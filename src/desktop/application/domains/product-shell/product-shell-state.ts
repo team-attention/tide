@@ -114,6 +114,9 @@ export interface ProductShellState {
   // currently being inline-renamed.
   pinnedProjectIds: string[];
   renamingProjectId: string | null;
+  // The project for which the inline "new worktree" name input is open (null =
+  // none). See docs_v2/specs/worktree-creation.md.
+  creatingWorktreeForProjectId: string | null;
   threads: ProductShellThread[];
   agentChat: AgentChatShellState;
   appChrome: AppChromeState;
@@ -230,6 +233,8 @@ export interface ProductShellProjectGroupView {
   contextMenuOpen: boolean;
   pinned: boolean;
   renaming: boolean;
+  // True when the inline "new worktree" name input is open for this project.
+  creatingWorktree: boolean;
   threads: ProductShellThreadView[];
   // True when a child thread needs attention (waiting for input/approval) — used
   // to bubble the indicator to the project row when it is collapsed.
@@ -387,6 +392,7 @@ export function createProductShellState(
     providerCommands: [],
     pinnedProjectIds: [],
     renamingProjectId: null,
+    creatingWorktreeForProjectId: null,
     threads: includeFixtureData ? initialThreads : [],
     agentChat: createStartAgentChatState(),
     appChrome: createAppChromeState(),
@@ -402,6 +408,22 @@ export function setProductShellListSettings(
   patch: Partial<ProductShellListSettings>,
 ): ProductShellState {
   return { ...state, listSettings: { ...state.listSettings, ...patch } };
+}
+
+// Open / close the inline "new worktree" name input for a project. The actual
+// git worktree creation happens in Main (project registry) once a name is
+// submitted. See docs_v2/specs/worktree-creation.md.
+export function startProductShellWorktreeCreate(
+  state: ProductShellState,
+  projectId: string,
+): ProductShellState {
+  return { ...state, creatingWorktreeForProjectId: projectId, leftUiMenu: null };
+}
+
+export function cancelProductShellWorktreeCreate(
+  state: ProductShellState,
+): ProductShellState {
+  return { ...state, creatingWorktreeForProjectId: null };
 }
 
 export function createProductShellViewModel(
@@ -426,6 +448,7 @@ export function createProductShellViewModel(
       state.leftUiMenu?.kind === "project" && state.leftUiMenu.projectId === project.projectId,
     pinned: state.pinnedProjectIds.includes(project.projectId),
     renaming: state.renamingProjectId === project.projectId,
+    creatingWorktree: state.creatingWorktreeForProjectId === project.projectId,
     threads: visibleThreads
       .filter((thread) => thread.scope.kind === "project" && thread.scope.projectId === project.projectId)
       .map((thread) => toThreadView(thread, state)),

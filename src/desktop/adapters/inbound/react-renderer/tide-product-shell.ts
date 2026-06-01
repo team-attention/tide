@@ -113,6 +113,8 @@ import {
   updateProductShellComposerDraft,
   writeProductShellTerminalInput,
   setProductShellListSettings,
+  startProductShellWorktreeCreate,
+  cancelProductShellWorktreeCreate,
   DEFAULT_PRODUCT_SHELL_LIST_SETTINGS,
   type ProductShellListSettings,
   type ProductShellBackendCommand,
@@ -187,7 +189,7 @@ export interface ProjectRegistryBridge {
   unregisterProject(cwd: string): Promise<ProjectRegistryEntry[]>;
   renameProject(cwd: string, name: string): Promise<ProjectRegistryEntry[]>;
   revealInFinder(cwd: string): Promise<void>;
-  createWorktree(cwd: string): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
+  createWorktree(cwd: string, name: string): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
   gitContext(cwd: string): Promise<GitContextResult>;
   listCommands(cwd: string, agentId: string): Promise<AgentChatCommandOption[]>;
 }
@@ -251,6 +253,8 @@ interface ProductShellHandlers {
   onProjectRenameSubmit: (projectId: string, name: string) => void;
   onProjectRenameCancel: () => void;
   onProjectCreateWorktree: (projectId: string) => void;
+  onProjectCreateWorktreeSubmit: (projectId: string, name: string) => void;
+  onProjectCreateWorktreeCancel: () => void;
   onPinnedProjectSelect: (projectId: string) => void;
   onAddProject: () => void;
   onNewScratchThread: () => void;
@@ -721,19 +725,26 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       }
       setShellState((state) => cancelProductShellProjectRename(state));
     },
-    onProjectCreateWorktree: (projectId) => {
+    // Opens the inline "new worktree" name input on the project row. One name
+    // drives the worktree/branch/dir (v1). Actual creation happens on submit.
+    onProjectCreateWorktree: (projectId) =>
+      setShellState((state) => startProductShellWorktreeCreate(state, projectId)),
+    onProjectCreateWorktreeSubmit: (projectId, name) => {
+      const trimmed = name.trim();
       const cwd = projectCwdById(shellState, projectId);
       const bridge = props.projectBridge;
-      if (cwd !== undefined && bridge !== undefined) {
+      if (trimmed.length > 0 && cwd !== undefined && bridge !== undefined) {
         bridge
-          .createWorktree(cwd)
+          .createWorktree(cwd, trimmed)
           .then((result) =>
             setShellState((state) => setProductShellRegisteredProjects(state, result.entries)),
           )
           .catch(() => {});
       }
-      setShellState((state) => openProductShellLeftUiMenu(state, null));
+      setShellState((state) => cancelProductShellWorktreeCreate(state));
     },
+    onProjectCreateWorktreeCancel: () =>
+      setShellState((state) => cancelProductShellWorktreeCreate(state)),
     onPinnedProjectSelect: (projectId) =>
       setShellState((state) => {
         const result = selectProductShellChoiceSurfaceRow(
@@ -2233,7 +2244,31 @@ function createProjectGroup(
                 onBlur: (event: { currentTarget: { value: string } }) =>
                   handlers.onProjectRenameSubmit(project.projectId, event.currentTarget.value),
               })
-            : createElement("span", { className: "project-row__title" }, project.name),
+            : project.creatingWorktree
+              ? createElement("input", {
+                  className: "project-row__rename-input",
+                  "aria-label": "New worktree name",
+                  placeholder: "worktree name…",
+                  autoFocus: true,
+                  onClick: (event: { stopPropagation: () => void }) => event.stopPropagation(),
+                  onKeyDown: (event: {
+                    key: string;
+                    currentTarget: { value: string };
+                    preventDefault: () => void;
+                  }) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handlers.onProjectCreateWorktreeSubmit(
+                        project.projectId,
+                        event.currentTarget.value,
+                      );
+                    } else if (event.key === "Escape") {
+                      handlers.onProjectCreateWorktreeCancel();
+                    }
+                  },
+                  onBlur: () => handlers.onProjectCreateWorktreeCancel(),
+                })
+              : createElement("span", { className: "project-row__title" }, project.name),
           // When collapsed, bubble a child thread's attention to the project row.
           !project.expanded && project.attention
             ? createElement("span", {

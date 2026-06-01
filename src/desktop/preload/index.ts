@@ -37,7 +37,7 @@ export interface TidePreloadSurface {
   unregisterProject(cwd: string): Promise<ProjectRegistryEntry[]>;
   renameProject(cwd: string, name: string): Promise<ProjectRegistryEntry[]>;
   revealInFinder(cwd: string): Promise<void>;
-  createWorktree(cwd: string): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
+  createWorktree(cwd: string, name: string): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
   gitContext(cwd: string): Promise<GitContext>;
   listCommands(cwd: string, agentId: string): Promise<ProviderCommandSuggestion[]>;
 }
@@ -75,8 +75,8 @@ export const tidePreloadSurface: TidePreloadSurface = {
   revealInFinder(cwd) {
     return ipcRenderer.invoke("tide:reveal-in-finder", cwd) as Promise<void>;
   },
-  createWorktree(cwd) {
-    return ipcRenderer.invoke("tide:create-worktree", cwd) as Promise<{
+  createWorktree(cwd, name) {
+    return ipcRenderer.invoke("tide:create-worktree", cwd, name) as Promise<{
       entries: ProjectRegistryEntry[];
       createdCwd: string | null;
     }>;

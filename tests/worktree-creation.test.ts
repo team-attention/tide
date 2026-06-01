@@ -6,6 +6,12 @@ import {
   computeWorktreePath,
   sanitizeWorktreeBranch,
 } from "../src/backend/application/domains/worktree/worktree-path.ts";
+import {
+  createProductShellState,
+  createProductShellViewModel,
+  startProductShellWorktreeCreate,
+  cancelProductShellWorktreeCreate,
+} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
 
 // --- UC-1: Worktree Path Rule ---
 
@@ -31,4 +37,21 @@ test("applies_configured_worktree_path_pattern", () => {
     }),
     "/Users/me/repo/.worktrees/feature-login",
   );
+});
+
+// --- UC-3: Inline worktree name input (Desktop) ---
+
+test("opening_worktree_create_marks_the_project_row_for_a_name_input", () => {
+  const base = createProductShellState({ includeFixtureData: false });
+  const state = {
+    ...base,
+    projects: [{ projectId: "p1", name: "repo", cwd: "/repo" }],
+  };
+  const opened = startProductShellWorktreeCreate(state, "p1");
+  assert.equal(opened.creatingWorktreeForProjectId, "p1");
+  const group = createProductShellViewModel(opened).projectGroups.find((g) => g.projectId === "p1");
+  assert.equal(group?.creatingWorktree, true);
+
+  const cancelled = cancelProductShellWorktreeCreate(opened);
+  assert.equal(cancelled.creatingWorktreeForProjectId, null);
 });

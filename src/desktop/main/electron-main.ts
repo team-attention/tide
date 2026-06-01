@@ -140,16 +140,20 @@ ipcMain.handle("tide:rename-project", async (_event, cwd: unknown, name: unknown
   return next;
 });
 
-// Create a git worktree for a project and register it. The worktree lives in a
-// Tide-managed directory; a new branch is created from the project's HEAD.
-ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown) => {
+// Create a git worktree for a project and register it as a Project at the same
+// level as others. One user-supplied name drives the branch + directory; the
+// worktree lives in a `<repo>.worktree/<branch>` sibling (Tide v1 rule).
+// See docs_v2/specs/worktree-creation.md.
+ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown, name: unknown) => {
   const current = await readProjectRegistry();
   if (typeof cwd !== "string" || cwd.length === 0) {
     return { entries: current, createdCwd: null };
   }
-  const id = Math.random().toString(36).slice(2, 8);
-  const branch = `${basename(cwd) || "tide"}-wt-${id}`;
-  const worktreePath = join(resolveAppDataRoot(), "worktrees", branch);
+  const rawName = typeof name === "string" ? name.trim() : "";
+  const branch = (rawName.length > 0 ? rawName : `${basename(cwd) || "tide"}-wt`)
+    .replace(/\//g, "-")
+    .replace(/\s+/g, "-");
+  const worktreePath = join(`${cwd.replace(/\/+$/, "")}.worktree`, branch);
   const created = await new Promise<boolean>((resolve) => {
     execFile(
       "git",
@@ -161,7 +165,7 @@ ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown) => {
   if (!created) {
     return { entries: current, createdCwd: null };
   }
-  const entries = [...current, { projectId: branch, name: branch, cwd: worktreePath }];
+  const entries = [...current, { projectId: worktreePath, name: branch, cwd: worktreePath }];
   await writeProjectRegistry(entries);
   return { entries, createdCwd: worktreePath };
 });
