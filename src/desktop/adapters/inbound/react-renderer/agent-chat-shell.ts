@@ -497,6 +497,14 @@ function renderToolBody(block: AgentChatBlockView): ReactNode {
   if (block.body.length === 0) {
     return null;
   }
+  // Read/view file calls render as a file chip (icon + name + dir), not raw
+  // file_path/offset/limit args.
+  if (block.kind === "tool_call" && categorizeTool(block.title) === "read") {
+    const path = readToolFilePath(block.body);
+    if (path !== undefined) {
+      return renderFileChip(path);
+    }
+  }
   // Edits render as a +/- diff (Codex/Claude-app style) when we can derive one.
   const diff = block.kind === "tool_call" ? editDiffLines(block.title, block.body) : null;
   if (diff !== null && diff.length > 0) {
@@ -671,6 +679,38 @@ function lineDiff(oldText: string, newText: string): DiffLine[] | null {
   while (i < m) out.push({ kind: "del", text: a[i++] });
   while (j < n) out.push({ kind: "add", text: b[j++] });
   return out;
+}
+
+// The file path a read/view tool targets (e.g. {"file_path":"…"} or DirectoryPath).
+function readToolFilePath(body: string): string | undefined {
+  const trimmed = body.trim();
+  if (!trimmed.startsWith("{")) {
+    return undefined;
+  }
+  try {
+    const record = JSON.parse(trimmed) as Record<string, unknown>;
+    return pickStringField(record, [
+      "file_path", "filePath", "path", "AbsolutePath", "TargetFile", "DirectoryPath", "abs_path",
+    ]);
+  } catch {
+    return undefined;
+  }
+}
+
+// A compact file reference chip: filetype icon + filename + directory.
+function renderFileChip(path: string): ReactElement {
+  const slash = path.lastIndexOf("/");
+  const name = slash === -1 ? path : path.slice(slash + 1);
+  const dir = slash === -1 ? "" : path.slice(0, slash);
+  return createElement(
+    "div",
+    { className: "agent-session-turn__file-chip" },
+    createElement(fileIconFor(name), { size: 14, strokeWidth: 1.85, "aria-hidden": true }),
+    createElement("span", { className: "agent-session-turn__file-chip-name" }, name),
+    dir.length > 0
+      ? createElement("span", { className: "agent-session-turn__file-chip-dir" }, dir)
+      : null,
+  );
 }
 
 function pickStringField(record: Record<string, unknown>, keys: string[]): string | undefined {

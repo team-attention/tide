@@ -1213,6 +1213,34 @@ button {
   white-space: pre-wrap;
 }
 
+/* Read/view tool calls render as a compact file chip, not raw args. */
+.agent-session-turn__file-chip {
+  margin: 2px 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-bg);
+  color: var(--tide-muted);
+}
+
+.agent-session-turn__file-chip-name {
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 540;
+}
+
+.agent-session-turn__file-chip-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 /* Edit tools render as a +/- diff (Codex/Claude-app style). */
 .agent-session-turn__diff {
   margin: 2px 0 0;

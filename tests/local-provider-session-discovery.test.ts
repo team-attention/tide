@@ -124,3 +124,17 @@ test("discovery_falls_back_to_a_dated_title_when_no_user_message", () => {
   const sessions = discoverLocalSessions({ cwds: [CWD], fs });
   assert.equal(sessions[0].title, "Claude session 2026-05-31");
 });
+
+// UC-3: internal/auto-review sub-sessions are not adopted.
+test("discovery_skips_auto_review_internal_sessions", () => {
+  const reviewTranscript = JSON.stringify({
+    type: "user",
+    message: { role: "user", content: "The following is the Codex agent history whose request action you must assess." },
+  });
+  const fs = fakeFs({
+    listClaudeTranscripts: () => [{ path: "/c/review.jsonl", sessionId: "review-1", mtimeMs: 1 }],
+    readText: () => reviewTranscript,
+  });
+  const sessions = discoverLocalSessions({ cwds: [CWD], fs });
+  assert.equal(sessions.length, 0, "auto-review session is filtered out");
+});

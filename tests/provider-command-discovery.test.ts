@@ -71,3 +71,11 @@ test("discovery_tags_trigger_slash_for_commands_and_dollar_for_skills", () => {
   assert.equal(codex[0].trigger, "$");
   assert.equal(codex[0].name, "s");
 });
+
+test("discovery_includes_builtin_commands_like_model", () => {
+  const fs: CommandFs = { listFiles: () => [], listDirs: () => [], readText: () => undefined };
+  for (const agentId of ["claude", "codex", "antigravity"]) {
+    const out = discoverProviderCommands({ cwd: "/p", homeDir: "/h", agentId, fs });
+    assert.ok(out.some((c) => c.name === "model" && c.trigger === "/"), `${agentId} has /model`);
+  }
+});

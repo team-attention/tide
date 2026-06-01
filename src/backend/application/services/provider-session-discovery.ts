@@ -115,12 +115,14 @@ export function discoverLocalSessions(input: {
   for (const cwd of cwds) {
     for (const entry of input.fs.listClaudeTranscripts(cwd)) {
       const text = input.fs.readText(entry.path);
+      const title = (text && claudeSessionTitle(text)) || datedTitle("Claude", entry.mtimeMs);
+      if (isInternalSessionTitle(title)) continue;
       sessions.push({
         agentId: "claude",
         sessionId: entry.sessionId,
         transcriptPath: entry.path,
         cwd,
-        title: (text && claudeSessionTitle(text)) || datedTitle("Claude", entry.mtimeMs),
+        title,
         startedAtMs: entry.mtimeMs,
       });
     }
@@ -136,12 +138,14 @@ export function discoverLocalSessions(input: {
     if (descriptor.cwd === undefined || !cwdSet.has(descriptor.cwd)) {
       continue;
     }
+    const title = descriptor.title || datedTitle("Codex", entry.mtimeMs);
+    if (isInternalSessionTitle(title)) continue;
     sessions.push({
       agentId: "codex",
       sessionId: codexSessionIdFromPath(entry.path),
       transcriptPath: entry.path,
       cwd: descriptor.cwd,
-      title: descriptor.title || datedTitle("Codex", entry.mtimeMs),
+      title,
       startedAtMs: entry.mtimeMs,
     });
   }
@@ -153,17 +157,36 @@ export function discoverLocalSessions(input: {
       continue;
     }
     const text = input.fs.readText(conversation.transcriptPath);
+    const title = (text && antigravitySessionTitle(text)) || datedTitle("Antigravity", conversation.mtimeMs);
+    if (isInternalSessionTitle(title)) continue;
     sessions.push({
       agentId: "antigravity",
       sessionId: conversation.conversationId,
       transcriptPath: conversation.transcriptPath,
       cwd,
-      title: (text && antigravitySessionTitle(text)) || datedTitle("Antigravity", conversation.mtimeMs),
+      title,
       startedAtMs: conversation.mtimeMs,
     });
   }
 
   return sessions;
+}
+
+// Auto-review / internal sub-sessions (e.g. Tide or Codex spawning a review pass
+// to assess a planned action) are not real user conversations and must not be
+// adopted as Threads. They are identifiable by their prompt markers.
+const INTERNAL_SESSION_MARKERS = [
+  "the following is the codex agent history",
+  "approval request start",
+  ">>> transcript",
+  "reviewed codex session",
+  "request action you must assess",
+  "planned action json",
+];
+
+export function isInternalSessionTitle(title: string): boolean {
+  const lower = title.toLowerCase();
+  return INTERNAL_SESSION_MARKERS.some((marker) => lower.includes(marker));
 }
 
 // Deterministic Thread id so re-discovery across restarts is idempotent.

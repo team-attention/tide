@@ -12,9 +12,37 @@ export interface ProviderCommandSuggestion {
   name: string;
   description: string;
   trigger: CommandTrigger;
-  source: "project" | "user";
+  source: "project" | "user" | "builtin";
   agentId: "codex" | "claude" | "antigravity";
 }
+
+// Built-in slash commands per provider (version-static, so listed without
+// spawning). Curated from each CLI's own `/` menu; surfaced alongside the
+// discovered project/user commands.
+const BUILTIN_COMMANDS: Record<string, { name: string; description: string }[]> = {
+  claude: [
+    { name: "model", description: "Switch the Claude model" },
+    { name: "clear", description: "Start a new session with empty context" },
+    { name: "compact", description: "Summarize the conversation to free context" },
+    { name: "context", description: "Visualize current context usage" },
+    { name: "agents", description: "Manage agent configurations" },
+    { name: "review", description: "Review unstaged changes or a branch" },
+    { name: "resume", description: "Resume a previous session" },
+    { name: "init", description: "Initialize project memory (CLAUDE.md)" },
+    { name: "config", description: "Open the config panel" },
+  ],
+  codex: [
+    { name: "model", description: "Switch the model and reasoning effort" },
+    { name: "approvals", description: "Change the approval/permission mode" },
+    { name: "review", description: "Review changes" },
+    { name: "compact", description: "Summarize the conversation to free context" },
+    { name: "new", description: "Start a new session" },
+    { name: "init", description: "Initialize project memory (AGENTS.md)" },
+    { name: "mcp", description: "Show MCP server status" },
+    { name: "status", description: "Show session status" },
+  ],
+  antigravity: [{ name: "model", description: "Switch the model" }],
+};
 
 export interface CommandFs {
   listFiles(dir: string): string[];
@@ -96,6 +124,13 @@ export function discoverProviderCommands(input: {
         push({ ...parsed, trigger: "/", source, agentId: "antigravity" });
       }
     }
+  }
+
+  // Built-in provider commands (e.g. /model, /clear) on the `/` trigger, after
+  // the discovered project/user commands.
+  const agentId = input.agentId as ProviderCommandSuggestion["agentId"];
+  for (const builtin of BUILTIN_COMMANDS[input.agentId] ?? []) {
+    push({ ...builtin, trigger: "/", source: "builtin", agentId });
   }
   return out;
 }

@@ -75,6 +75,7 @@ import { createFixtureAgentSessionReader } from "../../application/services/fixt
 import {
   adoptedThreadSeedsFromSessions,
   discoverLocalSessions,
+  isInternalSessionTitle,
   type DiscoveryFs,
 } from "../../application/services/provider-session-discovery.ts";
 import {
@@ -319,7 +320,12 @@ function createPersistentLiveBackendAdapter(input: {
       }
     }
 
-    const restored = await input.service.restoreThreads({ threads: [...seeds, ...adopted] });
+    // Drop auto-review / internal sub-sessions (e.g. approval-assessment passes)
+    // from BOTH persisted and adopted seeds — they are not real conversations.
+    const threads = [...seeds, ...adopted].filter(
+      (seed) => !isInternalSessionTitle(seed.title),
+    );
+    const restored = await input.service.restoreThreads({ threads });
     if (!restored.ok) {
       process.emitWarning(restored.error.message, {
         type: "TidePersistenceRestoreWarning",

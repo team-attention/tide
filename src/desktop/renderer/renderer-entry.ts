@@ -75,7 +75,7 @@ declare global {
         name: string;
         description: string;
         trigger: "/" | "$";
-        source: "project" | "user";
+        source: "project" | "user" | "builtin";
         agentId: "codex" | "claude" | "antigravity";
       }[]>;
     };
