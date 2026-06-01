@@ -30,6 +30,7 @@ import {
   Wrench,
 } from "lucide-react";
 
+import { fileIconFor } from "./file-icons.ts";
 import type {
   AgentChatBlockView,
   AgentChatChoiceSurfaceRowView,
@@ -733,7 +734,7 @@ function createFilesChangedList(blocks: AgentChatBlockView[]): ReactElement | nu
       return createElement(
         "li",
         { key: path, className: "agent-session-tools__file" },
-        createElement(FileText, { className: "agent-session-tools__file-icon", size: 13, "aria-hidden": true }),
+        createElement(fileIconFor(name), { className: "agent-session-tools__file-icon", size: 13, "aria-hidden": true }),
         createElement("span", { className: "agent-session-tools__file-name" }, name),
         dir.length > 0
           ? createElement("span", { className: "agent-session-tools__file-dir" }, dir)

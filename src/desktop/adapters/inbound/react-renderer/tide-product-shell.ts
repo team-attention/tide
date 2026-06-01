@@ -25,6 +25,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { fileIconFor } from "./file-icons.ts";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 // xterm core is CommonJS and safe to import in any environment (it does not
@@ -2011,7 +2012,7 @@ function createFileTreeColumn(
               : createElement("span", { className: "file-tree-row__chevron-spacer", "aria-hidden": true }),
             entry.kind === "folder"
               ? createElement(entry.expanded === false ? Folder : FolderOpen, { size: 14, strokeWidth: 1.8, "aria-hidden": true })
-              : createElement(FileText, { size: 14, strokeWidth: 1.8, "aria-hidden": true }),
+              : createElement(fileIconFor(entry.name), { size: 14, strokeWidth: 1.8, "aria-hidden": true }),
             createElement("span", null, entry.name),
           ),
         ),
