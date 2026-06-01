@@ -938,6 +938,9 @@ button {
   /* Vertical scroll only — content wraps, so there is never a horizontal bar. */
   overflow-x: hidden;
   overflow-y: auto;
+  /* Reserve the scrollbar on both sides so the centered content doesn't shift
+     relative to the composer (which has no scrollbar). */
+  scrollbar-gutter: stable both-edges;
   display: flex;
   flex-direction: column;
   justify-content: center;
