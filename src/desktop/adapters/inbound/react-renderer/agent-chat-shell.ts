@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 
 import { fileIconFor } from "./file-icons.ts";
+import { highlightToHtml } from "./code-highlight.ts";
 import type {
   AgentChatBlockView,
   AgentChatChoiceSurfaceRowView,
@@ -51,6 +52,8 @@ export interface AgentChatShellProps {
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
   ) => void;
+  // Opens a file (from a Read tool's file chip) in the Workbench editor.
+  onOpenFile?: (path: string) => void;
 }
 
 // A chip's screen rectangle, captured when it is clicked so the dropdown can
@@ -133,7 +136,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       "data-runtime-state": viewModel.runtimeState,
     },
     props.showThreadHeader === false ? null : createThreadHeader(viewModel),
-    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput),
+    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile),
     createComposerStack(viewModel, handlers),
     popover,
   );
@@ -331,6 +334,7 @@ function createAgentSession(
   blocks: AgentChatBlockView[],
   chatState: AgentChatShellViewModel["chatState"],
   queuedInput: string | null,
+  onOpenFile?: (path: string) => void,
 ): ReactElement {
   // Show a live "working" indicator only until the agent produces its block:
   // a streaming block carries its own caret, and a complete block means the turn
@@ -346,6 +350,19 @@ function createAgentSession(
       className: `agent-session${blocks.length > 0 ? " agent-session--has-turns" : ""}`,
       "aria-label": "Agent Session",
       "data-session-state": blocks.length === 0 ? "empty" : "turns",
+      // Event-delegated: clicking a file chip opens the file in the Workbench.
+      onClick: onOpenFile
+        ? (event: { target: EventTarget | null }) => {
+            const el =
+              event.target instanceof Element
+                ? event.target.closest("[data-open-file]")
+                : null;
+            const path = el?.getAttribute("data-open-file");
+            if (path) {
+              onOpenFile(path);
+            }
+          }
+        : undefined,
     },
     blocks.length === 0 ? null : groupSessionItems(blocks).map(renderSessionItem),
     working ? createElement(AgentWorkingIndicator) : null,
@@ -422,7 +439,14 @@ function AgentWorkingIndicator(): ReactElement {
 // Agent answers are markdown (headings, lists, code, links, bold). Render them
 // with markdown-it (html:false escapes raw HTML, so this is injection-safe for
 // provider text); linkify makes bare URLs clickable, breaks honors soft breaks.
-const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
+const markdown = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,
+  // Syntax-highlight fenced code blocks; markdown-it wraps the returned HTML in
+  // <pre><code>.
+  highlight: (code, lang) => highlightToHtml(code, lang || undefined),
+});
 
 function renderAgentMarkdown(body: string): ReactElement {
   return createElement("div", {
@@ -537,11 +561,10 @@ function renderToolBody(block: AgentChatBlockView): ReactNode {
       ),
     );
   }
-  return createElement(
-    "pre",
-    { className: "agent-session-turn__tool-body" },
-    toolBodyText(block.title, block.body),
-  );
+  return createElement("pre", {
+    className: "agent-session-turn__tool-body",
+    dangerouslySetInnerHTML: { __html: highlightToHtml(toolBodyText(block.title, block.body)) },
+  });
 }
 
 // Tool args arrive as a JSON string (e.g. {"command":"cd …\npkill …"}), which
@@ -703,8 +726,13 @@ function renderFileChip(path: string): ReactElement {
   const name = slash === -1 ? path : path.slice(slash + 1);
   const dir = slash === -1 ? "" : path.slice(0, slash);
   return createElement(
-    "div",
-    { className: "agent-session-turn__file-chip" },
+    "button",
+    {
+      type: "button",
+      className: "agent-session-turn__file-chip",
+      "data-open-file": path,
+      title: `Open ${name} in the Workbench`,
+    },
     createElement(fileIconFor(name), { size: 14, strokeWidth: 1.85, "aria-hidden": true }),
     createElement("span", { className: "agent-session-turn__file-chip-name" }, name),
     dir.length > 0

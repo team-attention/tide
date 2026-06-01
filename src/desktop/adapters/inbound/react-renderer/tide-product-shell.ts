@@ -75,6 +75,7 @@ import {
   openProductShellThread,
   openProductShellThreadFromLeftUi,
   selectProductShellFileTreeEntry,
+  openProductShellFileInEditor,
   setProductShellSearchQuery,
   toggleProductShellSearch,
   selectProductShellChoiceSurfaceRow,
@@ -192,6 +193,7 @@ interface ProductShellHandlers {
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
   ) => void;
+  onOpenFile: (path: string) => void;
   onLauncherAction: (actionId: string) => void;
   onLeftUiMenuOpen: (menu: ProductShellLeftUiMenu | null, rect?: MenuAnchorRect) => void;
   isSectionCollapsed: (title: string) => boolean;
@@ -568,6 +570,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         return result.state;
       });
     },
+    onOpenFile: (path) =>
+      setShellState((state) => {
+        const result = openProductShellFileInEditor(state, path);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
     onLauncherAction: (actionId) =>
       setShellState((state) => {
         const result = selectProductShellLauncherAction(state, actionId);
@@ -969,6 +977,7 @@ function createAgentChatColumn(
       onInterrupt: handlers.onInterrupt,
       onComposerSurfaceChange: handlers.onComposerSurfaceChange,
       onChoiceSurfaceRowSelect: handlers.onChoiceSurfaceRowSelect,
+      onOpenFile: handlers.onOpenFile,
     }),
   );
 }

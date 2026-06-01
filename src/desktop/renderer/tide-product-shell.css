@@ -1213,6 +1213,40 @@ button {
   white-space: pre-wrap;
 }
 
+/* Syntax-highlight token theme (from @lezer/highlight classHighlighter), used in
+   tool-body code and markdown code blocks. Tuned for the light surface. */
+.tok-keyword { color: #a626a4; }
+.tok-controlKeyword,
+.tok-moduleKeyword,
+.tok-operatorKeyword { color: #a626a4; }
+.tok-string,
+.tok-string2,
+.tok-special.tok-string { color: #50a14f; }
+.tok-comment,
+.tok-lineComment,
+.tok-blockComment { color: #a0a1a7; font-style: italic; }
+.tok-number,
+.tok-bool,
+.tok-atom { color: #b76b01; }
+.tok-typeName,
+.tok-className,
+.tok-namespace { color: #0184bc; }
+.tok-function,
+.tok-function.tok-variableName,
+.tok-macroName { color: #4078f2; }
+.tok-propertyName { color: #e06c75; }
+.tok-variableName,
+.tok-definition.tok-variableName { color: #383a42; }
+.tok-operator,
+.tok-punctuation,
+.tok-bracket,
+.tok-separator { color: #4f5159; }
+.tok-meta,
+.tok-annotation { color: #986801; }
+.tok-link,
+.tok-url { color: #4078f2; }
+.tok-heading { color: #383a42; font-weight: 600; }
+
 /* Read/view tool calls render as a compact file chip, not raw args. */
 .agent-session-turn__file-chip {
   margin: 2px 0 0;
@@ -1225,6 +1259,14 @@ button {
   border-radius: 8px;
   background: var(--tide-bg);
   color: var(--tide-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-session-turn__file-chip:hover {
+  background: var(--tide-selection);
+  border-color: var(--tide-line-strong);
 }
 
 .agent-session-turn__file-chip-name {

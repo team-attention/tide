@@ -771,6 +771,24 @@ export function selectProductShellLauncherAction(
   return { state, command: null };
 }
 
+// Opens an arbitrary file path (e.g. a Read tool's file chip) in the Workbench
+// editor, opening the Workbench column if needed.
+export function openProductShellFileInEditor(
+  state: ProductShellState,
+  path: string,
+): ProductShellUpdateResult {
+  if (state.activeThreadId === null || path.length === 0) {
+    return { state, command: null };
+  }
+  return {
+    state: { ...state, workbenchOpen: true },
+    command: {
+      kind: "workbench.command",
+      payload: { threadId: state.activeThreadId, command: "open_editor", data: { path } },
+    },
+  };
+}
+
 export function selectProductShellFileTreeEntry(
   state: ProductShellState,
   entryId: string,
