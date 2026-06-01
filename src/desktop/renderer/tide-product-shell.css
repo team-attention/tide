@@ -844,7 +844,10 @@ button {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 16px;
-  padding: 26px clamp(24px, 4vw, 56px) 24px;
+  /* No horizontal padding: the scroll area spans the full column (scrollbar at
+     the column edge, Codex-style). Content + composer self-center at a shared
+     width so they line up. */
+  padding: 26px 0 20px;
   overflow: hidden;
 }
 
@@ -938,6 +941,8 @@ button {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  /* Center the content column so turns + composer share one column. */
+  align-items: center;
   gap: 22px;
 }
 
@@ -956,30 +961,32 @@ button {
    boxed into cards. Only structured/event blocks get cards. */
 .agent-session-turn {
   min-width: 0;
-  max-width: min(760px, 100%);
-  align-self: stretch;
+  /* The shared content column width — matches the composer. */
+  width: min(760px, calc(100% - 32px));
+  align-self: center;
   display: grid;
   gap: 4px;
 }
 
 .agent-session-turn--agent {
-  align-self: stretch;
   color: var(--tide-text);
 }
 
 /* Codex-style: the user's message is a compact right-aligned bubble, clearly
    distinct from the agent's flat left-aligned prose. */
+/* The user turn fills the shared column but right-aligns its bubble inside. */
 .agent-session-turn--user {
-  align-self: flex-end;
-  max-width: min(560px, 82%);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.agent-session-turn--user .agent-session-turn__body {
+  max-width: 82%;
   width: fit-content;
   padding: 10px 14px;
   border-radius: 16px;
   background: var(--tide-selection);
   color: var(--tide-text);
-}
-
-.agent-session-turn--user .agent-session-turn__body {
   font-size: 15px;
   line-height: 1.55;
 }
@@ -987,7 +994,6 @@ button {
 /* Structured/event blocks are cards (canonical 1338): white, bordered, soft
    shadow, radius 14 — distinct from the flat user/agent transcript text. */
 .agent-session-turn--event {
-  align-self: stretch;
   max-width: min(800px, 100%);
   gap: 8px;
   padding: 10px 12px;
@@ -1259,7 +1265,6 @@ button {
 /* Provider tool calls/results: a compact, indented log entry distinct from the
    flat message transcript — quiet by default so they read as activity, not chat. */
 .agent-session-turn--tool {
-  align-self: stretch;
   max-width: min(800px, 100%);
   gap: 4px;
   padding: 6px 10px;
@@ -1441,8 +1446,8 @@ button {
 /* Codex-style collapsed tool-activity summary: a quiet one-line row that
    aggregates a run of tool calls, expandable to the per-tool detail. */
 .agent-session-tools {
-  align-self: stretch;
-  max-width: min(760px, 100%);
+  align-self: center;
+  width: min(760px, calc(100% - 32px));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1690,7 +1695,8 @@ button {
 }
 
 .composer-shell {
-  width: min(760px, 100%);
+  /* Same width as the content column so they line up. */
+  width: min(760px, calc(100% - 32px));
   margin: 0 auto;
   display: grid;
   gap: 12px;
