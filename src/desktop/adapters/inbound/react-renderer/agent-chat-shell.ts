@@ -76,6 +76,8 @@ interface AnchorRect {
 export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   const viewModel = props.viewModel;
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
+  // A pasted-image attachment enlarged into a lightbox (its data: URL), or null.
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const sessionRef = useRef<HTMLElement | null>(null);
   // On entering a thread, jump to the most recent message (not the top).
@@ -109,6 +111,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     onChoiceSurfaceRowSelect: props.onChoiceSurfaceRowSelect,
     onAddAttachment: props.onAddAttachment,
     onRemoveAttachment: props.onRemoveAttachment,
+    onPreviewAttachment: (previewUrl: string) => setImagePreview(previewUrl),
     inputRef: composerInputRef,
   };
 
@@ -135,6 +138,24 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       })
     : null;
 
+  const lightbox =
+    imagePreview === null
+      ? null
+      : createElement(
+          "div",
+          {
+            className: "image-lightbox-backdrop",
+            role: "dialog",
+            "aria-label": "Image preview",
+            onClick: () => setImagePreview(null),
+          },
+          createElement("img", {
+            className: "image-lightbox__img",
+            src: imagePreview,
+            alt: "Attachment preview",
+          }),
+        );
+
   if (isNewThreadStart) {
     return createElement(
       "main",
@@ -145,6 +166,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       },
       createNewThreadStartSurface(viewModel, handlers),
       popover,
+      lightbox,
     );
   }
 
@@ -159,6 +181,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef),
     createComposerStack(viewModel, handlers),
     popover,
+    lightbox,
   );
 }
 
@@ -280,6 +303,7 @@ interface ComposerHandlers {
     dataBase64: string;
   }) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
+  onPreviewAttachment?: (previewUrl: string) => void;
   // The composer textarea, so slash (/) command suggestions can anchor to it.
   inputRef?: { current: HTMLTextAreaElement | null };
 }
@@ -1061,11 +1085,21 @@ function createComposer(
               createElement(
                 "div",
                 { key: attachment.id, className: "composer-shell__attachment" },
-                createElement("img", {
-                  className: "composer-shell__attachment-thumb",
-                  src: attachment.previewUrl,
-                  alt: attachment.name,
-                }),
+                createElement(
+                  "button",
+                  {
+                    type: "button",
+                    className: "composer-shell__attachment-open",
+                    title: "Preview image",
+                    "aria-label": `Preview ${attachment.name}`,
+                    onClick: () => handlers.onPreviewAttachment?.(attachment.previewUrl),
+                  },
+                  createElement("img", {
+                    className: "composer-shell__attachment-thumb",
+                    src: attachment.previewUrl,
+                    alt: attachment.name,
+                  }),
+                ),
                 createElement(
                   "button",
                   {
