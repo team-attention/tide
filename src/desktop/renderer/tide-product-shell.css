@@ -941,6 +941,12 @@ button {
   gap: 22px;
 }
 
+/* A real conversation is top-anchored so it can scroll to the latest message;
+   centering is only for the (short) empty state. */
+.agent-session--has-turns {
+  justify-content: flex-start;
+}
+
 .agent-session--has-turns {
   justify-content: flex-start;
   padding: 6px 0 12px;
@@ -1081,6 +1087,53 @@ button {
   border-radius: 8px;
   overflow: auto;
   background: var(--tide-selection);
+}
+
+/* Codex-style fenced code block: a header (language + Copy) over the code. */
+.agent-session-turn__body--md .md-code {
+  margin: 0 0 12px;
+  border: 1px solid var(--tide-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.agent-session-turn__body--md .md-code__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px 5px 12px;
+  border-bottom: 1px solid var(--tide-line);
+  background: var(--tide-surface);
+}
+
+.agent-session-turn__body--md .md-code__lang {
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+
+.agent-session-turn__body--md .md-code__copy {
+  border: 0;
+  background: transparent;
+  color: var(--tide-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.agent-session-turn__body--md .md-code__copy:hover {
+  background: var(--tide-selection);
+  color: var(--tide-action);
+}
+
+.agent-session-turn__body--md .md-code__pre {
+  margin: 0;
+  border-radius: 0;
+  background: var(--tide-bg);
 }
 
 .agent-session-turn__body--md pre code {

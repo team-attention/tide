@@ -68,6 +68,15 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   const viewModel = props.viewModel;
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const sessionRef = useRef<HTMLElement | null>(null);
+  // On entering a thread, jump to the most recent message (not the top).
+  const threadId = viewModel.thread?.threadId;
+  useEffect(() => {
+    const el = sessionRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [threadId]);
   const isNewThreadStart =
     viewModel.composer.mode === "start" &&
     viewModel.blocks.length === 0 &&
@@ -136,7 +145,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       "data-runtime-state": viewModel.runtimeState,
     },
     props.showThreadHeader === false ? null : createThreadHeader(viewModel),
-    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile),
+    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef),
     createComposerStack(viewModel, handlers),
     popover,
   );
@@ -335,6 +344,7 @@ function createAgentSession(
   chatState: AgentChatShellViewModel["chatState"],
   queuedInput: string | null,
   onOpenFile?: (path: string) => void,
+  sessionRef?: { current: HTMLElement | null },
 ): ReactElement {
   // Show a live "working" indicator only until the agent produces its block:
   // a streaming block carries its own caret, and a complete block means the turn
@@ -347,22 +357,27 @@ function createAgentSession(
   return createElement(
     "section",
     {
+      ref: sessionRef,
       className: `agent-session${blocks.length > 0 ? " agent-session--has-turns" : ""}`,
       "aria-label": "Agent Session",
       "data-session-state": blocks.length === 0 ? "empty" : "turns",
-      // Event-delegated: clicking a file chip opens the file in the Workbench.
-      onClick: onOpenFile
-        ? (event: { target: EventTarget | null }) => {
-            const el =
-              event.target instanceof Element
-                ? event.target.closest("[data-open-file]")
-                : null;
-            const path = el?.getAttribute("data-open-file");
-            if (path) {
-              onOpenFile(path);
-            }
-          }
-        : undefined,
+      // Event-delegated clicks: Copy a code block, or open a file chip.
+      onClick: (event: { target: EventTarget | null }) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target === null) {
+          return;
+        }
+        const copyButton = target.closest(".md-code__copy");
+        if (copyButton) {
+          const pre = copyButton.closest(".md-code")?.querySelector("pre");
+          void navigator.clipboard?.writeText(pre?.textContent ?? "");
+          return;
+        }
+        const path = onOpenFile ? target.closest("[data-open-file]")?.getAttribute("data-open-file") : null;
+        if (path) {
+          onOpenFile?.(path);
+        }
+      },
     },
     blocks.length === 0 ? null : groupSessionItems(blocks).map(renderSessionItem),
     working ? createElement(AgentWorkingIndicator) : null,
@@ -443,10 +458,29 @@ const markdown = new MarkdownIt({
   html: false,
   linkify: true,
   breaks: true,
-  // Syntax-highlight fenced code blocks; markdown-it wraps the returned HTML in
-  // <pre><code>.
-  highlight: (code, lang) => highlightToHtml(code, lang || undefined),
 });
+
+// Codex-style fenced code blocks: a header with the language label + a Copy
+// button, then the syntax-highlighted code. Copy is handled by event delegation
+// on the session (reads the <pre> text).
+markdown.renderer.rules.fence = (tokens, index) => {
+  const token = tokens[index];
+  const info = token.info.trim().split(/\s+/)[0] ?? "";
+  const lang = info || guessLanguage(token.content) || "";
+  const label = lang || "code";
+  const codeHtml = highlightToHtml(token.content, lang || undefined);
+  return (
+    `<div class="md-code">` +
+    `<div class="md-code__header"><span class="md-code__lang">${escapeAttr(label)}</span>` +
+    `<button type="button" class="md-code__copy" data-copy aria-label="Copy code">Copy</button></div>` +
+    `<pre class="md-code__pre"><code>${codeHtml}</code></pre>` +
+    `</div>`
+  );
+};
+
+function escapeAttr(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 
 function renderAgentMarkdown(body: string): ReactElement {
   return createElement("div", {
