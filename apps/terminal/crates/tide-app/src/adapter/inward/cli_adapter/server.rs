@@ -181,7 +181,7 @@ impl GatewayServer {
     pub fn start(router: Arc<GatewayCommandRouter>) -> std::io::Result<Self> {
         let pid = std::process::id();
         let tmpdir = std::env::temp_dir();
-        let socket_path = tmpdir.join(format!("tide-{pid}.sock"));
+        let socket_path = tmpdir.join(format!("tide-terminal-{pid}.sock"));
 
         // Clean up stale socket from a previous run
         Self::cleanup_stale_socket(&socket_path);
@@ -190,7 +190,7 @@ impl GatewayServer {
         listener.set_nonblocking(false)?;
 
         // Create symlink for discovery
-        let latest_path = tmpdir.join("tide-latest.sock");
+        let latest_path = tmpdir.join("tide-terminal-latest.sock");
         let _ = std::fs::remove_file(&latest_path);
         let _ = std::os::unix::fs::symlink(&socket_path, &latest_path);
 
@@ -425,7 +425,7 @@ impl Drop for GatewayServer {
         let latest = self
             .socket_path
             .parent()
-            .map(|p| p.join("tide-latest.sock"))
+            .map(|p| p.join("tide-terminal-latest.sock"))
             .unwrap_or_default();
         if let Ok(target) = std::fs::read_link(&latest) {
             if target == self.socket_path {

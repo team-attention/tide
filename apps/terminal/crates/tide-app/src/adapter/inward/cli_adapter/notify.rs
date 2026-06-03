@@ -56,7 +56,7 @@ pub fn run_notify(args: &[String]) -> i32 {
 
     // Inject caller identity so the gateway can route to the correct
     // Tide Window first, then the App can route to the correct Workspace.
-    if let Ok(window_str) = std::env::var("TIDE_WINDOW") {
+    if let Ok(window_str) = std::env::var("TIDE_TERMINAL_WINDOW") {
         if let Ok(tide_window_id) = window_str.parse::<u64>() {
             if let Some(obj) = params.as_object_mut() {
                 obj.insert(
@@ -66,7 +66,7 @@ pub fn run_notify(args: &[String]) -> i32 {
             }
         }
     }
-    if let Ok(pane_str) = std::env::var("TIDE_PANE") {
+    if let Ok(pane_str) = std::env::var("TIDE_TERMINAL_PANE") {
         if let Ok(pane_id) = pane_str.parse::<u64>() {
             if let Some(obj) = params.as_object_mut() {
                 obj.insert(
@@ -76,7 +76,7 @@ pub fn run_notify(args: &[String]) -> i32 {
             }
         }
     }
-    if let Ok(instance_pid_str) = std::env::var("TIDE_INSTANCE_PID") {
+    if let Ok(instance_pid_str) = std::env::var("TIDE_TERMINAL_INSTANCE_PID") {
         if let Ok(instance_pid) = instance_pid_str.parse::<u32>() {
             if let Some(obj) = params.as_object_mut() {
                 obj.insert(
@@ -172,7 +172,7 @@ fn read_payload_from_stdin() -> Option<serde_json::Value> {
 /// Find the owning Agent Gateway socket path for wrapper-hook delivery.
 /// Wrapper hooks must use the explicit Tide socket from the owning PTY.
 fn find_socket_path() -> Option<String> {
-    if let Ok(path) = std::env::var("TIDE_SOCKET") {
+    if let Ok(path) = std::env::var("TIDE_TERMINAL_SOCKET") {
         if std::path::Path::new(&path).exists() {
             return Some(path);
         }

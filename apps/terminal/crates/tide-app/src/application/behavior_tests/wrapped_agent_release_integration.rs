@@ -178,12 +178,12 @@ fn codex_wrapper_uses_a_stable_codex_home_overlay() {
     // UC-2 BR-4, BR-21: The wrapper must use a stable Tide-owned CODEX_HOME overlay instead of mutating the user's real CODEX_HOME.
     let wrapper = include_str!("../../../resources/bin/codex");
 
-    assert!(wrapper.contains("TIDE_CODEX_HOME"));
+    assert!(wrapper.contains("TIDE_TERMINAL_CODEX_HOME"));
     assert!(wrapper.contains("REAL_CODEX_HOME"));
-    assert!(wrapper.contains("TIDE_WRAPPER_CONFIG_ROOT"));
-    assert!(wrapper.contains("TIDE_CODEX_HOME=\"$TIDE_WRAPPER_CONFIG_ROOT/codex/home\""));
+    assert!(wrapper.contains("TIDE_TERMINAL_WRAPPER_CONFIG_ROOT"));
+    assert!(wrapper.contains("TIDE_TERMINAL_CODEX_HOME=\"$TIDE_TERMINAL_WRAPPER_CONFIG_ROOT/codex/home\""));
     assert!(!wrapper.contains("mktemp -d /tmp/tide-codex-home"));
-    assert!(!wrapper.contains("rm -rf \"$TIDE_CODEX_HOME\""));
+    assert!(!wrapper.contains("rm -rf \"$TIDE_TERMINAL_CODEX_HOME\""));
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn codex_wrapper_installs_user_prompt_submit_and_stop_hooks() {
     assert!(wrapper.contains("features.hooks=true"));
     assert!(!wrapper.contains("features.codex_hooks=true"));
     assert!(
-        wrapper.contains("notify codex-stop --pane \"$TIDE_PANE\" --agent codex --payload-stdin")
+        wrapper.contains("notify codex-stop --pane \"$TIDE_TERMINAL_PANE\" --agent codex --payload-stdin")
     );
     assert!(wrapper.contains("is_tide_managed_hook_group"));
     assert!(!wrapper.contains("codex-turn-complete"));
@@ -209,17 +209,17 @@ fn agent_wrappers_use_stable_hook_bearing_config_files() {
     let claude = include_str!("../../../resources/bin/claude");
     let gemini = include_str!("../../../resources/bin/gemini");
 
-    assert!(codex.contains("HOOKS_FILE=\"$TIDE_CODEX_HOME/hooks.json\""));
-    assert!(claude.contains("HOOKS_FILE=\"$TIDE_CLAUDE_CONFIG_DIR/hooks.json\""));
-    assert!(gemini.contains("DEFAULTS_FILE=\"$TIDE_GEMINI_CONFIG_DIR/defaults.json\""));
+    assert!(codex.contains("HOOKS_FILE=\"$TIDE_TERMINAL_CODEX_HOME/hooks.json\""));
+    assert!(claude.contains("HOOKS_FILE=\"$TIDE_TERMINAL_CLAUDE_CONFIG_DIR/hooks.json\""));
+    assert!(gemini.contains("DEFAULTS_FILE=\"$TIDE_TERMINAL_GEMINI_CONFIG_DIR/defaults.json\""));
 
     assert!(!claude.contains("HOOKS_FILE=\"$(mktemp"));
     assert!(!gemini.contains("DEFAULTS_FILE=\"$(mktemp"));
     assert!(!gemini.contains("CONTEXT_DIR=\"$(mktemp"));
 
-    assert!(codex.contains("notify agent-running --pane \"$TIDE_PANE\" --agent codex"));
-    assert!(claude.contains("notify agent-running --pane \\\"$TIDE_PANE\\\" --agent claude"));
-    assert!(gemini.contains("notify agent-running --pane \\\"\\$TIDE_PANE\\\" --agent gemini"));
+    assert!(codex.contains("notify agent-running --pane \"$TIDE_TERMINAL_PANE\" --agent codex"));
+    assert!(claude.contains("notify agent-running --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude"));
+    assert!(gemini.contains("notify agent-running --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini"));
 }
 
 #[test]
@@ -230,14 +230,14 @@ fn agent_wrappers_forward_tide_window_to_mcp_server() {
     let claude = include_str!("../../../resources/bin/claude");
     let gemini = include_str!("../../../resources/bin/gemini");
 
-    assert!(codex.contains(r#"mcp_servers.tide.env.TIDE_SOCKET=\"$TIDE_SOCKET\""#));
-    assert!(codex.contains(r#"mcp_servers.tide.env.TIDE_PANE=\"$TIDE_PANE\""#));
-    assert!(codex.contains(r#"mcp_servers.tide.env.TIDE_WINDOW=\"$TIDE_WINDOW\""#));
+    assert!(codex.contains(r#"mcp_servers.tide-terminal.env.TIDE_TERMINAL_SOCKET=\"$TIDE_TERMINAL_SOCKET\""#));
+    assert!(codex.contains(r#"mcp_servers.tide-terminal.env.TIDE_TERMINAL_PANE=\"$TIDE_TERMINAL_PANE\""#));
+    assert!(codex.contains(r#"mcp_servers.tide-terminal.env.TIDE_TERMINAL_WINDOW=\"$TIDE_TERMINAL_WINDOW\""#));
     assert!(claude.contains(
-        "\"env\": { \"TIDE_SOCKET\": \"$TIDE_SOCKET\", \"TIDE_PANE\": \"$TIDE_PANE\", \"TIDE_WINDOW\": \"$TIDE_WINDOW\" }"
+        "\"env\": { \"TIDE_TERMINAL_SOCKET\": \"$TIDE_TERMINAL_SOCKET\", \"TIDE_TERMINAL_PANE\": \"$TIDE_TERMINAL_PANE\", \"TIDE_TERMINAL_WINDOW\": \"$TIDE_TERMINAL_WINDOW\" }"
     ));
     assert!(gemini.contains(
-        "\"env\": { \"TIDE_SOCKET\": \"$TIDE_SOCKET\", \"TIDE_PANE\": \"$TIDE_PANE\", \"TIDE_WINDOW\": \"$TIDE_WINDOW\" }"
+        "\"env\": { \"TIDE_TERMINAL_SOCKET\": \"$TIDE_TERMINAL_SOCKET\", \"TIDE_TERMINAL_PANE\": \"$TIDE_TERMINAL_PANE\", \"TIDE_TERMINAL_WINDOW\": \"$TIDE_TERMINAL_WINDOW\" }"
     ));
 }
 
@@ -248,12 +248,12 @@ fn codex_wrapper_injects_tide_tool_discovery_context() {
     // UC-5 BR-10: Tide Tool Discovery Context tells Wrapped Agents to prefer Tide MCP tools before macOS default-app commands.
     let wrapper = include_str!("../../../resources/bin/codex");
 
-    assert!(wrapper.contains("TIDE_SKILLS_DIR=\"$TIDE_CODEX_HOME/skills\""));
-    assert!(wrapper.contains("TIDE_SKILL_DIR=\"$TIDE_SKILLS_DIR/tide\""));
+    assert!(wrapper.contains("TIDE_TERMINAL_SKILLS_DIR=\"$TIDE_TERMINAL_CODEX_HOME/skills\""));
+    assert!(wrapper.contains("TIDE_TERMINAL_SKILL_DIR=\"$TIDE_TERMINAL_SKILLS_DIR/tide-terminal\""));
     assert!(wrapper.contains("[ \"$base\" = \"skills\" ] && continue"));
     assert!(wrapper.contains("Use when Codex is running inside Tide"));
     assert!(wrapper.contains("tool_search"));
-    assert!(wrapper.contains("mcp__tide__"));
+    assert!(wrapper.contains("mcp__tide-terminal__"));
     assert!(wrapper.contains("tide_open_browser"));
     assert!(wrapper.contains("tide_open_editor"));
     assert!(wrapper.contains("tide_observe_workspace"));
@@ -267,8 +267,8 @@ fn claude_wrapper_appends_tide_tool_discovery_context() {
     // UC-5 BR-10: Tide Tool Discovery Context tells Wrapped Agents to prefer Tide MCP tools before macOS default-app commands.
     let wrapper = include_str!("../../../resources/bin/claude");
 
-    assert!(wrapper.contains("TIDE_CONTEXT_PROMPT="));
-    assert!(wrapper.contains("--append-system-prompt \"$TIDE_CONTEXT_PROMPT\""));
+    assert!(wrapper.contains("TIDE_TERMINAL_CONTEXT_PROMPT="));
+    assert!(wrapper.contains("--append-system-prompt \"$TIDE_TERMINAL_CONTEXT_PROMPT\""));
     assert!(wrapper.contains("You are running inside Tide"));
     assert!(wrapper.contains("Tide MCP tools"));
     assert!(wrapper.contains("tide_open_browser"));
@@ -284,7 +284,7 @@ fn gemini_wrapper_loads_tide_tool_discovery_context_from_stable_memory() {
     // UC-5 BR-10: Tide Tool Discovery Context tells Wrapped Agents to prefer Tide MCP tools before macOS default-app commands.
     let wrapper = include_str!("../../../resources/bin/gemini");
 
-    assert!(wrapper.contains("CONTEXT_DIR=\"$TIDE_GEMINI_CONFIG_DIR/context\""));
+    assert!(wrapper.contains("CONTEXT_DIR=\"$TIDE_TERMINAL_GEMINI_CONFIG_DIR/context\""));
     assert!(wrapper.contains("CONTEXT_FILE=\"$CONTEXT_DIR/GEMINI.md\""));
     assert!(wrapper.contains("\"includeDirectories\": [\"$CONTEXT_DIR\"]"));
     assert!(wrapper.contains("\"loadMemoryFromIncludeDirectories\": true"));
@@ -308,12 +308,12 @@ fn notify_client_accepts_payload_from_stdin() {
 
 #[test]
 fn notify_client_requires_an_explicit_tide_socket_for_wrapper_hooks() {
-    // UC-2 BR-7: Wrapper-hook notify must require the owning TIDE_SOCKET and must not fall back to tide-latest.sock.
+    // UC-2 BR-7: Wrapper-hook notify must require the owning TIDE_TERMINAL_SOCKET and must not fall back to tide-terminal-latest.sock.
     let source = include_str!("../../adapter/inward/cli_adapter/notify.rs");
 
-    assert!(source.contains("std::env::var(\"TIDE_SOCKET\")"));
+    assert!(source.contains("std::env::var(\"TIDE_TERMINAL_SOCKET\")"));
     assert!(
-        !source.contains("tide-latest.sock"),
+        !source.contains("tide-terminal-latest.sock"),
         "wrapper-hook notify must not fall back to the latest Tide socket"
     );
 }
@@ -323,7 +323,7 @@ fn notify_client_forwards_the_owning_tide_instance_pid() {
     // UC-2 BR-8: Wrapper-hook notify forwards the owning Tide Instance PID so a mismatched gateway can ignore the event.
     let source = include_str!("../../adapter/inward/cli_adapter/notify.rs");
 
-    assert!(source.contains("std::env::var(\"TIDE_INSTANCE_PID\")"));
+    assert!(source.contains("std::env::var(\"TIDE_TERMINAL_INSTANCE_PID\")"));
     assert!(source.contains("\"tide_instance_pid\""));
 }
 
@@ -332,7 +332,7 @@ fn terminal_pty_env_exports_the_owning_tide_instance_pid() {
     // UC-2 BR-8: PTY env exports the owning Tide Instance PID so wrapper hooks can forward it.
     let source = include_str!("../../domain/terminal/mod.rs");
 
-    assert!(source.contains("String::from(\"TIDE_INSTANCE_PID\")"));
+    assert!(source.contains("String::from(\"TIDE_TERMINAL_INSTANCE_PID\")"));
     assert!(source.contains("std::process::id().to_string()"));
 }
 

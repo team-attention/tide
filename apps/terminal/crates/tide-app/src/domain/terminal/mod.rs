@@ -49,7 +49,7 @@ pub fn set_auto_integration(enabled: bool) {
 }
 
 /// Global socket path for the Agent Gateway. Set once on app startup.
-/// Every PTY spawned after this is set will export TIDE_SOCKET.
+/// Every PTY spawned after this is set will export TIDE_TERMINAL_SOCKET.
 static GATEWAY_SOCKET_PATH: OnceLock<String> = OnceLock::new();
 
 /// Set the Agent Gateway socket path. Called once from main after server starts.
@@ -747,7 +747,7 @@ impl Terminal {
     }
 
     /// Create a new terminal backend, optionally starting in the given directory.
-    /// If `pane_id` is provided, sets the `TIDE_PANE` env var for the child process.
+    /// If `pane_id` is provided, sets the `TIDE_TERMINAL_PANE` env var for the child process.
     pub fn with_cwd(
         cols: u16,
         rows: u16,
@@ -816,26 +816,26 @@ impl Terminal {
         // Agent Gateway: export socket path, pane id, and workspace name
         // so child processes can discover Tide
         if let Some(socket_path) = GATEWAY_SOCKET_PATH.get() {
-            env.insert(String::from("TIDE_SOCKET"), socket_path.clone());
+            env.insert(String::from("TIDE_TERMINAL_SOCKET"), socket_path.clone());
         }
         if let Some(id) = pane_id {
-            env.insert(String::from("TIDE_PANE"), id.to_string());
+            env.insert(String::from("TIDE_TERMINAL_PANE"), id.to_string());
         }
         if let Some(id) = tide_window_id {
-            env.insert(String::from("TIDE_WINDOW"), id.get().to_string());
+            env.insert(String::from("TIDE_TERMINAL_WINDOW"), id.get().to_string());
         }
         env.insert(
-            String::from("TIDE_INSTANCE_PID"),
+            String::from("TIDE_TERMINAL_INSTANCE_PID"),
             std::process::id().to_string(),
         );
         if let Some(name) = workspace_name {
-            env.insert(String::from("TIDE_WORKSPACE"), name.to_string());
+            env.insert(String::from("TIDE_TERMINAL_WORKSPACE"), name.to_string());
         }
-        // TIDE_BIN is always set (supports manual `tide` CLI usage)
+        // TIDE_TERMINAL_BIN is always set (supports manual `tide` CLI usage)
         if let Ok(exe) = std::env::current_exe() {
-            env.insert(String::from("TIDE_BIN"), exe.to_string_lossy().to_string());
+            env.insert(String::from("TIDE_TERMINAL_BIN"), exe.to_string_lossy().to_string());
         }
-        // Agent wrappers: ZDOTDIR hijack + __TIDE_WRAPPER_DIR env var.
+        // Agent wrappers: ZDOTDIR hijack + __TIDE_TERMINAL_WRAPPER_DIR env var.
         // Only injected when auto-integration is enabled.
         // Direct PATH injection doesn't work on macOS because /etc/zprofile
         // runs path_helper which reconstructs PATH from scratch.
@@ -844,12 +844,12 @@ impl Terminal {
         // after all init files have run (including path_helper).
         if AUTO_INTEGRATION_ENABLED.load(Ordering::Relaxed) {
             if let Some(wrapper_dir) = AGENT_WRAPPER_DIR.get() {
-                env.insert(String::from("__TIDE_WRAPPER_DIR"), wrapper_dir.clone());
+                env.insert(String::from("__TIDE_TERMINAL_WRAPPER_DIR"), wrapper_dir.clone());
             }
             if let Some(shell_dir) = SHELL_INTEGRATION_DIR.get() {
                 // Save user's original ZDOTDIR before overwriting
                 if let Ok(orig) = std::env::var("ZDOTDIR") {
-                    env.insert(String::from("__TIDE_ORIG_ZDOTDIR"), orig);
+                    env.insert(String::from("__TIDE_TERMINAL_ORIG_ZDOTDIR"), orig);
                 }
                 env.insert(String::from("ZDOTDIR"), shell_dir.clone());
             }

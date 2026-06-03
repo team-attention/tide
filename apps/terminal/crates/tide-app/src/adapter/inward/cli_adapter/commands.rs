@@ -3388,10 +3388,10 @@ pub(crate) fn list_integration_status() -> Vec<Value> {
             let enabled = if config_path.exists() {
                 let content = std::fs::read_to_string(&config_path).unwrap_or_default();
                 match &tool.enable_method {
-                    EnableMethod::CliCommand(_) => content.contains("[mcp_servers.tide]"),
+                    EnableMethod::CliCommand(_) => content.contains("[mcp_servers.tide-terminal]"),
                     _ => serde_json::from_str::<Value>(&content)
                         .ok()
-                        .map(|v| v.get("mcpServers").and_then(|m| m.get("tide")).is_some())
+                        .map(|v| v.get("mcpServers").and_then(|m| m.get("tide-terminal")).is_some())
                         .unwrap_or(false),
                 }
             } else {
@@ -3416,12 +3416,12 @@ pub(crate) fn enable_integration(tool_name: &str) -> Result<String, String> {
 
     let tide_bin = std::env::current_exe()
         .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| "tide".to_string());
+        .unwrap_or_else(|_| "tide-terminal".to_string());
 
     match &tool.enable_method {
         EnableMethod::CliCommand(binary) => {
             let output = std::process::Command::new(binary)
-                .args(["mcp", "add", "tide", &tide_bin, "mcp"])
+                .args(["mcp", "add", "tide-terminal", &tide_bin, "mcp"])
                 .output()
                 .map_err(|e| format!("failed to run {binary} mcp add: {e}"))?;
             if output.status.success() {
@@ -3454,7 +3454,7 @@ pub(crate) fn enable_integration(tool_name: &str) -> Result<String, String> {
             let servers_obj = servers
                 .as_object_mut()
                 .ok_or("mcpServers is not an object")?;
-            servers_obj.insert("tide".to_string(), tide_entry);
+            servers_obj.insert("tide-terminal".to_string(), tide_entry);
 
             let output = serde_json::to_string_pretty(&config).unwrap();
             std::fs::write(&config_path, &output)
@@ -3474,7 +3474,7 @@ pub(crate) fn remove_integration(tool_name: &str) -> Result<(), String> {
     match &tool.enable_method {
         EnableMethod::CliCommand(binary) => {
             let _ = std::process::Command::new(binary)
-                .args(["mcp", "remove", "tide"])
+                .args(["mcp", "remove", "tide-terminal"])
                 .output();
             Ok(())
         }
@@ -3490,7 +3490,7 @@ pub(crate) fn remove_integration(tool_name: &str) -> Result<(), String> {
                 serde_json::from_str(&content).map_err(|e| format!("invalid JSON: {e}"))?;
 
             if let Some(servers) = config.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-                servers.remove("tide");
+                servers.remove("tide-terminal");
             }
 
             let output = serde_json::to_string_pretty(&config).unwrap();

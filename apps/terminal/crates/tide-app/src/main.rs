@@ -299,7 +299,7 @@ fn main() {
     }));
 
     // ── Agent Gateway (always on) ───────────────────────────────────
-    // Start the socket server before app setup so terminals inherit TIDE_SOCKET.
+    // Start the socket server before app setup so terminals inherit TIDE_TERMINAL_SOCKET.
     let _gateway_server =
         match adapter::inward::cli_adapter::server::GatewayServer::start(gateway_router.clone()) {
             Ok(server) => {

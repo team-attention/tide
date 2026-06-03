@@ -11,7 +11,7 @@ use super::manager::Language;
 pub fn lsp_base_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".tide")
+        .join(".tide-terminal")
         .join("lsp")
 }
 

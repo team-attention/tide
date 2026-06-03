@@ -9,22 +9,22 @@ REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|
 [ -z "$REAL_CMD" ] && echo "codex: command not found" >&2 && exit 127
 
 # Skip injection if not inside Tide
-[ -z "$TIDE_BIN" ] && exec "$REAL_CMD" "$@"
+[ -z "$TIDE_TERMINAL_BIN" ] && exec "$REAL_CMD" "$@"
 
 REAL_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-TIDE_WRAPPER_CONFIG_ROOT="${TIDE_WRAPPER_CONFIG_ROOT:-${XDG_STATE_HOME:-$HOME/Library/Application Support/Tide}/agent-wrappers}"
-TIDE_CODEX_HOME="$TIDE_WRAPPER_CONFIG_ROOT/codex/home"
-HOOKS_FILE="$TIDE_CODEX_HOME/hooks.json"
-TIDE_SKILLS_DIR="$TIDE_CODEX_HOME/skills"
-TIDE_SKILL_DIR="$TIDE_SKILLS_DIR/tide"
+TIDE_TERMINAL_WRAPPER_CONFIG_ROOT="${TIDE_TERMINAL_WRAPPER_CONFIG_ROOT:-${XDG_STATE_HOME:-$HOME/Library/Application Support/Tide Terminal}/agent-wrappers}"
+TIDE_TERMINAL_CODEX_HOME="$TIDE_TERMINAL_WRAPPER_CONFIG_ROOT/codex/home"
+HOOKS_FILE="$TIDE_TERMINAL_CODEX_HOME/hooks.json"
+TIDE_TERMINAL_SKILLS_DIR="$TIDE_TERMINAL_CODEX_HOME/skills"
+TIDE_TERMINAL_SKILL_DIR="$TIDE_TERMINAL_SKILLS_DIR/tide-terminal"
 
-mkdir -p "$TIDE_CODEX_HOME"
+mkdir -p "$TIDE_TERMINAL_CODEX_HOME"
 
 # Wrapper-owned OSC 9 helper used only as a fallback when `tide notify` is unavailable.
 tide_osc9() { printf '\033]9;%s\007' "$1"; }
 
 tide_notify() {
-  "$TIDE_BIN" notify "$1" --pane "$TIDE_PANE" --agent codex >/dev/null 2>&1 || \
+  "$TIDE_TERMINAL_BIN" notify "$1" --pane "$TIDE_TERMINAL_PANE" --agent codex >/dev/null 2>&1 || \
     tide_osc9 "tide:wrapped-agent:codex:$1"
 }
 
@@ -40,7 +40,7 @@ if [ -d "$REAL_CODEX_HOME" ]; then
     base="$(basename "$entry")"
     [ "$base" = "hooks.json" ] && continue
     [ "$base" = "skills" ] && continue
-    dest="$TIDE_CODEX_HOME/$base"
+    dest="$TIDE_TERMINAL_CODEX_HOME/$base"
     if [ -L "$dest" ]; then
       if [ "$(readlink "$dest" 2>/dev/null || true)" != "$entry" ]; then
         rm -f "$dest"
@@ -52,13 +52,13 @@ if [ -d "$REAL_CODEX_HOME" ]; then
   done
 fi
 
-mkdir -p "$TIDE_SKILLS_DIR"
+mkdir -p "$TIDE_TERMINAL_SKILLS_DIR"
 if [ -d "$REAL_CODEX_HOME/skills" ]; then
   for entry in "$REAL_CODEX_HOME/skills"/* "$REAL_CODEX_HOME/skills"/.[!.]* "$REAL_CODEX_HOME/skills"/..?*; do
     [ -e "$entry" ] || continue
     base="$(basename "$entry")"
-    [ "$base" = "tide" ] && continue
-    dest="$TIDE_SKILLS_DIR/$base"
+    [ "$base" = "tide-terminal" ] && continue
+    dest="$TIDE_TERMINAL_SKILLS_DIR/$base"
     if [ -L "$dest" ]; then
       if [ "$(readlink "$dest" 2>/dev/null || true)" != "$entry" ]; then
         rm -f "$dest"
@@ -70,10 +70,10 @@ if [ -d "$REAL_CODEX_HOME/skills" ]; then
   done
 fi
 
-mkdir -p "$TIDE_SKILL_DIR"
-cat > "$TIDE_SKILL_DIR/SKILL.md" <<'TIDE_SKILL_EOF'
+mkdir -p "$TIDE_TERMINAL_SKILL_DIR"
+cat > "$TIDE_TERMINAL_SKILL_DIR/SKILL.md" <<'TIDE_TERMINAL_SKILL_EOF'
 ---
-name: tide
+name: tide-terminal
 description: Use when Codex is running inside Tide and the user asks to open, show, view, browse, inspect, preview, navigate to, or display a file, URL, webpage, local server, Pane, or Tide surface.
 ---
 
@@ -83,19 +83,19 @@ You are running inside Tide, a terminal-centered task Workspace.
 
 Before using macOS `open` for a file, URL, webpage, preview, local server, or "show/view/open this" request, search Tide tools with `tool_search` using task terms such as `tide open browser editor observe workspace`.
 
-Prefer `mcp__tide__` tools when they are available:
+Prefer `mcp__tide-terminal__` tools when they are available:
 
 - Use `tide_open_browser` for URLs, webpages, local previews, and browser inspection inside a Tide Browser Pane.
 - Use `tide_open_editor` for existing source or text files inside a Tide Editor Pane.
 - Use `tide_observe_workspace` when you need current Stage, Terminal Context Surface, Pane geometry, or focus.
 
 Use macOS `open` only when the user explicitly asks for the default app or external browser, or when Tide tools cannot represent the target.
-TIDE_SKILL_EOF
+TIDE_TERMINAL_SKILL_EOF
 
 if [ -f "$REAL_CODEX_HOME/hooks.json" ] && command -v python3 >/dev/null 2>&1; then
-  TIDE_RUNNING_HOOK_COMMAND='"$TIDE_BIN" notify agent-running --pane "$TIDE_PANE" --agent codex' \
-  TIDE_PERMISSION_REQUEST_HOOK_COMMAND='"$TIDE_BIN" notify agent-needs-input --pane "$TIDE_PANE" --agent codex --payload-stdin' \
-  TIDE_STOP_HOOK_COMMAND='"$TIDE_BIN" notify codex-stop --pane "$TIDE_PANE" --agent codex --payload-stdin' \
+  TIDE_TERMINAL_RUNNING_HOOK_COMMAND='"$TIDE_TERMINAL_BIN" notify agent-running --pane "$TIDE_TERMINAL_PANE" --agent codex' \
+  TIDE_TERMINAL_PERMISSION_REQUEST_HOOK_COMMAND='"$TIDE_TERMINAL_BIN" notify agent-needs-input --pane "$TIDE_TERMINAL_PANE" --agent codex --payload-stdin' \
+  TIDE_TERMINAL_STOP_HOOK_COMMAND='"$TIDE_TERMINAL_BIN" notify codex-stop --pane "$TIDE_TERMINAL_PANE" --agent codex --payload-stdin' \
     python3 - "$REAL_CODEX_HOME/hooks.json" "$HOOKS_FILE" <<'PY'
 import json
 import os
@@ -147,19 +147,19 @@ def append_command_hook(event_name: str, command: str, matcher: str | None = Non
         group["matcher"] = matcher
     groups.append(group)
 
-append_command_hook("UserPromptSubmit", os.environ["TIDE_RUNNING_HOOK_COMMAND"])
+append_command_hook("UserPromptSubmit", os.environ["TIDE_TERMINAL_RUNNING_HOOK_COMMAND"])
 append_command_hook(
     "PermissionRequest",
-    os.environ["TIDE_PERMISSION_REQUEST_HOOK_COMMAND"],
+    os.environ["TIDE_TERMINAL_PERMISSION_REQUEST_HOOK_COMMAND"],
     matcher="Bash",
 )
-append_command_hook("Stop", os.environ["TIDE_STOP_HOOK_COMMAND"])
+append_command_hook("Stop", os.environ["TIDE_TERMINAL_STOP_HOOK_COMMAND"])
 
 with open(dst, "w", encoding="utf-8") as f:
     json.dump(data, f)
 PY
 else
-  cat > "$HOOKS_FILE" <<'TIDE_EOF'
+  cat > "$HOOKS_FILE" <<'TIDE_TERMINAL_EOF'
 {
   "hooks": {
     "UserPromptSubmit": [
@@ -167,7 +167,7 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "\"$TIDE_BIN\" notify agent-running --pane \"$TIDE_PANE\" --agent codex"
+            "command": "\"$TIDE_TERMINAL_BIN\" notify agent-running --pane \"$TIDE_TERMINAL_PANE\" --agent codex"
           }
         ]
       }
@@ -178,7 +178,7 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "\"$TIDE_BIN\" notify agent-needs-input --pane \"$TIDE_PANE\" --agent codex --payload-stdin"
+            "command": "\"$TIDE_TERMINAL_BIN\" notify agent-needs-input --pane \"$TIDE_TERMINAL_PANE\" --agent codex --payload-stdin"
           }
         ]
       }
@@ -188,27 +188,27 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "\"$TIDE_BIN\" notify codex-stop --pane \"$TIDE_PANE\" --agent codex --payload-stdin"
+            "command": "\"$TIDE_TERMINAL_BIN\" notify codex-stop --pane \"$TIDE_TERMINAL_PANE\" --agent codex --payload-stdin"
           }
         ]
       }
     ]
   }
 }
-TIDE_EOF
+TIDE_TERMINAL_EOF
 fi
 
 trap 'tide_notify "agent-detached"' EXIT
 
 codex_direct_launch() {
-  CODEX_HOME="$TIDE_CODEX_HOME" "$REAL_CMD" \
+  CODEX_HOME="$TIDE_TERMINAL_CODEX_HOME" "$REAL_CMD" \
     -c "features.hooks=true" \
     -c "plugins.\"browser-use@openai-bundled\".enabled=false" \
-    -c "mcp_servers.tide.command=\"$TIDE_BIN\"" \
-    -c "mcp_servers.tide.args=[\"mcp\"]" \
-    -c "mcp_servers.tide.env.TIDE_SOCKET=\"$TIDE_SOCKET\"" \
-    -c "mcp_servers.tide.env.TIDE_PANE=\"$TIDE_PANE\"" \
-    -c "mcp_servers.tide.env.TIDE_WINDOW=\"$TIDE_WINDOW\"" \
+    -c "mcp_servers.tide-terminal.command=\"$TIDE_TERMINAL_BIN\"" \
+    -c "mcp_servers.tide-terminal.args=[\"mcp\"]" \
+    -c "mcp_servers.tide-terminal.env.TIDE_TERMINAL_SOCKET=\"$TIDE_TERMINAL_SOCKET\"" \
+    -c "mcp_servers.tide-terminal.env.TIDE_TERMINAL_PANE=\"$TIDE_TERMINAL_PANE\"" \
+    -c "mcp_servers.tide-terminal.env.TIDE_TERMINAL_WINDOW=\"$TIDE_TERMINAL_WINDOW\"" \
     "$@"
 }
 

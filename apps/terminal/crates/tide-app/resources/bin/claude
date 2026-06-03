@@ -8,16 +8,16 @@ REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|
 [ -z "$REAL_CMD" ] && echo "claude: command not found" >&2 && exit 127
 
 # Skip injection if not inside Tide
-[ -z "$TIDE_BIN" ] && exec "$REAL_CMD" "$@"
+[ -z "$TIDE_TERMINAL_BIN" ] && exec "$REAL_CMD" "$@"
 
-TIDE_WRAPPER_CONFIG_ROOT="${TIDE_WRAPPER_CONFIG_ROOT:-${XDG_STATE_HOME:-$HOME/Library/Application Support/Tide}/agent-wrappers}"
-TIDE_CLAUDE_CONFIG_DIR="$TIDE_WRAPPER_CONFIG_ROOT/claude"
+TIDE_TERMINAL_WRAPPER_CONFIG_ROOT="${TIDE_TERMINAL_WRAPPER_CONFIG_ROOT:-${XDG_STATE_HOME:-$HOME/Library/Application Support/Tide Terminal}/agent-wrappers}"
+TIDE_TERMINAL_CLAUDE_CONFIG_DIR="$TIDE_TERMINAL_WRAPPER_CONFIG_ROOT/claude"
 MCP_FILE="$(mktemp /tmp/tide-claude-mcp.XXXXXX)"
-HOOKS_FILE="$TIDE_CLAUDE_CONFIG_DIR/hooks.json"
-mkdir -p "$TIDE_CLAUDE_CONFIG_DIR"
+HOOKS_FILE="$TIDE_TERMINAL_CLAUDE_CONFIG_DIR/hooks.json"
+mkdir -p "$TIDE_TERMINAL_CLAUDE_CONFIG_DIR"
 trap 'rm -f "$MCP_FILE"' EXIT
 
-TIDE_CONTEXT_PROMPT="$(cat <<'TIDE_CONTEXT_EOF'
+TIDE_TERMINAL_CONTEXT_PROMPT="$(cat <<'TIDE_TERMINAL_CONTEXT_EOF'
 You are running inside Tide, a terminal-centered task Workspace.
 
 Tide has a Stage for the primary Terminal, a Terminal Context Surface for supporting Panes, a FileTree View, a Workspace rail, and Pane kinds Terminal, Editor, Diff, Browser, and Launcher.
@@ -29,41 +29,41 @@ When the user asks to open, show, view, browse, inspect, preview, navigate to, o
 - Use `tide_observe_workspace` when you need current Stage, Terminal Context Surface, Pane geometry, or focus.
 
 Use macOS `open` only when the user explicitly asks for the default app or external browser, or when Tide tools cannot represent the target.
-TIDE_CONTEXT_EOF
+TIDE_TERMINAL_CONTEXT_EOF
 )"
 
 tide_notify() {
-  "$TIDE_BIN" notify "$1" --pane "$TIDE_PANE" --agent claude >/dev/null 2>&1 || \
+  "$TIDE_TERMINAL_BIN" notify "$1" --pane "$TIDE_TERMINAL_PANE" --agent claude >/dev/null 2>&1 || \
     printf '\033]9;tide:wrapped-agent:claude:%s\007' "$1"
 }
 
 # --mcp-config: additive MCP servers (merged with user's ~/.claude.json and .mcp.json)
-cat > "$MCP_FILE" << TIDE_EOF
+cat > "$MCP_FILE" << TIDE_TERMINAL_EOF
 {
   "mcpServers": {
-    "tide": {
+    "tide-terminal": {
       "type": "stdio",
-      "command": "$TIDE_BIN",
+      "command": "$TIDE_TERMINAL_BIN",
       "args": ["mcp"],
-      "env": { "TIDE_SOCKET": "$TIDE_SOCKET", "TIDE_PANE": "$TIDE_PANE", "TIDE_WINDOW": "$TIDE_WINDOW" }
+      "env": { "TIDE_TERMINAL_SOCKET": "$TIDE_TERMINAL_SOCKET", "TIDE_TERMINAL_PANE": "$TIDE_TERMINAL_PANE", "TIDE_TERMINAL_WINDOW": "$TIDE_TERMINAL_WINDOW" }
     }
   }
 }
-TIDE_EOF
+TIDE_TERMINAL_EOF
 
 # --settings: hooks use matcher + hooks array format.
 # Combined from all sources (user + project + this) — never replaces user hooks.
-cat > "$HOOKS_FILE" <<'TIDE_EOF'
+cat > "$HOOKS_FILE" <<'TIDE_TERMINAL_EOF'
 {
   "hooks": {
-    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "\"$TIDE_BIN\" notify agent-needs-input --pane \"$TIDE_PANE\" --agent claude --payload-stdin"}]}],
-    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "\"$TIDE_BIN\" notify agent-idle --pane \"$TIDE_PANE\" --agent claude --payload-stdin"}]}],
-    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "\"$TIDE_BIN\" notify agent-running --pane \"$TIDE_PANE\" --agent claude"}]}]
+    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "\"$TIDE_TERMINAL_BIN\" notify agent-needs-input --pane \"$TIDE_TERMINAL_PANE\" --agent claude --payload-stdin"}]}],
+    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "\"$TIDE_TERMINAL_BIN\" notify agent-idle --pane \"$TIDE_TERMINAL_PANE\" --agent claude --payload-stdin"}]}],
+    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "\"$TIDE_TERMINAL_BIN\" notify agent-running --pane \"$TIDE_TERMINAL_PANE\" --agent claude"}]}]
   }
 }
-TIDE_EOF
+TIDE_TERMINAL_EOF
 
 tide_notify agent-attached
 trap 'tide_notify agent-detached; rm -f "$MCP_FILE"' EXIT
 
-"$REAL_CMD" --mcp-config "$MCP_FILE" --settings "$HOOKS_FILE" --append-system-prompt "$TIDE_CONTEXT_PROMPT" "$@"
+"$REAL_CMD" --mcp-config "$MCP_FILE" --settings "$HOOKS_FILE" --append-system-prompt "$TIDE_TERMINAL_CONTEXT_PROMPT" "$@"

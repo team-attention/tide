@@ -20,12 +20,12 @@ pub(crate) use crate::application::ports::outward::persistence_port::{
 
 fn session_path() -> Option<PathBuf> {
     let config_dir = dirs::config_dir()?;
-    Some(config_dir.join("tide").join("session.json"))
+    Some(config_dir.join("tide-terminal").join("session.json"))
 }
 
 fn context_area_session_path() -> Option<PathBuf> {
     let config_dir = dirs::config_dir()?;
-    Some(config_dir.join("tide").join("session_context_area.json"))
+    Some(config_dir.join("tide-terminal").join("session_context_area.json"))
 }
 
 pub fn save_context_area_session(data: &SessionContextArea) {
@@ -84,7 +84,7 @@ pub fn load_session() -> Option<Session> {
 
 fn running_marker_path() -> Option<PathBuf> {
     let config_dir = dirs::config_dir()?;
-    Some(config_dir.join("tide").join("running"))
+    Some(config_dir.join("tide-terminal").join("running"))
 }
 
 pub fn create_running_marker() {

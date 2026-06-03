@@ -12,8 +12,8 @@ name = "Tide"
 path = "src/main.rs"
 
 [package.metadata.bundle]
-name = "Tide"
-identifier = "com.eatnug.tide"
+name = "Tide Terminal"
+identifier = "com.eatnug.tide-terminal"
 icon = ["crates/tide-app/icon.icns"]
 resources = ["crates/tide-app/resources/bin", "crates/tide-app/resources/shell-integration"]
 category = "public.app-category.developer-tools"

@@ -154,7 +154,7 @@ impl WorktreeSettings {
 
 fn settings_path() -> Option<PathBuf> {
     let config_dir = dirs::config_dir()?;
-    Some(config_dir.join("tide").join("settings.json"))
+    Some(config_dir.join("tide-terminal").join("settings.json"))
 }
 
 pub fn load_settings() -> TideSettings {

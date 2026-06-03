@@ -151,7 +151,7 @@ fn mcp_initialize(id: serde_json::Value) -> serde_json::Value {
         "result": {
             "protocolVersion": "2024-11-05",
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "tide", "version": "0.1.0" },
+            "serverInfo": { "name": "tide-terminal", "version": "0.1.0" },
             "instructions": mcp_instructions()
         }
     })
@@ -561,7 +561,7 @@ fn mcp_tools_call(
 
     // Inject caller identity so the gateway can route to the correct
     // Tide Window first, then the App can route to the correct Workspace.
-    if let Ok(window_str) = std::env::var("TIDE_WINDOW") {
+    if let Ok(window_str) = std::env::var("TIDE_TERMINAL_WINDOW") {
         if let Ok(tide_window_id) = window_str.parse::<u64>() {
             if let Some(obj) = arguments.as_object_mut() {
                 obj.insert(
@@ -571,7 +571,7 @@ fn mcp_tools_call(
             }
         }
     }
-    if let Ok(pane_str) = std::env::var("TIDE_PANE") {
+    if let Ok(pane_str) = std::env::var("TIDE_TERMINAL_PANE") {
         if let Ok(pane_id) = pane_str.parse::<u64>() {
             if let Some(obj) = arguments.as_object_mut() {
                 obj.insert(
@@ -663,13 +663,13 @@ fn mcp_error_result(id: serde_json::Value, message: &str) -> serde_json::Value {
 }
 
 fn find_socket_path() -> Option<String> {
-    if let Ok(path) = std::env::var("TIDE_SOCKET") {
+    if let Ok(path) = std::env::var("TIDE_TERMINAL_SOCKET") {
         if std::path::Path::new(&path).exists() {
             return Some(path);
         }
     }
     let tmpdir = std::env::temp_dir();
-    let latest = tmpdir.join("tide-latest.sock");
+    let latest = tmpdir.join("tide-terminal-latest.sock");
     if latest.exists() {
         return Some(latest.to_string_lossy().into_owned());
     }

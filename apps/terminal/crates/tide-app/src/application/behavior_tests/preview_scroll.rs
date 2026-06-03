@@ -237,7 +237,7 @@ fn profile_markdown_preview_terminal_context() {
 fn profile_markdown_preview_file(path: &str) {
     let source = std::fs::read_to_string(path).expect("read markdown profile fixture");
     let lines: Vec<String> = source.lines().map(str::to_string).collect();
-    let duration = std::env::var("TIDE_PROFILE_SECONDS")
+    let duration = std::env::var("TIDE_TERMINAL_PROFILE_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(20);

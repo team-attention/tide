@@ -63,7 +63,7 @@ impl LspClient {
         // Redirect stderr to a log file for diagnostics
         let log_dir = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join(".tide")
+            .join(".tide-terminal")
             .join("lsp")
             .join("logs");
         let _ = fs::create_dir_all(&log_dir);

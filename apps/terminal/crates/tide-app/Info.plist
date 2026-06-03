@@ -5,17 +5,17 @@
   <key>CFBundleDevelopmentRegion</key>
   <string>English</string>
   <key>CFBundleDisplayName</key>
-  <string>Tide</string>
+  <string>Tide Terminal</string>
   <key>CFBundleExecutable</key>
   <string>Tide</string>
   <key>CFBundleIconFile</key>
   <string>icon.icns</string>
   <key>CFBundleIdentifier</key>
-  <string>com.eatnug.tide</string>
+  <string>com.eatnug.tide-terminal</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>Tide</string>
+  <string>Tide Terminal</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

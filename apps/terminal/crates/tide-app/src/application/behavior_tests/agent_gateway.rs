@@ -225,7 +225,7 @@ fn capture_pane_editor_with_line_range() {
 
 #[test]
 fn capture_pane_no_target_uses_focused_pane() {
-    // UC-2 BR-10: No pane_id → TIDE_PANE (focused pane in test)
+    // UC-2 BR-10: No pane_id → TIDE_TERMINAL_PANE (focused pane in test)
     let (mut app, id) = app_with_editor();
     if let Some(PaneKind::Editor(ep)) = app.panes.get_mut(&id) {
         ep.editor.buffer.lines = vec!["focused content".into()];
@@ -1529,10 +1529,10 @@ fn notify_does_not_bump_chrome_when_no_agent() {
 fn wrapper_scripts_are_generated_at_known_path() {
     // UC-1: Wrapper scripts should be created in $TMPDIR/tide-<pid>-bin/
     let pid = std::process::id();
-    let expected_dir = format!("{}/tide-{}-bin", std::env::temp_dir().display(), pid);
+    let expected_dir = format!("{}/tide-terminal-{}-bin", std::env::temp_dir().display(), pid);
     // generate_agent_wrappers is called in main, but we can verify
     // the expected path format
-    assert!(expected_dir.contains(&format!("tide-{}-bin", pid)));
+    assert!(expected_dir.contains(&format!("tide-terminal-{}-bin", pid)));
 }
 
 #[test]
@@ -1550,23 +1550,23 @@ fn codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook() {
     let wrapper = std::fs::read_to_string(&wrapper_path)
         .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
 
-    assert!(wrapper.contains("mcp_servers.tide.command"));
-    assert!(wrapper.contains("mcp_servers.tide.args"));
+    assert!(wrapper.contains("mcp_servers.tide-terminal.command"));
+    assert!(wrapper.contains("mcp_servers.tide-terminal.args"));
     assert!(wrapper.contains("tide_notify \"agent-attached\""));
     assert!(wrapper.contains("features.hooks=true"));
     assert!(!wrapper.contains("features.codex_hooks=true"));
     assert!(wrapper.contains("\"UserPromptSubmit\""));
     assert!(wrapper.contains("\"PermissionRequest\""));
     assert!(wrapper.contains("\"Stop\""));
-    assert!(wrapper.contains("notify agent-running --pane \"$TIDE_PANE\" --agent codex"));
+    assert!(wrapper.contains("notify agent-running --pane \"$TIDE_TERMINAL_PANE\" --agent codex"));
     assert!(wrapper
-        .contains("notify agent-needs-input --pane \"$TIDE_PANE\" --agent codex --payload-stdin"));
+        .contains("notify agent-needs-input --pane \"$TIDE_TERMINAL_PANE\" --agent codex --payload-stdin"));
     assert!(wrapper.contains("\"matcher\": \"Bash\""));
     assert!(
-        wrapper.contains("notify codex-stop --pane \"$TIDE_PANE\" --agent codex --payload-stdin")
+        wrapper.contains("notify codex-stop --pane \"$TIDE_TERMINAL_PANE\" --agent codex --payload-stdin")
     );
     assert!(wrapper.contains("tide_notify \"agent-detached\""));
-    assert!(!wrapper.contains("rm -rf \"$TIDE_CODEX_HOME\""));
+    assert!(!wrapper.contains("rm -rf \"$TIDE_TERMINAL_CODEX_HOME\""));
     assert!(wrapper.contains("tide:wrapped-agent:codex:$1"));
     assert!(!wrapper.contains("\"Notification\""));
     assert!(!wrapper.contains("codex-turn-complete"));
@@ -1643,13 +1643,13 @@ fn codex_wrapper_omits_app_server_and_launches_direct_cli_only() {
     let wrapper = std::fs::read_to_string(&wrapper_path)
         .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
 
-    assert!(wrapper.contains("mcp_servers.tide.command"));
-    assert!(wrapper.contains("mcp_servers.tide.args"));
+    assert!(wrapper.contains("mcp_servers.tide-terminal.command"));
+    assert!(wrapper.contains("mcp_servers.tide-terminal.args"));
     assert!(wrapper.contains("\"UserPromptSubmit\""));
     assert!(wrapper.contains("\"Stop\""));
     assert!(wrapper.contains("tide_notify \"agent-detached\""));
-    assert!(!wrapper.contains("rm -rf \"$TIDE_CODEX_HOME\""));
-    assert!(!wrapper.contains("TIDE_CODEX_APP_SERVER"));
+    assert!(!wrapper.contains("rm -rf \"$TIDE_TERMINAL_CODEX_HOME\""));
+    assert!(!wrapper.contains("TIDE_TERMINAL_CODEX_APP_SERVER"));
     assert!(!wrapper.contains("codex app-server"));
     assert!(!wrapper.contains("codex-app-server-watch"));
     assert!(!wrapper.contains("--remote"));
@@ -1676,13 +1676,13 @@ fn claude_wrapper_forwards_hook_stdin_payloads_for_notification_and_stop() {
         .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
 
     assert!(wrapper.contains(
-        "notify agent-needs-input --pane \\\"$TIDE_PANE\\\" --agent claude --payload-stdin"
+        "notify agent-needs-input --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude --payload-stdin"
     ));
     assert!(wrapper
-        .contains("notify agent-idle --pane \\\"$TIDE_PANE\\\" --agent claude --payload-stdin"));
+        .contains("notify agent-idle --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude --payload-stdin"));
     assert!(wrapper.contains("tide_notify agent-attached"));
     assert!(wrapper.contains("tide_notify agent-detached"));
-    assert!(wrapper.contains("notify agent-running --pane \\\"$TIDE_PANE\\\" --agent claude"));
+    assert!(wrapper.contains("notify agent-running --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude"));
 }
 
 #[test]
@@ -1694,13 +1694,13 @@ fn gemini_wrapper_forwards_hook_stdin_payloads_for_notification_and_after_agent(
         .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
 
     assert!(wrapper.contains(
-        "notify agent-needs-input --pane \\\"\\$TIDE_PANE\\\" --agent gemini --payload-stdin"
+        "notify agent-needs-input --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini --payload-stdin"
     ));
     assert!(wrapper
-        .contains("notify agent-idle --pane \\\"\\$TIDE_PANE\\\" --agent gemini --payload-stdin"));
+        .contains("notify agent-idle --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini --payload-stdin"));
     assert!(wrapper.contains("tide_notify agent-attached"));
     assert!(wrapper.contains("tide_notify agent-detached"));
-    assert!(wrapper.contains("notify agent-running --pane \\\"\\$TIDE_PANE\\\" --agent gemini"));
+    assert!(wrapper.contains("notify agent-running --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini"));
 }
 
 #[test]

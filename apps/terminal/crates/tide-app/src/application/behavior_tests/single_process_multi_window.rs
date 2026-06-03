@@ -147,18 +147,18 @@ fn each_tide_window_keeps_independent_workspace_state() {
 
 #[test]
 fn cli_callers_include_tide_window_for_gateway_routing() {
-    // UC-4 BR-1, BR-2: terminal children export TIDE_WINDOW, and CLI/MCP/notify clients forward it as _caller_window.
+    // UC-4 BR-1, BR-2: terminal children export TIDE_TERMINAL_WINDOW, and CLI/MCP/notify clients forward it as _caller_window.
     let terminal_source = include_str!("../../domain/terminal/mod.rs");
     let cli_source = include_str!("../../adapter/inward/cli_adapter/client.rs");
     let mcp_source = include_str!("../../adapter/inward/cli_adapter/mcp.rs");
     let notify_source = include_str!("../../adapter/inward/cli_adapter/notify.rs");
 
-    assert!(terminal_source.contains("\"TIDE_WINDOW\""));
-    assert!(cli_source.contains("std::env::var(\"TIDE_WINDOW\")"));
+    assert!(terminal_source.contains("\"TIDE_TERMINAL_WINDOW\""));
+    assert!(cli_source.contains("std::env::var(\"TIDE_TERMINAL_WINDOW\")"));
     assert!(cli_source.contains("\"_caller_window\""));
-    assert!(mcp_source.contains("std::env::var(\"TIDE_WINDOW\")"));
+    assert!(mcp_source.contains("std::env::var(\"TIDE_TERMINAL_WINDOW\")"));
     assert!(mcp_source.contains("\"_caller_window\""));
-    assert!(notify_source.contains("std::env::var(\"TIDE_WINDOW\")"));
+    assert!(notify_source.contains("std::env::var(\"TIDE_TERMINAL_WINDOW\")"));
     assert!(notify_source.contains("\"_caller_window\""));
 }
 
@@ -421,13 +421,13 @@ fn notification_authorization_updates_are_not_main_window_only() {
 
 #[test]
 fn terminal_workspace_environment_uses_the_owning_app_workspace() {
-    // UC-6 BR-5: TIDE_WORKSPACE is passed through terminal creation from the owning App instead of a process-global active workspace.
+    // UC-6 BR-5: TIDE_TERMINAL_WORKSPACE is passed through terminal creation from the owning App instead of a process-global active workspace.
     let terminal_source = include_str!("../../domain/terminal/mod.rs");
     let terminal_factory_source =
         include_str!("../../application/ports/outward/terminal_factory_port/mod.rs");
     let pane_create_source = include_str!("../../application/services/pane_create_service/mod.rs");
 
-    assert!(terminal_source.contains("\"TIDE_WORKSPACE\""));
+    assert!(terminal_source.contains("\"TIDE_TERMINAL_WORKSPACE\""));
     assert!(!terminal_source.contains("ACTIVE_WORKSPACE_NAME"));
     assert!(terminal_factory_source.contains("workspace_name"));
     assert!(pane_create_source.contains("active_workspace_name"));

@@ -405,15 +405,15 @@ fn profile_live_preview_terminal_context_hidden_ranges() {
 fn profile_live_preview_hidden_ranges_file(path: &str) {
     let source = std::fs::read_to_string(path).expect("read markdown profile fixture");
     let lines: Vec<String> = source.lines().map(str::to_string).collect();
-    let duration = std::env::var("TIDE_PROFILE_SECONDS")
+    let duration = std::env::var("TIDE_TERMINAL_PROFILE_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(15);
-    let wrap_cols = std::env::var("TIDE_PROFILE_WRAP_COLS")
+    let wrap_cols = std::env::var("TIDE_TERMINAL_PROFILE_WRAP_COLS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(39);
-    let visible_rows = std::env::var("TIDE_PROFILE_VISIBLE_ROWS")
+    let visible_rows = std::env::var("TIDE_TERMINAL_PROFILE_VISIBLE_ROWS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(38);

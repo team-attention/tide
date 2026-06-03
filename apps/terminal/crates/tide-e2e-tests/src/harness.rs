@@ -30,7 +30,7 @@ pub struct TestApp {
 impl TestApp {
     /// Launch a Tide binary in an isolated temporary environment.
     ///
-    /// The binary is located via the `TIDE_BIN` environment variable. If unset,
+    /// The binary is located via the `TIDE_TERMINAL_BIN` environment variable. If unset,
     /// it falls back to `target/debug/Tide` relative to the workspace root.
     pub fn launch() -> Result<Self, Box<dyn Error>> {
         let temp_dir = TempDir::new()?;
@@ -50,7 +50,7 @@ impl TestApp {
             .map_err(|e| format!("failed to launch Tide at {}: {e}", bin_path.display()))?;
 
         let pid = child.id();
-        let socket_path = tmpdir_path.join(format!("tide-{pid}.sock"));
+        let socket_path = tmpdir_path.join(format!("tide-terminal-{pid}.sock"));
 
         let mut app = TestApp {
             process: child,
@@ -66,12 +66,12 @@ impl TestApp {
     /// Locate the Tide binary.
     fn find_binary() -> Result<PathBuf, Box<dyn Error>> {
         // 1. Explicit env var
-        if let Ok(path) = std::env::var("TIDE_BIN") {
+        if let Ok(path) = std::env::var("TIDE_TERMINAL_BIN") {
             let p = PathBuf::from(path);
             if p.exists() {
                 return Ok(p);
             }
-            return Err(format!("TIDE_BIN points to non-existent path: {}", p.display()).into());
+            return Err(format!("TIDE_TERMINAL_BIN points to non-existent path: {}", p.display()).into());
         }
 
         // 2. Relative to workspace root: walk up from CARGO_MANIFEST_DIR
@@ -90,7 +90,7 @@ impl TestApp {
             }
         }
 
-        Err("Cannot find Tide binary. Set TIDE_BIN or run `cargo build -p tide-app` first.".into())
+        Err("Cannot find Tide binary. Set TIDE_TERMINAL_BIN or run `cargo build -p tide-app` first.".into())
     }
 
     /// Poll until the socket file appears on disk.

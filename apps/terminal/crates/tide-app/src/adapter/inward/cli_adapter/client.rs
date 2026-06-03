@@ -893,7 +893,7 @@ mod tests {
 fn inject_caller_pane(mut params: serde_json::Value) -> serde_json::Value {
     // Inject caller identity so the gateway can route to the correct
     // Tide Window first, then the App can route to the correct Workspace.
-    if let Ok(window_str) = std::env::var("TIDE_WINDOW") {
+    if let Ok(window_str) = std::env::var("TIDE_TERMINAL_WINDOW") {
         if let Ok(tide_window_id) = window_str.parse::<u64>() {
             if let Some(obj) = params.as_object_mut() {
                 obj.insert(
@@ -903,7 +903,7 @@ fn inject_caller_pane(mut params: serde_json::Value) -> serde_json::Value {
             }
         }
     }
-    if let Ok(pane_str) = std::env::var("TIDE_PANE") {
+    if let Ok(pane_str) = std::env::var("TIDE_TERMINAL_PANE") {
         if let Ok(pane_id) = pane_str.parse::<u64>() {
             if let Some(obj) = params.as_object_mut() {
                 obj.insert(
@@ -922,7 +922,7 @@ fn send_command(method: &str, params: serde_json::Value) -> i32 {
         Some(p) => p,
         None => {
             eprintln!("error: cannot find Tide socket. Is Tide running?");
-            eprintln!("hint: check $TIDE_SOCKET or look for $TMPDIR/tide-*.sock");
+            eprintln!("hint: check $TIDE_TERMINAL_SOCKET or look for $TMPDIR/tide-*.sock");
             return 1;
         }
     };
@@ -989,18 +989,18 @@ fn send_command(method: &str, params: serde_json::Value) -> i32 {
 }
 
 /// Find the socket path to connect to.
-/// Priority: $TIDE_SOCKET → $TMPDIR/tide-latest.sock
+/// Priority: $TIDE_TERMINAL_SOCKET → $TMPDIR/tide-terminal-latest.sock
 fn find_socket_path() -> Option<String> {
-    // 1. Check TIDE_SOCKET env var
-    if let Ok(path) = std::env::var("TIDE_SOCKET") {
+    // 1. Check TIDE_TERMINAL_SOCKET env var
+    if let Ok(path) = std::env::var("TIDE_TERMINAL_SOCKET") {
         if std::path::Path::new(&path).exists() {
             return Some(path);
         }
     }
 
-    // 2. Check tide-latest.sock symlink
+    // 2. Check tide-terminal-latest.sock symlink
     let tmpdir = std::env::temp_dir();
-    let latest = tmpdir.join("tide-latest.sock");
+    let latest = tmpdir.join("tide-terminal-latest.sock");
     if latest.exists() {
         return Some(latest.to_string_lossy().into_owned());
     }

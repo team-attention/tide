@@ -171,11 +171,11 @@ fn notification_target_from_identifier(identifier: &str) -> Option<NotificationA
 }
 
 fn notification_relay_socket_path_for_tide_instance(tide_instance_pid: u32) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("tide-{tide_instance_pid}.sock"))
+    std::env::temp_dir().join(format!("tide-terminal-{tide_instance_pid}.sock"))
 }
 
 fn restore_latest_socket_symlink(tide_instance_pid: u32) {
-    let latest = std::env::temp_dir().join("tide-latest.sock");
+    let latest = std::env::temp_dir().join("tide-terminal-latest.sock");
     let target = notification_relay_socket_path_for_tide_instance(tide_instance_pid);
     let _ = std::fs::remove_file(&latest);
     let _ = std::os::unix::fs::symlink(&target, &latest);
