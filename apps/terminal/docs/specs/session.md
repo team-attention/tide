@@ -99,6 +99,7 @@ pre-spawned `Terminal`.
   - BR-8: `restore_preferences` restores theme and side-surface widths, but must not reopen FileTree View, Workspace rail hidden state, or Terminal Context Surface visibility from a previous intentional quit
   - BR-9: `restore_preferences` must sync the restored `dark_mode` preference into a pre-spawned `Terminal` before the first `Terminal Pane` renders
   - BR-10: Ordinary launch must use default `WindowConfig` size instead of `Session.window_width` / `Session.window_height`
+  - BR-11: The boot sequence seeds the Workspace rail once at startup; creating the initial `Terminal Pane` must not push a duplicate `Workspace`, so a fresh non-crash launch ends with exactly one `Workspace`
 
 ## Tests
 
@@ -113,6 +114,7 @@ pre-spawned `Terminal`.
 | UC-3 | BR-8 | `restore_preferences_starts_from_workspace_rail_and_terminal_only` |
 | UC-3 | BR-9 | `restore_preferences_applies_light_mode_to_prespawned_terminal` |
 | UC-3 | BR-10 | `launch_window_config_uses_default_size_despite_saved_session_dimensions` |
+| UC-3 | BR-11 | `boot_seed_then_initial_pane_yields_exactly_one_workspace` |
 
 ## Location
 

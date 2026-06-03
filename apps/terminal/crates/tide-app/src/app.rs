@@ -11,7 +11,6 @@ use crate::tide_tree::FsTree;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state;
 use crate::theme::*;
-use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
 use crate::DockPort;
 use crate::GatewayPort;
 use crate::LayoutPort;
@@ -544,17 +543,11 @@ impl App {
         self.sync_file_tree_modified_editor_cache();
         self.timing.last_cwd = Some(cwd);
 
-        self.ws.workspaces.push(Workspace {
-            name: "Workspace 1".to_string(),
-            layout: SplitLayout::new(),
-            focused: None,
-            panes: HashMap::new(),
-        });
-        self.ws.workspace_extras.push(WorkspaceExtras::new());
-        self.ws
-            .workspace_context_artifacts
-            .push(state::ContextArtifactStore::new());
-        self.ws.active = 0;
+        // Seed the rail idempotently: main.rs already seeds an initial Workspace
+        // before init_phase1, so pushing unconditionally here would create a
+        // duplicate "Workspace 1". ensure_initial_workspace_seeded() is a no-op
+        // when a Workspace already exists.
+        self.ensure_initial_workspace_seeded();
     }
 }
 

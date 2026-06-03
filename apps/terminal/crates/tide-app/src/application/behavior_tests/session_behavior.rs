@@ -176,6 +176,23 @@ fn restore_preferences_starts_from_workspace_rail_and_terminal_only() {
 }
 
 #[test]
+fn boot_seed_then_initial_pane_yields_exactly_one_workspace() {
+    // UC-3 BR-11: main.rs seeds the Workspace rail once before init_phase1, then
+    // creating the initial Terminal Pane must not push a duplicate Workspace.
+    // A fresh non-crash launch must end with exactly one Workspace.
+    let mut app = crate::App::new();
+
+    // main.rs:184 seeds the rail before the window/init phase.
+    app.ensure_initial_workspace_seeded();
+    // init_phase1 (no saved session) creates the first Terminal Pane.
+    app.create_initial_pane(None);
+
+    assert_eq!(app.ws.workspaces.len(), 1);
+    assert_eq!(app.ws.active, 0);
+    assert_eq!(terminal_pane_count(&app), 1);
+}
+
+#[test]
 fn restore_preferences_applies_light_mode_to_prespawned_terminal() {
     // UC-3 BR-9: restore_preferences syncs restored dark_mode into a pre-spawned Terminal.
     let session = Session {
