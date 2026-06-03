@@ -8,7 +8,7 @@ repository.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "Tide"
+name = "tide-terminal"
 path = "src/main.rs"
 
 [package.metadata.bundle]

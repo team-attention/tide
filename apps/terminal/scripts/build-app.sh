@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_BUNDLE="$ROOT_DIR/target/release/bundle/osx/Tide.app"
+APP_BUNDLE="$ROOT_DIR/target/release/bundle/osx/Tide Terminal.app"
 APP_PLIST="$APP_BUNDLE/Contents/Info.plist"
 SKIP_BUILD=false
 
@@ -12,7 +12,7 @@ for arg in "$@"; do
         --help|-h)
             echo "Usage: $0 [--skip-build]"
             echo "  (default)     cargo bundle + Info.plist fixup + ad-hoc sign"
-            echo "  --skip-build  reuse the existing Tide.app and only apply fixups"
+            echo "  --skip-build  reuse the existing Tide Terminal.app and only apply fixups"
             exit 0
             ;;
         *) echo "Unknown option: $arg" >&2; exit 1 ;;
@@ -24,7 +24,7 @@ if [ "$SKIP_BUILD" = false ]; then
 fi
 
 if [ ! -d "$APP_BUNDLE" ]; then
-    echo "Tide.app not found at $APP_BUNDLE" >&2
+    echo "Tide Terminal.app not found at $APP_BUNDLE" >&2
     exit 1
 fi
 
@@ -39,4 +39,4 @@ fi
 
 codesign --force --deep --sign - --identifier com.eatnug.tide "$APP_BUNDLE"
 
-echo "Built Tide.app at $APP_BUNDLE"
+echo "Built Tide Terminal.app at $APP_BUNDLE"

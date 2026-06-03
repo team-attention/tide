@@ -31,7 +31,7 @@ impl TestApp {
     /// Launch a Tide binary in an isolated temporary environment.
     ///
     /// The binary is located via the `TIDE_TERMINAL_BIN` environment variable. If unset,
-    /// it falls back to `target/debug/Tide` relative to the workspace root.
+    /// it falls back to `target/debug/tide-terminal` relative to the workspace root.
     pub fn launch() -> Result<Self, Box<dyn Error>> {
         let temp_dir = TempDir::new()?;
         let tmpdir_path = temp_dir.path().to_path_buf();
@@ -83,7 +83,7 @@ impl TestApp {
                 .map(|p| p.to_path_buf());
 
             if let Some(root) = workspace_root {
-                let debug_path = root.join("target/debug/Tide");
+                let debug_path = root.join("target/debug/tide-terminal");
                 if debug_path.exists() {
                     return Ok(debug_path);
                 }

@@ -44,10 +44,10 @@ done
 
 # Paths
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_BUNDLE="$ROOT_DIR/target/release/bundle/osx/Tide.app"
+APP_BUNDLE="$ROOT_DIR/target/release/bundle/osx/Tide Terminal.app"
 ENTITLEMENTS="$ROOT_DIR/scripts/entitlements.plist"
 VERSION=$(grep '^version' "$ROOT_DIR/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
-DMG_NAME="Tide-${VERSION}.dmg"
+DMG_NAME="Tide-Terminal-${VERSION}.dmg"
 DMG_OUTPUT="$ROOT_DIR/target/release/$DMG_NAME"
 DMG_TEMP="$ROOT_DIR/target/release/dmg-staging"
 
@@ -72,20 +72,20 @@ printf "${YELLOW}Tide DMG Installer Builder (v%s)${NC}\n\n" "$VERSION"
 
 # ── Step 1: Build .app bundle ──────────────────────────────────────
 if [ "$SKIP_BUILD" = false ]; then
-    step "build Tide.app" "$ROOT_DIR/scripts/build-app.sh"
+    step "build Tide Terminal.app" "$ROOT_DIR/scripts/build-app.sh"
 else
-    step "fix up existing Tide.app" "$ROOT_DIR/scripts/build-app.sh" --skip-build
+    step "fix up existing Tide Terminal.app" "$ROOT_DIR/scripts/build-app.sh" --skip-build
 fi
 
 if [ ! -d "$APP_BUNDLE" ]; then
-    printf "${RED}Error: Tide.app not found at %s${NC}\n" "$APP_BUNDLE"
+    printf "${RED}Error: Tide Terminal.app not found at %s${NC}\n" "$APP_BUNDLE"
     printf "Run without --skip-build to create it first.\n"
     exit 1
 fi
 
 # ── Step 2: Codesign the .app bundle ──────────────────────────────
 # Sign with hardened runtime (required for notarization)
-step "codesign Tide.app" codesign --force --deep --options runtime \
+step "codesign Tide Terminal.app" codesign --force --deep --options runtime \
     --sign "$SIGNING_IDENTITY" \
     --entitlements "$ENTITLEMENTS" \
     --timestamp \
@@ -99,12 +99,12 @@ rm -f "$DMG_OUTPUT"
 
 step "prepare DMG contents" bash -c "
     mkdir -p '$DMG_TEMP'
-    cp -R '$APP_BUNDLE' '$DMG_TEMP/Tide.app'
+    cp -R '$APP_BUNDLE' '$DMG_TEMP/Tide Terminal.app'
     ln -s /Applications '$DMG_TEMP/Applications'
 "
 
 step "create DMG" hdiutil create \
-    -volname "Tide" \
+    -volname "Tide Terminal" \
     -srcfolder "$DMG_TEMP" \
     -ov \
     -format UDZO \
