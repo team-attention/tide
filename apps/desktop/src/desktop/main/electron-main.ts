@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, utilityProcess, type UtilityProcess } from "electron";
 import { basename, dirname, join } from "node:path";
 import { readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import {
   discoverProviderCommands,
@@ -816,7 +816,23 @@ app.on("child-process-gone", (_event, details) => {
   console.error("[tide-main] child-process-gone:", details.type, details.reason, details.exitCode);
 });
 
+// Tide doesn't use Electron safeStorage; the only keychain access is Chromium's
+// automatic cookie encryption, which pops a "<app> wants to use confidential
+// information…" Keychain prompt on every (re-signed) launch. Use the basic
+// password store so cookies aren't keychain-encrypted and the prompt never shows.
+app.commandLine.appendSwitch("password-store", "basic");
+
 void app.whenReady().then(() => {
+  // Dev (`electron .`) shows the default Electron dock icon; point it at the
+  // brand icon. The packaged app uses the bundle icon (electron-builder) instead.
+  try {
+    const brandIcon = join(app.getAppPath(), "..", "..", "assets", "icon.png");
+    if (process.platform === "darwin" && existsSync(brandIcon)) {
+      app.dock?.setIcon(brandIcon);
+    }
+  } catch {
+    // Icon optional — never block startup.
+  }
   createMainWindow();
 
   app.on("activate", () => {

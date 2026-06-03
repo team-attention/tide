@@ -11,6 +11,7 @@
   "mac": {
     "target": [
       "dmg"
-    ]
+    ],
+    "icon": "build/icon.icns"
   }
 }
