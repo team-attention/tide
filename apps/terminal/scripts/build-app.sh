@@ -37,6 +37,6 @@ if /usr/libexec/PlistBuddy -c "Print :LSRequiresCarbon" "$APP_PLIST" >/dev/null 
     exit 1
 fi
 
-codesign --force --deep --sign - --identifier com.eatnug.tide "$APP_BUNDLE"
+codesign --force --deep --sign - --identifier com.eatnug.tide-terminal "$APP_BUNDLE"
 
 echo "Built Tide Terminal.app at $APP_BUNDLE"
