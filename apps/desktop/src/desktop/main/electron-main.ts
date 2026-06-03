@@ -817,9 +817,12 @@ app.on("child-process-gone", (_event, details) => {
 });
 
 // Tide doesn't use Electron safeStorage; the only keychain access is Chromium's
-// automatic cookie encryption, which pops a "<app> wants to use confidential
-// information…" Keychain prompt on every (re-signed) launch. Use the basic
-// password store so cookies aren't keychain-encrypted and the prompt never shows.
+// automatic cookie/OSCrypt encryption, which pops a "<app> wants to use
+// confidential information…" macOS Keychain prompt on every (re-signed) launch.
+// `use-mock-keychain` makes Chromium use an in-memory key instead of the macOS
+// Keychain, so it never prompts. (`password-store=basic` is a Linux-only flag and
+// has no effect on macOS — keep it for Linux parity.)
+app.commandLine.appendSwitch("use-mock-keychain");
 app.commandLine.appendSwitch("password-store", "basic");
 
 void app.whenReady().then(() => {
