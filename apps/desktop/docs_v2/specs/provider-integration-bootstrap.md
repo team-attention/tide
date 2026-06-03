@@ -193,6 +193,12 @@ The generated Codex hook command must point at a stable Tide-owned provider sign
 
 When Tide rewrites the Codex overlay, it may preserve existing `hooks.state` entries only if the previous `hooks.json` content matches the next generated `hooks.json` content. If the hook definition changes, Backend must treat hook trust as incomplete and return Provider Readiness instead of starting the Thread turn.
 
+### D17. Codex overlay mirrors the full real home except Tide-owned entries
+
+The overlay `CODEX_HOME` exists only so Tide can own a few entries (`config.toml`, `hooks.json`, `skills`) without mutating the user's real `~/.codex`. Every other entry in the real Codex home must be symlinked into the overlay, mirrored dynamically rather than from a fixed allow-list.
+
+Codex keeps live state in version-suffixed sqlite databases (observed 2026-06-03: `state_5.sqlite`, `goals_1.sqlite`, `logs_2.sqlite`, `memories_1.sqlite`, plus their `-wal`/`-shm` siblings and a `sqlite/` directory). Their names change across Codex releases. A hardcoded allow-list that omits them — and a prune step that deletes anything not on the list — leaves the overlay without a usable database, so Codex refuses to start with "its local database appears to be damaged". The v1 wrapper (`crates/tide-app/resources/bin/codex`) already mirrors the full home (`for entry in *`, excluding only Tide-owned entries); the v2 overlay must do the same so it survives Codex adding new state files. The prune step may remove only overlay entries that are neither Tide-owned nor present in the real home (stale/dangling links).
+
 ## Out Of Scope
 
 - Full provider parser implementation.

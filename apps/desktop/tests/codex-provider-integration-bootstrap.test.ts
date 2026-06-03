@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import {
+  ensureProviderBootstrapArtifacts,
+  providerBootstrapArtifactsForHome,
+} from "../src/backend/infrastructure/node/provider-bootstrap-artifacts.ts";
 import {
   createCodexAgentIntegration,
   type CodexProviderState,
@@ -337,3 +342,51 @@ function sourceFiles(root: string): string[] {
 
   return files;
 }
+
+// D17: the overlay CODEX_HOME mirrors the full real home (minus Tide-owned
+// entries) so Codex's version-suffixed sqlite state DBs are available and it
+// does not refuse to start with "its local database appears to be damaged".
+test("codex_overlay_home_mirrors_real_codex_state_dbs_not_just_a_fixed_allowlist", () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "tide-codex-home-"));
+  try {
+    const realCodexHome = path.join(homeDir, ".codex");
+    fs.mkdirSync(path.join(realCodexHome, "sessions"), { recursive: true });
+    fs.writeFileSync(path.join(realCodexHome, "auth.json"), "{}");
+    fs.writeFileSync(path.join(realCodexHome, "config.toml"), "");
+    const stateDbs = [
+      "state_5.sqlite",
+      "goals_1.sqlite",
+      "logs_2.sqlite",
+      "memories_1.sqlite",
+      "logs_2.sqlite-wal",
+    ];
+    for (const db of stateDbs) {
+      fs.writeFileSync(path.join(realCodexHome, db), "");
+    }
+
+    const rootDir = path.join(homeDir, ".tide", "agent-bootstrap");
+    ensureProviderBootstrapArtifacts({ homeDir, rootDir });
+    const overlay = providerBootstrapArtifactsForHome({ homeDir, rootDir }).codexHome;
+
+    for (const entry of [...stateDbs, "auth.json", "sessions"]) {
+      const dest = path.join(overlay, entry);
+      assert.ok(
+        fs.lstatSync(dest).isSymbolicLink(),
+        `${entry} should be symlinked into the overlay CODEX_HOME`,
+      );
+      assert.equal(fs.readlinkSync(dest), path.join(realCodexHome, entry));
+    }
+
+    // Tide owns these overlay entries; they must be real files, not links to ~/.codex.
+    assert.ok(
+      !fs.lstatSync(path.join(overlay, "hooks.json")).isSymbolicLink(),
+      "hooks.json is Tide-owned",
+    );
+    assert.ok(
+      !fs.lstatSync(path.join(overlay, "config.toml")).isSymbolicLink(),
+      "config.toml is a Tide overlay file, not a symlink",
+    );
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});

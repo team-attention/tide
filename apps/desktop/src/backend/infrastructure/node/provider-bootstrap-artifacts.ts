@@ -136,22 +136,21 @@ function ensureCodexOverlay(
 ): void {
   const realCodexHome = join(homeDir, ".codex");
   mkdirSync(artifacts.codexHome, { recursive: true });
+  // D17: Tide owns only these overlay entries; everything else in the user's real
+  // ~/.codex is mirrored in by symlink so Codex sees its full home — including its
+  // version-suffixed sqlite state DBs (state_*/goals_*/logs_*/memories_*.sqlite),
+  // whose names change across releases. Mirror dynamically (like the v1 wrapper)
+  // instead of a fixed allow-list, which goes stale and makes Codex refuse to
+  // start with "its local database appears to be damaged".
+  const tideOwnedCodexEntries = new Set(["config.toml", "hooks.json", "skills"]);
   removeUnlistedEntries(
     artifacts.codexHome,
-    new Set([
-      "auth.json",
-      "config.toml",
-      "history.jsonl",
-      "hooks.json",
-      "models_cache.json",
-      "sessions",
-      "skills",
-    ]),
+    new Set([...tideOwnedCodexEntries, ...directoryEntryNames(realCodexHome)]),
   );
-  linkSelectedDirectoryEntries(
+  linkUnownedDirectoryEntries(
     realCodexHome,
     artifacts.codexHome,
-    new Set(["auth.json", "history.jsonl", "models_cache.json", "sessions"]),
+    tideOwnedCodexEntries,
   );
   const nextCodexHooks = codexHooksConfig(artifacts);
   const previousCodexHooksText = readOptionalText(artifacts.codexHooksPath);
@@ -414,10 +413,18 @@ function removeUnlistedEntries(
   }
 }
 
-function linkSelectedDirectoryEntries(
+function directoryEntryNames(dir: string): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true }).map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+function linkUnownedDirectoryEntries(
   sourceDir: string,
   destinationDir: string,
-  allowedNames: Set<string>,
+  ownedNames: Set<string>,
 ): void {
   let entries;
   try {
@@ -427,7 +434,7 @@ function linkSelectedDirectoryEntries(
   }
 
   for (const entry of entries) {
-    if (!allowedNames.has(entry.name)) {
+    if (ownedNames.has(entry.name)) {
       continue;
     }
     ensureSymlink(join(sourceDir, entry.name), join(destinationDir, entry.name));

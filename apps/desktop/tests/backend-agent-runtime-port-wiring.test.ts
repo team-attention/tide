@@ -642,16 +642,25 @@ test("provider_bootstrap_artifacts_create_provider_native_files", () => {
     fs.lstatSync(path.join(artifacts.codexHome, "sessions")).isSymbolicLink(),
     true,
   );
-  assert.equal(fs.existsSync(path.join(artifacts.codexHome, "plugins")), false);
-  assert.equal(fs.existsSync(path.join(artifacts.codexHome, "vendor_imports")), false);
-  assert.equal(fs.existsSync(path.join(artifacts.codexHome, "cache")), false);
-  assert.equal(fs.existsSync(path.join(artifacts.codexHome, "state_5.sqlite")), false);
+  // D17: the overlay mirrors the full real ~/.codex (minus Tide-owned entries),
+  // so Codex's state DBs, plugins, caches, and vendor imports are all linked in —
+  // a fixed allow-list would omit version-suffixed state DBs and break Codex startup.
+  for (const entry of ["plugins", "vendor_imports", "cache", "state_5.sqlite"]) {
+    assert.equal(
+      fs.lstatSync(path.join(artifacts.codexHome, entry)).isSymbolicLink(),
+      true,
+      `${entry} should be mirrored into the overlay CODEX_HOME`,
+    );
+  }
+  // skills stays Tide-owned: the real Codex skills are not linked into the overlay.
   assert.equal(
     fs.existsSync(path.join(artifacts.codexHome, "skills", "impeccable")),
     false,
   );
 
-  writeFile(path.join(artifacts.codexHome, "cache", "codex_apps", "state.json"), "{}");
+  // A stale overlay entry (absent from real ~/.codex, not Tide-owned) is pruned on
+  // rewrite; the Tide-owned skills dir keeps only the tide skill.
+  writeFile(path.join(artifacts.codexHome, "legacy-stray.json"), "{}");
   writeFile(path.join(artifacts.codexHome, "skills", ".system", "SKILL.md"), "# System\n");
   appendCodexOverlayHookTrust(artifacts);
   ensureProviderBootstrapArtifacts({
@@ -664,10 +673,15 @@ test("provider_bootstrap_artifacts_create_provider_native_files", () => {
   assert.match(codexConfigAfterRewrite, /hooks\.state/);
   assert.match(codexConfigAfterRewrite, /permission_request:0:0/);
   assert.match(codexConfigAfterRewrite, /trusted_hash = "sha256:permission"/);
-  assert.equal(fs.existsSync(path.join(artifacts.codexHome, "cache")), false);
+  assert.equal(fs.existsSync(path.join(artifacts.codexHome, "legacy-stray.json")), false);
   assert.equal(
     fs.existsSync(path.join(artifacts.codexHome, "skills", ".system")),
     false,
+  );
+  // Real-home entries stay mirrored across rewrites.
+  assert.equal(
+    fs.lstatSync(path.join(artifacts.codexHome, "cache")).isSymbolicLink(),
+    true,
   );
 });
 
