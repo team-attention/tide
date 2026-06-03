@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "node scripts/v2-tooling-command.mjs electron-vite dev",
     "build": "node scripts/v2-tooling-command.mjs electron-vite build",
+    "start": "npm run build && electron .",
     "typecheck": "node scripts/v2-tooling-command.mjs tsc --noEmit",
     "test": "npm run test:v2",
     "test:v2": "node --test --experimental-strip-types tests/*.test.ts",
