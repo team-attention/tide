@@ -444,14 +444,18 @@ function linkUnownedDirectoryEntries(
 function ensureSymlink(sourcePath: string, destinationPath: string): void {
   try {
     const existing = lstatSync(destinationPath);
-    if (existing.isSymbolicLink() && readlinkSync(destinationPath) !== sourcePath) {
-      unlinkSync(destinationPath);
-      symlinkSync(sourcePath, destinationPath);
+    if (existing.isSymbolicLink() && readlinkSync(destinationPath) === sourcePath) {
+      return; // already the correct symlink
     }
-    return;
+    // Replace a wrong symlink OR a stale real file/dir left in the overlay (e.g. a
+    // sqlite DB the provider created here before this entry was mirrored) so the
+    // overlay always reflects the real home. A real DB file alongside symlinked
+    // -wal/-shm siblings is an inconsistent state Codex reports as "damaged".
+    rmSync(destinationPath, { recursive: true, force: true });
   } catch {
-    symlinkSync(sourcePath, destinationPath);
+    // destination does not exist yet
   }
+  symlinkSync(sourcePath, destinationPath);
 }
 
 function commandHookGroup(command: string, matcher?: string) {

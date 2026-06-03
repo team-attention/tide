@@ -5,7 +5,13 @@ import {
   type BackendHandshake,
 } from "../../../shared/contracts/index.ts";
 import { createLiveBackendContractMessageAdapter } from "./live-backend.ts";
+import { resolveAugmentedPath } from "./resolve-shell-path.ts";
 import { runTideMcpStdioBridgeFromEnv } from "./tide-mcp-stdio-entrypoint.ts";
+
+// A Finder/Dock-launched packaged app only inherits the minimal launchd PATH, so
+// the Agent Runtime's `which codex|claude|agy` finds nothing and no provider ever
+// spawns. Restore the user's real login-shell PATH before anything resolves a CLI.
+process.env.PATH = resolveAugmentedPath();
 
 type ElectronParentPort = {
   postMessage: (message: unknown) => void;

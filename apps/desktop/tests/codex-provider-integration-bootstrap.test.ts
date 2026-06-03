@@ -390,3 +390,34 @@ test("codex_overlay_home_mirrors_real_codex_state_dbs_not_just_a_fixed_allowlist
     fs.rmSync(homeDir, { recursive: true, force: true });
   }
 });
+
+// D17: a stale REAL state DB left in the overlay by an older build (where the DB
+// wasn't mirrored) must be replaced with a symlink — otherwise a real DB file
+// next to symlinked -wal/-shm siblings is the inconsistent state Codex calls
+// "damaged".
+test("codex_overlay_replaces_a_stale_real_state_db_with_a_symlink", () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "tide-codex-home-"));
+  try {
+    const realCodexHome = path.join(homeDir, ".codex");
+    fs.mkdirSync(realCodexHome, { recursive: true });
+    fs.writeFileSync(path.join(realCodexHome, "auth.json"), "{}");
+    fs.writeFileSync(path.join(realCodexHome, "state_5.sqlite"), "real-db");
+
+    const rootDir = path.join(homeDir, ".tide", "agent-bootstrap");
+    const overlay = providerBootstrapArtifactsForHome({ homeDir, rootDir }).codexHome;
+    // Simulate an old-build leftover: a real DB file sitting in the overlay.
+    fs.mkdirSync(overlay, { recursive: true });
+    fs.writeFileSync(path.join(overlay, "state_5.sqlite"), "stale-overlay-copy");
+
+    ensureProviderBootstrapArtifacts({ homeDir, rootDir });
+
+    const dest = path.join(overlay, "state_5.sqlite");
+    assert.ok(
+      fs.lstatSync(dest).isSymbolicLink(),
+      "stale real DB in the overlay should be replaced by a symlink",
+    );
+    assert.equal(fs.readlinkSync(dest), path.join(realCodexHome, "state_5.sqlite"));
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});

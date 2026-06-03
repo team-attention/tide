@@ -1,0 +1,56 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { resolveAugmentedPath } from "../src/backend/infrastructure/node/resolve-shell-path.ts";
+
+// Why: a Finder-launched packaged app only gets the minimal launchd PATH, so the
+// Agent Runtime's `which <cli>` cannot find provider CLIs in ~/.local/bin etc.
+// resolveAugmentedPath restores the login-shell PATH plus common fallbacks.
+
+test("login_shell_path_is_prepended_to_the_minimal_launchd_path", () => {
+  const result = resolveAugmentedPath({
+    platform: "darwin",
+    currentPath: "/usr/bin:/bin:/usr/sbin:/sbin",
+    homeDir: "/Users/me",
+    runShell: () => "/Users/me/.local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+  });
+
+  const parts = result.split(":");
+  assert.ok(parts.includes("/Users/me/.local/bin"), "shell PATH bins must be present");
+  assert.ok(parts.includes("/opt/homebrew/bin"));
+  // Shell PATH wins ordering over the minimal launchd PATH.
+  assert.ok(
+    parts.indexOf("/Users/me/.local/bin") < parts.indexOf("/usr/sbin"),
+    "shell entries should come before the minimal launchd-only entries",
+  );
+  // No duplicates.
+  assert.equal(new Set(parts).size, parts.length);
+});
+
+test("falls_back_to_common_bins_when_the_login_shell_cannot_be_read", () => {
+  const result = resolveAugmentedPath({
+    platform: "darwin",
+    currentPath: "/usr/bin:/bin:/usr/sbin:/sbin",
+    homeDir: "/Users/me",
+    runShell: () => {
+      throw new Error("shell unavailable");
+    },
+  });
+
+  const parts = result.split(":");
+  assert.ok(parts.includes("/Users/me/.local/bin"));
+  assert.ok(parts.includes("/opt/homebrew/bin"));
+  assert.ok(parts.includes("/usr/local/bin"));
+  // Original entries are preserved.
+  assert.ok(parts.includes("/usr/bin"));
+});
+
+test("windows_path_is_left_unchanged", () => {
+  const current = "C:\\Windows\\System32;C:\\Users\\me\\bin";
+  const result = resolveAugmentedPath({
+    platform: "win32",
+    currentPath: current,
+    runShell: () => "should-not-be-used",
+  });
+  assert.equal(result, current);
+});
