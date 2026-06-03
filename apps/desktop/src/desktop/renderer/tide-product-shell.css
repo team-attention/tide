@@ -813,6 +813,32 @@ button {
   margin-left: 6px;
 }
 
+/* Live "agent is running" dot — shown for every thread (incl. background) so
+   activity is visible in the rail without focusing the thread. */
+.thread-row__running,
+.project-row__running {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--tide-success, #22c55e);
+  animation: tide-running-pulse 1.2s ease-in-out infinite;
+}
+
+.project-row__running {
+  margin-left: 6px;
+}
+
+@keyframes tide-running-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .thread-row__actions {
   display: none;
   align-items: center;
@@ -821,7 +847,8 @@ button {
 }
 
 .thread-row:hover .thread-row__time,
-.thread-row:hover .thread-row__attention {
+.thread-row:hover .thread-row__attention,
+.thread-row:hover .thread-row__running {
   display: none;
 }
 

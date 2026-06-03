@@ -58,6 +58,9 @@ export interface ProductShellThread {
   workbenchPanes: AppChromeWorkbenchPaneRef[];
   pinned?: boolean;
   attention?: boolean;
+  // True while this thread's agent runtime is actively running — shown as a live
+  // rail indicator for every thread (incl. background ones), independent of focus.
+  running?: boolean;
   // Absolute timestamps for list sorting (the `time` field is a display string).
   createdAt?: string;
   updatedAt?: string;
@@ -261,6 +264,9 @@ export interface ProductShellProjectGroupView {
   // True when a child thread needs attention (waiting for input/approval) — used
   // to bubble the indicator to the project row when it is collapsed.
   attention: boolean;
+  // True when a child thread's agent is actively running — bubbled to a collapsed
+  // project row so background activity is visible without expanding.
+  running: boolean;
 }
 
 // Pinned projects render as full expandable groups, identical to the Projects
@@ -516,6 +522,9 @@ export function createProductShellViewModel(
       .map((thread) => toThreadView(thread, state)),
     attention: state.threads.some(
       (thread) => inGroup(thread, project) && thread.attention === true,
+    ),
+    running: state.threads.some(
+      (thread) => inGroup(thread, project) && thread.running === true,
     ),
   });
   // Worktree Projects folded into a repo no longer appear as their own group.
@@ -1323,16 +1332,33 @@ export function applyProductShellBackendEvent(
     case "thread.renamed":
       return applyProductShellThreadRenamedEvent(nextState, event);
     case "agentRuntime.stateChanged": {
-      const payload = event.payload as { state?: string };
-      if (!applyToActiveSurfaces) {
-        return nextState;
+      const payload = event.payload as { threadId?: string; state?: string };
+      // Update the thread's rail status for EVERY thread regardless of focus, so
+      // background threads show their live running / needs-input state in the list
+      // (v1 parity — running agents were always indicated, not just the focused one).
+      const threads =
+        payload.threadId === undefined
+          ? nextState.threads
+          : nextState.threads.map((thread) =>
+              thread.threadId === payload.threadId
+                ? {
+                    ...thread,
+                    running: payload.state === "running",
+                    attention:
+                      payload.state === "waiting_for_input" ||
+                      payload.state === "waiting_for_approval",
+                  }
+                : thread,
+            );
+      const withThreads = threads === nextState.threads ? nextState : { ...nextState, threads };
+      // The active thread's composer also clears its draft when its own run starts.
+      if (applyToActiveSurfaces && payload.state === "running") {
+        return {
+          ...withThreads,
+          agentChat: updateComposerDraft(withThreads.agentChat, "").state,
+        };
       }
-      return payload.state === "running"
-        ? {
-            ...nextState,
-            agentChat: updateComposerDraft(nextState.agentChat, "").state,
-          }
-        : nextState;
+      return withThreads;
     }
     case "workbench.changed": {
       const payload = event.payload as {
@@ -1749,6 +1775,7 @@ function toProductShellThreadFromSummary(
     attention:
       threadSummary.lastKnownState === "waiting_for_input" ||
       threadSummary.lastKnownState === "waiting_for_approval",
+    running: threadSummary.lastKnownState === "running",
     createdAt: threadSummary.createdAt,
     updatedAt: threadSummary.updatedAt,
   };
@@ -2041,6 +2068,7 @@ function applyProductShellThreadEvent(
     attention:
       threadSummary.lastKnownState === "waiting_for_input" ||
       threadSummary.lastKnownState === "waiting_for_approval",
+    running: threadSummary.lastKnownState === "running",
   };
   const existingThread = state.threads.find(
     (candidate) => candidate.threadId === threadSummary.threadId,

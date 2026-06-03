@@ -2514,6 +2514,13 @@ function createProjectGroup(
                 "aria-label": "A thread in this project needs attention",
               })
             : null,
+          // Likewise bubble live running activity so background work is visible.
+          !project.expanded && project.running && !project.attention
+            ? createElement("span", {
+                className: "project-row__running",
+                "aria-label": "A thread in this project is running",
+              })
+            : null,
         ),
         createElement(
           "span",
@@ -2812,6 +2819,13 @@ function createThreadRow(
           )
         : [
             thread.attention ? createElement("span", { key: "attention", className: "thread-row__attention" }) : null,
+            thread.running && !thread.attention
+              ? createElement("span", {
+                  key: "running",
+                  className: "thread-row__running",
+                  "aria-label": "Agent is running",
+                })
+              : null,
             createElement("span", { key: "time", className: "thread-row__time" }, thread.time),
             createElement(
               "span",

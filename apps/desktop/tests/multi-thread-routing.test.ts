@@ -135,3 +135,34 @@ test("clicking another thread switches focus even while a thread is running", ()
   assert.equal(state.activeThreadId, "thread-b", "command hydrate must switch focus to B");
   assert.equal((state.agentChat.thread as { threadId?: string } | null)?.threadId, "thread-b");
 });
+
+test("a background thread's running state shows in the rail without stealing focus", () => {
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = applyProductShellBackendEvent(state, hydrated("thread-b", "claude", []), "broadcast");
+  assert.equal(state.activeThreadId, "thread-a");
+
+  // Background thread B starts running (async broadcast).
+  state = applyProductShellBackendEvent(
+    state,
+    { kind: "agentRuntime.stateChanged" as const, payload: { threadId: "thread-b", state: "running" } },
+    "broadcast",
+  );
+  assert.equal(
+    state.threads.find((t: { threadId: string }) => t.threadId === "thread-b")?.running,
+    true,
+    "background thread shows a running indicator in the rail",
+  );
+  assert.equal(state.activeThreadId, "thread-a", "background running must not steal focus");
+
+  // B finishes -> running clears.
+  state = applyProductShellBackendEvent(
+    state,
+    { kind: "agentRuntime.stateChanged" as const, payload: { threadId: "thread-b", state: "idle" } },
+    "broadcast",
+  );
+  assert.equal(
+    state.threads.find((t: { threadId: string }) => t.threadId === "thread-b")?.running,
+    false,
+  );
+});
