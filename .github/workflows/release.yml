@@ -14,6 +14,12 @@ jobs:
     permissions:
       contents: write
 
+    # The v1 (Rust terminal) app lives in apps/terminal after the monorepo split;
+    # run all shell steps there so cargo + the target/dist paths resolve.
+    defaults:
+      run:
+        working-directory: apps/terminal
+
     steps:
       - uses: actions/checkout@v4
 

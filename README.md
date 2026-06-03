@@ -19,6 +19,18 @@ Through the Agent Gateway and Tide MCP Runtime, Wrapped Agents can inspect Works
 
 https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
+## Repository layout
+
+Tide is a monorepo with two independent products under the same brand:
+
+| App | Path | Stack |
+|-----|------|-------|
+| **Terminal** | [`apps/terminal/`](apps/terminal/) | Rust + WGPU native macOS app (the original Tide) |
+| **Desktop** | [`apps/desktop/`](apps/desktop/) | Electron + Node + React agent workspace |
+
+Each app builds independently from its own directory (`cargo` for `apps/terminal`,
+`npm` for `apps/desktop`). See each app's docs for details.
+
 ## Features
 
 ### Run Multiple Coding Agents
