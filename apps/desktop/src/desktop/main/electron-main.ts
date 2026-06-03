@@ -826,7 +826,7 @@ void app.whenReady().then(() => {
   // Dev (`electron .`) shows the default Electron dock icon; point it at the
   // brand icon. The packaged app uses the bundle icon (electron-builder) instead.
   try {
-    const brandIcon = join(app.getAppPath(), "..", "..", "assets", "icon.png");
+    const brandIcon = join(app.getAppPath(), "build", "icon.png");
     if (process.platform === "darwin" && existsSync(brandIcon)) {
       app.dock?.setIcon(brandIcon);
     }
