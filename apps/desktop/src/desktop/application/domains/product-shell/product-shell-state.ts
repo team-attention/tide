@@ -1376,13 +1376,16 @@ function shouldApplyBackendEventToActiveSurfaces(
   state: ProductShellState,
   event: AgentChatBackendEvent,
 ): boolean {
-  if (
-    event.kind === "thread.listed" ||
-    event.kind === "thread.started" ||
-    event.kind === "thread.hydrated"
-  ) {
+  // thread.listed updates the whole rail, never a single chat surface.
+  if (event.kind === "thread.listed") {
     return true;
   }
+  // Every other event (including thread.started/thread.hydrated, which carry a
+  // thread summary + blocks) must only touch the active chat surface when it is
+  // for the active thread. Otherwise a background thread finishing — and emitting
+  // thread.hydrated with ITS blocks — overwrites the chat the user is viewing,
+  // so another thread's answer appears in the wrong thread. The thread-list/state
+  // update for these events still runs regardless (handled in the switch below).
   const eventThreadId = threadIdFromBackendEvent(event);
   if (eventThreadId === undefined || state.activeThreadId === null) {
     return true;
@@ -1403,6 +1406,11 @@ function threadIdFromBackendEvent(event: AgentChatBackendEvent): string | undefi
     case "agentSessionBlock.upserted": {
       const payload = event.payload as { block?: { threadId?: unknown } };
       return typeof payload.block?.threadId === "string" ? payload.block.threadId : undefined;
+    }
+    case "thread.started":
+    case "thread.hydrated": {
+      const payload = event.payload as { thread?: { threadId?: unknown } };
+      return typeof payload.thread?.threadId === "string" ? payload.thread.threadId : undefined;
     }
     default:
       return undefined;
@@ -2030,7 +2038,12 @@ function applyProductShellThreadEvent(
 
   return {
     ...state,
-    activeThreadId: threadSummary.threadId,
+    // A thread.started/hydrated event is a data update, NOT a focus command —
+    // focus is owned by user actions (open/new thread set activeThreadId locally).
+    // Only adopt the thread as active when nothing is focused yet; otherwise a
+    // background thread emitting started/hydrated would steal focus and surface
+    // its answer in the thread the user is currently viewing.
+    activeThreadId: state.activeThreadId ?? threadSummary.threadId,
     threads,
     // Recompute projects so a thread started in a not-yet-listed project (e.g.
     // slice) appears in the rail immediately.
