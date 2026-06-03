@@ -1442,29 +1442,38 @@ test("product_shell_setup_terminal_input_emits_workbench_command", () => {
 
 test("product_shell_ignores_thread_scoped_events_for_inactive_threads", () => {
   const opened = openProductShellThread(createProductShellState(), "thread-workbench");
-  const afterOtherThreadRuntime = applyProductShellBackendEvent(opened, {
-    kind: "agentRuntime.stateChanged",
-    payload: {
-      threadId: "thread-other",
-      state: "running",
-      changedAt: "2026-05-29T00:00:00.000Z",
-    },
-  });
-  const afterOtherThreadBlock = applyProductShellBackendEvent(afterOtherThreadRuntime, {
-    kind: "agentSessionBlock.upserted",
-    payload: {
-      block: {
-        blockId: "block-other-thread",
+  // These arrive over the async push channel from another (background) thread.
+  const afterOtherThreadRuntime = applyProductShellBackendEvent(
+    opened,
+    {
+      kind: "agentRuntime.stateChanged",
+      payload: {
         threadId: "thread-other",
-        agentId: "antigravity",
-        kind: "agent_message",
-        role: "agent",
-        status: "complete",
-        body: "This belongs to another Thread",
-        updatedAt: "2026-05-29T00:00:00.000Z",
+        state: "running",
+        changedAt: "2026-05-29T00:00:00.000Z",
       },
     },
-  });
+    "broadcast",
+  );
+  const afterOtherThreadBlock = applyProductShellBackendEvent(
+    afterOtherThreadRuntime,
+    {
+      kind: "agentSessionBlock.upserted",
+      payload: {
+        block: {
+          blockId: "block-other-thread",
+          threadId: "thread-other",
+          agentId: "antigravity",
+          kind: "agent_message",
+          role: "agent",
+          status: "complete",
+          body: "This belongs to another Thread",
+          updatedAt: "2026-05-29T00:00:00.000Z",
+        },
+      },
+    },
+    "broadcast",
+  );
   const view = createProductShellViewModel(afterOtherThreadBlock);
   const html = renderProductShell(afterOtherThreadBlock);
 

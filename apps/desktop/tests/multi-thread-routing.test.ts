@@ -118,3 +118,20 @@ test("the user's own new-thread command response still populates the new thread"
   assert.equal(state.activeThreadId, "thread-new", "the user's own new thread becomes active");
   assert.equal((state.agentChat.thread as { threadId?: string } | null)?.threadId, "thread-new");
 });
+
+test("clicking another thread switches focus even while a thread is running", () => {
+  let state = createProductShellState({ includeFixtureData: false });
+  // Thread A is open and running.
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", [
+    { blockId: "a1", threadId: "thread-a", role: "agent", kind: "agent_message", body: "A answer" },
+  ]));
+  assert.equal(state.activeThreadId, "thread-a");
+
+  // User clicks thread B -> the thread.hydrate command response (command source)
+  // must switch focus AND the chat to B.
+  state = applyProductShellBackendEvent(state, hydrated("thread-b", "claude", [
+    { blockId: "b1", threadId: "thread-b", role: "agent", kind: "agent_message", body: "B answer" },
+  ]));
+  assert.equal(state.activeThreadId, "thread-b", "command hydrate must switch focus to B");
+  assert.equal((state.agentChat.thread as { threadId?: string } | null)?.threadId, "thread-b");
+});
