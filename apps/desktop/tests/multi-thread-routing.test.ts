@@ -45,12 +45,13 @@ test("a background thread hydrate does not steal focus or overwrite the active c
   );
   assert.equal(state.activeThreadId, "thread-a");
 
-  // A concurrently-running background thread B finishes and emits thread.hydrated.
+  // A concurrently-running background thread B finishes and broadcasts thread.hydrated.
   state = applyProductShellBackendEvent(
     state,
     hydrated("thread-b", "claude", [
       { blockId: "b1", threadId: "thread-b", role: "agent", kind: "agent_message", body: "B answer" },
     ]),
+    "broadcast",
   );
 
   // Focus stays on A; the active chat still shows A, never B's answer.
@@ -71,4 +72,49 @@ test("a background thread hydrate does not steal focus or overwrite the active c
     state.threads.some((thread: { threadId: string }) => thread.threadId === "thread-b"),
     "background thread should still appear in the rail",
   );
+});
+
+test("a background broadcast answer does not appear on the empty New Thread composer", () => {
+  // New Thread composer: nothing is active.
+  let state = createProductShellState({ includeFixtureData: false });
+  assert.equal(state.activeThreadId, null);
+  const blocksBefore = state.agentChat.blocks.length;
+
+  // A background thread broadcasts its agent answer.
+  state = applyProductShellBackendEvent(
+    state,
+    {
+      kind: "agentSessionBlock.upserted" as const,
+      payload: {
+        block: {
+          blockId: "bg1",
+          threadId: "thread-bg",
+          role: "agent",
+          kind: "agent_message",
+          body: "background answer",
+        },
+      },
+    },
+    "broadcast",
+  );
+
+  // The empty composer must NOT absorb the background answer, and focus must not move.
+  assert.equal(state.activeThreadId, null, "background broadcast must not focus a thread");
+  assert.equal(
+    state.agentChat.blocks.length,
+    blocksBefore,
+    "background answer must not appear in the New Thread composer",
+  );
+});
+
+test("the user's own new-thread command response still populates the new thread", () => {
+  // New Thread composer (nothing active) — the user submits, the backend responds
+  // (command source) with thread.started + the answer for the brand-new thread.
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-new", "codex", [
+    { blockId: "n1", threadId: "thread-new", role: "user", kind: "user_message", body: "hi" },
+    { blockId: "n2", threadId: "thread-new", role: "agent", kind: "agent_message", body: "hello" },
+  ]));
+  assert.equal(state.activeThreadId, "thread-new", "the user's own new thread becomes active");
+  assert.equal((state.agentChat.thread as { threadId?: string } | null)?.threadId, "thread-new");
 });

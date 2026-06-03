@@ -1286,11 +1286,18 @@ export function interruptProductShellRuntime(
   };
 }
 
+// Where a backend event came from. "command" events are the direct response to a
+// user action in THIS shell (open/start/send) and own focus + the active surface.
+// "broadcast" events are pushed asynchronously (including other threads running in
+// the background) and must never populate a surface they don't belong to.
+export type ProductShellBackendEventSource = "command" | "broadcast";
+
 export function applyProductShellBackendEvent(
   state: ProductShellState,
   event: AgentChatBackendEvent,
+  source: ProductShellBackendEventSource = "command",
 ): ProductShellState {
-  const applyToActiveSurfaces = shouldApplyBackendEventToActiveSurfaces(state, event);
+  const applyToActiveSurfaces = shouldApplyBackendEventToActiveSurfaces(state, event, source);
   const agentChat = applyToActiveSurfaces
     ? applyAgentChatBackendEvent(state.agentChat, event)
     : state.agentChat;
@@ -1308,7 +1315,7 @@ export function applyProductShellBackendEvent(
       return applyProductShellThreadListEvent(nextState, event);
     case "thread.started":
     case "thread.hydrated":
-      return applyProductShellThreadEvent(nextState, event);
+      return applyProductShellThreadEvent(nextState, event, source);
     case "thread.archived":
       return applyProductShellThreadArchivedEvent(nextState, event);
     case "thread.pinChanged":
@@ -1375,19 +1382,25 @@ export function applyProductShellBackendEvent(
 function shouldApplyBackendEventToActiveSurfaces(
   state: ProductShellState,
   event: AgentChatBackendEvent,
+  source: ProductShellBackendEventSource,
 ): boolean {
   // thread.listed updates the whole rail, never a single chat surface.
   if (event.kind === "thread.listed") {
     return true;
   }
-  // Every other event (including thread.started/thread.hydrated, which carry a
-  // thread summary + blocks) must only touch the active chat surface when it is
-  // for the active thread. Otherwise a background thread finishing — and emitting
-  // thread.hydrated with ITS blocks — overwrites the chat the user is viewing,
-  // so another thread's answer appears in the wrong thread. The thread-list/state
-  // update for these events still runs regardless (handled in the switch below).
+  // With no active thread (e.g. the New Thread composer), only the user's own
+  // command response may populate the surface — the first thread.started/blocks
+  // for the thread they just submitted. A background broadcast (another thread
+  // finishing) must NOT drop its answer into the empty composer.
+  if (state.activeThreadId === null) {
+    return source === "command";
+  }
+  // Otherwise only touch the active chat when the event is for the active thread.
+  // Without this, a background thread emitting thread.hydrated with ITS blocks
+  // overwrites the chat the user is viewing. The thread-list/state update for
+  // these events still runs regardless (handled in the switch below).
   const eventThreadId = threadIdFromBackendEvent(event);
-  if (eventThreadId === undefined || state.activeThreadId === null) {
+  if (eventThreadId === undefined) {
     return true;
   }
   return eventThreadId === state.activeThreadId;
@@ -2003,6 +2016,7 @@ function cloneProductShellFileTree(
 function applyProductShellThreadEvent(
   state: ProductShellState,
   event: AgentChatBackendEvent,
+  source: ProductShellBackendEventSource = "command",
 ): ProductShellState {
   const payload = event.payload as {
     thread?: AgentChatThreadSummary;
@@ -2040,10 +2054,12 @@ function applyProductShellThreadEvent(
     ...state,
     // A thread.started/hydrated event is a data update, NOT a focus command —
     // focus is owned by user actions (open/new thread set activeThreadId locally).
-    // Only adopt the thread as active when nothing is focused yet; otherwise a
-    // background thread emitting started/hydrated would steal focus and surface
-    // its answer in the thread the user is currently viewing.
-    activeThreadId: state.activeThreadId ?? threadSummary.threadId,
+    // Adopt the thread as active only when nothing is focused yet AND this is the
+    // user's own command response (the new thread they just submitted); a
+    // background broadcast must never steal focus or surface its answer in the
+    // thread the user is currently viewing / the empty New Thread composer.
+    activeThreadId:
+      state.activeThreadId ?? (source === "command" ? threadSummary.threadId : null),
     threads,
     // Recompute projects so a thread started in a not-yet-listed project (e.g.
     // slice) appears in the rail immediately.

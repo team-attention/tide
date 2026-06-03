@@ -601,7 +601,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         return;
       }
       setShellState((state) => {
-        const next = applyProductShellBackendEvent(state, event);
+        // These arrive over the async push channel — including other threads
+        // running in the background — so they must never populate a surface they
+        // don't belong to (e.g. drop another thread's answer into the thread the
+        // user is viewing, or into the empty New Thread composer).
+        const next = applyProductShellBackendEvent(state, event, "broadcast");
         // When a thread becomes active (started/hydrated) with the FileTree
         // shown, populate it — covers the new-thread first message and any
         // thread activation, not just manual toggle. refresh_file_tree is
