@@ -241,10 +241,6 @@ export interface HydrateThreadResult {
   thread: ThreadSnapshot;
   runtimeState: AgentRuntimeState;
   blocks: AgentSessionBlockReference[];
-  // Present only for a Thread blocked on Provider Readiness (has pending input it
-  // could not start). Lets re-opening a blocked Thread re-show its trust/setup
-  // blocker instead of losing it on navigation. See docs_v2/specs/workspace-trust-grant.md.
-  providerReadiness?: ProviderReadinessResult;
 }
 
 export interface ListThreadsInput {
@@ -960,24 +956,11 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       return failure("thread_not_found", "Thread was not found.");
     }
 
-    // A Thread holding pending input is blocked on Provider Readiness (e.g. directory
-    // trust). Re-derive readiness so re-opening it re-surfaces the blocker instead of
-    // showing a blank, un-actionable Thread.
-    const providerReadiness =
-      thread.pendingInput !== undefined
-        ? await this.providerReadinessPort.check({
-            agentId: thread.agentBinding.agentId,
-            scope: thread.scope,
-            launchOptions: thread.launchOptions,
-          })
-        : undefined;
-
     return {
       ok: true,
       thread: snapshotThread(thread),
       runtimeState: thread.runtimeState,
       blocks: cloneBlocks(thread.cachedBlocks),
-      ...(providerReadiness !== undefined ? { providerReadiness } : {}),
     };
   }
 

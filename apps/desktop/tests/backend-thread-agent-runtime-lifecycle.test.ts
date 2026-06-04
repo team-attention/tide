@@ -291,60 +291,6 @@ test("starting_a_thread_with_incomplete_provider_readiness_preserves_pending_inp
   assert.deepEqual(fakes.runtime.events, []);
 });
 
-test("hydrating_a_blocked_thread_re_surfaces_its_provider_readiness_blocker", async () => {
-  // Re-opening a Thread that is blocked on trust must re-show the blocker, not a
-  // blank, un-actionable Thread (the blocker was being lost on thread navigation).
-  const fakes = createFakes({
-    readiness: {
-      ready: false,
-      agentId: "codex",
-      blockers: [
-        {
-          kind: "directory_trust_required",
-          scope: "execution_context",
-          message: "Codex workspace trust is required for this Execution Context.",
-          action: "open_terminal",
-        },
-      ],
-    },
-  });
-  const service = createThreadRuntimeService({
-    ...fakes.ports,
-    clock: fixedClock,
-    idGenerator: sequentialIdGenerator("thread"),
-  });
-
-  const started = await service.startThread({
-    initialMessage: "do the thing",
-    agentBinding: { agentId: "codex" },
-    scope: { kind: "project", projectId: "p1", cwd: "/repo" },
-  });
-  assert.equal(started.ok && started.status, "provider_not_ready");
-  const threadId = started.ok ? started.thread.threadId : "";
-
-  const hydrated = await service.hydrateThread({ threadId });
-  assert.equal(hydrated.ok, true);
-  assert.equal(hydrated.ok && hydrated.providerReadiness?.ready, false);
-  assert.ok(
-    hydrated.ok &&
-      hydrated.providerReadiness?.blockers.some((b) => b.kind === "directory_trust_required"),
-    "re-opened blocked thread carries its trust blocker",
-  );
-});
-
-test("hydrating_a_ready_thread_omits_provider_readiness", async () => {
-  const fakes = createFakes();
-  const service = createThreadRuntimeService({
-    ...fakes.ports,
-    clock: fixedClock,
-    idGenerator: sequentialIdGenerator("thread"),
-    initialThreads: [threadSeed("thread-ready")],
-  });
-  const hydrated = await service.hydrateThread({ threadId: "thread-ready" });
-  // No pending input → not blocked → no readiness payload (clears any stale blocker).
-  assert.equal(hydrated.ok && hydrated.providerReadiness, undefined);
-});
-
 test("scratch_thread_materializes_a_real_tide_owned_cwd_and_auto_trusts_it", async () => {
   // Spec: docs_v2/specs/scratch-execution-context.md
   const fakes = createFakes();

@@ -765,10 +765,7 @@ export function applyAgentChatBackendEvent(
         ...state,
         thread: payload.thread,
         blocks: payload.blocks ?? state.blocks,
-        // Hydrate is authoritative for this thread's readiness: the backend re-derives
-        // it for a blocked thread (so the trust/setup blocker re-shows on re-open) and
-        // omits it otherwise (so switching to a ready thread clears a stale blocker).
-        providerReadiness: payload.providerReadiness ?? null,
+        providerReadiness: payload.providerReadiness ?? state.providerReadiness,
         runtimeState: payload.runtimeState ?? state.runtimeState,
         // Hydrate is the source of truth for this thread (its persisted blocks).
         // Drop any optimistic "queued input" row left over from before a thread
