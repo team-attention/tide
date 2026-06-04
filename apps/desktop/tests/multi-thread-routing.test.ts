@@ -4,13 +4,16 @@ import test from "node:test";
 import {
   applyProductShellBackendEvent,
   createProductShellState,
+  openProductShellThreadFromLeftUi,
+  submitProductShellComposerDraft,
+  updateProductShellComposerDraft,
 } from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
 
-// When several agents run at once, a background thread finishing emits
-// thread.hydrated (with ITS thread summary + blocks). That event must update the
-// rail's data for that thread WITHOUT stealing focus from the thread the user is
-// viewing or overwriting the active chat — otherwise another thread's answer
-// shows up in the wrong thread.
+// When several agents run at once, focus is owned by the user's actions (click a
+// thread / start a new thread set activeThreadId locally). Backend events NEVER
+// move focus — they update the rail's data for their thread and only touch the
+// active chat when they are FOR the active thread. So a background thread's answer
+// can't steal focus or bleed into the thread the user is viewing.
 
 function threadSummary(threadId: string, agentId: string) {
   return {
@@ -33,17 +36,32 @@ function hydrated(threadId: string, agentId: string, blocks: unknown[]) {
   };
 }
 
+function clickThread(state: ReturnType<typeof createProductShellState>, threadId: string) {
+  return openProductShellThreadFromLeftUi(state, threadId, {
+    backendTransportAvailable: true,
+  }).state;
+}
+
 test("a background thread hydrate does not steal focus or overwrite the active chat", () => {
   let state = createProductShellState({ includeFixtureData: false });
 
-  // User opens / starts thread A and sees its answer.
+  // Thread A exists in the rail (events add it without focusing it).
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  assert.equal(state.activeThreadId, null, "events never move focus");
+
+  // The user clicks A; focus is owned by that click. A's hydrate response then
+  // populates A's chat (it is FOR the active thread).
+  state = clickThread(state, "thread-a");
+  assert.equal(state.activeThreadId, "thread-a");
   state = applyProductShellBackendEvent(
     state,
     hydrated("thread-a", "codex", [
       { blockId: "a1", threadId: "thread-a", role: "agent", kind: "agent_message", body: "A answer" },
     ]),
   );
-  assert.equal(state.activeThreadId, "thread-a");
+  assert.ok(
+    state.agentChat.blocks.some((block: { body?: string }) => block.body === "A answer"),
+  );
 
   // A concurrently-running background thread B finishes and broadcasts thread.hydrated.
   state = applyProductShellBackendEvent(
@@ -107,32 +125,49 @@ test("a background broadcast answer does not appear on the empty New Thread comp
   );
 });
 
-test("the user's own new-thread command response still populates the new thread", () => {
-  // New Thread composer (nothing active) — the user submits, the backend responds
-  // (command source) with thread.started + the answer for the brand-new thread.
+test("a new thread's own backend blocks populate its chat (optimistic focus)", () => {
+  // The user starts a new thread: submit sets focus + shows the thread locally
+  // (optimistic, with a client id). The backend then streams blocks for that same
+  // id — they land in the new thread because it is the active one.
   let state = createProductShellState({ includeFixtureData: false });
-  state = applyProductShellBackendEvent(state, hydrated("thread-new", "codex", [
-    { blockId: "n1", threadId: "thread-new", role: "user", kind: "user_message", body: "hi" },
-    { blockId: "n2", threadId: "thread-new", role: "agent", kind: "agent_message", body: "hello" },
-  ]));
-  assert.equal(state.activeThreadId, "thread-new", "the user's own new thread becomes active");
-  assert.equal((state.agentChat.thread as { threadId?: string } | null)?.threadId, "thread-new");
+  state = updateProductShellComposerDraft(state, "hi");
+  const submit = submitProductShellComposerDraft(state);
+  state = submit.state;
+  const newThreadId = submit.command?.kind === "thread.start" ? submit.command.payload.threadId : undefined;
+  assert.equal(typeof newThreadId, "string");
+  assert.equal(state.activeThreadId, newThreadId, "the user's own new thread is active immediately");
+
+  state = applyProductShellBackendEvent(state, {
+    kind: "agentSessionBlock.upserted" as const,
+    payload: {
+      block: {
+        blockId: "n2",
+        threadId: newThreadId as string,
+        role: "agent",
+        kind: "agent_message",
+        body: "hello",
+      },
+    },
+  });
+  assert.ok(
+    state.agentChat.blocks.some(
+      (block: { threadId?: string; body?: string }) =>
+        block.threadId === newThreadId && block.body === "hello",
+    ),
+  );
 });
 
 test("clicking another thread switches focus even while a thread is running", () => {
   let state = createProductShellState({ includeFixtureData: false });
-  // Thread A is open and running.
-  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", [
-    { blockId: "a1", threadId: "thread-a", role: "agent", kind: "agent_message", body: "A answer" },
-  ]));
-  assert.equal(state.activeThreadId, "thread-a");
+  // Threads A and B both exist in the rail.
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = applyProductShellBackendEvent(state, hydrated("thread-b", "claude", []));
 
-  // User clicks thread B -> the thread.hydrate command response (command source)
-  // must switch focus AND the chat to B.
-  state = applyProductShellBackendEvent(state, hydrated("thread-b", "claude", [
-    { blockId: "b1", threadId: "thread-b", role: "agent", kind: "agent_message", body: "B answer" },
-  ]));
-  assert.equal(state.activeThreadId, "thread-b", "command hydrate must switch focus to B");
+  // User opens A, then clicks B while A is still running.
+  state = clickThread(state, "thread-a");
+  assert.equal(state.activeThreadId, "thread-a");
+  state = clickThread(state, "thread-b");
+  assert.equal(state.activeThreadId, "thread-b", "a click switches focus to B");
   assert.equal((state.agentChat.thread as { threadId?: string } | null)?.threadId, "thread-b");
 });
 
@@ -140,6 +175,7 @@ test("a background thread's running state shows in the rail without stealing foc
   let state = createProductShellState({ includeFixtureData: false });
   state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
   state = applyProductShellBackendEvent(state, hydrated("thread-b", "claude", []), "broadcast");
+  state = clickThread(state, "thread-a");
   assert.equal(state.activeThreadId, "thread-a");
 
   // Background thread B starts running (async broadcast).

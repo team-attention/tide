@@ -1220,9 +1220,13 @@ export function openProductShellThreadFromLeftUi(
     return { state: openProductShellThread(state, threadId), command: null };
   }
 
+  // Web pattern: a click switches focus + shows the cached thread instantly
+  // (locally), then refreshes from the backend. Focus is owned by this action —
+  // backend events never move focus, so a late answer can't drag the view away.
+  const optimistic = openProductShellThread(state, threadId);
   return {
     state: {
-      ...state,
+      ...optimistic,
       leftUiMenu: null,
       archiveConfirmThreadId: null,
     },
@@ -1432,15 +1436,11 @@ function shouldApplyBackendEventToActiveSurfaces(
   if (event.kind === "thread.listed") {
     return true;
   }
-  // The user's own action in this shell (open/switch/new/send) owns the active
-  // surface — including switching TO a different thread — so its command response
-  // always applies. Clicking a thread while another one runs must switch the view.
-  if (source === "command") {
-    return true;
-  }
-  // Broadcast (async push, incl. background threads): never populate a surface it
-  // doesn't belong to — not the New Thread composer (no active thread), and not the
-  // chat of a different thread the user is viewing.
+  // The active chat shows exactly the active thread (focus is user-owned). Apply an
+  // event to it only when the event is FOR the active thread — regardless of where
+  // it came from. A late command response for a thread the user already left, or a
+  // background broadcast, never touches the current chat. No active thread (New
+  // Thread composer) → nothing applies.
   if (state.activeThreadId === null) {
     return false;
   }
@@ -2099,12 +2099,10 @@ function applyProductShellThreadEvent(
 
   return {
     ...state,
-    // Focus follows the user's own action: a command-source thread.started/hydrated
-    // is the thread the user just opened/switched to/started, so focus it (clicking
-    // a thread while another runs must switch). A background broadcast must never
-    // change focus — keep whatever the user is currently viewing.
-    activeThreadId:
-      source === "command" ? threadSummary.threadId : state.activeThreadId,
+    // Focus is owned by user actions (click / new-thread set activeThreadId
+    // locally). A thread.started/hydrated event is a DATA update only and never
+    // moves focus — otherwise a late answer for another thread drags the view away.
+    activeThreadId: state.activeThreadId,
     threads,
     // Recompute projects so a thread started in a not-yet-listed project (e.g.
     // slice) appears in the rail immediately.

@@ -555,7 +555,7 @@ test("opening_thread_from_left_ui_marks_it_active_and_hydrates_follow_up_compose
   );
 });
 
-test("product_shell_thread_selection_emits_thread_hydrate_when_backend_transport_exists", () => {
+test("product_shell_thread_selection_switches_focus_locally_and_emits_thread_hydrate", () => {
   const result = openProductShellThreadFromLeftUi(
     createProductShellState(),
     "thread-workbench",
@@ -563,13 +563,17 @@ test("product_shell_thread_selection_emits_thread_hydrate_when_backend_transport
   );
   const view = createProductShellViewModel(result.state);
 
+  // A click owns focus: switch to the thread instantly (locally, from cache) and
+  // refresh from the backend. Events never move focus.
   assert.deepEqual(result.command, {
     kind: "thread.hydrate",
     payload: { threadId: "thread-workbench" },
   });
-  assert.equal(view.activeThreadId, null);
-  assert.equal(view.agentChat.thread, null);
-  assert.doesNotMatch(renderProductShell(result.state), /Local preview/);
+  assert.equal(view.activeThreadId, "thread-workbench");
+  assert.equal(
+    (view.agentChat.thread as { threadId?: string } | null)?.threadId,
+    "thread-workbench",
+  );
 });
 
 test("typing_in_start_composer_fills_the_local_draft", () => {
@@ -2098,12 +2102,16 @@ test("product_shell_thread_started_preserves_antigravity_model_label", () => {
   const submitted = submitProductShellComposerDraft(withDraft);
 
   assert.equal(submitted.command?.kind, "thread.start");
+  // The backend honors the optimistic client id, so thread.started arrives for the
+  // same thread the user already opened (focus is already on it).
+  const newThreadId = submitted.command?.payload.threadId;
+  assert.equal(typeof newThreadId, "string");
 
   const started = applyProductShellBackendEvent(submitted.state, {
     kind: "thread.started",
     payload: {
       thread: {
-        threadId: "thread-antigravity-started",
+        threadId: newThreadId as string,
         title: "Start Antigravity and keep its model source",
         agentBinding: {
           agentId: "antigravity",
@@ -2138,7 +2146,7 @@ test("product_shell_thread_started_preserves_antigravity_model_label", () => {
   });
   const view = createProductShellViewModel(started);
 
-  assert.equal(view.activeThreadId, "thread-antigravity-started");
+  assert.equal(view.activeThreadId, newThreadId);
   assert.equal(view.agentChat.thread?.agentLabel, "Antigravity CLI");
   assert.equal(view.agentChat.composer.mode, "follow_up");
   assert.equal(view.agentChat.composer.modelLabel, "Default");
