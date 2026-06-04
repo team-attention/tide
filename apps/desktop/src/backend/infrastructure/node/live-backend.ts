@@ -970,6 +970,46 @@ export function createLiveAgentSessionEventProjector(input: {
     blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
   };
 
+  // Tail a provider's transcript/signal file by re-running `emit` once per interval
+  // WHILE the turn is running, then stop a few cycles after it goes idle. (The old
+  // fixed poll count gave up at ~45s, so a slow concurrent turn that finished later
+  // got stuck "Working" forever because its on-disk answer was never re-read.) The
+  // hard cap is only a runaway safety net for a turn whose end is never detected.
+  const pollWhileRunning = (
+    threadId: string,
+    state: { pollingStarted: boolean },
+    emit: () => Promise<void>,
+    intervalMs: number,
+  ): void => {
+    if (state.pollingStarted) {
+      return;
+    }
+    state.pollingStarted = true;
+    let hardCap = Math.ceil((90 * 60 * 1000) / intervalMs);
+    let idleGrace = 3;
+    const poll = async (): Promise<void> => {
+      if (hardCap <= 0) {
+        return;
+      }
+      hardCap -= 1;
+      await emit();
+      const hydrated = await input.service().hydrateThread({ threadId });
+      const running =
+        hydrated.ok &&
+        (hydrated.thread.runtimeState === "running" ||
+          hydrated.thread.runtimeState === "starting");
+      if (running) {
+        idleGrace = 3;
+      } else if (--idleGrace <= 0) {
+        return;
+      }
+      const timer = setTimeout(() => void poll(), intervalMs);
+      timer.unref?.();
+    };
+    const timer = setTimeout(() => void poll(), intervalMs);
+    timer.unref?.();
+  };
+
   const scheduleProviderSignalPolling = (frameInput: {
     threadId: string;
     agentId: "codex" | "claude" | "antigravity";
@@ -979,24 +1019,12 @@ export function createLiveAgentSessionEventProjector(input: {
       providerSignalsByRuntime.get(frameInput.runtimeId) ??
       { seenKeys: new Set<string>(), pollingStarted: false };
     providerSignalsByRuntime.set(frameInput.runtimeId, signalState);
-    if (signalState.pollingStarted) {
-      return;
-    }
-
-    signalState.pollingStarted = true;
-    let remainingPolls = 90;
-    const poll = (): void => {
-      if (remainingPolls <= 0) {
-        return;
-      }
-      remainingPolls -= 1;
-      void emitProviderSignals(frameInput).finally(() => {
-        const timer = setTimeout(poll, 500);
-        timer.unref?.();
-      });
-    };
-    const timer = setTimeout(poll, 0);
-    timer.unref?.();
+    pollWhileRunning(
+      frameInput.threadId,
+      signalState,
+      () => emitProviderSignals(frameInput),
+      500,
+    );
   };
 
   const emitCodexHistory = async (frameInput: {
@@ -1093,24 +1121,12 @@ export function createLiveAgentSessionEventProjector(input: {
         pollingStarted: false,
       };
     codexHistoryByRuntime.set(frameInput.runtimeId, historyState);
-    if (historyState.pollingStarted) {
-      return;
-    }
-
-    historyState.pollingStarted = true;
-    let remainingPolls = 45;
-    const poll = (): void => {
-      if (remainingPolls <= 0) {
-        return;
-      }
-      remainingPolls -= 1;
-      void emitCodexHistory(frameInput).finally(() => {
-        const timer = setTimeout(poll, 1000);
-        timer.unref?.();
-      });
-    };
-    const timer = setTimeout(poll, 1000);
-    timer.unref?.();
+    pollWhileRunning(
+      frameInput.threadId,
+      historyState,
+      () => emitCodexHistory(frameInput),
+      1000,
+    );
   };
 
   const emitClaudeHistory = async (frameInput: {
@@ -1208,24 +1224,12 @@ export function createLiveAgentSessionEventProjector(input: {
         pollingStarted: false,
       };
     claudeHistoryByRuntime.set(frameInput.runtimeId, historyState);
-    if (historyState.pollingStarted) {
-      return;
-    }
-
-    historyState.pollingStarted = true;
-    let remainingPolls = 45;
-    const poll = (): void => {
-      if (remainingPolls <= 0) {
-        return;
-      }
-      remainingPolls -= 1;
-      void emitClaudeHistory(frameInput).finally(() => {
-        const timer = setTimeout(poll, 1000);
-        timer.unref?.();
-      });
-    };
-    const timer = setTimeout(poll, 1000);
-    timer.unref?.();
+    pollWhileRunning(
+      frameInput.threadId,
+      historyState,
+      () => emitClaudeHistory(frameInput),
+      1000,
+    );
   };
 
   const emitAntigravityHistory = async (frameInput: {
@@ -1329,24 +1333,12 @@ export function createLiveAgentSessionEventProjector(input: {
         pollingStarted: false,
       };
     antigravityHistoryByRuntime.set(frameInput.runtimeId, historyState);
-    if (historyState.pollingStarted) {
-      return;
-    }
-
-    historyState.pollingStarted = true;
-    let remainingPolls = 45;
-    const poll = (): void => {
-      if (remainingPolls <= 0) {
-        return;
-      }
-      remainingPolls -= 1;
-      void emitAntigravityHistory(frameInput).finally(() => {
-        const timer = setTimeout(poll, 1000);
-        timer.unref?.();
-      });
-    };
-    const timer = setTimeout(poll, 1000);
-    timer.unref?.();
+    pollWhileRunning(
+      frameInput.threadId,
+      historyState,
+      () => emitAntigravityHistory(frameInput),
+      1000,
+    );
   };
 
   const appendFrameAndEmit = async (frameInput: {
