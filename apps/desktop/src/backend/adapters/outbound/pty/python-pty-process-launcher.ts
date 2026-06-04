@@ -169,10 +169,19 @@ def write_terminal_query_replies(master_fd, data):
         os.write(master_fd, response)
 
 def terminate_child(signum, frame):
+    # Escalate: SIGTERM, then SIGKILL if it won't go. A reaped agent must actually
+    # die — if it lingered on the closed PTY it would spin CPU as an orphan.
     try:
         child.terminate()
     except ProcessLookupError:
-        pass
+        return
+    try:
+        child.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            child.kill()
+        except ProcessLookupError:
+            pass
 
 signal.signal(signal.SIGTERM, terminate_child)
 signal.signal(signal.SIGINT, terminate_child)
@@ -180,6 +189,13 @@ signal.signal(signal.SIGINT, terminate_child)
 stdin_open = True
 while True:
     if child.poll() is not None:
+        break
+
+    # The agent runs in its own session (start_new_session), so if the Tide backend
+    # that spawned us dies, this bridge is reparented to init (ppid 1) and the agent
+    # would otherwise survive as a CPU-spinning orphan on a dead PTY. Reap it.
+    if os.getppid() == 1:
+        terminate_child(None, None)
         break
 
     for key, _events in selector.select(timeout=0.1):
