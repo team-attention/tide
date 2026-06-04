@@ -995,6 +995,19 @@ test("opening_a_thread_shows_a_loading_skeleton_that_clears_even_with_zero_block
   assert.doesNotMatch(renderShell(hydratedEmpty), /agent-session-skeleton/);
 });
 
+test("a_loaded_thread_with_no_messages_shows_an_empty_placeholder", () => {
+  // A hydrated, idle thread with zero blocks (e.g. an agent that produced nothing)
+  // shows a friendly empty state instead of a blank void.
+  const empty = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  assert.equal(createAgentChatShellViewModel(empty).chatState, "ready");
+  const html = renderShell(empty);
+  assert.match(html, /No messages here/);
+  assert.doesNotMatch(html, /agent-session-skeleton/);
+});
+
 test("prompt_choice_surface_row_emits_prompt_answer", () => {
   const withPrompt = applyBackendEventToAgentChatShell(
     applyBackendEventToAgentChatShell(

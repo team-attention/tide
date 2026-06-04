@@ -22,6 +22,7 @@ import {
   FolderPlus,
   GitBranch,
   Layers,
+  MessageSquareDashed,
   Mic,
   PanelsTopLeft,
   Paperclip,
@@ -496,7 +497,11 @@ function createAgentSession(
     blocks.length === 0
       ? chatState === "hydrating"
         ? createAgentSessionSkeleton()
-        : null
+        : // A loaded, idle thread with no messages (e.g. an agent that produced
+          // nothing) shows a placeholder instead of a blank void.
+          chatState === "ready"
+          ? createAgentSessionEmptyPlaceholder()
+          : null
       : groupSessionItems(blocks).map(renderSessionItem),
     working ? createElement(AgentWorkingIndicator, { runtimeStartedAt }) : null,
     queuedInput !== null ? createQueuedInputRow(queuedInput) : null,
@@ -527,6 +532,26 @@ function createAgentSessionSkeleton(): ReactElement {
       line("78%", "l2"),
       line("85%", "l3"),
       line("40%", "l4"),
+    ),
+  );
+}
+
+// Empty state for a loaded thread that has no messages to show (e.g. an agent that
+// produced nothing, or a session that ended before any output) — better than a void.
+function createAgentSessionEmptyPlaceholder(): ReactElement {
+  return createElement(
+    "div",
+    { className: "agent-session-empty", "aria-label": "No messages" },
+    createElement(MessageSquareDashed, {
+      size: 26,
+      strokeWidth: 1.5,
+      className: "agent-session-empty__icon",
+    }),
+    createElement("p", { className: "agent-session-empty__title" }, "No messages here"),
+    createElement(
+      "p",
+      { className: "agent-session-empty__hint" },
+      "This thread has no output yet. Send a message below to start.",
     ),
   );
 }

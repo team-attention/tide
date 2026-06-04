@@ -3069,3 +3069,33 @@ button.file-tree-row {
     animation: none;
   }
 }
+
+/* Empty state for a loaded thread with no messages to show. */
+.agent-session-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 240px;
+  padding: 40px 24px;
+  text-align: center;
+  color: rgba(60, 55, 60, 0.55);
+}
+.agent-session-empty__icon {
+  color: rgba(60, 55, 60, 0.32);
+  margin-bottom: 2px;
+}
+.agent-session-empty__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(60, 55, 60, 0.7);
+}
+.agent-session-empty__hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  max-width: 280px;
+  color: rgba(60, 55, 60, 0.48);
+}
