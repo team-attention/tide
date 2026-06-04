@@ -727,6 +727,11 @@ export function applyAgentChatBackendEvent(
         blocks: payload.blocks ?? state.blocks,
         providerReadiness: payload.providerReadiness ?? state.providerReadiness,
         runtimeState: payload.runtimeState ?? state.runtimeState,
+        // Hydrate is the source of truth for this thread (its persisted blocks).
+        // Drop any optimistic "queued input" row left over from before a thread
+        // switch — otherwise the real user block (now in blocks) renders twice.
+        // If the input is genuinely still queued, its user block arrives live.
+        queuedInput: null,
         workbenchOpen:
           payload.workbenchPanes === undefined
             ? state.workbenchOpen
@@ -742,6 +747,7 @@ export function applyAgentChatBackendEvent(
         ...state,
         thread: payload.thread,
         runtimeState: payload.runtimeState,
+        queuedInput: null,
       };
     }
     case "agentRuntime.stateChanged": {

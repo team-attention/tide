@@ -1,17 +1,19 @@
 #!/bin/sh
 # Tide auto-injected wrapper for Antigravity CLI (`agy`).
 #
-# Antigravity exposes no additive `--mcp-config` flag and does not honor a
-# config-path override env (CASCADE_GLOBAL_CONFIG_OVERRIDE does not re-route
-# its mcp_config). So this wrapper performs an ADDITIVE, IDEMPOTENT merge of a
-# single Tide-owned `tide-terminal` MCP server into the canonical config that
-# Antigravity reads (~/.gemini/config/mcp_config.json). It only inserts/refreshes
-# the `tide-terminal` key and never removes or alters the user's own servers.
+# Antigravity discovers self-contained plugins under ~/.gemini/config/plugins/<name>/
+# (plugin.json + mcp_config.json + hooks.json). This wrapper installs a
+# Tide-owned `tide-terminal` plugin there, which is fully non-mutating to the
+# user's own config (separate plugin dir) and gives parity with the other
+# Wrapped Agents: Tide MCP tools (via mcp_config) AND lifecycle attention (via
+# hooks). It coexists with the v2 desktop app's separate `tide` plugin.
 #
-# Per-Pane identity (TIDE_TERMINAL_SOCKET/PANE/WINDOW) is inherited from this
-# PTY's environment by the spawned `tide-terminal mcp` child, so no per-Pane
-# `env` block is needed in the shared config. Tide Tool Discovery Context is
-# delivered through the MCP server's own `initialize` instructions.
+# Per-Pane identity comes from process-env inheritance: the spawned
+# `tide-terminal mcp` child and the lifecycle hook children both inherit this
+# PTY's TIDE_TERMINAL_* env, so no Pane id is baked into the shared plugin.
+# `tide-terminal notify` falls back to $TIDE_TERMINAL_PANE when --pane is omitted.
+# Tide Tool Discovery Context is delivered through the MCP server's `initialize`
+# instructions.
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|${SELF_DIR}||g")" command -v agy 2>/dev/null)"
@@ -20,55 +22,52 @@ REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|
 # Skip injection if not inside Tide
 [ -z "$TIDE_TERMINAL_BIN" ] && exec "$REAL_CMD" "$@"
 
-MCP_CONFIG="${ANTIGRAVITY_MCP_CONFIG:-$HOME/.gemini/config/mcp_config.json}"
+PLUGIN_DIR="${ANTIGRAVITY_PLUGIN_DIR:-$HOME/.gemini/config/plugins/tide-terminal}"
 
 tide_notify() {
   "$TIDE_TERMINAL_BIN" notify "$1" --pane "$TIDE_TERMINAL_PANE" --agent antigravity >/dev/null 2>&1 || \
     printf '\033]9;tide:wrapped-agent:antigravity:%s\007' "$1"
 }
 
-# Additive, idempotent merge of the tide-terminal MCP server.
-# Preserves every existing user server and top-level key. Tolerates an empty or
-# malformed config (treated as no user servers). Requires python3; if it is
-# unavailable we only write when the file is empty/missing so a user config is
-# never clobbered.
-tide_inject_mcp() {
-  mkdir -p "$(dirname "$MCP_CONFIG")" 2>/dev/null || return 0
-  if command -v python3 >/dev/null 2>&1; then
-    TIDE_TERMINAL_BIN="$TIDE_TERMINAL_BIN" MCP_CONFIG="$MCP_CONFIG" python3 - <<'PY' 2>/dev/null
-import json, os
-cfg = os.environ["MCP_CONFIG"]
-binp = os.environ["TIDE_TERMINAL_BIN"]
-data = {}
-try:
-    with open(cfg) as f:
-        loaded = json.load(f)
-    if isinstance(loaded, dict):
-        data = loaded
-except Exception:
-    data = {}
-servers = data.get("mcpServers")
-if not isinstance(servers, dict):
-    servers = {}
-servers["tide-terminal"] = {"command": binp, "args": ["mcp"]}
-data["mcpServers"] = servers
-tmp = cfg + ".tide.tmp"
-with open(tmp, "w") as f:
-    json.dump(data, f, indent=2)
-os.replace(tmp, cfg)
-PY
-  elif [ ! -s "$MCP_CONFIG" ]; then
-    cat > "$MCP_CONFIG" <<EOF
+# Install/refresh the Tide-owned Antigravity plugin (idempotent). Overwrites the
+# Tide-owned files only; never touches the user's main config or other plugins.
+tide_install_plugin() {
+  mkdir -p "$PLUGIN_DIR" 2>/dev/null || return 0
+
+  cat > "$PLUGIN_DIR/plugin.json" <<EOF
+{
+  "name": "tide-terminal",
+  "version": "0.1.0",
+  "description": "Tide Terminal MCP Runtime and lifecycle signals for Antigravity CLI."
+}
+EOF
+
+  # MCP server: no per-Pane env block — the child inherits TIDE_TERMINAL_* from
+  # this PTY, so one shared entry routes correctly per Pane.
+  cat > "$PLUGIN_DIR/mcp_config.json" <<EOF
 {
   "mcpServers": {
     "tide-terminal": { "command": "$TIDE_TERMINAL_BIN", "args": ["mcp"] }
   }
 }
 EOF
-  fi
+
+  # Lifecycle hooks → Tide notify. --pane is omitted so notify resolves the Pane
+  # from the hook child's inherited TIDE_TERMINAL_PANE env at runtime. The Tide
+  # binary path may contain spaces, so it is wrapped in JSON-escaped quotes.
+  cat > "$PLUGIN_DIR/hooks.json" <<EOF
+{
+  "hooks": {
+    "PreInvocation": [{"hooks": [{"type": "command", "command": "\"$TIDE_TERMINAL_BIN\" notify agent-running --agent antigravity >/dev/null 2>&1 || true"}]}],
+    "PostToolUse":   [{"hooks": [{"type": "command", "command": "\"$TIDE_TERMINAL_BIN\" notify agent-running --agent antigravity >/dev/null 2>&1 || true"}]}],
+    "Notification":  [{"hooks": [{"type": "command", "command": "\"$TIDE_TERMINAL_BIN\" notify agent-needs-input --agent antigravity --payload-stdin >/dev/null 2>&1 || true"}]}],
+    "Stop":          [{"hooks": [{"type": "command", "command": "\"$TIDE_TERMINAL_BIN\" notify agent-idle --agent antigravity --payload-stdin >/dev/null 2>&1 || true"}]}]
+  }
+}
+EOF
 }
 
-tide_inject_mcp
+tide_install_plugin
 
 tide_notify agent-attached
 trap 'tide_notify agent-detached' EXIT

@@ -1136,3 +1136,24 @@ function walkSourceFiles(root: string): string[] {
 
   return files;
 }
+
+test("hydrating a thread clears a stale optimistic queued input so the user row is not duplicated", () => {
+  // Submitting while the agent is busy shows an optimistic "queued" row. After
+  // switching away and back, hydrate reloads the persisted blocks (which already
+  // contain that user message) — the leftover queuedInput must be dropped, or the
+  // user message renders twice.
+  const withQueued: AgentChatShellState = {
+    ...createAgentChatShellState(),
+    thread,
+    runtimeState: "running",
+    queuedInput: "ㅇㅋ",
+  };
+  assert.equal(withQueued.queuedInput, "ㅇㅋ");
+
+  const hydrated = applyAgentChatBackendEvent(
+    withQueued,
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "running" }),
+  );
+
+  assert.equal(hydrated.queuedInput, null);
+});

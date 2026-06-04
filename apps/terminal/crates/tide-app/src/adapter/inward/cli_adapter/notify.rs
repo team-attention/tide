@@ -147,9 +147,19 @@ fn parse_args(args: &[String]) -> Option<ParsedArgs> {
         }
     }
 
+    // Fall back to the launching Pane's TIDE_TERMINAL_PANE env when --pane is
+    // omitted. Wrapped Agent plugin hooks (e.g. Antigravity) are installed once
+    // globally and cannot bake in a Pane id, but each hook runs as a child of
+    // the agent process and inherits that Pane's env.
+    let pane_id = pane_id.or_else(|| {
+        std::env::var("TIDE_TERMINAL_PANE")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+    })?;
+
     Some(ParsedArgs {
         event,
-        pane_id: pane_id?,
+        pane_id,
         agent,
         payload,
         payload_from_stdin,

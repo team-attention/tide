@@ -548,32 +548,47 @@ fn antigravity_wrapper_skips_injection_outside_tide() {
 }
 
 #[test]
-fn antigravity_wrapper_injects_tide_mcp_additively() {
-    // UC-1 BR-2, BR-3 + UC-3 BR-1, BR-2: The wrapper merges a tide-terminal MCP
-    // server into the canonical Antigravity config additively and idempotently,
-    // preserving the user's existing servers, with per-Pane identity inherited
-    // from the process env (no per-Pane env block needed).
+fn antigravity_wrapper_installs_tide_plugin_without_mutating_user_config() {
+    // UC-1 BR-2, BR-3 + UC-3 BR-1, BR-2: The wrapper installs a self-contained
+    // Tide-owned plugin (its own dir) carrying the tide-terminal MCP server, so
+    // the user's main config is never touched. Per-Pane identity is inherited
+    // from the process env (no per-Pane env block in the shared plugin).
     let wrapper = include_str!("../../../resources/bin/agy");
 
-    assert!(wrapper.contains(r#"$HOME/.gemini/config/mcp_config.json"#));
-    // additive: reads existing servers before inserting tide-terminal
-    assert!(wrapper.contains(r#"data.get("mcpServers")"#));
-    assert!(wrapper.contains(r#"servers["tide-terminal"] = {"command": binp, "args": ["mcp"]}"#));
-    // atomic write so a crash never truncates the user's config
-    assert!(wrapper.contains("os.replace(tmp, cfg)"));
-    // command points at the Tide binary; per-Pane env is inherited, not written
-    assert!(wrapper.contains(r#"binp = os.environ["TIDE_TERMINAL_BIN"]"#));
-    // must not clobber a non-empty user config when python3 is unavailable
-    assert!(wrapper.contains(r#"elif [ ! -s "$MCP_CONFIG" ]; then"#));
+    assert!(wrapper.contains(r#"$HOME/.gemini/config/plugins/tide-terminal"#));
+    assert!(wrapper.contains(r#""$PLUGIN_DIR/plugin.json""#));
+    assert!(wrapper.contains(r#""$PLUGIN_DIR/mcp_config.json""#));
+    assert!(wrapper.contains(r#""$PLUGIN_DIR/hooks.json""#));
+    assert!(wrapper.contains(r#""tide-terminal": { "command": "$TIDE_TERMINAL_BIN", "args": ["mcp"] }"#));
+    // must not edit the user's own mcp_config.json
+    assert!(!wrapper.contains("config/mcp_config.json"));
 }
 
 #[test]
-fn antigravity_wrapper_reports_lifecycle_presence_like_other_agents() {
-    // UC-4 BR-1, BR-2: The wrapper establishes Wrapped Agent Presence on attach
-    // and clears it on detach via the same notify path as the other agents.
+fn antigravity_wrapper_wires_lifecycle_hooks_and_presence_like_other_agents() {
+    // UC-4 BR-1, BR-2: attach/detach presence via the same notify path, plus
+    // turn-level lifecycle hooks (running / needs-input / idle) so attention
+    // behaves like the other Wrapped Agents.
     let wrapper = include_str!("../../../resources/bin/agy");
 
     assert!(wrapper.contains(r#"notify "$1" --pane "$TIDE_TERMINAL_PANE" --agent antigravity"#));
     assert!(wrapper.contains("tide_notify agent-attached"));
     assert!(wrapper.contains("trap 'tide_notify agent-detached' EXIT"));
+    // lifecycle hook events mapped to Tide notify (no --pane: resolved from env)
+    assert!(wrapper.contains(r#""PreInvocation""#));
+    assert!(wrapper.contains(r#""Stop""#));
+    assert!(wrapper.contains(r#""Notification""#));
+    assert!(wrapper.contains("notify agent-running --agent antigravity"));
+    assert!(wrapper.contains("notify agent-idle --agent antigravity"));
+    assert!(wrapper.contains("notify agent-needs-input --agent antigravity"));
+}
+
+#[test]
+fn notify_resolves_pane_from_env_when_pane_flag_omitted() {
+    // UC-4: Plugin hooks are installed globally and cannot bake a Pane id, so
+    // `tide notify` must fall back to the inherited TIDE_TERMINAL_PANE env.
+    let source = include_str!("../../adapter/inward/cli_adapter/notify.rs");
+
+    assert!(source.contains(r#"std::env::var("TIDE_TERMINAL_PANE")"#));
+    assert!(source.contains("let pane_id = pane_id.or_else(||"));
 }
