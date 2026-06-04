@@ -1058,6 +1058,7 @@ export function createLiveAgentSessionEventProjector(input: {
       sinceMs: historyState.sinceMs,
       seenKeys: historyState.seenKeys,
       expectedUserMessage,
+      boundRolloutPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
     if (historyFrames.length === 0) {
       return;
@@ -1160,6 +1161,7 @@ export function createLiveAgentSessionEventProjector(input: {
       sinceMs: historyState.sinceMs,
       seenKeys: historyState.seenKeys,
       expectedUserMessage,
+      boundTranscriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
     if (historyFrames.length === 0) {
       return;
@@ -1258,6 +1260,7 @@ export function createLiveAgentSessionEventProjector(input: {
       runtimeId: frameInput.runtimeId,
       sinceMs: historyState.sinceMs,
       seenKeys: historyState.seenKeys,
+      boundTranscriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
     if (historyFrames.length === 0) {
       return;
@@ -1690,10 +1693,18 @@ export function readCodexProviderHistoryFramesFromHome(input: {
   sinceMs: number;
   seenKeys: Set<string>;
   expectedUserMessage?: string;
+  // The rollout THIS thread is bound to (from the hook). When set, read ONLY it so
+  // concurrent codex sessions never read each other's rollout.
+  boundRolloutPath?: string;
 }): CodexProviderHistoryFrame[] {
   const frames: CodexProviderHistoryFrame[] = [];
-  for (const rolloutPath of recentCodexRollouts(input.homeDir, input.sinceMs)) {
+  const rolloutPaths =
+    input.boundRolloutPath !== undefined
+      ? [input.boundRolloutPath]
+      : recentCodexRollouts(input.homeDir, input.sinceMs);
+  for (const rolloutPath of rolloutPaths) {
     if (
+      input.boundRolloutPath === undefined &&
       input.expectedUserMessage !== undefined &&
       !codexRolloutContainsUserMessage(rolloutPath, input.expectedUserMessage)
     ) {
@@ -1870,10 +1881,18 @@ export function readClaudeProviderHistoryFramesFromHome(input: {
   sinceMs: number;
   seenKeys: Set<string>;
   expectedUserMessage?: string;
+  // The transcript THIS thread is bound to (from the hook). When set, read ONLY it
+  // so concurrent claude sessions never read each other's transcript.
+  boundTranscriptPath?: string;
 }): ClaudeProviderHistoryFrame[] {
   const frames: ClaudeProviderHistoryFrame[] = [];
-  for (const transcriptPath of recentClaudeTranscripts(input.homeDir, input.sinceMs)) {
+  const transcriptPaths =
+    input.boundTranscriptPath !== undefined
+      ? [input.boundTranscriptPath]
+      : recentClaudeTranscripts(input.homeDir, input.sinceMs);
+  for (const transcriptPath of transcriptPaths) {
     if (
+      input.boundTranscriptPath === undefined &&
       input.expectedUserMessage !== undefined &&
       !claudeTranscriptContainsUserMessage(
         transcriptPath,
@@ -2096,9 +2115,17 @@ export function readAntigravityProviderHistoryFramesFromHome(input: {
   runtimeId: string;
   sinceMs: number;
   seenKeys: Set<string>;
+  // The transcript THIS thread is bound to (from the hook). When set, read ONLY it
+  // so concurrent antigravity sessions never read each other's transcript; the
+  // recency scan is just the pre-binding discovery fallback.
+  boundTranscriptPath?: string;
 }): AntigravityProviderHistoryFrame[] {
   const frames: AntigravityProviderHistoryFrame[] = [];
-  for (const transcriptPath of recentAntigravityTranscripts(input.homeDir, input.sinceMs)) {
+  const transcriptPaths =
+    input.boundTranscriptPath !== undefined
+      ? [input.boundTranscriptPath]
+      : recentAntigravityTranscripts(input.homeDir, input.sinceMs);
+  for (const transcriptPath of transcriptPaths) {
     const conversationId = antigravityConversationIdFromTranscriptPath(transcriptPath);
     const transcriptText = readBoundedTail(transcriptPath, 128 * 1024);
     if (transcriptText === undefined) {

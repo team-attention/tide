@@ -837,6 +837,31 @@ function appendCodexOverlayHookTrust(
   );
 }
 
+test("antigravity_history_reader_reads_only_the_bound_transcript_under_concurrency", () => {
+  // Two concurrent antigravity sessions write separate transcripts. A thread bound
+  // to one must read ONLY that one — never the other session's content (the recency
+  // scan would have mixed them, leaving concurrent agy threads broken).
+  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-agy-multi-"));
+  const transcriptFor = (conversationId: string) =>
+    path.join(home, ".gemini", "antigravity-cli", "brain", conversationId, ".system_generated", "logs", "transcript.jsonl");
+  const mine = transcriptFor("conv-mine");
+  const theirs = transcriptFor("conv-theirs");
+  writeFile(mine, JSON.stringify({ step_index: 1, source: "MODEL", type: "PLANNER_RESPONSE", status: "DONE", content: "MINE" }));
+  writeFile(theirs, JSON.stringify({ step_index: 1, source: "MODEL", type: "PLANNER_RESPONSE", status: "DONE", content: "THEIRS" }));
+
+  const frames = readAntigravityProviderHistoryFramesFromHome({
+    homeDir: home,
+    threadId: "thread-mine",
+    runtimeId: "runtime-mine",
+    sinceMs: Date.now() - 10_000,
+    seenKeys: new Set<string>(),
+    boundTranscriptPath: mine,
+  });
+
+  assert.ok(frames.some((frame) => frame.body === "MINE"));
+  assert.ok(!frames.some((frame) => frame.body === "THEIRS"), "must not read another session's transcript");
+});
+
 test("antigravity_provider_history_reader_projects_planner_response_as_agent_message_frame", () => {
   const home = fs.mkdtempSync(path.join(tmpdir(), "tide-agy-history-"));
   const transcriptPath = path.join(
