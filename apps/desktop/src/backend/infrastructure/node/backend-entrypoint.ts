@@ -5,6 +5,7 @@ import {
   type BackendHandshake,
 } from "../../../shared/contracts/index.ts";
 import { createLiveBackendContractMessageAdapter } from "./live-backend.ts";
+import { reapOrphanedTideAgentProcesses } from "./reap-orphaned-agents.ts";
 import { resolveAugmentedPath } from "./resolve-shell-path.ts";
 import { runTideMcpStdioBridgeFromEnv } from "./tide-mcp-stdio-entrypoint.ts";
 
@@ -12,6 +13,11 @@ import { runTideMcpStdioBridgeFromEnv } from "./tide-mcp-stdio-entrypoint.ts";
 // the Agent Runtime's `which codex|claude|agy` finds nothing and no provider ever
 // spawns. Restore the user's real login-shell PATH before anything resolves a CLI.
 process.env.PATH = resolveAugmentedPath();
+
+// Reap any agent orphaned by a previous hard kill (force quit / crash / power loss)
+// before this session spawns anything — a force-quit can skip the PTY watchdog and
+// leave a CPU-spinning antigravity orphan from the last run.
+reapOrphanedTideAgentProcesses();
 
 type ElectronParentPort = {
   postMessage: (message: unknown) => void;
