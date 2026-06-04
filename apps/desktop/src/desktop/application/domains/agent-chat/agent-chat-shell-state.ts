@@ -49,9 +49,6 @@ export interface AgentChatShellState {
   thread: AgentChatThreadSummary | null;
   runtimeState: AgentRuntimeStateName;
   providerReadiness: AgentChatProviderReadiness | null;
-  // True between dispatching a Provider Readiness action (e.g. "Trust this folder")
-  // and the resulting providerReadiness.changed — so the UI can show it is working.
-  providerReadinessActionPending: boolean;
   promptState: AgentChatPromptState | null;
   blocks: AgentChatBlock[];
   composer: AgentChatComposerState;
@@ -277,8 +274,6 @@ export interface AgentChatShellViewModel {
   runtimeState: AgentRuntimeStateName;
   thread: AgentChatThreadView | null;
   providerReadinessBlockers: AgentChatProviderReadinessBlocker[];
-  // True while a Provider Readiness action (e.g. trust grant) is in flight.
-  providerReadinessActionPending: boolean;
   prompt: AgentChatPromptState | null;
   blocks: AgentChatBlockView[];
   composer: AgentChatComposerView;
@@ -361,7 +356,6 @@ export function createAgentChatShellState(input?: {
     thread: null,
     runtimeState: "not_started",
     providerReadiness: null,
-    providerReadinessActionPending: false,
     promptState: null,
     blocks: [],
     composer: {
@@ -525,12 +519,11 @@ export function selectAgentChatChoiceSurfaceRow(
     // writes the provider's trust config (no terminal). See workspace-trust-grant.
     if (rowId === "directory_trust_required:trust") {
       const threadId = state.thread?.threadId ?? activeThreadId;
-      // Ignore re-clicks while a trust grant is already in flight.
-      if (threadId === undefined || state.providerReadinessActionPending) {
+      if (threadId === undefined) {
         return { state, command: null };
       }
       return {
-        state: { ...state, providerReadinessActionPending: true },
+        state,
         command: {
           kind: "provider.trustWorkspace",
           payload: { threadId },
@@ -776,7 +769,6 @@ export function applyAgentChatBackendEvent(
         // it for a blocked thread (so the trust/setup blocker re-shows on re-open) and
         // omits it otherwise (so switching to a ready thread clears a stale blocker).
         providerReadiness: payload.providerReadiness ?? null,
-        providerReadinessActionPending: false,
         runtimeState: payload.runtimeState ?? state.runtimeState,
         // Hydrate is the source of truth for this thread (its persisted blocks).
         // Drop any optimistic "queued input" row left over from before a thread
@@ -813,8 +805,6 @@ export function applyAgentChatBackendEvent(
       return {
         ...state,
         providerReadiness: payload.readiness,
-        // The readiness re-check came back; the trust/setup action is done.
-        providerReadinessActionPending: false,
       };
     }
     case "prompt.changed": {
@@ -887,7 +877,6 @@ export function createAgentChatShellViewModel(
       state.providerReadiness && !state.providerReadiness.ready
         ? state.providerReadiness.blockers
         : [],
-    providerReadinessActionPending: state.providerReadinessActionPending,
     prompt: state.promptState,
     blocks: state.blocks.map(toBlockView),
     composer: {

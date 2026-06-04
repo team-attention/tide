@@ -962,7 +962,7 @@ test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {
     }),
   );
   // The rendered surface wires onRowSelect (no longer a dead row).
-  assert.match(renderShell(blocked), /Set up in the provider terminal/);
+  assert.match(renderShell(blocked), /Open provider setup/);
 
   const result = selectAgentChatChoiceSurfaceRow(
     blocked,
@@ -972,57 +972,6 @@ test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {
   );
   assert.equal(result.command?.kind, "workbench.command");
   assert.equal(result.command?.payload.command, "open_provider_setup_surface");
-});
-
-test("clicking_trust_this_folder_shows_a_pending_state_until_readiness_resolves", () => {
-  const blocked = applyBackendEventToAgentChatShell(
-    applyBackendEventToAgentChatShell(
-      createAgentChatShellState(),
-      backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
-    ),
-    backendEvent("providerReadiness.changed", {
-      readiness: {
-        agentId: "codex",
-        ready: false,
-        blockers: [
-          {
-            kind: "directory_trust_required",
-            scope: "execution_context",
-            message: "Codex Directory Trust is required for this Execution Context.",
-          },
-        ],
-      },
-    }),
-  );
-
-  const result = selectAgentChatChoiceSurfaceRow(
-    blocked,
-    "provider_readiness",
-    "directory_trust_required:trust",
-    "thread-shell",
-  );
-  assert.equal(result.command?.kind, "provider.trustWorkspace");
-  // While the grant is in flight the row shows it is working, not a fresh button.
-  const pendingHtml = renderShell(result.state);
-  assert.match(pendingHtml, /Trusting this folder/);
-
-  // A re-click while pending is ignored (no duplicate command).
-  const reClick = selectAgentChatChoiceSurfaceRow(
-    result.state,
-    "provider_readiness",
-    "directory_trust_required:trust",
-    "thread-shell",
-  );
-  assert.equal(reClick.command, null);
-
-  // When the re-check returns, the pending state clears.
-  const resolved = applyBackendEventToAgentChatShell(
-    result.state,
-    backendEvent("providerReadiness.changed", {
-      readiness: { agentId: "codex", ready: true, blockers: [] },
-    }),
-  );
-  assert.equal(resolved.providerReadinessActionPending, false);
 });
 
 test("prompt_choice_surface_row_emits_prompt_answer", () => {
