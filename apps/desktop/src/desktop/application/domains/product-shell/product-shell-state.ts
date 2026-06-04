@@ -403,6 +403,11 @@ export function createProductShellState(
   input: CreateProductShellStateInput = {},
 ): ProductShellState {
   const includeFixtureData = input.includeFixtureData ?? true;
+  const startProjects = includeFixtureData ? initialProjects : [];
+  const startScope: AgentChatThreadScope =
+    startProjects[0] !== undefined
+      ? { kind: "project", projectId: startProjects[0].projectId, cwd: startProjects[0].cwd }
+      : { kind: "scratch", scratchCwd: "Scratch" };
   return {
     activeThreadId: null,
     leftUiOpen: true,
@@ -424,7 +429,7 @@ export function createProductShellState(
     renamingProjectId: null,
     creatingWorktreeForProjectId: null,
     threads: includeFixtureData ? initialThreads : [],
-    agentChat: createStartAgentChatState(),
+    agentChat: createStartAgentChatState(startScope),
     appChrome: createAppChromeState(),
     fileTree: null,
     editorDrafts: {},
@@ -609,9 +614,9 @@ export function startNewProductShellThread(
   const project = projectId
     ? state.projects.find((candidate) => candidate.projectId === projectId)
     : undefined;
-  const scope: AgentChatThreadScope | undefined = project
+  const scope: AgentChatThreadScope = project
     ? { kind: "project", projectId: project.projectId, cwd: project.cwd }
-    : undefined;
+    : defaultStartScope(state);
   return {
     ...state,
     activeThreadId: null,
@@ -2124,11 +2129,22 @@ function applyProductShellThreadEvent(
   };
 }
 
+// A new Thread with no chosen Project scopes to the user's first REAL project (a
+// real, already-trusted cwd) — never a hardcoded placeholder path, which would put
+// the Agent in a non-existent directory and trip provider directory-trust. Falls
+// back to Scratch only when there are no projects yet.
+function defaultStartScope(state: ProductShellState): AgentChatThreadScope {
+  const project = state.projects[0];
+  return project !== undefined
+    ? { kind: "project", projectId: project.projectId, cwd: project.cwd }
+    : { kind: "scratch", scratchCwd: "Scratch" };
+}
+
 function createStartAgentChatState(scope?: AgentChatThreadScope): AgentChatShellState {
   return createAgentChatShellState({
     startOptions: {
       agentBinding: agentBindingForShellAgent("codex"),
-      scope: scope ?? { kind: "project", projectId: "tide", cwd: "/Users/you/Workspace/tide" },
+      scope: scope ?? { kind: "scratch", scratchCwd: "Scratch" },
       launchOptions: {
         model: "gpt-5.5",
         permission: "Auto-review",

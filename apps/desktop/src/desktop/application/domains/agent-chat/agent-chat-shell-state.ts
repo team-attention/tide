@@ -1475,7 +1475,10 @@ function permissionForRow(rowId: string): string | undefined {
 // project today (projects are not yet backend-provided); a new thread must have
 // a real root so the Agent runs somewhere and the FileTree can list files.
 function defaultThreadScope(): AgentChatThreadScope {
-  return { kind: "project", projectId: "tide", cwd: "/Users/you/Workspace/tide" };
+  // No hardcoded user path — the product shell injects a real project scope for new
+  // threads. This bare fallback is Scratch so the Agent never lands in a
+  // non-existent placeholder directory (which trips provider directory-trust).
+  return { kind: "scratch", scratchCwd: "Scratch" };
 }
 
 // The real projects the Project menu lists: those injected from the product

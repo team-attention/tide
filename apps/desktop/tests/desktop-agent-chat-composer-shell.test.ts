@@ -861,7 +861,12 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
 
 test("project_menu_lists_real_injected_projects_not_a_hardcoded_set", () => {
   const base: AgentChatShellState = {
-    ...createAgentChatShellState(),
+    ...createAgentChatShellState({
+      startOptions: {
+        agentBinding: { agentId: "codex" },
+        scope: { kind: "project", projectId: "tide", cwd: "/Users/you/Workspace/tide" },
+      },
+    }),
     availableProjects: [
       { projectId: "tide", name: "tide", cwd: "/Users/you/Workspace/tide" },
       { projectId: "money", name: "money", cwd: "/Users/you/Workspace/money" },
