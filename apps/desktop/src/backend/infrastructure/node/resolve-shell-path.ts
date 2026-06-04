@@ -50,9 +50,18 @@ export function resolveAugmentedPath(deps: ResolveAugmentedPathDeps = {}): strin
     ...shellPath.split(":"),
     ...fallbackDirs,
     ...currentPath.split(":"),
-  ].filter((entry) => entry.length > 0);
+  ].filter((entry) => entry.length > 0 && !isV1WrapperBinDir(entry));
 
   return Array.from(new Set(merged)).join(":");
+}
+
+// The v1 "Tide Terminal" (Rust) app ships wrapper scripts for codex/claude/agy in
+// its bundle (…/crates/tide-app/resources/bin). When both products are installed
+// that dir is on the login-shell PATH, so v2 would resolve its agents to v1's
+// wrappers instead of the real CLIs — they are SEPARATE products and must never
+// share a runtime wrapper. Drop the v1 wrapper dir so v2 always runs the real CLI.
+function isV1WrapperBinDir(entry: string): boolean {
+  return entry.replace(/\/+$/, "").endsWith("/crates/tide-app/resources/bin");
 }
 
 const PATH_MARKER = "__TIDE_PATH__";

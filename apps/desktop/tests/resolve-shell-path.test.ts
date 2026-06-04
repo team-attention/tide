@@ -27,6 +27,26 @@ test("login_shell_path_is_prepended_to_the_minimal_launchd_path", () => {
   assert.equal(new Set(parts).size, parts.length);
 });
 
+test("drops_the_v1_tide_terminal_wrapper_bin_so_v2_runs_the_real_cli", () => {
+  const wrapperDir =
+    "/Applications/Tide Terminal.app/Contents/Resources/crates/tide-app/resources/bin";
+  const result = resolveAugmentedPath({
+    platform: "darwin",
+    currentPath: "/usr/bin:/bin",
+    homeDir: "/Users/me",
+    // The v1 wrapper dir is on the login-shell PATH when both products are installed.
+    runShell: () => `${wrapperDir}:/Users/me/.local/bin:/usr/bin`,
+  });
+
+  const parts = result.split(":");
+  assert.ok(
+    !parts.includes(wrapperDir),
+    "v2 must not resolve agents to the v1 Tide Terminal wrappers",
+  );
+  // The real CLI location is still present.
+  assert.ok(parts.includes("/Users/me/.local/bin"));
+});
+
 test("falls_back_to_common_bins_when_the_login_shell_cannot_be_read", () => {
   const result = resolveAugmentedPath({
     platform: "darwin",
