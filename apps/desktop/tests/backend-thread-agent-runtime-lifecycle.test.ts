@@ -332,7 +332,7 @@ test("hydrating_a_blocked_thread_re_surfaces_its_provider_readiness_blocker", as
   );
 });
 
-test("hydrating_a_non_running_thread_reports_ready_so_a_stale_blocker_clears", async () => {
+test("hydrating_a_ready_thread_omits_provider_readiness", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({
     ...fakes.ports,
@@ -341,9 +341,8 @@ test("hydrating_a_non_running_thread_reports_ready_so_a_stale_blocker_clears", a
     initialThreads: [threadSeed("thread-ready")],
   });
   const hydrated = await service.hydrateThread({ threadId: "thread-ready" });
-  // Not running → readiness is re-derived authoritatively; here it is ready, so the
-  // UI drops any blocker carried over from another thread.
-  assert.equal(hydrated.ok && hydrated.providerReadiness?.ready, true);
+  // No pending input → not blocked → no readiness payload (clears any stale blocker).
+  assert.equal(hydrated.ok && hydrated.providerReadiness, undefined);
 });
 
 test("scratch_thread_materializes_a_real_tide_owned_cwd_and_auto_trusts_it", async () => {

@@ -960,19 +960,17 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       return failure("thread_not_found", "Thread was not found.");
     }
 
-    // Re-derive Provider Readiness for any Thread that is not actively running, so
-    // hydrate is authoritative: a blocked Thread (e.g. directory trust) re-shows its
-    // blocker on open/switch instead of going blank or being cleared by a stale hydrate,
-    // and a ready Thread reports ready so a previous thread's blocker is dropped.
-    const isRunning =
-      thread.runtimeState === "running" || thread.runtimeState === "starting";
-    const providerReadiness = isRunning
-      ? undefined
-      : await this.providerReadinessPort.check({
-          agentId: thread.agentBinding.agentId,
-          scope: thread.scope,
-          launchOptions: thread.launchOptions,
-        });
+    // A Thread holding pending input is blocked on Provider Readiness (e.g. directory
+    // trust). Re-derive readiness so re-opening it re-surfaces the blocker instead of
+    // showing a blank, un-actionable Thread.
+    const providerReadiness =
+      thread.pendingInput !== undefined
+        ? await this.providerReadinessPort.check({
+            agentId: thread.agentBinding.agentId,
+            scope: thread.scope,
+            launchOptions: thread.launchOptions,
+          })
+        : undefined;
 
     return {
       ok: true,
