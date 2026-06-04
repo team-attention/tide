@@ -291,6 +291,43 @@ test("starting_a_thread_with_incomplete_provider_readiness_preserves_pending_inp
   assert.deepEqual(fakes.runtime.events, []);
 });
 
+test("scratch_thread_materializes_a_real_tide_owned_cwd_and_auto_trusts_it", async () => {
+  // Spec: docs_v2/specs/scratch-execution-context.md
+  const fakes = createFakes();
+  const created: string[] = [];
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+    ensureScratchDirectory: (threadId) => {
+      const dir = `/app-support/scratch/${threadId}`;
+      created.push(dir);
+      return dir;
+    },
+  });
+
+  const result = await service.startThread({
+    initialMessage: "scratch run",
+    agentBinding: { agentId: "codex" },
+    // The placeholder cwd a new Scratch Thread is created with.
+    scope: { kind: "scratch", scratchCwd: "Scratch" },
+  });
+
+  assert.equal(result.ok, true);
+  const scope = result.ok ? result.thread.scope : undefined;
+  assert.equal(scope?.kind, "scratch");
+  const cwd = scope?.kind === "scratch" ? scope.scratchCwd : "";
+  // Placeholder "Scratch" became a real per-thread dir, which was created...
+  assert.notEqual(cwd, "Scratch");
+  assert.ok(/\/app-support\/scratch\/thread/.test(cwd), `real scratch cwd, got ${cwd}`);
+  assert.ok(created.includes(cwd), "scratch directory was created");
+  // ...and auto-trusted for the agent so no directory-trust prompt blocks it.
+  assert.ok(
+    fakes.providerTrust.calls.some((call) => call.agentId === "codex" && call.cwd === cwd),
+    "scratch cwd auto-trusted for the agent",
+  );
+});
+
 test("starting_a_thread_with_ready_provider_starts_runtime_then_writes_terminal_input", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({

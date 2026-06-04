@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import {
   closeSync,
   lstatSync,
+  mkdirSync,
   openSync,
   readFileSync,
   readdirSync,
@@ -242,6 +243,11 @@ export function createLiveBackendContractMessageAdapter(
     workspaceFilePort: createNodeWorkspaceFilePort(),
     composerAttachmentStorePort: createNodeComposerAttachmentStorePort(),
     providerTrustPort: createNodeProviderTrustPort(homeDir),
+    ensureScratchDirectory: (threadId: string) => {
+      const dir = join(appDataRoot, "scratch", threadId);
+      mkdirSync(dir, { recursive: true });
+      return dir;
+    },
     workspaceCodeIntelligencePort: createTypeScriptCodeIntelligencePort(),
     defaultWorkbenchTerminalCommand: env.SHELL ?? "sh",
     onAsyncEvent: (event) => {

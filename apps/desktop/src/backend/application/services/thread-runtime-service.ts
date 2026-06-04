@@ -166,6 +166,9 @@ export interface CreateThreadRuntimeServiceInput {
   workspaceCodeIntelligencePort?: WorkspaceCodeIntelligencePort;
   composerAttachmentStorePort?: ComposerAttachmentStorePort;
   providerTrustPort?: ProviderTrustPort;
+  // Materializes a Scratch Thread's real per-thread cwd under the Tide app-support
+  // dir (creates it). See docs_v2/specs/scratch-execution-context.md.
+  ensureScratchDirectory?: (threadId: string) => string;
   defaultWorkbenchTerminalCommand?: string;
   clock?: () => string;
   idGenerator?: () => string;
@@ -830,6 +833,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
   composerAttachmentStorePort?: ComposerAttachmentStorePort;
   providerTrustPort?: ProviderTrustPort;
+  ensureScratchDirectory?: (threadId: string) => string;
   defaultWorkbenchTerminalCommand: string;
   clock: () => string;
   idGenerator: () => string;
@@ -850,6 +854,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       input.workspaceCodeIntelligencePort ?? createUnavailableWorkspaceCodeIntelligencePort();
     this.composerAttachmentStorePort = input.composerAttachmentStorePort;
     this.providerTrustPort = input.providerTrustPort;
+    this.ensureScratchDirectory = input.ensureScratchDirectory;
     this.defaultWorkbenchTerminalCommand =
       input.defaultWorkbenchTerminalCommand ?? DEFAULT_WORKBENCH_TERMINAL_COMMAND;
     this.clock = input.clock ?? defaultClock;
@@ -981,6 +986,11 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       workbench: defaultWorkbenchState(),
     };
     this.threads.set(threadId, thread);
+
+    // A Scratch Thread runs in a real Tide-owned per-thread dir; materialize + trust
+    // it before readiness/attachments so the agent proceeds without a trust prompt.
+    // See docs_v2/specs/scratch-execution-context.md.
+    await this.materializeScratchScope(thread);
 
     // Materialize any pasted images and fold their paths into the message so the
     // Agent can read them. Done before readiness so a deferred (not-ready) send
@@ -1401,6 +1411,27 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   // cwd, then re-check Provider Readiness. If the provider is now ready and a
   // Composer input was held pending trust, proceed with it. See
   // docs_v2/specs/workspace-trust-grant.md.
+  // Resolves a Scratch Thread's cwd to a real Tide-owned dir under the app-support
+  // scratch root, creates it, persists the path, and auto-trusts it for the agent.
+  // Idempotent: a second call returns the same path and does not re-trust.
+  private async materializeScratchScope(thread: ThreadRecord): Promise<void> {
+    if (thread.scope?.kind !== "scratch" || this.ensureScratchDirectory === undefined) {
+      return;
+    }
+    const realCwd = this.ensureScratchDirectory(thread.threadId);
+    if (thread.scope.scratchCwd === realCwd) {
+      return;
+    }
+    thread.scope = { kind: "scratch", scratchCwd: realCwd };
+    thread.updatedAt = this.clock();
+    if (this.providerTrustPort !== undefined) {
+      await this.providerTrustPort.trust({
+        agentId: thread.agentBinding.agentId,
+        cwd: realCwd,
+      });
+    }
+  }
+
   async trustWorkspace(
     input: TrustWorkspaceInput,
   ): Promise<ServiceResult<TrustWorkspaceResult>> {
