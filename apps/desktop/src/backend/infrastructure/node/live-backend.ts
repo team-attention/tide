@@ -1417,6 +1417,17 @@ export function createLiveAgentSessionEventProjector(input: {
         onEvent: input.onEvent,
       });
     }
+    // Antigravity emits no turn-end hook, so the runtime never sees `agent-idle`.
+    // When the transcript yields the terminal agent message (a PLANNER_RESPONSE with
+    // content and no tool call), end the turn the same way the codex/claude Stop
+    // signal does (idle transition / queued-input flush).
+    if (historyFrames.some((frame) => frame.turnComplete === true)) {
+      await emitTurnComplete({
+        threadId: frameInput.threadId,
+        service,
+        onEvent: input.onEvent,
+      });
+    }
     blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
   };
 
@@ -1627,6 +1638,9 @@ export interface AntigravityProviderHistoryFrame {
   payloadKind: "provider_record";
   payload: Record<string, unknown>;
   body: string;
+  // True when this frame is the terminal agent message of a turn. Antigravity emits
+  // no turn-end hook, so the runtime returns to idle off this transcript signal.
+  turnComplete?: boolean;
 }
 
 export interface CodexProviderHistoryFrame {
@@ -2262,6 +2276,7 @@ export function readAntigravityProviderHistoryFramesFromHome(input: {
         payloadKind: "provider_record",
         payload,
         body: item.body,
+        ...(item.turnEnd === true ? { turnComplete: true } : {}),
       });
     }
   }
@@ -2275,6 +2290,9 @@ interface AntigravityConversationItem {
   blockSuffix: string;
   toolName?: string;
   body: string;
+  // True for the final agent message of a turn: a PLANNER_RESPONSE with content and
+  // no tool_calls. Antigravity fires no turn-end hook, so this is the turn boundary.
+  turnEnd?: boolean;
 }
 
 // Walks an antigravity transcript into ordered conversation items. A
@@ -2326,7 +2344,15 @@ function antigravityConversationItems(
       });
       const content = stringField(record, "content");
       if (content !== undefined && content.length > 0) {
-        items.push({ kind: "message", role: "agent", blockSuffix: `${step}`, body: content });
+        // A planner message with no tool_calls is the agent's final answer = the
+        // turn end (antigravity emits no turn-end hook).
+        items.push({
+          kind: "message",
+          role: "agent",
+          blockSuffix: `${step}`,
+          body: content,
+          turnEnd: toolCalls.length === 0,
+        });
       }
       continue;
     }

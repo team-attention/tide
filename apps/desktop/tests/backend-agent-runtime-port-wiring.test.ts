@@ -902,6 +902,77 @@ test("antigravity_provider_history_reader_projects_planner_response_as_agent_mes
   );
 });
 
+test("antigravity_provider_history_reader_marks_a_terminal_planner_response_as_turn_complete", () => {
+  // Spec: docs_v2/specs/antigravity-turn-completion.md
+  // Antigravity has no turn-end hook, so the turn end is read from the transcript:
+  // a PLANNER_RESPONSE with content and NO tool_calls is the final answer. An
+  // intermediate PLANNER_RESPONSE carries a tool_call and is NOT the turn end.
+  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-agy-complete-"));
+  const transcriptPath = path.join(
+    home,
+    ".gemini",
+    "antigravity-cli",
+    "brain",
+    "conversation-1",
+    ".system_generated",
+    "logs",
+    "transcript.jsonl",
+  );
+  writeFile(
+    transcriptPath,
+    [
+      JSON.stringify({
+        step_index: 0,
+        source: "USER_EXPLICIT",
+        type: "USER_INPUT",
+        status: "DONE",
+        content: "Look around and summarize",
+      }),
+      JSON.stringify({
+        step_index: 2,
+        source: "MODEL",
+        type: "PLANNER_RESPONSE",
+        status: "DONE",
+        tool_calls: [{ name: "list_dir", args: { DirectoryPath: "/repo" } }],
+      }),
+      JSON.stringify({
+        step_index: 3,
+        source: "MODEL",
+        type: "LIST_DIRECTORY",
+        status: "DONE",
+        content: "package.json",
+      }),
+      JSON.stringify({
+        step_index: 4,
+        source: "MODEL",
+        type: "PLANNER_RESPONSE",
+        status: "DONE",
+        content: "It is a battleship game.",
+      }),
+    ].join("\n"),
+  );
+
+  const frames = readAntigravityProviderHistoryFramesFromHome({
+    homeDir: home,
+    threadId: "thread-agy-complete",
+    runtimeId: "runtime-agy-complete",
+    sinceMs: Date.now() - 10_000,
+    seenKeys: new Set<string>(),
+  });
+
+  const toolCallFrame = frames.find((frame) => frame.payload.type === "tool_call");
+  const terminalMessageFrame = frames.find(
+    (frame) => frame.payload.type === "message" && frame.body === "It is a battleship game.",
+  );
+
+  // The intermediate planner response (a tool call) is not a turn end.
+  assert.ok(toolCallFrame, "expected a tool_call frame");
+  assert.notEqual(toolCallFrame?.turnComplete, true);
+  // The final planner message (content, no tool_calls) IS the turn end.
+  assert.ok(terminalMessageFrame, "expected a terminal agent message frame");
+  assert.equal(terminalMessageFrame?.turnComplete, true);
+});
+
 test("antigravity_provider_history_reader_derives_provider_session_ref_from_transcript_path", () => {
   // Spec: docs_v2/specs/live-provider-session-reference-discovery.md
   const transcriptPath = path.join(
