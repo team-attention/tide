@@ -110,6 +110,8 @@ import {
   toggleProductShellWorkbenchWithLauncher,
   updateProductShellBrowserActionResult,
   updateProductShellBrowserSnapshot,
+  updateProductShellBackgroundBrowserActionResult,
+  updateProductShellBackgroundBrowserSnapshot,
   updateProductShellComposerDraft,
   writeProductShellTerminalInput,
   resizeProductShellTerminal,
@@ -365,6 +367,9 @@ interface ProductShellHandlers {
   onEditorGoToReferences: (paneId: string) => void;
   onBrowserSnapshot: (paneId: string, snapshot: ProductShellBrowserSnapshot) => void;
   onBrowserActionResult: (paneId: string, result: ProductShellBrowserActionResult) => void;
+  // Background (non-active thread) Browser Pane updates, routed by the pane's threadId.
+  onBackgroundBrowserSnapshot: (threadId: string, paneId: string, snapshot: ProductShellBrowserSnapshot) => void;
+  onBackgroundBrowserActionResult: (threadId: string, paneId: string, result: ProductShellBrowserActionResult) => void;
 }
 
 
@@ -974,6 +979,18 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         dispatchBackendCommand(result.command);
         return result.state;
       }),
+    onBackgroundBrowserSnapshot: (threadId, paneId, snapshot) =>
+      setShellState((state) => {
+        const result = updateProductShellBackgroundBrowserSnapshot(state, threadId, paneId, snapshot);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onBackgroundBrowserActionResult: (threadId, paneId, actionResult) =>
+      setShellState((state) => {
+        const result = updateProductShellBackgroundBrowserActionResult(state, threadId, paneId, actionResult);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
   };
 
   // Auto-collapse columns that no longer fit the window at their min widths.
@@ -1047,6 +1064,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     // Workbench + FileTree toggles live in a single fixed cluster at the window's
     // top-right, so they never jump between column headers as panels open/close.
     createWindowChromeToggles(layoutVm, handlers),
+    // Offscreen host keeping background threads' Browser Panes alive for their agents.
+    createElement(BackgroundBrowserHost, {
+      panes: layoutVm.backgroundBrowserPanes,
+      handlers,
+    }),
     viewModel.settingsOpen ? createSettingsModal(viewModel.worktreeSettings, handlers) : null,
   );
 }
@@ -1714,6 +1736,105 @@ function WorkbenchBrowserPane(props: {
       partition: "persist:tide-workbench-browser",
     }),
   );
+}
+
+// Persistent offscreen host for Browser Panes owned by NON-active threads. Each
+// pane's <webview> stays mounted (alive) so a background agent keeps driving its own
+// browser (snapshots + scheduled actions) without being visible or stealing focus.
+function BackgroundBrowserHost(props: {
+  panes: ProductShellViewModel["backgroundBrowserPanes"];
+  handlers: ProductShellHandlers;
+}): ReactElement | null {
+  if (props.panes.length === 0) {
+    return null;
+  }
+  return createElement(
+    "div",
+    { className: "background-browser-host", "aria-hidden": true },
+    ...props.panes.map((pane) =>
+      createElement(BackgroundBrowserWebView, {
+        key: `${pane.threadId}:${pane.paneId}`,
+        pane,
+        handlers: props.handlers,
+      }),
+    ),
+  );
+}
+
+function BackgroundBrowserWebView(props: {
+  pane: ProductShellViewModel["backgroundBrowserPanes"][number];
+  handlers: ProductShellHandlers;
+}): ReactElement {
+  const webviewRef = useRef<BrowserWebViewElement | null>(null);
+  const executedActionIdsRef = useRef<Set<string>>(new Set());
+  const { threadId, paneId, revision, url, pendingAction } = props.pane;
+  const handlers = props.handlers;
+
+  // Report a snapshot when the offscreen page settles, routed to the pane's thread.
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (webview === null) {
+      return;
+    }
+    const emitSnapshot = () => {
+      void readBrowserWebViewSnapshot(webview).then((snapshot) => {
+        handlers.onBackgroundBrowserSnapshot(threadId, paneId, {
+          revision,
+          loading: false,
+          ...snapshot,
+        });
+      });
+    };
+    webview.addEventListener("did-finish-load", emitSnapshot);
+    webview.addEventListener("did-stop-loading", emitSnapshot);
+    return () => {
+      webview.removeEventListener("did-finish-load", emitSnapshot);
+      webview.removeEventListener("did-stop-loading", emitSnapshot);
+    };
+  }, [handlers, threadId, paneId, revision, url]);
+
+  // Execute a scheduled background action (click/type) against the offscreen webview.
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (
+      webview === null ||
+      url === undefined ||
+      pendingAction === undefined ||
+      executedActionIdsRef.current.has(pendingAction.actionId)
+    ) {
+      return;
+    }
+    executedActionIdsRef.current.add(pendingAction.actionId);
+    void executeBrowserWebViewAction(webview, pendingAction)
+      .then(async (actionResult) => {
+        const snapshot = await readBrowserWebViewSnapshot(webview);
+        handlers.onBackgroundBrowserActionResult(threadId, paneId, {
+          revision,
+          actionId: pendingAction.actionId,
+          status: actionResult.ok ? "completed" : "failed",
+          message: actionResult.message,
+          loading: false,
+          ...snapshot,
+        });
+      })
+      .catch((error: unknown) => {
+        handlers.onBackgroundBrowserActionResult(threadId, paneId, {
+          revision,
+          actionId: pendingAction.actionId,
+          status: "failed",
+          message: error instanceof Error ? error.message : "Browser action failed.",
+          loading: false,
+        });
+      });
+  }, [handlers, threadId, paneId, revision, url, pendingAction?.actionId]);
+
+  return createElement("webview", {
+    ref: webviewRef,
+    className: "background-browser-host__webview",
+    "data-browser-pane-webview": paneId,
+    src: url ?? "about:blank",
+    partition: "persist:tide-workbench-browser",
+  });
 }
 
 type BrowserWebViewElement = HTMLElement & {

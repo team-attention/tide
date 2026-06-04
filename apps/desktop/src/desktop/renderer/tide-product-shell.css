@@ -3150,6 +3150,23 @@ button.file-tree-row {
   }
 }
 
+/* Offscreen host for background threads' Browser Pane webviews. Positioned far off
+   the viewport (not display:none, which would suspend rendering) so the webContents
+   stay alive and scriptable for background agents, while never visible to the user. */
+.background-browser-host {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 1024px;
+  height: 768px;
+  pointer-events: none;
+  overflow: hidden;
+}
+.background-browser-host__webview {
+  width: 1024px;
+  height: 768px;
+}
+
 /* Rail (thread list) loading shimmer on a cold boot. */
 .rail-skeleton {
   display: flex;

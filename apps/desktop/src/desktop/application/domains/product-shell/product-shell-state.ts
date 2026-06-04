@@ -296,6 +296,12 @@ export interface ProductShellProjectGroupView {
 // section, so the shortcut can be expanded to reach its Threads.
 export type ProductShellPinnedProjectView = ProductShellProjectGroupView;
 
+// A non-active thread's Browser Pane, carried with its owning threadId so its
+// offscreen <webview> can route snapshots/actions back to the right thread.
+export type ProductShellBackgroundBrowserPane = AppChromeWorkbenchPaneRef & {
+  threadId: string;
+};
+
 export interface ProductShellViewModel {
   activeThreadId: string | null;
   leftUiOpen: boolean;
@@ -319,6 +325,8 @@ export interface ProductShellViewModel {
   agentChat: AgentChatShellViewModel;
   appChrome: AppChromeViewModel;
   fileTree: ProductShellFileTreeView;
+  // Browser Panes of non-active threads, kept alive offscreen for background agents.
+  backgroundBrowserPanes: ProductShellBackgroundBrowserPane[];
   editorDrafts: Record<string, ProductShellEditorDraft>;
 }
 
@@ -604,6 +612,16 @@ export function createProductShellViewModel(
     appChrome: createAppChromeViewModel(state.appChrome),
     fileTree: createFileTreeView(state),
     editorDrafts: state.editorDrafts,
+    // Visible Browser Panes owned by NON-active threads. Their <webview>s are kept
+    // alive offscreen so a background agent can drive its own Browser Pane (observe /
+    // act) without stealing focus or opening the user's view (focus is user-owned).
+    backgroundBrowserPanes: state.threads.flatMap((thread) =>
+      thread.threadId === state.activeThreadId
+        ? []
+        : thread.workbenchPanes
+            .filter((pane) => pane.kind === "browser" && pane.visible)
+            .map((pane) => ({ ...pane, threadId: thread.threadId })),
+    ),
   };
 }
 
@@ -1829,6 +1847,69 @@ export function updateProductShellBrowserActionResult(
       kind: "workbench.command",
       payload: {
         threadId: state.activeThreadId,
+        command: "update_browser_action_result",
+        targetPaneId: paneId,
+        data: result,
+      },
+    },
+  };
+}
+
+// Background (non-active thread) variants: route the snapshot/action result to the
+// pane's OWN thread, looked up by threadId, so an offscreen Browser Pane driven by a
+// background agent updates the correct thread instead of the active one.
+export function updateProductShellBackgroundBrowserSnapshot(
+  state: ProductShellState,
+  threadId: string,
+  paneId: string,
+  snapshot: ProductShellBrowserSnapshot,
+): ProductShellUpdateResult {
+  const pane = state.threads
+    .find((thread) => thread.threadId === threadId)
+    ?.workbenchPanes.find(
+      (candidate) => candidate.paneId === paneId && candidate.kind === "browser",
+    );
+  if (pane === undefined || snapshot.revision !== pane.revision) {
+    return { state, command: null };
+  }
+  return {
+    state,
+    command: {
+      kind: "workbench.command",
+      payload: {
+        threadId,
+        command: "update_browser_snapshot",
+        targetPaneId: paneId,
+        data: snapshot,
+      },
+    },
+  };
+}
+
+export function updateProductShellBackgroundBrowserActionResult(
+  state: ProductShellState,
+  threadId: string,
+  paneId: string,
+  result: ProductShellBrowserActionResult,
+): ProductShellUpdateResult {
+  const pane = state.threads
+    .find((thread) => thread.threadId === threadId)
+    ?.workbenchPanes.find(
+      (candidate) => candidate.paneId === paneId && candidate.kind === "browser",
+    );
+  if (
+    pane === undefined ||
+    result.revision !== pane.revision ||
+    pane.pendingAction?.actionId !== result.actionId
+  ) {
+    return { state, command: null };
+  }
+  return {
+    state,
+    command: {
+      kind: "workbench.command",
+      payload: {
+        threadId,
         command: "update_browser_action_result",
         targetPaneId: paneId,
         data: result,
