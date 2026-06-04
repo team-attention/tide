@@ -1489,9 +1489,10 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     thread.lifecycleState = "running";
     thread.lastKnownState = "running";
     thread.updatedAt = this.clock();
-    const handle = await this.startOrResumeRuntimeForPendingInput(
+    const { handle, deliveredViaLaunch } = await this.startOrResumeRuntimeForPendingInput(
       thread,
       pendingInput.launchOptions,
+      pendingInput.value,
     );
     const submittedBlock = this.appendLocalUserMessageBlock(
       thread,
@@ -1501,11 +1502,13 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     thread.runtimeState = "running";
     thread.pendingInput = undefined;
     thread.updatedAt = this.clock();
-    await this.agentRuntimePort.writeInput(handle, {
-      kind: "composer_input",
-      value: pendingInput.value,
-      submittedAt: this.clock(),
-    });
+    if (!deliveredViaLaunch) {
+      await this.agentRuntimePort.writeInput(handle, {
+        kind: "composer_input",
+        value: pendingInput.value,
+        submittedAt: this.clock(),
+      });
+    }
     const threadSnapshot = snapshotThread(thread);
     this.emitAsyncEvent({
       kind: "agent_session_block_upserted",
@@ -2480,9 +2483,10 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       thread.lifecycleState = "running";
       thread.lastKnownState = "running";
       thread.updatedAt = this.clock();
-      const handle = await this.startOrResumeRuntimeForPendingInput(
+      const { handle, deliveredViaLaunch } = await this.startOrResumeRuntimeForPendingInput(
         thread,
         pendingInput.launchOptions,
+        pendingInput.value,
       );
       const submittedBlock = this.appendLocalUserMessageBlock(
         thread,
@@ -2492,11 +2496,13 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       thread.runtimeState = "running";
       thread.updatedAt = this.clock();
 
-      await this.agentRuntimePort.writeInput(handle, {
-        kind: "composer_input",
-        value: pendingInput.value,
-        submittedAt: this.clock(),
-      });
+      if (!deliveredViaLaunch) {
+        await this.agentRuntimePort.writeInput(handle, {
+          kind: "composer_input",
+          value: pendingInput.value,
+          submittedAt: this.clock(),
+        });
+      }
       thread.pendingInput = undefined;
       thread.updatedAt = this.clock();
       const threadSnapshot = snapshotThread(thread);
@@ -2554,20 +2560,30 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   private async startOrResumeRuntimeForPendingInput(
     thread: ThreadRecord,
     launchOptions: Record<string, unknown> | undefined,
-  ): Promise<AgentRuntimeHandle> {
+    promptValue: string,
+  ): Promise<{ handle: AgentRuntimeHandle; deliveredViaLaunch: boolean }> {
     if (thread.activeRuntimeHandle !== undefined) {
-      return thread.activeRuntimeHandle;
+      return { handle: thread.activeRuntimeHandle, deliveredViaLaunch: false };
     }
     if (thread.agentBinding.providerSessionRef !== undefined) {
-      return this.activeOrResumedHandle(thread);
+      return { handle: await this.activeOrResumedHandle(thread), deliveredViaLaunch: false };
     }
 
-    return this.agentRuntimePort.start({
+    // A fresh Provider CLI start must receive the first message as the launch-time
+    // initial prompt (positional/flag), which reliably starts a turn — exactly like
+    // startThread. Without it the CLI launches idle and the typed-in message does not
+    // begin a turn (the held first message never resolves). Tide API Agents have no
+    // launch argv, so they receive it via writeInput.
+    const deliverPromptViaLaunch =
+      thread.agentBinding.runtimeSource?.kind === "provider_cli";
+    const handle = await this.agentRuntimePort.start({
       threadId: thread.threadId,
       agentBinding: cloneAgentBinding(thread.agentBinding),
       scope: cloneScope(thread.scope),
       launchOptions,
+      initialPrompt: deliverPromptViaLaunch ? promptValue : undefined,
     });
+    return { handle, deliveredViaLaunch: deliverPromptViaLaunch };
   }
 
   private async stopTerminalPane(

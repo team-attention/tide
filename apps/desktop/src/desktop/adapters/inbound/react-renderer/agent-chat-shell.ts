@@ -387,23 +387,31 @@ function createProviderReadiness(
             icon: "□",
           },
           // The directory-trust blocker gets a one-click in-app trust action that
-          // writes the provider's own trust config (no terminal drop).
+          // writes the provider's own trust config (no terminal drop). While the
+          // grant is in flight the row shows it is working (re-clicks are ignored).
           ...(blocker.kind === "directory_trust_required"
             ? [
-                {
-                  rowId: "directory_trust_required:trust",
-                  label: "Trust this folder",
-                  detail: "grant workspace trust",
-                  icon: "✓",
-                },
+                viewModel.providerReadinessActionPending
+                  ? {
+                      rowId: "directory_trust_required:trust",
+                      label: "Trusting this folder…",
+                      detail: "writing workspace trust",
+                      icon: "⋯",
+                    }
+                  : {
+                      rowId: "directory_trust_required:trust",
+                      label: "Trust this folder",
+                      detail: "lets this agent run here — one click, nothing else changes",
+                      icon: "✓",
+                    },
               ]
             : []),
           ...(blocker.setup
             ? [
                 {
                   rowId: `${blocker.kind}:setup`,
-                  label: "Open provider setup",
-                  detail: "preserve draft",
+                  label: "Set up in the provider terminal instead",
+                  detail: "opens the provider's own setup; your draft is kept",
                   icon: "+",
                 },
               ]

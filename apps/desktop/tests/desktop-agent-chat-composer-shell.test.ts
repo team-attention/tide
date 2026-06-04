@@ -962,7 +962,7 @@ test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {
     }),
   );
   // The rendered surface wires onRowSelect (no longer a dead row).
-  assert.match(renderShell(blocked), /Open provider setup/);
+  assert.match(renderShell(blocked), /Set up in the provider terminal/);
 
   const result = selectAgentChatChoiceSurfaceRow(
     blocked,

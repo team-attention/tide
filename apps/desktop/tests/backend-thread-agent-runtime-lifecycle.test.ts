@@ -291,6 +291,53 @@ test("starting_a_thread_with_incomplete_provider_readiness_preserves_pending_inp
   assert.deepEqual(fakes.runtime.events, []);
 });
 
+test("granting_trust_replays_the_held_first_message_via_launch_not_typed_input", async () => {
+  // Regression: after trust, the held first message must be delivered as the launch
+  // prompt (like a normal start) so the provider CLI reliably begins a turn — not
+  // only typed via writeInput, which left the CLI idle ("Working" forever).
+  const fakes = createFakes({
+    readiness: {
+      ready: false,
+      agentId: "codex",
+      blockers: [
+        {
+          kind: "directory_trust_required",
+          scope: "execution_context",
+          message: "trust required",
+          action: "open_terminal",
+        },
+      ],
+    },
+  });
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+
+  const started = await service.startThread({
+    initialMessage: "explain this repo",
+    agentBinding: {
+      agentId: "codex",
+      runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+    },
+    scope: { kind: "project", projectId: "p1", cwd: "/repo" },
+  });
+  assert.equal(started.ok && started.status, "provider_not_ready");
+  const threadId = started.ok ? started.thread.threadId : "";
+  assert.equal(fakes.runtime.starts.length, 0);
+
+  fakes.readiness.setResult({ ready: true, agentId: "codex", blockers: [] });
+  const trusted = await service.trustWorkspace({ threadId });
+  assert.equal(trusted.ok && trusted.status, "trusted");
+
+  // Started exactly once, carrying the held message as the launch prompt.
+  assert.equal(fakes.runtime.starts.length, 1);
+  assert.equal(fakes.runtime.starts[0].initialPrompt, "explain this repo");
+  // A provider CLI got the prompt via launch, so it is NOT typed again via writeInput.
+  assert.equal(fakes.runtime.writes.length, 0);
+});
+
 test("scratch_thread_materializes_a_real_tide_owned_cwd_and_auto_trusts_it", async () => {
   // Spec: docs_v2/specs/scratch-execution-context.md
   const fakes = createFakes();
