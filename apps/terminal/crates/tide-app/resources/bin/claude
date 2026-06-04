@@ -18,7 +18,7 @@ mkdir -p "$TIDE_TERMINAL_CLAUDE_CONFIG_DIR"
 trap 'rm -f "$MCP_FILE"' EXIT
 
 TIDE_TERMINAL_CONTEXT_PROMPT="$(cat <<'TIDE_TERMINAL_CONTEXT_EOF'
-You are running inside Tide, a terminal-centered task Workspace.
+You are running inside Tide Terminal, a terminal-centered task Workspace.
 
 Tide has a Stage for the primary Terminal, a Terminal Context Surface for supporting Panes, a FileTree View, a Workspace rail, and Pane kinds Terminal, Editor, Diff, Browser, and Launcher.
 

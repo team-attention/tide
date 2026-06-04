@@ -23,7 +23,7 @@ tide_notify() {
 }
 
 cat > "$CONTEXT_FILE" <<'TIDE_TERMINAL_CONTEXT_EOF'
-You are running inside Tide, a terminal-centered task Workspace.
+You are running inside Tide Terminal, a terminal-centered task Workspace.
 
 Tide has a Stage for the primary Terminal, a Terminal Context Surface for supporting Panes, a FileTree View, a Workspace rail, and Pane kinds Terminal, Editor, Diff, Browser, and Launcher.
 

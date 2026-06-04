@@ -74,12 +74,12 @@ mkdir -p "$TIDE_TERMINAL_SKILL_DIR"
 cat > "$TIDE_TERMINAL_SKILL_DIR/SKILL.md" <<'TIDE_TERMINAL_SKILL_EOF'
 ---
 name: tide-terminal
-description: Use when Codex is running inside Tide and the user asks to open, show, view, browse, inspect, preview, navigate to, or display a file, URL, webpage, local server, Pane, or Tide surface.
+description: Use when Codex is running inside Tide Terminal and the user asks to open, show, view, browse, inspect, preview, navigate to, or display a file, URL, webpage, local server, Pane, or Tide surface.
 ---
 
 # Tide
 
-You are running inside Tide, a terminal-centered task Workspace.
+You are running inside Tide Terminal, a terminal-centered task Workspace.
 
 Before using macOS `open` for a file, URL, webpage, preview, local server, or "show/view/open this" request, search Tide tools with `tool_search` using task terms such as `tide open browser editor observe workspace`.
 
