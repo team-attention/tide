@@ -75,13 +75,24 @@ export interface ProductShellListSettings {
   groupBy: ProductShellListGroupBy;
   sortBy: ProductShellListSortBy;
   groupWorktreesByRepo: boolean;
+  // When false (default), the list shows only Threads started in Tide. When true,
+  // it also shows External Sessions — agent sessions found in the provider's local
+  // history that Tide did not start (surfaced as `adopted-*` Threads).
+  showExternalSessions: boolean;
 }
 
 export const DEFAULT_PRODUCT_SHELL_LIST_SETTINGS: ProductShellListSettings = {
   groupBy: "project",
   sortBy: "recent",
   groupWorktreesByRepo: false,
+  showExternalSessions: false,
 };
+
+// External Sessions (agent sessions Tide did not start) are surfaced by backend
+// discovery as Threads whose id is prefixed `adopted-`.
+export function isExternalSessionThread(threadId: string): boolean {
+  return threadId.startsWith("adopted-");
+}
 
 // App-level worktree creation settings (persisted in the renderer; passed to Main
 // on create). See docs_v2/specs/worktree-creation.md.
@@ -484,9 +495,15 @@ export function createProductShellViewModel(
   const matchesSearch = (thread: ProductShellThread): boolean =>
     query.length === 0 || thread.title.toLowerCase().includes(query);
   const searching = query.length > 0;
+  // External Sessions (agent sessions Tide did not start) stay hidden unless the
+  // user opts in via the list-config menu — the default list is Tide-made Threads.
+  const matchesExternalFilter = (thread: ProductShellThread): boolean =>
+    state.listSettings.showExternalSessions || !isExternalSessionThread(thread.threadId);
   const sortThreads = (threads: ProductShellThread[]): ProductShellThread[] =>
     sortProductShellThreads(threads, state.listSettings.sortBy);
-  const visibleThreads = sortThreads(state.threads.filter(matchesSearch));
+  const visibleThreads = sortThreads(
+    state.threads.filter((thread) => matchesSearch(thread) && matchesExternalFilter(thread)),
+  );
 
   // When "group worktrees by repo" is on, a worktree Project (cwd
   // `<repo>.worktree/<branch>`) is folded into its repo Project: its threads

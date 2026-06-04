@@ -63,6 +63,28 @@ test("thread_group_mode_lists_all_threads_flat", () => {
   );
 });
 
+test("external_sessions_are_hidden_by_default_and_shown_when_enabled", () => {
+  // Default list = Threads started in Tide. Adopted (external) sessions Tide did
+  // not start stay hidden until the user enables them in the list-config menu.
+  const threads = [
+    thread("t1", "Tide thread", { scope: { kind: "project", projectId: "p1", cwd: "/repo" } }),
+    thread("adopted-sess-1", "External", {
+      scope: { kind: "project", projectId: "p1", cwd: "/repo" },
+    }),
+  ];
+
+  const hidden = createProductShellViewModel(stateWith(threads, { groupBy: "thread" }));
+  assert.deepEqual(hidden.flatThreads.map((t) => t.threadId), ["t1"]);
+
+  const shown = createProductShellViewModel(
+    stateWith(threads, { groupBy: "thread", showExternalSessions: true }),
+  );
+  assert.deepEqual(
+    shown.flatThreads.map((t) => t.threadId).sort(),
+    ["adopted-sess-1", "t1"],
+  );
+});
+
 test("project_group_mode_buckets_threads_by_project", () => {
   // UC-1 BR-2: "project" mode (default) buckets threads under their project.
   const state = stateWith([

@@ -2719,6 +2719,14 @@ function createListSettingsMenu(
           ),
         ]
       : []),
+    sectionLabel("Sessions"),
+    // Off by default: the list shows only Threads started in Tide. On reveals
+    // External Sessions (agent history Tide did not start).
+    optionRow("Show external sessions", settings.showExternalSessions, () =>
+      handlers.onListSettingsChange({
+        showExternalSessions: !settings.showExternalSessions,
+      }),
+    ),
   );
 }
 
