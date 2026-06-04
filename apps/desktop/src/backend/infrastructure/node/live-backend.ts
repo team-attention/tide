@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   closeSync,
   lstatSync,
@@ -116,8 +117,14 @@ export function createLiveBackendContractMessageAdapter(
   const env = input.env ?? process.env;
   const homeDir = env.HOME ?? process.cwd();
   const appDataRoot = input.appDataRoot ?? env.TIDE_APP_DATA_ROOT ?? join(homeDir, ".tide-v2");
+  // Stable per-install MCP socket path (a short hash of the app data root), NOT
+  // pid-based. A pid-based path changed on every backend restart, so agents spawned
+  // by an earlier backend pointed at a dead socket and their MCP tool calls hung
+  // forever. With a stable path the new backend re-binds the same socket (the server
+  // unlinks the stale file) and existing agents reconnect to it.
   const tideSocket =
-    env.TIDE_SOCKET ?? join(tmpdir(), `tide-mcp-${process.pid}.sock`);
+    env.TIDE_SOCKET ??
+    join(tmpdir(), `tide-mcp-${createHash("sha1").update(appDataRoot).digest("hex").slice(0, 12)}.sock`);
   const tideMcpEntrypoint =
     env.TIDE_MCP_ENTRYPOINT ??
     join(dirname(fileURLToPath(import.meta.url)), "backend-entrypoint.js");
