@@ -13,5 +13,17 @@
       "dmg"
     ],
     "icon": "build/icon.icns"
+  },
+  "dmg": {
+    "title": "${productName}",
+    "window": {
+      "width": 540,
+      "height": 380
+    },
+    "contents": [
+      { "x": 150, "y": 190, "type": "file" },
+      { "x": 390, "y": 190, "type": "link", "path": "/Applications" }
+    ],
+    "internetEnabled": false
   }
 }

@@ -163,7 +163,7 @@ export function createLiveBackendContractMessageAdapter(
       readProviderState: ({ cwd }) => readClaudeProviderStateFromHome(homeDir, cwd),
       mcpConfigPath: bootstrapArtifacts.claudeMcpConfigPath,
       settingsPath: bootstrapArtifacts.claudeSettingsPath,
-      tideContextPrompt: "You are running inside Tide. Use Tide MCP tools when available.",
+      tideContextPrompt: tideClaudeContextPrompt(),
       defaultCwd: process.cwd(),
     }),
     antigravity: createAntigravityAgentIntegration({
@@ -399,6 +399,29 @@ async function persistThreadEvents(
   for (const threadId of blockThreadIds) {
     await persistThreadBlocks({ persistence, service, threadId });
   }
+}
+
+// Claude Code (the claude provider) defers MCP tools and discovers them via
+// ToolSearch. A vague prompt made it search for bare names like "tide_open_browser"
+// — which don't match the real "mcp__tide__*" names — so it stalled before ever
+// opening a Browser Pane. Name the tools exactly and tell it to call them directly.
+function tideClaudeContextPrompt(): string {
+  return [
+    "You are running inside Tide, a terminal workspace. Tide exposes real, callable MCP",
+    'tools (MCP server name "tide") that control the Tide UI. Their exact names are:',
+    "- mcp__tide__tide_open_browser — open/navigate a visible Tide Browser Pane (args: url, title, disposition)",
+    "- mcp__tide__tide_observe_browser — read a Browser Pane's content (args: paneId, revision)",
+    "- mcp__tide__tide_act_browser — click or type in a Browser Pane (args: paneId, revision, action, selector, text)",
+    "- mcp__tide__tide_observe_thread / mcp__tide__tide_observe_workbench — read current Thread/Workbench state",
+    "- mcp__tide__tide_open_terminal / mcp__tide__tide_run_terminal_command — visible Terminal Pane",
+    "- mcp__tide__tide_read_file / mcp__tide__tide_open_file / mcp__tide__tide_edit_file — files with visible Editor/Diff Panes",
+    "",
+    "When the user asks to open, show, browse, or navigate a URL/page/file/Tide surface, call",
+    "the matching mcp__tide__ tool DIRECTLY — do not fall back to shell. If these tools appear",
+    'as deferred, load them by their exact name (e.g. ToolSearch "select:mcp__tide__tide_open_browser")',
+    "and then call them. Open a Browser Pane with mcp__tide__tide_open_browser first, then use",
+    "mcp__tide__tide_observe_browser and mcp__tide__tide_act_browser to read and act on it.",
+  ].join("\n");
 }
 
 export function backendEventsFromThreadRuntimeAsyncEvent(
