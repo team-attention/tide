@@ -149,7 +149,13 @@ export interface ProductShellState {
   // none). See docs_v2/specs/worktree-creation.md.
   creatingWorktreeForProjectId: string | null;
   threads: ProductShellThread[];
+  // The active thread's agent-chat state (what is rendered).
   agentChat: AgentChatShellState;
+  // Per-thread agent-chat state, keyed by threadId. Each thread's content (blocks,
+  // readiness blocker, prompt, composer draft) lives here independently, so switching
+  // threads is a pure selection — it never mutates or loses another thread's state.
+  // Switching preserves the current `agentChat` here and restores the target's.
+  agentChatByThreadId: Record<string, AgentChatShellState>;
   appChrome: AppChromeState;
   fileTree: ProductShellFileTreeView | null;
   editorDrafts: Record<string, ProductShellEditorDraft>;
@@ -441,6 +447,7 @@ export function createProductShellState(
     creatingWorktreeForProjectId: null,
     threads: includeFixtureData ? initialThreads : [],
     agentChat: createStartAgentChatState(startScope),
+    agentChatByThreadId: {},
     appChrome: createAppChromeState(),
     fileTree: null,
     editorDrafts: {},
@@ -1221,6 +1228,18 @@ export function applyProductShellPromptState(
   };
 }
 
+// Stash the currently active thread's agent-chat state into the per-thread map so it
+// is preserved when we switch away (and can be restored intact on return).
+function preserveActiveAgentChat(
+  state: ProductShellState,
+  nextThreadId: string,
+): Record<string, AgentChatShellState> {
+  if (state.activeThreadId === null || state.activeThreadId === nextThreadId) {
+    return state.agentChatByThreadId;
+  }
+  return { ...state.agentChatByThreadId, [state.activeThreadId]: state.agentChat };
+}
+
 export function openProductShellThread(
   state: ProductShellState,
   threadId: string,
@@ -1230,7 +1249,14 @@ export function openProductShellThread(
     return state;
   }
 
-  return hydrateProductShellThread(state, thread, previewBlocksForThread(thread));
+  const agentChatByThreadId = preserveActiveAgentChat(state, threadId);
+  return hydrateProductShellThread(
+    { ...state, agentChatByThreadId },
+    thread,
+    previewBlocksForThread(thread),
+    "idle",
+    agentChatByThreadId[threadId],
+  );
 }
 
 export function openProductShellThreadFromLeftUi(
@@ -1249,10 +1275,20 @@ export function openProductShellThreadFromLeftUi(
   // indicator if it's running) with an empty body until thread.hydrated fills the
   // real blocks.
   const thread = state.threads.find((candidate) => candidate.threadId === threadId);
+  // Preserve the thread we are leaving and restore the target's preserved state, so
+  // its blocker / blocks / draft survive the switch instead of being rebuilt blank.
+  const agentChatByThreadId = preserveActiveAgentChat(state, threadId);
+  const stateWithMap = { ...state, agentChatByThreadId };
   const optimistic =
     thread === undefined
-      ? { ...state, activeThreadId: threadId }
-      : hydrateProductShellThread(state, thread, [], thread.running ? "running" : "idle");
+      ? { ...stateWithMap, activeThreadId: threadId }
+      : hydrateProductShellThread(
+          stateWithMap,
+          thread,
+          [],
+          thread.running ? "running" : "idle",
+          agentChatByThreadId[threadId],
+        );
   return {
     state: {
       ...optimistic,
@@ -1950,17 +1986,23 @@ function hydrateProductShellThread(
   thread: ProductShellThread,
   blocks: AgentChatBlock[],
   runtimeState: "idle" | "running" = "idle",
+  // When this thread already has preserved per-thread state (we are switching back
+  // to it), restore that full state instead of rebuilding a fresh one — so its
+  // readiness blocker, blocks, prompt, and draft are not lost on the round-trip.
+  preservedAgentChat?: AgentChatShellState,
 ): ProductShellState {
   const threadSummary = toAgentChatThreadSummary(thread);
-  const agentChat = applyAgentChatBackendEvent(createStartAgentChatState(), {
-    kind: "thread.hydrated",
-    payload: {
-      thread: threadSummary,
-      blocks,
-      runtimeState,
-      workbenchPanes: thread.workbenchPanes.filter((pane) => pane.visible),
-    },
-  });
+  const agentChat =
+    preservedAgentChat ??
+    applyAgentChatBackendEvent(createStartAgentChatState(), {
+      kind: "thread.hydrated",
+      payload: {
+        thread: threadSummary,
+        blocks,
+        runtimeState,
+        workbenchPanes: thread.workbenchPanes.filter((pane) => pane.visible),
+      },
+    });
   const appChrome = applyAppChromeBackendEvent(createAppChromeState(), {
     kind: "thread.hydrated",
     payload: {
@@ -1978,7 +2020,8 @@ function hydrateProductShellThread(
   return {
     ...state,
     activeThreadId: thread.threadId,
-    agentChat: updateComposerDraft(agentChat, "").state,
+    agentChat:
+      preservedAgentChat !== undefined ? agentChat : updateComposerDraft(agentChat, "").state,
     appChrome,
     workbenchOpen: thread.workbenchPanes.some((pane) => pane.visible),
     leftUiMenu: null,

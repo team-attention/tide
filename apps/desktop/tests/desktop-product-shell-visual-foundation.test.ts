@@ -156,6 +156,61 @@ function threadListState() {
   });
 }
 
+test("switching_threads_preserves_each_threads_agent_chat_state", () => {
+  // Spec: docs_v2/specs/runtime-mental-model.md — switching threads is a pure
+  // selection; it must never lose another thread's state. Here thread A is blocked
+  // on directory trust; viewing B and returning to A must keep A's blocker.
+  const summary = (threadId: string, title: string) => ({
+    threadId,
+    title,
+    agentBinding: { agentId: "codex", runtimeSource: { kind: "provider_cli", integrationId: "codex" } },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    createdAt: "2026-05-29T00:00:00.000Z",
+    updatedAt: "2026-05-29T00:01:00.000Z",
+    pinned: false,
+    archived: false,
+    lastKnownState: "idle",
+  });
+  const base = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: { threads: [summary("thread-a", "A"), summary("thread-b", "B")] },
+  });
+
+  const openA = openProductShellThreadFromLeftUi(base, "thread-a", {
+    backendTransportAvailable: true,
+  }).state;
+  const aBlocked = applyProductShellBackendEvent(openA, {
+    kind: "providerReadiness.changed",
+    payload: {
+      threadId: "thread-a",
+      readiness: {
+        agentId: "codex",
+        ready: false,
+        blockers: [
+          { kind: "directory_trust_required", scope: "execution_context", message: "trust needed" },
+        ],
+      },
+    },
+  });
+  assert.equal(aBlocked.agentChat.providerReadiness?.ready, false);
+
+  const onB = openProductShellThreadFromLeftUi(aBlocked, "thread-b", {
+    backendTransportAvailable: true,
+  }).state;
+  // B has its own (clean) state — A's blocker did not bleed into it.
+  assert.equal(onB.agentChat.providerReadiness, null);
+
+  const backToA = openProductShellThreadFromLeftUi(onB, "thread-a", {
+    backendTransportAvailable: true,
+  }).state;
+  assert.equal(backToA.activeThreadId, "thread-a");
+  // A's blocker survived the round-trip instead of being rebuilt blank.
+  assert.equal(backToA.agentChat.providerReadiness?.ready, false);
+  assert.ok(
+    backToA.agentChat.providerReadiness?.blockers.some((b) => b.kind === "directory_trust_required"),
+  );
+});
+
 test("confirming_thread_archive_emits_command_and_drops_it_from_the_list", () => {
   // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
   const state = threadListState();
