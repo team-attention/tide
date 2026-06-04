@@ -6,7 +6,7 @@
 
 **A free, open-source Codex App alternative for local coding-agent work — with multi-agent support.**
 
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](../../LICENSE)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](../../LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)
 ![Electron](https://img.shields.io/badge/electron-node%20%2B%20react-47848F?style=flat-square)
 
@@ -45,4 +45,4 @@ Download the latest Tide `.dmg` from [Releases](https://github.com/team-attentio
 
 ## License
 
-[MIT](../../LICENSE)
+[AGPL-3.0](../../LICENSE). Contributions are accepted under the [Contributor License Agreement](../../CLA.md).

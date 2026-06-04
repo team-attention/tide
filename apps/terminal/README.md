@@ -7,7 +7,7 @@
 **A native macOS Workspace where humans and coding agents share Terminal, Editor, Diff, and Browser Panes.**
 
 [![Release](https://img.shields.io/github/v/release/team-attention/tide?style=flat-square&color=blue)](https://github.com/team-attention/tide/releases)
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](../../LICENSE)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](../../LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)
 ![Rust](https://img.shields.io/badge/rust-2021-orange?style=flat-square)
 
@@ -161,4 +161,4 @@ Terminals are still the substrate. The difference is that the surrounding Worksp
 
 ## License
 
-[MIT](../../LICENSE)
+[AGPL-3.0](../../LICENSE). Contributions are accepted under the [Contributor License Agreement](../../CLA.md).

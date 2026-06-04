@@ -6,7 +6,7 @@
 
 **Local, open-source coding-agent workspaces — two products under one brand.**
 
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)
 
 </div>
@@ -40,4 +40,6 @@ A native macOS (Rust + WGPU) Workspace where humans and coding agents share Term
 
 ## License
 
-[MIT](LICENSE)
+Copyright © 2025 eatnug. Licensed under [AGPL-3.0](LICENSE).
+
+Contributions are accepted under the [Contributor License Agreement](CLA.md), which lets the owner offer the Project under AGPL-3.0 **and** under separate commercial licenses. For commercial licensing, contact the owner.
