@@ -158,67 +158,6 @@ test("agent_runtime_port_starts_antigravity_launch_plan_and_writes_input", async
   assert.deepEqual(launcher.handles[0].writes, ["Use Antigravity for this turn\r"]);
 });
 
-test("antigravity_spawns_serialize_so_concurrent_agy_threads_do_not_collide", async () => {
-  // The agy CLI cannot start two conversations near-simultaneously (shared
-  // daemon/brain). The runtime gates agy spawns: the second waits for the first.
-  const order: string[] = [];
-  let releaseFirst!: () => void;
-  const firstBlocked = new Promise<void>((resolve) => {
-    releaseFirst = resolve;
-  });
-
-  class GatedAntigravity extends FakeAgentIntegration {
-    calls = 0;
-    constructor() {
-      super("antigravity", startPlan("antigravity"));
-    }
-    async buildStartPlan(input: AgentStartPlanInput): Promise<ProviderLaunchPlan> {
-      this.calls += 1;
-      order.push(`agy-${this.calls}`);
-      if (this.calls === 1) {
-        await firstBlocked;
-      }
-      return super.buildStartPlan(input);
-    }
-  }
-
-  const antigravity = new GatedAntigravity();
-  const runtime = createAgentIntegrationAgentRuntimePort({
-    integrations: {
-      codex: fakeIntegration("codex", startPlan("codex")),
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity,
-    },
-    launcher: new FakePtyProcessLauncher(),
-    clock: () => now,
-    idGenerator: sequentialIdGenerator("runtime"),
-    antigravitySpawnSettleMs: 0,
-  });
-
-  const scope = { kind: "project" as const, projectId: "tide", cwd: "/repo" };
-  const launchOptions = { model: "Antigravity default", permission: "default" as const };
-  const first = runtime.start({
-    threadId: "t1",
-    agentBinding: { agentId: "antigravity" },
-    scope,
-    launchOptions,
-  });
-  const second = runtime.start({
-    threadId: "t2",
-    agentBinding: { agentId: "antigravity" },
-    scope,
-    launchOptions,
-  });
-
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  // The second agy is gated behind the first — its plan has not started yet.
-  assert.deepEqual(order, ["agy-1"]);
-
-  releaseFirst();
-  await Promise.all([first, second]);
-  assert.deepEqual(order, ["agy-1", "agy-2"]);
-});
-
 test("agent_runtime_port_adds_runtime_identity_env_to_provider_process", async () => {
   const codex = fakeIntegration("codex", startPlan("codex"));
   const launcher = new FakePtyProcessLauncher();

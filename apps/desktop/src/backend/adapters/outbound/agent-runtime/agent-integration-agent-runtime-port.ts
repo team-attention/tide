@@ -77,9 +77,6 @@ export interface CreateAgentIntegrationRuntimePortInput {
   }) => Promise<void> | void;
   clock?: () => string;
   idGenerator?: () => string;
-  // Settle window after an antigravity spawn before the next agy may start. Injected
-  // so tests can drop it to 0. Defaults to ANTIGRAVITY_SPAWN_SETTLE_MS.
-  antigravitySpawnSettleMs?: number;
 }
 
 export interface CreateAgentIntegrationProviderReadinessPortInput {
@@ -128,10 +125,6 @@ export function createAgentIntegrationProviderReadinessPort(
   };
 }
 
-// Settle window after an antigravity spawn before the next agy may start, so the
-// agy CLI has time to create its conversation/brain before a sibling agy begins.
-const ANTIGRAVITY_SPAWN_SETTLE_MS = 2500;
-
 export function createAgentIntegrationAgentRuntimePort(
   input: CreateAgentIntegrationRuntimePortInput,
 ): AgentRuntimePort {
@@ -146,12 +139,6 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
   private readonly processes = new Map<string, RuntimeProcessState>();
-  // Antigravity's CLI cannot start two conversations near-simultaneously: the
-  // shared daemon/brain means the second agy spawns no conversation (no brain dir,
-  // no hook signal → empty Thread). codex/claude are independent processes and need
-  // no gate. Serialize agy spawns with a short settle so each establishes first.
-  private antigravitySpawnGate: Promise<void> = Promise.resolve();
-  private readonly antigravitySpawnSettleMs: number;
 
   constructor(input: CreateAgentIntegrationRuntimePortInput) {
     this.integrations = input.integrations;
@@ -160,60 +147,25 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     this.onRuntimeStarted = input.onRuntimeStarted;
     this.clock = input.clock ?? defaultClock;
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
-    this.antigravitySpawnSettleMs =
-      input.antigravitySpawnSettleMs ?? ANTIGRAVITY_SPAWN_SETTLE_MS;
   }
 
   async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
     if (!isProviderCliAgentId(input.agentBinding.agentId)) {
       throw new Error("Tide API Agents do not start through the Provider CLI runtime port.");
     }
-    if (input.agentBinding.agentId === "antigravity") {
-      return this.startThroughAntigravityGate(input);
-    }
-    return this.launchProviderCli(input);
-  }
 
-  // Serializes antigravity spawns: the next agy start waits for the prior spawn to
-  // finish plus a settle, so concurrent agy Threads don't collide on the shared
-  // antigravity daemon/brain (which otherwise drops the second conversation).
-  private async startThroughAntigravityGate(
-    input: AgentRuntimeStartInput,
-  ): Promise<AgentRuntimeHandle> {
-    const prior = this.antigravitySpawnGate;
-    let release!: () => void;
-    this.antigravitySpawnGate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    try {
-      await prior;
-    } catch {
-      // A prior agy spawn failing must not wedge the gate for later starts.
-    }
-    try {
-      return await this.launchProviderCli(input);
-    } finally {
-      setTimeout(release, this.antigravitySpawnSettleMs);
-    }
-  }
-
-  private async launchProviderCli(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
-    const agentId = input.agentBinding.agentId;
-    if (!isProviderCliAgentId(agentId)) {
-      throw new Error("Tide API Agents do not start through the Provider CLI runtime port.");
-    }
-    traceAgentRuntime(`start ${agentId} thread=${input.threadId}`);
-    const integration = this.integrations[agentId];
+    traceAgentRuntime(`start ${input.agentBinding.agentId} thread=${input.threadId}`);
+    const integration = this.integrations[input.agentBinding.agentId];
     const plan = await integration.buildStartPlan({
-      agentId,
+      agentId: input.agentBinding.agentId,
       agentBinding: input.agentBinding,
       scope: input.scope,
       launchOptions: input.launchOptions,
       initialPrompt: input.initialPrompt,
     });
-    traceAgentRuntime(`plan ${agentId} command=${plan.command}`);
+    traceAgentRuntime(`plan ${input.agentBinding.agentId} command=${plan.command}`);
 
-    return this.spawnRuntime(input.threadId, agentId, plan);
+    return this.spawnRuntime(input.threadId, input.agentBinding.agentId, plan);
   }
 
   async resume(input: AgentRuntimeResumeInput): Promise<AgentRuntimeHandle> {
