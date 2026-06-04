@@ -152,6 +152,9 @@ export interface ProductShellState {
   // none). See docs_v2/specs/worktree-creation.md.
   creatingWorktreeForProjectId: string | null;
   threads: ProductShellThread[];
+  // False until the first thread.listed arrives, so a cold boot shows a rail skeleton
+  // instead of a flash of "empty". Once listed (even with zero threads) it stays true.
+  threadsLoaded: boolean;
   // The active thread's agent-chat state (what is rendered).
   agentChat: AgentChatShellState;
   // Per-thread agent-chat state, keyed by threadId. Each thread's content (blocks,
@@ -296,6 +299,8 @@ export type ProductShellPinnedProjectView = ProductShellProjectGroupView;
 export interface ProductShellViewModel {
   activeThreadId: string | null;
   leftUiOpen: boolean;
+  // False on a cold boot until the first thread list arrives — drives the rail skeleton.
+  threadsLoaded: boolean;
   workbenchOpen: boolean;
   fileTreeOpen: boolean;
   searchQuery: string;
@@ -346,6 +351,9 @@ export interface ProductShellFileTreeView {
   updatedAt?: string;
   entries: ProductShellFileTreeEntryView[];
   truncated?: boolean;
+  // True while the tree for the active thread is being (re)loaded — e.g. right after
+  // a thread switch cleared it — so the UI can show a skeleton instead of "empty".
+  loading?: boolean;
 }
 
 export interface ProductShellFileTreeEntryView {
@@ -449,6 +457,8 @@ export function createProductShellState(
     renamingProjectId: null,
     creatingWorktreeForProjectId: null,
     threads: includeFixtureData ? initialThreads : [],
+    // Fixture/dev data is "already loaded"; a real cold boot waits for thread.listed.
+    threadsLoaded: includeFixtureData,
     agentChat: createStartAgentChatState(startScope),
     agentChatByThreadId: {},
     appChrome: createAppChromeState(),
@@ -564,6 +574,7 @@ export function createProductShellViewModel(
   return {
     activeThreadId: state.activeThreadId,
     leftUiOpen: state.leftUiOpen,
+    threadsLoaded: state.threadsLoaded,
     workbenchOpen: state.workbenchOpen,
     fileTreeOpen: state.fileTreeOpen,
     searchQuery: state.searchQuery,
@@ -1573,6 +1584,7 @@ function applyProductShellThreadListEvent(
     activeThreadId,
     projects: projectsFromThreads(threads),
     threads,
+    threadsLoaded: true,
     leftUiMenu: null,
     archiveConfirmThreadId: null,
     fileTree: null,
@@ -2073,9 +2085,13 @@ function createFileTreeView(state: ProductShellState): ProductShellFileTreeView 
       ? thread.scope.projectId
       : thread?.scope.scratchCwd || "tide";
 
+  // fileTree === null while a thread is active means "not loaded yet" (just switched
+  // / cleared, awaiting refresh_file_tree), which the UI renders as a loading state
+  // rather than an empty folder.
   return {
     cwdLabel,
     entries: [],
+    loading: state.activeThreadId !== null,
   };
 }
 

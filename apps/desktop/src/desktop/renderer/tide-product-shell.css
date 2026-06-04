@@ -3106,6 +3106,103 @@ button.file-tree-row {
   }
 }
 
+/* File tree loading shimmer (shown right after a thread switch while the new tree
+   loads, instead of a blank/empty tree). */
+.file-tree-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+.file-tree-skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding-left: calc(10px + var(--depth, 0) * 14px);
+  padding-right: 12px;
+}
+.file-tree-skeleton__icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+.file-tree-skeleton__label {
+  height: 9px;
+  border-radius: 4px;
+}
+.file-tree-skeleton__icon,
+.file-tree-skeleton__label {
+  background: linear-gradient(
+    90deg,
+    rgba(60, 55, 60, 0.06) 25%,
+    rgba(60, 55, 60, 0.13) 37%,
+    rgba(60, 55, 60, 0.06) 63%
+  );
+  background-size: 400% 100%;
+  animation: tide-skeleton-shimmer 1.4s ease infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-tree-skeleton__icon,
+  .file-tree-skeleton__label {
+    animation: none;
+  }
+}
+
+/* Rail (thread list) loading shimmer on a cold boot. */
+.rail-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 6px 14px;
+}
+.rail-skeleton__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rail-skeleton__heading {
+  height: 8px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+.rail-skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 22px;
+}
+.rail-skeleton__dot {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+}
+.rail-skeleton__label {
+  height: 9px;
+  border-radius: 4px;
+}
+.rail-skeleton__heading,
+.rail-skeleton__dot,
+.rail-skeleton__label {
+  background: linear-gradient(
+    90deg,
+    rgba(60, 55, 60, 0.06) 25%,
+    rgba(60, 55, 60, 0.13) 37%,
+    rgba(60, 55, 60, 0.06) 63%
+  );
+  background-size: 400% 100%;
+  animation: tide-skeleton-shimmer 1.4s ease infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail-skeleton__heading,
+  .rail-skeleton__dot,
+  .rail-skeleton__label {
+    animation: none;
+  }
+}
+
 /* Empty state for a loaded thread with no messages to show. */
 .agent-session-empty {
   display: flex;

@@ -1280,7 +1280,9 @@ function createLeftUi(
     createElement(
       "div",
       { className: "left-ui__sections" },
-      ...(viewModel.listSettings.groupBy === "thread"
+      ...(!viewModel.threadsLoaded
+        ? [createRailSkeleton()]
+        : viewModel.listSettings.groupBy === "thread"
         ? [
             // Thread mode still surfaces pinned threads in a Pinned section (no
             // project groups); the flat list then excludes them to avoid dupes.
@@ -2378,6 +2380,48 @@ function WorkbenchTerminalPane(props: {
   );
 }
 
+// Shimmer rows shown while the active thread's file tree is (re)loading, so a thread
+// switch shows motion instead of a blank/empty tree.
+function createFileTreeSkeleton(): ReactElement {
+  const widths = [82, 64, 73, 58, 70, 50, 66, 60];
+  return createElement(
+    "div",
+    { className: "file-tree-skeleton", "aria-hidden": true, "aria-label": "Loading files" },
+    ...widths.map((width, index) =>
+      createElement(
+        "div",
+        { key: index, className: "file-tree-skeleton__row", style: { "--depth": index % 3 } as CSSProperties },
+        createElement("span", { className: "file-tree-skeleton__icon" }),
+        createElement("span", { className: "file-tree-skeleton__label", style: { width: `${width}%` } as CSSProperties }),
+      ),
+    ),
+  );
+}
+
+// Rail shimmer shown on a cold boot until the first thread list arrives.
+function createRailSkeleton(): ReactElement {
+  const groups: number[][] = [[78, 60], [70, 84, 52], [66]];
+  return createElement(
+    "div",
+    { className: "rail-skeleton", "aria-hidden": true, "aria-label": "Loading threads" },
+    ...groups.map((rows, groupIndex) =>
+      createElement(
+        "div",
+        { key: groupIndex, className: "rail-skeleton__group" },
+        createElement("span", { className: "rail-skeleton__heading", style: { width: "38%" } as CSSProperties }),
+        ...rows.map((width, rowIndex) =>
+          createElement(
+            "div",
+            { key: rowIndex, className: "rail-skeleton__row" },
+            createElement("span", { className: "rail-skeleton__dot" }),
+            createElement("span", { className: "rail-skeleton__label", style: { width: `${width}%` } as CSSProperties }),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 function createFileTreeColumn(
   viewModel: ProductShellViewModel,
   handlers: ProductShellHandlers,
@@ -2410,7 +2454,9 @@ function createFileTreeColumn(
       createElement(
         "div",
         { className: "file-tree-column__entries" },
-        viewModel.fileTree.entries.map((entry) =>
+        viewModel.fileTree.loading
+          ? createFileTreeSkeleton()
+          : viewModel.fileTree.entries.map((entry) =>
           createElement(
             "button",
             {
