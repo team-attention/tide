@@ -673,15 +673,12 @@ export function submitComposer(
   const composerAfterSend = { ...state.composer, draft: "", attachments: [] };
 
   if (state.thread) {
-    // Submitting during a live turn: the backend queues it. Reflect that
-    // optimistically as a "queued" row and clear the draft so the user can keep
-    // typing; it clears when the flushed user block arrives. Attachments always
-    // clear on send so they aren't re-attached to the next message.
-    const busy = state.runtimeState === "running" || state.runtimeState === "starting";
+    // Show the sent message immediately as a pending row, whether the turn is busy
+    // (genuinely queued) or idle (about to run) — it clears the instant the real
+    // user block arrives. Without this a follow-up looked like it vanished until
+    // the backend recorded it. Draft + attachments always clear on send.
     return {
-      state: busy
-        ? { ...state, queuedInput: input, composer: { ...composerAfterSend, draft: "" } }
-        : { ...state, composer: composerAfterSend },
+      state: { ...state, queuedInput: input, composer: composerAfterSend },
       command: {
         kind: "composer.sendInput",
         payload: {

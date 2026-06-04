@@ -164,6 +164,29 @@ test("structured_tool_events_render_as_tool_blocks", () => {
   });
 });
 
+test("mcp_capability_discovery_calls_are_kept_out_of_the_session", () => {
+  // An agent's list_mcp_resources / list_mcp_tools are protocol housekeeping, not
+  // user-meaningful tool activity, so they render no blocks (they showed as empty
+  // "{}" / "resources: []" noise before).
+  const reader = createFixtureAgentSessionReader();
+  const result = reader.read({
+    thread,
+    agentBinding: thread.agentBinding,
+    frames: [
+      frame("frame-mcp-call", {
+        payload: { type: "tool_call", toolName: "list_mcp_resources", callId: "m1", body: "{}" },
+      }),
+      frame("frame-mcp-result", {
+        sequence: 2,
+        payload: { type: "tool_result", toolName: "list_mcp_resources", callId: "m1", ok: true, body: "resources: []" },
+      }),
+    ],
+    existingBlocks: [],
+  });
+
+  assert.equal(result.blockUpdates.length, 0, "MCP discovery calls emit no blocks");
+});
+
 test("structured_file_edit_tool_result_renders_file_edit_and_diff_blocks", () => {
   // Spec: docs_v2/specs/tide-mcp-file-edit-diff-tools.md
   const reader = createFixtureAgentSessionReader();

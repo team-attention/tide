@@ -74,8 +74,14 @@ function blocksFromFrame(
     case "message":
       return [messageBlockFromFrame(input.thread.threadId, frame, payload)];
     case "tool_call":
+      if (isMcpProtocolNoiseTool(payload)) {
+        return [];
+      }
       return [toolBlockFromFrame(input.thread.threadId, frame, payload, "tool_call")];
     case "tool_result":
+      if (isMcpProtocolNoiseTool(payload)) {
+        return [];
+      }
       return blocksFromToolResult(input.thread.threadId, frame, payload);
     case "approval_prompt":
       return [promptBlockFromFrame(input.thread.threadId, frame, payload, "approval_prompt")];
@@ -94,6 +100,15 @@ function blocksFromFrame(
     default:
       return [rawBlockFromFrame(input.thread.threadId, frame)];
   }
+}
+
+// The agent's MCP capability-discovery calls (list_mcp_resources / list_mcp_tools)
+// are protocol housekeeping, not user-meaningful tool activity, so they are kept
+// out of the visible session instead of showing as empty "{}" / "resources: []".
+const MCP_PROTOCOL_NOISE_TOOLS = new Set(["list_mcp_resources", "list_mcp_tools"]);
+function isMcpProtocolNoiseTool(payload: Record<string, unknown>): boolean {
+  const toolName = stringField(payload.toolName);
+  return toolName !== undefined && MCP_PROTOCOL_NOISE_TOOLS.has(toolName);
 }
 
 function blocksFromToolResult(
