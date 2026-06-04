@@ -974,36 +974,25 @@ test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {
   assert.equal(result.command?.payload.command, "open_provider_setup_surface");
 });
 
-test("opening_a_thread_shows_a_loading_skeleton_until_its_blocks_arrive", () => {
-  // An opened thread with no blocks yet (and no active run) is still loading from
-  // the backend, so the chat area shows a skeleton instead of flashing blank.
+test("opening_a_thread_shows_a_loading_skeleton_that_clears_even_with_zero_blocks", () => {
+  // While a thread is hydrating (opened, blocks not back yet) the chat area shows a
+  // skeleton instead of flashing blank.
   const opened = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),
     backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
   );
-  assert.equal(createAgentChatShellViewModel(opened).chatState, "hydrating");
-  assert.match(renderShell(opened), /agent-session-skeleton/);
+  const loading = { ...opened, hydrating: true };
+  assert.equal(createAgentChatShellViewModel(loading).chatState, "hydrating");
+  assert.match(renderShell(loading), /agent-session-skeleton/);
 
-  // Once a block arrives it renders content, not the skeleton.
-  const withBlock = applyBackendEventToAgentChatShell(opened, {
-    contractVersion: CONTRACT_VERSION,
-    eventId: "e-block",
-    kind: "agentSessionBlock.upserted",
-    emittedAt: now,
-    payload: {
-      block: {
-        blockId: "b1",
-        threadId: thread.threadId,
-        kind: "message",
-        role: "agent",
-        status: "complete",
-        body: "Here is the answer.",
-        updatedAt: now,
-      },
-    },
-  } as BackendEventEnvelope<BackendEventKind>);
-  assert.equal(createAgentChatShellViewModel(withBlock).chatState, "ready");
-  assert.doesNotMatch(renderShell(withBlock), /agent-session-skeleton/);
+  // The real hydrate returning — even with ZERO blocks (e.g. an agent that produced
+  // nothing) — must clear the skeleton, not leave it spinning forever.
+  const hydratedEmpty = applyBackendEventToAgentChatShell(
+    loading,
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  assert.equal(createAgentChatShellViewModel(hydratedEmpty).chatState, "ready");
+  assert.doesNotMatch(renderShell(hydratedEmpty), /agent-session-skeleton/);
 });
 
 test("prompt_choice_surface_row_emits_prompt_answer", () => {

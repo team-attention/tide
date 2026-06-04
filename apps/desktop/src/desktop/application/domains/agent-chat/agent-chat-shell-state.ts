@@ -48,6 +48,10 @@ export interface AgentChatCommandOption {
 export interface AgentChatShellState {
   thread: AgentChatThreadSummary | null;
   runtimeState: AgentRuntimeStateName;
+  // True from the optimistic open of a thread until its real hydrate returns from the
+  // backend. Drives the loading skeleton — cleared on hydrate even if the thread has
+  // zero blocks (a genuinely empty thread shows empty, not a skeleton forever).
+  hydrating: boolean;
   providerReadiness: AgentChatProviderReadiness | null;
   // True between dispatching a Provider Readiness action (e.g. "Trust this folder")
   // and the resulting providerReadiness.changed — so the UI can show it is working.
@@ -360,6 +364,7 @@ export function createAgentChatShellState(input?: {
   return {
     thread: null,
     runtimeState: "not_started",
+    hydrating: false,
     providerReadiness: null,
     providerReadinessActionPending: false,
     promptState: null,
@@ -772,6 +777,9 @@ export function applyAgentChatBackendEvent(
         ...state,
         thread: payload.thread,
         blocks: payload.blocks ?? state.blocks,
+        // The real hydrate has returned — stop the loading skeleton (even if there
+        // are zero blocks, so an empty thread does not skeleton forever).
+        hydrating: false,
         providerReadiness: payload.providerReadiness ?? state.providerReadiness,
         providerReadinessActionPending: false,
         runtimeState: payload.runtimeState ?? state.runtimeState,
@@ -984,14 +992,10 @@ function deriveChatState(state: AgentChatShellState): AgentChatState {
   if (!state.thread) {
     return "empty";
   }
-  // An opened thread with no content yet and no active run is still loading its
-  // blocks from the backend (the optimistic switch shows the header first). A
-  // preserved thread restored on switch-back already has its blocks, so it skips
-  // this and renders instantly.
-  if (
-    state.blocks.length === 0 &&
-    (state.runtimeState === "idle" || state.runtimeState === "not_started")
-  ) {
+  // Still loading this thread's blocks from the backend (set on optimistic open,
+  // cleared when the real hydrate returns). A preserved thread restored on switch-
+  // back is not hydrating, so it renders instantly with no skeleton.
+  if (state.hydrating && state.blocks.length === 0) {
     return "hydrating";
   }
   return "ready";

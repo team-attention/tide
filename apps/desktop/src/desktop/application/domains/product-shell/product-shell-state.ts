@@ -1288,6 +1288,9 @@ export function openProductShellThreadFromLeftUi(
           [],
           thread.running ? "running" : "idle",
           agentChatByThreadId[threadId],
+          // Awaiting the real hydrate below → show the loading skeleton (unless we
+          // restored preserved content, which renders instantly).
+          agentChatByThreadId[threadId] === undefined,
         );
   return {
     state: {
@@ -1990,6 +1993,9 @@ function hydrateProductShellThread(
   // to it), restore that full state instead of rebuilding a fresh one — so its
   // readiness blocker, blocks, prompt, and draft are not lost on the round-trip.
   preservedAgentChat?: AgentChatShellState,
+  // True for an optimistic open awaiting the backend hydrate — drives the loading
+  // skeleton until the real blocks arrive. Not set when restoring preserved state.
+  hydrating = false,
 ): ProductShellState {
   const threadSummary = toAgentChatThreadSummary(thread);
   const agentChat =
@@ -2021,7 +2027,9 @@ function hydrateProductShellThread(
     ...state,
     activeThreadId: thread.threadId,
     agentChat:
-      preservedAgentChat !== undefined ? agentChat : updateComposerDraft(agentChat, "").state,
+      preservedAgentChat !== undefined
+        ? agentChat
+        : { ...updateComposerDraft(agentChat, "").state, hydrating },
     appChrome,
     workbenchOpen: thread.workbenchPanes.some((pane) => pane.visible),
     leftUiMenu: null,
