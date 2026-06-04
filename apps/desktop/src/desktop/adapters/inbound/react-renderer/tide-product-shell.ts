@@ -104,6 +104,7 @@ import {
   removeProductShellComposerAttachment,
   saveProductShellWorkbenchEditorPane,
   toggleProductShellFileTreeWithRefresh,
+  refreshStartPageFileTree,
   toggleProductShellLeftUi,
   toggleProductShellProject,
   toggleProductShellThreadPin,
@@ -462,7 +463,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     if (cwd === null) {
       return;
     }
-    setShellState((state) => setProductShellComposerFolderScope(state, cwd));
+    setShellState((state) => {
+      const next = setProductShellComposerFolderScope(state, cwd);
+      // Reflect the newly picked folder in the start-page file tree if it's open.
+      dispatchBackendCommand(refreshStartPageFileTree(next));
+      return next;
+    });
   };
 
   // Fetch real git branches/worktrees whenever the active Project cwd changes,
@@ -759,6 +765,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       setShellState((state) => {
         const result = selectProductShellChoiceSurfaceRow(state, surfaceKind, rowId);
         dispatchBackendCommand(result.command);
+        // Changing the start-page scope chip reloads the file tree for that directory.
+        dispatchBackendCommand(refreshStartPageFileTree(result.state));
         return result.state;
       });
     },

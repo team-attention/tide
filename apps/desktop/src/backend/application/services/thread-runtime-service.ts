@@ -420,6 +420,17 @@ export interface WorkbenchCommandResult {
   workbench: WorkbenchSnapshot;
 }
 
+export interface ReadWorkspaceFileTreeInput {
+  cwd: string;
+  maxDepth?: number;
+  maxEntries?: number;
+}
+
+export interface ReadWorkspaceFileTreeResult {
+  cwd: string;
+  fileTree: WorkbenchFileTreeView;
+}
+
 interface ProviderSetupSurfaceActionInput {
   command: string;
   args: string[];
@@ -645,6 +656,9 @@ export interface ThreadRuntimeService {
   handleWorkbenchCommand(
     input: WorkbenchCommandInput,
   ): Promise<ServiceResult<WorkbenchCommandResult>>;
+  readWorkspaceFileTree(
+    input: ReadWorkspaceFileTreeInput,
+  ): Promise<ServiceResult<ReadWorkspaceFileTreeResult>>;
   appendRawAgentFrame(input: AppendRawAgentFrameInput): Promise<RawAgentFrame>;
   listTideMcpTools(): TideMcpToolDefinition[];
   handleTideMcpToolCall(
@@ -2129,6 +2143,27 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
           "Workbench command is not supported.",
         );
     }
+  }
+
+  async readWorkspaceFileTree(
+    input: ReadWorkspaceFileTreeInput,
+  ): Promise<ServiceResult<ReadWorkspaceFileTreeResult>> {
+    // Thread-independent file tree read (the start page shows the composer-selected
+    // project's files before any thread exists). Same workspace file port + limits
+    // as refresh_file_tree, just keyed by an explicit cwd instead of a thread root.
+    const listed = await this.workspaceFilePort.listTree({
+      root: input.cwd,
+      maxDepth: fileTreeMaxDepth(input.maxDepth),
+      maxEntries: fileTreeMaxEntries(input.maxEntries),
+    });
+    if (!listed.ok) {
+      return failure(listed.error.code, listed.error.message);
+    }
+    return {
+      ok: true,
+      cwd: input.cwd,
+      fileTree: cloneFileTreeView(listed.fileTree),
+    };
   }
 
   async appendRawAgentFrame(input: AppendRawAgentFrameInput): Promise<RawAgentFrame> {

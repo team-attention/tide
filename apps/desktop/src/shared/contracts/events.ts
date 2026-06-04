@@ -32,7 +32,8 @@ export type BackendEventKind =
   | "agentSessionBlock.upserted"
   | "agentSessionBlock.completed"
   | "workbench.changed"
-  | "workbench.terminalOutput";
+  | "workbench.terminalOutput"
+  | "workspace.fileTreeLoaded";
 
 export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "backend.connectionChanged",
@@ -54,6 +55,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "agentSessionBlock.completed",
   "workbench.changed",
   "workbench.terminalOutput",
+  "workspace.fileTreeLoaded",
 ];
 
 export interface BackendEventPayloadByKind {
@@ -126,5 +128,10 @@ export interface BackendEventPayloadByKind {
     paneId: string;
     source: "stdout" | "stderr";
     chunk: string;
+  };
+  // A file tree read for an arbitrary directory (start page), not tied to a thread.
+  "workspace.fileTreeLoaded": {
+    cwd: string;
+    fileTree: WorkbenchFileTreeDto;
   };
 }

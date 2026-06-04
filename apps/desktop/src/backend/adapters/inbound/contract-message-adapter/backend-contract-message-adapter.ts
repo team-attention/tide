@@ -211,6 +211,27 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           ],
         );
       }
+      case "workspace.readFileTree": {
+        const typedCommand = command as BackendCommandEnvelope<"workspace.readFileTree">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.readWorkspaceFileTree(typedCommand.payload),
+          (result) => [
+            {
+              contractVersion: CONTRACT_VERSION,
+              eventId: this.nextEventId(),
+              requestId: typedCommand.requestId,
+              kind: "workspace.fileTreeLoaded",
+              emittedAt: this.clock(),
+              payload: {
+                cwd: result.cwd,
+                fileTree: toWorkbenchFileTreeDto(result.fileTree),
+              },
+            } satisfies BackendEventEnvelope<"workspace.fileTreeLoaded">,
+            this.commandCompletedEvent(typedCommand, { handled: true }),
+          ],
+        );
+      }
     }
   }
 

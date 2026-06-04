@@ -15,7 +15,8 @@ export type BackendCommandKind =
   | "prompt.answer"
   | "agentRuntime.stop"
   | "provider.trustWorkspace"
-  | "workbench.command";
+  | "workbench.command"
+  | "workspace.readFileTree";
 
 export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "thread.list",
@@ -30,6 +31,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "agentRuntime.stop",
   "provider.trustWorkspace",
   "workbench.command",
+  "workspace.readFileTree",
 ];
 
 /**
@@ -80,5 +82,12 @@ export interface BackendCommandPayloadByKind {
     command: string;
     targetPaneId?: WorkbenchPaneId;
     data?: JsonObject;
+  };
+  // Read a file tree for an arbitrary directory, NOT tied to a thread — used by the
+  // start (New Thread) page to show the composer-selected project's files.
+  "workspace.readFileTree": {
+    cwd: string;
+    maxDepth?: number;
+    maxEntries?: number;
   };
 }

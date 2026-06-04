@@ -177,6 +177,10 @@ export interface ProductShellState {
 export type ProductShellBackendCommand =
   | { kind: "thread.list"; payload: { includeArchived?: boolean } }
   | { kind: "thread.hydrate"; payload: { threadId: string } }
+  | {
+      kind: "workspace.readFileTree";
+      payload: { cwd: string; maxDepth?: number; maxEntries?: number };
+    }
   | { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }
   | { kind: "thread.setPinned"; payload: { threadId: string; pinned: boolean } }
   | { kind: "thread.rename"; payload: { threadId: string; title: string } }
@@ -772,10 +776,20 @@ export function toggleProductShellFileTreeWithRefresh(
   state: ProductShellState,
 ): ProductShellUpdateResult {
   const nextState = toggleProductShellFileTree(state);
-  if (state.fileTreeOpen || state.activeThreadId === null) {
+  // Closing: nothing to load.
+  if (state.fileTreeOpen) {
     return { state: nextState, command: null };
   }
-
+  // Opening on the start (New Thread) page: show the composer-selected project's
+  // file tree (no thread yet).
+  if (state.activeThreadId === null) {
+    const command = startPageFileTreeCommand(state);
+    return {
+      state: command === null ? nextState : { ...nextState, fileTree: null, expandedFolderPaths: [] },
+      command,
+    };
+  }
+  // Opening for an active thread: refresh that thread's tree.
   return {
     state: nextState,
     command: {
@@ -790,6 +804,32 @@ export function toggleProductShellFileTreeWithRefresh(
       },
     },
   };
+}
+
+// On the start page the file tree follows the composer's selected scope. A project
+// scope has a real cwd to list; a scratch scope has no directory yet (empty tree).
+function startPageFileTreeCommand(
+  state: ProductShellState,
+): ProductShellBackendCommand | null {
+  const scope = state.agentChat.composer.startOptions.scope;
+  if (scope?.kind === "project" && scope.cwd.length > 0) {
+    return {
+      kind: "workspace.readFileTree",
+      payload: { cwd: scope.cwd, maxDepth: 12, maxEntries: 4000 },
+    };
+  }
+  return null;
+}
+
+// When the start-page composer scope changes while the file tree is open, reload the
+// tree for the new directory. Returns null when not on the start page / tree closed.
+export function refreshStartPageFileTree(
+  state: ProductShellState,
+): ProductShellBackendCommand | null {
+  if (state.activeThreadId !== null || !state.fileTreeOpen) {
+    return null;
+  }
+  return startPageFileTreeCommand(state);
 }
 
 // The Projects shown in the Left UI and Project menu: the union of explicitly
@@ -1539,6 +1579,20 @@ export function applyProductShellBackendEvent(
             ? nextState.fileTree
             : productShellFileTreeFromPayload(payload.fileTree),
         editorDrafts: reconcileEditorDrafts(nextState.editorDrafts, panes),
+      };
+    }
+    case "workspace.fileTreeLoaded": {
+      // Start-page file tree for the composer-selected directory. Only applies while
+      // no thread is active (the New Thread page); once a thread opens, that thread's
+      // own tree takes over.
+      if (state.activeThreadId !== null) {
+        return nextState;
+      }
+      const payload = event.payload as { cwd?: string; fileTree?: unknown };
+      return {
+        ...nextState,
+        fileTree: productShellFileTreeFromPayload(payload.fileTree),
+        expandedFolderPaths: [],
       };
     }
     default:
