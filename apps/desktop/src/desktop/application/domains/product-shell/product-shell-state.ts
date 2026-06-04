@@ -155,6 +155,9 @@ export interface ProductShellState {
   // False until the first thread.listed arrives, so a cold boot shows a rail skeleton
   // instead of a flash of "empty". Once listed (even with zero threads) it stays true.
   threadsLoaded: boolean;
+  // When non-null, the Workbench Launcher shows an in-pane file picker (the string is
+  // the current filter text) so "Editor" picks a file to open right where you clicked.
+  editorPickerFilter: string | null;
   // The active thread's agent-chat state (what is rendered).
   agentChat: AgentChatShellState;
   // Per-thread agent-chat state, keyed by threadId. Each thread's content (blocks,
@@ -306,6 +309,17 @@ export type ProductShellBackgroundBrowserPane = AppChromeWorkbenchPaneRef & {
   threadId: string;
 };
 
+export interface ProductShellEditorPickerFileView {
+  relativePath: string;
+  name: string;
+  depth: number;
+}
+
+export interface ProductShellEditorPickerView {
+  filter: string;
+  files: ProductShellEditorPickerFileView[];
+}
+
 export interface ProductShellViewModel {
   activeThreadId: string | null;
   leftUiOpen: boolean;
@@ -329,6 +343,8 @@ export interface ProductShellViewModel {
   agentChat: AgentChatShellViewModel;
   appChrome: AppChromeViewModel;
   fileTree: ProductShellFileTreeView;
+  // In-pane editor file picker (the Workbench Launcher's "Editor" mode), or null.
+  editorPicker: ProductShellEditorPickerView | null;
   // Browser Panes of non-active threads, kept alive offscreen for background agents.
   backgroundBrowserPanes: ProductShellBackgroundBrowserPane[];
   editorDrafts: Record<string, ProductShellEditorDraft>;
@@ -471,6 +487,7 @@ export function createProductShellState(
     threads: includeFixtureData ? initialThreads : [],
     // Fixture/dev data is "already loaded"; a real cold boot waits for thread.listed.
     threadsLoaded: includeFixtureData,
+    editorPickerFilter: null,
     agentChat: createStartAgentChatState(startScope),
     agentChatByThreadId: {},
     appChrome: createAppChromeState(),
@@ -615,6 +632,7 @@ export function createProductShellViewModel(
     agentChat: createAgentChatShellViewModel(agentChatWithProjects(state)),
     appChrome: createAppChromeViewModel(state.appChrome),
     fileTree: createFileTreeView(state),
+    editorPicker: createEditorPickerView(state),
     editorDrafts: state.editorDrafts,
     // Visible Browser Panes owned by NON-active threads. Their <webview>s are kept
     // alive offscreen so a background agent can drive its own Browser Pane (observe /
@@ -689,6 +707,7 @@ export function startNewProductShellThread(
     appChrome: createAppChromeState(),
     fileTree: null,
     editorDrafts: {},
+    editorPickerFilter: null,
   };
 }
 
@@ -998,28 +1017,56 @@ export function selectProductShellLauncherAction(
     };
   }
   if (action.actionId === "open_editor") {
-    // The Editor launcher entry is a file picker: open the FileTree column so the
-    // user can choose which file to open in an Editor Pane (clicking a file row
-    // dispatches open_editor for that path).
+    // The Editor launcher entry turns the Launcher pad into an in-pane file picker
+    // (a searchable file list right where you clicked). Load the tree behind it; the
+    // picker reads it, and choosing a file opens it in the Editor (consuming the
+    // launcher). The FileTree column is NOT forced open.
     return {
-      state: {
-        ...state,
-        fileTreeOpen: true,
-      },
+      state: { ...state, editorPickerFilter: "" },
       command: {
         kind: "workbench.command",
         payload: {
           threadId: state.activeThreadId,
           command: "refresh_file_tree",
-          data: {
-            maxDepth: 12,
-            maxEntries: 4000,
-          },
+          data: { maxDepth: 12, maxEntries: 4000 },
         },
       },
     };
   }
   return { state, command: null };
+}
+
+// Update the in-pane editor file-picker's filter text.
+export function setProductShellEditorPickerFilter(
+  state: ProductShellState,
+  filter: string,
+): ProductShellState {
+  if (state.editorPickerFilter === null) {
+    return state;
+  }
+  return { ...state, editorPickerFilter: filter };
+}
+
+// Pick a file from the in-pane editor picker: open it in an Editor Pane (which
+// consumes the launcher) and close the picker.
+export function selectProductShellEditorPickerFile(
+  state: ProductShellState,
+  relativePath: string,
+): ProductShellUpdateResult {
+  if (state.activeThreadId === null) {
+    return { state: { ...state, editorPickerFilter: null }, command: null };
+  }
+  return {
+    state: { ...state, editorPickerFilter: null, workbenchOpen: true },
+    command: {
+      kind: "workbench.command",
+      payload: {
+        threadId: state.activeThreadId,
+        command: "open_editor",
+        data: { path: relativePath },
+      },
+    },
+  };
 }
 
 // Opens an arbitrary file path (e.g. a Read tool's file chip) in the Workbench
@@ -1334,6 +1381,7 @@ export function openProductShellThread(
     ),
     fileTree: null,
     expandedFolderPaths: [],
+    editorPickerFilter: null,
   };
 }
 
@@ -1379,6 +1427,7 @@ export function openProductShellThreadFromLeftUi(
       // the caller (and on thread.hydrated) fills in the new thread's files.
       fileTree: null,
       expandedFolderPaths: [],
+      editorPickerFilter: null,
     },
     command: {
       kind: "thread.hydrate",
@@ -2207,6 +2256,32 @@ function hydrateProductShellThread(
     fileTree: null,
     editorDrafts: {},
   };
+}
+
+// The in-pane editor picker's view: a flat, filtered list of files from the loaded
+// tree (folders excluded), matched case-insensitively against name or path.
+function createEditorPickerView(
+  state: ProductShellState,
+): ProductShellEditorPickerView | null {
+  if (state.editorPickerFilter === null) {
+    return null;
+  }
+  const query = state.editorPickerFilter.trim().toLowerCase();
+  const files = (state.fileTree?.entries ?? [])
+    .filter((entry) => entry.kind === "file")
+    .filter(
+      (entry) =>
+        query.length === 0 ||
+        entry.name.toLowerCase().includes(query) ||
+        entry.relativePath.toLowerCase().includes(query),
+    )
+    .slice(0, 300)
+    .map((entry) => ({
+      relativePath: entry.relativePath,
+      name: entry.name,
+      depth: entry.depth,
+    }));
+  return { filter: state.editorPickerFilter, files };
 }
 
 function createFileTreeView(state: ProductShellState): ProductShellFileTreeView {

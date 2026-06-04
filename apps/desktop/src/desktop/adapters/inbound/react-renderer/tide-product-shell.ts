@@ -82,6 +82,8 @@ import {
   toggleProductShellSearch,
   selectProductShellChoiceSurfaceRow,
   selectProductShellLauncherAction,
+  setProductShellEditorPickerFilter,
+  selectProductShellEditorPickerFile,
   archiveProductShellProjectChats,
   cancelProductShellProjectRename,
   setProductShellComposerActiveSurface,
@@ -327,6 +329,8 @@ interface ProductShellHandlers {
   }) => void;
   onRemoveAttachment: (attachmentId: string) => void;
   onLauncherAction: (actionId: string) => void;
+  onEditorPickerFilter: (filter: string) => void;
+  onEditorPickerSelect: (relativePath: string) => void;
   onLeftUiMenuOpen: (menu: ProductShellLeftUiMenu | null, rect?: MenuAnchorRect) => void;
   isSectionCollapsed: (title: string) => boolean;
   onToggleSection: (title: string) => void;
@@ -791,6 +795,14 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     onLauncherAction: (actionId) =>
       setShellState((state) => {
         const result = selectProductShellLauncherAction(state, actionId);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onEditorPickerFilter: (filter) =>
+      setShellState((state) => setProductShellEditorPickerFilter(state, filter)),
+    onEditorPickerSelect: (relativePath) =>
+      setShellState((state) => {
+        const result = selectProductShellEditorPickerFile(state, relativePath);
         dispatchBackendCommand(result.command);
         return result.state;
       }),
@@ -1473,7 +1485,13 @@ function createWorkbenchColumn(
         createIconButton("New Pane", createElement(Plus, { size: 16, strokeWidth: 1.9 }), handlers.onNewWorkbenchPane, "top-row-button"),
       ),
     ),
-    activeTab && activePane
+    viewModel.editorPicker !== null
+      ? createElement(
+          "section",
+          { className: "workbench-column__pane", "data-pane-kind": "editor-picker" },
+          createEditorPickerPane(viewModel.editorPicker, handlers),
+        )
+      : activeTab && activePane
       ? createElement(
           "section",
           {
@@ -1497,6 +1515,61 @@ function createWorkbenchColumn(
             handlers,
           }),
         ),
+  );
+}
+
+// In-pane editor file picker: the Launcher pad becomes a searchable file list. The
+// search input is autofocused; clicking a file opens it in the Editor (the backend
+// consumes the launcher). Mirrors the preview the user approved.
+function createEditorPickerPane(
+  editorPicker: NonNullable<ProductShellViewModel["editorPicker"]>,
+  handlers: ProductShellHandlers,
+): ReactElement {
+  return createElement(
+    "div",
+    { className: "workbench-pane-content editor-picker" },
+    createElement(
+      "label",
+      { className: "editor-picker__search" },
+      createElement(Search, { size: 14, strokeWidth: 1.9, "aria-hidden": true }),
+      createElement("input", {
+        className: "editor-picker__input",
+        type: "search",
+        "aria-label": "Filter files to open",
+        placeholder: "Filter files…",
+        autoFocus: true,
+        spellCheck: false,
+        value: editorPicker.filter,
+        onChange: (event: { currentTarget: { value: string } }) =>
+          handlers.onEditorPickerFilter(event.currentTarget.value),
+      }),
+    ),
+    createElement(
+      "div",
+      { className: "editor-picker__list", role: "listbox", "aria-label": "Files" },
+      editorPicker.files.length === 0
+        ? createElement(
+            "p",
+            { className: "editor-picker__empty" },
+            editorPicker.filter.trim().length === 0 ? "No files here." : "No matching files.",
+          )
+        : editorPicker.files.map((file) =>
+            createElement(
+              "button",
+              {
+                key: file.relativePath,
+                type: "button",
+                className: "editor-picker__row",
+                role: "option",
+                title: file.relativePath,
+                onClick: () => handlers.onEditorPickerSelect(file.relativePath),
+              },
+              createElement(fileIconFor(file.name), { size: 14, strokeWidth: 1.8, "aria-hidden": true }),
+              createElement("span", { className: "editor-picker__name" }, file.name),
+              createElement("span", { className: "editor-picker__path" }, file.relativePath),
+            ),
+          ),
+    ),
   );
 }
 

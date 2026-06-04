@@ -34,6 +34,7 @@ import {
   selectProductShellFileTreeEntry,
   selectProductShellChoiceSurfaceRow,
   selectProductShellLauncherAction,
+  selectProductShellEditorPickerFile,
   setProductShellComposerActiveSurface,
   setProductShellComposerFolderScope,
   setProductShellRegisteredProjects,
@@ -1928,10 +1929,10 @@ test("product_shell_launcher_browser_action_emits_open_browser_command", () => {
   });
 });
 
-test("product_shell_launcher_editor_action_opens_file_picker_column", () => {
+test("product_shell_launcher_editor_action_opens_in_pane_file_picker", () => {
   // Spec: docs_v2/specs/workbench-launcher-pane.md
-  // The Editor launcher entry is a file picker: it opens the FileTree column so
-  // the user can choose a file. FileTree is not itself a launcher entry.
+  // The Editor launcher entry turns the Launcher pad into an in-pane file picker
+  // (it does NOT open the FileTree column); it loads the tree behind the picker.
   const state = applyProductShellBackendEvent(
     toggleProductShellWorkbench(openProductShellThread(createProductShellState(), "thread-sketch")),
     {
@@ -1961,7 +1962,9 @@ test("product_shell_launcher_editor_action_opens_file_picker_column", () => {
   );
   const result = selectProductShellLauncherAction(state, "open_editor");
 
-  assert.equal(result.state.fileTreeOpen, true);
+  // In-pane picker: the FileTree column is NOT forced open; the picker is active.
+  assert.equal(result.state.fileTreeOpen, false);
+  assert.equal(result.state.editorPickerFilter, "");
   assert.equal(result.command?.kind, "workbench.command");
   assert.deepEqual(result.command?.payload, {
     threadId: "thread-sketch",
@@ -1970,6 +1973,15 @@ test("product_shell_launcher_editor_action_opens_file_picker_column", () => {
       maxDepth: 12,
       maxEntries: 4000,
     },
+  });
+
+  // Picking a file opens it in an Editor Pane and closes the picker.
+  const picked = selectProductShellEditorPickerFile(result.state, "src/app.ts");
+  assert.equal(picked.state.editorPickerFilter, null);
+  assert.deepEqual(picked.command?.payload, {
+    threadId: "thread-sketch",
+    command: "open_editor",
+    data: { path: "src/app.ts" },
   });
 });
 

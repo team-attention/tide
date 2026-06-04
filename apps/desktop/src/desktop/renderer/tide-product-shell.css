@@ -2979,6 +2979,84 @@ button {
   gap: 2px;
 }
 
+/* In-pane editor file picker (Workbench Launcher "Editor" mode). */
+.editor-picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  padding: 10px 8px 8px;
+  gap: 8px;
+}
+.editor-picker__search {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: 34px;
+  border: 1px solid var(--tide-line);
+  border-radius: 9px;
+  background: var(--tide-surface);
+  color: var(--tide-muted);
+}
+.editor-picker__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 13px;
+  outline: none;
+}
+.editor-picker__list {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.editor-picker__empty {
+  margin: 14px 6px;
+  color: var(--tide-muted);
+  font-size: 13px;
+}
+.editor-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 10px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-text);
+  cursor: pointer;
+  text-align: left;
+}
+.editor-picker__row:hover {
+  background: var(--tide-selection);
+}
+.editor-picker__row svg {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+}
+.editor-picker__name {
+  flex: 0 0 auto;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.editor-picker__path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--tide-muted);
+}
+
 .file-tree-row {
   flex: 0 0 28px;
   height: 28px;
