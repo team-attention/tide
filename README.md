@@ -26,13 +26,7 @@ Both run Codex, Claude Code, Gemini, and Antigravity as first-class agents. Each
 
 A free, open-source [Codex App](apps/desktop/) alternative: a focused Agent Chat per Thread, a Composer anchored to that chat, and a Workbench (Browser / Diff / Editor / Terminal Panes) that appears only when the Thread needs it — local, open, and multi-agent.
 
-- **Download:** _coming soon._
-- **Run from source:**
-  ```sh
-  cd apps/desktop && npm install && npm start
-  ```
-
-→ Details: **[apps/desktop/README.md](apps/desktop/README.md)**
+**Download:** _coming soon._ → Details: **[apps/desktop/README.md](apps/desktop/README.md)**
 
 ---
 
@@ -40,13 +34,7 @@ A free, open-source [Codex App](apps/desktop/) alternative: a focused Agent Chat
 
 A native macOS (Rust + WGPU) Workspace where humans and coding agents share Terminal, Editor, Diff, and Browser Panes, driven through the Agent Gateway and Tide MCP Runtime.
 
-- **Download:** grab the latest `Tide Terminal` `.dmg` from [Releases](https://github.com/team-attention/tide/releases) and drag it to Applications.
-- **Run from source:**
-  ```sh
-  cd apps/terminal && cargo build --release && ./scripts/build-app.sh
-  ```
-
-→ Details: **[apps/terminal/README.md](apps/terminal/README.md)**
+**Download:** grab the latest `Tide Terminal` `.dmg` from [Releases](https://github.com/team-attention/tide/releases) and drag it to Applications. → Details: **[apps/terminal/README.md](apps/terminal/README.md)**
 
 ---
 

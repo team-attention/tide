@@ -1,6 +1,6 @@
 const { _electron } = require("playwright");
 const path=require("node:path"),os=require("node:os"),fs=require("node:fs");
-const repo="/Users/eatnug/Workspace/tide";
+const repo=require("path").resolve(__dirname, "..");
 (async()=>{const dr=fs.mkdtempSync(path.join(os.tmpdir(),"tide-agm-"));
 const app=await _electron.launch({args:[path.join(repo,"out/main/electron-main.js")],env:{...process.env,TIDE_APP_DATA_ROOT:dr}});
 const page=await app.firstWindow();await page.waitForSelector(".tide-product-shell",{timeout:20000});await page.waitForTimeout(900);

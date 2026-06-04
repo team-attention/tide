@@ -8,7 +8,7 @@ const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
 
-const repo = "/Users/eatnug/Workspace/tide";
+const repo = require("path").resolve(__dirname, "..");
 const PROMPT =
   "Using your tools, list the top-level files in the current directory and read CLAUDE.md. " +
   "Then reply with ONE sentence describing what this project is. " +

@@ -32,29 +32,9 @@ Left UI | Agent Chat | Workbench
 
 ## Install
 
-> Packaged downloads are **coming soon**. For now, run from source.
+Download the latest Tide `.dmg` from [Releases](https://github.com/team-attention/tide/releases) — **coming soon**.
 
-### From source
-
-Build and run from this directory (never from the repo root):
-
-```sh
-cd apps/desktop
-npm install
-npm start              # build + launch
-npm run dev            # HMR dev
-npm run package:mac    # macOS .dmg (dist/package-mac/)
-```
-
-## Develop
-
-```sh
-cd apps/desktop
-npm test               # behavior tests
-npm run typecheck      # TypeScript
-npm run test:architecture
-npm run test:smoke:electron
-```
+> Building from source / contributing: see [`docs_v2/`](docs_v2/).
 
 ## Documentation
 

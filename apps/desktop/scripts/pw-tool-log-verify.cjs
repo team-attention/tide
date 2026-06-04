@@ -8,7 +8,7 @@ const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
-const repo = "/Users/eatnug/Workspace/tide";
+const repo = require("path").resolve(__dirname, "..");
 
 (async () => {
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tide-toollog-"));
@@ -17,7 +17,7 @@ const repo = "/Users/eatnug/Workspace/tide";
     home,
     ".claude",
     "projects",
-    "-Users-eatnug-Workspace-tide",
+    "-Users-you-Workspace-tide",
     "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl",
   );
   fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });

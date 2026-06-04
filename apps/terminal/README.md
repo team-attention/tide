@@ -23,20 +23,9 @@ https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
 ## Install
 
-### DMG
-
 Download the latest Tide Terminal `.dmg` from [Releases](https://github.com/team-attention/tide/releases), open it, and drag **Tide Terminal** to Applications.
 
-### From source
-
-Build from this directory (never from the repo root):
-
-```sh
-cd apps/terminal
-cargo build --release          # binary
-./scripts/build-app.sh         # macOS .app bundle + Info.plist fixup + ad-hoc sign
-./scripts/build-dmg.sh         # signed + notarized DMG
-```
+> Building from source / contributing: see [`CLAUDE.md`](CLAUDE.md).
 
 ## Features
 

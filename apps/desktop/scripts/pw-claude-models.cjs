@@ -1,7 +1,7 @@
 const { _electron } = require("playwright");
 const { spawnSync } = require("node:child_process");
 const path=require("node:path"),os=require("node:os"),fs=require("node:fs");
-const repo="/Users/eatnug/Workspace/tide";
+const repo=require("path").resolve(__dirname, "..");
 (async()=>{const dr=fs.mkdtempSync(path.join(os.tmpdir(),"tide-cm-"));
 spawnSync("node",[path.join(repo,"scripts/seed-thread.cjs"),dr,"claude"],{cwd:repo,stdio:"ignore"});
 const app=await _electron.launch({args:[path.join(repo,"out/main/electron-main.js")],env:{...process.env,TIDE_APP_DATA_ROOT:dr}});

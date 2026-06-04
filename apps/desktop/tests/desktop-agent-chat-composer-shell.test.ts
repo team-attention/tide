@@ -824,8 +824,8 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
   const base: AgentChatShellState = {
     ...createAgentChatShellState(),
     availableProjects: [
-      { projectId: "tide", name: "tide", cwd: "/Users/eatnug/Workspace/tide" },
-      { projectId: "slice", name: "slice", cwd: "/Users/eatnug/Workspace/slice" },
+      { projectId: "tide", name: "tide", cwd: "/Users/you/Workspace/tide" },
+      { projectId: "slice", name: "slice", cwd: "/Users/you/Workspace/slice" },
     ],
   };
   const agentSelected = selectAgentChatChoiceSurfaceRow(
@@ -850,7 +850,7 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
   assert.deepEqual(permissionSelected.composer.startOptions.scope, {
     kind: "project",
     projectId: "slice",
-    cwd: "/Users/eatnug/Workspace/slice",
+    cwd: "/Users/you/Workspace/slice",
   });
   assert.equal(permissionSelected.composer.startOptions.launchOptions?.permission, "acceptEdits");
   assert.match(html, /Claude Code/);
@@ -863,8 +863,8 @@ test("project_menu_lists_real_injected_projects_not_a_hardcoded_set", () => {
   const base: AgentChatShellState = {
     ...createAgentChatShellState(),
     availableProjects: [
-      { projectId: "tide", name: "tide", cwd: "/Users/eatnug/Workspace/tide" },
-      { projectId: "money", name: "money", cwd: "/Users/eatnug/Workspace/money" },
+      { projectId: "tide", name: "tide", cwd: "/Users/you/Workspace/tide" },
+      { projectId: "money", name: "money", cwd: "/Users/you/Workspace/money" },
     ],
   };
   const html = renderShell(setComposerActiveSurface(base, "project_menu").state);
@@ -916,8 +916,8 @@ test("worktree_menu_lists_real_worktrees", () => {
   const base: AgentChatShellState = {
     ...createAgentChatShellState(),
     availableWorktrees: [
-      { path: "/Users/eatnug/Workspace/tide", branch: "main", current: true },
-      { path: "/Users/eatnug/Workspace/tide-wt", branch: "feature/x", current: false },
+      { path: "/Users/you/Workspace/tide", branch: "main", current: true },
+      { path: "/Users/you/Workspace/tide-wt", branch: "feature/x", current: false },
     ],
   };
   const html = renderShell(setComposerActiveSurface(base, "worktree_menu").state);
@@ -948,7 +948,7 @@ test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {
             setup: {
               command: "codex",
               args: ["--no-alt-screen"],
-              cwd: "/Users/eatnug/Workspace/tide",
+              cwd: "/Users/you/Workspace/tide",
               expectedCompletion: "retry_preflight",
             },
           },

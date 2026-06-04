@@ -341,8 +341,8 @@ export interface ProductShellFileTreeEntryView {
 const shellTimestamp = "2026-05-28T00:00:00.000Z";
 
 const initialProjects: ProductShellProject[] = [
-  { projectId: "tide", name: "tide", cwd: "/Users/eatnug/Workspace/tide" },
-  { projectId: "slice", name: "slice", cwd: "/Users/eatnug/Workspace/slice" },
+  { projectId: "tide", name: "tide", cwd: "/Users/you/Workspace/tide" },
+  { projectId: "slice", name: "slice", cwd: "/Users/you/Workspace/slice" },
 ];
 
 const initialThreads: ProductShellThread[] = [
@@ -351,7 +351,7 @@ const initialThreads: ProductShellThread[] = [
     title: "v2 master plan implementation",
     agentId: "codex",
     time: "now",
-    scope: { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+    scope: { kind: "project", projectId: "tide", cwd: "/Users/you/Workspace/tide" },
     workbenchPanes: [
       workbenchPane("pane-thread-master-plan-diff", "diff", "Master plan diff"),
     ],
@@ -362,7 +362,7 @@ const initialThreads: ProductShellThread[] = [
     title: "Workbench MCP surface",
     agentId: "codex",
     time: "14m",
-    scope: { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+    scope: { kind: "project", projectId: "tide", cwd: "/Users/you/Workspace/tide" },
     workbenchPanes: [
       workbenchPane("pane-thread-workbench-browser", "browser", "Browser preview"),
       workbenchPane("pane-thread-workbench-diff", "diff", "Review diff"),
@@ -373,7 +373,7 @@ const initialThreads: ProductShellThread[] = [
     title: "Thread persistence cache",
     agentId: "claude",
     time: "1h",
-    scope: { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+    scope: { kind: "project", projectId: "tide", cwd: "/Users/you/Workspace/tide" },
     workbenchPanes: [
       workbenchPane("pane-thread-persistence-editor", "editor", "Thread metadata"),
     ],
@@ -383,7 +383,7 @@ const initialThreads: ProductShellThread[] = [
     title: "Desktop shell visual pass",
     agentId: "antigravity",
     time: "2h",
-    scope: { kind: "project", projectId: "slice", cwd: "/Users/eatnug/Workspace/slice" },
+    scope: { kind: "project", projectId: "slice", cwd: "/Users/you/Workspace/slice" },
     workbenchPanes: [
       workbenchPane("pane-thread-visual-browser", "browser", "Visual preview"),
     ],
@@ -2122,7 +2122,7 @@ function createStartAgentChatState(scope?: AgentChatThreadScope): AgentChatShell
   return createAgentChatShellState({
     startOptions: {
       agentBinding: agentBindingForShellAgent("codex"),
-      scope: scope ?? { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+      scope: scope ?? { kind: "project", projectId: "tide", cwd: "/Users/you/Workspace/tide" },
       launchOptions: {
         model: "gpt-5.5",
         permission: "Auto-review",

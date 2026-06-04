@@ -905,7 +905,7 @@ test("antigravity_provider_history_reader_projects_planner_response_as_agent_mes
 test("antigravity_provider_history_reader_derives_provider_session_ref_from_transcript_path", () => {
   // Spec: docs_v2/specs/live-provider-session-reference-discovery.md
   const transcriptPath = path.join(
-    "/Users/eatnug",
+    "/Users/you",
     ".gemini",
     "antigravity-cli",
     "brain",
@@ -1042,7 +1042,7 @@ test("live_backend_projector_persists_antigravity_provider_session_ref", async (
 test("codex_provider_history_reader_derives_provider_session_ref_from_rollout_path", () => {
   // Spec: docs_v2/specs/live-provider-session-reference-discovery.md
   const rolloutPath = path.join(
-    "/Users/eatnug",
+    "/Users/you",
     ".codex",
     "sessions",
     "2026",
@@ -1062,10 +1062,10 @@ test("codex_provider_history_reader_derives_provider_session_ref_from_rollout_pa
 test("claude_provider_history_reader_derives_provider_session_ref_from_transcript_path", () => {
   // Spec: docs_v2/specs/live-provider-session-reference-discovery.md
   const transcriptPath = path.join(
-    "/Users/eatnug",
+    "/Users/you",
     ".claude",
     "projects",
-    "-Users-eatnug-Workspace-tide",
+    "-Users-you-Workspace-tide",
     "6a26b8ab-c91e-4846-aae5-f51ce6b04a39.jsonl",
   );
 
@@ -1083,28 +1083,28 @@ test("provider_signal_payload_derives_provider_session_refs_for_codex_and_claude
     providerSessionRefFromProviderSignalPayload("codex", {
       session_id: "019e68ba-86a7-7a20-8946-173af0377df3",
       transcript_path:
-        "/Users/eatnug/.codex/sessions/2026/05/27/rollout-2026-05-27T18-18-31-019e68ba-86a7-7a20-8946-173af0377df3.jsonl",
+        "/Users/you/.codex/sessions/2026/05/27/rollout-2026-05-27T18-18-31-019e68ba-86a7-7a20-8946-173af0377df3.jsonl",
     }),
     {
       agentId: "codex",
       kind: "codex_rollout",
       value: "019e68ba-86a7-7a20-8946-173af0377df3",
       transcriptPath:
-        "/Users/eatnug/.codex/sessions/2026/05/27/rollout-2026-05-27T18-18-31-019e68ba-86a7-7a20-8946-173af0377df3.jsonl",
+        "/Users/you/.codex/sessions/2026/05/27/rollout-2026-05-27T18-18-31-019e68ba-86a7-7a20-8946-173af0377df3.jsonl",
     },
   );
   assert.deepEqual(
     providerSessionRefFromProviderSignalPayload("claude", {
       session_id: "09a10091-c9d4-4479-832d-6bef29703ff5",
       transcript_path:
-        "/Users/eatnug/.claude/projects/-Users-eatnug-Workspace-tide/09a10091-c9d4-4479-832d-6bef29703ff5.jsonl",
+        "/Users/you/.claude/projects/-Users-you-Workspace-tide/09a10091-c9d4-4479-832d-6bef29703ff5.jsonl",
     }),
     {
       agentId: "claude",
       kind: "claude_transcript",
       value: "09a10091-c9d4-4479-832d-6bef29703ff5",
       transcriptPath:
-        "/Users/eatnug/.claude/projects/-Users-eatnug-Workspace-tide/09a10091-c9d4-4479-832d-6bef29703ff5.jsonl",
+        "/Users/you/.claude/projects/-Users-you-Workspace-tide/09a10091-c9d4-4479-832d-6bef29703ff5.jsonl",
     },
   );
 });
@@ -1125,7 +1125,7 @@ test("provider_history_readers_return_recent_codex_and_claude_session_refs_once"
     home,
     ".claude",
     "projects",
-    "-Users-eatnug-Workspace-tide",
+    "-Users-you-Workspace-tide",
     "6a26b8ab-c91e-4846-aae5-f51ce6b04a39.jsonl",
   );
   writeFile(codexRolloutPath, JSON.stringify({ type: "session_meta" }));
@@ -1393,7 +1393,7 @@ test("claude_provider_history_reader_emits_tool_call_and_tool_result_frames", ()
     home,
     ".claude",
     "projects",
-    "-Users-eatnug-Workspace-tide",
+    "-Users-you-Workspace-tide",
     "7a26b8ab-c91e-4846-aae5-f51ce6b04a40.jsonl",
   );
   writeFile(
@@ -1602,7 +1602,7 @@ test("claude_provider_history_reader_projects_agent_message_frame", () => {
     home,
     ".claude",
     "projects",
-    "-Users-eatnug-Workspace-tide",
+    "-Users-you-Workspace-tide",
     "6a26b8ab-c91e-4846-aae5-f51ce6b04a40.jsonl",
   );
   writeFile(
@@ -1676,7 +1676,7 @@ test("provider_history_readers_ignore_recent_codex_and_claude_files_without_thre
     home,
     ".claude",
     "projects",
-    "-Users-eatnug-Workspace-tide",
+    "-Users-you-Workspace-tide",
     "6a26b8ab-c91e-4846-aae5-f51ce6b04a39.jsonl",
   );
   writeFile(

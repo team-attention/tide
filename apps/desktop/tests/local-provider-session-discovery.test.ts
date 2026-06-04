@@ -11,7 +11,7 @@ import {
   type DiscoveryFs,
 } from "../src/backend/application/services/provider-session-discovery.ts";
 
-const CWD = "/Users/eatnug/Workspace/tide";
+const CWD = "/Users/you/Workspace/tide";
 
 const CODEX_ROLLOUT = [
   JSON.stringify({ type: "session_meta", payload: { cwd: CWD, id: "sess" } }),

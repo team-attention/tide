@@ -11,7 +11,7 @@ if (!dataRoot) {
   process.exit(1);
 }
 
-const repo = "/Users/eatnug/Workspace/tide";
+const repo = require("path").resolve(__dirname, "..");
 const ts = "2026-05-31T00:00:00.000Z";
 const record = {
   storageVersion: 1,

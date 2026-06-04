@@ -57,7 +57,7 @@ function figmaFixtureState() {
         threadId: "thread-master-plan",
         title: "v2 master plan implementation",
         agentBinding: { agentId: "codex" },
-        scope: { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+        scope: { kind: "project", projectId: "tide", cwd: "/Users/you/Workspace/tide" },
         createdAt: "2026-05-31T00:00:00.000Z",
         updatedAt: "2026-05-31T00:00:00.000Z",
         pinned: false,
@@ -100,7 +100,7 @@ function figmaFixtureState() {
           visible: true,
           revision: "pane-editor:rev",
           updatedAt: "2026-05-31T00:00:00.000Z",
-          filePath: "/Users/eatnug/Workspace/tide/docs_v2/specs/workbench-markdown-preview-editor.md",
+          filePath: "/Users/you/Workspace/tide/docs_v2/specs/workbench-markdown-preview-editor.md",
           relativePath: "docs_v2/specs/workbench-markdown-preview-editor.md",
           bodyTextPreview: CLAUDE_MD_PREVIEW,
           byteLength: 4096,
@@ -109,7 +109,7 @@ function figmaFixtureState() {
       ],
       fileTree: {
         cwdLabel: "tide",
-        root: "/Users/eatnug/Workspace/tide",
+        root: "/Users/you/Workspace/tide",
         entries: [
           fileTreeEntry("e-assets", "assets", "folder"),
           fileTreeEntry("e-crates", "crates", "folder"),

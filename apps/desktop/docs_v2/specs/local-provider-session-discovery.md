@@ -17,13 +17,13 @@ provider-history rebuild), and resume through the provider's native resume.
   (Tide-owned records) via `restorePersistedThreads`; it never scans provider
   history to *discover* sessions. So a session started by the `claude`/`codex`
   CLI directly is invisible (e.g. this conversation's transcript
-  `~/.claude/projects/-Users-eatnug-Workspace-tide/cc2ec012-…jsonl` exists but is
+  `~/.claude/projects/-Users-you-Workspace-tide/cc2ec012-…jsonl` exists but is
   not listed).
 - cwd mapping per provider (verified on disk):
   - **Claude**: `~/.claude/projects/<cwd with '/'→'-'>/<sessionId>.jsonl`. The
     directory name encodes the cwd.
   - **Codex**: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`; the first line is
-    `{"type":"session_meta","payload":{"cwd":"/Users/eatnug/Workspace/tide",…}}`.
+    `{"type":"session_meta","payload":{"cwd":"/Users/you/Workspace/tide",…}}`.
   - **Antigravity**: `~/.gemini/antigravity-cli/cache/last_conversations.json`
     maps `cwd → conversationId` (one — the most recent — per cwd). Transcript at
     `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript.jsonl`.

@@ -6,13 +6,13 @@ const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
-const repo = "/Users/eatnug/Workspace/tide";
+const repo = require("path").resolve(__dirname, "..");
 
 (async () => {
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tide-fc-"));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "tide-fc-home-"));
   const sid = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
-  const transcriptPath = path.join(home, ".claude", "projects", "-Users-eatnug-Workspace-tide", `${sid}.jsonl`);
+  const transcriptPath = path.join(home, ".claude", "projects", "-Users-you-Workspace-tide", `${sid}.jsonl`);
   fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
   fs.writeFileSync(
     transcriptPath,

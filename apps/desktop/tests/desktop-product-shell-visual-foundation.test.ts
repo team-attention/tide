@@ -625,7 +625,7 @@ test("sending_start_composer_from_product_shell_uses_provider_native_model_value
 
 test("new_thread_in_project_prescopes_start_composer_to_that_project", () => {
   // Spec: docs_v2/specs/desktop-product-shell-visual-foundation.md UC-6b inv-18
-  // "slice" project (cwd /Users/eatnug/Workspace/slice) must scope the new thread.
+  // "slice" project (cwd /Users/you/Workspace/slice) must scope the new thread.
   const state = startNewProductShellThread(createProductShellState(), "slice");
   const drafted = updateProductShellComposerDraft(state, "Investigate the slice build");
   const result = submitProductShellComposerDraft(drafted);
@@ -634,7 +634,7 @@ test("new_thread_in_project_prescopes_start_composer_to_that_project", () => {
   assert.deepEqual(result.command?.payload.scope, {
     kind: "project",
     projectId: "slice",
-    cwd: "/Users/eatnug/Workspace/slice",
+    cwd: "/Users/you/Workspace/slice",
   });
 });
 
@@ -957,7 +957,7 @@ test("workbench_editor_pane_renders_as_a_code_editor_not_a_viewer", () => {
   // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-3)
   const state = editorPaneState({
     title: "app.ts",
-    filePath: "/Users/eatnug/Workspace/tide/src/app.ts",
+    filePath: "/Users/you/Workspace/tide/src/app.ts",
     relativePath: "src/app.ts",
     bodyText: "export const value = 1;\n",
     bodyTextPreview: "export const value = 1;\n",
@@ -985,7 +985,7 @@ test("code_editor_pane_has_no_markdown_preview_toggle", () => {
   const html = renderProductShell(
     editorPaneState({
       title: "lib.rs",
-      filePath: "/Users/eatnug/Workspace/tide/src/lib.rs",
+      filePath: "/Users/you/Workspace/tide/src/lib.rs",
       relativePath: "src/lib.rs",
       bodyText: "fn main() {}\n",
       bodyTextPreview: "fn main() {}\n",
@@ -1002,7 +1002,7 @@ test("markdown_editor_pane_renders_preview_with_rendered_headings", () => {
   const html = renderProductShell(
     editorPaneState({
       title: "CLAUDE.md",
-      filePath: "/Users/eatnug/Workspace/tide/CLAUDE.md",
+      filePath: "/Users/you/Workspace/tide/CLAUDE.md",
       relativePath: "CLAUDE.md",
       bodyText: "# Tide — Project Rules\n\n## Evidence-First\n\nEvery claim needs evidence.\n",
       bodyTextPreview: "# Tide — Project Rules\n\n## Evidence-First\n\nEvery claim needs evidence.\n",
@@ -1026,7 +1026,7 @@ test("markdown_preview_escapes_raw_html", () => {
   const html = renderProductShell(
     editorPaneState({
       title: "evil.md",
-      filePath: "/Users/eatnug/Workspace/tide/evil.md",
+      filePath: "/Users/you/Workspace/tide/evil.md",
       relativePath: "evil.md",
       bodyText: "# Hi\n\n<img src=x onerror=alert(1)>\n",
       bodyTextPreview: "# Hi\n\n<img src=x onerror=alert(1)>\n",
@@ -1056,7 +1056,7 @@ test("editing_workbench_editor_pane_marks_draft_dirty", () => {
             visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
-            filePath: "/Users/eatnug/Workspace/tide/README.md",
+            filePath: "/Users/you/Workspace/tide/README.md",
             relativePath: "README.md",
             bodyText: "# Tide\n",
             bodyTextPreview: "# Tide\n",
@@ -1096,7 +1096,7 @@ test("saving_workbench_editor_pane_emits_save_editor_file_command", () => {
               visible: true,
               revision: "pane-editor:rev",
               updatedAt: "2026-05-28T00:00:00.000Z",
-              filePath: "/Users/eatnug/Workspace/tide/README.md",
+              filePath: "/Users/you/Workspace/tide/README.md",
               relativePath: "README.md",
               bodyText: "# Tide\n",
               bodyTextPreview: "# Tide\n",
@@ -1144,7 +1144,7 @@ test("product_shell_go_to_definition_emits_cursor_position_command", () => {
             visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
-            filePath: "/Users/eatnug/Workspace/tide/src/app.ts",
+            filePath: "/Users/you/Workspace/tide/src/app.ts",
             relativePath: "src/app.ts",
             bodyText: "const local = 1;\nconsole.log(local);\n",
             bodyTextPreview: "const local = 1;\nconsole.log(local);\n",
@@ -1192,7 +1192,7 @@ test("product_shell_find_references_emits_go_to_references_command", () => {
             visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
-            filePath: "/Users/eatnug/Workspace/tide/src/app.ts",
+            filePath: "/Users/you/Workspace/tide/src/app.ts",
             relativePath: "src/app.ts",
             bodyText: "const local = 1;\nconsole.log(local);\n",
             bodyTextPreview: "const local = 1;\nconsole.log(local);\n",
@@ -1240,7 +1240,7 @@ test("workbench_editor_pane_renders_references_list", () => {
             visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
-            filePath: "/Users/eatnug/Workspace/tide/src/app.ts",
+            filePath: "/Users/you/Workspace/tide/src/app.ts",
             relativePath: "src/app.ts",
             bodyText: "export const value = 1;\nconst a = value;\n",
             bodyTextPreview: "export const value = 1;\nconst a = value;\n",
@@ -1286,7 +1286,7 @@ test("truncated_workbench_editor_pane_renders_read_only", () => {
             visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
-            filePath: "/Users/eatnug/Workspace/tide/large.md",
+            filePath: "/Users/you/Workspace/tide/large.md",
             relativePath: "large.md",
             bodyTextPreview: "partial",
             byteLength: 200000,
@@ -1321,7 +1321,7 @@ test("workbench_diff_pane_renders_diff_metadata_and_text", () => {
             visible: true,
             revision: "pane-diff:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
-            filePath: "/Users/eatnug/Workspace/tide/README.md",
+            filePath: "/Users/you/Workspace/tide/README.md",
             relativePath: "README.md",
             diffText: "@@ -1 +1 @@\n-Old Tide\n+New Tide",
             beforeByteLength: 9,
@@ -1359,7 +1359,7 @@ test("workbench_diff_pane_renders_structured_unified_diff_lines", () => {
             visible: true,
             revision: "pane-diff:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
-            filePath: "/Users/eatnug/Workspace/tide/README.md",
+            filePath: "/Users/you/Workspace/tide/README.md",
             relativePath: "README.md",
             diffText:
               "--- README.md\n+++ README.md\n@@ -1,2 +1,2 @@\n Title\n-Old Tide\n+New Tide\n[diff truncated]",
@@ -1607,7 +1607,7 @@ test("starting_a_thread_in_a_new_project_adds_that_project_to_the_rail", () => {
         threadId: "thread-slice-new",
         title: "Slice work",
         agentBinding: { agentId: "codex" },
-        scope: { kind: "project", projectId: "slice", cwd: "/Users/eatnug/Workspace/slice" },
+        scope: { kind: "project", projectId: "slice", cwd: "/Users/you/Workspace/slice" },
         createdAt: "2026-06-01T00:00:00.000Z",
         updatedAt: "2026-06-01T00:00:00.000Z",
         pinned: false,
@@ -2074,7 +2074,7 @@ test("product_shell_antigravity_selection_updates_start_command_launch_options",
   assert.deepEqual(submitted.command?.payload.scope, {
     kind: "project",
     projectId: "tide",
-    cwd: "/Users/eatnug/Workspace/tide",
+    cwd: "/Users/you/Workspace/tide",
   });
   assert.deepEqual(submitted.command?.payload.launchOptions, {
     model: "Antigravity default",
@@ -2115,7 +2115,7 @@ test("product_shell_thread_started_preserves_antigravity_model_label", () => {
         scope: {
           kind: "project",
           projectId: "tide",
-          cwd: "/Users/eatnug/Workspace/tide",
+          cwd: "/Users/you/Workspace/tide",
         },
         launchOptions: {
           model: "Antigravity default",
@@ -2242,8 +2242,8 @@ function providerSetupTerminalPane() {
     revision: "pane-provider-setup:rev",
     updatedAt: "2026-05-28T00:00:00.000Z",
     status: "running",
-    command: "/Users/eatnug/.local/bin/codex",
-    cwd: "/Users/eatnug/Workspace/tide",
+    command: "/Users/you/.local/bin/codex",
+    cwd: "/Users/you/Workspace/tide",
     expectedCompletion: "retry_preflight",
     transcriptPreview: "Welcome to Codex setup\nSelect trust and press Enter",
   };
@@ -2263,7 +2263,7 @@ function extractByDataAttribute(html: string, attr: string, value: string): stri
 test("registered_project_appears_in_projects_even_with_no_threads", () => {
   const state = setProductShellRegisteredProjects(
     createProductShellState({ includeFixtureData: false }),
-    [{ projectId: "money", name: "money", cwd: "/Users/eatnug/Workspace/money" }],
+    [{ projectId: "money", name: "money", cwd: "/Users/you/Workspace/money" }],
   );
   const view = createProductShellViewModel(state);
 
@@ -2283,7 +2283,7 @@ test("registered_and_thread_derived_projects_dedupe_by_id", () => {
           threadId: "t1",
           title: "x",
           agentBinding: { agentId: "codex" },
-          scope: { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+          scope: { kind: "project", projectId: "tide", cwd: "/Users/you/Workspace/tide" },
           createdAt: "2026-06-01T00:00:00.000Z",
           updatedAt: "2026-06-01T00:00:00.000Z",
           lastKnownState: "idle",
@@ -2294,7 +2294,7 @@ test("registered_and_thread_derived_projects_dedupe_by_id", () => {
     },
   });
   const withRegistry = setProductShellRegisteredProjects(seeded, [
-    { projectId: "tide", name: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+    { projectId: "tide", name: "tide", cwd: "/Users/you/Workspace/tide" },
   ]);
   const view = createProductShellViewModel(withRegistry);
 
@@ -2393,7 +2393,7 @@ test("chip_open_folder_scopes_composer_without_registering_a_left_list_project",
   // Execution Context (cwd). It must NOT appear in the left Projects list until
   // a Thread is actually started in it (thread-derived).
   const state = createProductShellState({ includeFixtureData: false });
-  const scoped = setProductShellComposerFolderScope(state, "/Users/eatnug/Workspace/battleship");
+  const scoped = setProductShellComposerFolderScope(state, "/Users/you/Workspace/battleship");
   const view = createProductShellViewModel(scoped);
 
   // The Project chip reflects the picked folder's basename.

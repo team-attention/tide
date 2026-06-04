@@ -67,11 +67,11 @@ Important Figma corrections already made:
 ## Current Risk
 
 At the time this note was written, Pencil's active editor was not the Tide `.pen` file.
-It was `/Users/eatnug/Workspace/slice/slice`, so new Pencil reads against the target file were not safe.
+It was `/Users/you/Workspace/slice/slice`, so new Pencil reads against the target file were not safe.
 
 Before continuing, reopen or focus:
 
-`/Users/eatnug/Workspace/tide/docs_v2/designs/tide-codex-workbench.pen`
+`/Users/you/Workspace/tide/docs_v2/designs/tide-codex-workbench.pen`
 
 Then re-read the target with Pencil before making further claims or changes.
 

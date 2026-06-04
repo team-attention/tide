@@ -1,7 +1,7 @@
 const { _electron } = require("playwright");
 const { spawnSync, execSync } = require("node:child_process");
 const path = require("node:path"); const os = require("node:os"); const fs = require("node:fs");
-const repo = "/Users/eatnug/Workspace/tide";
+const repo = require("path").resolve(__dirname, "..");
 (async () => {
   // Isolated temp git repo with one commit (so worktree add works).
   const proj = fs.mkdtempSync(path.join(os.tmpdir(), "tide-wt-proj-"));

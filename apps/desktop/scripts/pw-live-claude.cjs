@@ -8,7 +8,7 @@ const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
 
-const repo = "/Users/eatnug/Workspace/tide";
+const repo = require("path").resolve(__dirname, "..");
 const AGENT = process.argv[2] ?? "claude";
 // Read-only prompt: explicitly forbid tools/edits so the agent cannot mutate the repo.
 const PROMPT =

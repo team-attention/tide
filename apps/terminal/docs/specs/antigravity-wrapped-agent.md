@@ -22,7 +22,7 @@ Repo / environment evidence:
 | `agy` supports hooks | Binary embeds `hooks.json`, `settings.json`, `HooksPath`, `exa.hooks_pb`, `GetStopHooks`. Hook events: `PreInvocation`, `PreToolUse`, `PostToolUse`, `PostInvocation`, `Stop`, `Notification`, `SessionStart/End`. |
 | **Plugin mechanism (verified)** | `agy` auto-loads self-contained plugins from `~/.gemini/config/plugins/<name>/` (`plugin.json` + `mcp_config.json` + `hooks.json`). The **v2 desktop app already ships such a plugin** at `~/.gemini/config/plugins/tide/` (its `PostToolUse` hook was observed firing). This is the clean, non-mutating injection surface: a Tide-owned plugin dir delivers BOTH MCP and lifecycle without touching the user's main config. |
 | `agy` supports hooks | Binary embeds `exa.hooks_pb`, `GetStopHooks`, `runStopHooks`, `WriteHooksTo` — lifecycle hook injection is feasible but the format is UNVERIFIED. |
-| `agy` invocation | Binary at `/Users/eatnug/.local/bin/agy`; flags include `--print/-p`, `--prompt-interactive/-i`, `--dangerously-skip-permissions`, `--continue`, subcommands `plugin`, `install`, `update`. There is no additive `--mcp-config` flag like Claude has. |
+| `agy` invocation | Binary at `/Users/you/.local/bin/agy`; flags include `--print/-p`, `--prompt-interactive/-i`, `--dangerously-skip-permissions`, `--continue`, subcommands `plugin`, `install`, `update`. There is no additive `--mcp-config` flag like Claude has. |
 
 ### To-Be
 

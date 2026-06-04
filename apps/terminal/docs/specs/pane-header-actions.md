@@ -4,14 +4,14 @@
 
 ### As-Is
 
-`HeaderHitAction` in [crates/tide-app/src/adapter/outward/view/header.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/outward/view/header.rs) covers close, git badges, comment, diff, live-preview, tab switching, `OpenBrowser`, `AddPane`, and split actions. The repeated `OpenBrowser` action in visible `HeaderActionStrip` chrome is too specific for a compact per-`Pane` control because it opens a Browser Pane directly instead of letting the user choose from a Launcher Pane.
+`HeaderHitAction` in [crates/tide-app/src/adapter/outward/view/header.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/view/header.rs) covers close, git badges, comment, diff, live-preview, tab switching, `OpenBrowser`, `AddPane`, and split actions. The repeated `OpenBrowser` action in visible `HeaderActionStrip` chrome is too specific for a compact per-`Pane` control because it opens a Browser Pane directly instead of letting the user choose from a Launcher Pane.
 
 Core pane-creation flows still depend on keyboard-only `GlobalAction`s:
 
-1. `GlobalAction::SplitHorizontal`, `SplitVertical`, `DockSplitHorizontal`, and `DockSplitVertical` are wired in [crates/tide-app/src/application/services/action_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/action_service/mod.rs).
-2. `GlobalAction::NewTab`, `NewFile`, and `OpenBrowser` are listed in [crates/tide-app/src/domain/input/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/input/mod.rs) and dispatched in the same action service.
-3. The Launcher Pane rendered in [crates/tide-app/src/adapter/outward/view/grid.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/outward/view/grid.rs) shows `Terminal`, `New File`, `Open File`, and `Browser`, but [docs/specs/launcher.md](/Users/eatnug/Workspace/tide/docs/specs/launcher.md) and [crates/tide-app/src/application/behavior_tests/launcher_behavior.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/behavior_tests/launcher_behavior.rs) only specify keyboard or IME resolution, not header-driven creation.
-4. The titlebar already exposes mouse buttons for `Workspace`, `FileTree`, `Dock`, settings, and integration in [crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs). Stage already has a Dock toggle, so repeated Stage add-pane chrome is no longer the primary mouse path for opening Launcher choices.
+1. `GlobalAction::SplitHorizontal`, `SplitVertical`, `DockSplitHorizontal`, and `DockSplitVertical` are wired in [crates/tide-app/src/application/services/action_service/mod.rs](/Users/you/Workspace/tide/crates/tide-app/src/application/services/action_service/mod.rs).
+2. `GlobalAction::NewTab`, `NewFile`, and `OpenBrowser` are listed in [crates/tide-app/src/domain/input/mod.rs](/Users/you/Workspace/tide/crates/tide-app/src/domain/input/mod.rs) and dispatched in the same action service.
+3. The Launcher Pane rendered in [crates/tide-app/src/adapter/outward/view/grid.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/view/grid.rs) shows `Terminal`, `New File`, `Open File`, and `Browser`, but [docs/specs/launcher.md](/Users/you/Workspace/tide/docs/specs/launcher.md) and [crates/tide-app/src/application/behavior_tests/launcher_behavior.rs](/Users/you/Workspace/tide/crates/tide-app/src/application/behavior_tests/launcher_behavior.rs) only specify keyboard or IME resolution, not header-driven creation.
+4. The titlebar already exposes mouse buttons for `Workspace`, `FileTree`, `Dock`, settings, and integration in [crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs). Stage already has a Dock toggle, so repeated Stage add-pane chrome is no longer the primary mouse path for opening Launcher choices.
 
 ### To-Be
 

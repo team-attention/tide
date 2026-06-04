@@ -1472,7 +1472,7 @@ function permissionForRow(rowId: string): string | undefined {
 // project today (projects are not yet backend-provided); a new thread must have
 // a real root so the Agent runs somewhere and the FileTree can list files.
 function defaultThreadScope(): AgentChatThreadScope {
-  return { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" };
+  return { kind: "project", projectId: "tide", cwd: "/Users/you/Workspace/tide" };
 }
 
 // The real projects the Project menu lists: those injected from the product

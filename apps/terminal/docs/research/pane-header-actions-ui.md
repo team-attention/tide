@@ -8,15 +8,15 @@ Add a mouse-first control surface to Tide so a user can create and split `Pane`s
 
 ### Existing mouse-first surfaces
 
-1. Titlebar toggles already expose `Workspace`, `FileTree`, `Dock`, theme, settings, and integration affordances in [crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs).
-2. Header chrome already exposes close, git badges, compare/back, live-preview, diff refresh, and tab switching through `HeaderHitAction` and `check_header_click()` in [header.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/outward/view/header.rs) and [click_adapter/header.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/click_adapter/header.rs).
-3. Mouse routing already supports header clicks, browser navigation buttons, file tree clicks, drag-drop between `Pane`s, and split-border resizing in [mouse_adapter/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/mouse_adapter/mod.rs).
+1. Titlebar toggles already expose `Workspace`, `FileTree`, `Dock`, theme, settings, and integration affordances in [crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs).
+2. Header chrome already exposes close, git badges, compare/back, live-preview, diff refresh, and tab switching through `HeaderHitAction` and `check_header_click()` in [header.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/view/header.rs) and [click_adapter/header.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/inward/click_adapter/header.rs).
+3. Mouse routing already supports header clicks, browser navigation buttons, file tree clicks, drag-drop between `Pane`s, and split-border resizing in [mouse_adapter/mod.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/inward/mouse_adapter/mod.rs).
 
 ### Keyboard-first gaps before this change
 
-1. `GlobalAction::SplitHorizontal`, `SplitVertical`, `DockSplitHorizontal`, `DockSplitVertical`, `NewTab`, `NewFile`, and `OpenBrowser` are defined in [crates/tide-app/src/domain/input/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/input/mod.rs).
-2. Those creation flows are dispatched in [crates/tide-app/src/application/services/action_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/action_service/mod.rs).
-3. The actual `Pane` creation behavior lives in [crates/tide-app/src/application/services/pane_create_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/pane_create_service/mod.rs):
+1. `GlobalAction::SplitHorizontal`, `SplitVertical`, `DockSplitHorizontal`, `DockSplitVertical`, `NewTab`, `NewFile`, and `OpenBrowser` are defined in [crates/tide-app/src/domain/input/mod.rs](/Users/you/Workspace/tide/crates/tide-app/src/domain/input/mod.rs).
+2. Those creation flows are dispatched in [crates/tide-app/src/application/services/action_service/mod.rs](/Users/you/Workspace/tide/crates/tide-app/src/application/services/action_service/mod.rs).
+3. The actual `Pane` creation behavior lives in [crates/tide-app/src/application/services/pane_create_service/mod.rs](/Users/you/Workspace/tide/crates/tide-app/src/application/services/pane_create_service/mod.rs):
    `new_terminal_tab()`, `new_editor_pane()`, `open_browser_pane()`, `split_with_launcher()`, and `resolve_launcher()`.
 4. `new_editor_pane()` and `open_browser_pane()` already route non-`Terminal` `Pane`s into the Dock whenever a live context terminal exists, so the new header surface should preserve that routing instead of introducing a second rule set.
 5. Before this work, header chrome did not expose any of those create/split flows directly.
@@ -91,8 +91,8 @@ Action order:
 
 ## Implementation Scope
 
-1. Spec: [docs/specs/pane-header-actions.md](/Users/eatnug/Workspace/tide/docs/specs/pane-header-actions.md)
-2. Behavior tests: [crates/tide-app/src/application/behavior_tests/pane_header_actions.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/behavior_tests/pane_header_actions.rs)
-3. Rendering: [crates/tide-app/src/adapter/outward/view/header.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/outward/view/header.rs)
-4. Click dispatch: [crates/tide-app/src/adapter/inward/click_adapter/header.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/click_adapter/header.rs)
-5. Hover feedback: [drag_types.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/state/drag_types.rs), [hit_test.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/click_adapter/hit_test.rs), [hover.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/outward/view/hover.rs), and [layout_compute.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/layout_compute.rs)
+1. Spec: [docs/specs/pane-header-actions.md](/Users/you/Workspace/tide/docs/specs/pane-header-actions.md)
+2. Behavior tests: [crates/tide-app/src/application/behavior_tests/pane_header_actions.rs](/Users/you/Workspace/tide/crates/tide-app/src/application/behavior_tests/pane_header_actions.rs)
+3. Rendering: [crates/tide-app/src/adapter/outward/view/header.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/view/header.rs)
+4. Click dispatch: [crates/tide-app/src/adapter/inward/click_adapter/header.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/inward/click_adapter/header.rs)
+5. Hover feedback: [drag_types.rs](/Users/you/Workspace/tide/crates/tide-app/src/domain/state/drag_types.rs), [hit_test.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/inward/click_adapter/hit_test.rs), [hover.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/view/hover.rs), and [layout_compute.rs](/Users/you/Workspace/tide/crates/tide-app/src/layout_compute.rs)

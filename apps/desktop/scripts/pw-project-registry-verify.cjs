@@ -5,7 +5,7 @@ const { _electron } = require("playwright");
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
-const repo = "/Users/eatnug/Workspace/tide";
+const repo = require("path").resolve(__dirname, "..");
 
 (async () => {
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tide-preg-"));
