@@ -584,7 +584,7 @@ test("typing_in_start_composer_fills_the_local_draft", () => {
   assert.equal(view.activeThreadId, null);
 });
 
-test("sending_start_composer_from_product_shell_emits_thread_start_without_local_preview", () => {
+test("sending_start_composer_from_product_shell_opens_the_new_thread_optimistically", () => {
   const drafted = updateProductShellComposerDraft(
     createProductShellState(),
     "Build the Product Shell interactions",
@@ -595,15 +595,15 @@ test("sending_start_composer_from_product_shell_emits_thread_start_without_local
   assert.equal(result.command?.kind, "thread.start");
   assert.equal(result.command?.payload.initialMessage, "Build the Product Shell interactions");
   assert.equal(result.command?.payload.launchOptions?.model, "gpt-5.5");
-  assert.equal(view.agentChat.composer.modelLabel, "GPT-5.5 · Medium");
-  assert.equal(view.activeThreadId, null);
-  assert.equal(view.agentChat.thread, null);
-  assert.equal(view.agentChat.composer.draft, "Build the Product Shell interactions");
-  assert.equal(view.projectGroups[0].threads[0].threadId, "thread-master-plan");
-  assert.doesNotMatch(
-    view.agentChat.blocks.map((block) => block.body).join("\n"),
-    /Local preview|local-thread/,
-  );
+  // The command carries a client-generated id; the new thread is shown right away
+  // with that id as active, and the draft is cleared so a re-click can't resend.
+  const newThreadId = result.command?.payload.threadId;
+  assert.equal(typeof newThreadId, "string");
+  assert.equal(view.activeThreadId, newThreadId);
+  assert.equal((view.agentChat.thread as { threadId?: string } | null)?.threadId, newThreadId);
+  assert.equal(view.agentChat.composer.draft, "");
+  // The optimistic thread is in the rail immediately.
+  assert.ok(view.flatThreads.some((thread) => thread.threadId === newThreadId));
 });
 
 test("sending_start_composer_from_product_shell_uses_provider_native_model_value", () => {
@@ -2061,29 +2061,26 @@ test("product_shell_antigravity_selection_updates_start_command_launch_options",
 
   const submitted = submitProductShellComposerDraft(withDraft);
 
-  assert.deepEqual(submitted.command, {
-    kind: "thread.start",
-    payload: {
-      initialMessage: "Start an Antigravity Thread",
-      agentBinding: {
-        agentId: "antigravity",
-        runtimeSource: {
-          kind: "provider_cli",
-          integrationId: "antigravity",
-        },
-      },
-      scope: {
-        kind: "project",
-        projectId: "tide",
-        cwd: "/Users/eatnug/Workspace/tide",
-      },
-      launchOptions: {
-        model: "Antigravity default",
-        permission: "default",
-        worktree: "current folder",
-        branch: "main",
-      },
+  assert.equal(submitted.command?.kind, "thread.start");
+  assert.equal(typeof submitted.command?.payload.threadId, "string");
+  assert.equal(submitted.command?.payload.initialMessage, "Start an Antigravity Thread");
+  assert.deepEqual(submitted.command?.payload.agentBinding, {
+    agentId: "antigravity",
+    runtimeSource: {
+      kind: "provider_cli",
+      integrationId: "antigravity",
     },
+  });
+  assert.deepEqual(submitted.command?.payload.scope, {
+    kind: "project",
+    projectId: "tide",
+    cwd: "/Users/eatnug/Workspace/tide",
+  });
+  assert.deepEqual(submitted.command?.payload.launchOptions, {
+    model: "Antigravity default",
+    permission: "default",
+    worktree: "current folder",
+    branch: "main",
   });
 });
 

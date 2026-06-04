@@ -48,6 +48,9 @@ export interface BackendCommandPayloadByKind {
   "thread.list": { includeArchived?: boolean };
   "thread.hydrate": { threadId: ThreadId };
   "thread.start": {
+    // Client-generated id so the new thread can be shown optimistically and the
+    // backend binds to the same thread (startThread honors input.threadId).
+    threadId?: ThreadId;
     initialMessage: string;
     agentBinding: AgentBindingDto;
     scope?: ThreadScopeDto;

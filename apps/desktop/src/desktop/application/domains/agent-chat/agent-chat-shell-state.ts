@@ -214,6 +214,7 @@ export type AgentChatBackendCommand =
   | {
       kind: "thread.start";
       payload: {
+        threadId?: string;
         initialMessage: string;
         agentBinding: AgentChatAgentBinding;
         scope?: AgentChatThreadScope;
@@ -629,6 +630,14 @@ export function interruptComposer(
   };
 }
 
+function generateThreadId(): string {
+  const random =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID().replace(/-/g, "")
+      : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  return `id-${random.slice(0, 12)}`;
+}
+
 export function submitComposer(
   state: AgentChatShellState,
 ): AgentChatShellUpdateResult {
@@ -654,7 +663,9 @@ export function submitComposer(
   }
 
   const messageAttachments = attachmentsForMessage(attachments);
-  const composerAfterSend = { ...state.composer, attachments: [] };
+  // Clear the draft on send (every path) so re-clicking submit can't resend the
+  // same message and spawn a duplicate thread / duplicate user row.
+  const composerAfterSend = { ...state.composer, draft: "", attachments: [] };
 
   if (state.thread) {
     // Submitting during a live turn: the backend queues it. Reflect that
@@ -680,15 +691,42 @@ export function submitComposer(
     };
   }
 
+  // Optimistic new thread: open it instantly with a client-generated id and pass
+  // that id to the backend (startThread honors it). The view switches to the new
+  // thread immediately, so a slow backend can't leave the user clicking again and
+  // spawning duplicate threads.
+  const startOptions = state.composer.startOptions;
+  const newThreadId = generateThreadId();
+  const nowIso = new Date().toISOString();
+  const optimisticThread: AgentChatThreadSummary = {
+    threadId: newThreadId,
+    title: input.length > 0 ? input.slice(0, 80) : "New thread",
+    agentBinding: startOptions.agentBinding,
+    scope: startOptions.scope ?? { kind: "scratch", scratchCwd: "Scratch" },
+    launchOptions: startOptions.launchOptions,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    pinned: false,
+    archived: false,
+    lastKnownState: "running",
+  };
+
   return {
-    state: { ...state, composer: composerAfterSend },
+    state: {
+      ...state,
+      thread: optimisticThread,
+      runtimeState: "starting",
+      queuedInput: null,
+      composer: composerAfterSend,
+    },
     command: {
       kind: "thread.start",
       payload: {
+        threadId: newThreadId,
         initialMessage: input,
-        agentBinding: state.composer.startOptions.agentBinding,
-        scope: state.composer.startOptions.scope,
-        launchOptions: state.composer.startOptions.launchOptions,
+        agentBinding: startOptions.agentBinding,
+        scope: startOptions.scope,
+        launchOptions: startOptions.launchOptions,
         ...(messageAttachments ? { attachments: messageAttachments } : {}),
       },
     },

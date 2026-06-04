@@ -71,16 +71,21 @@ test("sending_a_non_empty_start_composer_draft_emits_thread_start_with_launch_op
   const command = result.command ? toBackendCommandDraft(result.command) : null;
 
   assert.equal(command?.kind, "thread.start");
-  assert.deepEqual(command?.payload, {
-    initialMessage: "Build the Desktop shell",
-    agentBinding: { agentId: "codex" },
-    scope: { kind: "project", projectId: "project-tide", cwd: "/repo/tide" },
-    launchOptions: {
-      model: "GPT-5.5 High",
-      permission: "Auto-review",
-      worktree: "current folder",
-      branch: "main",
-    },
+  // A client-generated threadId is attached so the new thread opens optimistically
+  // and the backend binds to the same id.
+  assert.equal(typeof command?.payload.threadId, "string");
+  assert.equal(command?.payload.initialMessage, "Build the Desktop shell");
+  assert.deepEqual(command?.payload.agentBinding, { agentId: "codex" });
+  assert.deepEqual(command?.payload.scope, {
+    kind: "project",
+    projectId: "project-tide",
+    cwd: "/repo/tide",
+  });
+  assert.deepEqual(command?.payload.launchOptions, {
+    model: "GPT-5.5 High",
+    permission: "Auto-review",
+    worktree: "current folder",
+    branch: "main",
   });
 });
 

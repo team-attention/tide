@@ -1279,10 +1279,28 @@ export function submitProductShellComposerDraft(
   }
 
   const result = submitComposer(state.agentChat);
-  return {
-    state: result.state === state.agentChat ? state : { ...state, agentChat: result.state },
-    command: result.command,
-  };
+  if (result.state === state.agentChat) {
+    return { state, command: result.command };
+  }
+
+  let nextState: ProductShellState = { ...state, agentChat: result.state };
+
+  // Optimistic new thread: submit just opened a brand-new thread (the agent chat
+  // now has a thread that wasn't the active one). Reflect it in the rail + focus
+  // immediately so the thread opens instantly and re-clicks can't duplicate it.
+  const startedThread = result.command?.kind === "thread.start" ? result.state.thread : null;
+  if (startedThread !== null && state.activeThreadId !== startedThread.threadId) {
+    const shellThread = toProductShellThreadFromSummary(startedThread);
+    const threads = [shellThread, ...state.threads];
+    nextState = {
+      ...nextState,
+      activeThreadId: startedThread.threadId,
+      threads,
+      projects: projectsFromThreads(threads),
+    };
+  }
+
+  return { state: nextState, command: result.command };
 }
 
 export function interruptProductShellRuntime(
