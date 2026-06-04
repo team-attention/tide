@@ -493,9 +493,41 @@ function createAgentSession(
         }
       },
     },
-    blocks.length === 0 ? null : groupSessionItems(blocks).map(renderSessionItem),
+    blocks.length === 0
+      ? chatState === "hydrating"
+        ? createAgentSessionSkeleton()
+        : null
+      : groupSessionItems(blocks).map(renderSessionItem),
     working ? createElement(AgentWorkingIndicator, { runtimeStartedAt }) : null,
     queuedInput !== null ? createQueuedInputRow(queuedInput) : null,
+  );
+}
+
+// Skeleton shown while an opened thread is loading its blocks from the backend, so
+// switching into a thread feels responsive instead of flashing blank.
+function createAgentSessionSkeleton(): ReactElement {
+  const line = (width: string, key: string) =>
+    createElement("div", {
+      key,
+      className: "agent-skeleton__line",
+      style: { width },
+    });
+  return createElement(
+    "div",
+    {
+      className: "agent-session-skeleton",
+      "aria-label": "Loading thread",
+      "aria-busy": "true",
+    },
+    createElement("div", { className: "agent-skeleton__bubble" }),
+    createElement(
+      "div",
+      { className: "agent-skeleton__agent" },
+      line("92%", "l1"),
+      line("78%", "l2"),
+      line("85%", "l3"),
+      line("40%", "l4"),
+    ),
   );
 }
 

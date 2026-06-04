@@ -984,6 +984,16 @@ function deriveChatState(state: AgentChatShellState): AgentChatState {
   if (!state.thread) {
     return "empty";
   }
+  // An opened thread with no content yet and no active run is still loading its
+  // blocks from the backend (the optimistic switch shows the header first). A
+  // preserved thread restored on switch-back already has its blocks, so it skips
+  // this and renders instantly.
+  if (
+    state.blocks.length === 0 &&
+    (state.runtimeState === "idle" || state.runtimeState === "not_started")
+  ) {
+    return "hydrating";
+  }
   return "ready";
 }
 

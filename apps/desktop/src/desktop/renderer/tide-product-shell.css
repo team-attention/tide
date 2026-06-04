@@ -3018,3 +3018,54 @@ button.file-tree-row {
 .collapsible[data-expanded="true"] {
   grid-template-rows: 1fr;
 }
+
+/* Loading skeleton shown while an opened thread's blocks load from the backend, so
+   switching into a thread feels responsive instead of flashing blank. */
+.agent-session-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 12px 0;
+}
+.agent-skeleton__bubble {
+  align-self: flex-end;
+  width: 200px;
+  max-width: 60%;
+  height: 36px;
+  border-radius: 16px;
+}
+.agent-skeleton__agent {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  max-width: 80%;
+}
+.agent-skeleton__line {
+  height: 13px;
+  border-radius: 6px;
+}
+.agent-skeleton__bubble,
+.agent-skeleton__line {
+  background: linear-gradient(
+    90deg,
+    rgba(60, 55, 60, 0.06) 25%,
+    rgba(60, 55, 60, 0.13) 37%,
+    rgba(60, 55, 60, 0.06) 63%
+  );
+  background-size: 400% 100%;
+  animation: tide-skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes tide-skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-skeleton__bubble,
+  .agent-skeleton__line {
+    animation: none;
+  }
+}
