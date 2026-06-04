@@ -42,6 +42,10 @@ class ChildProcessPtyHandle implements PtyProcessHandle {
     this.child = child;
   }
 
+  get pid(): number | undefined {
+    return this.child.pid;
+  }
+
   write(data: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.child.stdin.write(data, (error) => {

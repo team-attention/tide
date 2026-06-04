@@ -290,6 +290,7 @@ test("agent_runtime_port_forwards_pty_output_with_thread_runtime_context", async
     threadId: string;
     agentId: string;
     runtimeId: string;
+    runtimePid?: number;
     source: PtyProcessOutput["source"];
     body: string;
   }[] = [];
@@ -319,6 +320,7 @@ test("agent_runtime_port_forwards_pty_output_with_thread_runtime_context", async
       threadId: "thread-output",
       agentId: "claude",
       runtimeId: "runtime-1",
+      runtimePid: undefined,
       source: "stdout",
       body: "provider output",
     },

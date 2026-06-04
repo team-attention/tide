@@ -891,3 +891,30 @@ fn mcp_close_pane_in_terminal_context_surface_starts_split_transition_animation(
     );
     assert_eq!(animation.pane_id, second_browser_id);
 }
+
+#[test]
+fn mcp_initialize_handshake_satisfies_antigravity_client_contract() {
+    // Spec: docs/specs/antigravity-wrapped-agent.md UC-2 BR-1, BR-2, BR-3, BR-4
+    // Antigravity's Go MCP SDK sends initialize (protocolVersion 2025-11-25) and
+    // accepts our response; the handshake was verified to deliver all tools.
+    // This guards the response contract every Wrapped Agent (Antigravity included)
+    // relies on: a protocolVersion, a tools capability, and serverInfo.
+    let initialize = mcp::mcp_initialize_for_test();
+    let result = &initialize["result"];
+
+    let version = result["protocolVersion"].as_str().unwrap_or_default();
+    assert!(
+        version.starts_with("20") && version.len() == 10,
+        "initialize must advertise a dated MCP protocolVersion, got {version:?}"
+    );
+    assert!(
+        result["capabilities"]["tools"].is_object(),
+        "initialize must advertise a tools capability"
+    );
+    assert_eq!(result["serverInfo"]["name"].as_str(), Some("tide-terminal"));
+
+    // tools/list contract the client calls right after initialize.
+    let tools = mcp::mcp_tool_definitions();
+    assert!(!tools.is_empty());
+    assert!(tools.iter().all(|t| t["name"].is_string() && t["inputSchema"].is_object()));
+}

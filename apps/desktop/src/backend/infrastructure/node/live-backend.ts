@@ -74,6 +74,7 @@ import type {
 } from "../../application/domains/agent-session/agent-session-block.ts";
 import type { AgentId, PromptState } from "../../application/domains/thread/thread.ts";
 import { createFixtureAgentSessionReader } from "../../application/services/fixture-agent-session-reader.ts";
+import { codexRolloutPathForPid } from "./codex-rollout-for-pid.ts";
 import {
   adoptedThreadSeedsFromSessions,
   discoverLocalSessions,
@@ -877,7 +878,7 @@ export function createLiveAgentSessionEventProjector(input: {
   >();
   const providerSessionRefsByRuntime = new Map<
     string,
-    { sinceMs: number; seenKeys: Set<string>; pollingStarted: boolean }
+    { sinceMs: number; seenKeys: Set<string>; pollingStarted: boolean; runtimePid?: number }
   >();
 
   const emitProviderSignals = async (frameInput: {
@@ -1007,6 +1008,7 @@ export function createLiveAgentSessionEventProjector(input: {
     threadId: string;
     agentId: "codex" | "claude" | "antigravity";
     runtimeId: string;
+    runtimePid?: number;
   }): Promise<void> => {
     if (frameInput.agentId === "antigravity") {
       return;
@@ -1028,22 +1030,42 @@ export function createLiveAgentSessionEventProjector(input: {
         seenKeys: new Set<string>(),
         pollingStarted: false,
       };
+    if (frameInput.runtimePid !== undefined) {
+      refState.runtimePid = frameInput.runtimePid;
+    }
     providerSessionRefsByRuntime.set(frameInput.runtimeId, refState);
 
-    const providerSessionRefs =
-      frameInput.agentId === "codex"
-        ? readCodexProviderSessionRefsFromHome({
-            homeDir: input.homeDir,
-            sinceMs: refState.sinceMs,
-            seenKeys: refState.seenKeys,
-            expectedUserMessage,
-          })
-        : readClaudeProviderSessionRefsFromHome({
-            homeDir: input.homeDir,
-            sinceMs: refState.sinceMs,
-            seenKeys: refState.seenKeys,
-            expectedUserMessage,
-          });
+    let providerSessionRefs: DiscoveredProviderSessionRef[];
+    if (frameInput.agentId === "codex" && refState.runtimePid !== undefined) {
+      // Deterministic: bind the exact rollout THIS run's process actually has
+      // open (a process can only hold its own rollout), instead of guessing by
+      // recency + prompt text — which mis-binds when several runs share the same
+      // prompt or spawn at once. Wait for the next poll if it isn't open yet; do
+      // NOT fall back to the guess here, so a wrong rollout can never bind first.
+      const rolloutPath = codexRolloutPathForPid(refState.runtimePid);
+      const frameKey = rolloutPath === undefined ? undefined : `codex:${rolloutPath}`;
+      if (rolloutPath === undefined || frameKey === undefined || refState.seenKeys.has(frameKey)) {
+        providerSessionRefs = [];
+      } else {
+        refState.seenKeys.add(frameKey);
+        providerSessionRefs = [codexProviderSessionRefFromRolloutPath(rolloutPath)];
+      }
+    } else if (frameInput.agentId === "codex") {
+      // No pid to inspect (e.g. adopted/fixture run) — legacy heuristic.
+      providerSessionRefs = readCodexProviderSessionRefsFromHome({
+        homeDir: input.homeDir,
+        sinceMs: refState.sinceMs,
+        seenKeys: refState.seenKeys,
+        expectedUserMessage,
+      });
+    } else {
+      providerSessionRefs = readClaudeProviderSessionRefsFromHome({
+        homeDir: input.homeDir,
+        sinceMs: refState.sinceMs,
+        seenKeys: refState.seenKeys,
+        expectedUserMessage,
+      });
+    }
 
     for (const providerSessionRef of providerSessionRefs) {
       await recordDiscoveredProviderSessionRef({
@@ -1507,6 +1529,7 @@ export function createLiveAgentSessionEventProjector(input: {
       threadId: string;
       agentId: "codex" | "claude" | "antigravity";
       runtimeId: string;
+      runtimePid?: number;
       source: "stdout" | "stderr";
       body: string;
     }): Promise<void> {
@@ -1533,6 +1556,7 @@ export function createLiveAgentSessionEventProjector(input: {
         threadId: frameInput.threadId,
         agentId: frameInput.agentId,
         runtimeId: frameInput.runtimeId,
+        runtimePid: frameInput.runtimePid,
       });
       scheduleProviderSessionRefPolling({
         threadId: frameInput.threadId,

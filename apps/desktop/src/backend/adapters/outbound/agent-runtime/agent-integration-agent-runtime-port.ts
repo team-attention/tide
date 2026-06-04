@@ -19,6 +19,10 @@ export type AgentIntegrationRegistry = Record<ProviderCliAgentId, AgentIntegrati
 
 export interface PtyProcessHandle {
   runtimeId: string;
+  // PID of the spawned process (the PTY host). Used to deterministically find the
+  // rollout file the provider CLI this run owns is actually writing, instead of
+  // guessing by recency + prompt text.
+  pid?: number;
   write(data: string): Promise<void> | void;
   resize?(cols: number, rows: number): void;
   stop(): Promise<void> | void;
@@ -60,6 +64,9 @@ export interface CreateAgentIntegrationRuntimePortInput {
     threadId: string;
     agentId: ProviderCliAgentId;
     runtimeId: string;
+    // PID of this run's spawned PTY host, so the provider session binding can find
+    // the exact rollout this process owns instead of matching by prompt text.
+    runtimePid?: number;
     source: PtyProcessOutput["source"];
     body: string;
   }) => Promise<void> | void;
@@ -240,6 +247,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           threadId,
           agentId,
           runtimeId,
+          runtimePid: this.processes.get(runtimeId)?.handle.pid,
           source: output.source,
           body: output.body,
         });

@@ -535,3 +535,45 @@ fn macos_show_window_uses_full_window_activation_for_full_screen_space() {
     assert!(show_body.contains("NSRunningApplication::currentApplication()"));
     assert!(show_body.contains("NSApplicationActivateAllWindows"));
 }
+
+// --- Antigravity Wrapped Agent (Spec: docs/specs/antigravity-wrapped-agent.md) ---
+
+#[test]
+fn antigravity_wrapper_skips_injection_outside_tide() {
+    // UC-1 BR-1: The wrapper execs the real `agy` unchanged when not inside Tide.
+    let wrapper = include_str!("../../../resources/bin/agy");
+
+    assert!(wrapper.contains(r#"command -v agy"#));
+    assert!(wrapper.contains(r#"[ -z "$TIDE_TERMINAL_BIN" ] && exec "$REAL_CMD" "$@""#));
+}
+
+#[test]
+fn antigravity_wrapper_injects_tide_mcp_additively() {
+    // UC-1 BR-2, BR-3 + UC-3 BR-1, BR-2: The wrapper merges a tide-terminal MCP
+    // server into the canonical Antigravity config additively and idempotently,
+    // preserving the user's existing servers, with per-Pane identity inherited
+    // from the process env (no per-Pane env block needed).
+    let wrapper = include_str!("../../../resources/bin/agy");
+
+    assert!(wrapper.contains(r#"$HOME/.gemini/config/mcp_config.json"#));
+    // additive: reads existing servers before inserting tide-terminal
+    assert!(wrapper.contains(r#"data.get("mcpServers")"#));
+    assert!(wrapper.contains(r#"servers["tide-terminal"] = {"command": binp, "args": ["mcp"]}"#));
+    // atomic write so a crash never truncates the user's config
+    assert!(wrapper.contains("os.replace(tmp, cfg)"));
+    // command points at the Tide binary; per-Pane env is inherited, not written
+    assert!(wrapper.contains(r#"binp = os.environ["TIDE_TERMINAL_BIN"]"#));
+    // must not clobber a non-empty user config when python3 is unavailable
+    assert!(wrapper.contains(r#"elif [ ! -s "$MCP_CONFIG" ]; then"#));
+}
+
+#[test]
+fn antigravity_wrapper_reports_lifecycle_presence_like_other_agents() {
+    // UC-4 BR-1, BR-2: The wrapper establishes Wrapped Agent Presence on attach
+    // and clears it on detach via the same notify path as the other agents.
+    let wrapper = include_str!("../../../resources/bin/agy");
+
+    assert!(wrapper.contains(r#"notify "$1" --pane "$TIDE_TERMINAL_PANE" --agent antigravity"#));
+    assert!(wrapper.contains("tide_notify agent-attached"));
+    assert!(wrapper.contains("trap 'tide_notify agent-detached' EXIT"));
+}
