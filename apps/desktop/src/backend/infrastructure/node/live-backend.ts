@@ -74,7 +74,10 @@ import type {
 } from "../../application/domains/agent-session/agent-session-block.ts";
 import type { AgentId, PromptState } from "../../application/domains/thread/thread.ts";
 import { createFixtureAgentSessionReader } from "../../application/services/fixture-agent-session-reader.ts";
-import { codexRolloutPathForPid } from "./codex-rollout-for-pid.ts";
+import {
+  claudeTranscriptPathForPid,
+  codexRolloutPathForPid,
+} from "./codex-rollout-for-pid.ts";
 import {
   adoptedThreadSeedsFromSessions,
   discoverLocalSessions,
@@ -1050,6 +1053,19 @@ export function createLiveAgentSessionEventProjector(input: {
         refState.seenKeys.add(frameKey);
         providerSessionRefs = [codexProviderSessionRefFromRolloutPath(rolloutPath)];
       }
+    } else if (frameInput.agentId === "claude" && refState.runtimePid !== undefined) {
+      // Deterministic: bind the exact transcript THIS run's claude process has
+      // open (a process can only hold its own), instead of guessing by recency +
+      // prompt text — which mis-binds under concurrency / identical prompts. Wait
+      // for the next poll if it isn't open yet; never fall back to a guess here.
+      const transcriptPath = claudeTranscriptPathForPid(refState.runtimePid);
+      const frameKey = transcriptPath === undefined ? undefined : `claude:${transcriptPath}`;
+      if (transcriptPath === undefined || frameKey === undefined || refState.seenKeys.has(frameKey)) {
+        providerSessionRefs = [];
+      } else {
+        refState.seenKeys.add(frameKey);
+        providerSessionRefs = [claudeProviderSessionRefFromTranscriptPath(transcriptPath)];
+      }
     } else if (frameInput.agentId === "codex") {
       // No pid to inspect (e.g. adopted/fixture run) — legacy heuristic.
       providerSessionRefs = readCodexProviderSessionRefsFromHome({
@@ -1059,6 +1075,7 @@ export function createLiveAgentSessionEventProjector(input: {
         expectedUserMessage,
       });
     } else {
+      // claude with no pid (adopted/fixture run) — legacy heuristic.
       providerSessionRefs = readClaudeProviderSessionRefsFromHome({
         homeDir: input.homeDir,
         sinceMs: refState.sinceMs,

@@ -9,6 +9,9 @@ import { spawnSync } from "node:child_process";
 // yet (caller waits / falls back), never a guess.
 
 const CODEX_ROLLOUT_RE = /\/\.codex\/sessions\/.*\/rollout-[^/]*\.jsonl$/;
+// Claude writes one transcript per session at
+// ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl and holds it open.
+const CLAUDE_TRANSCRIPT_RE = /\/\.claude\/projects\/[^/]+\/[^/]+\.jsonl$/;
 
 export interface CodexRolloutForPidDeps {
   childPidsOf?: (pid: number) => number[];
@@ -19,14 +22,38 @@ export function codexRolloutPathForPid(
   hostPid: number | undefined,
   deps: CodexRolloutForPidDeps = {},
 ): string | undefined {
+  return providerSessionFilePathForPid(hostPid, CODEX_ROLLOUT_RE, deps);
+}
+
+// Same deterministic process-ownership rule for Claude: bind the exact transcript
+// this run's claude process has open, never a recency/prompt-text guess.
+export function claudeTranscriptPathForPid(
+  hostPid: number | undefined,
+  deps: CodexRolloutForPidDeps = {},
+): string | undefined {
+  return providerSessionFilePathForPid(hostPid, CLAUDE_TRANSCRIPT_RE, deps);
+}
+
+// Find the provider session file matching `pattern` that the run's process (or a
+// descendant) has open. A process can only hold its OWN session file open, so this
+// can never bind to another run's session — unlike the legacy "recent file that
+// contains the prompt text" heuristic, which collides when several threads run
+// concurrently or send the same prompt. v2 owns the PTY host PID; the provider CLI
+// is its descendant. Returns undefined if not determinable yet (caller waits /
+// falls back), never a guess.
+function providerSessionFilePathForPid(
+  hostPid: number | undefined,
+  pattern: RegExp,
+  deps: CodexRolloutForPidDeps = {},
+): string | undefined {
   if (hostPid === undefined || !Number.isInteger(hostPid)) {
     return undefined;
   }
   const childPidsOf = deps.childPidsOf ?? defaultChildPidsOf;
   const openFilesOf = deps.openFilesOf ?? defaultOpenFilesOf;
 
-  // The PTY host (python) spawns codex as a child; codex holds the rollout open.
-  // Walk the host + its descendants breadth-first.
+  // The PTY host (python) spawns the provider CLI as a child; the CLI holds its
+  // session file open. Walk the host + its descendants breadth-first.
   const seen = new Set<number>();
   const queue: number[] = [hostPid];
   while (queue.length > 0) {
@@ -35,9 +62,9 @@ export function codexRolloutPathForPid(
       continue;
     }
     seen.add(pid);
-    const rollout = openFilesOf(pid).find((path) => CODEX_ROLLOUT_RE.test(path));
-    if (rollout !== undefined) {
-      return rollout;
+    const match = openFilesOf(pid).find((path) => pattern.test(path));
+    if (match !== undefined) {
+      return match;
     }
     for (const child of childPidsOf(pid)) {
       if (!seen.has(child)) {
