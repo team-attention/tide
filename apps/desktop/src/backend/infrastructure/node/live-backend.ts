@@ -1698,18 +1698,12 @@ export function readCodexProviderHistoryFramesFromHome(input: {
   boundRolloutPath?: string;
 }): CodexProviderHistoryFrame[] {
   const frames: CodexProviderHistoryFrame[] = [];
+  // Read ONLY the rollout the hook bound this thread to — no recency-scan fallback,
+  // which under concurrency picks another session's (more recent) rollout and binds
+  // two threads to one session. Unbound → read nothing; the hook binds within ~1s.
   const rolloutPaths =
-    input.boundRolloutPath !== undefined
-      ? [input.boundRolloutPath]
-      : recentCodexRollouts(input.homeDir, input.sinceMs);
+    input.boundRolloutPath !== undefined ? [input.boundRolloutPath] : [];
   for (const rolloutPath of rolloutPaths) {
-    if (
-      input.boundRolloutPath === undefined &&
-      input.expectedUserMessage !== undefined &&
-      !codexRolloutContainsUserMessage(rolloutPath, input.expectedUserMessage)
-    ) {
-      continue;
-    }
     const sessionId = codexSessionIdFromRolloutPath(rolloutPath);
     const rolloutText = readBoundedTail(rolloutPath, 256 * 1024);
     if (rolloutText === undefined) {
@@ -1886,21 +1880,12 @@ export function readClaudeProviderHistoryFramesFromHome(input: {
   boundTranscriptPath?: string;
 }): ClaudeProviderHistoryFrame[] {
   const frames: ClaudeProviderHistoryFrame[] = [];
+  // Read ONLY the transcript the hook bound this thread to — no recency-scan
+  // fallback (it cross-binds concurrent claude sessions to one transcript). Unbound
+  // → read nothing; the hook binds within ~1s and the next poll reads it.
   const transcriptPaths =
-    input.boundTranscriptPath !== undefined
-      ? [input.boundTranscriptPath]
-      : recentClaudeTranscripts(input.homeDir, input.sinceMs);
+    input.boundTranscriptPath !== undefined ? [input.boundTranscriptPath] : [];
   for (const transcriptPath of transcriptPaths) {
-    if (
-      input.boundTranscriptPath === undefined &&
-      input.expectedUserMessage !== undefined &&
-      !claudeTranscriptContainsUserMessage(
-        transcriptPath,
-        input.expectedUserMessage,
-      )
-    ) {
-      continue;
-    }
     const sessionId = claudeSessionIdFromTranscriptPath(transcriptPath);
     const transcriptText = readBoundedTail(transcriptPath, 256 * 1024);
     if (transcriptText === undefined) {
@@ -2121,10 +2106,12 @@ export function readAntigravityProviderHistoryFramesFromHome(input: {
   boundTranscriptPath?: string;
 }): AntigravityProviderHistoryFrame[] {
   const frames: AntigravityProviderHistoryFrame[] = [];
+  // Read ONLY the transcript the hook bound this thread to. No recency-scan
+  // fallback: under concurrency the most-recent transcript belongs to ANOTHER
+  // session, so scanning cross-binds two threads to one session. If not bound yet,
+  // read nothing this cycle — the hook binds within ~1s and the next poll reads it.
   const transcriptPaths =
-    input.boundTranscriptPath !== undefined
-      ? [input.boundTranscriptPath]
-      : recentAntigravityTranscripts(input.homeDir, input.sinceMs);
+    input.boundTranscriptPath !== undefined ? [input.boundTranscriptPath] : [];
   for (const transcriptPath of transcriptPaths) {
     const conversationId = antigravityConversationIdFromTranscriptPath(transcriptPath);
     const transcriptText = readBoundedTail(transcriptPath, 128 * 1024);

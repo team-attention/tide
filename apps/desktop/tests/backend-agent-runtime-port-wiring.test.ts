@@ -901,6 +901,7 @@ test("antigravity_provider_history_reader_projects_planner_response_as_agent_mes
     runtimeId: "runtime-agy-history",
     sinceMs: Date.now() - 10_000,
     seenKeys,
+    boundTranscriptPath: transcriptPath,
   });
 
   assert.equal(frames.length, 1);
@@ -922,6 +923,7 @@ test("antigravity_provider_history_reader_projects_planner_response_as_agent_mes
       runtimeId: "runtime-agy-history",
       sinceMs: Date.now() - 10_000,
       seenKeys,
+      boundTranscriptPath: transcriptPath,
     }),
     [],
   );
@@ -983,6 +985,7 @@ test("antigravity_provider_history_reader_marks_a_terminal_planner_response_as_t
     runtimeId: "runtime-agy-complete",
     sinceMs: Date.now() - 10_000,
     seenKeys: new Set<string>(),
+    boundTranscriptPath: transcriptPath,
   });
 
   const toolCallFrame = frames.find((frame) => frame.payload.type === "tool_call");
@@ -1097,6 +1100,20 @@ test("live_backend_projector_persists_antigravity_provider_session_ref", async (
     },
     providerSignalSpoolDir: path.join(home, ".tide", "agent-bootstrap", "provider-signals"),
   });
+
+  // Model: the provider session is bound to the thread by the agent's HOOK (which
+  // reports its conversation + transcript path), not by scanning recent files. Feed
+  // that agent-running signal so the projector binds, then reads the bound transcript.
+  writeFile(
+    path.join(home, ".tide", "agent-bootstrap", "provider-signals", `${runtimeId}.jsonl`),
+    JSON.stringify({
+      threadId,
+      runtimeId,
+      agent: "antigravity",
+      event: "agent-running",
+      payload: { conversationId, transcriptPath },
+    }),
+  );
 
   await projector.ingestOutput({
     threadId,
@@ -1354,6 +1371,7 @@ test("codex_provider_history_reader_projects_agent_message_frame", () => {
     sinceMs: Date.now() - 10_000,
     seenKeys,
     expectedUserMessage: "Reply exactly: Codex history",
+    boundRolloutPath: rolloutPath,
   });
 
   assert.equal(frames.length, 1);
@@ -1376,6 +1394,7 @@ test("codex_provider_history_reader_projects_agent_message_frame", () => {
       sinceMs: Date.now() - 10_000,
       seenKeys,
       expectedUserMessage: "Reply exactly: Codex history",
+      boundRolloutPath: rolloutPath,
     }),
     [],
   );
@@ -1417,6 +1436,7 @@ test("codex_provider_history_reader_emits_only_the_current_turns_reply", () => {
     sinceMs: Date.now() - 10_000,
     seenKeys: new Set<string>(),
     expectedUserMessage: "hi",
+    boundRolloutPath: rolloutPath,
   });
 
   assert.equal(frames.length, 1, "only the current turn's reply is emitted");
@@ -1465,6 +1485,7 @@ test("codex_provider_history_reader_emits_tool_call_and_tool_result_frames", () 
     sinceMs: Date.now() - 10_000,
     seenKeys: new Set<string>(),
     expectedUserMessage: "list files",
+    boundRolloutPath: rolloutPath,
   });
 
   // Ordered: tool_call, tool_result, then the agent message.
@@ -1527,6 +1548,7 @@ test("claude_provider_history_reader_emits_tool_call_and_tool_result_frames", ()
     sinceMs: Date.now() - 10_000,
     seenKeys: new Set<string>(),
     expectedUserMessage: "list files",
+    boundTranscriptPath: transcriptPath,
   });
 
   const types = frames.map((frame) => (frame.payload as { type: string }).type);
@@ -1580,6 +1602,7 @@ test("antigravity_provider_history_reader_emits_tool_call_and_tool_result_frames
     runtimeId: "runtime-agy-tool",
     sinceMs: Date.now() - 10_000,
     seenKeys: new Set<string>(),
+    boundTranscriptPath: transcriptPath,
   });
 
   assert.deepEqual(
@@ -1729,6 +1752,7 @@ test("claude_provider_history_reader_projects_agent_message_frame", () => {
     sinceMs: Date.now() - 10_000,
     seenKeys,
     expectedUserMessage: "Reply exactly: Claude history",
+    boundTranscriptPath: transcriptPath,
   });
 
   assert.equal(frames.length, 1);
