@@ -73,40 +73,9 @@ interface AnchorRect {
   bottom: number;
 }
 
-// Keep the loading skeleton visible for a short minimum once shown, so a thread that
-// hydrates almost instantly still reads as "loading" instead of flickering invisibly.
-function useMinimumVisible(active: boolean, minMs = 320): boolean {
-  const [visible, setVisible] = useState(active);
-  const shownAtRef = useRef<number | null>(active ? Date.now() : null);
-  useEffect(() => {
-    if (active) {
-      if (shownAtRef.current === null) {
-        shownAtRef.current = Date.now();
-      }
-      setVisible(true);
-      return;
-    }
-    if (shownAtRef.current === null) {
-      setVisible(false);
-      return;
-    }
-    const remaining = Math.max(0, minMs - (Date.now() - shownAtRef.current));
-    const timer = setTimeout(() => {
-      shownAtRef.current = null;
-      setVisible(false);
-    }, remaining);
-    return () => clearTimeout(timer);
-  }, [active, minMs]);
-  return visible;
-}
-
 export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   const viewModel = props.viewModel;
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
-  // Show the loading skeleton while hydrating, kept on briefly so it is perceptible.
-  const showSkeleton = useMinimumVisible(
-    viewModel.chatState === "hydrating" && viewModel.blocks.length === 0,
-  );
   // A pasted-image attachment enlarged into a lightbox (its data: URL), or null.
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -209,7 +178,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       "data-runtime-state": viewModel.runtimeState,
     },
     props.showThreadHeader === false ? null : createThreadHeader(viewModel),
-    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt, showSkeleton),
+    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt),
     createComposerStack(viewModel, handlers),
     popover,
     lightbox,
@@ -488,7 +457,6 @@ function createAgentSession(
   onOpenFile?: (path: string) => void,
   sessionRef?: { current: HTMLElement | null },
   runtimeStartedAt?: string,
-  showSkeleton = false,
 ): ReactElement {
   // Show a live "working" indicator only until the agent produces its block:
   // a streaming block carries its own caret, and a complete block means the turn
@@ -526,7 +494,7 @@ function createAgentSession(
       },
     },
     blocks.length === 0
-      ? showSkeleton
+      ? chatState === "hydrating"
         ? createAgentSessionSkeleton()
         : null
       : groupSessionItems(blocks).map(renderSessionItem),
