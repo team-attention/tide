@@ -1253,13 +1253,19 @@ export function openProductShellThread(
   }
 
   const agentChatByThreadId = preserveActiveAgentChat(state, threadId);
-  return hydrateProductShellThread(
-    { ...state, agentChatByThreadId },
-    thread,
-    previewBlocksForThread(thread),
-    "idle",
-    agentChatByThreadId[threadId],
-  );
+  return {
+    // Drop the previous thread's file tree so the new thread never flashes stale
+    // files; the refresh_file_tree dispatched on switch repopulates it.
+    ...hydrateProductShellThread(
+      { ...state, agentChatByThreadId },
+      thread,
+      previewBlocksForThread(thread),
+      "idle",
+      agentChatByThreadId[threadId],
+    ),
+    fileTree: null,
+    expandedFolderPaths: [],
+  };
 }
 
 export function openProductShellThreadFromLeftUi(
@@ -1300,6 +1306,10 @@ export function openProductShellThreadFromLeftUi(
       ...optimistic,
       leftUiMenu: null,
       archiveConfirmThreadId: null,
+      // Stale-free file tree: clear on switch; the refresh_file_tree dispatched by
+      // the caller (and on thread.hydrated) fills in the new thread's files.
+      fileTree: null,
+      expandedFolderPaths: [],
     },
     command: {
       kind: "thread.hydrate",

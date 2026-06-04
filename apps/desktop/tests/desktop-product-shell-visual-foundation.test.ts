@@ -2034,16 +2034,24 @@ test("product_shell_file_tree_file_row_emits_open_editor_command", () => {
   });
 });
 
-test("right_window_actions_move_to_the_rightmost_visible_column", () => {
+test("window_toggles_are_a_fixed_top_right_cluster_independent_of_open_panels", () => {
+  // The Workbench/FileTree toggles live in one fixed window-level cluster, not in
+  // whichever column happens to be rightmost — so they never jump around.
   const startHtml = renderProductShell();
-  const workbenchHtml = renderProductShell(openProductShellThread(createProductShellState(), "thread-workbench"));
-  const fileTreeHtml = renderProductShell(
-    toggleProductShellFileTree(openProductShellThread(createProductShellState(), "thread-workbench")),
-  );
+  assert.match(startHtml, /class="tide-window-toggles"/);
+  assert.match(startHtml, /aria-label="Open Workbench"/);
+  assert.match(startHtml, /aria-label="Open FileTree"/);
 
-  assert.match(startHtml, /data-right-actions-owner="agent-chat"/);
-  assert.match(workbenchHtml, /data-right-actions-owner="workbench"/);
-  assert.match(fileTreeHtml, /data-right-actions-owner="file-tree"/);
+  const workbenchOpen = openProductShellThread(createProductShellState(), "thread-workbench");
+  const workbenchHtml = renderProductShell(workbenchOpen);
+  assert.match(workbenchHtml, /class="tide-window-toggles"/);
+  // Active panel surfaces a Close affordance with the active state.
+  assert.match(workbenchHtml, /aria-label="Close Workbench"/);
+
+  const fileTreeHtml = renderProductShell(toggleProductShellFileTree(workbenchOpen));
+  assert.match(fileTreeHtml, /aria-label="Close FileTree"/);
+  // The toggle cluster is not duplicated into the columns.
+  assert.doesNotMatch(fileTreeHtml, /data-right-actions-owner/);
 });
 
 test("prompt_choice_surface_renders_above_composer_with_canonical_spacing", () => {

@@ -261,6 +261,38 @@ button {
   color: var(--tide-action);
 }
 
+/* Fixed Workbench/FileTree toggles, pinned to the window's top-right inside the
+   52px top band, above the columns. The buttons opt out of the drag region. */
+.tide-window-toggles {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 14px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.tide-window-toggles .window-toggle {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.tide-window-toggles .window-toggle--active {
+  background: var(--tide-selection);
+  color: var(--tide-action);
+}
+
+/* Reserve the toggle cluster's footprint on whichever column reaches the window's
+   right edge, so its trailing controls (e.g. the Workbench +) never sit under the
+   fixed toggles. The body's last child is the rightmost mounted column. */
+.tide-product-shell__body > :last-child .column-top-row {
+  padding-right: 84px;
+}
+
 .left-ui {
   min-width: 0;
   min-height: 0;

@@ -1578,6 +1578,28 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     };
   }
 
+  // A Launcher tab is a transient "pick what to open" pad. When the active pane is a
+  // Launcher and the user opens something from it, the Launcher is consumed (replaced
+  // by the opened pane) instead of lingering as a dangling empty tab.
+  private activeLauncherPaneId(thread: ThreadRecord): string | undefined {
+    const active = thread.workbench.panes.find(
+      (pane) => pane.paneId === thread.workbench.activePaneId,
+    );
+    return active?.kind === "launcher" ? active.paneId : undefined;
+  }
+
+  private removeLauncherPane(thread: ThreadRecord, paneId: string | undefined): void {
+    if (paneId === undefined) {
+      return;
+    }
+    const index = thread.workbench.panes.findIndex(
+      (pane) => pane.paneId === paneId && pane.kind === "launcher",
+    );
+    if (index >= 0) {
+      thread.workbench.panes.splice(index, 1);
+    }
+  }
+
   async handleWorkbenchCommand(
     input: WorkbenchCommandInput,
   ): Promise<ServiceResult<WorkbenchCommandResult>> {
@@ -1600,12 +1622,14 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         };
       }
       case "open_browser": {
+        const consumedLauncher = this.activeLauncherPaneId(thread);
         const opened = this.openBrowserOutput(thread, input.data);
         const pane = workbenchPaneById(thread.workbench, opened.pane.paneId);
         if (pane !== undefined) {
           pane.visible = true;
           thread.workbench.activePaneId = pane.paneId;
         }
+        this.removeLauncherPane(thread, consumedLauncher);
         thread.workbench.focusOwner = "workbench";
         thread.updatedAt = this.clock();
         return {
@@ -1707,6 +1731,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         };
       }
       case "open_editor": {
+        const consumedLauncher = this.activeLauncherPaneId(thread);
         const opened = await this.openFileOutput(thread, input.data);
         if (!opened.ok) {
           return failure(opened.error.code, opened.error.message);
@@ -1716,6 +1741,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
           pane.visible = true;
           thread.workbench.activePaneId = pane.paneId;
         }
+        this.removeLauncherPane(thread, consumedLauncher);
         thread.workbench.focusOwner = "workbench";
         thread.updatedAt = this.clock();
         return {
@@ -1726,6 +1752,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         };
       }
       case "open_terminal": {
+        const consumedLauncher = this.activeLauncherPaneId(thread);
         const root = threadRoot(thread);
         if (root === undefined) {
           return failure(
@@ -1749,6 +1776,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         });
         await this.ensureWorkbenchTerminalRunning(thread, pane);
         thread.workbench.activePaneId = pane.paneId;
+        this.removeLauncherPane(thread, consumedLauncher);
         thread.workbench.focusOwner = "workbench";
         thread.updatedAt = this.clock();
         return {

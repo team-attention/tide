@@ -367,7 +367,6 @@ interface ProductShellHandlers {
   onBrowserActionResult: (paneId: string, result: ProductShellBrowserActionResult) => void;
 }
 
-type RightActionOwner = "agent-chat" | "workbench" | "file-tree";
 
 export function TideProductShell(props: TideProductShellProps): ReactElement {
   const [shellState, setShellState] = useState(() =>
@@ -1026,7 +1025,57 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       workbenchPresence.mounted ? createWorkbenchColumn(layoutVm, handlers) : null,
       fileTreePresence.mounted ? createFileTreeColumn(layoutVm, handlers) : null,
     ),
+    // Workbench + FileTree toggles live in a single fixed cluster at the window's
+    // top-right, so they never jump between column headers as panels open/close.
+    createWindowChromeToggles(layoutVm, handlers),
     viewModel.settingsOpen ? createSettingsModal(viewModel.worktreeSettings, handlers) : null,
+  );
+}
+
+// Fixed top-right window controls: open/close the Workbench and the FileTree. These
+// are window-level affordances, not column content, so their position is stable
+// regardless of which panels are currently open.
+function createWindowChromeToggles(
+  viewModel: ProductShellViewModel,
+  handlers: ProductShellHandlers,
+): ReactElement {
+  const toggle = (
+    label: string,
+    icon: ReactElement,
+    active: boolean,
+    onClick: () => void,
+  ): ReactElement =>
+    createElement(
+      "button",
+      {
+        className: ["top-row-button", "window-toggle", active ? "window-toggle--active" : ""]
+          .filter(Boolean)
+          .join(" "),
+        type: "button",
+        "aria-label": label,
+        "aria-pressed": active,
+        title: label,
+        onClick,
+      },
+      icon,
+    );
+  return createElement(
+    "div",
+    { className: "tide-window-toggles", "aria-label": "Window panels" },
+    toggle(
+      viewModel.workbenchOpen ? "Close Workbench" : "Open Workbench",
+      viewModel.workbenchOpen
+        ? createElement(PanelRightClose, { size: 15, strokeWidth: 1.9 })
+        : createElement(PanelRightOpen, { size: 15, strokeWidth: 1.9 }),
+      viewModel.workbenchOpen,
+      handlers.onWorkbenchToggle,
+    ),
+    toggle(
+      viewModel.fileTreeOpen ? "Close FileTree" : "Open FileTree",
+      createElement(FolderOpen, { size: 15, strokeWidth: 1.9 }),
+      viewModel.fileTreeOpen,
+      handlers.onFileTreeToggle,
+    ),
   );
 }
 
@@ -1264,7 +1313,6 @@ function createAgentChatColumn(
   viewModel: ProductShellViewModel,
   handlers: ProductShellHandlers,
 ): ReactElement {
-  const rightOwner = rightActionOwner(viewModel);
   const title = viewModel.agentChat.thread?.title ?? "New Thread";
 
   return createElement(
@@ -1292,13 +1340,9 @@ function createAgentChatColumn(
         createElement(Pin, { size: 14, strokeWidth: 1.9, "aria-hidden": true }),
         createElement("span", { className: "column-top-row__title" }, title),
       ),
-      createElement(
-        "div",
-        { className: "column-top-row__trailing" },
-        rightOwner === "agent-chat"
-          ? createRightWindowActions(rightOwner, viewModel.workbenchOpen, handlers)
-          : null,
-      ),
+      // Trailing kept as a spacer; the Workbench/FileTree toggles now live in the
+      // fixed window-level cluster at the top-right.
+      createElement("div", { className: "column-top-row__trailing" }),
     ),
     createElement(AgentChatShell, {
       viewModel: viewModel.agentChat,
@@ -1322,7 +1366,6 @@ function createWorkbenchColumn(
   const tabs = viewModel.appChrome.workbenchTabStrip.visibleTabs;
   const activeTab = tabs.find((tab) => tab.active) ?? tabs[0];
   const activePane = viewModel.appChrome.activeWorkbenchPane;
-  const rightOwner = rightActionOwner(viewModel);
 
   return createElement(
     "aside",
@@ -1371,14 +1414,12 @@ function createWorkbenchColumn(
               ),
             ),
       ),
+      // The + (New Pane) opens a Launcher tab to pick what to open; it always lives
+      // in the Workbench header. Open/close is handled by the fixed window toggles.
       createElement(
         "div",
         { className: "column-top-row__trailing" },
         createIconButton("New Pane", createElement(Plus, { size: 16, strokeWidth: 1.9 }), handlers.onNewWorkbenchPane, "top-row-button"),
-        createIconButton("Close Workbench", createElement(PanelRightClose, { size: 16, strokeWidth: 1.9 }), handlers.onWorkbenchToggle, "top-row-button"),
-        rightOwner === "workbench"
-          ? createRightWindowActions(rightOwner, viewModel.workbenchOpen, handlers)
-          : null,
       ),
     ),
     activeTab && activePane
@@ -2354,7 +2395,8 @@ function createFileTreeColumn(
         createElement(FolderOpen, { size: 15, strokeWidth: 1.9, "aria-hidden": true }),
         createElement("span", { className: "column-top-row__title" }, viewModel.fileTree.cwdLabel),
       ),
-      createRightWindowActions("file-tree", viewModel.workbenchOpen, handlers),
+      // Spacer; the FileTree toggle now lives in the fixed window cluster.
+      createElement("div", { className: "column-top-row__trailing" }),
     ),
     createElement(
       "div",
@@ -2925,35 +2967,6 @@ function createColumnResizeHandle(
   });
 }
 
-function createRightWindowActions(
-  owner: RightActionOwner,
-  workbenchOpen: boolean,
-  handlers: ProductShellHandlers,
-): ReactElement {
-  return createElement(
-    "div",
-    { className: "right-window-actions", "data-right-actions-owner": owner },
-    // Workbench open affordance. When the Workbench is open its own column header
-    // owns the close control, so we only surface "Open Workbench" here.
-    workbenchOpen
-      ? null
-      : createIconButton(
-          "Open Workbench",
-          createElement(PanelRightOpen, { size: 15, strokeWidth: 1.9 }),
-          handlers.onWorkbenchToggle,
-          "top-row-button",
-        ),
-    createIconButton(
-      owner === "file-tree" ? "Close FileTree" : "Open FileTree",
-      owner === "file-tree"
-        ? createElement(PanelRightClose, { size: 15, strokeWidth: 1.9 })
-        : createElement(FolderOpen, { size: 15, strokeWidth: 1.9 }),
-      handlers.onFileTreeToggle,
-      "top-row-button",
-    ),
-  );
-}
-
 // Renders the left-rail context menu as a fixed popover anchored to its trigger
 // (escaping the rail's scroll-overflow clip), behind a transparent full-viewport
 // backdrop that closes it on outside click.
@@ -3074,16 +3087,6 @@ function createLeftUiContextMenu(
       ),
     ),
   );
-}
-
-function rightActionOwner(viewModel: ProductShellViewModel): RightActionOwner {
-  if (viewModel.fileTreeOpen) {
-    return "file-tree";
-  }
-  if (viewModel.workbenchOpen) {
-    return "workbench";
-  }
-  return "agent-chat";
 }
 
 // The window is frameless (titleBarStyle: "hidden") and the macOS traffic lights
