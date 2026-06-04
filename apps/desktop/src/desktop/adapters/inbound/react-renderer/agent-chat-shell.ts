@@ -466,7 +466,7 @@ function createAgentSession(
       "aria-label": "Agent Session",
       "data-session-state": blocks.length === 0 ? "empty" : "turns",
       // Event-delegated clicks: Copy a code block, or open a file chip.
-      onClick: (event: { target: EventTarget | null }) => {
+      onClick: (event: { target: EventTarget | null; preventDefault: () => void }) => {
         const target = event.target instanceof Element ? event.target : null;
         if (target === null) {
           return;
@@ -479,6 +479,8 @@ function createAgentSession(
         }
         const path = onOpenFile ? target.closest("[data-open-file]")?.getAttribute("data-open-file") : null;
         if (path) {
+          // file-open links render as <a href="#"> — stop the anchor navigation.
+          event.preventDefault();
           onOpenFile?.(path);
         }
       },
@@ -575,6 +577,24 @@ const markdown = new MarkdownIt({
   linkify: true,
   breaks: true,
 });
+
+// Agents often link to repo files as [name](file:///abs/path). markdown-it blocks
+// file: links by default; allow them and render them as Workbench file-open links
+// (the same data-open-file the tool chips use) instead of navigating anchors.
+const defaultValidateLink = markdown.validateLink.bind(markdown);
+markdown.validateLink = (url: string) =>
+  url.startsWith("file://") || defaultValidateLink(url);
+
+markdown.renderer.rules.link_open = (tokens, index, options, _env, self) => {
+  const token = tokens[index];
+  const href = token.attrGet("href");
+  if (href && href.startsWith("file://")) {
+    token.attrSet("data-open-file", decodeURIComponent(href.slice("file://".length)));
+    token.attrSet("class", "md-file-link");
+    token.attrSet("href", "#");
+  }
+  return self.renderToken(tokens, index, options);
+};
 
 // Codex-style fenced code blocks: a header with the language label + a Copy
 // button, then the syntax-highlighted code. Copy is handled by event delegation
