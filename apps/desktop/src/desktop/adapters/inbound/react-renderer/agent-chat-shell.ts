@@ -178,7 +178,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       "data-runtime-state": viewModel.runtimeState,
     },
     props.showThreadHeader === false ? null : createThreadHeader(viewModel),
-    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef),
+    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt),
     createComposerStack(viewModel, handlers),
     popover,
     lightbox,
@@ -448,6 +448,7 @@ function createAgentSession(
   queuedInput: string | null,
   onOpenFile?: (path: string) => void,
   sessionRef?: { current: HTMLElement | null },
+  runtimeStartedAt?: string,
 ): ReactElement {
   // Show a live "working" indicator only until the agent produces its block:
   // a streaming block carries its own caret, and a complete block means the turn
@@ -483,7 +484,7 @@ function createAgentSession(
       },
     },
     blocks.length === 0 ? null : groupSessionItems(blocks).map(renderSessionItem),
-    working ? createElement(AgentWorkingIndicator) : null,
+    working ? createElement(AgentWorkingIndicator, { runtimeStartedAt }) : null,
     queuedInput !== null ? createQueuedInputRow(queuedInput) : null,
   );
 }
@@ -521,15 +522,27 @@ function renderSessionItem(item: SessionRenderItem): ReactElement | null {
 
 // Live working indicator with an elapsed timer, so a long turn reads as active
 // progress (like "Working… 12s") rather than a static spinner.
-function AgentWorkingIndicator(): ReactElement {
-  const [seconds, setSeconds] = useState(0);
+function AgentWorkingIndicator({
+  runtimeStartedAt,
+}: {
+  runtimeStartedAt?: string;
+}): ReactElement {
+  // Base elapsed on when the turn actually started (from the backend), so the timer
+  // is correct even after reopening a running thread. Fall back to mount time only
+  // when the backend hasn't reported a start (e.g. an optimistic local turn).
+  const startedMs = (() => {
+    const parsed = runtimeStartedAt ? Date.parse(runtimeStartedAt) : NaN;
+    return Number.isNaN(parsed) ? Date.now() : parsed;
+  })();
+  const [seconds, setSeconds] = useState(() =>
+    Math.max(0, Math.floor((Date.now() - startedMs) / 1000)),
+  );
   useEffect(() => {
-    const started = Date.now();
     const timer = setInterval(() => {
-      setSeconds(Math.floor((Date.now() - started) / 1000));
+      setSeconds(Math.max(0, Math.floor((Date.now() - startedMs) / 1000)));
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [startedMs]);
   return createElement(
     "article",
     {

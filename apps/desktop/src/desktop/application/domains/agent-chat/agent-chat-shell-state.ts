@@ -146,6 +146,10 @@ export interface AgentChatThreadSummary {
   pinned: boolean;
   archived: boolean;
   lastKnownState: string;
+  // When the current turn started running (from the backend). The Working
+  // indicator shows elapsed since this, so reopening a running thread keeps the
+  // real time instead of resetting to 0.
+  runtimeStartedAt?: string;
 }
 
 export type AgentChatThreadScope =
@@ -282,6 +286,7 @@ export interface AgentChatThreadView {
   threadId: string;
   title: string;
   agentLabel: string;
+  runtimeStartedAt?: string;
 }
 
 export interface AgentChatBlockView {
@@ -865,6 +870,7 @@ export function createAgentChatShellViewModel(
           threadId: state.thread.threadId,
           title: state.thread.title,
           agentLabel: formatAgentLabel(state.thread.agentBinding.agentId),
+          runtimeStartedAt: state.thread.runtimeStartedAt,
         }
       : null,
     providerReadinessBlockers:

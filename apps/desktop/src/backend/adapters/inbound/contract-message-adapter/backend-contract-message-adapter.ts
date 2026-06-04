@@ -562,6 +562,9 @@ export function toThreadSummaryDto(thread: ThreadSnapshot): ThreadSummaryDto {
   if (launchOptions !== undefined) {
     summary.launchOptions = launchOptions;
   }
+  if (thread.runtimeStartedAt !== undefined) {
+    summary.runtimeStartedAt = thread.runtimeStartedAt;
+  }
   return summary;
 }
 

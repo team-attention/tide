@@ -13,6 +13,9 @@ export interface ThreadSummaryDto {
   pinned: boolean;
   archived: boolean;
   lastKnownState: LastKnownStateDto;
+  // When the current turn started running (set at each turn start). Lets the
+  // Working indicator show elapsed-since-turn-start even after reopening a thread.
+  runtimeStartedAt?: string;
 }
 
 export type ThreadScopeDto =

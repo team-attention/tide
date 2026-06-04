@@ -119,6 +119,10 @@ export interface ThreadRecord {
   lifecycleState: ThreadLifecycleState;
   runtimeState: AgentRuntimeState;
   lastKnownState: LastKnownState;
+  // When the current turn started running. Set at each turn start so the Working
+  // indicator can show elapsed-since-turn-start even after the thread is reopened
+  // (the React indicator alone would reset to 0 on every open).
+  runtimeStartedAt?: string;
   pinned?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -140,6 +144,7 @@ export interface ThreadSnapshot {
   lifecycleState: ThreadLifecycleState;
   runtimeState: AgentRuntimeState;
   lastKnownState: LastKnownState;
+  runtimeStartedAt?: string;
   pinned?: boolean;
   createdAt: string;
   updatedAt: string;

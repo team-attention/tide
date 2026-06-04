@@ -308,6 +308,9 @@ test("starting_a_thread_with_ready_provider_starts_runtime_then_writes_terminal_
   assert.equal(result.ok, true);
   assert.equal(result.status, "started");
   assert.equal(result.runtimeState, "running");
+  // The turn's start time is recorded so the Working indicator can show elapsed
+  // since the turn started, even after the thread is reopened.
+  assert.equal(result.thread.runtimeStartedAt, now);
   assert.deepEqual(fakes.runtime.events, ["start", "writeInput"]);
   assert.equal(fakes.runtime.writes[0].input.kind, "composer_input");
   assert.equal(fakes.runtime.writes[0].input.value, "Implement the backend lifecycle");

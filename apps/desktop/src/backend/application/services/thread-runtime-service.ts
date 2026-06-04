@@ -1017,6 +1017,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     }
 
     thread.runtimeState = "starting";
+    thread.runtimeStartedAt = this.clock();
     thread.lifecycleState = "running";
     thread.lastKnownState = "running";
     thread.updatedAt = this.clock();
@@ -1160,6 +1161,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     const handle = await this.activeOrResumedHandle(thread);
     const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
     thread.runtimeState = "running";
+    thread.runtimeStartedAt = this.clock();
     thread.lifecycleState = "running";
     thread.lastKnownState = "running";
     thread.updatedAt = this.clock();
@@ -1210,6 +1212,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
 
     thread.promptState = undefined;
     thread.runtimeState = "running";
+    thread.runtimeStartedAt = this.clock();
     thread.lifecycleState = "running";
     thread.lastKnownState = "running";
     thread.updatedAt = this.clock();
@@ -1353,6 +1356,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     }
 
     thread.runtimeState = "running";
+    thread.runtimeStartedAt = this.clock();
     thread.lifecycleState = "running";
     thread.lastKnownState = "running";
     thread.updatedAt = this.clock();
@@ -1450,6 +1454,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       return;
     }
     thread.runtimeState = "starting";
+    thread.runtimeStartedAt = this.clock();
     thread.lifecycleState = "running";
     thread.lastKnownState = "running";
     thread.updatedAt = this.clock();
@@ -1510,6 +1515,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       const handle = await this.activeOrResumedHandle(thread);
       const submittedBlock = this.appendLocalUserMessageBlock(thread, queued.value);
       thread.runtimeState = "running";
+      thread.runtimeStartedAt = this.clock();
       thread.lifecycleState = "running";
       thread.lastKnownState = "running";
       thread.updatedAt = this.clock();
@@ -2439,6 +2445,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
 
     try {
       thread.runtimeState = "starting";
+    thread.runtimeStartedAt = this.clock();
       thread.lifecycleState = "running";
       thread.lastKnownState = "running";
       thread.updatedAt = this.clock();
@@ -3437,6 +3444,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     }
 
     thread.runtimeState = "starting";
+    thread.runtimeStartedAt = this.clock();
     thread.updatedAt = this.clock();
     // Resume only when there is a provider session to resume. A thread that has
     // never run (e.g. hydrated from metadata before the agent produced a session
@@ -3514,6 +3522,7 @@ function snapshotThread(thread: ThreadRecord): ThreadSnapshot {
     lifecycleState: thread.lifecycleState,
     runtimeState: thread.runtimeState,
     lastKnownState: thread.lastKnownState,
+    runtimeStartedAt: thread.runtimeStartedAt,
     pinned: thread.pinned ?? false,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
