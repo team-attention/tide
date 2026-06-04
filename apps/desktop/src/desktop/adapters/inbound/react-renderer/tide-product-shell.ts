@@ -1,4 +1,4 @@
-import { createElement, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { createElement, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import {
   Archive,
   Check,
@@ -546,8 +546,14 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     const start = columnWidths;
     const clamp = (value: number, min: number, max: number) =>
       Math.max(min, Math.min(max, value));
-    const onMove = (move: PointerEvent) => {
-      const dx = move.clientX - startX;
+    // Coalesce pointermove into one state update per animation frame. Raw
+    // pointermove fires ~60–120x/sec and each setState re-renders the whole shell
+    // (chat + workbench webview + file tree), which is the main resize jank.
+    let frame: number | null = null;
+    let latestDx = 0;
+    const applyWidth = () => {
+      frame = null;
+      const dx = latestDx;
       // Keep every column inside the viewport: the flexible chat track must keep
       // at least CHAT_MIN, so a resizable column can't grow past the space left
       // by the other open columns. This prevents horizontal overflow/scroll.
@@ -575,9 +581,19 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         return { ...current, fileTree: clamp(start.fileTree - dx, 240, max) };
       });
     };
+    const onMove = (move: PointerEvent) => {
+      latestDx = move.clientX - startX;
+      if (frame === null) {
+        frame = requestAnimationFrame(applyWidth);
+      }
+    };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+        frame = null;
+      }
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       setIsResizing(false);
@@ -627,7 +643,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       });
     });
   }, [props.onBackendEvent]);
-  const viewModel = createProductShellViewModel(shellState);
+  // Deriving the view model sorts threads, clones the file tree, and builds project
+  // groups — too expensive to redo when only transient UI state (column widths during
+  // a resize drag, menu anchor, window width) changes. Memoize it on shellState.
+  const viewModel = useMemo(() => createProductShellViewModel(shellState), [shellState]);
   const applyBackendEvents = (events: AgentChatBackendEvent[] | undefined) => {
     if (events === undefined || events.length === 0) {
       return;
