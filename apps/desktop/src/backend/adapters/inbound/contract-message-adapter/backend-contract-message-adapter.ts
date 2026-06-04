@@ -319,6 +319,11 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
             result.thread.workbench.fileTree === undefined
               ? undefined
               : toWorkbenchFileTreeDto(result.thread.workbench.fileTree),
+          // Re-surface a blocked Thread's Provider Readiness (trust/setup) on re-open.
+          providerReadiness:
+            result.providerReadiness === undefined
+              ? undefined
+              : toProviderReadinessDto(result.providerReadiness),
         }),
       },
     };
