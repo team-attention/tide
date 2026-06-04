@@ -1507,12 +1507,21 @@ export function applyProductShellBackendEvent(
       }
       const panes = payload.panes ?? [];
       const threadId = payload.threadId ?? state.activeThreadId;
-      // Only a real (non-launcher) visible pane auto-opens the workbench; an empty
-      // launcher pane must not (e.g. a refresh_file_tree from opening the FileTree
-      // emits workbench.changed with just the launcher — that shouldn't pop the
-      // workbench open). Otherwise preserve the user's open/closed intent, and
-      // close only when nothing is visible at all.
-      const hasRealPane = panes.some((pane) => pane.visible && pane.kind !== "launcher");
+      // Auto-open only when a NEW real (non-launcher) visible pane appears (an agent
+      // opened a browser, the user opened a terminal/editor). An UPDATE to existing
+      // panes — e.g. terminal output/status events stream workbench.changed — must
+      // NOT re-open the workbench, or the user could never close it while a terminal
+      // is running. Otherwise preserve the user's open/closed intent, and close only
+      // when nothing is visible at all.
+      const existingPaneIds = new Set(
+        (threadId === null
+          ? []
+          : nextState.threads.find((thread) => thread.threadId === threadId)?.workbenchPanes ?? []
+        ).map((pane) => pane.paneId),
+      );
+      const hasNewRealPane = panes.some(
+        (pane) => pane.visible && pane.kind !== "launcher" && !existingPaneIds.has(pane.paneId),
+      );
       const anyVisible = panes.some((pane) => pane.visible);
       return {
         ...nextState,
@@ -1524,7 +1533,7 @@ export function applyProductShellBackendEvent(
                   ? { ...thread, workbenchPanes: panes }
                   : thread,
               ),
-        workbenchOpen: hasRealPane ? true : anyVisible ? nextState.workbenchOpen : false,
+        workbenchOpen: hasNewRealPane ? true : anyVisible ? nextState.workbenchOpen : false,
         fileTree:
           payload.fileTree === undefined
             ? nextState.fileTree

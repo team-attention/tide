@@ -394,6 +394,43 @@ test("a_launcher_only_workbench_change_does_not_force_the_workbench_open", () =>
   assert.equal(withEditor.workbenchOpen, true, "a visible editor pane opens the workbench");
 });
 
+test("an_existing_pane_update_does_not_reopen_a_workbench_the_user_closed", () => {
+  // A terminal streams workbench.changed updates (same paneId) as it runs. After the
+  // user closes the workbench, those updates must NOT re-open it — otherwise the
+  // workbench can never be closed while a terminal pane is active.
+  const opened = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        panes: [
+          { paneId: "p-term", kind: "terminal", title: "Terminal", visible: true, revision: "1", updatedAt: "2026-06-01T00:00:00.000Z" },
+        ],
+      },
+    },
+  );
+  assert.equal(opened.workbenchOpen, true, "a new terminal pane opens the workbench");
+
+  const closed = toggleProductShellWorkbench(opened);
+  assert.equal(closed.workbenchOpen, false, "the user closed the workbench");
+
+  const afterUpdate = applyProductShellBackendEvent(closed, {
+    kind: "workbench.changed",
+    payload: {
+      threadId: "thread-workbench",
+      panes: [
+        { paneId: "p-term", kind: "terminal", title: "Terminal", visible: true, revision: "2", updatedAt: "2026-06-01T00:00:01.000Z" },
+      ],
+    },
+  });
+  assert.equal(
+    afterUpdate.workbenchOpen,
+    false,
+    "an update to the existing pane does not re-open the closed workbench",
+  );
+});
+
 test("clicking_a_file_tree_folder_collapses_and_expands_its_descendants", () => {
   // Spec: docs_v2/specs/workbench-filetree-view.md
   const state = applyProductShellBackendEvent(
