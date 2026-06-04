@@ -61,6 +61,9 @@ export interface ProductShellThread {
   // True while this thread's agent runtime is actively running — shown as a live
   // rail indicator for every thread (incl. background ones), independent of focus.
   running?: boolean;
+  // When the current turn started (from the backend). Carried so the Working timer
+  // shows real elapsed time even after switching threads, instead of resetting.
+  runtimeStartedAt?: string;
   // Absolute timestamps for list sorting (the `time` field is a display string).
   createdAt?: string;
   updatedAt?: string;
@@ -1862,6 +1865,7 @@ function toProductShellThreadFromSummary(
       threadSummary.lastKnownState === "waiting_for_input" ||
       threadSummary.lastKnownState === "waiting_for_approval",
     running: threadSummary.lastKnownState === "running",
+    runtimeStartedAt: threadSummary.runtimeStartedAt,
     createdAt: threadSummary.createdAt,
     updatedAt: threadSummary.updatedAt,
   };
@@ -2168,6 +2172,7 @@ function applyProductShellThreadEvent(
       threadSummary.lastKnownState === "waiting_for_input" ||
       threadSummary.lastKnownState === "waiting_for_approval",
     running: threadSummary.lastKnownState === "running",
+    runtimeStartedAt: threadSummary.runtimeStartedAt,
   };
   const existingThread = state.threads.find(
     (candidate) => candidate.threadId === threadSummary.threadId,
@@ -2249,7 +2254,12 @@ function toAgentChatThreadSummary(thread: ProductShellThread): AgentChatThreadSu
     updatedAt: shellTimestamp,
     pinned: Boolean(thread.pinned),
     archived: false,
-    lastKnownState: thread.attention ? "waiting_for_input" : "idle",
+    lastKnownState: thread.running
+      ? "running"
+      : thread.attention
+        ? "waiting_for_input"
+        : "idle",
+    runtimeStartedAt: thread.runtimeStartedAt,
   };
 }
 

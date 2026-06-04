@@ -140,19 +140,23 @@ button {
 }
 
 .tide-product-shell--file-tree-open .tide-product-shell__body {
-  grid-template-columns: 256px minmax(420px, 1fr) minmax(344px, 38vw);
+  grid-template-columns: 256px minmax(380px, 1fr) minmax(300px, 32vw);
 }
 
+/* Four columns (rail + chat + workbench + file tree): keep the track minimums small
+   enough that the whole row fits a normal laptop window instead of overflowing and
+   clipping the file tree off the right edge. The chat/workbench flex; the file tree
+   is a compact fixed panel. */
 .tide-product-shell--workbench-open.tide-product-shell--file-tree-open .tide-product-shell__body {
-  grid-template-columns: 256px minmax(390px, 0.95fr) minmax(360px, 0.9fr) 344px;
+  grid-template-columns: 256px minmax(280px, 1fr) minmax(300px, 1.1fr) 300px;
 }
 
 .tide-product-shell--left-closed.tide-product-shell--file-tree-open .tide-product-shell__body {
-  grid-template-columns: minmax(500px, 1fr) 344px;
+  grid-template-columns: minmax(480px, 1fr) 300px;
 }
 
 .tide-product-shell--left-closed.tide-product-shell--workbench-open.tide-product-shell--file-tree-open .tide-product-shell__body {
-  grid-template-columns: minmax(390px, 0.95fr) minmax(360px, 0.9fr) 344px;
+  grid-template-columns: minmax(300px, 1fr) minmax(320px, 1.1fr) 300px;
 }
 
 .column-top-row {
