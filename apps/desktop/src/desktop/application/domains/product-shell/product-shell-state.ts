@@ -1220,10 +1220,17 @@ export function openProductShellThreadFromLeftUi(
     return { state: openProductShellThread(state, threadId), command: null };
   }
 
-  // Web pattern: a click switches focus + shows the cached thread instantly
-  // (locally), then refreshes from the backend. Focus is owned by this action —
-  // backend events never move focus, so a late answer can't drag the view away.
-  const optimistic = openProductShellThread(state, threadId);
+  // Web pattern: a click switches focus instantly (locally), then refreshes from
+  // the backend. Focus is owned by this action — backend events never move focus,
+  // so a late answer can't drag the view away. Show the thread header + the real
+  // running state right away (no fake "local preview" block, and keep the Working
+  // indicator if it's running) with an empty body until thread.hydrated fills the
+  // real blocks.
+  const thread = state.threads.find((candidate) => candidate.threadId === threadId);
+  const optimistic =
+    thread === undefined
+      ? { ...state, activeThreadId: threadId }
+      : hydrateProductShellThread(state, thread, [], thread.running ? "running" : "idle");
   return {
     state: {
       ...optimistic,
@@ -1920,6 +1927,7 @@ function hydrateProductShellThread(
   state: ProductShellState,
   thread: ProductShellThread,
   blocks: AgentChatBlock[],
+  runtimeState: "idle" | "running" = "idle",
 ): ProductShellState {
   const threadSummary = toAgentChatThreadSummary(thread);
   const agentChat = applyAgentChatBackendEvent(createStartAgentChatState(), {
@@ -1927,7 +1935,7 @@ function hydrateProductShellThread(
     payload: {
       thread: threadSummary,
       blocks,
-      runtimeState: "idle",
+      runtimeState,
       workbenchPanes: thread.workbenchPanes.filter((pane) => pane.visible),
     },
   });
@@ -1940,7 +1948,7 @@ function hydrateProductShellThread(
         agentBinding: agentBindingForShellAgent(thread.agentId),
         launchOptions: cloneLaunchOptions(thread.launchOptions),
       },
-      runtimeState: "idle",
+      runtimeState,
       workbenchPanes: thread.workbenchPanes.filter((pane) => pane.visible),
     },
   });

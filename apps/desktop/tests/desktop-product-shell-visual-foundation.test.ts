@@ -574,6 +574,15 @@ test("product_shell_thread_selection_switches_focus_locally_and_emits_thread_hyd
     (view.agentChat.thread as { threadId?: string } | null)?.threadId,
     "thread-workbench",
   );
+  // The optimistic switch shows the thread header with an empty body until the real
+  // blocks arrive — never a fake "local preview" placeholder block (which then
+  // vanished when thread.hydrated replaced it).
+  assert.ok(
+    view.agentChat.blocks.every(
+      (block) => !(block.body ?? "").includes("local Product Shell preview"),
+    ),
+    "the backend switch must not inject a local-preview placeholder block",
+  );
 });
 
 test("typing_in_start_composer_fills_the_local_draft", () => {
