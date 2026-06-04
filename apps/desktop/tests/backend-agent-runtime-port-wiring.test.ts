@@ -183,6 +183,39 @@ test("agent_runtime_port_adds_runtime_identity_env_to_provider_process", async (
   assert.equal(launcher.starts[0].plan.env.TERM, "xterm-256color");
 });
 
+test("agent_runtime_port_keeps_one_live_process_per_thread", async () => {
+  // Starting a runtime for a Thread that already has a live process tears the old one
+  // down first — a Thread must never double-run (two PTYs/rollouts tangle the turn and
+  // hang "Working"). Regression guard for the concurrent-spawn hang.
+  const launcher = new FakePtyProcessLauncher();
+  const runtime = createAgentIntegrationAgentRuntimePort({
+    integrations: {
+      codex: fakeIntegration("codex", startPlan("codex")),
+      claude: fakeIntegration("claude", startPlan("claude")),
+      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
+    },
+    launcher,
+    idGenerator: sequentialIdGenerator("runtime"),
+  });
+
+  const binding = { agentId: "codex" as const };
+  const scope = { kind: "project" as const, projectId: "tide", cwd: "/repo" };
+  await runtime.start({ threadId: "thread-codex", agentBinding: binding, scope });
+  await runtime.start({ threadId: "thread-codex", agentBinding: binding, scope });
+
+  assert.equal(launcher.handles.length, 2, "a second start spawns a fresh process");
+  assert.equal(launcher.handles[0].stopped, true, "the first process is reaped");
+  assert.equal(launcher.handles[1].stopped, false, "the new process stays live");
+
+  // A different Thread is untouched by the dedup.
+  await runtime.start({
+    threadId: "thread-other",
+    agentBinding: binding,
+    scope,
+  });
+  assert.equal(launcher.handles[1].stopped, false, "other-thread start did not reap it");
+});
+
 test("agent_runtime_port_notifies_runtime_start_with_identity", async () => {
   const runtimeStarts: Array<{
     threadId: string;

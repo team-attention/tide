@@ -51,6 +51,7 @@ export interface PtyProcessLauncher {
 
 interface RuntimeProcessState {
   handle: PtyProcessHandle;
+  threadId: string;
   agentId: ProviderCliAgentId;
   inputTiming?: ProviderLaunchPlan["inputTiming"];
   startupDelayConsumed: boolean;
@@ -227,6 +228,19 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     agentId: ProviderCliAgentId,
     plan: ProviderLaunchPlan,
   ): Promise<AgentRuntimeHandle> {
+    // One live runtime process per Thread. Under heavy concurrent spawning we have
+    // seen a Thread end up with TWO live provider processes (two PTYs, two rollouts)
+    // that then both write the same provider session spool and tangle the turn — the
+    // turn never settles and the UI hangs "Working". Tear down any existing process
+    // for this Thread before starting a new one so a Thread can never double-run.
+    for (const [existingRuntimeId, state] of this.processes) {
+      if (state.threadId === threadId) {
+        traceAgentRuntime(`reaping duplicate runtime=${existingRuntimeId} thread=${threadId}`);
+        void Promise.resolve(state.handle.stop()).catch(() => undefined);
+        this.processes.delete(existingRuntimeId);
+      }
+    }
+
     const runtimeId = this.idGenerator();
     const runtimePlan: ProviderLaunchPlan = {
       ...plan,
@@ -256,6 +270,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     traceAgentRuntime(`spawned ${agentId} runtime=${runtimeId}`);
     this.processes.set(runtimeId, {
       handle: process,
+      threadId,
       agentId,
       inputTiming: plan.inputTiming,
       startupDelayConsumed: false,
