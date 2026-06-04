@@ -1046,17 +1046,10 @@ export function createLiveAgentSessionEventProjector(input: {
     timer.unref?.();
   };
 
-  // A provider that hits a usage/quota limit mid-turn emits NO turn-end signal, so
-  // the runtime would spin "Working" forever. Detect the limit in the provider's raw
-  // output (its own error text stays visible as the last block) and end the turn so
-  // the UI settles instead of hanging.
-  const stopRunningTurnOnProviderLimit = async (
-    threadId: string,
-    candidateText: string,
-  ): Promise<void> => {
-    if (!PROVIDER_USAGE_LIMIT_RE.test(candidateText)) {
-      return;
-    }
+  // End a running turn that has settled but emitted no normal turn-end signal, so the
+  // UI doesn't hang "Working". WHETHER a turn ended is decided structurally per
+  // provider (typed frames / events) — never by scanning free text for error wording.
+  const endRunningTurn = async (threadId: string): Promise<void> => {
     const service = input.service();
     const hydrated = await service.hydrateThread({ threadId });
     if (!hydrated.ok) {
@@ -1071,25 +1064,50 @@ export function createLiveAgentSessionEventProjector(input: {
     await emitTurnComplete({ threadId, service, onEvent: input.onEvent });
   };
 
-  // antigravity writes its quota/usage-limit failures to its own CLI log rather than
-  // the transcript. Scan the newest log's tail so a quota'd antigravity turn (which
-  // otherwise yields zero output) doesn't hang "Working" forever.
-  const antigravityLogIndicatesUsageLimit = (): boolean => {
-    try {
-      const logDir = join(input.homeDir, ".gemini", "antigravity-cli", "log");
-      const newest = readdirSync(logDir)
-        .filter((name) => name.startsWith("cli-") && name.endsWith(".log"))
-        .map((name) => join(logDir, name))
-        .map((file) => ({ file, mtimeMs: statSync(file).mtimeMs }))
-        .sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
-      if (newest === undefined) {
-        return false;
-      }
-      const text = readFileSync(newest.file, "utf8");
-      return PROVIDER_USAGE_LIMIT_RE.test(text.length > 16384 ? text.slice(-16384) : text);
-    } catch {
+  // codex writes a typed `event_msg` of kind `turn_aborted` to its rollout when a turn
+  // ends without a normal completion — a usage/quota limit, a fatal error, or an
+  // interrupt. We detect it by event TYPE in the bound rollout (no regex / text
+  // matching), scoped to the current turn, so the runtime settles instead of hanging.
+  const codexRolloutTurnAborted = (
+    boundRolloutPath: string | undefined,
+    expectedUserMessage: string | undefined,
+  ): boolean => {
+    if (boundRolloutPath === undefined) {
       return false;
     }
+    const text = readBoundedTail(boundRolloutPath, 256 * 1024);
+    if (text === undefined) {
+      return false;
+    }
+    const lines = text.split(/\r?\n/);
+    let latestUserIndex = -1;
+    if (expectedUserMessage !== undefined) {
+      for (let i = 0; i < lines.length; i += 1) {
+        const record = parseJsonObject(lines[i]);
+        const payload = recordField(record, "payload");
+        if (record?.type !== "event_msg" || payload?.type !== "user_message") {
+          continue;
+        }
+        const content = payload.content;
+        if (
+          stringField(payload, "message") === expectedUserMessage ||
+          (Array.isArray(content) &&
+            content.some((item) => inputTextContentEquals(item, expectedUserMessage)))
+        ) {
+          latestUserIndex = i;
+        }
+      }
+    }
+    for (let i = lines.length - 1; i > latestUserIndex; i -= 1) {
+      const record = parseJsonObject(lines[i]);
+      if (
+        record?.type === "event_msg" &&
+        recordField(record, "payload")?.type === "turn_aborted"
+      ) {
+        return true;
+      }
+    }
+    return false;
   };
 
   const scheduleProviderSignalPolling = (frameInput: {
@@ -1142,13 +1160,20 @@ export function createLiveAgentSessionEventProjector(input: {
       expectedUserMessage,
       boundRolloutPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
+    // Structured turn-end: a `turn_aborted` event means the turn stopped without a
+    // normal completion (limit / error / interrupt). Settle the runtime even when the
+    // turn produced no agent output (so it can't hang "Working").
+    if (
+      codexRolloutTurnAborted(
+        hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
+        expectedUserMessage,
+      )
+    ) {
+      await endRunningTurn(frameInput.threadId);
+    }
     if (historyFrames.length === 0) {
       return;
     }
-    await stopRunningTurnOnProviderLimit(
-      frameInput.threadId,
-      historyFrames.map((frame) => frame.body ?? "").join("\n"),
-    );
 
     const nextBlocks = new Map(
       (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [
@@ -1252,10 +1277,6 @@ export function createLiveAgentSessionEventProjector(input: {
     if (historyFrames.length === 0) {
       return;
     }
-    await stopRunningTurnOnProviderLimit(
-      frameInput.threadId,
-      historyFrames.map((frame) => frame.body ?? "").join("\n"),
-    );
 
     const nextBlocks = new Map(
       (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [
@@ -1335,13 +1356,6 @@ export function createLiveAgentSessionEventProjector(input: {
       return;
     }
 
-    // antigravity reports a quota/usage limit only in its own CLI log (not the
-    // transcript), and then produces zero output — so check the log every poll,
-    // before the empty-frames early return, or the turn would hang forever.
-    if (antigravityLogIndicatesUsageLimit()) {
-      await stopRunningTurnOnProviderLimit(frameInput.threadId, "resource_exhausted");
-    }
-
     const historyState =
       antigravityHistoryByRuntime.get(frameInput.runtimeId) ??
       {
@@ -1362,10 +1376,6 @@ export function createLiveAgentSessionEventProjector(input: {
     if (historyFrames.length === 0) {
       return;
     }
-    await stopRunningTurnOnProviderLimit(
-      frameInput.threadId,
-      historyFrames.map((frame) => frame.body ?? "").join("\n"),
-    );
 
     const nextBlocks = new Map(
       (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [
@@ -2509,14 +2519,6 @@ async function persistThreadBlocks(input: {
 // Provider Stop-hook signal events that mean "the current turn has ended".
 // codex forwards `codex-stop`; claude/antigravity forward `agent-idle`.
 const TURN_END_SIGNAL_EVENTS = new Set(["codex-stop", "agent-idle"]);
-
-// Signatures of a provider usage/quota/rate limit in raw provider output. Used to
-// end a turn that would otherwise hang "Working" because the provider stopped
-// without emitting a turn-end signal (e.g. antigravity RESOURCE_EXHAUSTED 429).
-// Deliberately narrow: match concrete provider error signatures, not topical
-// mentions like "I'll add rate limiting", so a legitimate turn is never cut short.
-const PROVIDER_USAGE_LIMIT_RE =
-  /resource[_\s-]*exhausted|insufficient[_\s-]*quota|exceeded your current quota|quota[_\s-]*exceeded|rate[_\s-]*limit[_\s-]*(?:exceeded|error|reached)|429 too many requests|reached your (?:usage|plan|monthly|daily|weekly) limit|usage limit reached|out of (?:credits|tokens)/i;
 
 // On a turn-end signal, return the runtime to idle (so the UI stops showing
 // "working") or flush a queued Composer input into the next turn.
