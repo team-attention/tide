@@ -12,7 +12,11 @@
     "target": [
       "dmg"
     ],
-    "icon": "build/icon.icns"
+    "icon": "build/icon.icns",
+    "category": "public.app-category.developer-tools",
+    "hardenedRuntime": true,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.inherit.plist"
   },
   "dmg": {
     "title": "${productName}",

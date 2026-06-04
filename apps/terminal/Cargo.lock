@@ -3106,7 +3106,7 @@ dependencies = [
 
 [[package]]
 name = "tide-app"
-version = "0.51.41"
+version = "0.51.42"
 dependencies = [
  "alacritty_terminal",
  "arboard",
