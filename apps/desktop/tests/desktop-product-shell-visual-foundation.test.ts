@@ -1664,6 +1664,24 @@ test("agent_session_shows_working_indicator_while_runtime_is_running", () => {
   assert.doesNotMatch(renderProductShell(opened), /agent-session-working/);
 });
 
+test("composer_button_is_stop_while_running_but_becomes_send_when_typing_a_followup", () => {
+  const running = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "agentRuntime.stateChanged",
+      payload: { threadId: "thread-workbench", state: "running", changedAt: "2026-05-29T00:00:00.000Z" },
+    },
+  );
+  // Running with an empty composer → Stop (interrupt) button.
+  const stopHtml = renderProductShell(running);
+  assert.match(stopHtml, /aria-label="Interrupt"/);
+
+  // Start typing a follow-up → the button becomes Send (no interrupt button).
+  const typing = updateProductShellComposerDraft(running, "follow up");
+  const sendHtml = renderProductShell(typing);
+  assert.doesNotMatch(sendHtml, /aria-label="Interrupt"/);
+});
+
 test("submitting_during_a_running_turn_shows_a_queued_row_then_clears_on_flush", () => {
   // Spec: docs_v2/specs/agent-session-block-rendering-path.md (queue UX)
   const running = applyProductShellBackendEvent(
