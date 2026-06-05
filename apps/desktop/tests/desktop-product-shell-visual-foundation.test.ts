@@ -1664,8 +1664,8 @@ test("agent_session_shows_working_indicator_while_runtime_is_running", () => {
   assert.doesNotMatch(renderProductShell(opened), /agent-session-working/);
 });
 
-test("submitting_during_a_running_turn_shows_a_plain_sent_row_then_clears", () => {
-  // Spec: docs_v2/specs/agent-session-block-rendering-path.md
+test("submitting_during_a_running_turn_shows_a_queued_row_then_clears_on_flush", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md (queue UX)
   const running = applyProductShellBackendEvent(
     openProductShellThread(createProductShellState(), "thread-workbench"),
     {
@@ -1676,15 +1676,26 @@ test("submitting_during_a_running_turn_shows_a_plain_sent_row_then_clears", () =
   const drafted = updateProductShellComposerDraft(running, "follow up while busy");
   const submitted = submitProductShellComposerDraft(drafted);
 
-  // Sent immediately (the agent buffers it) and shown as a plain user row — NO
-  // "대기 중" waiting badge.
+  // Queued behind the live turn: composer.sendInput + the "대기 중" badge (the agent
+  // is genuinely running).
   assert.equal(submitted.command?.kind, "composer.sendInput");
   assert.equal(createProductShellViewModel(submitted.state).agentChat.queuedInput, "follow up while busy");
-  const sentHtml = renderProductShell(submitted.state);
-  assert.doesNotMatch(sentHtml, /대기 중/);
-  assert.match(sentHtml, /follow up while busy/);
+  const queuedHtml = renderProductShell(submitted.state);
+  assert.match(queuedHtml, /대기 중/);
+  assert.match(queuedHtml, /follow up while busy/);
 
-  // When the real user block arrives, the optimistic row clears.
+  // An idle send (no live turn) shows the same optimistic row WITHOUT the badge — the
+  // message just goes in; "대기 중" only means "waiting behind a running turn".
+  const idle = openProductShellThread(createProductShellState(), "thread-workbench");
+  const idleSubmitted = submitProductShellComposerDraft(
+    updateProductShellComposerDraft(idle, "send while idle"),
+  );
+  const idleHtml = renderProductShell(idleSubmitted.state);
+  assert.doesNotMatch(idleHtml, /대기 중/);
+  assert.match(idleHtml, /send while idle/);
+
+  // When the turn ends and the queued input is flushed as a real user block,
+  // the optimistic queued row clears.
   const flushed = applyProductShellBackendEvent(submitted.state, {
     kind: "agentSessionBlock.upserted",
     payload: {

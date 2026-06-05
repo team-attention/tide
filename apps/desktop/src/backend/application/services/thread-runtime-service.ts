@@ -1158,27 +1158,26 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       };
     }
 
-    // A message typed mid-turn is delivered to the running agent immediately rather
-    // than held Tide-side ("대기 중"). The provider CLIs buffer mid-turn input and
-    // process it next, so it shows as a normal sent message and just goes in.
+    // While a turn is genuinely in flight, queue the input Tide-side and flush it when
+    // the turn completes (recordTurnComplete). The user can interrupt to send sooner.
+    // (An idle thread takes the path below and sends immediately.)
     const busy =
       thread.activeRuntimeHandle !== undefined &&
       (thread.runtimeState === "running" || thread.runtimeState === "starting");
     if (busy) {
-      const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
-      thread.updatedAt = this.clock();
-      await this.agentRuntimePort.writeInput(thread.activeRuntimeHandle!, {
+      thread.pendingInput = {
         kind: "composer_input",
         value: message,
-        submittedAt: this.clock(),
-      });
+        capturedAt: this.clock(),
+        launchOptions: cloneLaunchOptions(input.launchOptions ?? thread.launchOptions),
+      };
+      thread.updatedAt = this.clock();
       return {
         ok: true,
-        status: "sent",
+        status: "queued",
         thread: snapshotThread(thread),
         runtimeState: thread.runtimeState,
         providerReadiness: readiness,
-        submittedBlock,
       };
     }
 

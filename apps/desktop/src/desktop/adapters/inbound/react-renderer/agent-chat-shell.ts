@@ -434,16 +434,27 @@ function createProviderReadiness(
 }
 
 // Optimistic just-sent user row, shown until the backend's real user block arrives.
-// A message is delivered to the agent immediately (never held), so this is a plain
-// user message — no "waiting/queued" badge.
-function createQueuedInputRow(queuedInput: string): ReactElement {
+// The "대기 중" (waiting) badge only appears when the agent is genuinely busy and the
+// message is actually queued behind the live turn — never on an idle send, which goes
+// straight through.
+function createQueuedInputRow(queuedInput: string, queued: boolean): ReactElement {
   return createElement(
     "article",
     {
-      className: "agent-session-turn agent-session-turn--user",
+      className: queued
+        ? "agent-session-turn agent-session-turn--user agent-session-turn--queued"
+        : "agent-session-turn agent-session-turn--user",
       "data-block-role": "user",
+      ...(queued ? { "data-queued": true } : {}),
     },
-    createElement("span", { className: "agent-session-turn__label" }, "You"),
+    createElement(
+      "span",
+      { className: "agent-session-turn__label" },
+      "You",
+      queued
+        ? createElement("span", { className: "agent-session-turn__queued-badge" }, "대기 중")
+        : null,
+    ),
     createElement("p", { className: "agent-session-turn__body" }, queuedInput),
   );
 }
@@ -501,7 +512,9 @@ function createAgentSession(
           : null
       : groupSessionItems(blocks).map(renderSessionItem),
     working ? createElement(AgentWorkingIndicator, { runtimeStartedAt }) : null,
-    queuedInput !== null ? createQueuedInputRow(queuedInput) : null,
+    queuedInput !== null
+      ? createQueuedInputRow(queuedInput, chatState === "running")
+      : null,
   );
 }
 

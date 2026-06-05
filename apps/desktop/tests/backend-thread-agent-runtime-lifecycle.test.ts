@@ -674,33 +674,30 @@ function busyThreadService() {
   return { fakes, service };
 }
 
-test("input_sent_while_a_turn_is_running_is_delivered_immediately", async () => {
-  // A message typed mid-turn is written to the running agent right away (it shows as
-  // a normal sent message and just goes in) — never held Tide-side as "대기 중".
+test("input_sent_while_a_turn_is_running_is_queued_not_sent", async () => {
+  // A second input during a live turn queues Tide-side (an idle thread sends at once).
   const { fakes, service } = busyThreadService();
   await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
-  const sent = await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
+  const queued = await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
 
-  assert.equal(sent.ok, true);
-  assert.equal(sent.status, "sent");
-  // Both inputs reached the runtime immediately.
-  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput", "writeInput"]);
-  assert.equal(fakes.runtime.writes.length, 2);
-  assert.equal(fakes.runtime.writes[1]?.input.value, "second");
+  assert.equal(queued.ok, true);
+  assert.equal(queued.status, "queued");
+  // Only the first input reached the runtime; the second is held.
+  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput"]);
+  assert.equal(fakes.runtime.writes.length, 1);
 });
 
-test("recording_turn_complete_after_mid_turn_sends_returns_to_idle_with_no_flush", async () => {
-  // Mid-turn input is delivered immediately, so nothing is queued to flush — the turn
-  // simply settles to idle when it completes.
+test("recording_turn_complete_flushes_the_queued_input_into_the_next_turn", async () => {
   const { fakes, service } = busyThreadService();
   await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
   await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
   const done = await service.recordTurnComplete({ threadId: "thread-busy" });
 
   assert.equal(done.ok, true);
-  assert.equal(done.flushedInput, undefined);
-  assert.equal(done.runtimeState, "idle");
+  assert.equal(done.flushedInput, "second");
+  assert.equal(done.runtimeState, "running");
   assert.deepEqual(fakes.runtime.events, ["resume", "writeInput", "writeInput"]);
+  assert.equal(fakes.runtime.writes[1]?.input.value, "second");
 });
 
 test("recording_turn_complete_with_no_queue_returns_the_runtime_to_idle", async () => {
