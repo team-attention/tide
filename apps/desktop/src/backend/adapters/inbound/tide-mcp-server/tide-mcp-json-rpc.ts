@@ -124,11 +124,16 @@ class BackendTideMcpJsonRpcHandler implements TideMcpJsonRpcHandler {
     }
 
     const id = request.id ?? null;
-    switch (request.method) {
+    const method = request.method ?? "";
+    switch (method) {
       case "initialize":
         return jsonRpcResult(id, initializeResult());
-      case "notifications/initialized":
-        return undefined;
+      // MCP keepalive: a client (e.g. codex's rmcp client) pings the server and
+      // treats no/erroring reply as a dead connection — then it stops dispatching
+      // tool calls and the turn hangs "Working". Always answer ping with an empty
+      // result so the connection stays healthy.
+      case "ping":
+        return jsonRpcResult(id, {});
       case "tools/list":
         return jsonRpcResult(id, {
           tools: (await this.listTools()).map(mcpToolDefinition),
@@ -136,11 +141,12 @@ class BackendTideMcpJsonRpcHandler implements TideMcpJsonRpcHandler {
       case "tools/call":
         return this.handleToolCall(id, request.params);
       default:
-        return jsonRpcError(
-          id,
-          -32601,
-          `Method not found: ${request.method ?? ""}`,
-        );
+        // Notifications (no response expected) must never get a reply — answering a
+        // notification with an error response can desync a strict client.
+        if (method.startsWith("notifications/")) {
+          return undefined;
+        }
+        return jsonRpcError(id, -32601, `Method not found: ${method}`);
     }
   }
 
