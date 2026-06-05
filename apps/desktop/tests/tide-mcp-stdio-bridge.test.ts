@@ -377,6 +377,46 @@ test("line_delimited_stdio_runner_writes_one_json_response_per_request", async (
   assert.equal(JSON.parse(output[1]).id, 2);
 });
 
+test("line_delimited_stdio_runner_survives_a_handler_socket_error", async () => {
+  // Simulates the Backend socket briefly going away (e.g. a restart): the
+  // handler throws on one request, then recovers. The runner must NOT crash the
+  // process — it must reply with a JSON-RPC error and keep serving, otherwise
+  // the agent loses the whole Tide tool surface for the rest of the session.
+  let failNext = true;
+  const handler = createTideMcpJsonRpcHandler({
+    listTools: () => {
+      if (failNext) {
+        failNext = false;
+        throw new Error("ECONNREFUSED");
+      }
+      return [];
+    },
+    callTool: async () => {
+      throw new Error("not used");
+    },
+    session: () => ({ runtimeId: "runtime-mcp", agentId: "codex" }),
+  });
+  const output: string[] = [];
+
+  await runTideMcpLineDelimitedStdio({
+    input: [
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+    ],
+    writeLine: (line) => output.push(line),
+    handler,
+  });
+
+  assert.equal(output.length, 2);
+  const failed = JSON.parse(output[0]);
+  assert.equal(failed.id, 1);
+  assert.equal(failed.error.code, -32603);
+  assert.match(failed.error.message, /ECONNREFUSED/);
+  const recovered = JSON.parse(output[1]);
+  assert.equal(recovered.id, 2);
+  assert.deepEqual(recovered.result.tools, []);
+});
+
 test("socket_request_handler_routes_to_live_tool_surface", async () => {
   const service = serviceWithActiveThread();
   const adapter = createTideMcpToolSurfaceAdapter({ service });

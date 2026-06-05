@@ -85,7 +85,22 @@ export async function runTideMcpLineDelimitedStdio(
       continue;
     }
 
-    const response = await input.handler.handle(parsed);
+    // A transient backend socket error (e.g. the Backend restarted and its unix
+    // socket briefly went away) must not crash the stdio bridge process: the
+    // agent's MCP client does not respawn a dead server, so the whole Tide tool
+    // surface would vanish for that session permanently. Reply with a JSON-RPC
+    // error and keep the loop alive so the next request reconnects to the
+    // stable-path socket once the Backend is back.
+    let response: JsonRpcResponse | undefined;
+    try {
+      response = await input.handler.handle(parsed);
+    } catch (error) {
+      response = jsonRpcError(
+        jsonRpcIdOf(parsed),
+        -32603,
+        error instanceof Error ? error.message : "Tide MCP request failed.",
+      );
+    }
     if (response !== undefined) {
       await input.writeLine(JSON.stringify(response));
     }
@@ -262,6 +277,14 @@ function requestObject(value: unknown): JsonRpcRequest | undefined {
     return undefined;
   }
   return request;
+}
+
+function jsonRpcIdOf(value: unknown): JsonRpcId {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const id = (value as { id?: unknown }).id;
+  return typeof id === "string" || typeof id === "number" ? id : null;
 }
 
 function jsonRpcResult(
