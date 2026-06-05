@@ -22,7 +22,7 @@ Both run Codex, Claude Code, Gemini, and Antigravity as first-class agents. Each
 
 ---
 
-## Tide  ·  the agent workspace app
+## Tide  ·  the chat-centered agent app
 
 A free, open-source [Codex App](apps/desktop/) alternative: a focused Agent Chat per Thread, a Composer anchored to that chat, and a Workbench (Browser / Diff / Editor / Terminal Panes) that appears only when the Thread needs it — local, open, and multi-agent.
 
@@ -30,7 +30,7 @@ A free, open-source [Codex App](apps/desktop/) alternative: a focused Agent Chat
 
 ---
 
-## Tide Terminal  ·  the native macOS app
+## Tide Terminal  ·  the terminal-centered workspace
 
 A native macOS (Rust + WGPU) Workspace where humans and coding agents share Terminal, Editor, Diff, and Browser Panes, driven through the Agent Gateway and Tide MCP Runtime.
 
