@@ -638,12 +638,21 @@ export function interruptComposer(
   if (!busy) {
     return { state, command: null };
   }
-  // Optimistically settle the runtime so the UI reflects the interrupt INSTANTLY:
-  // the Working indicator/timer stops and the next message sends a fresh turn instead
-  // of queueing ("대기 중"). The backend stop confirms it; if the agent is wedged,
-  // the user still sees it stop immediately rather than spinning.
+  // With a queued follow-up, Stop CONSUMES it: the current turn ends and the queued
+  // message runs next. Keep the optimistic row + stay running (the backend confirms
+  // with the new turn). With no queue it's a plain interrupt: settle to idle instantly
+  // so the Working indicator/timer stops and the next message is a fresh turn.
+  if (state.queuedInput !== null) {
+    return {
+      state,
+      command: {
+        kind: "agentRuntime.stop",
+        payload: { threadId: state.thread.threadId },
+      },
+    };
+  }
   return {
-    state: { ...state, queuedInput: null, runtimeState: "idle" },
+    state: { ...state, runtimeState: "idle" },
     command: {
       kind: "agentRuntime.stop",
       payload: { threadId: state.thread.threadId },

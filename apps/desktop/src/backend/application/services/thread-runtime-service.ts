@@ -392,6 +392,8 @@ export interface StopAgentRuntimeInput {
 export interface StopAgentRuntimeResult {
   thread: ThreadSnapshot;
   runtimeState: AgentRuntimeState;
+  // When stopping consumed a queued follow-up, the local user block for it.
+  submittedBlock?: AgentSessionBlockReference;
 }
 
 export interface RecordTurnCompleteInput {
@@ -1404,12 +1406,37 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       thread.updatedAt = this.clock();
       await this.agentRuntimePort.stop(thread.activeRuntimeHandle);
     }
-
     thread.activeRuntimeHandle = undefined;
+
+    // Stop consumes a queued follow-up: ending the current turn immediately runs the
+    // message the user queued behind it (codex/Claude Code behavior). With no queue,
+    // it just settles to stopped.
+    const queued = thread.pendingInput;
+    if (queued !== undefined && queued.kind === "composer_input") {
+      thread.pendingInput = undefined;
+      const handle = await this.activeOrResumedHandle(thread);
+      const submittedBlock = this.appendLocalUserMessageBlock(thread, queued.value);
+      thread.runtimeState = "running";
+      thread.runtimeStartedAt = this.clock();
+      thread.lifecycleState = "running";
+      thread.lastKnownState = "running";
+      thread.updatedAt = this.clock();
+      await this.agentRuntimePort.writeInput(handle, {
+        kind: "composer_input",
+        value: queued.value,
+        submittedAt: this.clock(),
+      });
+      return {
+        ok: true,
+        thread: snapshotThread(thread),
+        runtimeState: thread.runtimeState,
+        submittedBlock,
+      };
+    }
+
     thread.runtimeState = "stopped";
     thread.lifecycleState = "open";
     thread.lastKnownState = "idle";
-    // An interrupt drops the in-flight turn; don't resurrect a queued input.
     thread.pendingInput = undefined;
     thread.updatedAt = this.clock();
 

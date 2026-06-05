@@ -474,6 +474,10 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
   ): BackendEventEnvelope[] {
     return [
       this.agentRuntimeStateChangedEvent(command, result.thread, result.runtimeState),
+      // When stopping consumed a queued follow-up, surface its user block.
+      ...(result.submittedBlock === undefined
+        ? []
+        : [this.agentSessionBlockUpsertedEvent(command, result.thread, result.submittedBlock)]),
       this.commandCompletedEvent(command),
     ];
   }

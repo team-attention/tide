@@ -1285,7 +1285,11 @@ function createComposer(
           },
           createElement(Mic, { size: 15, strokeWidth: 2, "aria-hidden": true }),
         ),
-        viewModel.chatState === "running"
+        // While the agent runs, the button stops the turn — UNLESS you've started
+        // typing a follow-up, in which case it becomes Send so you can queue it (the
+        // codex/Claude Code pattern). Submitting clears the draft, so it flips back
+        // to Stop.
+        viewModel.chatState === "running" && viewModel.composer.draft.trim().length === 0
           ? createElement(
               "button",
               {

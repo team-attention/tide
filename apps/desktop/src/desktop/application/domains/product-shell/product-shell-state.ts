@@ -1513,15 +1513,18 @@ export function interruptProductShellRuntime(
   if (result.state === state.agentChat) {
     return { state, command: result.command };
   }
-  // Also clear the active thread's rail running dot optimistically so the whole UI
-  // reflects the interrupt at once (chat + rail), not just the composer.
-  const threads = state.activeThreadId
-    ? state.threads.map((thread) =>
-        thread.threadId === state.activeThreadId
-          ? { ...thread, running: false, attention: false }
-          : thread,
-      )
-    : state.threads;
+  // A plain interrupt (no queued follow-up) settles to idle — clear the rail running
+  // dot too. A queue-consuming stop keeps running (the queued message runs next), so
+  // leave the dot on.
+  const settledToIdle = result.state.runtimeState === "idle";
+  const threads =
+    settledToIdle && state.activeThreadId
+      ? state.threads.map((thread) =>
+          thread.threadId === state.activeThreadId
+            ? { ...thread, running: false, attention: false }
+            : thread,
+        )
+      : state.threads;
   return {
     state: { ...state, agentChat: result.state, threads },
     command: result.command,

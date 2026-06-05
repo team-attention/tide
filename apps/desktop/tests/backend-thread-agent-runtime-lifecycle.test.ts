@@ -1120,6 +1120,23 @@ test("stopping_agent_runtime_preserves_thread_metadata", async () => {
   assert.deepEqual(fakes.runtime.events, ["stop"]);
 });
 
+test("stopping_with_a_queued_follow_up_consumes_it_into_the_next_turn", async () => {
+  // Stop ends the current turn AND runs the message queued behind it (codex pattern),
+  // rather than dropping it.
+  const { fakes, service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  await service.sendComposerInput({ threadId: "thread-busy", input: "queued follow up" });
+  const stopped = await service.stopAgentRuntime({ threadId: "thread-busy" });
+
+  assert.equal(stopped.ok, true);
+  // Consumed → the runtime is running the queued message, not stopped.
+  assert.equal(stopped.runtimeState, "running");
+  assert.equal(stopped.submittedBlock?.body, "queued follow up");
+  // The current turn was stopped, then the queued message was written to the runtime.
+  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput", "stop", "resume", "writeInput"]);
+  assert.equal(fakes.runtime.writes[1]?.input.value, "queued follow up");
+});
+
 test("raw_agent_frames_receive_monotonic_thread_local_sequences", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({
