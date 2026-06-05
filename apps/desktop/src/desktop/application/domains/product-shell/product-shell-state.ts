@@ -1510,8 +1510,20 @@ export function interruptProductShellRuntime(
   state: ProductShellState,
 ): ProductShellUpdateResult {
   const result = interruptComposer(state.agentChat);
+  if (result.state === state.agentChat) {
+    return { state, command: result.command };
+  }
+  // Also clear the active thread's rail running dot optimistically so the whole UI
+  // reflects the interrupt at once (chat + rail), not just the composer.
+  const threads = state.activeThreadId
+    ? state.threads.map((thread) =>
+        thread.threadId === state.activeThreadId
+          ? { ...thread, running: false, attention: false }
+          : thread,
+      )
+    : state.threads;
   return {
-    state: result.state === state.agentChat ? state : { ...state, agentChat: result.state },
+    state: { ...state, agentChat: result.state, threads },
     command: result.command,
   };
 }
