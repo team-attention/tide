@@ -1664,8 +1664,8 @@ test("agent_session_shows_working_indicator_while_runtime_is_running", () => {
   assert.doesNotMatch(renderProductShell(opened), /agent-session-working/);
 });
 
-test("submitting_during_a_running_turn_shows_a_queued_row_then_clears_on_flush", () => {
-  // Spec: docs_v2/specs/agent-session-block-rendering-path.md (queue UX)
+test("submitting_during_a_running_turn_shows_a_plain_sent_row_then_clears", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md
   const running = applyProductShellBackendEvent(
     openProductShellThread(createProductShellState(), "thread-workbench"),
     {
@@ -1676,15 +1676,15 @@ test("submitting_during_a_running_turn_shows_a_queued_row_then_clears_on_flush",
   const drafted = updateProductShellComposerDraft(running, "follow up while busy");
   const submitted = submitProductShellComposerDraft(drafted);
 
-  // Queued (not sent): composer.sendInput command + optimistic "대기 중" row.
+  // Sent immediately (the agent buffers it) and shown as a plain user row — NO
+  // "대기 중" waiting badge.
   assert.equal(submitted.command?.kind, "composer.sendInput");
   assert.equal(createProductShellViewModel(submitted.state).agentChat.queuedInput, "follow up while busy");
-  const queuedHtml = renderProductShell(submitted.state);
-  assert.match(queuedHtml, /대기 중/);
-  assert.match(queuedHtml, /follow up while busy/);
+  const sentHtml = renderProductShell(submitted.state);
+  assert.doesNotMatch(sentHtml, /대기 중/);
+  assert.match(sentHtml, /follow up while busy/);
 
-  // When the turn ends and the queued input is flushed as a real user block,
-  // the optimistic queued row clears.
+  // When the real user block arrives, the optimistic row clears.
   const flushed = applyProductShellBackendEvent(submitted.state, {
     kind: "agentSessionBlock.upserted",
     payload: {

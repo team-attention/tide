@@ -433,20 +433,17 @@ function createProviderReadiness(
   ];
 }
 
+// Optimistic just-sent user row, shown until the backend's real user block arrives.
+// A message is delivered to the agent immediately (never held), so this is a plain
+// user message — no "waiting/queued" badge.
 function createQueuedInputRow(queuedInput: string): ReactElement {
   return createElement(
     "article",
     {
-      className: "agent-session-turn agent-session-turn--user agent-session-turn--queued",
+      className: "agent-session-turn agent-session-turn--user",
       "data-block-role": "user",
-      "data-queued": true,
     },
-    createElement(
-      "span",
-      { className: "agent-session-turn__label" },
-      "You",
-      createElement("span", { className: "agent-session-turn__queued-badge" }, "대기 중"),
-    ),
+    createElement("span", { className: "agent-session-turn__label" }, "You"),
     createElement("p", { className: "agent-session-turn__body" }, queuedInput),
   );
 }

@@ -1158,27 +1158,27 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       };
     }
 
-    // Default behaviour while a turn is in flight: queue the input Tide-side and
-    // flush it when the turn completes (recordTurnComplete). The user can
-    // explicitly interrupt to end the turn early and send sooner. This is
-    // agent-agnostic — Tide never relies on the CLI's own mid-turn input.
+    // A message typed mid-turn is delivered to the running agent immediately rather
+    // than held Tide-side ("대기 중"). The provider CLIs buffer mid-turn input and
+    // process it next, so it shows as a normal sent message and just goes in.
     const busy =
       thread.activeRuntimeHandle !== undefined &&
       (thread.runtimeState === "running" || thread.runtimeState === "starting");
     if (busy) {
-      thread.pendingInput = {
+      const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
+      thread.updatedAt = this.clock();
+      await this.agentRuntimePort.writeInput(thread.activeRuntimeHandle!, {
         kind: "composer_input",
         value: message,
-        capturedAt: this.clock(),
-        launchOptions: cloneLaunchOptions(input.launchOptions ?? thread.launchOptions),
-      };
-      thread.updatedAt = this.clock();
+        submittedAt: this.clock(),
+      });
       return {
         ok: true,
-        status: "queued",
+        status: "sent",
         thread: snapshotThread(thread),
         runtimeState: thread.runtimeState,
         providerReadiness: readiness,
+        submittedBlock,
       };
     }
 
