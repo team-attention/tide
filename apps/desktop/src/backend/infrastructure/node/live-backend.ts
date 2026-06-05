@@ -1064,11 +1064,15 @@ export function createLiveAgentSessionEventProjector(input: {
     await emitTurnComplete({ threadId, service, onEvent: input.onEvent });
   };
 
-  // codex writes a typed `event_msg` of kind `turn_aborted` to its rollout when a turn
-  // ends without a normal completion — a usage/quota limit, a fatal error, or an
-  // interrupt. We detect it by event TYPE in the bound rollout (no regex / text
-  // matching), scoped to the current turn, so the runtime settles instead of hanging.
-  const codexRolloutTurnAborted = (
+  // Structural codex turn-end detection from the bound rollout (no regex / text
+  // matching), scoped to the current turn. codex writes a typed `event_msg` whose
+  // payload type is `task_complete` on a normal finish and `turn_aborted` on a
+  // limit / error / interrupt. We poll for either so a turn settles even when the
+  // `codex-stop` HOOK never fires (which otherwise hangs the UI "Working" forever and
+  // never consumes a queued follow-up). `task_complete` is only honored once we've
+  // located the current turn's user message, so a prior turn's completion can't end
+  // this one early.
+  const codexRolloutTurnEnded = (
     boundRolloutPath: string | undefined,
     expectedUserMessage: string | undefined,
   ): boolean => {
@@ -1098,12 +1102,17 @@ export function createLiveAgentSessionEventProjector(input: {
         }
       }
     }
+    const sawCurrentUserMessage = latestUserIndex >= 0;
     for (let i = lines.length - 1; i > latestUserIndex; i -= 1) {
       const record = parseJsonObject(lines[i]);
-      if (
-        record?.type === "event_msg" &&
-        recordField(record, "payload")?.type === "turn_aborted"
-      ) {
+      if (record?.type !== "event_msg") {
+        continue;
+      }
+      const payloadType = recordField(record, "payload")?.type;
+      if (payloadType === "turn_aborted") {
+        return true;
+      }
+      if (payloadType === "task_complete" && sawCurrentUserMessage) {
         return true;
       }
     }
@@ -1160,11 +1169,11 @@ export function createLiveAgentSessionEventProjector(input: {
       expectedUserMessage,
       boundRolloutPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
-    // Structured turn-end: a `turn_aborted` event means the turn stopped without a
-    // normal completion (limit / error / interrupt). Settle the runtime even when the
-    // turn produced no agent output (so it can't hang "Working").
+    // Structured turn-end from the rollout (normal `task_complete` or `turn_aborted`),
+    // a fallback for a missing `codex-stop` hook. Settle the runtime even when the turn
+    // produced no agent output, so it can't hang "Working" or strand a queued message.
     if (
-      codexRolloutTurnAborted(
+      codexRolloutTurnEnded(
         hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
         expectedUserMessage,
       )
