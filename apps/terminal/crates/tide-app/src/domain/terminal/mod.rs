@@ -31,6 +31,7 @@ use unicode_width::UnicodeWidthChar;
 mod color;
 pub mod git;
 mod key_input;
+mod wheel_input;
 
 use crate::tide_core::{
     Color, CursorShape, CursorState, TerminalBackend, TerminalCell, TerminalGrid, TideWindowId,

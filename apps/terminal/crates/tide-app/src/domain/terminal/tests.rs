@@ -3,6 +3,98 @@ mod tests {
     use super::super::*;
     use crate::tide_core::{Key, Modifiers};
 
+    // --- UC-1/2/3: Wheel Forwarding (Spec: docs/specs/terminal-wheel-forwarding.md) ---
+
+    /// Build a Terminal and apply the given escape sequences to set TermMode flags.
+    fn term_with_modes(seqs: &[&str]) -> Terminal {
+        let term = Terminal::new(80, 24).expect("terminal backend");
+        for s in seqs {
+            term.bench_write_to_term(s.as_bytes());
+        }
+        term
+    }
+
+    // UC-1 BR-1: alt screen + alt scroll, wheel up -> Cursor Up
+    #[test]
+    fn wheel_up_on_alt_screen_sends_cursor_up() {
+        let t = term_with_modes(&["\x1b[?1049h", "\x1b[?1007h"]);
+        assert_eq!(t.wheel_to_bytes(true, 1, 0, 0), Some(vec![0x1b, b'[', b'A']));
+    }
+
+    // UC-1 BR-1: alt screen + alt scroll, wheel down -> Cursor Down
+    #[test]
+    fn wheel_down_on_alt_screen_sends_cursor_down() {
+        let t = term_with_modes(&["\x1b[?1049h", "\x1b[?1007h"]);
+        assert_eq!(t.wheel_to_bytes(false, 1, 0, 0), Some(vec![0x1b, b'[', b'B']));
+    }
+
+    // UC-1 BR-2: APP_CURSOR (DECCKM) selects SS3 (ESC O) over CSI (ESC [)
+    #[test]
+    fn wheel_on_alt_screen_with_app_cursor_uses_ss3() {
+        let t = term_with_modes(&["\x1b[?1049h", "\x1b[?1007h", "\x1b[?1h"]);
+        assert_eq!(t.wheel_to_bytes(true, 1, 0, 0), Some(vec![0x1b, b'O', b'A']));
+    }
+
+    // UC-1 BR-3: line count repeats the arrow sequence
+    #[test]
+    fn wheel_lines_emit_repeated_arrow_sequences() {
+        let t = term_with_modes(&["\x1b[?1049h", "\x1b[?1007h"]);
+        assert_eq!(
+            t.wheel_to_bytes(true, 3, 0, 0),
+            Some(vec![0x1b, b'[', b'A', 0x1b, b'[', b'A', 0x1b, b'[', b'A'])
+        );
+    }
+
+    // UC-2 BR-4: mouse reporting wins even when alt scroll is also enabled
+    #[test]
+    fn mouse_reporting_takes_priority_over_alternate_scroll() {
+        let t = term_with_modes(&["\x1b[?1049h", "\x1b[?1007h", "\x1b[?1000h", "\x1b[?1006h"]);
+        assert_eq!(t.wheel_to_bytes(true, 1, 4, 9), Some(b"\x1b[<64;5;10M".to_vec()));
+    }
+
+    // UC-2 BR-5: SGR mouse encoding
+    #[test]
+    fn wheel_with_sgr_mouse_uses_sgr_encoding() {
+        let t = term_with_modes(&["\x1b[?1000h", "\x1b[?1006h"]);
+        assert_eq!(t.wheel_to_bytes(false, 1, 0, 0), Some(b"\x1b[<65;1;1M".to_vec()));
+    }
+
+    // UC-2 BR-5: legacy X10 mouse encoding (no SGR)
+    #[test]
+    fn wheel_with_x10_mouse_uses_legacy_encoding() {
+        let t = term_with_modes(&["\x1b[?1000h"]);
+        // col=4,row=9 -> 1-based 5,10 -> +32 -> 37,42 ; wheel-up button 64 -> 96
+        assert_eq!(
+            t.wheel_to_bytes(true, 1, 4, 9),
+            Some(vec![0x1b, b'[', b'M', 96, 37, 42])
+        );
+    }
+
+    // UC-2 BR-6: reported cell is 1-based and clamped to the grid
+    #[test]
+    fn wheel_mouse_report_uses_one_based_clamped_cell() {
+        let t = term_with_modes(&["\x1b[?1000h", "\x1b[?1006h"]);
+        // 80x24 grid: col 999/row 999 clamp to 80/24 (1-based)
+        assert_eq!(
+            t.wheel_to_bytes(true, 1, 999, 999),
+            Some(b"\x1b[<64;80;24M".to_vec())
+        );
+    }
+
+    // UC-3 BR-7: plain screen, no mouse -> None (local scrollback)
+    #[test]
+    fn wheel_on_plain_screen_returns_none() {
+        let t = term_with_modes(&[]);
+        assert_eq!(t.wheel_to_bytes(true, 1, 0, 0), None);
+    }
+
+    // UC-3 BR-8: alt screen but alt scroll disabled, no mouse -> None
+    #[test]
+    fn wheel_on_alt_screen_without_alternate_scroll_returns_none() {
+        let t = term_with_modes(&["\x1b[?1049h", "\x1b[?1007l"]);
+        assert_eq!(t.wheel_to_bytes(true, 1, 0, 0), None);
+    }
+
     #[test]
     fn test_key_to_bytes_char() {
         let bytes = Terminal::key_to_bytes(&Key::Char('a'), &Modifiers::default());

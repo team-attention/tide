@@ -102,6 +102,9 @@ All paths below are relative to `crates/tide-app/src/`.
 | **DropZone** | `DropZone` | Which edge of a pane to drop on: `Top`/`Bottom`/`Left`/`Right`/`Center`. |
 | **PaneKind** | enum | The 5 content types: `Terminal`, `Editor`, `Diff`, `Browser`, `Launcher`. |
 | **CursorShape** | enum | Terminal cursor appearance: `Block`, `Beam`, `Underline`. |
+| **Alternate Screen** | `TermMode::ALT_SCREEN` | The secondary terminal grid a full-screen TUI switches to via `DECSET 1049` (Claude Code, `vim`, `less`). It has **zero scrollback**, so local scrollback scrolling does nothing while it is active. |
+| **Alternate Scroll** | `TermMode::ALTERNATE_SCROLL` | The `DECSET 1007` mode (on by default) where, on the Alternate Screen with no mouse reporting, the wheel is translated into arrow-key input for the foreground program instead of scrolling local scrollback. |
+| **Wheel Forwarding** | concept | Sending a Terminal Pane wheel event to the PTY as input — arrow keys (Alternate Scroll) or mouse button events (mouse reporting) — instead of scrolling local scrollback. Implemented by `Terminal::wheel_to_bytes`. |
 | **CompletionItem** | struct | A single completion suggestion: label, kind, insertText, sortText. |
 | **Generation** | `u64` | Monotonic counter for cache invalidation. Incremented on state change. |
 | **LivePreviewMap** | struct | A data structure that maps raw-buffer byte ranges to markdown element types (inline bold, heading, code block, etc.) and classifies which bytes are syntax markers vs content. Built from pulldown_cmark source-span offsets. Used by LivePreviewMode to determine which characters to hide or style. |

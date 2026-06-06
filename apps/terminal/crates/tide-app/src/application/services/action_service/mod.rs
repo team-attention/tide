@@ -854,13 +854,31 @@ impl crate::application::ports::inward::ActionPort for App {
                 }
 
                 // Forward mouse scroll to pane
-                if let Some(InputEvent::MouseScroll { delta, .. }) = event {
+                if let Some(InputEvent::MouseScroll { delta, position }) = event {
                     let cs = self.cell_size();
                     let diff_content_rect = self
                         .visual_pane_rects
                         .iter()
                         .find(|(pid, _)| *pid == id)
                         .map(|(_, r)| crate::pane::pane_content_rect(*r, TAB_BAR_HEIGHT));
+                    // 0-based terminal cell under the cursor — used only when the
+                    // wheel is forwarded to a mouse-reporting program.
+                    let (wheel_col, wheel_row) = self
+                        .visual_pane_rects
+                        .iter()
+                        .find(|(pid, _)| *pid == id)
+                        .map(|(_, r)| {
+                            let inner = crate::pane::pane_content_rect(
+                                *r,
+                                crate::theme::terminal_content_top(cs.height),
+                            );
+                            let origin = crate::pane::terminal_grid_origin(inner);
+                            let c = ((position.x - origin.x) / cs.width).floor().max(0.0) as u16;
+                            let rrow =
+                                ((position.y - origin.y) / cs.height).floor().max(0.0) as u16;
+                            (c, rrow)
+                        })
+                        .unwrap_or((0, 0));
                     match self.panes.get_mut(&id) {
                         Some(PaneKind::Editor(pane)) if pane.preview_mode => {
                             let content_rect = self
@@ -928,9 +946,22 @@ impl crate::application::ports::inward::ActionPort for App {
                             let lines = acc.trunc() as i32;
                             if lines != 0 {
                                 *acc -= lines as f32;
-                                pane.scroll_display(lines);
-                                pane.backend.process();
-                                self.cache.invalidate_pane(id);
+                                // Positive delta scrolls up (toward history).
+                                let up = lines > 0;
+                                let notches = lines.unsigned_abs() as usize;
+                                // Wheel Forwarding: when the foreground program owns
+                                // the wheel (mouse reporting or Alternate Screen +
+                                // Alternate Scroll), send it to the PTY instead of
+                                // scrolling local scrollback.
+                                if let Some(bytes) =
+                                    pane.backend.wheel_to_bytes(up, notches, wheel_col, wheel_row)
+                                {
+                                    pane.backend.write(&bytes);
+                                } else {
+                                    pane.scroll_display(lines);
+                                    pane.backend.process();
+                                    self.cache.invalidate_pane(id);
+                                }
                             }
                         }
                         Some(PaneKind::Diff(dp)) => {
