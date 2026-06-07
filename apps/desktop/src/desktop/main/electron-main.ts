@@ -346,7 +346,10 @@ async function ensureBackendProcess(): Promise<BackendHandshake> {
     stdio: "pipe",
   });
   backendProcess.stdout?.on("data", (chunk: Buffer) => {
-    if (process.env.TIDE_ELECTRON_SMOKE_COMMAND !== undefined) {
+    if (
+      process.env.TIDE_ELECTRON_SMOKE_COMMAND !== undefined ||
+      process.env.TIDE_BACKEND_TRACE === "1"
+    ) {
       console.log(`[tide-backend] ${chunk.toString("utf8").trimEnd()}`);
     }
   });

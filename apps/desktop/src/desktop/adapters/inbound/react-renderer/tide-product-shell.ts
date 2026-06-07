@@ -101,6 +101,7 @@ import {
   startNewProductShellThread,
   openProductShellWorkbenchLauncher,
   interruptProductShellRuntime,
+  editProductShellQueuedInput,
   submitProductShellComposerDraft,
   addProductShellComposerAttachment,
   removeProductShellComposerAttachment,
@@ -316,6 +317,7 @@ interface ProductShellHandlers {
   onDraftChange: (draft: string) => void;
   onSubmit: () => void;
   onInterrupt: () => void;
+  onEditQueued: () => void;
   onComposerSurfaceChange: (surface: AgentChatComposerSurfaceKind | null) => void;
   onChoiceSurfaceRowSelect: (
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
@@ -751,6 +753,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     onInterrupt: () =>
       setShellState((state) => {
         const result = interruptProductShellRuntime(state);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onEditQueued: () =>
+      setShellState((state) => {
+        const result = editProductShellQueuedInput(state);
         dispatchBackendCommand(result.command);
         return result.state;
       }),
@@ -1413,6 +1421,7 @@ function createAgentChatColumn(
       onDraftChange: handlers.onDraftChange,
       onSubmit: handlers.onSubmit,
       onInterrupt: handlers.onInterrupt,
+      onEditQueued: handlers.onEditQueued,
       onComposerSurfaceChange: handlers.onComposerSurfaceChange,
       onChoiceSurfaceRowSelect: handlers.onChoiceSurfaceRowSelect,
       onOpenFile: handlers.onOpenFile,

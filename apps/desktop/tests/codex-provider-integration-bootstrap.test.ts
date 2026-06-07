@@ -268,6 +268,10 @@ test("provider_specific_agent_integrations_stay_under_backend_adapters", () => {
   );
 });
 
+test("codex_declares_its_own_turn_end_hook_event", () => {
+  assert.deepEqual(codexIntegration().turnEndSignalEvents(), ["codex-stop"]);
+});
+
 function codexIntegration(options: {
   executablePath?: string;
   providerState?: CodexProviderState;

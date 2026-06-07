@@ -7,6 +7,7 @@ import {
   setComposerFolderScope,
   interruptComposer,
   submitComposer,
+  editQueuedInput,
   updateComposerDraft,
   addComposerAttachment,
   removeComposerAttachment,
@@ -1528,6 +1529,26 @@ export function interruptProductShellRuntime(
   return {
     state: { ...state, agentChat: result.state, threads },
     command: result.command,
+  };
+}
+
+// Edit the queued (not-yet-sent) message: pull its text back into the Composer
+// for editing and discard the backend's queued pendingInput. The user re-sends to
+// re-queue the corrected message. This reuses the Composer instead of an inline
+// editor, keeping the model simple. Spec: docs_v2/specs/composer-message-edit.md.
+export function editProductShellQueuedInput(
+  state: ProductShellState,
+): ProductShellUpdateResult {
+  const queued = state.agentChat.queuedInput;
+  if (queued === null) {
+    return { state, command: null };
+  }
+  // Discard the backend queue (blank edit), then load the text into the draft.
+  const discarded = editQueuedInput(state.agentChat, "");
+  const withDraft = updateComposerDraft(discarded.state, queued);
+  return {
+    state: { ...state, agentChat: withDraft.state },
+    command: discarded.command,
   };
 }
 

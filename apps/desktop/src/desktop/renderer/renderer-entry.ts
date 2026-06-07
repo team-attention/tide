@@ -8,6 +8,7 @@ import type {
 import type { ProductShellBackendCommand } from "../application/domains/product-shell/product-shell-state.ts";
 import {
   CONTRACT_VERSION,
+  sanitizeJsonValue,
   type BackendCommandEnvelope,
   type BackendEventEnvelope,
 } from "../../shared/contracts/index.ts";
@@ -107,7 +108,12 @@ function dispatchBackendCommand(
     requestId: `renderer-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     kind: command.kind,
     issuedAt: new Date().toISOString(),
-    payload: command.payload as BackendCommandEnvelope["payload"],
+    // Strip undefined/non-finite values so the envelope is a strict JsonObject.
+    // Builders set optional fields (e.g. launchOptions on threads with no saved
+    // options, like adopted-from-history threads) to undefined, which would fail
+    // the backend's isJsonObject envelope check ("invalid_command") and silently
+    // mark the turn failed before it ever reaches the runtime.
+    payload: (sanitizeJsonValue(command.payload) ?? {}) as BackendCommandEnvelope["payload"],
   };
 
   return window.tide.sendBackendCommand(envelope).then((events) =>

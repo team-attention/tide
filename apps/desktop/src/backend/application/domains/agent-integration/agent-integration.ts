@@ -80,6 +80,10 @@ export interface AgentStartPlanInput {
   // prompt so the session starts a turn immediately (typing it into the TUI
   // after launch is unreliable).
   initialPrompt?: string;
+  // The runtime id this launch will run as. Providers that do NOT inherit the
+  // parent process env into their MCP server subprocess (codex) must embed it in
+  // the MCP server config env so the Tide MCP bridge can identify the session.
+  runtimeId?: string;
 }
 
 export interface AgentResumePlanInput {
@@ -87,6 +91,8 @@ export interface AgentResumePlanInput {
   providerSessionRef: ProviderSessionRef;
   scope?: ThreadScope;
   launchOptions?: Record<string, unknown>;
+  // See AgentStartPlanInput.runtimeId.
+  runtimeId?: string;
 }
 
 export interface AgentPromptSignalInput {
@@ -104,4 +110,19 @@ export interface AgentIntegrationPort {
   buildStartPlan(input: AgentStartPlanInput): Promise<ProviderLaunchPlan>;
   buildResumePlan(input: AgentResumePlanInput): Promise<ProviderLaunchPlan>;
   detectPromptState(input: AgentPromptSignalInput): PromptState | null;
+  // The provider-hook event names that mean "the current turn has ended". This
+  // is provider lifecycle knowledge and lives in the Agent Integration, not in
+  // shared infrastructure. codex forwards "codex-stop"; claude and antigravity
+  // forward "agent-idle". See docs_v2/specs/agent-runtime-event-spine.md.
+  turnEndSignalEvents(): readonly string[];
+  // When the runtime is ready to receive its FIRST user turn. The first prompt is
+  // delivered through one shared path gated by this, never via launch argv. CLIs
+  // that attach the Tide MCP server must wait for its tool-surface handshake so the
+  // turn does not start before tools are registered for dispatch. See
+  // docs_v2/specs/agent-turn-handoff-readiness.md.
+  initialTurnReadiness(): RuntimeReadinessGate;
 }
+
+export type RuntimeReadinessGate =
+  | { kind: "immediate" }
+  | { kind: "tool_surface_ready" };

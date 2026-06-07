@@ -153,3 +153,26 @@ export interface ThreadSnapshot {
   promptState?: PromptState;
   workbench: WorkbenchSnapshot;
 }
+
+// A persisted Thread restored into the in-memory store on boot. Optional fields
+// default when normalized into a ThreadRecord.
+export interface ThreadSeed {
+  threadId: ThreadId;
+  title: string;
+  agentBinding: AgentBinding;
+  scope?: ThreadScope;
+  launchOptions?: Record<string, unknown>;
+  lifecycleState: ThreadLifecycleState;
+  runtimeState: AgentRuntimeState;
+  lastKnownState: LastKnownState;
+  pinned?: boolean;
+  createdAt: string;
+  updatedAt: string;
+  cachedBlocks?: AgentSessionBlockReference[];
+  pendingInput?: PendingInput;
+  promptState?: PromptState;
+  activeRuntimeHandle?: AgentRuntimeHandle;
+  rawFrameSequence?: number;
+  mcpToolCallCount?: number;
+  workbench?: WorkbenchState;
+}

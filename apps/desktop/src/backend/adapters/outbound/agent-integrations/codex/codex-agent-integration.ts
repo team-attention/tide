@@ -10,6 +10,7 @@ import type {
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
+  RuntimeReadinessGate,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { PromptState, ThreadScope } from "../../../../application/domains/thread/thread.ts";
 
@@ -193,6 +194,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       resumeRef: undefined,
       launchOptions: input.launchOptions,
       initialPrompt: input.initialPrompt,
+      runtimeId: input.runtimeId,
     });
   }
 
@@ -211,7 +213,16 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       codexHome: providerState.codexHome,
       resumeRef: input.providerSessionRef.value,
       launchOptions: input.launchOptions,
+      runtimeId: input.runtimeId,
     });
+  }
+
+  initialTurnReadiness(): RuntimeReadinessGate {
+    return { kind: "tool_surface_ready" };
+  }
+
+  turnEndSignalEvents(): readonly string[] {
+    return ["codex-stop"];
   }
 
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {
@@ -251,7 +262,24 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     resumeRef?: string;
     launchOptions?: Record<string, unknown>;
     initialPrompt?: string;
+    runtimeId?: string;
   }): ProviderLaunchPlan {
+    // codex spawns its MCP server with ONLY the config-declared env (it does not
+    // inherit codex's own process env, unlike claude). So the Tide MCP bridge's
+    // session identity (TIDE_RUNTIME_ID/TIDE_AGENT_ID) MUST be embedded in the
+    // codex MCP server config env here, or every Tide tool call fails session
+    // resolution and codex hangs "Working" with no result.
+    const tideMcp =
+      this.tideMcp === undefined || input.runtimeId === undefined
+        ? this.tideMcp
+        : {
+            ...this.tideMcp,
+            env: {
+              ...this.tideMcp.env,
+              TIDE_RUNTIME_ID: input.runtimeId,
+              TIDE_AGENT_ID: "codex",
+            },
+          };
     const env: Record<string, string> = {
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
@@ -261,20 +289,17 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     }
 
     const launchOptionArgs = codexLaunchOptionArgs(input.launchOptions);
-    // Deliver the first user message as Codex's positional [PROMPT] so the
-    // session starts a turn immediately, instead of typing it into the TUI.
-    const promptArgs =
-      input.initialPrompt !== undefined && input.initialPrompt.length > 0
-        ? [input.initialPrompt]
-        : [];
+    // The first user message is NOT embedded as a positional [PROMPT]. It is
+    // delivered through the shared turn-handoff path after the tool-surface
+    // readiness gate, so the turn never starts before the Tide MCP tools are
+    // registered for dispatch. See agent-turn-handoff-readiness.md.
     const args =
       input.resumeRef === undefined
         ? [
             "--no-alt-screen",
             ...launchOptionArgs,
             "--dangerously-bypass-hook-trust",
-            ...codexConfigArgs(this.tideMcp),
-            ...promptArgs,
+            ...codexConfigArgs(tideMcp),
           ]
         : [
             "resume",
@@ -282,8 +307,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
             input.resumeRef,
             ...launchOptionArgs,
             "--dangerously-bypass-hook-trust",
-            ...codexConfigArgs(this.tideMcp),
-            ...promptArgs,
+            ...codexConfigArgs(tideMcp),
           ];
 
     return {
@@ -328,6 +352,11 @@ function codexConfigArgs(tideMcp: CodexTideMcpConfig | undefined): string[] {
     config.push(
       `mcp_servers.tide.args=[${tideMcp.args.map(codexConfigString).join(",")}]`,
     );
+    // Tide's own MCP tools are first-party and trusted (we inject this server), so
+    // auto-approve all of them — no per-tool permission prompt. Other (user/3rd-party)
+    // MCP servers keep codex's native approval flow, so behavior matches using codex
+    // in a plain terminal. See agent-turn-handoff-readiness.md.
+    config.push(`mcp_servers.tide.default_tools_approval_mode=${codexConfigString("approve")}`);
     for (const [key, value] of Object.entries(tideMcp.env ?? {}).sort()) {
       config.push(
         `mcp_servers.tide.env.${key}=${codexConfigString(value)}`,

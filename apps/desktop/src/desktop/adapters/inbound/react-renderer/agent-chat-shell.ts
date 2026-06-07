@@ -1,12 +1,14 @@
 import {
   createElement,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type ClipboardEvent,
   type CSSProperties,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -50,6 +52,8 @@ export interface AgentChatShellProps {
   onDraftChange?: (draft: string) => void;
   onSubmit?: () => void;
   onInterrupt?: () => void;
+  // Edit the queued (not-yet-sent) message: pull it back into the Composer.
+  onEditQueued?: () => void;
   onComposerSurfaceChange?: (surface: AgentChatComposerSurfaceKind | null) => void;
   onChoiceSurfaceRowSelect?: (
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
@@ -89,6 +93,28 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       el.scrollTop = el.scrollHeight;
     }
   }, [threadId]);
+  // Escape dismisses the active chip/command popover and the image lightbox — the
+  // expected keyboard companion to the outside-click backdrop. Only listens while
+  // something is open, so it never swallows Escape from the rest of the app.
+  const hasActiveSurface = viewModel.composer.activeSurface != null;
+  useEffect(() => {
+    if (!hasActiveSurface && imagePreview === null) {
+      return undefined;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (imagePreview !== null) {
+        setImagePreview(null);
+      }
+      if (hasActiveSurface) {
+        props.onComposerSurfaceChange?.(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hasActiveSurface, imagePreview, props.onComposerSurfaceChange]);
   const isNewThreadStart =
     viewModel.composer.mode === "start" &&
     viewModel.blocks.length === 0 &&
@@ -179,7 +205,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       "data-runtime-state": viewModel.runtimeState,
     },
     props.showThreadHeader === false ? null : createThreadHeader(viewModel),
-    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt),
+    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt, props.onEditQueued),
     createComposerStack(viewModel, handlers),
     popover,
     lightbox,
@@ -454,6 +480,21 @@ function createQueuedInputRow(queuedInput: string, queued: boolean): ReactElemen
       queued
         ? createElement("span", { className: "agent-session-turn__queued-badge" }, "대기 중")
         : null,
+      // Edit the queued message before it runs (only while genuinely queued).
+      // Handled by the Agent Session's delegated onClick via [data-edit-queued].
+      queued
+        ? createElement(
+            "button",
+            {
+              type: "button",
+              className: "agent-session-turn__edit",
+              "data-edit-queued": true,
+              "aria-label": "Edit queued message",
+              title: "Edit queued message",
+            },
+            "수정",
+          )
+        : null,
     ),
     createElement("p", { className: "agent-session-turn__body" }, queuedInput),
   );
@@ -466,6 +507,7 @@ function createAgentSession(
   onOpenFile?: (path: string) => void,
   sessionRef?: { current: HTMLElement | null },
   runtimeStartedAt?: string,
+  onEditQueued?: () => void,
 ): ReactElement {
   // Show a live "working" indicator only until the agent produces its block:
   // a streaming block carries its own caret, and a complete block means the turn
@@ -492,6 +534,11 @@ function createAgentSession(
         if (copyButton) {
           const pre = copyButton.closest(".md-code")?.querySelector("pre");
           void navigator.clipboard?.writeText(pre?.textContent ?? "");
+          return;
+        }
+        if (onEditQueued && target.closest("[data-edit-queued]")) {
+          event.preventDefault();
+          onEditQueued();
           return;
         }
         const path = onOpenFile ? target.closest("[data-open-file]")?.getAttribute("data-open-file") : null;
@@ -607,19 +654,21 @@ function AgentWorkingIndicator({
   // Base elapsed on when the turn actually started (from the backend), so the timer
   // is correct even after reopening a running thread. Fall back to mount time only
   // when the backend hasn't reported a start (e.g. an optimistic local turn).
-  const startedMs = (() => {
+  // Memoize so an undefined runtimeStartedAt doesn't re-anchor to Date.now() every
+  // render (the mount-time fallback must stay stable for one turn).
+  const startedMs = useMemo(() => {
     const parsed = runtimeStartedAt ? Date.parse(runtimeStartedAt) : NaN;
     return Number.isNaN(parsed) ? Date.now() : parsed;
-  })();
-  const [seconds, setSeconds] = useState(() =>
-    Math.max(0, Math.floor((Date.now() - startedMs) / 1000)),
-  );
+  }, [runtimeStartedAt]);
+  // The interval only forces a re-render each second; the elapsed value is derived
+  // straight from the injected start time every render, so switching threads shows
+  // the new turn's elapsed immediately (no stale state to wait out).
+  const [, forceTick] = useState(0);
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSeconds(Math.max(0, Math.floor((Date.now() - startedMs) / 1000)));
-    }, 1000);
+    const timer = setInterval(() => forceTick((n) => n + 1), 1000);
     return () => clearInterval(timer);
-  }, [startedMs]);
+  }, []);
+  const seconds = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
   return createElement(
     "article",
     {
@@ -1181,6 +1230,20 @@ function createComposer(
         value: viewModel.composer.draft,
         onChange: (event: ChangeEvent<HTMLTextAreaElement>) =>
           handlers.onDraftChange?.(event.currentTarget.value),
+        // Enter sends; Shift+Enter inserts a newline. Never submit mid-IME
+        // composition (Korean/Japanese candidate selection) — that Enter commits
+        // the candidate, not the message. `isComposing`/keyCode 229 guard it.
+        onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+          if (
+            event.key === "Enter" &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing &&
+            event.keyCode !== 229
+          ) {
+            event.preventDefault();
+            handlers.onSubmit?.();
+          }
+        },
         onPaste: (event: ClipboardEvent) =>
           handleComposerPaste(event, handlers.onAddAttachment),
         placeholder: isStartComposer ? "Do anything" : "Ask for follow-up changes",

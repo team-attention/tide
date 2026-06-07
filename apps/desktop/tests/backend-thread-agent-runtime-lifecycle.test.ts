@@ -711,6 +711,132 @@ test("recording_turn_complete_with_no_queue_returns_the_runtime_to_idle", async 
   assert.equal(done.flushedInput, undefined);
 });
 
+test("a_full_session_composes_send_queue_edit_prompt_answer_and_turn_end_flush", async () => {
+  // Proves the seamless features work TOGETHER in one flow (not just in isolation):
+  // send -> queue a follow-up -> edit the queued message -> a provider prompt
+  // arrives and is answered -> the turn ends and the EDITED queued message flushes.
+  const { fakes, service } = busyThreadService();
+
+  const first = await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  assert.equal(first.status, "sent");
+
+  const queued = await service.sendComposerInput({
+    threadId: "thread-busy",
+    input: "teh queued typo",
+  });
+  assert.equal(queued.status, "queued");
+
+  const edited = await service.editPendingInput({
+    threadId: "thread-busy",
+    value: "the queued fix",
+  });
+  assert.equal(edited.ok, true);
+  assert.equal(edited.status, "edited");
+
+  // A provider permission prompt arrives mid-turn; the user answers it.
+  await service.recordProviderPromptState({
+    threadId: "thread-busy",
+    promptState: {
+      promptId: "p1",
+      threadId: "thread-busy",
+      agentId: "codex",
+      kind: "permission",
+      message: "Allow command?",
+      source: "provider_hook",
+    },
+  });
+  const answered = await service.answerPrompt({
+    threadId: "thread-busy",
+    promptId: "p1",
+    value: "yes",
+  });
+  assert.equal(answered.ok, true);
+  assert.equal(answered.runtimeState, "running");
+
+  // The turn ends — the corrected queued message runs as the next turn.
+  const done = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(done.ok, true);
+  assert.equal(done.flushedInput, "the queued fix");
+  assert.equal(done.runtimeState, "running");
+  // The edited message (not the typo) is what reached the runtime last.
+  assert.equal(
+    fakes.runtime.writes[fakes.runtime.writes.length - 1]?.input.value,
+    "the queued fix",
+  );
+});
+
+test("editing_queued_input_replaces_text_and_preserves_launch_options", async () => {
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  await service.sendComposerInput({
+    threadId: "thread-busy",
+    input: "teh typo",
+    launchOptions: { model: "gpt-5.5" },
+  });
+
+  const edited = await service.editPendingInput({
+    threadId: "thread-busy",
+    value: "the fix",
+  });
+
+  assert.equal(edited.ok, true);
+  assert.equal(edited.status, "edited");
+  assert.equal(edited.thread.pendingInput?.value, "the fix");
+  assert.deepEqual(edited.thread.pendingInput?.launchOptions, { model: "gpt-5.5" });
+});
+
+test("editing_queued_input_does_not_write_to_runtime", async () => {
+  const { fakes, service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
+  const writesBefore = fakes.runtime.writes.length;
+
+  await service.editPendingInput({ threadId: "thread-busy", value: "edited" });
+
+  // The queued input was never sent, so editing it touches no runtime input.
+  assert.equal(fakes.runtime.writes.length, writesBefore);
+});
+
+test("turn_end_flushes_the_edited_queued_message", async () => {
+  const { fakes, service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
+  await service.editPendingInput({ threadId: "thread-busy", value: "edited second" });
+
+  const done = await service.recordTurnComplete({ threadId: "thread-busy" });
+
+  assert.equal(done.ok, true);
+  assert.equal(done.flushedInput, "edited second");
+  assert.equal(fakes.runtime.writes[1]?.input.value, "edited second");
+});
+
+test("editing_with_no_queued_input_fails", async () => {
+  const { service } = busyThreadService();
+  // A single send goes straight to the runtime (running, nothing queued).
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+
+  const result = await service.editPendingInput({ threadId: "thread-busy", value: "x" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "no_pending_input");
+});
+
+test("editing_queued_input_with_blank_value_discards_it", async () => {
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
+
+  const discarded = await service.editPendingInput({ threadId: "thread-busy", value: "   " });
+  assert.equal(discarded.ok, true);
+  assert.equal(discarded.status, "discarded");
+  assert.equal(discarded.thread.pendingInput, undefined);
+
+  // With the queue cleared, the turn ends to idle and nothing flushes.
+  const done = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(done.runtimeState, "idle");
+  assert.equal(done.flushedInput, undefined);
+});
+
 test("resuming_agent_runtime_without_input_resumes_provider_session_without_writing", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({

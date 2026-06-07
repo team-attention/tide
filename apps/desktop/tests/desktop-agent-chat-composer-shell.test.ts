@@ -17,6 +17,7 @@ import {
   selectComposerAgent,
   setComposerActiveSurface,
   submitComposer,
+  editQueuedInput,
   updateComposerDraft,
   addComposerAttachment,
   removeComposerAttachment,
@@ -217,6 +218,62 @@ test("follow_up_composer_emits_composer_send_input_for_the_active_thread", () =>
   // Follow-ups carry the current composer launch options so a changed model
   // (or reasoning/permission) applies, not just the thread's original.
   assert.ok("launchOptions" in (command?.payload ?? {}));
+});
+
+test("editing_the_queued_message_emits_edit_queued_input_command", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "running" }),
+  );
+  const sent = submitComposer(updateComposerDraft(hydrated, "teh typo").state);
+  assert.equal(sent.state.queuedInput, "teh typo");
+
+  const edited = editQueuedInput(sent.state, "the fix");
+
+  assert.equal(edited.state.queuedInput, "the fix");
+  const command = edited.command ? toBackendCommandDraft(edited.command) : null;
+  assert.equal(command?.kind, "composer.editQueuedInput");
+  assert.equal(command?.payload.threadId, "thread-shell");
+  assert.equal(command?.payload.value, "the fix");
+});
+
+test("editing_the_queued_message_with_blank_value_discards_the_queued_row", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "running" }),
+  );
+  const sent = submitComposer(updateComposerDraft(hydrated, "second").state);
+
+  const discarded = editQueuedInput(sent.state, "   ");
+
+  assert.equal(discarded.state.queuedInput, null);
+  assert.equal(discarded.command?.kind, "composer.editQueuedInput");
+});
+
+test("editing_with_no_queued_message_is_a_noop", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+
+  const result = editQueuedInput(hydrated, "anything");
+
+  assert.equal(result.command, null);
+  assert.equal(result.state, hydrated);
+});
+
+test("the_queued_row_renders_an_edit_affordance_while_a_turn_runs", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "running" }),
+  );
+  const queued = submitComposer(updateComposerDraft(hydrated, "queued message").state).state;
+
+  const markup = renderShell(queued);
+
+  // The queued row shows the "대기 중" badge and an edit affordance to fix it.
+  assert.ok(markup.includes("대기 중"));
+  assert.ok(markup.includes("data-edit-queued"));
 });
 
 test("follow_up_carries_a_changed_model_in_launch_options", () => {

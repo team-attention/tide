@@ -12,6 +12,7 @@ export type BackendCommandKind =
   | "thread.rename"
   | "agentRuntime.resume"
   | "composer.sendInput"
+  | "composer.editQueuedInput"
   | "prompt.answer"
   | "agentRuntime.stop"
   | "provider.trustWorkspace"
@@ -27,6 +28,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "thread.rename",
   "agentRuntime.resume",
   "composer.sendInput",
+  "composer.editQueuedInput",
   "prompt.answer",
   "agentRuntime.stop",
   "provider.trustWorkspace",
@@ -68,6 +70,12 @@ export interface BackendCommandPayloadByKind {
     input: string;
     launchOptions?: JsonObject;
     attachments?: ComposerAttachment[];
+  };
+  // Edit the queued (not-yet-sent) Composer message in place. A blank value
+  // discards the queued input. See docs_v2/specs/composer-message-edit.md.
+  "composer.editQueuedInput": {
+    threadId: ThreadId;
+    value: string;
   };
   "prompt.answer": {
     promptId: string;

@@ -23,7 +23,9 @@ import type {
   AgentResumePlanInput,
   AgentStartPlanInput,
   ProviderLaunchPlan,
+  RuntimeReadinessGate,
 } from "../src/backend/application/ports/outbound/agent-integration-port.ts";
+import type { RuntimeReadinessRegistry } from "../src/backend/application/services/runtime-readiness-registry.ts";
 import {
   antigravityProviderSessionRefFromTranscriptPath,
   claudeProviderSessionRefFromTranscriptPath,
@@ -156,6 +158,43 @@ test("agent_runtime_port_starts_antigravity_launch_plan_and_writes_input", async
   assert.equal(launcher.starts[0].plan.command, "agy");
   assert.deepEqual(launcher.starts[0].plan.args, []);
   assert.deepEqual(launcher.handles[0].writes, ["Use Antigravity for this turn\r"]);
+});
+
+test("agent_runtime_port_delivers_first_turn_only_after_tool_surface_ready", async () => {
+  const codex = fakeIntegration("codex", startPlan("codex"));
+  codex.readinessGate = { kind: "tool_surface_ready" };
+  const launcher = new FakePtyProcessLauncher();
+  const registry = new ControllableReadinessRegistry();
+  const runtime = createAgentIntegrationAgentRuntimePort({
+    integrations: {
+      codex,
+      claude: fakeIntegration("claude", startPlan("claude")),
+      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
+    },
+    launcher,
+    readinessRegistry: registry,
+    clock: () => now,
+    idGenerator: sequentialIdGenerator("runtime"),
+  });
+
+  const handle = await runtime.start({
+    threadId: "thread-codex",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
+    launchOptions: { model: "gpt-5.5", permission: "default" },
+    initialPrompt: "open a browser",
+  });
+
+  // The first prompt is NOT in the launch plan argv.
+  assert.ok(!launcher.starts[0].plan.args.includes("open a browser"));
+  // And it is NOT written before the tool surface is ready.
+  await flushMicrotasks();
+  assert.deepEqual(launcher.handles[0].writes, []);
+
+  // Marking the runtime's tool surface ready opens the gate and delivers the turn.
+  registry.markToolSurfaceReady(handle.runtimeId);
+  await flushMicrotasks();
+  assert.deepEqual(launcher.handles[0].writes, ["open a browser\r"]);
 });
 
 test("agent_runtime_port_adds_runtime_identity_env_to_provider_process", async () => {
@@ -2087,6 +2126,7 @@ class FakeAgentIntegration implements AgentIntegrationPort {
   private readonly agentId: "codex" | "claude" | "antigravity";
   private readonly plan: ProviderLaunchPlan;
   private readonly promptDetector?: (input: AgentPromptSignalInput) => PromptState | null;
+  readinessGate: RuntimeReadinessGate = { kind: "immediate" };
 
   constructor(
     agentId: "codex" | "claude" | "antigravity",
@@ -2133,6 +2173,44 @@ class FakeAgentIntegration implements AgentIntegrationPort {
 
   detectPromptState(input: AgentPromptSignalInput) {
     return this.promptDetector?.(input) ?? null;
+  }
+
+  turnEndSignalEvents(): readonly string[] {
+    return this.agentId === "codex" ? ["codex-stop"] : ["agent-idle"];
+  }
+
+  initialTurnReadiness(): RuntimeReadinessGate {
+    return this.readinessGate;
+  }
+}
+
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+class ControllableReadinessRegistry implements RuntimeReadinessRegistry {
+  private readonly resolvers = new Map<string, () => void>();
+  private readonly marked = new Set<string>();
+
+  markToolSurfaceReady(runtimeId: string): void {
+    this.marked.add(runtimeId);
+    const resolve = this.resolvers.get(runtimeId);
+    if (resolve !== undefined) {
+      this.resolvers.delete(runtimeId);
+      resolve();
+    }
+  }
+
+  awaitToolSurface(runtimeId: string): Promise<void> {
+    if (this.marked.has(runtimeId)) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => this.resolvers.set(runtimeId, resolve));
+  }
+
+  forget(runtimeId: string): void {
+    this.resolvers.delete(runtimeId);
+    this.marked.delete(runtimeId);
   }
 }
 

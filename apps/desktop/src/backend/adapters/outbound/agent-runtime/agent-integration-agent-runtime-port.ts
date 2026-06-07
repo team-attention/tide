@@ -8,8 +8,10 @@ import type { AgentRuntimePort } from "../../../application/ports/outbound/agent
 import type {
   AgentIntegrationPort,
   ProviderLaunchPlan,
+  RuntimeReadinessGate,
 } from "../../../application/ports/outbound/agent-integration-port.ts";
 import type { ProviderReadinessPort } from "../../../application/ports/outbound/provider-readiness-port.ts";
+import type { RuntimeReadinessRegistry } from "../../../application/services/runtime-readiness-registry.ts";
 import type {
   AgentId,
   ProviderCliAgentId,
@@ -78,6 +80,9 @@ export interface CreateAgentIntegrationRuntimePortInput {
   }) => Promise<void> | void;
   clock?: () => string;
   idGenerator?: () => string;
+  // Gates the first-turn handoff for tool_surface_ready agents: the first prompt is
+  // delivered only after this runtime's Tide MCP tool surface is ready.
+  readinessRegistry?: RuntimeReadinessRegistry;
 }
 
 export interface CreateAgentIntegrationProviderReadinessPortInput {
@@ -139,6 +144,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   private readonly onRuntimeStarted?: CreateAgentIntegrationRuntimePortInput["onRuntimeStarted"];
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
+  private readonly readinessRegistry?: RuntimeReadinessRegistry;
   private readonly processes = new Map<string, RuntimeProcessState>();
 
   constructor(input: CreateAgentIntegrationRuntimePortInput) {
@@ -148,6 +154,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     this.onRuntimeStarted = input.onRuntimeStarted;
     this.clock = input.clock ?? defaultClock;
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
+    this.readinessRegistry = input.readinessRegistry;
   }
 
   async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
@@ -157,16 +164,65 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
 
     traceAgentRuntime(`start ${input.agentBinding.agentId} thread=${input.threadId}`);
     const integration = this.integrations[input.agentBinding.agentId];
+    // Generate the runtime id up front so the launch plan can embed it (codex needs
+    // it in its MCP server config env — it does not inherit the parent env).
+    const runtimeId = this.idGenerator();
     const plan = await integration.buildStartPlan({
       agentId: input.agentBinding.agentId,
       agentBinding: input.agentBinding,
       scope: input.scope,
       launchOptions: input.launchOptions,
       initialPrompt: input.initialPrompt,
+      runtimeId,
     });
     traceAgentRuntime(`plan ${input.agentBinding.agentId} command=${plan.command}`);
 
-    return this.spawnRuntime(input.threadId, input.agentBinding.agentId, plan);
+    const handle = await this.spawnRuntime(
+      input.threadId,
+      input.agentBinding.agentId,
+      plan,
+      runtimeId,
+    );
+    // First-turn handoff: tool_surface_ready agents (codex/claude) receive their
+    // first prompt via writeInput AFTER the tool surface is ready — never via launch
+    // argv — so the turn cannot start before MCP tools are registered for dispatch.
+    // immediate agents (antigravity) carry the prompt in their launch plan, so the
+    // port does nothing here. See docs_v2/specs/agent-turn-handoff-readiness.md.
+    this.deliverFirstTurn(handle, integration.initialTurnReadiness(), input.initialPrompt);
+    return handle;
+  }
+
+  private deliverFirstTurn(
+    handle: AgentRuntimeHandle,
+    gate: RuntimeReadinessGate,
+    initialPrompt: string | undefined,
+  ): void {
+    if (
+      gate.kind !== "tool_surface_ready" ||
+      initialPrompt === undefined ||
+      initialPrompt.length === 0
+    ) {
+      return;
+    }
+    void (async () => {
+      try {
+        if (this.readinessRegistry !== undefined) {
+          await this.readinessRegistry.awaitToolSurface(handle.runtimeId);
+        }
+        await this.writeInput(handle, {
+          kind: "composer_input",
+          value: initialPrompt,
+          submittedAt: this.clock(),
+        });
+        traceAgentRuntime(`first-turn delivered runtime=${handle.runtimeId}`);
+      } catch (error) {
+        traceAgentRuntime(
+          `first-turn delivery failed runtime=${handle.runtimeId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    })();
   }
 
   async resume(input: AgentRuntimeResumeInput): Promise<AgentRuntimeHandle> {
@@ -180,13 +236,15 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     }
 
     const integration = this.integrations[input.agentBinding.agentId];
+    const runtimeId = this.idGenerator();
     const plan = await integration.buildResumePlan({
       agentId: input.agentBinding.agentId,
       providerSessionRef,
       scope: input.scope,
+      runtimeId,
     });
 
-    return this.spawnRuntime(input.threadId, input.agentBinding.agentId, plan);
+    return this.spawnRuntime(input.threadId, input.agentBinding.agentId, plan, runtimeId);
   }
 
   async writeInput(handle: AgentRuntimeHandle, input: TerminalInput): Promise<void> {
@@ -196,6 +254,10 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     }
 
     traceAgentRuntime(`write ${processState.agentId} runtime=${handle.runtimeId} kind=${input.kind}`);
+    // A CLI TUI needs a beat after spawn before it will accept typed input; typing
+    // the first message too early drops it and the turn never starts. The readiness
+    // gate covers MCP-tool registration, this covers TUI input-readiness. Once per
+    // runtime, on its first write.
     await waitForStartupWindow(processState);
 
     if (
@@ -227,6 +289,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     threadId: string,
     agentId: ProviderCliAgentId,
     plan: ProviderLaunchPlan,
+    runtimeId: string,
   ): Promise<AgentRuntimeHandle> {
     // One live runtime process per Thread. Under heavy concurrent spawning we have
     // seen a Thread end up with TWO live provider processes (two PTYs, two rollouts)
@@ -241,7 +304,6 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       }
     }
 
-    const runtimeId = this.idGenerator();
     const runtimePlan: ProviderLaunchPlan = {
       ...plan,
       env: {
@@ -322,7 +384,6 @@ async function waitForStartupWindow(processState: RuntimeProcessState): Promise<
   if (processState.startupDelayConsumed) {
     return;
   }
-
   processState.startupDelayConsumed = true;
   await sleep(processState.inputTiming?.startupDelayMs ?? 0);
 }

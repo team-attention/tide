@@ -243,6 +243,10 @@ export type AgentChatBackendCommand =
       };
     }
   | {
+      kind: "composer.editQueuedInput";
+      payload: { threadId: string; value: string };
+    }
+  | {
       kind: "agentRuntime.stop";
       payload: { threadId: string };
     }
@@ -756,6 +760,27 @@ export function submitComposer(
         launchOptions: startOptions.launchOptions,
         ...(messageAttachments ? { attachments: messageAttachments } : {}),
       },
+    },
+  };
+}
+
+// Edit the queued (not-yet-sent) message shown as the queued row. The runtime has
+// not seen it, so this only updates the optimistic queued row and asks the backend
+// to correct its pendingInput. A blank value discards the queued message.
+// Spec: docs_v2/specs/composer-message-edit.md.
+export function editQueuedInput(
+  state: AgentChatShellState,
+  value: string,
+): AgentChatShellUpdateResult {
+  if (!state.thread || state.queuedInput === null) {
+    return { state, command: null };
+  }
+  const discards = value.trim().length === 0;
+  return {
+    state: { ...state, queuedInput: discards ? null : value },
+    command: {
+      kind: "composer.editQueuedInput",
+      payload: { threadId: state.thread.threadId, value },
     },
   };
 }

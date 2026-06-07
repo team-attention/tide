@@ -12,6 +12,8 @@ import {
   applyProductShellBackendEvent,
   createProductShellState,
   openProductShellThread,
+  submitProductShellComposerDraft,
+  updateProductShellComposerDraft,
 } from "../application/domains/product-shell/product-shell-state.ts";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
@@ -130,6 +132,19 @@ function figmaFixtureState() {
   });
 }
 
+// Queued-message fixture: a running turn with a follow-up queued behind it, so the
+// "대기 중" queued row and its edit affordance render for visual verification.
+// Spec: docs_v2/specs/composer-message-edit.md.
+function queuedFixtureState() {
+  const base = { ...figmaFixtureState(), fileTreeOpen: true };
+  const running = applyProductShellBackendEvent(base, {
+    kind: "agentRuntime.stateChanged",
+    payload: { threadId: "thread-master-plan", state: "running", changedAt: "2026-05-31T00:00:02.000Z" },
+  });
+  const drafted = updateProductShellComposerDraft(running, "Also update the README while you're at it");
+  return submitProductShellComposerDraft(drafted).state;
+}
+
 // Browser-pane fixture: a Workbench Browser pane pointing at a visible page so
 // the live <webview> load can be verified headlessly via offscreen Electron.
 function browserFixtureState() {
@@ -199,11 +214,15 @@ function measure(): void {
 const root = document.getElementById("root");
 if (root) {
   try {
-    const wantsBrowser = new URLSearchParams(location.search).get("pane") === "browser";
+    const params = new URLSearchParams(location.search);
+    const wantsBrowser = params.get("pane") === "browser";
+    const wantsQueued = params.get("mode") === "queued";
     // FileTree column is gated by fileTreeOpen; flip it on for the fixture.
     const state = wantsBrowser
       ? browserFixtureState()
-      : { ...figmaFixtureState(), fileTreeOpen: true };
+      : wantsQueued
+        ? queuedFixtureState()
+        : { ...figmaFixtureState(), fileTreeOpen: true };
     createRoot(root).render(createElement(TideProductShell, { initialState: state }));
     const fonts = (document as unknown as { fonts?: { ready?: Promise<unknown> } }).fonts;
     if (fonts?.ready) {

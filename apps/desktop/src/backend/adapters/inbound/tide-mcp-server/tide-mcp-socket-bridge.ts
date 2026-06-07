@@ -16,6 +16,7 @@ import type {
   TideMcpToolDefinition,
 } from "../../../application/services/thread-runtime-service.ts";
 import type { TideMcpToolSurfaceAdapter } from "../tide-mcp-tool-surface/tide-mcp-tool-surface-adapter.ts";
+import type { RuntimeReadinessRegistry } from "../../../application/services/runtime-readiness-registry.ts";
 
 export interface TideMcpSocketServer {
   readonly socketPath: string;
@@ -26,6 +27,9 @@ export interface TideMcpSocketServer {
 export interface CreateTideMcpSocketServerInput {
   socketPath: string;
   adapter: TideMcpToolSurfaceAdapter;
+  // Marked ready when a runtime's MCP client completes its tool-surface handshake
+  // (tools/list), opening that runtime's first-turn handoff gate.
+  readinessRegistry?: RuntimeReadinessRegistry;
 }
 
 export interface CreateTideMcpSocketClientCallbacksInput {
@@ -67,25 +71,27 @@ export function createTideMcpSocketServer(
 
 export function createTideMcpSocketRequestHandler(
   adapter: TideMcpToolSurfaceAdapter,
+  readinessRegistry?: RuntimeReadinessRegistry,
 ): TideMcpSocketRequestHandler {
-  return new BackendTideMcpSocketRequestHandler(adapter);
+  return new BackendTideMcpSocketRequestHandler(adapter, readinessRegistry);
 }
 
 export function createTideMcpSocketClientCallbacks(
   input: CreateTideMcpSocketClientCallbacksInput,
 ): {
-  listTools(): Promise<TideMcpToolDefinition[]>;
+  listTools(session?: TideMcpSessionRef): Promise<TideMcpToolDefinition[]>;
   callTool(
     toolCall: TideMcpToolCallInput,
   ): Promise<ServiceResult<TideMcpToolCallResult>>;
 } {
   return {
-    async listTools() {
+    async listTools(session?: TideMcpSessionRef) {
+      const resolvedSession = session ?? input.session;
       const result = await sendInternalRequest(input.socketPath, {
         jsonrpc: "2.0",
         id: nextRequestId(),
         method: "tide_mcp/list_tools",
-        params: {},
+        params: resolvedSession === undefined ? {} : { session: resolvedSession },
       });
       const tools = recordField(result)?.tools;
       return Array.isArray(tools) ? (tools as TideMcpToolDefinition[]) : [];
@@ -134,7 +140,7 @@ class NodeTideMcpSocketServer implements TideMcpSocketServer {
 
   constructor(input: CreateTideMcpSocketServerInput) {
     this.socketPath = input.socketPath;
-    this.requestHandler = createTideMcpSocketRequestHandler(input.adapter);
+    this.requestHandler = createTideMcpSocketRequestHandler(input.adapter, input.readinessRegistry);
   }
 
   listen(): Promise<void> {
@@ -200,16 +206,30 @@ class NodeTideMcpSocketServer implements TideMcpSocketServer {
       return;
     }
 
-    const response = await this.requestHandler.handle(request);
+    // Every request MUST get exactly one response. If the handler throws, the
+    // client (sendInternalRequest) has no timeout by design, so a missing response
+    // would hang the agent's MCP tool call forever ("Working…" with no end). Answer
+    // with a JSON-RPC error instead so the round-trip always completes.
+    let response: InternalMcpResponse;
+    try {
+      response = await this.requestHandler.handle(request);
+    } catch (error) {
+      response = internalError(jsonRpcId(recordField(request)?.id), -32603, errorMessage(error));
+    }
     socket.write(`${JSON.stringify(response)}\n`);
   }
 }
 
 class BackendTideMcpSocketRequestHandler implements TideMcpSocketRequestHandler {
   private readonly adapter: TideMcpToolSurfaceAdapter;
+  private readonly readinessRegistry?: RuntimeReadinessRegistry;
 
-  constructor(adapter: TideMcpToolSurfaceAdapter) {
+  constructor(
+    adapter: TideMcpToolSurfaceAdapter,
+    readinessRegistry?: RuntimeReadinessRegistry,
+  ) {
     this.adapter = adapter;
+    this.readinessRegistry = readinessRegistry;
   }
 
   async handle(request: unknown): Promise<InternalMcpResponse> {
@@ -219,8 +239,14 @@ class BackendTideMcpSocketRequestHandler implements TideMcpSocketRequestHandler 
     const params = recordField(fields?.params);
 
     switch (method) {
-      case "tide_mcp/list_tools":
+      case "tide_mcp/list_tools": {
+        // A runtime completing its tool-surface handshake opens its first-turn gate.
+        const runtimeId = stringField(recordField(params?.session)?.runtimeId);
+        if (runtimeId !== undefined) {
+          this.readinessRegistry?.markToolSurfaceReady(runtimeId);
+        }
         return internalResult(id, { tools: this.adapter.listTools() });
+      }
       case "tide_mcp/call_tool": {
         const parsed = parseInternalToolCall(params);
         if (parsed === undefined) {

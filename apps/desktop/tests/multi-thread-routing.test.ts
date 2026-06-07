@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   applyProductShellBackendEvent,
   createProductShellState,
+  editProductShellQueuedInput,
   openProductShellThreadFromLeftUi,
   submitProductShellComposerDraft,
   updateProductShellComposerDraft,
@@ -41,6 +42,35 @@ function clickThread(state: ReturnType<typeof createProductShellState>, threadId
     backendTransportAvailable: true,
   }).state;
 }
+
+test("editing the queued message pulls it back into the composer and discards the backend queue", () => {
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = clickThread(state, "thread-a");
+  state = updateProductShellComposerDraft(state, "teh typo");
+  state = submitProductShellComposerDraft(state).state;
+  assert.equal(state.agentChat.queuedInput, "teh typo");
+
+  const edited = editProductShellQueuedInput(state);
+
+  // The queued row clears and its text returns to the composer for editing.
+  assert.equal(edited.state.agentChat.queuedInput, null);
+  assert.equal(edited.state.agentChat.composer.draft, "teh typo");
+  // The backend is told to discard its queued pendingInput (a blank edit).
+  assert.equal(edited.command?.kind, "composer.editQueuedInput");
+  assert.equal(edited.command?.payload.value, "");
+});
+
+test("editing with nothing queued is a no-op with no backend command", () => {
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = clickThread(state, "thread-a");
+
+  const result = editProductShellQueuedInput(state);
+
+  assert.equal(result.command, null);
+  assert.equal(result.state, state);
+});
 
 test("a background thread hydrate does not steal focus or overwrite the active chat", () => {
   let state = createProductShellState({ includeFixtureData: false });

@@ -10,6 +10,7 @@ import type {
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
+  RuntimeReadinessGate,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { PromptState, ThreadScope } from "../../../../application/domains/thread/thread.ts";
 
@@ -203,6 +204,17 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     });
   }
 
+  initialTurnReadiness(): RuntimeReadinessGate {
+    // Claude registers MCP tools before running the turn and reliably accepts the
+    // first prompt at launch (positional argv), so it does not need the gated
+    // post-launch handoff that codex requires.
+    return { kind: "immediate" };
+  }
+
+  turnEndSignalEvents(): readonly string[] {
+    return ["agent-idle"];
+  }
+
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {
     if (input.source !== "provider_hook" || !isRecord(input.payload)) {
       return null;
@@ -317,8 +329,10 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       args.push("--resume", input.resumeRef);
     }
 
-    // Deliver the first user message as Claude's positional [prompt] so the
-    // session starts a turn immediately.
+    // Claude delivers its first message as a positional [prompt] at launch. Unlike
+    // codex it registers its MCP tools before running the turn, so the launch-time
+    // prompt is reliable and avoids the finicky TUI-typing path. Its readiness gate
+    // is therefore `immediate`. See agent-turn-handoff-readiness.md.
     if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
       args.push(input.initialPrompt);
     }

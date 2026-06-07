@@ -195,6 +195,45 @@ test("thread_start_contract_events_include_local_user_message_block_before_compl
   });
 });
 
+test("composer_edit_queued_input_command_routes_to_service_and_completes", async () => {
+  // Spec: docs_v2/specs/composer-message-edit.md
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+  });
+
+  await adapter.handleMessage(
+    commandEnvelope("thread.start", {
+      threadId: "th-edit",
+      initialMessage: "first",
+      agentBinding: { agentId: "codex" },
+      scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    }),
+  );
+  // Queue a follow-up while the first turn is still running.
+  await adapter.handleMessage(
+    commandEnvelope("composer.sendInput", { threadId: "th-edit", input: "teh typo" }),
+  );
+
+  const events = await adapter.handleMessage(
+    commandEnvelope("composer.editQueuedInput", { threadId: "th-edit", value: "the fix" }),
+  );
+
+  assertBackendEventsAreContractEnvelopes(events);
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ["command.accepted", "command.completed"],
+  );
+  const completed = events.find((event) => event.kind === "command.completed");
+  assert.equal(completed?.payload.result?.status, "edited");
+});
+
 test("product_shell_thread_start_command_reaches_backend_with_selected_agent_binding", async () => {
   // Spec: docs_v2/specs/backend-desktop-process-connection.md
   const fakes = createFakes();

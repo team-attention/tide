@@ -1,6 +1,7 @@
 import type {
   AnswerPromptResult,
   ArchiveThreadResult,
+  EditPendingInputResult,
   HydrateThreadResult,
   ListThreadsResult,
   RenameThreadResult,
@@ -166,6 +167,14 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           typedCommand,
           await this.service.sendComposerInput(typedCommand.payload),
           (result) => this.composerInputEvents(typedCommand, result),
+        );
+      }
+      case "composer.editQueuedInput": {
+        const typedCommand = command as BackendCommandEnvelope<"composer.editQueuedInput">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.editPendingInput(typedCommand.payload),
+          (result) => this.editQueuedInputEvents(typedCommand, result),
         );
       }
       case "prompt.answer": {
@@ -398,6 +407,15 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       this.agentRuntimeStateChangedEvent(command, result.thread, result.runtimeState),
       this.commandCompletedEvent(command),
     ];
+  }
+
+  private editQueuedInputEvents(
+    command: BackendCommandEnvelope,
+    result: EditPendingInputResult,
+  ): BackendEventEnvelope[] {
+    // The queued message hasn't been sent, so editing only confirms the new
+    // backend state; Desktop already holds the edited text it typed.
+    return [this.commandCompletedEvent(command, { status: result.status })];
   }
 
   private promptAnswerEvents(
@@ -702,6 +720,7 @@ function contractCodeFromServiceError(error: ServiceError): ContractErrorCode {
       return error.code;
     case "agent_binding_locked":
     case "prompt_not_found":
+    case "no_pending_input":
     case "invalid_workbench_command":
     case "invalid_thread_title":
     case "workbench_target_not_found":

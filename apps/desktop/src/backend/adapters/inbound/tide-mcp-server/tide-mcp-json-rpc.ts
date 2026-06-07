@@ -35,7 +35,10 @@ export interface TideMcpJsonRpcHandler {
 }
 
 export interface CreateTideMcpJsonRpcHandlerInput {
-  listTools(): TideMcpToolDefinition[] | Promise<TideMcpToolDefinition[]>;
+  // The caller session is forwarded on tools/list so the Backend can mark this
+  // runtime's tool surface ready (the first-turn handoff gate signal). Listing the
+  // tools does not itself need a session.
+  listTools(session?: TideMcpSessionRef): TideMcpToolDefinition[] | Promise<TideMcpToolDefinition[]>;
   callTool(
     input: TideMcpToolCallInput,
   ): Promise<ServiceResult<TideMcpToolCallResult>>;
@@ -63,6 +66,11 @@ export function createTideMcpJsonRpcHandler(
 export async function runTideMcpLineDelimitedStdio(
   input: RunTideMcpLineDelimitedStdioInput,
 ): Promise<void> {
+  // Process requests sequentially in arrival order. MCP clients (codex's rmcp,
+  // claude) expect the initialize/tools handshake responses in order; concurrent
+  // dispatch was observed to break a client's turn. Each handler still always
+  // produces exactly one response (or none for notifications) so a request is never
+  // left unanswered.
   for await (const line of input.input) {
     const trimmed = line.trim();
     if (trimmed.length === 0) {
@@ -86,11 +94,10 @@ export async function runTideMcpLineDelimitedStdio(
     }
 
     // A transient backend socket error (e.g. the Backend restarted and its unix
-    // socket briefly went away) must not crash the stdio bridge process: the
-    // agent's MCP client does not respawn a dead server, so the whole Tide tool
-    // surface would vanish for that session permanently. Reply with a JSON-RPC
-    // error and keep the loop alive so the next request reconnects to the
-    // stable-path socket once the Backend is back.
+    // socket briefly went away) must not crash the stdio bridge process: the agent's
+    // MCP client does not respawn a dead server, so the whole Tide tool surface would
+    // vanish for that session permanently. Reply with a JSON-RPC error and keep the
+    // loop alive so the next request reconnects once the Backend is back.
     let response: JsonRpcResponse | undefined;
     try {
       response = await input.handler.handle(parsed);
@@ -151,7 +158,7 @@ class BackendTideMcpJsonRpcHandler implements TideMcpJsonRpcHandler {
         return jsonRpcResult(id, {});
       case "tools/list":
         return jsonRpcResult(id, {
-          tools: (await this.listTools()).map(mcpToolDefinition),
+          tools: (await this.listTools(this.session())).map(mcpToolDefinition),
         });
       case "tools/call":
         return this.handleToolCall(id, request.params);

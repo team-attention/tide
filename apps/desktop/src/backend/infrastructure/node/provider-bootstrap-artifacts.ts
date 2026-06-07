@@ -326,6 +326,12 @@ function ensureClaudeArtifacts(
     },
   });
   writeJsonFile(artifacts.claudeSettingsPath, {
+    // Tide's own MCP tools are first-party and trusted (we inject this server), so
+    // pre-allow the whole `tide` server — no per-tool permission prompt. Other tools
+    // keep claude's native permission flow (terminal-equivalent behavior).
+    permissions: {
+      allow: ["mcp__tide"],
+    },
     hooks: {
       UserPromptSubmit: [
         claudeHook(providerNotifyCommand(artifacts, "claude", "agent-running")),

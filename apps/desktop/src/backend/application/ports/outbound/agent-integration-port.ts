@@ -13,6 +13,7 @@ export type {
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
   ProviderSignalSourceKind,
+  RuntimeReadinessGate,
 } from "../../domains/agent-integration/agent-integration.ts";
 export type {
   AgentBinding,

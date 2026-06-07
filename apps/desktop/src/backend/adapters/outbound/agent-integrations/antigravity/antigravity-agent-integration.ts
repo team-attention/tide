@@ -10,6 +10,7 @@ import type {
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
+  RuntimeReadinessGate,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { PromptState, ThreadScope } from "../../../../application/domains/thread/thread.ts";
 
@@ -207,6 +208,17 @@ class AntigravityAgentIntegration implements AgentIntegrationPort {
       conversationRef: input.providerSessionRef.value,
       launchOptions: input.launchOptions,
     });
+  }
+
+  initialTurnReadiness(): RuntimeReadinessGate {
+    // Antigravity is server-first and delivers its first prompt at launch
+    // (--prompt-interactive), so it does not ride the gated writeInput handoff.
+    // OPEN: unify onto tool_surface_ready once its transport is event-driven.
+    return { kind: "immediate" };
+  }
+
+  turnEndSignalEvents(): readonly string[] {
+    return ["agent-idle"];
   }
 
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {
