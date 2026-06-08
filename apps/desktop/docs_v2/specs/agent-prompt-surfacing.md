@@ -48,26 +48,45 @@ Out of scope (already handled / separate):
 
 - D1: Detect codex prompts by scraping the PTY transcript (no hook exists). Tolerant
   parser: strip ANSI, find the question line + the numbered options.
-- D2: Normalize to `PromptState` (kind `approval` for "Allow …?", `choice`/`question`
-  otherwise). `choices[i].providerValue` encodes how to answer (the option index).
-- D3: Answer routing drives the live PTY: from the default cursor row, ArrowDown to
-  the chosen index, then Enter. Cancel/Esc maps to option "Cancel" or Esc.
-- D4: Idempotent: the same menu streams across chunks; surface it once per
-  appearance (dedupe by parsed signature), and clear it when answered/gone.
+- D2: Normalize to `PromptState` (kind `approval` for "Allow …?", `choice` otherwise).
+  `choices[i].providerValue` encodes how to answer as a codex-menu navigation token
+  `codex-menu:<steps>`, where `steps = optionPosition − defaultIndex` (signed: down is
+  positive). `defaultChoiceId` is the option codex has the cursor on. The
+  parse→`PromptState` mapping lives in the codex Agent Integration's
+  `detectPromptState` (`source: "pty_transcript"` branch), NOT in infrastructure —
+  provider-specific detection stays in the adapter (runtime-spine invariant #1).
+- D3: Answer routing drives the live PTY. The runtime port decodes the
+  `codex-menu:<steps>` token: from the default cursor row it sends |steps| ArrowDown
+  (steps>0) or ArrowUp (steps<0) key events, each followed by a short delay (the codex
+  TUI needs a beat between key events, same as the hook-trust auto-answer), then Enter.
+  Cancel is just the "Cancel" option — navigate to it + Enter, uniform with every
+  other option. Non-codex / non-token `prompt_answer` values keep the existing typed
+  `<value>\r` path unchanged.
+- D4: Idempotent lifecycle, owned by the live-backend projector (generic plumbing, not
+  provider detection): a bounded per-runtime rolling PTY buffer accumulates chunks so a
+  box split across writes still parses. While a codex pty prompt is already pending,
+  codex's box redraws are no-ops (don't re-surface). When the prompt is answered (the
+  thread's `promptState` clears) the projector drops the rolling buffer so the now-stale
+  box text can't re-surface; a genuinely repeated approval re-renders a fresh box and
+  surfaces again.
 
 ## Domain Model
 
 - `parseCodexApprovalPrompt(raw): CodexApprovalPrompt | null` — pure parser:
   `{ question, options: { index, label, detail? }[], defaultIndex }`.
+- `encodeCodexMenuNavigation(steps): string` / `decodeCodexMenuNavigation(value):
+  CodexMenuNavigation | null` — pure inverse pair for the `codex-menu:<steps>` token.
+  Decode returns null for any non-token value (the generic typed-answer fallthrough).
 
 ## Flow
 
-1. PTY output → codex integration inspects it (alongside existing scrape) →
-   `parseCodexApprovalPrompt`.
-2. Non-null → build `PromptState` → emit as the thread's prompt (same path hooks use)
-   → v2 renders the approval/question card.
-3. User answers → `prompt.answer` → runtime port writes the navigation keys to the
-   PTY → codex proceeds. Turn continues.
+1. PTY output → live-backend projector appends to the runtime's rolling buffer →
+   `integrations.codex.detectPromptState({ source: "pty_transcript", text: buffer })`.
+2. Non-null → `emitPromptState` records it as the thread's prompt (same path hooks use)
+   → v2 renders the approval card with the codex options as choices.
+3. User selects an option → `prompt.answer` (providerValue = `codex-menu:<steps>`) →
+   runtime port writes the navigation keys to the PTY → codex proceeds. Turn continues,
+   and the projector drops the buffer so the consumed box can't re-surface.
 
 ## Invariants
 
@@ -79,14 +98,24 @@ Out of scope (already handled / separate):
 ## Tests
 
 - `parseCodexApprovalPrompt` extracts the question + ordered options + default from a
-  real ANSI-laden codex approval frame; returns null for non-prompt output.
-- `stripTerminalSequences` already covered.
-- (later) detection → PromptState mapping; prompt.answer → PTY key sequence.
+  real ANSI-laden codex approval frame; returns null for non-prompt output. (done)
+- `stripTerminalSequences` already covered. (done)
+- `encodeCodexMenuNavigation`/`decodeCodexMenuNavigation` round-trip; decode returns
+  null for non-token values.
+- codex `detectPromptState({ source: "pty_transcript", text })` maps the ANSI box to a
+  `PromptState` (kind `approval`, choices with `codex-menu:<steps>` providerValues,
+  `defaultChoiceId` = the cursor option); returns null for ordinary output.
+- runtime port `writeInput` `prompt_answer`: a `codex-menu:2` value on codex emits
+  `["\x1b[B","\x1b[B","\r"]`; `codex-menu:-1` emits `["\x1b[A","\r"]`; `codex-menu:0`
+  emits `["\r"]`; a non-token value keeps the existing `<value>\r` path.
 
 ## Implementation Notes
 
-- Parser slice first (this slice): `provider-tui-parsers.ts` +
-  `tests/provider-tui-parsers.test.ts`. Pure, no wiring.
-- Next slices: wire detection into the codex integration's PTY-output path; map to
-  `PromptState`; implement `prompt.answer` → PTY navigation in the runtime port;
-  dedupe/clear lifecycle.
+- Parser slice first (done): `provider-tui-parsers.ts` + tests. Pure, no wiring.
+- Slice 2–3: codex integration `detectPromptState` gains a `pty_transcript` branch that
+  calls `parseCodexApprovalPrompt` + builds the `PromptState` with nav-token choices.
+- Slice 4: runtime port `writeInput` decodes the codex-menu token and emits the keyed
+  navigation with inter-key delays; generic typed-answer path unchanged.
+- Slice 5: live-backend projector buffers codex PTY per runtime, surfaces once, drops
+  the buffer when the prompt clears. Detection stays in the adapter; the projector only
+  feeds text in and emits the result.

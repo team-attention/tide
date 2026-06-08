@@ -325,7 +325,7 @@ export function createLiveBackendContractMessageAdapter(
     workspaceCommandPort: createNodeWorkspaceCommandPort(),
     workspaceFilePort: createNodeWorkspaceFilePort(),
     composerAttachmentStorePort: createNodeComposerAttachmentStorePort(),
-    providerTrustPort: createNodeProviderTrustPort(homeDir),
+    providerTrustPort: createNodeProviderTrustPort(homeDir, bootstrapArtifacts.codexHome),
     ensureScratchDirectory: (threadId: string) => {
       const dir = join(appDataRoot, "scratch", threadId);
       mkdirSync(dir, { recursive: true });
@@ -725,6 +725,14 @@ export function createLiveAgentSessionEventProjector(input: {
   const claudeHistoryByRuntime = new Map<
     string,
     { sinceMs: number; seenKeys: Set<string>; pollingStarted: boolean }
+  >();
+  // Per-runtime rolling PTY buffer + last-surfaced signature for TUI prompts (codex's
+  // boxed approval/choice menus, which have no hook). Generic plumbing: detection lives
+  // in the Agent Integration; this only feeds text in, surfaces once, and drops the
+  // buffer when the prompt clears. See docs_v2/specs/agent-prompt-surfacing.md.
+  const ptyPromptByRuntime = new Map<
+    string,
+    { buffer: string; surfacedSignature?: string }
   >();
 
   const emitProviderSignals = async (frameInput: {
@@ -1251,6 +1259,58 @@ export function createLiveAgentSessionEventProjector(input: {
     );
   };
 
+  // Surface a provider's TUI prompt scraped from the hidden PTY (codex's boxed
+  // approval/choice menus have no hook). The box can split across PTY chunks, so
+  // accumulate a bounded rolling buffer per runtime and ask the Agent Integration to
+  // detect a prompt in it. Idempotent lifecycle: while a prompt is pending, the
+  // provider's redraws of the same box are no-ops; when it is answered (the thread's
+  // promptState clears) drop the buffer so the now-stale box can't re-surface, while a
+  // genuinely repeated prompt re-renders a fresh box and surfaces again.
+  const MAX_PTY_PROMPT_BUFFER = 16_384;
+  const maybeSurfacePtyPrompt = async (frameInput: {
+    threadId: string;
+    agentId: "codex" | "claude" | "antigravity";
+    runtimeId: string;
+    body: string;
+  }): Promise<void> => {
+    const service = input.service();
+    const hydrated = await service.hydrateThread({ threadId: frameInput.threadId });
+    if (!hydrated.ok) {
+      return;
+    }
+
+    const state =
+      ptyPromptByRuntime.get(frameInput.runtimeId) ?? { buffer: "" };
+    ptyPromptByRuntime.set(frameInput.runtimeId, state);
+
+    // A prompt we surfaced was answered/cleared → its box text is stale; drop it.
+    if (
+      state.surfacedSignature !== undefined &&
+      hydrated.thread.promptState === undefined
+    ) {
+      state.buffer = "";
+      state.surfacedSignature = undefined;
+    }
+
+    state.buffer = (state.buffer + frameInput.body).slice(-MAX_PTY_PROMPT_BUFFER);
+
+    // A prompt is already pending and unanswered: redraws of the same box are no-ops.
+    if (hydrated.thread.promptState !== undefined) {
+      return;
+    }
+
+    const promptState = input.integrations[frameInput.agentId].detectPromptState({
+      threadId: frameInput.threadId,
+      source: "pty_transcript",
+      text: state.buffer,
+    });
+    if (promptState === null) {
+      return;
+    }
+    state.surfacedSignature = promptState.promptId;
+    await emitPromptState({ promptState, service, onEvent: input.onEvent });
+  };
+
   const appendFrameAndEmit = async (frameInput: {
     threadId: string;
     agentId: RawAgentFrame["agentId"];
@@ -1337,6 +1397,14 @@ export function createLiveAgentSessionEventProjector(input: {
         sourceRef: frameInput.runtimeId,
         payloadKind: "ansi_text",
         payload: { stream: frameInput.source },
+        body: frameInput.body,
+      });
+      // Surface any TUI prompt the agent rendered into the hidden PTY (codex's boxed
+      // approval/choice menus; a no-op for providers that prompt only via hooks).
+      await maybeSurfacePtyPrompt({
+        threadId: frameInput.threadId,
+        agentId: frameInput.agentId,
+        runtimeId: frameInput.runtimeId,
         body: frameInput.body,
       });
       await emitProviderSignals({

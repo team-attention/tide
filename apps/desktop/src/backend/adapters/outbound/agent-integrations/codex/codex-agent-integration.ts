@@ -12,7 +12,17 @@ import type {
   ProviderSignalSource,
   RuntimeReadinessGate,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
-import type { PromptState, ThreadScope } from "../../../../application/domains/thread/thread.ts";
+import type {
+  PromptChoice,
+  PromptKind,
+  PromptState,
+  ThreadScope,
+} from "../../../../application/domains/thread/thread.ts";
+import {
+  codexApprovalPromptSignature,
+  encodeCodexMenuNavigation,
+  parseCodexApprovalPrompt,
+} from "../../../../application/services/provider-tui-parsers.ts";
 
 export interface CodexProviderState {
   authenticated: boolean;
@@ -226,6 +236,14 @@ class CodexAgentIntegration implements AgentIntegrationPort {
   }
 
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {
+    // codex's shell-command and (non-Tide) MCP-tool approval menus are pure TUI: no
+    // hook fires, they exist only as a boxed menu in the hidden PTY. Scrape that frame
+    // and surface it as a normalized PromptState so the turn can't hang on an unseen
+    // prompt. (Tide's own MCP tools are pre-approved in codex config and never render a
+    // box, so any box we see is a non-Tide tool/command.) See agent-prompt-surfacing.md.
+    if (input.source === "pty_transcript") {
+      return detectCodexTuiApprovalPrompt(input.threadId, input.text);
+    }
     if (
       input.source !== "provider_hook" ||
       input.eventName !== "PermissionRequest"
@@ -322,6 +340,45 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       expectedSignalSources: expectedSignalSources.map((source) => ({ ...source })),
     };
   }
+}
+
+// Maps a parsed codex TUI approval/choice box into a normalized PromptState. Each
+// option becomes a choice whose providerValue is a codex-menu navigation token
+// (`codex-menu:<steps>`, signed offset from the cursor's default row) that the runtime
+// port replays as ArrowDown/ArrowUp + Enter. defaultChoiceId is the cursor option, so
+// v2 highlights codex's own default. promptId is the content signature so the same box
+// re-rendered across PTY chunks dedupes to one surfaced prompt.
+function detectCodexTuiApprovalPrompt(
+  threadId: string,
+  text: string | undefined,
+): PromptState | null {
+  if (text === undefined) {
+    return null;
+  }
+  const parsed = parseCodexApprovalPrompt(text);
+  if (parsed === null) {
+    return null;
+  }
+
+  const choices: PromptChoice[] = parsed.options.map((option, position) => ({
+    choiceId: `codex-opt-${option.index}`,
+    label: option.label,
+    providerValue: encodeCodexMenuNavigation(position - parsed.defaultIndex),
+  }));
+  // "Allow …?" is an approval (waiting_for_approval); any other boxed question is a
+  // generic choice (waiting_for_input).
+  const kind: PromptKind = /\ballow\b/i.test(parsed.question) ? "approval" : "choice";
+
+  return {
+    promptId: codexApprovalPromptSignature(parsed),
+    threadId,
+    agentId: "codex",
+    kind,
+    message: parsed.question,
+    choices,
+    defaultChoiceId: choices[parsed.defaultIndex]?.choiceId,
+    source: "pty",
+  };
 }
 
 function codexSetupAction(

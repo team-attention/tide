@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  codexApprovalPromptSignature,
+  decodeCodexMenuNavigation,
+  encodeCodexMenuNavigation,
   parseClaudeModelPicker,
   parseCodexApprovalPrompt,
   stripTerminalSequences,
@@ -83,4 +86,35 @@ test("parseCodexApprovalPrompt returns null for ordinary numbered output (no pro
     "2. Then do that",
   ].join("\n");
   assert.equal(parseCodexApprovalPrompt(prose), null);
+});
+
+test("encode/decodeCodexMenuNavigation round-trips signed step counts", () => {
+  for (const steps of [0, 1, 2, -1, 3]) {
+    assert.deepEqual(decodeCodexMenuNavigation(encodeCodexMenuNavigation(steps)), {
+      steps,
+    });
+  }
+});
+
+test("decodeCodexMenuNavigation returns null for non-token answer values", () => {
+  assert.equal(decodeCodexMenuNavigation("allow_once"), null);
+  assert.equal(decodeCodexMenuNavigation(""), null);
+  assert.equal(decodeCodexMenuNavigation("codex-menu:abc"), null);
+});
+
+test("codexApprovalPromptSignature is stable per box and distinct across boxes", () => {
+  const parsed = parseCodexApprovalPrompt(CODEX_APPROVAL_PROMPT);
+  assert.notEqual(parsed, null);
+  // Re-parsing the same box yields the same signature (dedupe across PTY chunks).
+  const reparsed = parseCodexApprovalPrompt(CODEX_APPROVAL_PROMPT);
+  assert.equal(
+    codexApprovalPromptSignature(parsed!),
+    codexApprovalPromptSignature(reparsed!),
+  );
+  // A different question yields a different signature.
+  const other = { ...parsed!, question: "Allow a different tool?" };
+  assert.notEqual(
+    codexApprovalPromptSignature(parsed!),
+    codexApprovalPromptSignature(other),
+  );
 });

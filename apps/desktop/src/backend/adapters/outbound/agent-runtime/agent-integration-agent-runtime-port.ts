@@ -12,6 +12,10 @@ import type {
 } from "../../../application/ports/outbound/agent-integration-port.ts";
 import type { ProviderReadinessPort } from "../../../application/ports/outbound/provider-readiness-port.ts";
 import type { RuntimeReadinessRegistry } from "../../../application/services/runtime-readiness-registry.ts";
+import {
+  type CodexMenuNavigation,
+  decodeCodexMenuNavigation,
+} from "../../../application/services/provider-tui-parsers.ts";
 import type {
   AgentId,
   ProviderCliAgentId,
@@ -260,6 +264,20 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     // runtime, on its first write.
     await waitForStartupWindow(processState);
 
+    // Answering a codex TUI approval/choice menu is not typed text: the providerValue is
+    // a codex-menu navigation token. Replay it as keyed navigation (ArrowDown/ArrowUp +
+    // Enter) on the live PTY so codex's own menu cursor lands on the chosen option. Any
+    // other prompt answer (claude/antigravity hook prompts, free-form text) keeps the
+    // generic typed path below. See docs_v2/specs/agent-prompt-surfacing.md.
+    if (input.kind === "prompt_answer" && processState.agentId === "codex") {
+      const navigation = decodeCodexMenuNavigation(input.value);
+      if (navigation !== null) {
+        await sendCodexMenuNavigation(processState.handle, navigation);
+        traceAgentRuntime(`wrote codex menu nav runtime=${handle.runtimeId} steps=${navigation.steps}`);
+        return;
+      }
+    }
+
     if (
       input.kind === "composer_input" &&
       processState.inputTiming?.preSubmitDelayMs !== undefined
@@ -378,6 +396,26 @@ function maybeAutoTrustCodexHooks(
     await sleep(150);
     await processState.handle.write("\r");
   })();
+}
+
+// codex's TUI reads one key event at a time and needs a beat between them (the same
+// reason the hook-trust auto-answer sleeps between ArrowDown and Enter). Drive the menu
+// cursor with |steps| ArrowDown (steps>0) or ArrowUp (steps<0) presses, each followed
+// by a short delay, then Enter to submit the highlighted option.
+const CODEX_MENU_KEY_DELAY_MS = 120;
+const ARROW_DOWN = "\x1b[B";
+const ARROW_UP = "\x1b[A";
+async function sendCodexMenuNavigation(
+  handle: PtyProcessHandle,
+  navigation: CodexMenuNavigation,
+): Promise<void> {
+  const key = navigation.steps >= 0 ? ARROW_DOWN : ARROW_UP;
+  const presses = Math.abs(navigation.steps);
+  for (let i = 0; i < presses; i += 1) {
+    await handle.write(key);
+    await sleep(CODEX_MENU_KEY_DELAY_MS);
+  }
+  await handle.write("\r");
 }
 
 async function waitForStartupWindow(processState: RuntimeProcessState): Promise<void> {

@@ -357,6 +357,61 @@ test("agent_runtime_port_writes_provider_native_prompt_value_before_ui_choice_id
   assert.deepEqual(launcher.handles[0].writes, ["allow_once\r", "fallback-choice\r"]);
 });
 
+// Spec: docs_v2/specs/agent-prompt-surfacing.md — answering a codex TUI menu replays
+// keyed navigation on the live PTY, not typed text.
+test("agent_runtime_port_replays_codex_menu_navigation_for_tui_prompt_answers", async () => {
+  const launcher = new FakePtyProcessLauncher();
+  const runtime = createAgentIntegrationAgentRuntimePort({
+    integrations: {
+      codex: fakeIntegration("codex", startPlan("codex")),
+      claude: fakeIntegration("claude", startPlan("claude")),
+      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
+    },
+    launcher,
+    clock: () => now,
+    idGenerator: sequentialIdGenerator("runtime"),
+  });
+
+  const handle = await runtime.start({
+    threadId: "thread-codex-menu",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
+  });
+
+  // Two rows down from the default cursor, then Enter.
+  await runtime.writeInput(handle, {
+    kind: "prompt_answer",
+    value: "codex-menu:2",
+    choiceId: "codex-opt-3",
+    promptId: "codex-tui-1",
+    submittedAt: now,
+  });
+  // Negative steps navigate up; zero steps is just Enter on the default.
+  await runtime.writeInput(handle, {
+    kind: "prompt_answer",
+    value: "codex-menu:-1",
+    choiceId: "codex-opt-1",
+    promptId: "codex-tui-2",
+    submittedAt: now,
+  });
+  await runtime.writeInput(handle, {
+    kind: "prompt_answer",
+    value: "codex-menu:0",
+    choiceId: "codex-opt-2",
+    promptId: "codex-tui-3",
+    submittedAt: now,
+  });
+
+  assert.deepEqual(launcher.handles[0].writes, [
+    "\x1b[B",
+    "\x1b[B",
+    "\r",
+    "\x1b[A",
+    "\r",
+    "\r",
+  ]);
+});
+
 test("agent_runtime_port_forwards_pty_output_with_thread_runtime_context", async () => {
   const outputFrames: {
     threadId: string;

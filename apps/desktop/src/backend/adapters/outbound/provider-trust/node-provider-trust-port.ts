@@ -7,7 +7,18 @@ import type { ProviderTrustPort } from "../../../application/ports/outbound/prov
 // Writes each provider's own trust store so the CLI treats the cwd as trusted on
 // next launch. Mirrors the readers in live-backend.ts (claude .claude.json,
 // codex config.toml, antigravity settings.json).
-export function createNodeProviderTrustPort(homeDir?: string): ProviderTrustPort {
+//
+// codexOverlayHome is Tide's overlaid CODEX_HOME (the one codex actually launches
+// against). Its config.toml is a bootstrap-time SNAPSHOT of the real config's trust,
+// so a trust written only to the real ~/.codex/config.toml is invisible to the running
+// codex — it would still prompt for directory trust in the hidden PTY (and then its MCP
+// surface never connects, hanging the turn). So codex trust is written to BOTH the real
+// config (readiness reads it; persists for the next bootstrap) and the overlay config
+// (the running session reads it). See docs_v2/specs/scratch-execution-context.md.
+export function createNodeProviderTrustPort(
+  homeDir?: string,
+  codexOverlayHome?: string,
+): ProviderTrustPort {
   const home = homeDir ?? homedir();
   return {
     async trust(input: { agentId: string; cwd: string }): Promise<void> {
@@ -16,7 +27,7 @@ export function createNodeProviderTrustPort(homeDir?: string): ProviderTrustPort
           trustClaude(home, input.cwd);
           return;
         case "codex":
-          trustCodex(home, input.cwd);
+          trustCodex(home, input.cwd, codexOverlayHome);
           return;
         case "antigravity":
           trustAntigravity(home, input.cwd);
@@ -52,8 +63,17 @@ function trustAntigravity(home: string, cwd: string): void {
   writeJson(path, settings);
 }
 
-function trustCodex(home: string, cwd: string): void {
-  const path = join(home, ".codex", "config.toml");
+function trustCodex(home: string, cwd: string, overlayHome?: string): void {
+  // Real config: readiness reads it, and it persists across bootstraps.
+  writeCodexTrust(join(home, ".codex", "config.toml"), cwd);
+  // Overlay config (CODEX_HOME the running codex uses): without this the live session
+  // doesn't see the trust and prompts for it in the hidden PTY.
+  if (overlayHome !== undefined) {
+    writeCodexTrust(join(overlayHome, "config.toml"), cwd);
+  }
+}
+
+function writeCodexTrust(path: string, cwd: string): void {
   const existing = (existsSync(path) ? readText(path) : "") ?? "";
   if (codexCwdAlreadyTrusted(existing, cwd)) {
     return;

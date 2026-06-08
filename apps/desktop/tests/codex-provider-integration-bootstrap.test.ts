@@ -245,6 +245,67 @@ test("codex_permission_prompt_detection_requires_permission_request_hook_payload
   assert.equal(unknown, null);
 });
 
+// Spec: docs_v2/specs/agent-prompt-surfacing.md — codex's boxed TUI approval menu has
+// no hook, so the codex integration maps the scraped PTY frame into a PromptState.
+const CODEX_TUI_APPROVAL_FRAME = [
+  "\x1b[2J\x1b[H",
+  '\x1b[38;5;252mAllow the playwright MCP server to run tool "browser_navigate"?\x1b[0m',
+  "",
+  "\x1b[36m> 1. Allow\x1b[0m                  Run the tool and continue.",
+  "  2. Allow for this session   Remember this choice for this session.",
+  "  3. Always allow             Remember for future tool calls.",
+  "  4. Cancel                   Cancel this tool call",
+  "",
+  "\x1b[2menter to submit | esc to cancel\x1b[0m",
+].join("\n");
+
+test("codex_maps_a_scraped_tui_approval_box_into_a_prompt_state", () => {
+  const integration = codexIntegration();
+
+  const prompt = integration.detectPromptState({
+    threadId: "thread-tui",
+    source: "pty_transcript",
+    text: CODEX_TUI_APPROVAL_FRAME,
+  });
+
+  assert.notEqual(prompt, null);
+  assert.equal(prompt?.kind, "approval");
+  assert.equal(prompt?.source, "pty");
+  assert.equal(
+    prompt?.message,
+    'Allow the playwright MCP server to run tool "browser_navigate"?',
+  );
+  // Cursor is on option 1 → that is the default choice.
+  assert.equal(prompt?.defaultChoiceId, "codex-opt-1");
+  assert.deepEqual(
+    prompt?.choices?.map((choice) => ({
+      label: choice.label,
+      providerValue: choice.providerValue,
+    })),
+    [
+      { label: "Allow", providerValue: "codex-menu:0" },
+      { label: "Allow for this session", providerValue: "codex-menu:1" },
+      { label: "Always allow", providerValue: "codex-menu:2" },
+      { label: "Cancel", providerValue: "codex-menu:3" },
+    ],
+  );
+});
+
+test("codex_tui_prompt_state_id_is_stable_across_re_renders_of_the_same_box", () => {
+  const integration = codexIntegration();
+  const first = integration.detectPromptState({
+    threadId: "thread-tui",
+    source: "pty_transcript",
+    text: CODEX_TUI_APPROVAL_FRAME,
+  });
+  const second = integration.detectPromptState({
+    threadId: "thread-tui",
+    source: "pty_transcript",
+    text: `noise before\n${CODEX_TUI_APPROVAL_FRAME}`,
+  });
+  assert.equal(first?.promptId, second?.promptId);
+});
+
 test("codex_launch_plan_does_not_use_exec_json_app_server_or_remote_runtime", async () => {
   const integration = codexIntegration();
 

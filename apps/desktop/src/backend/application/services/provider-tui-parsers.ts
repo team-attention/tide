@@ -139,3 +139,49 @@ export function parseCodexApprovalPrompt(raw: string): CodexApprovalPrompt | nul
 
   return { question, options, defaultIndex };
 }
+
+// How to drive codex's TUI menu from its default cursor row to a chosen option:
+// `steps` ArrowDown presses (positive) or ArrowUp presses (negative), then Enter.
+export interface CodexMenuNavigation {
+  steps: number;
+}
+
+const CODEX_MENU_TOKEN_PREFIX = "codex-menu:";
+
+// Encodes the navigation a `PromptState.choice.providerValue` carries for a codex TUI
+// menu option. `steps` is the signed offset of the option from the cursor's default
+// row (down is positive). The runtime port decodes this back into key events.
+export function encodeCodexMenuNavigation(steps: number): string {
+  return `${CODEX_MENU_TOKEN_PREFIX}${steps}`;
+}
+
+// Inverse of encodeCodexMenuNavigation. Returns null for any value that is not a codex
+// menu token, so the generic typed-answer path (`<value>\r`) still applies to every
+// other prompt answer (claude/antigravity hook prompts, free-form text, etc.).
+export function decodeCodexMenuNavigation(value: string): CodexMenuNavigation | null {
+  if (!value.startsWith(CODEX_MENU_TOKEN_PREFIX)) {
+    return null;
+  }
+  const steps = Number(value.slice(CODEX_MENU_TOKEN_PREFIX.length));
+  if (!Number.isInteger(steps)) {
+    return null;
+  }
+  return { steps };
+}
+
+// A stable, content-derived signature for a parsed codex approval/choice menu, used as
+// the PromptState.promptId so the same box re-rendered across PTY chunks dedupes to one
+// surfaced prompt. Two distinct prompts (different question or options) get distinct
+// ids. Not cryptographic — only needs to be deterministic and collision-resistant for
+// short menu text.
+export function codexApprovalPromptSignature(prompt: CodexApprovalPrompt): string {
+  const material = [prompt.question, ...prompt.options.map((option) => option.label)].join(
+    "",
+  );
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < material.length; i += 1) {
+    hash ^= material.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `codex-tui-${(hash >>> 0).toString(36)}`;
+}
