@@ -553,8 +553,10 @@ function createAgentSession(
       ? chatState === "hydrating"
         ? createAgentSessionSkeleton()
         : // A loaded, idle thread with no messages (e.g. an agent that produced
-          // nothing) shows a placeholder instead of a blank void.
-          chatState === "ready"
+          // nothing) shows a placeholder instead of a blank void. But once a message
+          // is submitted it shows as the optimistic/queued "You" row below — there IS
+          // content, so the "No messages here" placeholder must not render alongside it.
+          chatState === "ready" && queuedInput === null
           ? createAgentSessionEmptyPlaceholder()
           : null
       : groupSessionItems(blocks).map(renderSessionItem),

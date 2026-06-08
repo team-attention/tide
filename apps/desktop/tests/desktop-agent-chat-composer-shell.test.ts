@@ -1065,6 +1065,22 @@ test("a_loaded_thread_with_no_messages_shows_an_empty_placeholder", () => {
   assert.doesNotMatch(html, /agent-session-skeleton/);
 });
 
+test("a_submitted_message_hides_the_empty_placeholder_even_before_its_block_arrives", () => {
+  // The moment a message is submitted it shows as the optimistic "You" row while the
+  // real user block is still in flight (blocks stays empty for a beat). The "No
+  // messages here" placeholder must NOT render alongside that row — they contradict.
+  const opened = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const submitted = submitComposer(updateComposerDraft(opened, "do the thing").state).state;
+
+  assert.equal(submitted.queuedInput, "do the thing");
+  const html = renderShell(submitted);
+  assert.doesNotMatch(html, /No messages here/);
+  assert.match(html, /do the thing/);
+});
+
 test("prompt_choice_surface_row_emits_prompt_answer", () => {
   const withPrompt = applyBackendEventToAgentChatShell(
     applyBackendEventToAgentChatShell(
