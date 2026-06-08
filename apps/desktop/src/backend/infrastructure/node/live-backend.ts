@@ -8,6 +8,7 @@ import {
   readFileSync,
   readdirSync,
   readSync,
+  realpathSync,
   statSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -329,7 +330,16 @@ export function createLiveBackendContractMessageAdapter(
     ensureScratchDirectory: (threadId: string) => {
       const dir = join(appDataRoot, "scratch", threadId);
       mkdirSync(dir, { recursive: true });
-      return dir;
+      // Canonicalize to the real on-disk casing. app.getPath("userData") is derived
+      // from productName ("Tide"), but the directory on a case-insensitive macOS FS is
+      // physically "tide" (created lowercase by an earlier run). A provider's trust
+      // check (claude ~/.claude.json, codex config.toml) is a case-SENSITIVE string
+      // match against the cwd it resolves via getcwd() — i.e. the stored casing. If we
+      // trust the "Tide" string but the kernel resolves the launch cwd to the stored
+      // "tide", claude shows its directory-trust dialog and the hidden-PTY turn hangs
+      // forever. Node's JS realpathSync does NOT correct case on macOS; realpathSync.native
+      // (libc realpath) returns the true on-disk casing, matching the provider's getcwd.
+      return realpathSync.native(dir);
     },
     workspaceCodeIntelligencePort: createTypeScriptCodeIntelligencePort(),
     defaultWorkbenchTerminalCommand: env.SHELL ?? "sh",
