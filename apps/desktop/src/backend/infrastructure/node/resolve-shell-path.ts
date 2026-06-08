@@ -67,9 +67,17 @@ function isV1WrapperBinDir(entry: string): boolean {
 const PATH_MARKER = "__TIDE_PATH__";
 
 function defaultRunShell(shell: string): string {
+  // Use a LOGIN (-l) but NON-interactive shell — NOT interactive (-i). PATH is set in
+  // the login files (.zprofile/.zshenv/.profile), which -l sources. Adding -i sources
+  // the interactive rc (.zshrc), whose plugins/prompt frameworks can take tens of
+  // seconds on some setups; that ran on every backend start and blocked startup past
+  // the parent's handshake timeout, so the app hung "can't load sessions" forever. A
+  // child the slow rc spawns can also hold the pipe open past `timeout`, so the only
+  // reliable fix is to not source the interactive rc at all. The login PATH already
+  // contains the agent CLIs (~/.local/bin, /opt/homebrew/bin, …).
   const output = execFileSync(
     shell,
-    ["-lic", `printf '${PATH_MARKER}%s${PATH_MARKER}' "$PATH"`],
+    ["-lc", `printf '${PATH_MARKER}%s${PATH_MARKER}' "$PATH"`],
     { encoding: "utf8", timeout: 4000, stdio: ["ignore", "pipe", "ignore"] },
   );
   const match = output.match(new RegExp(`${PATH_MARKER}([\\s\\S]*)${PATH_MARKER}`));
