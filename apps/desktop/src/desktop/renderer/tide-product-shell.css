@@ -1958,6 +1958,10 @@ button {
   width: 100%;
   margin: 0 auto;
   display: grid;
+  /* Pin the column to the box width (minmax(0,1fr)); without this the implicit `auto`
+     column grows to the toolbar/chips max-content and the rows (and the send button)
+     spill past the composer's right edge into the workbench on a narrow column. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--tide-line);
@@ -1968,12 +1972,13 @@ button {
 
 .composer-shell__body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
 .composer-shell__input {
   width: 100%;
-  min-height: 64px;
+  min-height: 44px;
   resize: none;
   border: 0;
   outline: none;
@@ -2143,8 +2148,11 @@ button {
 .composer-shell__choice-chip {
   padding: 0 12px;
   cursor: pointer;
-  /* Toolbar chips keep their natural one-line width (don't shrink + wrap). */
-  flex-shrink: 0;
+  /* white-space: nowrap (shared rule) already keeps the label on one line, so the chip
+     may shrink when the toolbar is tight (narrow composer) — clip cleanly instead of
+     pushing the send button out of the composer. */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .composer-shell__choice-chip:hover,
