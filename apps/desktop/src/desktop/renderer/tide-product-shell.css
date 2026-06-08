@@ -2125,7 +2125,9 @@ button {
   min-width: 0;
 }
 
-.composer-shell__context-chip .composer-shell__chip-label {
+/* Only the LABEL ellipsizes — the leading icon and trailing chevron stay visible. */
+.composer-shell__chip-label {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2148,11 +2150,10 @@ button {
 .composer-shell__choice-chip {
   padding: 0 12px;
   cursor: pointer;
-  /* white-space: nowrap (shared rule) already keeps the label on one line, so the chip
-     may shrink when the toolbar is tight (narrow composer) — clip cleanly instead of
-     pushing the send button out of the composer. */
+  /* The chip may shrink when the toolbar is tight (narrow composer); the chip-label
+     ellipsizes while the icon + chevron stay (no overflow:hidden on the chip itself, so
+     the chevron is never clipped). */
   min-width: 0;
-  overflow: hidden;
 }
 
 .composer-shell__choice-chip:hover,

@@ -1322,7 +1322,7 @@ function createComposer(
           },
           // Figma: shield-check icon + label + chevron-down.
           createElement(ShieldCheck, { size: 14, strokeWidth: 1.9, className: "composer-shell__chip-icon", "aria-hidden": true }),
-          createElement("span", null, viewModel.composer.permissionLabel),
+          createElement("span", { className: "composer-shell__chip-label" }, viewModel.composer.permissionLabel),
           createElement(ChevronDown, { size: 13, strokeWidth: 1.9, className: "composer-shell__chip-chevron", "aria-hidden": true }),
         ),
         createElement("span", { className: "composer-shell__toolbar-spacer" }),
@@ -1337,7 +1337,7 @@ function createComposer(
               handlers.onOpenSurface?.("model_menu", chipAnchorFromEvent(event)),
           },
           // Figma: label + chevron-down (no leading icon).
-          createElement("span", null, viewModel.composer.modelLabel),
+          createElement("span", { className: "composer-shell__chip-label" }, viewModel.composer.modelLabel),
           createElement(ChevronDown, { size: 13, strokeWidth: 1.9, className: "composer-shell__chip-chevron", "aria-hidden": true }),
         ),
         createElement(
