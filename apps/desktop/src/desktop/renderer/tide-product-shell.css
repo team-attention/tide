@@ -2099,6 +2099,9 @@ button {
   color: var(--tide-text);
   font-size: 12.5px;
   line-height: 1;
+  /* Single-line labels: never wrap "Auto-review" at its hyphen or "GPT-5.5 · Medium"
+     at its space into two lines (which made the chip — and the composer — taller). */
+  white-space: nowrap;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 
@@ -2136,6 +2139,8 @@ button {
 .composer-shell__choice-chip {
   padding: 0 12px;
   cursor: pointer;
+  /* Toolbar chips keep their natural one-line width (don't shrink + wrap). */
+  flex-shrink: 0;
 }
 
 .composer-shell__choice-chip:hover,
