@@ -635,17 +635,39 @@ export function createProductShellViewModel(
     fileTree: createFileTreeView(state),
     editorPicker: createEditorPickerView(state),
     editorDrafts: state.editorDrafts,
-    // Visible Browser Panes owned by NON-active threads. Their <webview>s are kept
-    // alive offscreen so a background agent can drive its own Browser Pane (observe /
-    // act) without stealing focus or opening the user's view (focus is user-owned).
-    backgroundBrowserPanes: state.threads.flatMap((thread) =>
-      thread.threadId === state.activeThreadId
-        ? []
-        : thread.workbenchPanes
-            .filter((pane) => pane.kind === "browser" && pane.visible)
-            .map((pane) => ({ ...pane, threadId: thread.threadId })),
-    ),
+    // Visible Browser Panes that need an offscreen live <webview> so a background
+    // agent can drive its own Browser Pane (observe / act) without a visible view.
+    backgroundBrowserPanes: deriveBackgroundBrowserPanes(state),
   };
+}
+
+// Every visible agent-owned Browser Pane needs exactly one live <webview> so its
+// agent-scheduled actions actually execute (otherwise tide_act_browser sits `pending`
+// forever and the turn hangs). The foreground workbench hosts a webview ONLY for the
+// active thread's currently-shown pane (workbench open + that pane active); every other
+// visible Browser Pane — non-active threads, AND the active thread's panes that aren't
+// foregrounded (workbench closed, or a different pane active) — needs an offscreen
+// webview here. The one pane already foregrounded is excluded to avoid a duplicate.
+// See docs_v2/specs/browser-pane-action-liveness.md.
+export function deriveBackgroundBrowserPanes(
+  state: Pick<ProductShellState, "threads" | "activeThreadId" | "workbenchOpen"> & {
+    appChrome: Pick<ProductShellState["appChrome"], "activeWorkbenchPaneId">;
+  },
+): ProductShellBackgroundBrowserPane[] {
+  return state.threads.flatMap((thread) => {
+    const isActive = thread.threadId === state.activeThreadId;
+    return thread.workbenchPanes
+      .filter((pane) => pane.kind === "browser" && pane.visible)
+      .filter(
+        (pane) =>
+          !(
+            isActive &&
+            state.workbenchOpen &&
+            state.appChrome.activeWorkbenchPaneId === pane.paneId
+          ),
+      )
+      .map((pane) => ({ ...pane, threadId: thread.threadId }));
+  });
 }
 
 export function setProductShellSearchQuery(
@@ -1623,8 +1645,12 @@ export function applyProductShellBackendEvent(
         panes?: AppChromeWorkbenchPaneRef[];
         fileTree?: unknown;
       };
+      // A workbench change only touches the view when it is FOR the active thread.
+      // This must also hold when no thread is active (the New Thread composer,
+      // activeThreadId === null): a BACKGROUND thread opening a browser must not flip
+      // the workbench open on the composer the user is looking at. (payload.threadId
+      // undefined means an inherently active-thread-scoped event — let it through.)
       if (
-        state.activeThreadId !== null &&
         payload.threadId !== undefined &&
         payload.threadId !== state.activeThreadId
       ) {

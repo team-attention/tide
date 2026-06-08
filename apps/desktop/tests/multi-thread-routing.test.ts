@@ -232,3 +232,47 @@ test("a background thread's running state shows in the rail without stealing foc
     false,
   );
 });
+
+// Spec: docs_v2/specs/browser-pane-action-liveness.md (multi-thread workbench leak)
+// On the New Thread composer (activeThreadId === null) a BACKGROUND thread opening a
+// browser must NOT flip the workbench open on the composer the user is looking at —
+// each thread's workbench is its own.
+test("a background thread opening a browser does not open the workbench on the New Thread composer", () => {
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-bg", "codex", []));
+  // The user is on the New Thread composer: no active thread, workbench closed.
+  assert.equal(state.activeThreadId, null);
+  assert.equal(state.workbenchOpen, false);
+
+  // The background thread's agent opens a visible Browser Pane.
+  state = applyProductShellBackendEvent(state, {
+    kind: "workbench.changed" as const,
+    payload: {
+      threadId: "thread-bg",
+      panes: [{ paneId: "p1", kind: "browser", title: "Naver", visible: true, revision: "r1" }],
+    },
+  });
+
+  // The composer view is unaffected — the workbench stays closed.
+  assert.equal(state.workbenchOpen, false);
+  assert.equal(state.activeThreadId, null);
+});
+
+// Regression: when the user IS viewing the thread, its own browser open still opens
+// the workbench.
+test("the active thread opening a browser still opens its workbench", () => {
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = clickThread(state, "thread-a");
+  assert.equal(state.activeThreadId, "thread-a");
+
+  state = applyProductShellBackendEvent(state, {
+    kind: "workbench.changed" as const,
+    payload: {
+      threadId: "thread-a",
+      panes: [{ paneId: "p1", kind: "browser", title: "Naver", visible: true, revision: "r1" }],
+    },
+  });
+
+  assert.equal(state.workbenchOpen, true);
+});

@@ -369,7 +369,27 @@ test("left_ui_search_is_a_nav_row_until_activated", () => {
 test("a_launcher_only_workbench_change_does_not_force_the_workbench_open", () => {
   // Opening the FileTree emits a refresh_file_tree -> workbench.changed carrying
   // just the (default-visible) launcher pane. That must NOT pop the Workbench open.
-  const base = openProductShellThread(createProductShellState(), "thread-wb");
+  // The thread must be the ACTIVE one for its workbench changes to touch the view
+  // (a background thread's pane change is ignored — see multi-thread-routing).
+  const hydrated = applyProductShellBackendEvent(createProductShellState(), {
+    kind: "thread.hydrated",
+    payload: {
+      thread: {
+        threadId: "thread-wb",
+        title: "thread-wb",
+        agentBinding: { agentId: "codex" },
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+        pinned: false,
+        archived: false,
+        updatedAt: "2026-06-04T00:00:00.000Z",
+        lastKnownState: "idle",
+      },
+      blocks: [],
+      runtimeState: "idle",
+    },
+  });
+  const base = openProductShellThread(hydrated, "thread-wb");
+  assert.equal(base.activeThreadId, "thread-wb");
   const launcherOnly = applyProductShellBackendEvent(base, {
     kind: "workbench.changed",
     payload: {
@@ -1143,6 +1163,70 @@ test("markdown_preview_escapes_raw_html", () => {
   // Raw HTML in the file is escaped, never emitted as a live element.
   assert.doesNotMatch(html, /<img src=x onerror/);
   assert.match(html, /&lt;img/);
+});
+
+test("markdown_editor_pane_renders_gfm_table", () => {
+  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-4, UC-5)
+  const body = "# T\n\n| A | B |\n| - | - |\n| 1 | 2 |\n";
+  const html = renderProductShell(
+    editorPaneState({
+      title: "table.md",
+      filePath: "/Users/you/Workspace/tide/table.md",
+      relativePath: "table.md",
+      bodyText: body,
+      bodyTextPreview: body,
+      byteLength: body.length,
+      truncated: false,
+    }),
+  );
+  // The pipe table renders as a real table, not raw "| A | B |" source.
+  assert.match(html, /<table>/);
+  assert.match(html, /<th>A<\/th>/);
+  assert.match(html, /<td>1<\/td>/);
+  assert.doesNotMatch(html, /\| A \| B \|/);
+});
+
+test("markdown_editor_pane_renders_task_list_checkboxes", () => {
+  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-4, Invariant 1)
+  const body = "# Todo\n\n- [ ] open item\n- [x] done item\n";
+  const html = renderProductShell(
+    editorPaneState({
+      title: "todo.md",
+      filePath: "/Users/you/Workspace/tide/todo.md",
+      relativePath: "todo.md",
+      bodyText: body,
+      bodyTextPreview: body,
+      byteLength: body.length,
+      truncated: false,
+    }),
+  );
+  // Markers become real (read-only) checkboxes, not literal "[ ]"/"[x]" text.
+  assert.match(html, /class="contains-task-list"/);
+  assert.match(html, /class="task-list-item-checkbox"[^>]*type="checkbox"/);
+  assert.match(html, /checked=""/); // the [x] item
+  assert.match(html, /disabled=""/); // read-only
+  assert.doesNotMatch(html, /\[ \] open item/);
+  assert.doesNotMatch(html, /\[x\] done item/);
+});
+
+test("markdown_editor_pane_highlights_fenced_code", () => {
+  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-4, D6)
+  const body = "# Code\n\n```ts\nconst x = 1;\n```\n";
+  const html = renderProductShell(
+    editorPaneState({
+      title: "code.md",
+      filePath: "/Users/you/Workspace/tide/code.md",
+      relativePath: "code.md",
+      bodyText: body,
+      bodyTextPreview: body,
+      byteLength: body.length,
+      truncated: false,
+    }),
+  );
+  // Fenced code is highlighted (tok-* spans from the bundled highlighter),
+  // inside the md-fence code block.
+  assert.match(html, /class="md-fence"/);
+  assert.match(html, /class="tok-/);
 });
 
 test("editing_workbench_editor_pane_marks_draft_dirty", () => {
