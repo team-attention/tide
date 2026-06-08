@@ -58,3 +58,84 @@ export function parseClaudeModelPicker(raw: string): ScrapedModelOption[] {
   }
   return options;
 }
+
+export interface CodexApprovalOption {
+  // 1-based index as codex numbers the option.
+  index: number;
+  // The selectable label (e.g. "Allow", "Always allow", "Cancel").
+  label: string;
+  // The option's description column when present.
+  detail?: string;
+}
+
+export interface CodexApprovalPrompt {
+  // The question codex asks (ends with "?"), e.g. an "Allow … to run tool …?".
+  question: string;
+  options: CodexApprovalOption[];
+  // Index into `options` codex has the cursor on (its default), 0 when unmarked.
+  defaultIndex: number;
+}
+
+// Parses codex's boxed interactive approval/choice menu from hidden-PTY output.
+// codex raises these for shell-command and (non-Tide) MCP tool approval; they have
+// no hook, so they only exist in the live TUI. Shape (ANSI-stripped):
+//   Allow the <server> MCP server to run tool "<tool>"?
+//   > 1. Allow                  Run the tool and continue.
+//     2. Allow for this session ...
+//     3. Always allow           ...
+//     4. Cancel                 Cancel this tool call
+//   enter to submit | esc to cancel
+// Returns null for ordinary output. The "esc to cancel"/"to submit" footer is the
+// reliable signal that this is an interactive prompt (vs a numbered list in prose).
+export function parseCodexApprovalPrompt(raw: string): CodexApprovalPrompt | null {
+  const text = stripTerminalSequences(raw);
+  if (!/esc to cancel|to submit/i.test(text)) {
+    return null;
+  }
+
+  const lines = text.split(/\r?\n/);
+  const options: CodexApprovalOption[] = [];
+  let defaultIndex = 0;
+  let firstOptionLine = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = lines[i].match(/^\s*([>❯])?\s*(\d+)\.\s+(.+?)\s*$/);
+    if (match === null) {
+      continue;
+    }
+    const rest = match[3].trim();
+    const parts = rest.split(/\s{2,}/);
+    const label = parts[0].trim();
+    if (label.length === 0) {
+      continue;
+    }
+    if (match[1] !== undefined) {
+      defaultIndex = options.length;
+    }
+    options.push({
+      index: Number(match[2]),
+      label,
+      detail: parts.length > 1 ? parts.slice(1).join(" ").trim() : undefined,
+    });
+    if (firstOptionLine === -1) {
+      firstOptionLine = i;
+    }
+  }
+  if (options.length < 2 || firstOptionLine === -1) {
+    return null;
+  }
+
+  // The question is the nearest line above the options that ends with "?".
+  let question = "";
+  for (let i = firstOptionLine - 1; i >= 0; i -= 1) {
+    const line = lines[i].trim();
+    if (line.endsWith("?")) {
+      question = line;
+      break;
+    }
+  }
+  if (question.length === 0) {
+    return null;
+  }
+
+  return { question, options, defaultIndex };
+}
