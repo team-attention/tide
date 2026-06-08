@@ -1094,8 +1094,12 @@ button {
      edges. */
   width: min(760px, calc(100% - 32px));
   display: grid;
+  /* Constrain the single column to the surface width (minmax(0,1fr)); without this the
+     implicit `auto` column grows to the heading's one-line max-content and overflows
+     the surface — spilling into the workbench — when the chat column is narrow. The h1
+     then wraps and stays centered via text-align; the composer centers via margin auto. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 28px;
-  justify-items: center;
 }
 
 .agent-chat-shell__start-surface h1 {
