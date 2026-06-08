@@ -398,7 +398,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   const [menuAnchor, setMenuAnchor] = useState<MenuAnchorRect | null>(null);
   // Collapsed left-rail sections (Pinned / Projects / Scratch), keyed by title.
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
-  const [columnWidths, setColumnWidths] = useState({ left: 256, workbench: 480, fileTree: 344 });
+  const [columnWidths, setColumnWidths] = useState({ left: 220, workbench: 480, fileTree: 280 });
   const [isResizing, setIsResizing] = useState(false);
   // Track the window width so the layout can auto-collapse columns that no
   // longer fit (responsive narrow-screen handling).
@@ -1063,8 +1063,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         style: {
           // A mounted-but-closing column keeps its track (collapsing to 0) so the
           // grid width animates rather than snapping; unmounted columns drop out.
-          // Side tracks are plain px (not minmax) so the open<->0 transition is
-          // CSS-interpolable — minmax(...) <-> 0px is NOT and would just snap.
+          // Side tracks are minmax(0px, dragWidth): they honour the dragged/default
+          // width when there is room but SHRINK below it when several columns are open
+          // on a narrow window, so the file tree is never clipped off the right edge
+          // (a plain `${width}px` track can't shrink and overflows). The max animates
+          // dragWidth<->0 for the open<->close transition (both ends stay minmax, so it
+          // interpolates instead of snapping).
           gridTemplateColumns: [
             leftPresence.mounted
               ? `${leftPresence.visible ? columnWidths.left : 0}px`
@@ -1072,10 +1076,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             // Never shrink the agent-chat column below the composer's usable width.
             `minmax(${CHAT_MIN}px, 1fr)`,
             workbenchPresence.mounted
-              ? `${workbenchPresence.visible ? columnWidths.workbench : 0}px`
+              ? `minmax(0px, ${workbenchPresence.visible ? columnWidths.workbench : 0}px)`
               : null,
             fileTreePresence.mounted
-              ? `${fileTreePresence.visible ? columnWidths.fileTree : 0}px`
+              ? `minmax(0px, ${fileTreePresence.visible ? columnWidths.fileTree : 0}px)`
               : null,
           ]
             .filter(Boolean)

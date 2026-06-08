@@ -1089,7 +1089,10 @@ button {
 }
 
 .agent-chat-shell__start-surface {
-  width: min(760px, 100%);
+  /* Same width basis as the content turns + composer-stack: keep a side gutter so
+     when the column narrows the composer shrinks WITH it instead of sticking to the
+     edges. */
+  width: min(760px, calc(100% - 32px));
   display: grid;
   gap: 28px;
   justify-items: center;
@@ -2073,7 +2076,11 @@ button {
 }
 
 .composer-shell__start-context {
-  flex-wrap: wrap;
+  /* Keep the context chips on ONE row so the composer stays thin instead of growing
+     taller when the column is narrow. Chips shrink (label ellipsis) rather than wrap. */
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
   margin: 0;
 }
 
@@ -2102,6 +2109,8 @@ button {
 .composer-shell__context-chip {
   padding: 0 11px;
   cursor: pointer;
+  /* Allow the chip to shrink so its label ellipsizes instead of forcing a wrap. */
+  min-width: 0;
 }
 
 .composer-shell__context-chip .composer-shell__chip-label {
