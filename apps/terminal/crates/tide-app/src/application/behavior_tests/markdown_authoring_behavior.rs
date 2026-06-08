@@ -30,7 +30,9 @@ fn app_with_markdown_editor(contents: &str) -> (App, u64, PathBuf) {
     app.layout = layout;
     let path = temp_markdown_path("list");
     std::fs::write(&path, contents).unwrap();
-    let pane = EditorPane::open(id, &path).unwrap();
+    // Markdown now opens in Reading mode; authoring tests exercise Source mode.
+    let mut pane = EditorPane::open(id, &path).unwrap();
+    pane.preview_mode = false;
     app.panes.insert(id, PaneKind::Editor(pane));
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;

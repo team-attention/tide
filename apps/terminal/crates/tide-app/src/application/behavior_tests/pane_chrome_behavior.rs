@@ -695,7 +695,7 @@ fn active_markdown_live_preview_chrome_keeps_plain_and_comment_badges_visible() 
     // UC-7 BR-22: The shared active-tab width budget stretches with the available row width enough to keep both live-preview critical badges visible without collapsing the title below its minimum.
     let mut editor = EditorPane::new_empty(1);
     editor.editor.buffer.file_path = Some(PathBuf::from("README.md"));
-    editor.live_preview = true;
+    editor.preview_mode = true;
 
     let mut panes = HashMap::new();
     panes.insert(1, PaneKind::Editor(editor));
@@ -715,16 +715,17 @@ fn active_markdown_live_preview_chrome_keeps_plain_and_comment_badges_visible() 
 
     assert_eq!(layout.visible_badges, 2);
     assert!(layout.title_w >= TAB_MIN_TITLE_WIDTH);
-    assert_eq!(badges[0].action, Some(HeaderHitAction::ToggleLivePreview));
+    assert_eq!(badges[0].action, Some(HeaderHitAction::MarkdownPreview));
     assert_eq!(badges[1].action, Some(HeaderHitAction::AddComment));
 }
 
 #[test]
-fn single_pane_markdown_live_preview_header_keeps_plain_and_comment_badges_visible() {
-    // UC-7 BR-19, BR-22: Single-pane headers must not waste the available width budget when runtime cell metrics make the plain badge wider than the live badge.
+fn single_pane_markdown_reading_header_keeps_mode_and_comment_badges_visible() {
+    // UC-7 BR-19, BR-22: Single-pane headers must not waste the available width
+    // budget for the markdown mode badge + add-comment badge.
     let mut editor = EditorPane::new_empty(1);
     editor.editor.buffer.file_path = Some(PathBuf::from("a.md"));
-    editor.live_preview = true;
+    editor.preview_mode = true;
 
     let mut panes = HashMap::new();
     panes.insert(1, PaneKind::Editor(editor));
@@ -745,7 +746,7 @@ fn single_pane_markdown_live_preview_header_keeps_plain_and_comment_badges_visib
 
     assert_eq!(layout.visible_badges, 2);
     assert!(layout.title_w >= TAB_MIN_TITLE_WIDTH);
-    assert_eq!(badges[0].action, Some(HeaderHitAction::ToggleLivePreview));
+    assert_eq!(badges[0].action, Some(HeaderHitAction::MarkdownPreview));
     assert_eq!(badges[1].action, Some(HeaderHitAction::AddComment));
 }
 

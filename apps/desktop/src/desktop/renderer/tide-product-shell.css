@@ -2926,6 +2926,24 @@ button {
   color: var(--tide-text);
 }
 
+.markdown-body h4 {
+  margin: 16px 0 6px;
+  font-weight: 600;
+  font-size: 14.5px;
+  line-height: 22px;
+  color: var(--tide-text);
+}
+
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 14px 0 6px;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--tide-muted);
+  text-transform: none;
+}
+
 .markdown-body p,
 .markdown-body ul,
 .markdown-body ol {
@@ -2982,6 +3000,63 @@ button {
   margin: 20px 0;
   border: 0;
   border-top: 1px solid var(--tide-line);
+}
+
+.markdown-body del {
+  color: var(--tide-muted);
+}
+
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+/* Highlighted fenced code (md-fence) reuses the shared tok-* token colors. */
+.markdown-body pre.md-fence {
+  background: var(--tide-surface);
+}
+
+/* A wide table scrolls horizontally inside its own block instead of clipping or
+   widening the reading column. Shared rule with the agent-chat surface. */
+.markdown-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 14px;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 6px 12px;
+  border: 1px solid var(--tide-line);
+  text-align: left;
+}
+
+.markdown-body thead th {
+  background: var(--tide-surface);
+  font-weight: 650;
+}
+
+/* GFM task lists: a read-only checkbox flush with its label, no list bullet. */
+.markdown-body .contains-task-list {
+  list-style: none;
+  padding-left: 4px;
+}
+
+.markdown-body .task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.markdown-body .task-list-item-checkbox {
+  margin: 5px 0 0;
+  flex: 0 0 auto;
 }
 
 /* The xterm surface IS the terminal: it fills the dark pane edge-to-edge. */

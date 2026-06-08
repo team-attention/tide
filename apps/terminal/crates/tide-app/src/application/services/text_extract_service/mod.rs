@@ -1,12 +1,7 @@
 use std::path::PathBuf;
 
-use pulldown_cmark::{Event, Options, Parser, Tag};
-
 use crate::tide_core::{TerminalBackend, Vec2};
 
-use crate::domain::editor::markdown::{LivePreviewMap, MdElementKind};
-use crate::pane::editor::EditorPane;
-use crate::pane::editor::GUTTER_WIDTH_CELLS;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
@@ -36,9 +31,9 @@ impl crate::TextExtractPort for App {
 
                 Self::extract_wrapped_terminal_url(&pane.backend, row as usize, col as usize)
             }
-            Some(PaneKind::Editor(pane)) => {
-                self.extract_live_preview_url_at(pane, pane_id, position)
-            }
+            // Editor Panes have no clickable-URL extraction (LivePreviewMode,
+            // which provided it, was removed).
+            Some(PaneKind::Editor(_)) => None,
             _ => None,
         }
     }
@@ -154,119 +149,6 @@ impl crate::TextExtractPort for App {
 }
 
 impl App {
-    fn extract_live_preview_url_at(
-        &self,
-        pane: &EditorPane,
-        pane_id: crate::tide_core::PaneId,
-        position: Vec2,
-    ) -> Option<String> {
-        if pane.preview_mode || !pane.live_preview {
-            return None;
-        }
-
-        let live_preview_map = pane.live_preview_map.as_ref()?;
-        let (_, visual_rect) = self
-            .visual_pane_rects
-            .iter()
-            .find(|(id, _)| *id == pane_id)?;
-        let cell_size = self.cell_size();
-        let mut click_rect = pane.content_rect(*visual_rect, TAB_BAR_HEIGHT, cell_size);
-        if let Some((editor_rect, preview_rect)) = pane.split_preview_rects(click_rect, cell_size) {
-            if position.x >= preview_rect.x {
-                return None;
-            }
-            click_rect = editor_rect;
-        }
-
-        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
-        let content_x = click_rect.x + gutter_width;
-        let rel_col = ((position.x - content_x) / cell_size.width).floor() as isize;
-        let rel_row = ((position.y - click_rect.y) / cell_size.height).floor() as isize;
-        if rel_col < 0 || rel_row < 0 {
-            return None;
-        }
-
-        let (line, buffer_col) = if pane.effective_soft_wrap() {
-            let wrap_map = pane.wrap_map()?;
-            let abs_visual_row = pane.soft_wrap_visual_scroll() + rel_row as usize;
-            let info =
-                wrap_map.visual_row_to_line_info(abs_visual_row, &pane.editor.buffer.lines)?;
-            let visual_col = (info.char_offset + rel_col as usize).min(info.char_end);
-            let line_content = pane.editor.buffer.line(info.logical_line).unwrap_or("");
-            (
-                info.logical_line,
-                live_preview_map.visual_to_buffer_col(
-                    info.logical_line,
-                    visual_col,
-                    pane.editor.cursor_position().line,
-                    line_content,
-                    &pane.editor.buffer.lines,
-                ),
-            )
-        } else {
-            let line = pane.editor.scroll_offset() + rel_row as usize;
-            let visual_col = pane.editor.h_scroll_offset() + rel_col as usize;
-            let line_content = pane.editor.buffer.line(line).unwrap_or("");
-            (
-                line,
-                live_preview_map.visual_to_buffer_col(
-                    line,
-                    visual_col,
-                    pane.editor.cursor_position().line,
-                    line_content,
-                    &pane.editor.buffer.lines,
-                ),
-            )
-        };
-
-        let line_content = pane.editor.buffer.line(line)?;
-        let byte_in_line = Self::char_col_to_byte(line_content, buffer_col);
-        let line_byte_start: usize = pane
-            .editor
-            .buffer
-            .lines
-            .iter()
-            .take(line)
-            .map(|source_line| source_line.len() + 1)
-            .sum();
-        let byte_offset = line_byte_start + byte_in_line;
-        let source = pane.editor.buffer.lines.join("\n");
-        Self::extract_live_preview_link(live_preview_map, byte_offset, &source)
-    }
-
-    fn extract_live_preview_link(
-        live_preview_map: &LivePreviewMap,
-        byte_offset: usize,
-        source: &str,
-    ) -> Option<String> {
-        let element = live_preview_map.elements.iter().find(|element| {
-            matches!(element.kind, MdElementKind::Link)
-                && element.full_range.start <= byte_offset
-                && byte_offset < element.full_range.end
-        })?;
-        Self::parse_inline_markdown_link(&source[element.full_range.clone()])
-    }
-
-    fn parse_inline_markdown_link(fragment: &str) -> Option<String> {
-        let options = Options::ENABLE_STRIKETHROUGH
-            | Options::ENABLE_TABLES
-            | Options::ENABLE_TASKLISTS
-            | Options::ENABLE_FOOTNOTES;
-        for event in Parser::new_ext(fragment, options) {
-            if let Event::Start(Tag::Link { dest_url, .. }) = event {
-                return Some(dest_url.to_string());
-            }
-        }
-        None
-    }
-
-    fn char_col_to_byte(line: &str, char_col: usize) -> usize {
-        line.char_indices()
-            .nth(char_col)
-            .map(|(idx, _)| idx)
-            .unwrap_or(line.len())
-    }
-
     fn extract_wrapped_terminal_url(
         terminal: &crate::tide_terminal::Terminal,
         row: usize,
@@ -415,24 +297,3 @@ impl App {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_inline_markdown_link_extracts_destination_without_title() {
-        let fragment = r#"[docs](https://example.com/docs "Docs Title")"#;
-
-        assert_eq!(
-            App::parse_inline_markdown_link(fragment).as_deref(),
-            Some("https://example.com/docs")
-        );
-    }
-
-    #[test]
-    fn parse_inline_markdown_link_ignores_images() {
-        let fragment = "![alt](https://example.com/image.png)";
-
-        assert_eq!(App::parse_inline_markdown_link(fragment), None);
-    }
-}

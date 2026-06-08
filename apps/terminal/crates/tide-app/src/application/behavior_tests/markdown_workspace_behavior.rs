@@ -43,7 +43,10 @@ fn app_with_markdown_editor(contents: &str) -> (App, u64, PathBuf) {
     app.layout = layout;
     let path = temp_markdown_path("split_preview");
     std::fs::write(&path, contents).unwrap();
-    let pane = EditorPane::open(id, &path).unwrap();
+    // Markdown now opens in Reading mode; split-preview/authoring tests exercise
+    // Source mode.
+    let mut pane = EditorPane::open(id, &path).unwrap();
+    pane.preview_mode = false;
     app.panes.insert(id, PaneKind::Editor(pane));
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
@@ -70,16 +73,9 @@ fn preview_only_modifiers() -> crate::tide_core::Modifiers {
 
 fn pane_content_rect(
     pane_rect: crate::tide_core::Rect,
-    cell_height: f32,
+    _cell_height: f32,
 ) -> crate::tide_core::Rect {
-    let base = crate::pane::pane_content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT);
-    let padding = crate::theme::editor_live_preview_vertical_padding(cell_height);
-    crate::tide_core::Rect::new(
-        base.x,
-        base.y + padding,
-        base.width,
-        (base.height - 2.0 * padding).max(1.0),
-    )
+    crate::pane::pane_content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT)
 }
 
 fn test_window_proxy() -> crate::tide_platform::WindowProxy {

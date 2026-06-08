@@ -50,22 +50,6 @@ fn editor_plain_click_col(
     line: usize,
     rel_col: usize,
 ) -> usize {
-    if pane.live_preview {
-        let visual_col = pane.editor.h_scroll_offset() + rel_col;
-        if let Some(ref lpm) = pane.live_preview_map {
-            let cursor_line = pane.editor.cursor_position().line;
-            let line_content = pane.editor.buffer.line(line).unwrap_or("").to_string();
-            return lpm.visual_to_buffer_col(
-                line,
-                visual_col,
-                cursor_line,
-                &line_content,
-                &pane.editor.buffer.lines,
-            );
-        }
-        return visual_col;
-    }
-
     let start_char = pane.editor.h_scroll_offset();
     pane.editor
         .buffer
@@ -1254,17 +1238,6 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::ToggleDockPin => {
                 self.toggle_dock_pin();
-            }
-            GlobalAction::ToggleLivePreview => {
-                if let Some(focused) = self.focus.focused {
-                    if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&focused) {
-                        if pane.is_markdown() {
-                            pane.toggle_live_preview();
-                            self.cache.invalidate_chrome();
-                            self.cache.invalidate_pane(focused);
-                        }
-                    }
-                }
             }
         }
     }

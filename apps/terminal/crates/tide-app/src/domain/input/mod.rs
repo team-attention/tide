@@ -73,7 +73,6 @@ pub enum GlobalAction {
     ToggleStacked,
     DockToggleStacked,
     ToggleDockPin,
-    ToggleLivePreview,
 }
 
 impl GlobalAction {
@@ -129,7 +128,6 @@ impl GlobalAction {
             GlobalAction::ToggleStacked => "Toggle Stacked",
             GlobalAction::DockToggleStacked => "Dock Toggle Stacked",
             GlobalAction::ToggleDockPin => "Toggle Dock Pin",
-            GlobalAction::ToggleLivePreview => "Toggle Live Preview",
         }
     }
 
@@ -185,7 +183,6 @@ impl GlobalAction {
             GlobalAction::ToggleStacked => "ToggleStacked",
             GlobalAction::DockToggleStacked => "DockToggleStacked",
             GlobalAction::ToggleDockPin => "ToggleDockPin",
-            GlobalAction::ToggleLivePreview => "ToggleLivePreview",
         }
     }
 
@@ -241,8 +238,8 @@ impl GlobalAction {
             "ToggleStacked" => Some(GlobalAction::ToggleStacked),
             "DockToggleStacked" => Some(GlobalAction::DockToggleStacked),
             "ToggleDockPin" => Some(GlobalAction::ToggleDockPin),
-            "ToggleLivePreview" => Some(GlobalAction::ToggleLivePreview),
             // Removed action keys — silently dropped (UC-8 BR-1, BR-2)
+            "ToggleLivePreview" => None,
             "SplitHorizontalHere" => None,
             "SplitVerticalHere" => None,
             "ToggleZoom" => None,

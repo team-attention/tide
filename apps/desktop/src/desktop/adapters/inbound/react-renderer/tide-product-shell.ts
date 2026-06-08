@@ -56,10 +56,26 @@ import { rust } from "@codemirror/lang-rust";
 import { css as cssLanguage } from "@codemirror/lang-css";
 import { markdown as markdownLang } from "@codemirror/lang-markdown";
 import MarkdownIt from "markdown-it";
+import { guessLanguage, highlightToHtml } from "./code-highlight.ts";
+import { renderMarkdownCached, taskListPlugin } from "./markdown-rendering.ts";
 
 // Markdown rendering for the Editor Pane Preview. `html: false` escapes raw HTML
 // in file content so rendering local/agent-authored files cannot execute markup.
+// Tables + strikethrough come from markdown-it's default preset; task lists are
+// added by the shared plugin; fenced code is highlighted by the bundled
+// CodeMirror/Lezer highlighter (no new highlighter dependency).
+// Spec: docs_v2/specs/workbench-markdown-preview-editor.md (D5, D6).
 const markdownRenderer = new MarkdownIt({ html: false, linkify: true, typographer: true });
+markdownRenderer.use(taskListPlugin);
+markdownRenderer.renderer.rules.fence = (tokens, index) => {
+  const token = tokens[index];
+  const lang = (token.info.trim().split(/\s+/)[0] ?? "") || guessLanguage(token.content) || "";
+  const codeHtml = highlightToHtml(token.content, lang || undefined);
+  // Only emit a language class for safe identifiers (avoids attribute injection
+  // from an arbitrary fence info string).
+  const langAttr = /^[\w-]+$/.test(lang) ? ` class="language-${lang}"` : "";
+  return `<pre class="md-fence"><code${langAttr}>${codeHtml}</code></pre>`;
+};
 
 import {
   applyProductShellBackendEvent,
@@ -2123,6 +2139,9 @@ function WorkbenchMarkdownView(props: {
   handlers: ProductShellHandlers;
 }): ReactElement {
   const [mode, setMode] = useState<"preview" | "edit">("preview");
+  // Render once per source string (cached), so unrelated re-renders don't
+  // re-parse the whole file. Spec D8.
+  const previewHtml = useMemo(() => renderMarkdownCached(markdownRenderer, props.value), [props.value]);
   const toggle = (target: "preview" | "edit", label: string) =>
     createElement(
       "button",
@@ -2148,7 +2167,7 @@ function WorkbenchMarkdownView(props: {
       ? createElement("div", {
           className: "workbench-md-preview markdown-body",
           "aria-label": "Markdown preview",
-          dangerouslySetInnerHTML: { __html: markdownRenderer.render(props.value) },
+          dangerouslySetInnerHTML: { __html: previewHtml },
         })
       : createElement(WorkbenchCodeEditor, {
           paneId: props.paneId,

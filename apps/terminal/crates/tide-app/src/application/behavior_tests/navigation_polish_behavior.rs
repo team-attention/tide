@@ -65,11 +65,7 @@ fn identifier_click_position(
             + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width
             + col_index as f32 * cell.width
             + 1.0,
-        pane_rect.y
-            + crate::theme::TAB_BAR_HEIGHT
-            + crate::theme::editor_live_preview_vertical_padding(cell.height)
-            + line_index as f32 * cell.height
-            + 1.0,
+        pane_rect.y + crate::theme::TAB_BAR_HEIGHT + line_index as f32 * cell.height + 1.0,
     )
 }
 

@@ -170,14 +170,8 @@ fn file_tree_disclosure_chevrons_use_mode_aware_opacity() {
 
 // --- UC-4: LightModeEditorText ---
 
-#[test]
-fn editor_live_preview_rendering_uses_mode_aware_markdown_theme() {
-    // UC-4 BR-9: Editor live-preview rendering must choose MarkdownTheme from the active theme mode.
-    let source = include_str!("../../domain/pane/editor_rendering.rs");
-
-    assert!(source.contains("MarkdownTheme::for_dark_mode(dark_mode)"));
-    assert!(!source.contains("let theme = MarkdownTheme::dark();"));
-}
+// (Removed editor_live_preview_rendering_uses_mode_aware_markdown_theme: the
+// LivePreviewMode render path it grepped for was removed.)
 
 #[test]
 fn light_markdown_theme_uses_vscode_light_plus_role_colors() {

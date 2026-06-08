@@ -543,77 +543,6 @@ fn dock_pane_with_associated_terminal_opens_context_comment_composer_without_sel
 }
 
 #[test]
-fn live_preview_context_artifact_capture_uses_visible_selected_text() {
-    // UC-3 BR-21, BR-22: A Dock Markdown Pane in LivePreviewMode can open the Context Comment Composer and capture the visible selected text.
-    let (mut app, terminal_id) = app_with_terminal();
-    let editor_id = add_dock_markdown_editor(
-        &mut app,
-        terminal_id,
-        "cursor line\n[OpenAI](https://openai.com)\n",
-    );
-    app.gateway.detected_agents.insert(
-        terminal_id,
-        crate::state::gateway_status::AgentInfo {
-            name: "Codex",
-            pid: 42,
-            wrapper_managed: true,
-            gateway_connected: true,
-            status: None,
-        },
-    );
-
-    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
-    let cell = app.window.cached_cell_size;
-    app.visual_pane_rects = vec![(editor_id, pane_rect)];
-
-    let content_rect = {
-        let pane = match app.panes.get_mut(&editor_id) {
-            Some(PaneKind::Editor(pane)) => pane,
-            _ => panic!("expected editor pane"),
-        };
-        let content_rect = pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell);
-        pane.handle_action(
-            crate::tide_editor::input::EditorAction::SetCursor { line: 0, col: 0 },
-            20,
-        );
-        pane.prepare_inline_caches(content_rect, cell, false);
-        content_rect
-    };
-
-    let gutter_x = content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width;
-    let start = crate::tide_core::Vec2::new(gutter_x + 1.0, content_rect.y + cell.height + 1.0);
-    let end = crate::tide_core::Vec2::new(
-        gutter_x + 6.0 * cell.width + 1.0,
-        content_rect.y + cell.height + 1.0,
-    );
-    app.window.last_cursor_pos = start;
-    crate::adapter::inward::mouse_adapter::handle_mouse_down(
-        &mut app,
-        crate::tide_core::MouseButton::Left,
-        &test_window_proxy(),
-    );
-    crate::adapter::inward::mouse_adapter::drag::handle_cursor_moved_logical(
-        &mut app,
-        end,
-        &test_window_proxy(),
-    );
-    crate::adapter::inward::mouse_adapter::handle_mouse_up(
-        &mut app,
-        crate::tide_core::MouseButton::Left,
-    );
-
-    assert!(app.can_open_context_comment_composer(editor_id));
-    app.open_context_comment_composer(editor_id);
-
-    let composer = app
-        .modal
-        .context_comment_composer
-        .as_ref()
-        .expect("composer should open for dock live preview markdown selection");
-    assert_eq!(composer.content, "OpenAI");
-}
-
-#[test]
 fn active_markdown_live_preview_keeps_add_comment_visible_when_shared_tab_budget_allows_both_badges(
 ) {
     // UC-3 BR-25: The shared active-tab width budget stretches with the available row width to keep add-comment visible beside the plain/live mode badge for an active Markdown Pane.
@@ -621,7 +550,7 @@ fn active_markdown_live_preview_keeps_add_comment_visible_when_shared_tab_budget
     editor.editor.buffer.file_path = Some(PathBuf::from(
         "/tmp/a-very-long-markdown-file-name-for-comment-priority.md",
     ));
-    editor.live_preview = true;
+    editor.preview_mode = true;
 
     let mut panes = std::collections::HashMap::new();
     panes.insert(11, PaneKind::Editor(editor));
@@ -646,7 +575,7 @@ fn active_markdown_live_preview_keeps_add_comment_visible_when_shared_tab_budget
     assert_eq!(title_layout.visible_badges, 2);
     assert_eq!(
         visible_badges[0].action,
-        Some(HeaderHitAction::ToggleLivePreview)
+        Some(HeaderHitAction::MarkdownPreview)
     );
     assert_eq!(visible_badges[1].action, Some(HeaderHitAction::AddComment));
     assert!(title_layout.title_w >= crate::theme::TAB_MIN_TITLE_WIDTH);

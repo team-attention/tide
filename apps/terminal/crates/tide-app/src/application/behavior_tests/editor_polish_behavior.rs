@@ -47,8 +47,8 @@ fn active_markdown_pane_shows_explicit_mode_badge() {
     let badges = active_tab_badges(&panes, &1, true, false);
 
     assert!(
-        badges.iter().any(|badge| badge.text == "live"
-            && badge.action == Some(HeaderHitAction::ToggleLivePreview)),
+        badges.iter().any(|badge| badge.text == "read"
+            && badge.action == Some(HeaderHitAction::MarkdownPreview)),
         "focused Markdown panes should surface an explicit mode badge"
     );
 }
@@ -84,8 +84,8 @@ fn focused_markdown_pane_keeps_mode_badge_visible_ahead_of_add_comment_when_widt
     assert!(layout.title_w >= TAB_MIN_TITLE_WIDTH);
     assert_eq!(
         badges[0].action,
-        Some(HeaderHitAction::ToggleLivePreview),
-        "the first badge kept under tight width should remain the live/plain mode affordance"
+        Some(HeaderHitAction::MarkdownPreview),
+        "the first badge kept under tight width should remain the read/edit mode affordance"
     );
 }
 

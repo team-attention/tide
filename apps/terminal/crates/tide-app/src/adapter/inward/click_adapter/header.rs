@@ -166,14 +166,6 @@ pub(crate) fn check_header_click(
                     ctx.invalidate_pane(zone.pane_id);
                     return true;
                 }
-                HeaderHitAction::ToggleLivePreview => {
-                    if let Some(PaneKind::Editor(pane)) = ctx.pane_mut(zone.pane_id) {
-                        pane.toggle_live_preview();
-                    }
-                    ctx.invalidate_chrome();
-                    ctx.invalidate_pane(zone.pane_id);
-                    return true;
-                }
                 HeaderHitAction::EditorFileName => {
                     // Allow drag from editor filename area
                     ctx.interaction_mut().pane_drag =

@@ -395,7 +395,6 @@ pub const BORDER_WIDTH: f32 = 1.0;
 pub const PANE_GAP: f32 = 2.0;
 pub const PANE_PADDING: f32 = 12.0;
 pub const TERMINAL_TOP_PADDING_CELLS: f32 = 0.5;
-pub const EDITOR_LIVE_PREVIEW_VERTICAL_PADDING_CELLS: f32 = 0.5;
 pub const PANE_CORNER_RADIUS: f32 = 0.0;
 pub const FILE_TREE_LINE_SPACING: f32 = 1.7;
 pub const FILE_TREE_ROW_RADIUS: f32 = 6.0;
@@ -444,13 +443,6 @@ pub fn terminal_content_top(cell_height: f32) -> f32 {
     TAB_BAR_HEIGHT + terminal_top_padding(cell_height)
 }
 
-pub fn editor_live_preview_vertical_padding(cell_height: f32) -> f32 {
-    if cell_height <= 0.0 {
-        0.0
-    } else {
-        (cell_height * EDITOR_LIVE_PREVIEW_VERTICAL_PADDING_CELLS).round()
-    }
-}
 pub const TAB_ACTIVE_INDICATOR_HEIGHT: f32 = 2.0;
 pub const TAB_MAX_WIDTH: f32 = 220.0;
 pub const ACTIVE_TAB_MAX_WIDTH: f32 = 228.0;

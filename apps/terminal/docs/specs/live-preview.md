@@ -1,5 +1,11 @@
 # Spec: Live Preview (LivePreviewMode)
 
+> **SUPERSEDED by `docs/specs/markdown-reading-edit-modes.md`.** LivePreviewMode
+> is no longer a user-facing mode. Markdown opens in Reading mode (read-only
+> Preview) and toggles Reading ↔ Source only — no LivePreviewMode default,
+> header badge, GlobalAction, or keybinding. The render path is dormant and its
+> behavior tests were removed. Kept for historical context.
+
 ## Overview
 ### As-Is
 Current state: Two rendering modes — Plain (raw markdown with syntax highlighting) and Preview (read-only pulldown_cmark formatted). `LivePreviewMode` exists, and Markdown Panes now open with `live_preview = true` while staying in authoring mode. Click-to-cursor, mouse selection, visible-text copy, add-comment capture, and link activation already share the live-preview mapping path, but the editor content rect still starts directly at `TAB_BAR_HEIGHT` with no extra vertical inset for `LivePreviewMode`. That means the first visible Markdown row sits against the Pane chrome, and pointer mapping still treats that edge as immediate content. Fixed-Width Live Preview Block detection reads a line's styled byte ranges, so an empty source row inside a fenced code block can miss the code-block kind, lose the code surface background, and start a separate block-scoped horizontal scroll range after the blank row.

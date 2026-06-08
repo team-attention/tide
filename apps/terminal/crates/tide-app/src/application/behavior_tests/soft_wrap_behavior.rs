@@ -31,7 +31,10 @@ fn app_with_markdown_editor(contents: &str) -> (App, u64, std::path::PathBuf) {
             .as_nanos()
     ));
     std::fs::write(&path, contents).unwrap();
-    let pane = EditorPane::open(id, &path).unwrap();
+    // Markdown now opens in Reading mode; soft-wrap authoring tests exercise
+    // Source mode.
+    let mut pane = EditorPane::open(id, &path).unwrap();
+    pane.preview_mode = false;
     app.panes.insert(id, PaneKind::Editor(pane));
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
@@ -82,8 +85,9 @@ fn soft_wrap_disabled_in_diff_mode() {
 
 #[test]
 fn markdown_authoring_opens_with_soft_wrap_active() {
-    // UC-1 BR-3: Markdown files open in authoring mode so Soft Wrap is active immediately
-    let pane = editor_with_extension("md");
+    // UC-1 BR-3: Markdown Source (authoring) mode has Soft Wrap active.
+    let mut pane = editor_with_extension("md");
+    pane.preview_mode = false; // Markdown now opens in Reading; test Source mode.
     assert!(
         pane.effective_soft_wrap(),
         "markdown authoring should start with effective soft wrap enabled"
@@ -197,6 +201,7 @@ fn wrapped_selection_highlight_tracks_visual_rows() {
     std::fs::write(&path, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
 
     let mut pane = EditorPane::open(1, &path).unwrap();
+    pane.preview_mode = false; // Markdown opens in Reading; test Source selection.
     let cell_size = Size::new(8.0, 16.0);
     let inner = Rect::new(
         0.0,
@@ -244,6 +249,7 @@ fn scrolling_wrapped_markdown_advances_by_visual_row() {
     use crate::tide_editor::input::EditorAction;
 
     let mut pane = editor_with_extension("md");
+    pane.preview_mode = false; // Markdown opens in Reading; test Source soft-wrap.
     pane.editor.insert_text(&"a".repeat(120));
     pane.ensure_wrap_map(20);
 
@@ -263,6 +269,7 @@ fn scrolling_wrapped_markdown_reaches_the_last_visual_row() {
     use crate::tide_editor::input::EditorAction;
 
     let mut pane = editor_with_extension("md");
+    pane.preview_mode = false; // Markdown opens in Reading; test Source soft-wrap.
     pane.editor.insert_text(&"a".repeat(120));
     pane.ensure_wrap_map(20);
 
@@ -285,6 +292,7 @@ fn scrolling_wrapped_markdown_past_bottom_does_not_snap_back_to_cursor() {
     use crate::tide_editor::input::EditorAction;
 
     let mut pane = editor_with_extension("md");
+    pane.preview_mode = false; // Markdown opens in Reading; test Source soft-wrap.
     pane.editor.insert_text(&"a".repeat(120));
     pane.ensure_wrap_map(20);
 
@@ -388,20 +396,14 @@ fn mouse_wheel_scrolling_wrapped_markdown_stays_monotonic_and_keeps_cache_maps_s
         pane.wrap_cols_for_rect(content_rect, cell_size)
     };
 
-    let (initial_wrap_generation, initial_live_preview_ptr) = {
+    let initial_wrap_generation = {
         let pane = match app.panes.get(&id) {
             Some(PaneKind::Editor(pane)) => pane,
             _ => panic!("expected editor pane"),
         };
-        (
-            pane.wrap_map()
-                .map(|map| map.generation())
-                .expect("expected wrap map after initial cache preparation"),
-            pane.live_preview_map
-                .as_ref()
-                .map(|map| map as *const _ as usize)
-                .expect("expected live preview map after initial cache preparation"),
-        )
+        pane.wrap_map()
+            .map(|map| map.generation())
+            .expect("expected wrap map after initial cache preparation")
     };
 
     let apply_scroll = |app: &mut App, delta: f32| -> usize {
@@ -429,13 +431,6 @@ fn mouse_wheel_scrolling_wrapped_markdown_stays_monotonic_and_keeps_cache_maps_s
             pane.wrap_map().map(|map| map.generation()),
             Some(initial_wrap_generation),
             "scroll-only changes should not invalidate the WrapMap generation"
-        );
-        assert_eq!(
-            pane.live_preview_map
-                .as_ref()
-                .map(|map| map as *const _ as usize),
-            Some(initial_live_preview_ptr),
-            "scroll-only changes should not rebuild the LivePreviewMap"
         );
 
         pane.soft_wrap_visual_scroll()

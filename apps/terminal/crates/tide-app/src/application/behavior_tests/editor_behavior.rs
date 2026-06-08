@@ -47,7 +47,10 @@ fn app_with_markdown_editor(contents: &str) -> (App, u64, PathBuf) {
     app.layout = layout;
     let path = temp_markdown_path("authoring");
     std::fs::write(&path, contents).unwrap();
-    let pane = EditorPane::open(id, &path).unwrap();
+    // Markdown now opens in Reading mode; these tests exercise Source (authoring)
+    // mode, so switch the pane to Source after opening.
+    let mut pane = EditorPane::open(id, &path).unwrap();
+    pane.preview_mode = false;
     app.panes.insert(id, PaneKind::Editor(pane));
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
@@ -223,22 +226,31 @@ fn new_editor_is_not_in_preview_mode() {
     }
 }
 
+// --- UC-1: OpenMarkdownInReadingMode ---
+
 #[test]
-fn markdown_file_opens_in_authoring_mode_with_live_preview_enabled() {
-    // UC-2 BR-9: Opening a Markdown file starts in authoring mode with preview disabled and LivePreviewMode enabled
-    let (app, id, _path) = app_with_markdown_editor("# Title\n\nBody");
-    if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
-        assert!(
-            !pane.preview_mode,
-            "markdown panes should open in authoring mode"
-        );
-        assert!(
-            pane.live_preview,
-            "markdown panes should default to LivePreviewMode"
-        );
-    } else {
-        panic!("expected editor pane");
-    }
+fn markdown_file_opens_in_reading_mode() {
+    // Spec: docs/specs/markdown-reading-edit-modes.md UC-1 BR-1
+    let path = temp_markdown_path("reading_default");
+    std::fs::write(&path, "# Title\n\nBody").unwrap();
+    let pane = EditorPane::open(1, &path).unwrap();
+    assert!(pane.preview_mode, "markdown opens in Reading mode");
+}
+
+// UC-1 BR-2 (LivePreviewMode is not the default) is now structurally guaranteed:
+// the LivePreviewMode state was fully removed from EditorPane, so there is no
+// live-preview field to assert against.
+
+#[test]
+fn non_markdown_file_opens_in_source_mode() {
+    // Spec: docs/specs/markdown-reading-edit-modes.md UC-1 BR-3
+    let path = std::env::temp_dir().join(format!(
+        "tide_editor_source_default_{}.txt",
+        std::process::id()
+    ));
+    std::fs::write(&path, "fn main() {}\n").unwrap();
+    let pane = EditorPane::open(1, &path).unwrap();
+    assert!(!pane.preview_mode, "non-markdown opens in Source mode");
 }
 
 #[test]
@@ -291,11 +303,7 @@ fn click_in_authoring_mode_moves_cursor_using_current_layout() {
         + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width
         + 2.0 * cell.width
         + 1.0;
-    let y = pane_rect.y
-        + crate::theme::TAB_BAR_HEIGHT
-        + crate::theme::editor_live_preview_vertical_padding(cell.height)
-        + 1.0 * cell.height
-        + 1.0;
+    let y = pane_rect.y + crate::theme::TAB_BAR_HEIGHT + 1.0 * cell.height + 1.0;
 
     ActionPort::handle_action(
         &mut app,

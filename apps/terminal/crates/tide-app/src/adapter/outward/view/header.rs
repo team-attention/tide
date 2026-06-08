@@ -33,7 +33,6 @@ pub enum HeaderHitAction {
     EditorBack,
     EditorFileName,
     MarkdownPreview,
-    ToggleLivePreview,
     DiffRefresh,
     Maximize,
     AddPane,
@@ -123,13 +122,15 @@ pub(crate) fn editor_header_badges(ep: &crate::pane::editor::EditorPane) -> Vec<
         });
     }
 
-    // Markdown mode toggle: plain ↔ live preview.
-    // Mode is secondary to attention state, so it comes after file-state badges.
+    // Markdown mode toggle: Reading (read-only Preview) ↔ Source (Plain). The
+    // label names the action the click performs. Mode is secondary to attention
+    // state, so it comes after file-state badges.
+    // Spec: docs/specs/markdown-reading-edit-modes.md UC-2.
     if ep.is_markdown() {
-        let text = if ep.live_preview { "plain" } else { "live" };
+        let text = if ep.preview_mode { "edit" } else { "read" };
         badges.push(EditorBadge {
             text: text.to_string(),
-            action: Some(HeaderHitAction::ToggleLivePreview),
+            action: Some(HeaderHitAction::MarkdownPreview),
         });
     }
 
@@ -873,7 +874,7 @@ fn editor_badge_colors(
     };
 
     match badge.action {
-        Some(HeaderHitAction::ToggleLivePreview) => (
+        Some(HeaderHitAction::MarkdownPreview) => (
             if is_focused {
                 p.tab_text_focused
             } else {
@@ -1916,22 +1917,34 @@ mod tests {
     }
 
     #[test]
-    fn markdown_shows_live_badge() {
-        let ep = make_markdown_editor(1);
+    fn source_mode_badge_offers_read() {
+        // Spec: docs/specs/markdown-reading-edit-modes.md UC-2 BR-5
+        let ep = make_markdown_editor(1); // new_empty → Source (preview_mode=false)
         let badges = editor_header_badges(&ep);
         assert_eq!(badges.len(), 1);
-        assert_eq!(badges[0].text, "live");
-        assert_eq!(badges[0].action, Some(HeaderHitAction::ToggleLivePreview));
+        assert_eq!(badges[0].text, "read");
+        assert_eq!(badges[0].action, Some(HeaderHitAction::MarkdownPreview));
     }
 
     #[test]
-    fn markdown_live_preview_shows_plain_badge() {
+    fn reading_mode_badge_offers_edit() {
+        // Spec: docs/specs/markdown-reading-edit-modes.md UC-2 BR-4
         let mut ep = make_markdown_editor(1);
-        ep.live_preview = true;
+        ep.preview_mode = true;
         let badges = editor_header_badges(&ep);
         assert_eq!(badges.len(), 1);
-        assert_eq!(badges[0].text, "plain");
-        assert_eq!(badges[0].action, Some(HeaderHitAction::ToggleLivePreview));
+        assert_eq!(badges[0].text, "edit");
+        assert_eq!(badges[0].action, Some(HeaderHitAction::MarkdownPreview));
+    }
+
+    #[test]
+    fn markdown_badge_never_offers_live_preview() {
+        // Spec: docs/specs/markdown-reading-edit-modes.md UC-2 BR-6
+        let ep = make_markdown_editor(1);
+        let badges = editor_header_badges(&ep);
+        assert!(badges
+            .iter()
+            .all(|b| b.action == Some(HeaderHitAction::MarkdownPreview)));
     }
 
     #[test]
@@ -2049,7 +2062,7 @@ mod tests {
             ep.editor.buffer.file_path = Some(PathBuf::from(format!("file.{}", ext)));
             let badges = editor_header_badges(&ep);
             assert!(!badges.is_empty(), "expected badge for .{} file", ext);
-            assert_eq!(badges[0].text, "live");
+            assert_eq!(badges[0].text, "read");
         }
     }
 
@@ -2065,7 +2078,7 @@ mod tests {
 
         assert_eq!(
             badge_texts,
-            vec!["compare", "conflict", "live"],
+            vec!["compare", "conflict", "read"],
             "attention state should outrank mode state in the shared badge order"
         );
     }
@@ -2081,8 +2094,8 @@ mod tests {
 
         assert_eq!(
             badge_texts,
-            vec!["live", "comment"],
-            "active markdown chrome should keep the live/plain switch ahead of add-comment affordances"
+            vec!["read", "comment"],
+            "active markdown chrome should keep the read/edit switch ahead of add-comment affordances"
         );
     }
 
