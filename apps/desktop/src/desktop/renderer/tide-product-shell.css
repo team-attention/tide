@@ -3326,6 +3326,12 @@ button {
 }
 .workbench-browser-bar__to-chat svg { color: var(--tide-muted); }
 .workbench-browser-bar__to-chat:hover { background: var(--tide-selection); }
+.workbench-browser-bar__to-chat[data-active="true"] {
+  border-color: var(--tide-action, var(--tide-text));
+  background: var(--tide-action, var(--tide-text));
+  color: #fff;
+}
+.workbench-browser-bar__to-chat[data-active="true"] svg { color: #fff; }
 
 .workbench-browser-webview {
   display: flex;

@@ -4,6 +4,7 @@ import {
   Check,
   ChevronRight,
   CornerDownRight,
+  Crosshair,
   ExternalLink,
   FileText,
   Folder,
@@ -2414,6 +2415,26 @@ function launcherActionIcon(actionId: string): ReactElement {
   }
 }
 
+// Injected into the Browser Pane's <webview> to run a devtools-style element
+// picker: highlight the element under the cursor, capture it on click into
+// `window.__tideElementPick`, and expose `window.__tideCancelPick` to tear down.
+const BROWSER_ELEMENT_PICKER_SCRIPT = `(() => {
+  if (window.__tidePickerActive) return;
+  window.__tidePickerActive = true;
+  window.__tideElementPick = null;
+  var style = document.createElement('style');
+  style.id = '__tidePickerStyle';
+  style.textContent = '.__tidePickHover{outline:2px solid #4c8bf5 !important;outline-offset:1px;background:rgba(76,139,245,0.08) !important;cursor:crosshair !important;}';
+  document.documentElement.appendChild(style);
+  var last = null;
+  function over(e){ if(last){last.classList.remove('__tidePickHover');} last=e.target; if(last&&last.classList){last.classList.add('__tidePickHover');} }
+  function click(e){ e.preventDefault(); e.stopPropagation(); var el=e.target; var text=(el.innerText||el.textContent||'').trim().slice(0,3000); var tag=(el.tagName||'element').toLowerCase(); window.__tideElementPick={text:text,tag:tag}; cleanup(); }
+  function cleanup(){ if(last){last.classList.remove('__tidePickHover');} document.removeEventListener('mouseover',over,true); document.removeEventListener('click',click,true); var s=document.getElementById('__tidePickerStyle'); if(s){s.remove();} window.__tidePickerActive=false; }
+  window.__tideCancelPick=cleanup;
+  document.addEventListener('mouseover',over,true);
+  document.addEventListener('click',click,true);
+})()`;
+
 function WorkbenchBrowserPane(props: {
   pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;
   handlers: ProductShellHandlers;
@@ -2425,6 +2446,52 @@ function WorkbenchBrowserPane(props: {
   // <webview> is isolated, so we poll its selection + bounding rect and map it
   // into host coordinates. This is distinct from the address-bar "Add page".
   const [browserSelToolbar, setBrowserSelToolbar] = useState<{ x: number; y: number; text: string } | null>(null);
+  // Element-picker mode: a devtools-style "select a component/block" engine — the
+  // page highlights the element under the cursor and a click attaches it.
+  const [pickMode, setPickMode] = useState(false);
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (webview?.executeJavaScript === undefined) {
+      return undefined;
+    }
+    if (!pickMode) {
+      void webview.executeJavaScript("window.__tideCancelPick && window.__tideCancelPick()").catch(() => {});
+      return undefined;
+    }
+    void webview.executeJavaScript(BROWSER_ELEMENT_PICKER_SCRIPT).catch(() => {});
+    let cancelled = false;
+    const poll = window.setInterval(() => {
+      void webview
+        .executeJavaScript?.("(() => { const p = window.__tideElementPick; window.__tideElementPick = null; return p || null; })()")
+        .then((result) => {
+          if (cancelled || result === null || typeof result !== "object") {
+            return;
+          }
+          const record = result as Record<string, unknown>;
+          const text = typeof record.text === "string" ? record.text : "";
+          const tag = typeof record.tag === "string" ? record.tag : "element";
+          const url = props.pane.url ?? address;
+          const title = props.pane.title && props.pane.title !== "Browser" ? props.pane.title : url;
+          const oneLine = text.trim().replace(/\s+/g, " ");
+          props.handlers.onAddContentToChat({
+            kind: "browser",
+            label: `<${tag}> ${oneLine.slice(0, 34)}${oneLine.length > 34 ? "…" : ""}`,
+            text: `From [${title}](${url}) — \`<${tag}>\`:\n\n${text
+              .trim()
+              .split("\n")
+              .map((line) => `> ${line}`)
+              .join("\n")}`,
+          });
+          setPickMode(false);
+        })
+        .catch(() => {});
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+      void webview.executeJavaScript?.("window.__tideCancelPick && window.__tideCancelPick()").catch(() => {});
+    };
+  }, [pickMode, props.pane.paneId]);
   useEffect(() => {
     const webview = webviewRef.current;
     if (webview?.executeJavaScript === undefined) {
@@ -2616,6 +2683,20 @@ function WorkbenchBrowserPane(props: {
         },
         createElement(FileText, { size: 13, strokeWidth: 1.8, "aria-hidden": true }),
         "Add page",
+      ),
+      createElement(
+        "button",
+        {
+          type: "button",
+          className: "workbench-browser-bar__to-chat",
+          "data-active": pickMode ? "true" : "false",
+          title: pickMode ? "Cancel element pick" : "Pick an element/component to add to chat",
+          "aria-label": "Pick an element to add to chat",
+          "aria-pressed": pickMode,
+          onClick: () => setPickMode((prev) => !prev),
+        },
+        createElement(Crosshair, { size: 13, strokeWidth: 1.8, "aria-hidden": true }),
+        pickMode ? "Cancel" : "Pick element",
       ),
     ),
     createElement("webview", {
