@@ -931,11 +931,9 @@ export function createLiveAgentSessionEventProjector(input: {
       }
     };
 
-    // The agent answer is rendered from ONE source: the provider's own history
-    // (transcript/rollout) via the frame readers in emitClaudeHistory/emitCodexHistory/
-    // emitAntigravityHistory/emitGeminiHistory. The turn-end path does NOT ingest the
-    // answer (that produced the reply twice) — it only surfaces a `notice` when the
-    // turn ended with no usable answer (e.g. out of credits), then settles.
+    if (args.outcome.finalMessage !== undefined) {
+      await ingest("message", args.outcome.finalMessage);
+    }
     if (args.outcome.notice !== undefined) {
       await ingest("notice", args.outcome.notice.message);
     }
@@ -1259,6 +1257,9 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
+        if (isDuplicateAgentMessageUpdate(update, nextBlocks)) {
+          continue;
+        }
         await recordBlockUpdateInThreadCache(input.persistence, service, update);
         emitBlockUpdate({
           update,
@@ -1346,6 +1347,10 @@ export function createLiveAgentSessionEventProjector(input: {
       agentId: "claude",
       transcriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
+    if (historyFrames.length === 0) {
+      return;
+    }
+
     const nextBlocks = new Map(
       (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [
         block.blockId,
@@ -1376,6 +1381,14 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
+        // The turn-end hook may already have ingested the final answer (from its
+        // last_assistant_message) as an agent_message block; the transcript then yields
+        // the SAME answer under a different blockId. Skip it so the reply is not shown
+        // twice. (The reverse — hook deduping against the transcript — already happens
+        // in ingestTurnOutcomeAndSettle.)
+        if (isDuplicateAgentMessageUpdate(update, nextBlocks)) {
+          continue;
+        }
         await recordBlockUpdateInThreadCache(input.persistence, service, update);
         emitBlockUpdate({
           update,
@@ -1389,18 +1402,6 @@ export function createLiveAgentSessionEventProjector(input: {
         onEvent: input.onEvent,
       });
     }
-    // Authoritative claude turn-end from its own transcript (an assistant message with
-    // stop_reason "end_turn"), uniform with codex's rollout and antigravity's
-    // transcript. The answer is already rendered from the transcript frames above; this
-    // only settles. No hook, no finalMessage, no dedup.
-    await settleFromHistory({
-      threadId: frameInput.threadId,
-      agentId: "claude",
-      runtimeId: frameInput.runtimeId,
-      boundPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
-      expectedUserMessage,
-      nextBlocks,
-    });
     blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
   };
 
@@ -1483,6 +1484,9 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
+        if (isDuplicateAgentMessageUpdate(update, nextBlocks)) {
+          continue;
+        }
         await recordBlockUpdateInThreadCache(input.persistence, service, update);
         emitBlockUpdate({
           update,
@@ -1576,70 +1580,6 @@ export function createLiveAgentSessionEventProjector(input: {
     const nextBlocks = new Map(
       (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [block.blockId, block]),
     );
-    // Render gemini's answer from its OWN session JSONL (`gemini` records), the single
-    // content source — uniform with codex/claude reading their own history. No
-    // finalMessage, no dedup.
-    const sessionTail = readBoundedTail(boundPath, 256 * 1024);
-    if (sessionTail !== undefined) {
-      for (const line of sessionTail.split(/\r?\n/)) {
-        if (line.trim().length === 0) {
-          continue;
-        }
-        let record: Record<string, unknown> | undefined;
-        try {
-          const parsed: unknown = JSON.parse(line);
-          record =
-            parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-              ? (parsed as Record<string, unknown>)
-              : undefined;
-        } catch {
-          continue;
-        }
-        if (record?.type !== "gemini" || typeof record.content !== "string") {
-          continue;
-        }
-        const body = record.content.trim();
-        if (body.length === 0) {
-          continue;
-        }
-        const key = `gemini-msg:${typeof record.id === "string" ? record.id : body.slice(0, 48)}`;
-        if (historyState.seenKeys.has(key)) {
-          continue;
-        }
-        historyState.seenKeys.add(key);
-        let hash = 5381;
-        for (let i = 0; i < body.length; i += 1) {
-          hash = ((hash << 5) + hash + body.charCodeAt(i)) | 0;
-        }
-        const blockId = `provider:${frameInput.threadId}:gemini:${(hash >>> 0).toString(36)}`;
-        const frame = await service.appendRawAgentFrame({
-          threadId: frameInput.threadId,
-          agentId: "gemini",
-          source: "provider_history",
-          sourceRef: blockId,
-          payloadKind: "provider_record",
-          payload: {
-            type: "message",
-            role: "agent",
-            status: "complete",
-            blockId,
-            body,
-            sourceRuntimeId: frameInput.runtimeId,
-          },
-          body,
-        });
-        const result = reader.read({
-          thread: hydrated.thread,
-          agentBinding: hydrated.thread.agentBinding,
-          frames: [frame],
-          existingBlocks: [...nextBlocks.values()],
-        });
-        for (const update of result.blockUpdates) {
-          await recordBlockUpdateInThreadCache(input.persistence, service, update);
-          emitBlockUpdate({ update, blocks: nextBlocks, onEvent: input.onEvent });
-        }
-      }
-    }
     await settleFromHistory({
       threadId: frameInput.threadId,
       agentId: "gemini",
@@ -1950,6 +1890,34 @@ function emitBlockUpdate(input: {
       }),
     );
   }
+}
+
+// True when this block update would render an agent_message identical to one already
+// present under a different blockId — i.e. the same final answer produced by both the
+// turn-end hook (last_assistant_message) and the provider transcript. Used to keep the
+// reply from appearing twice.
+function isDuplicateAgentMessageUpdate(
+  update: AgentSessionBlockUpdate,
+  existing: Map<string, AgentSessionBlock>,
+): boolean {
+  if (update.kind !== "upsert" || update.block.kind !== "agent_message") {
+    return false;
+  }
+  const body = typeof update.block.body === "string" ? update.block.body.trim() : "";
+  if (body.length === 0) {
+    return false;
+  }
+  for (const other of existing.values()) {
+    if (
+      other.blockId !== update.block.blockId &&
+      other.kind === "agent_message" &&
+      typeof other.body === "string" &&
+      other.body.trim() === body
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function recordBlockUpdateInThreadCache(
