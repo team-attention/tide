@@ -2648,6 +2648,33 @@ function WorkbenchCodeEditor(props: {
       label,
     );
 
+  // Cmd/Ctrl+click a symbol → jump to its definition (VS Code parity). Sets the
+  // caret to the clicked token, then runs go-to-definition on it.
+  const onCmdClick = (event: {
+    metaKey: boolean;
+    ctrlKey: boolean;
+    button: number;
+    clientX: number;
+    clientY: number;
+    preventDefault: () => void;
+  }) => {
+    if ((!event.metaKey && !event.ctrlKey) || event.button !== 0) {
+      return;
+    }
+    const view = editorRef.current?.view;
+    if (!view) {
+      return;
+    }
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+    if (pos === null || pos === undefined) {
+      return;
+    }
+    event.preventDefault();
+    view.dispatch({ selection: { anchor: pos } });
+    props.handlers.onEditorCursorChange(props.paneId, pos);
+    props.handlers.onEditorGoToDefinition(props.paneId);
+  };
+
   return createElement(
     "div",
     {
@@ -2656,6 +2683,7 @@ function WorkbenchCodeEditor(props: {
       "data-editor-language": props.language,
       "data-navigation-target": nav?.label,
       onContextMenu: openContextMenu,
+      onMouseDownCapture: onCmdClick,
     },
     createElement(CodeMirror, {
       ref: editorRef,
