@@ -670,8 +670,7 @@ button {
 
 .project-row__title,
 .thread-row__title,
-.file-tree-row span,
-.workbench-tab {
+.file-tree-row span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

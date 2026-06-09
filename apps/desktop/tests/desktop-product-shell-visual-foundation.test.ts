@@ -2472,7 +2472,9 @@ test("left_ui_context_menus_match_figma_items_and_keep_rows_highlighted", () => 
   assert.match(projectHtml, /Create permanent worktree/);
   assert.match(projectHtml, /Rename project/);
   assert.match(projectHtml, /Archive chats/);
-  assert.match(projectHtml, /Remove/);
+  // "tide" has threads, so it can't be removed from the sidebar (it would be
+  // re-derived) — Remove is hidden; Archive chats is the way to clear it.
+  assert.doesNotMatch(projectHtml, /Remove from sidebar/);
 });
 
 function renderProductShell(state = createProductShellState()): string {

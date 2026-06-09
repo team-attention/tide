@@ -421,6 +421,10 @@ interface ProductShellHandlers {
   onProjectArchiveChats: (projectId: string) => void;
   onProjectRemove: (projectId: string) => void;
   onProjectDeleteWorktree: (projectId: string) => void;
+  // A project that still has threads can't be "removed" (it's re-derived from
+  // those threads) — so the menu only offers Remove when this returns true.
+  isProjectRemovable: (projectId: string) => boolean;
+  isProjectWorktree: (projectId: string) => boolean;
   onProjectPinToggle: (projectId: string) => void;
   onProjectRenameStart: (projectId: string) => void;
   onProjectRenameSubmit: (projectId: string, name: string) => void;
@@ -1455,6 +1459,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         .then((result) => setShellState((state) => setProductShellRegisteredProjects(state, result.entries)))
         .catch(() => {});
     },
+    isProjectRemovable: (projectId) =>
+      !shellState.threads.some(
+        (thread) => thread.scope.kind === "project" && thread.scope.projectId === projectId,
+      ),
+    isProjectWorktree: (projectId) => worktreeRepoRootForCwd(projectId) !== null,
     onProjectPinToggle: (projectId) =>
       setShellState((state) => toggleProductShellProjectPin(state, projectId)),
     onProjectRenameStart: (projectId) =>
@@ -2149,6 +2158,15 @@ function createWorkbenchColumn(
                   "data-kind": tab.kind,
                   role: "tab",
                   "aria-selected": tab.active,
+                  // Keep the active tab (with its close button) fully in view when
+                  // the strip overflows.
+                  ref: tab.active
+                    ? (el: HTMLElement | null) => {
+                        if (typeof el?.scrollIntoView === "function") {
+                          el.scrollIntoView({ inline: "nearest", block: "nearest" });
+                        }
+                      }
+                    : undefined,
                 },
                 createElement(
                   "button",
@@ -4230,7 +4248,7 @@ function createLeftUiContextMenu(
             icon: createElement(Archive, { size: 16, strokeWidth: 1.9 }),
             onClick: () => handlers.onProjectArchiveChats(menu.projectId),
           },
-          ...(worktreeRepoRootForCwd(menu.projectId) !== null
+          ...(handlers.isProjectWorktree(menu.projectId)
             ? [
                 {
                   label: "Delete worktree",
@@ -4239,14 +4257,16 @@ function createLeftUiContextMenu(
                   danger: true,
                 } satisfies ContextMenuItem,
               ]
-            : [
+            : handlers.isProjectRemovable(menu.projectId)
+            ? [
                 {
-                  label: "Remove",
+                  label: "Remove from sidebar",
                   icon: createElement(Trash2, { size: 16, strokeWidth: 1.9 }),
                   onClick: () => handlers.onProjectRemove(menu.projectId),
                   danger: true,
                 } satisfies ContextMenuItem,
-              ]),
+              ]
+            : []),
         ];
 
   return createElement(
