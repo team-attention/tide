@@ -78,6 +78,7 @@ export interface AgentChatShellProps {
   }) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
   onRemoveContextChip?: (id: string) => void;
+  onSetContextChipComment?: (id: string, comment: string) => void;
 }
 
 // A chip's screen rectangle, captured when it is clicked so the dropdown can
@@ -164,6 +165,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     onAddAttachment: props.onAddAttachment,
     onRemoveAttachment: props.onRemoveAttachment,
     onRemoveContextChip: props.onRemoveContextChip,
+    onSetContextChipComment: props.onSetContextChipComment,
     onPreviewAttachment: (previewUrl: string) => setImagePreview(previewUrl),
     inputRef: composerInputRef,
   };
@@ -390,6 +392,7 @@ interface ComposerHandlers {
   onInterrupt?: () => void;
   onEditQueued?: () => void;
   onRemoveContextChip?: (id: string) => void;
+  onSetContextChipComment?: (id: string, comment: string) => void;
   onComposerSurfaceChange?: (surface: AgentChatComposerSurfaceKind | null) => void;
   onOpenSurface?: (surface: AgentChatComposerSurfaceKind, rect: AnchorRect) => void;
   onChoiceSurfaceRowSelect?: (
@@ -1500,26 +1503,40 @@ function createComposer(
             { className: "composer-shell__chips" },
             viewModel.composer.contextChips.map((chip) =>
               createElement(
-                "span",
-                { key: chip.id, className: `composer-chip composer-chip--${chip.kind}` },
-                createElement(contextChipIcon(chip.kind), {
-                  size: 12,
-                  strokeWidth: 1.9,
-                  className: "composer-chip__icon",
-                  "aria-hidden": true,
-                }),
-                createElement("span", { className: "composer-chip__label" }, chip.label),
+                "div",
+                { key: chip.id, className: `composer-chip-card composer-chip-card--${chip.kind}` },
                 createElement(
-                  "button",
-                  {
-                    type: "button",
-                    className: "composer-chip__remove",
-                    title: "Remove",
-                    "aria-label": `Remove ${chip.label}`,
-                    onClick: () => handlers.onRemoveContextChip?.(chip.id),
-                  },
-                  createElement(X, { size: 11, strokeWidth: 2.4, "aria-hidden": true }),
+                  "div",
+                  { className: "composer-chip-card__head" },
+                  createElement(contextChipIcon(chip.kind), {
+                    size: 13,
+                    strokeWidth: 1.9,
+                    className: "composer-chip-card__icon",
+                    "aria-hidden": true,
+                  }),
+                  createElement("span", { className: "composer-chip-card__label" }, chip.label),
+                  createElement("span", { className: "composer-chip-card__kind" }, chip.kind),
+                  createElement(
+                    "button",
+                    {
+                      type: "button",
+                      className: "composer-chip-card__remove",
+                      title: "Remove",
+                      "aria-label": `Remove ${chip.label}`,
+                      onClick: () => handlers.onRemoveContextChip?.(chip.id),
+                    },
+                    createElement(X, { size: 12, strokeWidth: 2.4, "aria-hidden": true }),
+                  ),
                 ),
+                createElement("input", {
+                  className: "composer-chip-card__comment",
+                  placeholder: "Comment on this selection… (optional)",
+                  value: chip.comment,
+                  spellCheck: false,
+                  "aria-label": `Comment for ${chip.label}`,
+                  onChange: (event: ChangeEvent<HTMLInputElement>) =>
+                    handlers.onSetContextChipComment?.(chip.id, event.currentTarget.value),
+                }),
               ),
             ),
           )

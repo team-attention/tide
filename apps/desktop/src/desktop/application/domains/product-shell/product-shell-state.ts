@@ -14,6 +14,7 @@ import {
   removeComposerAttachment,
   addComposerContextChip,
   removeComposerContextChip,
+  setComposerContextChipComment,
   type AgentChatComposerAttachment,
   type AgentChatContextChip,
   type AgentChatBackendCommand,
@@ -1516,6 +1517,17 @@ export function removeProductShellComposerContextChip(
   return {
     ...state,
     agentChat: removeComposerContextChip(state.agentChat, chipId).state,
+  };
+}
+
+export function setProductShellComposerContextChipComment(
+  state: ProductShellState,
+  chipId: string,
+  comment: string,
+): ProductShellState {
+  return {
+    ...state,
+    agentChat: setComposerContextChipComment(state.agentChat, chipId, comment).state,
   };
 }
 

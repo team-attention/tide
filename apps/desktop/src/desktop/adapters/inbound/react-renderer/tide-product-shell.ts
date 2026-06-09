@@ -142,6 +142,7 @@ import {
   updateProductShellComposerDraft,
   addProductShellComposerContextChip,
   removeProductShellComposerContextChip,
+  setProductShellComposerContextChipComment,
   writeProductShellTerminalInput,
   resizeProductShellTerminal,
   setProductShellListSettings,
@@ -393,6 +394,7 @@ interface ProductShellHandlers {
   // quoted message) to the composer as a removable chip.
   onAddContentToChat: (chip: { kind: "code" | "terminal" | "browser" | "message"; label: string; text: string }) => void;
   onRemoveContextChip: (id: string) => void;
+  onSetContextChipComment: (id: string, comment: string) => void;
   onSubmit: () => void;
   onInterrupt: () => void;
   onEditQueued: () => void;
@@ -1278,6 +1280,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       ),
     onRemoveContextChip: (id) =>
       setShellState((state) => removeProductShellComposerContextChip(state, id)),
+    onSetContextChipComment: (id, comment) =>
+      setShellState((state) => setProductShellComposerContextChipComment(state, id, comment)),
     onSubmit: () => {
       // Throttle to swallow accidental double-clicks / double Enter so the same
       // draft is never submitted twice in quick succession.
@@ -2109,6 +2113,7 @@ function createAgentChatColumn(
       onAddAttachment: handlers.onAddAttachment,
       onRemoveAttachment: handlers.onRemoveAttachment,
       onRemoveContextChip: handlers.onRemoveContextChip,
+      onSetContextChipComment: handlers.onSetContextChipComment,
     }),
   );
 }
@@ -2534,30 +2539,66 @@ function WorkbenchBrowserPane(props: {
         {
           type: "button",
           className: "workbench-browser-bar__to-chat",
-          title: "Add page to chat",
-          "aria-label": "Add this page to chat",
+          title: "Add selection (or page) to chat",
+          "aria-label": "Add browser selection or page to chat",
           onClick: () => {
             const url = props.pane.url ?? address;
             if (url.length === 0) {
               return;
             }
             const title = props.pane.title && props.pane.title !== "Browser" ? props.pane.title : url;
-            const add = (body: string) =>
+            const webview = webviewRef.current;
+            // Prefer the user's in-page text selection; fall back to the whole page.
+            const selectionScript =
+              "(() => { const s = (window.getSelection && window.getSelection().toString()) || ''; const el = window.getSelection && window.getSelection().anchorNode; const tag = el && (el.parentElement ? el.parentElement.tagName : (el.tagName||'')); return { text: s, tag: (tag||'').toLowerCase() }; })()";
+            const addSelection = (sel: string, tag: string) => {
+              const quoted = sel
+                .trim()
+                .split("\n")
+                .map((line) => `> ${line}`)
+                .join("\n");
+              const tagLabel = tag.length > 0 ? `<${tag}> ` : "";
               props.handlers.onAddContentToChat({
                 kind: "browser",
-                label: title.length > 40 ? `${title.slice(0, 40)}…` : title,
-                text: body,
+                label: `${tagLabel}${sel.trim().slice(0, 36)}${sel.trim().length > 36 ? "…" : ""}`,
+                text: `From [${title}](${url}):\n\n${quoted}`,
               });
-            const webview = webviewRef.current;
-            if (webview !== null) {
-              void readBrowserWebViewSnapshot(webview)
-                .then((snapshot) => {
-                  const excerpt = (snapshot.bodyTextPreview ?? "").trim().slice(0, 2000);
-                  add(`[${title}](${url})${excerpt.length > 0 ? `\n\n${excerpt}` : ""}`);
+            };
+            const addPage = () => {
+              const label = title.length > 40 ? `${title.slice(0, 40)}…` : title;
+              if (webview !== null) {
+                void readBrowserWebViewSnapshot(webview)
+                  .then((snapshot) => {
+                    const excerpt = (snapshot.bodyTextPreview ?? "").trim().slice(0, 2000);
+                    props.handlers.onAddContentToChat({
+                      kind: "browser",
+                      label,
+                      text: `[${title}](${url})${excerpt.length > 0 ? `\n\n${excerpt}` : ""}`,
+                    });
+                  })
+                  .catch(() =>
+                    props.handlers.onAddContentToChat({ kind: "browser", label, text: `[${title}](${url})` }),
+                  );
+              } else {
+                props.handlers.onAddContentToChat({ kind: "browser", label, text: `[${title}](${url})` });
+              }
+            };
+            if (webview?.executeJavaScript !== undefined) {
+              void webview
+                .executeJavaScript(selectionScript)
+                .then((result) => {
+                  const record = result !== null && typeof result === "object" ? (result as Record<string, unknown>) : {};
+                  const text = typeof record.text === "string" ? record.text : "";
+                  const tag = typeof record.tag === "string" ? record.tag : "";
+                  if (text.trim().length > 0) {
+                    addSelection(text, tag);
+                  } else {
+                    addPage();
+                  }
                 })
-                .catch(() => add(`[${title}](${url})`));
+                .catch(() => addPage());
             } else {
-              add(`[${title}](${url})`);
+              addPage();
             }
           },
         },

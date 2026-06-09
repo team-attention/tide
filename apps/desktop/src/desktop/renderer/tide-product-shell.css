@@ -2595,45 +2595,63 @@ button {
   gap: 8px;
 }
 
-/* Attached content references (code selection, terminal output, …): removable
-   chips above the composer input. */
+/* Attached content references (code selection, terminal output, browser page,
+   quoted message): each is a card with a per-region comment input, sitting above
+   the general message input so the two are clearly distinct. */
 .composer-shell__chips {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
 }
 
-.composer-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 240px;
-  padding: 3px 4px 3px 8px;
+.composer-chip-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 8px 8px;
   border: 1px solid var(--tide-line);
+  border-left: 2px solid var(--tide-line-strong, var(--tide-muted));
   border-radius: 8px;
   background: var(--tide-surface);
-  color: var(--tide-text);
-  font-size: 12px;
-  line-height: 16px;
 }
 
-.composer-chip__icon { flex: 0 0 auto; color: var(--tide-muted); }
+.composer-chip-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
-.composer-chip__label {
+.composer-chip-card__icon { flex: 0 0 auto; color: var(--tide-muted); }
+
+.composer-chip-card__label {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 500;
+  color: var(--tide-text);
+  font-size: 12.5px;
+  font-weight: 600;
 }
 
-.composer-chip__remove {
+.composer-chip-card__kind {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--tide-bg);
+  color: var(--tide-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.composer-chip-card__remove {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border: 0;
   border-radius: 5px;
   background: transparent;
@@ -2641,11 +2659,17 @@ button {
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
+.composer-chip-card__remove:hover { background: var(--tide-selection); color: var(--tide-text); }
 
-.composer-chip__remove:hover {
-  background: var(--tide-selection);
+.composer-chip-card__comment {
+  width: 100%;
+  border: 0;
+  background: transparent;
   color: var(--tide-text);
+  font-size: 12.5px;
+  outline: none;
 }
+.composer-chip-card__comment::placeholder { color: var(--tide-muted); }
 
 .composer-shell__attachment {
   position: relative;

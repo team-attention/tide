@@ -113,6 +113,9 @@ export interface AgentChatContextChip {
   kind: AgentChatContextChipKind;
   label: string;
   text: string;
+  // An optional note the user attaches specifically to this region/selection,
+  // distinct from the general message.
+  comment?: string;
 }
 
 // The wire shape carried in a BackendCommand (no renderer-only `id`). Matches the
@@ -369,6 +372,7 @@ export interface AgentChatContextChipView {
   id: string;
   kind: AgentChatContextChipKind;
   label: string;
+  comment: string;
 }
 
 export interface AgentChatContextItem {
@@ -519,6 +523,25 @@ export function removeComposerContextChip(
       composer: {
         ...state.composer,
         contextChips: state.composer.contextChips.filter((chip) => chip.id !== chipId),
+      },
+    },
+    command: null,
+  };
+}
+
+export function setComposerContextChipComment(
+  state: AgentChatShellState,
+  chipId: string,
+  comment: string,
+): AgentChatShellUpdateResult {
+  return {
+    state: {
+      ...state,
+      composer: {
+        ...state.composer,
+        contextChips: state.composer.contextChips.map((chip) =>
+          chip.id === chipId ? { ...chip, comment } : chip,
+        ),
       },
     },
     command: null,
@@ -749,6 +772,14 @@ function generateThreadId(): string {
   return `id-${random.slice(0, 12)}`;
 }
 
+// Formats an attached content chip into the outgoing message: a labeled header,
+// the user's per-region note (if any), then the referenced content.
+function formatContextChipForMessage(chip: AgentChatContextChip): string {
+  const head = `**↳ ${chip.label}**`;
+  const note = chip.comment && chip.comment.trim().length > 0 ? `\n${chip.comment.trim()}` : "";
+  return `${head}${note}\n\n${chip.text}`;
+}
+
 export function submitComposer(
   state: AgentChatShellState,
 ): AgentChatShellUpdateResult {
@@ -763,7 +794,7 @@ export function submitComposer(
   const input =
     chips.length === 0
       ? draft
-      : `${chips.map((chip) => chip.text).join("\n\n")}${draft.length > 0 ? `\n\n${draft}` : ""}`;
+      : `${chips.map(formatContextChipForMessage).join("\n\n")}${draft.length > 0 ? `\n\n${draft}` : ""}`;
 
   if (state.promptState) {
     return {
@@ -1061,6 +1092,7 @@ export function createAgentChatShellViewModel(
         id: chip.id,
         kind: chip.kind,
         label: chip.label,
+        comment: chip.comment ?? "",
       })),
     },
     workbenchOpen: state.workbenchOpen,
