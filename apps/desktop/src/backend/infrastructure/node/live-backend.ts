@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   closeSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -408,6 +409,17 @@ function createPersistentLiveBackendAdapter(input: {
             seed.cachedBlocks = hydrated.value.blocks;
           }
         }
+        // A thread whose worktree/project directory was deleted is "tangled": its
+        // files and new runs can't work. Surface a clear notice at the top so
+        // opening it explains the state instead of silently failing.
+        const threadCwd =
+          record.scope.kind === "project" ? record.scope.cwd : undefined;
+        if (threadCwd !== undefined && !existsSync(threadCwd)) {
+          seed.cachedBlocks = [
+            worktreeMissingBlock(record.threadId, record.agentBinding.agentId, threadCwd),
+            ...(seed.cachedBlocks ?? []),
+          ];
+        }
         return seed;
       }),
     );
@@ -650,6 +662,29 @@ export function threadSeedFromStorageRecord(record: ThreadStorageRecord): Thread
 
 
 
+
+// A synthetic top-of-thread notice for a thread whose worktree/project directory
+// no longer exists on disk (e.g. the worktree was deleted) — the "tangled" state.
+function worktreeMissingBlock(
+  threadId: string,
+  agentId: AgentSessionBlock["agentId"],
+  cwd: string,
+): AgentSessionBlock {
+  const now = new Date().toISOString();
+  return {
+    blockId: `worktree-missing:${threadId}`,
+    threadId,
+    agentId,
+    kind: "error",
+    role: "system",
+    sourceFrameIds: [],
+    status: "failed",
+    title: "Worktree unavailable",
+    body: `⚠ This thread's working directory is gone:\n\`${cwd}\`\n\nIts worktree was likely removed, so files and new runs can't be shown here. Re-create the worktree at that path, or start a new thread.`,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
 
 // Extracts plain text from a provider message `content` (string or content-part array).
 
