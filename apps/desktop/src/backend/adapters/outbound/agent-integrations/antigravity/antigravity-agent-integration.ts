@@ -1,4 +1,5 @@
 import type {
+  AgentTurnOutcome,
   AgentIntegrationCapabilities,
   AgentIntegrationPort,
   AgentIntegrationPreflightInput,
@@ -12,6 +13,7 @@ import type {
   ProviderSignalSource,
   RuntimeReadinessGate,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
+import { antigravityTurnOutcomeFromTranscript } from "./antigravity-transcript-turn-detection.ts";
 import type { PromptState, ThreadScope } from "../../../../application/domains/thread/thread.ts";
 
 export interface AntigravityProviderState {
@@ -217,8 +219,17 @@ class AntigravityAgentIntegration implements AgentIntegrationPort {
     return { kind: "immediate" };
   }
 
-  turnEndSignalEvents(): readonly string[] {
-    return ["agent-idle"];
+  turnEndFromHook(): AgentTurnOutcome | null {
+    // Antigravity fires no turn-end hook; its turn boundary is read from the
+    // transcript (turnEndFromHistory).
+    return null;
+  }
+
+  turnEndFromHistory(
+    transcriptTailText: string,
+    expectedUserMessage: string | undefined,
+  ): AgentTurnOutcome | null {
+    return antigravityTurnOutcomeFromTranscript(transcriptTailText, expectedUserMessage);
   }
 
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {

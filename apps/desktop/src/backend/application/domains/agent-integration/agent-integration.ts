@@ -103,6 +103,24 @@ export interface AgentPromptSignalInput {
   text?: string;
 }
 
+// A user-facing notice surfaced when a turn ended WITHOUT a usable answer (rate
+// limit / out of credits / empty output / error), so the UI shows why instead of a
+// silent empty turn. Rendered as an `error` Agent Session block.
+export interface AgentTurnNotice {
+  severity: "warning" | "error";
+  message: string;
+}
+
+// The normalized outcome of a finished turn, produced uniformly by every Agent
+// Integration from its own signals (claude/codex hook payload, codex rollout,
+// antigravity transcript). The shared runtime applies it identically: ingest
+// `finalMessage` as the agent answer (deduped by content) and/or `notice` as an
+// error block, then settle the turn.
+export interface AgentTurnOutcome {
+  finalMessage?: string;
+  notice?: AgentTurnNotice;
+}
+
 export interface AgentIntegrationPort {
   preflight(
     input: AgentIntegrationPreflightInput,
@@ -110,11 +128,21 @@ export interface AgentIntegrationPort {
   buildStartPlan(input: AgentStartPlanInput): Promise<ProviderLaunchPlan>;
   buildResumePlan(input: AgentResumePlanInput): Promise<ProviderLaunchPlan>;
   detectPromptState(input: AgentPromptSignalInput): PromptState | null;
-  // The provider-hook event names that mean "the current turn has ended". This
-  // is provider lifecycle knowledge and lives in the Agent Integration, not in
-  // shared infrastructure. codex forwards "codex-stop"; claude and antigravity
-  // forward "agent-idle". See docs_v2/specs/agent-runtime-event-spine.md.
-  turnEndSignalEvents(): readonly string[];
+  // Turn-end detected from a runtime-keyed provider hook frame. Returns the turn's
+  // outcome (final answer and/or a user-facing notice) when THIS hook event ends the
+  // current turn, or null when it does not. Provider lifecycle knowledge lives in the
+  // adapter: claude/codex read the final answer (and credit/rate-limit state) from
+  // the hook payload; antigravity has no turn-end hook and returns null here.
+  turnEndFromHook(eventName: string, payload: unknown): AgentTurnOutcome | null;
+  // Turn-end detected from the provider's OWN history tail (codex rollout,
+  // antigravity transcript), scoped to the current turn's user message. Returns the
+  // outcome when the turn has ended, or null when it has not. claude is hook-driven
+  // and returns null here. This is the binding-independent fallback that also carries
+  // a notice (e.g. "out of credits") when the turn ended with no usable answer.
+  turnEndFromHistory(
+    historyTailText: string,
+    expectedUserMessage: string | undefined,
+  ): AgentTurnOutcome | null;
   // When the runtime is ready to receive its FIRST user turn. The first prompt is
   // delivered through one shared path gated by this, never via launch argv. CLIs
   // that attach the Tide MCP server must wait for its tool-surface handshake so the

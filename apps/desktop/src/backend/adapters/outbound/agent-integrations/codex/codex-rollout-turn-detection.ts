@@ -10,6 +10,8 @@
 // turn's completion cannot end this one early. No regex / free-text matching.
 // See docs_v2/specs/agent-runtime-event-spine.md.
 
+import type { AgentTurnOutcome } from "../../../../application/ports/outbound/agent-integration-port.ts";
+
 export type CodexTurnEndReason = "completed" | "aborted";
 
 export interface CodexTurnEndDetection {
@@ -65,6 +67,67 @@ export function codexRolloutTurnEnded(
   expectedUserMessage: string | undefined,
 ): boolean {
   return detectCodexRolloutTurnEnd(rolloutTailText, expectedUserMessage).ended;
+}
+
+// Uniform turn outcome from the codex rollout: the final answer if codex produced
+// one, otherwise a user-facing notice explaining why it did not (aborted, or
+// out-of-credits / rate-limited — codex finishes an empty turn in ~2s with
+// `task_complete.last_agent_message: null` and `token_count.rate_limits.credits.
+// has_credits: false`). Returns null while the current turn is still running.
+export function codexTurnOutcomeFromRollout(
+  rolloutTailText: string,
+  expectedUserMessage: string | undefined,
+): AgentTurnOutcome | null {
+  const detection = detectCodexRolloutTurnEnd(rolloutTailText, expectedUserMessage);
+  if (!detection.ended) {
+    return null;
+  }
+  const lines = rolloutTailText.split(/\r?\n/);
+  let finalMessage: string | undefined;
+  let hasCredits: boolean | undefined;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const record = parseJsonObject(lines[i] ?? "");
+    if (record?.type !== "event_msg") {
+      continue;
+    }
+    const payload = recordField(record, "payload");
+    const payloadType = stringField(payload, "type");
+    if (payloadType === "task_complete" && finalMessage === undefined) {
+      finalMessage = stringField(payload, "last_agent_message");
+    }
+    if (payloadType === "token_count" && hasCredits === undefined) {
+      const credits = recordField(recordField(payload, "rate_limits"), "credits");
+      const value = credits?.["has_credits"];
+      if (typeof value === "boolean") {
+        hasCredits = value;
+      }
+    }
+    if (finalMessage !== undefined && hasCredits !== undefined) {
+      break;
+    }
+  }
+  if (finalMessage !== undefined && finalMessage.trim().length > 0) {
+    return { finalMessage };
+  }
+  if (detection.reason === "aborted") {
+    return {
+      notice: {
+        severity: "error",
+        message: "Codex turn was aborted before it produced a response.",
+      },
+    };
+  }
+  if (hasCredits === false) {
+    return {
+      notice: {
+        severity: "error",
+        message:
+          "Codex produced no response — the account is out of credits or rate-limited.",
+      },
+    };
+  }
+  // Ended with no final message and no known reason: leave any streamed content as-is.
+  return {};
 }
 
 function inputTextContentEquals(item: unknown, expectedUserMessage: string): boolean {

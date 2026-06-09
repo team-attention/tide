@@ -238,8 +238,26 @@ test("antigravity_provider_specific_agent_integration_stays_under_backend_adapte
   );
 });
 
-test("antigravity_declares_its_own_turn_end_hook_event", () => {
-  assert.deepEqual(antigravityIntegration().turnEndSignalEvents(), ["agent-idle"]);
+test("antigravity_turn_end_from_transcript_terminal_planner_response", () => {
+  const integration = antigravityIntegration();
+  // Antigravity has no turn-end hook; its turn-end + final answer come from the
+  // transcript's terminal PLANNER_RESPONSE (content, no tool_calls).
+  assert.equal(integration.turnEndFromHook("agent-running", {}), null);
+  const transcript = [
+    JSON.stringify({ source: "USER", type: "USER_INPUT", content: "hi" }),
+    JSON.stringify({ source: "MODEL", type: "PLANNER_RESPONSE", content: "the reply", tool_calls: [] }),
+  ].join("\n");
+  assert.deepEqual(integration.turnEndFromHistory(transcript, undefined), {
+    finalMessage: "the reply",
+  });
+  // A PLANNER_RESPONSE that still has tool_calls is mid-turn, not the end.
+  const midTurn = JSON.stringify({
+    source: "MODEL",
+    type: "PLANNER_RESPONSE",
+    content: "calling a tool",
+    tool_calls: [{ name: "x" }],
+  });
+  assert.equal(integration.turnEndFromHistory(midTurn, undefined), null);
 });
 
 function antigravityIntegration(options: {
