@@ -1563,12 +1563,16 @@ test("workbench_diff_pane_renders_structured_unified_diff_lines", () => {
   );
   const html = renderProductShell(state);
 
-  // D4: each diff line carries a change-type tag instead of one flat <pre> block.
-  assert.match(html, /workbench-diff-line--header[\s\S]*?\+\+\+ README\.md/);
-  assert.match(html, /workbench-diff-line--hunk[\s\S]*?@@ -1,2 \+1,2 @@/);
-  assert.match(html, /workbench-diff-line--removed[\s\S]*?Old Tide/);
-  assert.match(html, /workbench-diff-line--added[\s\S]*?New Tide/);
-  assert.match(html, /workbench-diff-line--context[\s\S]*?Title/);
+  // D4: each diff line carries a change-type tag instead of one flat <pre> block,
+  // now GitHub/VS Code-style with a +/- stat header and line-number gutters.
+  assert.match(html, /workbench-diff__stat/);
+  assert.match(html, /workbench-diff-row--hunk[\s\S]*?@@ -1,2 \+1,2 @@/);
+  assert.match(html, /workbench-diff-row--removed[\s\S]*?Old Tide/);
+  assert.match(html, /workbench-diff-row--added[\s\S]*?New Tide/);
+  assert.match(html, /workbench-diff-row--context[\s\S]*?Title/);
+  assert.match(html, /workbench-diff-row__gutter/);
+  // The +++/--- file header lines are dropped (the pane breadcrumb shows the path).
+  assert.doesNotMatch(html, /\+\+\+ README\.md/);
   // Truncation notice stays visible as context, never hidden.
   assert.match(html, /\[diff truncated\]/);
   // No flat single-block preview for a known diff anymore.

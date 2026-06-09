@@ -2884,61 +2884,90 @@ button {
 
 .workbench-diff {
   min-height: 168px;
-  max-height: 360px;
+  max-height: 420px;
   overflow: auto;
   border: 1px solid var(--tide-line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--tide-bg);
-  font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 12px/1.6 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.workbench-diff-line {
+/* Stat header: +N / −N and a change count, like a GitHub diff toolbar. */
+.workbench-diff__stat {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 0 10px;
-  white-space: pre-wrap;
-  word-break: break-word;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--tide-line);
+  background: var(--tide-surface);
+  font-family: var(--tide-sans, Inter, system-ui, sans-serif);
+  font-size: 12px;
+  font-weight: 500;
 }
 
-.workbench-diff-line__marker {
+.workbench-diff__stat-add { color: #1a7f37; font-variant-numeric: tabular-nums; }
+.workbench-diff__stat-del { color: #c0392b; font-variant-numeric: tabular-nums; }
+.workbench-diff__stat-label { color: var(--tide-muted); font-weight: 400; }
+
+.workbench-diff-row {
+  display: flex;
+  align-items: baseline;
+  min-height: 19px;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+/* Two compact line-number gutters (old, new), then a change marker. */
+.workbench-diff-row__gutter {
   flex: 0 0 auto;
-  width: 1ch;
+  width: 40px;
+  padding: 0 8px 0 0;
+  text-align: right;
+  color: var(--tide-muted);
+  opacity: 0.65;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.workbench-diff-row__marker {
+  flex: 0 0 auto;
+  width: 1.4ch;
+  text-align: center;
   color: var(--tide-muted);
   user-select: none;
 }
 
-.workbench-diff-line__text {
+.workbench-diff-row__text {
   flex: 1 1 auto;
   min-width: 0;
+  padding-right: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.workbench-diff-line--header {
-  color: var(--tide-muted);
+/* A subtle colored bar on the left edge of changed rows (VS Code gutter cue). */
+.workbench-diff-row--added {
+  background: color-mix(in srgb, #2f9e44 11%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, #2f9e44 55%, transparent);
 }
+.workbench-diff-row--added .workbench-diff-row__marker { color: #1a7f37; }
 
-.workbench-diff-line--hunk {
-  color: var(--tide-action);
-  background: var(--tide-surface);
+.workbench-diff-row--removed {
+  background: color-mix(in srgb, var(--tide-danger) 10%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--tide-danger) 55%, transparent);
 }
+.workbench-diff-row--removed .workbench-diff-row__marker { color: var(--tide-danger); }
 
-.workbench-diff-line--added {
-  background: color-mix(in srgb, #2f9e44 14%, transparent);
-}
-
-.workbench-diff-line--added .workbench-diff-line__marker {
-  color: #2f7a3a;
-}
-
-.workbench-diff-line--removed {
-  background: color-mix(in srgb, var(--tide-danger) 12%, transparent);
-}
-
-.workbench-diff-line--removed .workbench-diff-line__marker {
-  color: var(--tide-danger);
-}
-
-.workbench-diff-line--context {
-  color: var(--tide-text);
+/* Hunk separator (@@ -a,b +c,d @@): a quiet full-width band. */
+.workbench-diff-row--hunk {
+  padding: 2px 12px;
+  margin: 2px 0;
+  background: color-mix(in srgb, var(--tide-action) 8%, transparent);
+  color: color-mix(in srgb, var(--tide-action) 80%, var(--tide-muted));
+  border-block: 1px solid var(--tide-line);
 }
 
 /* Editor pane is a real code editor: a thin breadcrumb path bar, then the

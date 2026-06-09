@@ -280,6 +280,54 @@ function richQueuedFixtureState() {
   return submitProductShellComposerDraft(drafted).state;
 }
 
+// Diff-pane fixture: a Workbench Diff pane with a sample unified diff, to eyeball
+// the diff view (line-number gutters, syntax highlight, +/- stat).
+function diffFixtureState() {
+  const opened = openProductShellThread(
+    createProductShellState({ includeFixtureData: true }),
+    "thread-master-plan",
+  );
+  const diffText = [
+    "--- a/src/diff-view.ts",
+    "+++ b/src/diff-view.ts",
+    "@@ -12,7 +12,9 @@ export function createDiffView(text: string) {",
+    "   const lines = text.split(\"\\n\");",
+    "-  return lines.map((line) => renderPlain(line));",
+    "+  const { rows, adds, dels } = parseDiffRows(text);",
+    "+  const lang = guessLanguage(rows.map((r) => r.text).join(\"\\n\"));",
+    "+  return rows.map((row) => renderRow(row, lang));",
+    " }",
+    "@@ -40,6 +42,7 @@ function renderRow(row: DiffRow) {",
+    "   const marker = row.kind === \"added\" ? \"+\" : \"-\";",
+    "   return el(\"div\", { className: row.kind }, marker, row.text);",
+    "+  // gutters now carry the old/new line numbers",
+    " }",
+  ].join("\n");
+  return applyProductShellBackendEvent(opened, {
+    kind: "workbench.changed",
+    payload: {
+      threadId: "thread-master-plan",
+      activePaneId: "pane-diff",
+      panes: [
+        {
+          paneId: "pane-diff",
+          kind: "diff",
+          title: "diff-view.ts",
+          visible: true,
+          revision: "pane-diff:rev",
+          updatedAt: "2026-05-31T00:00:00.000Z",
+          filePath: "/Users/you/Workspace/tide/src/diff-view.ts",
+          relativePath: "src/diff-view.ts",
+          diffText,
+          beforeByteLength: 980,
+          afterByteLength: 1120,
+          truncated: false,
+        },
+      ],
+    },
+  });
+}
+
 // Browser-pane fixture: a Workbench Browser pane pointing at a visible page so
 // the live <webview> load can be verified headlessly via offscreen Electron.
 function browserFixtureState() {
@@ -354,8 +402,11 @@ if (root) {
     const wantsQueued = params.get("mode") === "queued";
     const wantsRich = params.get("mode") === "rich";
     const wantsRichQueued = params.get("mode") === "rich-queued";
+    const wantsDiff = params.get("pane") === "diff";
     // FileTree column is gated by fileTreeOpen; flip it on for the fixture.
-    const state = wantsBrowser
+    const state = wantsDiff
+      ? diffFixtureState()
+      : wantsBrowser
       ? browserFixtureState()
       : wantsQueued
         ? queuedFixtureState()
