@@ -1,6 +1,7 @@
 import { basename, join } from "node:path";
 
 import type { ProviderSessionRefRecord } from "../../application/services/thread-persistence-service.ts";
+import type { ProviderCliAgentId } from "../../application/domains/thread/thread.ts";
 import { stringField, unknownRecord } from "./live-backend-json.ts";
 
 // Derives a provider-owned session reference (codex rollout id / claude transcript
@@ -43,7 +44,7 @@ export function claudeProviderSessionRefFromTranscriptPath(
 }
 
 export function providerSessionRefFromProviderSignalPayload(
-  agentId: "codex" | "claude" | "antigravity",
+  agentId: ProviderCliAgentId,
   payload: unknown,
 ): DiscoveredProviderSessionRef | undefined {
   const record = unknownRecord(payload);

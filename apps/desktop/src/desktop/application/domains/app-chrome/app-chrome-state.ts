@@ -518,6 +518,8 @@ function formatAgentLabel(agentId: string): string {
       return "Claude Code";
     case "antigravity":
       return "Antigravity CLI";
+    case "gemini":
+      return "Gemini CLI";
     default:
       return agentId;
   }

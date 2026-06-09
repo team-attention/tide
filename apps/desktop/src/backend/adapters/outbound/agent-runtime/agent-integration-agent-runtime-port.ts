@@ -445,7 +445,12 @@ function submitSequenceForAgent(agentId: ProviderCliAgentId): string {
 }
 
 function isProviderCliAgentId(agentId: AgentId): agentId is ProviderCliAgentId {
-  return agentId === "codex" || agentId === "claude" || agentId === "antigravity";
+  return (
+    agentId === "codex" ||
+    agentId === "claude" ||
+    agentId === "antigravity" ||
+    agentId === "gemini"
+  );
 }
 
 function sleep(ms: number): Promise<void> {

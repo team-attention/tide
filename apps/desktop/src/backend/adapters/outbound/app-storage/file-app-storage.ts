@@ -3,6 +3,10 @@ import path from "node:path";
 
 import type { AppStoragePort } from "../../../application/ports/outbound/app-storage-port.ts";
 
+// Monotonic across all atomic writes in this process so concurrent writers never
+// collide on a temp filename.
+let atomicWriteCounter = 0;
+
 export interface CreateFileAppStorageInput {
   appDataRoot: string;
 }
@@ -62,7 +66,15 @@ class FileAppStorage implements AppStoragePort {
   async writeTextAtomic(relativePath: string, value: string): Promise<void> {
     const filePath = this.resolve(relativePath);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
-    const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+    // The temp name must be unique per call: two writes to the same file within the
+    // same millisecond (concurrent history polls re-persisting the same thread) would
+    // otherwise collide on `pid-Date.now()`, and one rename would ENOENT on the temp
+    // the other already consumed — crashing the backend. A monotonic counter +
+    // randomness makes collisions impossible.
+    atomicWriteCounter += 1;
+    const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${atomicWriteCounter}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
     await fs.writeFile(tempPath, value, "utf8");
     await fs.rename(tempPath, filePath);
   }
