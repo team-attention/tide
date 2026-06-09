@@ -23,6 +23,7 @@ import {
   FileText,
   Folder,
   FolderGit2,
+  Globe,
   FolderPlus,
   GitBranch,
   Layers,
@@ -35,6 +36,7 @@ import {
   ShieldCheck,
   Sparkles,
   Square,
+  Terminal,
   Wrench,
   X,
 } from "lucide-react";
@@ -60,6 +62,7 @@ export interface AgentChatShellProps {
   onEditQueued?: () => void;
   // Resend a prompt (retry an answer): submits the given text as a new turn.
   onResend?: (text: string) => void;
+  onQuote?: (text: string) => void;
   onComposerSurfaceChange?: (surface: AgentChatComposerSurfaceKind | null) => void;
   onChoiceSurfaceRowSelect?: (
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
@@ -74,6 +77,7 @@ export interface AgentChatShellProps {
     dataBase64: string;
   }) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
+  onRemoveContextChip?: (id: string) => void;
 }
 
 // A chip's screen rectangle, captured when it is clicked so the dropdown can
@@ -159,6 +163,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     },
     onAddAttachment: props.onAddAttachment,
     onRemoveAttachment: props.onRemoveAttachment,
+    onRemoveContextChip: props.onRemoveContextChip,
     onPreviewAttachment: (previewUrl: string) => setImagePreview(previewUrl),
     inputRef: composerInputRef,
   };
@@ -247,7 +252,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       "data-runtime-state": viewModel.runtimeState,
     },
     props.showThreadHeader === false ? null : createThreadHeader(viewModel),
-    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt, props.onEditQueued, props.onResend),
+    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt, props.onEditQueued, props.onResend, props.onQuote),
     createComposerStack(viewModel, handlers),
     popover,
     lightbox,
@@ -366,11 +371,25 @@ function attachImageFile(
   reader.readAsDataURL(file);
 }
 
+function contextChipIcon(kind: string): typeof FileText {
+  switch (kind) {
+    case "terminal":
+      return Terminal;
+    case "browser":
+      return Globe;
+    case "message":
+      return CornerDownRight;
+    default:
+      return FileText;
+  }
+}
+
 interface ComposerHandlers {
   onDraftChange?: (draft: string) => void;
   onSubmit?: () => void;
   onInterrupt?: () => void;
   onEditQueued?: () => void;
+  onRemoveContextChip?: (id: string) => void;
   onComposerSurfaceChange?: (surface: AgentChatComposerSurfaceKind | null) => void;
   onOpenSurface?: (surface: AgentChatComposerSurfaceKind, rect: AnchorRect) => void;
   onChoiceSurfaceRowSelect?: (
@@ -562,6 +581,7 @@ function createAgentSession(
   runtimeStartedAt?: string,
   onEditQueued?: () => void,
   onResend?: (text: string) => void,
+  onQuote?: (text: string) => void,
 ): ReactElement {
   // Show a live "working" indicator only until the agent produces its block:
   // a streaming block carries its own caret, and a complete block means the turn
@@ -599,6 +619,17 @@ function createAgentSession(
           void navigator.clipboard?.writeText(body?.textContent ?? "");
           copyAnswer.classList.add("agent-turn-actions__btn--done");
           window.setTimeout(() => copyAnswer.classList.remove("agent-turn-actions__btn--done"), 1400);
+          return;
+        }
+        // Quote an answer into the composer as a content chip.
+        const quoteAnswer = onQuote ? target.closest(".agent-turn-actions__btn--quote") : null;
+        if (quoteAnswer) {
+          const text = quoteAnswer
+            .closest(".agent-session-turn")
+            ?.querySelector(".agent-session-turn__body")?.textContent ?? "";
+          if (text.trim().length > 0) {
+            onQuote?.(text.trim());
+          }
           return;
         }
         // Retry an answer: resend the user prompt that preceded it as a new turn.
@@ -933,6 +964,16 @@ function createAgentTurnActions(): ReactElement {
       },
       createElement(Copy, { size: 13, strokeWidth: 1.8, className: "agent-turn-actions__icon agent-turn-actions__icon--copy", "aria-hidden": true }),
       createElement(Check, { size: 13, strokeWidth: 2, className: "agent-turn-actions__icon agent-turn-actions__icon--check", "aria-hidden": true }),
+    ),
+    createElement(
+      "button",
+      {
+        type: "button",
+        className: "agent-turn-actions__btn agent-turn-actions__btn--quote",
+        title: "Quote in chat",
+        "aria-label": "Quote this message in the composer",
+      },
+      createElement(CornerDownRight, { size: 13, strokeWidth: 1.8, className: "agent-turn-actions__icon", "aria-hidden": true }),
     ),
     createElement(
       "button",
@@ -1448,6 +1489,36 @@ function createComposer(
                     onClick: () => handlers.onRemoveAttachment?.(attachment.id),
                   },
                   createElement(X, { size: 12, strokeWidth: 2.2, "aria-hidden": true }),
+                ),
+              ),
+            ),
+          )
+        : null,
+      viewModel.composer.contextChips.length > 0
+        ? createElement(
+            "div",
+            { className: "composer-shell__chips" },
+            viewModel.composer.contextChips.map((chip) =>
+              createElement(
+                "span",
+                { key: chip.id, className: `composer-chip composer-chip--${chip.kind}` },
+                createElement(contextChipIcon(chip.kind), {
+                  size: 12,
+                  strokeWidth: 1.9,
+                  className: "composer-chip__icon",
+                  "aria-hidden": true,
+                }),
+                createElement("span", { className: "composer-chip__label" }, chip.label),
+                createElement(
+                  "button",
+                  {
+                    type: "button",
+                    className: "composer-chip__remove",
+                    title: "Remove",
+                    "aria-label": `Remove ${chip.label}`,
+                    onClick: () => handlers.onRemoveContextChip?.(chip.id),
+                  },
+                  createElement(X, { size: 11, strokeWidth: 2.4, "aria-hidden": true }),
                 ),
               ),
             ),

@@ -93,6 +93,10 @@ export interface AgentChatComposerState {
   // Images pasted into the Composer, shown as preview chips and sent with the
   // next message. See docs_v2/specs/composer-image-attachments.md.
   attachments: AgentChatComposerAttachment[];
+  // Content references attached from the Workbench/session (a code selection,
+  // terminal output, a browser snapshot, a quoted message), shown as removable
+  // chips and prepended to the next message as context.
+  contextChips: AgentChatContextChip[];
 }
 
 export interface AgentChatComposerAttachment {
@@ -100,6 +104,15 @@ export interface AgentChatComposerAttachment {
   name: string;
   mediaType: string;
   dataBase64: string;
+}
+
+export type AgentChatContextChipKind = "code" | "terminal" | "browser" | "message";
+
+export interface AgentChatContextChip {
+  id: string;
+  kind: AgentChatContextChipKind;
+  label: string;
+  text: string;
 }
 
 // The wire shape carried in a BackendCommand (no renderer-only `id`). Matches the
@@ -342,6 +355,7 @@ export interface AgentChatComposerView {
   contextControlsEditable: boolean;
   contextItems: AgentChatContextItem[];
   attachments: AgentChatComposerAttachmentView[];
+  contextChips: AgentChatContextChipView[];
 }
 
 export interface AgentChatComposerAttachmentView {
@@ -349,6 +363,12 @@ export interface AgentChatComposerAttachmentView {
   name: string;
   // A data: URL the renderer can use directly as an <img> src for the thumbnail.
   previewUrl: string;
+}
+
+export interface AgentChatContextChipView {
+  id: string;
+  kind: AgentChatContextChipKind;
+  label: string;
 }
 
 export interface AgentChatContextItem {
@@ -400,6 +420,7 @@ export function createAgentChatShellState(input?: {
       draft: "",
       activeSurface: null,
       attachments: [],
+      contextChips: [],
       startOptions: input?.startOptions ?? {
         agentBinding: {
           agentId: "codex",
@@ -466,6 +487,38 @@ export function removeComposerAttachment(
         attachments: state.composer.attachments.filter(
           (attachment) => attachment.id !== attachmentId,
         ),
+      },
+    },
+    command: null,
+  };
+}
+
+export function addComposerContextChip(
+  state: AgentChatShellState,
+  chip: AgentChatContextChip,
+): AgentChatShellUpdateResult {
+  return {
+    state: {
+      ...state,
+      composer: {
+        ...state.composer,
+        contextChips: [...state.composer.contextChips, chip],
+      },
+    },
+    command: null,
+  };
+}
+
+export function removeComposerContextChip(
+  state: AgentChatShellState,
+  chipId: string,
+): AgentChatShellUpdateResult {
+  return {
+    state: {
+      ...state,
+      composer: {
+        ...state.composer,
+        contextChips: state.composer.contextChips.filter((chip) => chip.id !== chipId),
       },
     },
     command: null,
@@ -699,12 +752,18 @@ function generateThreadId(): string {
 export function submitComposer(
   state: AgentChatShellState,
 ): AgentChatShellUpdateResult {
-  const input = state.composer.draft.trim();
+  const draft = state.composer.draft.trim();
   const attachments = state.composer.attachments;
-  // A message with no text but with pasted images is still a valid send.
-  if (input.length === 0 && attachments.length === 0) {
+  const chips = state.composer.contextChips;
+  // A message with no text but with pasted images or attached content chips is
+  // still a valid send. Attached content is prepended to the message as context.
+  if (draft.length === 0 && attachments.length === 0 && chips.length === 0) {
     return { state, command: null };
   }
+  const input =
+    chips.length === 0
+      ? draft
+      : `${chips.map((chip) => chip.text).join("\n\n")}${draft.length > 0 ? `\n\n${draft}` : ""}`;
 
   if (state.promptState) {
     return {
@@ -723,7 +782,7 @@ export function submitComposer(
   const messageAttachments = attachmentsForMessage(attachments);
   // Clear the draft on send (every path) so re-clicking submit can't resend the
   // same message and spawn a duplicate thread / duplicate user row.
-  const composerAfterSend = { ...state.composer, draft: "", attachments: [] };
+  const composerAfterSend = { ...state.composer, draft: "", attachments: [], contextChips: [] };
 
   if (state.thread) {
     // Show the sent message immediately as a pending row, whether the turn is busy
@@ -997,6 +1056,11 @@ export function createAgentChatShellViewModel(
         id: attachment.id,
         name: attachment.name,
         previewUrl: `data:${attachment.mediaType};base64,${attachment.dataBase64}`,
+      })),
+      contextChips: state.composer.contextChips.map((chip) => ({
+        id: chip.id,
+        kind: chip.kind,
+        label: chip.label,
       })),
     },
     workbenchOpen: state.workbenchOpen,

@@ -260,13 +260,27 @@ function richTranscriptFixtureState() {
       ],
     },
   });
-  return applyProductShellBackendEvent(hydrated, {
+  const withUsage = applyProductShellBackendEvent(hydrated, {
     kind: "agentRuntime.usageChanged",
     payload: {
       threadId: "thread-master-plan",
       usage: { totalTokens: 82400, contextWindow: 256000, contextUsedPercent: 32, model: "gpt-5.5" },
     },
   });
+  // Seed a couple of composer content chips so the "Add to chat" pills render.
+  return {
+    ...withUsage,
+    agentChat: {
+      ...withUsage.agentChat,
+      composer: {
+        ...withUsage.agentChat.composer,
+        contextChips: [
+          { id: "chip-1", kind: "code" as const, label: "agent-chat-shell.ts L817-871", text: "" },
+          { id: "chip-2", kind: "terminal" as const, label: "Terminal output", text: "" },
+        ],
+      },
+    },
+  };
 }
 
 // Rich transcript with a live turn + a message queued behind it, so the docked

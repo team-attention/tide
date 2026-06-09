@@ -12,7 +12,10 @@ import {
   updateComposerDraft,
   addComposerAttachment,
   removeComposerAttachment,
+  addComposerContextChip,
+  removeComposerContextChip,
   type AgentChatComposerAttachment,
+  type AgentChatContextChip,
   type AgentChatBackendCommand,
   type AgentChatComposerSurfaceKind,
   type AgentChatBlock,
@@ -1493,18 +1496,26 @@ export function updateProductShellComposerDraft(
   };
 }
 
-// Appends a content reference (a code selection, terminal output, etc.) to the
-// composer draft — used by the workbench/session "Add to chat" affordances. A
-// blank separator keeps the existing draft and the addition on their own lines.
-export function appendProductShellComposerDraft(
+// Attaches a content reference (a code selection, terminal output, browser
+// snapshot, quoted message) to the composer as a removable chip — used by the
+// workbench/session "Add to chat" affordances.
+export function addProductShellComposerContextChip(
   state: ProductShellState,
-  text: string,
+  chip: AgentChatContextChip,
 ): ProductShellState {
-  const current = state.agentChat.composer.draft;
-  const next = current.trim().length === 0 ? text : `${current.replace(/\s+$/, "")}\n\n${text}`;
   return {
     ...state,
-    agentChat: updateComposerDraft(state.agentChat, next).state,
+    agentChat: addComposerContextChip(state.agentChat, chip).state,
+  };
+}
+
+export function removeProductShellComposerContextChip(
+  state: ProductShellState,
+  chipId: string,
+): ProductShellState {
+  return {
+    ...state,
+    agentChat: removeComposerContextChip(state.agentChat, chipId).state,
   };
 }
 

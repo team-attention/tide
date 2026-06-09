@@ -3,6 +3,7 @@ import {
   Archive,
   Check,
   ChevronRight,
+  CornerDownRight,
   ExternalLink,
   FileText,
   Folder,
@@ -138,7 +139,8 @@ import {
   updateProductShellBackgroundBrowserActionResult,
   updateProductShellBackgroundBrowserSnapshot,
   updateProductShellComposerDraft,
-  appendProductShellComposerDraft,
+  addProductShellComposerContextChip,
+  removeProductShellComposerContextChip,
   writeProductShellTerminalInput,
   resizeProductShellTerminal,
   setProductShellListSettings,
@@ -385,13 +387,15 @@ interface ProductShellHandlers {
     event: { clientX: number; preventDefault: () => void },
   ) => void;
   onDraftChange: (draft: string) => void;
-  // Append a content reference (editor selection, terminal output, …) to the
-  // composer draft, then focus the chat composer.
-  onAddContentToChat: (text: string) => void;
+  // Attach a content reference (editor selection, terminal output, browser, a
+  // quoted message) to the composer as a removable chip.
+  onAddContentToChat: (chip: { kind: "code" | "terminal" | "browser" | "message"; label: string; text: string }) => void;
+  onRemoveContextChip: (id: string) => void;
   onSubmit: () => void;
   onInterrupt: () => void;
   onEditQueued: () => void;
   onResend: (text: string) => void;
+  onQuote: (text: string) => void;
   onComposerSurfaceChange: (surface: AgentChatComposerSurfaceKind | null) => void;
   onChoiceSurfaceRowSelect: (
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
@@ -1140,8 +1144,20 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         return result.state;
       }),
     onDraftChange: (draft) => setShellState((state) => updateProductShellComposerDraft(state, draft)),
-    onAddContentToChat: (text) =>
-      setShellState((state) => appendProductShellComposerDraft(state, text)),
+    onAddContentToChat: (chip) =>
+      setShellState((state) =>
+        addProductShellComposerContextChip(state, {
+          id:
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `chip-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          kind: chip.kind,
+          label: chip.label,
+          text: chip.text,
+        }),
+      ),
+    onRemoveContextChip: (id) =>
+      setShellState((state) => removeProductShellComposerContextChip(state, id)),
     onSubmit: () => {
       // Throttle to swallow accidental double-clicks / double Enter so the same
       // draft is never submitted twice in quick succession.
@@ -1175,6 +1191,21 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         dispatchBackendCommand(result.command);
         return result.state;
       }),
+    onQuote: (text) =>
+      setShellState((state) =>
+        addProductShellComposerContextChip(state, {
+          id:
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `chip-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          kind: "message",
+          label: text.length > 32 ? `${text.slice(0, 32)}…` : text,
+          text: text
+            .split("\n")
+            .map((line) => `> ${line}`)
+            .join("\n"),
+        }),
+      ),
     onComposerSurfaceChange: (surface) =>
       setShellState((state) => setProductShellComposerActiveSurface(state, surface)),
     onChoiceSurfaceRowSelect: (surfaceKind, rowId) => {
@@ -1896,11 +1927,13 @@ function createAgentChatColumn(
       onInterrupt: handlers.onInterrupt,
       onEditQueued: handlers.onEditQueued,
       onResend: handlers.onResend,
+      onQuote: handlers.onQuote,
       onComposerSurfaceChange: handlers.onComposerSurfaceChange,
       onChoiceSurfaceRowSelect: handlers.onChoiceSurfaceRowSelect,
       onOpenFile: handlers.onOpenFile,
       onAddAttachment: handlers.onAddAttachment,
       onRemoveAttachment: handlers.onRemoveAttachment,
+      onRemoveContextChip: handlers.onRemoveContextChip,
     }),
   );
 }
@@ -2808,12 +2841,16 @@ function WorkbenchCodeEditor(props: {
       return;
     }
     const path = props.relativePath ?? "selection";
+    const baseName = path.slice(path.lastIndexOf("/") + 1);
     const lines =
       menuSelection.fromLine === menuSelection.toLine
         ? `L${menuSelection.fromLine}`
         : `L${menuSelection.fromLine}-${menuSelection.toLine}`;
-    const reference = `\`${path}\` (${lines})\n\`\`\`${props.language}\n${menuSelection.text}\n\`\`\``;
-    props.handlers.onAddContentToChat(reference);
+    props.handlers.onAddContentToChat({
+      kind: "code",
+      label: `${baseName} ${lines}`,
+      text: `\`${path}\` (${lines})\n\`\`\`${props.language}\n${menuSelection.text}\n\`\`\``,
+    });
   };
 
   const menuItem = (label: string, onSelect: () => void, disabled = false) =>
@@ -3102,6 +3139,9 @@ function formatBeforeAfterBytes(before: number | undefined, after: number | unde
 // it is written straight to the GPU terminal and never funneled through React
 // state (which would re-render the whole shell per chunk).
 const terminalOutputSinks = new Map<string, (chunk: string) => void>();
+// Per-pane readers for the current xterm text selection, so "Add to chat" can
+// grab the selected terminal output.
+const terminalSelectionGetters = new Map<string, () => string>();
 
 function routeProductShellTerminalOutput(paneId: string, chunk: string): boolean {
   const sink = terminalOutputSinks.get(paneId);
@@ -3147,6 +3187,10 @@ function WorkbenchTerminalView(props: {
     }
     const dataSub = term.onData((data) => props.onInput(props.paneId, data));
     terminalOutputSinks.set(props.paneId, (chunk) => term.write(chunk));
+    terminalSelectionGetters.set(props.paneId, () => {
+      const withSel = term as unknown as { getSelection?: () => string };
+      return typeof withSel.getSelection === "function" ? withSel.getSelection() : "";
+    });
 
     let active = true;
     let fitAddon: { fit: () => void } | undefined;
@@ -3207,6 +3251,7 @@ function WorkbenchTerminalView(props: {
     return () => {
       active = false;
       terminalOutputSinks.delete(props.paneId);
+      terminalSelectionGetters.delete(props.paneId);
       dataSub.dispose();
       observer?.disconnect();
       term.dispose();
@@ -3224,10 +3269,34 @@ function WorkbenchTerminalPane(props: {
   handlers: ProductShellHandlers;
 }): ReactElement {
   // A real dark terminal: the xterm surface fills the pane and takes keystrokes
-  // directly (xterm.onData routes to onTerminalInput). No metadata chrome.
+  // directly (xterm.onData routes to onTerminalInput). A floating "Add to chat"
+  // button grabs the current text selection.
+  const paneId = props.pane.paneId;
   return createElement(
     "div",
     { className: "workbench-terminal", "data-terminal-status": props.pane.status ?? "ready" },
+    createElement(
+      "button",
+      {
+        type: "button",
+        className: "workbench-terminal__to-chat",
+        title: "Add selection to chat",
+        "aria-label": "Add terminal selection to chat",
+        onClick: () => {
+          const selection = terminalSelectionGetters.get(paneId)?.() ?? "";
+          if (selection.trim().length === 0) {
+            return;
+          }
+          props.handlers.onAddContentToChat({
+            kind: "terminal",
+            label: "Terminal output",
+            text: `\`\`\`\n${selection}\n\`\`\``,
+          });
+        },
+      },
+      createElement(CornerDownRight, { size: 13, strokeWidth: 1.9, "aria-hidden": true }),
+      "Add to chat",
+    ),
     createElement(WorkbenchTerminalView, {
       paneId: props.pane.paneId,
       initialText: props.pane.transcriptPreview ?? "",

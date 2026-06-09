@@ -2510,6 +2510,58 @@ button {
   gap: 8px;
 }
 
+/* Attached content references (code selection, terminal output, …): removable
+   chips above the composer input. */
+.composer-shell__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.composer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 240px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.composer-chip__icon { flex: 0 0 auto; color: var(--tide-muted); }
+
+.composer-chip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.composer-chip__remove {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.composer-chip__remove:hover {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
 .composer-shell__attachment {
   position: relative;
   width: 56px;
@@ -2880,9 +2932,35 @@ button {
 
 /* Only the terminal pane is dark; other panes inherit the light pane surface. */
 .workbench-terminal {
+  position: relative;
   padding: 8px;
   background: #1b1b1d;
 }
+
+/* Floating "Add to chat" for the current terminal selection — top-right, quiet
+   until hovered. */
+.workbench-terminal__to-chat {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(40, 40, 44, 0.92);
+  color: #d6d6da;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.workbench-terminal:hover .workbench-terminal__to-chat { opacity: 1; }
+.workbench-terminal__to-chat:hover { background: rgba(58, 58, 64, 0.98); }
 
 /* Editor manages its own layout/padding (breadcrumb + content), so it fills the
    pane flush with no card padding. */
