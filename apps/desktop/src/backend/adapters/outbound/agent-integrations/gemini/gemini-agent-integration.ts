@@ -224,10 +224,15 @@ function geminiApprovalArgs(launchOptions: Record<string, unknown> | undefined):
 
 function geminiModelArgs(launchOptions: Record<string, unknown> | undefined): string[] {
   const model = stringValue(launchOptions?.model);
-  // Only forward a gemini model. The composer default may leak a non-gemini model
-  // (e.g. "gpt-5.5"); passing that to `gemini --model` fails the turn. When the model
-  // is not a gemini one, omit the flag and let gemini use its default.
-  if (model !== undefined && model.toLowerCase().startsWith("gemini")) {
+  // Only forward a concrete gemini model id (e.g. "gemini-3-flash"). The sentinel
+  // "Gemini default" and any leaked non-gemini model (e.g. "gpt-5.5") must NOT be
+  // passed to `gemini --model` (that fails the turn) — omit the flag and let gemini
+  // use its own default.
+  if (
+    model !== undefined &&
+    model !== "Gemini default" &&
+    model.toLowerCase().startsWith("gemini")
+  ) {
     return ["--model", model];
   }
   return [];

@@ -1358,10 +1358,12 @@ function createActiveComposerSurface(
         sourceLabel: "Agent Binding",
         // Tide API Agents / OpenAI API are hidden for now (provider-CLI only).
         // The openai_api binding + runtime still exist; they're just not offered here.
+        // Antigravity is not offered: its CLI cannot authenticate when Tide spawns it
+        // (auth is bound to an interactive/IDE session), so it would only hang. Its
+        // adapter stays wired and dormant — re-add the row when agy fixes spawn auth.
         rows: [
           row("codex", "Codex CLI", "Agent Integration", undefined, binding.agentId === "codex" ? "check" : "identity:codex", binding.agentId === "codex"),
           row("claude", "Claude Code", "Agent Integration", undefined, binding.agentId === "claude" ? "check" : "identity:claude", binding.agentId === "claude"),
-          row("antigravity", "Antigravity CLI", "Agent Integration", undefined, binding.agentId === "antigravity" ? "check" : "identity:antigravity", binding.agentId === "antigravity"),
           row("gemini", "Gemini CLI", "Agent Integration", undefined, binding.agentId === "gemini" ? "check" : "identity:gemini", binding.agentId === "gemini"),
         ],
       };
@@ -1498,6 +1500,14 @@ const PERMISSION_OPTIONS: Record<string, { default: string; options: PermissionO
       { id: "agy-ask", value: "default", label: "Ask for approval", detail: "Approve actions manually" },
       { id: "agy-sandbox", value: "sandbox", label: "Sandbox", detail: "Run inside a sandbox" },
       { id: "agy-bypass", value: "dangerously-skip-permissions", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
+    ],
+  },
+  gemini: {
+    default: "default",
+    options: [
+      { id: "gemini-auto", value: "default", label: "Auto-approve", detail: "Run tools without prompting" },
+      { id: "gemini-edit", value: "auto_edit", label: "Auto edits", detail: "Auto-approve edits only" },
+      { id: "gemini-plan", value: "plan", label: "Plan mode", detail: "Read-only planning" },
     ],
   },
   openai_api: {
@@ -1701,6 +1711,14 @@ function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
         { value: "Claude Sonnet 4.6 (Thinking)", label: "Claude Sonnet 4.6", detail: "Thinking" },
         { value: "Claude Opus 4.6 (Thinking)", label: "Claude Opus 4.6", detail: "Thinking" },
         { value: "GPT-OSS 120B (Medium)", label: "GPT-OSS 120B", detail: "Medium" },
+      ];
+    case "gemini":
+      // "Gemini default" passes no --model (gemini's own default, gemini-3-flash);
+      // explicit ids pass `gemini --model <id>`.
+      return [
+        { value: "Gemini default", label: "Default", detail: "Gemini 3 Flash" },
+        { value: "gemini-3-pro", label: "Gemini 3 Pro" },
+        { value: "gemini-3-flash", label: "Gemini 3 Flash" },
       ];
     default:
       return [];
@@ -1967,6 +1985,8 @@ function defaultModelValueForAgent(agentId: string): string {
       return "Claude default";
     case "antigravity":
       return "Antigravity default";
+    case "gemini":
+      return "Gemini default";
     case "openai_api":
       return "gpt-5.5";
     default:
