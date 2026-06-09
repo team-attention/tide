@@ -318,11 +318,6 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     const args = [
       "--mcp-config",
       this.mcpConfigPath,
-      // Use ONLY Tide's MCP config — ignore the user's global ~/.claude.json MCP
-      // servers (e.g. pencil). Claude waits for every configured MCP server to
-      // register before starting the turn, so a slow/hung global server would
-      // stall the whole thread at "Working…". Tide threads only need Tide's tools.
-      "--strict-mcp-config",
       "--settings",
       this.settingsPath,
       "--append-system-prompt",
