@@ -594,6 +594,70 @@ impl App {
             crate::ContextMenuTarget::WorkspaceSidebarItem { ws_index } => {
                 self.execute_workspace_context_menu_action(action_index, ws_index)
             }
+            crate::ContextMenuTarget::EditorSymbol {
+                pane_id,
+                identifier,
+                line,
+                character,
+            } => self.execute_editor_symbol_context_menu_action(
+                action_index,
+                pane_id,
+                &identifier,
+                line,
+                character,
+            ),
+        }
+    }
+
+    /// Run "Go to Definition" / "Find References" from the editor right-click
+    /// menu. Prefer real LSP navigation (`textDocument/definition` /
+    /// `references`); fall back to the integrated finder's symbol/text search
+    /// when no language server is serving the file.
+    fn execute_editor_symbol_context_menu_action(
+        &mut self,
+        action_index: usize,
+        pane_id: crate::tide_core::PaneId,
+        identifier: &str,
+        line: usize,
+        character: usize,
+    ) {
+        let action = match crate::ContextMenuAction::editor_symbol_items().get(action_index) {
+            Some(a) => *a,
+            None => return,
+        };
+        let uri = match self.panes.get(&pane_id) {
+            Some(crate::PaneKind::Editor(pane)) => pane
+                .editor
+                .file_path()
+                .map(crate::tide_lsp::manager::path_to_uri),
+            _ => None,
+        };
+        let lsp_ready = uri
+            .as_ref()
+            .map(|u| self.ports.lsp.supports_navigation(u))
+            .unwrap_or(false);
+        match action {
+            crate::ContextMenuAction::GoToDefinition => {
+                if let (true, Some(u)) = (lsp_ready, uri.as_ref()) {
+                    self.ports
+                        .lsp
+                        .request_definition(u, line as u32, character as u32);
+                } else {
+                    let query = self.editor_definition_query(pane_id, identifier);
+                    self.open_file_finder_with_query(&query, None);
+                }
+            }
+            crate::ContextMenuAction::FindReferences => {
+                if let (true, Some(u)) = (lsp_ready, uri.as_ref()) {
+                    self.ports
+                        .lsp
+                        .request_references(u, line as u32, character as u32);
+                } else {
+                    let query = Self::editor_references_query(identifier);
+                    self.open_file_finder_with_query(&query, None);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -667,6 +731,9 @@ impl App {
                 });
                 self.cache.invalidate_chrome();
             }
+            // Editor-only actions never reach the file-tree menu.
+            crate::ContextMenuAction::GoToDefinition
+            | crate::ContextMenuAction::FindReferences => {}
         }
         self.cache.needs_redraw = true;
     }

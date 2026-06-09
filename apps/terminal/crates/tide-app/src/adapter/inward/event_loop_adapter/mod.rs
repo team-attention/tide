@@ -1278,6 +1278,11 @@ impl App {
             // poll_lsp already invalidates the pane cache
         }
 
+        // LSP definition/references (Go to Definition / Find References)
+        if self.poll_lsp_navigation() {
+            crate::AppCorePort::request_redraw(self);
+        }
+
         // Browser Cmd+click new-tab requests
         let new_tab_urls = crate::tide_platform::macos::webview::drain_new_tab_urls_for_window(
             self.tide_window_id,

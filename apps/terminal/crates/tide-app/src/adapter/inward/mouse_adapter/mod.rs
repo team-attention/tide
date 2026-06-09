@@ -297,6 +297,29 @@ pub(crate) fn handle_mouse_down(
         }
     }
 
+    // Right-click on an Editor Pane: open the Go to Definition / Find
+    // References context menu for the identifier under the pointer.
+    if button == MouseButton::Right {
+        let pos = ctx.last_cursor_pos();
+        let editor_pane = ctx
+            .visual_pane_rects()
+            .iter()
+            .find(|(id, rect)| {
+                pos.x >= rect.x
+                    && pos.x < rect.x + rect.width
+                    && pos.y >= rect.y
+                    && pos.y < rect.y + rect.height
+                    && matches!(ctx.pane(*id), Some(PaneKind::Editor(ep)) if !ep.preview_mode)
+            })
+            .map(|(id, _)| *id);
+        if let Some(id) = editor_pane {
+            if ctx.open_editor_symbol_context_menu(id, pos) {
+                ctx.request_redraw();
+                return;
+            }
+        }
+    }
+
     // File tree clicks
     if button == MouseButton::Left {
         if ctx.ft().visible {

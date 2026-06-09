@@ -6,7 +6,8 @@ use crate::AppCorePort;
 
 use super::super::raster_icons::FLATICON_OPEN_EXTERNAL;
 use super::super::svg_icons::{
-    svg_icon_palette, SVG_ICON_DELETE, SVG_ICON_FOLDER, SVG_ICON_RENAME, SVG_ICON_TERMINAL,
+    svg_icon_palette, SVG_ICON_CONNECT, SVG_ICON_DELETE, SVG_ICON_FILE_TREE, SVG_ICON_FOLDER,
+    SVG_ICON_RENAME, SVG_ICON_TERMINAL,
 };
 use super::draw_popup_rounded_bg;
 
@@ -17,6 +18,8 @@ pub(crate) enum ContextMenuIcon {
     OpenExternal,
     Rename,
     Delete,
+    Definition,
+    References,
 }
 
 pub(crate) fn context_menu_icon(action: crate::ContextMenuAction) -> ContextMenuIcon {
@@ -28,6 +31,8 @@ pub(crate) fn context_menu_icon(action: crate::ContextMenuAction) -> ContextMenu
         }
         crate::ContextMenuAction::Rename => ContextMenuIcon::Rename,
         crate::ContextMenuAction::Delete => ContextMenuIcon::Delete,
+        crate::ContextMenuAction::GoToDefinition => ContextMenuIcon::Definition,
+        crate::ContextMenuAction::FindReferences => ContextMenuIcon::References,
     }
 }
 
@@ -70,6 +75,8 @@ fn render_context_menu_icon(
         ContextMenuIcon::Terminal => SVG_ICON_TERMINAL,
         ContextMenuIcon::Rename => SVG_ICON_RENAME,
         ContextMenuIcon::Delete => SVG_ICON_DELETE,
+        ContextMenuIcon::Definition => SVG_ICON_FILE_TREE,
+        ContextMenuIcon::References => SVG_ICON_CONNECT,
         ContextMenuIcon::OpenExternal => return,
     };
     renderer.draw_top_svg_icon(svg, icon_rect, svg_icon_palette(color, secondary));

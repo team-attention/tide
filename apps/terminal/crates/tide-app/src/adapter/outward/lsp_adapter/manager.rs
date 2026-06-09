@@ -117,6 +117,29 @@ pub struct CompletionItemData {
     pub detail: Option<String>,
 }
 
+/// What kind of code-navigation result a `NavigationResponse` carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavKind {
+    GoToDefinition,
+    FindReferences,
+}
+
+/// A resolved code location from `textDocument/definition` or `references`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LspLocation {
+    /// Absolute filesystem path (decoded from the `file://` URI).
+    pub path: PathBuf,
+    pub line: u32,
+    pub character: u32,
+}
+
+/// A code-navigation response ready for the UI.
+#[derive(Debug, Clone)]
+pub struct NavigationResponse {
+    pub kind: NavKind,
+    pub locations: Vec<LspLocation>,
+}
+
 /// Manages all language server instances.
 pub struct LspManager {
     clients: HashMap<Language, LspClient>,
@@ -124,6 +147,8 @@ pub struct LspManager {
     waker: Option<Arc<dyn Fn() + Send + Sync>>,
     /// Pending completion request: (language, request_id, uri)
     pending_completion: Option<(Language, u64, String)>,
+    /// Pending definition/references request: (language, request_id, kind)
+    pending_navigation: Option<(Language, u64, NavKind)>,
     /// Track open documents per language: uri → language
     open_docs: HashMap<String, Language>,
     /// User's full shell PATH (resolved at creation time).
@@ -148,6 +173,7 @@ impl LspManager {
             root_path,
             waker,
             pending_completion: None,
+            pending_navigation: None,
             open_docs: HashMap::new(),
             shell_path,
             install_status: HashMap::new(),
@@ -295,6 +321,68 @@ impl LspManager {
         }
     }
 
+    /// Whether a language server is running for the document, so code
+    /// navigation (definition/references) can be served by LSP.
+    pub fn supports_navigation(&self, uri: &str) -> bool {
+        self.open_docs
+            .get(uri)
+            .map(|lang| self.clients.contains_key(lang))
+            .unwrap_or(false)
+    }
+
+    /// Request the definition at a position. The response arrives asynchronously
+    /// via `poll_navigation`.
+    pub fn request_definition(&mut self, uri: &str, line: u32, character: u32) {
+        if let Some(&lang) = self.open_docs.get(uri) {
+            if let Some(client) = self.clients.get_mut(&lang) {
+                let id = client.request_definition(uri, line, character);
+                self.pending_navigation = Some((lang, id, NavKind::GoToDefinition));
+            }
+        }
+    }
+
+    /// Request all references to the symbol at a position. The response arrives
+    /// asynchronously via `poll_navigation`.
+    pub fn request_references(&mut self, uri: &str, line: u32, character: u32) {
+        if let Some(&lang) = self.open_docs.get(uri) {
+            if let Some(client) = self.clients.get_mut(&lang) {
+                let id = client.request_references(uri, line, character);
+                self.pending_navigation = Some((lang, id, NavKind::FindReferences));
+            }
+        }
+    }
+
+    /// Poll for a pending definition/references response. Call from the event
+    /// loop alongside `poll`.
+    pub fn poll_navigation(&mut self) -> Option<NavigationResponse> {
+        let (lang, expected_id, kind) = self.pending_navigation.as_ref().copied()?;
+        let client = self.clients.get_mut(&lang)?;
+        while let Ok(msg) = client.rx.try_recv() {
+            match msg {
+                LspMessage::Response { id, result, error } => {
+                    if id == expected_id {
+                        self.pending_navigation = None;
+                        if error.is_some() {
+                            return Some(NavigationResponse {
+                                kind,
+                                locations: Vec::new(),
+                            });
+                        }
+                        let locations = result.map(parse_locations).unwrap_or_default();
+                        return Some(NavigationResponse { kind, locations });
+                    }
+                }
+                LspMessage::ServerExited => {
+                    self.clients.remove(&lang);
+                    self.pending_navigation = None;
+                    return None;
+                }
+                LspMessage::Notification { .. } => {}
+            }
+        }
+        None
+    }
+
     /// Poll for completion responses. Call this from the main event loop.
     /// Returns a CompletionResponse if one is ready.
     pub fn poll(&mut self) -> Option<CompletionResponse> {
@@ -399,6 +487,58 @@ impl Drop for LspManager {
     }
 }
 
+/// Decode a `file://` URI into a filesystem path.
+fn path_from_uri(uri: &str) -> Option<PathBuf> {
+    let rest = uri.strip_prefix("file://")?;
+    // Strip an optional host part (rare); keep the absolute path.
+    let path = rest.strip_prefix("localhost").unwrap_or(rest);
+    // Percent-decode the most common escapes.
+    let decoded = path.replace("%20", " ").replace("%3A", ":");
+    Some(PathBuf::from(decoded))
+}
+
+/// Parse a `textDocument/definition` / `references` result. The result may be a
+/// single `Location`, an array of `Location`, or an array of `LocationLink`.
+pub(crate) fn parse_locations(value: serde_json::Value) -> Vec<LspLocation> {
+    use protocol::{Location, LocationLink};
+
+    let to_loc = |uri: String, pos: protocol::LspPosition| {
+        path_from_uri(&uri).map(|path| LspLocation {
+            path,
+            line: pos.line,
+            character: pos.character,
+        })
+    };
+
+    // Single Location object.
+    if value.is_object() {
+        if let Ok(loc) = serde_json::from_value::<Location>(value.clone()) {
+            return to_loc(loc.uri, loc.range.start).into_iter().collect();
+        }
+        if let Ok(link) = serde_json::from_value::<LocationLink>(value.clone()) {
+            return to_loc(link.target_uri, link.target_selection_range.start)
+                .into_iter()
+                .collect();
+        }
+        return Vec::new();
+    }
+
+    // Array of Location or LocationLink.
+    if let Ok(locs) = serde_json::from_value::<Vec<Location>>(value.clone()) {
+        return locs
+            .into_iter()
+            .filter_map(|l| to_loc(l.uri, l.range.start))
+            .collect();
+    }
+    if let Ok(links) = serde_json::from_value::<Vec<LocationLink>>(value) {
+        return links
+            .into_iter()
+            .filter_map(|l| to_loc(l.target_uri, l.target_selection_range.start))
+            .collect();
+    }
+    Vec::new()
+}
+
 pub(crate) fn parse_completion_response(
     value: serde_json::Value,
     uri: &str,
@@ -450,4 +590,58 @@ fn extract_text_edit_new_text(text_edit: &serde_json::Value) -> Option<String> {
 /// Convert a file path to an LSP URI.
 pub fn path_to_uri(path: &std::path::Path) -> String {
     format!("file://{}", path.display())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // Spec: docs/specs/lsp-navigation.md — UC-1 BR-1
+
+    #[test]
+    fn parse_single_location_object() {
+        let v = json!({
+            "uri": "file:///tmp/proj/src/util.ts",
+            "range": { "start": { "line": 4, "character": 9 },
+                       "end": { "line": 4, "character": 15 } }
+        });
+        let locs = parse_locations(v);
+        assert_eq!(locs.len(), 1);
+        assert_eq!(locs[0].path, PathBuf::from("/tmp/proj/src/util.ts"));
+        assert_eq!(locs[0].line, 4);
+        assert_eq!(locs[0].character, 9);
+    }
+
+    #[test]
+    fn parse_location_array() {
+        let v = json!([
+            { "uri": "file:///a.ts", "range": { "start": { "line": 1, "character": 0 }, "end": { "line": 1, "character": 3 } } },
+            { "uri": "file:///b.ts", "range": { "start": { "line": 7, "character": 2 }, "end": { "line": 7, "character": 5 } } }
+        ]);
+        let locs = parse_locations(v);
+        assert_eq!(locs.len(), 2);
+        assert_eq!(locs[1].path, PathBuf::from("/b.ts"));
+        assert_eq!(locs[1].line, 7);
+    }
+
+    #[test]
+    fn parse_location_link_array() {
+        // tsserver returns LocationLink[] for definitions.
+        let v = json!([
+            { "targetUri": "file:///c.ts",
+              "targetRange": { "start": { "line": 2, "character": 0 }, "end": { "line": 2, "character": 9 } },
+              "targetSelectionRange": { "start": { "line": 2, "character": 4 }, "end": { "line": 2, "character": 9 } } }
+        ]);
+        let locs = parse_locations(v);
+        assert_eq!(locs.len(), 1);
+        assert_eq!(locs[0].path, PathBuf::from("/c.ts"));
+        assert_eq!(locs[0].line, 2);
+        assert_eq!(locs[0].character, 4);
+    }
+
+    #[test]
+    fn parse_null_definition_yields_no_locations() {
+        assert!(parse_locations(serde_json::Value::Null).is_empty());
+    }
 }

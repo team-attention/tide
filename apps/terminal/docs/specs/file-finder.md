@@ -65,6 +65,7 @@ Selection remains predictable:
   - BR-1: A plain query uses `FileFinderMode::Files`.
   - BR-2: File search prefers basename and prefix matches ahead of deeper path-only matches.
   - BR-15: Empty file search orders visible project files before hidden/tooling paths, while still keeping hidden files searchable.
+  - BR-16: `FileFinder` candidates respect `.gitignore`/`.ignore` (the same rules ripgrep and VS Code use), so generated output (`dist/`, `build/`, `target/`, `node_modules/`, dotfiles) never floods the list.
 
 ### UC-2: SearchSymbols
 - **Actor**: User
@@ -134,6 +135,23 @@ Selection remains predictable:
   - BR-13: File result rows render the relative path as primary text.
   - BR-14: Symbol and workspace-search rows render the symbol or preview as primary text and path/line context as secondary metadata.
 
+### UC-7: EditorSymbolNavigation
+- **Actor**: User
+- **Trigger**: Right-click an identifier in an `Editor Pane`
+- **Precondition**: The `Editor Pane` is in authoring (non-preview) mode and an identifier is under the pointer
+- **Flow**:
+  1. Tide resolves the identifier under the pointer and opens a context menu with "Go to Definition" and "Find References".
+  2. "Go to Definition" opens the `FileFinder` with the definition query (`@name` when the symbol is defined in the focused file, otherwise `#name`).
+  3. "Find References" opens the `FileFinder` with the workspace text-search query (`/name`), listing every occurrence.
+- **Postcondition**: The integrated `FileFinder` is open in the matching mode so the user can jump to the definition or any reference.
+- **Business Rules**:
+  - BR-17: `editor_definition_query` prefixes a focused-file symbol with `@` and any other identifier with `#` (used as the fallback when no language server is available).
+  - BR-18: "Find References" opens the `FileFinder` in `FileFinderMode::WorkspaceSearch` for the identifier (fallback path).
+  - BR-19: "Go to Definition" opens the `FileFinder` in symbol mode for the identifier (fallback path).
+  - BR-20: When a language server serves the file, "Go to Definition" issues a real LSP request instead of the finder fallback (see `lsp-navigation.md`).
+  - BR-21: LSP "Find References" results render in the `FileFinder` and filter in memory (see `lsp-navigation.md`).
+  - BR-22: Cmd/Ctrl+click in an `Editor Pane` navigates directly (VS Code style) — it opens the import/file-path link under the pointer, otherwise jumps to the symbol's definition (LSP, else the first workspace-symbol match). It never opens the `FileFinder` palette.
+
 ## Invariants
 
 1. `FileFinder` stays the single modal entry point for file and code navigation.
@@ -148,6 +166,7 @@ Selection remains predictable:
 | UC-1 | BR-1 | `file_finder_behavior` | `plain_query_uses_file_mode` |
 | UC-1 | BR-2 | `file_finder_behavior` | `plain_file_query_prefers_basename_matches_over_deeper_paths` |
 | UC-1 | BR-15 | `file_finder_behavior` | `empty_file_query_orders_visible_project_files_before_hidden_paths` |
+| UC-1 | BR-16 | `file_finder_behavior` | `finder_entries_respect_gitignore` |
 | UC-2 | BR-3 | `file_finder_behavior` | `at_prefix_switches_to_current_file_symbol_mode` |
 | UC-2 | BR-4 | `file_finder_behavior` | `hash_prefix_switches_to_workspace_symbol_mode` |
 | UC-2 | BR-5 | `file_finder_behavior` | `selected_current_file_symbol_targets_focused_editor` |
@@ -159,6 +178,12 @@ Selection remains predictable:
 | UC-5 | BR-11/BR-12 | `file_finder_behavior` | `scrolling_over_file_finder_popup_scrolls_results` |
 | UC-6 | BR-13 | `file_finder_behavior` | `file_result_row_parts_show_relative_path` |
 | UC-6 | BR-14 | `file_finder_behavior` | `symbol_result_row_parts_separate_label_and_location` |
+| UC-7 | BR-17 | `file_finder_behavior` | `editor_definition_query_prefixes_local_symbol_with_at` |
+| UC-7 | BR-18 | `file_finder_behavior` | `editor_find_references_opens_workspace_text_search` |
+| UC-7 | BR-19 | `file_finder_behavior` | `editor_go_to_definition_opens_symbol_search` |
+| UC-7 | BR-20 | `file_finder_behavior` | `go_to_definition_uses_lsp_when_a_server_is_available` |
+| UC-7 | BR-21 | `file_finder_behavior` | `find_references_hits_render_in_finder_and_filter_in_memory` |
+| UC-7 | BR-22 | `file_finder_behavior` | `cmd_click_on_import_path_opens_the_file_not_a_palette` |
 
 ## Location
 

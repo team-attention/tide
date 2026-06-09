@@ -1,3 +1,5 @@
+use unicode_width::UnicodeWidthChar;
+
 use crate::tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
 
 use crate::state::drag_types::HoverTarget;
@@ -6,10 +8,231 @@ use crate::ui::file_icon;
 use crate::App;
 use crate::AppCorePort;
 
-use super::{draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style, visual_width};
+use super::{
+    draw_cursor_beam, draw_input_with_preedit, draw_popup_rounded_bg, draw_popup_scrim, text_style,
+    visual_width,
+};
 
 fn with_alpha(color: Color, alpha: f32) -> Color {
     Color::new(color.r, color.g, color.b, alpha)
+}
+
+/// Truncate to `max_cells` display columns, keeping the front (filenames,
+/// signatures) and marking the cut with an ellipsis.
+fn ellipsize_end(s: &str, max_cells: usize) -> String {
+    if max_cells == 0 || visual_width(s) <= max_cells {
+        return s.to_string();
+    }
+    let budget = max_cells.saturating_sub(1);
+    let mut out = String::new();
+    let mut w = 0usize;
+    for ch in s.chars() {
+        let cw = ch.width().unwrap_or(1);
+        if w + cw > budget {
+            break;
+        }
+        out.push(ch);
+        w += cw;
+    }
+    out.push('…');
+    out
+}
+
+/// Truncate to `max_cells`, keeping the tail — used for paths so the filename
+/// and line number (the useful part) stay visible.
+fn ellipsize_front(s: &str, max_cells: usize) -> String {
+    if max_cells == 0 || visual_width(s) <= max_cells {
+        return s.to_string();
+    }
+    let budget = max_cells.saturating_sub(1);
+    let chars: Vec<char> = s.chars().collect();
+    let mut w = 0usize;
+    let mut start = chars.len();
+    for (i, ch) in chars.iter().enumerate().rev() {
+        let cw = ch.width().unwrap_or(1);
+        if w + cw > budget {
+            break;
+        }
+        w += cw;
+        start = i;
+    }
+    let mut out = String::from('…');
+    out.extend(chars[start..].iter());
+    out
+}
+
+/// The filename portion of a `path:line` location string (for the row icon).
+fn loc_filename(loc: &str) -> &str {
+    let path = loc.rsplit_once(':').map(|(p, _)| p).unwrap_or(loc);
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+/// Draw `text`, emphasizing the first case-insensitive occurrence of
+/// `query_lower` (bold + the accent color) the way VS Code highlights matches.
+#[allow(clippy::too_many_arguments)]
+fn draw_match_text(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    text: &str,
+    query_lower: &str,
+    pos: Vec2,
+    cell_w: f32,
+    base: Color,
+    accent: Color,
+    clip: Rect,
+) {
+    let base_style = text_style(base);
+    let orig: Vec<char> = text.chars().collect();
+    let lower: Vec<char> = text.to_lowercase().chars().collect();
+    // Skip emphasis if lowercasing changed the char count (keeps index mapping
+    // exact); plain queries over ASCII/Hangul never hit this.
+    if query_lower.is_empty() || lower.len() != orig.len() {
+        renderer.draw_top_text(text, pos, base_style, clip);
+        return;
+    }
+
+    let hi_style = TextStyle {
+        foreground: accent,
+        background: None,
+        bold: true,
+        dim: false,
+        italic: false,
+        underline: false,
+    };
+    let mask = subsequence_highlight_mask(&lower, query_lower);
+    let mut cx = pos.x;
+    let mut run = String::new();
+    let mut run_hi = false;
+    for (i, &ch) in orig.iter().enumerate() {
+        if mask[i] != run_hi && !run.is_empty() {
+            let style = if run_hi { hi_style } else { base_style };
+            renderer.draw_top_text(&run, Vec2::new(cx, pos.y), style, clip);
+            cx += visual_width(&run) as f32 * cell_w;
+            run.clear();
+        }
+        run_hi = mask[i];
+        run.push(ch);
+    }
+    if !run.is_empty() {
+        let style = if run_hi { hi_style } else { base_style };
+        renderer.draw_top_text(&run, Vec2::new(cx, pos.y), style, clip);
+    }
+}
+
+/// Greedy left-to-right subsequence match: returns, per character of
+/// `lower_text`, whether it is part of the matched run for `query_lower` — the
+/// same emphasis VS Code applies, so fuzzy queries ("appfsz" → apply_font_size)
+/// and plain substrings both light up.
+fn subsequence_highlight_mask(lower_text: &[char], query_lower: &str) -> Vec<bool> {
+    let mut mask = vec![false; lower_text.len()];
+    let qchars: Vec<char> = query_lower.chars().collect();
+    if qchars.is_empty() {
+        return mask;
+    }
+
+    // 1. Prefer a clean contiguous substring — this is the common case (typing
+    //    "TideMcpToolSurfaceAdapter" should light up that exact run, not the
+    //    stray 't' in "create…"). Pick the occurrence at the strongest boundary
+    //    (start-of-word / camelCase hump) so the highlight reads naturally.
+    if qchars.len() <= lower_text.len() {
+        let mut best: Option<(u8, usize)> = None;
+        for start in 0..=(lower_text.len() - qchars.len()) {
+            if lower_text[start..start + qchars.len()] == qchars[..] {
+                let boundary = start == 0
+                    || matches!(lower_text[start - 1], ' ' | '_' | '-' | '.' | '/' | ':' | '<' | '(');
+                let rank = if boundary { 0u8 } else { 1u8 };
+                if best.map_or(true, |(r, _)| rank < r) {
+                    best = Some((rank, start));
+                    if rank == 0 {
+                        break;
+                    }
+                }
+            }
+        }
+        if let Some((_, start)) = best {
+            for slot in mask.iter_mut().skip(start).take(qchars.len()) {
+                *slot = true;
+            }
+            return mask;
+        }
+    }
+
+    // 2. Fall back to a greedy subsequence for true fuzzy queries
+    //    ("appfs" → apply_font_size).
+    let mut qi = 0usize;
+    for (i, &ch) in lower_text.iter().enumerate() {
+        if qi < qchars.len() && qchars[qi] == ch {
+            mask[i] = true;
+            qi += 1;
+        }
+    }
+    mask
+}
+
+#[cfg(test)]
+mod tests {
+    use super::subsequence_highlight_mask;
+
+    fn lower(s: &str) -> Vec<char> {
+        s.to_lowercase().chars().collect()
+    }
+
+    #[test]
+    fn fuzzy_subsequence_highlights_matched_chars() {
+        // "appfsz" fuzzily matches apply_font_size → a,p,p, f(ont), s(ize), z? no z;
+        // use a real subsequence "appfs".
+        let text = lower("apply_font_size");
+        let mask = subsequence_highlight_mask(&text, "appfs");
+        let hit: String = text
+            .iter()
+            .zip(&mask)
+            .filter(|(_, &m)| m)
+            .map(|(c, _)| *c)
+            .collect();
+        assert_eq!(hit, "appfs");
+    }
+
+    #[test]
+    fn contiguous_substring_is_fully_highlighted() {
+        let text = lower("ProviderReadinessBlockerKind");
+        let mask = subsequence_highlight_mask(&text, "providerread");
+        // The first 12 chars (ProviderRead) are the contiguous match.
+        assert!(mask[..12].iter().all(|&m| m));
+        assert!(!mask[12]);
+    }
+
+    #[test]
+    fn no_match_highlights_nothing() {
+        let text = lower("hello");
+        let mask = subsequence_highlight_mask(&text, "xyz");
+        assert!(mask.iter().all(|&m| !m));
+    }
+
+    #[test]
+    fn contiguous_run_wins_over_scattered_subsequence() {
+        // The reported bug: typing the full name highlighted the stray 't' in
+        // "create" plus a scattered tail. The contiguous run must win instead.
+        let text = lower("createTideMcpToolSurfaceAdapter");
+        let mask = subsequence_highlight_mask(&text, "tidemcptoolsurfaceadapter");
+        assert!(
+            mask[..6].iter().all(|&m| !m),
+            "'create' prefix must stay unhighlighted"
+        );
+        assert!(
+            mask[6..].iter().all(|&m| m),
+            "the contiguous TideMcpToolSurfaceAdapter run must be highlighted"
+        );
+    }
+
+    #[test]
+    fn substring_prefers_word_boundary_occurrence() {
+        // "on" appears twice; the standalone word should win over the one
+        // buried inside "button".
+        let text = lower("button on");
+        let mask = subsequence_highlight_mask(&text, "on");
+        // index 7,8 = the standalone "on" (after the space).
+        assert!(mask[7] && mask[8], "boundary 'on' highlighted");
+        assert!(!mask[4] && !mask[5], "the 'on' inside 'button' not highlighted");
+    }
 }
 
 /// Render file finder UI on top layer (visible regardless of tab state).
@@ -38,13 +261,12 @@ pub(super) fn render_file_finder(
     let popup_h = geo.popup_h;
     let input_h = geo.input_h;
     let max_visible = geo.max_visible;
-    let indent_width = cell_size.width * 1.5;
 
     let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
 
-    // Shadow
-    let shadow_color = Color::new(0.0, 0.0, 0.0, 0.25);
-    renderer.draw_top_shadow(popup_rect, shadow_color, 8.0, 40.0, 0.0);
+    // Shadow — deeper so the palette reads as a floating panel above the scrim.
+    let shadow_color = Color::new(0.0, 0.0, 0.0, 0.45);
+    renderer.draw_top_shadow(popup_rect, shadow_color, 10.0, 48.0, 0.0);
 
     // Background + border (rounded)
     draw_popup_rounded_bg(
@@ -68,18 +290,19 @@ pub(super) fn render_file_finder(
         input_h,
     );
     let text_y = input_y + (input_h - cell_height) / 2.0;
-    let icon_x = popup_x + item_pad;
-    let icon_style = text_style(p.tab_text);
+    let icon_x = popup_x + 14.0;
+    let icon_style = text_style(Color::new(0.47, 0.47, 0.50, 1.0));
 
     // Search icon
     renderer.draw_top_text(
-        "\u{f002} ",
+        "\u{f002}",
         Vec2::new(icon_x, text_y),
         icon_style,
         input_clip,
     );
 
-    let text_x = icon_x + 2.0 * cell_size.width;
+    // Align the typed query with the result column below it.
+    let text_x = icon_x + cell_size.width * 1.7 + 6.0;
     let text_clip = Rect::new(
         text_x,
         input_y,
@@ -87,16 +310,30 @@ pub(super) fn render_file_finder(
         input_h,
     );
 
-    if finder.input.is_empty() {
+    // Query text, with the in-progress IME composition (Korean, etc.) shown
+    // inline at the caret — the same treatment as every other Tide text input.
+    let beam_x = if finder.input.is_empty() && app.ime.preedit.is_empty() {
         renderer.draw_top_text(
             finder.placeholder_text(),
             Vec2::new(text_x, text_y),
             muted_style,
             text_clip,
         );
+        text_x
     } else {
-        renderer.draw_top_text(&finder.input.text, Vec2::new(text_x, text_y), ts, text_clip);
-    }
+        draw_input_with_preedit(
+            renderer,
+            &finder.input.text,
+            finder.input.cursor,
+            &app.ime.preedit,
+            Vec2::new(text_x, text_y),
+            cell_size,
+            text_clip,
+            ts,
+            p.ime_preedit_bg,
+            p.ime_preedit_fg,
+        )
+    };
 
     // Match count
     let count_text = format!("{}/{}", finder.filtered.len(), finder.total_candidates());
@@ -120,18 +357,17 @@ pub(super) fn render_file_finder(
         mode_w + mode_pad_x * 2.0,
         mode_h,
     );
-    renderer.draw_top_rounded_rect(mode_rect, with_alpha(p.badge_bg, 0.55), 4.0);
+    let badge_accent = Color::new(0.86, 0.78, 0.60, 1.0);
+    renderer.draw_top_rounded_rect(mode_rect, with_alpha(badge_accent, 0.15), 5.0);
     renderer.draw_top_text(
         mode_text,
         Vec2::new(mode_x + mode_pad_x, text_y),
-        text_style(p.badge_text),
+        text_style(with_alpha(badge_accent, 0.9)),
         input_clip,
     );
 
-    // Cursor beam
-    let cx =
-        text_x + visual_width(&finder.input.text[..finder.input.cursor]) as f32 * cell_size.width;
-    draw_cursor_beam(renderer, cx, text_y, cell_height, p.cursor_accent);
+    // Cursor beam — after the committed prefix plus the in-progress composition.
+    draw_cursor_beam(renderer, beam_x, text_y, cell_height, p.cursor_accent);
 
     // Separator line below input
     let sep_y = input_y + input_h;
@@ -152,6 +388,28 @@ pub(super) fn render_file_finder(
         max_visible as f32 * line_height,
     );
 
+    // Query (minus its mode prefix) for in-row match emphasis.
+    let query_lower = finder
+        .input
+        .text
+        .strip_prefix('@')
+        .or_else(|| finder.input.text.strip_prefix('#'))
+        .or_else(|| finder.input.text.strip_prefix('/'))
+        .unwrap_or(finder.input.text.as_str())
+        .to_lowercase();
+
+    let cell_w = cell_size.width;
+    let row_left = popup_x + 14.0;
+    let icon_x = row_left;
+    let text_x = icon_x + cell_w * 1.7 + 6.0;
+    let row_right = popup_x + popup_w - 14.0;
+
+    // Warm-monochrome palette: hierarchy via brightness, one gold accent.
+    let primary_dim = Color::new(0.82, 0.82, 0.84, 1.0);
+    let dir_dim = Color::new(0.46, 0.46, 0.49, 1.0);
+    let icon_dim = Color::new(0.47, 0.47, 0.50, 1.0);
+    let accent = Color::new(0.86, 0.78, 0.60, 1.0);
+
     for vi in 0..max_visible {
         let fi = finder.scroll_offset + vi;
         if fi >= finder.filtered.len() {
@@ -164,102 +422,114 @@ pub(super) fn render_file_finder(
             Some(HoverTarget::FileFinderItem(idx)) if idx == fi
         );
 
-        // Selected item highlight
-        if is_selected || is_hovered {
-            let color = if is_selected {
-                p.file_tree_focus_fill
-            } else {
-                with_alpha(p.badge_bg, 0.18)
-            };
-            let sel_rect = Rect::new(
-                popup_x + POPUP_SELECTED_INSET,
-                y + 2.0,
-                popup_w - 2.0 * POPUP_SELECTED_INSET,
-                line_height - 4.0,
+        // Row highlight + an active accent bar on the selected row.
+        if is_selected {
+            let sel_rect = Rect::new(popup_x + 6.0, y + 2.0, popup_w - 12.0, line_height - 4.0);
+            renderer.draw_top_rounded_rect(
+                sel_rect,
+                Color::new(1.0, 1.0, 1.0, 0.10),
+                FILE_TREE_ROW_RADIUS,
             );
-            renderer.draw_top_rounded_rect(sel_rect, color, FILE_TREE_ROW_RADIUS);
+            let bar = Rect::new(popup_x + 6.0, y + 5.0, 2.5, line_height - 10.0);
+            renderer.draw_top_rounded_rect(bar, accent, 1.5);
+        } else if is_hovered {
+            let sel_rect = Rect::new(popup_x + 6.0, y + 2.0, popup_w - 12.0, line_height - 4.0);
+            renderer.draw_top_rounded_rect(
+                sel_rect,
+                Color::new(1.0, 1.0, 1.0, 0.045),
+                FILE_TREE_ROW_RADIUS,
+            );
         }
 
-        // Result icon
-        let text_offset_y = (line_height - cell_height) / 2.0;
-        let (icon_str, icon_style) = match finder.mode {
+        let ty = y + (line_height - cell_height) / 2.0;
+        let (primary, secondary) = finder.row_parts(fi).unwrap_or_default();
+
+        // Left icon: a real file-type icon for files and text hits, a symbol
+        // glyph for symbol modes.
+        let (icon_char, icon_color) = match finder.mode {
             crate::state::FileFinderMode::Files => {
-                let entry_idx = finder.filtered[fi];
-                let rel_path = &finder.entries[entry_idx];
-                let file_name = rel_path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                let icon = file_icon(&file_name, false, false);
-                (
-                    std::iter::once(icon).collect::<String>(),
-                    text_style(p.tree_icon),
-                )
+                (file_icon(loc_filename(&primary), false, false), icon_dim)
             }
             crate::state::FileFinderMode::Symbols
-            | crate::state::FileFinderMode::WorkspaceSymbols => {
-                ("\u{f121}".to_string(), text_style(p.badge_text))
-            }
+            | crate::state::FileFinderMode::WorkspaceSymbols => ('\u{f121}', icon_dim),
             crate::state::FileFinderMode::WorkspaceSearch => {
-                ("\u{f002}".to_string(), text_style(p.badge_text))
+                (file_icon(loc_filename(&secondary), false, false), icon_dim)
             }
         };
-        let icon_x = popup_x + item_pad + 4.0;
         renderer.draw_top_text(
-            &icon_str,
-            Vec2::new(icon_x, y + text_offset_y),
-            icon_style,
+            &icon_char.to_string(),
+            Vec2::new(icon_x, ty),
+            text_style(icon_color),
             list_clip,
         );
 
-        // Result row text
-        let path_x = icon_x + indent_width + 4.0;
-        let (primary, secondary) = finder.row_parts(fi).unwrap_or_default();
-        let path_color = if is_selected {
-            p.tab_text_focused
-        } else {
-            p.tree_text
-        };
-        let path_style = TextStyle {
-            foreground: path_color,
-            background: None,
-            bold: is_selected,
-            dim: false,
-            italic: false,
-            underline: false,
-        };
-        let meta_style = TextStyle {
-            foreground: if is_selected {
-                p.badge_text
-            } else {
-                p.badge_text_dimmed
-            },
-            background: None,
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-        };
-        let secondary_w = visual_width(&secondary) as f32 * cell_size.width;
-        let secondary_x = popup_x + popup_w - item_pad - secondary_w;
-        let primary_clip_w = if secondary.is_empty() {
-            popup_x + popup_w - item_pad - path_x
-        } else {
-            (secondary_x - path_x - 12.0).max(0.0)
-        };
-        renderer.draw_top_text(
-            &primary,
-            Vec2::new(path_x, y + text_offset_y),
-            path_style,
-            Rect::new(path_x, list_top, primary_clip_w, list_clip.height),
-        );
-        if !secondary.is_empty() && secondary_w < list_clip.width {
-            renderer.draw_top_text(
-                &secondary,
-                Vec2::new(secondary_x, y + text_offset_y),
-                meta_style,
-                list_clip,
-            );
+        let primary_color = if is_selected { p.tab_text_focused } else { primary_dim };
+
+        match finder.mode {
+            crate::state::FileFinderMode::Files => {
+                // Filename bright, parent directory dim (Quick Open hierarchy).
+                let avail = ((row_right - text_x) / cell_w).max(0.0) as usize;
+                let (dir, name) = match primary.rfind('/') {
+                    Some(i) => (&primary[..=i], &primary[i + 1..]),
+                    None => ("", primary.as_str()),
+                };
+                let dir_budget = avail.saturating_sub(visual_width(name));
+                let dir_disp = ellipsize_front(dir, dir_budget);
+                let mut cx = text_x;
+                if !dir_disp.is_empty() {
+                    renderer.draw_top_text(
+                        &dir_disp,
+                        Vec2::new(cx, ty),
+                        text_style(dir_dim),
+                        list_clip,
+                    );
+                    cx += visual_width(&dir_disp) as f32 * cell_w;
+                }
+                let name_disp =
+                    ellipsize_end(name, avail.saturating_sub(visual_width(&dir_disp)));
+                let name_style = TextStyle {
+                    foreground: primary_color,
+                    background: None,
+                    bold: is_selected,
+                    dim: false,
+                    italic: false,
+                    underline: false,
+                };
+                renderer.draw_top_text(&name_disp, Vec2::new(cx, ty), name_style, list_clip);
+            }
+            _ => {
+                // Primary (signature / matched line) keeps priority; the path is
+                // capped to ~40% and trimmed from the front so the filename and
+                // line number stay readable.
+                let total = ((row_right - text_x) / cell_w).max(0.0) as usize;
+                let sec_disp = if secondary.is_empty() {
+                    String::new()
+                } else {
+                    ellipsize_front(&secondary, (total * 40) / 100)
+                };
+                let sec_w = visual_width(&sec_disp);
+                let gap = if sec_w > 0 { 2 } else { 0 };
+                let prim_disp = ellipsize_end(&primary, total.saturating_sub(sec_w + gap));
+                draw_match_text(
+                    renderer,
+                    &prim_disp,
+                    &query_lower,
+                    Vec2::new(text_x, ty),
+                    cell_w,
+                    primary_color,
+                    accent,
+                    list_clip,
+                );
+                if sec_w > 0 {
+                    let sec_x = row_right - sec_w as f32 * cell_w;
+                    renderer.draw_top_text(
+                        &sec_disp,
+                        Vec2::new(sec_x, ty),
+                        text_style(dir_dim),
+                        list_clip,
+                    );
+                }
+            }
         }
     }
 

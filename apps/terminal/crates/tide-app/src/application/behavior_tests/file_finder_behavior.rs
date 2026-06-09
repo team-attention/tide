@@ -71,6 +71,204 @@ fn app_with_file_backed_editor(root: &PathBuf, rel_path: &str, contents: &str) -
     (app, id)
 }
 
+// --- UC-7: EditorSymbolNavigation ---
+
+// A fake LSP that reports navigation support and records definition/references
+// requests, so tests can prove the real-LSP path is taken (not the fallback).
+#[derive(Clone, Default)]
+struct RecordingLsp {
+    definitions: std::sync::Arc<std::sync::Mutex<Vec<(String, u32, u32)>>>,
+    references: std::sync::Arc<std::sync::Mutex<Vec<(String, u32, u32)>>>,
+}
+
+impl crate::outward::LspPort for RecordingLsp {
+    fn init(&mut self, _root: &std::path::Path, _waker: Option<crate::tide_platform::WakeCallback>) {}
+    fn is_initialized(&self) -> bool {
+        true
+    }
+    fn did_open(&mut self, _uri: &str, _lang: crate::tide_lsp::manager::Language, _text: &str) {}
+    fn did_change(&mut self, _uri: &str, _text: &str) {}
+    fn did_save(&mut self, _uri: &str) {}
+    fn did_close(&mut self, _uri: &str) {}
+    fn request_completion(
+        &mut self,
+        _uri: &str,
+        _line: u32,
+        _character: u32,
+        _trigger_kind: u32,
+        _trigger_char: Option<&str>,
+    ) {
+    }
+    fn trigger_characters(&self, _lang: crate::tide_lsp::manager::Language) -> Vec<String> {
+        Vec::new()
+    }
+    fn poll(&mut self) -> Option<crate::tide_lsp::manager::CompletionResponse> {
+        None
+    }
+    fn supports_navigation(&self, _uri: &str) -> bool {
+        true
+    }
+    fn request_definition(&mut self, uri: &str, line: u32, character: u32) {
+        self.definitions
+            .lock()
+            .unwrap()
+            .push((uri.to_string(), line, character));
+    }
+    fn request_references(&mut self, uri: &str, line: u32, character: u32) {
+        self.references
+            .lock()
+            .unwrap()
+            .push((uri.to_string(), line, character));
+    }
+    fn poll_navigation(&mut self) -> Option<crate::tide_lsp::manager::NavigationResponse> {
+        None
+    }
+}
+
+#[test]
+fn go_to_definition_uses_lsp_when_a_server_is_available() {
+    // UC-7 BR-20: With a language server serving the file, "Go to Definition"
+    // issues a real LSP `textDocument/definition` request instead of the
+    // finder fallback.
+    let root = temp_dir("lsp_def");
+    let (mut app, id) =
+        app_with_file_backed_editor(&root, "src/util.ts", "export function fooBar() {}\n");
+    let lsp = RecordingLsp::default();
+    let definitions = lsp.definitions.clone();
+    app.ports.lsp = Box::new(lsp);
+    app.modal.context_menu = Some(crate::ContextMenuState {
+        target: crate::ContextMenuTarget::EditorSymbol {
+            pane_id: id,
+            identifier: "fooBar".to_string(),
+            line: 0,
+            character: 16,
+        },
+        position: Vec2::new(0.0, 0.0),
+        selected: 0,
+    });
+    crate::FileTreePort::execute_context_menu_action(&mut app, 0);
+
+    assert_eq!(definitions.lock().unwrap().len(), 1, "one LSP definition request");
+    let (uri, line, character) = definitions.lock().unwrap()[0].clone();
+    assert!(uri.ends_with("src/util.ts"), "request targets the file: {uri}");
+    assert_eq!((line, character), (0, 16));
+    // The finder fallback must NOT have opened.
+    assert!(app.modal.file_finder.is_none(), "LSP path used, not the search fallback");
+}
+
+#[test]
+fn find_references_hits_render_in_finder_and_filter_in_memory() {
+    // UC-7 BR-21: LSP "Find References" results are shown in the finder and
+    // filtered in memory (never re-grepped from disk).
+    let base = temp_dir("ref_hits");
+    let mut finder = FileFinderState::new(base, vec![]);
+    finder.set_reference_hits(vec![
+        WorkspaceSearchHit {
+            path: PathBuf::from("src/a.ts"),
+            line: 3,
+            col: 5,
+            preview: "fooBar()".to_string(),
+        },
+        WorkspaceSearchHit {
+            path: PathBuf::from("src/b.ts"),
+            line: 9,
+            col: 1,
+            preview: "const x = fooBar".to_string(),
+        },
+    ]);
+    assert_eq!(finder.mode, FileFinderMode::WorkspaceSearch);
+    assert_eq!(finder.filtered.len(), 2);
+    // Typing narrows the injected hits in memory (only b.ts's preview has 'x').
+    finder.insert_char('x');
+    assert_eq!(finder.filtered.len(), 1);
+    assert_eq!(finder.workspace_search_hits[finder.filtered[0]].path, PathBuf::from("src/b.ts"));
+}
+
+#[test]
+fn cmd_click_on_import_path_opens_the_file_not_a_palette() {
+    // UC-7 BR-22: Cmd/Ctrl+click on an import/file path opens that file directly
+    // (VS Code behavior) — it must NOT pop the search palette.
+    let root = temp_dir("cmdclick_import");
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("src/b.ts"), "export const b = 1;\n").unwrap();
+    let (mut app, id) =
+        app_with_file_backed_editor(&root, "src/a.ts", "import { b } from \"./b\";\n");
+
+    // Click inside the quoted import specifier "./b".
+    let line = "import { b } from \"./b\";";
+    let col = line.find("./b").unwrap() + 1;
+    app.editor_navigate_at(id, 0, col);
+
+    assert!(
+        app.modal.file_finder.is_none(),
+        "Cmd+click must not open the search palette"
+    );
+    let opened_b = app.panes.values().any(|p| {
+        matches!(p, PaneKind::Editor(ep)
+            if ep.editor.file_path().map(|x| x.ends_with("b.ts")).unwrap_or(false))
+    });
+    assert!(opened_b, "the imported file b.ts should be opened");
+}
+
+#[test]
+fn editor_definition_query_prefixes_local_symbol_with_at() {
+    // UC-7 BR-17: focused-file symbol -> @name, otherwise #name.
+    let root = temp_dir("def_query");
+    let (app, id) = app_with_file_backed_editor(
+        &root,
+        "src/util.ts",
+        "export function fooBar() { return 1 }\nconst y = fooBar()\n",
+    );
+    assert_eq!(app.editor_definition_query(id, "fooBar"), "@fooBar");
+    assert_eq!(app.editor_definition_query(id, "SomethingElse"), "#SomethingElse");
+}
+
+#[test]
+fn editor_find_references_opens_workspace_text_search() {
+    // UC-7 BR-18: Find References opens the finder in workspace text mode.
+    let root = temp_dir("find_refs");
+    let (mut app, id) =
+        app_with_file_backed_editor(&root, "src/util.ts", "export function fooBar() {}\n");
+    app.modal.context_menu = Some(crate::ContextMenuState {
+        target: crate::ContextMenuTarget::EditorSymbol {
+            pane_id: id,
+            identifier: "fooBar".to_string(),
+            line: 0,
+            character: 0,
+        },
+        position: Vec2::new(0.0, 0.0),
+        selected: 0,
+    });
+    // Index 1 = Find References.
+    app.execute_context_menu_action(1);
+    let finder = app.modal.file_finder.as_ref().expect("finder opened");
+    assert_eq!(finder.mode, FileFinderMode::WorkspaceSearch);
+    assert!(finder.input.text.contains("fooBar"));
+}
+
+#[test]
+fn editor_go_to_definition_opens_symbol_search() {
+    // UC-7 BR-19: Go to Definition opens the finder in symbol mode.
+    let root = temp_dir("go_def");
+    let (mut app, id) =
+        app_with_file_backed_editor(&root, "src/util.ts", "export function fooBar() {}\n");
+    app.modal.context_menu = Some(crate::ContextMenuState {
+        target: crate::ContextMenuTarget::EditorSymbol {
+            pane_id: id,
+            identifier: "fooBar".to_string(),
+            line: 0,
+            character: 0,
+        },
+        position: Vec2::new(0.0, 0.0),
+        selected: 0,
+    });
+    // Index 0 = Go to Definition; fooBar is defined in this file -> @ symbol mode.
+    app.execute_context_menu_action(0);
+    let finder = app.modal.file_finder.as_ref().expect("finder opened");
+    assert_eq!(finder.mode, FileFinderMode::Symbols);
+    assert!(finder.input.text.contains("fooBar"));
+}
+
 // --- UC-1: SearchFiles ---
 
 #[test]
@@ -85,6 +283,41 @@ fn plain_query_uses_file_mode() {
     finder.insert_char('e');
 
     assert_eq!(finder.mode, FileFinderMode::Files);
+}
+
+#[test]
+fn finder_entries_respect_gitignore() {
+    // UC-1 BR-16: FileFinder candidates respect .gitignore/.ignore so generated
+    // output never floods the list.
+    let base = temp_dir("gitignore");
+    fs::write(base.join(".gitignore"), "dist/\nbuild/\n*.log\n").unwrap();
+    fs::write(base.join("src.ts"), "export const x = 1;\n").unwrap();
+    fs::create_dir_all(base.join("dist")).unwrap();
+    fs::write(base.join("dist/bundle.js"), "// generated\n").unwrap();
+    fs::create_dir_all(base.join("build/pkg")).unwrap();
+    fs::write(base.join("build/pkg/app.bin"), "x").unwrap();
+    fs::create_dir_all(base.join("node_modules/dep")).unwrap();
+    fs::write(base.join("node_modules/dep/index.js"), "x").unwrap();
+    fs::write(base.join("debug.log"), "noise\n").unwrap();
+
+    let entries = App::gather_finder_entries(&base, 8);
+
+    assert!(
+        entries.contains(&PathBuf::from("src.ts")),
+        "tracked source file should be listed: {entries:?}"
+    );
+    for ignored in [
+        PathBuf::from("dist/bundle.js"),
+        PathBuf::from("build/pkg/app.bin"),
+        PathBuf::from("node_modules/dep/index.js"),
+        PathBuf::from("debug.log"),
+        PathBuf::from(".gitignore"),
+    ] {
+        assert!(
+            !entries.contains(&ignored),
+            "ignored path should not be listed: {ignored:?} in {entries:?}"
+        );
+    }
 }
 
 #[test]

@@ -11,6 +11,49 @@ fn editor_with_extension(ext: &str) -> EditorPane {
     EditorPane::open(1, &path).unwrap()
 }
 
+#[test]
+fn korean_wrapped_caret_rect_lands_on_the_glyph() {
+    // UC-3 BR-19 (rendering): the caret RECT the GPU draws — `authoring_cursor_rect`
+    // — must land exactly on the glyph the cursor points at, even after a wide-char
+    // early wrap. This is the production caret-render path (not just the WrapMap math).
+    use crate::tide_core::{Rect, Size};
+    use crate::tide_editor::EditorPosition;
+
+    let mut pane = EditorPane::new_empty(1);
+    pane.soft_wrap = true;
+    pane.editor.buffer.lines = vec!["가가가가".to_string()]; // 4 CJK glyphs, bytes 0,3,6,9
+    // Wrap at 5 cells: each width-2 glyph forces an early break, so rows are 4 cells.
+    pane.ensure_wrap_map(5);
+    assert!(pane.effective_soft_wrap());
+
+    let cell = Size::new(8.0, 16.0);
+    let inner = Rect::new(0.0, 0.0, 400.0, 400.0);
+    let gutter_px = 6.0 * cell.width; // GUTTER_WIDTH_CELLS = 6
+
+    // Cursor at char 2 (byte 6): first glyph of visual row 1 → column 0.
+    pane.editor
+        .cursor
+        .set_position(EditorPosition { line: 0, col: 6 });
+    let caret = pane
+        .authoring_cursor_rect(inner, cell, 0)
+        .expect("caret visible");
+    assert_eq!(caret.y, 16.0, "caret on the 2nd visual row");
+    assert_eq!(
+        caret.x, gutter_px,
+        "caret at column 0 of its wrapped row (was gutter+4 cells before the fix)"
+    );
+
+    // Cursor at char 3 (byte 9): second glyph of visual row 1 → column 2 cells.
+    pane.editor
+        .cursor
+        .set_position(EditorPosition { line: 0, col: 9 });
+    let caret = pane
+        .authoring_cursor_rect(inner, cell, 0)
+        .expect("caret visible");
+    assert_eq!(caret.y, 16.0);
+    assert_eq!(caret.x, gutter_px + 2.0 * cell.width);
+}
+
 fn test_app() -> App {
     let mut app = App::new();
     app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);

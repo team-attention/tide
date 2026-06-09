@@ -397,6 +397,9 @@ pub const PANE_PADDING: f32 = 12.0;
 pub const TERMINAL_TOP_PADDING_CELLS: f32 = 0.5;
 pub const PANE_CORNER_RADIUS: f32 = 0.0;
 pub const FILE_TREE_LINE_SPACING: f32 = 1.7;
+/// Row rhythm for the file finder / command palette — roomier than the file
+/// tree so results read like VS Code Quick Open instead of a dense list.
+pub const FILE_FINDER_ROW_SPACING: f32 = 2.05;
 pub const FILE_TREE_ROW_RADIUS: f32 = 6.0;
 pub const FILE_TREE_WIDTH: f32 = 200.0;
 pub const FILE_TREE_MIN_WIDTH: f32 = 160.0;

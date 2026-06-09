@@ -78,6 +78,7 @@ All other file types: no wrap (current behavior preserved).
   - BR-11: Home goes to start of visual row (not logical line start)
   - BR-12: End goes to end of visual row (not logical line end)
   - BR-13: Left/Right at visual row boundary continues within the same logical line (no change from current behavior)
+  - BR-19: The visual row and column for a buffer position follow the real wrapped-row boundaries (`WrapMap` rows), not `display_col % wrap_width`. When an early wide-character (CJK) wrap makes a row narrower than `wrap_width`, the rendered caret still lands on the glyph it points at.
 
 ### UC-4: Click in Wrapped Text
 - **Actor**: User
@@ -153,6 +154,7 @@ All other file types: no wrap (current behavior preserved).
 | UC-3 | BR-10 | `cursor_up_down_moves_by_visual_row()` |
 | UC-3 | BR-11 | `home_goes_to_visual_row_start()` |
 | UC-3 | BR-12 | `end_goes_to_visual_row_end()` |
+| UC-3 | BR-19 | `wide_char_cursor_position_uses_real_row_boundaries()` |
 | UC-4 | BR-14 | `click_on_continuation_row_maps_correctly()` |
 | UC-5 | BR-15, BR-16 | `wrapped_selection_highlight_tracks_visual_rows()` |
 | UC-6 | BR-17 | `wrap_map_rebuilt_on_width_change()` |

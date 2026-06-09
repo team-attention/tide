@@ -7,6 +7,8 @@ use crate::tide_lsp::manager::Language;
 use crate::pane::editor::completion::{CompletionItem, CompletionKind, CompletionState};
 use crate::pane::PaneKind;
 use crate::App;
+use crate::FileOpsPort;
+use crate::PaneLifecyclePort;
 
 impl App {
     /// Initialize the LSP manager with the current working directory.
@@ -236,6 +238,67 @@ impl App {
             return true;
         }
         false
+    }
+
+    /// Poll the LSP manager for definition/references results. Call from the
+    /// event loop. Opens the definition target, or shows references in the
+    /// finder. Returns true when a response was handled (redraw needed).
+    pub(crate) fn poll_lsp_navigation(&mut self) -> bool {
+        use crate::tide_lsp::manager::NavKind;
+        let Some(response) = self.ports.lsp.poll_navigation() else {
+            return false;
+        };
+        match response.kind {
+            NavKind::GoToDefinition => {
+                if let Some(loc) = response.locations.into_iter().next() {
+                    // LSP lines are 0-based; open_editor_pane_at_line is 1-based.
+                    self.open_editor_pane_at_line(loc.path, Some(loc.line as usize + 1));
+                }
+            }
+            NavKind::FindReferences => {
+                if !response.locations.is_empty() {
+                    self.show_reference_results(response.locations);
+                }
+            }
+        }
+        true
+    }
+
+    /// Open the finder populated with LSP "Find References" results.
+    fn show_reference_results(
+        &mut self,
+        locations: Vec<crate::tide_lsp::manager::LspLocation>,
+    ) {
+        let base_dir = self.resolve_base_dir();
+        let hits: Vec<crate::state::WorkspaceSearchHit> = locations
+            .into_iter()
+            .map(|loc| {
+                let rel = loc
+                    .path
+                    .strip_prefix(&base_dir)
+                    .unwrap_or(&loc.path)
+                    .to_path_buf();
+                let preview = std::fs::read_to_string(&loc.path)
+                    .ok()
+                    .and_then(|text| {
+                        text.lines()
+                            .nth(loc.line as usize)
+                            .map(|l| l.trim().to_string())
+                    })
+                    .unwrap_or_default();
+                crate::state::WorkspaceSearchHit {
+                    path: rel,
+                    line: loc.line as usize + 1,
+                    col: loc.character as usize + 1,
+                    preview,
+                }
+            })
+            .collect();
+        self.open_file_finder_with_replace(None);
+        if let Some(ref mut finder) = self.modal.file_finder {
+            finder.set_reference_hits(hits);
+        }
+        self.cache.invalidate_chrome();
     }
 
     fn find_pane_by_uri(&self, uri: &str) -> Option<PaneId> {

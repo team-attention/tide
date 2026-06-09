@@ -87,6 +87,7 @@ Theme switching and font defaults.
   - BR-22: Dark syntax highlighting must use VS Code Dark+ role colors instead of a stock low-variance base theme.
   - BR-23: Dark syntax highlighting must produce multiple visibly distinct token colors for representative Rust source.
   - BR-24: Dark Markdown theme roles must be distinct enough for headings, code, links, and body text to read as separate content classes.
+  - BR-27: TypeScript (`.ts`/`.mts`/`.cts`) generic type arguments must be colored as types, never as JSX tags. Plain TypeScript has no JSX, so `<…>` is a generic type-argument list (`Promise<T>`, `Array<Map<string, number>>`); a real comparison `a < b` must stay an operator, not start a tag/generic.
 
 ### UC-5: ConfigureAppearanceTheme
 
@@ -140,6 +141,7 @@ Theme switching and font defaults.
 | UC-4A | BR-22 | `dark_syntax_highlighting_uses_vscode_dark_plus_role_colors` |
 | UC-4A | BR-23 | `dark_syntax_highlighting_gives_rust_source_distinct_token_colors` |
 | UC-4A | BR-24 | `dark_markdown_theme_separates_content_roles` |
+| UC-4A | BR-27 | `dark_typescript_generics_color_as_types_not_jsx_tags` |
 | UC-5 | BR-12/BR-13 | `config_page_appearance_theme_uses_text_status` |
 | UC-5 | BR-14 | `config_page_appearance_theme_toggle_switches_theme` |
 | UC-6 | BR-20/BR-21 | `dark_mode_editor_surface_has_document_depth_without_loud_overlays` |

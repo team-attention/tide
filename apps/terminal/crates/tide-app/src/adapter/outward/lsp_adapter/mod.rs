@@ -72,6 +72,25 @@ impl LspPort for RealLsp {
     fn poll(&mut self) -> Option<manager::CompletionResponse> {
         self.manager.as_mut()?.poll()
     }
+    fn supports_navigation(&self, uri: &str) -> bool {
+        self.manager
+            .as_ref()
+            .map(|lsp| lsp.supports_navigation(uri))
+            .unwrap_or(false)
+    }
+    fn request_definition(&mut self, uri: &str, line: u32, character: u32) {
+        if let Some(ref mut lsp) = self.manager {
+            lsp.request_definition(uri, line, character);
+        }
+    }
+    fn request_references(&mut self, uri: &str, line: u32, character: u32) {
+        if let Some(ref mut lsp) = self.manager {
+            lsp.request_references(uri, line, character);
+        }
+    }
+    fn poll_navigation(&mut self) -> Option<manager::NavigationResponse> {
+        self.manager.as_mut()?.poll_navigation()
+    }
 }
 
 pub(crate) struct NoopLsp;
@@ -98,6 +117,14 @@ impl LspPort for NoopLsp {
         Vec::new()
     }
     fn poll(&mut self) -> Option<manager::CompletionResponse> {
+        None
+    }
+    fn supports_navigation(&self, _uri: &str) -> bool {
+        false
+    }
+    fn request_definition(&mut self, _uri: &str, _line: u32, _character: u32) {}
+    fn request_references(&mut self, _uri: &str, _line: u32, _character: u32) {}
+    fn poll_navigation(&mut self) -> Option<manager::NavigationResponse> {
         None
     }
 }

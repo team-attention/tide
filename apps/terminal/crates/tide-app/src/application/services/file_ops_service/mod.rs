@@ -49,8 +49,7 @@ impl crate::FileOpsPort for App {
         self.interaction.drop_preview_start = None;
 
         let base_dir = self.resolve_base_dir();
-        let mut entries: Vec<PathBuf> = Vec::new();
-        Self::scan_dir(&base_dir, &base_dir, &mut entries, 0, 8);
+        let mut entries: Vec<PathBuf> = Self::gather_finder_entries(&base_dir, 8);
         crate::state::sort_file_finder_entries(&mut entries);
 
         let (symbol_source_pane_id, current_file_symbols) =
@@ -84,6 +83,45 @@ impl crate::FileOpsPort for App {
 
     fn ensure_file_finder_workspace_symbols_loaded(&mut self) {
         App::ensure_file_finder_workspace_symbols_loaded(self);
+    }
+
+    fn open_editor_symbol_context_menu(
+        &mut self,
+        pane_id: crate::tide_core::PaneId,
+        position: crate::tide_core::Vec2,
+    ) -> bool {
+        let (line, col) = match self.editor_click_target(pane_id, position) {
+            Some(target) => target,
+            None => return false,
+        };
+        let identifier = match self.editor_identifier_at(pane_id, line, col) {
+            Some(id) => id,
+            None => return false,
+        };
+        // LSP position: 0-based line + UTF-16 character offset within the line.
+        // `col` from editor_click_target is a CHARACTER index.
+        let character = match self.panes.get(&pane_id) {
+            Some(PaneKind::Editor(pane)) => pane
+                .editor
+                .buffer
+                .line(line)
+                .map(|text| text.chars().take(col).map(char::len_utf16).sum())
+                .unwrap_or(0),
+            _ => 0,
+        };
+        self.modal.file_tree_rename = None;
+        self.modal.context_menu = Some(crate::ContextMenuState {
+            target: crate::ContextMenuTarget::EditorSymbol {
+                pane_id,
+                identifier,
+                line,
+                character,
+            },
+            position,
+            selected: 0,
+        });
+        self.cache.invalidate_chrome();
+        true
     }
 
     /// Open or focus a DiffPane for the given CWD.
@@ -204,7 +242,7 @@ impl App {
             .unwrap_or((None, Vec::new()))
     }
 
-    fn build_workspace_file_finder_symbols(
+    pub(crate) fn build_workspace_file_finder_symbols(
         &self,
         base_dir: &Path,
         entries: &[PathBuf],
@@ -227,43 +265,47 @@ impl App {
         workspace_symbols
     }
 
-    /// Recursively scan a directory, collecting file paths relative to base_dir.
-    fn scan_dir(
-        dir: &std::path::Path,
+    /// Gather file finder candidates under `base_dir`, respecting `.gitignore`,
+    /// `.ignore`, and the global gitignore — the same rules ripgrep/VS Code use,
+    /// so generated output (`dist/`, `build/`, `target/`, `node_modules/`, …)
+    /// never floods the finder. Returns paths relative to `base_dir`.
+    pub(crate) fn gather_finder_entries(
         base_dir: &std::path::Path,
-        entries: &mut Vec<PathBuf>,
-        depth: usize,
         max_depth: usize,
-    ) {
-        if depth > max_depth {
-            return;
-        }
-        let read_dir = match std::fs::read_dir(dir) {
-            Ok(rd) => rd,
-            Err(_) => return,
-        };
-        let mut subdirs: Vec<PathBuf> = Vec::new();
-        for entry in read_dir.flatten() {
-            let path = entry.path();
-            let file_name = entry.file_name();
-            let name = file_name.to_string_lossy();
+    ) -> Vec<PathBuf> {
+        let mut builder = ignore::WalkBuilder::new(base_dir);
+        builder
+            .max_depth(Some(max_depth))
+            .hidden(true) // skip dotfiles (.git, .DS_Store, …)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .parents(true)
+            .require_git(false) // honor .gitignore even outside a git repo
+            .follow_links(false);
+        // Safety net: always skip heavy generated/VCS directories even when a
+        // project ships no `.gitignore` (ripgrep would otherwise descend into
+        // `node_modules`/`target` unless they are explicitly ignored).
+        builder.filter_entry(|entry| {
+            !matches!(
+                entry.file_name().to_str(),
+                Some(".git" | "node_modules" | "target" | "__pycache__")
+            )
+        });
 
-            // Skip .git and common large/generated directories
-            if name == ".git" || name == "node_modules" || name == "target" || name == "__pycache__"
-            {
-                continue;
-            }
-
-            if path.is_dir() {
-                subdirs.push(path);
-            } else if path.is_file() {
-                if let Ok(rel) = path.strip_prefix(base_dir) {
+        let mut entries: Vec<PathBuf> = Vec::new();
+        for result in builder.build() {
+            let entry = match result {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+            // Files only (the walker yields directories too).
+            if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                if let Ok(rel) = entry.path().strip_prefix(base_dir) {
                     entries.push(rel.to_path_buf());
                 }
             }
         }
-        for subdir in subdirs {
-            Self::scan_dir(&subdir, base_dir, entries, depth + 1, max_depth);
-        }
+        entries
     }
 }

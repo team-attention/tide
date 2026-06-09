@@ -10,6 +10,7 @@
 - The `Context Comment Composer` accepts IME commit text, but it does not render preedit inline and does not expose an overlay-specific IME cursor area.
 - IME cursor-area updates currently derive only from the focused `Terminal` or `Editor` caret, so overlay text inputs such as the `Search Bar` and `Context Comment Composer` can anchor the candidate window to the wrong place.
 - The `Context Comment Composer` still uses a one-line caret and cursor-area model, so long multiline composition can drift once the visible comment wraps.
+- While IME composition is active, pressing a cursor-movement key (arrows, Home/End, Page Up/Down) moves the caret **without** committing the in-progress glyph: the platform IME keeps composing, so the glyph is finalized at the new caret location. The composing glyph appears to be "carried" to wherever the caret lands — diverging from VS Code / native macOS text views, which commit the glyph in place first.
 
 ### To-Be
 
@@ -19,6 +20,7 @@
 - The IME candidate window follows the active overlay caret for `Search Bar` and `Context Comment Composer` instead of the underlying `Pane` cursor.
 - Long Korean composition in the `Search Bar` keeps committed text, preedit text, caret, and IME cursor area visually aligned.
 - Long Korean composition in the `Context Comment Composer` keeps committed text, preedit text, wrapped-row caret, and IME cursor area visually aligned.
+- A cursor-movement key pressed during composition commits the in-progress glyph at its current caret position first, then performs the movement — the glyph stays put (no "carry"), matching VS Code and native macOS text views. This holds for both `Editor` and `Terminal` targets.
 
 ### Approach
 
@@ -105,6 +107,20 @@
   - BR-15: Long Korean `Search Bar` composition keeps committed text, preedit, caret, and IME cursor area aligned
   - BR-16: Long Korean `Context Comment Composer` composition keeps committed text, preedit, wrapped-row caret, and IME cursor area aligned
 
+### UC-5: NavigationCommitsCompositionInPlace
+
+- **Actor**: User
+- **Trigger**: The caret is moved while IME composition is active — either a cursor-movement key (Left/Right/Up/Down, Home/End, Page Up/Down) or a mouse click
+- **Precondition**: An IME composition is in progress over an `Editor` or `Terminal` target
+- **Flow**:
+  1. For a cursor-movement key, the platform IME proxy detects it while marked (composing) text is non-empty and the input method passed the key through. For a mouse click, the `TideView` mouse handler asks the focused IME proxy to finalize composition before the click is dispatched.
+  2. The proxy commits the in-progress glyph at the current caret position (`ImeCommit`), clears the preedit overlay, and resets the input method's marked state (`discardMarkedText`) so it will not re-commit the same glyph
+  3. The movement (key or click) then applies, moving the caret
+- **Postcondition**: The composing glyph is finalized at its original caret position and the caret moves to the requested location; the glyph is not carried to the new location
+- **Business Rules**:
+  - BR-17: A cursor-movement key during composition commits the in-progress glyph in place, then moves the caret (the committed glyph keeps its original position)
+  - BR-18: A mouse click during composition commits the in-progress glyph in place before the click moves the caret (`commit_pending_composition`)
+
 ## Invariants
 
 1. IME composition state remains separate from committed text.
@@ -133,6 +149,8 @@
 | UC-4 | BR-14 | `context_comment_composer_ime_cursor_area_tracks_composer_caret` |
 | UC-4 | BR-15 | `search_bar_long_hangul_input_keeps_text_and_caret_aligned` |
 | UC-4 | BR-16 | `context_comment_composer_long_hangul_input_keeps_text_and_caret_aligned` |
+| UC-5 | BR-17 | `navigation_during_composition_commits_glyph_in_place_then_moves` |
+| UC-5 | BR-18 | platform (`ime_proxy::commit_pending_composition` via `TideView` mouse handler) — same commit-then-move domain contract as BR-17; live-verified |
 
 ## Location
 
@@ -142,4 +160,5 @@
 | IME input | `crates/tide-app/src/adapter/inward/ime_adapter/mod.rs` |
 | IME target + cursor area | `crates/tide-app/src/adapter/inward/event_loop_adapter/mod.rs` |
 | Overlay rendering | `crates/tide-app/src/adapter/outward/view/overlays/search_bar.rs`, `crates/tide-app/src/adapter/outward/view/overlays/context_comment.rs` |
+| Composition commit-on-navigation | `crates/tide-app/src/adapter/outward/platform_adapter/macos/ime_proxy.rs` (`do_command_by_selector`) |
 | Behavior tests | `crates/tide-app/src/application/behavior_tests/ime_behavior.rs` |

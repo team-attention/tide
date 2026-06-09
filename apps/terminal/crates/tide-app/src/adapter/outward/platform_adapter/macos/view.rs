@@ -258,6 +258,10 @@ declare_class!(
 
         #[method(mouseDown:)]
         fn mouse_down(&self, event: &NSEvent) {
+            // Finalize any in-progress IME composition in place BEFORE the click
+            // moves the caret, so the composing glyph commits where it was rather
+            // than following the caret to the click position.
+            self.finalize_active_composition();
             let pos = self.mouse_pos(event);
             self.emit(PlatformEvent::MouseDown { button: MouseButton::Left, position: pos });
         }
@@ -457,6 +461,23 @@ impl TideView {
         let converted: NSPoint =
             unsafe { msg_send![self, convertPoint:point fromView:std::ptr::null::<NSView>()] };
         (converted.x, converted.y)
+    }
+
+    /// If the focused pane's IME proxy is mid-composition, commit the composing
+    /// glyph in place. Called before a mouse click so the glyph stays put rather
+    /// than being carried to the click position.
+    fn finalize_active_composition(&self) {
+        unsafe {
+            let window: Option<Retained<objc2_app_kit::NSWindow>> = msg_send_id![self, window];
+            let Some(window) = window else { return };
+            let responder: Option<Retained<AnyObject>> = msg_send_id![&window, firstResponder];
+            let Some(responder) = responder else { return };
+            if responder.class().name() != "ImeProxyView" {
+                return;
+            }
+            // Safe: we just confirmed the responder is an ImeProxyView.
+            let _: () = msg_send![&responder, commitPendingComposition];
+        }
     }
 
     fn backing_scale(&self) -> f64 {

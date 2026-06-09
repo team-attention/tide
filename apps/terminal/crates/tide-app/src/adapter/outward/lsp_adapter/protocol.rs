@@ -172,6 +172,50 @@ pub struct CompletionContext {
 pub const COMPLETION_TRIGGER_INVOKED: u32 = 1;
 pub const COMPLETION_TRIGGER_CHARACTER: u32 = 2;
 
+// ── Definition / References ──
+
+#[derive(Serialize)]
+pub struct TextDocumentPositionParams {
+    #[serde(rename = "textDocument")]
+    pub text_document: TextDocumentIdentifier,
+    pub position: LspPosition,
+}
+
+#[derive(Serialize)]
+pub struct ReferenceParams {
+    #[serde(rename = "textDocument")]
+    pub text_document: TextDocumentIdentifier,
+    pub position: LspPosition,
+    pub context: ReferenceContext,
+}
+
+#[derive(Serialize)]
+pub struct ReferenceContext {
+    #[serde(rename = "includeDeclaration")]
+    pub include_declaration: bool,
+}
+
+/// `Location` and (the relevant fields of) `LocationLink` from a
+/// `textDocument/definition` or `references` response.
+#[derive(Deserialize, Debug)]
+pub struct LspRange {
+    pub start: LspPosition,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Location {
+    pub uri: String,
+    pub range: LspRange,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct LocationLink {
+    #[serde(rename = "targetUri")]
+    pub target_uri: String,
+    #[serde(rename = "targetSelectionRange")]
+    pub target_selection_range: LspRange,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LspPosition {
     pub line: u32,

@@ -1,0 +1,237 @@
+%YAML 1.2
+---
+# TypeScript syntax highlighting for syntect (no JSX).
+#
+# `.ts`/`.mts`/`.cts` files have no JSX, so `<...>` is a generic type-argument
+# list or a comparison operator — NEVER a JSX tag. The shared JSX grammar treats
+# `<Ident` as a tag, which corrupts every generic in a TypeScript file
+# (`Promise<T>`, `Array<Map<string, number>>`, `useState<Foo>()`). This grammar
+# handles those positions correctly and colors generic arguments as types.
+name: TypeScript
+file_extensions: [ts, mts, cts]
+scope: source.ts
+
+variables:
+  ident: '[_$a-zA-Z][_$a-zA-Z0-9]*'
+
+contexts:
+  prototype: []
+
+  main:
+    - include: comments
+    - include: strings
+    - include: template-string
+    - include: regex
+    - include: numbers
+    - include: decorators
+    - include: keywords
+    - include: constants
+    - include: type-primitives
+    - include: type-ref-before-generic
+    - include: generics
+    - include: type-annotation
+    - include: function-call
+    - include: operators
+
+  # ── Comments ──────────────────────────────────────────────
+  comments:
+    - match: '///'
+      scope: punctuation.definition.comment.ts
+      push:
+        - meta_scope: comment.line.documentation.ts
+        - match: $
+          pop: true
+    - match: '//'
+      scope: punctuation.definition.comment.ts
+      push:
+        - meta_scope: comment.line.double-slash.ts
+        - match: $
+          pop: true
+    - match: '/\*\*(?!/)'
+      scope: punctuation.definition.comment.begin.ts
+      push:
+        - meta_scope: comment.block.documentation.ts
+        - match: '\*/'
+          scope: punctuation.definition.comment.end.ts
+          pop: true
+    - match: '/\*'
+      scope: punctuation.definition.comment.begin.ts
+      push:
+        - meta_scope: comment.block.ts
+        - match: '\*/'
+          scope: punctuation.definition.comment.end.ts
+          pop: true
+
+  # ── Strings ───────────────────────────────────────────────
+  strings:
+    - match: "'"
+      scope: punctuation.definition.string.begin.ts
+      push:
+        - meta_scope: string.quoted.single.ts
+        - match: '\\.'
+          scope: constant.character.escape.ts
+        - match: "'"
+          scope: punctuation.definition.string.end.ts
+          pop: true
+        - match: $
+          pop: true
+    - match: '"'
+      scope: punctuation.definition.string.begin.ts
+      push:
+        - meta_scope: string.quoted.double.ts
+        - match: '\\.'
+          scope: constant.character.escape.ts
+        - match: '"'
+          scope: punctuation.definition.string.end.ts
+          pop: true
+        - match: $
+          pop: true
+
+  template-string:
+    - match: '`'
+      scope: punctuation.definition.string.begin.ts
+      push:
+        - meta_scope: string.quoted.other.ts
+        - match: '\\.'
+          scope: constant.character.escape.ts
+        - match: '\$\{'
+          scope: punctuation.section.interpolation.begin.ts
+          push:
+            - clear_scopes: 1
+            - meta_scope: meta.interpolation.ts
+            - match: '\}'
+              scope: punctuation.section.interpolation.end.ts
+              pop: true
+            - include: main
+        - match: '`'
+          scope: punctuation.definition.string.end.ts
+          pop: true
+
+  # ── Numbers ───────────────────────────────────────────────
+  numbers:
+    - match: '\b0[xX][0-9a-fA-F_]+n?\b'
+      scope: constant.numeric.hex.ts
+    - match: '\b0[oO][0-7_]+n?\b'
+      scope: constant.numeric.octal.ts
+    - match: '\b0[bB][01_]+n?\b'
+      scope: constant.numeric.binary.ts
+    - match: '\b[0-9][0-9_]*\.?[0-9_]*([eE][+-]?[0-9_]+)?n?\b'
+      scope: constant.numeric.decimal.ts
+
+  # ── Regex ─────────────────────────────────────────────────
+  regex:
+    - match: '(?<=[=(:,\[!&|?{;~^%*+\->])\s*(/)(?![/*])'
+      captures:
+        1: punctuation.definition.string.begin.ts
+      push:
+        - meta_scope: string.regexp.ts
+        - match: '\\.'
+          scope: constant.character.escape.ts
+        - match: '/[gimsuvy]*'
+          scope: punctuation.definition.string.end.ts
+          pop: true
+
+  # ── Decorators ────────────────────────────────────────────
+  decorators:
+    - match: '@{{ident}}'
+      scope: meta.decorator.ts variable.annotation.ts
+
+  # ── Keywords ──────────────────────────────────────────────
+  keywords:
+    - match: '\b(import|export|from|default|as)\b'
+      scope: keyword.control.import.ts
+    - match: '\b(async|await)\b'
+      scope: keyword.control.flow.ts
+    - match: '\b(function|return|yield)\b'
+      scope: keyword.control.ts
+    - match: '\b(const|let|var)\b'
+      scope: storage.type.ts
+    - match: '\b(if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|with)\b'
+      scope: keyword.control.ts
+    - match: '\b(new|delete|typeof|instanceof|in|of|void)\b'
+      scope: keyword.operator.ts
+    - match: '\b(class|extends|super|this|static|constructor|get|set)\b'
+      scope: storage.type.class.ts
+    - match: '\b(debugger)\b'
+      scope: keyword.other.ts
+    # TypeScript-specific keywords
+    - match: '\b(type|interface|namespace|module|declare|abstract|readonly|enum|implements|private|protected|public|override|keyof|infer|is|asserts|satisfies)\b'
+      scope: keyword.other.ts
+    - match: '=>'
+      scope: storage.type.function.arrow.ts
+
+  # ── Constants ─────────────────────────────────────────────
+  constants:
+    - match: '\b(true|false)\b'
+      scope: constant.language.boolean.ts
+    - match: '\b(null|undefined)\b'
+      scope: constant.language.ts
+    - match: '\b(NaN|Infinity)\b'
+      scope: constant.language.ts
+    - match: '\b(console|window|document|process|global|globalThis|module|exports|require|Promise|Array|Object|String|Number|Boolean|Symbol|Map|Set|WeakMap|WeakSet|RegExp|Error|TypeError|RangeError|JSON|Math|Date|parseInt|parseFloat|isNaN|isFinite|encodeURI|decodeURI|encodeURIComponent|decodeURIComponent|setTimeout|setInterval|clearTimeout|clearInterval|fetch|URL|URLSearchParams|AbortController|Response|Request|Headers|FormData|Blob|File|FileReader|Buffer|TextEncoder|TextDecoder|Event|EventTarget)\b'
+      scope: support.class.ts
+
+  # ── Primitive type keywords (string, number, …) ──────────
+  type-primitives:
+    - match: '\b(string|number|boolean|object|symbol|bigint|never|unknown|any)\b'
+      scope: support.type.primitive.ts
+
+  # ── A type name immediately before a generic argument list ─
+  # `Promise<…>`, `Foo<…>` — the head identifier is a type.
+  type-ref-before-generic:
+    - match: '([A-Z]{{ident}})(?=<(?![<=]))'
+      scope: entity.name.type.ts
+
+  # ── Generic argument lists: `<T, U>` ─────────────────────
+  # Only when `<` immediately follows an identifier (no space), to avoid
+  # matching the `<` comparison operator (`a < b`).
+  generics:
+    - match: '(?<=[_$a-zA-Z0-9])<(?![<=])'
+      scope: punctuation.definition.generic.begin.ts
+      push: type-arguments
+
+  type-arguments:
+    - match: '>'
+      scope: punctuation.definition.generic.end.ts
+      pop: true
+    - match: '<'
+      scope: punctuation.definition.generic.begin.ts
+      push: type-arguments
+    - include: comments
+    - include: strings
+    - include: numbers
+    - include: type-primitives
+    - match: '\b(extends|keyof|infer|typeof|readonly|in|is)\b'
+      scope: keyword.other.ts
+    - match: '\b([A-Z]{{ident}})\b'
+      scope: entity.name.type.ts
+    - match: '[,|&]'
+      scope: punctuation.separator.ts
+    - match: '\b{{ident}}\b'
+      scope: variable.parameter.ts
+
+  # ── Type annotations: `: Type` / `as Type` ───────────────
+  type-annotation:
+    - match: '(?<=:\s)([A-Z]{{ident}})'
+      scope: entity.name.type.ts
+    - match: '(?<=as\s)([A-Z]{{ident}})'
+      scope: entity.name.type.ts
+
+  # ── Function calls ───────────────────────────────────────
+  function-call:
+    - match: '({{ident}})\s*(?=\()'
+      captures:
+        1: entity.name.function.ts
+
+  # ── Operators ─────────────────────────────────────────────
+  operators:
+    - match: '===|!==|==|!='
+      scope: keyword.operator.comparison.ts
+    - match: '<=|>=|<|>'
+      scope: keyword.operator.comparison.ts
+    - match: '&&|\|\||\?\?|!'
+      scope: keyword.operator.logical.ts
+    - match: '\?\.|\?\['
+      scope: keyword.operator.optional.ts
+    - match: '\.\.\.'
+      scope: keyword.operator.spread.ts

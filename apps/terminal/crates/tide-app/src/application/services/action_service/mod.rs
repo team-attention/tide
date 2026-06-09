@@ -7,6 +7,8 @@ pub(crate) enum LauncherChoice {
     Browser,
 }
 
+use std::path::{Path, PathBuf};
+
 use crate::tide_core::{InputEvent, LayoutEngine, Size, SplitDirection, TerminalBackend, Vec2};
 use crate::tide_editor::input::EditorAction;
 use crate::tide_input::{Action, AreaSlot, GlobalAction};
@@ -411,7 +413,7 @@ impl App {
         action_target_id(self.focus.focused)
     }
 
-    fn editor_click_target(
+    pub(crate) fn editor_click_target(
         &self,
         pane_id: crate::tide_core::PaneId,
         position: Vec2,
@@ -453,7 +455,8 @@ impl App {
         Some((line, col))
     }
 
-    fn editor_symbol_query_for_click(
+    /// Extract the identifier (word) under a buffer position, if any.
+    pub(crate) fn editor_identifier_at(
         &self,
         pane_id: crate::tide_core::PaneId,
         line: usize,
@@ -488,25 +491,255 @@ impl App {
         }
         let identifier: String = chars[start..end].iter().collect();
         if identifier.is_empty() {
-            return None;
+            None
+        } else {
+            Some(identifier)
+        }
+    }
+
+    /// Build the integrated-search query that takes the user to an identifier's
+    /// definition: `@name` when the symbol is defined in the focused file,
+    /// otherwise `#name` (workspace symbol search).
+    pub(crate) fn editor_definition_query(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+        identifier: &str,
+    ) -> String {
+        let identifier_lower = identifier.to_lowercase();
+        let is_local = matches!(self.panes.get(&pane_id), Some(PaneKind::Editor(pane))
+            if crate::state::collect_symbol_matches(
+                std::path::Path::new(""),
+                &pane.editor.buffer.lines,
+            )
+            .iter()
+            .any(|symbol| symbol.label.to_lowercase().contains(&identifier_lower)));
+        let prefix = if is_local { '@' } else { '#' };
+        format!("{prefix}{identifier}")
+    }
+
+    /// Workspace text search that lists every reference to an identifier.
+    pub(crate) fn editor_references_query(identifier: &str) -> String {
+        format!("/{identifier}")
+    }
+
+    /// Cmd/Ctrl+click navigation inside an editor — VS Code style: open an
+    /// import/file-path link, otherwise jump to the symbol's definition. It
+    /// never pops the search palette.
+    pub(crate) fn editor_navigate_at(
+        &mut self,
+        pane_id: crate::tide_core::PaneId,
+        line: usize,
+        col: usize,
+    ) {
+        // 1. Import / file-path link under the pointer → open that file.
+        if let Some(path) = self.editor_link_target_at(pane_id, line, col) {
+            self.open_editor_pane_at_line(path, None);
+            return;
         }
 
-        let identifier_lower = identifier.to_lowercase();
-        let current_file_symbols = crate::state::collect_symbol_matches(
-            std::path::Path::new(""),
-            &pane.editor.buffer.lines,
-        );
-        let prefix = if current_file_symbols
-            .iter()
-            .any(|symbol| symbol.label.to_lowercase().contains(&identifier_lower))
-        {
-            '@'
-        } else {
-            '#'
+        let identifier = match self.editor_identifier_at(pane_id, line, col) {
+            Some(id) => id,
+            None => return,
         };
 
-        Some(format!("{prefix}{identifier}"))
+        // 2. Symbol → Go to Definition via the language server when one is
+        //    serving the file (jumps when the async response arrives).
+        let uri = match self.panes.get(&pane_id) {
+            Some(PaneKind::Editor(p)) => p
+                .editor
+                .file_path()
+                .map(crate::tide_lsp::manager::path_to_uri),
+            _ => None,
+        };
+        if let Some(u) = uri {
+            if self.ports.lsp.supports_navigation(&u) {
+                let character = self.editor_lsp_character(pane_id, line, col);
+                self.ports
+                    .lsp
+                    .request_definition(&u, line as u32, character as u32);
+                return;
+            }
+        }
+
+        // 3. No language server — jump to the definition directly (no palette):
+        //    the current file first (fast and exact), then the workspace.
+        let cur_path = match self.panes.get(&pane_id) {
+            Some(PaneKind::Editor(p)) => p.editor.file_path().map(|x| x.to_path_buf()),
+            _ => None,
+        };
+        if let Some(cur) = &cur_path {
+            if let Some(line1) = self.find_local_definition(pane_id, &identifier) {
+                self.open_editor_pane_at_line(cur.clone(), Some(line1));
+                return;
+            }
+        }
+        if let Some((path, line1)) = self.find_workspace_definition(&identifier) {
+            self.open_editor_pane_at_line(path, Some(line1));
+        }
     }
+
+    /// Line (1-based) of a definition of `identifier` in the current buffer.
+    fn find_local_definition(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+        identifier: &str,
+    ) -> Option<usize> {
+        let pane = match self.panes.get(&pane_id) {
+            Some(PaneKind::Editor(p)) => p,
+            _ => return None,
+        };
+        crate::state::collect_symbol_matches(Path::new(""), &pane.editor.buffer.lines)
+            .iter()
+            .find(|s| symbol_label_defines(&s.label, identifier))
+            .map(|s| s.line)
+    }
+
+    /// UTF-16 character offset (LSP position) for a buffer (line, char col).
+    fn editor_lsp_character(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+        line: usize,
+        col: usize,
+    ) -> usize {
+        match self.panes.get(&pane_id) {
+            Some(PaneKind::Editor(pane)) => pane
+                .editor
+                .buffer
+                .line(line)
+                .map(|text| text.chars().take(col).map(char::len_utf16).sum())
+                .unwrap_or(0),
+            _ => 0,
+        }
+    }
+
+    /// If the click lands on an import string or file path, resolve it to an
+    /// existing file (relative to the current file's directory, then the
+    /// workspace root, trying common extensions and index files).
+    fn editor_link_target_at(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+        line: usize,
+        col: usize,
+    ) -> Option<PathBuf> {
+        let pane = match self.panes.get(&pane_id) {
+            Some(PaneKind::Editor(p)) => p,
+            _ => return None,
+        };
+        let line_text = pane.editor.buffer.line(line)?;
+        let chars: Vec<char> = line_text.chars().collect();
+        if chars.is_empty() {
+            return None;
+        }
+        let col = col.min(chars.len() - 1);
+        let candidate = enclosing_quoted(&chars, col).or_else(|| path_token(&chars, col))?;
+        // Must look like a path, not a bare identifier.
+        if !(candidate.contains('/') || candidate.starts_with('.')) {
+            return None;
+        }
+        let cur = pane.editor.file_path()?;
+        let file_dir = cur.parent()?.to_path_buf();
+        let base = self.resolve_base_dir();
+        resolve_link_path(&candidate, &file_dir, &base)
+    }
+
+    /// Find the first workspace symbol that defines `identifier`. Returns
+    /// (absolute path, 1-based line) for `open_editor_pane_at_line`.
+    fn find_workspace_definition(&self, identifier: &str) -> Option<(PathBuf, usize)> {
+        let base = self.resolve_base_dir();
+        let entries = Self::gather_finder_entries(&base, 8);
+        let symbols = self.build_workspace_file_finder_symbols(&base, &entries);
+        let exact = symbols
+            .iter()
+            .find(|s| symbol_label_defines(&s.label, identifier));
+        let chosen = exact.or_else(|| {
+            let lo = identifier.to_lowercase();
+            symbols.iter().find(|s| s.label.to_lowercase().contains(&lo))
+        })?;
+        Some((base.join(&chosen.path), chosen.line))
+    }
+}
+
+/// True when `identifier` appears as a whole word in a symbol signature label.
+fn symbol_label_defines(label: &str, identifier: &str) -> bool {
+    label
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .any(|word| word == identifier)
+}
+
+/// The string literal enclosing `col`, if the click sits inside `"…"`, `'…'`
+/// or a template literal — i.e. an import specifier.
+fn enclosing_quoted(chars: &[char], col: usize) -> Option<String> {
+    let quotes = ['"', '\'', '`'];
+    if quotes.contains(&chars[col]) {
+        return None;
+    }
+    let mut l = col;
+    while l > 0 && !quotes.contains(&chars[l - 1]) {
+        l -= 1;
+    }
+    if l == 0 || !quotes.contains(&chars[l - 1]) {
+        return None;
+    }
+    let q = chars[l - 1];
+    let mut r = col;
+    while r < chars.len() && chars[r] != q {
+        r += 1;
+    }
+    if r >= chars.len() {
+        return None;
+    }
+    Some(chars[l..r].iter().collect())
+}
+
+/// A path-like token (no quotes) around `col`.
+fn path_token(chars: &[char], col: usize) -> Option<String> {
+    let is_path = |c: char| {
+        c.is_alphanumeric() || matches!(c, '/' | '\\' | '.' | '-' | '_' | '~' | '@')
+    };
+    if !is_path(chars[col]) {
+        return None;
+    }
+    let mut s = col;
+    while s > 0 && is_path(chars[s - 1]) {
+        s -= 1;
+    }
+    let mut e = col;
+    while e < chars.len() && is_path(chars[e]) {
+        e += 1;
+    }
+    Some(chars[s..e].iter().collect())
+}
+
+/// Resolve an import specifier / path to an existing file, trying the current
+/// file's directory and the workspace root, with common extensions and index
+/// files (TS/JS module resolution, plus Rust `mod.rs`).
+fn resolve_link_path(candidate: &str, file_dir: &Path, base: &Path) -> Option<PathBuf> {
+    let cand = candidate.split(':').next().unwrap_or(candidate).trim();
+    if cand.is_empty() {
+        return None;
+    }
+    const EXTS: [&str; 12] = [
+        "", ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".rs", ".json", ".md", ".css", ".html",
+    ];
+    const INDEX: [&str; 5] = ["index.ts", "index.tsx", "index.js", "index.jsx", "mod.rs"];
+    for root in [file_dir, base] {
+        let joined = root.join(cand);
+        for ext in EXTS {
+            let mut s = joined.clone().into_os_string();
+            s.push(ext);
+            let p = PathBuf::from(s);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+        for idx in INDEX {
+            let p = joined.join(idx);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
 }
 
 impl crate::application::ports::inward::ActionPort for App {
@@ -579,10 +812,10 @@ impl crate::application::ports::inward::ActionPort for App {
                             return;
                         }
                         if let Some((line, col)) = self.editor_click_target(id, position) {
-                            if let Some(query) = self.editor_symbol_query_for_click(id, line, col) {
-                                self.open_file_finder_with_query(&query, None);
-                                return;
-                            }
+                            // Open the import/file link or jump to the symbol's
+                            // definition — don't pop the search palette.
+                            self.editor_navigate_at(id, line, col);
+                            return;
                         }
                     }
 
@@ -1289,5 +1522,58 @@ impl App {
                 false,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod cmd_click_nav_tests {
+    use super::{enclosing_quoted, path_token, resolve_link_path, symbol_label_defines};
+
+    fn chars(s: &str) -> Vec<char> {
+        s.chars().collect()
+    }
+
+    #[test]
+    fn enclosing_quoted_extracts_import_specifier() {
+        let line = chars("} from \"../app/agent-chat-shell-state.ts\";");
+        // click somewhere inside the quoted path
+        let col = "} from \"../app/agent".chars().count();
+        assert_eq!(
+            enclosing_quoted(&line, col).as_deref(),
+            Some("../app/agent-chat-shell-state.ts")
+        );
+    }
+
+    #[test]
+    fn enclosing_quoted_none_outside_quotes() {
+        let line = chars("const x = foo();");
+        assert_eq!(enclosing_quoted(&line, 2), None);
+    }
+
+    #[test]
+    fn path_token_expands_path_like_run() {
+        let line = chars("see ./src/main.rs here");
+        let col = "see ./sr".chars().count();
+        assert_eq!(path_token(&line, col).as_deref(), Some("./src/main.rs"));
+    }
+
+    #[test]
+    fn symbol_label_defines_matches_whole_word() {
+        assert!(symbol_label_defines("export function fooBar(", "fooBar"));
+        assert!(symbol_label_defines("class BackendAdapter implements", "BackendAdapter"));
+        assert!(!symbol_label_defines("fooBarBaz()", "fooBar"));
+    }
+
+    #[test]
+    fn resolve_link_path_finds_file_with_added_extension() {
+        let dir = std::env::temp_dir().join(format!("tide_link_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/b.ts"), "export const b = 1;\n").unwrap();
+        let file_dir = dir.join("src");
+        // "./b" resolves to src/b.ts via the appended extension.
+        let resolved = resolve_link_path("./b", &file_dir, &dir).unwrap();
+        assert!(resolved.ends_with("b.ts"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

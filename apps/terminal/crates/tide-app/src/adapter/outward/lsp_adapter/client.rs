@@ -334,6 +334,45 @@ impl LspClient {
         )
     }
 
+    // ── Definition / References ──
+
+    /// Request the definition location(s) at a position. Returns the request id.
+    pub fn request_definition(&mut self, uri: &str, line: u32, character: u32) -> u64 {
+        if !self.initialized {
+            return 0;
+        }
+        let params = TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier {
+                uri: uri.to_string(),
+            },
+            position: LspPosition { line, character },
+        };
+        self.send_request(
+            "textDocument/definition",
+            Some(serde_json::to_value(params).unwrap()),
+        )
+    }
+
+    /// Request all references to the symbol at a position. Returns the request id.
+    pub fn request_references(&mut self, uri: &str, line: u32, character: u32) -> u64 {
+        if !self.initialized {
+            return 0;
+        }
+        let params = ReferenceParams {
+            text_document: TextDocumentIdentifier {
+                uri: uri.to_string(),
+            },
+            position: LspPosition { line, character },
+            context: ReferenceContext {
+                include_declaration: true,
+            },
+        };
+        self.send_request(
+            "textDocument/references",
+            Some(serde_json::to_value(params).unwrap()),
+        )
+    }
+
     // ── Lifecycle ──
 
     pub fn shutdown(&mut self) {

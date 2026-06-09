@@ -5,7 +5,7 @@ use crate::App;
 use crate::AppCorePort;
 
 use super::{
-    bold_style, draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style, visual_width,
+    bold_style, draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style,
 };
 
 /// Render the save-as popup (filename entry for untitled files).
@@ -80,17 +80,20 @@ pub(super) fn render_save_as(
         dir_rect,
     );
     let dir_clip = Rect::new(content_x, dir_y, content_w, field_h);
-    renderer.draw_top_text(
+    let dir_beam = super::draw_input_with_preedit(
+        renderer,
         &save_as.directory.text,
+        save_as.directory.cursor,
+        if is_dir_active { app.ime.preedit.as_str() } else { "" },
         Vec2::new(content_x, dir_text_y),
-        ts,
+        cell_size,
         dir_clip,
+        ts,
+        p.ime_preedit_bg,
+        p.ime_preedit_fg,
     );
     if is_dir_active {
-        let cx = content_x
-            + visual_width(&save_as.directory.text[..save_as.directory.cursor]) as f32
-                * cell_size.width;
-        draw_cursor_beam(renderer, cx, dir_text_y, cell_height, p.cursor_accent);
+        draw_cursor_beam(renderer, dir_beam, dir_text_y, cell_height, p.cursor_accent);
     }
 
     // Separator
@@ -119,17 +122,20 @@ pub(super) fn render_save_as(
         name_rect,
     );
     let name_clip = Rect::new(content_x, name_y, content_w, field_h);
-    renderer.draw_top_text(
+    let name_beam = super::draw_input_with_preedit(
+        renderer,
         &save_as.filename.text,
+        save_as.filename.cursor,
+        if is_dir_active { "" } else { app.ime.preedit.as_str() },
         Vec2::new(content_x, name_text_y),
-        ts,
+        cell_size,
         name_clip,
+        ts,
+        p.ime_preedit_bg,
+        p.ime_preedit_fg,
     );
     if !is_dir_active {
-        let cx = content_x
-            + visual_width(&save_as.filename.text[..save_as.filename.cursor]) as f32
-                * cell_size.width;
-        draw_cursor_beam(renderer, cx, name_text_y, cell_height, p.cursor_accent);
+        draw_cursor_beam(renderer, name_beam, name_text_y, cell_height, p.cursor_accent);
     }
 
     // Hint bar

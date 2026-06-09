@@ -184,6 +184,10 @@ pub(crate) struct FileFinderState {
     pub workspace_symbols: Vec<SymbolMatch>,
     pub workspace_symbols_loaded: bool,
     pub workspace_search_hits: Vec<WorkspaceSearchHit>,
+    /// When set, `workspace_search_hits` were injected (e.g. LSP "Find
+    /// References" results) and must be filtered in memory rather than rebuilt
+    /// from a filesystem grep.
+    pub external_hits: bool,
     pub symbol_source_pane_id: Option<PaneId>,
     /// When set, the selected file replaces this pane (e.g. a Launcher) instead of opening a new tab.
     pub replace_pane_id: Option<crate::tide_core::PaneId>,
@@ -204,9 +208,20 @@ impl FileFinderState {
             workspace_symbols: Vec::new(),
             workspace_symbols_loaded: false,
             workspace_search_hits: Vec::new(),
+            external_hits: false,
             symbol_source_pane_id: None,
             replace_pane_id: None,
         }
+    }
+
+    /// Populate the finder with externally-supplied search hits (e.g. LSP "Find
+    /// References" results) and switch it to workspace-search mode, filtering
+    /// the injected hits in memory instead of grepping the filesystem.
+    pub fn set_reference_hits(&mut self, hits: Vec<WorkspaceSearchHit>) {
+        self.workspace_search_hits = hits;
+        self.external_hits = true;
+        self.input = InputLine::with_text("/".to_string());
+        self.filter();
     }
 
     pub fn with_symbol_sources(
@@ -241,8 +256,8 @@ impl FileFinderState {
         logical_width: f32,
         _logical_height: f32,
     ) -> FileFinderGeometry {
-        let line_height = cell_height * crate::theme::FILE_TREE_LINE_SPACING;
-        let input_h = cell_height + POPUP_INPUT_PADDING;
+        let line_height = cell_height * crate::theme::FILE_FINDER_ROW_SPACING;
+        let input_h = cell_height + POPUP_INPUT_PADDING + 6.0;
         let popup_w = FILE_FINDER_POPUP_W.min(logical_width - 32.0);
         let popup_x = (logical_width - popup_w) / 2.0;
         let popup_y = 120.0_f32.min(_logical_height * 0.15);
@@ -389,7 +404,9 @@ impl FileFinderState {
 
     pub fn placeholder_text(&self) -> &'static str {
         match self.mode {
-            FileFinderMode::Files => "Search files...",
+            // Teach the integrated-search prefixes in the empty state so the
+            // unified finder (files + symbols + text) is discoverable.
+            FileFinderMode::Files => "Search files…    @ symbol   # workspace symbol   / text",
             FileFinderMode::Symbols => "@ symbol in file",
             FileFinderMode::WorkspaceSymbols => "# symbol in workspace",
             FileFinderMode::WorkspaceSearch => "/ text in workspace",
@@ -501,6 +518,22 @@ impl FileFinderState {
     }
 
     fn filter_workspace_search(&mut self, query: &str) {
+        // Injected hits (LSP "Find References"): filter in memory, never grep.
+        if self.external_hits {
+            let q = query.to_lowercase();
+            self.filtered = self
+                .workspace_search_hits
+                .iter()
+                .enumerate()
+                .filter(|(_, hit)| {
+                    q.is_empty()
+                        || hit.preview.to_lowercase().contains(&q)
+                        || hit.path.to_string_lossy().to_lowercase().contains(&q)
+                })
+                .map(|(idx, _)| idx)
+                .collect();
+            return;
+        }
         self.workspace_search_hits.clear();
         if query.chars().count() < 2 {
             self.filtered.clear();
@@ -893,6 +926,8 @@ pub(crate) enum ContextMenuAction {
     RevealInFinder,
     Rename,
     Delete,
+    GoToDefinition,
+    FindReferences,
 }
 
 impl ContextMenuAction {
@@ -918,6 +953,10 @@ impl ContextMenuAction {
         ContextMenuAction::Delete,
     ];
     const WORKSPACE_ACTIONS: [ContextMenuAction; 1] = [ContextMenuAction::Rename];
+    const EDITOR_SYMBOL_ACTIONS: [ContextMenuAction; 2] = [
+        ContextMenuAction::GoToDefinition,
+        ContextMenuAction::FindReferences,
+    ];
 
     pub fn items(
         is_dir: bool,
@@ -942,6 +981,10 @@ impl ContextMenuAction {
         &Self::WORKSPACE_ACTIONS
     }
 
+    pub fn editor_symbol_items() -> &'static [ContextMenuAction] {
+        &Self::EDITOR_SYMBOL_ACTIONS
+    }
+
     pub fn label(&self) -> &'static str {
         match self {
             ContextMenuAction::CdHere => "cd",
@@ -950,6 +993,8 @@ impl ContextMenuAction {
             ContextMenuAction::RevealInFinder => "Reveal in Finder",
             ContextMenuAction::Rename => "Rename",
             ContextMenuAction::Delete => "Delete",
+            ContextMenuAction::GoToDefinition => "Go to Definition",
+            ContextMenuAction::FindReferences => "Find References",
         }
     }
 
@@ -961,6 +1006,8 @@ impl ContextMenuAction {
             ContextMenuAction::RevealInFinder => "\u{f07c}", // folder-open icon
             ContextMenuAction::Rename => "\u{f044}", //
             ContextMenuAction::Delete => "\u{f1f8}", //
+            ContextMenuAction::GoToDefinition => "\u{f1c9}", // file-code icon
+            ContextMenuAction::FindReferences => "\u{f002}", // search icon
         }
     }
 }
@@ -976,6 +1023,14 @@ pub(crate) enum ContextMenuTarget {
     },
     WorkspaceSidebarItem {
         ws_index: usize,
+    },
+    EditorSymbol {
+        pane_id: crate::tide_core::PaneId,
+        identifier: String,
+        /// 0-based buffer line of the click (for LSP definition/references).
+        line: usize,
+        /// 0-based UTF-16 character offset within the line (LSP position).
+        character: usize,
     },
 }
 
@@ -997,6 +1052,7 @@ impl ContextMenuState {
             ContextMenuTarget::WorkspaceSidebarItem { .. } => {
                 ContextMenuAction::workspace_items()
             }
+            ContextMenuTarget::EditorSymbol { .. } => ContextMenuAction::editor_symbol_items(),
         }
     }
 

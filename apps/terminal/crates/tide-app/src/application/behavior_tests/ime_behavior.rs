@@ -420,6 +420,55 @@ fn context_comment_composer_long_hangul_input_keeps_text_and_caret_aligned() {
     );
 }
 
+// --- UC-5: NavigationCommitsCompositionInPlace ---
+
+#[test]
+fn navigation_during_composition_commits_glyph_in_place_then_moves() {
+    // UC-5 BR-17: A cursor-movement key during IME composition commits the
+    // in-progress glyph at its current caret position, then moves the caret —
+    // the committed glyph keeps its original position (no "carry"), matching
+    // VS Code / native macOS text views.
+    //
+    // The platform IME proxy (ime_proxy.rs `do_command_by_selector`) translates
+    // an arrow-during-composition into this exact event sequence: ImeCommit of
+    // the preedit glyph, then KeyDown of the movement key. This test locks the
+    // domain contract that sequence relies on.
+    use crate::tide_core::{Key, Modifiers};
+    let (mut app, id) = app_with_editor();
+    app.router.set_focused(id);
+
+    // Simulate an active composition over the editor caret at column 0.
+    app.ime.composing = true;
+    app.ime.preedit = "한".to_string();
+
+    // Proxy step 1: commit the in-progress glyph in place.
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app, "한");
+    assert!(!app.ime.composing, "commit clears composition");
+    assert!(app.ime.preedit.is_empty(), "commit clears preedit overlay");
+
+    // Proxy step 2: perform the movement.
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        Key::Left,
+        Modifiers::default(),
+        None,
+    );
+
+    if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
+        assert_eq!(
+            pane.editor.buffer.line(0),
+            Some("한"),
+            "the committed glyph stays at its original position"
+        );
+        assert_eq!(
+            pane.editor.cursor.position.col, 0,
+            "the caret moves left, landing before the committed glyph (not carrying it)"
+        );
+    } else {
+        panic!("expected an editor pane");
+    }
+}
+
 #[test]
 fn search_bar_long_hangul_input_keeps_text_and_caret_aligned() {
     // UC-4 BR-15: Long Korean Search Bar composition keeps committed text, preedit, caret, and IME cursor area aligned.

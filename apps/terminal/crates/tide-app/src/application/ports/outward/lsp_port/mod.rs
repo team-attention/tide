@@ -19,4 +19,9 @@ pub(crate) trait LspPort {
     );
     fn trigger_characters(&self, lang: crate::tide_lsp::manager::Language) -> Vec<String>;
     fn poll(&mut self) -> Option<crate::tide_lsp::manager::CompletionResponse>;
+    /// Whether a server is running for `uri` so LSP code navigation is possible.
+    fn supports_navigation(&self, uri: &str) -> bool;
+    fn request_definition(&mut self, uri: &str, line: u32, character: u32);
+    fn request_references(&mut self, uri: &str, line: u32, character: u32);
+    fn poll_navigation(&mut self) -> Option<crate::tide_lsp::manager::NavigationResponse>;
 }

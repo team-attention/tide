@@ -66,20 +66,19 @@
   - BR-5: `FileFinder` must build workspace symbols lazily when `WorkspaceSymbols` mode is first requested.
   - BR-6: Once lazy loading runs, Tide must remember that the workspace-symbol index is loaded even if the result set is empty.
 
-### UC-3: SeedSymbolSearchFromModifierClick
+### UC-3: GoToDefinitionFromModifierClick
 
 - **Actor**: User
-- **Trigger**: Cmd/Ctrl-click an identifier inside an `Editor Pane`
-- **Precondition**: The click is not on a rendered Markdown link and the identifier under the click is non-empty
+- **Trigger**: Cmd/Ctrl-click an identifier or import path inside an `Editor Pane`
+- **Precondition**: The click is not on a rendered Markdown link and the token under the click is non-empty
 - **Flow**:
-  1. Tide resolves the clicked identifier in the `Editor Pane`.
-  2. Tide checks whether current-file symbols already match that identifier.
-  3. Tide opens `FileFinder` with `@identifier` when the match is local, or `#identifier` otherwise.
-- **Postcondition**: The modal opens in symbol-search mode seeded from the clicked identifier.
+  1. If the click lands on an import/file-path link, Tide opens that file directly.
+  2. Otherwise Tide resolves the clicked identifier and jumps to its definition: the language server when one serves the file, else a definition in the current file, else the first workspace-symbol definition.
+- **Postcondition**: The caret jumps to (or the file opens at) the definition. The `FileFinder` palette never opens.
 - **Business Rules**:
-  - BR-7: `Editor Pane` modifier-click on an identifier must prefer current-file symbol search when the current file already contains a matching symbol signature.
-  - BR-8: `Editor Pane` modifier-click on an identifier without a current-file symbol match must seed workspace symbol search.
-  - BR-9: Modifier-click link activation keeps its existing higher priority over seeded symbol search.
+  - BR-7: `Editor Pane` modifier-click on a symbol defined in the current file jumps to that definition in place — it does not open the palette.
+  - BR-8: `Editor Pane` modifier-click on a symbol defined in another file opens that file at the definition — it does not open the palette.
+  - BR-9: Modifier-click on an import/file-path link opens that file, keeping its higher priority over symbol definition.
 
 ## Invariants
 
@@ -94,8 +93,8 @@
 | UC-1 | BR-1, BR-2, BR-3 | `macos_window_marks_tide_window_as_managed_primary_full_screen_window` |
 | UC-2 | BR-4 | `opening_file_finder_defers_workspace_symbol_indexing` |
 | UC-2 | BR-5, BR-6 | `workspace_symbol_mode_loads_symbol_index_once_on_demand` |
-| UC-3 | BR-7 | `modifier_click_on_local_editor_symbol_seeds_current_file_symbol_query` |
-| UC-3 | BR-8 | `modifier_click_on_cross_file_editor_symbol_seeds_workspace_symbol_query` |
+| UC-3 | BR-7 | `modifier_click_on_local_editor_symbol_jumps_in_file_without_palette` |
+| UC-3 | BR-8 | `modifier_click_on_cross_file_editor_symbol_opens_definition_file_without_palette` |
 | UC-3 | BR-9 | `modifier_click_on_live_preview_link_keeps_link_activation` |
 
 ## Location

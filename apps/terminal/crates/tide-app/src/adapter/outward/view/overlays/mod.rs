@@ -9,7 +9,7 @@ mod search_bar;
 
 use unicode_width::UnicodeWidthChar;
 
-use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{Color, Rect, Renderer, Size, TextStyle, Vec2};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -20,6 +20,49 @@ pub(super) fn visual_width(s: &str) -> usize {
     s.chars()
         .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
         .sum()
+}
+
+/// Draw a single-line text input value with the in-progress IME composition
+/// (Korean, etc.) shown inline at the caret — used by every Tide-rendered text
+/// input so composing looks identical everywhere (finder, git switcher,
+/// save-as, …). Returns the caret beam x position.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn draw_input_with_preedit(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    text: &str,
+    cursor: usize,
+    preedit: &str,
+    pos: Vec2,
+    cell_size: Size,
+    clip: Rect,
+    style: TextStyle,
+    preedit_bg: Color,
+    preedit_fg: Color,
+) -> f32 {
+    let cb = cursor.min(text.len());
+    let cb = if text.is_char_boundary(cb) { cb } else { 0 };
+    let (before, after) = text.split_at(cb);
+    let before_w = visual_width(before) as f32 * cell_size.width;
+    let preedit_w = visual_width(preedit) as f32 * cell_size.width;
+    if !before.is_empty() {
+        renderer.draw_top_text(before, pos, style, clip);
+    }
+    let preedit_x = pos.x + before_w;
+    if !preedit.is_empty() {
+        renderer.draw_top_rect(
+            Rect::new(preedit_x, pos.y, preedit_w, cell_size.height),
+            preedit_bg,
+        );
+        renderer.draw_top_text(preedit, Vec2::new(preedit_x, pos.y), text_style(preedit_fg), clip);
+        renderer.draw_top_rect(
+            Rect::new(preedit_x, pos.y + cell_size.height - 1.0, preedit_w, 1.0),
+            preedit_fg,
+        );
+    }
+    if !after.is_empty() {
+        renderer.draw_top_text(after, Vec2::new(preedit_x + preedit_w, pos.y), style, clip);
+    }
+    pos.x + before_w + preedit_w
 }
 
 pub(crate) fn search_bar_text_advance_cells(text: &str) -> usize {

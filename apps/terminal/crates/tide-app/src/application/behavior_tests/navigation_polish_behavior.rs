@@ -156,11 +156,12 @@ fn workspace_symbol_mode_loads_symbol_index_once_on_demand() {
     assert_eq!(second_len, first_len);
 }
 
-// --- UC-3: SeedSymbolSearchFromModifierClick ---
+// --- UC-3: GoToDefinitionFromModifierClick ---
 
 #[test]
-fn modifier_click_on_local_editor_symbol_seeds_current_file_symbol_query() {
-    // UC-3 BR-7: Modifier-click prefers current-file symbol search when the file already exposes a matching symbol signature.
+fn modifier_click_on_local_editor_symbol_jumps_in_file_without_palette() {
+    // UC-3 BR-7: Modifier-click on a symbol defined in the current file jumps to
+    // that definition in place (VS Code), and never opens the search palette.
     let root = temp_root("local_modifier_click");
     let (mut app, id) = app_with_file_backed_editor(
         &root,
@@ -173,6 +174,7 @@ fn modifier_click_on_local_editor_symbol_seeds_current_file_symbol_query() {
         meta: true,
         ..crate::tide_core::Modifiers::default()
     };
+    // Click the call site on line 2 (0-based row 1).
     let click_position = identifier_click_position(&app, pane_rect, 1, 2);
 
     ActionPort::handle_action(
@@ -184,18 +186,22 @@ fn modifier_click_on_local_editor_symbol_seeds_current_file_symbol_query() {
         }),
     );
 
-    let finder = app
-        .modal
-        .file_finder
-        .as_ref()
-        .expect("file finder should open");
-    assert_eq!(finder.input.text, "@render_header");
-    assert_eq!(finder.mode, crate::state::FileFinderMode::Symbols);
+    assert!(
+        app.modal.file_finder.is_none(),
+        "Cmd+click must not open the search palette"
+    );
+    // The caret jumped to the definition on the first line (0-based row 0).
+    if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
+        assert_eq!(pane.editor.cursor.position.line, 0);
+    } else {
+        panic!("editor pane expected");
+    }
 }
 
 #[test]
-fn modifier_click_on_cross_file_editor_symbol_seeds_workspace_symbol_query() {
-    // UC-3 BR-8: Modifier-click falls back to workspace symbol search when the current file has no matching symbol signature.
+fn modifier_click_on_cross_file_editor_symbol_opens_definition_file_without_palette() {
+    // UC-3 BR-8: Modifier-click on a symbol defined in another file opens that
+    // file at the definition — no palette.
     let root = temp_root("workspace_modifier_click");
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/header.rs"), "fn render_header() {}\n").unwrap();
@@ -221,13 +227,13 @@ fn modifier_click_on_cross_file_editor_symbol_seeds_workspace_symbol_query() {
         }),
     );
 
-    let finder = app
-        .modal
-        .file_finder
-        .as_ref()
-        .expect("file finder should open");
-    assert_eq!(finder.input.text, "#render_header");
-    assert_eq!(finder.mode, crate::state::FileFinderMode::WorkspaceSymbols);
-    assert!(finder.workspace_symbols_loaded);
-    assert!(!finder.filtered.is_empty());
+    assert!(
+        app.modal.file_finder.is_none(),
+        "Cmd+click must not open the search palette"
+    );
+    let opened_header = app.panes.values().any(|p| {
+        matches!(p, PaneKind::Editor(ep)
+            if ep.editor.file_path().map(|x| x.ends_with("header.rs")).unwrap_or(false))
+    });
+    assert!(opened_header, "header.rs (the definition file) should open");
 }

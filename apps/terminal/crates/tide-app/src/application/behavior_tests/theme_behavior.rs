@@ -414,6 +414,63 @@ fn dark_syntax_highlighting_gives_rust_source_distinct_token_colors() {
 }
 
 #[test]
+fn dark_typescript_generics_color_as_types_not_jsx_tags() {
+    // UC-4A BR-27: TypeScript generic arguments color as types, never JSX tags.
+    let mut highlighter = Highlighter::new();
+    highlighter.set_dark_mode(true);
+    let syntax = highlighter
+        .syntax_set()
+        .find_syntax_by_extension("ts")
+        .expect("typescript syntax should be available");
+    assert_eq!(
+        syntax.name, "TypeScript",
+        ".ts must resolve to the dedicated TypeScript grammar, not JSX"
+    );
+    let lines = vec![
+        "async preflight(): Promise<AgentIntegrationPreflight> {".to_string(),
+        "const arr: Array<Map<string, number>> = [];".to_string(),
+        "if (a < b && c > d) return;".to_string(),
+    ];
+    let spans = highlighter.highlight_lines(&lines, syntax, 0, lines.len());
+
+    // VS Code Dark+ role colors from the dark syntax theme.
+    let type_color = (78u8, 201u8, 176u8); // entity.name.type / support.type
+    let tag_color = (86u8, 156u8, 214u8); // entity.name.tag (JSX) — must NOT appear
+
+    let rgb = |c: crate::tide_core::Color| {
+        (
+            (c.r * 255.0).round() as u8,
+            (c.g * 255.0).round() as u8,
+            (c.b * 255.0).round() as u8,
+        )
+    };
+
+    let mut saw_type_arg = false;
+    for span in spans.iter().flatten() {
+        let text = span.text.trim();
+        // No token anywhere may take the JSX tag color: there is no JSX in `.ts`.
+        assert_ne!(
+            rgb(span.style.foreground),
+            tag_color,
+            "TypeScript token {text:?} was colored as a JSX tag"
+        );
+        // Generic argument type names must read as types.
+        if matches!(
+            text,
+            "AgentIntegrationPreflight" | "Map" | "string" | "number" | "Promise" | "Array"
+        ) {
+            assert_eq!(
+                rgb(span.style.foreground),
+                type_color,
+                "generic type {text:?} should use the type role color"
+            );
+            saw_type_arg = true;
+        }
+    }
+    assert!(saw_type_arg, "expected generic type arguments to be checked");
+}
+
+#[test]
 fn dark_markdown_theme_separates_content_roles() {
     // UC-4A BR-24: Dark Markdown theme separates headings, code, links, and body text.
     let theme = MarkdownTheme::dark();

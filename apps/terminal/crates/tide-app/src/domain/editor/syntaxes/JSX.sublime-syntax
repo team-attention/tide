@@ -3,7 +3,7 @@
 # JSX/TSX syntax highlighting for syntect.
 # Covers JavaScript, TypeScript keywords, and JSX tag syntax.
 name: JSX
-file_extensions: [jsx, tsx, ts, mjs, cjs, mts, cts]
+file_extensions: [jsx, tsx, mjs, cjs]
 scope: source.jsx
 
 variables:

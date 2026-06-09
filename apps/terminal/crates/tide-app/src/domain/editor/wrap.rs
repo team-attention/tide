@@ -137,6 +137,28 @@ impl WrapMap {
             .copied()
     }
 
+    /// Find the wrapped sub-row (index + info) within a logical line that
+    /// contains the given character index. Wrapping breaks early to avoid
+    /// splitting a wide (CJK) glyph, so rows are NOT uniformly `wrap_width`
+    /// cells — the actual row boundaries must be consulted, not `% wrap_width`.
+    fn sub_row_for_char(
+        &self,
+        logical_line: usize,
+        char_idx: usize,
+    ) -> Option<(usize, VisualRowInfo)> {
+        let rows = self.rows_by_line.get(logical_line)?;
+        if rows.is_empty() {
+            return None;
+        }
+        for (i, row) in rows.iter().enumerate() {
+            if char_idx < row.char_end {
+                return Some((i, *row));
+            }
+        }
+        let last = rows.len() - 1;
+        Some((last, rows[last]))
+    }
+
     /// Map a buffer position (logical_line, byte_col) to a visual row index.
     pub fn buffer_pos_to_visual_row(
         &self,
@@ -149,16 +171,14 @@ impl WrapMap {
             Some(l) => l,
             None => return base,
         };
-        // Count how many display columns precede byte_col
-        let display_col: usize = line[..byte_col.min(line.len())]
-            .chars()
-            .map(|c| c.width().unwrap_or(1))
-            .sum();
         if self.wrap_width == 0 {
             return base;
         }
-        let sub_row = display_col / self.wrap_width;
-        base + sub_row
+        let char_idx = line[..byte_col.min(line.len())].chars().count();
+        match self.sub_row_for_char(logical_line, char_idx) {
+            Some((sub_row, _)) => base + sub_row,
+            None => base,
+        }
     }
 
     /// Map a buffer position (logical_line, byte_col) to the display column
@@ -173,14 +193,23 @@ impl WrapMap {
             Some(l) => l,
             None => return 0,
         };
-        let display_col: usize = line[..byte_col.min(line.len())]
-            .chars()
-            .map(|c| c.width().unwrap_or(1))
-            .sum();
+        let byte_col = byte_col.min(line.len());
+        let char_idx = line[..byte_col].chars().count();
         if self.wrap_width == 0 {
-            return display_col;
+            return line.chars().take(char_idx).map(|c| c.width().unwrap_or(1)).sum();
         }
-        display_col % self.wrap_width
+        // Display width from the start of the containing wrapped row to the
+        // cursor — NOT `display_col % wrap_width`, which drifts once an early
+        // wide-char wrap makes a row narrower than `wrap_width`.
+        let row_char_offset = self
+            .sub_row_for_char(logical_line, char_idx)
+            .map(|(_, row)| row.char_offset)
+            .unwrap_or(0);
+        line.chars()
+            .skip(row_char_offset)
+            .take(char_idx.saturating_sub(row_char_offset))
+            .map(|c| c.width().unwrap_or(1))
+            .sum()
     }
 }
 
@@ -404,6 +433,23 @@ mod tests {
     }
 
     // --- Wide character wrapping ---
+
+    #[test]
+    fn wide_char_cursor_position_uses_real_row_boundaries() {
+        // UC-3 BR-19: wrap_width 5 with width-2 CJK glyphs forces an early wrap,
+        // so each visual row is only 4 cells wide. The caret row/column must
+        // follow the real row boundaries, not `% wrap_width` (which drifts after
+        // the early wrap and is what made the markdown caret point off-glyph).
+        let l = lines(&["가가가가"]); // 4 CJK chars at bytes 0, 3, 6, 9
+        let map = WrapMap::build(&l, 5, 0);
+        assert_eq!(map.total_visual_rows(), 2);
+        // char 2 (byte 6) begins visual row 1 at column 0.
+        assert_eq!(map.buffer_pos_to_visual_row(0, 6, &l), 1);
+        assert_eq!(map.buffer_pos_to_visual_col(0, 6, &l), 0);
+        // char 3 (byte 9) is the second glyph of row 1 → column 2 (not 6 % 5 = 1).
+        assert_eq!(map.buffer_pos_to_visual_row(0, 9, &l), 1);
+        assert_eq!(map.buffer_pos_to_visual_col(0, 9, &l), 2);
+    }
 
     #[test]
     fn wrap_map_with_cjk_characters() {

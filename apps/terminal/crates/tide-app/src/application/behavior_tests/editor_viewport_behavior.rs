@@ -26,6 +26,40 @@ fn char_col_to_byte(line: &str, char_col: usize) -> usize {
 // --- UC-1: KeepDocumentChromeAndCursorLocked ---
 
 #[test]
+fn caret_rect_with_korean_spaces_and_dots_matches_glyph_columns() {
+    // The caret must sit on the glyph it points at when a line mixes wide
+    // Korean (width 2), spaces, and dots (width 1) — the user-reported
+    // "시각적으로 가리키는 곳이 이상" case, on the non-wrapped authoring path.
+    let mut pane = EditorPane::new_empty(1);
+    pane.soft_wrap = false;
+    pane.editor.buffer.lines = vec!["한 글.x".to_string()]; // 한(2) ' '(1) 글(2) '.'(1) x(1)
+    let cell = Size::new(8.0, 16.0);
+    let inner = Rect::new(0.0, 0.0, 400.0, 200.0);
+    let gutter = 6.0 * cell.width; // GUTTER_WIDTH_CELLS = 6
+
+    // After "한 " (byte 4): display width 2 + 1 = 3 cells.
+    pane.editor
+        .cursor
+        .set_position(EditorPosition { line: 0, col: 4 });
+    let caret = pane.authoring_cursor_rect(inner, cell, 0).expect("caret");
+    assert_eq!(caret.x, gutter + 3.0 * cell.width);
+
+    // After "한 글" (byte 7), before the dot: display width 2 + 1 + 2 = 5 cells.
+    pane.editor
+        .cursor
+        .set_position(EditorPosition { line: 0, col: 7 });
+    let caret = pane.authoring_cursor_rect(inner, cell, 0).expect("caret");
+    assert_eq!(caret.x, gutter + 5.0 * cell.width);
+
+    // After "한 글." (byte 8): display width 5 + 1 = 6 cells.
+    pane.editor
+        .cursor
+        .set_position(EditorPosition { line: 0, col: 8 });
+    let caret = pane.authoring_cursor_rect(inner, cell, 0).expect("caret");
+    assert_eq!(caret.x, gutter + 6.0 * cell.width);
+}
+
+#[test]
 fn selection_rects_share_authoring_viewport_geometry() {
     // UC-1 BR-2: Selection rects must use the same authoring rect, gutter width, and scroll origin as cursor geometry.
     let mut pane = EditorPane::new_empty(1);

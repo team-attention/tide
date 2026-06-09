@@ -312,6 +312,14 @@ impl Highlighter {
             builder.add(jsx_def);
         }
 
+        // Load the dedicated TypeScript syntax for `.ts`/`.mts`/`.cts`. Plain
+        // TypeScript has no JSX, so `<…>` is a generic type-argument list (not a
+        // tag) — the JSX grammar mis-parses every generic as a JSX tag.
+        let ts_yaml = include_str!("syntaxes/TypeScript.sublime-syntax");
+        if let Ok(ts_def) = SyntaxDefinition::load_from_str(ts_yaml, true, None) {
+            builder.add(ts_def);
+        }
+
         let syntax_set = builder.build();
         let theme_set = ThemeSet::load_defaults();
         let dark_theme = build_dark_syntax_theme(&theme_set);

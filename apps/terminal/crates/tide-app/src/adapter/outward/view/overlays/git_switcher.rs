@@ -6,7 +6,7 @@ use crate::App;
 use crate::AppCorePort;
 
 use super::{
-    bold_style, draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style, visual_width,
+    bold_style, draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style,
 };
 
 pub(crate) struct CurrentWorktreeRowLayout {
@@ -108,19 +108,30 @@ pub(super) fn render_git_switcher(
     let placeholder = "Search worktrees...";
     let placeholder_color = p.badge_text_dimmed;
     let placeholder_style = text_style(placeholder_color);
-    if gs.input.is_empty() {
+    let beam_x = if gs.input.is_empty() && app.ime.preedit.is_empty() {
         renderer.draw_top_text(
             placeholder,
             Vec2::new(text_x, text_y),
             placeholder_style,
             input_clip,
         );
+        text_x
     } else {
-        renderer.draw_top_text(&gs.input.text, Vec2::new(text_x, text_y), ts, input_clip);
-    }
-    // Cursor beam
-    let cx = text_x + visual_width(&gs.input.text[..gs.input.cursor]) as f32 * cell_size.width;
-    draw_cursor_beam(renderer, cx, text_y, cell_height, p.cursor_accent);
+        super::draw_input_with_preedit(
+            renderer,
+            &gs.input.text,
+            gs.input.cursor,
+            &app.ime.preedit,
+            Vec2::new(text_x, text_y),
+            cell_size,
+            input_clip,
+            ts,
+            p.ime_preedit_bg,
+            p.ime_preedit_fg,
+        )
+    };
+    // Cursor beam — after the committed prefix plus any composition.
+    draw_cursor_beam(renderer, beam_x, text_y, cell_height, p.cursor_accent);
     // Bottom border of search bar
     let sep_color = p.popup_border;
     renderer.draw_top_rect(

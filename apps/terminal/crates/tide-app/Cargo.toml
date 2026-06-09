@@ -39,6 +39,8 @@ alacritty_terminal = "0.25"
 libc = "0.2"
 signal-hook = "0.3"
 regex = "1"
+# ripgrep's walker — respects .gitignore/.ignore for the file finder.
+ignore = "0.4"
 
 # ── From tide-editor ──
 syntect = "5"

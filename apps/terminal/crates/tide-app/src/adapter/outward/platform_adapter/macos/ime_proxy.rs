@@ -255,6 +255,13 @@ declare_class!(
             self.emit(PlatformEvent::KeyUp { key, modifiers });
         }
 
+        /// ObjC entry point so the TideView mouse handler can finalize the
+        /// in-progress composition before a click moves the caret.
+        #[method(commitPendingComposition)]
+        fn objc_commit_pending_composition(&self) {
+            let _ = self.commit_pending_composition();
+        }
+
         /// On modifier changes (including Caps Lock input method toggle),
         /// clear the preedit overlay and virtual text buffer, then prime the
         /// NSTextInputContext. The deactivating IME will call `insertText:`
@@ -555,6 +562,63 @@ declare_class!(
                     return;
                 }
 
+                // Cursor-movement key during an in-progress composition that the
+                // input method forwarded WITHOUT committing (e.g. the Korean IME
+                // passes an arrow through while still composing a syllable).
+                // Commit the in-progress glyph at the current caret, reset the
+                // input method's marked state so it does not re-commit the same
+                // glyph on the next keystroke, then perform the movement. This
+                // matches VS Code / native macOS text views (UC-5 BR-17); without
+                // it the glyph is "carried" to wherever the caret lands.
+                let is_cursor_movement = matches!(
+                    key,
+                    Key::Up
+                        | Key::Down
+                        | Key::Left
+                        | Key::Right
+                        | Key::Home
+                        | Key::End
+                        | Key::PageUp
+                        | Key::PageDown
+                );
+                if is_cursor_movement && !self.ivars().marked_text.borrow().is_empty() {
+                    let composing =
+                        std::mem::take(&mut *self.ivars().marked_text.borrow_mut());
+                    self.ivars().committed_text.borrow_mut().clear();
+                    // 1. Commit the in-progress glyph in place.
+                    self.emit(PlatformEvent::ImeCommit(composing));
+                    // 2. Clear the preedit overlay.
+                    self.emit(PlatformEvent::ImePreedit {
+                        text: String::new(),
+                        cursor: None,
+                    });
+                    // 3. Reset the input method composition so it will not
+                    //    re-commit the glyph. Safe here: keyDown set deferring=true,
+                    //    so any reentrant unmarkText only queues events.
+                    //    discardMarkedText drops marked text without committing.
+                    unsafe {
+                        let ic: Option<Retained<AnyObject>> = msg_send_id![self, inputContext];
+                        if let Some(ic) = ic {
+                            let _: () = msg_send![&*ic, discardMarkedText];
+                        }
+                    }
+                    // 4. Perform the movement.
+                    let modifiers = if let Some(event) =
+                        self.ivars().current_event.borrow().as_ref()
+                    {
+                        modifiers_from_flags(unsafe { event.modifierFlags() })
+                    } else {
+                        Modifiers::default()
+                    };
+                    self.ivars().ime_handled.set(true);
+                    self.emit(PlatformEvent::KeyDown {
+                        key,
+                        modifiers,
+                        chars: None,
+                    });
+                    return;
+                }
+
                 // Keep committed_text in sync.
                 // Backspace: remove last character. All other keys that change
                 // cursor position or terminal state: clear entirely to prevent
@@ -604,6 +668,31 @@ impl ImeProxyView {
             composing_at_key_down: Cell::new(false),
         });
         unsafe { msg_send_id![super(this), initWithFrame: NSRect::ZERO] }
+    }
+
+    /// Finalize any in-progress composition in place — used before a mouse click
+    /// moves the caret, so the composing glyph commits where it was instead of
+    /// following the caret to the click position (parallels the arrow-key path
+    /// in `do_command_by_selector`). Returns true if it committed something.
+    pub fn commit_pending_composition(&self) -> bool {
+        let composing = std::mem::take(&mut *self.ivars().marked_text.borrow_mut());
+        if composing.is_empty() {
+            return false;
+        }
+        self.ivars().committed_text.borrow_mut().clear();
+        self.emit(PlatformEvent::ImeCommit(composing));
+        self.emit(PlatformEvent::ImePreedit {
+            text: String::new(),
+            cursor: None,
+        });
+        // Reset the input method so it does not re-commit the same glyph.
+        unsafe {
+            let ic: Option<Retained<AnyObject>> = msg_send_id![self, inputContext];
+            if let Some(ic) = ic {
+                let _: () = msg_send![&*ic, discardMarkedText];
+            }
+        }
+        true
     }
 
     pub fn set_ime_cursor_rect(&self, x: f64, y: f64, w: f64, h: f64) {
