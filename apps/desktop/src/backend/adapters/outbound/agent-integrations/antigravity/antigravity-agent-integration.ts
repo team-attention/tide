@@ -217,10 +217,6 @@ class AntigravityAgentIntegration implements AgentIntegrationPort {
     return { kind: "immediate" };
   }
 
-  turnEndSignalEvents(): readonly string[] {
-    return ["agent-idle"];
-  }
-
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {
     if (
       input.source !== "provider_hook" ||

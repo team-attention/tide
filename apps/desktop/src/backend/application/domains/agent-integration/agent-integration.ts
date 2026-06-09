@@ -110,11 +110,6 @@ export interface AgentIntegrationPort {
   buildStartPlan(input: AgentStartPlanInput): Promise<ProviderLaunchPlan>;
   buildResumePlan(input: AgentResumePlanInput): Promise<ProviderLaunchPlan>;
   detectPromptState(input: AgentPromptSignalInput): PromptState | null;
-  // The provider-hook event names that mean "the current turn has ended". This
-  // is provider lifecycle knowledge and lives in the Agent Integration, not in
-  // shared infrastructure. codex forwards "codex-stop"; claude and antigravity
-  // forward "agent-idle". See docs_v2/specs/agent-runtime-event-spine.md.
-  turnEndSignalEvents(): readonly string[];
   // When the runtime is ready to receive its FIRST user turn. The first prompt is
   // delivered through one shared path gated by this, never via launch argv. CLIs
   // that attach the Tide MCP server must wait for its tool-surface handshake so the

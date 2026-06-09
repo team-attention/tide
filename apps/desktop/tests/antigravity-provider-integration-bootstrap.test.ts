@@ -238,9 +238,6 @@ test("antigravity_provider_specific_agent_integration_stays_under_backend_adapte
   );
 });
 
-test("antigravity_declares_its_own_turn_end_hook_event", () => {
-  assert.deepEqual(antigravityIntegration().turnEndSignalEvents(), ["agent-idle"]);
-});
 
 function antigravityIntegration(options: {
   executablePath?: string;
