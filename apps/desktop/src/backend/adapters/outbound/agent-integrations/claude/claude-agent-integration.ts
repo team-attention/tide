@@ -223,11 +223,13 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
   }
 
   turnEndFromHook(eventName: string, payload: unknown): AgentTurnOutcome | null {
-    // Claude's turn-end is the runtime-keyed `agent-idle` Stop hook, whose payload
-    // carries the final answer in `last_assistant_message` — attributed to the exact
-    // runtime/thread and independent of the transcript binding (which concurrent
-    // spawns can leave pointing at an unflushed session file). That is the source of
-    // truth for the final answer.
+    // Claude's turn-end is the runtime-keyed `agent-idle` Stop hook — the reliable
+    // signal to settle the turn. Empirically the transcript receives the assistant
+    // answer ~0.3s BEFORE this hook fires, so the history reader is the content source
+    // and renders the reply; `last_assistant_message` here is a runtime-keyed *fallback*
+    // (used only if the transcript hasn't yielded the reply yet — e.g. an unflushed
+    // session file under heavy concurrent spawns). The live-backend's one-source rule
+    // suppresses this fallback once the reader has shown the turn's answer.
     if (eventName !== "agent-idle") {
       return null;
     }
@@ -236,7 +238,8 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
   }
 
   turnEndFromHistory(): AgentTurnOutcome | null {
-    // Claude turn-end is owned by the agent-idle hook (above), not the transcript.
+    // Claude's settle signal is the agent-idle hook (above); the transcript supplies the
+    // content via the history reader, so there is no separate history-driven outcome.
     return null;
   }
 

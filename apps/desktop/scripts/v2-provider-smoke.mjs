@@ -162,6 +162,12 @@ try {
       [...startEvents, ...pushedEvents, ...hydrateEvents],
       token,
     );
+    // The turn's reply must render exactly once. Both the streaming history reader and
+    // the turn-end fallback can carry the same answer; the one-source rule guarantees a
+    // single rendered copy. Assert it so a regression can never re-introduce the dup.
+    const answerBlocksWithToken = view.agentChat.blocks.filter(
+      (block) => block?.role === "agent" && String(block.body ?? "").includes(token),
+    ).length;
 
     log({
       phase: "hydrated",
@@ -171,6 +177,7 @@ try {
       modelLabel: view.agentChat.composer.modelLabel,
       runtimeState: view.agentChat.runtimeState,
       blockCount: view.agentChat.blocks.length,
+      answerBlocksWithToken,
       agentOutputFound,
       pushedCount: pushedEvents.length,
       fakeOpenAiRequestCount: fakeOpenAi?.requestCount() ?? 0,
@@ -181,6 +188,11 @@ try {
     }
     if ((providerCliAgents.has(options.agent) || options.agent === "openai_api") && !agentOutputFound) {
       throw new Error("Hydrated Agent Session did not include the live token in an Agent output block.");
+    }
+    if (answerBlocksWithToken > 1) {
+      throw new Error(
+        `Final answer rendered ${answerBlocksWithToken} times — the one-source rule should make it exactly once.`,
+      );
     }
   }
 } catch (error) {

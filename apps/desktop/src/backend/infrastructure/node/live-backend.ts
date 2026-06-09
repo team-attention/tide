@@ -839,6 +839,55 @@ export function createLiveAgentSessionEventProjector(input: {
     string,
     { sinceMs: number; seenKeys: Set<string>; pollingStarted: boolean }
   >();
+  // One-source rule for the turn's final answer. Every agent persists its reply to a
+  // history file (claude transcript / codex rollout / gemini session) — that file,
+  // surfaced by the streaming history reader, is the SOLE content source. The turn-end
+  // outcome (claude Stop hook `last_assistant_message`, codex `task_complete`) is a
+  // settle signal whose `finalMessage` is only a *fallback* answer, used when the
+  // history file has not yielded the reply yet (gemini's one-shot read; a transcript
+  // that lags its turn-end marker). We scope that fallback by the turn's user message:
+  // once the reader has emitted an answer for a turn, the outcome's finalMessage for the
+  // same turn is suppressed. This replaces the old body-compare dedup (`isDuplicate…`)
+  // with a structural guarantee that the reply renders exactly once.
+  const answeredTurnByThread = new Map<string, string>();
+  const markTurnAnswered = (
+    threadId: string,
+    userMessage: string | undefined,
+  ): void => {
+    if (userMessage !== undefined) {
+      answeredTurnByThread.set(threadId, userMessage);
+    }
+  };
+  const turnAlreadyAnswered = (
+    threadId: string,
+    userMessage: string | undefined,
+  ): boolean =>
+    userMessage !== undefined && answeredTurnByThread.get(threadId) === userMessage;
+  // True when this update renders a non-empty agent_message — i.e. the turn's reply.
+  const isAnswerUpdate = (update: AgentSessionBlockUpdate): boolean =>
+    update.kind === "upsert" &&
+    update.block.kind === "agent_message" &&
+    typeof update.block.body === "string" &&
+    update.block.body.trim().length > 0;
+  // The one-source rule for a streaming history reader. The reader and the turn-end
+  // fallback race (the Stop hook can fire before the next 1s poll reads the transcript,
+  // or after) — whichever emits the answer first wins; the loser suppresses its copy.
+  // Returns true when this answer update should be SKIPPED. Non-answer updates (tool
+  // calls, reasoning, prompts) always pass through.
+  const suppressAlreadyAnsweredReply = (
+    threadId: string,
+    userMessage: string | undefined,
+    update: AgentSessionBlockUpdate,
+  ): boolean => {
+    if (!isAnswerUpdate(update)) {
+      return false;
+    }
+    if (turnAlreadyAnswered(threadId, userMessage)) {
+      return true;
+    }
+    markTurnAnswered(threadId, userMessage);
+    return false;
+  };
   // Per-runtime rolling PTY buffer + last-surfaced signature for TUI prompts (codex's
   // boxed approval/choice menus, which have no hook). Generic plumbing: detection lives
   // in the Agent Integration; this only feeds text in, surfaces once, and drops the
@@ -865,6 +914,12 @@ export function createLiveAgentSessionEventProjector(input: {
     nextBlocks: Map<string, AgentSessionBlock>;
   }): Promise<void> => {
     const service = input.service();
+    // Identify the turn so the final-answer fallback can stand down once the history
+    // reader has already shown this turn's reply (the one-source rule above).
+    const hydratedForTurn = await service.hydrateThread({ threadId: args.threadId });
+    const turnUserMessage = hydratedForTurn.ok
+      ? latestUserMessageForProviderHistory(hydratedForTurn.thread)
+      : undefined;
     const ingest = async (
       kind: "message" | "notice",
       rawBody: string,
@@ -872,16 +927,6 @@ export function createLiveAgentSessionEventProjector(input: {
       const body = rawBody.trim();
       if (body.length === 0) {
         return;
-      }
-      const dupKind = kind === "message" ? "agent_message" : "error";
-      for (const block of args.nextBlocks.values()) {
-        if (
-          block.kind === dupKind &&
-          typeof block.body === "string" &&
-          block.body.trim() === body
-        ) {
-          return;
-        }
       }
       let hash = 5381;
       for (let i = 0; i < body.length; i += 1) {
@@ -931,7 +976,15 @@ export function createLiveAgentSessionEventProjector(input: {
       }
     };
 
-    if (args.outcome.finalMessage !== undefined) {
+    // Fallback answer: only when the history reader has not already produced this
+    // turn's reply. Marking the turn answered keeps a later poll from re-ingesting it.
+    if (
+      args.outcome.finalMessage !== undefined &&
+      !turnAlreadyAnswered(args.threadId, turnUserMessage)
+    ) {
+      // Claim the turn synchronously BEFORE awaiting, so a concurrent reader poll can't
+      // slip into the await window and emit a second copy of the same reply.
+      markTurnAnswered(args.threadId, turnUserMessage);
       await ingest("message", args.outcome.finalMessage);
     }
     if (args.outcome.notice !== undefined) {
@@ -1257,7 +1310,9 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
-        if (isDuplicateAgentMessageUpdate(update, nextBlocks)) {
+        if (
+          suppressAlreadyAnsweredReply(frameInput.threadId, expectedUserMessage, update)
+        ) {
           continue;
         }
         await recordBlockUpdateInThreadCache(input.persistence, service, update);
@@ -1381,12 +1436,13 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
-        // The turn-end hook may already have ingested the final answer (from its
-        // last_assistant_message) as an agent_message block; the transcript then yields
-        // the SAME answer under a different blockId. Skip it so the reply is not shown
-        // twice. (The reverse — hook deduping against the transcript — already happens
-        // in ingestTurnOutcomeAndSettle.)
-        if (isDuplicateAgentMessageUpdate(update, nextBlocks)) {
+        // The transcript is claude's content source: it writes the assistant answer
+        // ~0.3s before the Stop hook fires. Whichever of the two reads the reply first
+        // (this poll, or the hook fallback) wins; the other suppresses its copy so the
+        // answer renders exactly once (one-source rule).
+        if (
+          suppressAlreadyAnsweredReply(frameInput.threadId, expectedUserMessage, update)
+        ) {
           continue;
         }
         await recordBlockUpdateInThreadCache(input.persistence, service, update);
@@ -1436,6 +1492,7 @@ export function createLiveAgentSessionEventProjector(input: {
     if (!hydrated.ok) {
       return;
     }
+    const expectedUserMessage = latestUserMessageForProviderHistory(hydrated.thread);
 
     const historyState =
       antigravityHistoryByRuntime.get(frameInput.runtimeId) ??
@@ -1484,7 +1541,9 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
-        if (isDuplicateAgentMessageUpdate(update, nextBlocks)) {
+        if (
+          suppressAlreadyAnsweredReply(frameInput.threadId, expectedUserMessage, update)
+        ) {
           continue;
         }
         await recordBlockUpdateInThreadCache(input.persistence, service, update);
@@ -1890,34 +1949,6 @@ function emitBlockUpdate(input: {
       }),
     );
   }
-}
-
-// True when this block update would render an agent_message identical to one already
-// present under a different blockId — i.e. the same final answer produced by both the
-// turn-end hook (last_assistant_message) and the provider transcript. Used to keep the
-// reply from appearing twice.
-function isDuplicateAgentMessageUpdate(
-  update: AgentSessionBlockUpdate,
-  existing: Map<string, AgentSessionBlock>,
-): boolean {
-  if (update.kind !== "upsert" || update.block.kind !== "agent_message") {
-    return false;
-  }
-  const body = typeof update.block.body === "string" ? update.block.body.trim() : "";
-  if (body.length === 0) {
-    return false;
-  }
-  for (const other of existing.values()) {
-    if (
-      other.blockId !== update.block.blockId &&
-      other.kind === "agent_message" &&
-      typeof other.body === "string" &&
-      other.body.trim() === body
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 async function recordBlockUpdateInThreadCache(
