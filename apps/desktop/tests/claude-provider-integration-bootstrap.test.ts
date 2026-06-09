@@ -315,16 +315,29 @@ test("claude_provider_specific_agent_integration_stays_under_backend_adapters", 
   );
 });
 
-test("claude_turn_end_from_agent_idle_hook_carries_final_answer", () => {
+test("claude_turn_end_read_from_transcript_end_turn_not_the_hook", () => {
   const integration = claudeIntegration();
-  // agent-idle ends the turn and yields the final answer from the hook payload.
-  assert.deepEqual(
-    integration.turnEndFromHook("agent-idle", { last_assistant_message: "the answer" }),
-    { finalMessage: "the answer" },
-  );
-  // Other hook events are not turn-end; claude has no history-driven turn-end.
-  assert.equal(integration.turnEndFromHook("agent-running", {}), null);
-  assert.equal(integration.turnEndFromHistory("", undefined), null);
+  // Claude turn-end is read from its OWN transcript (uniform with codex/antigravity),
+  // NOT the agent-idle hook — so the answer is never sourced twice.
+  assert.equal(integration.turnEndFromHook("agent-idle", { last_assistant_message: "x" }), null);
+
+  // An assistant message with stop_reason "end_turn" after the user message ends the
+  // turn; the answer itself is rendered from the transcript by the content reader, so
+  // the outcome carries no message.
+  const transcript = [
+    JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "hi" }] } }),
+    JSON.stringify({ type: "assistant", message: { role: "assistant", stop_reason: "tool_use", content: [{ type: "tool_use" }] } }),
+    JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "tool_result" }] } }),
+    JSON.stringify({ type: "assistant", message: { role: "assistant", stop_reason: "end_turn", content: [{ type: "text", text: "done" }] } }),
+  ].join("\n");
+  assert.deepEqual(integration.turnEndFromHistory(transcript, "hi"), {});
+
+  // While the latest assistant message is still mid-turn (tool_use), the turn has not ended.
+  const midTurn = [
+    JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "hi" }] } }),
+    JSON.stringify({ type: "assistant", message: { role: "assistant", stop_reason: "tool_use", content: [{ type: "tool_use" }] } }),
+  ].join("\n");
+  assert.equal(integration.turnEndFromHistory(midTurn, "hi"), null);
 });
 
 function claudeIntegration(options: {
