@@ -329,8 +329,32 @@ test("provider_specific_agent_integrations_stay_under_backend_adapters", () => {
   );
 });
 
-test("codex_declares_its_own_turn_end_hook_event", () => {
-  assert.deepEqual(codexIntegration().turnEndSignalEvents(), ["codex-stop"]);
+test("codex_turn_end_from_hook_and_rollout_outcome", () => {
+  const integration = codexIntegration();
+  // codex-stop hook carries the final answer.
+  assert.deepEqual(
+    integration.turnEndFromHook("codex-stop", { last_assistant_message: "done" }),
+    { finalMessage: "done" },
+  );
+  assert.equal(integration.turnEndFromHook("agent-running", {}), null);
+  // Rollout task_complete with an answer is the authoritative history outcome.
+  const rollout = [
+    JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "hi" } }),
+    JSON.stringify({ type: "event_msg", payload: { type: "task_complete", last_agent_message: "rolled" } }),
+  ].join("\n");
+  assert.deepEqual(integration.turnEndFromHistory(rollout, "hi"), { finalMessage: "rolled" });
+  // No credits + no answer surfaces a notice instead of an empty turn.
+  const noCredits = [
+    JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "hi" } }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: { type: "token_count", rate_limits: { credits: { has_credits: false } } },
+    }),
+    JSON.stringify({ type: "event_msg", payload: { type: "task_complete", last_agent_message: null } }),
+  ].join("\n");
+  const outcome = integration.turnEndFromHistory(noCredits, "hi");
+  assert.equal(outcome?.finalMessage, undefined);
+  assert.equal(outcome?.notice?.severity, "error");
 });
 
 function codexIntegration(options: {

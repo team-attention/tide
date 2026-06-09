@@ -1,4 +1,5 @@
 import type {
+  AgentTurnOutcome,
   AgentIntegrationCapabilities,
   AgentIntegrationPort,
   AgentIntegrationPreflightInput,
@@ -12,6 +13,7 @@ import type {
   ProviderSignalSource,
   RuntimeReadinessGate,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
+import { codexTurnOutcomeFromRollout } from "./codex-rollout-turn-detection.ts";
 import type {
   PromptChoice,
   PromptKind,
@@ -231,8 +233,25 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     return { kind: "tool_surface_ready" };
   }
 
-  turnEndSignalEvents(): readonly string[] {
-    return ["codex-stop"];
+  turnEndFromHook(eventName: string, payload: unknown): AgentTurnOutcome | null {
+    // The codex-stop hook carries the final answer in `last_assistant_message`. It
+    // is unreliable (often never fires), which is why turnEndFromHistory exists as
+    // the authoritative path — but when it does fire it is the fastest answer.
+    if (eventName !== "codex-stop") {
+      return null;
+    }
+    const record = isRecord(payload) ? payload : undefined;
+    return { finalMessage: stringValue(record?.last_assistant_message) };
+  }
+
+  turnEndFromHistory(
+    rolloutTailText: string,
+    expectedUserMessage: string | undefined,
+  ): AgentTurnOutcome | null {
+    // Authoritative codex turn-end: the rollout's typed task_complete / turn_aborted,
+    // carrying the final answer or a credits/rate-limit notice. See
+    // codexTurnOutcomeFromRollout.
+    return codexTurnOutcomeFromRollout(rolloutTailText, expectedUserMessage);
   }
 
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {

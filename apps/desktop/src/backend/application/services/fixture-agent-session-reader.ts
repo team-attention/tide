@@ -73,6 +73,8 @@ function blocksFromFrame(
   switch (payload.type) {
     case "message":
       return [messageBlockFromFrame(input.thread.threadId, frame, payload)];
+    case "notice":
+      return [noticeBlockFromFrame(input.thread.threadId, frame, payload)];
     case "reasoning":
       return reasoningBlockFromFrame(input.thread.threadId, frame, payload);
     case "tool_call":
@@ -134,6 +136,29 @@ function blocksFromToolResult(
     return [commandRunBlockFromFrame(threadId, frame, payload, output)];
   }
   return [toolBlockFromFrame(threadId, frame, payload, "tool_result")];
+}
+
+// A turn that ended with no usable answer (rate limit / out of credits / empty
+// output / error) surfaces a visible `error` block so the user sees why, instead of
+// a silent empty turn. Produced uniformly from each provider's AgentTurnOutcome.notice.
+function noticeBlockFromFrame(
+  threadId: ThreadId,
+  frame: RawAgentFrame,
+  payload: Record<string, unknown>,
+): AgentSessionBlock {
+  const body = typeof payload.body === "string" ? payload.body : rawText(frame);
+  return {
+    blockId: stringField(payload.blockId) ?? `block:${threadId}:${frame.frameId}`,
+    threadId,
+    agentId: frame.agentId,
+    kind: "error",
+    role: "system",
+    sourceFrameIds: [frame.frameId],
+    status: blockStatus(payload.status, "failed"),
+    body,
+    createdAt: frame.observedAt,
+    updatedAt: frame.observedAt,
+  };
 }
 
 function messageBlockFromFrame(

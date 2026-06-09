@@ -149,6 +149,7 @@ import type {
   AgentSessionBlockUpdate,
 } from "../../application/domains/agent-session/agent-session-block.ts";
 import type { AgentId, PromptState } from "../../application/domains/thread/thread.ts";
+import type { AgentTurnOutcome } from "../../application/ports/outbound/agent-integration-port.ts";
 import { createFixtureAgentSessionReader } from "../../application/services/fixture-agent-session-reader.ts";
 import {
   adoptedThreadSeedsFromSessions,
@@ -825,82 +826,135 @@ export function createLiveAgentSessionEventProjector(input: {
     { buffer: string; surfacedSignature?: string }
   >();
 
-  // The runtime-keyed turn-end hook carries the turn's final assistant message in
-  // its payload (claude `agent-idle` → `last_assistant_message`). That is the
-  // authoritative final answer, independent of the transcript binding — which under
-  // concurrent spawns can point at a session file the provider never flushed,
-  // leaving the UI with a settled-but-empty turn ("Ran N commands"/no reply, or
-  // "Working" forever). Ingest it as the agent_message block through the SAME reader
-  // pipeline as transcript content, deduped by body so it never duplicates an answer
-  // the transcript already produced. This makes the hook the source of truth for the
-  // final answer; the transcript stays the source for streaming/tool/intermediate
-  // content. See docs_v2/specs/claude-runtime-event-source.md.
-  const ingestFinalAssistantMessageFromHook = async (args: {
-    signalPayload: unknown;
+  // Uniform turn settle. Every Agent Integration produces an AgentTurnOutcome from
+  // its OWN signals (claude/codex hook payload, codex rollout, antigravity
+  // transcript); this shared path applies it identically — the provider-specific
+  // "circus" lives in the adapters, not here. `finalMessage` becomes the agent
+  // answer block; `notice` (rate limit / out of credits / empty / error) becomes a
+  // visible `error` block so the turn never settles silently empty. Both go through
+  // the same reader pipeline as streamed content and are deduped by body, so they
+  // never duplicate what the transcript already produced. Then the turn settles.
+  const ingestTurnOutcomeAndSettle = async (args: {
+    outcome: AgentTurnOutcome;
     threadId: string;
     agentId: "codex" | "claude" | "antigravity";
     runtimeId: string;
+    sessionId?: string;
     nextBlocks: Map<string, AgentSessionBlock>;
   }): Promise<void> => {
-    const payload =
-      typeof args.signalPayload === "object" &&
-      args.signalPayload !== null &&
-      !Array.isArray(args.signalPayload)
-        ? (args.signalPayload as Record<string, unknown>)
-        : undefined;
-    const raw = payload?.last_assistant_message;
-    const body = typeof raw === "string" ? raw.trim() : "";
-    if (body.length === 0) {
-      return;
-    }
-    // Content dedup: skip if the transcript already produced this exact answer.
-    for (const block of args.nextBlocks.values()) {
-      if (
-        block.kind === "agent_message" &&
-        typeof block.body === "string" &&
-        block.body.trim() === body
-      ) {
+    const service = input.service();
+    const ingest = async (
+      kind: "message" | "notice",
+      rawBody: string,
+    ): Promise<void> => {
+      const body = rawBody.trim();
+      if (body.length === 0) {
         return;
       }
+      const dupKind = kind === "message" ? "agent_message" : "error";
+      for (const block of args.nextBlocks.values()) {
+        if (
+          block.kind === dupKind &&
+          typeof block.body === "string" &&
+          block.body.trim() === body
+        ) {
+          return;
+        }
+      }
+      let hash = 5381;
+      for (let i = 0; i < body.length; i += 1) {
+        hash = ((hash << 5) + hash + body.charCodeAt(i)) | 0;
+      }
+      const sessionId = args.sessionId ?? args.runtimeId;
+      const blockId = `provider:${args.threadId}:${sessionId}:${kind}:${(hash >>> 0).toString(36)}`;
+      const hydrated = await service.hydrateThread({ threadId: args.threadId });
+      if (!hydrated.ok) {
+        return;
+      }
+      const payload =
+        kind === "message"
+          ? {
+              type: "message",
+              role: "agent",
+              status: "complete",
+              blockId,
+              body,
+              sourceRuntimeId: args.runtimeId,
+            }
+          : {
+              type: "notice",
+              status: "failed",
+              blockId,
+              body,
+              sourceRuntimeId: args.runtimeId,
+            };
+      const frame = await service.appendRawAgentFrame({
+        threadId: args.threadId,
+        agentId: args.agentId,
+        source: "provider_history",
+        sourceRef: blockId,
+        payloadKind: "provider_record",
+        payload,
+        body,
+      });
+      const result = reader.read({
+        thread: hydrated.thread,
+        agentBinding: hydrated.thread.agentBinding,
+        frames: [frame],
+        existingBlocks: [...args.nextBlocks.values()],
+      });
+      for (const update of result.blockUpdates) {
+        await recordBlockUpdateInThreadCache(input.persistence, service, update);
+        emitBlockUpdate({ update, blocks: args.nextBlocks, onEvent: input.onEvent });
+      }
+    };
+
+    if (args.outcome.finalMessage !== undefined) {
+      await ingest("message", args.outcome.finalMessage);
     }
-    const sessionId =
-      typeof payload?.session_id === "string" ? payload.session_id : args.runtimeId;
-    let hash = 5381;
-    for (let i = 0; i < body.length; i += 1) {
-      hash = ((hash << 5) + hash + body.charCodeAt(i)) | 0;
+    if (args.outcome.notice !== undefined) {
+      await ingest("notice", args.outcome.notice.message);
     }
-    const blockId = `provider:${args.threadId}:${sessionId}:final:${(hash >>> 0).toString(36)}`;
-    const service = input.service();
-    const hydrated = await service.hydrateThread({ threadId: args.threadId });
-    if (!hydrated.ok) {
+    await emitTurnComplete({
+      threadId: args.threadId,
+      service,
+      onEvent: input.onEvent,
+    });
+  };
+
+  // History-driven settle: read the bound rollout/transcript tail, ask the adapter
+  // whether the current turn ended (and with what outcome), and apply it uniformly.
+  // The binding-independent counterpart of the hook path. Used by the per-provider
+  // history emitters (codex rollout, antigravity transcript).
+  const settleFromHistory = async (args: {
+    threadId: string;
+    agentId: "codex" | "claude" | "antigravity";
+    runtimeId: string;
+    boundPath: string | undefined;
+    expectedUserMessage: string | undefined;
+    nextBlocks: Map<string, AgentSessionBlock>;
+  }): Promise<void> => {
+    if (args.boundPath === undefined) {
       return;
     }
-    const frame = await service.appendRawAgentFrame({
+    const tail = readBoundedTail(args.boundPath, 256 * 1024);
+    if (tail === undefined) {
+      return;
+    }
+    const outcome = input.integrations[args.agentId].turnEndFromHistory(
+      tail,
+      args.expectedUserMessage,
+    );
+    if (outcome === null) {
+      return;
+    }
+    await ingestTurnOutcomeAndSettle({
+      outcome,
       threadId: args.threadId,
       agentId: args.agentId,
-      source: "provider_history",
-      sourceRef: blockId,
-      payloadKind: "provider_record",
-      payload: {
-        type: "message",
-        role: "agent",
-        status: "complete",
-        blockId,
-        body,
-        sourceRuntimeId: args.runtimeId,
-      },
-      body,
+      runtimeId: args.runtimeId,
+      nextBlocks: args.nextBlocks,
     });
-    const result = reader.read({
-      thread: hydrated.thread,
-      agentBinding: hydrated.thread.agentBinding,
-      frames: [frame],
-      existingBlocks: [...args.nextBlocks.values()],
-    });
-    for (const update of result.blockUpdates) {
-      await recordBlockUpdateInThreadCache(input.persistence, service, update);
-      emitBlockUpdate({ update, blocks: args.nextBlocks, onEvent: input.onEvent });
-    }
   };
 
   const emitProviderSignals = async (frameInput: {
@@ -986,22 +1040,27 @@ export function createLiveAgentSessionEventProjector(input: {
         service,
         onEvent: input.onEvent,
       });
-      const turnEndEvents = input.integrations[frameInput.agentId].turnEndSignalEvents();
-      if (turnEndEvents.includes(signalFrame.eventName)) {
-        // Ingest the final answer carried by the turn-end hook BEFORE settling, so
-        // the turn never settles to an empty/answerless state regardless of the
-        // transcript binding.
-        await ingestFinalAssistantMessageFromHook({
-          signalPayload: signalFrame.payload,
+      // Hook-driven turn-end (claude agent-idle / codex codex-stop): the adapter
+      // decides whether this hook ends the turn and extracts the outcome from the
+      // runtime-keyed payload. Apply it uniformly (answer/notice + settle).
+      const hookOutcome = input.integrations[frameInput.agentId].turnEndFromHook(
+        signalFrame.eventName,
+        signalFrame.payload,
+      );
+      if (hookOutcome !== null) {
+        const sessionId =
+          typeof signalFrame.payload === "object" &&
+          signalFrame.payload !== null &&
+          typeof (signalFrame.payload as Record<string, unknown>).session_id === "string"
+            ? ((signalFrame.payload as Record<string, unknown>).session_id as string)
+            : undefined;
+        await ingestTurnOutcomeAndSettle({
+          outcome: hookOutcome,
           threadId: frameInput.threadId,
           agentId: frameInput.agentId,
           runtimeId: frameInput.runtimeId,
+          sessionId,
           nextBlocks,
-        });
-        await emitTurnComplete({
-          threadId: frameInput.threadId,
-          service,
-          onEvent: input.onEvent,
         });
       }
     }
@@ -1147,21 +1206,6 @@ export function createLiveAgentSessionEventProjector(input: {
       agentId: "codex",
       transcriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
-    // Structured turn-end from the rollout (normal `task_complete` or `turn_aborted`),
-    // a fallback for a missing `codex-stop` hook. Settle the runtime even when the turn
-    // produced no agent output, so it can't hang "Working" or strand a queued message.
-    if (
-      codexRolloutTurnEnded(
-        hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
-        expectedUserMessage,
-      )
-    ) {
-      await endRunningTurn(frameInput.threadId);
-    }
-    if (historyFrames.length === 0) {
-      return;
-    }
-
     const nextBlocks = new Map(
       (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [
         block.blockId,
@@ -1204,6 +1248,18 @@ export function createLiveAgentSessionEventProjector(input: {
         onEvent: input.onEvent,
       });
     }
+    // Authoritative codex turn-end from the rollout (task_complete / turn_aborted),
+    // AFTER ingesting frames so the answer is recorded first. Surfaces a credit /
+    // rate-limit notice when codex finished without producing a response. Runs on
+    // zero-frame polls too, so a turn can't hang "Working".
+    await settleFromHistory({
+      threadId: frameInput.threadId,
+      agentId: "codex",
+      runtimeId: frameInput.runtimeId,
+      boundPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
+      expectedUserMessage,
+      nextBlocks,
+    });
     blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
   };
 
@@ -1365,10 +1421,6 @@ export function createLiveAgentSessionEventProjector(input: {
       seenKeys: historyState.seenKeys,
       boundTranscriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
-    if (historyFrames.length === 0) {
-      return;
-    }
-
     const nextBlocks = new Map(
       (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [
         block.blockId,
@@ -1413,16 +1465,16 @@ export function createLiveAgentSessionEventProjector(input: {
       });
     }
     // Antigravity emits no turn-end hook, so the runtime never sees `agent-idle`.
-    // When the transcript yields the terminal agent message (a PLANNER_RESPONSE with
-    // content and no tool call), end the turn the same way the codex/claude Stop
-    // signal does (idle transition / queued-input flush).
-    if (historyFrames.some((frame) => frame.turnComplete === true)) {
-      await emitTurnComplete({
-        threadId: frameInput.threadId,
-        service,
-        onEvent: input.onEvent,
-      });
-    }
+    // Its turn-end is read from the transcript (terminal PLANNER_RESPONSE) through
+    // the same uniform settle path as codex's rollout.
+    await settleFromHistory({
+      threadId: frameInput.threadId,
+      agentId: "antigravity",
+      runtimeId: frameInput.runtimeId,
+      boundPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
+      expectedUserMessage: undefined,
+      nextBlocks,
+    });
     blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
   };
 
@@ -1737,6 +1789,25 @@ async function recordBlockUpdateInThreadCache(
 // restore the conversation. Blocks live as references in the service; fill the
 // required block fields to write the durable cache.
 async function persistThreadBlocks(input: {
+  persistence: ThreadPersistenceService;
+  service: ThreadRuntimeService;
+  threadId: string;
+}): Promise<void> {
+  try {
+    await persistThreadBlocksUnsafe(input);
+  } catch (error) {
+    // The Agent Session cache is a best-effort restore optimization — the live
+    // service holds the authoritative blocks in memory and the next write persists
+    // the full list again. A transient FS error (concurrent atomic-write rename
+    // race, or teardown removing the dir mid-write) must never crash the backend.
+    process.emitWarning(
+      error instanceof Error ? error.message : String(error),
+      { type: "TidePersistenceCacheWarning" },
+    );
+  }
+}
+
+async function persistThreadBlocksUnsafe(input: {
   persistence: ThreadPersistenceService;
   service: ThreadRuntimeService;
   threadId: string;

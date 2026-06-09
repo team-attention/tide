@@ -315,8 +315,16 @@ test("claude_provider_specific_agent_integration_stays_under_backend_adapters", 
   );
 });
 
-test("claude_declares_its_own_turn_end_hook_event", () => {
-  assert.deepEqual(claudeIntegration().turnEndSignalEvents(), ["agent-idle"]);
+test("claude_turn_end_from_agent_idle_hook_carries_final_answer", () => {
+  const integration = claudeIntegration();
+  // agent-idle ends the turn and yields the final answer from the hook payload.
+  assert.deepEqual(
+    integration.turnEndFromHook("agent-idle", { last_assistant_message: "the answer" }),
+    { finalMessage: "the answer" },
+  );
+  // Other hook events are not turn-end; claude has no history-driven turn-end.
+  assert.equal(integration.turnEndFromHook("agent-running", {}), null);
+  assert.equal(integration.turnEndFromHistory("", undefined), null);
 });
 
 function claudeIntegration(options: {

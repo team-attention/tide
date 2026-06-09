@@ -1,4 +1,5 @@
 import type {
+  AgentTurnOutcome,
   AgentIntegrationCapabilities,
   AgentIntegrationPort,
   AgentIntegrationPreflightInput,
@@ -221,8 +222,22 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     return { kind: "immediate" };
   }
 
-  turnEndSignalEvents(): readonly string[] {
-    return ["agent-idle"];
+  turnEndFromHook(eventName: string, payload: unknown): AgentTurnOutcome | null {
+    // Claude's turn-end is the runtime-keyed `agent-idle` Stop hook, whose payload
+    // carries the final answer in `last_assistant_message` — attributed to the exact
+    // runtime/thread and independent of the transcript binding (which concurrent
+    // spawns can leave pointing at an unflushed session file). That is the source of
+    // truth for the final answer.
+    if (eventName !== "agent-idle") {
+      return null;
+    }
+    const record = isRecord(payload) ? payload : undefined;
+    return { finalMessage: stringValue(record?.last_assistant_message) };
+  }
+
+  turnEndFromHistory(): AgentTurnOutcome | null {
+    // Claude turn-end is owned by the agent-idle hook (above), not the transcript.
+    return null;
   }
 
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {

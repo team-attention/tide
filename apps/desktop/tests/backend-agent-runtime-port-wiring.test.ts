@@ -22,6 +22,7 @@ import type {
   AgentPromptSignalInput,
   AgentResumePlanInput,
   AgentStartPlanInput,
+  AgentTurnOutcome,
   ProviderLaunchPlan,
   RuntimeReadinessGate,
 } from "../src/backend/application/ports/outbound/agent-integration-port.ts";
@@ -2230,8 +2231,12 @@ class FakeAgentIntegration implements AgentIntegrationPort {
     return this.promptDetector?.(input) ?? null;
   }
 
-  turnEndSignalEvents(): readonly string[] {
-    return this.agentId === "codex" ? ["codex-stop"] : ["agent-idle"];
+  turnEndFromHook(): AgentTurnOutcome | null {
+    return null;
+  }
+
+  turnEndFromHistory(): AgentTurnOutcome | null {
+    return null;
   }
 
   initialTurnReadiness(): RuntimeReadinessGate {
