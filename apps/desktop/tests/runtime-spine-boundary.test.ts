@@ -52,10 +52,11 @@ test("codex_turn_detection_lives_in_the_codex_agent_integration", () => {
   }
 });
 
-// The hook event names that mean "turn ended" (codex-stop / agent-idle) are
-// provider knowledge; they must be declared by each Agent Integration's
-// turnEndSignalEvents(), not hardcoded in infrastructure (double-quoted literal
-// form — explanatory comments use backticks and are allowed).
+// Turn-end is provider knowledge owned in each Agent Integration's history
+// detection — NOT a hook the infrastructure settles on. Infrastructure must not
+// hardcode provider turn-end hook event names (double-quoted literal form;
+// explanatory comments use backticks and are allowed). The hooks still flow as
+// Provider Signals, but no `if (eventName === "codex-stop") settle` lives here.
 const turnEndHookLiterals = ['"codex-stop"', '"agent-idle"'];
 
 test("infra_live_backend_does_not_hardcode_turn_end_hook_events", () => {
@@ -64,14 +65,15 @@ test("infra_live_backend_does_not_hardcode_turn_end_hook_events", () => {
     assert.equal(
       source.includes(literal),
       false,
-      `live-backend.ts must not hardcode turn-end hook event ${literal}; declare it in the Agent Integration's turnEndSignalEvents()`,
+      `live-backend.ts must not hardcode turn-end hook event ${literal}; turn-end is owned by each provider's history detection in its adapter`,
     );
   }
 });
 
-// All three providers own their turn-end detection in their adapters: codex
-// (rollout task_complete/turn_aborted + codex-stop hook), claude (agent-idle
-// hook), antigravity (agent-idle hook + transcript PLANNER_RESPONSE rule).
+// All three providers own their turn-end detection in their adapters, settled from
+// their own provider history (no cross-channel hook settle): codex (rollout
+// task_complete/turn_aborted), claude (transcript turn_duration/stop_hook_summary),
+// antigravity (transcript PLANNER_RESPONSE terminal rule).
 test("antigravity_transcript_turn_end_rule_lives_in_its_adapter", () => {
   const adapter = read(
     "src/backend/adapters/outbound/agent-integrations/antigravity/antigravity-transcript-turn-detection.ts",
