@@ -7,6 +7,7 @@ import type {
   BackendSnapshotRequestedPayload,
 } from "./connection.ts";
 import type { RequestId, ThreadId } from "./ids.ts";
+import type { ProviderCliAgentId } from "./agent.ts";
 import type { JsonObject } from "./json.ts";
 import type { PromptStateDto } from "./prompt.ts";
 import type { ProviderReadinessDto } from "./provider-readiness.ts";
@@ -76,6 +77,10 @@ export interface BackendEventPayloadByKind {
   "contract.error": ContractErrorPayload;
   "thread.listed": {
     threads: ThreadSummaryDto[];
+    // Provider-CLI agents detected on the local system (their executable resolves).
+    // The composer agent menu enables these and shows the rest disabled (never
+    // removed). Absent = older backend; the UI then treats all as available.
+    availableAgents?: ProviderCliAgentId[];
   };
   "thread.hydrated": {
     thread: ThreadSummaryDto;

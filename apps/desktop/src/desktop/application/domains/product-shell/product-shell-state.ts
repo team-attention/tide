@@ -16,6 +16,7 @@ import {
   addComposerContextChip,
   removeComposerContextChip,
   setComposerContextChipComment,
+  setAvailableProviderAgents,
   type AgentChatComposerAttachment,
   type AgentChatContextChip,
   type AgentChatBackendCommand,
@@ -1671,6 +1672,11 @@ export function applyProductShellBackendEvent(
 
   switch (event.kind) {
     case "thread.listed":
+      // Record which provider-CLI agents the backend detected locally so the composer
+      // agent menu enables them and shows the rest disabled.
+      setAvailableProviderAgents(
+        (event.payload as { availableAgents?: readonly string[] }).availableAgents ?? null,
+      );
       return applyProductShellThreadListEvent(nextState, event);
     case "thread.started":
     case "thread.hydrated":

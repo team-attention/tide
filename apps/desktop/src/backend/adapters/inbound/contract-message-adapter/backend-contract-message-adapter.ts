@@ -32,6 +32,7 @@ import {
   type ContractErrorCode,
   type JsonObject,
   type LastKnownStateDto,
+  type ProviderCliAgentId,
   type ProviderReadinessDto,
   type PromptStateDto,
   type ThreadScopeDto,
@@ -46,6 +47,10 @@ export interface CreateBackendContractMessageAdapterInput {
   service: ThreadRuntimeService;
   clock?: () => string;
   idGenerator?: () => string;
+  // Provider-CLI agents detected on the local system. Surfaced on thread.listed so the
+  // composer menu can enable available agents and show the rest disabled. Evaluated
+  // per call so newly-installed CLIs are picked up without a restart.
+  detectAvailableAgents?: () => ProviderCliAgentId[];
 }
 
 export interface BackendContractMessageAdapter {
@@ -62,11 +67,13 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
   private readonly service: ThreadRuntimeService;
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
+  private readonly detectAvailableAgents?: () => ProviderCliAgentId[];
 
   constructor(input: CreateBackendContractMessageAdapterInput) {
     this.service = input.service;
     this.clock = input.clock ?? defaultClock;
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
+    this.detectAvailableAgents = input.detectAvailableAgents;
   }
 
   async handleMessage(message: unknown): Promise<BackendEventEnvelope[]> {
@@ -299,6 +306,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       emittedAt: this.clock(),
       payload: {
         threads: result.threads.map(toThreadSummaryDto),
+        availableAgents: this.detectAvailableAgents?.(),
       },
     };
   }

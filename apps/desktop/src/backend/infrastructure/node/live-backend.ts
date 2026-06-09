@@ -374,7 +374,18 @@ export function createLiveBackendContractMessageAdapter(
   }
 
   return createPersistentLiveBackendAdapter({
-    adapter: createBackendContractMessageAdapter({ service }),
+    adapter: createBackendContractMessageAdapter({
+      service,
+      // Detect which provider-CLI agents are installed locally (executable resolves).
+      // The composer menu enables these and shows the rest disabled. Evaluated per
+      // thread.list so a CLI installed after launch is picked up.
+      detectAvailableAgents: () =>
+        (["codex", "claude", "antigravity", "gemini"] as const).filter(
+          (agentId) =>
+            integrations[agentId] !== undefined &&
+            resolveExecutable(executableForAgent(agentId)) !== undefined,
+        ),
+    }),
     service,
     persistence,
     homeDir,
@@ -2056,6 +2067,12 @@ async function recordDiscoveredProviderSessionRef(input: {
 
 function nextEventId(): string {
   return `evt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function executableForAgent(
+  agentId: "codex" | "claude" | "antigravity" | "gemini",
+): string {
+  return agentId === "antigravity" ? "agy" : agentId;
 }
 
 function resolveExecutable(command: string): string | undefined {

@@ -683,7 +683,11 @@ export function selectAgentChatChoiceSurfaceRow(
   switch (surfaceKind) {
     case "agent_menu": {
       const agentId = composerAgentIdForRow(rowId);
-      return agentId ? selectComposerAgent(state, agentId) : { state, command: null };
+      // Selecting a disabled (undetected) agent is a no-op.
+      if (agentId === null || !isAgentAvailable(agentId)) {
+        return { state, command: null };
+      }
+      return selectComposerAgent(state, agentId);
     }
     case "model_menu": {
       const reasoning = reasoningForRow(rowId);
@@ -1358,13 +1362,14 @@ function createActiveComposerSurface(
         sourceLabel: "Agent Binding",
         // Tide API Agents / OpenAI API are hidden for now (provider-CLI only).
         // The openai_api binding + runtime still exist; they're just not offered here.
-        // Antigravity is not offered: its CLI cannot authenticate when Tide spawns it
-        // (auth is bound to an interactive/IDE session), so it would only hang. Its
-        // adapter stays wired and dormant — re-add the row when agy fixes spawn auth.
+        // All provider-CLI agents are always listed; ones whose CLI is not detected on
+        // the local system are shown DISABLED (greyed), never removed, so the user sees
+        // what exists and what to install.
         rows: [
-          row("codex", "Codex CLI", "Agent Integration", undefined, binding.agentId === "codex" ? "check" : "identity:codex", binding.agentId === "codex"),
-          row("claude", "Claude Code", "Agent Integration", undefined, binding.agentId === "claude" ? "check" : "identity:claude", binding.agentId === "claude"),
-          row("gemini", "Gemini CLI", "Agent Integration", undefined, binding.agentId === "gemini" ? "check" : "identity:gemini", binding.agentId === "gemini"),
+          agentMenuRow("codex", "Codex CLI", binding.agentId),
+          agentMenuRow("claude", "Claude Code", binding.agentId),
+          agentMenuRow("gemini", "Gemini CLI", binding.agentId),
+          agentMenuRow("antigravity", "Antigravity CLI", binding.agentId),
         ],
       };
     case "model_menu":
@@ -1550,6 +1555,40 @@ function permissionRowsForAgent(agentId: string, currentValue: string): AgentCha
     const icon = selected ? "check" : option.danger ? "!" : "";
     return row(option.id, option.label, option.detail, undefined, icon, selected, option.danger ?? false);
   });
+}
+
+// Provider-CLI agents the backend detected on the local system. `null` = not yet
+// reported (treat all as available so the menu never flashes all-disabled at startup).
+// Set by the Desktop adapter from the thread.listed event. Module-level so it survives
+// New-Thread state resets.
+let availableProviderAgents: readonly string[] | null = null;
+
+export function setAvailableProviderAgents(agents: readonly string[] | null): void {
+  availableProviderAgents = agents;
+}
+
+function isAgentAvailable(agentId: string): boolean {
+  return availableProviderAgents === null || availableProviderAgents.includes(agentId);
+}
+
+// One provider-CLI agent row: enabled+selectable when its CLI is detected, otherwise
+// shown disabled (greyed) — never removed.
+function agentMenuRow(
+  agentId: string,
+  label: string,
+  selectedAgentId: string,
+): AgentChatChoiceSurfaceRowView {
+  const selected = selectedAgentId === agentId;
+  return row(
+    agentId,
+    label,
+    "Agent Integration",
+    undefined,
+    selected ? "check" : `identity:${agentId}`,
+    selected,
+    false,
+    !isAgentAvailable(agentId),
+  );
 }
 
 function row(
