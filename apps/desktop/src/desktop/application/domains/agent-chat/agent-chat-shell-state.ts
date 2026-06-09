@@ -1362,14 +1362,14 @@ function createActiveComposerSurface(
         sourceLabel: "Agent Binding",
         // Tide API Agents / OpenAI API are hidden for now (provider-CLI only).
         // The openai_api binding + runtime still exist; they're just not offered here.
-        // All provider-CLI agents are always listed; ones whose CLI is not detected on
-        // the local system are shown DISABLED (greyed), never removed, so the user sees
-        // what exists and what to install.
+        // Provider-CLI agents are listed; ones whose CLI is not detected on the local
+        // system are shown DISABLED (greyed), never removed. Antigravity is hidden for
+        // now (its CLI can't authenticate when Tide spawns it, so it would only ever be
+        // a dead row) — its adapter stays wired; re-add the row when agy is usable.
         rows: [
           agentMenuRow("codex", "Codex CLI", binding.agentId),
           agentMenuRow("claude", "Claude Code", binding.agentId),
           agentMenuRow("gemini", "Gemini CLI", binding.agentId),
-          agentMenuRow("antigravity", "Antigravity CLI", binding.agentId),
         ],
       };
     case "model_menu":
