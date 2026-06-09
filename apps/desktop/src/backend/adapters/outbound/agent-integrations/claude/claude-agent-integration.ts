@@ -12,7 +12,17 @@ import type {
   ProviderSignalSource,
   RuntimeReadinessGate,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
-import type { PromptState, ThreadScope } from "../../../../application/domains/thread/thread.ts";
+import type {
+  PromptChoice,
+  PromptKind,
+  PromptState,
+  ThreadScope,
+} from "../../../../application/domains/thread/thread.ts";
+import {
+  codexApprovalPromptSignature,
+  encodeCodexMenuNavigation,
+  parseCodexApprovalPrompt,
+} from "../../../../application/services/provider-tui-parsers.ts";
 
 export interface ClaudeProviderState {
   authenticated: boolean;
@@ -216,6 +226,13 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
   }
 
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {
+    // Claude's shell-command / tool permission is an interactive boxed menu in the
+    // hidden PTY (the Notification hook only signals "needs input" without the
+    // Allow/Deny choices). Scrape that frame — same vertical arrow-nav menu as codex
+    // — so the turn can't hang on an unseen "Do you want to proceed?" prompt.
+    if (input.source === "pty_transcript") {
+      return detectClaudeTuiApprovalPrompt(input.threadId, input.text);
+    }
     if (input.source !== "provider_hook" || !isRecord(input.payload)) {
       return null;
     }
@@ -447,4 +464,40 @@ function claudePromptId(
     stringValue(payload.elicitation_id) ??
     `claude-${kind}-${message}`
   );
+}
+
+// Scrape claude's interactive permission/choice box from the hidden PTY and
+// normalize it to a PromptState. Claude's box is the same vertical arrow-nav menu
+// as codex ("Do you want to proceed? ❯1. Yes  2. …  3. No", footer "Esc to
+// cancel · …"), so it reuses the codex TUI parser + menu-navigation encoding; the
+// user's choice is replayed as ArrowDown/Up + Enter on the PTY.
+function detectClaudeTuiApprovalPrompt(
+  threadId: string,
+  text: string | undefined,
+): PromptState | null {
+  if (text === undefined) {
+    return null;
+  }
+  const parsed = parseCodexApprovalPrompt(text);
+  if (parsed === null) {
+    return null;
+  }
+  const choices: PromptChoice[] = parsed.options.map((option, position) => ({
+    choiceId: `claude-opt-${option.index}`,
+    label: option.label,
+    providerValue: encodeCodexMenuNavigation(position - parsed.defaultIndex),
+  }));
+  const kind: PromptKind = /\b(proceed|trust|allow|permission)\b/i.test(parsed.question)
+    ? "approval"
+    : "choice";
+  return {
+    promptId: `claude:${codexApprovalPromptSignature(parsed)}`,
+    threadId,
+    agentId: "claude",
+    kind,
+    message: parsed.question,
+    choices,
+    defaultChoiceId: choices[parsed.defaultIndex]?.choiceId,
+    source: "pty",
+  };
 }

@@ -264,16 +264,21 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     // runtime, on its first write.
     await waitForStartupWindow(processState);
 
-    // Answering a codex TUI approval/choice menu is not typed text: the providerValue is
-    // a codex-menu navigation token. Replay it as keyed navigation (ArrowDown/ArrowUp +
-    // Enter) on the live PTY so codex's own menu cursor lands on the chosen option. Any
-    // other prompt answer (claude/antigravity hook prompts, free-form text) keeps the
-    // generic typed path below. See docs_v2/specs/agent-prompt-surfacing.md.
-    if (input.kind === "prompt_answer" && processState.agentId === "codex") {
+    // Answering a TUI approval/choice menu is not typed text: the providerValue is a
+    // menu-navigation token. Replay it as keyed navigation (ArrowDown/ArrowUp + Enter)
+    // on the live PTY so the agent's own menu cursor lands on the chosen option. This
+    // applies to codex AND claude — both surface their shell-command/tool permission as
+    // an interactive boxed menu in the hidden PTY (claude's "Do you want to proceed? ❯1.
+    // Yes 2.… 3.No"). A non-nav value (hook prompts, free-form "Other") decodes to null
+    // and falls through to the generic typed path. See agent-prompt-surfacing.md.
+    if (
+      input.kind === "prompt_answer" &&
+      (processState.agentId === "codex" || processState.agentId === "claude")
+    ) {
       const navigation = decodeCodexMenuNavigation(input.value);
       if (navigation !== null) {
         await sendCodexMenuNavigation(processState.handle, navigation);
-        traceAgentRuntime(`wrote codex menu nav runtime=${handle.runtimeId} steps=${navigation.steps}`);
+        traceAgentRuntime(`wrote ${processState.agentId} menu nav runtime=${handle.runtimeId} steps=${navigation.steps}`);
         return;
       }
     }

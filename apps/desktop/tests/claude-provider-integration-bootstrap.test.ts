@@ -213,6 +213,55 @@ test("claude_question_prompt_detection_uses_pretooluse_ask_user_question", () =>
   assert.equal(otherPreToolUse, null);
 });
 
+// Claude's shell-command permission is an interactive boxed menu in the hidden PTY
+// (its Notification hook only signals "needs input" without the choices), so the
+// claude integration scrapes that frame — captured live from Claude Code.
+const CLAUDE_TUI_APPROVAL_FRAME = [
+  "\x1b[2J\x1b[H",
+  "Bash command",
+  "touch /tmp/tide_perm_probe.txt",
+  "Create probe file in /tmp",
+  "",
+  "Do you want to proceed?",
+  "\x1b[36m❯ 1. Yes\x1b[0m",
+  "  2. Yes, and always allow access to tmp/ from this project",
+  "  3. No",
+  "",
+  "\x1b[2mEsc to cancel · Tab to amend · ctrl+e to explain\x1b[0m",
+].join("\n");
+
+test("claude_maps_a_scraped_permission_box_into_a_prompt_state_with_choices", () => {
+  const integration = claudeIntegration();
+
+  const prompt = integration.detectPromptState({
+    threadId: "thread-tui",
+    source: "pty_transcript",
+    text: CLAUDE_TUI_APPROVAL_FRAME,
+  });
+
+  assert.notEqual(prompt, null);
+  assert.equal(prompt?.agentId, "claude");
+  assert.equal(prompt?.kind, "approval");
+  assert.equal(prompt?.source, "pty");
+  assert.equal(prompt?.message, "Do you want to proceed?");
+  // Cursor (❯) is on option 1 → that is the default choice.
+  assert.equal(prompt?.defaultChoiceId, "claude-opt-1");
+  assert.deepEqual(
+    prompt?.choices?.map((choice) => ({
+      label: choice.label,
+      providerValue: choice.providerValue,
+    })),
+    [
+      { label: "Yes", providerValue: "codex-menu:0" },
+      {
+        label: "Yes, and always allow access to tmp/ from this project",
+        providerValue: "codex-menu:1",
+      },
+      { label: "No", providerValue: "codex-menu:2" },
+    ],
+  );
+});
+
 test("claude_elicitation_prompt_detection_uses_elicitation_event", () => {
   const integration = claudeIntegration();
 
