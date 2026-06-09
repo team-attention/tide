@@ -5,6 +5,50 @@ use crate::state::FocusArea;
 use crate::ActionPort;
 use crate::App;
 
+#[test]
+fn horizontal_code_block_scroll_does_not_move_vertical_document_scroll() {
+    // A predominantly horizontal trackpad swipe over a wide markdown code block
+    // must scroll the block horizontally WITHOUT nudging the document's vertical
+    // scroll — axis lock for the "가로 스크롤이 세로에 영향" report.
+    use crate::adapter::inward::scroll_adapter::handle_scroll;
+    let long = "x".repeat(200);
+    let (mut app, id, _path) =
+        app_with_markdown_editor(&format!("# H\n\n```\n{}\n```\n", long));
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+    app.visual_pane_rects = vec![(id, pane_rect)];
+    app.window.last_cursor_pos = crate::tide_core::Vec2::new(
+        pane_rect.x + 100.0,
+        pane_rect.y + crate::theme::TAB_BAR_HEIGHT + 80.0,
+    );
+    let cell = app.window.cached_cell_size;
+    if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&id) {
+        pane.preview_mode = true;
+        let content_rect = pane_content_rect(pane_rect);
+        let wrap = pane.preview_wrap_width_for_rect(content_rect, cell);
+        pane.ensure_preview_cache(wrap, false);
+    }
+    let vscroll_before = match app.panes.get(&id) {
+        Some(PaneKind::Editor(p)) => p.preview_scroll,
+        _ => panic!("editor"),
+    };
+
+    // Horizontal-dominant gesture: |dx| (5) > |dy| (2), both significant.
+    handle_scroll(&mut app, -5.0, -2.0);
+
+    let pane = match app.panes.get(&id) {
+        Some(PaneKind::Editor(p)) => p,
+        _ => panic!("editor"),
+    };
+    assert!(
+        pane.preview_h_scroll > 0,
+        "the code block should scroll horizontally"
+    );
+    assert_eq!(
+        pane.preview_scroll, vscroll_before,
+        "a horizontal swipe must NOT move the document's vertical scroll"
+    );
+}
+
 fn editor_with_extension(ext: &str) -> EditorPane {
     let path = std::env::temp_dir().join(format!("tide_test_soft_wrap.{}", ext));
     std::fs::write(&path, "hello world").unwrap();

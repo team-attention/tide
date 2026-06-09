@@ -205,27 +205,34 @@ pub(crate) fn handle_scroll(
         }
     }
 
-    // Check if scrolling over the file tree
-    let ft_visible = ctx.ft().visible;
-    let ft_rect = ctx.ft().rect;
-    if ft_visible && ft_rect.is_some_and(|r| cursor_pos.x >= r.x && cursor_pos.x < r.x + r.width) {
-        let max_scroll = ctx.file_tree_max_scroll();
-        let current_scroll = ctx.ft().scroll;
-        let new_val = (current_scroll - dy * 18.0).clamp(0.0, max_scroll);
-        if new_val != current_scroll {
-            let ft = ctx.ft_mut();
-            ft.scroll = new_val;
-            ft.scroll_target = new_val;
-            ctx.invalidate_chrome();
+    // Axis lock: a predominantly horizontal trackpad swipe (e.g. scrolling a
+    // wide code block in markdown preview) must NOT also nudge the document's
+    // vertical scroll. Only apply vertical scroll when the gesture isn't
+    // horizontal-dominant.
+    if !horizontal_scroll_dominant {
+        // Check if scrolling over the file tree
+        let ft_visible = ctx.ft().visible;
+        let ft_rect = ctx.ft().rect;
+        if ft_visible && ft_rect.is_some_and(|r| cursor_pos.x >= r.x && cursor_pos.x < r.x + r.width)
+        {
+            let max_scroll = ctx.file_tree_max_scroll();
+            let current_scroll = ctx.ft().scroll;
+            let new_val = (current_scroll - dy * 18.0).clamp(0.0, max_scroll);
+            if new_val != current_scroll {
+                let ft = ctx.ft_mut();
+                ft.scroll = new_val;
+                ft.scroll_target = new_val;
+                ctx.invalidate_chrome();
+            }
+        } else {
+            // Route scroll to the pane under the cursor via the input router
+            let input = InputEvent::MouseScroll {
+                delta: editor_dy,
+                position: cursor_pos,
+            };
+            let action = ctx.route_input(input);
+            ctx.handle_action(action, Some(input));
         }
-    } else {
-        // Route scroll to the pane under the cursor via the input router
-        let input = InputEvent::MouseScroll {
-            delta: editor_dy,
-            position: cursor_pos,
-        };
-        let action = ctx.route_input(input);
-        ctx.handle_action(action, Some(input));
     }
 
     // Horizontal scroll for editor/diff panes (trackpad two-finger swipe)

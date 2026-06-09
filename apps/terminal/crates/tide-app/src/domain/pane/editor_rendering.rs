@@ -891,7 +891,12 @@ impl EditorPane {
         let content_width = (rect.width - scrollbar_reserved - content_inset * 2.0).max(0.0);
         // 2-cell right padding for code block bg to match the 2-cell left indent
         let right_pad = 2.0 * cell_size.width;
-        let bg_width = (content_width - right_pad).max(0.0);
+        // Code blocks (ASCII diagrams, wide snippets) stay left-aligned with the
+        // prose column but extend to the FULL pane width — not capped to the
+        // narrow readable column — so wide lines aren't clipped mid-content.
+        // Anything still wider than the pane scrolls horizontally (h_scroll).
+        let code_avail = (rect.x + rect.width - scrollbar_reserved - content_origin.x).max(0.0);
+        let bg_width = (code_avail - right_pad).max(0.0);
         let visible_rows = (rect.height / cell_size.height).floor() as usize;
 
         let start = preview_scroll.min(preview_lines.len());
