@@ -2550,17 +2550,17 @@ function WorkbenchBrowserPane(props: {
             const webview = webviewRef.current;
             // Prefer the user's in-page text selection; fall back to the whole page.
             const selectionScript =
-              "(() => { const s = (window.getSelection && window.getSelection().toString()) || ''; const el = window.getSelection && window.getSelection().anchorNode; const tag = el && (el.parentElement ? el.parentElement.tagName : (el.tagName||'')); return { text: s, tag: (tag||'').toLowerCase() }; })()";
-            const addSelection = (sel: string, tag: string) => {
+              "(() => ({ text: (window.getSelection && window.getSelection().toString()) || '' }))()";
+            const addSelection = (sel: string) => {
+              const trimmed = sel.trim().replace(/\s+/g, " ");
               const quoted = sel
                 .trim()
                 .split("\n")
                 .map((line) => `> ${line}`)
                 .join("\n");
-              const tagLabel = tag.length > 0 ? `<${tag}> ` : "";
               props.handlers.onAddContentToChat({
                 kind: "browser",
-                label: `${tagLabel}${sel.trim().slice(0, 36)}${sel.trim().length > 36 ? "…" : ""}`,
+                label: `${trimmed.slice(0, 40)}${trimmed.length > 40 ? "…" : ""}`,
                 text: `From [${title}](${url}):\n\n${quoted}`,
               });
             };
@@ -2589,9 +2589,8 @@ function WorkbenchBrowserPane(props: {
                 .then((result) => {
                   const record = result !== null && typeof result === "object" ? (result as Record<string, unknown>) : {};
                   const text = typeof record.text === "string" ? record.text : "";
-                  const tag = typeof record.tag === "string" ? record.tag : "";
                   if (text.trim().length > 0) {
-                    addSelection(text, tag);
+                    addSelection(text);
                   } else {
                     addPage();
                   }
