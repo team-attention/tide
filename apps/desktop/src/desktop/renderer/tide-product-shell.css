@@ -3255,6 +3255,22 @@ button {
   cursor: pointer;
 }
 
+.workbench-browser-bar__to-chat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--tide-line);
+  border-radius: 999px;
+  background: var(--tide-bg);
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.workbench-browser-bar__to-chat:hover { background: var(--tide-selection); color: var(--tide-text); }
+
 .workbench-browser-webview {
   display: flex;
   /* `<webview>` is a replaced element with a short intrinsic height; a 0 flex

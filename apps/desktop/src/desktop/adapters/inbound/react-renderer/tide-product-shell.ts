@@ -2511,6 +2511,40 @@ function WorkbenchBrowserPane(props: {
         { type: "submit", className: "workbench-browser-bar__go", "aria-label": "Go" },
         "Go",
       ),
+      createElement(
+        "button",
+        {
+          type: "button",
+          className: "workbench-browser-bar__to-chat",
+          title: "Add page to chat",
+          "aria-label": "Add this page to chat",
+          onClick: () => {
+            const url = props.pane.url ?? address;
+            if (url.length === 0) {
+              return;
+            }
+            const title = props.pane.title && props.pane.title !== "Browser" ? props.pane.title : url;
+            const add = (body: string) =>
+              props.handlers.onAddContentToChat({
+                kind: "browser",
+                label: title.length > 40 ? `${title.slice(0, 40)}…` : title,
+                text: body,
+              });
+            const webview = webviewRef.current;
+            if (webview !== null) {
+              void readBrowserWebViewSnapshot(webview)
+                .then((snapshot) => {
+                  const excerpt = (snapshot.bodyTextPreview ?? "").trim().slice(0, 2000);
+                  add(`[${title}](${url})${excerpt.length > 0 ? `\n\n${excerpt}` : ""}`);
+                })
+                .catch(() => add(`[${title}](${url})`));
+            } else {
+              add(`[${title}](${url})`);
+            }
+          },
+        },
+        createElement(CornerDownRight, { size: 13, strokeWidth: 1.9, "aria-hidden": true }),
+      ),
     ),
     createElement("webview", {
       ref: webviewRef,
