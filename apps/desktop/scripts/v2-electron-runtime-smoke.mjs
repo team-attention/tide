@@ -20,7 +20,7 @@ import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 const require = createRequire(import.meta.url);
 const electronPath = require("electron");
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const selectableAgents = new Set(["codex", "claude", "antigravity", "openai_api"]);
+const selectableAgents = new Set(["codex", "claude", "antigravity", "gemini", "openai_api"]);
 
 const options = parseArgs(process.argv.slice(2));
 if (options.help) {
