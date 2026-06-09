@@ -2539,7 +2539,7 @@ function WorkbenchBrowserPane(props: {
         {
           type: "button",
           className: "workbench-browser-bar__to-chat",
-          title: "Add selection (or page) to chat",
+          title: "Send the selected text (or whole page) to the chat composer",
           "aria-label": "Add browser selection or page to chat",
           onClick: () => {
             const url = props.pane.url ?? address;
@@ -2602,7 +2602,8 @@ function WorkbenchBrowserPane(props: {
             }
           },
         },
-        createElement(CornerDownRight, { size: 13, strokeWidth: 1.9, "aria-hidden": true }),
+        createElement(FileText, { size: 13, strokeWidth: 1.8, "aria-hidden": true }),
+        "Add to chat",
       ),
     ),
     createElement("webview", {
@@ -3037,7 +3038,24 @@ function WorkbenchCodeEditor(props: {
   // The text selection captured when the context menu opened (before the caret is
   // moved to the clicked symbol), so "Add selection to chat" uses it.
   const [menuSelection, setMenuSelection] = useState<{ text: string; fromLine: number; toLine: number } | null>(null);
+  // A floating "Add to chat" button anchored to the current text selection.
+  const [selToolbar, setSelToolbar] = useState<
+    { x: number; y: number; text: string; fromLine: number; toLine: number } | null
+  >(null);
   const nav = props.navigationTarget;
+
+  // Attach a code selection to the composer as a chip (shared by the right-click
+  // menu and the floating selection toolbar).
+  const attachCodeSelection = (sel: { text: string; fromLine: number; toLine: number }) => {
+    const path = props.relativePath ?? "selection";
+    const baseName = path.slice(path.lastIndexOf("/") + 1);
+    const lines = sel.fromLine === sel.toLine ? `L${sel.fromLine}` : `L${sel.fromLine}-${sel.toLine}`;
+    props.handlers.onAddContentToChat({
+      kind: "code",
+      label: `${baseName} ${lines}`,
+      text: `\`${path}\` (${lines})\n\`\`\`${props.language}\n${sel.text}\n\`\`\``,
+    });
+  };
   useEffect(() => {
     const view = editorRef.current?.view;
     if (nav === undefined || view === undefined) {
@@ -3096,20 +3114,9 @@ function WorkbenchCodeEditor(props: {
   const closeMenu = () => setContextMenu(null);
 
   const addSelectionToChat = () => {
-    if (menuSelection === null) {
-      return;
+    if (menuSelection !== null) {
+      attachCodeSelection(menuSelection);
     }
-    const path = props.relativePath ?? "selection";
-    const baseName = path.slice(path.lastIndexOf("/") + 1);
-    const lines =
-      menuSelection.fromLine === menuSelection.toLine
-        ? `L${menuSelection.fromLine}`
-        : `L${menuSelection.fromLine}-${menuSelection.toLine}`;
-    props.handlers.onAddContentToChat({
-      kind: "code",
-      label: `${baseName} ${lines}`,
-      text: `\`${path}\` (${lines})\n\`\`\`${props.language}\n${menuSelection.text}\n\`\`\``,
-    });
   };
 
   const menuItem = (label: string, onSelect: () => void, disabled = false) =>
@@ -3178,11 +3185,46 @@ function WorkbenchCodeEditor(props: {
       extensions: [saveKeymap, EditorView.lineWrapping, ...editorLanguageExtensions(props.language)],
       onChange: (next: string) => props.handlers.onEditorDraftChange(props.paneId, next),
       onUpdate: (update: ViewUpdate) => {
-        if (update.selectionSet) {
-          props.handlers.onEditorCursorChange(props.paneId, update.state.selection.main.head);
+        if (!update.selectionSet) {
+          return;
         }
+        const sel = update.state.selection.main;
+        props.handlers.onEditorCursorChange(props.paneId, sel.head);
+        const view = editorRef.current?.view;
+        if (!sel.empty && view !== undefined && typeof view.coordsAtPos === "function") {
+          const coords = view.coordsAtPos(sel.from);
+          if (coords) {
+            setSelToolbar({
+              x: coords.left,
+              y: coords.top,
+              text: update.state.sliceDoc(sel.from, sel.to),
+              fromLine: update.state.doc.lineAt(sel.from).number,
+              toLine: update.state.doc.lineAt(sel.to).number,
+            });
+            return;
+          }
+        }
+        setSelToolbar(null);
       },
     }),
+    selToolbar === null
+      ? null
+      : createElement(
+          "button",
+          {
+            type: "button",
+            className: "editor-selection-toolbar",
+            style: { left: `${selToolbar.x}px`, top: `${Math.max(selToolbar.y - 36, 8)}px` } as CSSProperties,
+            // Use mousedown so the click lands before the selection clears.
+            onMouseDown: (event: { preventDefault: () => void }) => {
+              event.preventDefault();
+              attachCodeSelection(selToolbar);
+              setSelToolbar(null);
+            },
+          },
+          createElement(CornerDownRight, { size: 13, strokeWidth: 1.9, "aria-hidden": true }),
+          "Add to chat",
+        ),
     contextMenu === null
       ? null
       : createElement(

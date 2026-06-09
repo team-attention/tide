@@ -2610,7 +2610,6 @@ button {
   gap: 4px;
   padding: 7px 8px 8px;
   border: 1px solid var(--tide-line);
-  border-left: 2px solid var(--tide-line-strong, var(--tide-muted));
   border-radius: 8px;
   background: var(--tide-surface);
 }
@@ -2650,10 +2649,10 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 26px;
+  height: 26px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 7px;
   background: transparent;
   color: var(--tide-muted);
   cursor: pointer;
@@ -2663,11 +2662,17 @@ button {
 
 .composer-chip-card__comment {
   width: 100%;
+  min-height: 20px;
   border: 0;
   background: transparent;
   color: var(--tide-text);
+  font: inherit;
   font-size: 12.5px;
+  line-height: 1.5;
   outline: none;
+  resize: none;
+  /* Grow with content (recent Chromium/Electron) so multi-line notes fit. */
+  field-sizing: content;
 }
 .composer-chip-card__comment::placeholder { color: var(--tide-muted); }
 
@@ -3282,17 +3287,20 @@ button {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
+  gap: 5px;
   height: 28px;
+  padding: 0 11px;
   border: 1px solid var(--tide-line);
   border-radius: 999px;
   background: var(--tide-bg);
-  color: var(--tide-muted);
+  color: var(--tide-text);
+  font: 500 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
   cursor: pointer;
+  white-space: nowrap;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.workbench-browser-bar__to-chat:hover { background: var(--tide-selection); color: var(--tide-text); }
+.workbench-browser-bar__to-chat svg { color: var(--tide-muted); }
+.workbench-browser-bar__to-chat:hover { background: var(--tide-selection); }
 
 .workbench-browser-webview {
   display: flex;
@@ -3544,6 +3552,26 @@ button {
   margin: 4px 8px;
   background: var(--tide-line);
 }
+
+/* Floating "Add to chat" button anchored to the current editor text selection. */
+.editor-selection-toolbar {
+  position: fixed;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 8px;
+  background: var(--tide-text);
+  color: var(--tide-bg);
+  font: 600 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  box-shadow: 0 6px 18px -6px rgba(36, 33, 38, 0.45);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.editor-selection-toolbar svg { color: var(--tide-bg); opacity: 0.85; }
+.editor-selection-toolbar:hover { opacity: 0.92; }
 
 .workbench-editor-cm .cm-gutters {
   background: var(--tide-surface);

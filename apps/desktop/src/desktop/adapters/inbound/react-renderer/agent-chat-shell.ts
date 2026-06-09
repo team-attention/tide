@@ -1525,16 +1525,17 @@ function createComposer(
                       "aria-label": `Remove ${chip.label}`,
                       onClick: () => handlers.onRemoveContextChip?.(chip.id),
                     },
-                    createElement(X, { size: 12, strokeWidth: 2.4, "aria-hidden": true }),
+                    createElement(X, { size: 15, strokeWidth: 2.2, "aria-hidden": true }),
                   ),
                 ),
-                createElement("input", {
+                createElement("textarea", {
                   className: "composer-chip-card__comment",
                   placeholder: "Comment on this selection… (optional)",
                   value: chip.comment,
+                  rows: 1,
                   spellCheck: false,
                   "aria-label": `Comment for ${chip.label}`,
-                  onChange: (event: ChangeEvent<HTMLInputElement>) =>
+                  onChange: (event: ChangeEvent<HTMLTextAreaElement>) =>
                     handlers.onSetContextChipComment?.(chip.id, event.currentTarget.value),
                 }),
               ),
