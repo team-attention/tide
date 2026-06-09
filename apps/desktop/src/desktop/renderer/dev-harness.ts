@@ -285,6 +285,32 @@ function richTranscriptFixtureState() {
 
 // Rich transcript with a live turn + a message queued behind it, so the docked
 // Composer "steer" chip (대기 중 + 수정) can be eyeballed.
+// A thread paused on an agent prompt, so the unified PromptCard can be eyeballed.
+function promptFixtureState() {
+  const base = richTranscriptFixtureState();
+  return {
+    ...base,
+    agentChat: {
+      ...base.agentChat,
+      promptState: {
+        promptId: "prompt-1",
+        threadId: "thread-master-plan",
+        agentId: "codex",
+        kind: "question" as const,
+        message: "'123 다 괜찮은데 흠..' — 그 걸림의 정체가 뭐야? (제일 가까운 거 골라줘)",
+        source: "pty" as const,
+        defaultChoiceId: "c1",
+        choices: [
+          { choiceId: "c1", label: "역할이 변두리 같아서", providerValue: "1" },
+          { choiceId: "c2", label: "이 회사들이 안 꽂혀서", providerValue: "2" },
+          { choiceId: "c3", label: "현실성이 흠", providerValue: "3" },
+          { choiceId: "c4", label: "사실 다른 축이다", providerValue: "4" },
+        ],
+      },
+    },
+  };
+}
+
 function richQueuedFixtureState() {
   const running = applyProductShellBackendEvent(richTranscriptFixtureState(), {
     kind: "agentRuntime.stateChanged",
@@ -416,13 +442,16 @@ if (root) {
     const wantsQueued = params.get("mode") === "queued";
     const wantsRich = params.get("mode") === "rich";
     const wantsRichQueued = params.get("mode") === "rich-queued";
+    const wantsPrompt = params.get("mode") === "prompt";
     const wantsDiff = params.get("pane") === "diff";
     // FileTree column is gated by fileTreeOpen; flip it on for the fixture.
     const state = wantsDiff
       ? diffFixtureState()
       : wantsBrowser
       ? browserFixtureState()
-      : wantsQueued
+      : wantsPrompt
+        ? promptFixtureState()
+        : wantsQueued
         ? queuedFixtureState()
         : wantsRichQueued
           ? richQueuedFixtureState()

@@ -143,6 +143,7 @@ import {
   addProductShellComposerContextChip,
   removeProductShellComposerContextChip,
   setProductShellComposerContextChipComment,
+  answerProductShellPromptText,
   writeProductShellTerminalInput,
   resizeProductShellTerminal,
   setProductShellListSettings,
@@ -395,6 +396,7 @@ interface ProductShellHandlers {
   onAddContentToChat: (chip: { kind: "code" | "terminal" | "browser" | "message"; label: string; text: string }) => void;
   onRemoveContextChip: (id: string) => void;
   onSetContextChipComment: (id: string, comment: string) => void;
+  onAnswerPromptText: (value: string) => void;
   onSubmit: () => void;
   onInterrupt: () => void;
   onEditQueued: () => void;
@@ -1282,6 +1284,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       setShellState((state) => removeProductShellComposerContextChip(state, id)),
     onSetContextChipComment: (id, comment) =>
       setShellState((state) => setProductShellComposerContextChipComment(state, id, comment)),
+    onAnswerPromptText: (value) =>
+      setShellState((state) => {
+        const result = answerProductShellPromptText(state, value);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
     onSubmit: () => {
       // Throttle to swallow accidental double-clicks / double Enter so the same
       // draft is never submitted twice in quick succession.
@@ -2114,6 +2122,7 @@ function createAgentChatColumn(
       onRemoveAttachment: handlers.onRemoveAttachment,
       onRemoveContextChip: handlers.onRemoveContextChip,
       onSetContextChipComment: handlers.onSetContextChipComment,
+      onAnswerPromptText: handlers.onAnswerPromptText,
     }),
   );
 }

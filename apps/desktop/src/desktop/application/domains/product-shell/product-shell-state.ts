@@ -4,6 +4,7 @@ import {
   createAgentChatShellViewModel,
   defaultPermissionForAgent,
   selectAgentChatChoiceSurfaceRow,
+  answerPromptText,
   setComposerActiveSurface,
   setComposerFolderScope,
   interruptComposer,
@@ -1027,6 +1028,14 @@ export function selectProductShellChoiceSurfaceRow(
     },
     command: result.command,
   };
+}
+
+export function answerProductShellPromptText(
+  state: ProductShellState,
+  value: string,
+): ProductShellUpdateResult {
+  const result = answerPromptText(agentChatWithProjects(state), value);
+  return { state: { ...state, agentChat: result.state }, command: result.command };
 }
 
 export function selectProductShellLauncherAction(

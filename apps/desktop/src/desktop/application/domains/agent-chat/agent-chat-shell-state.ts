@@ -729,6 +729,28 @@ export function selectAgentChatChoiceSurfaceRow(
   }
 }
 
+// Answers the active prompt with free-text (the prompt card's "Other" / custom
+// reply, or Skip with an empty value), clearing the prompt.
+export function answerPromptText(
+  state: AgentChatShellState,
+  value: string,
+): AgentChatShellUpdateResult {
+  if (state.promptState === null) {
+    return { state, command: null };
+  }
+  return {
+    state: { ...state, promptState: null, composer: { ...state.composer, draft: "" } },
+    command: {
+      kind: "prompt.answer",
+      payload: {
+        threadId: state.promptState.threadId,
+        promptId: state.promptState.promptId,
+        value,
+      },
+    },
+  };
+}
+
 // Explicit interrupt: stop the in-flight turn. The session stays resumable, so
 // the next message continues via the agent's native resume. Any queued input is
 // dropped (the user chose to interrupt).
