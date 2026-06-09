@@ -872,6 +872,22 @@ void app.whenReady().then(() => {
   });
 });
 
+// A page inside a Browser Pane <webview> that opens a popup (target=_blank,
+// window.open) would otherwise spawn a blank top-level BrowserWindow. Deny the
+// popup and navigate the originating webview in place instead, so links stay in
+// the pane and never produce a stray empty window.
+app.on("web-contents-created", (_event, contents) => {
+  if (contents.getType() !== "webview") {
+    return;
+  }
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) {
+      void contents.loadURL(url).catch(() => undefined);
+    }
+    return { action: "deny" };
+  });
+});
+
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();

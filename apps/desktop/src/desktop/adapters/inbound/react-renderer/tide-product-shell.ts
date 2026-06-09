@@ -3038,8 +3038,11 @@ function WorkbenchMarkdownView(props: {
   const previewRef = useRef<HTMLDivElement | null>(null);
   // Floating "Add to chat" for a drag-selection inside the rendered preview.
   const [selToolbar, setSelToolbar] = useState<{ x: number; y: number; text: string } | null>(null);
-  // "Pick block" mode: hover-highlight a rendered block and click to attach it.
+  // "Pick block" mode: hover-highlight rendered blocks; click toggles each into a
+  // multi-selection, and a confirm attaches them all.
   const [pickBlock, setPickBlock] = useState(false);
+  const pickedRef = useRef<Set<HTMLElement>>(new Set());
+  const [pickedCount, setPickedCount] = useState(0);
   const path = props.relativePath ?? "preview.md";
   const baseName = path.slice(path.lastIndexOf("/") + 1);
   const attach = (text: string, label: string) =>
@@ -3067,7 +3070,13 @@ function WorkbenchMarkdownView(props: {
     document.addEventListener("mouseup", onUp);
     return () => document.removeEventListener("mouseup", onUp);
   }, [mode]);
-  // Block-pick mode: highlight the hovered top-level block, attach on click.
+  const clearPickedBlocks = () => {
+    pickedRef.current.forEach((el) => el.classList.remove("workbench-md-pick-selected"));
+    pickedRef.current.clear();
+    setPickedCount(0);
+  };
+  // Block-pick mode: hover-highlight blocks; click toggles each into the picked
+  // set (multi-select). A confirm attaches all picked blocks at once.
   useEffect(() => {
     const root = previewRef.current;
     if (!pickBlock || root === null) {
@@ -3091,13 +3100,17 @@ function WorkbenchMarkdownView(props: {
       event.preventDefault();
       event.stopPropagation();
       const block = blockOf(event.target);
-      if (block !== null) {
-        const text = (block.innerText || block.textContent || "").trim();
-        if (text.length > 0) {
-          attach(text, `${baseName} · ${(block.tagName || "block").toLowerCase()}`);
-        }
+      if (block === null) {
+        return;
       }
-      setPickBlock(false);
+      if (pickedRef.current.has(block)) {
+        pickedRef.current.delete(block);
+        block.classList.remove("workbench-md-pick-selected");
+      } else {
+        pickedRef.current.add(block);
+        block.classList.add("workbench-md-pick-selected");
+      }
+      setPickedCount(pickedRef.current.size);
     };
     root.addEventListener("mouseover", over);
     root.addEventListener("click", click, true);
@@ -3130,6 +3143,32 @@ function WorkbenchMarkdownView(props: {
       { className: "workbench-md-toggle", role: "group", "aria-label": "Markdown view mode" },
       toggle("preview", "Preview"),
       props.readOnly ? null : toggle("edit", "Edit"),
+      mode === "preview" && pickBlock && pickedCount > 0
+        ? createElement(
+            "button",
+            {
+              type: "button",
+              className: "workbench-md-toggle__pick workbench-md-toggle__pick--add",
+              title: "Add the selected blocks to chat",
+              onClick: () => {
+                const blocks = Array.from(
+                  previewRef.current?.querySelectorAll(".workbench-md-pick-selected") ?? [],
+                ) as HTMLElement[];
+                const text = blocks
+                  .map((el) => (el.innerText || el.textContent || "").trim())
+                  .filter((t) => t.length > 0)
+                  .join("\n\n");
+                if (text.length > 0) {
+                  attach(text, `${baseName} · ${pickedCount} block${pickedCount === 1 ? "" : "s"}`);
+                }
+                clearPickedBlocks();
+                setPickBlock(false);
+              },
+            },
+            createElement(CornerDownRight, { size: 12, strokeWidth: 1.8, "aria-hidden": true }),
+            `Add ${pickedCount} to chat`,
+          )
+        : null,
       mode === "preview"
         ? createElement(
             "button",
@@ -3138,8 +3177,14 @@ function WorkbenchMarkdownView(props: {
               className: "workbench-md-toggle__pick",
               "data-active": pickBlock ? "true" : "false",
               "aria-pressed": pickBlock,
-              title: pickBlock ? "Cancel block pick" : "Pick a block to add to chat",
-              onClick: () => setPickBlock((prev) => !prev),
+              title: pickBlock ? "Cancel block pick" : "Pick blocks to add to chat",
+              onClick: () =>
+                setPickBlock((prev) => {
+                  if (prev) {
+                    clearPickedBlocks();
+                  }
+                  return !prev;
+                }),
             },
             createElement(Crosshair, { size: 12, strokeWidth: 1.8, "aria-hidden": true }),
             pickBlock ? "Cancel" : "Pick block",

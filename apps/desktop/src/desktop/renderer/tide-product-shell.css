@@ -3880,12 +3880,32 @@ button {
 }
 .workbench-md-toggle__pick[data-active="true"] svg { color: #fff; }
 
+.workbench-md-toggle__pick--add {
+  border-color: var(--tide-action, var(--tide-text));
+  background: var(--tide-action, var(--tide-text));
+  color: #fff;
+}
+.workbench-md-toggle__pick--add svg { color: #fff; }
+
 .workbench-md[data-md-picking="true"] .workbench-md-preview * { cursor: crosshair !important; }
 .workbench-md-pick-hover {
+  outline: 2px dashed var(--tide-action, #4c8bf5);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+/* A confirmed (clicked) block stays solidly highlighted while picking more. */
+.workbench-md-pick-selected {
   outline: 2px solid var(--tide-action, #4c8bf5);
   outline-offset: 2px;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--tide-action, #4c8bf5) 8%, transparent);
+  background: color-mix(in srgb, var(--tide-action, #4c8bf5) 14%, transparent) !important;
+}
+
+/* Make text selections clearly visible (so the floating "Add to chat" reads as
+   acting on a highlighted region) in the markdown preview and the transcript. */
+.workbench-md-preview ::selection,
+.agent-session ::selection {
+  background: color-mix(in srgb, var(--tide-action, #4c8bf5) 32%, transparent);
 }
 
 /* Obsidian-style reading view, conformed to the Figma editor typography. */
