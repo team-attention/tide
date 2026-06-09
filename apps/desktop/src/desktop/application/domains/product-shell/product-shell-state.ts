@@ -1493,6 +1493,21 @@ export function updateProductShellComposerDraft(
   };
 }
 
+// Appends a content reference (a code selection, terminal output, etc.) to the
+// composer draft — used by the workbench/session "Add to chat" affordances. A
+// blank separator keeps the existing draft and the addition on their own lines.
+export function appendProductShellComposerDraft(
+  state: ProductShellState,
+  text: string,
+): ProductShellState {
+  const current = state.agentChat.composer.draft;
+  const next = current.trim().length === 0 ? text : `${current.replace(/\s+$/, "")}\n\n${text}`;
+  return {
+    ...state,
+    agentChat: updateComposerDraft(state.agentChat, next).state,
+  };
+}
+
 export function sendProductShellComposerDraft(
   state: ProductShellState,
 ): ProductShellState {

@@ -138,6 +138,7 @@ import {
   updateProductShellBackgroundBrowserActionResult,
   updateProductShellBackgroundBrowserSnapshot,
   updateProductShellComposerDraft,
+  appendProductShellComposerDraft,
   writeProductShellTerminalInput,
   resizeProductShellTerminal,
   setProductShellListSettings,
@@ -384,6 +385,9 @@ interface ProductShellHandlers {
     event: { clientX: number; preventDefault: () => void },
   ) => void;
   onDraftChange: (draft: string) => void;
+  // Append a content reference (editor selection, terminal output, …) to the
+  // composer draft, then focus the chat composer.
+  onAddContentToChat: (text: string) => void;
   onSubmit: () => void;
   onInterrupt: () => void;
   onEditQueued: () => void;
@@ -1136,6 +1140,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         return result.state;
       }),
     onDraftChange: (draft) => setShellState((state) => updateProductShellComposerDraft(state, draft)),
+    onAddContentToChat: (text) =>
+      setShellState((state) => appendProductShellComposerDraft(state, text)),
     onSubmit: () => {
       // Throttle to swallow accidental double-clicks / double Enter so the same
       // draft is never submitted twice in quick succession.
@@ -2558,6 +2564,7 @@ function WorkbenchEditorPane(props: {
             language,
             revision: props.pane.revision,
             navigationTarget: props.pane.navigationTarget,
+            relativePath: props.pane.relativePath ?? props.pane.filePath,
             handlers: props.handlers,
           }),
           createWorkbenchEditorReferences(props.pane.references),
@@ -2730,10 +2737,14 @@ function WorkbenchCodeEditor(props: {
   navigationTarget?: NonNullable<
     ProductShellViewModel["appChrome"]["activeWorkbenchPane"]
   >["navigationTarget"];
+  relativePath?: string;
   handlers: ProductShellHandlers;
 }): ReactElement {
   const editorRef = useRef<ReactCodeMirrorRef>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  // The text selection captured when the context menu opened (before the caret is
+  // moved to the clicked symbol), so "Add selection to chat" uses it.
+  const [menuSelection, setMenuSelection] = useState<{ text: string; fromLine: number; toLine: number } | null>(null);
   const nav = props.navigationTarget;
   useEffect(() => {
     const view = editorRef.current?.view;
@@ -2771,6 +2782,17 @@ function WorkbenchCodeEditor(props: {
     event.preventDefault();
     const view = editorRef.current?.view;
     if (view) {
+      // Capture any active selection BEFORE collapsing the caret to the click.
+      const sel = view.state.selection.main;
+      if (!sel.empty) {
+        setMenuSelection({
+          text: view.state.sliceDoc(sel.from, sel.to),
+          fromLine: view.state.doc.lineAt(sel.from).number,
+          toLine: view.state.doc.lineAt(sel.to).number,
+        });
+      } else {
+        setMenuSelection(null);
+      }
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
       if (pos !== null && pos !== undefined) {
         view.dispatch({ selection: { anchor: pos } });
@@ -2780,6 +2802,19 @@ function WorkbenchCodeEditor(props: {
     setContextMenu({ x: event.clientX, y: event.clientY });
   };
   const closeMenu = () => setContextMenu(null);
+
+  const addSelectionToChat = () => {
+    if (menuSelection === null) {
+      return;
+    }
+    const path = props.relativePath ?? "selection";
+    const lines =
+      menuSelection.fromLine === menuSelection.toLine
+        ? `L${menuSelection.fromLine}`
+        : `L${menuSelection.fromLine}-${menuSelection.toLine}`;
+    const reference = `\`${path}\` (${lines})\n\`\`\`${props.language}\n${menuSelection.text}\n\`\`\``;
+    props.handlers.onAddContentToChat(reference);
+  };
 
   const menuItem = (label: string, onSelect: () => void, disabled = false) =>
     createElement(
@@ -2872,6 +2907,8 @@ function WorkbenchCodeEditor(props: {
               "aria-label": "Editor actions",
               style: { left: `${contextMenu.x}px`, top: `${contextMenu.y}px` } as CSSProperties,
             },
+            menuItem("Add selection to chat", addSelectionToChat, menuSelection === null),
+            createElement("div", { className: "workbench-editor-menu__sep", role: "separator" }),
             menuItem("Go to Definition", () => props.handlers.onEditorGoToDefinition(props.paneId)),
             menuItem("Find References", () => props.handlers.onEditorGoToReferences(props.paneId)),
             props.readOnly

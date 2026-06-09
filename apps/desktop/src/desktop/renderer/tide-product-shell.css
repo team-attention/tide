@@ -3336,6 +3336,12 @@ button {
   cursor: default;
 }
 
+.workbench-editor-menu__sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--tide-line);
+}
+
 .workbench-editor-cm .cm-gutters {
   background: var(--tide-surface);
   border-right: 1px solid var(--tide-line);
