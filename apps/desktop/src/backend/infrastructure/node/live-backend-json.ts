@@ -84,3 +84,24 @@ export function claudeAssistantTextContent(content: unknown): string | undefined
     .filter((text): text is string => text !== undefined);
   return textParts.length > 0 ? textParts.join("\n") : undefined;
 }
+
+// Extended-thinking content from a claude assistant message: content items of
+// type "thinking" carry a `thinking` field (not `text`). Returns the joined
+// thinking text, or undefined when the turn has no thinking content.
+export function claudeThinkingText(content: unknown): string | undefined {
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  for (const item of content) {
+    const record = unknownRecord(item);
+    if (record?.type !== "thinking") {
+      continue;
+    }
+    const text = stringField(record, "thinking") ?? stringField(record, "text");
+    if (text !== undefined && text.trim().length > 0) {
+      parts.push(text);
+    }
+  }
+  return parts.length > 0 ? parts.join("\n\n") : undefined;
+}

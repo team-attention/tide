@@ -396,6 +396,18 @@ function claudeLaunchOptionArgs(
     args.push("--permission-mode", permission);
   }
 
+  // Thinking effort (the Claude Code app's "Effort" control) maps to `--effort`.
+  const effort = stringValue(launchOptions?.reasoning);
+  if (
+    effort === "low" ||
+    effort === "medium" ||
+    effort === "high" ||
+    effort === "xhigh" ||
+    effort === "max"
+  ) {
+    args.push("--effort", effort);
+  }
+
   return args;
 }
 

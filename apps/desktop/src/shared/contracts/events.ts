@@ -1,4 +1,4 @@
-import type { AgentRuntimeStateDto } from "./agent-runtime.ts";
+import type { AgentRuntimeStateDto, AgentRuntimeUsageDto } from "./agent-runtime.ts";
 import type { AgentSessionBlockDto } from "./agent-session-block.ts";
 import type { ContractErrorPayload } from "./errors.ts";
 import type {
@@ -27,6 +27,7 @@ export type BackendEventKind =
   | "thread.pinChanged"
   | "thread.renamed"
   | "agentRuntime.stateChanged"
+  | "agentRuntime.usageChanged"
   | "providerReadiness.changed"
   | "prompt.changed"
   | "agentSessionBlock.upserted"
@@ -49,6 +50,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "thread.pinChanged",
   "thread.renamed",
   "agentRuntime.stateChanged",
+  "agentRuntime.usageChanged",
   "providerReadiness.changed",
   "prompt.changed",
   "agentSessionBlock.upserted",
@@ -98,6 +100,10 @@ export interface BackendEventPayloadByKind {
     threadId: ThreadId;
     state: AgentRuntimeStateDto;
     changedAt: string;
+  };
+  "agentRuntime.usageChanged": {
+    threadId: ThreadId;
+    usage: AgentRuntimeUsageDto;
   };
   "providerReadiness.changed": {
     threadId?: ThreadId;

@@ -743,7 +743,7 @@ test("sending_start_composer_from_product_shell_uses_provider_native_model_value
   assert.equal(result.command?.kind, "thread.start");
   assert.deepEqual(result.command?.payload.launchOptions, {
     model: "gpt-5.5",
-    permission: "Auto-review",
+    permission: "approve-for-me",
     worktree: "current folder",
     branch: "main",
   });
@@ -2282,7 +2282,7 @@ test("product_shell_antigravity_selection_updates_model_before_thread_start", ()
 
   assert.equal(view.agentChat.composer.contextItems[0].value, "Antigravity CLI");
   assert.equal(view.agentChat.composer.modelLabel, "Default");
-  assert.equal(view.agentChat.composer.permissionLabel, "default");
+  assert.equal(view.agentChat.composer.permissionLabel, "Ask for approval");
 });
 
 test("product_shell_antigravity_selection_updates_start_command_launch_options", () => {
@@ -2384,7 +2384,7 @@ test("product_shell_thread_started_preserves_antigravity_model_label", () => {
   assert.equal(view.agentChat.thread?.agentLabel, "Antigravity CLI");
   assert.equal(view.agentChat.composer.mode, "follow_up");
   assert.equal(view.agentChat.composer.modelLabel, "Default");
-  assert.equal(view.agentChat.composer.permissionLabel, "default");
+  assert.equal(view.agentChat.composer.permissionLabel, "Ask for approval");
   assert.notEqual(view.agentChat.composer.modelLabel, "GPT-5.5 High");
   assert.deepEqual(view.agentChat.composer.contextItems.map((item) => item.value), [
     "Antigravity CLI",

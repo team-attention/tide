@@ -73,6 +73,8 @@ function blocksFromFrame(
   switch (payload.type) {
     case "message":
       return [messageBlockFromFrame(input.thread.threadId, frame, payload)];
+    case "reasoning":
+      return reasoningBlockFromFrame(input.thread.threadId, frame, payload);
     case "tool_call":
       if (isMcpProtocolNoiseTool(payload)) {
         return [];
@@ -155,6 +157,35 @@ function messageBlockFromFrame(
     createdAt: frame.observedAt,
     updatedAt: frame.observedAt,
   };
+}
+
+// Reasoning/thinking from a provider (codex summary text, etc.) becomes a
+// reasoning block — rendered as a quiet, collapsible disclosure, not as an
+// answer turn. Empty reasoning (encrypted-only, no readable summary) is dropped.
+function reasoningBlockFromFrame(
+  threadId: ThreadId,
+  frame: RawAgentFrame,
+  payload: Record<string, unknown>,
+): AgentSessionBlock[] {
+  const body = typeof payload.body === "string" ? payload.body : rawText(frame);
+  if (body.trim().length === 0) {
+    return [];
+  }
+  return [
+    {
+      blockId: stringField(payload.blockId) ?? `reasoning:${threadId}:${frame.frameId}`,
+      threadId,
+      agentId: frame.agentId,
+      kind: "reasoning",
+      role: "reasoning",
+      sourceFrameIds: [frame.frameId],
+      status: blockStatus(payload.status, "complete"),
+      title: stringField(payload.title) ?? "Thinking",
+      body,
+      createdAt: frame.observedAt,
+      updatedAt: frame.observedAt,
+    },
+  ];
 }
 
 function toolBlockFromFrame(

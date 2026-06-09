@@ -98,7 +98,7 @@ export interface AgentSessionBlockReference {
   blockId: string;
   agentId?: AgentId;
   kind: string;
-  role?: "user" | "agent" | "tool" | "system" | "runtime";
+  role?: "user" | "agent" | "reasoning" | "tool" | "system" | "runtime";
   sourceFrameIds?: string[];
   localProvenance?: Record<string, unknown>;
   status: "pending" | "streaming" | "complete" | "failed" | "needs_input";

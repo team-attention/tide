@@ -8,6 +8,9 @@ import {
   Folder,
   FolderOpen,
   GitBranchPlus,
+  GitCompare,
+  Globe,
+  LayoutGrid,
   Maximize2,
   MessageSquarePlus,
   MoreHorizontal,
@@ -140,6 +143,8 @@ import {
   cancelProductShellWorktreeCreate,
   setProductShellWorktreeSettings,
   setProductShellSettingsOpen,
+  setPreferredStartComposer,
+  type PreferredStartComposer,
   DEFAULT_PRODUCT_SHELL_LIST_SETTINGS,
   DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS,
   type ProductShellListSettings,
@@ -195,6 +200,45 @@ function persistListSettings(settings: ProductShellListSettings): void {
 }
 
 const WORKTREE_SETTINGS_STORAGE_KEY = "tide.worktreeSettings";
+const START_COMPOSER_STORAGE_KEY = "tide.startComposerDefaults";
+
+// Remembers the agent + model the user last chose in the Start Composer, so the
+// next New Thread defaults to it instead of always codex/gpt-5.5.
+function loadPreferredStartComposer(): PreferredStartComposer | null {
+  if (typeof localStorage === "undefined") {
+    return null;
+  }
+  try {
+    const raw = localStorage.getItem(START_COMPOSER_STORAGE_KEY);
+    if (raw === null) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<PreferredStartComposer>;
+    const agentId = parsed.agentId;
+    if (agentId !== "codex" && agentId !== "claude" && agentId !== "antigravity" && agentId !== "openai_api") {
+      return null;
+    }
+    return {
+      agentId,
+      model: typeof parsed.model === "string" ? parsed.model : undefined,
+      permission: typeof parsed.permission === "string" ? parsed.permission : undefined,
+      reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistPreferredStartComposer(defaults: PreferredStartComposer): void {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+  try {
+    localStorage.setItem(START_COMPOSER_STORAGE_KEY, JSON.stringify(defaults));
+  } catch {
+    // Best-effort.
+  }
+}
 
 function loadWorktreeSettings(): ProductShellWorktreeSettings {
   if (typeof localStorage === "undefined") {
@@ -254,6 +298,13 @@ function useColumnPresence(open: boolean): { mounted: boolean; visible: boolean 
       }
       let inner = 0;
       const outer = requestAnimationFrame(() => {
+        // Force the collapsed (0px) track to commit to layout BEFORE revealing.
+        // Without this, the very first open after launch can coalesce the 0px and
+        // full-width frames into one paint, so the grid snaps instead of animating
+        // (subsequent opens are already warmed up). A reflow read fixes the first.
+        if (typeof document !== "undefined" && document.body) {
+          void document.body.offsetHeight;
+        }
         inner = requestAnimationFrame(() => setVisible(true));
       });
       return () => {
@@ -334,6 +385,7 @@ interface ProductShellHandlers {
   onSubmit: () => void;
   onInterrupt: () => void;
   onEditQueued: () => void;
+  onResend: (text: string) => void;
   onComposerSurfaceChange: (surface: AgentChatComposerSurfaceKind | null) => void;
   onChoiceSurfaceRowSelect: (
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
@@ -397,14 +449,47 @@ interface ProductShellHandlers {
 
 
 export function TideProductShell(props: TideProductShellProps): ReactElement {
-  const [shellState, setShellState] = useState(() =>
-    props.initialState ??
+  const [shellState, setShellState] = useState(() => {
+    // Apply the remembered agent/model BEFORE the first Start Composer is built,
+    // so a fresh launch already shows the user's last choice.
+    setPreferredStartComposer(loadPreferredStartComposer());
+    return (
+      props.initialState ??
       createProductShellState({
         includeFixtureData: false,
         listSettings: loadListSettings(),
         worktreeSettings: loadWorktreeSettings(),
-      }),
-  );
+      })
+    );
+  });
+  // Remember the Start Composer's agent/model choice: whenever it changes while no
+  // thread is active, persist it so the NEXT New Thread (this launch or the next)
+  // defaults to it.
+  const startBinding = shellState.activeThreadId === null
+    ? shellState.agentChat.composer.startOptions
+    : undefined;
+  const startAgentId = startBinding?.agentBinding.agentId;
+  const startModel = startBinding?.launchOptions?.model;
+  const startPermission = startBinding?.launchOptions?.permission;
+  const startReasoning = startBinding?.launchOptions?.reasoning;
+  useEffect(() => {
+    if (
+      startAgentId !== "codex" &&
+      startAgentId !== "claude" &&
+      startAgentId !== "antigravity" &&
+      startAgentId !== "openai_api"
+    ) {
+      return;
+    }
+    const defaults: PreferredStartComposer = {
+      agentId: startAgentId,
+      model: typeof startModel === "string" ? startModel : undefined,
+      permission: typeof startPermission === "string" ? startPermission : undefined,
+      reasoning: typeof startReasoning === "string" ? startReasoning : undefined,
+    };
+    setPreferredStartComposer(defaults);
+    persistPreferredStartComposer(defaults);
+  }, [startAgentId, startModel, startPermission, startReasoning]);
   // Resizable column widths (agent chat is the flexible middle track). Drag
   // handles on column edges update these via pointer capture.
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -775,6 +860,13 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     onEditQueued: () =>
       setShellState((state) => {
         const result = editProductShellQueuedInput(state);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onResend: (text) =>
+      setShellState((state) => {
+        const drafted = updateProductShellComposerDraft(state, text);
+        const result = submitProductShellComposerDraft(drafted);
         dispatchBackendCommand(result.command);
         return result.state;
       }),
@@ -1442,6 +1534,7 @@ function createAgentChatColumn(
       onSubmit: handlers.onSubmit,
       onInterrupt: handlers.onInterrupt,
       onEditQueued: handlers.onEditQueued,
+      onResend: handlers.onResend,
       onComposerSurfaceChange: handlers.onComposerSurfaceChange,
       onChoiceSurfaceRowSelect: handlers.onChoiceSurfaceRowSelect,
       onOpenFile: handlers.onOpenFile,
@@ -1458,6 +1551,21 @@ function createWorkbenchColumn(
   const tabs = viewModel.appChrome.workbenchTabStrip.visibleTabs;
   const activeTab = tabs.find((tab) => tab.active) ?? tabs[0];
   const activePane = viewModel.appChrome.activeWorkbenchPane;
+  const tabIconSize = 13;
+  const workbenchTabIcon = (kind: string): ReactElement => {
+    switch (kind) {
+      case "browser":
+        return createElement(Globe, { size: tabIconSize, strokeWidth: 1.85 });
+      case "terminal":
+        return createElement(Terminal, { size: tabIconSize, strokeWidth: 1.85 });
+      case "diff":
+        return createElement(GitCompare, { size: tabIconSize, strokeWidth: 1.85 });
+      case "launcher":
+        return createElement(LayoutGrid, { size: tabIconSize, strokeWidth: 1.85 });
+      default:
+        return createElement(FileText, { size: tabIconSize, strokeWidth: 1.85 });
+    }
+  };
 
   return createElement(
     "aside",
@@ -1478,6 +1586,7 @@ function createWorkbenchColumn(
                   key: tab.paneId,
                   className: "workbench-tab",
                   "data-active": tab.active,
+                  "data-kind": tab.kind,
                   role: "tab",
                   "aria-selected": tab.active,
                 },
@@ -1488,21 +1597,26 @@ function createWorkbenchColumn(
                     type: "button",
                     onClick: () => handlers.onFocusWorkbenchPane(tab.paneId),
                   },
-                  tab.title,
+                  createElement(
+                    "span",
+                    { className: "workbench-tab__icon", "aria-hidden": true },
+                    workbenchTabIcon(tab.kind),
+                  ),
+                  createElement("span", { className: "workbench-tab__title" }, tab.title),
                 ),
-                tab.active
-                  ? createElement(
-                      "button",
-                      {
-                        className: "workbench-tab__close",
-                        type: "button",
-                        title: "Close Pane",
-                        "aria-label": "Close Pane",
-                        onClick: () => handlers.onCloseWorkbenchPane(tab.paneId),
-                      },
-                      createElement(X, { size: 12, strokeWidth: 2.2, "aria-hidden": true }),
-                    )
-                  : null,
+                // Every tab carries a close button (revealed on hover; always shown
+                // on the active tab) so closing a pane is always one obvious click.
+                createElement(
+                  "button",
+                  {
+                    className: "workbench-tab__close",
+                    type: "button",
+                    title: "Close Pane",
+                    "aria-label": "Close Pane",
+                    onClick: () => handlers.onCloseWorkbenchPane(tab.paneId),
+                  },
+                  createElement(X, { size: 14, strokeWidth: 2.2, "aria-hidden": true }),
+                ),
               ),
             ),
       ),

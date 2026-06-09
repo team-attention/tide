@@ -145,6 +145,141 @@ function queuedFixtureState() {
   return submitProductShellComposerDraft(drafted).state;
 }
 
+// Rich-transcript fixture: a realistic multi-block agent conversation (user turn,
+// reasoning, agent markdown with code + lists, a read file-chip, a shell tool call
+// + result, and an edit diff) so the transcript's visual fidelity can be eyeballed
+// against the native Codex/Claude apps. Not shipped.
+function richTranscriptFixtureState() {
+  const opened = openProductShellThread(
+    createProductShellState({ includeFixtureData: true }),
+    "thread-master-plan",
+  );
+  const at = (s: number) => `2026-05-31T00:00:${String(s).padStart(2, "0")}.000Z`;
+  const block = (b: Record<string, unknown>) => ({
+    threadId: "thread-master-plan",
+    status: "complete",
+    updatedAt: at(0),
+    ...b,
+  });
+  const hydrated = applyProductShellBackendEvent(opened, {
+    kind: "thread.hydrated",
+    payload: {
+      thread: {
+        threadId: "thread-master-plan",
+        title: "Tighten the agent transcript",
+        agentBinding: { agentId: "codex" },
+        scope: { kind: "project", projectId: "tide", cwd: "/Users/you/Workspace/tide" },
+        createdAt: at(0),
+        updatedAt: at(9),
+        pinned: false,
+        archived: false,
+        lastKnownState: "idle",
+      },
+      runtimeState: "idle",
+      blocks: [
+        block({
+          blockId: "r-user-1",
+          kind: "message",
+          role: "user",
+          body: "The agent transcript feels a bit flat next to the Codex app. Read the renderer, then tighten the spacing and tool log so it reads cleanly.",
+          updatedAt: at(1),
+        }),
+        block({
+          blockId: "r-reason-1",
+          kind: "reasoning",
+          role: "reasoning",
+          title: "Thought for 8s",
+          body: "The user wants the transcript to feel premium. I should open the chat shell renderer first to see how turns, tool logs, and diffs are styled, then adjust the spacing scale and the tool-log treatment. Let me read the file before changing anything.",
+          updatedAt: at(2),
+        }),
+        block({
+          blockId: "r-tool-read",
+          kind: "tool_call",
+          role: "tool",
+          title: "Read",
+          body: JSON.stringify({ file_path: "/Users/you/Workspace/tide/src/desktop/adapters/inbound/react-renderer/agent-chat-shell.ts" }),
+          updatedAt: at(3),
+        }),
+        block({
+          blockId: "r-tool-grep",
+          kind: "tool_call",
+          role: "tool",
+          title: "Shell",
+          body: JSON.stringify({ command: "rg -n \"agent-session-turn\" src/desktop/renderer/tide-product-shell.css | head" }),
+          updatedAt: at(4),
+        }),
+        block({
+          blockId: "r-tool-grep-out",
+          kind: "tool_result",
+          role: "tool",
+          title: "Shell",
+          body: "1198:.agent-session-turn {\n1207:.agent-session-turn--agent {\n1214:.agent-session-turn--user {\n1242:.agent-session-turn__label {",
+          updatedAt: at(5),
+        }),
+        block({
+          blockId: "r-agent-1",
+          kind: "message",
+          role: "agent",
+          body: [
+            "Found it. The transcript renders through `createAgentSessionTurn`, and the spacing is driven by a single `--gap`. Here's the plan:",
+            "",
+            "1. Tighten the vertical rhythm between turns so related blocks group.",
+            "2. Give the **tool log** a quieter, monospace treatment with a left rail.",
+            "3. Render reasoning as a collapsible, muted section.",
+            "",
+            "The core change is small:",
+            "",
+            "```ts",
+            "const role = block.role === \"user\" ? \"user\" : \"agent\";",
+            "return createElement(\"article\", { className: `turn turn--${role}` }, body);",
+            "```",
+            "",
+            "I'll start with the spacing and tool log.",
+          ].join("\n"),
+          updatedAt: at(6),
+        }),
+        block({
+          blockId: "r-tool-edit",
+          kind: "tool_call",
+          role: "tool",
+          title: "Edit",
+          body: JSON.stringify({
+            file_path: "src/desktop/renderer/tide-product-shell.css",
+            old_string: ".agent-session-turn {\n  margin-bottom: 16px;\n}",
+            new_string: ".agent-session-turn {\n  margin-bottom: 22px;\n  line-height: 1.62;\n}",
+          }),
+          updatedAt: at(7),
+        }),
+        block({
+          blockId: "r-agent-2",
+          kind: "message",
+          role: "agent",
+          body: "Done — the turns now breathe and the tool log sits on its own rail. Want me to apply the same rhythm to the diff view?",
+          updatedAt: at(8),
+        }),
+      ],
+    },
+  });
+  return applyProductShellBackendEvent(hydrated, {
+    kind: "agentRuntime.usageChanged",
+    payload: {
+      threadId: "thread-master-plan",
+      usage: { totalTokens: 82400, contextWindow: 256000, contextUsedPercent: 32, model: "gpt-5.5" },
+    },
+  });
+}
+
+// Rich transcript with a live turn + a message queued behind it, so the docked
+// Composer "steer" chip (대기 중 + 수정) can be eyeballed.
+function richQueuedFixtureState() {
+  const running = applyProductShellBackendEvent(richTranscriptFixtureState(), {
+    kind: "agentRuntime.stateChanged",
+    payload: { threadId: "thread-master-plan", state: "running", changedAt: "2026-05-31T00:00:10.000Z" },
+  });
+  const drafted = updateProductShellComposerDraft(running, "오 그리고 README도 같이 정리해줘");
+  return submitProductShellComposerDraft(drafted).state;
+}
+
 // Browser-pane fixture: a Workbench Browser pane pointing at a visible page so
 // the live <webview> load can be verified headlessly via offscreen Electron.
 function browserFixtureState() {
@@ -217,12 +352,18 @@ if (root) {
     const params = new URLSearchParams(location.search);
     const wantsBrowser = params.get("pane") === "browser";
     const wantsQueued = params.get("mode") === "queued";
+    const wantsRich = params.get("mode") === "rich";
+    const wantsRichQueued = params.get("mode") === "rich-queued";
     // FileTree column is gated by fileTreeOpen; flip it on for the fixture.
     const state = wantsBrowser
       ? browserFixtureState()
       : wantsQueued
         ? queuedFixtureState()
-        : { ...figmaFixtureState(), fileTreeOpen: true };
+        : wantsRichQueued
+          ? richQueuedFixtureState()
+          : wantsRich
+            ? richTranscriptFixtureState()
+            : { ...figmaFixtureState(), fileTreeOpen: true };
     createRoot(root).render(createElement(TideProductShell, { initialState: state }));
     const fonts = (document as unknown as { fonts?: { ready?: Promise<unknown> } }).fonts;
     if (fonts?.ready) {

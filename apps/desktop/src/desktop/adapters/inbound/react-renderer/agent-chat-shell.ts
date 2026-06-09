@@ -18,6 +18,8 @@ import {
   Bot,
   Check,
   ChevronDown,
+  Copy,
+  CornerDownRight,
   FileText,
   Folder,
   FolderGit2,
@@ -29,7 +31,9 @@ import {
   PanelsTopLeft,
   Paperclip,
   Plus,
+  RotateCcw,
   ShieldCheck,
+  Sparkles,
   Square,
   Wrench,
   X,
@@ -54,6 +58,8 @@ export interface AgentChatShellProps {
   onInterrupt?: () => void;
   // Edit the queued (not-yet-sent) message: pull it back into the Composer.
   onEditQueued?: () => void;
+  // Resend a prompt (retry an answer): submits the given text as a new turn.
+  onResend?: (text: string) => void;
   onComposerSurfaceChange?: (surface: AgentChatComposerSurfaceKind | null) => void;
   onChoiceSurfaceRowSelect?: (
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
@@ -85,6 +91,8 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const sessionRef = useRef<HTMLElement | null>(null);
+  // Hidden <input type=file> for the "Files and images" composer-menu action.
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   // On entering a thread, jump to the most recent message (not the top).
   const threadId = viewModel.thread?.threadId;
   useEffect(() => {
@@ -133,9 +141,22 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     onDraftChange: props.onDraftChange,
     onSubmit: props.onSubmit,
     onInterrupt: props.onInterrupt,
+    onEditQueued: props.onEditQueued,
     onComposerSurfaceChange: props.onComposerSurfaceChange,
     onOpenSurface: openSurface,
-    onChoiceSurfaceRowSelect: props.onChoiceSurfaceRowSelect,
+    // Intercept the "Files and images" composer-menu row to open a native file
+    // picker locally; everything else routes to the product shell as before.
+    onChoiceSurfaceRowSelect: (
+      surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
+      rowId: string,
+    ) => {
+      if (surfaceKind === "composer_options" && rowId === "files-images") {
+        props.onComposerSurfaceChange?.(null);
+        fileInputRef.current?.click();
+        return;
+      }
+      props.onChoiceSurfaceRowSelect?.(surfaceKind, rowId);
+    },
     onAddAttachment: props.onAddAttachment,
     onRemoveAttachment: props.onRemoveAttachment,
     onPreviewAttachment: (previewUrl: string) => setImagePreview(previewUrl),
@@ -160,10 +181,30 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     ? createChipPopover({
         surface: viewModel.composer.activeSurface,
         anchor: popoverAnchor,
-        onRowSelect: props.onChoiceSurfaceRowSelect,
+        // Use the intercepting handler so "Files and images" opens the picker.
+        onRowSelect: handlers.onChoiceSurfaceRowSelect,
         onClose: closeSurface,
       })
     : null;
+
+  // Native file picker for the "Files and images" action: reads picked images as
+  // base64 attachments (same path as paste). Hidden; triggered programmatically.
+  const fileInput = createElement("input", {
+    ref: fileInputRef,
+    type: "file",
+    accept: "image/*",
+    multiple: true,
+    style: { display: "none" },
+    onChange: (event: ChangeEvent<HTMLInputElement>) => {
+      const files = event.currentTarget.files;
+      if (files && props.onAddAttachment) {
+        for (const file of Array.from(files)) {
+          attachImageFile(file, props.onAddAttachment);
+        }
+      }
+      event.currentTarget.value = "";
+    },
+  });
 
   const lightbox =
     imagePreview === null
@@ -194,6 +235,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       createNewThreadStartSurface(viewModel, handlers),
       popover,
       lightbox,
+      fileInput,
     );
   }
 
@@ -205,10 +247,11 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       "data-runtime-state": viewModel.runtimeState,
     },
     props.showThreadHeader === false ? null : createThreadHeader(viewModel),
-    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt, props.onEditQueued),
+    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt, props.onEditQueued, props.onResend),
     createComposerStack(viewModel, handlers),
     popover,
     lightbox,
+    fileInput,
   );
 }
 
@@ -297,27 +340,37 @@ function handleComposerPaste(
   // Pasting an image should attach it, not insert the OS clipboard text path.
   event.preventDefault();
   for (const file of images) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") {
-        return;
-      }
-      const base64 = result.includes(",") ? result.slice(result.indexOf(",") + 1) : result;
-      onAddAttachment({
-        name: file.name.length > 0 ? file.name : "pasted-image.png",
-        mediaType: file.type.length > 0 ? file.type : "image/png",
-        dataBase64: base64,
-      });
-    };
-    reader.readAsDataURL(file);
+    attachImageFile(file, onAddAttachment);
   }
+}
+
+// Reads an image File as base64 and adds it as a composer attachment. Shared by
+// the paste handler and the "Files and images" picker.
+function attachImageFile(
+  file: File,
+  onAddAttachment: (attachment: { name: string; mediaType: string; dataBase64: string }) => void,
+): void {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = reader.result;
+    if (typeof result !== "string") {
+      return;
+    }
+    const base64 = result.includes(",") ? result.slice(result.indexOf(",") + 1) : result;
+    onAddAttachment({
+      name: file.name.length > 0 ? file.name : "pasted-image.png",
+      mediaType: file.type.length > 0 ? file.type : "image/png",
+      dataBase64: base64,
+    });
+  };
+  reader.readAsDataURL(file);
 }
 
 interface ComposerHandlers {
   onDraftChange?: (draft: string) => void;
   onSubmit?: () => void;
   onInterrupt?: () => void;
+  onEditQueued?: () => void;
   onComposerSurfaceChange?: (surface: AgentChatComposerSurfaceKind | null) => void;
   onOpenSurface?: (surface: AgentChatComposerSurfaceKind, rect: AnchorRect) => void;
   onChoiceSurfaceRowSelect?: (
@@ -508,6 +561,7 @@ function createAgentSession(
   sessionRef?: { current: HTMLElement | null },
   runtimeStartedAt?: string,
   onEditQueued?: () => void,
+  onResend?: (text: string) => void,
 ): ReactElement {
   // Show a live "working" indicator only until the agent produces its block:
   // a streaming block carries its own caret, and a complete block means the turn
@@ -536,6 +590,30 @@ function createAgentSession(
           void navigator.clipboard?.writeText(pre?.textContent ?? "");
           return;
         }
+        // Copy a whole agent answer (hover action). Flash the button to confirm.
+        const copyAnswer = target.closest(".agent-turn-actions__btn--copy");
+        if (copyAnswer) {
+          const body = copyAnswer
+            .closest(".agent-session-turn")
+            ?.querySelector(".agent-session-turn__body");
+          void navigator.clipboard?.writeText(body?.textContent ?? "");
+          copyAnswer.classList.add("agent-turn-actions__btn--done");
+          window.setTimeout(() => copyAnswer.classList.remove("agent-turn-actions__btn--done"), 1400);
+          return;
+        }
+        // Retry an answer: resend the user prompt that preceded it as a new turn.
+        const retryAnswer = onResend ? target.closest(".agent-turn-actions__btn--retry") : null;
+        if (retryAnswer) {
+          let node = retryAnswer.closest(".agent-session-turn")?.previousElementSibling ?? null;
+          while (node && node.getAttribute("data-block-role") !== "user") {
+            node = node.previousElementSibling;
+          }
+          const prompt = node?.querySelector(".agent-session-turn__body")?.textContent ?? "";
+          if (prompt.trim().length > 0) {
+            onResend?.(prompt);
+          }
+          return;
+        }
         if (onEditQueued && target.closest("[data-edit-queued]")) {
           event.preventDefault();
           onEditQueued();
@@ -561,8 +639,11 @@ function createAgentSession(
           : null
       : groupSessionItems(blocks).map(renderSessionItem),
     working ? createElement(AgentWorkingIndicator, { runtimeStartedAt }) : null,
-    queuedInput !== null
-      ? createQueuedInputRow(queuedInput, chatState === "running")
+    // An optimistic just-sent message (idle send) still shows in the transcript
+    // until its real block arrives. A message QUEUED behind a live turn is docked
+    // to the Composer instead (Codex-style "steer"), so it isn't done here.
+    queuedInput !== null && chatState !== "running"
+      ? createQueuedInputRow(queuedInput, false)
       : null,
   );
 }
@@ -641,9 +722,60 @@ function groupSessionItems(blocks: AgentChatBlockView[]): SessionRenderItem[] {
 }
 
 function renderSessionItem(item: SessionRenderItem): ReactElement | null {
-  return item.kind === "toolGroup"
-    ? createElement(ToolActivityGroup, { key: item.key, blocks: item.blocks })
-    : createAgentSessionTurn(item.block);
+  if (item.kind === "toolGroup") {
+    return createElement(ToolActivityGroup, { key: item.key, blocks: item.blocks });
+  }
+  if (item.block.role === "reasoning" || item.block.kind === "reasoning") {
+    return createElement(ReasoningTurn, { key: item.block.blockId, block: item.block });
+  }
+  return createAgentSessionTurn(item.block);
+}
+
+// Reasoning/thinking renders as a quiet, collapsible disclosure — secondary to the
+// answer, like the Codex/Claude apps. It expands live while streaming so the user
+// can watch the model think, then collapses once the turn is complete.
+function ReasoningTurn({ block }: { block: AgentChatBlockView }): ReactElement {
+  const streaming = block.status === "streaming" || block.status === "pending";
+  const [expanded, setExpanded] = useState(streaming);
+  // Follow the live stream open, but stop forcing it once the user has toggled.
+  const userToggled = useRef(false);
+  useEffect(() => {
+    if (!userToggled.current) {
+      setExpanded(streaming);
+    }
+  }, [streaming]);
+  const label = block.title && block.title.trim().length > 0 ? block.title : "Thinking";
+  return createElement(
+    "div",
+    {
+      className: `agent-reasoning${expanded ? " agent-reasoning--expanded" : ""}${
+        streaming ? " agent-reasoning--streaming" : ""
+      }`,
+      "data-block-id": block.blockId,
+      "data-block-role": "reasoning",
+    },
+    createElement(
+      "button",
+      {
+        type: "button",
+        className: "agent-reasoning__summary",
+        "aria-expanded": expanded,
+        onClick: () => {
+          userToggled.current = true;
+          setExpanded((value) => !value);
+        },
+      },
+      createElement(Sparkles, { size: 13, strokeWidth: 1.9, className: "agent-reasoning__icon", "aria-hidden": true }),
+      createElement("span", { className: "agent-reasoning__label" }, label),
+      createElement(ChevronDown, { size: 13, strokeWidth: 1.9, className: "agent-reasoning__chevron", "aria-hidden": true }),
+    ),
+    expanded
+      ? createElement("div", {
+          className: "agent-reasoning__body",
+          dangerouslySetInnerHTML: { __html: markdown.render(block.body) },
+        })
+      : null,
+  );
 }
 
 // Live working indicator with an elapsed timer, so a long turn reads as active
@@ -779,6 +911,39 @@ function createAgentSessionTurn(block: AgentChatBlockView): ReactElement | null 
     block.rawFallback && block.rawFallback !== block.body
       ? createElement("pre", { className: "agent-session-turn__raw" }, block.rawFallback)
       : null,
+    // Hover actions on a completed agent answer: copy the answer, or retry the
+    // prompt. Click handling is event-delegated on the session container.
+    role === "agent" && block.status !== "streaming" && block.status !== "pending" && block.body.trim().length > 0
+      ? createAgentTurnActions()
+      : null,
+  );
+}
+
+function createAgentTurnActions(): ReactElement {
+  return createElement(
+    "div",
+    { className: "agent-turn-actions", "aria-hidden": false },
+    createElement(
+      "button",
+      {
+        type: "button",
+        className: "agent-turn-actions__btn agent-turn-actions__btn--copy",
+        title: "Copy answer",
+        "aria-label": "Copy answer",
+      },
+      createElement(Copy, { size: 13, strokeWidth: 1.8, className: "agent-turn-actions__icon agent-turn-actions__icon--copy", "aria-hidden": true }),
+      createElement(Check, { size: 13, strokeWidth: 2, className: "agent-turn-actions__icon agent-turn-actions__icon--check", "aria-hidden": true }),
+    ),
+    createElement(
+      "button",
+      {
+        type: "button",
+        className: "agent-turn-actions__btn agent-turn-actions__btn--retry",
+        title: "Retry",
+        "aria-label": "Retry this prompt",
+      },
+      createElement(RotateCcw, { size: 13, strokeWidth: 1.8, className: "agent-turn-actions__icon", "aria-hidden": true }),
+    ),
   );
 }
 
@@ -1412,7 +1577,76 @@ function createComposerStack(
           onRowSelect: handlers.onChoiceSurfaceRowSelect,
         })
       : null,
+    viewModel.usage ? createUsageMeter(viewModel.usage) : null,
+    // A message queued behind a live turn docks here, attached to the top of the
+    // Composer (Codex-style "steer"): visible as pending, editable before it runs.
+    viewModel.queuedInput !== null && viewModel.chatState === "running"
+      ? createQueuedSteerChip(viewModel.queuedInput, handlers.onEditQueued)
+      : null,
     createComposer(viewModel, handlers),
+  );
+}
+
+// The pending "steer" message docked to the top of the Composer while a turn is
+// live. Shows the queued text with a "대기 중" badge; clicking 수정 pulls it back
+// into the Composer input.
+function createQueuedSteerChip(
+  queuedInput: string,
+  onEditQueued?: () => void,
+): ReactElement {
+  return createElement(
+    "div",
+    { className: "composer-steer", "data-queued": true },
+    createElement(CornerDownRight, {
+      size: 13,
+      strokeWidth: 1.9,
+      className: "composer-steer__icon",
+      "aria-hidden": true,
+    }),
+    createElement("span", { className: "composer-steer__badge" }, "대기 중"),
+    createElement("span", { className: "composer-steer__text" }, queuedInput),
+    createElement(
+      "button",
+      {
+        type: "button",
+        className: "composer-steer__edit",
+        "aria-label": "Edit queued message",
+        title: "Edit queued message",
+        onClick: () => onEditQueued?.(),
+      },
+      "수정",
+    ),
+  );
+}
+
+// A quiet context/token usage chip above the composer (Codex-app style): an
+// optional thin context-window meter, then the percent + token labels. Shown
+// only when the provider has reported usage for the active thread.
+function createUsageMeter(usage: NonNullable<AgentChatShellViewModel["usage"]>): ReactElement {
+  const parts: ReactNode[] = [];
+  if (usage.contextUsedPercent !== undefined) {
+    parts.push(
+      createElement(
+        "span",
+        { key: "bar", className: "agent-usage__bar", "aria-hidden": true },
+        createElement("span", {
+          className: "agent-usage__bar-fill",
+          style: { width: `${Math.max(2, Math.min(100, usage.contextUsedPercent))}%` },
+        }),
+      ),
+    );
+  }
+  const text = [
+    usage.contextPercentLabel ? `${usage.contextPercentLabel} context` : undefined,
+    usage.tokensLabel,
+  ]
+    .filter((value): value is string => value !== undefined)
+    .join(" · ");
+  parts.push(createElement("span", { key: "text", className: "agent-usage__text" }, text));
+  return createElement(
+    "div",
+    { className: "agent-usage", "aria-label": "Context usage" },
+    ...parts,
   );
 }
 
@@ -1489,9 +1723,13 @@ function createChoiceRows(
         {
           key: row.rowId,
           type: "button",
-          className: `choice-surface__row${row.danger ? " choice-surface__row--danger" : ""}`,
+          className: `choice-surface__row${row.danger ? " choice-surface__row--danger" : ""}${
+            row.disabled ? " choice-surface__row--disabled" : ""
+          }`,
           "data-selected": row.selected ? "true" : "false",
-          onClick: () => onRowSelect?.(surface.surfaceKind, row.rowId),
+          disabled: row.disabled === true,
+          "aria-disabled": row.disabled === true,
+          onClick: row.disabled ? undefined : () => onRowSelect?.(surface.surfaceKind, row.rowId),
         },
         createElement("span", { className: "choice-surface__row-icon", "aria-hidden": true }, choiceRowIcon(row.icon)),
         createElement("span", { className: "choice-surface__row-label" }, row.label),

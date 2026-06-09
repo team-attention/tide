@@ -5,6 +5,7 @@ import type { JsonObject } from "./json.ts";
 export type AgentSessionBlockRoleDto =
   | "user"
   | "agent"
+  | "reasoning"
   | "tool"
   | "system"
   | "runtime";

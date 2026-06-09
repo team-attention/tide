@@ -11,6 +11,7 @@ import type {
 export type AgentSessionBlockRole =
   | "user"
   | "agent"
+  | "reasoning"
   | "tool"
   | "system"
   | "runtime";
@@ -25,6 +26,7 @@ export type AgentSessionBlockStatus =
 export type AgentSessionBlockKind =
   | "user_message"
   | "agent_message"
+  | "reasoning"
   | "markdown"
   | "code_block"
   | "working_status"

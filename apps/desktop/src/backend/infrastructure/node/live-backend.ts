@@ -38,6 +38,7 @@ import {
   rebuildCodexConversation,
   rebuildConversationFromProviderHistory,
 } from "./provider-conversation-rebuilders.ts";
+import { parseProviderUsage } from "./provider-usage.ts";
 import { recentCodexRollouts } from "./recent-provider-files.ts";
 import {
   readAntigravityProviderHistoryFramesFromHome,
@@ -720,6 +721,50 @@ export function createLiveAgentSessionEventProjector(input: {
 }) {
   const reader = createFixtureAgentSessionReader();
   const blocksByThread = new Map<string, AgentSessionBlock[]>();
+  // Last usage signature emitted per thread, so identical usage isn't re-emitted
+  // on every history poll (the chip would otherwise churn every tick).
+  const usageSignatureByThread = new Map<string, string>();
+
+  // Reads a provider transcript, parses its last-known context/token usage, and
+  // emits `agentRuntime.usageChanged` when it differs from the last emit. A no-op
+  // when the transcript is missing or carries no usage yet.
+  const emitProviderUsage = (emitInput: {
+    threadId: string;
+    agentId: "codex" | "claude" | "antigravity";
+    transcriptPath?: string;
+  }): void => {
+    // Usage is a non-essential decoration: it must NEVER throw and stall the
+    // history-emit path (which renders the agent's actual answer). Any parse
+    // failure is swallowed.
+    try {
+      if (emitInput.transcriptPath === undefined) {
+        return;
+      }
+      const text = readBoundedTail(emitInput.transcriptPath, 256 * 1024);
+      if (text === undefined) {
+        return;
+      }
+      const usage = parseProviderUsage(text, emitInput.agentId);
+      if (usage === undefined) {
+        return;
+      }
+      const signature = JSON.stringify(usage);
+      if (usageSignatureByThread.get(emitInput.threadId) === signature) {
+        return;
+      }
+      usageSignatureByThread.set(emitInput.threadId, signature);
+      input.onEvent?.({
+        contractVersion: CONTRACT_VERSION,
+        eventId: nextEventId(),
+        kind: "agentRuntime.usageChanged",
+        emittedAt: new Date().toISOString(),
+        payload: { threadId: emitInput.threadId, usage },
+      });
+    } catch {
+      // ignore — usage is best-effort.
+    }
+  };
+
   const providerSignalsByRuntime = new Map<
     string,
     { seenKeys: Set<string>; pollingStarted: boolean }
@@ -974,6 +1019,11 @@ export function createLiveAgentSessionEventProjector(input: {
       expectedUserMessage,
       boundRolloutPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
+    emitProviderUsage({
+      threadId: frameInput.threadId,
+      agentId: "codex",
+      transcriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
+    });
     // Structured turn-end from the rollout (normal `task_complete` or `turn_aborted`),
     // a fallback for a missing `codex-stop` hook. Settle the runtime even when the turn
     // produced no agent output, so it can't hang "Working" or strand a queued message.
@@ -1087,6 +1137,11 @@ export function createLiveAgentSessionEventProjector(input: {
       seenKeys: historyState.seenKeys,
       expectedUserMessage,
       boundTranscriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
+    });
+    emitProviderUsage({
+      threadId: frameInput.threadId,
+      agentId: "claude",
+      transcriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
     if (historyFrames.length === 0) {
       return;

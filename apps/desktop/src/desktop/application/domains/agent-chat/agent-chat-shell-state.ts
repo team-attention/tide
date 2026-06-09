@@ -73,7 +73,17 @@ export interface AgentChatShellState {
   // Composer input submitted during a live turn: held (queued) and shown as a
   // "queued" row until the turn ends and the backend flushes it as a real block.
   queuedInput: string | null;
+  // Last-known context/token usage for this thread's runtime (from the provider
+  // transcript). Drives the quiet usage chip in the thread header.
+  usage: AgentChatUsage | null;
   errorMessage?: string;
+}
+
+export interface AgentChatUsage {
+  totalTokens?: number;
+  contextWindow?: number;
+  contextUsedPercent?: number;
+  model?: string;
 }
 
 export interface AgentChatComposerState {
@@ -212,7 +222,7 @@ export interface AgentChatBlock {
   threadId: string;
   agentId?: string;
   kind: string;
-  role?: "user" | "agent" | "tool" | "system" | "runtime";
+  role?: "user" | "agent" | "reasoning" | "tool" | "system" | "runtime";
   sourceFrameIds?: string[];
   status: "pending" | "streaming" | "complete" | "failed" | "needs_input";
   title?: string;
@@ -292,7 +302,17 @@ export interface AgentChatShellViewModel {
   composer: AgentChatComposerView;
   workbenchOpen: boolean;
   queuedInput: string | null;
+  usage: AgentChatUsageView | null;
   errorMessage?: string;
+}
+
+export interface AgentChatUsageView {
+  // Pre-formatted, ready to render: e.g. "12.3k tokens".
+  tokensLabel?: string;
+  // e.g. "64%" when a context window is known.
+  contextPercentLabel?: string;
+  // 0–100, for the meter bar fill.
+  contextUsedPercent?: number;
 }
 
 export interface AgentChatThreadView {
@@ -355,6 +375,9 @@ export interface AgentChatChoiceSurfaceRowView {
   icon?: string;
   selected?: boolean;
   danger?: boolean;
+  // A row for a real feature that is not wired up yet: shown greyed and
+  // non-interactive instead of silently doing nothing when clicked.
+  disabled?: boolean;
 }
 
 export interface AgentChatBackendEvent {
@@ -390,6 +413,7 @@ export function createAgentChatShellState(input?: {
     },
     workbenchOpen: false,
     queuedInput: null,
+    usage: null,
   };
 }
 
@@ -826,10 +850,35 @@ export function applyAgentChatBackendEvent(
         // switch — otherwise the real user block (now in blocks) renders twice.
         // If the input is genuinely still queued, its user block arrives live.
         queuedInput: null,
+        // Usage is per-thread; a fresh hydrate clears the previous thread's chip
+        // until a usageChanged for this thread arrives.
+        usage: null,
         workbenchOpen:
           payload.workbenchPanes === undefined
             ? state.workbenchOpen
             : payload.workbenchPanes.some((pane) => pane.visible === true),
+      };
+    }
+    case "agentRuntime.usageChanged": {
+      const payload = event.payload as {
+        usage?: {
+          totalTokens?: number;
+          contextWindow?: number;
+          contextUsedPercent?: number;
+          model?: string;
+        };
+      };
+      if (payload.usage === undefined) {
+        return state;
+      }
+      return {
+        ...state,
+        usage: {
+          totalTokens: payload.usage.totalTokens,
+          contextWindow: payload.usage.contextWindow,
+          contextUsedPercent: payload.usage.contextUsedPercent,
+          model: payload.usage.model,
+        },
       };
     }
     case "thread.started": {
@@ -952,8 +1001,38 @@ export function createAgentChatShellViewModel(
     },
     workbenchOpen: state.workbenchOpen,
     queuedInput: state.queuedInput,
+    usage: usageView(state.usage),
     errorMessage: state.errorMessage,
   };
+}
+
+// Formats raw usage into ready-to-render labels. Returns null when there is
+// nothing meaningful to show (no tokens and no context percent).
+function usageView(usage: AgentChatUsage | null): AgentChatUsageView | null {
+  if (usage === null) {
+    return null;
+  }
+  const tokensLabel =
+    usage.totalTokens !== undefined ? `${formatTokenCount(usage.totalTokens)} tokens` : undefined;
+  const contextPercentLabel =
+    usage.contextUsedPercent !== undefined ? `${usage.contextUsedPercent}%` : undefined;
+  if (tokensLabel === undefined && contextPercentLabel === undefined) {
+    return null;
+  }
+  return {
+    tokensLabel,
+    contextPercentLabel,
+    contextUsedPercent: usage.contextUsedPercent,
+  };
+}
+
+// 1234 -> "1.2k", 12345 -> "12.3k", 999 -> "999".
+function formatTokenCount(tokens: number): string {
+  if (tokens < 1000) {
+    return String(tokens);
+  }
+  const thousands = tokens / 1000;
+  return `${thousands.toFixed(thousands < 100 ? 1 : 0)}k`;
 }
 
 function launchOptionsForState(
@@ -971,6 +1050,10 @@ function modelLabelForState(state: AgentChatShellState): string {
   if (binding.agentId === "codex") {
     const reasoning = String(launchOptions?.reasoning ?? "medium");
     return `${codexModelLabel(model)} · ${reasoningLabel(reasoning)}`;
+  }
+  if (binding.agentId === "claude") {
+    const effort = String(launchOptions?.reasoning ?? "high");
+    return `${modelLabelForAgent("claude", model)} · ${reasoningLabel(effort)}`;
   }
   return modelLabelForAgent(binding.agentId, model);
 }
@@ -1000,9 +1083,10 @@ function capitalize(value: string): string {
 
 function permissionLabelForState(state: AgentChatShellState): string {
   const binding = state.thread?.agentBinding ?? state.composer.startOptions.agentBinding;
-  return String(
+  const value = String(
     launchOptionsForState(state)?.permission ?? defaultPermissionForAgent(binding.agentId),
   );
+  return permissionLabelForValue(binding.agentId, value);
 }
 
 function deriveChatState(state: AgentChatShellState): AgentChatState {
@@ -1155,10 +1239,9 @@ function createActiveComposerSurface(
         // Tide API Agents / OpenAI API are hidden for now (provider-CLI only).
         // The openai_api binding + runtime still exist; they're just not offered here.
         rows: [
-          row("provider-cli", "Provider CLI Agents", "hidden PTY", "source", "source"),
-          row("codex", "Codex CLI", "Agent Integration", "ready", binding.agentId === "codex" ? "check" : "identity:codex", binding.agentId === "codex"),
-          row("claude", "Claude Code", "Agent Integration", "ready", binding.agentId === "claude" ? "check" : "identity:claude", binding.agentId === "claude"),
-          row("antigravity", "Antigravity CLI", "Agent Integration", "ready", binding.agentId === "antigravity" ? "check" : "identity:antigravity", binding.agentId === "antigravity"),
+          row("codex", "Codex CLI", "Agent Integration", undefined, binding.agentId === "codex" ? "check" : "identity:codex", binding.agentId === "codex"),
+          row("claude", "Claude Code", "Agent Integration", undefined, binding.agentId === "claude" ? "check" : "identity:claude", binding.agentId === "claude"),
+          row("antigravity", "Antigravity CLI", "Agent Integration", undefined, binding.agentId === "antigravity" ? "check" : "identity:antigravity", binding.agentId === "antigravity"),
         ],
       };
     case "model_menu":
@@ -1170,19 +1253,30 @@ function createActiveComposerSurface(
           source.kind === "tide_api"
             ? [
                 row("gpt-55-high", "gpt-5.5", "OpenAI Provider Account", undefined, "check", selectedModel === "gpt-5.5"),
-                row("provider-model-catalog", "Provider model catalog", "from Tide API runtime"),
-                row("custom-model", "Custom model id...", "API model id", undefined, "plus"),
               ]
             : binding.agentId === "codex"
               ? codexModelMenuRows(state, selectedModel)
-              : cliModelMenuRows(binding.agentId, agentLabel, selectedModel),
+              : binding.agentId === "claude"
+                ? [
+                    ...cliModelMenuRows("claude", agentLabel, selectedModel),
+                    // The Claude Code app's "Effort" control → `--effort`.
+                    row("effort-section", "Effort", "thinking effort", "source", "source"),
+                    ...effortRows(
+                      String(launchOptionsForState(state)?.reasoning ?? "high"),
+                      ["low", "medium", "high", "xhigh", "max"],
+                    ),
+                  ]
+                : cliModelMenuRows(binding.agentId, agentLabel, selectedModel),
       };
     case "permission_menu":
       return {
         surfaceKind,
         title: `${agentLabel} Permission`,
         sourceLabel: agentLabel,
-        rows: permissionRowsForAgent(binding.agentId),
+        rows: permissionRowsForAgent(
+          binding.agentId,
+          String(launchOptionsForState(state)?.permission ?? defaultPermissionForAgent(binding.agentId)),
+        ),
       };
     case "project_menu":
       return {
@@ -1211,10 +1305,11 @@ function createActiveComposerSurface(
         title: "Composer menu",
         sourceLabel: agentLabel,
         rows: [
-          row("files-images", "Files and images", "Attach file or image", undefined, "attach"),
-          row("current-selection", "Current file or selection", "when available", undefined, "file"),
-          row("context", "Browser, Diff, Terminal, or FileTree context", "when available", undefined, "panel"),
-          row("agent-tools", "Agent tools", "selected Agent features", undefined, "tool"),
+          row("files-images", "Files and images", "Attach an image", undefined, "attach"),
+          // Context-attach features are not wired yet — shown disabled, not as
+          // silent no-ops. (selected=false, danger=false, disabled=true)
+          row("current-selection", "Current file or selection", "coming soon", undefined, "file", false, false, true),
+          row("context", "Browser, Diff, Terminal, or FileTree context", "coming soon", undefined, "panel", false, false, true),
         ],
       };
     case "command_suggestions": {
@@ -1244,39 +1339,86 @@ function createActiveComposerSurface(
   }
 }
 
-function permissionRowsForAgent(agentId: string): AgentChatChoiceSurfaceRowView[] {
-  switch (agentId) {
-    case "openai_api":
-      return [
-        row("tide-auto-review", "Auto-review", "Tide tool policy", "Tide API", "check", true),
-        row("tide-ask-first", "Ask before tools", "Tide tool policy", "Tide API"),
-        row("tide-read-only", "Read-only", "Tide workspace policy", "Tide API"),
-      ];
-    case "claude":
-      return [
-        row("default", "default", "provider-native", undefined, "check", true),
-        row("accept-edits", "acceptEdits", "provider-native"),
-        row("auto", "auto", "provider-native"),
-        row("dont-ask", "dontAsk", "provider-native"),
-        row("plan", "plan", "provider-native"),
-        row("bypass-permissions", "bypassPermissions", "provider-native", undefined, "!", false, true),
-      ];
-    case "antigravity":
-      return [
-        row("default", "default", "provider-native", undefined, "check", true),
-        row("sandbox", "sandbox", "provider-native"),
-        row("dangerously-skip-permissions", "dangerously-skip-permissions", "provider-native", undefined, "!", false, true),
-      ];
-    default:
-      return [
-        row("read-only", "read-only", "Access"),
-        row("workspace-write", "workspace-write", "Access", undefined, "check", true),
-        row("danger-full-access", "danger-full-access", "Access", undefined, "!", false, true),
-        row("untrusted", "untrusted", "Approval"),
-        row("on-request", "on-request", "Approval", undefined, ""),
-        row("never", "never", "Approval", undefined, "!", false, true),
-      ];
+// Permission/approval modes, presented to match each provider's own app rather
+// than exposing raw CLI flags: Codex mirrors the Codex app's 3 approval modes,
+// Claude mirrors the Claude app's mode list, Antigravity uses the same friendly
+// shape. `value` is what flows to the Agent Integration (which maps it to the
+// provider's real flags); `label`/`detail` are the human presentation.
+interface PermissionOption {
+  id: string;
+  value: string;
+  label: string;
+  detail: string;
+  danger?: boolean;
+}
+
+const PERMISSION_OPTIONS: Record<string, { default: string; options: PermissionOption[] }> = {
+  codex: {
+    default: "approve-for-me",
+    options: [
+      { id: "codex-ask", value: "ask-for-approval", label: "Ask for approval", detail: "Edits & internet need approval" },
+      { id: "codex-auto", value: "approve-for-me", label: "Approve for me", detail: "Only unsafe actions ask" },
+      { id: "codex-full", value: "full-access", label: "Full access", detail: "Unrestricted files & internet", danger: true },
+    ],
+  },
+  claude: {
+    default: "default",
+    options: [
+      { id: "claude-ask", value: "default", label: "Ask permissions", detail: "Approve edits & tools" },
+      { id: "claude-accept", value: "acceptEdits", label: "Accept edits", detail: "Auto-approve file edits" },
+      { id: "claude-plan", value: "plan", label: "Plan mode", detail: "Plan without editing" },
+      { id: "claude-auto", value: "auto", label: "Auto mode", detail: "Run autonomously" },
+      { id: "claude-bypass", value: "bypassPermissions", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
+    ],
+  },
+  antigravity: {
+    default: "default",
+    options: [
+      { id: "agy-ask", value: "default", label: "Ask for approval", detail: "Approve actions manually" },
+      { id: "agy-sandbox", value: "sandbox", label: "Sandbox", detail: "Run inside a sandbox" },
+      { id: "agy-bypass", value: "dangerously-skip-permissions", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
+    ],
+  },
+  openai_api: {
+    default: "Auto-review",
+    options: [
+      { id: "tide-auto-review", value: "Auto-review", label: "Auto-review", detail: "Tide tool policy" },
+      { id: "tide-ask-first", value: "Ask before tools", label: "Ask before tools", detail: "Tide tool policy" },
+      { id: "tide-read-only", value: "Read-only", label: "Read-only", detail: "Tide workspace policy" },
+    ],
+  },
+};
+
+function permissionConfigForAgent(agentId: string): { default: string; options: PermissionOption[] } {
+  return PERMISSION_OPTIONS[agentId] ?? PERMISSION_OPTIONS.codex;
+}
+
+// Legacy raw permission values (from threads created before the friendly modes)
+// map to the closest current mode so the chip + selected row still make sense.
+function normalizePermissionValue(agentId: string, value: string): string {
+  const config = permissionConfigForAgent(agentId);
+  if (config.options.some((option) => option.value === value)) {
+    return value;
   }
+  if (agentId === "codex") {
+    if (value === "read-only" || value === "untrusted" || value === "on-request") return "ask-for-approval";
+    if (value === "workspace-write" || value === "on-failure") return "approve-for-me";
+    if (value === "danger-full-access" || value === "never" || value === "dangerously-bypass-approvals-and-sandbox") {
+      return "full-access";
+    }
+  }
+  if (agentId === "claude" && value === "dontAsk") return "acceptEdits";
+  return value;
+}
+
+function permissionRowsForAgent(agentId: string, currentValue: string): AgentChatChoiceSurfaceRowView[] {
+  const config = permissionConfigForAgent(agentId);
+  const normalized = normalizePermissionValue(agentId, currentValue);
+  return config.options.map((option) => {
+    const selected = option.value === normalized;
+    const icon = selected ? "check" : option.danger ? "!" : "";
+    return row(option.id, option.label, option.detail, undefined, icon, selected, option.danger ?? false);
+  });
 }
 
 function row(
@@ -1287,8 +1429,9 @@ function row(
   icon = "",
   selected = false,
   danger = false,
+  disabled = false,
 ): AgentChatChoiceSurfaceRowView {
-  return { rowId, label, detail, meta, icon, selected, danger };
+  return { rowId, label, detail, meta, icon, selected, danger, disabled };
 }
 
 function updateComposerLaunchOptions(
@@ -1408,20 +1551,33 @@ interface CliModelOption {
 function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
   switch (agentId) {
     case "claude":
+      // Mirrors the Claude Code app's model list. "Claude default" passes no
+      // --model (the CLI's own default, currently Opus 4.8); the rest pass an
+      // explicit `--model` id.
       return [
-        { value: "Claude default", label: "Default", detail: "Sonnet 4.6" },
-        { value: "sonnet", label: "Sonnet", detail: "everyday tasks" },
-        { value: "opus", label: "Opus", detail: "most capable" },
-        { value: "haiku", label: "Haiku", detail: "fastest" },
+        { value: "Claude default", label: "Default", detail: "Opus 4.8" },
+        { value: "claude-opus-4-8", label: "Opus 4.8" },
+        { value: "claude-opus-4-8[1m]", label: "Opus 4.8 (1M context)" },
+        { value: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+        { value: "claude-haiku-4-5", label: "Haiku 4.5" },
+        { value: "claude-opus-4-7", label: "Opus 4.7", detail: "Legacy" },
+        { value: "claude-opus-4-7[1m]", label: "Opus 4.7 (1M context)", detail: "Legacy" },
+        { value: "claude-opus-4-6", label: "Opus 4.6", detail: "Legacy" },
       ];
     case "antigravity":
-      // gemini models from the local Gemini/Antigravity CLI (`-m, --model`).
+      // Real models from the Antigravity CLI (`agy models`). Effort is baked into
+      // the model variant (Low/Medium/High/Thinking), so there is no separate
+      // effort control. Values are passed verbatim to `agy --model`.
       return [
         { value: "Antigravity default", label: "Default" },
-        { value: "gemini-3-flash-preview", label: "Gemini 3 Flash", detail: "preview" },
-        { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", detail: "most capable" },
-        { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", detail: "fast" },
-        { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite", detail: "fastest" },
+        { value: "Gemini 3.1 Pro (High)", label: "Gemini 3.1 Pro", detail: "High" },
+        { value: "Gemini 3.1 Pro (Low)", label: "Gemini 3.1 Pro", detail: "Low" },
+        { value: "Gemini 3.5 Flash (High)", label: "Gemini 3.5 Flash", detail: "High" },
+        { value: "Gemini 3.5 Flash (Medium)", label: "Gemini 3.5 Flash", detail: "Medium" },
+        { value: "Gemini 3.5 Flash (Low)", label: "Gemini 3.5 Flash", detail: "Low" },
+        { value: "Claude Sonnet 4.6 (Thinking)", label: "Claude Sonnet 4.6", detail: "Thinking" },
+        { value: "Claude Opus 4.6 (Thinking)", label: "Claude Opus 4.6", detail: "Thinking" },
+        { value: "GPT-OSS 120B (Medium)", label: "GPT-OSS 120B", detail: "Medium" },
       ];
     default:
       return [];
@@ -1433,22 +1589,46 @@ function cliModelMenuRows(
   agentLabel: string,
   selectedModel: string,
 ): AgentChatChoiceSurfaceRowView[] {
+  void agentLabel;
+  // No noisy fallback detail (matches the provider apps' clean model lists): a
+  // model shows its own detail (e.g. "Legacy") or nothing.
   const rows = cliModelOptionsForAgent(agentId).map((option) =>
     row(
       `model:${option.value}`,
       option.label,
-      option.detail ?? `${agentLabel} Agent Integration`,
+      option.detail,
       undefined,
       option.value === selectedModel ? "check" : "",
       option.value === selectedModel,
     ),
   );
-  rows.push(row("custom-model", "Custom model id...", "if provider accepts it", undefined, "plus"));
   return rows;
 }
 
-// codex reasoning effort rows map to the `model_reasoning_effort` config knob.
-function reasoningForRow(rowId: string): "low" | "medium" | "high" | "xhigh" | undefined {
+// Reasoning/thinking effort levels, shared by codex (`model_reasoning_effort`)
+// and claude (`--effort`). Codex offers low–xhigh; claude adds "max".
+const REASONING_LEVELS: Record<string, { label: string; detail: string }> = {
+  low: { label: "Low", detail: "fastest, least thorough" },
+  medium: { label: "Medium", detail: "balanced" },
+  high: { label: "High", detail: "slower, more thorough" },
+  xhigh: { label: "Extra High", detail: "slowest, most thorough" },
+  max: { label: "Max", detail: "maximum effort" },
+};
+
+function effortRows(current: string, levels: string[]): AgentChatChoiceSurfaceRowView[] {
+  return levels.map((level) =>
+    row(
+      `reasoning-${level}`,
+      REASONING_LEVELS[level].label,
+      REASONING_LEVELS[level].detail,
+      undefined,
+      current === level ? "check" : "",
+      current === level,
+    ),
+  );
+}
+
+function reasoningForRow(rowId: string): "low" | "medium" | "high" | "xhigh" | "max" | undefined {
   switch (rowId) {
     case "reasoning-low":
       return "low";
@@ -1458,6 +1638,8 @@ function reasoningForRow(rowId: string): "low" | "medium" | "high" | "xhigh" | u
       return "high";
     case "reasoning-xhigh":
       return "xhigh";
+    case "reasoning-max":
+      return "max";
     default:
       return undefined;
   }
@@ -1486,52 +1668,20 @@ function codexModelMenuRows(
     );
   }
   rows.push(
-    row("custom-model", "Custom model id...", "if provider accepts it", undefined, "plus"),
     row("reasoning-section", "Reasoning effort", "model_reasoning_effort", "source", "source"),
-    row("reasoning-low", "Low", "fastest, least thorough", undefined, reasoning === "low" ? "check" : ""),
-    row("reasoning-medium", "Medium", "balanced (default)", undefined, reasoning === "medium" ? "check" : ""),
-    row("reasoning-high", "High", "slower, more thorough", undefined, reasoning === "high" ? "check" : ""),
-    row("reasoning-xhigh", "Extra High", "slowest, most thorough", undefined, reasoning === "xhigh" ? "check" : ""),
+    ...effortRows(reasoning, ["low", "medium", "high", "xhigh"]),
   );
   return rows;
 }
 
 function permissionForRow(rowId: string): string | undefined {
-  switch (rowId) {
-    case "read-only":
-      return "read-only";
-    case "workspace-write":
-      return "workspace-write";
-    case "danger-full-access":
-      return "danger-full-access";
-    case "untrusted":
-      return "untrusted";
-    case "on-request":
-      return "on-request";
-    case "never":
-      return "never";
-    case "accept-edits":
-      return "acceptEdits";
-    case "dont-ask":
-      return "dontAsk";
-    case "bypass-permissions":
-      return "bypassPermissions";
-    case "dangerously-skip-permissions":
-      return "dangerously-skip-permissions";
-    case "tide-auto-review":
-      return "Auto-review";
-    case "tide-ask-first":
-      return "Ask before tools";
-    case "tide-read-only":
-      return "Read-only";
-    case "default":
-    case "auto":
-    case "plan":
-    case "sandbox":
-      return rowId;
-    default:
-      return undefined;
+  for (const config of Object.values(PERMISSION_OPTIONS)) {
+    const option = config.options.find((candidate) => candidate.id === rowId);
+    if (option) {
+      return option.value;
+    }
   }
+  return undefined;
 }
 
 // Default working directory for a brand-new thread. Hardcoded to the primary
@@ -1593,7 +1743,9 @@ function worktreeMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRow
       row(`worktree:${worktree.path}`, label, worktree.path, undefined, "folder", selected === worktree.path),
     );
   }
-  rows.push(row("new-worktree", "New worktree", "create a git worktree", undefined, "folder-plus"));
+  // Creating a worktree from the Composer isn't wired yet (worktrees are created
+  // from the Project rail). Show it disabled rather than as a silent no-op.
+  rows.push(row("new-worktree", "New worktree", "coming soon", undefined, "folder-plus", false, false, true));
   return rows;
 }
 
@@ -1621,7 +1773,8 @@ function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowVi
       );
     }
   }
-  rows.push(row("create-branch", "Create new branch", undefined, undefined, "plus"));
+  // Creating a branch from the Composer isn't wired yet — show it disabled.
+  rows.push(row("create-branch", "Create new branch", "coming soon", undefined, "plus", false, false, true));
   return rows;
 }
 
@@ -1720,16 +1873,16 @@ function modelRowIdForAgent(agentId: string): string {
   }
 }
 
-function defaultPermissionForAgent(agentId: string): string {
-  switch (agentId) {
-    case "claude":
-    case "antigravity":
-      return "default";
-    case "openai_api":
-      return "Auto-review";
-    default:
-      return "workspace-write";
-  }
+export function defaultPermissionForAgent(agentId: string): string {
+  return permissionConfigForAgent(agentId).default;
+}
+
+// The friendly label for a permission value (handles legacy raw values too), used
+// for the composer permission chip.
+function permissionLabelForValue(agentId: string, value: string): string {
+  const config = permissionConfigForAgent(agentId);
+  const normalized = normalizePermissionValue(agentId, value);
+  return config.options.find((option) => option.value === normalized)?.label ?? value;
 }
 
 function composerSurfaceForDraft(draft: string): AgentChatComposerSurfaceKind | null {

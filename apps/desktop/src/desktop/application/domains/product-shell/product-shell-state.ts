@@ -2,6 +2,7 @@ import {
   applyAgentChatBackendEvent,
   createAgentChatShellState,
   createAgentChatShellViewModel,
+  defaultPermissionForAgent,
   selectAgentChatChoiceSurfaceRow,
   setComposerActiveSurface,
   setComposerFolderScope,
@@ -1738,6 +1739,7 @@ function shouldApplyBackendEventToActiveSurfaces(
 function threadIdFromBackendEvent(event: AgentChatBackendEvent): string | undefined {
   switch (event.kind) {
     case "agentRuntime.stateChanged":
+    case "agentRuntime.usageChanged":
     case "providerReadiness.changed":
     case "prompt.changed":
     case "agentSessionBlock.completed":
@@ -2520,16 +2522,35 @@ function defaultStartScope(state: ProductShellState): AgentChatThreadScope {
     : { kind: "scratch", scratchCwd: "Scratch" };
 }
 
+// The user's most-recently-used Start Composer agent + model/permission/reasoning,
+// so a new thread defaults to their last choice instead of always codex/gpt-5.5.
+// Set by the Desktop adapter from persisted storage; null = historical defaults.
+// Module-level (not in ProductShellState) so it survives full New-Thread resets.
+export interface PreferredStartComposer {
+  agentId: ProductShellAgentIdentity;
+  model?: string;
+  permission?: string;
+  reasoning?: string;
+}
+let preferredStartComposer: PreferredStartComposer | null = null;
+
+export function setPreferredStartComposer(defaults: PreferredStartComposer | null): void {
+  preferredStartComposer = defaults;
+}
+
 function createStartAgentChatState(scope?: AgentChatThreadScope): AgentChatShellState {
+  const pref = preferredStartComposer;
+  const agentId = pref?.agentId ?? "codex";
   return createAgentChatShellState({
     startOptions: {
-      agentBinding: agentBindingForShellAgent("codex"),
+      agentBinding: agentBindingForShellAgent(agentId),
       scope: scope ?? { kind: "scratch", scratchCwd: "Scratch" },
       launchOptions: {
-        model: "gpt-5.5",
-        permission: "Auto-review",
+        model: pref?.model ?? "gpt-5.5",
+        permission: pref?.permission ?? defaultPermissionForAgent(agentId),
         worktree: "current folder",
         branch: "main",
+        ...(pref?.reasoning !== undefined ? { reasoning: pref.reasoning } : {}),
       },
     },
   });

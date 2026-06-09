@@ -4,6 +4,7 @@ import type { ThreadStorageRecord } from "../../application/services/thread-pers
 import { readBoundedTail } from "./live-backend-fs.ts";
 import {
   claudeAssistantTextContent,
+  claudeThinkingText,
   parseJsonObject,
   recordField,
   stringField,
@@ -13,6 +14,7 @@ import {
   boundedToolText,
   claudeToolResultItems,
   claudeToolUseItems,
+  codexReasoningText,
   codexToolFramePayload,
   joinTextContent,
 } from "./provider-history-helpers.ts";
@@ -71,6 +73,28 @@ function conversationBlock(input: {
   };
 }
 
+function reasoningConversationBlock(input: {
+  threadId: string;
+  agentId: AgentId;
+  blockId: string;
+  body: string;
+  timestamp: string;
+}): AgentSessionBlock {
+  return {
+    blockId: input.blockId,
+    threadId: input.threadId,
+    agentId: input.agentId,
+    kind: "reasoning",
+    role: "reasoning",
+    sourceFrameIds: [],
+    status: "complete",
+    title: "Thinking",
+    body: input.body,
+    createdAt: input.timestamp,
+    updatedAt: input.timestamp,
+  };
+}
+
 function toolConversationBlock(input: {
   threadId: string;
   agentId: AgentId;
@@ -114,6 +138,18 @@ export function rebuildCodexConversation(
     if (record?.type === "event_msg") {
       const isUser = payload?.type === "user_message";
       if (!isUser && payload?.type !== "agent_message") {
+        const reasoning = payload !== undefined ? codexReasoningText(payload) : undefined;
+        if (reasoning !== undefined) {
+          blocks.push(
+            reasoningConversationBlock({
+              threadId,
+              agentId,
+              blockId: `reasoning:${threadId}:${sessionId}:${index}`,
+              body: reasoning,
+              timestamp,
+            }),
+          );
+        }
         continue;
       }
       const body = stringField(payload, "message") ?? (isUser ? joinTextContent(payload?.content) : undefined);
@@ -124,6 +160,19 @@ export function rebuildCodexConversation(
       continue;
     }
     if (record?.type !== "response_item" || payload === undefined) {
+      continue;
+    }
+    const reasoning = codexReasoningText(payload);
+    if (reasoning !== undefined) {
+      blocks.push(
+        reasoningConversationBlock({
+          threadId,
+          agentId,
+          blockId: `reasoning:${threadId}:${sessionId}:${index}`,
+          body: reasoning,
+          timestamp,
+        }),
+      );
       continue;
     }
     const toolFrame = codexToolFramePayload({
@@ -178,6 +227,20 @@ export function rebuildClaudeConversation(
       continue;
     }
     const blockId = `provider:${threadId}:${sessionId}:${index}`;
+    if (!isUser) {
+      const thinking = claudeThinkingText(message.content);
+      if (thinking !== undefined) {
+        blocks.push(
+          reasoningConversationBlock({
+            threadId,
+            agentId,
+            blockId: `reasoning:${threadId}:${sessionId}:${index}`,
+            body: thinking,
+            timestamp,
+          }),
+        );
+      }
+    }
     const body = isUser ? joinTextContent(message.content) : claudeAssistantTextContent(message.content);
     if (body !== undefined && body.length > 0) {
       blocks.push(conversationBlock({ threadId, sessionId, index, agentId, isUser, body, timestamp }));

@@ -48,6 +48,37 @@ export function codexToolOutputText(output: unknown): string {
   return joinTextContent(output) ?? "";
 }
 
+// Extracts readable reasoning/thinking text from a codex rollout payload, whether
+// it arrives as an `event_msg` (type "agent_reasoning", carrying `text`) or a
+// `response_item` (type "reasoning", carrying a `summary` of summary_text parts).
+// Returns undefined when the reasoning is encrypted/empty (nothing to show).
+export function codexReasoningText(payload: Record<string, unknown>): string | undefined {
+  const type = stringField(payload, "type");
+  if (type === "agent_reasoning" || type === "agent_reasoning_delta") {
+    const text = stringField(payload, "text");
+    return text !== undefined && text.trim().length > 0 ? text : undefined;
+  }
+  if (type !== "reasoning") {
+    return undefined;
+  }
+  const parts: string[] = [];
+  for (const key of ["summary", "content"]) {
+    const value = (payload as Record<string, unknown>)[key];
+    if (!Array.isArray(value)) {
+      continue;
+    }
+    for (const item of value) {
+      const record = unknownRecord(item);
+      const text = record !== undefined ? stringField(record, "text") : undefined;
+      if (text !== undefined && text.trim().length > 0) {
+        parts.push(text);
+      }
+    }
+  }
+  const joined = parts.join("\n\n").trim();
+  return joined.length > 0 ? joined : undefined;
+}
+
 export function codexToolFramePayload(input: {
   payload: Record<string, unknown>;
   threadId: string;

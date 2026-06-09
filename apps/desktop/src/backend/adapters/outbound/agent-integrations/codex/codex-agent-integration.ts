@@ -444,7 +444,16 @@ function codexLaunchOptionArgs(
   }
 
   const permission = stringValue(launchOptions?.permission);
-  if (
+  // Friendly approval modes (mirroring the Codex app) expand to a sandbox +
+  // approval-policy pair. Legacy raw values (workspace-write, on-request, …) from
+  // older threads still map directly to a single flag below.
+  if (permission === "ask-for-approval") {
+    args.push("--sandbox", "workspace-write", "--ask-for-approval", "on-request");
+  } else if (permission === "approve-for-me") {
+    args.push("--sandbox", "workspace-write", "--ask-for-approval", "on-failure");
+  } else if (permission === "full-access") {
+    args.push("--dangerously-bypass-approvals-and-sandbox");
+  } else if (
     permission === "read-only" ||
     permission === "workspace-write" ||
     permission === "danger-full-access"

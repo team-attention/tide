@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { readBoundedTail } from "./live-backend-fs.ts";
 import {
   claudeAssistantTextContent,
+  claudeThinkingText,
   inputTextContentEquals,
   parseJsonObject,
   recordField,
@@ -13,6 +14,7 @@ import {
   boundedToolText,
   claudeToolResultItems,
   claudeToolUseItems,
+  codexReasoningText,
   codexToolFramePayload,
 } from "./provider-history-helpers.ts";
 import {
@@ -193,28 +195,59 @@ export function readCodexProviderHistoryFramesFromHome(input: {
       const record = parseJsonObject(lines[index]);
       const payload = recordField(record, "payload");
       if (record?.type === "event_msg") {
-        if (payload?.type !== "agent_message") {
+        if (payload?.type === "agent_message") {
+          const message = stringField(payload, "message");
+          if (message === undefined) {
+            continue;
+          }
+          pushFrame(
+            index,
+            {
+              type: "message",
+              role: "agent",
+              status: "complete",
+              blockId: `provider:${input.threadId}:${sessionId}:${index}`,
+              body: message,
+              sourceRuntimeId: input.runtimeId,
+            },
+            message,
+          );
           continue;
         }
-        const message = stringField(payload, "message");
-        if (message === undefined) {
-          continue;
+        const reasoning = payload !== undefined ? codexReasoningText(payload) : undefined;
+        if (reasoning !== undefined) {
+          pushFrame(
+            index,
+            {
+              type: "reasoning",
+              role: "reasoning",
+              status: "complete",
+              blockId: `reasoning:${input.threadId}:${sessionId}:${index}`,
+              body: reasoning,
+              sourceRuntimeId: input.runtimeId,
+            },
+            reasoning,
+          );
         }
-        pushFrame(
-          index,
-          {
-            type: "message",
-            role: "agent",
-            status: "complete",
-            blockId: `provider:${input.threadId}:${sessionId}:${index}`,
-            body: message,
-            sourceRuntimeId: input.runtimeId,
-          },
-          message,
-        );
         continue;
       }
       if (record?.type !== "response_item" || payload === undefined) {
+        continue;
+      }
+      const reasoning = codexReasoningText(payload);
+      if (reasoning !== undefined) {
+        pushFrame(
+          index,
+          {
+            type: "reasoning",
+            role: "reasoning",
+            status: "complete",
+            blockId: `reasoning:${input.threadId}:${sessionId}:${index}`,
+            body: reasoning,
+            sourceRuntimeId: input.runtimeId,
+          },
+          reasoning,
+        );
         continue;
       }
       const toolFrame = codexToolFramePayload({
@@ -308,6 +341,21 @@ export function readClaudeProviderHistoryFramesFromHome(input: {
         // Agent text becomes a message block; tool_use items become tool_call
         // blocks. Both come from the same assistant line, so disambiguate the
         // block ids by call id.
+        const thinking = claudeThinkingText(message.content);
+        if (thinking !== undefined) {
+          pushFrame(
+            `${index}:thinking`,
+            {
+              type: "reasoning",
+              role: "reasoning",
+              status: "complete",
+              blockId: `reasoning:${input.threadId}:${sessionId}:${index}`,
+              body: thinking,
+              sourceRuntimeId: input.runtimeId,
+            },
+            thinking,
+          );
+        }
         const body = claudeAssistantTextContent(message.content);
         if (body !== undefined) {
           pushFrame(

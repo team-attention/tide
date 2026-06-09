@@ -271,9 +271,12 @@ test("the_queued_row_renders_an_edit_affordance_while_a_turn_runs", () => {
 
   const markup = renderShell(queued);
 
-  // The queued row shows the "대기 중" badge and an edit affordance to fix it.
+  // A message queued behind a live turn docks to the Composer as a "steer" chip
+  // (Codex-style): the "대기 중" badge plus an edit affordance to fix it before it
+  // runs.
   assert.ok(markup.includes("대기 중"));
-  assert.ok(markup.includes("data-edit-queued"));
+  assert.ok(markup.includes("composer-steer"));
+  assert.ok(markup.includes("Edit queued message"));
 });
 
 test("follow_up_carries_a_changed_model_in_launch_options", () => {
@@ -662,7 +665,6 @@ test("model_chip_routes_menu_data_by_agent_runtime_source", () => {
   assert.match(codexHtml, /Codex Agent Integration/);
   assert.doesNotMatch(codexHtml, /OpenAI Provider Account/);
   assert.match(openAiHtml, /OpenAI Provider Account/);
-  assert.match(openAiHtml, /from Tide API runtime/);
   assert.doesNotMatch(openAiHtml, /Codex Agent Integration/);
 });
 
@@ -708,7 +710,7 @@ test("selecting_antigravity_updates_visible_model_and_permission_defaults_away_f
   assert.equal(selected.composer.startOptions.agentBinding.agentId, "antigravity");
   assert.equal(selected.composer.startOptions.agentBinding.runtimeSource?.kind, "provider_cli");
   assert.equal(view.composer.modelLabel, "Default");
-  assert.equal(view.composer.permissionLabel, "default");
+  assert.equal(view.composer.permissionLabel, "Ask for approval");
   assert.notEqual(view.composer.modelLabel, "GPT-5.5 High");
 });
 
@@ -750,7 +752,7 @@ test("follow_up_composer_model_label_uses_active_thread_launch_options", () => {
 
   assert.equal(view.composer.mode, "follow_up");
   assert.equal(view.composer.modelLabel, "Default");
-  assert.equal(view.composer.permissionLabel, "default");
+  assert.equal(view.composer.permissionLabel, "Ask for approval");
 });
 
 test("follow_up_composer_model_label_falls_back_to_active_agent_default", () => {
@@ -779,7 +781,7 @@ test("follow_up_composer_model_label_falls_back_to_active_agent_default", () => 
   const view = createAgentChatShellViewModel(hydrated);
 
   assert.equal(view.composer.modelLabel, "Default");
-  assert.equal(view.composer.permissionLabel, "default");
+  assert.equal(view.composer.permissionLabel, "Ask for approval");
 });
 
 test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
@@ -805,20 +807,22 @@ test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
     ).state,
   );
 
-  assert.match(codexHtml, /workspace-write/);
-  assert.match(codexHtml, /on-request/);
-  assert.doesNotMatch(codexHtml, /acceptEdits/);
-  assert.doesNotMatch(codexHtml, /dangerously-skip-permissions/);
-  assert.match(claudeHtml, /acceptEdits/);
-  assert.match(claudeHtml, /bypassPermissions/);
-  assert.doesNotMatch(claudeHtml, /workspace-write/);
-  assert.match(antigravityHtml, /sandbox/);
-  assert.match(antigravityHtml, /dangerously-skip-permissions/);
-  assert.doesNotMatch(antigravityHtml, /acceptEdits/);
+  // Codex mirrors the Codex app's 3 friendly approval modes (not raw CLI flags).
+  assert.match(codexHtml, /Approve for me/);
+  assert.match(codexHtml, /Full access/);
+  assert.doesNotMatch(codexHtml, /Accept edits/);
+  assert.doesNotMatch(codexHtml, /workspace-write/);
+  // Claude mirrors the Claude app's mode labels.
+  assert.match(claudeHtml, /Accept edits/);
+  assert.match(claudeHtml, /Bypass permissions/);
+  assert.doesNotMatch(claudeHtml, /Approve for me/);
+  // Antigravity uses the same friendly shape.
+  assert.match(antigravityHtml, /Sandbox/);
+  assert.match(antigravityHtml, /Bypass permissions/);
+  assert.doesNotMatch(antigravityHtml, /Accept edits/);
   assert.match(openAiHtml, /Tide tool policy/);
-  assert.match(openAiHtml, /Tide API/);
   assert.doesNotMatch(openAiHtml, /workspace-write/);
-  assert.doesNotMatch(openAiHtml, /bypassPermissions/);
+  assert.doesNotMatch(openAiHtml, /Bypass permissions/);
 });
 
 test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", () => {
@@ -840,7 +844,10 @@ test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", 
   assert.match(optionsHtml, /chip-popover/);
   assert.match(optionsHtml, /Files and images/);
   assert.match(optionsHtml, /Current file or selection/);
-  assert.match(optionsHtml, /Agent tools/);
+  // Unwired context-attach rows are shown disabled (greyed), not as no-ops; the
+  // placeholder "Agent tools" row was removed entirely.
+  assert.match(optionsHtml, /choice-surface__row--disabled/);
+  assert.doesNotMatch(optionsHtml, /Agent tools/);
   assert.doesNotMatch(optionsHtml, /This popover never shows/i);
   assert.match(slashHtml, /Commands/);
   assert.match(slashHtml, /\/check/);
@@ -898,7 +905,7 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
   const permissionSelected = selectAgentChatChoiceSurfaceRow(
     setComposerActiveSurface(projectSelected, "permission_menu").state,
     "permission_menu",
-    "accept-edits",
+    "claude-accept",
   ).state;
   const html = renderShell(permissionSelected);
 
