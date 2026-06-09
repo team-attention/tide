@@ -2230,6 +2230,10 @@ class FakeAgentIntegration implements AgentIntegrationPort {
     return this.promptDetector?.(input) ?? null;
   }
 
+  turnEndSignalEvents(): readonly string[] {
+    return this.agentId === "codex" ? ["codex-stop"] : ["agent-idle"];
+  }
+
   initialTurnReadiness(): RuntimeReadinessGate {
     return this.readinessGate;
   }
