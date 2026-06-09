@@ -58,7 +58,7 @@ pub fn set_gateway_socket_path(path: String) {
     let _ = GATEWAY_SOCKET_PATH.set(path);
 }
 
-/// Directory containing agent wrapper scripts (claude, codex, gemini).
+/// Directory containing agent wrapper scripts (claude, codex, gemini, agy, opencode).
 /// Resolved from the .app bundle's Contents/Resources/bin/ at startup.
 /// Prepended to PATH in every PTY so wrappers shadow the real binaries.
 static AGENT_WRAPPER_DIR: OnceLock<String> = OnceLock::new();

@@ -68,6 +68,8 @@ pub(crate) fn wrapped_agent_display_name(agent_name: &str) -> Option<&'static st
         "claude" | "Claude Code" => Some("Claude Code"),
         "codex" | "Codex" => Some("Codex"),
         "gemini" | "Gemini" => Some("Gemini"),
+        "antigravity" | "Antigravity" => Some("Antigravity"),
+        "opencode" => Some("opencode"),
         "aider" | "Aider" => Some("Aider"),
         "cursor-agent" | "Cursor" => Some("Cursor"),
         "copilot" | "Copilot" => Some("Copilot"),

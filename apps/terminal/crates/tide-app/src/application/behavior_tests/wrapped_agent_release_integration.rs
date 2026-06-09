@@ -583,6 +583,77 @@ fn antigravity_wrapper_wires_lifecycle_hooks_and_presence_like_other_agents() {
     assert!(wrapper.contains("notify agent-needs-input --agent antigravity"));
 }
 
+// --- opencode Wrapped Agent (Spec: docs/specs/opencode-wrapped-agent.md) ---
+
+#[test]
+fn opencode_wrapper_skips_injection_outside_tide() {
+    // UC-1 BR-1: The wrapper execs the real `opencode` unchanged when not inside Tide.
+    let wrapper = include_str!("../../../resources/bin/opencode");
+
+    assert!(wrapper.contains(r#"command -v opencode"#));
+    assert!(wrapper.contains(r#"[ -z "$TIDE_TERMINAL_BIN" ] && exec "$REAL_CMD" "$@""#));
+}
+
+#[test]
+fn opencode_wrapper_injects_mcp_and_context_via_opencode_config_without_mutating_user_config() {
+    // UC-1 BR-2, BR-3 + UC-2 BR-1, BR-3: The wrapper injects the tide-terminal MCP
+    // server (per-Pane env), Tide Tool Discovery Context (instructions), and the
+    // lifecycle plugin through a single Tide-owned OPENCODE_CONFIG overlay that is
+    // merged between global and project config, so the user's real
+    // ~/.config/opencode is never read or rewritten.
+    let wrapper = include_str!("../../../resources/bin/opencode");
+
+    // additive overlay via OPENCODE_CONFIG (not a rewrite of the user's config)
+    assert!(wrapper.contains(r#"OPENCODE_CONFIG="$CONFIG_FILE""#));
+    // MCP server: argv-array command + per-Pane environment block + local type
+    assert!(wrapper.contains(r#""tide-terminal""#));
+    assert!(wrapper.contains(r#""command": ["$TIDE_TERMINAL_BIN", "mcp"]"#));
+    assert!(wrapper.contains(r#""TIDE_TERMINAL_SOCKET": "$TIDE_TERMINAL_SOCKET""#));
+    assert!(wrapper.contains(r#""TIDE_TERMINAL_PANE": "$TIDE_TERMINAL_PANE""#));
+    assert!(wrapper.contains(r#""TIDE_TERMINAL_WINDOW": "$TIDE_TERMINAL_WINDOW""#));
+    assert!(wrapper.contains(r#""type": "local""#));
+    // Tide Tool Discovery Context via instructions (absolute path)
+    assert!(wrapper.contains(r#""instructions""#));
+    assert!(wrapper.contains("prefer Tide MCP tools"));
+    // lifecycle plugin referenced by absolute path (a "file" plugin)
+    assert!(wrapper.contains(r#""plugin""#));
+    // must never edit the user's real opencode config
+    assert!(!wrapper.contains(".config/opencode/opencode.json"));
+}
+
+#[test]
+fn opencode_wrapper_wires_lifecycle_hooks_and_presence_like_other_agents() {
+    // UC-3 BR-1, BR-2, BR-3: attach/detach presence via the same notify path, plus
+    // a plugin wiring chat.message -> running, permission.ask -> needs-input,
+    // session.idle -> idle, resolving the Pane from the inherited env.
+    let wrapper = include_str!("../../../resources/bin/opencode");
+
+    assert!(wrapper.contains(r#"notify "$1" --pane "$TIDE_TERMINAL_PANE" --agent opencode"#));
+    assert!(wrapper.contains("tide_notify agent-attached"));
+    assert!(wrapper.contains("trap 'tide_notify agent-detached' EXIT"));
+    // plugin lifecycle hooks mapped to Tide notify
+    assert!(wrapper.contains(r#""chat.message""#));
+    assert!(wrapper.contains(r#""permission.ask""#));
+    assert!(wrapper.contains(r#"session.idle"#));
+    assert!(wrapper.contains("agent-running"));
+    assert!(wrapper.contains("agent-needs-input"));
+    assert!(wrapper.contains("agent-idle"));
+    // plugin resolves the Pane from the inherited env, not a baked-in id
+    assert!(wrapper.contains("process.env.TIDE_TERMINAL_PANE"));
+    assert!(wrapper.contains("--agent opencode"));
+}
+
+#[test]
+fn wrapped_agent_display_name_covers_opencode_and_antigravity() {
+    // UC-4 BR-1, BR-2: auto-registered wrapper hooks resolve a real display name
+    // instead of the generic "Agent" fallback.
+    use crate::state::gateway_status::wrapped_agent_display_name;
+
+    assert_eq!(wrapped_agent_display_name("opencode"), Some("opencode"));
+    assert_eq!(wrapped_agent_display_name("antigravity"), Some("Antigravity"));
+    assert_eq!(wrapped_agent_display_name("Antigravity"), Some("Antigravity"));
+}
+
 #[test]
 fn notify_resolves_pane_from_env_when_pane_flag_omitted() {
     // UC-4: Plugin hooks are installed globally and cannot bake a Pane id, so
