@@ -3887,25 +3887,33 @@ button {
 }
 .workbench-md-toggle__pick--add svg { color: #fff; }
 
+/* While picking blocks, the preview doesn't select text — the drag picks blocks. */
+.workbench-md[data-md-picking="true"] .workbench-md-preview {
+  user-select: none;
+  cursor: crosshair;
+}
 .workbench-md[data-md-picking="true"] .workbench-md-preview * { cursor: crosshair !important; }
 .workbench-md-pick-hover {
-  outline: 2px dashed var(--tide-action, #4c8bf5);
+  outline: 2px dashed #3b82f6;
   outline-offset: 2px;
   border-radius: 3px;
 }
-/* A confirmed (clicked) block stays solidly highlighted while picking more. */
+/* A picked block stays clearly highlighted (solid border + fill) while picking. */
 .workbench-md-pick-selected {
-  outline: 2px solid var(--tide-action, #4c8bf5);
+  outline: 2px solid #2563eb !important;
   outline-offset: 2px;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--tide-action, #4c8bf5) 14%, transparent) !important;
+  background: rgba(37, 99, 235, 0.16) !important;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
 }
 
 /* Make text selections clearly visible (so the floating "Add to chat" reads as
    acting on a highlighted region) in the markdown preview and the transcript. */
 .workbench-md-preview ::selection,
-.agent-session ::selection {
-  background: color-mix(in srgb, var(--tide-action, #4c8bf5) 32%, transparent);
+.workbench-md-preview *::selection,
+.agent-session ::selection,
+.agent-session *::selection {
+  background: rgba(37, 99, 235, 0.4);
 }
 
 /* Obsidian-style reading view, conformed to the Figma editor typography. */

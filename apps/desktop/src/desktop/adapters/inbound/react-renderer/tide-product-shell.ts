@@ -3094,9 +3094,11 @@ function WorkbenchMarkdownView(props: {
       label,
       text: `From \`${path}\` (preview):\n\n${text.trim().split("\n").map((l) => `> ${l}`).join("\n")}`,
     });
-  // Drag-selection toolbar (host DOM — no injection needed).
+  // Drag-selection toolbar (host DOM — no injection needed). Off while picking
+  // blocks (that drag selects blocks, not text).
   useEffect(() => {
-    if (mode !== "preview") {
+    if (mode !== "preview" || pickBlock) {
+      setSelToolbar(null);
       return undefined;
     }
     const onUp = () => {
@@ -3112,20 +3114,25 @@ function WorkbenchMarkdownView(props: {
     };
     document.addEventListener("mouseup", onUp);
     return () => document.removeEventListener("mouseup", onUp);
-  }, [mode]);
+  }, [mode, pickBlock]);
   const clearPickedBlocks = () => {
     pickedRef.current.forEach((el) => el.classList.remove("workbench-md-pick-selected"));
     pickedRef.current.clear();
     setPickedCount(0);
   };
-  // Block-pick mode: hover-highlight blocks; click toggles each into the picked
-  // set (multi-select). A confirm attaches all picked blocks at once.
+  // Block-pick mode: hover-highlight blocks; click toggles one, and dragging
+  // across blocks selects (or deselects) them all at once. A confirm attaches
+  // every picked block.
   useEffect(() => {
     const root = previewRef.current;
     if (!pickBlock || root === null) {
       return undefined;
     }
     let last: HTMLElement | null = null;
+    let dragging = false;
+    // While dragging, whether we are adding blocks or removing them (decided by
+    // the first block under the pointer).
+    let dragAdds = true;
     const blockOf = (target: EventTarget | null): HTMLElement | null => {
       let node = target as HTMLElement | null;
       while (node !== null && node.parentElement !== root && node !== root) {
@@ -3133,34 +3140,53 @@ function WorkbenchMarkdownView(props: {
       }
       return node !== null && node !== root ? node : null;
     };
-    const over = (event: MouseEvent) => {
-      const block = blockOf(event.target);
-      if (last !== null) last.classList.remove("workbench-md-pick-hover");
-      last = block;
-      if (block !== null) block.classList.add("workbench-md-pick-hover");
-    };
-    const click = (event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const block = blockOf(event.target);
-      if (block === null) {
-        return;
-      }
-      if (pickedRef.current.has(block)) {
-        pickedRef.current.delete(block);
-        block.classList.remove("workbench-md-pick-selected");
-      } else {
+    const apply = (block: HTMLElement, add: boolean) => {
+      if (add) {
         pickedRef.current.add(block);
         block.classList.add("workbench-md-pick-selected");
+      } else {
+        pickedRef.current.delete(block);
+        block.classList.remove("workbench-md-pick-selected");
       }
       setPickedCount(pickedRef.current.size);
     };
-    root.addEventListener("mouseover", over);
-    root.addEventListener("click", click, true);
+    const onDown = (event: MouseEvent) => {
+      const block = blockOf(event.target);
+      if (block === null) return;
+      event.preventDefault();
+      dragging = true;
+      dragAdds = !pickedRef.current.has(block);
+      apply(block, dragAdds);
+    };
+    const onOver = (event: MouseEvent) => {
+      const block = blockOf(event.target);
+      if (last !== null) last.classList.remove("workbench-md-pick-hover");
+      last = block;
+      if (block !== null && !pickedRef.current.has(block)) {
+        block.classList.add("workbench-md-pick-hover");
+      }
+      if (dragging && block !== null) {
+        apply(block, dragAdds);
+      }
+    };
+    const onUp = () => {
+      dragging = false;
+    };
+    // Suppress the native click/selection so picking never also selects text.
+    const swallow = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    root.addEventListener("mousedown", onDown);
+    root.addEventListener("mouseover", onOver);
+    document.addEventListener("mouseup", onUp);
+    root.addEventListener("click", swallow, true);
     return () => {
       if (last !== null) last.classList.remove("workbench-md-pick-hover");
-      root.removeEventListener("mouseover", over);
-      root.removeEventListener("click", click, true);
+      root.removeEventListener("mousedown", onDown);
+      root.removeEventListener("mouseover", onOver);
+      document.removeEventListener("mouseup", onUp);
+      root.removeEventListener("click", swallow, true);
     };
   }, [pickBlock]);
   // Render once per source string (cached), so unrelated re-renders don't
