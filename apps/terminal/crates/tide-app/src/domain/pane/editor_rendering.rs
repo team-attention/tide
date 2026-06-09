@@ -970,7 +970,7 @@ impl EditorPane {
     }
 
     /// Whether the preview content is long enough to need a scrollbar.
-    fn preview_needs_scrollbar(&self, rect: Rect, cell_height: f32) -> bool {
+    pub(crate) fn preview_needs_scrollbar(&self, rect: Rect, cell_height: f32) -> bool {
         let visible_rows = (rect.height / cell_height).floor() as usize;
         self.preview_line_count() > visible_rows
     }

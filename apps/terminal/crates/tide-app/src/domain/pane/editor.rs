@@ -875,7 +875,16 @@ impl EditorPane {
         } else {
             GUTTER_WIDTH_CELLS as f32 * cell_size.width
         };
-        let content_x = target_rect.x + gutter_width;
+        // Preview text is centered inside a readable column, so the rendered
+        // glyphs start at `target_rect.x + content_inset`, not the pane edge.
+        // The hit-test must use the same origin or clicks land on the wrong
+        // column (selection appears shifted into the left margin).
+        let preview_inset = if self.preview_mode {
+            self.preview_content_inset_for_target(target_rect, cell_size)
+        } else {
+            0.0
+        };
+        let content_x = target_rect.x + gutter_width + preview_inset;
         let pos = if clamp_to_target {
             let max_x = (target_rect.x + target_rect.width - 0.001).max(content_x);
             let max_y = (target_rect.y + target_rect.height - 0.001).max(target_rect.y);
@@ -903,10 +912,12 @@ impl EditorPane {
         rel_col: usize,
     ) -> Option<(usize, usize)> {
         if self.preview_mode {
-            return Some((
-                self.preview_scroll + rel_row,
-                self.preview_h_scroll + rel_col,
-            ));
+            let row = self.preview_scroll + rel_row;
+            // Clicking in a line's trailing whitespace anchors at the line end
+            // rather than at an out-of-range column far past the text.
+            let col =
+                (self.preview_h_scroll + rel_col).min(self.preview_line_display_width(row));
+            return Some((row, col));
         }
         if self.effective_soft_wrap() {
             let visual_row = self.soft_wrap_visual_scroll() + rel_row;
@@ -1088,6 +1099,31 @@ impl EditorPane {
     }
 
     /// Horizontal inset for centered full-preview content on wide Panes.
+    /// Left inset of the centered preview text column for a content rect,
+    /// accounting for a reserved scrollbar. Shared by the renderer, the
+    /// selection hit-test, and the selection rect builder so they stay aligned.
+    pub(crate) fn preview_content_inset_for_target(&self, rect: Rect, cell_size: Size) -> f32 {
+        let scrollbar_reserved = if self.preview_needs_scrollbar(rect, cell_size.height) {
+            SCROLLBAR_WIDTH
+        } else {
+            0.0
+        };
+        self.preview_content_inset_for_rect(rect, cell_size, scrollbar_reserved)
+    }
+
+    /// Display-cell width of a rendered preview line (CJK chars count as 2).
+    pub(crate) fn preview_line_display_width(&self, row: usize) -> usize {
+        use unicode_width::UnicodeWidthChar;
+        self.preview_lines().get(row).map_or(0, |line| {
+            line.spans
+                .iter()
+                .flat_map(|s| s.text.chars())
+                .filter(|c| *c != '\n')
+                .map(|c| c.width().unwrap_or(1))
+                .sum()
+        })
+    }
+
     pub(crate) fn preview_content_inset_for_rect(
         &self,
         rect: Rect,

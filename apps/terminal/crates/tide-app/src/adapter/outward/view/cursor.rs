@@ -485,43 +485,48 @@ fn render_preview_selection(
     sel: &crate::pane::Selection,
 ) {
     let cell_size = renderer.cell_size();
+    for rect in preview_selection_rects(pane, inner, cell_size, sel) {
+        let clipped = rect.clip_to(&inner);
+        if clipped.width > 0.0 && clipped.height > 0.0 {
+            renderer.draw_rect(clipped, p.selection);
+        }
+    }
+}
+
+/// Selection rects for the Markdown preview. Origin matches the centered
+/// readable column used by the preview renderer (`content_inset`), so the
+/// highlight sits exactly under the glyphs rather than in the left margin.
+pub(crate) fn preview_selection_rects(
+    pane: &crate::pane::editor::EditorPane,
+    inner: Rect,
+    cell_size: crate::tide_core::Size,
+    sel: &crate::pane::Selection,
+) -> Vec<Rect> {
     let (start, end) = if sel.anchor <= sel.end {
         (sel.anchor, sel.end)
     } else {
         (sel.end, sel.anchor)
     };
     if start == end {
-        return;
+        return Vec::new();
     }
-    let sel_color = p.selection;
     let scroll = pane.preview_scroll;
     let h_scroll = pane.preview_h_scroll;
     let visible_rows = (inner.height / cell_size.height).ceil() as usize;
-    let preview_lines = pane.preview_lines();
+    let content_inset = pane.preview_content_inset_for_target(inner, cell_size);
 
+    let mut rects = Vec::new();
     for row in start.0..=end.0 {
         if row < scroll || row >= scroll + visible_rows {
             continue;
         }
         let visual_row = row - scroll;
-        let col_start = if row == start.0 { start.1 } else { 0 };
+        let line_width = pane.preview_line_display_width(row);
+        let col_start = if row == start.0 { start.1.min(line_width) } else { 0 };
         let col_end = if row == end.0 {
-            end.1
+            end.1.min(line_width)
         } else {
-            // Full line width from preview spans
-            preview_lines.get(row).map_or(0, |line| {
-                use unicode_width::UnicodeWidthChar;
-                line.spans
-                    .iter()
-                    .map(|s| {
-                        s.text
-                            .chars()
-                            .filter(|c| *c != '\n')
-                            .map(|c| c.width().unwrap_or(1))
-                            .sum::<usize>()
-                    })
-                    .sum()
-            })
+            line_width
         };
         if col_start >= col_end {
             continue;
@@ -532,11 +537,12 @@ fn render_preview_selection(
         if vis_start >= vis_end {
             continue;
         }
-        let rx = inner.x + vis_start as f32 * cell_size.width;
+        let rx = inner.x + content_inset + vis_start as f32 * cell_size.width;
         let ry = inner.y + visual_row as f32 * cell_size.height;
         let rw = (vis_end - vis_start) as f32 * cell_size.width;
-        renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), sel_color);
+        rects.push(Rect::new(rx, ry, rw, cell_size.height));
     }
+    rects
 }
 
 /// Render matching bracket highlights for an editor pane.

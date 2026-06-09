@@ -28,6 +28,8 @@ pub(crate) use chrome::{
 #[cfg(test)]
 pub(crate) use cursor::editor_selection_rects;
 #[cfg(test)]
+pub(crate) use cursor::preview_selection_rects;
+#[cfg(test)]
 pub(crate) use header::{header_action_raster_icon_asset, header_close_raster_icon_asset};
 #[cfg(test)]
 pub(crate) use launcher::launcher_icon_raster_icon_asset;

@@ -428,3 +428,92 @@ fn wrapped_ime_cursor_area_matches_editor_cursor_geometry() {
     assert_eq!(ime_rect.width.to_bits(), cell_size.width.to_bits());
     assert_eq!(ime_rect.height.to_bits(), cursor_rect.height.to_bits());
 }
+
+// --- UC-1: KeepDocumentChromeAndCursorLocked (Markdown preview selection) ---
+
+/// Build a Markdown preview pane wide enough that the centered readable column
+/// leaves a non-zero left inset, then prime the preview cache. Returns the pane
+/// and its outer pane rect (the renderer derives the content rect from it).
+fn wide_preview_pane(line: &str) -> (EditorPane, Rect, Size) {
+    let mut pane = EditorPane::new_empty(1);
+    pane.editor.buffer.file_path = Some(PathBuf::from("note.md"));
+    pane.preview_mode = true;
+    pane.editor.buffer.lines = vec![line.to_string()];
+
+    // 1200px wide pane → content width 1176 > readable 768 → inset > 0.
+    let pane_rect = Rect::new(0.0, 0.0, 1200.0, 320.0);
+    let cell_size = Size::new(8.0, 16.0);
+    let content_rect = pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size);
+    pane.prepare_inline_caches(content_rect, cell_size, false);
+    (pane, pane_rect, cell_size)
+}
+
+#[test]
+fn preview_selection_highlight_aligns_with_centered_text_column() {
+    // UC-1 BR-2: In Markdown preview the selection highlight must use the same
+    // centered readable-column origin as the rendered glyphs, not the pane edge,
+    // so it sits under the text instead of floating in the left margin.
+    use crate::adapter::outward::view::preview_selection_rects;
+
+    let (pane, pane_rect, cell_size) = wide_preview_pane("Hello world");
+    let content_rect = pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size);
+    let content_inset = pane.preview_content_inset_for_target(content_rect, cell_size);
+    assert!(content_inset > 0.0, "wide preview should have a non-zero inset");
+
+    let selection = Selection {
+        anchor: (0, 0),
+        end: (0, 5),
+    };
+    let rects = preview_selection_rects(&pane, content_rect, cell_size, &selection);
+    assert_eq!(rects.len(), 1);
+    assert_eq!(
+        rects[0].x.to_bits(),
+        (content_rect.x + content_inset).to_bits(),
+        "highlight must start at the centered text column, not the pane edge"
+    );
+    assert_eq!(rects[0].width.to_bits(), (5.0 * cell_size.width).to_bits());
+}
+
+#[test]
+fn preview_click_on_glyph_origin_hits_first_column() {
+    // UC-1 BR-2: A click at the first rendered glyph must map to column 0,
+    // accounting for the centered readable-column inset.
+    let (pane, pane_rect, cell_size) = wide_preview_pane("Hello world");
+    let content_rect = pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size);
+    let content_inset = pane.preview_content_inset_for_target(content_rect, cell_size);
+
+    let pos = Vec2::new(
+        content_rect.x + content_inset + cell_size.width * 0.5,
+        content_rect.y + cell_size.height * 0.5,
+    );
+    let (rr, rc) = pane
+        .selection_hit_cell(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size, pos, false)
+        .expect("click inside preview should hit a cell");
+    let (row, col) = pane
+        .selection_position_for_cell(rr, rc)
+        .expect("hit cell maps to a preview position");
+    assert_eq!((row, col), (0, 0));
+}
+
+#[test]
+fn preview_click_past_line_end_anchors_at_line_end() {
+    // UC-1 BR-2: Clicking in a line's trailing whitespace anchors the selection
+    // at the line end rather than at an out-of-range column.
+    let (pane, pane_rect, cell_size) = wide_preview_pane("Hello world");
+    let content_rect = pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size);
+    let line_width = pane.preview_line_display_width(0);
+    assert!(line_width > 0);
+
+    // Click near the far right edge of the content area, well past the text.
+    let pos = Vec2::new(
+        content_rect.x + content_rect.width - 1.0,
+        content_rect.y + cell_size.height * 0.5,
+    );
+    let (rr, rc) = pane
+        .selection_hit_cell(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size, pos, false)
+        .expect("click inside preview should hit a cell");
+    let (row, col) = pane
+        .selection_position_for_cell(rr, rc)
+        .expect("hit cell maps to a preview position");
+    assert_eq!((row, col), (0, line_width));
+}
