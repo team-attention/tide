@@ -27,6 +27,15 @@ export function createUnavailableWorkspaceFilePort(): WorkspaceFilePort {
         },
       };
     },
+    async searchContent() {
+      return {
+        ok: false,
+        error: {
+          code: "workspace_file_unavailable",
+          message: "Workspace file access is not configured.",
+        },
+      };
+    },
     async replaceText() {
       return {
         ok: false,

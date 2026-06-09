@@ -76,6 +76,24 @@ export type WorkspaceFileTreeResult =
   | { ok: true; fileTree: WorkspaceFileTree }
   | { ok: false; error: WorkspaceFileError };
 
+export interface WorkspaceFileSearchMatch {
+  relativePath: string;
+  line: number;
+  column: number;
+  lineText: string;
+}
+
+export interface WorkspaceFileSearch {
+  query: string;
+  matches: WorkspaceFileSearchMatch[];
+  fileCount: number;
+  truncated: boolean;
+}
+
+export type WorkspaceFileSearchResult =
+  | { ok: true; search: WorkspaceFileSearch }
+  | { ok: false; error: WorkspaceFileError };
+
 export interface WorkspaceFilePort {
   listTree(input: {
     root: string;
@@ -88,6 +106,15 @@ export interface WorkspaceFilePort {
     path: string;
     byteLimit: number;
   }): Promise<WorkspaceFileReadResult>;
+
+  // Project-wide content search (gitignore-filtered). Returns matching lines
+  // across files under `root` for a plain-text (case-insensitive) query.
+  searchContent(input: {
+    root: string;
+    query: string;
+    maxResults: number;
+    maxFiles: number;
+  }): Promise<WorkspaceFileSearchResult>;
 
   replaceText(input: {
     root: string;

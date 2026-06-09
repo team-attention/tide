@@ -169,6 +169,8 @@ export interface ProductShellState {
   agentChatByThreadId: Record<string, AgentChatShellState>;
   appChrome: AppChromeState;
   fileTree: ProductShellFileTreeView | null;
+  // Latest project content-search (Cmd+Shift+F) results for the active thread.
+  contentSearch: ProductShellContentSearch | null;
   editorDrafts: Record<string, ProductShellEditorDraft>;
   nextLocalThreadNumber: number;
   // How the Left UI thread list is grouped/sorted (persisted in the renderer).
@@ -185,6 +187,10 @@ export type ProductShellBackendCommand =
   | {
       kind: "workspace.readFileTree";
       payload: { cwd: string; maxDepth?: number; maxEntries?: number };
+    }
+  | {
+      kind: "workspace.searchContent";
+      payload: { cwd: string; query: string; maxResults?: number; maxFiles?: number };
     }
   | { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }
   | { kind: "thread.setPinned"; payload: { threadId: string; pinned: boolean } }
@@ -345,6 +351,7 @@ export interface ProductShellViewModel {
   agentChat: AgentChatShellViewModel;
   appChrome: AppChromeViewModel;
   fileTree: ProductShellFileTreeView;
+  contentSearch: ProductShellContentSearch | null;
   // In-pane editor file picker (the Workbench Launcher's "Editor" mode), or null.
   editorPicker: ProductShellEditorPickerView | null;
   // Browser Panes of non-active threads, kept alive offscreen for background agents.
@@ -394,6 +401,20 @@ export interface ProductShellFileTreeEntryView {
   kind: "folder" | "file";
   active?: boolean;
   expanded?: boolean;
+}
+
+export interface ProductShellContentSearchMatch {
+  relativePath: string;
+  line: number;
+  column: number;
+  lineText: string;
+}
+
+export interface ProductShellContentSearch {
+  query: string;
+  matches: ProductShellContentSearchMatch[];
+  fileCount: number;
+  truncated: boolean;
 }
 
 const shellTimestamp = "2026-05-28T00:00:00.000Z";
@@ -494,6 +515,7 @@ export function createProductShellState(
     agentChatByThreadId: {},
     appChrome: createAppChromeState(),
     fileTree: null,
+    contentSearch: null,
     editorDrafts: {},
     nextLocalThreadNumber: 1,
     listSettings: input.listSettings ?? { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS },
@@ -634,6 +656,7 @@ export function createProductShellViewModel(
     agentChat: createAgentChatShellViewModel(agentChatWithProjects(state)),
     appChrome: createAppChromeViewModel(state.appChrome),
     fileTree: createFileTreeView(state),
+    contentSearch: state.contentSearch,
     editorPicker: createEditorPickerView(state),
     editorDrafts: state.editorDrafts,
     // Visible Browser Panes that need an offscreen live <webview> so a background
@@ -1707,9 +1730,46 @@ export function applyProductShellBackendEvent(
         expandedFolderPaths: [],
       };
     }
+    case "workspace.contentSearchResults": {
+      const payload = event.payload as Partial<ProductShellContentSearch>;
+      return {
+        ...nextState,
+        contentSearch: {
+          query: typeof payload.query === "string" ? payload.query : "",
+          matches: Array.isArray(payload.matches) ? payload.matches : [],
+          fileCount: typeof payload.fileCount === "number" ? payload.fileCount : 0,
+          truncated: payload.truncated === true,
+        },
+      };
+    }
     default:
       return nextState;
   }
+}
+
+// The cwd a content search runs in: the active thread's root.
+function activeThreadCwd(state: ProductShellState): string | null {
+  const thread = state.threads.find((candidate) => candidate.threadId === state.activeThreadId);
+  if (thread === undefined) {
+    return null;
+  }
+  return thread.scope.kind === "project" ? thread.scope.cwd : thread.scope.scratchCwd;
+}
+
+// Builds the Cmd+Shift+F content-search command for the active thread, or null
+// when there is no active thread root to search.
+export function searchProductShellContentCommand(
+  state: ProductShellState,
+  query: string,
+): ProductShellBackendCommand | null {
+  const cwd = activeThreadCwd(state);
+  if (cwd === null || query.trim().length === 0) {
+    return null;
+  }
+  return {
+    kind: "workspace.searchContent",
+    payload: { cwd, query },
+  };
 }
 
 function shouldApplyBackendEventToActiveSurfaces(

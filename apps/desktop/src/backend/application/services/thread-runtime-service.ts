@@ -476,12 +476,16 @@ import {
   type WorkbenchCommandResult,
   type ReadWorkspaceFileTreeInput,
   type ReadWorkspaceFileTreeResult,
+  type SearchWorkspaceContentInput,
+  type SearchWorkspaceContentResult,
 } from "./workbench-command-handler.ts";
 export type {
   WorkbenchCommandInput,
   WorkbenchCommandResult,
   ReadWorkspaceFileTreeInput,
   ReadWorkspaceFileTreeResult,
+  SearchWorkspaceContentInput,
+  SearchWorkspaceContentResult,
 };
 
 export interface ThreadRuntimeService {
@@ -526,6 +530,9 @@ export interface ThreadRuntimeService {
   readWorkspaceFileTree(
     input: ReadWorkspaceFileTreeInput,
   ): Promise<ServiceResult<ReadWorkspaceFileTreeResult>>;
+  searchWorkspaceContent(
+    input: SearchWorkspaceContentInput,
+  ): Promise<ServiceResult<SearchWorkspaceContentResult>>;
   appendRawAgentFrame(input: AppendRawAgentFrameInput): Promise<RawAgentFrame>;
   listTideMcpTools(): TideMcpToolDefinition[];
   handleTideMcpToolCall(
@@ -1390,6 +1397,12 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     input: ReadWorkspaceFileTreeInput,
   ): Promise<ServiceResult<ReadWorkspaceFileTreeResult>> {
     return this.workbenchCmd.readWorkspaceFileTree(input);
+  }
+
+  searchWorkspaceContent(
+    input: SearchWorkspaceContentInput,
+  ): Promise<ServiceResult<SearchWorkspaceContentResult>> {
+    return this.workbenchCmd.searchWorkspaceContent(input);
   }
 
   // Tide MCP tool surface is owned by TideMcpToolHandler (shares the store + ops).

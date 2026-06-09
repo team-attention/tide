@@ -1906,6 +1906,146 @@ button {
   font-size: 13px;
 }
 
+/* Content search (Cmd+Shift+F): a centered panel with file-grouped matches. */
+.content-search-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 10vh;
+  background: rgba(36, 33, 38, 0.28);
+}
+
+.content-search {
+  width: min(680px, calc(100vw - 48px));
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--tide-bg);
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 12px;
+  box-shadow: 0 24px 60px -12px rgba(36, 33, 38, 0.35);
+  overflow: hidden;
+}
+
+.content-search__field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--tide-line);
+}
+
+.content-search__icon { flex: 0 0 auto; color: var(--tide-muted); }
+
+.content-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 15px;
+  outline: none;
+}
+
+.content-search__input::placeholder { color: var(--tide-muted); }
+
+.content-search__count {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.content-search__results {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.content-search__empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--tide-muted);
+  font-size: 13px;
+}
+
+.content-search__group { margin-bottom: 6px; }
+
+.content-search__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 4px;
+  position: sticky;
+  top: 0;
+  background: var(--tide-bg);
+}
+
+.content-search__file-icon { flex: 0 0 auto; display: inline-flex; color: var(--tide-muted); }
+
+.content-search__file-name {
+  flex: 0 0 auto;
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.content-search__file-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--tide-muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content-search__file-count {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.content-search__match {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 10px 3px 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.content-search__match:hover { background: var(--tide-selection); }
+
+.content-search__line-no {
+  flex: 0 0 auto;
+  width: 34px;
+  text-align: right;
+  color: var(--tide-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.content-search__line {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--tide-text);
+  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Reasoning / thinking: a quiet, collapsible disclosure that stays clearly
    secondary to the answer (like the Codex/Claude apps). Muted summary row,
    chevron that rotates open, and a left-railed muted body when expanded. */

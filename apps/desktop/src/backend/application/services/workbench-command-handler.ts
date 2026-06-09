@@ -67,6 +67,28 @@ export interface ReadWorkspaceFileTreeResult {
   fileTree: WorkbenchFileTreeView;
 }
 
+export interface SearchWorkspaceContentInput {
+  cwd: string;
+  query: string;
+  maxResults?: number;
+  maxFiles?: number;
+}
+
+export interface WorkspaceContentSearchMatch {
+  relativePath: string;
+  line: number;
+  column: number;
+  lineText: string;
+}
+
+export interface SearchWorkspaceContentResult {
+  cwd: string;
+  query: string;
+  matches: WorkspaceContentSearchMatch[];
+  fileCount: number;
+  truncated: boolean;
+}
+
 export interface WorkbenchCommandHandlerDeps {
   threads: ThreadStore;
   clock: () => string;
@@ -655,6 +677,28 @@ export class WorkbenchCommandHandler {
       ok: true,
       cwd: input.cwd,
       fileTree: cloneFileTreeView(listed.fileTree),
+    };
+  }
+
+  async searchWorkspaceContent(
+    input: SearchWorkspaceContentInput,
+  ): Promise<ServiceResult<SearchWorkspaceContentResult>> {
+    const searched = await this.workspaceFilePort.searchContent({
+      root: input.cwd,
+      query: input.query,
+      maxResults: Math.min(Math.max(input.maxResults ?? 500, 1), 2000),
+      maxFiles: Math.min(Math.max(input.maxFiles ?? 2000, 1), 8000),
+    });
+    if (!searched.ok) {
+      return failure(searched.error.code, searched.error.message);
+    }
+    return {
+      ok: true,
+      cwd: input.cwd,
+      query: searched.search.query,
+      matches: searched.search.matches.map((match) => ({ ...match })),
+      fileCount: searched.search.fileCount,
+      truncated: searched.search.truncated,
     };
   }
 }

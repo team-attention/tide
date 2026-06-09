@@ -34,7 +34,8 @@ export type BackendEventKind =
   | "agentSessionBlock.completed"
   | "workbench.changed"
   | "workbench.terminalOutput"
-  | "workspace.fileTreeLoaded";
+  | "workspace.fileTreeLoaded"
+  | "workspace.contentSearchResults";
 
 export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "backend.connectionChanged",
@@ -58,6 +59,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "workbench.changed",
   "workbench.terminalOutput",
   "workspace.fileTreeLoaded",
+  "workspace.contentSearchResults",
 ];
 
 export interface BackendEventPayloadByKind {
@@ -140,4 +142,19 @@ export interface BackendEventPayloadByKind {
     cwd: string;
     fileTree: WorkbenchFileTreeDto;
   };
+  // Project-wide content search results for the Cmd+Shift+F finder.
+  "workspace.contentSearchResults": {
+    cwd: string;
+    query: string;
+    matches: WorkspaceContentSearchMatchDto[];
+    fileCount: number;
+    truncated: boolean;
+  };
+}
+
+export interface WorkspaceContentSearchMatchDto {
+  relativePath: string;
+  line: number;
+  column: number;
+  lineText: string;
 }

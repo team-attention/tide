@@ -17,7 +17,8 @@ export type BackendCommandKind =
   | "agentRuntime.stop"
   | "provider.trustWorkspace"
   | "workbench.command"
-  | "workspace.readFileTree";
+  | "workspace.readFileTree"
+  | "workspace.searchContent";
 
 export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "thread.list",
@@ -34,6 +35,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "provider.trustWorkspace",
   "workbench.command",
   "workspace.readFileTree",
+  "workspace.searchContent",
 ];
 
 /**
@@ -97,5 +99,13 @@ export interface BackendCommandPayloadByKind {
     cwd: string;
     maxDepth?: number;
     maxEntries?: number;
+  };
+  // Project-wide content search under `cwd` (the active thread root), for the
+  // Cmd+Shift+F finder. Plain-text, case-insensitive.
+  "workspace.searchContent": {
+    cwd: string;
+    query: string;
+    maxResults?: number;
+    maxFiles?: number;
   };
 }

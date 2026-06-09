@@ -6,6 +6,8 @@ import type {
   WorkspaceFileError,
   WorkspaceFilePort,
   WorkspaceFileReadResult,
+  WorkspaceFileSearchMatch,
+  WorkspaceFileSearchResult,
   WorkspaceFileTreeEntry,
   WorkspaceFileTreeResult,
   WorkspaceFileWriteResult,
@@ -129,6 +131,101 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
         truncated,
       },
     };
+  }
+
+  async searchContent(input: {
+    root: string;
+    query: string;
+    maxResults: number;
+    maxFiles: number;
+  }): Promise<WorkspaceFileSearchResult> {
+    const root = path.resolve(input.root);
+    const query = input.query;
+    if (query.trim().length === 0) {
+      return { ok: true, search: { query, matches: [], fileCount: 0, truncated: false } };
+    }
+    let rootStat;
+    try {
+      rootStat = await stat(root);
+    } catch {
+      return { ok: false, error: { code: "workspace_file_not_found", message: "Thread root was not found." } };
+    }
+    if (!rootStat.isDirectory()) {
+      return { ok: false, error: { code: "workspace_file_unreadable", message: "Thread root is not a directory." } };
+    }
+
+    const ignoredByGit = await loadGitignoreMatcher(root);
+    const needle = query.toLowerCase();
+    const matches: WorkspaceFileSearchMatch[] = [];
+    let fileCount = 0;
+    let truncated = false;
+
+    const visit = async (directory: string): Promise<void> => {
+      if (truncated) {
+        return;
+      }
+      let children;
+      try {
+        children = await readdir(directory, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      children.sort((a, b) => a.name.localeCompare(b.name));
+      for (const child of children) {
+        if (truncated) {
+          return;
+        }
+        const isDir = child.isDirectory();
+        if (isDir && IGNORED_DIRECTORIES.has(child.name)) {
+          continue;
+        }
+        const childPath = path.join(directory, child.name);
+        const relativePath = path.relative(root, childPath);
+        if (ignoredByGit(relativePath, child.name, isDir)) {
+          continue;
+        }
+        if (isDir) {
+          await visit(childPath);
+          continue;
+        }
+        if (fileCount >= input.maxFiles) {
+          truncated = true;
+          return;
+        }
+        let buffer: Buffer;
+        try {
+          buffer = await readFile(childPath);
+        } catch {
+          continue;
+        }
+        // Skip binary files (NUL byte in the first chunk) and very large files.
+        if (buffer.length > 2 * 1024 * 1024 || buffer.subarray(0, 8000).includes(0)) {
+          continue;
+        }
+        fileCount += 1;
+        const text = DEFAULT_TEXT_DECODER.decode(buffer);
+        const lines = text.split("\n");
+        for (let i = 0; i < lines.length; i += 1) {
+          const column = lines[i].toLowerCase().indexOf(needle);
+          if (column === -1) {
+            continue;
+          }
+          matches.push({
+            relativePath,
+            line: i,
+            column,
+            lineText: lines[i].length > 400 ? `${lines[i].slice(0, 400)}…` : lines[i],
+          });
+          if (matches.length >= input.maxResults) {
+            truncated = true;
+            return;
+          }
+        }
+      }
+    };
+
+    await visit(root);
+    return { ok: true, search: { query, matches, fileCount, truncated } };
   }
 
   async readTextFile(input: {
