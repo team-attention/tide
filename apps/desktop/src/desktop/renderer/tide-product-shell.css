@@ -3857,6 +3857,37 @@ button {
   box-shadow: 0 1px 2px rgb(52 48 56 / 8%);
 }
 
+/* "Pick block" toggle in the markdown toolbar + the block-pick hover/cursor. */
+.workbench-md-toggle__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0 10px;
+  border: 1px solid var(--tide-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  font: 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+.workbench-md-toggle__pick:hover { background: var(--tide-selection); color: var(--tide-text); }
+.workbench-md-toggle__pick[data-active="true"] {
+  border-color: var(--tide-action, var(--tide-text));
+  background: var(--tide-action, var(--tide-text));
+  color: #fff;
+}
+.workbench-md-toggle__pick[data-active="true"] svg { color: #fff; }
+
+.workbench-md[data-md-picking="true"] .workbench-md-preview * { cursor: crosshair !important; }
+.workbench-md-pick-hover {
+  outline: 2px solid var(--tide-action, #4c8bf5);
+  outline-offset: 2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--tide-action, #4c8bf5) 8%, transparent);
+}
+
 /* Obsidian-style reading view, conformed to the Figma editor typography. */
 .workbench-md-preview {
   flex: 1 1 auto;

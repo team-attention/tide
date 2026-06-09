@@ -97,6 +97,24 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const sessionRef = useRef<HTMLElement | null>(null);
+  // Floating "Add to chat" for a drag-selection inside the transcript — quoting
+  // any part of the conversation into the composer as a message chip.
+  const [transcriptSel, setTranscriptSel] = useState<{ x: number; y: number; text: string } | null>(null);
+  useEffect(() => {
+    const onUp = () => {
+      const sel = window.getSelection();
+      const text = sel ? sel.toString() : "";
+      const root = sessionRef.current;
+      if (text.trim().length > 0 && sel !== null && root !== null && root.contains(sel.anchorNode)) {
+        const rect = sel.getRangeAt(0).getBoundingClientRect();
+        setTranscriptSel({ x: rect.left, y: rect.top, text });
+      } else {
+        setTranscriptSel(null);
+      }
+    };
+    document.addEventListener("mouseup", onUp);
+    return () => document.removeEventListener("mouseup", onUp);
+  }, []);
   // Hidden <input type=file> for the "Files and images" composer-menu action.
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // On entering a thread, jump to the most recent message (not the top).
@@ -258,6 +276,26 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     props.showThreadHeader === false ? null : createThreadHeader(viewModel),
     createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt, props.onEditQueued, props.onResend, props.onQuote),
     createComposerStack(viewModel, handlers),
+    transcriptSel === null || props.onQuote === undefined
+      ? null
+      : createElement(
+          "button",
+          {
+            type: "button",
+            className: "editor-selection-toolbar",
+            style: {
+              left: `${transcriptSel.x}px`,
+              top: `${Math.max(transcriptSel.y - 36, 8)}px`,
+            } as CSSProperties,
+            onMouseDown: (event: { preventDefault: () => void }) => {
+              event.preventDefault();
+              props.onQuote?.(transcriptSel.text.trim());
+              setTranscriptSel(null);
+            },
+          },
+          createElement(CornerDownRight, { size: 13, strokeWidth: 1.9, "aria-hidden": true }),
+          "Add to chat",
+        ),
     popover,
     lightbox,
     fileInput,

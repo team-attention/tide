@@ -2969,6 +2969,7 @@ function WorkbenchEditorPane(props: {
           readOnly,
           dirty: props.draft?.dirty === true,
           revision: props.pane.revision,
+          relativePath: props.pane.relativePath ?? props.pane.filePath,
           handlers: props.handlers,
         })
       : createElement(
@@ -3030,9 +3031,82 @@ function WorkbenchMarkdownView(props: {
   readOnly: boolean;
   dirty: boolean;
   revision: string;
+  relativePath?: string;
   handlers: ProductShellHandlers;
 }): ReactElement {
   const [mode, setMode] = useState<"preview" | "edit">("preview");
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  // Floating "Add to chat" for a drag-selection inside the rendered preview.
+  const [selToolbar, setSelToolbar] = useState<{ x: number; y: number; text: string } | null>(null);
+  // "Pick block" mode: hover-highlight a rendered block and click to attach it.
+  const [pickBlock, setPickBlock] = useState(false);
+  const path = props.relativePath ?? "preview.md";
+  const baseName = path.slice(path.lastIndexOf("/") + 1);
+  const attach = (text: string, label: string) =>
+    props.handlers.onAddContentToChat({
+      kind: "code",
+      label,
+      text: `From \`${path}\` (preview):\n\n${text.trim().split("\n").map((l) => `> ${l}`).join("\n")}`,
+    });
+  // Drag-selection toolbar (host DOM — no injection needed).
+  useEffect(() => {
+    if (mode !== "preview") {
+      return undefined;
+    }
+    const onUp = () => {
+      const sel = window.getSelection();
+      const text = sel ? sel.toString() : "";
+      const root = previewRef.current;
+      if (text.trim().length > 0 && sel !== null && root !== null && root.contains(sel.anchorNode)) {
+        const rect = sel.getRangeAt(0).getBoundingClientRect();
+        setSelToolbar({ x: rect.left, y: rect.top, text });
+      } else {
+        setSelToolbar(null);
+      }
+    };
+    document.addEventListener("mouseup", onUp);
+    return () => document.removeEventListener("mouseup", onUp);
+  }, [mode]);
+  // Block-pick mode: highlight the hovered top-level block, attach on click.
+  useEffect(() => {
+    const root = previewRef.current;
+    if (!pickBlock || root === null) {
+      return undefined;
+    }
+    let last: HTMLElement | null = null;
+    const blockOf = (target: EventTarget | null): HTMLElement | null => {
+      let node = target as HTMLElement | null;
+      while (node !== null && node.parentElement !== root && node !== root) {
+        node = node.parentElement;
+      }
+      return node !== null && node !== root ? node : null;
+    };
+    const over = (event: MouseEvent) => {
+      const block = blockOf(event.target);
+      if (last !== null) last.classList.remove("workbench-md-pick-hover");
+      last = block;
+      if (block !== null) block.classList.add("workbench-md-pick-hover");
+    };
+    const click = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const block = blockOf(event.target);
+      if (block !== null) {
+        const text = (block.innerText || block.textContent || "").trim();
+        if (text.length > 0) {
+          attach(text, `${baseName} · ${(block.tagName || "block").toLowerCase()}`);
+        }
+      }
+      setPickBlock(false);
+    };
+    root.addEventListener("mouseover", over);
+    root.addEventListener("click", click, true);
+    return () => {
+      if (last !== null) last.classList.remove("workbench-md-pick-hover");
+      root.removeEventListener("mouseover", over);
+      root.removeEventListener("click", click, true);
+    };
+  }, [pickBlock]);
   // Render once per source string (cached), so unrelated re-renders don't
   // re-parse the whole file. Spec D8.
   const previewHtml = useMemo(() => renderMarkdownCached(markdownRenderer, props.value), [props.value]);
@@ -3050,19 +3124,60 @@ function WorkbenchMarkdownView(props: {
     );
   return createElement(
     "div",
-    { className: "workbench-md", "data-md-mode": mode },
+    { className: "workbench-md", "data-md-mode": mode, "data-md-picking": pickBlock ? "true" : "false" },
     createElement(
       "div",
       { className: "workbench-md-toggle", role: "group", "aria-label": "Markdown view mode" },
       toggle("preview", "Preview"),
       props.readOnly ? null : toggle("edit", "Edit"),
+      mode === "preview"
+        ? createElement(
+            "button",
+            {
+              type: "button",
+              className: "workbench-md-toggle__pick",
+              "data-active": pickBlock ? "true" : "false",
+              "aria-pressed": pickBlock,
+              title: pickBlock ? "Cancel block pick" : "Pick a block to add to chat",
+              onClick: () => setPickBlock((prev) => !prev),
+            },
+            createElement(Crosshair, { size: 12, strokeWidth: 1.8, "aria-hidden": true }),
+            pickBlock ? "Cancel" : "Pick block",
+          )
+        : null,
     ),
     mode === "preview" || props.readOnly
-      ? createElement("div", {
-          className: "workbench-md-preview markdown-body",
-          "aria-label": "Markdown preview",
-          dangerouslySetInnerHTML: { __html: previewHtml },
-        })
+      ? createElement(
+          Fragment,
+          null,
+          createElement("div", {
+            ref: previewRef,
+            className: "workbench-md-preview markdown-body",
+            "aria-label": "Markdown preview",
+            dangerouslySetInnerHTML: { __html: previewHtml },
+          }),
+          selToolbar === null
+            ? null
+            : createElement(
+                "button",
+                {
+                  type: "button",
+                  className: "editor-selection-toolbar",
+                  style: {
+                    left: `${selToolbar.x}px`,
+                    top: `${Math.max(selToolbar.y - 36, 8)}px`,
+                  } as CSSProperties,
+                  onMouseDown: (event: { preventDefault: () => void }) => {
+                    event.preventDefault();
+                    const oneLine = selToolbar.text.trim().replace(/\s+/g, " ");
+                    attach(selToolbar.text, `${baseName} · ${oneLine.slice(0, 28)}${oneLine.length > 28 ? "…" : ""}`);
+                    setSelToolbar(null);
+                  },
+                },
+                createElement(CornerDownRight, { size: 13, strokeWidth: 1.9, "aria-hidden": true }),
+                "Add to chat",
+              ),
+        )
       : createElement(WorkbenchCodeEditor, {
           paneId: props.paneId,
           value: props.value,
