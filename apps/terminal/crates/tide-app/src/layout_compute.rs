@@ -144,6 +144,13 @@ impl App {
             return None;
         };
 
+        // The Pane must belong to this Terminal Context Surface at all (any tab,
+        // active or not). `all_pane_ids` includes inactive TabGroup tabs, which
+        // `pane_ids` omits.
+        if !terminal.dock_layout.all_pane_ids().contains(&pane_id) {
+            return None;
+        }
+
         let active_area = self.dock_area_rect.unwrap_or_else(|| {
             let width = self.terminal_context_surface_layout_width();
             Rect::new(
@@ -160,25 +167,19 @@ impl App {
             active_area.height,
         );
 
+        // BR-9: a background Browser Pane stays live offscreen whether or not it is
+        // the active Pane of its surface. Stacked Panes overlap full-size, and an
+        // inactive TabGroup tab has no computed split sub-rect, so both render at the
+        // full offscreen area; only a visible split leaf uses its computed sub-rect.
         if terminal.dock_view_mode == crate::state::ViewMode::Stacked {
-            let all_ids = terminal.dock_layout.all_pane_ids();
-            let active = terminal
-                .dock_focused
-                .filter(|pane_id| all_ids.contains(pane_id))
-                .or_else(|| terminal.dock_layout.pane_ids().first().copied())
-                .or_else(|| all_ids.first().copied());
-            return (active == Some(pane_id)).then_some(offscreen_area);
+            return Some(offscreen_area);
         }
 
         let dock_pane_ids = terminal.dock_layout.pane_ids();
-        if dock_pane_ids.is_empty() {
-            return None;
-        }
-
         let mut layout = terminal.dock_layout.clone();
         layout.expand_leaf_groups_to_splits(SplitDirection::Vertical);
         let ctx_size = Size::new(offscreen_area.width, offscreen_area.height);
-        layout
+        let split_rect = layout
             .compute(ctx_size, &dock_pane_ids, terminal.dock_focused)
             .into_iter()
             .find_map(|(id, mut rect)| {
@@ -188,7 +189,10 @@ impl App {
                 rect.x += offscreen_area.x;
                 rect.y += offscreen_area.y;
                 Some(rect)
-            })
+            });
+        // Inactive tab (omitted from `pane_ids`/`compute`): fall back to the full
+        // offscreen surface area so it still loads and snapshots.
+        Some(split_rect.unwrap_or(offscreen_area))
     }
 }
 
