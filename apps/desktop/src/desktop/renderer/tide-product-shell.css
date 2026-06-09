@@ -1800,6 +1800,112 @@ button {
   white-space: nowrap;
 }
 
+/* Quick Open (Cmd+P): a centered command palette over a dim backdrop. */
+.quick-open-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgba(36, 33, 38, 0.28);
+}
+
+.quick-open {
+  width: min(620px, calc(100vw - 48px));
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--tide-bg);
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 12px;
+  box-shadow: 0 24px 60px -12px rgba(36, 33, 38, 0.35);
+  overflow: hidden;
+}
+
+.quick-open__field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--tide-line);
+}
+
+.quick-open__icon { flex: 0 0 auto; color: var(--tide-muted); }
+
+.quick-open__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 15px;
+  outline: none;
+}
+
+.quick-open__input::placeholder { color: var(--tide-muted); }
+
+.quick-open__count {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.quick-open__results {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.quick-open__row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.quick-open__row[data-selected="true"] {
+  background: var(--tide-selection);
+}
+
+.quick-open__row-icon { flex: 0 0 auto; display: inline-flex; color: var(--tide-muted); }
+
+.quick-open__row-name {
+  flex: 0 0 auto;
+  color: var(--tide-text);
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.quick-open__row-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--tide-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.quick-open__empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--tide-muted);
+  font-size: 13px;
+}
+
 /* Reasoning / thinking: a quiet, collapsible disclosure that stays clearly
    secondary to the answer (like the Codex/Claude apps). Muted summary row,
    chevron that rotates open, and a left-railed muted body when expanded. */
