@@ -825,6 +825,84 @@ export function createLiveAgentSessionEventProjector(input: {
     { buffer: string; surfacedSignature?: string }
   >();
 
+  // The runtime-keyed turn-end hook carries the turn's final assistant message in
+  // its payload (claude `agent-idle` → `last_assistant_message`). That is the
+  // authoritative final answer, independent of the transcript binding — which under
+  // concurrent spawns can point at a session file the provider never flushed,
+  // leaving the UI with a settled-but-empty turn ("Ran N commands"/no reply, or
+  // "Working" forever). Ingest it as the agent_message block through the SAME reader
+  // pipeline as transcript content, deduped by body so it never duplicates an answer
+  // the transcript already produced. This makes the hook the source of truth for the
+  // final answer; the transcript stays the source for streaming/tool/intermediate
+  // content. See docs_v2/specs/claude-runtime-event-source.md.
+  const ingestFinalAssistantMessageFromHook = async (args: {
+    signalPayload: unknown;
+    threadId: string;
+    agentId: "codex" | "claude" | "antigravity";
+    runtimeId: string;
+    nextBlocks: Map<string, AgentSessionBlock>;
+  }): Promise<void> => {
+    const payload =
+      typeof args.signalPayload === "object" &&
+      args.signalPayload !== null &&
+      !Array.isArray(args.signalPayload)
+        ? (args.signalPayload as Record<string, unknown>)
+        : undefined;
+    const raw = payload?.last_assistant_message;
+    const body = typeof raw === "string" ? raw.trim() : "";
+    if (body.length === 0) {
+      return;
+    }
+    // Content dedup: skip if the transcript already produced this exact answer.
+    for (const block of args.nextBlocks.values()) {
+      if (
+        block.kind === "agent_message" &&
+        typeof block.body === "string" &&
+        block.body.trim() === body
+      ) {
+        return;
+      }
+    }
+    const sessionId =
+      typeof payload?.session_id === "string" ? payload.session_id : args.runtimeId;
+    let hash = 5381;
+    for (let i = 0; i < body.length; i += 1) {
+      hash = ((hash << 5) + hash + body.charCodeAt(i)) | 0;
+    }
+    const blockId = `provider:${args.threadId}:${sessionId}:final:${(hash >>> 0).toString(36)}`;
+    const service = input.service();
+    const hydrated = await service.hydrateThread({ threadId: args.threadId });
+    if (!hydrated.ok) {
+      return;
+    }
+    const frame = await service.appendRawAgentFrame({
+      threadId: args.threadId,
+      agentId: args.agentId,
+      source: "provider_history",
+      sourceRef: blockId,
+      payloadKind: "provider_record",
+      payload: {
+        type: "message",
+        role: "agent",
+        status: "complete",
+        blockId,
+        body,
+        sourceRuntimeId: args.runtimeId,
+      },
+      body,
+    });
+    const result = reader.read({
+      thread: hydrated.thread,
+      agentBinding: hydrated.thread.agentBinding,
+      frames: [frame],
+      existingBlocks: [...args.nextBlocks.values()],
+    });
+    for (const update of result.blockUpdates) {
+      await recordBlockUpdateInThreadCache(input.persistence, service, update);
+      emitBlockUpdate({ update, blocks: args.nextBlocks, onEvent: input.onEvent });
+    }
+  };
+
   const emitProviderSignals = async (frameInput: {
     threadId: string;
     agentId: "codex" | "claude" | "antigravity";
@@ -910,6 +988,16 @@ export function createLiveAgentSessionEventProjector(input: {
       });
       const turnEndEvents = input.integrations[frameInput.agentId].turnEndSignalEvents();
       if (turnEndEvents.includes(signalFrame.eventName)) {
+        // Ingest the final answer carried by the turn-end hook BEFORE settling, so
+        // the turn never settles to an empty/answerless state regardless of the
+        // transcript binding.
+        await ingestFinalAssistantMessageFromHook({
+          signalPayload: signalFrame.payload,
+          threadId: frameInput.threadId,
+          agentId: frameInput.agentId,
+          runtimeId: frameInput.runtimeId,
+          nextBlocks,
+        });
         await emitTurnComplete({
           threadId: frameInput.threadId,
           service,
