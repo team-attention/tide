@@ -254,11 +254,11 @@ test("product_shell_thread_start_command_reaches_backend_with_selected_agent_bin
   const selected = selectProductShellChoiceSurfaceRow(
     withAgentMenu,
     "agent_menu",
-    "antigravity",
+    "gemini",
   );
   const withDraft = updateProductShellComposerDraft(
     selected.state,
-    "Run Antigravity through the Backend",
+    "Run Gemini through the Backend",
   );
   const submitted = submitProductShellComposerDraft(withDraft);
 
@@ -269,31 +269,31 @@ test("product_shell_thread_start_command_reaches_backend_with_selected_agent_bin
   );
 
   assertBackendEventsAreContractEnvelopes(events);
-  assert.equal(fakes.readiness.checks[0]?.agentId, "antigravity");
+  assert.equal(fakes.readiness.checks[0]?.agentId, "gemini");
   assert.deepEqual(fakes.readiness.checks[0]?.launchOptions, {
-    model: "Antigravity default",
+    model: "Gemini default",
     permission: "default",
     worktree: "current folder",
     branch: "main",
   });
-  assert.equal(fakes.runtime.starts[0]?.agentBinding.agentId, "antigravity");
+  assert.equal(fakes.runtime.starts[0]?.agentBinding.agentId, "gemini");
   assert.deepEqual(fakes.runtime.starts[0]?.agentBinding.runtimeSource, {
     kind: "provider_cli",
-    integrationId: "antigravity",
+    integrationId: "gemini",
   });
   assert.deepEqual(fakes.runtime.starts[0]?.launchOptions, {
-    model: "Antigravity default",
+    model: "Gemini default",
     permission: "default",
     worktree: "current folder",
     branch: "main",
   });
   // Provider CLIs receive the first message as the launch-time initial prompt
   // (reliably starts a turn), not by typing it into the TUI after launch.
-  assert.equal(fakes.runtime.starts[0]?.initialPrompt, "Run Antigravity through the Backend");
+  assert.equal(fakes.runtime.starts[0]?.initialPrompt, "Run Gemini through the Backend");
   assert.equal(fakes.runtime.writes.length, 0);
   assert.equal(events[2].kind, "thread.started");
-  assert.equal(events[2].payload.thread.agentBinding.agentId, "antigravity");
-  assert.equal(events[2].payload.thread.launchOptions?.model, "Antigravity default");
+  assert.equal(events[2].payload.thread.agentBinding.agentId, "gemini");
+  assert.equal(events[2].payload.thread.launchOptions?.model, "Gemini default");
 });
 
 test("thread_list_contract_events_return_backend_thread_summaries", async () => {

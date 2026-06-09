@@ -2279,38 +2279,37 @@ test("product_shell_prompt_choice_row_emits_prompt_answer_command", () => {
   });
 });
 
-test("product_shell_antigravity_selection_updates_model_before_thread_start", () => {
+test("product_shell_gemini_selection_updates_model_before_thread_start", () => {
   const withMenu = setProductShellComposerActiveSurface(createProductShellState(), "agent_menu");
-  const result = selectProductShellChoiceSurfaceRow(withMenu, "agent_menu", "antigravity");
+  const result = selectProductShellChoiceSurfaceRow(withMenu, "agent_menu", "gemini");
   const view = createProductShellViewModel(result.state);
 
-  assert.equal(view.agentChat.composer.contextItems[0].value, "Antigravity CLI");
+  assert.equal(view.agentChat.composer.contextItems[0].value, "Gemini CLI");
   assert.equal(view.agentChat.composer.modelLabel, "Default");
-  assert.equal(view.agentChat.composer.permissionLabel, "Ask for approval");
 });
 
-test("product_shell_antigravity_selection_updates_start_command_launch_options", () => {
+test("product_shell_gemini_selection_updates_start_command_launch_options", () => {
   const withAgentMenu = setProductShellComposerActiveSurface(createProductShellState(), "agent_menu");
   const selected = selectProductShellChoiceSurfaceRow(
     withAgentMenu,
     "agent_menu",
-    "antigravity",
+    "gemini",
   );
   const withDraft = updateProductShellComposerDraft(
     selected.state,
-    "Start an Antigravity Thread",
+    "Start a Gemini Thread",
   );
 
   const submitted = submitProductShellComposerDraft(withDraft);
 
   assert.equal(submitted.command?.kind, "thread.start");
   assert.equal(typeof submitted.command?.payload.threadId, "string");
-  assert.equal(submitted.command?.payload.initialMessage, "Start an Antigravity Thread");
+  assert.equal(submitted.command?.payload.initialMessage, "Start a Gemini Thread");
   assert.deepEqual(submitted.command?.payload.agentBinding, {
-    agentId: "antigravity",
+    agentId: "gemini",
     runtimeSource: {
       kind: "provider_cli",
-      integrationId: "antigravity",
+      integrationId: "gemini",
     },
   });
   assert.deepEqual(submitted.command?.payload.scope, {
@@ -2319,7 +2318,7 @@ test("product_shell_antigravity_selection_updates_start_command_launch_options",
     cwd: "/Users/you/Workspace/tide",
   });
   assert.deepEqual(submitted.command?.payload.launchOptions, {
-    model: "Antigravity default",
+    model: "Gemini default",
     permission: "default",
     worktree: "current folder",
     branch: "main",
