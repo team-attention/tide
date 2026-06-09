@@ -3,6 +3,8 @@ import {
   createAgentChatShellState,
   createAgentChatShellViewModel,
   defaultPermissionForAgent,
+  defaultModelValueForAgent,
+  resolveStartAgentId,
   selectAgentChatChoiceSurfaceRow,
   answerPromptText,
   setComposerActiveSurface,
@@ -2653,17 +2655,21 @@ export function setPreferredStartComposer(defaults: PreferredStartComposer | nul
 
 function createStartAgentChatState(scope?: AgentChatThreadScope): AgentChatShellState {
   const pref = preferredStartComposer;
-  const agentId = pref?.agentId ?? "codex";
+  const agentId = resolveStartAgentId(pref?.agentId);
+  // Only carry the persisted model/permission/reasoning when the resolved agent is the
+  // one the user actually picked. If we fell back (their last agent is hidden or not
+  // installed), use the resolved agent's own defaults instead of another agent's.
+  const carryPref = pref?.agentId === agentId;
   return createAgentChatShellState({
     startOptions: {
       agentBinding: agentBindingForShellAgent(agentId),
       scope: scope ?? { kind: "scratch", scratchCwd: "Scratch" },
       launchOptions: {
-        model: pref?.model ?? "gpt-5.5",
-        permission: pref?.permission ?? defaultPermissionForAgent(agentId),
+        model: carryPref ? pref?.model ?? defaultModelValueForAgent(agentId) : defaultModelValueForAgent(agentId),
+        permission: carryPref ? pref?.permission ?? defaultPermissionForAgent(agentId) : defaultPermissionForAgent(agentId),
         worktree: "current folder",
         branch: "main",
-        ...(pref?.reasoning !== undefined ? { reasoning: pref.reasoning } : {}),
+        ...(carryPref && pref?.reasoning !== undefined ? { reasoning: pref.reasoning } : {}),
       },
     },
   });

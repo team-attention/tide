@@ -1571,6 +1571,25 @@ function isAgentAvailable(agentId: string): boolean {
   return availableProviderAgents === null || availableProviderAgents.includes(agentId);
 }
 
+// Provider-CLI agents offered in the composer menu (antigravity is hidden for now).
+const OFFERED_PROVIDER_AGENTS = ["codex", "claude", "gemini"] as const;
+
+// Pick the agent a new thread should default to. Honors the user's last choice only if
+// it is still offered AND detected locally — so a persisted hidden/uninstalled agent
+// (e.g. antigravity) never resurfaces as the default. Falls back to the first
+// detected offered agent, then codex.
+export function resolveStartAgentId(preferred: string | undefined): AgentChatAgentId {
+  if (
+    preferred !== undefined &&
+    (OFFERED_PROVIDER_AGENTS as readonly string[]).includes(preferred) &&
+    isAgentAvailable(preferred)
+  ) {
+    return preferred as AgentChatAgentId;
+  }
+  const firstAvailable = OFFERED_PROVIDER_AGENTS.find((agentId) => isAgentAvailable(agentId));
+  return (firstAvailable ?? "codex") as AgentChatAgentId;
+}
+
 // One provider-CLI agent row: enabled+selectable when its CLI is detected, otherwise
 // shown disabled (greyed) — never removed.
 function agentMenuRow(
@@ -2018,7 +2037,7 @@ function runtimeSourceForAgent(agentId: string): AgentChatAgentRuntimeSource {
   };
 }
 
-function defaultModelValueForAgent(agentId: string): string {
+export function defaultModelValueForAgent(agentId: string): string {
   switch (agentId) {
     case "claude":
       return "Claude default";
