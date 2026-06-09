@@ -80,9 +80,10 @@ test("claude_ready_preflight_returns_hidden_pty_start_plan_with_settings_mcp_con
     startupDelayMs: 5000,
     preSubmitDelayMs: 350,
   });
-  assert.deepEqual(result.launchPlan?.args.slice(0, 6), [
+  assert.deepEqual(result.launchPlan?.args.slice(0, 7), [
     "--mcp-config",
     "/tmp/tide-claude-mcp.json",
+    "--strict-mcp-config",
     "--settings",
     "/tmp/tide-claude-settings.json",
     "--append-system-prompt",
