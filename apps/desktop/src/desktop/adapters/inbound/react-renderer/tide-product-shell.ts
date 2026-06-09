@@ -2415,6 +2415,18 @@ function launcherActionIcon(actionId: string): ReactElement {
   }
 }
 
+// `<webview>.executeJavaScript` throws *synchronously* if called before the
+// guest has emitted `dom-ready`. Wrap it so an early call (e.g. from an effect
+// that runs on mount) can never throw out and unmount the whole React tree.
+function safeWebviewExec(webview: BrowserWebViewElement, code: string): Promise<unknown> {
+  try {
+    const result = webview.executeJavaScript?.(code);
+    return result instanceof Promise ? result.catch(() => undefined) : Promise.resolve(undefined);
+  } catch {
+    return Promise.resolve(undefined);
+  }
+}
+
 // Injected into the Browser Pane's <webview> to run a devtools-style element
 // picker: highlight the element under the cursor, capture it on click into
 // `window.__tideElementPick`, and expose `window.__tideCancelPick` to tear down.
@@ -2455,14 +2467,13 @@ function WorkbenchBrowserPane(props: {
       return undefined;
     }
     if (!pickMode) {
-      void webview.executeJavaScript("window.__tideCancelPick && window.__tideCancelPick()").catch(() => {});
+      void safeWebviewExec(webview, "window.__tideCancelPick && window.__tideCancelPick()");
       return undefined;
     }
-    void webview.executeJavaScript(BROWSER_ELEMENT_PICKER_SCRIPT).catch(() => {});
+    void safeWebviewExec(webview, BROWSER_ELEMENT_PICKER_SCRIPT);
     let cancelled = false;
     const poll = window.setInterval(() => {
-      void webview
-        .executeJavaScript?.("(() => { const p = window.__tideElementPick; window.__tideElementPick = null; return p || null; })()")
+      void safeWebviewExec(webview, "(() => { const p = window.__tideElementPick; window.__tideElementPick = null; return p || null; })()")
         .then((result) => {
           if (cancelled || result === null || typeof result !== "object") {
             return;
@@ -2489,7 +2500,7 @@ function WorkbenchBrowserPane(props: {
     return () => {
       cancelled = true;
       window.clearInterval(poll);
-      void webview.executeJavaScript?.("window.__tideCancelPick && window.__tideCancelPick()").catch(() => {});
+      void safeWebviewExec(webview, "window.__tideCancelPick && window.__tideCancelPick()");
     };
   }, [pickMode, props.pane.paneId]);
   useEffect(() => {
@@ -2501,8 +2512,7 @@ function WorkbenchBrowserPane(props: {
     const script =
       "(() => { const s = window.getSelection && window.getSelection(); const t = s ? s.toString() : ''; if (!t.trim()) return { text: '' }; const r = s.rangeCount ? s.getRangeAt(0).getBoundingClientRect() : null; return { text: t, left: r ? r.left : 0, top: r ? r.top : 0 }; })()";
     const tick = () => {
-      void webview
-        .executeJavaScript?.(script)
+      void safeWebviewExec(webview, script)
         .then((result) => {
           if (cancelled) {
             return;
