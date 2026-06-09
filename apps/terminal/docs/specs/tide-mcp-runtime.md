@@ -99,6 +99,7 @@ Business Rules:
 - BR-6: When `tide_observe_workspace` is called from a Caller Pane, the returned Pane entries must be scoped to the caller Terminal boundary and must not expose other Terminal Context Surface Browser PaneIds as ordinary action targets.
 - BR-7: Compact `tide_observe_workspace` must return Caller Pane orientation, Terminal Context Surface visibility, scoped Pane identities, and Browser Pane target summaries without full Browser visual-fit guidance fields.
 - BR-8: `tide_list_panes` from a Caller Pane must list only the caller Terminal boundary instead of every Pane in the active Workspace.
+- BR-9: The background offscreen WKWebView frame (fact 16) must be computed for **every** Browser Pane owned by a non-focused Stage Terminal, including a Browser Pane that is an inactive TabGroup tab or a non-active Pane in a Stacked Terminal Context Surface — not only the surface's active Pane. Otherwise such a Browser Pane never navigates or installs its snapshot bridge, so `tide_browser_observe` / `tide_browser_read_snapshot` return an empty BrowserSnapshot until its owner is focused. The offscreen frame falls back to the full owning Terminal Context Surface area when the Pane has no computed split sub-rect (inactive tab).
 
 ### UC-2: ResizeLayoutTarget
 
@@ -257,6 +258,7 @@ Business Rules:
 | UC-1: ObserveTideWorkspace | BR-3 | `tide_mcp_runtime` | `observing_workspace_reports_browser_visual_fit` |
 | UC-1: ObserveTideWorkspace | BR-5 | `tide_mcp_runtime` | `observing_workspace_guides_layout_correction_before_browser_workarounds` |
 | UC-1: ObserveTideWorkspace | BR-5 | `tide_mcp_runtime` | `observing_background_browser_reports_background_runtime_without_focus_tool` |
+| UC-1: ObserveTideWorkspace | BR-9 | `tide_mcp_runtime` | `background_browser_in_inactive_tab_still_gets_offscreen_rect_for_snapshot` |
 | UC-1: ObserveTideWorkspace | BR-6 | `tide_mcp_runtime` | `observing_workspace_from_caller_scopes_panes_to_caller_terminal_context_surface` |
 | UC-1: ObserveTideWorkspace | BR-7 | `tide_mcp_runtime` | `observing_workspace_compact_reports_caller_orientation_without_full_visual_payload` |
 | UC-1: ObserveTideWorkspace | BR-8 | `tide_mcp_runtime` | `list_panes_from_caller_scopes_to_caller_terminal_context_surface` |

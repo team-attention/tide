@@ -1,0 +1,101 @@
+#!/bin/sh
+# Tide auto-injected wrapper for opencode CLI.
+# Uses OPENCODE_CONFIG to layer a single Tide-owned config overlay that is merged
+# BETWEEN the user's global (~/.config/opencode) and project config — never a
+# rewrite. The overlay carries three additive surfaces in one file:
+#   - mcp.tide-terminal      → Tide MCP Runtime (per-Pane env)
+#   - instructions[]         → Tide Tool Discovery Context
+#   - plugin[]               → lifecycle attention plugin (absolute path = file plugin)
+# The user's own MCP servers, plugins, and instructions still apply.
+
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|${SELF_DIR}||g")" command -v opencode 2>/dev/null)"
+[ -z "$REAL_CMD" ] && echo "opencode: command not found" >&2 && exit 127
+
+# Skip injection if not inside Tide
+[ -z "$TIDE_TERMINAL_BIN" ] && exec "$REAL_CMD" "$@"
+
+TIDE_TERMINAL_WRAPPER_CONFIG_ROOT="${TIDE_TERMINAL_WRAPPER_CONFIG_ROOT:-${XDG_STATE_HOME:-$HOME/Library/Application Support/Tide Terminal}/agent-wrappers}"
+TIDE_TERMINAL_OPENCODE_DIR="$TIDE_TERMINAL_WRAPPER_CONFIG_ROOT/opencode"
+CONFIG_FILE="$TIDE_TERMINAL_OPENCODE_DIR/opencode.json"
+CONTEXT_FILE="$TIDE_TERMINAL_OPENCODE_DIR/tide-context.md"
+PLUGIN_FILE="$TIDE_TERMINAL_OPENCODE_DIR/tide-terminal.js"
+mkdir -p "$TIDE_TERMINAL_OPENCODE_DIR"
+
+tide_notify() {
+  "$TIDE_TERMINAL_BIN" notify "$1" --pane "$TIDE_TERMINAL_PANE" --agent opencode >/dev/null 2>&1 || \
+    printf '\033]9;tide:wrapped-agent:opencode:%s\007' "$1"
+}
+
+# Tide Tool Discovery Context — loaded via the config `instructions` field.
+cat > "$CONTEXT_FILE" <<'TIDE_TERMINAL_CONTEXT_EOF'
+You are running inside Tide Terminal, a terminal-centered task Workspace.
+
+Tide has a Stage for the primary Terminal, a Terminal Context Surface for supporting Panes, a FileTree View, a Workspace rail, and Pane kinds Terminal, Editor, Diff, Browser, and Launcher.
+
+When the user asks to open, show, view, browse, inspect, preview, navigate to, or display a file, URL, webpage, local server, Pane, or Tide surface, prefer Tide MCP tools before shell commands that open macOS default apps.
+
+- Use `tide_open_browser` for URLs, webpages, local previews, and browser inspection inside a Tide Browser Pane.
+- Use `tide_open_editor` for existing source or text files inside a Tide Editor Pane.
+- Use `tide_observe_workspace` when you need current Stage, Terminal Context Surface, Pane geometry, or focus.
+
+Use macOS `open` only when the user explicitly asks for the default app or external browser, or when Tide tools cannot represent the target.
+TIDE_TERMINAL_CONTEXT_EOF
+
+# Lifecycle plugin (a "file" plugin — referenced by absolute path in the config).
+# It reads TIDE_TERMINAL_* from the inherited process env (this wrapper exports
+# them), so a single shared plugin file routes lifecycle to the right Pane:
+#   chat.message    → agent-running (a new user message starts a turn)
+#   permission.ask  → agent-needs-input (opencode is asking to proceed)
+#   session.idle    → agent-idle (the turn finished)
+cat > "$PLUGIN_FILE" <<'TIDE_TERMINAL_PLUGIN_EOF'
+const bin = process.env.TIDE_TERMINAL_BIN
+const pane = process.env.TIDE_TERMINAL_PANE
+
+export const TideTerminal = async ({ $ }) => {
+  const notify = async (event) => {
+    if (!bin) return
+    try {
+      await $`${bin} notify ${event} --pane ${pane} --agent opencode`.quiet()
+    } catch {}
+  }
+  return {
+    "chat.message": async () => {
+      await notify("agent-running")
+    },
+    "permission.ask": async () => {
+      await notify("agent-needs-input")
+    },
+    event: async ({ event }) => {
+      if (event.type === "session.idle") {
+        await notify("agent-idle")
+      }
+    },
+  }
+}
+TIDE_TERMINAL_PLUGIN_EOF
+
+# Tide-owned config overlay (OPENCODE_CONFIG). Additive — merged between the
+# user's global and project config. $TIDE_TERMINAL_* expand to this Pane's values;
+# $schema is kept literal. The MCP `command` is an argv array and the per-Pane
+# identity rides in the `environment` block.
+cat > "$CONFIG_FILE" << TIDE_TERMINAL_EOF
+{
+  "\$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "tide-terminal": {
+      "type": "local",
+      "command": ["$TIDE_TERMINAL_BIN", "mcp"],
+      "environment": { "TIDE_TERMINAL_SOCKET": "$TIDE_TERMINAL_SOCKET", "TIDE_TERMINAL_PANE": "$TIDE_TERMINAL_PANE", "TIDE_TERMINAL_WINDOW": "$TIDE_TERMINAL_WINDOW" },
+      "enabled": true
+    }
+  },
+  "instructions": ["$CONTEXT_FILE"],
+  "plugin": ["$PLUGIN_FILE"]
+}
+TIDE_TERMINAL_EOF
+
+tide_notify agent-attached
+trap 'tide_notify agent-detached' EXIT
+
+OPENCODE_CONFIG="$CONFIG_FILE" "$REAL_CMD" "$@"

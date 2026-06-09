@@ -5,7 +5,7 @@
 ### As-Is
 
 - `TideSettings.auto_integration` is persisted in `crates/tide-app/src/domain/state/settings.rs` and defaults to `true`.
-- `discover_agent_resources()` in `crates/tide-app/src/domain/terminal/mod.rs` discovers bundled resources for the fixed Wrapped Agent set: `claude`, `codex`, `gemini`, and `agy` (Antigravity — see [docs/specs/antigravity-wrapped-agent.md](antigravity-wrapped-agent.md)).
+- `discover_agent_resources()` in `crates/tide-app/src/domain/terminal/mod.rs` discovers bundled resources for the fixed Wrapped Agent set: `claude`, `codex`, `gemini`, `agy` (Antigravity — see [docs/specs/antigravity-wrapped-agent.md](antigravity-wrapped-agent.md)), and `opencode` (see [docs/specs/opencode-wrapped-agent.md](opencode-wrapped-agent.md)).
 - Every new `Terminal` exports `TIDE_TERMINAL_SOCKET`, `TIDE_TERMINAL_PANE`, `TIDE_TERMINAL_WORKSPACE`, and `TIDE_TERMINAL_BIN`. When auto-integration is enabled, the PTY environment also injects `__TIDE_TERMINAL_WRAPPER_DIR` (and `__TIDE_TERMINAL_ORIG_ZDOTDIR`) and overrides `ZDOTDIR` so Tide's shell integration can place the bundled wrappers ahead of the real commands.
 - The checked-in Claude and Gemini wrappers currently map their documented hook names into `tide notify` lifecycle events, but they do not yet forward the hook `stdin` JSON that already contains response text for `Notification` and `AfterAgent`.
 - The checked-in Codex wrapper still uses the official `UserPromptSubmit` hook, but its completed-turn path has to move off top-level `notify` and onto the documented `Stop` hook plus `transcript_path` so Tide can wait for main-thread completion.
@@ -14,7 +14,7 @@
 
 ### To-Be
 
-- Keep auto-integration zero-config for the fixed Wrapped Agent set: `claude`, `codex`, `gemini`, and `agy` (Antigravity).
+- Keep auto-integration zero-config for the fixed Wrapped Agent set: `claude`, `codex`, `gemini`, `agy` (Antigravity), and `opencode`.
 - Keep the Codex wrapper aligned with the documented `UserPromptSubmit` and `Stop` hooks instead of treating Codex completion as an early top-level `notify`.
 - Let wrapper launch mark `Wrapped Agent Presence` without forcing `Running`, so Tide chrome can distinguish connected-idle from an active turn.
 - Preserve wrapper-managed connected-idle presence across Gateway PID refreshes and shell-idle-driven re-detection gaps when the wrapper has reported `agent-attached` but Tide has not rebound a concrete agent PID yet.
@@ -25,7 +25,7 @@
 
 1. Keep resource discovery and PTY environment injection as the only auto-integration boundary inside Tide.
 2. Treat `tide notify` as the primary wrapper signal path, with wrapped-agent OSC 9 fallback only where the checked-in wrapper actually implements it.
-3. Keep the supported Wrapped Agent list fixed to `claude`, `codex`, `gemini`, and `agy` (Antigravity).
+3. Keep the supported Wrapped Agent list fixed to `claude`, `codex`, `gemini`, `agy` (Antigravity), and `opencode`.
 4. Use the documented Codex `Stop` hook to forward turn-stop payload JSON into Tide's Codex-specific classifier, and use `transcript_path` to resolve the main-thread final assistant response.
 5. Let checked-in wrappers opt into `tide notify --payload-stdin` when their official hook docs guarantee JSON on `stdin`.
 6. Verify bundled wrapper contracts with behavior tests that read the checked-in wrapper resources instead of guessing external coding-agent configuration.

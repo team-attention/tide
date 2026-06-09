@@ -263,6 +263,64 @@ fn observing_background_browser_reports_background_runtime_without_focus_tool() 
 }
 
 #[test]
+fn background_browser_in_inactive_tab_still_gets_offscreen_rect_for_snapshot() {
+    // UC-1 BR-9: a Browser Pane that is an INACTIVE TabGroup tab in a non-focused
+    // Terminal Context Surface must still receive a background offscreen rect, so it
+    // navigates and installs its snapshot bridge. pane_ids() excludes inactive tabs,
+    // which previously left such panes with no rect and a permanently empty snapshot.
+    let (mut app, focused_terminal_id) = app_with_terminal();
+    let owner_terminal_id = app
+        .layout
+        .split(focused_terminal_id, SplitDirection::Vertical);
+    let terminal = TerminalPane::with_cwd(owner_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(owner_terminal_id, PaneKind::Terminal(terminal));
+
+    // First dock pane becomes the active tab.
+    let active_pane_id = app.layout.alloc_id();
+    app.panes.insert(
+        active_pane_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            active_pane_id,
+            "http://localhost:4100".to_string(),
+        )),
+    );
+    app.add_pane_to_dock(active_pane_id, Some(owner_terminal_id));
+
+    // Browser pane is added as an inactive tab behind the active one.
+    let browser_id = app.layout.alloc_id();
+    app.panes.insert(
+        browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            browser_id,
+            "http://localhost:4174".to_string(),
+        )),
+    );
+    if let Some(PaneKind::Terminal(tp)) = app.panes.get_mut(&owner_terminal_id) {
+        assert!(tp.dock_layout.add_tab(active_pane_id, browser_id));
+        assert!(tp.dock_layout.set_active_tab(active_pane_id));
+    }
+    app.dock.dock_open = true;
+    app.dock.visibility_animation = None;
+    app.focus.focused = Some(focused_terminal_id);
+    app.focus.stage_focused = Some(focused_terminal_id);
+    app.compute_layout();
+
+    // Precondition: the browser is in the surface but is NOT the active tab.
+    let tp = match app.panes.get(&owner_terminal_id) {
+        Some(PaneKind::Terminal(tp)) => tp,
+        _ => panic!("owner terminal missing"),
+    };
+    assert!(tp.dock_layout.all_pane_ids().contains(&browser_id));
+    assert!(!tp.dock_layout.pane_ids().contains(&browser_id));
+
+    let rect = app
+        .background_browser_visual_rect_for_layout(browser_id, owner_terminal_id)
+        .expect("inactive-tab background Browser Pane must still get an offscreen rect");
+    assert!(rect.x < 0.0);
+}
+
+#[test]
 fn observing_workspace_from_caller_scopes_panes_to_caller_terminal_context_surface() {
     // UC-1 BR-6: Caller-scoped workspace observe returns only the caller Terminal boundary as ordinary targets.
     let (mut app, caller_terminal_id, caller_browser_id) = app_with_context_browser(400.0);
