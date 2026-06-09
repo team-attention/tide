@@ -1257,6 +1257,9 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
+        if (isDuplicateAgentMessageUpdate(update, nextBlocks)) {
+          continue;
+        }
         await recordBlockUpdateInThreadCache(input.persistence, service, update);
         emitBlockUpdate({
           update,
@@ -1378,6 +1381,14 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
+        // The turn-end hook may already have ingested the final answer (from its
+        // last_assistant_message) as an agent_message block; the transcript then yields
+        // the SAME answer under a different blockId. Skip it so the reply is not shown
+        // twice. (The reverse — hook deduping against the transcript — already happens
+        // in ingestTurnOutcomeAndSettle.)
+        if (isDuplicateAgentMessageUpdate(update, nextBlocks)) {
+          continue;
+        }
         await recordBlockUpdateInThreadCache(input.persistence, service, update);
         emitBlockUpdate({
           update,
@@ -1473,6 +1484,9 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
+        if (isDuplicateAgentMessageUpdate(update, nextBlocks)) {
+          continue;
+        }
         await recordBlockUpdateInThreadCache(input.persistence, service, update);
         emitBlockUpdate({
           update,
@@ -1876,6 +1890,34 @@ function emitBlockUpdate(input: {
       }),
     );
   }
+}
+
+// True when this block update would render an agent_message identical to one already
+// present under a different blockId — i.e. the same final answer produced by both the
+// turn-end hook (last_assistant_message) and the provider transcript. Used to keep the
+// reply from appearing twice.
+function isDuplicateAgentMessageUpdate(
+  update: AgentSessionBlockUpdate,
+  existing: Map<string, AgentSessionBlock>,
+): boolean {
+  if (update.kind !== "upsert" || update.block.kind !== "agent_message") {
+    return false;
+  }
+  const body = typeof update.block.body === "string" ? update.block.body.trim() : "";
+  if (body.length === 0) {
+    return false;
+  }
+  for (const other of existing.values()) {
+    if (
+      other.blockId !== update.block.blockId &&
+      other.kind === "agent_message" &&
+      typeof other.body === "string" &&
+      other.body.trim() === body
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function recordBlockUpdateInThreadCache(
