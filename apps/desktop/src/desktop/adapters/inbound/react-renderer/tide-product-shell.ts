@@ -32,7 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { fileIconFor } from "./file-icons.ts";
-import { computeWorktreePath } from "../../../../shared/worktree-path.ts";
+import { computeWorktreePath, worktreeRepoRootForCwd } from "../../../../shared/worktree-path.ts";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 // xterm core is CommonJS and safe to import in any environment (it does not
@@ -352,6 +352,7 @@ export interface ProjectRegistryBridge {
     name: string,
     options?: { baseDirPattern?: string; copyFiles?: string[] },
   ): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
+  removeWorktree(cwd: string): Promise<{ entries: ProjectRegistryEntry[] }>;
   gitContext(cwd: string): Promise<GitContextResult>;
   listCommands(cwd: string, agentId: string): Promise<AgentChatCommandOption[]>;
 }
@@ -419,6 +420,7 @@ interface ProductShellHandlers {
   onProjectRevealInFinder: (projectId: string) => void;
   onProjectArchiveChats: (projectId: string) => void;
   onProjectRemove: (projectId: string) => void;
+  onProjectDeleteWorktree: (projectId: string) => void;
   onProjectPinToggle: (projectId: string) => void;
   onProjectRenameStart: (projectId: string) => void;
   onProjectRenameSubmit: (projectId: string, name: string) => void;
@@ -1429,6 +1431,29 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           .catch(() => {});
       }
       setShellState((state) => openProductShellLeftUiMenu(state, null));
+    },
+    // Delete the git worktree on disk (thread-aware): warn if threads live in it.
+    onProjectDeleteWorktree: (projectId) => {
+      const cwd = projectCwdById(shellState, projectId);
+      const bridge = props.projectBridge;
+      setShellState((state) => openProductShellLeftUiMenu(state, null));
+      if (cwd === undefined || bridge === undefined) {
+        return;
+      }
+      const threadsHere = shellState.threads.filter(
+        (thread) => thread.scope.kind === "project" && thread.scope.cwd === cwd,
+      ).length;
+      const message =
+        threadsHere > 0
+          ? `Delete this worktree? ${threadsHere} thread${threadsHere === 1 ? "" : "s"} run in it — they'll become unavailable (their history is kept).`
+          : "Delete this worktree directory? The branch is kept.";
+      if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(message)) {
+        return;
+      }
+      bridge
+        .removeWorktree(cwd)
+        .then((result) => setShellState((state) => setProductShellRegisteredProjects(state, result.entries)))
+        .catch(() => {});
     },
     onProjectPinToggle: (projectId) =>
       setShellState((state) => toggleProductShellProjectPin(state, projectId)),
@@ -4171,12 +4196,23 @@ function createLeftUiContextMenu(
             icon: createElement(Archive, { size: 16, strokeWidth: 1.9 }),
             onClick: () => handlers.onProjectArchiveChats(menu.projectId),
           },
-          {
-            label: "Remove",
-            icon: createElement(Trash2, { size: 16, strokeWidth: 1.9 }),
-            onClick: () => handlers.onProjectRemove(menu.projectId),
-            danger: true,
-          },
+          ...(worktreeRepoRootForCwd(menu.projectId) !== null
+            ? [
+                {
+                  label: "Delete worktree",
+                  icon: createElement(Trash2, { size: 16, strokeWidth: 1.9 }),
+                  onClick: () => handlers.onProjectDeleteWorktree(menu.projectId),
+                  danger: true,
+                } satisfies ContextMenuItem,
+              ]
+            : [
+                {
+                  label: "Remove",
+                  icon: createElement(Trash2, { size: 16, strokeWidth: 1.9 }),
+                  onClick: () => handlers.onProjectRemove(menu.projectId),
+                  danger: true,
+                } satisfies ContextMenuItem,
+              ]),
         ];
 
   return createElement(

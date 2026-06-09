@@ -40,6 +40,7 @@ export function createInitialRendererElement() {
               name: string,
               options?: { baseDirPattern?: string; copyFiles?: string[] },
             ) => window.tide!.createWorktree(cwd, name, options),
+            removeWorktree: (cwd: string) => window.tide!.removeWorktree(cwd),
             gitContext: (cwd: string) => window.tide!.gitContext(cwd),
             listCommands: (cwd: string, agentId: string) => window.tide!.listCommands(cwd, agentId),
           },
@@ -70,6 +71,7 @@ declare global {
       renameProject(cwd: string, name: string): Promise<{ projectId: string; name: string; cwd: string }[]>;
       revealInFinder(cwd: string): Promise<void>;
       createWorktree(cwd: string, name: string, options?: { baseDirPattern?: string; copyFiles?: string[] }): Promise<{ entries: { projectId: string; name: string; cwd: string }[]; createdCwd: string | null }>;
+      removeWorktree(cwd: string): Promise<{ entries: { projectId: string; name: string; cwd: string }[] }>;
       gitContext(cwd: string): Promise<{
         isGitRepo: boolean;
         currentBranch: string | null;

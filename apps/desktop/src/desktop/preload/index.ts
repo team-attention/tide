@@ -42,6 +42,7 @@ export interface TidePreloadSurface {
     name: string,
     options?: { baseDirPattern?: string; copyFiles?: string[] },
   ): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
+  removeWorktree(cwd: string): Promise<{ entries: ProjectRegistryEntry[] }>;
   gitContext(cwd: string): Promise<GitContext>;
   listCommands(cwd: string, agentId: string): Promise<ProviderCommandSuggestion[]>;
 }
@@ -83,6 +84,11 @@ export const tidePreloadSurface: TidePreloadSurface = {
     return ipcRenderer.invoke("tide:create-worktree", cwd, name, options) as Promise<{
       entries: ProjectRegistryEntry[];
       createdCwd: string | null;
+    }>;
+  },
+  removeWorktree(cwd) {
+    return ipcRenderer.invoke("tide:remove-worktree", cwd) as Promise<{
+      entries: ProjectRegistryEntry[];
     }>;
   },
   gitContext(cwd) {

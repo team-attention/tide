@@ -8,7 +8,7 @@ import {
   type CommandFs,
 } from "./provider-command-discovery.ts";
 import { fileURLToPath } from "node:url";
-import { computeWorktreePath, sanitizeWorktreeBranch } from "../../shared/worktree-path.ts";
+import { computeWorktreePath, sanitizeWorktreeBranch, worktreeRepoRootForCwd } from "../../shared/worktree-path.ts";
 import {
   CONTRACT_VERSION,
   createContractErrorEvent,
@@ -188,6 +188,30 @@ ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown, name: unknow
   const entries = [...current, { projectId: worktreePath, name: branch, cwd: worktreePath }];
   await writeProjectRegistry(entries);
   return { entries, createdCwd: worktreePath };
+});
+
+// Remove a git worktree directory and unregister it as a Project. The branch is
+// left intact (deleting branches is a separate, more destructive action). The
+// repo root is derived from the `<repo>.worktree/<branch>` path rule.
+ipcMain.handle("tide:remove-worktree", async (_event, cwd: unknown) => {
+  const current = await readProjectRegistry();
+  if (typeof cwd !== "string" || cwd.length === 0) {
+    return { entries: current };
+  }
+  const repoRoot = worktreeRepoRootForCwd(cwd);
+  if (repoRoot !== null) {
+    await new Promise<void>((resolve) => {
+      execFile(
+        "git",
+        ["-C", repoRoot, "worktree", "remove", "--force", cwd],
+        { maxBuffer: 4 * 1024 * 1024 },
+        () => resolve(),
+      );
+    });
+  }
+  const entries = current.filter((entry) => entry.cwd !== cwd);
+  await writeProjectRegistry(entries);
+  return { entries };
 });
 
 // Reveal a folder in Finder (read-only, opens the OS file browser).
