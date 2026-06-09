@@ -920,6 +920,17 @@ function renderAgentMarkdown(body: string): ReactElement {
   });
 }
 
+// A user message that carries attached regions (each formatted as `**↳ label**`
+// + note + content) renders as markdown so the labels, quoted notes, and code
+// blocks read as structured attachments instead of raw asterisks/backticks.
+function renderUserAttachmentBody(body: string): ReactElement {
+  return createElement("div", {
+    className:
+      "agent-session-turn__body agent-session-turn__body--md agent-session-turn__body--attachments",
+    dangerouslySetInnerHTML: { __html: markdown.render(body) },
+  });
+}
+
 function createAgentSessionTurn(block: AgentChatBlockView): ReactElement | null {
   if (block.role === "tool") {
     return createToolLogTurn(block);
@@ -944,7 +955,9 @@ function createAgentSessionTurn(block: AgentChatBlockView): ReactElement | null 
       : null,
     role === "agent"
       ? renderAgentMarkdown(block.body)
-      : createElement("p", { className: "agent-session-turn__body" }, block.body),
+      : role === "user" && block.body.includes("**↳ ")
+        ? renderUserAttachmentBody(block.body)
+        : createElement("p", { className: "agent-session-turn__body" }, block.body),
     block.rawFallback && block.rawFallback !== block.body
       ? createElement("pre", { className: "agent-session-turn__raw" }, block.rawFallback)
       : null,

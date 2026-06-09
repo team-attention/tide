@@ -1226,6 +1226,31 @@ button {
   line-height: 1.55;
 }
 
+/* A user message carrying attached regions reads as a left-aligned card (the
+   right-aligned bubble is too cramped for code/quotes). */
+.agent-session-turn--user:has(.agent-session-turn__body--attachments) {
+  justify-content: flex-start;
+}
+.agent-session-turn__body--attachments {
+  max-width: min(800px, 100%);
+  width: 100%;
+  font-size: 14px;
+}
+/* The "↳ label" header for each attached region. */
+.agent-session-turn__body--attachments strong:first-child,
+.agent-session-turn__body--attachments p > strong {
+  display: inline-block;
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.agent-session-turn__body--attachments blockquote {
+  margin: 4px 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--tide-line-strong, var(--tide-line));
+  color: var(--tide-text);
+}
+
 /* Structured/event blocks are cards (canonical 1338): white, bordered, soft
    shadow, radius 14 — distinct from the flat user/agent transcript text. */
 .agent-session-turn--event {
