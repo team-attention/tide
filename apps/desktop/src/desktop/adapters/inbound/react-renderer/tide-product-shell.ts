@@ -1,4 +1,4 @@
-import { createElement, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
+import { createElement, Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
 import {
   Archive,
   Check,
@@ -2421,6 +2421,44 @@ function WorkbenchBrowserPane(props: {
   const webviewRef = useRef<BrowserWebViewElement | null>(null);
   const executedActionIdsRef = useRef<Set<string>>(new Set());
   const [address, setAddress] = useState(props.pane.url ?? "");
+  // Floating "Add selection" toolbar that follows an in-page text selection. The
+  // <webview> is isolated, so we poll its selection + bounding rect and map it
+  // into host coordinates. This is distinct from the address-bar "Add page".
+  const [browserSelToolbar, setBrowserSelToolbar] = useState<{ x: number; y: number; text: string } | null>(null);
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (webview?.executeJavaScript === undefined) {
+      return undefined;
+    }
+    let cancelled = false;
+    const script =
+      "(() => { const s = window.getSelection && window.getSelection(); const t = s ? s.toString() : ''; if (!t.trim()) return { text: '' }; const r = s.rangeCount ? s.getRangeAt(0).getBoundingClientRect() : null; return { text: t, left: r ? r.left : 0, top: r ? r.top : 0 }; })()";
+    const tick = () => {
+      void webview
+        .executeJavaScript?.(script)
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+          const record = result !== null && typeof result === "object" ? (result as Record<string, unknown>) : {};
+          const text = typeof record.text === "string" ? record.text : "";
+          if (text.trim().length === 0) {
+            setBrowserSelToolbar((prev) => (prev === null ? prev : null));
+            return;
+          }
+          const host = webview.getBoundingClientRect?.();
+          const left = (host?.left ?? 0) + (typeof record.left === "number" ? record.left : 0);
+          const top = (host?.top ?? 0) + (typeof record.top === "number" ? record.top : 0);
+          setBrowserSelToolbar({ x: left, y: top, text });
+        })
+        .catch(() => {});
+    };
+    const interval = window.setInterval(tick, 500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [props.pane.paneId, props.pane.url]);
   // Keep the address bar in sync when the backend reports a navigated URL.
   useEffect(() => {
     if (props.pane.url !== undefined) {
@@ -2548,70 +2586,36 @@ function WorkbenchBrowserPane(props: {
         {
           type: "button",
           className: "workbench-browser-bar__to-chat",
-          title: "Send the selected text (or whole page) to the chat composer",
-          "aria-label": "Add browser selection or page to chat",
+          title: "Add this page (as a document) to the chat composer",
+          "aria-label": "Add this page to chat",
           onClick: () => {
             const url = props.pane.url ?? address;
             if (url.length === 0) {
               return;
             }
             const title = props.pane.title && props.pane.title !== "Browser" ? props.pane.title : url;
+            const label = title.length > 40 ? `${title.slice(0, 40)}…` : title;
             const webview = webviewRef.current;
-            // Prefer the user's in-page text selection; fall back to the whole page.
-            const selectionScript =
-              "(() => ({ text: (window.getSelection && window.getSelection().toString()) || '' }))()";
-            const addSelection = (sel: string) => {
-              const trimmed = sel.trim().replace(/\s+/g, " ");
-              const quoted = sel
-                .trim()
-                .split("\n")
-                .map((line) => `> ${line}`)
-                .join("\n");
-              props.handlers.onAddContentToChat({
-                kind: "browser",
-                label: `${trimmed.slice(0, 40)}${trimmed.length > 40 ? "…" : ""}`,
-                text: `From [${title}](${url}):\n\n${quoted}`,
-              });
-            };
-            const addPage = () => {
-              const label = title.length > 40 ? `${title.slice(0, 40)}…` : title;
-              if (webview !== null) {
-                void readBrowserWebViewSnapshot(webview)
-                  .then((snapshot) => {
-                    const excerpt = (snapshot.bodyTextPreview ?? "").trim().slice(0, 2000);
-                    props.handlers.onAddContentToChat({
-                      kind: "browser",
-                      label,
-                      text: `[${title}](${url})${excerpt.length > 0 ? `\n\n${excerpt}` : ""}`,
-                    });
-                  })
-                  .catch(() =>
-                    props.handlers.onAddContentToChat({ kind: "browser", label, text: `[${title}](${url})` }),
-                  );
-              } else {
-                props.handlers.onAddContentToChat({ kind: "browser", label, text: `[${title}](${url})` });
-              }
-            };
-            if (webview?.executeJavaScript !== undefined) {
-              void webview
-                .executeJavaScript(selectionScript)
-                .then((result) => {
-                  const record = result !== null && typeof result === "object" ? (result as Record<string, unknown>) : {};
-                  const text = typeof record.text === "string" ? record.text : "";
-                  if (text.trim().length > 0) {
-                    addSelection(text);
-                  } else {
-                    addPage();
-                  }
+            if (webview !== null) {
+              void readBrowserWebViewSnapshot(webview)
+                .then((snapshot) => {
+                  const excerpt = (snapshot.bodyTextPreview ?? "").trim().slice(0, 2000);
+                  props.handlers.onAddContentToChat({
+                    kind: "browser",
+                    label,
+                    text: `[${title}](${url})${excerpt.length > 0 ? `\n\n${excerpt}` : ""}`,
+                  });
                 })
-                .catch(() => addPage());
+                .catch(() =>
+                  props.handlers.onAddContentToChat({ kind: "browser", label, text: `[${title}](${url})` }),
+                );
             } else {
-              addPage();
+              props.handlers.onAddContentToChat({ kind: "browser", label, text: `[${title}](${url})` });
             }
           },
         },
         createElement(FileText, { size: 13, strokeWidth: 1.8, "aria-hidden": true }),
-        "Add to chat",
+        "Add page",
       ),
     ),
     createElement("webview", {
@@ -2621,6 +2625,38 @@ function WorkbenchBrowserPane(props: {
       src: props.pane.url ?? "about:blank",
       partition: "persist:tide-workbench-browser",
     }),
+    browserSelToolbar === null
+      ? null
+      : createElement(
+          "button",
+          {
+            type: "button",
+            className: "editor-selection-toolbar",
+            style: {
+              left: `${browserSelToolbar.x}px`,
+              top: `${Math.max(browserSelToolbar.y - 36, 8)}px`,
+            } as CSSProperties,
+            onMouseDown: (event: { preventDefault: () => void }) => {
+              event.preventDefault();
+              const url = props.pane.url ?? address;
+              const title = props.pane.title && props.pane.title !== "Browser" ? props.pane.title : url;
+              const trimmed = browserSelToolbar.text.trim().replace(/\s+/g, " ");
+              const quoted = browserSelToolbar.text
+                .trim()
+                .split("\n")
+                .map((line) => `> ${line}`)
+                .join("\n");
+              props.handlers.onAddContentToChat({
+                kind: "browser",
+                label: `${trimmed.slice(0, 40)}${trimmed.length > 40 ? "…" : ""}`,
+                text: `From [${title}](${url}):\n\n${quoted}`,
+              });
+              setBrowserSelToolbar(null);
+            },
+          },
+          createElement(CornerDownRight, { size: 13, strokeWidth: 1.9, "aria-hidden": true }),
+          "Add selection",
+        ),
   );
 }
 
@@ -3470,8 +3506,11 @@ function WorkbenchTerminalView(props: {
   initialText: string;
   onInput: (paneId: string, bytes: string) => void;
   onResize?: (paneId: string, cols: number, rows: number) => void;
+  onAddSelection?: (text: string) => void;
 }): ReactElement {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  // Floating "Add to chat" button that follows the terminal text selection.
+  const [selToolbar, setSelToolbar] = useState<{ x: number; y: number } | null>(null);
   useEffect(() => {
     const host = hostRef.current;
     if (host === null || XtermTerminal === undefined) {
@@ -3496,9 +3535,24 @@ function WorkbenchTerminalView(props: {
     }
     const dataSub = term.onData((data) => props.onInput(props.paneId, data));
     terminalOutputSinks.set(props.paneId, (chunk) => term.write(chunk));
-    terminalSelectionGetters.set(props.paneId, () => {
+    const readSelection = () => {
       const withSel = term as unknown as { getSelection?: () => string };
       return typeof withSel.getSelection === "function" ? withSel.getSelection() : "";
+    };
+    terminalSelectionGetters.set(props.paneId, readSelection);
+    // Show the floating "Add to chat" near where the drag-selection ended; hide
+    // it as soon as the selection is cleared.
+    const onHostMouseUp = (event: MouseEvent) => {
+      window.setTimeout(() => {
+        setSelToolbar(readSelection().trim().length > 0 ? { x: event.clientX, y: event.clientY } : null);
+      }, 0);
+    };
+    host.addEventListener("mouseup", onHostMouseUp);
+    const withSelEvents = term as unknown as { onSelectionChange?: (cb: () => void) => { dispose: () => void } };
+    const selSub = withSelEvents.onSelectionChange?.(() => {
+      if (readSelection().trim().length === 0) {
+        setSelToolbar(null);
+      }
     });
 
     let active = true;
@@ -3561,16 +3615,42 @@ function WorkbenchTerminalView(props: {
       active = false;
       terminalOutputSinks.delete(props.paneId);
       terminalSelectionGetters.delete(props.paneId);
+      host.removeEventListener("mouseup", onHostMouseUp);
+      selSub?.dispose();
       dataSub.dispose();
       observer?.disconnect();
       term.dispose();
     };
   }, [props.paneId]);
-  return createElement("div", {
-    className: "workbench-terminal-xterm",
-    "data-terminal-xterm": props.paneId,
-    ref: hostRef,
-  });
+  return createElement(
+    Fragment,
+    null,
+    createElement("div", {
+      className: "workbench-terminal-xterm",
+      "data-terminal-xterm": props.paneId,
+      ref: hostRef,
+    }),
+    selToolbar === null
+      ? null
+      : createElement(
+          "button",
+          {
+            type: "button",
+            className: "editor-selection-toolbar",
+            style: { left: `${selToolbar.x + 6}px`, top: `${Math.max(selToolbar.y - 36, 8)}px` } as CSSProperties,
+            onMouseDown: (event: { preventDefault: () => void }) => {
+              event.preventDefault();
+              const text = terminalSelectionGetters.get(props.paneId)?.() ?? "";
+              if (text.trim().length > 0) {
+                props.onAddSelection?.(text);
+              }
+              setSelToolbar(null);
+            },
+          },
+          createElement(CornerDownRight, { size: 13, strokeWidth: 1.9, "aria-hidden": true }),
+          "Add to chat",
+        ),
+  );
 }
 
 function WorkbenchTerminalPane(props: {
@@ -3578,39 +3658,22 @@ function WorkbenchTerminalPane(props: {
   handlers: ProductShellHandlers;
 }): ReactElement {
   // A real dark terminal: the xterm surface fills the pane and takes keystrokes
-  // directly (xterm.onData routes to onTerminalInput). A floating "Add to chat"
-  // button grabs the current text selection.
-  const paneId = props.pane.paneId;
+  // directly (xterm.onData routes to onTerminalInput). Selecting text shows a
+  // floating "Add to chat" anchored to the selection (no always-on button).
   return createElement(
     "div",
     { className: "workbench-terminal", "data-terminal-status": props.pane.status ?? "ready" },
-    createElement(
-      "button",
-      {
-        type: "button",
-        className: "workbench-terminal__to-chat",
-        title: "Add selection to chat",
-        "aria-label": "Add terminal selection to chat",
-        onClick: () => {
-          const selection = terminalSelectionGetters.get(paneId)?.() ?? "";
-          if (selection.trim().length === 0) {
-            return;
-          }
-          props.handlers.onAddContentToChat({
-            kind: "terminal",
-            label: "Terminal output",
-            text: `\`\`\`\n${selection}\n\`\`\``,
-          });
-        },
-      },
-      createElement(CornerDownRight, { size: 13, strokeWidth: 1.9, "aria-hidden": true }),
-      "Add to chat",
-    ),
     createElement(WorkbenchTerminalView, {
       paneId: props.pane.paneId,
       initialText: props.pane.transcriptPreview ?? "",
       onInput: props.handlers.onTerminalInput,
       onResize: props.handlers.onTerminalResize,
+      onAddSelection: (text: string) =>
+        props.handlers.onAddContentToChat({
+          kind: "terminal",
+          label: text.trim().replace(/\s+/g, " ").slice(0, 40) || "Terminal output",
+          text: `\`\`\`\n${text}\n\`\`\``,
+        }),
     }),
   );
 }

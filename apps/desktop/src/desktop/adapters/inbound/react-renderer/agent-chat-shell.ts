@@ -542,6 +542,7 @@ function createProviderReadiness(
 // message is actually queued behind the live turn — never on an idle send, which goes
 // straight through.
 function createQueuedInputRow(queuedInput: string, queued: boolean): ReactElement {
+  const hasAttachments = queuedInput.includes("**↳ ");
   return createElement(
     "article",
     {
@@ -574,7 +575,9 @@ function createQueuedInputRow(queuedInput: string, queued: boolean): ReactElemen
           )
         : null,
     ),
-    createElement("p", { className: "agent-session-turn__body" }, queuedInput),
+    hasAttachments
+      ? renderUserAttachmentBody(queuedInput)
+      : createElement("p", { className: "agent-session-turn__body" }, queuedInput),
   );
 }
 
@@ -1546,13 +1549,20 @@ function createComposer(
                 ),
                 createElement("textarea", {
                   className: "composer-chip-card__comment",
-                  placeholder: "Comment on this selection… (optional)",
+                  placeholder: "Comment on this selection… (Enter to send, Shift+Enter for newline)",
                   value: chip.comment,
                   rows: 1,
                   spellCheck: false,
                   "aria-label": `Comment for ${chip.label}`,
                   onChange: (event: ChangeEvent<HTMLTextAreaElement>) =>
                     handlers.onSetContextChipComment?.(chip.id, event.currentTarget.value),
+                  // Match the composer: Enter sends, Shift+Enter inserts a newline.
+                  onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      handlers.onSubmit?.();
+                    }
+                  },
                 }),
               ),
             ),
@@ -1811,7 +1821,7 @@ function PromptCard(props: {
             "aria-label": "Custom reply",
             onChange: (event: ChangeEvent<HTMLTextAreaElement>) => setOtherText(event.currentTarget.value),
             onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 submit();
               }
