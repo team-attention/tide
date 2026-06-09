@@ -315,6 +315,9 @@ test("claude_provider_specific_agent_integration_stays_under_backend_adapters", 
   );
 });
 
+test("claude_declares_its_own_turn_end_hook_event", () => {
+  assert.deepEqual(claudeIntegration().turnEndSignalEvents(), ["agent-idle"]);
+});
 
 function claudeIntegration(options: {
   executablePath?: string;

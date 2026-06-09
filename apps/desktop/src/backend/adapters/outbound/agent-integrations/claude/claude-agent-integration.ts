@@ -221,6 +221,10 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     return { kind: "immediate" };
   }
 
+  turnEndSignalEvents(): readonly string[] {
+    return ["agent-idle"];
+  }
+
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {
     // Claude's shell-command / tool permission is an interactive boxed menu in the
     // hidden PTY (the Notification hook only signals "needs input" without the

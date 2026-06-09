@@ -231,6 +231,10 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     return { kind: "tool_surface_ready" };
   }
 
+  turnEndSignalEvents(): readonly string[] {
+    return ["codex-stop"];
+  }
+
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {
     // codex's shell-command and (non-Tide) MCP-tool approval menus are pure TUI: no
     // hook fires, they exist only as a boxed menu in the hidden PTY. Scrape that frame

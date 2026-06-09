@@ -125,7 +125,6 @@ import {
   type CodexProviderState,
 } from "../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
 import { codexRolloutTurnEnded as codexRolloutTurnEndedFromText } from "../../adapters/outbound/agent-integrations/codex/codex-rollout-turn-detection.ts";
-import { claudeTranscriptTurnEnded as claudeTranscriptTurnEndedFromText } from "../../adapters/outbound/agent-integrations/claude/claude-transcript-turn-detection.ts";
 import {
   createAgentSessionBlockCompletedEventFromUpdate,
   createAgentSessionBlockUpsertedEventFromBlock,
@@ -909,15 +908,14 @@ export function createLiveAgentSessionEventProjector(input: {
         service,
         onEvent: input.onEvent,
       });
-      // NOTE: provider hooks (codex-stop, agent-idle) flow here as Provider Signals
-      // for prompt detection and session-ref discovery — they no longer SETTLE the
-      // turn. Turn-end is uniformly owned by each provider's own history-emit, where
-      // the settle decision and the final-frame ingest happen in one read of one
-      // file (codex rollout `task_complete`/`turn_aborted` in emitCodexHistory,
-      // claude transcript `turn_duration`/`stop_hook_summary` in emitClaudeHistory,
-      // antigravity terminal planner-response in emitAntigravityHistory). This kills
-      // the cross-channel race between a hook spool and a separate history poll that
-      // dropped Claude's final answer. See docs_v2/specs/claude-runtime-event-source.md.
+      const turnEndEvents = input.integrations[frameInput.agentId].turnEndSignalEvents();
+      if (turnEndEvents.includes(signalFrame.eventName)) {
+        await emitTurnComplete({
+          threadId: frameInput.threadId,
+          service,
+          onEvent: input.onEvent,
+        });
+      }
     }
     blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
   };
@@ -981,14 +979,13 @@ export function createLiveAgentSessionEventProjector(input: {
   };
 
   // Structural codex turn-end detection from the bound rollout (no regex / text
-  // matching), scoped to the current turn. This is codex's SOLE settle path (the
-  // `codex-stop` hook no longer settles — it was unreliable and "never fires",
-  // hanging the UI "Working" forever, which is why this rollout detection existed in
-  // the first place). codex writes a typed `event_msg` whose payload type is
-  // `task_complete` on a normal finish and `turn_aborted` on a limit / error /
-  // interrupt; we poll for either. `task_complete` is only honored once we've located
-  // the current turn's user message, so a prior turn's completion can't end this one
-  // early.
+  // matching), scoped to the current turn. codex writes a typed `event_msg` whose
+  // payload type is `task_complete` on a normal finish and `turn_aborted` on a
+  // limit / error / interrupt. We poll for either so a turn settles even when the
+  // `codex-stop` HOOK never fires (which otherwise hangs the UI "Working" forever and
+  // never consumes a queued follow-up). `task_complete` is only honored once we've
+  // located the current turn's user message, so a prior turn's completion can't end
+  // this one early.
   // Read the bound rollout tail and delegate the typed turn-end decision to the
   // codex Agent Integration's detection logic. The provider lifecycle knowledge
   // (event_msg task_complete / turn_aborted, honored-once user-message guard)
@@ -1005,24 +1002,6 @@ export function createLiveAgentSessionEventProjector(input: {
       return false;
     }
     return codexRolloutTurnEndedFromText(text, expectedUserMessage);
-  };
-
-  // Claude turn-end from the bound transcript tail, delegated to the claude Agent
-  // Integration's detection (the `system` turn_duration / stop_hook_summary record
-  // that the provider writes AFTER the final answer). Same shape as codex above:
-  // infrastructure reads the file; the adapter owns the lifecycle decision.
-  const claudeTranscriptTurnEnded = (
-    boundTranscriptPath: string | undefined,
-    expectedUserMessage: string | undefined,
-  ): boolean => {
-    if (boundTranscriptPath === undefined) {
-      return false;
-    }
-    const text = readBoundedTail(boundTranscriptPath, 256 * 1024);
-    if (text === undefined) {
-      return false;
-    }
-    return claudeTranscriptTurnEndedFromText(text, expectedUserMessage);
   };
 
   const scheduleProviderSignalPolling = (frameInput: {
@@ -1080,8 +1059,8 @@ export function createLiveAgentSessionEventProjector(input: {
       agentId: "codex",
       transcriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
-    // Structured turn-end from the rollout (normal `task_complete` or `turn_aborted`).
-    // This is codex's authoritative settle (no hook). Settle even when the turn
+    // Structured turn-end from the rollout (normal `task_complete` or `turn_aborted`),
+    // a fallback for a missing `codex-stop` hook. Settle the runtime even when the turn
     // produced no agent output, so it can't hang "Working" or strand a queued message.
     if (
       codexRolloutTurnEnded(
@@ -1185,8 +1164,6 @@ export function createLiveAgentSessionEventProjector(input: {
       };
     claudeHistoryByRuntime.set(frameInput.runtimeId, historyState);
 
-    const boundTranscriptPath =
-      hydrated.thread.agentBinding.providerSessionRef?.transcriptPath;
     const historyFrames = readClaudeProviderHistoryFramesFromHome({
       homeDir: input.homeDir,
       threadId: frameInput.threadId,
@@ -1194,69 +1171,61 @@ export function createLiveAgentSessionEventProjector(input: {
       sinceMs: historyState.sinceMs,
       seenKeys: historyState.seenKeys,
       expectedUserMessage,
-      boundTranscriptPath,
+      boundTranscriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
     emitProviderUsage({
       threadId: frameInput.threadId,
       agentId: "claude",
-      transcriptPath: boundTranscriptPath,
+      transcriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
+    if (historyFrames.length === 0) {
+      return;
+    }
 
-    if (historyFrames.length > 0) {
-      const nextBlocks = new Map(
-        (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [
-          block.blockId,
-          block,
-        ]),
-      );
-      for (const historyFrame of historyFrames) {
-        await recordDiscoveredProviderSessionRef({
-          service,
-          persistence: input.persistence,
-          threadId: frameInput.threadId,
-          providerSessionRef:
-            claudeProviderSessionRefFromTranscriptPath(historyFrame.sourceRef),
-        });
-        const providerFrame = await service.appendRawAgentFrame({
-          threadId: frameInput.threadId,
-          agentId: frameInput.agentId,
-          source: historyFrame.source,
-          sourceRef: historyFrame.sourceRef,
-          payloadKind: historyFrame.payloadKind,
-          payload: historyFrame.payload,
-          body: historyFrame.body,
-        });
-        const providerReadResult = reader.read({
-          thread: hydrated.thread,
-          agentBinding: hydrated.thread.agentBinding,
-          frames: [providerFrame],
-          existingBlocks: [...nextBlocks.values()],
-        });
-        for (const update of providerReadResult.blockUpdates) {
-          await recordBlockUpdateInThreadCache(input.persistence, service, update);
-          emitBlockUpdate({
-            update,
-            blocks: nextBlocks,
-            onEvent: input.onEvent,
-          });
-        }
-        await emitPromptState({
-          promptState: providerReadResult.promptState,
-          service,
+    const nextBlocks = new Map(
+      (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [
+        block.blockId,
+        block,
+      ]),
+    );
+    for (const historyFrame of historyFrames) {
+      await recordDiscoveredProviderSessionRef({
+        service,
+        persistence: input.persistence,
+        threadId: frameInput.threadId,
+        providerSessionRef:
+          claudeProviderSessionRefFromTranscriptPath(historyFrame.sourceRef),
+      });
+      const providerFrame = await service.appendRawAgentFrame({
+        threadId: frameInput.threadId,
+        agentId: frameInput.agentId,
+        source: historyFrame.source,
+        sourceRef: historyFrame.sourceRef,
+        payloadKind: historyFrame.payloadKind,
+        payload: historyFrame.payload,
+        body: historyFrame.body,
+      });
+      const providerReadResult = reader.read({
+        thread: hydrated.thread,
+        agentBinding: hydrated.thread.agentBinding,
+        frames: [providerFrame],
+        existingBlocks: [...nextBlocks.values()],
+      });
+      for (const update of providerReadResult.blockUpdates) {
+        await recordBlockUpdateInThreadCache(input.persistence, service, update);
+        emitBlockUpdate({
+          update,
+          blocks: nextBlocks,
           onEvent: input.onEvent,
         });
       }
-      blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
+      await emitPromptState({
+        promptState: providerReadResult.promptState,
+        service,
+        onEvent: input.onEvent,
+      });
     }
-
-    // Provider-owned turn-end: claude settles from its OWN transcript, AFTER the
-    // frames above are ingested (so the final answer is recorded before idle) and on
-    // every poll including zero-frame ones (a tool-only turn writes `turn_duration`
-    // with no new agent text). This replaces the agent-idle hook settle that raced
-    // the content read and dropped the final message. Mirrors emitCodexHistory.
-    if (claudeTranscriptTurnEnded(boundTranscriptPath, expectedUserMessage)) {
-      await endRunningTurn(frameInput.threadId);
-    }
+    blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
   };
 
   const scheduleClaudeHistoryPolling = (frameInput: {

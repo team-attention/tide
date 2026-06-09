@@ -284,23 +284,16 @@ Provider smoke (after fake path green), per provider:
 
 Migration is additive-then-subtractive to avoid a big-bang rewrite:
 
-- **Slice 1 (additive) — DONE:** `AgentRuntimeEvent`, `AgentRuntimeEventSource` port,
-  the pure `reduceRuntimeEvent` reducer, AND the provider-neutral
-  `consumeRuntimeEvents` consumer (`runtime-event-consumer.ts`) that drives a fake
-  event source through the reducer into an injected effects handler. Proven by the
-  fake-provider Tests table below (`tests/runtime-event-consumer.test.ts`, 8 green).
-  Runs beside the existing path; no deletion yet. Next: real per-adapter sources +
-  cutover from `live-backend.ts` polling.
+- **Slice 1 (additive):** add `AgentRuntimeEvent`, `AgentRuntimeEventSource` port,
+  and a fake event source. Add a thin service consumer path that can run *beside*
+  the existing one, proven by fake-provider tests. No deletion yet.
 - **Slice 2 (codex):** implement the codex `AgentRuntimeEventSource` inside the
   codex integration, moving `codexRolloutTurnEnded` + history polling out of
   `live-backend.ts`. Switch codex onto the spine. Delete the infra codex
   detection. Keep the rollout tail as a *private* detail of the codex source.
 - **Slice 3 (claude + antigravity):** same move for the other two. This is where
   antigravity "forever Working" and concurrent-binding bugs get fixed by
-  per-runtime sources. **Reprioritized: the claude kernel was pulled ahead of the
-  codex slice after a live incident (a `gd` turn dropped its final answer to a
-  poll-timing race). Its provider-owned turn-end kernel — the seed of the claude
-  source — landed first: `docs_v2/specs/claude-runtime-event-source.md`.**
+  per-runtime sources.
 - **Slice 4 (controls):** interrupt, queuing flush, and prompt round-trip all
   expressed uniformly on the spine for all three providers.
 
