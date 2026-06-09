@@ -1807,9 +1807,9 @@ function worktreeMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRow
       row(`worktree:${worktree.path}`, label, worktree.path, undefined, "folder", selected === worktree.path),
     );
   }
-  // Creating a worktree from the Composer isn't wired yet (worktrees are created
-  // from the Project rail). Show it disabled rather than as a silent no-op.
-  rows.push(row("new-worktree", "New worktree", "coming soon", undefined, "folder-plus", false, false, true));
+  // Selecting this opens an inline name input (handled in the Desktop adapter):
+  // it creates a git worktree off the current scope and re-scopes the composer.
+  rows.push(row("new-worktree", "New worktree", "create a git worktree", undefined, "folder-plus"));
   return rows;
 }
 
@@ -1838,7 +1838,7 @@ function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowVi
     }
   }
   // Creating a branch from the Composer isn't wired yet — show it disabled.
-  rows.push(row("create-branch", "Create new branch", "coming soon", undefined, "plus", false, false, true));
+  rows.push(row("create-branch", "Create new branch", "new worktree + branch", undefined, "plus"));
   return rows;
 }
 

@@ -32,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { fileIconFor } from "./file-icons.ts";
+import { computeWorktreePath } from "../../../../shared/worktree-path.ts";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 // xterm core is CommonJS and safe to import in any environment (it does not
@@ -752,6 +753,91 @@ function ContentSearchPanel(props: {
   );
 }
 
+// Inline "new worktree" name input (opened from the composer worktree/branch
+// menu): one name drives the branch + a sibling `<repo>.worktree/<branch>` dir.
+// Shows a live path preview so the user sees where it lands without thinking.
+function WorktreeNameInput(props: {
+  baseCwd: string;
+  baseDirPattern: string;
+  onSubmit: (name: string) => void;
+  onClose: () => void;
+}): ReactElement {
+  const [name, setName] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+  const preview =
+    name.trim().length > 0
+      ? computeWorktreePath(props.baseCwd, name, { baseDirPattern: props.baseDirPattern })
+      : "";
+  return createElement(
+    "div",
+    {
+      className: "worktree-create-backdrop",
+      role: "dialog",
+      "aria-label": "New worktree",
+      onMouseDown: (event: { target: EventTarget | null; currentTarget: EventTarget | null }) => {
+        if (event.target === event.currentTarget) {
+          props.onClose();
+        }
+      },
+    },
+    createElement(
+      "div",
+      { className: "worktree-create" },
+      createElement(
+        "div",
+        { className: "worktree-create__title" },
+        createElement(GitBranchPlus, { size: 15, strokeWidth: 1.9, "aria-hidden": true }),
+        "New worktree",
+      ),
+      createElement("input", {
+        ref: inputRef,
+        className: "worktree-create__input",
+        placeholder: "branch name (e.g. fix-login)",
+        value: name,
+        spellCheck: false,
+        "aria-label": "Worktree branch name",
+        onChange: (event: ChangeEvent<HTMLInputElement>) => setName(event.currentTarget.value),
+        onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement>) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            props.onSubmit(name);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            props.onClose();
+          }
+        },
+      }),
+      createElement(
+        "div",
+        { className: "worktree-create__preview" },
+        preview.length > 0 ? preview : "A new branch + sibling worktree directory",
+      ),
+      createElement(
+        "div",
+        { className: "worktree-create__actions" },
+        createElement(
+          "button",
+          { type: "button", className: "worktree-create__cancel", onClick: () => props.onClose() },
+          "Cancel",
+        ),
+        createElement(
+          "button",
+          {
+            type: "button",
+            className: "worktree-create__confirm",
+            disabled: name.trim().length === 0,
+            onClick: () => props.onSubmit(name),
+          },
+          "Create",
+        ),
+      ),
+    ),
+  );
+}
+
 export function TideProductShell(props: TideProductShellProps): ReactElement {
   const [shellState, setShellState] = useState(() => {
     // Apply the remembered agent/model BEFORE the first Start Composer is built,
@@ -808,6 +894,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Quick Open (Cmd+P) file finder + content search (Cmd+Shift+F) visibility.
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [contentSearchVisible, setContentSearchVisible] = useState(false);
+  // Inline "new worktree" name input opened from the composer worktree/branch menu.
+  const [worktreeCreate, setWorktreeCreate] = useState<{ baseCwd: string } | null>(null);
   // Track the window width so the layout can auto-collapse columns that no
   // longer fit (responsive narrow-screen handling).
   const [windowWidth, setWindowWidth] = useState(
@@ -883,6 +971,32 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       dispatchBackendCommand(refreshStartPageFileTree(next));
       return next;
     });
+  };
+
+  // Create a git worktree off the composer's current scope and re-scope the
+  // Start Composer to it, so the next thread runs in the new worktree.
+  const submitWorktreeCreate = (name: string) => {
+    const trimmed = name.trim();
+    const base = worktreeCreate?.baseCwd;
+    const bridge = props.projectBridge;
+    setWorktreeCreate(null);
+    if (trimmed.length === 0 || base === undefined || bridge === undefined) {
+      return;
+    }
+    const { baseDirPattern, copyFiles } = shellState.worktreeSettings;
+    bridge
+      .createWorktree(base, trimmed, { baseDirPattern, copyFiles })
+      .then((result) => {
+        setShellState((state) => {
+          let next = setProductShellRegisteredProjects(state, result.entries);
+          if (result.createdCwd !== null) {
+            next = setProductShellComposerFolderScope(next, result.createdCwd);
+            dispatchBackendCommand(refreshStartPageFileTree(next));
+          }
+          return next;
+        });
+      })
+      .catch(() => {});
   };
 
   // Fetch real git branches/worktrees whenever the active Project cwd changes,
@@ -1215,6 +1329,25 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       // button or when a Thread is actually started in the folder.
       if (surfaceKind === "project_menu" && rowId === "open-folder") {
         openFolderForScope();
+        setShellState((state) => setProductShellComposerActiveSurface(state, null));
+        return;
+      }
+      // "New worktree" / "Create new branch" open an inline name input; creation
+      // runs on submit and re-scopes the composer to the new worktree.
+      if (
+        (surfaceKind === "worktree_menu" && rowId === "new-worktree") ||
+        (surfaceKind === "branch_menu" && rowId === "create-branch")
+      ) {
+        const scope = shellState.agentChat.composer.startOptions.scope;
+        const baseCwd =
+          scope === undefined
+            ? undefined
+            : scope.kind === "project"
+            ? scope.cwd
+            : scope.scratchCwd;
+        if (baseCwd !== undefined) {
+          setWorktreeCreate({ baseCwd });
+        }
         setShellState((state) => setProductShellComposerActiveSurface(state, null));
         return;
       }
@@ -1600,6 +1733,14 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             }),
           onOpen: (relativePath: string) => handlers.onOpenFile(relativePath),
           onClose: () => setContentSearchVisible(false),
+        })
+      : null,
+    worktreeCreate !== null
+      ? createElement(WorktreeNameInput, {
+          baseCwd: worktreeCreate.baseCwd,
+          baseDirPattern: shellState.worktreeSettings.baseDirPattern,
+          onSubmit: submitWorktreeCreate,
+          onClose: () => setWorktreeCreate(null),
         })
       : null,
   );
