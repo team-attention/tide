@@ -40,6 +40,7 @@ export interface ProviderSessionRefRecord {
     | "codex_rollout"
     | "claude_transcript"
     | "antigravity_conversation"
+    | "gemini_session"
     | "provider_native";
   value: string;
   transcriptPath?: string;

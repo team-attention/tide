@@ -7,7 +7,7 @@ import type {
   WorkbenchState,
 } from "../workbench/workbench.ts";
 
-export type ProviderCliAgentId = "codex" | "claude" | "antigravity";
+export type ProviderCliAgentId = "codex" | "claude" | "antigravity" | "gemini";
 export type TideApiAgentId = "openai_api";
 export type AgentId = ProviderCliAgentId | TideApiAgentId;
 export type ThreadId = string;
@@ -29,6 +29,7 @@ export interface ProviderSessionRef {
     | "codex_rollout"
     | "claude_transcript"
     | "antigravity_conversation"
+    | "gemini_session"
     | "provider_native";
   value: string;
   transcriptPath?: string;

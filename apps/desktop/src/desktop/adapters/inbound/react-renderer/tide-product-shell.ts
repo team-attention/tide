@@ -1957,6 +1957,8 @@ export function agentMonogram(agentId: ProductShellAgentIdentity): string {
       return "Cl";
     case "antigravity":
       return "Ag";
+    case "gemini":
+      return "Ge";
     case "openai_api":
       return "AI";
   }
@@ -4803,6 +4805,8 @@ function agentLabel(agentId: ProductShellAgentIdentity): string {
       return "Claude Code";
     case "antigravity":
       return "Antigravity CLI";
+    case "gemini":
+      return "Gemini CLI";
     case "openai_api":
       return "OpenAI API";
   }

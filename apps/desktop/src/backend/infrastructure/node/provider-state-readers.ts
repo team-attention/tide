@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import type { AntigravityProviderState } from "../../adapters/outbound/agent-integrations/antigravity/antigravity-agent-integration.ts";
 import type { ClaudeProviderState } from "../../adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
+import type { GeminiProviderState } from "../../adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts";
 import type { CodexProviderState } from "../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
 import {
   isAntigravityPluginBootstrapReady,
@@ -73,6 +74,19 @@ export function readAntigravityProviderStateFromHome(
     pluginBootstrapReady: isAntigravityPluginBootstrapReady(
       providerBootstrapArtifactsForHome({ homeDir }),
     ),
+  };
+}
+
+export function readGeminiProviderStateFromHome(
+  homeDir: string,
+  _cwd: string,
+): GeminiProviderState {
+  // Gemini signs in via OAuth; the credential lives at ~/.gemini/oauth_creds.json
+  // (works when spawned, unlike antigravity's Keychain-bound auth).
+  const oauth = readJsonFile(join(homeDir, ".gemini", "oauth_creds.json"));
+  const accounts = readJsonFile(join(homeDir, ".gemini", "google_accounts.json"));
+  return {
+    authenticated: oauth !== undefined || accounts !== undefined,
   };
 }
 

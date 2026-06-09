@@ -143,7 +143,7 @@ export interface AgentChatAgentBinding {
   };
 }
 
-export type AgentChatProviderCliAgentId = "codex" | "claude" | "antigravity";
+export type AgentChatProviderCliAgentId = "codex" | "claude" | "antigravity" | "gemini";
 export type AgentChatAgentId = AgentChatProviderCliAgentId | "openai_api";
 
 export type AgentChatAgentRuntimeSource =
@@ -1325,6 +1325,8 @@ function formatAgentLabel(agentId: string): string {
       return "Claude Code";
     case "antigravity":
       return "Antigravity CLI";
+    case "gemini":
+      return "Gemini CLI";
     case "openai_api":
       return "OpenAI API";
     default:
@@ -1360,6 +1362,7 @@ function createActiveComposerSurface(
           row("codex", "Codex CLI", "Agent Integration", undefined, binding.agentId === "codex" ? "check" : "identity:codex", binding.agentId === "codex"),
           row("claude", "Claude Code", "Agent Integration", undefined, binding.agentId === "claude" ? "check" : "identity:claude", binding.agentId === "claude"),
           row("antigravity", "Antigravity CLI", "Agent Integration", undefined, binding.agentId === "antigravity" ? "check" : "identity:antigravity", binding.agentId === "antigravity"),
+          row("gemini", "Gemini CLI", "Agent Integration", undefined, binding.agentId === "gemini" ? "check" : "identity:gemini", binding.agentId === "gemini"),
         ],
       };
     case "model_menu":
@@ -1629,6 +1632,8 @@ function composerAgentIdForRow(
       return "claude";
     case "antigravity":
       return "antigravity";
+    case "gemini":
+      return "gemini";
     case "openai-api":
       return "openai_api";
     default:
@@ -1947,7 +1952,9 @@ function runtimeSourceForAgent(agentId: string): AgentChatAgentRuntimeSource {
   }
 
   const providerAgent =
-    agentId === "claude" || agentId === "antigravity" ? agentId : "codex";
+    agentId === "claude" || agentId === "antigravity" || agentId === "gemini"
+      ? agentId
+      : "codex";
   return {
     kind: "provider_cli",
     integrationId: providerAgent,

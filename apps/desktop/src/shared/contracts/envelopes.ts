@@ -429,7 +429,12 @@ function isKnownAgentId(value: string): boolean {
 }
 
 function isProviderCliAgentId(value: string): boolean {
-  return value === "codex" || value === "claude" || value === "antigravity";
+  return (
+    value === "codex" ||
+    value === "claude" ||
+    value === "antigravity" ||
+    value === "gemini"
+  );
 }
 
 function isNonEmptyString(value: unknown): value is string {

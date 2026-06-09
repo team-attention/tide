@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import type { ProviderCliAgentId } from "../../application/domains/thread/thread.ts";
 import { readBoundedTail } from "./live-backend-fs.ts";
 import {
   claudeAssistantTextContent,
@@ -420,7 +421,7 @@ export function readClaudeProviderHistoryFramesFromHome(input: {
 export function readProviderSignalFramesFromSpool(input: {
   spoolDir: string;
   threadId: string;
-  agentId: "codex" | "claude" | "antigravity";
+  agentId: ProviderCliAgentId;
   runtimeId: string;
   seenKeys: Set<string>;
 }): ProviderSignalSpoolFrame[] {

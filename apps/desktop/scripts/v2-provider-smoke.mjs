@@ -19,7 +19,7 @@ import { createLiveBackendContractMessageAdapter } from "../src/backend/infrastr
 import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const providerCliAgents = new Set(["codex", "claude", "antigravity"]);
+const providerCliAgents = new Set(["codex", "claude", "antigravity", "gemini"]);
 const selectableAgents = new Set([...providerCliAgents, "openai_api"]);
 
 const options = parseArgs(process.argv.slice(2));
@@ -287,6 +287,8 @@ function labelForAgent(agent) {
       return "Claude Code";
     case "antigravity":
       return "Antigravity CLI";
+    case "gemini":
+      return "Gemini CLI";
     case "openai_api":
       return "OpenAI API";
     default:

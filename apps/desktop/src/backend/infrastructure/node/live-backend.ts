@@ -25,6 +25,7 @@ import {
   readAntigravityProviderStateFromHome,
   readClaudeProviderStateFromHome,
   readCodexProviderStateFromHome,
+  readGeminiProviderStateFromHome,
 } from "./provider-state-readers.ts";
 import {
   antigravityProviderSessionRefFromTranscriptPath,
@@ -124,6 +125,7 @@ import {
   createCodexAgentIntegration,
   type CodexProviderState,
 } from "../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
+import { createGeminiAgentIntegration } from "../../adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts";
 import { codexRolloutTurnEnded as codexRolloutTurnEndedFromText } from "../../adapters/outbound/agent-integrations/codex/codex-rollout-turn-detection.ts";
 import {
   createAgentSessionBlockCompletedEventFromUpdate,
@@ -148,7 +150,7 @@ import type {
   AgentSessionBlock,
   AgentSessionBlockUpdate,
 } from "../../application/domains/agent-session/agent-session-block.ts";
-import type { AgentId, PromptState } from "../../application/domains/thread/thread.ts";
+import type { AgentId, ProviderCliAgentId, PromptState } from "../../application/domains/thread/thread.ts";
 import type { AgentTurnOutcome } from "../../application/ports/outbound/agent-integration-port.ts";
 import { createFixtureAgentSessionReader } from "../../application/services/fixture-agent-session-reader.ts";
 import {
@@ -247,6 +249,11 @@ export function createLiveBackendContractMessageAdapter(
       tidePlugin: {
         installSourcePath: bootstrapArtifacts.antigravityPluginSourcePath,
       },
+      defaultCwd: process.cwd(),
+    }),
+    gemini: createGeminiAgentIntegration({
+      resolveExecutable: () => resolveExecutable("gemini"),
+      readProviderState: ({ cwd }) => readGeminiProviderStateFromHome(homeDir, cwd),
       defaultCwd: process.cwd(),
     }),
   };
@@ -766,7 +773,7 @@ export function createLiveAgentSessionEventProjector(input: {
   // when the transcript is missing or carries no usage yet.
   const emitProviderUsage = (emitInput: {
     threadId: string;
-    agentId: "codex" | "claude" | "antigravity";
+    agentId: ProviderCliAgentId;
     transcriptPath?: string;
   }): void => {
     // Usage is a non-essential decoration: it must NEVER throw and stall the
@@ -817,6 +824,10 @@ export function createLiveAgentSessionEventProjector(input: {
     string,
     { sinceMs: number; seenKeys: Set<string>; pollingStarted: boolean }
   >();
+  const geminiHistoryByRuntime = new Map<
+    string,
+    { sinceMs: number; seenKeys: Set<string>; pollingStarted: boolean }
+  >();
   // Per-runtime rolling PTY buffer + last-surfaced signature for TUI prompts (codex's
   // boxed approval/choice menus, which have no hook). Generic plumbing: detection lives
   // in the Agent Integration; this only feeds text in, surfaces once, and drops the
@@ -837,7 +848,7 @@ export function createLiveAgentSessionEventProjector(input: {
   const ingestTurnOutcomeAndSettle = async (args: {
     outcome: AgentTurnOutcome;
     threadId: string;
-    agentId: "codex" | "claude" | "antigravity";
+    agentId: ProviderCliAgentId;
     runtimeId: string;
     sessionId?: string;
     nextBlocks: Map<string, AgentSessionBlock>;
@@ -928,7 +939,7 @@ export function createLiveAgentSessionEventProjector(input: {
   // history emitters (codex rollout, antigravity transcript).
   const settleFromHistory = async (args: {
     threadId: string;
-    agentId: "codex" | "claude" | "antigravity";
+    agentId: ProviderCliAgentId;
     runtimeId: string;
     boundPath: string | undefined;
     expectedUserMessage: string | undefined;
@@ -959,7 +970,7 @@ export function createLiveAgentSessionEventProjector(input: {
 
   const emitProviderSignals = async (frameInput: {
     threadId: string;
-    agentId: "codex" | "claude" | "antigravity";
+    agentId: ProviderCliAgentId;
     runtimeId: string;
   }): Promise<void> => {
     const signalState =
@@ -1153,7 +1164,7 @@ export function createLiveAgentSessionEventProjector(input: {
 
   const scheduleProviderSignalPolling = (frameInput: {
     threadId: string;
-    agentId: "codex" | "claude" | "antigravity";
+    agentId: ProviderCliAgentId;
     runtimeId: string;
   }): void => {
     const signalState =
@@ -1499,6 +1510,79 @@ export function createLiveAgentSessionEventProjector(input: {
     );
   };
 
+  // Gemini writes a session JSONL (user / gemini records) under
+  // ~/.gemini/tmp/<project>/chats/session-*.jsonl. It fires no usable turn-end hook
+  // in the prompt-interactive path, so — like antigravity — turn-end + the final
+  // answer are read from that session file. Gemini does not report the session path
+  // via a hook, so the bound session is discovered by recency: the most recent
+  // session file written since this runtime started.
+  const emitGeminiHistory = async (frameInput: {
+    threadId: string;
+    agentId: "gemini";
+    runtimeId: string;
+  }): Promise<void> => {
+    const service = input.service();
+    const hydrated = await service.hydrateThread({ threadId: frameInput.threadId });
+    if (!hydrated.ok) {
+      return;
+    }
+    const expectedUserMessage = latestUserMessageForProviderHistory(hydrated.thread);
+    if (expectedUserMessage === undefined) {
+      return;
+    }
+    const historyState =
+      geminiHistoryByRuntime.get(frameInput.runtimeId) ??
+      { sinceMs: Date.now() - 15_000, seenKeys: new Set<string>(), pollingStarted: false };
+    geminiHistoryByRuntime.set(frameInput.runtimeId, historyState);
+
+    const boundPath =
+      hydrated.thread.agentBinding.providerSessionRef?.transcriptPath ??
+      findRecentGeminiSessionPath(input.homeDir, historyState.sinceMs);
+    if (boundPath === undefined) {
+      return;
+    }
+    await recordDiscoveredProviderSessionRef({
+      service,
+      persistence: input.persistence,
+      threadId: frameInput.threadId,
+      providerSessionRef: {
+        agentId: "gemini",
+        kind: "gemini_session",
+        value: boundPath,
+        transcriptPath: boundPath,
+      },
+    });
+    const nextBlocks = new Map(
+      (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [block.blockId, block]),
+    );
+    await settleFromHistory({
+      threadId: frameInput.threadId,
+      agentId: "gemini",
+      runtimeId: frameInput.runtimeId,
+      boundPath,
+      expectedUserMessage,
+      nextBlocks,
+    });
+    blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
+  };
+
+  const scheduleGeminiHistoryPolling = (frameInput: {
+    threadId: string;
+    agentId: "gemini";
+    runtimeId: string;
+  }): void => {
+    const historyState =
+      geminiHistoryByRuntime.get(frameInput.runtimeId) ??
+      { sinceMs: Date.now() - 15_000, seenKeys: new Set<string>(), pollingStarted: false };
+    geminiHistoryByRuntime.set(frameInput.runtimeId, historyState);
+    pollWhileRunning(
+      frameInput.threadId,
+      historyState,
+      () => emitGeminiHistory(frameInput),
+      1000,
+    );
+  };
+
   // Surface a provider's TUI prompt scraped from the hidden PTY (codex's boxed
   // approval/choice menus have no hook). The box can split across PTY chunks, so
   // accumulate a bounded rolling buffer per runtime and ask the Agent Integration to
@@ -1509,7 +1593,7 @@ export function createLiveAgentSessionEventProjector(input: {
   const MAX_PTY_PROMPT_BUFFER = 16_384;
   const maybeSurfacePtyPrompt = async (frameInput: {
     threadId: string;
-    agentId: "codex" | "claude" | "antigravity";
+    agentId: ProviderCliAgentId;
     runtimeId: string;
     body: string;
   }): Promise<void> => {
@@ -1603,7 +1687,7 @@ export function createLiveAgentSessionEventProjector(input: {
   return {
     trackRuntime(runtime: {
       threadId: string;
-      agentId: "codex" | "claude" | "antigravity";
+      agentId: ProviderCliAgentId;
       runtimeId: string;
     }): void {
       scheduleProviderSignalPolling(runtime);
@@ -1621,10 +1705,17 @@ export function createLiveAgentSessionEventProjector(input: {
           runtimeId: runtime.runtimeId,
         });
       }
+      if (runtime.agentId === "gemini") {
+        scheduleGeminiHistoryPolling({
+          threadId: runtime.threadId,
+          agentId: "gemini",
+          runtimeId: runtime.runtimeId,
+        });
+      }
     },
     async ingestOutput(frameInput: {
       threadId: string;
-      agentId: "codex" | "claude" | "antigravity";
+      agentId: ProviderCliAgentId;
       runtimeId: string;
       runtimePid?: number;
       source: "stdout" | "stderr";
@@ -1679,6 +1770,20 @@ export function createLiveAgentSessionEventProjector(input: {
           runtimeId: frameInput.runtimeId,
         });
         scheduleClaudeHistoryPolling({
+          threadId: frameInput.threadId,
+          agentId: frameInput.agentId,
+          runtimeId: frameInput.runtimeId,
+        });
+        return;
+      }
+
+      if (frameInput.agentId === "gemini") {
+        await emitGeminiHistory({
+          threadId: frameInput.threadId,
+          agentId: frameInput.agentId,
+          runtimeId: frameInput.runtimeId,
+        });
+        scheduleGeminiHistoryPolling({
           threadId: frameInput.threadId,
           agentId: frameInput.agentId,
           runtimeId: frameInput.runtimeId,
@@ -2137,6 +2242,49 @@ function rebuildAdoptedConversation(seed: ThreadSeed): AgentSessionBlock[] {
     return rebuildAntigravityConversation(text, seed.threadId, ref.value, agentId);
   }
   return [];
+}
+
+// Discover the gemini session JSONL for the current turn by recency: gemini does not
+// report its session path via a hook, so bind the most recent
+// ~/.gemini/tmp/<project>/chats/session-*.jsonl written since the runtime started.
+function findRecentGeminiSessionPath(
+  homeDir: string,
+  sinceMs: number,
+): string | undefined {
+  const tmpRoot = join(homeDir, ".gemini", "tmp");
+  let projectDirs: string[];
+  try {
+    projectDirs = readdirSync(tmpRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return undefined;
+  }
+  let best: { path: string; mtimeMs: number } | undefined;
+  for (const project of projectDirs) {
+    const chatsDir = join(tmpRoot, project, "chats");
+    let names: string[];
+    try {
+      names = readdirSync(chatsDir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!name.startsWith("session-") || !name.endsWith(".jsonl")) {
+        continue;
+      }
+      const path = join(chatsDir, name);
+      try {
+        const mtimeMs = statSync(path).mtimeMs;
+        if (mtimeMs >= sinceMs && (best === undefined || mtimeMs > best.mtimeMs)) {
+          best = { path, mtimeMs };
+        }
+      } catch {
+        // Skip files that vanished between listing and stat.
+      }
+    }
+  }
+  return best?.path;
 }
 
 function latestUserMessageForProviderHistory(

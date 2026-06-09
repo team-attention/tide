@@ -48,7 +48,7 @@ import {
 } from "../app-chrome/app-chrome-state.ts";
 import { worktreeRepoRootForCwd } from "../../../../shared/worktree-path.ts";
 
-export type ProductShellAgentIdentity = "codex" | "claude" | "antigravity" | "openai_api";
+export type ProductShellAgentIdentity = "codex" | "claude" | "antigravity" | "gemini" | "openai_api";
 
 export type ProductShellLeftUiMenu =
   | { kind: "thread"; threadId: string }
@@ -2715,7 +2715,12 @@ function previewBlocksForThread(thread: ProductShellThread): AgentChatBlock[] {
 }
 
 function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
-  if (agentId === "claude" || agentId === "antigravity" || agentId === "openai_api") {
+  if (
+    agentId === "claude" ||
+    agentId === "antigravity" ||
+    agentId === "gemini" ||
+    agentId === "openai_api"
+  ) {
     return agentId;
   }
   return "codex";
