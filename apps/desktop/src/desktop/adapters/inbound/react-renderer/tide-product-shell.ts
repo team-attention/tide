@@ -4222,7 +4222,12 @@ function WorkbenchTerminalView(props: {
     const term = new XtermTerminal({
       convertEol: true,
       fontSize: 12,
-      fontFamily: '"Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      // Roboto Mono first for the brand look, then Nerd Fonts (if the user has
+      // one installed for their shell prompt) and the macOS system monospaces,
+      // which cover the powerline/box glyphs Roboto Mono lacks (they fell back
+      // to ○). Per-glyph browser fallback only kicks in for missing glyphs.
+      fontFamily:
+        '"Roboto Mono", "MesloLGS NF", "FiraCode Nerd Font", "JetBrainsMono Nerd Font", "Hack Nerd Font", Menlo, Monaco, ui-monospace, SFMono-Regular, Consolas, monospace',
       scrollback: 5000,
       theme: {
         background: "#1b1b1d",

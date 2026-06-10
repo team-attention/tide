@@ -4224,9 +4224,17 @@ button {
 .workbench-md-preview *::selection,
 .agent-session ::selection,
 .agent-session *::selection {
-  /* Same themeable highlight as the code editor, so selection reads clearly in
-     both light and dark and stays consistent across transcript/preview/editor. */
-  background: var(--tide-editor-selection);
+  /* LITERAL color, not var(): Chromium drops `background: var(--x)` inside the
+     ::selection pseudo (custom props don't reliably resolve there), which left
+     the selection with no visible highlight. The dark override is a separate
+     literal rule below. */
+  background: rgba(57, 112, 240, 0.30);
+}
+[data-theme="dark"] .workbench-md-preview ::selection,
+[data-theme="dark"] .workbench-md-preview *::selection,
+[data-theme="dark"] .agent-session ::selection,
+[data-theme="dark"] .agent-session *::selection {
+  background: rgba(96, 150, 255, 0.36);
 }
 
 /* Obsidian-style reading view, conformed to the Figma editor typography. */
