@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   AgentTurnOutcome,
   AgentIntegrationCapabilities,
@@ -8,6 +10,7 @@ import type {
   AgentPromptSignalInput,
   AgentResumePlanInput,
   AgentStartPlanInput,
+  ProviderHistoryConnector,
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
@@ -25,6 +28,10 @@ import {
   parseCodexApprovalPrompt,
   PTY_CANCEL_TOKEN,
 } from "../../../../application/services/provider-tui-parsers.ts";
+import {
+  claudeProjectDirName,
+  createClaudeHistoryConnector,
+} from "./claude-history-connector.ts";
 
 export interface ClaudeProviderState {
   authenticated: boolean;
@@ -50,6 +57,12 @@ export interface CreateClaudeAgentIntegrationInput {
   settingsPath: string;
   tideContextPrompt: string;
   defaultCwd?: string;
+  // Used to compute the plan-time transcript path for a minted session id
+  // (~/.claude/projects/<munged-cwd>/<session-id>.jsonl).
+  homeDir?: string;
+  // Mints the per-runtime session id passed via `--session-id`, so the thread's
+  // session binding is deterministic at launch. Injectable for tests.
+  mintSessionId?: () => string;
 }
 
 const claudeCapabilities: AgentIntegrationCapabilities = {
@@ -94,6 +107,9 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
   private readonly settingsPath: string;
   private readonly tideContextPrompt: string;
   private readonly defaultCwd: string;
+  private readonly homeDir: string | undefined;
+  private readonly mintSessionId: () => string;
+  private readonly historyConnector = createClaudeHistoryConnector();
 
   constructor(input: CreateClaudeAgentIntegrationInput) {
     this.resolveExecutable = input.resolveExecutable;
@@ -102,6 +118,8 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     this.settingsPath = input.settingsPath;
     this.tideContextPrompt = input.tideContextPrompt;
     this.defaultCwd = input.defaultCwd ?? ".";
+    this.homeDir = input.homeDir;
+    this.mintSessionId = input.mintSessionId ?? (() => randomUUID());
   }
 
   async preflight(
@@ -195,12 +213,17 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     const executablePath = (await this.resolveExecutable("claude")) ?? "claude";
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
 
+    // Mint the session id and pass it via --session-id so this thread's session
+    // binding is deterministic at launch (transcript path is known before the
+    // first poll) — never discovered by file recency.
+    const sessionId = this.mintSessionId();
     return this.claudeLaunchPlan({
       executablePath,
       cwd,
       resumeRef: undefined,
       launchOptions: input.launchOptions,
       initialPrompt: input.initialPrompt,
+      sessionId,
     });
   }
 
@@ -235,6 +258,10 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       return null;
     }
     return {};
+  }
+
+  history(): ProviderHistoryConnector {
+    return this.historyConnector;
   }
 
   turnEndFromHistory(): AgentTurnOutcome | null {
@@ -374,6 +401,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     resumeRef?: string;
     launchOptions?: Record<string, unknown>;
     initialPrompt?: string;
+    sessionId?: string;
   }): ProviderLaunchPlan {
     const args = [
       "--mcp-config",
@@ -387,6 +415,9 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
 
     if (input.resumeRef !== undefined) {
       args.push("--resume", input.resumeRef);
+    }
+    if (input.sessionId !== undefined) {
+      args.push("--session-id", input.sessionId);
     }
 
     // Claude delivers its first message as a positional [prompt] at launch. Unlike
@@ -409,9 +440,28 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
         startupDelayMs: 5000,
         preSubmitDelayMs: 350,
       },
+      // Claude's TUI negotiates the extended (CSI-u) keyboard protocol on the
+      // hidden PTY, so plain "\r" does not submit; Enter is "\x1b[13u".
+      submitKeySequence: "\x1b[13u",
       expectedSignalSources: expectedSignalSources.map((source) => ({
         ...source,
       })),
+      ...(input.sessionId !== undefined
+        ? {
+            providerSessionRef: {
+              agentId: "claude" as const,
+              kind: "claude_transcript" as const,
+              value: input.sessionId,
+              // The transcript path is fully determined by cwd + session id, so the
+              // binding is recorded before claude even creates the file.
+              ...(this.homeDir !== undefined
+                ? {
+                    transcriptPath: `${this.homeDir}/.claude/projects/${claudeProjectDirName(input.cwd)}/${input.sessionId}.jsonl`,
+                  }
+                : {}),
+            },
+          }
+        : {}),
     };
   }
 }

@@ -8,12 +8,14 @@ import type {
   AgentPromptSignalInput,
   AgentResumePlanInput,
   AgentStartPlanInput,
+  ProviderHistoryConnector,
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
   RuntimeReadinessGate,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import { codexTurnOutcomeFromRollout } from "./codex-rollout-turn-detection.ts";
+import { createCodexHistoryConnector } from "./codex-history-connector.ts";
 import type {
   PromptChoice,
   PromptKind,
@@ -96,12 +98,17 @@ class CodexAgentIntegration implements AgentIntegrationPort {
   private readonly readProviderState: CodexProviderStateReader;
   private readonly tideMcp?: CodexTideMcpConfig;
   private readonly defaultCwd: string;
+  private readonly historyConnector = createCodexHistoryConnector();
 
   constructor(input: CreateCodexAgentIntegrationInput) {
     this.resolveExecutable = input.resolveExecutable;
     this.readProviderState = input.readProviderState;
     this.tideMcp = cloneTideMcpConfig(input.tideMcp);
     this.defaultCwd = input.defaultCwd ?? ".";
+  }
+
+  history(): ProviderHistoryConnector {
+    return this.historyConnector;
   }
 
   async preflight(
@@ -362,6 +369,19 @@ class CodexAgentIntegration implements AgentIntegrationPort {
         startupDelayMs: 5000,
         preSubmitDelayMs: 350,
       },
+      // Codex shows an interactive "Hooks need review" trust box the first time it
+      // sees Tide's generated hooks (--dangerously-bypass-hook-trust only applies
+      // to `codex exec`, not the TUI). Auto-select "Trust all and continue"
+      // (ArrowDown to option 2, then Enter); codex persists the trust keyed by the
+      // hooks path, so this fires once per hooks file. Without it the hidden PTY
+      // blocks forever and the Agent never answers.
+      autoRespondPrompts: [
+        {
+          pattern: "Hooks need review|Trust all and continue",
+          response: ["\x1b[B", "\r"],
+          interKeyDelayMs: 150,
+        },
+      ],
       expectedSignalSources: expectedSignalSources.map((source) => ({ ...source })),
     };
   }

@@ -7,6 +7,7 @@ import type {
 import type { AgentRuntimePort } from "../../../application/ports/outbound/agent-runtime-port.ts";
 import type {
   AgentIntegrationPort,
+  DiscoveredProviderSessionRef,
   ProviderLaunchPlan,
   RuntimeReadinessGate,
 } from "../../../application/ports/outbound/agent-integration-port.ts";
@@ -61,8 +62,10 @@ interface RuntimeProcessState {
   threadId: string;
   agentId: ProviderCliAgentId;
   inputTiming?: ProviderLaunchPlan["inputTiming"];
+  submitKeySequence?: string;
+  autoRespondPrompts?: ProviderLaunchPlan["autoRespondPrompts"];
   startupDelayConsumed: boolean;
-  hookTrustPromptHandled: boolean;
+  autoRespondedPatterns: Set<string>;
 }
 
 export interface CreateAgentIntegrationRuntimePortInput {
@@ -82,6 +85,10 @@ export interface CreateAgentIntegrationRuntimePortInput {
     threadId: string;
     agentId: ProviderCliAgentId;
     runtimeId: string;
+    // The session this runtime will run as, when the launch plan assigned it
+    // (claude/gemini minted --session-id). Recorded as the thread's binding
+    // before the first history poll — deterministic, never recency-discovered.
+    providerSessionRef?: DiscoveredProviderSessionRef;
   }) => Promise<void> | void;
   clock?: () => string;
   idGenerator?: () => string;
@@ -272,10 +279,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     // an interactive boxed menu in the hidden PTY (claude's "Do you want to proceed? ❯1.
     // Yes 2.… 3.No"). A non-nav value (hook prompts, free-form "Other") decodes to null
     // and falls through to the generic typed path. See agent-prompt-surfacing.md.
-    if (
-      input.kind === "prompt_answer" &&
-      (processState.agentId === "codex" || processState.agentId === "claude")
-    ) {
+    if (input.kind === "prompt_answer") {
       // Deny / dismiss a permission box: Escape reliably cancels the agent's TUI box
       // even when its exact option layout is unknown (hook-surfaced claude prompts).
       if (input.value === PTY_CANCEL_TOKEN) {
@@ -297,12 +301,12 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     ) {
       await processState.handle.write(input.value);
       await sleep(processState.inputTiming.preSubmitDelayMs);
-      await processState.handle.write(submitSequenceForAgent(processState.agentId));
+      await processState.handle.write(processState.submitKeySequence ?? "\r");
       traceAgentRuntime(`wrote ${processState.agentId} runtime=${handle.runtimeId}`);
       return;
     }
 
-    await processState.handle.write(terminalBytesForInput(processState.agentId, input));
+    await processState.handle.write(terminalBytesForInput(processState, input));
     traceAgentRuntime(`wrote ${processState.agentId} runtime=${handle.runtimeId}`);
   }
 
@@ -349,7 +353,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       runtimeId,
       plan: runtimePlan,
       onOutput: (output) => {
-        maybeAutoTrustCodexHooks(this.processes.get(runtimeId), output.body);
+        runPlanAutoResponders(this.processes.get(runtimeId), output.body);
         void this.onOutputFrame?.({
           threadId,
           agentId,
@@ -366,13 +370,18 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       threadId,
       agentId,
       inputTiming: plan.inputTiming,
+      submitKeySequence: plan.submitKeySequence,
+      autoRespondPrompts: plan.autoRespondPrompts,
       startupDelayConsumed: false,
-      hookTrustPromptHandled: false,
+      autoRespondedPatterns: new Set(),
     });
     void this.onRuntimeStarted?.({
       threadId,
       agentId,
       runtimeId,
+      ...(plan.providerSessionRef !== undefined
+        ? { providerSessionRef: plan.providerSessionRef }
+        : {}),
     });
 
     return {
@@ -383,32 +392,38 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   }
 }
 
-// Codex shows an interactive "Hooks need review" trust prompt the first time it
-// sees Tide's generated hooks (the --dangerously-bypass-hook-trust flag only
-// applies to `codex exec`, not the TUI). Auto-select "Trust all and continue"
-// (ArrowDown to option 2, then Enter); Codex persists the trust in config.toml
-// keyed by the hooks path, so this only happens once per hooks file. Without
-// this the hidden PTY blocks here forever and the Agent never answers.
-const CODEX_HOOK_TRUST_PROMPT = /Hooks need review|Trust all and continue/;
-function maybeAutoTrustCodexHooks(
+// Replays a launch-plan-declared auto-response the first time its pattern shows
+// up in this runtime's PTY output (e.g. codex's "Hooks need review" trust box for
+// Tide's own generated hooks). Provider-neutral: the pattern/keys are declared by
+// the provider's Agent Integration on the launch plan.
+function runPlanAutoResponders(
   processState: RuntimeProcessState | undefined,
   body: string,
 ): void {
-  if (
-    processState === undefined ||
-    processState.hookTrustPromptHandled ||
-    processState.agentId !== "codex" ||
-    !CODEX_HOOK_TRUST_PROMPT.test(body)
-  ) {
+  if (processState?.autoRespondPrompts === undefined) {
     return;
   }
-  processState.hookTrustPromptHandled = true;
-  void (async () => {
-    // Move cursor from "1. Review hooks" to "2. Trust all and continue".
-    await processState.handle.write("\x1b[B");
-    await sleep(150);
-    await processState.handle.write("\r");
-  })();
+  for (const responder of processState.autoRespondPrompts) {
+    if (processState.autoRespondedPatterns.has(responder.pattern)) {
+      continue;
+    }
+    let matches = false;
+    try {
+      matches = new RegExp(responder.pattern).test(body);
+    } catch {
+      matches = false;
+    }
+    if (!matches) {
+      continue;
+    }
+    processState.autoRespondedPatterns.add(responder.pattern);
+    void (async () => {
+      for (const key of responder.response) {
+        await processState.handle.write(key);
+        await sleep(responder.interKeyDelayMs ?? 150);
+      }
+    })();
+  }
 }
 
 // codex's TUI reads one key event at a time and needs a beat between them (the same
@@ -439,17 +454,16 @@ async function waitForStartupWindow(processState: RuntimeProcessState): Promise<
   await sleep(processState.inputTiming?.startupDelayMs ?? 0);
 }
 
-function terminalBytesForInput(agentId: ProviderCliAgentId, input: TerminalInput): string {
+function terminalBytesForInput(
+  processState: { submitKeySequence?: string },
+  input: TerminalInput,
+): string {
   const value = input.value;
   if (input.kind === "prompt_answer") {
     return `${value.length > 0 ? value : input.choiceId ?? value}\r`;
   }
 
-  return `${value}${submitSequenceForAgent(agentId)}`;
-}
-
-function submitSequenceForAgent(agentId: ProviderCliAgentId): string {
-  return agentId === "claude" ? "\x1b[13u" : "\r";
+  return `${value}${processState.submitKeySequence ?? "\r"}`;
 }
 
 function isProviderCliAgentId(agentId: AgentId): agentId is ProviderCliAgentId {

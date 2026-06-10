@@ -33,6 +33,7 @@ export interface ProviderBootstrapArtifacts {
   codexSkillPath: string;
   claudeMcpConfigPath: string;
   claudeSettingsPath: string;
+  geminiSettingsPath: string;
   antigravityPluginSourcePath: string;
   antigravityInstalledPluginPath: string;
   providerSignalHookPath: string;
@@ -64,6 +65,7 @@ export function providerBootstrapArtifactsForHome(
     codexSkillPath: join(codexHome, "skills", "tide", "SKILL.md"),
     claudeMcpConfigPath: join(rootDir, "claude", "mcp.json"),
     claudeSettingsPath: join(rootDir, "claude", "settings.json"),
+    geminiSettingsPath: join(rootDir, "gemini", "settings.json"),
     antigravityPluginSourcePath,
     antigravityInstalledPluginPath: join(
       input.homeDir,
@@ -101,6 +103,7 @@ export function ensureProviderBootstrapArtifacts(
   });
   ensureCodexOverlay(input.homeDir, artifacts);
   ensureClaudeArtifacts(input, artifacts);
+  ensureGeminiArtifacts(artifacts);
   ensureAntigravityPluginSource(input, artifacts);
   return artifacts;
 }
@@ -353,6 +356,38 @@ function ensureClaudeArtifacts(
   });
 }
 
+// Tide's gemini hook registrations ride the SYSTEM settings layer
+// (GEMINI_CLI_SYSTEM_SETTINGS_PATH on the launch env): gemini trusts system-level
+// hooks without a consent prompt, and the user's own ~/.gemini/settings.json is
+// never touched. Hook payloads carry session_id + transcript_path (deterministic
+// binding); AfterAgent fires exactly once per turn (the settle signal);
+// Notification announces pending tool approvals.
+function ensureGeminiArtifacts(artifacts: ProviderBootstrapArtifacts): void {
+  mkdirSync(join(artifacts.rootDir, "gemini"), { recursive: true });
+  writeJsonFile(artifacts.geminiSettingsPath, {
+    hooks: {
+      SessionStart: [
+        geminiHook(providerNotifyCommand(artifacts, "gemini", "session-start")),
+      ],
+      BeforeAgent: [
+        geminiHook(providerNotifyCommand(artifacts, "gemini", "agent-running")),
+      ],
+      Notification: [
+        geminiHook(providerNotifyCommand(artifacts, "gemini", "agent-needs-input")),
+      ],
+      AfterAgent: [
+        geminiHook(providerNotifyCommand(artifacts, "gemini", "agent-idle")),
+      ],
+    },
+  });
+}
+
+function geminiHook(command: string) {
+  return {
+    hooks: [{ name: "tide-signal", type: "command", command }],
+  };
+}
+
 function ensureAntigravityPluginSource(
   input: ProviderBootstrapArtifactsInput,
   artifacts: ProviderBootstrapArtifacts,
@@ -486,7 +521,7 @@ function antigravityHook(command: string) {
 
 function providerNotifyCommand(
   artifacts: ProviderBootstrapArtifacts,
-  agent: "codex" | "claude" | "antigravity",
+  agent: "codex" | "claude" | "antigravity" | "gemini",
   event: string,
 ): string {
   return `${shellWord(artifacts.providerSignalRunnerPath)} --agent ${agent} --event ${event} >/dev/null 2>&1 || true`;

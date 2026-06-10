@@ -31,7 +31,6 @@ import {
   antigravityProviderSessionRefFromTranscriptPath,
   claudeProviderSessionRefFromTranscriptPath,
   codexProviderSessionRefFromRolloutPath,
-  providerSessionRefFromProviderSignalPayload,
   type DiscoveredProviderSessionRef,
 } from "./provider-session-ref.ts";
 import {
@@ -43,31 +42,17 @@ import {
 import { parseProviderUsage } from "./provider-usage.ts";
 import { recentCodexRollouts } from "./recent-provider-files.ts";
 import {
-  readAntigravityProviderHistoryFramesFromHome,
-  readClaudeProviderHistoryFramesFromHome,
   readClaudeProviderSessionRefsFromHome,
-  readCodexProviderHistoryFramesFromHome,
   readCodexProviderSessionRefsFromHome,
   readProviderSignalFramesFromSpool,
-  type AntigravityProviderHistoryFrame,
-  type ClaudeProviderHistoryFrame,
-  type CodexProviderHistoryFrame,
   type ProviderSignalSpoolFrame,
 } from "./provider-history-readers.ts";
 export {
-  readAntigravityProviderHistoryFramesFromHome,
-  readClaudeProviderHistoryFramesFromHome,
   readClaudeProviderSessionRefsFromHome,
-  readCodexProviderHistoryFramesFromHome,
   readCodexProviderSessionRefsFromHome,
   readProviderSignalFramesFromSpool,
 };
-export type {
-  AntigravityProviderHistoryFrame,
-  ClaudeProviderHistoryFrame,
-  CodexProviderHistoryFrame,
-  ProviderSignalSpoolFrame,
-};
+export type { ProviderSignalSpoolFrame };
 export {
   rebuildAntigravityConversation,
   rebuildClaudeConversation,
@@ -78,7 +63,6 @@ export {
   antigravityProviderSessionRefFromTranscriptPath,
   claudeProviderSessionRefFromTranscriptPath,
   codexProviderSessionRefFromRolloutPath,
-  providerSessionRefFromProviderSignalPayload,
 };
 export {
   readAntigravityProviderStateFromHome,
@@ -151,7 +135,10 @@ import type {
   AgentSessionBlockUpdate,
 } from "../../application/domains/agent-session/agent-session-block.ts";
 import type { AgentId, ProviderCliAgentId, PromptState } from "../../application/domains/thread/thread.ts";
-import type { AgentTurnOutcome } from "../../application/ports/outbound/agent-integration-port.ts";
+import type {
+  AgentTurnOutcome,
+  DiscoveredProviderSessionRef as AdapterProviderSessionRef,
+} from "../../application/ports/outbound/agent-integration-port.ts";
 import { createFixtureAgentSessionReader } from "../../application/services/fixture-agent-session-reader.ts";
 import {
   adoptedThreadSeedsFromSessions,
@@ -242,6 +229,7 @@ export function createLiveBackendContractMessageAdapter(
       settingsPath: bootstrapArtifacts.claudeSettingsPath,
       tideContextPrompt: tideClaudeContextPrompt(),
       defaultCwd: process.cwd(),
+      homeDir,
     }),
     antigravity: createAntigravityAgentIntegration({
       resolveExecutable: () => resolveExecutable("agy"),
@@ -255,6 +243,8 @@ export function createLiveBackendContractMessageAdapter(
       resolveExecutable: () => resolveExecutable("gemini"),
       readProviderState: ({ cwd }) => readGeminiProviderStateFromHome(homeDir, cwd),
       defaultCwd: process.cwd(),
+      hookSettingsPath: bootstrapArtifacts.geminiSettingsPath,
+      locateSessionFile: (sessionId) => locateGeminiSessionFile(homeDir, sessionId),
     }),
   };
   let service: ThreadRuntimeService;
@@ -823,27 +813,14 @@ export function createLiveAgentSessionEventProjector(input: {
     string,
     { seenKeys: Set<string>; pollingStarted: boolean }
   >();
-  const antigravityHistoryByRuntime = new Map<
+  // One uniform history-poll state per runtime, for every provider. Session
+  // binding is deterministic (launch-assigned session id or runtime-keyed hook
+  // payload — see docs_v2/specs/provider-history-connector.md), so there is no
+  // per-provider discovery state and no recency claiming.
+  const historyByRuntime = new Map<
     string,
-    { sinceMs: number; seenKeys: Set<string>; pollingStarted: boolean }
+    { seenKeys: Set<string>; pollingStarted: boolean }
   >();
-  const codexHistoryByRuntime = new Map<
-    string,
-    { sinceMs: number; seenKeys: Set<string>; pollingStarted: boolean }
-  >();
-  const claudeHistoryByRuntime = new Map<
-    string,
-    { sinceMs: number; seenKeys: Set<string>; pollingStarted: boolean }
-  >();
-  const geminiHistoryByRuntime = new Map<
-    string,
-    { sinceMs: number; seenKeys: Set<string>; pollingStarted: boolean }
-  >();
-  // Gemini session binding: gemini does not hand Tide its session id, so each runtime
-  // discovers its own `~/.gemini/.../chats/session-*.jsonl`. These prevent two threads
-  // from binding the same file (the cause of "different threads, identical answer").
-  const geminiBoundPathByRuntime = new Map<string, string>();
-  const geminiClaimedSessionPaths = new Set<string>();
   // SINGLE CONTENT SOURCE - why there is no answer dedup anywhere. A turn's content
   // (answer text, reasoning, tool calls) is produced ONLY by the agent history reader
   // (claude transcript / codex rollout / gemini session). The turn-end SIGNAL (claude
@@ -953,27 +930,20 @@ export function createLiveAgentSessionEventProjector(input: {
     });
   };
 
-  // History-driven settle: read the bound rollout/transcript tail, ask the adapter
-  // whether the current turn ended (and with what outcome), and apply it uniformly.
-  // The binding-independent counterpart of the hook path. Used by the per-provider
-  // history emitters (codex rollout, antigravity transcript).
+  // History-driven settle: ask the adapter whether the current turn ended in the
+  // bound session tail (and with what outcome), and apply it uniformly. The
+  // binding-independent counterpart of the hook path; an adapter that settles by
+  // hook (claude, gemini) simply returns null here.
   const settleFromHistory = async (args: {
     threadId: string;
     agentId: ProviderCliAgentId;
     runtimeId: string;
-    boundPath: string | undefined;
+    tailText: string;
     expectedUserMessage: string | undefined;
     nextBlocks: Map<string, AgentSessionBlock>;
   }): Promise<void> => {
-    if (args.boundPath === undefined) {
-      return;
-    }
-    const tail = readBoundedTail(args.boundPath, 256 * 1024);
-    if (tail === undefined) {
-      return;
-    }
     const outcome = input.integrations[args.agentId].turnEndFromHistory(
-      tail,
+      args.tailText,
       args.expectedUserMessage,
     );
     if (outcome === null) {
@@ -1021,10 +991,11 @@ export function createLiveAgentSessionEventProjector(input: {
     );
 
     for (const signalFrame of signalFrames) {
-      const providerSessionRef = providerSessionRefFromProviderSignalPayload(
-        frameInput.agentId,
-        signalFrame.payload,
-      );
+      // The adapter owns its hook payload shape; it derives the session ref
+      // (session id + transcript path) that binds this runtime to its session.
+      const providerSessionRef = input.integrations[frameInput.agentId]
+        .history()
+        .sessionRefFromHookPayload(signalFrame.payload);
       if (providerSessionRef !== undefined) {
         await recordDiscoveredProviderSessionRef({
           service,
@@ -1149,50 +1120,6 @@ export function createLiveAgentSessionEventProjector(input: {
     timer.unref?.();
   };
 
-  // End a running turn that has settled but emitted no normal turn-end signal, so the
-  // UI doesn't hang "Working". WHETHER a turn ended is decided structurally per
-  // provider (typed frames / events) — never by scanning free text for error wording.
-  const endRunningTurn = async (threadId: string): Promise<void> => {
-    const service = input.service();
-    const hydrated = await service.hydrateThread({ threadId });
-    if (!hydrated.ok) {
-      return;
-    }
-    if (
-      hydrated.thread.runtimeState !== "running" &&
-      hydrated.thread.runtimeState !== "starting"
-    ) {
-      return;
-    }
-    await emitTurnComplete({ threadId, service, onEvent: input.onEvent });
-  };
-
-  // Structural codex turn-end detection from the bound rollout (no regex / text
-  // matching), scoped to the current turn. codex writes a typed `event_msg` whose
-  // payload type is `task_complete` on a normal finish and `turn_aborted` on a
-  // limit / error / interrupt. We poll for either so a turn settles even when the
-  // `codex-stop` HOOK never fires (which otherwise hangs the UI "Working" forever and
-  // never consumes a queued follow-up). `task_complete` is only honored once we've
-  // located the current turn's user message, so a prior turn's completion can't end
-  // this one early.
-  // Read the bound rollout tail and delegate the typed turn-end decision to the
-  // codex Agent Integration's detection logic. The provider lifecycle knowledge
-  // (event_msg task_complete / turn_aborted, honored-once user-message guard)
-  // lives in the codex adapter, not in shared infrastructure.
-  const codexRolloutTurnEnded = (
-    boundRolloutPath: string | undefined,
-    expectedUserMessage: string | undefined,
-  ): boolean => {
-    if (boundRolloutPath === undefined) {
-      return false;
-    }
-    const text = readBoundedTail(boundRolloutPath, 256 * 1024);
-    if (text === undefined) {
-      return false;
-    }
-    return codexRolloutTurnEndedFromText(text, expectedUserMessage);
-  };
-
   const scheduleProviderSignalPolling = (frameInput: {
     threadId: string;
     agentId: ProviderCliAgentId;
@@ -1210,9 +1137,13 @@ export function createLiveAgentSessionEventProjector(input: {
     );
   };
 
-  const emitCodexHistory = async (frameInput: {
+  // ONE history loop for every provider. The provider-specific knowledge —
+  // where the session file lives, how to parse it, when the turn ends — is owned
+  // by the Agent Integration's ProviderHistoryConnector; this loop is identical
+  // for codex/claude/gemini/antigravity. See docs_v2/specs/provider-history-connector.md.
+  const emitProviderHistory = async (frameInput: {
     threadId: string;
-    agentId: "codex";
+    agentId: ProviderCliAgentId;
     runtimeId: string;
   }): Promise<void> => {
     const service = input.service();
@@ -1220,252 +1151,64 @@ export function createLiveAgentSessionEventProjector(input: {
     if (!hydrated.ok) {
       return;
     }
+    const integration = input.integrations[frameInput.agentId];
+    const connector = integration.history();
     const expectedUserMessage = latestUserMessageForProviderHistory(hydrated.thread);
-    if (expectedUserMessage === undefined) {
+
+    // Deterministic binding: the thread's ref was recorded from the launch plan
+    // (minted session id) or a runtime-keyed hook payload. A ref that knows its id
+    // but not its on-disk path yet (gemini's timestamped filename) is resolved by
+    // the connector — by id, never by recency. Unbound → read nothing this cycle;
+    // the hook binds within ~1s and the next poll reads it.
+    const boundRef = hydrated.thread.agentBinding.providerSessionRef;
+    if (boundRef === undefined) {
+      return;
+    }
+    let sessionRef: AdapterProviderSessionRef = {
+      agentId: frameInput.agentId,
+      kind: boundRef.kind,
+      value: boundRef.value,
+      transcriptPath: boundRef.transcriptPath,
+      logPath: boundRef.logPath,
+    };
+    if (sessionRef.transcriptPath === undefined && connector.resolveSessionRef !== undefined) {
+      const resolved = connector.resolveSessionRef(sessionRef);
+      if (resolved?.transcriptPath !== undefined) {
+        await recordDiscoveredProviderSessionRef({
+          service,
+          persistence: input.persistence,
+          threadId: frameInput.threadId,
+          providerSessionRef: resolved,
+        });
+        sessionRef = resolved;
+      }
+    }
+    if (sessionRef.transcriptPath === undefined) {
+      return;
+    }
+    const tail = readBoundedTail(sessionRef.transcriptPath, 256 * 1024);
+    if (tail === undefined) {
       return;
     }
 
-    const historyState =
-      codexHistoryByRuntime.get(frameInput.runtimeId) ??
-      {
-        sinceMs: Date.now() - 15_000,
-        seenKeys: new Set<string>(),
-        pollingStarted: false,
-      };
-    codexHistoryByRuntime.set(frameInput.runtimeId, historyState);
-
-    const historyFrames = readCodexProviderHistoryFramesFromHome({
-      homeDir: input.homeDir,
-      threadId: frameInput.threadId,
-      runtimeId: frameInput.runtimeId,
-      sinceMs: historyState.sinceMs,
-      seenKeys: historyState.seenKeys,
-      expectedUserMessage,
-      boundRolloutPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
-    });
     emitProviderUsage({
       threadId: frameInput.threadId,
-      agentId: "codex",
-      transcriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
+      agentId: frameInput.agentId,
+      transcriptPath: sessionRef.transcriptPath,
     });
-    const nextBlocks = new Map(
-      (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [
-        block.blockId,
-        block,
-      ]),
-    );
-    for (const historyFrame of historyFrames) {
-      await recordDiscoveredProviderSessionRef({
-        service,
-        persistence: input.persistence,
-        threadId: frameInput.threadId,
-        providerSessionRef: codexProviderSessionRefFromRolloutPath(historyFrame.sourceRef),
-      });
-      const providerFrame = await service.appendRawAgentFrame({
-        threadId: frameInput.threadId,
-        agentId: frameInput.agentId,
-        source: historyFrame.source,
-        sourceRef: historyFrame.sourceRef,
-        payloadKind: historyFrame.payloadKind,
-        payload: historyFrame.payload,
-        body: historyFrame.body,
-      });
-      const providerReadResult = reader.read({
-        thread: hydrated.thread,
-        agentBinding: hydrated.thread.agentBinding,
-        frames: [providerFrame],
-        existingBlocks: [...nextBlocks.values()],
-      });
-      for (const update of providerReadResult.blockUpdates) {
-        await recordBlockUpdateInThreadCache(input.persistence, service, update);
-        emitBlockUpdate({
-          update,
-          blocks: nextBlocks,
-          onEvent: input.onEvent,
-        });
-      }
-      await emitPromptState({
-        promptState: providerReadResult.promptState,
-        service,
-        onEvent: input.onEvent,
-      });
-    }
-    // Authoritative codex turn-end from the rollout (task_complete / turn_aborted),
-    // AFTER ingesting frames so the answer is recorded first. Surfaces a credit /
-    // rate-limit notice when codex finished without producing a response. Runs on
-    // zero-frame polls too, so a turn can't hang "Working".
-    await settleFromHistory({
-      threadId: frameInput.threadId,
-      agentId: "codex",
-      runtimeId: frameInput.runtimeId,
-      boundPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
-      expectedUserMessage,
-      nextBlocks,
-    });
-    blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
-  };
-
-  const scheduleCodexHistoryPolling = (frameInput: {
-    threadId: string;
-    agentId: "codex";
-    runtimeId: string;
-  }): void => {
-    const historyState =
-      codexHistoryByRuntime.get(frameInput.runtimeId) ??
-      {
-        sinceMs: Date.now() - 15_000,
-        seenKeys: new Set<string>(),
-        pollingStarted: false,
-      };
-    codexHistoryByRuntime.set(frameInput.runtimeId, historyState);
-    pollWhileRunning(
-      frameInput.threadId,
-      historyState,
-      () => emitCodexHistory(frameInput),
-      1000,
-    );
-  };
-
-  const emitClaudeHistory = async (frameInput: {
-    threadId: string;
-    agentId: "claude";
-    runtimeId: string;
-  }): Promise<void> => {
-    const service = input.service();
-    const hydrated = await service.hydrateThread({ threadId: frameInput.threadId });
-    if (!hydrated.ok) {
-      return;
-    }
-    const expectedUserMessage = latestUserMessageForProviderHistory(hydrated.thread);
-    if (expectedUserMessage === undefined) {
-      return;
-    }
 
     const historyState =
-      claudeHistoryByRuntime.get(frameInput.runtimeId) ??
-      {
-        sinceMs: Date.now() - 15_000,
-        seenKeys: new Set<string>(),
-        pollingStarted: false,
-      };
-    claudeHistoryByRuntime.set(frameInput.runtimeId, historyState);
+      historyByRuntime.get(frameInput.runtimeId) ??
+      { seenKeys: new Set<string>(), pollingStarted: false };
+    historyByRuntime.set(frameInput.runtimeId, historyState);
 
-    const historyFrames = readClaudeProviderHistoryFramesFromHome({
-      homeDir: input.homeDir,
+    const historyFrames = connector.readFrames({
       threadId: frameInput.threadId,
       runtimeId: frameInput.runtimeId,
-      sinceMs: historyState.sinceMs,
+      sessionRef,
+      tailText: tail,
       seenKeys: historyState.seenKeys,
       expectedUserMessage,
-      boundTranscriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
-    });
-    emitProviderUsage({
-      threadId: frameInput.threadId,
-      agentId: "claude",
-      transcriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
-    });
-    if (historyFrames.length === 0) {
-      return;
-    }
-
-    const nextBlocks = new Map(
-      (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [
-        block.blockId,
-        block,
-      ]),
-    );
-    for (const historyFrame of historyFrames) {
-      await recordDiscoveredProviderSessionRef({
-        service,
-        persistence: input.persistence,
-        threadId: frameInput.threadId,
-        providerSessionRef:
-          claudeProviderSessionRefFromTranscriptPath(historyFrame.sourceRef),
-      });
-      const providerFrame = await service.appendRawAgentFrame({
-        threadId: frameInput.threadId,
-        agentId: frameInput.agentId,
-        source: historyFrame.source,
-        sourceRef: historyFrame.sourceRef,
-        payloadKind: historyFrame.payloadKind,
-        payload: historyFrame.payload,
-        body: historyFrame.body,
-      });
-      const providerReadResult = reader.read({
-        thread: hydrated.thread,
-        agentBinding: hydrated.thread.agentBinding,
-        frames: [providerFrame],
-        existingBlocks: [...nextBlocks.values()],
-      });
-      // The transcript is claude's sole content source: it writes every assistant
-      // segment (intro, then the reply after tools), ~0.3s before the agent-idle hook
-      // settles the turn. The hook adds no content, so each segment renders once.
-      for (const update of providerReadResult.blockUpdates) {
-        await recordBlockUpdateInThreadCache(input.persistence, service, update);
-        emitBlockUpdate({
-          update,
-          blocks: nextBlocks,
-          onEvent: input.onEvent,
-        });
-      }
-      await emitPromptState({
-        promptState: providerReadResult.promptState,
-        service,
-        onEvent: input.onEvent,
-      });
-    }
-    blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
-  };
-
-  const scheduleClaudeHistoryPolling = (frameInput: {
-    threadId: string;
-    agentId: "claude";
-    runtimeId: string;
-  }): void => {
-    const historyState =
-      claudeHistoryByRuntime.get(frameInput.runtimeId) ??
-      {
-        sinceMs: Date.now() - 15_000,
-        seenKeys: new Set<string>(),
-        pollingStarted: false,
-      };
-    claudeHistoryByRuntime.set(frameInput.runtimeId, historyState);
-    pollWhileRunning(
-      frameInput.threadId,
-      historyState,
-      () => emitClaudeHistory(frameInput),
-      1000,
-    );
-  };
-
-  const emitAntigravityHistory = async (frameInput: {
-    threadId: string;
-    agentId: "antigravity";
-    runtimeId: string;
-  }): Promise<void> => {
-    const service = input.service();
-    const hydrated = await service.hydrateThread({ threadId: frameInput.threadId });
-    if (!hydrated.ok) {
-      return;
-    }
-    const expectedUserMessage = latestUserMessageForProviderHistory(hydrated.thread);
-
-    const historyState =
-      antigravityHistoryByRuntime.get(frameInput.runtimeId) ??
-      {
-        sinceMs: Date.now() - 15_000,
-        seenKeys: new Set<string>(),
-        pollingStarted: false,
-      };
-    antigravityHistoryByRuntime.set(frameInput.runtimeId, historyState);
-
-    const historyFrames = readAntigravityProviderHistoryFramesFromHome({
-      homeDir: input.homeDir,
-      threadId: frameInput.threadId,
-      runtimeId: frameInput.runtimeId,
-      sinceMs: historyState.sinceMs,
-      seenKeys: historyState.seenKeys,
-      boundTranscriptPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
     });
     const nextBlocks = new Map(
       (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [
@@ -1474,13 +1217,6 @@ export function createLiveAgentSessionEventProjector(input: {
       ]),
     );
     for (const historyFrame of historyFrames) {
-      await recordDiscoveredProviderSessionRef({
-        service,
-        persistence: input.persistence,
-        threadId: frameInput.threadId,
-        providerSessionRef:
-          antigravityProviderSessionRefFromTranscriptPath(historyFrame.sourceRef),
-      });
       const providerFrame = await service.appendRawAgentFrame({
         threadId: frameInput.threadId,
         agentId: frameInput.agentId,
@@ -1510,126 +1246,33 @@ export function createLiveAgentSessionEventProjector(input: {
         onEvent: input.onEvent,
       });
     }
-    // Antigravity emits no turn-end hook, so the runtime never sees `agent-idle`.
-    // Its turn-end is read from the transcript (terminal PLANNER_RESPONSE) through
-    // the same uniform settle path as codex's rollout.
+    // Uniform settle AFTER ingesting frames so the answer is recorded first. Runs
+    // on zero-frame polls too, so a turn can't hang "Working". Adapters that
+    // settle by hook return null from turnEndFromHistory.
     await settleFromHistory({
       threadId: frameInput.threadId,
-      agentId: "antigravity",
+      agentId: frameInput.agentId,
       runtimeId: frameInput.runtimeId,
-      boundPath: hydrated.thread.agentBinding.providerSessionRef?.transcriptPath,
-      expectedUserMessage: undefined,
-      nextBlocks,
-    });
-    blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
-  };
-
-  const scheduleAntigravityHistoryPolling = (frameInput: {
-    threadId: string;
-    agentId: "antigravity";
-    runtimeId: string;
-  }): void => {
-    const historyState =
-      antigravityHistoryByRuntime.get(frameInput.runtimeId) ??
-      {
-        sinceMs: Date.now() - 15_000,
-        seenKeys: new Set<string>(),
-        pollingStarted: false,
-      };
-    antigravityHistoryByRuntime.set(frameInput.runtimeId, historyState);
-    pollWhileRunning(
-      frameInput.threadId,
-      historyState,
-      () => emitAntigravityHistory(frameInput),
-      1000,
-    );
-  };
-
-  // Gemini writes a session JSONL (user / gemini records) under
-  // ~/.gemini/tmp/<project>/chats/session-*.jsonl. It fires no usable turn-end hook
-  // in the prompt-interactive path, so — like antigravity — turn-end + the final
-  // answer are read from that session file. Gemini does not report the session path
-  // via a hook, so the bound session is discovered by recency: the most recent
-  // session file written since this runtime started.
-  const emitGeminiHistory = async (frameInput: {
-    threadId: string;
-    agentId: "gemini";
-    runtimeId: string;
-  }): Promise<void> => {
-    const service = input.service();
-    const hydrated = await service.hydrateThread({ threadId: frameInput.threadId });
-    if (!hydrated.ok) {
-      return;
-    }
-    const expectedUserMessage = latestUserMessageForProviderHistory(hydrated.thread);
-    if (expectedUserMessage === undefined) {
-      return;
-    }
-    const historyState =
-      geminiHistoryByRuntime.get(frameInput.runtimeId) ??
-      { sinceMs: Date.now() - 15_000, seenKeys: new Set<string>(), pollingStarted: false };
-    geminiHistoryByRuntime.set(frameInput.runtimeId, historyState);
-
-    // Bind each gemini thread to ITS OWN session file. Already-bound threads keep their
-    // ref; a fresh thread claims the most-recent session that matches its prompt and is
-    // not already claimed by another runtime (geminiClaimedSessionPaths). The find +
-    // claim is synchronous (no await between), so two concurrent threads can't grab the
-    // same file - the root cause of the "different threads, identical answer" bug.
-    let boundPath =
-      hydrated.thread.agentBinding.providerSessionRef?.transcriptPath ??
-      geminiBoundPathByRuntime.get(frameInput.runtimeId);
-    if (boundPath === undefined) {
-      const candidate = findRecentGeminiSessionPath(input.homeDir, historyState.sinceMs, {
-        exclude: geminiClaimedSessionPaths,
-        expectedUserMessage,
-      });
-      if (candidate !== undefined) {
-        geminiClaimedSessionPaths.add(candidate);
-        geminiBoundPathByRuntime.set(frameInput.runtimeId, candidate);
-        boundPath = candidate;
-      }
-    }
-    if (boundPath === undefined) {
-      return;
-    }
-    await recordDiscoveredProviderSessionRef({
-      service,
-      persistence: input.persistence,
-      threadId: frameInput.threadId,
-      providerSessionRef: {
-        agentId: "gemini",
-        kind: "gemini_session",
-        value: boundPath,
-        transcriptPath: boundPath,
-      },
-    });
-    const nextBlocks = new Map(
-      (blocksByThread.get(frameInput.threadId) ?? []).map((block) => [block.blockId, block]),
-    );
-    await settleFromHistory({
-      threadId: frameInput.threadId,
-      agentId: "gemini",
-      runtimeId: frameInput.runtimeId,
-      boundPath,
+      tailText: tail,
       expectedUserMessage,
       nextBlocks,
     });
     blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
   };
 
-  const scheduleGeminiHistoryPolling = (frameInput: {
+  const scheduleProviderHistoryPolling = (frameInput: {
     threadId: string;
-    agentId: "gemini";
+    agentId: ProviderCliAgentId;
     runtimeId: string;
   }): void => {
     const historyState =
-      geminiHistoryByRuntime.get(frameInput.runtimeId) ??
-      { sinceMs: Date.now() - 15_000, seenKeys: new Set<string>(), pollingStarted: false };
-    geminiHistoryByRuntime.set(frameInput.runtimeId, historyState);
+      historyByRuntime.get(frameInput.runtimeId) ??
+      { seenKeys: new Set<string>(), pollingStarted: false };
+    historyByRuntime.set(frameInput.runtimeId, historyState);
     pollWhileRunning(
       frameInput.threadId,
       historyState,
-      () => emitGeminiHistory(frameInput),
+      () => emitProviderHistory(frameInput),
       1000,
     );
   };
@@ -1740,29 +1383,21 @@ export function createLiveAgentSessionEventProjector(input: {
       threadId: string;
       agentId: ProviderCliAgentId;
       runtimeId: string;
+      providerSessionRef?: AdapterProviderSessionRef;
     }): void {
+      // A launch-assigned session ref (claude/gemini minted --session-id) binds the
+      // thread BEFORE the first poll, so history reads never wait on a hook and can
+      // never bind another runtime's session.
+      if (runtime.providerSessionRef !== undefined) {
+        void recordDiscoveredProviderSessionRef({
+          service: input.service(),
+          persistence: input.persistence,
+          threadId: runtime.threadId,
+          providerSessionRef: runtime.providerSessionRef,
+        });
+      }
       scheduleProviderSignalPolling(runtime);
-      if (runtime.agentId === "codex") {
-        scheduleCodexHistoryPolling({
-          threadId: runtime.threadId,
-          agentId: "codex",
-          runtimeId: runtime.runtimeId,
-        });
-      }
-      if (runtime.agentId === "claude") {
-        scheduleClaudeHistoryPolling({
-          threadId: runtime.threadId,
-          agentId: "claude",
-          runtimeId: runtime.runtimeId,
-        });
-      }
-      if (runtime.agentId === "gemini") {
-        scheduleGeminiHistoryPolling({
-          threadId: runtime.threadId,
-          agentId: "gemini",
-          runtimeId: runtime.runtimeId,
-        });
-      }
+      scheduleProviderHistoryPolling(runtime);
     },
     async ingestOutput(frameInput: {
       threadId: string;
@@ -1799,59 +1434,12 @@ export function createLiveAgentSessionEventProjector(input: {
         agentId: frameInput.agentId,
         runtimeId: frameInput.runtimeId,
       });
-
-      if (frameInput.agentId === "codex") {
-        await emitCodexHistory({
-          threadId: frameInput.threadId,
-          agentId: frameInput.agentId,
-          runtimeId: frameInput.runtimeId,
-        });
-        scheduleCodexHistoryPolling({
-          threadId: frameInput.threadId,
-          agentId: frameInput.agentId,
-          runtimeId: frameInput.runtimeId,
-        });
-        return;
-      }
-
-      if (frameInput.agentId === "claude") {
-        await emitClaudeHistory({
-          threadId: frameInput.threadId,
-          agentId: frameInput.agentId,
-          runtimeId: frameInput.runtimeId,
-        });
-        scheduleClaudeHistoryPolling({
-          threadId: frameInput.threadId,
-          agentId: frameInput.agentId,
-          runtimeId: frameInput.runtimeId,
-        });
-        return;
-      }
-
-      if (frameInput.agentId === "gemini") {
-        await emitGeminiHistory({
-          threadId: frameInput.threadId,
-          agentId: frameInput.agentId,
-          runtimeId: frameInput.runtimeId,
-        });
-        scheduleGeminiHistoryPolling({
-          threadId: frameInput.threadId,
-          agentId: frameInput.agentId,
-          runtimeId: frameInput.runtimeId,
-        });
-        return;
-      }
-
-      if (frameInput.agentId !== "antigravity") {
-        return;
-      }
-
-      await emitAntigravityHistory({
+      await emitProviderHistory({
         threadId: frameInput.threadId,
         agentId: frameInput.agentId,
         runtimeId: frameInput.runtimeId,
       });
-      scheduleAntigravityHistoryPolling({
+      scheduleProviderHistoryPolling({
         threadId: frameInput.threadId,
         agentId: frameInput.agentId,
         runtimeId: frameInput.runtimeId,
@@ -2109,10 +1697,19 @@ function nextEventId(): string {
   return `evt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+// Provider CLI command names: pure registry data, the only place infrastructure
+// may know a provider-specific value.
+const providerCliCommands = {
+  codex: "codex",
+  claude: "claude",
+  antigravity: "agy",
+  gemini: "gemini",
+} as const;
+
 function executableForAgent(
   agentId: "codex" | "claude" | "antigravity" | "gemini",
 ): string {
-  return agentId === "antigravity" ? "agy" : agentId;
+  return providerCliCommands[agentId];
 }
 
 function resolveExecutable(command: string): string | undefined {
@@ -2301,13 +1898,13 @@ function rebuildAdoptedConversation(seed: ThreadSeed): AgentSessionBlock[] {
   return [];
 }
 
-// Discover the gemini session JSONL for the current turn by recency: gemini does not
-// report its session path via a hook, so bind the most recent
-// ~/.gemini/tmp/<project>/chats/session-*.jsonl written since the runtime started.
-function findRecentGeminiSessionPath(
+// Locates the on-disk gemini session file for a Tide-minted session id:
+// ~/.gemini/tmp/<project>/chats/session-<ts>-<uuid8>.jsonl whose header line
+// carries the full sessionId. Deterministic — keyed by the assigned id, never by
+// recency — so concurrent same-prompt threads can never swap sessions.
+export function locateGeminiSessionFile(
   homeDir: string,
-  sinceMs: number,
-  options?: { exclude?: ReadonlySet<string>; expectedUserMessage?: string },
+  sessionId: string,
 ): string | undefined {
   const tmpRoot = join(homeDir, ".gemini", "tmp");
   let projectDirs: string[];
@@ -2318,13 +1915,7 @@ function findRecentGeminiSessionPath(
   } catch {
     return undefined;
   }
-  // Two candidate tiers so concurrent gemini threads never bind the same file:
-  // a session whose FIRST user message matches this thread's prompt wins outright
-  // (exact attribution), otherwise fall back to the most-recent unclaimed session.
-  let matched: { path: string; mtimeMs: number } | undefined;
-  let fallback: { path: string; mtimeMs: number } | undefined;
-  const exclude = options?.exclude;
-  const wanted = options?.expectedUserMessage?.trim();
+  const idFragment = sessionId.slice(0, 8);
   for (const project of projectDirs) {
     const chatsDir = join(tmpRoot, project, "chats");
     let names: string[];
@@ -2334,66 +1925,27 @@ function findRecentGeminiSessionPath(
       continue;
     }
     for (const name of names) {
-      if (!name.startsWith("session-") || !name.endsWith(".jsonl")) {
+      if (!name.startsWith("session-") || !/\.jsonl?$/.test(name)) {
+        continue;
+      }
+      // The filename embeds the first 8 chars of the session id; the header line
+      // carries the full id. Both must match.
+      if (!name.includes(idFragment)) {
         continue;
       }
       const path = join(chatsDir, name);
-      if (exclude?.has(path)) {
-        continue;
-      }
       try {
-        const mtimeMs = statSync(path).mtimeMs;
-        if (mtimeMs < sinceMs) {
-          continue;
-        }
-        if (fallback === undefined || mtimeMs > fallback.mtimeMs) {
-          fallback = { path, mtimeMs };
-        }
-        if (
-          wanted !== undefined &&
-          geminiSessionFirstUserMessageMatches(path, wanted) &&
-          (matched === undefined || mtimeMs > matched.mtimeMs)
-        ) {
-          matched = { path, mtimeMs };
+        const headerLine = readFileSync(path, "utf8").split("\n", 1)[0] ?? "";
+        const header = JSON.parse(headerLine) as Record<string, unknown>;
+        if (header.sessionId === sessionId) {
+          return path;
         }
       } catch {
-        // Skip files that vanished between listing and stat.
+        // Skip unreadable/partial files; the next poll retries.
       }
     }
   }
-  return (matched ?? fallback)?.path;
-}
-
-// True when the gemini session file's first user turn equals the expected prompt, so a
-// thread binds to ITS OWN session even when several start at once.
-function geminiSessionFirstUserMessageMatches(path: string, wanted: string): boolean {
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch {
-    return false;
-  }
-  for (const line of text.split("\n")) {
-    if (line.trim().length === 0) {
-      continue;
-    }
-    try {
-      const record = JSON.parse(line) as Record<string, unknown>;
-      const role = record.role ?? record.type;
-      const content =
-        typeof record.content === "string"
-          ? record.content
-          : typeof (record as { text?: unknown }).text === "string"
-            ? (record as { text: string }).text
-            : undefined;
-      if ((role === "user" || role === "human") && content !== undefined) {
-        return content.trim() === wanted;
-      }
-    } catch {
-      // Ignore unparseable lines.
-    }
-  }
-  return false;
+  return undefined;
 }
 
 function latestUserMessageForProviderHistory(

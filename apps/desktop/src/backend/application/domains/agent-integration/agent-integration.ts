@@ -41,7 +41,82 @@ export interface ProviderLaunchPlan {
     startupDelayMs?: number;
     preSubmitDelayMs?: number;
   };
+  // The key sequence that submits typed input in this provider's TUI. Defaults
+  // to "\r"; claude uses CSI-u Enter ("\x1b[13u") because its TUI negotiates the
+  // extended keyboard protocol on the hidden PTY. Provider knowledge — declared
+  // here so the runtime port stays provider-neutral.
+  submitKeySequence?: string;
+  // One-shot TUI prompts this provider renders at startup that Tide must answer
+  // automatically (e.g. codex's "Hooks need review" trust box for Tide's own
+  // generated hooks). The runtime port replays `response` keys (with a beat
+  // between them) the first time `pattern` appears in PTY output.
+  autoRespondPrompts?: Array<{
+    pattern: string;
+    response: string[];
+    interKeyDelayMs?: number;
+  }>;
   expectedSignalSources: ProviderSignalSource[];
+  // The provider session this launch will run as, when the adapter can assign or
+  // derive it at plan time (claude/gemini mint a session id and pass it via
+  // `--session-id`). Recorded as the thread's binding before the first history
+  // poll, so binding is deterministic — never discovered by file recency.
+  providerSessionRef?: DiscoveredProviderSessionRef;
+}
+
+// A provider session reference paired with the provider that owns it. The
+// adapter-facing twin of the persistence layer's ProviderSessionRefRecord.
+export interface DiscoveredProviderSessionRef {
+  agentId: ProviderCliAgentId;
+  kind: ProviderSessionRef["kind"];
+  value: string;
+  transcriptPath?: string;
+  logPath?: string;
+}
+
+// One provider-record frame parsed from the provider's own history file. The
+// same shape the live projector appends through the frame→block pipeline.
+export interface ProviderHistoryFrame {
+  source: "provider_history";
+  sourceRef: string;
+  payloadKind: "provider_record";
+  payload: Record<string, unknown>;
+  body: string;
+  // True when this frame is the terminal agent message of a turn, for providers
+  // whose turn boundary is a transcript record (antigravity).
+  turnComplete?: boolean;
+}
+
+export interface ProviderHistoryReadInput {
+  threadId: string;
+  runtimeId: string;
+  // The session this runtime is bound to. readFrames parses ONLY this session's
+  // tail; there is no cross-session scanning.
+  sessionRef: DiscoveredProviderSessionRef;
+  // Bounded tail of the bound session file, read by the shared history loop.
+  tailText: string;
+  // Incremental frame dedup across polls, owned per runtime by the caller.
+  seenKeys: Set<string>;
+  // The current turn's user message; readers that anchor on it emit only frames
+  // that belong to the current turn.
+  expectedUserMessage?: string;
+}
+
+// The provider-owned history plane: how Tide deterministically locates THIS
+// runtime's session and parses it into frames. One per Agent Integration; the
+// shared history loop in live-backend calls it uniformly with zero provider
+// branching. See docs_v2/specs/provider-history-connector.md.
+export interface ProviderHistoryConnector {
+  // Locate the on-disk session file for a launch-assigned ref that does not know
+  // its path yet (gemini's timestamped filename). Deterministic — resolves by the
+  // assigned session id, never by recency. undefined until the file exists.
+  resolveSessionRef?(
+    assignedSessionRef: DiscoveredProviderSessionRef,
+  ): DiscoveredProviderSessionRef | undefined;
+  // Parse new provider-record frames for the current turn from the bound
+  // session's tail. Pure: all I/O happens in the shared loop.
+  readFrames(input: ProviderHistoryReadInput): ProviderHistoryFrame[];
+  // Derive this provider's session ref from a runtime-keyed hook payload.
+  sessionRefFromHookPayload(payload: unknown): DiscoveredProviderSessionRef | undefined;
 }
 
 export interface AgentIntegrationReadinessBlocker {
@@ -149,6 +224,9 @@ export interface AgentIntegrationPort {
   // turn does not start before tools are registered for dispatch. See
   // docs_v2/specs/agent-turn-handoff-readiness.md.
   initialTurnReadiness(): RuntimeReadinessGate;
+  // The provider-owned history plane (deterministic session binding + session
+  // file parsing). See docs_v2/specs/provider-history-connector.md.
+  history(): ProviderHistoryConnector;
 }
 
 export type RuntimeReadinessGate =

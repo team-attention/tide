@@ -83,3 +83,71 @@ test("antigravity_transcript_turn_end_rule_lives_in_its_adapter", () => {
   const infra = read("src/backend/infrastructure/node/live-backend.ts");
   assert.equal(infra.includes("turnEnd: toolCalls.length === 0"), false);
 });
+
+// Provider History Connector invariant #1: live-backend keeps exactly ONE
+// generic history loop. No `agentId === "<provider>"` comparison and no
+// per-provider emitter/binder may exist in infrastructure wiring; provider
+// knowledge lives in each Agent Integration's connector.
+// See docs_v2/specs/provider-history-connector.md.
+test("infra_live_backend_has_zero_provider_branches", () => {
+  const source = read("src/backend/infrastructure/node/live-backend.ts");
+  for (const literal of [
+    'agentId === "codex"',
+    'agentId === "claude"',
+    'agentId === "gemini"',
+    'agentId === "antigravity"',
+    "emitCodexHistory",
+    "emitClaudeHistory",
+    "emitGeminiHistory",
+    "emitAntigravityHistory",
+    "findRecentGeminiSessionPath",
+  ]) {
+    assert.equal(
+      source.includes(literal),
+      false,
+      `live-backend.ts must not contain provider-specific dispatch (${literal}); it belongs in that provider's Agent Integration`,
+    );
+  }
+});
+
+// The runtime port is provider-neutral: submit-key and startup auto-responses
+// are declared on the launch plan by each Agent Integration, never hardcoded by
+// agent id in the port.
+test("runtime_port_has_no_hardcoded_provider_key_sequences", () => {
+  const source = read(
+    "src/backend/adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts",
+  );
+  assert.equal(
+    source.includes('agentId === "claude" ? "\\x1b[13u"'),
+    false,
+    "the claude submit key belongs on the claude launch plan (submitKeySequence)",
+  );
+  assert.equal(
+    source.includes("CODEX_HOOK_TRUST_PROMPT"),
+    false,
+    "the codex hook-trust auto-answer belongs on the codex launch plan (autoRespondPrompts)",
+  );
+
+  const claudeAdapter = read(
+    "src/backend/adapters/outbound/agent-integrations/claude/claude-agent-integration.ts",
+  );
+  assert.ok(claudeAdapter.includes("submitKeySequence"));
+  const codexAdapter = read(
+    "src/backend/adapters/outbound/agent-integrations/codex/codex-agent-integration.ts",
+  );
+  assert.ok(codexAdapter.includes("autoRespondPrompts"));
+});
+
+// Deterministic session binding: the gemini recency heuristic must not return.
+// Binding comes from a launch-assigned session id (claude/gemini --session-id)
+// or a runtime-keyed hook payload only.
+test("session_binding_is_assigned_not_recency_discovered", () => {
+  const claudeAdapter = read(
+    "src/backend/adapters/outbound/agent-integrations/claude/claude-agent-integration.ts",
+  );
+  assert.ok(claudeAdapter.includes('"--session-id"'));
+  const geminiAdapter = read(
+    "src/backend/adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts",
+  );
+  assert.ok(geminiAdapter.includes('"--session-id"'));
+});

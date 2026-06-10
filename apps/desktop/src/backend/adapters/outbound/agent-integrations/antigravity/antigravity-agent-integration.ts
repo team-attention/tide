@@ -8,12 +8,14 @@ import type {
   AgentPromptSignalInput,
   AgentResumePlanInput,
   AgentStartPlanInput,
+  ProviderHistoryConnector,
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
   RuntimeReadinessGate,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import { antigravityTurnOutcomeFromTranscript } from "./antigravity-transcript-turn-detection.ts";
+import { createAntigravityHistoryConnector } from "./antigravity-history-connector.ts";
 import type { PromptState, ThreadScope } from "../../../../application/domains/thread/thread.ts";
 
 export interface AntigravityProviderState {
@@ -86,12 +88,17 @@ class AntigravityAgentIntegration implements AgentIntegrationPort {
   private readonly readProviderState: AntigravityProviderStateReader;
   private readonly tidePlugin?: AntigravityTidePluginConfig;
   private readonly defaultCwd: string;
+  private readonly historyConnector = createAntigravityHistoryConnector();
 
   constructor(input: CreateAntigravityAgentIntegrationInput) {
     this.resolveExecutable = input.resolveExecutable;
     this.readProviderState = input.readProviderState;
     this.tidePlugin = cloneTidePluginConfig(input.tidePlugin);
     this.defaultCwd = input.defaultCwd ?? ".";
+  }
+
+  history(): ProviderHistoryConnector {
+    return this.historyConnector;
   }
 
   async preflight(
