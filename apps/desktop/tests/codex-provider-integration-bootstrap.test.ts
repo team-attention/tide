@@ -215,33 +215,6 @@ test("backend_application_does_not_import_codex_adapter_or_shared_contracts", ()
   );
 });
 
-test("codex_permission_prompt_detection_requires_permission_request_hook_payload", () => {
-  const integration = codexIntegration();
-
-  const prompt = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "provider_hook",
-    eventName: "PermissionRequest",
-    payload: {
-      tool_name: "Bash",
-      tool_input: {
-        description: "Run a fixture command",
-        command: "python3 -c 'print(\"CODEX_PERMISSION_FIXTURE\")'",
-      },
-    },
-  });
-  const unknown = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "pty_transcript",
-    text: "Allow command?",
-  });
-
-  assert.equal(prompt?.kind, "permission");
-  assert.equal(prompt?.source, "provider_hook");
-  assert.equal(prompt?.message, "Run a fixture command");
-  assert.equal(unknown, null);
-});
-
 // Spec: docs_v2/specs/agent-prompt-surfacing.md — codex's boxed TUI approval menu has
 // no hook, so the codex integration maps the scraped PTY frame into a PromptState.
 const CODEX_TUI_APPROVAL_FRAME = [
@@ -255,53 +228,6 @@ const CODEX_TUI_APPROVAL_FRAME = [
   "",
   "\x1b[2menter to submit | esc to cancel\x1b[0m",
 ].join("\n");
-
-test("codex_maps_a_scraped_tui_approval_box_into_a_prompt_state", () => {
-  const integration = codexIntegration();
-
-  const prompt = integration.detectPromptState({
-    threadId: "thread-tui",
-    source: "pty_transcript",
-    text: CODEX_TUI_APPROVAL_FRAME,
-  });
-
-  assert.notEqual(prompt, null);
-  assert.equal(prompt?.kind, "approval");
-  assert.equal(prompt?.source, "pty");
-  assert.equal(
-    prompt?.message,
-    'Allow the playwright MCP server to run tool "browser_navigate"?',
-  );
-  // Cursor is on option 1 → that is the default choice.
-  assert.equal(prompt?.defaultChoiceId, "codex-opt-1");
-  assert.deepEqual(
-    prompt?.choices?.map((choice) => ({
-      label: choice.label,
-      providerValue: choice.providerValue,
-    })),
-    [
-      { label: "Allow", providerValue: "codex-menu:0" },
-      { label: "Allow for this session", providerValue: "codex-menu:1" },
-      { label: "Always allow", providerValue: "codex-menu:2" },
-      { label: "Cancel", providerValue: "codex-menu:3" },
-    ],
-  );
-});
-
-test("codex_tui_prompt_state_id_is_stable_across_re_renders_of_the_same_box", () => {
-  const integration = codexIntegration();
-  const first = integration.detectPromptState({
-    threadId: "thread-tui",
-    source: "pty_transcript",
-    text: CODEX_TUI_APPROVAL_FRAME,
-  });
-  const second = integration.detectPromptState({
-    threadId: "thread-tui",
-    source: "pty_transcript",
-    text: `noise before\n${CODEX_TUI_APPROVAL_FRAME}`,
-  });
-  assert.equal(first?.promptId, second?.promptId);
-});
 
 test("codex_launch_plan_uses_app_server_not_one_shot_exec", async () => {
   // app-server is the PERSISTENT structured protocol (multi-turn, server-push
@@ -327,36 +253,6 @@ test("provider_specific_agent_integrations_stay_under_backend_adapters", () => {
     ]),
     [],
   );
-});
-
-test("codex_turn_end_settles_without_content_but_keeps_notice", () => {
-  const integration = codexIntegration();
-  // codex-stop hook only settles; content comes from the rollout history reader, so
-  // the hook carries NO answer (empty outcome) - never produced twice.
-  assert.deepEqual(
-    integration.turnEndFromHook("codex-stop", { last_assistant_message: "done" }),
-    {},
-  );
-  assert.equal(integration.turnEndFromHook("agent-running", {}), null);
-  // Rollout task_complete with an answer: turn-end settles with NO finalMessage (the
-  // reader already rendered "rolled"), so nothing is duplicated.
-  const rollout = [
-    JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "hi" } }),
-    JSON.stringify({ type: "event_msg", payload: { type: "task_complete", last_agent_message: "rolled" } }),
-  ].join("\n");
-  assert.deepEqual(integration.turnEndFromHistory(rollout, "hi"), {});
-  // No credits + no answer surfaces a notice instead of an empty turn.
-  const noCredits = [
-    JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "hi" } }),
-    JSON.stringify({
-      type: "event_msg",
-      payload: { type: "token_count", rate_limits: { credits: { has_credits: false } } },
-    }),
-    JSON.stringify({ type: "event_msg", payload: { type: "task_complete", last_agent_message: null } }),
-  ].join("\n");
-  const outcome = integration.turnEndFromHistory(noCredits, "hi");
-  assert.equal(outcome?.finalMessage, undefined);
-  assert.equal(outcome?.notice?.severity, "error");
 });
 
 function codexIntegration(options: {

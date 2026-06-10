@@ -211,31 +211,6 @@ export interface AgentIntegrationPort {
   ): Promise<AgentIntegrationPreflightResult>;
   buildStartPlan(input: AgentStartPlanInput): Promise<ProviderLaunchPlan>;
   buildResumePlan(input: AgentResumePlanInput): Promise<ProviderLaunchPlan>;
-  detectPromptState(input: AgentPromptSignalInput): PromptState | null;
-  // Turn-end detected from a runtime-keyed provider hook frame. Returns the turn's
-  // outcome (final answer and/or a user-facing notice) when THIS hook event ends the
-  // current turn, or null when it does not. Provider lifecycle knowledge lives in the
-  // adapter: claude/codex read the final answer (and credit/rate-limit state) from
-  // the hook payload; antigravity has no turn-end hook and returns null here.
-  turnEndFromHook(eventName: string, payload: unknown): AgentTurnOutcome | null;
-  // Turn-end detected from the provider's OWN history tail (codex rollout,
-  // antigravity transcript), scoped to the current turn's user message. Returns the
-  // outcome when the turn has ended, or null when it has not. claude is hook-driven
-  // and returns null here. This is the binding-independent fallback that also carries
-  // a notice (e.g. "out of credits") when the turn ended with no usable answer.
-  turnEndFromHistory(
-    historyTailText: string,
-    expectedUserMessage: string | undefined,
-  ): AgentTurnOutcome | null;
-  // When the runtime is ready to receive its FIRST user turn. The first prompt is
-  // delivered through one shared path gated by this, never via launch argv. CLIs
-  // that attach the Tide MCP server must wait for its tool-surface handshake so the
-  // turn does not start before tools are registered for dispatch. See
-  // docs_v2/specs/agent-turn-handoff-readiness.md.
-  initialTurnReadiness(): RuntimeReadinessGate;
-  // The provider-owned history plane (deterministic session binding + session
-  // file parsing). See docs_v2/specs/provider-history-connector.md.
-  history(): ProviderHistoryConnector;
 }
 
 export type RuntimeReadinessGate =

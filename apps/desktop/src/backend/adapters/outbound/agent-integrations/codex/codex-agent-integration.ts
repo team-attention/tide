@@ -1,32 +1,18 @@
 import type {
-  AgentTurnOutcome,
   AgentIntegrationCapabilities,
   AgentIntegrationPort,
   AgentIntegrationPreflightInput,
   AgentIntegrationPreflightResult,
   AgentIntegrationReadinessBlocker,
-  AgentPromptSignalInput,
   AgentResumePlanInput,
   AgentStartPlanInput,
-  ProviderHistoryConnector,
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
-  RuntimeReadinessGate,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
-import { codexTurnOutcomeFromRollout } from "./codex-rollout-turn-detection.ts";
-import { createCodexHistoryConnector } from "./codex-history-connector.ts";
 import type {
-  PromptChoice,
-  PromptKind,
-  PromptState,
   ThreadScope,
 } from "../../../../application/domains/thread/thread.ts";
-import {
-  codexApprovalPromptSignature,
-  encodeCodexMenuNavigation,
-  parseCodexApprovalPrompt,
-} from "../../../../application/services/provider-tui-parsers.ts";
 
 export interface CodexProviderState {
   authenticated: boolean;
@@ -98,17 +84,12 @@ class CodexAgentIntegration implements AgentIntegrationPort {
   private readonly readProviderState: CodexProviderStateReader;
   private readonly tideMcp?: CodexTideMcpConfig;
   private readonly defaultCwd: string;
-  private readonly historyConnector = createCodexHistoryConnector();
 
   constructor(input: CreateCodexAgentIntegrationInput) {
     this.resolveExecutable = input.resolveExecutable;
     this.readProviderState = input.readProviderState;
     this.tideMcp = cloneTideMcpConfig(input.tideMcp);
     this.defaultCwd = input.defaultCwd ?? ".";
-  }
-
-  history(): ProviderHistoryConnector {
-    return this.historyConnector;
   }
 
   async preflight(
@@ -236,75 +217,6 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     });
   }
 
-  initialTurnReadiness(): RuntimeReadinessGate {
-    return { kind: "tool_surface_ready" };
-  }
-
-  turnEndFromHook(eventName: string, _payload: unknown): AgentTurnOutcome | null {
-    // The codex-stop hook is ONLY a settle signal (it often never fires, which is why
-    // turnEndFromHistory is the authoritative settle path). Like claude, content comes
-    // solely from the rollout history reader, so this carries no answer — settling
-    // without re-producing it keeps the answer single-sourced (no dedup).
-    if (eventName !== "codex-stop") {
-      return null;
-    }
-    return {};
-  }
-
-  turnEndFromHistory(
-    rolloutTailText: string,
-    expectedUserMessage: string | undefined,
-  ): AgentTurnOutcome | null {
-    // Authoritative codex turn-end: the rollout's typed task_complete / turn_aborted.
-    // The rollout history reader is the SOLE content source for the answer, so turn-end
-    // only settles (+ surfaces a notice when the turn produced none — aborted /
-    // out-of-credits). We deliberately drop finalMessage here so the answer is never
-    // produced twice (no dedup needed). See codexTurnOutcomeFromRollout.
-    const outcome = codexTurnOutcomeFromRollout(rolloutTailText, expectedUserMessage);
-    if (outcome === null) {
-      return null;
-    }
-    return outcome.notice !== undefined ? { notice: outcome.notice } : {};
-  }
-
-  detectPromptState(input: AgentPromptSignalInput): PromptState | null {
-    // codex's shell-command and (non-Tide) MCP-tool approval menus are pure TUI: no
-    // hook fires, they exist only as a boxed menu in the hidden PTY. Scrape that frame
-    // and surface it as a normalized PromptState so the turn can't hang on an unseen
-    // prompt. (Tide's own MCP tools are pre-approved in codex config and never render a
-    // box, so any box we see is a non-Tide tool/command.) See agent-prompt-surfacing.md.
-    if (input.source === "pty_transcript") {
-      return detectCodexTuiApprovalPrompt(input.threadId, input.text);
-    }
-    if (
-      input.source !== "provider_hook" ||
-      input.eventName !== "PermissionRequest"
-    ) {
-      return null;
-    }
-    if (!isRecord(input.payload)) {
-      return null;
-    }
-
-    const toolInput = isRecord(input.payload.tool_input)
-      ? input.payload.tool_input
-      : undefined;
-    const message =
-      stringValue(toolInput?.description) ??
-      stringValue(toolInput?.command) ??
-      stringValue(input.payload.tool_name) ??
-      "Codex permission required.";
-
-    return {
-      promptId: codexPromptId(input.payload, message),
-      threadId: input.threadId,
-      agentId: "codex",
-      kind: "permission",
-      message,
-      source: "provider_hook",
-    };
-  }
-
   private codexLaunchPlan(input: {
     executablePath: string;
     cwd: string;
@@ -372,38 +284,6 @@ class CodexAgentIntegration implements AgentIntegrationPort {
 // port replays as ArrowDown/ArrowUp + Enter. defaultChoiceId is the cursor option, so
 // v2 highlights codex's own default. promptId is the content signature so the same box
 // re-rendered across PTY chunks dedupes to one surfaced prompt.
-function detectCodexTuiApprovalPrompt(
-  threadId: string,
-  text: string | undefined,
-): PromptState | null {
-  if (text === undefined) {
-    return null;
-  }
-  const parsed = parseCodexApprovalPrompt(text);
-  if (parsed === null) {
-    return null;
-  }
-
-  const choices: PromptChoice[] = parsed.options.map((option, position) => ({
-    choiceId: `codex-opt-${option.index}`,
-    label: option.label,
-    providerValue: encodeCodexMenuNavigation(position - parsed.defaultIndex),
-  }));
-  // "Allow …?" is an approval (waiting_for_approval); any other boxed question is a
-  // generic choice (waiting_for_input).
-  const kind: PromptKind = /\ballow\b/i.test(parsed.question) ? "approval" : "choice";
-
-  return {
-    promptId: codexApprovalPromptSignature(parsed),
-    threadId,
-    agentId: "codex",
-    kind,
-    message: parsed.question,
-    choices,
-    defaultChoiceId: choices[parsed.defaultIndex]?.choiceId,
-    source: "pty",
-  };
-}
 
 function codexSetupAction(
   executablePath: string,
@@ -561,15 +441,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function codexPromptId(
-  payload: Record<string, unknown>,
-  message: string,
-): string {
-  return (
-    stringValue(payload.call_id) ??
-    stringValue(payload.turn_id) ??
-    `codex-permission-${message}`
-  );
 }

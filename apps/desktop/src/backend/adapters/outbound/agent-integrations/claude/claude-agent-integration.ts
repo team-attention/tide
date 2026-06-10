@@ -1,34 +1,20 @@
 import { randomUUID } from "node:crypto";
 
 import type {
-  AgentTurnOutcome,
   AgentIntegrationCapabilities,
   AgentIntegrationPort,
   AgentIntegrationPreflightInput,
   AgentIntegrationPreflightResult,
   AgentIntegrationReadinessBlocker,
-  AgentPromptSignalInput,
   AgentResumePlanInput,
   AgentStartPlanInput,
-  ProviderHistoryConnector,
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
-  RuntimeReadinessGate,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
-  PromptChoice,
-  PromptKind,
-  PromptState,
   ThreadScope,
 } from "../../../../application/domains/thread/thread.ts";
-import {
-  codexApprovalPromptSignature,
-  encodeCodexMenuNavigation,
-  parseCodexApprovalPrompt,
-  PTY_CANCEL_TOKEN,
-} from "../../../../application/services/provider-tui-parsers.ts";
-import { createClaudeHistoryConnector } from "./claude-history-connector.ts";
 
 export interface ClaudeProviderState {
   authenticated: boolean;
@@ -107,7 +93,6 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
   private readonly tideContextPrompt: string;
   private readonly defaultCwd: string;
   private readonly mintSessionId: () => string;
-  private readonly historyConnector: ProviderHistoryConnector;
 
   constructor(input: CreateClaudeAgentIntegrationInput) {
     this.resolveExecutable = input.resolveExecutable;
@@ -117,9 +102,6 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     this.tideContextPrompt = input.tideContextPrompt;
     this.defaultCwd = input.defaultCwd ?? ".";
     this.mintSessionId = input.mintSessionId ?? (() => randomUUID());
-    this.historyConnector = createClaudeHistoryConnector({
-      locateSessionFile: input.locateSessionFile,
-    });
   }
 
   async preflight(
@@ -237,145 +219,6 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       resumeRef: input.providerSessionRef.value,
       launchOptions: input.launchOptions,
     });
-  }
-
-  initialTurnReadiness(): RuntimeReadinessGate {
-    // Claude registers MCP tools before running the turn and reliably accepts the
-    // first prompt at launch (positional argv), so it does not need the gated
-    // post-launch handoff that codex requires.
-    return { kind: "immediate" };
-  }
-
-  turnEndFromHook(eventName: string, _payload: unknown): AgentTurnOutcome | null {
-    // Claude's turn-end is the runtime-keyed `agent-idle` Stop hook: ONLY a signal to
-    // settle the turn — it carries no content. Empirically the transcript receives the
-    // assistant answer ~0.3s BEFORE this hook fires, so the history reader is the SOLE
-    // content source and renders every segment (intro text, tools, the reply). Returning
-    // an empty outcome settles the turn without producing a second copy of the answer —
-    // which is why there is no answer dedup anywhere. (We intentionally do NOT read
-    // last_assistant_message here; doing so created the duplicate this design removes.)
-    if (eventName !== "agent-idle") {
-      return null;
-    }
-    return {};
-  }
-
-  history(): ProviderHistoryConnector {
-    return this.historyConnector;
-  }
-
-  turnEndFromHistory(): AgentTurnOutcome | null {
-    // Claude's settle signal is the agent-idle hook (above); the transcript supplies the
-    // content via the history reader, so there is no separate history-driven outcome.
-    return null;
-  }
-
-  detectPromptState(input: AgentPromptSignalInput): PromptState | null {
-    // ONE OWNER PER BOX KIND:
-    // - PERMISSION boxes ("Do you want to proceed?") are owned by the
-    //   PermissionRequest HOOK. It fires once per requested call, SEQUENTIALLY as
-    //   claude reaches each tool (verified live: a WebSearch hook, then two
-    //   WebFetch hooks), so the count is right and there is no PTY-parsing
-    //   fragility. The PTY scrape does NOT surface these (it returns null for
-    //   permission-worded boxes) — surfacing both produced two cards for one box
-    //   and wedged the next turn's prompt.
-    // - QUESTION boxes (AskUserQuestion) ARE owned by the PTY scrape: their hook
-    //   fires before the box renders and carries no selectable options, so the
-    //   box on screen is the only actionable source.
-    if (input.source === "pty_transcript") {
-      return detectClaudeTuiApprovalPrompt(input.threadId, input.text);
-    }
-    if (input.source !== "provider_hook" || !isRecord(input.payload)) {
-      return null;
-    }
-
-    // Tide normalizes every claude hook to the single signal event
-    // `agent-needs-input`; the REAL hook is in payload.hook_event_name.
-    const hookEvent = stringValue(input.payload.hook_event_name) ?? input.eventName;
-
-    if (hookEvent === "PermissionRequest") {
-      return this.detectPermissionPrompt(input);
-    }
-    if (hookEvent === "Elicitation") {
-      return this.detectElicitation(input);
-    }
-
-    return null;
-  }
-
-  private detectPermissionPrompt(input: AgentPromptSignalInput): PromptState | null {
-    if (!isRecord(input.payload)) {
-      return null;
-    }
-    const toolInput = isRecord(input.payload.tool_input)
-      ? input.payload.tool_input
-      : undefined;
-    const toolName = stringValue(input.payload.tool_name);
-    // AskUserQuestion's PermissionRequest must NOT surface as Allow/Deny: the box
-    // claude renders for it IS the question menu (the PTY scrape owns it).
-    if (toolName === "AskUserQuestion") {
-      return null;
-    }
-    // The distinguishing target of THIS call (the URL fetched, command run, path
-    // edited, query searched). Including it makes each call's message — and thus
-    // its content-derived promptId — UNIQUE, so a batched turn that fires several
-    // same-tool permissions (e.g. two WebFetch calls on different URLs, with no
-    // call_id and no description) does not collapse into one card that approves
-    // only one call and hangs on the rest. Verified live: WebFetch×2 (marketbeat
-    // + fintel) shared "permission required for WebFetch." and hung.
-    const target =
-      stringValue(toolInput?.command) ??
-      stringValue(toolInput?.url) ??
-      stringValue(toolInput?.query) ??
-      stringValue(toolInput?.path) ??
-      stringValue(toolInput?.file_path) ??
-      stringValue(toolInput?.pattern);
-    const message =
-      stringValue(toolInput?.description) ??
-      (toolName !== undefined && target !== undefined
-        ? `${toolName}: ${target}`
-        : toolName !== undefined
-          ? `Claude Code permission required for ${toolName}.`
-          : undefined);
-    if (message === undefined) {
-      return null;
-    }
-    return {
-      // Per-call id so each permission is a distinct prompt (a batched turn fires
-      // several). call_id when claude provides one, else the unique message above.
-      promptId: claudePromptId(input.payload, "permission", message),
-      threadId: input.threadId,
-      agentId: "claude",
-      kind: "approval",
-      message,
-      // claude's actual Allow/Deny box is in the hidden PTY. Allow = Enter on the
-      // default option; Deny = Esc (cancels regardless of option layout).
-      choices: [
-        { choiceId: "claude-perm-allow", label: "Allow", providerValue: encodeCodexMenuNavigation(0) },
-        { choiceId: "claude-perm-deny", label: "Deny", providerValue: PTY_CANCEL_TOKEN },
-      ],
-      defaultChoiceId: "claude-perm-allow",
-      source: "provider_hook",
-    };
-  }
-
-  private detectElicitation(input: AgentPromptSignalInput): PromptState | null {
-    if (!isRecord(input.payload)) {
-      return null;
-    }
-    const message = stringValue(input.payload.message);
-    if (message === undefined) {
-      return null;
-    }
-
-    return {
-      promptId: claudePromptId(input.payload, "elicitation", message),
-      threadId: input.threadId,
-      agentId: "claude",
-      kind: "question",
-      message,
-      source: "provider_hook",
-    };
   }
 
   private claudeLaunchPlan(input: {
@@ -507,58 +350,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function claudePromptId(
-  payload: Record<string, unknown>,
-  kind: string,
-  message: string,
-): string {
-  return (
-    stringValue(payload.call_id) ??
-    stringValue(payload.tool_use_id) ??
-    stringValue(payload.elicitation_id) ??
-    `claude-${kind}-${message}`
-  );
-}
-
-// Scrape claude's interactive permission/choice box from the hidden PTY and
-// normalize it to a PromptState. Claude's box is the same vertical arrow-nav menu
-// as codex ("Do you want to proceed? ❯1. Yes  2. …  3. No", footer "Esc to
-// cancel · …"), so it reuses the codex TUI parser + menu-navigation encoding; the
-// user's choice is replayed as ArrowDown/Up + Enter on the PTY.
-function detectClaudeTuiApprovalPrompt(
-  threadId: string,
-  text: string | undefined,
-): PromptState | null {
-  if (text === undefined) {
-    return null;
-  }
-  const parsed = parseCodexApprovalPrompt(text);
-  if (parsed === null) {
-    return null;
-  }
-  // Permission boxes ("Do you want to proceed?" / "...allow Claude to...?") are
-  // owned by the PermissionRequest hook — the scrape must NOT also surface them
-  // (two cards for one box wedged the next turn's prompt, verified live). The
-  // scrape owns only the QUESTION/choice menu (AskUserQuestion).
-  if (/\b(proceed|trust|allow|permission)\b/i.test(parsed.question)) {
-    return null;
-  }
-  const choices: PromptChoice[] = parsed.options.map((option, position) => ({
-    choiceId: `claude-opt-${option.index}`,
-    label: option.label,
-    providerValue: encodeCodexMenuNavigation(position - parsed.defaultIndex),
-  }));
-  const kind: PromptKind = "choice";
-  return {
-    promptId: `claude:${codexApprovalPromptSignature(parsed)}`,
-    threadId,
-    agentId: "claude",
-    kind,
-    message: parsed.question,
-    choices,
-    defaultChoiceId: choices[parsed.defaultIndex]?.choiceId,
-    source: "pty",
-  };
 }

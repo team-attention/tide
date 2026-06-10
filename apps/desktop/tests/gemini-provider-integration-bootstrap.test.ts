@@ -111,54 +111,6 @@ test("gemini_resume_plan_stays_on_acp_transport", async () => {
   assert.equal(plan.args.includes("--resume"), false);
 });
 
-test("gemini_turn_end_hook_is_after_agent_settle_only", () => {
-  const integration = geminiIntegration();
-  assert.deepEqual(
-    integration.turnEndFromHook("agent-idle", {
-      hook_event_name: "AfterAgent",
-      session_id: SESSION_ID,
-      prompt_response: "the answer text",
-    }),
-    {},
-  );
-  assert.equal(integration.turnEndFromHook("agent-running", {}), null);
-  assert.equal(
-    integration.turnEndFromHook("agent-idle", { hook_event_name: "Notification" }),
-    null,
-  );
-});
-
-test("gemini_notification_tool_permission_surfaces_approval_prompt", () => {
-  const integration = geminiIntegration();
-  const prompt = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "provider_hook",
-    eventName: "agent-needs-input",
-    payload: {
-      hook_event_name: "Notification",
-      notification_type: "ToolPermission",
-      message: "Tool run_shell_command requires approval",
-      details: { tool_name: "run_shell_command" },
-    },
-  });
-  assert.notEqual(prompt, null);
-  assert.equal(prompt?.kind, "approval");
-  assert.equal(prompt?.agentId, "gemini");
-  assert.equal(prompt?.choices?.length, 2);
-  assert.equal(prompt?.defaultChoiceId, "gemini-perm-allow");
-
-  // Non-permission notifications and PTY text do not surface prompts.
-  assert.equal(
-    integration.detectPromptState({
-      threadId: "thread-1",
-      source: "provider_hook",
-      eventName: "agent-needs-input",
-      payload: { hook_event_name: "Notification", notification_type: "Other" },
-    }),
-    null,
-  );
-});
-
 test("gemini_hook_payload_binds_session_ref", () => {
   assert.deepEqual(
     geminiSessionRefFromHookPayload({

@@ -149,86 +149,6 @@ test("claude_start_plan_mints_session_id_and_keeps_initial_prompt_off_argv", asy
   assert.equal(plan.providerSessionRef?.value, plan.args[sessionFlag + 1]);
 });
 
-test("claude_hook_owns_permission_prompts_and_each_call_is_distinct", () => {
-  // ONE OWNER PER BOX KIND: tool permissions are owned by the PermissionRequest
-  // hook (it fires once per requested call, SEQUENTIALLY — verified live:
-  // WebSearch then two WebFetch hooks), so a multi-permission turn surfaces a
-  // distinct card per call without the PTY-scrape fragility. The scrape skips
-  // permission boxes; the hook skips AskUserQuestion (that box is scrape-owned).
-  const integration = claudeIntegration();
-
-  const bash = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "provider_hook",
-    eventName: "agent-needs-input",
-    payload: {
-      hook_event_name: "PermissionRequest",
-      tool_name: "Bash",
-      tool_input: { description: "Run a fixture command", command: "echo hi" },
-    },
-  });
-  assert.equal(bash?.kind, "approval");
-  assert.equal(bash?.message, "Run a fixture command");
-  assert.equal(bash?.defaultChoiceId, "claude-perm-allow");
-  assert.equal(bash?.choices?.length, 2);
-
-  const webSearch = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "provider_hook",
-    eventName: "agent-needs-input",
-    payload: {
-      hook_event_name: "PermissionRequest",
-      tool_name: "WebSearch",
-      tool_input: { query: "Figma FIG short interest" },
-    },
-  });
-  assert.equal(webSearch?.kind, "approval");
-  // The message embeds the call's distinguishing target (query/url/command...)
-  // so batched same-tool calls get DISTINCT prompts (and the user sees what is
-  // actually being requested).
-  assert.equal(webSearch?.message, "WebSearch: Figma FIG short interest");
-  // A bare Notification and AskUserQuestion permission do not surface as a card.
-  assert.equal(
-    integration.detectPromptState({
-      threadId: "thread-1",
-      source: "provider_hook",
-      eventName: "agent-needs-input",
-      payload: { hook_event_name: "Notification", message: "needs input" },
-    }),
-    null,
-  );
-  assert.equal(
-    integration.detectPromptState({
-      threadId: "thread-1",
-      source: "provider_hook",
-      eventName: "agent-needs-input",
-      payload: { hook_event_name: "PermissionRequest", tool_name: "AskUserQuestion" },
-    }),
-    null,
-  );
-});
-
-test("claude_pretooluse_does_not_surface_a_premature_question_prompt", () => {
-  // PreToolUse(AskUserQuestion) fires BEFORE claude renders the question box; an
-  // answer collected that early is typed into a menu that does not exist yet and
-  // evaporates (verified live). The question box is owned by the PTY scrape once
-  // it is actually on screen, so the hook path must surface nothing.
-  const integration = claudeIntegration();
-
-  const question = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "provider_hook",
-    eventName: "PreToolUse",
-    payload: {
-      tool_name: "AskUserQuestion",
-      tool_input: {
-        questions: ["Which branch should Tide use?"],
-      },
-    },
-  });
-  assert.equal(question, null);
-});
-
 // Claude's shell-command permission is an interactive boxed menu in the hidden PTY
 // (its Notification hook only signals "needs input" without the choices), so the
 // claude integration scrapes that frame — captured live from Claude Code.
@@ -245,52 +165,6 @@ const CLAUDE_TUI_APPROVAL_FRAME = [
   "",
   "\x1b[2mEsc to cancel · Tab to amend · ctrl+e to explain\x1b[0m",
 ].join("\n");
-
-test("claude_pty_scrape_skips_permission_boxes_the_hook_owns_them", () => {
-  // A "Do you want to proceed?" box is a PERMISSION box — owned by the
-  // PermissionRequest hook. The PTY scrape must NOT also surface it (two cards
-  // for one box wedged the next turn's prompt, verified live). The scrape returns
-  // null here; the hook test above covers the surfaced card.
-  const integration = claudeIntegration();
-
-  const prompt = integration.detectPromptState({
-    threadId: "thread-tui",
-    source: "pty_transcript",
-    text: CLAUDE_TUI_APPROVAL_FRAME,
-  });
-
-  assert.equal(prompt, null);
-});
-
-test("claude_elicitation_prompt_detection_uses_elicitation_event", () => {
-  const integration = claudeIntegration();
-
-  const elicitation = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "provider_hook",
-    eventName: "Elicitation",
-    payload: {
-      mcp_server_name: "tide",
-      message: "Please choose a Workbench target.",
-      mode: "form",
-      elicitation_id: "elicit-1",
-    },
-  });
-  const notification = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "provider_hook",
-    eventName: "Notification",
-    payload: {
-      notification_type: "question",
-      message: "Please choose a Workbench target.",
-    },
-  });
-
-  assert.equal(elicitation?.kind, "question");
-  assert.equal(elicitation?.source, "provider_hook");
-  assert.equal(elicitation?.message, "Please choose a Workbench target.");
-  assert.equal(notification, null);
-});
 
 test("backend_application_does_not_import_claude_adapter_or_shared_contracts", () => {
   assert.deepEqual(
@@ -313,19 +187,6 @@ test("claude_provider_specific_agent_integration_stays_under_backend_adapters", 
     ]),
     [],
   );
-});
-
-test("claude_agent_idle_hook_settles_without_carrying_content", () => {
-  const integration = claudeIntegration();
-  // agent-idle ends the turn but carries NO answer content: the transcript history
-  // reader is the sole content source, so the hook only signals settle (empty outcome).
-  assert.deepEqual(
-    integration.turnEndFromHook("agent-idle", { last_assistant_message: "the answer" }),
-    {},
-  );
-  // Other hook events are not turn-end; claude has no history-driven turn-end.
-  assert.equal(integration.turnEndFromHook("agent-running", {}), null);
-  assert.equal(integration.turnEndFromHistory("", undefined), null);
 });
 
 function claudeIntegration(options: {

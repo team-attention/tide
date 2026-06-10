@@ -220,7 +220,6 @@ export function createLiveBackendContractMessageAdapter(
       readProviderState: ({ cwd }) => readGeminiProviderStateFromHome(homeDir, cwd),
       defaultCwd: process.cwd(),
       hookSettingsPath: bootstrapArtifacts.geminiSettingsPath,
-      locateSessionFile: (sessionId) => locateGeminiSessionFile(homeDir, sessionId),
     }),
   };
   let service: ThreadRuntimeService;
