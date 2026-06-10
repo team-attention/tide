@@ -1501,6 +1501,7 @@ function promptStatePayload(
     promptId: promptState.promptId,
     message: promptState.message,
     choices: promptState.choices,
+    defaultChoiceId: promptState.defaultChoiceId,
   };
 }
 
