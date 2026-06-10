@@ -44,7 +44,13 @@ const check = (ok, label, detail) => {
 
 (async () => {
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), `tide-e2e-${AGENT}-`));
-  const app = await _electron.launch({
+  // Close the app even when a step throws — an orphaned pre-fix window sitting
+  // on the desktop reads as "the app is broken" hours later.
+  let app;
+  process.on("exit", () => {
+    try { app?.process()?.kill(); } catch {}
+  });
+  app = await _electron.launch({
     args: [path.join(repo, "out/main/electron-main.js")],
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
