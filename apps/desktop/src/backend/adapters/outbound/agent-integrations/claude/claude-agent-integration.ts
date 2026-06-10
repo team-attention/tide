@@ -316,18 +316,33 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     if (toolName === "AskUserQuestion") {
       return null;
     }
+    // The distinguishing target of THIS call (the URL fetched, command run, path
+    // edited, query searched). Including it makes each call's message — and thus
+    // its content-derived promptId — UNIQUE, so a batched turn that fires several
+    // same-tool permissions (e.g. two WebFetch calls on different URLs, with no
+    // call_id and no description) does not collapse into one card that approves
+    // only one call and hangs on the rest. Verified live: WebFetch×2 (marketbeat
+    // + fintel) shared "permission required for WebFetch." and hung.
+    const target =
+      stringValue(toolInput?.command) ??
+      stringValue(toolInput?.url) ??
+      stringValue(toolInput?.query) ??
+      stringValue(toolInput?.path) ??
+      stringValue(toolInput?.file_path) ??
+      stringValue(toolInput?.pattern);
     const message =
       stringValue(toolInput?.description) ??
-      stringValue(toolInput?.command) ??
-      (toolName === undefined
-        ? undefined
-        : `Claude Code permission required for ${toolName}.`);
+      (toolName !== undefined && target !== undefined
+        ? `${toolName}: ${target}`
+        : toolName !== undefined
+          ? `Claude Code permission required for ${toolName}.`
+          : undefined);
     if (message === undefined) {
       return null;
     }
     return {
-      // Per-call id so each sequential permission is a distinct prompt (a batched
-      // turn fires several). Falls back to a content id when claude omits call_id.
+      // Per-call id so each permission is a distinct prompt (a batched turn fires
+      // several). call_id when claude provides one, else the unique message above.
       promptId: claudePromptId(input.payload, "permission", message),
       threadId: input.threadId,
       agentId: "claude",

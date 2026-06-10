@@ -184,7 +184,11 @@ function parseCodexApprovalBox(lines: string[]): CodexApprovalPrompt | null {
       break;
     }
   }
-  if (question.length === 0) {
+  // A sliding PTY buffer can cut a box mid-text, leaving a truncated tail like
+  // "ed?" (from "...proceed?") that slips past the permission-word filter and
+  // surfaces as a garbage card (seen live). A real box question is a sentence;
+  // reject fragments.
+  if (question.length < 8) {
     return null;
   }
 

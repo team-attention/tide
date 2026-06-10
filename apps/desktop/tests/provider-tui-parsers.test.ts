@@ -200,3 +200,15 @@ test("two_boxes_in_one_buffer_parses_the_last_active_box", () => {
   // The SECOND (active) box, not the stale first one.
   assert.equal(prompt?.question, "Do you want to allow Claude to fetch this content?");
 });
+
+test("truncated_box_tail_from_sliding_buffer_is_rejected", () => {
+  // A 16KB sliding buffer can cut a box mid-question, leaving "ed?" (the tail of
+  // "...proceed?") which slipped past the permission filter and surfaced as a
+  // garbage card (seen live in the research E2E). Fragments are not questions.
+  const raw =
+    "ed?\r\x1b[1B" +
+    "❯ 1. Yes\r\x1b[1B" +
+    "  2. No\r\x1b[1B" +
+    "Enter to confirm · Esc to cancel";
+  assert.equal(parseCodexApprovalPrompt(raw), null);
+});

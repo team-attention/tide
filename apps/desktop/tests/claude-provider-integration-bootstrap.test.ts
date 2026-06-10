@@ -179,7 +179,10 @@ test("claude_hook_owns_permission_prompts_and_each_call_is_distinct", () => {
     },
   });
   assert.equal(webSearch?.kind, "approval");
-  assert.equal(webSearch?.message, "Claude Code permission required for WebSearch.");
+  // The message embeds the call's distinguishing target (query/url/command...)
+  // so batched same-tool calls get DISTINCT prompts (and the user sees what is
+  // actually being requested).
+  assert.equal(webSearch?.message, "WebSearch: Figma FIG short interest");
   // A bare Notification and AskUserQuestion permission do not surface as a card.
   assert.equal(
     integration.detectPromptState({

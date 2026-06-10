@@ -3171,3 +3171,117 @@ function sourceFiles(root: string): string[] {
 
   return files;
 }
+
+test("batched_prompts_queue_and_each_answer_promotes_the_next", async () => {
+  // A turn can raise SEVERAL prompts at once (claude batching two WebFetch calls
+  // fires two PermissionRequest hooks in the same instant). The single prompt
+  // slot used to drop all but the last — the user answered one card and the agent
+  // hung forever on the unanswered call. Prompts now queue FIFO; each answer
+  // writes to the PTY and promotes the next card.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+  });
+  const started = await service.startThread({
+    initialMessage: "fetch two pages",
+    agentBinding: { agentId: "claude" },
+    scope: { kind: "scratch", scratchCwd: "/tmp/thread-batched" },
+  });
+  assert.equal(started.ok, true);
+  const threadId = started.ok ? started.thread.threadId : "";
+  const permission = (promptId: string, message: string): PromptState => ({
+    promptId,
+    threadId,
+    agentId: "claude",
+    kind: "approval",
+    message,
+    choices: [{ choiceId: "allow", label: "Allow", providerValue: "codex-menu:0" }],
+    defaultChoiceId: "allow",
+    source: "provider_hook",
+  });
+
+  // Two distinct permissions arrive back-to-back (batched calls).
+  const first = await service.recordProviderPromptState({
+    threadId,
+    promptState: permission("perm-fetch-marketbeat", "WebFetch: marketbeat.com"),
+  });
+  const second = await service.recordProviderPromptState({
+    threadId,
+    promptState: permission("perm-fetch-fintel", "WebFetch: fintel.io"),
+  });
+  // The FIRST card stays visible; the second queues behind it.
+  assert.equal(first.ok && first.promptState.promptId, "perm-fetch-marketbeat");
+  assert.equal(second.ok && second.promptState.promptId, "perm-fetch-marketbeat");
+
+  // Re-delivery of an already-queued prompt is idempotent (hook spool re-polls).
+  const replay = await service.recordProviderPromptState({
+    threadId,
+    promptState: permission("perm-fetch-fintel", "WebFetch: fintel.io"),
+  });
+  assert.equal(replay.ok && replay.promptState.promptId, "perm-fetch-marketbeat");
+
+  // Answering the first writes to the PTY and PROMOTES the second card.
+  const answered = await service.answerPrompt({
+    threadId,
+    promptId: "perm-fetch-marketbeat",
+    choiceId: "allow",
+    value: "codex-menu:0",
+  });
+  assert.equal(answered.ok, true);
+  assert.equal(answered.ok && answered.promptState?.promptId, "perm-fetch-fintel");
+  const midway = await service.hydrateThread({ threadId });
+  assert.equal(midway.thread.promptState?.promptId, "perm-fetch-fintel");
+  assert.equal(midway.thread.runtimeState, "waiting_for_approval");
+
+  // Answering the last one resumes the turn.
+  const final = await service.answerPrompt({
+    threadId,
+    promptId: "perm-fetch-fintel",
+    choiceId: "allow",
+    value: "codex-menu:0",
+  });
+  assert.equal(final.ok && final.promptState, null);
+  const after = await service.hydrateThread({ threadId });
+  assert.equal(after.thread.runtimeState, "running");
+  // Both answers reached the runtime as prompt_answer writes.
+  const answers = fakes.runtime.writes.filter((w) => w.input.kind === "prompt_answer");
+  assert.equal(answers.length, 2);
+});
+
+test("stop_clears_the_pending_prompt_and_its_queue", async () => {
+  // Prompts die with the runtime: after Stop, no card may linger (it would write
+  // keystrokes to a dead PTY).
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+  });
+  const started = await service.startThread({
+    initialMessage: "do work",
+    agentBinding: { agentId: "claude" },
+    scope: { kind: "scratch", scratchCwd: "/tmp/thread-stop-queue" },
+  });
+  const threadId = started.ok ? started.thread.threadId : "";
+  for (const [id, msg] of [["p1", "WebFetch: a"], ["p2", "WebFetch: b"]]) {
+    await service.recordProviderPromptState({
+      threadId,
+      promptState: {
+        promptId: id,
+        threadId,
+        agentId: "claude",
+        kind: "approval",
+        message: msg,
+        source: "provider_hook",
+      },
+    });
+  }
+  await service.stopAgentRuntime({ threadId });
+  const after = await service.hydrateThread({ threadId });
+  assert.equal(after.thread.promptState, undefined);
+  // A later answer to the dead queue is rejected, not typed into nothing.
+  const stale = await service.answerPrompt({ threadId, promptId: "p2", value: "x" });
+  assert.equal(stale.ok, false);
+});

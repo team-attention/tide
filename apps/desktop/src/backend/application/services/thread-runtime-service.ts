@@ -702,6 +702,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       thread.lastKnownState = "idle";
       thread.lifecycleState = "open";
       thread.promptState = undefined;
+      thread.promptQueue = undefined;
       thread.updatedAt = this.clock();
     }
 
@@ -1004,6 +1005,28 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       submittedAt: this.clock(),
     });
 
+    // Promote the next queued prompt (a batched multi-permission turn) so the
+    // user answers them one at a time instead of the agent hanging on the ones
+    // the single slot dropped. With none queued, the turn resumes running.
+    const next = (thread.promptQueue ?? []).shift();
+    if (next !== undefined) {
+      const nextKnown: LastKnownState =
+        runtimeStateForPromptKind(next.kind) === "waiting_for_approval"
+          ? "waiting_for_approval"
+          : "waiting_for_input";
+      thread.promptState = next;
+      thread.runtimeState = runtimeStateForPromptKind(next.kind);
+      thread.lifecycleState = nextKnown;
+      thread.lastKnownState = nextKnown;
+      thread.updatedAt = this.clock();
+      return {
+        ok: true,
+        thread: snapshotThread(thread),
+        runtimeState: thread.runtimeState,
+        promptState: next,
+      };
+    }
+
     thread.promptState = undefined;
     thread.runtimeState = "running";
     thread.runtimeStartedAt = this.clock();
@@ -1040,6 +1063,30 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       ...input.promptState,
       choices: input.promptState.choices?.map((choice) => ({ ...choice })),
     };
+
+    // Idempotent: a redraw/re-poll of the SAME prompt (by id) updates in place
+    // and never duplicates. A prompt already queued behind the current one is
+    // likewise ignored.
+    if (thread.promptState?.promptId === promptState.promptId) {
+      thread.promptState = promptState;
+      thread.updatedAt = this.clock();
+      return { ok: true, thread: snapshotThread(thread), runtimeState: thread.runtimeState, promptState };
+    }
+    if ((thread.promptQueue ?? []).some((p) => p.promptId === promptState.promptId)) {
+      // Already queued: report the still-visible prompt (the queue invariant is
+      // that a queue only exists while a prompt is visible).
+      return { ok: true, thread: snapshotThread(thread), runtimeState: thread.runtimeState, promptState: thread.promptState ?? promptState };
+    }
+
+    // A different prompt is already pending → QUEUE this one (don't clobber the
+    // visible card). It surfaces when the current one is answered. This is what
+    // makes a batched multi-permission turn answerable instead of hanging.
+    if (thread.promptState !== undefined) {
+      thread.promptQueue = [...(thread.promptQueue ?? []), promptState];
+      thread.updatedAt = this.clock();
+      return { ok: true, thread: snapshotThread(thread), runtimeState: thread.runtimeState, promptState: thread.promptState };
+    }
+
     const nextRuntimeState = runtimeStateForPromptKind(input.promptState.kind);
     const nextKnownState: LastKnownState = nextRuntimeState === "waiting_for_approval"
       ? "waiting_for_approval"
@@ -1229,6 +1276,9 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     thread.lifecycleState = "open";
     thread.lastKnownState = "idle";
     thread.pendingInput = undefined;
+    // Prompts die with the runtime: a card for a stopped PTY is unanswerable.
+    thread.promptState = undefined;
+    thread.promptQueue = undefined;
     thread.updatedAt = this.clock();
 
     return {
