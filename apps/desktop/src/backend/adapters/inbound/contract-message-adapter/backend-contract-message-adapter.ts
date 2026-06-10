@@ -120,7 +120,13 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         const typedCommand = command as BackendCommandEnvelope<"thread.hydrate">;
         return this.handleServiceResult(
           typedCommand,
-          await this.service.hydrateThread(typedCommand.payload),
+          // Explicit user open: reconcile a thread left waiting on a dead runtime
+          // (app restart / runtime death) back to idle so it isn't frozen and a
+          // stale permission card isn't resurrected.
+          await this.service.hydrateThread({
+            ...typedCommand.payload,
+            reconcileStaleRuntime: true,
+          }),
           (result) => [
             this.threadHydratedEvent(typedCommand, result),
             this.commandCompletedEvent(typedCommand),

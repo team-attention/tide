@@ -1083,7 +1083,7 @@ test("hydrating_a_thread_with_no_live_runtime_drops_the_stale_prompt_and_idles",
     ],
   });
 
-  const hydrated = await service.hydrateThread({ threadId: "thread-restored" });
+  const hydrated = await service.hydrateThread({ threadId: "thread-restored", reconcileStaleRuntime: true });
   assert.equal(hydrated.ok, true);
   assert.equal(hydrated.thread.runtimeState, "idle");
   assert.equal(hydrated.thread.lastKnownState, "idle");

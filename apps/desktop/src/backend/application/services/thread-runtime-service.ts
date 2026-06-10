@@ -255,6 +255,12 @@ export type { ServiceError, ServiceErrorCode, ServiceResult };
 
 export interface HydrateThreadInput {
   threadId: ThreadId;
+  // True ONLY on an explicit user thread-open (the contract adapter). When set,
+  // hydrate reconciles a thread whose runtime is dead but left in a running/
+  // waiting state back to idle (drops the stale prompt). MUST stay false on the
+  // internal polling reads (emitProviderHistory/pollWhileRunning call hydrate
+  // every cycle); reconciling there would race-kill a live turn.
+  reconcileStaleRuntime?: boolean;
 }
 
 export interface HydrateThreadResult {
@@ -679,12 +685,13 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     // alive: the answer is replayed as keystrokes on that runtime's hidden PTY.
     // After an app restart (runtime gone, prompt not persisted) or a mid-session
     // runtime death, a leftover waiting state is STALE — resurrecting a permission
-    // card for a dead process is a lie (answering writes to nothing). So when no
-    // runtime is alive, reconcile the thread to idle on hydrate: drop the stale
-    // prompt and let the composer work, so the user can send a follow-up (which
-    // resumes the provider session). The CLI behaves the same — a killed session
-    // does not re-ask; you start the next turn.
+    // card for a dead process is a lie (answering writes to nothing). On an
+    // EXPLICIT user open, reconcile such a thread to idle: drop the stale prompt
+    // and let the composer work, so the next message resumes the provider session.
+    // This NEVER runs on the internal polling reads (reconcileStaleRuntime stays
+    // false there) — mutating on every poll would race-kill a live turn.
     if (
+      input.reconcileStaleRuntime === true &&
       thread.activeRuntimeHandle === undefined &&
       (thread.runtimeState === "waiting_for_approval" ||
         thread.runtimeState === "waiting_for_input" ||
