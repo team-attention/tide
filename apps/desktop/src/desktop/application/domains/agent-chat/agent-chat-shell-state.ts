@@ -949,6 +949,7 @@ export function applyAgentChatBackendEvent(
         blocks?: AgentChatBlock[];
         providerReadiness?: AgentChatProviderReadiness;
         runtimeState?: AgentRuntimeStateName;
+        prompt?: AgentChatPromptState | null;
         workbenchPanes?: { visible?: boolean }[];
       };
       return {
@@ -961,6 +962,11 @@ export function applyAgentChatBackendEvent(
         providerReadiness: payload.providerReadiness ?? state.providerReadiness,
         providerReadinessActionPending: false,
         runtimeState: payload.runtimeState ?? state.runtimeState,
+        // Hydrate is the source of truth for the pending prompt: a thread opened
+        // while waiting on an approval/question must show its card (it surfaced
+        // as prompt.changed before this thread was on screen). `undefined` =
+        // old-style payload without the field; keep whatever we had.
+        promptState: payload.prompt !== undefined ? payload.prompt : state.promptState,
         // Hydrate is the source of truth for this thread (its persisted blocks).
         // Drop any optimistic "queued input" row left over from before a thread
         // switch — otherwise the real user block (now in blocks) renders twice.

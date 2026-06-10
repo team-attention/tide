@@ -109,6 +109,16 @@ const check = (ok, label, detail) => {
   }
   check(promptSurfaced, "permission_prompt_card_rendered");
   if (promptSurfaced) {
+    // The exact journey that used to hang invisibly: while the prompt waits,
+    // LEAVE the thread (New thread) and come back — the card must re-render
+    // from hydrate, not only from the live prompt.changed event.
+    await page.locator(".tide-product-shell").press("Escape").catch(() => {});
+    await page.getByText("New thread", { exact: true }).first().click();
+    await page.waitForTimeout(700);
+    await page.locator(".thread-row__main").first().click();
+    await page.waitForTimeout(1200);
+    const cardAfterReturn = (await page.locator(".prompt-card").count()) > 0;
+    check(cardAfterReturn, "prompt_card_survives_thread_switch");
     const message = (await promptCard.locator(".prompt-card__message").innerText()).trim();
     const optionLabels = await promptCard
       .locator(".prompt-card__option-label")

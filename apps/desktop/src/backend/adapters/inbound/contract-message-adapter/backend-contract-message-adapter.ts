@@ -376,6 +376,12 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
             toAgentSessionBlockDto(result.thread, block),
           ),
           runtimeState: result.runtimeState,
+          // Always present (null when none): hydrate is the source of truth for
+          // the pending prompt when a thread is (re)opened.
+          prompt:
+            result.thread.promptState === undefined
+              ? null
+              : toPromptStateDto(result.thread.promptState),
           workbenchPanes: result.thread.workbench.panes.map(toWorkbenchPaneRefDto),
           fileTree:
             result.thread.workbench.fileTree === undefined

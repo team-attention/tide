@@ -87,6 +87,10 @@ export interface BackendEventPayloadByKind {
     blocks?: AgentSessionBlockDto[];
     providerReadiness?: ProviderReadinessDto;
     runtimeState?: AgentRuntimeStateDto;
+    // The thread's pending prompt (approval/question), or null when none. Hydrate
+    // is the source of truth on thread open: without it, switching into a thread
+    // that is waiting on a prompt shows no card — an invisible hang.
+    prompt?: PromptStateDto | null;
     workbenchPanes?: WorkbenchPaneRefDto[];
     fileTree?: WorkbenchFileTreeDto;
   };
