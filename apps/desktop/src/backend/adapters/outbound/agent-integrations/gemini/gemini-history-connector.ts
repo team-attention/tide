@@ -114,8 +114,17 @@ export function readGeminiHistoryFrames(
     return frames;
   }
 
-  const pushFrame = (key: string, payload: Record<string, unknown>, body: string): void => {
-    const frameKey = `${sessionPath}:${key}`;
+  // Gemini RE-APPENDS a record (same `id`) as its content accumulates while the
+  // turn streams (thoughts first, then toolCalls, then content — verified live).
+  // So frames are keyed by RECORD ID, never by line index: an updated copy emits
+  // a fresh frame whose blockId is the same, and the reader UPSERTS the existing
+  // block instead of rendering a duplicate.
+  const pushFrame = (
+    seenKey: string,
+    payload: Record<string, unknown>,
+    body: string,
+  ): void => {
+    const frameKey = `${sessionPath}:${seenKey}`;
     if (input.seenKeys.has(frameKey)) {
       return;
     }
@@ -134,7 +143,8 @@ export function readGeminiHistoryFrames(
     if (record === undefined || "$set" in record) {
       continue;
     }
-    const blockId = `provider:${input.threadId}:${sessionId}:${index}`;
+    const recordId = stringField(record, "id") ?? `line-${index}`;
+    const blockId = `provider:${input.threadId}:${sessionId}:${recordId}`;
     if (record.type === "gemini") {
       // thoughts → reasoning, toolCalls → tool_call + tool_result, content → message.
       const thoughts = Array.isArray(record.thoughts) ? record.thoughts : [];
@@ -151,12 +161,12 @@ export function readGeminiHistoryFrames(
         .join("\n\n");
       if (thoughtText.length > 0) {
         pushFrame(
-          `${index}:thoughts`,
+          `${recordId}:thoughts:${hashText(thoughtText)}`,
           {
             type: "reasoning",
             role: "reasoning",
             status: "complete",
-            blockId: `reasoning:${input.threadId}:${sessionId}:${index}`,
+            blockId: `reasoning:${input.threadId}:${sessionId}:${recordId}`,
             body: thoughtText,
             sourceRuntimeId: input.runtimeId,
           },
@@ -169,12 +179,12 @@ export function readGeminiHistoryFrames(
         if (callRecord === undefined) {
           return;
         }
-        const callId = stringField(callRecord, "id") ?? `${blockId}:call:${callIndex}`;
+        const callId = stringField(callRecord, "id") ?? `${recordId}:call:${callIndex}`;
         const toolName = stringField(callRecord, "name") ?? "tool";
         const argsText =
           callRecord.args === undefined ? "" : JSON.stringify(callRecord.args);
         pushFrame(
-          `${index}:tool_call:${callIndex}`,
+          `${recordId}:tool_call:${callId}:${hashText(argsText)}`,
           {
             type: "tool_call",
             toolName,
@@ -182,7 +192,7 @@ export function readGeminiHistoryFrames(
             arguments: argsText,
             body: boundedToolText(argsText),
             status: "complete",
-            blockId: `${blockId}:call:${callIndex}`,
+            blockId: `${blockId}:call:${callId}`,
             sourceRuntimeId: input.runtimeId,
           },
           boundedToolText(argsText),
@@ -190,7 +200,7 @@ export function readGeminiHistoryFrames(
         const output = geminiToolResultText(callRecord.result);
         if (output !== undefined) {
           pushFrame(
-            `${index}:tool_result:${callIndex}`,
+            `${recordId}:tool_result:${callId}:${hashText(output)}`,
             {
               type: "tool_result",
               toolName,
@@ -199,7 +209,7 @@ export function readGeminiHistoryFrames(
               output,
               body: boundedToolText(output),
               status: "complete",
-              blockId: `${blockId}:result:${callIndex}`,
+              blockId: `${blockId}:result:${callId}`,
               sourceRuntimeId: input.runtimeId,
             },
             boundedToolText(output),
@@ -209,7 +219,7 @@ export function readGeminiHistoryFrames(
       const content = typeof record.content === "string" ? record.content.trim() : "";
       if (content.length > 0) {
         pushFrame(
-          `${index}:message`,
+          `${recordId}:message:${hashText(content)}`,
           {
             type: "message",
             role: "agent",
@@ -227,7 +237,7 @@ export function readGeminiHistoryFrames(
       const content = typeof record.content === "string" ? record.content.trim() : "";
       if (content.length > 0) {
         pushFrame(
-          `${index}:error`,
+          `${recordId}:error:${hashText(content)}`,
           {
             type: "notice",
             status: "failed",
@@ -241,6 +251,14 @@ export function readGeminiHistoryFrames(
     }
   }
   return frames;
+}
+
+function hashText(text: string): string {
+  let hash = 5381;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(36);
 }
 
 // A gemini tool call's `result` is an array of {functionResponse:{response:{output}}}

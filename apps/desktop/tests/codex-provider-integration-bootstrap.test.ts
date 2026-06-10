@@ -5,6 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { readCodexHistoryFrames } from "../src/backend/adapters/outbound/agent-integrations/codex/codex-history-connector.ts";
+
 import {
   ensureProviderBootstrapArtifacts,
   providerBootstrapArtifactsForHome,
@@ -511,4 +513,42 @@ test("codex_overlay_replaces_a_stale_real_state_db_with_a_symlink", () => {
   } finally {
     fs.rmSync(homeDir, { recursive: true, force: true });
   }
+});
+
+test("codex_web_search_calls_render_as_tool_calls", () => {
+  // Captured live: a research turn ran 36 web_search_call response_items with
+  // NOTHING rendered (the reader only knew function_call/custom_tool_call), so
+  // the UI sat on the intro text looking stuck for minutes.
+  const tail = [
+    JSON.stringify({
+      type: "event_msg",
+      payload: { type: "user_message", message: "research something" },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "web_search_call",
+        status: "completed",
+        action: { type: "search", query: "Figma short interest 2026" },
+      },
+    }),
+  ].join("\n");
+  const seenKeys = new Set<string>();
+  const frames = readCodexHistoryFrames({
+    threadId: "thread-1",
+    runtimeId: "runtime-1",
+    sessionRef: {
+      agentId: "codex",
+      kind: "codex_rollout",
+      value: "session-1",
+      transcriptPath: "/rollouts/r.jsonl",
+    },
+    tailText: tail,
+    seenKeys,
+    expectedUserMessage: "research something",
+  });
+  const calls = frames.filter((f) => f.payload.type === "tool_call");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.payload.toolName, "web_search");
+  assert.equal(calls[0]?.body, "Figma short interest 2026");
 });

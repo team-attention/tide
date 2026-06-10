@@ -281,6 +281,22 @@ export function codexToolFramePayload(input: {
       ...base,
     };
   }
+  if (type === "web_search_call") {
+    // Codex web searches are response_items with no call_id; without this branch
+    // a research turn runs dozens of searches with NOTHING on screen (verified
+    // live: 36 invisible web_search_calls while the UI sat on the intro text).
+    const action = recordField(payload, "action");
+    const query =
+      stringField(action ?? {}, "query") ??
+      (Array.isArray(action?.queries) ? String(action?.queries[0] ?? "") : "");
+    return {
+      type: "tool_call",
+      toolName: "web_search",
+      arguments: query,
+      body: boundedToolText(query),
+      ...base,
+    };
+  }
   if (type === "function_call_output" || type === "custom_tool_call_output") {
     const toolName = (callId !== undefined ? input.toolNameByCallId.get(callId) : undefined) ?? "tool";
     const output = codexToolOutputText(payload.output);

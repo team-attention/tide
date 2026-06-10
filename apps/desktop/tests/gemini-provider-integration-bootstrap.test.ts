@@ -328,3 +328,51 @@ test("provider_bootstrap_writes_tide_owned_gemini_hook_settings", () => {
     ),
   );
 });
+
+test("gemini_reappended_record_upserts_one_block_not_duplicates", () => {
+  // Gemini RE-APPENDS the same record id as content accumulates while streaming
+  // (verified live: thoughts-only copy first, then a copy with toolCalls). The
+  // reader must key by record id so the duplicate copy UPSERTS the same blockId
+  // — line-index keying rendered the same Thinking block twice.
+  const tail = [
+    JSON.stringify({ id: "u1", type: "user", content: [{ text: "current prompt" }] }),
+    JSON.stringify({
+      id: "g1",
+      type: "gemini",
+      content: "",
+      thoughts: [{ subject: "Investigating", description: "Looking at data." }],
+    }),
+    JSON.stringify({ $set: { lastUpdated: "t" } }),
+    JSON.stringify({
+      id: "g1",
+      type: "gemini",
+      content: "",
+      thoughts: [{ subject: "Investigating", description: "Looking at data." }],
+      toolCalls: [{ id: "call-1", name: "read_file", args: { path: "a" } }],
+    }),
+  ].join("\n");
+  const seenKeys = new Set<string>();
+  const frames = readGeminiHistoryFrames({
+    threadId: "thread-1",
+    runtimeId: "runtime-1",
+    sessionRef: {
+      agentId: "gemini",
+      kind: "gemini_session",
+      value: SESSION_ID,
+      transcriptPath: "/chats/session.jsonl",
+    },
+    tailText: tail,
+    seenKeys,
+    expectedUserMessage: "current prompt",
+  });
+  const reasoningFrames = frames.filter((f) => f.payload.type === "reasoning");
+  // Identical thought text re-appended → ONE reasoning frame (same seen key),
+  // and any future grown copy reuses the SAME blockId (upsert, not duplicate).
+  assert.equal(reasoningFrames.length, 1);
+  assert.equal(
+    reasoningFrames[0]?.payload.blockId,
+    `reasoning:thread-1:${SESSION_ID}:g1`,
+  );
+  const callFrames = frames.filter((f) => f.payload.type === "tool_call");
+  assert.equal(callFrames.length, 1);
+});
