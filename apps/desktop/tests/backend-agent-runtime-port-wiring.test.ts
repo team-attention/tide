@@ -28,7 +28,6 @@ import type {
 } from "../src/backend/application/ports/outbound/agent-integration-port.ts";
 import type { RuntimeReadinessRegistry } from "../src/backend/application/services/runtime-readiness-registry.ts";
 import {
-  antigravityProviderSessionRefFromTranscriptPath,
   claudeProviderSessionRefFromTranscriptPath,
   codexProviderSessionRefFromRolloutPath,
   createLiveAgentSessionEventProjector,
@@ -36,9 +35,6 @@ import {
   readClaudeProviderSessionRefsFromHome,
   rebuildCodexConversation,
   rebuildClaudeConversation,
-  rebuildAntigravityConversation,
-  readProviderSignalFramesFromSpool,
-  readAntigravityProviderStateFromHome,
   readClaudeProviderStateFromHome,
   readCodexProviderStateFromHome,
   threadStorageRecordFromThreadSummary,
@@ -52,9 +48,8 @@ import {
   readClaudeHistoryFrames,
 } from "../src/backend/adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
 import {
-  createAntigravityHistoryConnector,
-  readAntigravityHistoryFrames,
-} from "../src/backend/adapters/outbound/agent-integrations/antigravity/antigravity-history-connector.ts";
+  createGeminiHistoryConnector,
+} from "../src/backend/adapters/outbound/agent-integrations/gemini/gemini-history-connector.ts";
 import type { ProviderHistoryFrame } from "../src/backend/application/ports/outbound/agent-integration-port.ts";
 
 // Test-side twins of the shared history loop: read the bound session file's tail
@@ -116,31 +111,6 @@ function readClaudeProviderHistoryFramesFromHome(input: {
   });
 }
 
-function readAntigravityProviderHistoryFramesFromHome(input: {
-  homeDir: string;
-  threadId: string;
-  runtimeId: string;
-  sinceMs: number;
-  seenKeys: Set<string>;
-  boundTranscriptPath?: string;
-}): ProviderHistoryFrame[] {
-  if (input.boundTranscriptPath === undefined) {
-    return [];
-  }
-  let tailText: string;
-  try {
-    tailText = fs.readFileSync(input.boundTranscriptPath, "utf8");
-  } catch {
-    return [];
-  }
-  return readAntigravityHistoryFrames({
-    threadId: input.threadId,
-    runtimeId: input.runtimeId,
-    sessionRef: antigravityProviderSessionRefFromTranscriptPath(input.boundTranscriptPath),
-    tailText,
-    seenKeys: input.seenKeys,
-  });
-}
 
 // The hook-payload session-ref derivation moved into each adapter's history
 // connector; this twin dispatches the same way tests used to.
@@ -182,24 +152,24 @@ const now = "2026-05-29T00:00:00.000Z";
 test("provider_readiness_port_uses_selected_agent_integration_preflight", async () => {
   const codex = fakeIntegration("codex", startPlan("codex"));
   const claude = fakeIntegration("claude", startPlan("claude"));
-  const antigravity = fakeIntegration("antigravity", startPlan("antigravity"));
+  const gemini = fakeIntegration("gemini", startPlan("gemini"));
   const readiness = createAgentIntegrationProviderReadinessPort({
-    integrations: { codex, claude, antigravity },
+    integrations: { codex, claude, gemini },
   });
 
   const result = await readiness.check({
-    agentId: "antigravity",
+    agentId: "gemini",
     scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-    launchOptions: { model: "Antigravity default", permission: "default" },
+    launchOptions: { model: "Gemini default", permission: "default" },
   });
 
   assert.equal(result.ready, true);
-  assert.equal(result.agentId, "antigravity");
-  assert.equal(antigravity.preflightInputs.length, 1);
+  assert.equal(result.agentId, "gemini");
+  assert.equal(gemini.preflightInputs.length, 1);
   assert.equal(codex.preflightInputs.length, 0);
   assert.equal(claude.preflightInputs.length, 0);
-  assert.deepEqual(antigravity.preflightInputs[0].launchOptions, {
-    model: "Antigravity default",
+  assert.deepEqual(gemini.preflightInputs[0].launchOptions, {
+    model: "Gemini default",
     permission: "default",
   });
 });
@@ -207,9 +177,9 @@ test("provider_readiness_port_uses_selected_agent_integration_preflight", async 
 test("provider_readiness_port_reports_provider_account_blocker_for_tide_api_agent", async () => {
   const codex = fakeIntegration("codex", startPlan("codex"));
   const claude = fakeIntegration("claude", startPlan("claude"));
-  const antigravity = fakeIntegration("antigravity", startPlan("antigravity"));
+  const gemini = fakeIntegration("gemini", startPlan("gemini"));
   const readiness = createAgentIntegrationProviderReadinessPort({
-    integrations: { codex, claude, antigravity },
+    integrations: { codex, claude, gemini },
   });
 
   const result = await readiness.check({
@@ -230,365 +200,11 @@ test("provider_readiness_port_reports_provider_account_blocker_for_tide_api_agen
   ]);
   assert.equal(codex.preflightInputs.length, 0);
   assert.equal(claude.preflightInputs.length, 0);
-  assert.equal(antigravity.preflightInputs.length, 0);
-});
-
-test("agent_runtime_port_starts_antigravity_launch_plan_and_writes_input", async () => {
-  const antigravity = fakeIntegration("antigravity", startPlan("antigravity"));
-  const launcher = new FakePtyProcessLauncher();
-  const runtime = createAgentIntegrationAgentRuntimePort({
-    integrations: {
-      codex: fakeIntegration("codex", startPlan("codex")),
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity,
-    },
-    launcher,
-    clock: () => now,
-    idGenerator: sequentialIdGenerator("runtime"),
-  });
-
-  const handle = await runtime.start({
-    threadId: "thread-ag",
-    agentBinding: { agentId: "antigravity" },
-    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-    launchOptions: { model: "Antigravity default", permission: "default" },
-  });
-  await runtime.writeInput(handle, {
-    kind: "composer_input",
-    value: "Use Antigravity for this turn",
-    submittedAt: now,
-  });
-
-  assert.equal(handle.agentId, "antigravity");
-  assert.equal(antigravity.startInputs.length, 1);
-  assert.equal(launcher.starts[0].plan.command, "agy");
-  assert.deepEqual(launcher.starts[0].plan.args, []);
-  assert.deepEqual(launcher.handles[0].writes, ["Use Antigravity for this turn\r"]);
-});
-
-test("agent_runtime_port_delivers_first_turn_only_after_tool_surface_ready", async () => {
-  const codex = fakeIntegration("codex", startPlan("codex"));
-  codex.readinessGate = { kind: "tool_surface_ready" };
-  const launcher = new FakePtyProcessLauncher();
-  const registry = new ControllableReadinessRegistry();
-  const runtime = createAgentIntegrationAgentRuntimePort({
-    integrations: {
-      codex,
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
-    },
-    launcher,
-    readinessRegistry: registry,
-    clock: () => now,
-    idGenerator: sequentialIdGenerator("runtime"),
-  });
-
-  const handle = await runtime.start({
-    threadId: "thread-codex",
-    agentBinding: { agentId: "codex" },
-    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-    launchOptions: { model: "gpt-5.5", permission: "default" },
-    initialPrompt: "open a browser",
-  });
-
-  // The first prompt is NOT in the launch plan argv.
-  assert.ok(!launcher.starts[0].plan.args.includes("open a browser"));
-  // And it is NOT written before the tool surface is ready.
-  await flushMicrotasks();
-  assert.deepEqual(launcher.handles[0].writes, []);
-
-  // Marking the runtime's tool surface ready opens the gate and delivers the turn.
-  registry.markToolSurfaceReady(handle.runtimeId);
-  await flushMicrotasks();
-  assert.deepEqual(launcher.handles[0].writes, ["open a browser\r"]);
-});
-
-test("agent_runtime_port_adds_runtime_identity_env_to_provider_process", async () => {
-  const codex = fakeIntegration("codex", startPlan("codex"));
-  const launcher = new FakePtyProcessLauncher();
-  const runtime = createAgentIntegrationAgentRuntimePort({
-    integrations: {
-      codex,
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
-    },
-    launcher,
-    idGenerator: sequentialIdGenerator("runtime"),
-  });
-
-  await runtime.start({
-    threadId: "thread-codex",
-    agentBinding: { agentId: "codex" },
-    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-  });
-
-  assert.equal(launcher.starts[0].plan.env.TIDE_THREAD_ID, "thread-codex");
-  assert.equal(launcher.starts[0].plan.env.TIDE_RUNTIME_ID, "runtime-1");
-  assert.equal(launcher.starts[0].plan.env.TIDE_AGENT_ID, "codex");
-  assert.equal(launcher.starts[0].plan.env.TERM, "xterm-256color");
-});
-
-test("agent_runtime_port_keeps_one_live_process_per_thread", async () => {
-  // Starting a runtime for a Thread that already has a live process tears the old one
-  // down first — a Thread must never double-run (two PTYs/rollouts tangle the turn and
-  // hang "Working"). Regression guard for the concurrent-spawn hang.
-  const launcher = new FakePtyProcessLauncher();
-  const runtime = createAgentIntegrationAgentRuntimePort({
-    integrations: {
-      codex: fakeIntegration("codex", startPlan("codex")),
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
-    },
-    launcher,
-    idGenerator: sequentialIdGenerator("runtime"),
-  });
-
-  const binding = { agentId: "codex" as const };
-  const scope = { kind: "project" as const, projectId: "tide", cwd: "/repo" };
-  await runtime.start({ threadId: "thread-codex", agentBinding: binding, scope });
-  await runtime.start({ threadId: "thread-codex", agentBinding: binding, scope });
-
-  assert.equal(launcher.handles.length, 2, "a second start spawns a fresh process");
-  assert.equal(launcher.handles[0].stopped, true, "the first process is reaped");
-  assert.equal(launcher.handles[1].stopped, false, "the new process stays live");
-
-  // A different Thread is untouched by the dedup.
-  await runtime.start({
-    threadId: "thread-other",
-    agentBinding: binding,
-    scope,
-  });
-  assert.equal(launcher.handles[1].stopped, false, "other-thread start did not reap it");
-});
-
-test("agent_runtime_port_notifies_runtime_start_with_identity", async () => {
-  const runtimeStarts: Array<{
-    threadId: string;
-    agentId: "codex" | "claude" | "antigravity";
-    runtimeId: string;
-  }> = [];
-  const launcher = new FakePtyProcessLauncher();
-  const runtime = createAgentIntegrationAgentRuntimePort({
-    integrations: {
-      codex: fakeIntegration("codex", startPlan("codex")),
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
-    },
-    launcher,
-    idGenerator: sequentialIdGenerator("runtime"),
-    onRuntimeStarted: (event) => runtimeStarts.push(event),
-  });
-
-  await runtime.start({
-    threadId: "thread-claude",
-    agentBinding: { agentId: "claude" },
-    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-  });
-
-  assert.deepEqual(runtimeStarts, [
-    {
-      threadId: "thread-claude",
-      agentId: "claude",
-      runtimeId: "runtime-1",
-    },
-  ]);
-});
-
-test("agent_runtime_port_resumes_provider_session_ref_before_follow_up_write", async () => {
-  const codex = fakeIntegration("codex", startPlan("codex"));
-  const launcher = new FakePtyProcessLauncher();
-  const runtime = createAgentIntegrationAgentRuntimePort({
-    integrations: {
-      codex,
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
-    },
-    launcher,
-    clock: () => now,
-    idGenerator: sequentialIdGenerator("runtime"),
-  });
-
-  const handle = await runtime.resume({
-    threadId: "thread-codex",
-    agentBinding: {
-      agentId: "codex",
-      providerSessionRef: { kind: "codex_rollout", value: "session-1" },
-    },
-    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-  });
-  await runtime.writeInput(handle, {
-    kind: "composer_input",
-    value: "Continue",
-    submittedAt: now,
-  });
-
-  assert.equal(codex.resumeInputs[0].providerSessionRef.value, "session-1");
-  assert.deepEqual(launcher.starts[0].plan.args, ["resume", "session-1"]);
-  assert.deepEqual(launcher.handles[0].writes, ["Continue\r"]);
-});
-
-test("agent_runtime_port_writes_provider_native_prompt_value_before_ui_choice_id", async () => {
-  const launcher = new FakePtyProcessLauncher();
-  const runtime = createAgentIntegrationAgentRuntimePort({
-    integrations: {
-      codex: fakeIntegration("codex", startPlan("codex")),
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
-    },
-    launcher,
-    clock: () => now,
-    idGenerator: sequentialIdGenerator("runtime"),
-  });
-
-  const handle = await runtime.start({
-    threadId: "thread-prompt-answer",
-    agentBinding: { agentId: "codex" },
-    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-  });
-  await runtime.writeInput(handle, {
-    kind: "prompt_answer",
-    value: "allow_once",
-    choiceId: "allow-once",
-    promptId: "prompt-1",
-    submittedAt: now,
-  });
-  await runtime.writeInput(handle, {
-    kind: "prompt_answer",
-    value: "",
-    choiceId: "fallback-choice",
-    promptId: "prompt-2",
-    submittedAt: now,
-  });
-
-  assert.deepEqual(launcher.handles[0].writes, ["allow_once\r", "fallback-choice\r"]);
+  assert.equal(gemini.preflightInputs.length, 0);
 });
 
 // Spec: docs_v2/specs/agent-prompt-surfacing.md — answering a codex TUI menu replays
 // keyed navigation on the live PTY, not typed text.
-test("agent_runtime_port_replays_codex_menu_navigation_for_tui_prompt_answers", async () => {
-  const launcher = new FakePtyProcessLauncher();
-  const runtime = createAgentIntegrationAgentRuntimePort({
-    integrations: {
-      codex: fakeIntegration("codex", startPlan("codex")),
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
-    },
-    launcher,
-    clock: () => now,
-    idGenerator: sequentialIdGenerator("runtime"),
-  });
-
-  const handle = await runtime.start({
-    threadId: "thread-codex-menu",
-    agentBinding: { agentId: "codex" },
-    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-  });
-
-  // Two rows down from the default cursor, then Enter.
-  await runtime.writeInput(handle, {
-    kind: "prompt_answer",
-    value: "codex-menu:2",
-    choiceId: "codex-opt-3",
-    promptId: "codex-tui-1",
-    submittedAt: now,
-  });
-  // Negative steps navigate up; zero steps is just Enter on the default.
-  await runtime.writeInput(handle, {
-    kind: "prompt_answer",
-    value: "codex-menu:-1",
-    choiceId: "codex-opt-1",
-    promptId: "codex-tui-2",
-    submittedAt: now,
-  });
-  await runtime.writeInput(handle, {
-    kind: "prompt_answer",
-    value: "codex-menu:0",
-    choiceId: "codex-opt-2",
-    promptId: "codex-tui-3",
-    submittedAt: now,
-  });
-
-  assert.deepEqual(launcher.handles[0].writes, [
-    "\x1b[B",
-    "\x1b[B",
-    "\r",
-    "\x1b[A",
-    "\r",
-    "\r",
-  ]);
-});
-
-test("agent_runtime_port_forwards_pty_output_with_thread_runtime_context", async () => {
-  const outputFrames: {
-    threadId: string;
-    agentId: string;
-    runtimeId: string;
-    runtimePid?: number;
-    source: PtyProcessOutput["source"];
-    body: string;
-  }[] = [];
-  const launcher = new FakePtyProcessLauncher();
-  const runtime = createAgentIntegrationAgentRuntimePort({
-    integrations: {
-      codex: fakeIntegration("codex", startPlan("codex")),
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
-    },
-    launcher,
-    idGenerator: sequentialIdGenerator("runtime"),
-    onOutputFrame: (frame) => {
-      outputFrames.push(frame);
-    },
-  });
-
-  await runtime.start({
-    threadId: "thread-output",
-    agentBinding: { agentId: "claude" },
-    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-  });
-  launcher.emitOutput(0, { source: "stdout", body: "provider output" });
-
-  assert.deepEqual(outputFrames, [
-    {
-      threadId: "thread-output",
-      agentId: "claude",
-      runtimeId: "runtime-1",
-      runtimePid: undefined,
-      source: "stdout",
-      body: "provider output",
-    },
-  ]);
-});
-
-test("runtime_port_splits_composer_text_from_submit_key_when_launch_plan_requests_input_timing", async () => {
-  const launcher = new FakePtyProcessLauncher();
-  const runtime = createAgentIntegrationAgentRuntimePort({
-    integrations: {
-      codex: fakeIntegration("codex", {
-        ...startPlan("codex"),
-        inputTiming: { startupDelayMs: 0, preSubmitDelayMs: 0 },
-      }),
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
-    },
-    launcher,
-    idGenerator: sequentialIdGenerator("runtime"),
-  });
-
-  const handle = await runtime.start({
-    threadId: "thread-timing",
-    agentBinding: { agentId: "codex" },
-    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-  });
-  await runtime.writeInput(handle, {
-    kind: "composer_input",
-    value: "Text before submit",
-    submittedAt: now,
-  });
-
-  assert.deepEqual(launcher.handles[0].writes, ["Text before submit", "\r"]);
-});
-
 test("python_pty_process_launcher_round_trips_terminal_input_with_real_pty", async () => {
   const launcher = createPythonPtyProcessLauncher();
   let output = "";
@@ -820,18 +436,6 @@ test("provider_bootstrap_artifacts_create_provider_native_files", () => {
   assert.equal(fs.existsSync(artifacts.codexSkillPath), true);
   assert.equal(fs.existsSync(artifacts.claudeMcpConfigPath), true);
   assert.equal(fs.existsSync(artifacts.claudeSettingsPath), true);
-  assert.equal(
-    fs.existsSync(path.join(artifacts.antigravityPluginSourcePath, "plugin.json")),
-    true,
-  );
-  assert.equal(
-    fs.existsSync(path.join(artifacts.antigravityPluginSourcePath, "hooks.json")),
-    true,
-  );
-  assert.equal(
-    fs.existsSync(path.join(artifacts.antigravityPluginSourcePath, "mcp_config.json")),
-    true,
-  );
   assert.equal(fs.existsSync(artifacts.providerSignalHookPath), true);
 
   const claudeMcp = fs.readFileSync(artifacts.claudeMcpConfigPath, "utf8");
@@ -840,13 +444,6 @@ test("provider_bootstrap_artifacts_create_provider_native_files", () => {
   assert.match(claudeMcp, /tide-mcp-stdio/);
   assert.match(claudeMcp, /"args": \[\]/);
   assert.match(claudeMcp, /"TIDE_SOCKET": "\/tmp\/tide\.sock"/);
-  const antigravityMcp = fs.readFileSync(
-    path.join(artifacts.antigravityPluginSourcePath, "mcp_config.json"),
-    "utf8",
-  );
-  assert.match(antigravityMcp, /tide-mcp-stdio/);
-  assert.match(antigravityMcp, /"args": \[\]/);
-  assert.match(antigravityMcp, /"TIDE_SOCKET": "\/tmp\/tide\.sock"/);
   const tideMcpCommand = fs.readFileSync(artifacts.tideMcpCommandPath, "utf8");
   assert.match(tideMcpCommand, /ELECTRON_RUN_AS_NODE=1 exec/);
   assert.match(tideMcpCommand, /backend-entrypoint\.js/);
@@ -959,10 +556,6 @@ test("live_backend_provider_state_readers_require_tide_owned_bootstrap_artifacts
 
   assert.equal(readCodexProviderStateFromHome(home, cwd).hookBootstrapReady, false);
   assert.equal(readClaudeProviderStateFromHome(home, cwd).hookBootstrapReady, false);
-  assert.equal(
-    readAntigravityProviderStateFromHome(home, cwd).pluginBootstrapReady,
-    false,
-  );
 });
 
 test("live_backend_provider_state_readers_use_local_provider_files", () => {
@@ -974,9 +567,6 @@ test("live_backend_provider_state_readers_use_local_provider_files", () => {
     tideCommand: "/Applications/Tide.app/Contents/MacOS/Tide",
   });
   const artifacts = providerBootstrapArtifactsForHome({ homeDir: home });
-  writeFile(path.join(artifacts.antigravityInstalledPluginPath, "plugin.json"), "{}");
-  writeFile(path.join(artifacts.antigravityInstalledPluginPath, "hooks.json"), "{}");
-  writeFile(path.join(artifacts.antigravityInstalledPluginPath, "mcp_config.json"), "{}");
 
   assert.deepEqual(readCodexProviderStateFromHome(home, cwd), {
     authenticated: true,
@@ -990,12 +580,6 @@ test("live_backend_provider_state_readers_use_local_provider_files", () => {
     onboardingComplete: true,
     trustedCwds: [cwd],
     hookBootstrapReady: true,
-  });
-  assert.deepEqual(readAntigravityProviderStateFromHome(home, cwd), {
-    authenticated: true,
-    onboardingComplete: true,
-    trustedCwds: [cwd],
-    pluginBootstrapReady: true,
   });
 });
 
@@ -1050,14 +634,6 @@ function writeProviderFiles(home: string, cwd: string): void {
   );
   writeFile(path.join(home, ".claude", "settings.json"), "{}");
   writeFile(path.join(home, ".gemini", "oauth_creds.json"), "{}");
-  writeFile(
-    path.join(home, ".gemini", "antigravity-cli", "cache", "onboarding.json"),
-    JSON.stringify({ onboardingComplete: true }),
-  );
-  writeFile(
-    path.join(home, ".gemini", "antigravity-cli", "settings.json"),
-    JSON.stringify({ trustedWorkspaces: [cwd] }),
-  );
 }
 
 function appendCodexOverlayHookTrust(
@@ -1069,321 +645,6 @@ function appendCodexOverlayHookTrust(
     "utf8",
   );
 }
-
-test("antigravity_history_reader_reads_only_the_bound_transcript_under_concurrency", () => {
-  // Two concurrent antigravity sessions write separate transcripts. A thread bound
-  // to one must read ONLY that one — never the other session's content (the recency
-  // scan would have mixed them, leaving concurrent agy threads broken).
-  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-agy-multi-"));
-  const transcriptFor = (conversationId: string) =>
-    path.join(home, ".gemini", "antigravity-cli", "brain", conversationId, ".system_generated", "logs", "transcript.jsonl");
-  const mine = transcriptFor("conv-mine");
-  const theirs = transcriptFor("conv-theirs");
-  writeFile(mine, JSON.stringify({ step_index: 1, source: "MODEL", type: "PLANNER_RESPONSE", status: "DONE", content: "MINE" }));
-  writeFile(theirs, JSON.stringify({ step_index: 1, source: "MODEL", type: "PLANNER_RESPONSE", status: "DONE", content: "THEIRS" }));
-
-  const frames = readAntigravityProviderHistoryFramesFromHome({
-    homeDir: home,
-    threadId: "thread-mine",
-    runtimeId: "runtime-mine",
-    sinceMs: Date.now() - 10_000,
-    seenKeys: new Set<string>(),
-    boundTranscriptPath: mine,
-  });
-
-  assert.ok(frames.some((frame) => frame.body === "MINE"));
-  assert.ok(!frames.some((frame) => frame.body === "THEIRS"), "must not read another session's transcript");
-});
-
-test("antigravity_provider_history_reader_projects_planner_response_as_agent_message_frame", () => {
-  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-agy-history-"));
-  const transcriptPath = path.join(
-    home,
-    ".gemini",
-    "antigravity-cli",
-    "brain",
-    "conversation-1",
-    ".system_generated",
-    "logs",
-    "transcript.jsonl",
-  );
-  writeFile(
-    transcriptPath,
-    [
-      JSON.stringify({
-        step_index: 0,
-        source: "USER_EXPLICIT",
-        type: "USER_INPUT",
-        status: "DONE",
-        content: "Reply exactly with TIDE_AGY_HISTORY",
-      }),
-      JSON.stringify({
-        step_index: 2,
-        source: "MODEL",
-        type: "PLANNER_RESPONSE",
-        status: "DONE",
-        content: "TIDE_AGY_HISTORY",
-      }),
-    ].join("\n"),
-  );
-  const seenKeys = new Set<string>();
-
-  const frames = readAntigravityProviderHistoryFramesFromHome({
-    homeDir: home,
-    threadId: "thread-agy-history",
-    runtimeId: "runtime-agy-history",
-    sinceMs: Date.now() - 10_000,
-    seenKeys,
-    boundTranscriptPath: transcriptPath,
-  });
-
-  assert.equal(frames.length, 1);
-  assert.equal(frames[0].source, "provider_history");
-  assert.equal(frames[0].sourceRef, transcriptPath);
-  assert.equal(frames[0].body, "TIDE_AGY_HISTORY");
-  assert.deepEqual(frames[0].payload, {
-    type: "message",
-    role: "agent",
-    status: "complete",
-    blockId: "provider:thread-agy-history:conversation-1:2",
-    body: "TIDE_AGY_HISTORY",
-    sourceRuntimeId: "runtime-agy-history",
-  });
-  assert.deepEqual(
-    readAntigravityProviderHistoryFramesFromHome({
-      homeDir: home,
-      threadId: "thread-agy-history",
-      runtimeId: "runtime-agy-history",
-      sinceMs: Date.now() - 10_000,
-      seenKeys,
-      boundTranscriptPath: transcriptPath,
-    }),
-    [],
-  );
-});
-
-test("antigravity_provider_history_reader_marks_a_terminal_planner_response_as_turn_complete", () => {
-  // Spec: docs_v2/specs/antigravity-turn-completion.md
-  // Antigravity has no turn-end hook, so the turn end is read from the transcript:
-  // a PLANNER_RESPONSE with content and NO tool_calls is the final answer. An
-  // intermediate PLANNER_RESPONSE carries a tool_call and is NOT the turn end.
-  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-agy-complete-"));
-  const transcriptPath = path.join(
-    home,
-    ".gemini",
-    "antigravity-cli",
-    "brain",
-    "conversation-1",
-    ".system_generated",
-    "logs",
-    "transcript.jsonl",
-  );
-  writeFile(
-    transcriptPath,
-    [
-      JSON.stringify({
-        step_index: 0,
-        source: "USER_EXPLICIT",
-        type: "USER_INPUT",
-        status: "DONE",
-        content: "Look around and summarize",
-      }),
-      JSON.stringify({
-        step_index: 2,
-        source: "MODEL",
-        type: "PLANNER_RESPONSE",
-        status: "DONE",
-        tool_calls: [{ name: "list_dir", args: { DirectoryPath: "/repo" } }],
-      }),
-      JSON.stringify({
-        step_index: 3,
-        source: "MODEL",
-        type: "LIST_DIRECTORY",
-        status: "DONE",
-        content: "package.json",
-      }),
-      JSON.stringify({
-        step_index: 4,
-        source: "MODEL",
-        type: "PLANNER_RESPONSE",
-        status: "DONE",
-        content: "It is a battleship game.",
-      }),
-    ].join("\n"),
-  );
-
-  const frames = readAntigravityProviderHistoryFramesFromHome({
-    homeDir: home,
-    threadId: "thread-agy-complete",
-    runtimeId: "runtime-agy-complete",
-    sinceMs: Date.now() - 10_000,
-    seenKeys: new Set<string>(),
-    boundTranscriptPath: transcriptPath,
-  });
-
-  const toolCallFrame = frames.find((frame) => frame.payload.type === "tool_call");
-  const terminalMessageFrame = frames.find(
-    (frame) => frame.payload.type === "message" && frame.body === "It is a battleship game.",
-  );
-
-  // The intermediate planner response (a tool call) is not a turn end.
-  assert.ok(toolCallFrame, "expected a tool_call frame");
-  assert.notEqual(toolCallFrame?.turnComplete, true);
-  // The final planner message (content, no tool_calls) IS the turn end.
-  assert.ok(terminalMessageFrame, "expected a terminal agent message frame");
-  assert.equal(terminalMessageFrame?.turnComplete, true);
-});
-
-test("antigravity_provider_history_reader_derives_provider_session_ref_from_transcript_path", () => {
-  // Spec: docs_v2/specs/live-provider-session-reference-discovery.md
-  const transcriptPath = path.join(
-    "/Users/you",
-    ".gemini",
-    "antigravity-cli",
-    "brain",
-    "conversation-1",
-    ".system_generated",
-    "logs",
-    "transcript.jsonl",
-  );
-
-  assert.deepEqual(
-    antigravityProviderSessionRefFromTranscriptPath(transcriptPath),
-    {
-      agentId: "antigravity",
-      kind: "antigravity_conversation",
-      value: "conversation-1",
-      transcriptPath,
-    },
-  );
-});
-
-test("live_backend_projector_persists_antigravity_provider_session_ref", async () => {
-  // Spec: docs_v2/specs/live-provider-session-reference-discovery.md
-  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-live-agy-ref-"));
-  const appDataRoot = fs.mkdtempSync(path.join(tmpdir(), "tide-live-agy-ref-data-"));
-  const threadId = "thread-live-agy-ref";
-  const runtimeId = "runtime-live-agy-ref";
-  const conversationId = "conversation-live-agy";
-  const transcriptPath = path.join(
-    home,
-    ".gemini",
-    "antigravity-cli",
-    "brain",
-    conversationId,
-    ".system_generated",
-    "logs",
-    "transcript.jsonl",
-  );
-  writeFile(
-    transcriptPath,
-    JSON.stringify({
-      step_index: 4,
-      source: "MODEL",
-      type: "PLANNER_RESPONSE",
-      status: "DONE",
-      content: "Persisted Antigravity output",
-    }),
-  );
-  const service = createThreadRuntimeService({
-    agentRuntimePort: new CapturingAgentRuntimePort(),
-    providerReadinessPort: readyProviderReadinessPort(),
-    ptyTranscriptPort: new CapturingPtyTranscriptPort(),
-    clock: () => now,
-    idGenerator: sequentialIdGenerator("live-agy"),
-    initialThreads: [
-      liveProviderThreadSeed({
-        threadId,
-        runtimeId,
-        agentId: "antigravity",
-      }),
-    ],
-  });
-  const persistence = createThreadPersistenceService({
-    storage: createFileAppStorage({ appDataRoot }),
-    clock: () => now,
-    readerVersion: "test-live-agy-ref",
-  });
-  const saved = await persistence.saveThreadMetadata(
-    threadStorageRecordFromThreadSummary({
-      threadId,
-      title: "Live Antigravity ref",
-      agentBinding: {
-        agentId: "antigravity",
-        runtimeSource: { kind: "provider_cli", integrationId: "antigravity" },
-      },
-      scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-      launchOptions: { model: "Antigravity default" },
-      createdAt: now,
-      updatedAt: now,
-      pinned: false,
-      archived: false,
-      lastKnownState: "running",
-    }),
-  );
-  assert.equal(saved.ok, true);
-  const projector = createLiveAgentSessionEventProjector({
-    service: () => service,
-    persistence,
-    homeDir: home,
-    integrations: {
-      codex: fakeIntegration("codex", startPlan("codex")),
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
-    },
-    providerSignalSpoolDir: path.join(home, ".tide", "agent-bootstrap", "provider-signals"),
-  });
-
-  // Model: the provider session is bound to the thread by the agent's HOOK (which
-  // reports its conversation + transcript path), not by scanning recent files. Feed
-  // that agent-running signal so the projector binds, then reads the bound transcript.
-  writeFile(
-    path.join(home, ".tide", "agent-bootstrap", "provider-signals", `${runtimeId}.jsonl`),
-    JSON.stringify({
-      threadId,
-      runtimeId,
-      agent: "antigravity",
-      event: "agent-running",
-      payload: { conversationId, transcriptPath },
-    }),
-  );
-
-  await projector.ingestOutput({
-    threadId,
-    agentId: "antigravity",
-    runtimeId,
-    source: "stdout",
-    body: "provider output tick",
-  });
-  const hydrated = await service.hydrateThread({ threadId });
-  const loaded = await persistence.loadThreadMetadata(threadId);
-
-  assert.equal(hydrated.ok, true);
-  if (!hydrated.ok) {
-    assert.fail("Expected hydrated Thread.");
-  }
-  assert.equal(
-    hydrated.thread.agentBinding.providerSessionRef?.kind,
-    "antigravity_conversation",
-  );
-  assert.equal(hydrated.thread.agentBinding.providerSessionRef?.value, conversationId);
-  assert.equal(hydrated.thread.agentBinding.providerSessionRef?.transcriptPath, transcriptPath);
-  assert.equal(
-    hydrated.blocks.some((block) => block.body === "Persisted Antigravity output"),
-    true,
-  );
-  assert.equal(loaded.ok, true);
-  if (!loaded.ok) {
-    assert.fail("Expected persisted Thread metadata.");
-  }
-  assert.equal(loaded.value.providerSessionRef?.kind, "antigravity_conversation");
-  assert.equal(loaded.value.providerSessionRef?.value, conversationId);
-  assert.equal(loaded.value.providerSessionRef?.transcriptPath, transcriptPath);
-  assert.equal(
-    loaded.value.agentBinding.providerSessionRef?.value,
-    conversationId,
-  );
-});
 
 test("codex_provider_history_reader_derives_provider_session_ref_from_rollout_path", () => {
   // Spec: docs_v2/specs/live-provider-session-reference-discovery.md
@@ -1796,88 +1057,6 @@ test("claude_provider_history_reader_emits_tool_call_and_tool_result_frames", ()
   assert.match(String(result.body), /total 0/);
 });
 
-test("antigravity_provider_history_reader_emits_tool_call_and_tool_result_frames", () => {
-  // Spec: docs_v2/specs/agent-session-block-rendering-path.md D12
-  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-agy-tool-"));
-  const transcriptPath = path.join(
-    home,
-    ".gemini",
-    "antigravity-cli",
-    "brain",
-    "11111111-2222-3333-4444-555555555555",
-    ".system_generated",
-    "logs",
-    "transcript.jsonl",
-  );
-  writeFile(
-    transcriptPath,
-    [
-      JSON.stringify({ step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", content: "list it" }),
-      JSON.stringify({
-        step_index: 2,
-        source: "MODEL",
-        type: "PLANNER_RESPONSE",
-        tool_calls: [{ name: "list_dir", args: { DirectoryPath: "/tmp", toolSummary: "List directory" } }],
-      }),
-      JSON.stringify({ step_index: 3, source: "MODEL", type: "LIST_DIRECTORY", content: "a.txt\nb.txt\n" }),
-      JSON.stringify({
-        step_index: 4,
-        source: "MODEL",
-        type: "PLANNER_RESPONSE",
-        content: "Two files.",
-      }),
-    ].join("\n"),
-  );
-
-  const frames = readAntigravityProviderHistoryFramesFromHome({
-    homeDir: home,
-    threadId: "thread-agy-tool",
-    runtimeId: "runtime-agy-tool",
-    sinceMs: Date.now() - 10_000,
-    seenKeys: new Set<string>(),
-    boundTranscriptPath: transcriptPath,
-  });
-
-  assert.deepEqual(
-    frames.map((frame) => (frame.payload as { type: string }).type),
-    ["tool_call", "tool_result", "message"],
-  );
-  const call = frames[0].payload as Record<string, unknown>;
-  assert.equal(call.toolName, "list_dir");
-  assert.match(String(call.body), /DirectoryPath|tmp|List directory/);
-  const result = frames[1].payload as Record<string, unknown>;
-  assert.equal(result.toolName, "list_dir", "result inherits the preceding call's tool name");
-  assert.match(String(result.body), /a\.txt/);
-  assert.equal(frames[2].body, "Two files.");
-});
-
-test("rebuilt_antigravity_conversation_includes_ordered_tool_blocks", () => {
-  // Spec: docs_v2/specs/agent-session-block-rendering-path.md UC-5 D12
-  const text = [
-    JSON.stringify({ step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", content: "<USER_REQUEST>\nlist it\n</USER_REQUEST>" }),
-    JSON.stringify({
-      step_index: 2,
-      source: "MODEL",
-      type: "PLANNER_RESPONSE",
-      tool_calls: [{ name: "view_file", args: { AbsolutePath: "/tmp/x.json" } }],
-    }),
-    JSON.stringify({ step_index: 3, source: "MODEL", type: "VIEW_FILE", content: "1: {}\n" }),
-    JSON.stringify({ step_index: 4, source: "MODEL", type: "PLANNER_RESPONSE", content: "Read it." }),
-  ].join("\n");
-
-  const blocks = rebuildAntigravityConversation(text, "thread-agy", "conv-agy", "antigravity");
-
-  assert.deepEqual(
-    blocks.map((block) => block.kind),
-    ["user_message", "tool_call", "tool_result", "agent_message"],
-  );
-  assert.equal(blocks[0].body, "list it", "user prompt is unwrapped from <USER_REQUEST>");
-  assert.equal(blocks[1].title, "view_file");
-  assert.equal(blocks[2].title, "view_file");
-  assert.match(String(blocks[2].body), /\{\}/);
-  assert.equal(blocks[3].body, "Read it.");
-});
-
 test("rebuilt_codex_conversation_includes_ordered_tool_blocks", () => {
   // Spec: docs_v2/specs/agent-session-block-rendering-path.md UC-5 D12
   const text = [
@@ -2103,164 +1282,6 @@ test("provider_history_readers_ignore_recent_codex_and_claude_files_without_thre
   );
 });
 
-test("provider_signal_spool_reader_reads_runtime_scoped_hook_records_once", () => {
-  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-provider-signals-"));
-  const artifacts = ensureProviderBootstrapArtifacts({
-    homeDir: home,
-    tideCommand: "/Applications/Tide.app/Contents/MacOS/Tide",
-  });
-  const spoolPath = path.join(artifacts.providerSignalSpoolDir, "runtime-signal-1.jsonl");
-  writeFile(
-    spoolPath,
-    [
-      JSON.stringify({
-        agent: "codex",
-        event: "PermissionRequest",
-        threadId: "thread-signal",
-        runtimeId: "runtime-signal-1",
-        payload: { call_id: "call-1", tool_input: { command: "npm test" } },
-      }),
-      JSON.stringify({
-        agent: "claude",
-        event: "Notification",
-        threadId: "other-thread",
-        runtimeId: "other-runtime",
-        payload: { message: "ignore me" },
-      }),
-    ].join("\n"),
-  );
-  const seenKeys = new Set<string>();
-
-  const firstRead = readProviderSignalFramesFromSpool({
-    spoolDir: artifacts.providerSignalSpoolDir,
-    threadId: "thread-signal",
-    agentId: "codex",
-    runtimeId: "runtime-signal-1",
-    seenKeys,
-  });
-  const secondRead = readProviderSignalFramesFromSpool({
-    spoolDir: artifacts.providerSignalSpoolDir,
-    threadId: "thread-signal",
-    agentId: "codex",
-    runtimeId: "runtime-signal-1",
-    seenKeys,
-  });
-
-  assert.equal(firstRead.length, 1);
-  assert.equal(firstRead[0].eventName, "PermissionRequest");
-  assert.deepEqual(firstRead[0].payload, {
-    call_id: "call-1",
-    tool_input: { command: "npm test" },
-  });
-  assert.deepEqual(secondRead, []);
-});
-
-test("live_provider_signal_spool_prompt_roundtrip_records_prompt_and_preserves_provider_value", async () => {
-  // Spec: docs_v2/specs/provider-signal-prompt-ingress.md
-  // Spec: docs_v2/specs/provider-signal-spool-ingress.md
-  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-live-provider-signal-"));
-  const appDataRoot = fs.mkdtempSync(path.join(tmpdir(), "tide-live-provider-data-"));
-  const artifacts = ensureProviderBootstrapArtifacts({
-    homeDir: home,
-    tideCommand: "/Applications/Tide.app/Contents/MacOS/Tide",
-  });
-  const runtime = new CapturingAgentRuntimePort();
-  const service = createThreadRuntimeService({
-    agentRuntimePort: runtime,
-    providerReadinessPort: readyProviderReadinessPort(),
-    ptyTranscriptPort: new CapturingPtyTranscriptPort(),
-    clock: () => now,
-    idGenerator: sequentialIdGenerator("live"),
-    initialThreads: [
-      liveProviderThreadSeed({
-        threadId: "thread-live-prompt",
-        runtimeId: "runtime-live-prompt",
-        agentId: "codex",
-      }),
-    ],
-  });
-  const persistence = createThreadPersistenceService({
-    storage: createFileAppStorage({ appDataRoot }),
-    clock: () => now,
-    readerVersion: "test-live-provider-signal",
-  });
-  const events: { kind: string; payload: unknown }[] = [];
-  const projector = createLiveAgentSessionEventProjector({
-    service: () => service,
-    persistence,
-    onEvent: (event) => events.push({ kind: event.kind, payload: event.payload }),
-    homeDir: home,
-    integrations: {
-      codex: fakeIntegration("codex", startPlan("codex"), (input) => {
-        if (input.eventName !== "PermissionRequest") {
-          return null;
-        }
-        return {
-          promptId: "prompt-live-permission",
-          threadId: input.threadId,
-          agentId: "codex",
-          kind: "permission",
-          message: "Allow provider command?",
-          source: "provider_hook",
-          choices: [
-            {
-              choiceId: "allow-once",
-              label: "Allow once",
-              providerValue: "allow_once",
-            },
-            {
-              choiceId: "deny",
-              label: "Deny",
-              providerValue: "deny",
-            },
-          ],
-        };
-      }),
-      claude: fakeIntegration("claude", startPlan("claude")),
-      antigravity: fakeIntegration("antigravity", startPlan("antigravity")),
-    },
-    providerSignalSpoolDir: artifacts.providerSignalSpoolDir,
-  });
-  writeFile(
-    path.join(artifacts.providerSignalSpoolDir, "runtime-live-prompt.jsonl"),
-    JSON.stringify({
-      agent: "codex",
-      event: "PermissionRequest",
-      threadId: "thread-live-prompt",
-      runtimeId: "runtime-live-prompt",
-      payload: { call_id: "call-live", tool_input: { command: "npm test" } },
-    }),
-  );
-
-  await projector.ingestOutput({
-    threadId: "thread-live-prompt",
-    agentId: "codex",
-    runtimeId: "runtime-live-prompt",
-    source: "stdout",
-    body: "provider output tick",
-  });
-  const hydrated = await service.hydrateThread({ threadId: "thread-live-prompt" });
-  const promptEvent = events.find((event) => event.kind === "prompt.changed");
-
-  assert.equal(hydrated.ok, true);
-  assert.equal(hydrated.thread.runtimeState, "waiting_for_approval");
-  assert.equal(hydrated.thread.promptState?.promptId, "prompt-live-permission");
-  assert.equal(hydrated.thread.promptState?.source, "provider_hook");
-  assert.notEqual(promptEvent, undefined);
-
-  const answer = await service.answerPrompt({
-    threadId: "thread-live-prompt",
-    promptId: "prompt-live-permission",
-    choiceId: "allow-once",
-  });
-
-  assert.equal(answer.ok, true);
-  assert.equal(runtime.writes[0]?.handle.runtimeId, "runtime-live-prompt");
-  assert.equal(runtime.writes[0]?.input.kind, "prompt_answer");
-  assert.equal(runtime.writes[0]?.input.value, "allow_once");
-  assert.equal(runtime.writes[0]?.input.choiceId, "allow-once");
-});
-
 test("agent_runtime_wiring_stays_out_of_desktop_and_shared_contracts", () => {
   assert.deepEqual(
     findSourceMentions(["src/desktop", "src/shared/contracts"], [
@@ -2273,7 +1294,7 @@ test("agent_runtime_wiring_stays_out_of_desktop_and_shared_contracts", () => {
 });
 
 function fakeIntegration(
-  agentId: "codex" | "claude" | "antigravity",
+  agentId: "codex" | "claude" | "gemini",
   plan: ProviderLaunchPlan,
   promptDetector?: (input: AgentPromptSignalInput) => PromptState | null,
 ) {
@@ -2284,13 +1305,13 @@ class FakeAgentIntegration implements AgentIntegrationPort {
   preflightInputs: AgentIntegrationPreflightInput[] = [];
   startInputs: AgentStartPlanInput[] = [];
   resumeInputs: AgentResumePlanInput[] = [];
-  private readonly agentId: "codex" | "claude" | "antigravity";
+  private readonly agentId: "codex" | "claude" | "gemini";
   private readonly plan: ProviderLaunchPlan;
   private readonly promptDetector?: (input: AgentPromptSignalInput) => PromptState | null;
   readinessGate: RuntimeReadinessGate = { kind: "immediate" };
 
   constructor(
-    agentId: "codex" | "claude" | "antigravity",
+    agentId: "codex" | "claude" | "gemini",
     plan: ProviderLaunchPlan,
     promptDetector?: (input: AgentPromptSignalInput) => PromptState | null,
   ) {
@@ -2357,8 +1378,8 @@ class FakeAgentIntegration implements AgentIntegrationPort {
     if (this.agentId === "claude") {
       return createClaudeHistoryConnector();
     }
-    if (this.agentId === "antigravity") {
-      return createAntigravityHistoryConnector();
+    if (this.agentId === "gemini") {
+      return createGeminiHistoryConnector({});
     }
     return {
       readFrames: () => [],
@@ -2446,7 +1467,7 @@ function readyProviderReadinessPort(): ProviderReadinessPort {
 function liveProviderThreadSeed(input: {
   threadId: string;
   runtimeId: string;
-  agentId: "codex" | "claude" | "antigravity";
+  agentId: "codex" | "claude" | "gemini";
 }): ThreadSeed {
   return {
     threadId: input.threadId,
@@ -2470,10 +1491,10 @@ function liveProviderThreadSeed(input: {
   };
 }
 
-function startPlan(agentId: "codex" | "claude" | "antigravity"): ProviderLaunchPlan {
+function startPlan(agentId: "codex" | "claude" | "gemini"): ProviderLaunchPlan {
   return {
     command:
-      agentId === "antigravity" ? "agy" : agentId === "claude" ? "claude" : "codex",
+      agentId === "gemini" ? "gemini" : agentId === "claude" ? "claude" : "codex",
     args: [],
     env: { TERM: "xterm-256color", COLORTERM: "truecolor" },
     cwd: "/repo",

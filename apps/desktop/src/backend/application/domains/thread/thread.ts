@@ -7,7 +7,7 @@ import type {
   WorkbenchState,
 } from "../workbench/workbench.ts";
 
-export type ProviderCliAgentId = "codex" | "claude" | "antigravity" | "gemini";
+export type ProviderCliAgentId = "codex" | "claude" | "gemini";
 export type TideApiAgentId = "openai_api";
 export type AgentId = ProviderCliAgentId | TideApiAgentId;
 export type ThreadId = string;

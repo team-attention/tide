@@ -10,7 +10,6 @@ import {
   stringField,
 } from "./live-backend-json.ts";
 import {
-  antigravityConversationItems,
   boundedToolText,
   claudeToolResultItems,
   claudeToolUseItems,
@@ -42,9 +41,6 @@ export function rebuildConversationFromProviderHistory(
   }
   if (ref.kind === "claude_transcript") {
     return rebuildClaudeConversation(text, record.threadId, ref.value, agentId);
-  }
-  if (ref.kind === "antigravity_conversation") {
-    return rebuildAntigravityConversation(text, record.threadId, ref.value, agentId);
   }
   return [];
 }
@@ -283,37 +279,3 @@ export function rebuildClaudeConversation(
   return blocks;
 }
 
-export function rebuildAntigravityConversation(
-  text: string,
-  threadId: string,
-  conversationId: string,
-  agentId: AgentId,
-): AgentSessionBlock[] {
-  const timestamp = new Date().toISOString();
-  return antigravityConversationItems(text, { includeUser: true }).map((item) => {
-    const blockId = `provider:${threadId}:${conversationId}:${item.blockSuffix}`;
-    if (item.kind === "message") {
-      return conversationBlock({
-        threadId,
-        sessionId: conversationId,
-        index: 0,
-        agentId,
-        isUser: item.role === "user",
-        body: item.body,
-        timestamp,
-        blockId,
-      });
-    }
-    return toolConversationBlock({
-      threadId,
-      agentId,
-      blockId,
-      kind: item.kind,
-      toolName: item.toolName ?? "tool",
-      callId: blockId,
-      body: item.body,
-      data: item.kind === "tool_call" ? { arguments: item.body } : { ok: true, output: item.body },
-      timestamp,
-    });
-  });
-}

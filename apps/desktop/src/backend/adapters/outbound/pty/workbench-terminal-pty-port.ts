@@ -3,7 +3,7 @@ import type {
   WorkbenchTerminalPort,
   WorkbenchTerminalStartInput,
 } from "../../../application/ports/outbound/workbench-terminal-port.ts";
-import type { PtyProcessLauncher } from "../agent-runtime/agent-integration-agent-runtime-port.ts";
+import type { PtyProcessLauncher } from "./pty-process.ts";
 
 export interface CreatePtyWorkbenchTerminalPortInput {
   launcher: PtyProcessLauncher;

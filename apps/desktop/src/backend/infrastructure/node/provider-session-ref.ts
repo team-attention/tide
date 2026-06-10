@@ -9,10 +9,6 @@ import type { ProviderSessionRefRecord } from "../../application/services/thread
 export type DiscoveredProviderSessionRef = Omit<ProviderSessionRefRecord, "observedAt">;
 
 export {
-  antigravityConversationIdFromTranscriptPath,
-  antigravityProviderSessionRefFromTranscriptPath,
-} from "../../adapters/outbound/agent-integrations/antigravity/antigravity-history-connector.ts";
-export {
   codexProviderSessionRefFromRolloutPath,
   codexSessionIdFromRolloutPath,
 } from "../../adapters/outbound/agent-integrations/codex/codex-history-connector.ts";

@@ -3,7 +3,7 @@ import type {
   ProviderSetupSurfaceStartInput,
   ProviderSetupSurfaceTerminalPort,
 } from "../../../application/ports/outbound/provider-setup-surface-terminal-port.ts";
-import type { PtyProcessLauncher } from "../agent-runtime/agent-integration-agent-runtime-port.ts";
+import type { PtyProcessLauncher } from "./pty-process.ts";
 
 export interface CreatePtyProviderSetupSurfaceTerminalPortInput {
   launcher: PtyProcessLauncher;

@@ -15,8 +15,3 @@ export {
   claudeToolResultItems,
   claudeToolUseItems,
 } from "../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
-export {
-  antigravityConversationItems,
-  unwrapAntigravityUserRequest,
-  type AntigravityConversationItem,
-} from "../../adapters/outbound/agent-integrations/antigravity/antigravity-history-connector.ts";

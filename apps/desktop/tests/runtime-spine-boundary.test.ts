@@ -69,21 +69,6 @@ test("infra_live_backend_does_not_hardcode_turn_end_hook_events", () => {
   }
 });
 
-// All three providers own their turn-end detection in their adapters: codex
-// (rollout task_complete/turn_aborted + codex-stop hook), claude (agent-idle
-// hook), antigravity (agent-idle hook + transcript PLANNER_RESPONSE rule).
-test("antigravity_transcript_turn_end_rule_lives_in_its_adapter", () => {
-  const adapter = read(
-    "src/backend/adapters/outbound/agent-integrations/antigravity/antigravity-transcript-turn-detection.ts",
-  );
-  assert.ok(adapter.includes('"PLANNER_RESPONSE"'));
-  assert.ok(adapter.includes("tool_calls"));
-
-  // The inline rule must no longer live in infrastructure.
-  const infra = read("src/backend/infrastructure/node/live-backend.ts");
-  assert.equal(infra.includes("turnEnd: toolCalls.length === 0"), false);
-});
-
 // Provider History Connector invariant #1: live-backend keeps exactly ONE
 // generic history loop. No `agentId === "<provider>"` comparison and no
 // per-provider emitter/binder may exist in infrastructure wiring; provider

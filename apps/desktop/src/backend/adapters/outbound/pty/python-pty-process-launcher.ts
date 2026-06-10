@@ -4,7 +4,7 @@ import type {
   PtyProcessHandle,
   PtyProcessLauncher,
   PtyProcessSpawnInput,
-} from "../agent-runtime/agent-integration-agent-runtime-port.ts";
+} from "./pty-process.ts";
 
 export function createPythonPtyProcessLauncher(): PtyProcessLauncher {
   return new PythonPtyProcessLauncher();

@@ -9,7 +9,7 @@
 
 import type { ThreadSeed } from "./thread-runtime-service.ts";
 
-export type DiscoveredAgentId = "codex" | "claude" | "antigravity";
+export type DiscoveredAgentId = "codex" | "claude";
 
 export interface DiscoveredSession {
   agentId: DiscoveredAgentId;
@@ -26,10 +26,6 @@ export interface DiscoveryFs {
   listClaudeTranscripts(cwd: string): { path: string; sessionId: string; mtimeMs: number }[];
   // All recent codex rollouts (filtered to a cwd by reading session_meta).
   listCodexRollouts(): { path: string; mtimeMs: number }[];
-  // The single antigravity conversation cached for a cwd, if any.
-  antigravityConversationForCwd(
-    cwd: string,
-  ): { conversationId: string; transcriptPath: string; mtimeMs: number } | undefined;
   readText(path: string): string | undefined;
 }
 
@@ -150,25 +146,6 @@ export function discoverLocalSessions(input: {
     });
   }
 
-  // Antigravity: the one conversation cached for each cwd.
-  for (const cwd of cwds) {
-    const conversation = input.fs.antigravityConversationForCwd(cwd);
-    if (conversation === undefined) {
-      continue;
-    }
-    const text = input.fs.readText(conversation.transcriptPath);
-    const title = (text && antigravitySessionTitle(text)) || datedTitle("Antigravity", conversation.mtimeMs);
-    if (isInternalSessionTitle(title)) continue;
-    sessions.push({
-      agentId: "antigravity",
-      sessionId: conversation.conversationId,
-      transcriptPath: conversation.transcriptPath,
-      cwd,
-      title,
-      startedAtMs: conversation.mtimeMs,
-    });
-  }
-
   return sessions;
 }
 
@@ -197,7 +174,6 @@ export function adoptedThreadId(sessionId: string): string {
 const SESSION_REF_KIND: Record<DiscoveredAgentId, string> = {
   codex: "codex_rollout",
   claude: "claude_transcript",
-  antigravity: "antigravity_conversation",
 };
 
 // Maps discovered sessions to adopted ThreadSeeds, dropping any that a persisted

@@ -1,11 +1,9 @@
 import { join } from "node:path";
 
-import type { AntigravityProviderState } from "../../adapters/outbound/agent-integrations/antigravity/antigravity-agent-integration.ts";
 import type { ClaudeProviderState } from "../../adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
 import type { GeminiProviderState } from "../../adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts";
 import type { CodexProviderState } from "../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
 import {
-  isAntigravityPluginBootstrapReady,
   isClaudeBootstrapReady,
   isCodexBootstrapReady,
   providerBootstrapArtifactsForHome,
@@ -50,28 +48,6 @@ export function readClaudeProviderStateFromHome(
     onboardingComplete: state?.hasCompletedOnboarding === true,
     trustedCwds: project?.hasTrustDialogAccepted === true ? [cwd] : [],
     hookBootstrapReady: isClaudeBootstrapReady(
-      providerBootstrapArtifactsForHome({ homeDir }),
-    ),
-  };
-}
-
-export function readAntigravityProviderStateFromHome(
-  homeDir: string,
-  cwd: string,
-): AntigravityProviderState {
-  const oauth = readJsonFile(join(homeDir, ".gemini", "oauth_creds.json"));
-  const accounts = readJsonFile(join(homeDir, ".gemini", "google_accounts.json"));
-  const onboarding = readJsonFile(
-    join(homeDir, ".gemini", "antigravity-cli", "cache", "onboarding.json"),
-  );
-  const settings = readJsonFile(join(homeDir, ".gemini", "antigravity-cli", "settings.json"));
-  const trustedWorkspaces = arrayOfStrings(settings?.trustedWorkspaces);
-
-  return {
-    authenticated: oauth !== undefined || accounts !== undefined,
-    onboardingComplete: onboarding?.onboardingComplete === true,
-    trustedCwds: trustedWorkspaces,
-    pluginBootstrapReady: isAntigravityPluginBootstrapReady(
       providerBootstrapArtifactsForHome({ homeDir }),
     ),
   };

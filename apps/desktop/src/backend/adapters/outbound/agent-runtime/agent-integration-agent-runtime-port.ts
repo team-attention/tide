@@ -7,17 +7,9 @@ import type {
 import type { AgentRuntimePort } from "../../../application/ports/outbound/agent-runtime-port.ts";
 import type {
   AgentIntegrationPort,
-  DiscoveredProviderSessionRef,
   ProviderLaunchPlan,
-  RuntimeReadinessGate,
 } from "../../../application/ports/outbound/agent-integration-port.ts";
 import type { ProviderReadinessPort } from "../../../application/ports/outbound/provider-readiness-port.ts";
-import type { RuntimeReadinessRegistry } from "../../../application/services/runtime-readiness-registry.ts";
-import {
-  type CodexMenuNavigation,
-  decodeCodexMenuNavigation,
-  PTY_CANCEL_TOKEN,
-} from "../../../application/services/provider-tui-parsers.ts";
 import type {
   AgentId,
   ProviderCliAgentId,
@@ -32,52 +24,10 @@ import type {
 
 export type AgentIntegrationRegistry = Record<ProviderCliAgentId, AgentIntegrationPort>;
 
-export interface PtyProcessHandle {
-  runtimeId: string;
-  // PID of the spawned process (the PTY host). Used to deterministically find the
-  // rollout file the provider CLI this run owns is actually writing, instead of
-  // guessing by recency + prompt text.
-  pid?: number;
-  write(data: string): Promise<void> | void;
-  resize?(cols: number, rows: number): void;
-  stop(): Promise<void> | void;
-}
-
-export interface PtyProcessOutput {
-  source: "stdout" | "stderr";
-  body: string;
-}
-
-export interface PtyProcessExit {
-  exitCode: number | null;
-  signal: string | null;
-}
-
-export interface PtyProcessSpawnInput {
-  runtimeId: string;
-  plan: ProviderLaunchPlan;
-  onOutput?: (output: PtyProcessOutput) => void;
-  onExit?: (exit: PtyProcessExit) => void;
-}
-
-export interface PtyProcessLauncher {
-  spawn(input: PtyProcessSpawnInput): Promise<PtyProcessHandle>;
-}
-
-interface RuntimeProcessState {
-  handle: PtyProcessHandle;
-  threadId: string;
-  agentId: ProviderCliAgentId;
-  inputTiming?: ProviderLaunchPlan["inputTiming"];
-  submitKeySequence?: string;
-  autoRespondPrompts?: ProviderLaunchPlan["autoRespondPrompts"];
-  startupDelayConsumed: boolean;
-  autoRespondedPatterns: Set<string>;
-}
-
-// A structured-transport runtime: the provider's machine protocol over plain
-// stdio. None of the PTY machinery (startup delays, submit keys, menu
-// navigation, auto-responders) exists here — input routing is protocol-native.
+// A live structured-transport runtime: the provider's machine protocol over
+// plain stdio (claude stream-json / codex app-server / gemini ACP). There is no
+// PTY, no scrape, no hooks, no polling — the client pushes normalized
+// StructuredProviderEvents. See docs_v2/specs/structured-agent-runtime.md.
 interface StructuredRuntimeState {
   client: StructuredRuntimeClient;
   threadId: string;
@@ -86,28 +36,8 @@ interface StructuredRuntimeState {
 
 export interface CreateAgentIntegrationRuntimePortInput {
   integrations: AgentIntegrationRegistry;
-  launcher: PtyProcessLauncher;
-  onOutputFrame?: (frame: {
-    threadId: string;
-    agentId: ProviderCliAgentId;
-    runtimeId: string;
-    // PID of this run's spawned PTY host, so the provider session binding can find
-    // the exact rollout this process owns instead of matching by prompt text.
-    runtimePid?: number;
-    source: PtyProcessOutput["source"];
-    body: string;
-  }) => Promise<void> | void;
-  onRuntimeStarted?: (runtime: {
-    threadId: string;
-    agentId: ProviderCliAgentId;
-    runtimeId: string;
-    // The session this runtime will run as, when the launch plan assigned it
-    // (claude/gemini minted --session-id). Recorded as the thread's binding
-    // before the first history poll — deterministic, never recency-discovered.
-    providerSessionRef?: DiscoveredProviderSessionRef;
-  }) => Promise<void> | void;
-  // Normalized protocol events from STRUCTURED runtimes (content records,
-  // prompts, turn ends, session refs). PTY runtimes never emit these.
+  // Normalized protocol events from the structured runtime clients (content
+  // records, prompts, turn ends, session refs).
   onProviderEvent?: (input: {
     threadId: string;
     agentId: ProviderCliAgentId;
@@ -116,9 +46,6 @@ export interface CreateAgentIntegrationRuntimePortInput {
   }) => Promise<void> | void;
   clock?: () => string;
   idGenerator?: () => string;
-  // Gates the first-turn handoff for tool_surface_ready agents: the first prompt is
-  // delivered only after this runtime's Tide MCP tool surface is ready.
-  readinessRegistry?: RuntimeReadinessRegistry;
 }
 
 export interface CreateAgentIntegrationProviderReadinessPortInput {
@@ -175,24 +102,15 @@ export function createAgentIntegrationAgentRuntimePort(
 
 class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   private readonly integrations: AgentIntegrationRegistry;
-  private readonly launcher: PtyProcessLauncher;
-  private readonly onOutputFrame?: CreateAgentIntegrationRuntimePortInput["onOutputFrame"];
-  private readonly onRuntimeStarted?: CreateAgentIntegrationRuntimePortInput["onRuntimeStarted"];
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
-  private readonly readinessRegistry?: RuntimeReadinessRegistry;
   private readonly onProviderEvent?: CreateAgentIntegrationRuntimePortInput["onProviderEvent"];
-  private readonly processes = new Map<string, RuntimeProcessState>();
-  private readonly structuredRuntimes = new Map<string, StructuredRuntimeState>();
+  private readonly runtimes = new Map<string, StructuredRuntimeState>();
 
   constructor(input: CreateAgentIntegrationRuntimePortInput) {
     this.integrations = input.integrations;
-    this.launcher = input.launcher;
-    this.onOutputFrame = input.onOutputFrame;
-    this.onRuntimeStarted = input.onRuntimeStarted;
     this.clock = input.clock ?? defaultClock;
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
-    this.readinessRegistry = input.readinessRegistry;
     this.onProviderEvent = input.onProviderEvent;
   }
 
@@ -203,8 +121,8 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
 
     traceAgentRuntime(`start ${input.agentBinding.agentId} thread=${input.threadId}`);
     const integration = this.integrations[input.agentBinding.agentId];
-    // Generate the runtime id up front so the launch plan can embed it (codex needs
-    // it in its MCP server config env — it does not inherit the parent env).
+    // The runtime id is generated up front so the launch plan can embed it (codex
+    // needs it in its MCP server config env — it does not inherit the parent env).
     const runtimeId = this.idGenerator();
     const plan = await integration.buildStartPlan({
       agentId: input.agentBinding.agentId,
@@ -215,36 +133,73 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       runtimeId,
     });
     traceAgentRuntime(`plan ${input.agentBinding.agentId} command=${plan.command}`);
-
-    if (plan.transport !== undefined && plan.transport !== "hidden_pty") {
-      // Structured transports deliver the first turn themselves, gated on the
-      // protocol's own readiness signal (e.g. claude's init message) — no PTY
-      // startup delays, no MCP readiness registry.
-      return this.spawnStructuredRuntime(
-        input.threadId,
-        input.agentBinding.agentId,
-        plan,
-        runtimeId,
-        input.initialPrompt,
-      );
-    }
-
-    const handle = await this.spawnRuntime(
+    return this.spawnRuntime(
       input.threadId,
       input.agentBinding.agentId,
       plan,
       runtimeId,
+      input.initialPrompt,
     );
-    // First-turn handoff: tool_surface_ready agents (codex/claude) receive their
-    // first prompt via writeInput AFTER the tool surface is ready — never via launch
-    // argv — so the turn cannot start before MCP tools are registered for dispatch.
-    // immediate agents (antigravity) carry the prompt in their launch plan, so the
-    // port does nothing here. See docs_v2/specs/agent-turn-handoff-readiness.md.
-    this.deliverFirstTurn(handle, integration.initialTurnReadiness(), input.initialPrompt);
-    return handle;
   }
 
-  private spawnStructuredRuntime(
+  async resume(input: AgentRuntimeResumeInput): Promise<AgentRuntimeHandle> {
+    if (!isProviderCliAgentId(input.agentBinding.agentId)) {
+      throw new Error("Tide API Agents do not resume through the Provider CLI runtime port.");
+    }
+
+    const providerSessionRef = input.agentBinding.providerSessionRef;
+    if (providerSessionRef === undefined) {
+      throw new Error("Provider session reference is required to resume Agent Runtime.");
+    }
+
+    const integration = this.integrations[input.agentBinding.agentId];
+    const runtimeId = this.idGenerator();
+    const plan = await integration.buildResumePlan({
+      agentId: input.agentBinding.agentId,
+      providerSessionRef,
+      scope: input.scope,
+      runtimeId,
+    });
+    return this.spawnRuntime(
+      input.threadId,
+      input.agentBinding.agentId,
+      plan,
+      runtimeId,
+      undefined,
+      providerSessionRef.value,
+    );
+  }
+
+  async writeInput(handle: AgentRuntimeHandle, input: TerminalInput): Promise<void> {
+    const runtime = this.runtimes.get(handle.runtimeId);
+    if (runtime === undefined) {
+      throw new Error("Agent Runtime handle was not found.");
+    }
+    if (input.kind === "composer_input") {
+      await runtime.client.write({ kind: "composer_input", value: input.value });
+      return;
+    }
+    if (input.kind === "prompt_answer") {
+      await runtime.client.write({
+        kind: "prompt_answer",
+        promptId: input.promptId,
+        choiceId: input.choiceId,
+        value: input.value,
+      });
+    }
+    // Raw terminal bytes have no meaning on a structured transport.
+  }
+
+  async stop(handle: AgentRuntimeHandle): Promise<void> {
+    const runtime = this.runtimes.get(handle.runtimeId);
+    if (runtime === undefined) {
+      return;
+    }
+    await runtime.client.stop();
+    this.runtimes.delete(handle.runtimeId);
+  }
+
+  private spawnRuntime(
     threadId: string,
     agentId: ProviderCliAgentId,
     plan: ProviderLaunchPlan,
@@ -252,11 +207,13 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     initialPrompt?: string,
     resumeRef?: string,
   ): AgentRuntimeHandle {
-    // One live runtime per thread (same invariant as the PTY path).
-    for (const [existingRuntimeId, state] of this.structuredRuntimes) {
+    // One live runtime per thread: tear down any existing one so a thread can
+    // never double-run (two clients on one session tangle the turn).
+    for (const [existingRuntimeId, state] of this.runtimes) {
       if (state.threadId === threadId) {
+        traceAgentRuntime(`reaping duplicate runtime=${existingRuntimeId} thread=${threadId}`);
         void Promise.resolve(state.client.stop()).catch(() => undefined);
-        this.structuredRuntimes.delete(existingRuntimeId);
+        this.runtimes.delete(existingRuntimeId);
       }
     }
     const runtimePlan: ProviderLaunchPlan = {
@@ -303,332 +260,22 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
         });
         break;
       default:
-        throw new Error(`Unsupported structured transport: ${String(plan.transport)}`);
+        throw new Error(`Unsupported runtime transport: ${String(plan.transport)}`);
     }
-    this.structuredRuntimes.set(runtimeId, { client, threadId, agentId });
-    traceAgentRuntime(`spawned structured ${agentId} runtime=${runtimeId}`);
+    this.runtimes.set(runtimeId, { client, threadId, agentId });
+    traceAgentRuntime(`spawned ${agentId} runtime=${runtimeId} transport=${String(plan.transport)}`);
+    // A launch-assigned session ref (claude/gemini minted --session-id) binds the
+    // thread immediately; structured clients also emit session_ref from the
+    // protocol's own session id.
     if (runtimePlan.providerSessionRef !== undefined) {
-      emit({
-        kind: "session_ref",
-        ref: { ...runtimePlan.providerSessionRef },
-      });
+      emit({ kind: "session_ref", ref: { ...runtimePlan.providerSessionRef } });
     }
     return { runtimeId, threadId, agentId };
   }
-
-  private deliverFirstTurn(
-    handle: AgentRuntimeHandle,
-    gate: RuntimeReadinessGate,
-    initialPrompt: string | undefined,
-  ): void {
-    if (
-      gate.kind !== "tool_surface_ready" ||
-      initialPrompt === undefined ||
-      initialPrompt.length === 0
-    ) {
-      return;
-    }
-    void (async () => {
-      try {
-        if (this.readinessRegistry !== undefined) {
-          await this.readinessRegistry.awaitToolSurface(handle.runtimeId);
-        }
-        await this.writeInput(handle, {
-          kind: "composer_input",
-          value: initialPrompt,
-          submittedAt: this.clock(),
-        });
-        traceAgentRuntime(`first-turn delivered runtime=${handle.runtimeId}`);
-      } catch (error) {
-        traceAgentRuntime(
-          `first-turn delivery failed runtime=${handle.runtimeId}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    })();
-  }
-
-  async resume(input: AgentRuntimeResumeInput): Promise<AgentRuntimeHandle> {
-    if (!isProviderCliAgentId(input.agentBinding.agentId)) {
-      throw new Error("Tide API Agents do not resume through the Provider CLI runtime port.");
-    }
-
-    const providerSessionRef = input.agentBinding.providerSessionRef;
-    if (providerSessionRef === undefined) {
-      throw new Error("Provider session reference is required to resume Agent Runtime.");
-    }
-
-    const integration = this.integrations[input.agentBinding.agentId];
-    const runtimeId = this.idGenerator();
-    const plan = await integration.buildResumePlan({
-      agentId: input.agentBinding.agentId,
-      providerSessionRef,
-      scope: input.scope,
-      runtimeId,
-    });
-
-    if (plan.transport !== undefined && plan.transport !== "hidden_pty") {
-      return this.spawnStructuredRuntime(
-        input.threadId,
-        input.agentBinding.agentId,
-        plan,
-        runtimeId,
-        undefined,
-        providerSessionRef.value,
-      );
-    }
-    return this.spawnRuntime(input.threadId, input.agentBinding.agentId, plan, runtimeId);
-  }
-
-  async writeInput(handle: AgentRuntimeHandle, input: TerminalInput): Promise<void> {
-    const structured = this.structuredRuntimes.get(handle.runtimeId);
-    if (structured !== undefined) {
-      if (input.kind === "composer_input") {
-        await structured.client.write({ kind: "composer_input", value: input.value });
-        return;
-      }
-      if (input.kind === "prompt_answer") {
-        await structured.client.write({
-          kind: "prompt_answer",
-          promptId: input.promptId,
-          choiceId: input.choiceId,
-          value: input.value,
-        });
-        return;
-      }
-      // Raw terminal bytes have no meaning on a structured transport.
-      return;
-    }
-    const processState = this.processes.get(handle.runtimeId);
-    if (processState === undefined) {
-      throw new Error("Agent Runtime handle was not found.");
-    }
-
-    traceAgentRuntime(`write ${processState.agentId} runtime=${handle.runtimeId} kind=${input.kind}`);
-    // A CLI TUI needs a beat after spawn before it will accept typed input; typing
-    // the first message too early drops it and the turn never starts. The readiness
-    // gate covers MCP-tool registration, this covers TUI input-readiness. Once per
-    // runtime, on its first write.
-    await waitForStartupWindow(processState);
-
-    // Answering a TUI approval/choice menu is not typed text: the providerValue is a
-    // menu-navigation token. Replay it as keyed navigation (ArrowDown/ArrowUp + Enter)
-    // on the live PTY so the agent's own menu cursor lands on the chosen option. This
-    // applies to codex AND claude — both surface their shell-command/tool permission as
-    // an interactive boxed menu in the hidden PTY (claude's "Do you want to proceed? ❯1.
-    // Yes 2.… 3.No"). A non-nav value (hook prompts, free-form "Other") decodes to null
-    // and falls through to the generic typed path. See agent-prompt-surfacing.md.
-    if (input.kind === "prompt_answer") {
-      // Deny / dismiss a permission box: Escape reliably cancels the agent's TUI box
-      // even when its exact option layout is unknown (hook-surfaced claude prompts).
-      if (input.value === PTY_CANCEL_TOKEN) {
-        await processState.handle.write("\x1b");
-        traceAgentRuntime(`wrote ${processState.agentId} cancel(esc) runtime=${handle.runtimeId}`);
-        return;
-      }
-      const navigation = decodeCodexMenuNavigation(input.value);
-      if (navigation !== null) {
-        await sendCodexMenuNavigation(processState.handle, navigation);
-        traceAgentRuntime(`wrote ${processState.agentId} menu nav runtime=${handle.runtimeId} steps=${navigation.steps}`);
-        return;
-      }
-    }
-
-    if (
-      input.kind === "composer_input" &&
-      processState.inputTiming?.preSubmitDelayMs !== undefined
-    ) {
-      await processState.handle.write(input.value);
-      await sleep(processState.inputTiming.preSubmitDelayMs);
-      await processState.handle.write(processState.submitKeySequence ?? "\r");
-      traceAgentRuntime(`wrote ${processState.agentId} runtime=${handle.runtimeId}`);
-      return;
-    }
-
-    await processState.handle.write(terminalBytesForInput(processState, input));
-    traceAgentRuntime(`wrote ${processState.agentId} runtime=${handle.runtimeId}`);
-  }
-
-  async stop(handle: AgentRuntimeHandle): Promise<void> {
-    const structured = this.structuredRuntimes.get(handle.runtimeId);
-    if (structured !== undefined) {
-      await structured.client.stop();
-      this.structuredRuntimes.delete(handle.runtimeId);
-      return;
-    }
-    const processState = this.processes.get(handle.runtimeId);
-    if (processState === undefined) {
-      return;
-    }
-
-    await processState.handle.stop();
-    this.processes.delete(handle.runtimeId);
-  }
-
-  private async spawnRuntime(
-    threadId: string,
-    agentId: ProviderCliAgentId,
-    plan: ProviderLaunchPlan,
-    runtimeId: string,
-  ): Promise<AgentRuntimeHandle> {
-    // One live runtime process per Thread. Under heavy concurrent spawning we have
-    // seen a Thread end up with TWO live provider processes (two PTYs, two rollouts)
-    // that then both write the same provider session spool and tangle the turn — the
-    // turn never settles and the UI hangs "Working". Tear down any existing process
-    // for this Thread before starting a new one so a Thread can never double-run.
-    for (const [existingRuntimeId, state] of this.processes) {
-      if (state.threadId === threadId) {
-        traceAgentRuntime(`reaping duplicate runtime=${existingRuntimeId} thread=${threadId}`);
-        void Promise.resolve(state.handle.stop()).catch(() => undefined);
-        this.processes.delete(existingRuntimeId);
-      }
-    }
-
-    const runtimePlan: ProviderLaunchPlan = {
-      ...plan,
-      env: {
-        ...plan.env,
-        TIDE_THREAD_ID: threadId,
-        TIDE_RUNTIME_ID: runtimeId,
-        TIDE_AGENT_ID: agentId,
-      },
-      expectedSignalSources: plan.expectedSignalSources.map((source) => ({ ...source })),
-    };
-    const process = await this.launcher.spawn({
-      runtimeId,
-      plan: runtimePlan,
-      onOutput: (output) => {
-        runPlanAutoResponders(this.processes.get(runtimeId), output.body);
-        void this.onOutputFrame?.({
-          threadId,
-          agentId,
-          runtimeId,
-          runtimePid: this.processes.get(runtimeId)?.handle.pid,
-          source: output.source,
-          body: output.body,
-        });
-      },
-    });
-    traceAgentRuntime(`spawned ${agentId} runtime=${runtimeId}`);
-    this.processes.set(runtimeId, {
-      handle: process,
-      threadId,
-      agentId,
-      inputTiming: plan.inputTiming,
-      submitKeySequence: plan.submitKeySequence,
-      autoRespondPrompts: plan.autoRespondPrompts,
-      startupDelayConsumed: false,
-      autoRespondedPatterns: new Set(),
-    });
-    void this.onRuntimeStarted?.({
-      threadId,
-      agentId,
-      runtimeId,
-      ...(plan.providerSessionRef !== undefined
-        ? { providerSessionRef: plan.providerSessionRef }
-        : {}),
-    });
-
-    return {
-      runtimeId,
-      threadId,
-      agentId,
-    };
-  }
-}
-
-// Replays a launch-plan-declared auto-response the first time its pattern shows
-// up in this runtime's PTY output (e.g. codex's "Hooks need review" trust box for
-// Tide's own generated hooks). Provider-neutral: the pattern/keys are declared by
-// the provider's Agent Integration on the launch plan.
-function runPlanAutoResponders(
-  processState: RuntimeProcessState | undefined,
-  body: string,
-): void {
-  if (processState?.autoRespondPrompts === undefined) {
-    return;
-  }
-  for (const responder of processState.autoRespondPrompts) {
-    if (processState.autoRespondedPatterns.has(responder.pattern)) {
-      continue;
-    }
-    let matches = false;
-    try {
-      matches = new RegExp(responder.pattern).test(body);
-    } catch {
-      matches = false;
-    }
-    if (!matches) {
-      continue;
-    }
-    processState.autoRespondedPatterns.add(responder.pattern);
-    void (async () => {
-      for (const key of responder.response) {
-        await processState.handle.write(key);
-        await sleep(responder.interKeyDelayMs ?? 150);
-      }
-    })();
-  }
-}
-
-// codex's TUI reads one key event at a time and needs a beat between them (the same
-// reason the hook-trust auto-answer sleeps between ArrowDown and Enter). Drive the menu
-// cursor with |steps| ArrowDown (steps>0) or ArrowUp (steps<0) presses, each followed
-// by a short delay, then Enter to submit the highlighted option.
-const CODEX_MENU_KEY_DELAY_MS = 120;
-const ARROW_DOWN = "\x1b[B";
-const ARROW_UP = "\x1b[A";
-async function sendCodexMenuNavigation(
-  handle: PtyProcessHandle,
-  navigation: CodexMenuNavigation,
-): Promise<void> {
-  const key = navigation.steps >= 0 ? ARROW_DOWN : ARROW_UP;
-  const presses = Math.abs(navigation.steps);
-  for (let i = 0; i < presses; i += 1) {
-    await handle.write(key);
-    await sleep(CODEX_MENU_KEY_DELAY_MS);
-  }
-  await handle.write("\r");
-}
-
-async function waitForStartupWindow(processState: RuntimeProcessState): Promise<void> {
-  if (processState.startupDelayConsumed) {
-    return;
-  }
-  processState.startupDelayConsumed = true;
-  await sleep(processState.inputTiming?.startupDelayMs ?? 0);
-}
-
-function terminalBytesForInput(
-  processState: { submitKeySequence?: string },
-  input: TerminalInput,
-): string {
-  const value = input.value;
-  if (input.kind === "prompt_answer") {
-    return `${value.length > 0 ? value : input.choiceId ?? value}\r`;
-  }
-
-  return `${value}${processState.submitKeySequence ?? "\r"}`;
 }
 
 function isProviderCliAgentId(agentId: AgentId): agentId is ProviderCliAgentId {
-  return (
-    agentId === "codex" ||
-    agentId === "claude" ||
-    agentId === "antigravity" ||
-    agentId === "gemini"
-  );
-}
-
-function sleep(ms: number): Promise<void> {
-  if (ms <= 0) {
-    return Promise.resolve();
-  }
-
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+  return agentId === "codex" || agentId === "claude" || agentId === "gemini";
 }
 
 function defaultClock(): string {
