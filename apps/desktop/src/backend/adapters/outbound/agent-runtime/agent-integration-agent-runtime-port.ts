@@ -24,6 +24,7 @@ import type {
 } from "../../../application/domains/thread/thread.ts";
 import { createClaudeStreamJsonClient } from "./structured/claude-stream-json-client.ts";
 import { createCodexAppServerClient } from "./structured/codex-app-server-client.ts";
+import { createGeminiAcpClient } from "./structured/gemini-acp-client.ts";
 import type {
   StructuredProviderEvent,
   StructuredRuntimeClient,
@@ -288,6 +289,16 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           runtimeId,
           initialPrompt,
           resumeThreadId: resumeRef,
+          onEvent: emit,
+        });
+        break;
+      case "gemini_acp":
+        client = createGeminiAcpClient({
+          plan: runtimePlan,
+          threadId,
+          runtimeId,
+          initialPrompt,
+          resumeSessionId: resumeRef,
           onEvent: emit,
         });
         break;
