@@ -1043,12 +1043,22 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       );
     }
 
+    const existing = thread.agentBinding.providerSessionRef;
     if (
-      thread.agentBinding.providerSessionRef !== undefined &&
-      !providerSessionRefsEqual(
-        thread.agentBinding.providerSessionRef,
-        input.providerSessionRef,
-      )
+      existing !== undefined &&
+      (existing.kind !== input.providerSessionRef.kind ||
+        existing.value !== input.providerSessionRef.value)
+    ) {
+      // A DIFFERENT session may never steal the binding.
+      return {
+        ok: true,
+        thread: snapshotThread(thread),
+        runtimeState: thread.runtimeState,
+      };
+    }
+    if (
+      existing !== undefined &&
+      providerSessionRefsEqual(existing, input.providerSessionRef)
     ) {
       return {
         ok: true,
@@ -1057,7 +1067,19 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       };
     }
 
-    thread.agentBinding.providerSessionRef = { ...input.providerSessionRef };
+    // Same session (kind+value): allow the paths to be REFINED — the launch plan
+    // may know the session id before the provider materializes the file, and the
+    // hook later reports the authoritative on-disk path (which can differ from any
+    // plan-time guess via symlinks/casing). Never erase a known path with undefined.
+    const transcriptPath =
+      input.providerSessionRef.transcriptPath ?? existing?.transcriptPath;
+    const logPath = input.providerSessionRef.logPath ?? existing?.logPath;
+    thread.agentBinding.providerSessionRef = {
+      kind: input.providerSessionRef.kind,
+      value: input.providerSessionRef.value,
+      ...(transcriptPath !== undefined ? { transcriptPath } : {}),
+      ...(logPath !== undefined ? { logPath } : {}),
+    };
     thread.updatedAt = this.clock();
 
     return {

@@ -28,10 +28,7 @@ import {
   parseCodexApprovalPrompt,
   PTY_CANCEL_TOKEN,
 } from "../../../../application/services/provider-tui-parsers.ts";
-import {
-  claudeProjectDirName,
-  createClaudeHistoryConnector,
-} from "./claude-history-connector.ts";
+import { createClaudeHistoryConnector } from "./claude-history-connector.ts";
 
 export interface ClaudeProviderState {
   authenticated: boolean;
@@ -57,9 +54,11 @@ export interface CreateClaudeAgentIntegrationInput {
   settingsPath: string;
   tideContextPrompt: string;
   defaultCwd?: string;
-  // Used to compute the plan-time transcript path for a minted session id
-  // (~/.claude/projects/<munged-cwd>/<session-id>.jsonl).
-  homeDir?: string;
+  // Locates the on-disk transcript for a minted session id (infra-injected).
+  // The path is NOT computed from the cwd: claude munges its OWN getcwd (the
+  // canonical kernel path), which can differ from Tide's spelling via symlinks
+  // (/var -> /private/var) or casing — a guessed path silently reads nothing.
+  locateSessionFile?: (sessionId: string) => string | undefined;
   // Mints the per-runtime session id passed via `--session-id`, so the thread's
   // session binding is deterministic at launch. Injectable for tests.
   mintSessionId?: () => string;
@@ -107,9 +106,8 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
   private readonly settingsPath: string;
   private readonly tideContextPrompt: string;
   private readonly defaultCwd: string;
-  private readonly homeDir: string | undefined;
   private readonly mintSessionId: () => string;
-  private readonly historyConnector = createClaudeHistoryConnector();
+  private readonly historyConnector: ProviderHistoryConnector;
 
   constructor(input: CreateClaudeAgentIntegrationInput) {
     this.resolveExecutable = input.resolveExecutable;
@@ -118,8 +116,10 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     this.settingsPath = input.settingsPath;
     this.tideContextPrompt = input.tideContextPrompt;
     this.defaultCwd = input.defaultCwd ?? ".";
-    this.homeDir = input.homeDir;
     this.mintSessionId = input.mintSessionId ?? (() => randomUUID());
+    this.historyConnector = createClaudeHistoryConnector({
+      locateSessionFile: input.locateSessionFile,
+    });
   }
 
   async preflight(
@@ -434,13 +434,9 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
               agentId: "claude" as const,
               kind: "claude_transcript" as const,
               value: input.sessionId,
-              // The transcript path is fully determined by cwd + session id, so the
-              // binding is recorded before claude even creates the file.
-              ...(this.homeDir !== undefined
-                ? {
-                    transcriptPath: `${this.homeDir}/.claude/projects/${claudeProjectDirName(input.cwd)}/${input.sessionId}.jsonl`,
-                  }
-                : {}),
+              // The on-disk transcript path is resolved by the history connector
+              // (by session id) once claude creates the file, and confirmed by the
+              // hook payload's transcript_path.
             },
           }
         : {}),

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -22,21 +22,38 @@ export function createNodeProviderTrustPort(
   const home = homeDir ?? homedir();
   return {
     async trust(input: { agentId: string; cwd: string }): Promise<void> {
-      switch (input.agentId) {
-        case "claude":
-          trustClaude(home, input.cwd);
-          return;
-        case "codex":
-          trustCodex(home, input.cwd, codexOverlayHome);
-          return;
-        case "antigravity":
-          trustAntigravity(home, input.cwd);
-          return;
-        default:
-          return;
+      // A provider's trust check is a case/symlink-SENSITIVE string match against
+      // the cwd its process resolves via getcwd() — the canonical on-disk path.
+      // Tide may hold a different spelling (macOS /var -> /private/var, case-
+      // insensitive FS casing), so trust BOTH spellings or the hidden PTY blocks
+      // on a trust dialog nobody can see. realpathSync.native returns the true
+      // kernel path (plain realpathSync does not fix casing on macOS).
+      for (const cwd of cwdSpellings(input.cwd)) {
+        switch (input.agentId) {
+          case "claude":
+            trustClaude(home, cwd);
+            break;
+          case "codex":
+            trustCodex(home, cwd, codexOverlayHome);
+            break;
+          case "antigravity":
+            trustAntigravity(home, cwd);
+            break;
+          default:
+            return;
+        }
       }
     },
   };
+}
+
+function cwdSpellings(cwd: string): string[] {
+  try {
+    const canonical = realpathSync.native(cwd);
+    return canonical === cwd ? [cwd] : [cwd, canonical];
+  } catch {
+    return [cwd];
+  }
 }
 
 function trustClaude(home: string, cwd: string): void {

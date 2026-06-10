@@ -19,8 +19,28 @@ import {
 // Tide at launch (`--session-id`), so the transcript path is known at plan time;
 // the Stop/Notification hooks carry the same id and confirm it.
 
-export function createClaudeHistoryConnector(): ProviderHistoryConnector {
+export function createClaudeHistoryConnector(input?: {
+  // Locates the on-disk transcript for a minted session id (deterministic — by
+  // id, never by recency). Claude munges its OWN canonical cwd into the project
+  // directory name, so the path cannot be guessed from Tide's cwd spelling.
+  locateSessionFile?: (sessionId: string) => string | undefined;
+}): ProviderHistoryConnector {
+  const locateSessionFile = input?.locateSessionFile;
   return {
+    ...(locateSessionFile !== undefined
+      ? {
+          resolveSessionRef: (assignedSessionRef) => {
+            if (assignedSessionRef.transcriptPath !== undefined) {
+              return assignedSessionRef;
+            }
+            const transcriptPath = locateSessionFile(assignedSessionRef.value);
+            if (transcriptPath === undefined) {
+              return undefined;
+            }
+            return { ...assignedSessionRef, transcriptPath };
+          },
+        }
+      : {}),
     readFrames: readClaudeHistoryFrames,
     sessionRefFromHookPayload: claudeSessionRefFromHookPayload,
   };

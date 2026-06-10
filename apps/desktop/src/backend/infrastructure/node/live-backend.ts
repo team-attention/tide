@@ -229,7 +229,7 @@ export function createLiveBackendContractMessageAdapter(
       settingsPath: bootstrapArtifacts.claudeSettingsPath,
       tideContextPrompt: tideClaudeContextPrompt(),
       defaultCwd: process.cwd(),
-      homeDir,
+      locateSessionFile: (sessionId) => locateClaudeTranscriptFile(homeDir, sessionId),
     }),
     antigravity: createAntigravityAgentIntegration({
       resolveExecutable: () => resolveExecutable("agy"),
@@ -1928,6 +1928,33 @@ function rebuildAdoptedConversation(seed: ThreadSeed): AgentSessionBlock[] {
 // ~/.gemini/tmp/<project>/chats/session-<ts>-<uuid8>.jsonl whose header line
 // carries the full sessionId. Deterministic — keyed by the assigned id, never by
 // recency — so concurrent same-prompt threads can never swap sessions.
+// Locates the on-disk claude transcript for a Tide-minted session id:
+// ~/.claude/projects/<munged-cwd>/<session-id>.jsonl. Deterministic — keyed by
+// the assigned id (the filename IS the id), never by recency. The project dir is
+// scanned because claude munges its OWN canonical cwd, which can differ from
+// Tide's spelling via symlinks (/var -> /private/var) or casing.
+export function locateClaudeTranscriptFile(
+  homeDir: string,
+  sessionId: string,
+): string | undefined {
+  const projectsRoot = join(homeDir, ".claude", "projects");
+  let projectDirs: string[];
+  try {
+    projectDirs = readdirSync(projectsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return undefined;
+  }
+  for (const project of projectDirs) {
+    const candidate = join(projectsRoot, project, `${sessionId}.jsonl`);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 export function locateGeminiSessionFile(
   homeDir: string,
   sessionId: string,
