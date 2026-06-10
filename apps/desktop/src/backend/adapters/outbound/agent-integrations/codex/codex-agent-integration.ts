@@ -338,50 +338,29 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       env.CODEX_HOME = input.codexHome;
     }
 
-    const launchOptionArgs = codexLaunchOptionArgs(input.launchOptions);
-    // The first user message is NOT embedded as a positional [PROMPT]. It is
-    // delivered through the shared turn-handoff path after the tool-surface
-    // readiness gate, so the turn never starts before the Tide MCP tools are
-    // registered for dispatch. See agent-turn-handoff-readiness.md.
-    const args =
-      input.resumeRef === undefined
-        ? [
-            "--no-alt-screen",
-            ...launchOptionArgs,
-            "--dangerously-bypass-hook-trust",
-            ...codexConfigArgs(tideMcp),
-          ]
-        : [
-            "resume",
-            "--no-alt-screen",
-            input.resumeRef,
-            ...launchOptionArgs,
-            "--dangerously-bypass-hook-trust",
-            ...codexConfigArgs(tideMcp),
-          ];
+    // STRUCTURED TRANSPORT: the app-server protocol over plain stdio — the same
+    // protocol the Codex IDE extension speaks. Session parameters (cwd,
+    // approvalPolicy, sandbox, model, reasoning effort) ride thread/start via
+    // protocolParams; Tide MCP config rides `-c` overrides (verified: app-server
+    // accepts the global -c flag). No TUI: no hook-trust box, no startup delays.
+    // Approvals arrive as server-initiated JSON-RPC requests and the model does
+    // not proceed until the decision result is written back.
+    const reasoning = stringValue(input.launchOptions?.reasoning);
+    const args = [
+      "app-server",
+      ...(reasoning === "low" || reasoning === "medium" || reasoning === "high" || reasoning === "xhigh"
+        ? ["-c", `model_reasoning_effort=${codexConfigString(reasoning)}`]
+        : []),
+      ...codexConfigArgs(tideMcp),
+    ];
 
     return {
       command: input.executablePath,
       args,
       env,
       cwd: input.cwd,
-      inputTiming: {
-        startupDelayMs: 5000,
-        preSubmitDelayMs: 350,
-      },
-      // Codex shows an interactive "Hooks need review" trust box the first time it
-      // sees Tide's generated hooks (--dangerously-bypass-hook-trust only applies
-      // to `codex exec`, not the TUI). Auto-select "Trust all and continue"
-      // (ArrowDown to option 2, then Enter); codex persists the trust keyed by the
-      // hooks path, so this fires once per hooks file. Without it the hidden PTY
-      // blocks forever and the Agent never answers.
-      autoRespondPrompts: [
-        {
-          pattern: "Hooks need review|Trust all and continue",
-          response: ["\x1b[B", "\r"],
-          interKeyDelayMs: 150,
-        },
-      ],
+      transport: "codex_app_server",
+      protocolParams: codexThreadStartParams(input.launchOptions),
       expectedSignalSources: expectedSignalSources.map((source) => ({ ...source })),
     };
   }
@@ -471,6 +450,44 @@ function codexConfigArgs(tideMcp: CodexTideMcpConfig | undefined): string[] {
 
 function codexConfigString(value: string): string {
   return JSON.stringify(value);
+}
+
+// thread/start parameters for the app-server transport: the SAME approval/
+// sandbox expansion the TUI flags used, expressed as protocol values
+// (bindings: ThreadStartParams.approvalPolicy / sandbox / model).
+function codexThreadStartParams(
+  launchOptions: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  const model = stringValue(launchOptions?.model);
+  if (model !== undefined) {
+    params.model = model;
+  }
+  const permission = stringValue(launchOptions?.permission);
+  if (permission === "ask-for-approval") {
+    params.sandbox = "workspace-write";
+    params.approvalPolicy = "on-request";
+  } else if (permission === "approve-for-me") {
+    params.sandbox = "workspace-write";
+    params.approvalPolicy = "on-failure";
+  } else if (permission === "full-access" || permission === "dangerously-bypass-approvals-and-sandbox") {
+    params.sandbox = "danger-full-access";
+    params.approvalPolicy = "never";
+  } else if (
+    permission === "read-only" ||
+    permission === "workspace-write" ||
+    permission === "danger-full-access"
+  ) {
+    params.sandbox = permission;
+  } else if (
+    permission === "untrusted" ||
+    permission === "on-request" ||
+    permission === "never" ||
+    permission === "on-failure"
+  ) {
+    params.approvalPolicy = permission;
+  }
+  return params;
 }
 
 function codexLaunchOptionArgs(

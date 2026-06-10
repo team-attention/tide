@@ -134,10 +134,12 @@ test("runtime_port_has_no_hardcoded_provider_key_sequences", () => {
     "src/backend/adapters/outbound/agent-integrations/claude/claude-agent-integration.ts",
   );
   assert.ok(claudeAdapter.includes('transport: "claude_stream_json"'));
+  // codex moved to the structured app-server transport: no TUI boxes to
+  // auto-answer, so its plan declares a transport instead of auto-responders.
   const codexAdapter = read(
     "src/backend/adapters/outbound/agent-integrations/codex/codex-agent-integration.ts",
   );
-  assert.ok(codexAdapter.includes("autoRespondPrompts"));
+  assert.ok(codexAdapter.includes('transport: "codex_app_server"'));
 });
 
 // Deterministic session binding: the gemini recency heuristic must not return.

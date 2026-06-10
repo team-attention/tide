@@ -89,30 +89,19 @@ test("codex_preflight_requires_hook_bootstrap_before_ready_launch", async () => 
   assert.equal(result.launchPlan, undefined);
 });
 
-test("codex_ready_preflight_returns_hidden_pty_start_plan_with_hooks_mcp_and_terminal_env", async () => {
+test("codex_ready_preflight_returns_app_server_plan_with_tide_mcp_config", async () => {
   const integration = codexIntegration();
 
   const result = await integration.preflight(basePreflightInput);
 
   assert.equal(result.ready, true);
+  // Structured transport: the app-server protocol (the Codex IDE extension's).
+  assert.equal(result.launchPlan?.transport, "codex_app_server");
   assert.equal(result.launchPlan?.command, "/usr/local/bin/codex");
   assert.equal(result.launchPlan?.cwd, "/repo");
-  assert.equal(result.launchPlan?.env.TERM, "xterm-256color");
-  assert.equal(result.launchPlan?.env.COLORTERM, "truecolor");
-  assert.deepEqual(result.launchPlan?.inputTiming, {
-    startupDelayMs: 5000,
-    preSubmitDelayMs: 350,
-  });
-  assert.deepEqual(result.launchPlan?.args.slice(0, 1), ["--no-alt-screen"]);
-  assert.ok(
-    result.launchPlan?.args.includes("--dangerously-bypass-hook-trust"),
-    "Tide-generated Codex hooks must not stop the hidden PTY Thread at hook review.",
-  );
+  assert.equal(result.launchPlan?.args[0], "app-server");
+  // Tide MCP rides the global `-c` config overrides (no TUI, no hooks).
   assert.ok(result.launchPlan?.args.includes("-c"));
-  assert.ok(
-    result.launchPlan?.args.includes("features.hooks=true"),
-    "Codex hooks must be enabled by launch config.",
-  );
   assert.ok(
     result.launchPlan?.args.some((arg) =>
       arg === 'mcp_servers.tide.command="/tmp/tide-mcp-stdio"',
@@ -125,13 +114,17 @@ test("codex_ready_preflight_returns_hidden_pty_start_plan_with_hooks_mcp_and_ter
       'mcp_servers.tide.env.TIDE_SOCKET="/tmp/tide.sock"',
     ),
   );
+  // No TUI machinery on a structured plan.
+  assert.equal(result.launchPlan?.inputTiming, undefined);
+  assert.equal(result.launchPlan?.autoRespondPrompts, undefined);
+  assert.equal(result.launchPlan?.args.includes("--dangerously-bypass-hook-trust"), false);
   assert.deepEqual(
     result.launchPlan?.expectedSignalSources.map((source) => source.kind),
     ["pty_transcript", "provider_hook", "provider_history", "tide_mcp"],
   );
 });
 
-test("codex_launch_plan_applies_provider_native_model_sandbox_and_approval_options", async () => {
+test("codex_launch_plan_applies_model_sandbox_and_approval_via_protocol_params", async () => {
   const integration = codexIntegration();
 
   const sandboxPlan = await integration.buildStartPlan({
@@ -147,13 +140,15 @@ test("codex_launch_plan_applies_provider_native_model_sandbox_and_approval_optio
     scope: projectScope,
     launchOptions: {
       model: "gpt-5.5-high",
-      permission: "on-request",
+      permission: "ask-for-approval",
     },
   });
 
-  assert.equal(sandboxPlan.args[sandboxPlan.args.indexOf("--model") + 1], "gpt-5.5-high");
-  assert.equal(sandboxPlan.args[sandboxPlan.args.indexOf("--sandbox") + 1], "workspace-write");
-  assert.equal(approvalPlan.args[approvalPlan.args.indexOf("--ask-for-approval") + 1], "on-request");
+  // Session parameters ride thread/start (protocolParams), not argv.
+  assert.equal(sandboxPlan.protocolParams?.model, "gpt-5.5-high");
+  assert.equal(sandboxPlan.protocolParams?.sandbox, "workspace-write");
+  assert.equal(approvalPlan.protocolParams?.sandbox, "workspace-write");
+  assert.equal(approvalPlan.protocolParams?.approvalPolicy, "on-request");
 });
 
 test("codex_launch_plan_maps_reasoning_effort_to_config_override", async () => {
@@ -186,7 +181,7 @@ test("codex_launch_plan_maps_reasoning_effort_to_config_override", async () => {
   );
 });
 
-test("codex_resume_plan_uses_provider_native_session_ref", async () => {
+test("codex_resume_plan_stays_on_app_server_transport", async () => {
   const integration = codexIntegration();
   const providerSessionRef: ProviderSessionRef = {
     kind: "codex_rollout",
@@ -200,11 +195,11 @@ test("codex_resume_plan_uses_provider_native_session_ref", async () => {
     scope: projectScope,
   });
 
-  assert.deepEqual(plan.args.slice(0, 3), [
-    "resume",
-    "--no-alt-screen",
-    "019e683e-6ca4-7422-9c36-3a929746c5ec",
-  ]);
+  // Resume happens IN protocol (thread/resume with the rollout id, verified
+  // cross-process in the evidence transcripts) — not via argv.
+  assert.equal(plan.transport, "codex_app_server");
+  assert.equal(plan.args[0], "app-server");
+  assert.equal(plan.args.includes("resume"), false);
   assert.equal(plan.cwd, "/repo");
 });
 
@@ -308,14 +303,17 @@ test("codex_tui_prompt_state_id_is_stable_across_re_renders_of_the_same_box", ()
   assert.equal(first?.promptId, second?.promptId);
 });
 
-test("codex_launch_plan_does_not_use_exec_json_app_server_or_remote_runtime", async () => {
+test("codex_launch_plan_uses_app_server_not_one_shot_exec", async () => {
+  // app-server is the PERSISTENT structured protocol (multi-turn, server-push
+  // approvals). One-shot `exec --json` would fork a fresh process per turn and
+  // lose the session; --remote leaves the machine. Both stay banned.
   const integration = codexIntegration();
 
   const result = await integration.preflight(basePreflightInput);
   const args = result.launchPlan?.args ?? [];
 
+  assert.equal(args[0], "app-server");
   assert.equal(args.includes("exec"), false);
-  assert.equal(args.includes("app-server"), false);
   assert.equal(args.includes("--remote"), false);
   assert.equal(args.includes("--json"), false);
 });

@@ -43,6 +43,9 @@ export interface ProviderLaunchPlan {
   // machine protocol over plain stdio — events, permissions, and turn ends are
   // native protocol messages (see docs_v2/specs/structured-agent-runtime.md).
   transport?: "hidden_pty" | "claude_stream_json" | "codex_app_server" | "gemini_acp";
+  // Structured-transport session parameters that ride the protocol instead of
+  // argv (codex thread/start approvalPolicy/sandbox/model; gemini session/new).
+  protocolParams?: Record<string, unknown>;
   inputTiming?: {
     startupDelayMs?: number;
     preSubmitDelayMs?: number;

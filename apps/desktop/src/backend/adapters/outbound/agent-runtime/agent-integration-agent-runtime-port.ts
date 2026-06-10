@@ -23,6 +23,7 @@ import type {
   ProviderCliAgentId,
 } from "../../../application/domains/thread/thread.ts";
 import { createClaudeStreamJsonClient } from "./structured/claude-stream-json-client.ts";
+import { createCodexAppServerClient } from "./structured/codex-app-server-client.ts";
 import type {
   StructuredProviderEvent,
   StructuredRuntimeClient,
@@ -248,6 +249,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     plan: ProviderLaunchPlan,
     runtimeId: string,
     initialPrompt?: string,
+    resumeRef?: string,
   ): AgentRuntimeHandle {
     // One live runtime per thread (same invariant as the PTY path).
     for (const [existingRuntimeId, state] of this.structuredRuntimes) {
@@ -276,6 +278,16 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           threadId,
           runtimeId,
           initialPrompt,
+          onEvent: emit,
+        });
+        break;
+      case "codex_app_server":
+        client = createCodexAppServerClient({
+          plan: runtimePlan,
+          threadId,
+          runtimeId,
+          initialPrompt,
+          resumeThreadId: resumeRef,
           onEvent: emit,
         });
         break;
@@ -351,6 +363,8 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
         input.agentBinding.agentId,
         plan,
         runtimeId,
+        undefined,
+        providerSessionRef.value,
       );
     }
     return this.spawnRuntime(input.threadId, input.agentBinding.agentId, plan, runtimeId);
