@@ -5,7 +5,7 @@ import type { GeminiProviderState } from "../../adapters/outbound/agent-integrat
 import type { CodexProviderState } from "../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
 import {
   isClaudeBootstrapReady,
-  isCodexBootstrapReady,
+  isMcpBootstrapReady,
   providerBootstrapArtifactsForHome,
 } from "./provider-bootstrap-artifacts.ts";
 import { readJsonFile, readTextFile } from "./live-backend-fs.ts";
@@ -30,7 +30,7 @@ export function readCodexProviderStateFromHome(
     authenticated: hasCodexAuth(auth),
     onboardingComplete: config !== undefined,
     trustedCwds: config === undefined ? [] : codexTrustedCwds(config),
-    hookBootstrapReady: isCodexBootstrapReady(bootstrapArtifacts),
+    hookBootstrapReady: isMcpBootstrapReady(bootstrapArtifacts),
     codexHome: bootstrapArtifacts.codexHome,
   };
 }

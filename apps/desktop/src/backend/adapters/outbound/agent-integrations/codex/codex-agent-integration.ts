@@ -149,7 +149,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       blockers.push({
         kind: "hook_bootstrap_required" as const,
         scope: "integration" as const,
-        message: "Tide Codex hook/bootstrap setup is required.",
+        message: "Tide Codex MCP bootstrap setup is required.",
         setup: hookSetup,
       });
     }
@@ -304,7 +304,6 @@ function codexSetupAction(
 
 function codexConfigArgs(tideMcp: CodexTideMcpConfig | undefined): string[] {
   const config = [
-    "features.hooks=true",
     'plugins."browser-use@openai-bundled".enabled=false',
   ];
 

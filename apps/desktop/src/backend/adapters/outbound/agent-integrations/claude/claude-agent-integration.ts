@@ -163,7 +163,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       blockers.push({
         kind: "hook_bootstrap_required",
         scope: "integration",
-        message: "Tide Claude Code hook/bootstrap setup is required.",
+        message: "Tide Claude Code MCP bootstrap setup is required.",
         setup,
       });
     }

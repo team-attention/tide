@@ -255,32 +255,6 @@ test("locate_gemini_session_file_matches_assigned_id_only", () => {
   );
 });
 
-test("provider_bootstrap_writes_tide_owned_gemini_hook_settings", () => {
-  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-gemini-bootstrap-"));
-  const artifacts = ensureProviderBootstrapArtifacts({ homeDir: home });
-  assert.equal(
-    artifacts.geminiSettingsPath,
-    providerBootstrapArtifactsForHome({ homeDir: home }).geminiSettingsPath,
-  );
-  const settings = JSON.parse(fs.readFileSync(artifacts.geminiSettingsPath, "utf8"));
-  for (const event of ["SessionStart", "BeforeAgent", "Notification", "AfterAgent"]) {
-    const groups = settings.hooks[event];
-    assert.ok(Array.isArray(groups) && groups.length === 1, `hook ${event} registered`);
-    const command = groups[0].hooks[0].command as string;
-    assert.ok(command.includes("--agent gemini"), `${event} signals as gemini`);
-  }
-  assert.ok(
-    (settings.hooks.AfterAgent[0].hooks[0].command as string).includes(
-      "--event agent-idle",
-    ),
-  );
-  assert.ok(
-    (settings.hooks.Notification[0].hooks[0].command as string).includes(
-      "--event agent-needs-input",
-    ),
-  );
-});
-
 test("gemini_reappended_record_upserts_one_block_not_duplicates", () => {
   // Gemini RE-APPENDS the same record id as content accumulates while streaming
   // (verified live: thoughts-only copy first, then a copy with toolCalls). The

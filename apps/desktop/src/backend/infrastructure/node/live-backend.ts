@@ -110,8 +110,6 @@ import { createNodeComposerAttachmentStorePort } from "../../adapters/outbound/c
 import { createNodeProviderTrustPort } from "../../adapters/outbound/provider-trust/node-provider-trust-port.ts";
 import {
   ensureProviderBootstrapArtifacts,
-  isClaudeBootstrapReady,
-  isCodexBootstrapReady,
   providerBootstrapArtifactsForHome,
 } from "./provider-bootstrap-artifacts.ts";
 import type {
@@ -219,7 +217,6 @@ export function createLiveBackendContractMessageAdapter(
       resolveExecutable: () => resolveExecutable("gemini"),
       readProviderState: ({ cwd }) => readGeminiProviderStateFromHome(homeDir, cwd),
       defaultCwd: process.cwd(),
-      hookSettingsPath: bootstrapArtifacts.geminiSettingsPath,
     }),
   };
   let service: ThreadRuntimeService;

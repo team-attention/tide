@@ -366,13 +366,11 @@ async function ensureBackendProcess(): Promise<BackendHandshake> {
     env: {
       ...process.env,
       TIDE_APP_DATA_ROOT: resolveAppDataRoot(),
-      // The node-capable runtime for Tide's hook/MCP subprocess scripts
-      // (provider-signal-runner, tide-mcp-stdio run `ELECTRON_RUN_AS_NODE=1
-      // $TIDE_BIN <script>`). Inside the utility process, process.execPath is
-      // the Electron HELPER binary, which is NOT node-runnable — a hook spawned
-      // with it never exits, the provider waits out its hook timeout, and the
-      // turn hangs (verified live: gemini AfterAgent stuck "Executing Hook").
-      // The MAIN process execPath is the real Electron binary, which is.
+      // The node-capable runtime for Tide's MCP subprocess script (tide-mcp-stdio
+      // runs `ELECTRON_RUN_AS_NODE=1 $TIDE_BIN <script>`). Inside the utility
+      // process, process.execPath is the Electron HELPER binary, which is NOT
+      // node-runnable — the MCP bridge spawned with it would never exit. The MAIN
+      // process execPath is the real Electron binary, which is.
       TIDE_BIN: process.env.TIDE_BIN ?? process.execPath,
     },
     stdio: "pipe",

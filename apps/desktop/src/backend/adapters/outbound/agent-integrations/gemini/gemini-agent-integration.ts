@@ -30,9 +30,6 @@ export interface CreateGeminiAgentIntegrationInput {
   readProviderState: GeminiProviderStateReader;
   defaultCwd?: string;
   // Tide-owned gemini settings file carrying the Tide hook registrations
-  // (AfterAgent/Notification/...). Injected via GEMINI_CLI_SYSTEM_SETTINGS_PATH so
-  // the user's own ~/.gemini/settings.json is never touched.
-  hookSettingsPath?: string;
   // Mints the per-runtime session id passed via `--session-id`, so the thread's
   // session binding is deterministic at launch. Injectable for tests.
   mintSessionId?: () => string;
@@ -74,14 +71,12 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
   private readonly resolveExecutable: GeminiExecutableResolver;
   private readonly readProviderState: GeminiProviderStateReader;
   private readonly defaultCwd: string;
-  private readonly hookSettingsPath: string | undefined;
   private readonly mintSessionId: () => string;
 
   constructor(input: CreateGeminiAgentIntegrationInput) {
     this.resolveExecutable = input.resolveExecutable;
     this.readProviderState = input.readProviderState;
     this.defaultCwd = input.defaultCwd ?? ".";
-    this.hookSettingsPath = input.hookSettingsPath;
     this.mintSessionId = input.mintSessionId ?? (() => randomUUID());
   }
 

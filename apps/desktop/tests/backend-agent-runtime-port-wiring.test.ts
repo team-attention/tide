@@ -418,7 +418,10 @@ test("live_agent_session_projection_emits_prompt_changed_for_prompt_state", () =
   assert.match(source, /kind:\s*"prompt\.changed"/);
 });
 
-test("provider_bootstrap_artifacts_create_provider_native_files", () => {
+test("provider_bootstrap_artifacts_create_only_the_mcp_surface", () => {
+  // Structured runtimes need ONLY the Tide MCP bridge bootstrapped — no hooks,
+  // no signal spool, no codex config overlay (codex runs against its real
+  // ~/.codex; MCP rides `-c` argv).
   const home = fs.mkdtempSync(path.join(tmpdir(), "tide-provider-state-"));
   const cwd = "/repo";
   writeProviderFiles(home, cwd);
@@ -431,122 +434,23 @@ test("provider_bootstrap_artifacts_create_provider_native_files", () => {
   });
 
   assert.equal(fs.existsSync(artifacts.tideMcpCommandPath), true);
-  assert.equal(fs.existsSync(artifacts.providerSignalRunnerPath), true);
-  assert.equal(fs.existsSync(artifacts.codexHooksPath), true);
-  assert.equal(fs.existsSync(artifacts.codexSkillPath), true);
   assert.equal(fs.existsSync(artifacts.claudeMcpConfigPath), true);
   assert.equal(fs.existsSync(artifacts.claudeSettingsPath), true);
-  assert.equal(fs.existsSync(artifacts.providerSignalHookPath), true);
+  // codexHome is the REAL ~/.codex — no overlay dir/config written by Tide.
+  assert.equal(artifacts.codexHome, path.join(home, ".codex"));
 
   const claudeMcp = fs.readFileSync(artifacts.claudeMcpConfigPath, "utf8");
   assert.match(claudeMcp, /"mcpServers"/);
-  assert.match(claudeMcp, /"tide"/);
   assert.match(claudeMcp, /tide-mcp-stdio/);
-  assert.match(claudeMcp, /"args": \[\]/);
   assert.match(claudeMcp, /"TIDE_SOCKET": "\/tmp\/tide\.sock"/);
+  // settings.json pre-allows the tide MCP server and carries NO hooks.
+  const claudeSettings = fs.readFileSync(artifacts.claudeSettingsPath, "utf8");
+  assert.match(claudeSettings, /mcp__tide/);
+  assert.doesNotMatch(claudeSettings, /hooks/);
   const tideMcpCommand = fs.readFileSync(artifacts.tideMcpCommandPath, "utf8");
   assert.match(tideMcpCommand, /ELECTRON_RUN_AS_NODE=1 exec/);
   assert.match(tideMcpCommand, /backend-entrypoint\.js/);
   assert.match(tideMcpCommand, / mcp "\$@"/);
-  const providerSignalRunner = fs.readFileSync(
-    artifacts.providerSignalRunnerPath,
-    "utf8",
-  );
-  assert.match(providerSignalRunner, /TIDE_PROVIDER_SIGNAL_DIR=/);
-  assert.match(providerSignalRunner, /provider-signal-hook\.mjs/);
-  assert.match(providerSignalRunner, / "\$@"/);
-  const codexHooks = fs.readFileSync(artifacts.codexHooksPath, "utf8");
-  assert.match(codexHooks, /"PermissionRequest"/);
-  assert.match(codexHooks, /provider-signal-runner/);
-  assert.doesNotMatch(codexHooks, /provider-signal-hook\.mjs/);
-  const codexConfigPath = path.join(artifacts.codexHome, "config.toml");
-  const codexConfig = fs.readFileSync(codexConfigPath, "utf8");
-  assert.equal(fs.lstatSync(codexConfigPath).isSymbolicLink(), false);
-  assert.match(codexConfig, /model = "gpt-5\.5"/);
-  assert.match(codexConfig, /\[projects\."\/repo"\]/);
-  assert.doesNotMatch(codexConfig, /mcp_servers/);
-  assert.doesNotMatch(codexConfig, /paper/);
-  assert.equal(
-    fs.lstatSync(path.join(artifacts.codexHome, "auth.json")).isSymbolicLink(),
-    true,
-  );
-  assert.equal(
-    fs.lstatSync(path.join(artifacts.codexHome, "sessions")).isSymbolicLink(),
-    true,
-  );
-  // D17: the overlay mirrors the full real ~/.codex (minus Tide-owned entries),
-  // so Codex's state DBs, plugins, caches, and vendor imports are all linked in —
-  // a fixed allow-list would omit version-suffixed state DBs and break Codex startup.
-  for (const entry of ["plugins", "vendor_imports", "cache", "state_5.sqlite"]) {
-    assert.equal(
-      fs.lstatSync(path.join(artifacts.codexHome, entry)).isSymbolicLink(),
-      true,
-      `${entry} should be mirrored into the overlay CODEX_HOME`,
-    );
-  }
-  // skills stays Tide-owned: the real Codex skills are not linked into the overlay.
-  assert.equal(
-    fs.existsSync(path.join(artifacts.codexHome, "skills", "impeccable")),
-    false,
-  );
-
-  // A stale overlay entry (absent from real ~/.codex, not Tide-owned) is pruned on
-  // rewrite; the Tide-owned skills dir keeps only the tide skill.
-  writeFile(path.join(artifacts.codexHome, "legacy-stray.json"), "{}");
-  writeFile(path.join(artifacts.codexHome, "skills", ".system", "SKILL.md"), "# System\n");
-  appendCodexOverlayHookTrust(artifacts);
-  ensureProviderBootstrapArtifacts({
-    homeDir: home,
-    tideCommand: "/Applications/Tide.app/Contents/MacOS/Tide",
-    tideMcpEntrypoint: "/Applications/Tide.app/Contents/Resources/backend-entrypoint.js",
-    tideSocket: "/tmp/tide.sock",
-  });
-  const codexConfigAfterRewrite = fs.readFileSync(codexConfigPath, "utf8");
-  assert.match(codexConfigAfterRewrite, /hooks\.state/);
-  assert.match(codexConfigAfterRewrite, /permission_request:0:0/);
-  assert.match(codexConfigAfterRewrite, /trusted_hash = "sha256:permission"/);
-  assert.equal(fs.existsSync(path.join(artifacts.codexHome, "legacy-stray.json")), false);
-  assert.equal(
-    fs.existsSync(path.join(artifacts.codexHome, "skills", ".system")),
-    false,
-  );
-  // Real-home entries stay mirrored across rewrites.
-  assert.equal(
-    fs.lstatSync(path.join(artifacts.codexHome, "cache")).isSymbolicLink(),
-    true,
-  );
-});
-
-test("provider_bootstrap_artifacts_drop_stale_codex_hook_trust_when_hooks_change", () => {
-  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-provider-state-"));
-  const cwd = "/repo";
-  writeProviderFiles(home, cwd);
-  const artifacts = ensureProviderBootstrapArtifacts({
-    homeDir: home,
-    tideCommand: "/Applications/Tide.app/Contents/MacOS/Tide",
-    tideMcpEntrypoint: "/Applications/Tide.app/Contents/Resources/backend-entrypoint.js",
-    tideSocket: "/tmp/tide.sock",
-  });
-  appendCodexOverlayHookTrust(artifacts);
-  fs.writeFileSync(
-    artifacts.codexHooksPath,
-    JSON.stringify({ hooks: { Stop: [] } }, null, 2) + "\n",
-    "utf8",
-  );
-
-  ensureProviderBootstrapArtifacts({
-    homeDir: home,
-    tideCommand: "/Applications/Tide.app/Contents/MacOS/Tide",
-    tideMcpEntrypoint: "/Applications/Tide.app/Contents/Resources/backend-entrypoint.js",
-    tideSocket: "/tmp/tide.sock",
-  });
-
-  const codexConfig = fs.readFileSync(
-    path.join(artifacts.codexHome, "config.toml"),
-    "utf8",
-  );
-  assert.doesNotMatch(codexConfig, /hooks\.state/);
-  assert.equal(readCodexProviderStateFromHome(home, cwd).hookBootstrapReady, true);
 });
 
 test("live_backend_provider_state_readers_require_tide_owned_bootstrap_artifacts", () => {
