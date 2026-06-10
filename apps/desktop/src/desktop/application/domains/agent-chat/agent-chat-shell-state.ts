@@ -143,7 +143,7 @@ export interface AgentChatAgentBinding {
   };
 }
 
-export type AgentChatProviderCliAgentId = "codex" | "claude" | "antigravity" | "gemini";
+export type AgentChatProviderCliAgentId = "codex" | "claude" | "antigravity" | "gemini" | "opencode";
 export type AgentChatAgentId = AgentChatProviderCliAgentId | "openai_api";
 
 export type AgentChatAgentRuntimeSource =
@@ -1346,6 +1346,8 @@ function formatAgentLabel(agentId: string): string {
       return "Antigravity CLI";
     case "gemini":
       return "Gemini CLI";
+    case "opencode":
+      return "opencode";
     case "openai_api":
       return "OpenAI API";
     default:
@@ -1588,7 +1590,7 @@ function isAgentAvailable(agentId: string): boolean {
 }
 
 // Provider-CLI agents offered in the composer menu (antigravity is hidden for now).
-const OFFERED_PROVIDER_AGENTS = ["codex", "claude", "gemini"] as const;
+const OFFERED_PROVIDER_AGENTS = ["codex", "claude", "gemini", "opencode"] as const;
 
 // Pick the agent a new thread should default to. Honors the user's last choice only if
 // it is still offered AND detected locally — so a persisted hidden/uninstalled agent
@@ -1794,6 +1796,10 @@ function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
         { value: "gemini-3-pro", label: "Gemini 3 Pro" },
         { value: "gemini-3-flash", label: "Gemini 3 Flash" },
       ];
+    case "opencode":
+      // opencode picks the model from its own provider config/credentials; Tide
+      // uses its default (no per-turn model override yet).
+      return [{ value: "opencode default", label: "Default", detail: "opencode config" }];
     default:
       return [];
   }
@@ -2061,6 +2067,8 @@ export function defaultModelValueForAgent(agentId: string): string {
       return "Antigravity default";
     case "gemini":
       return "Gemini default";
+    case "opencode":
+      return "opencode default";
     case "openai_api":
       return "gpt-5.5";
     default:

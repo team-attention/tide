@@ -41,6 +41,7 @@ export interface ProviderSessionRefRecord {
     | "claude_transcript"
     | "antigravity_conversation"
     | "gemini_session"
+    | "opencode_session"
     | "provider_native";
   value: string;
   transcriptPath?: string;

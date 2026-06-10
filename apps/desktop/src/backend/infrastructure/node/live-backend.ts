@@ -25,6 +25,7 @@ import {
   readClaudeProviderStateFromHome,
   readCodexProviderStateFromHome,
   readGeminiProviderStateFromHome,
+  readOpencodeProviderStateFromHome,
 } from "./provider-state-readers.ts";
 import {
   claudeProviderSessionRefFromTranscriptPath,
@@ -95,6 +96,7 @@ import {
   type CodexProviderState,
 } from "../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
 import { createGeminiAgentIntegration } from "../../adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts";
+import { createOpencodeAgentIntegration } from "../../adapters/outbound/agent-integrations/opencode/opencode-agent-integration.ts";
 import { codexRolloutTurnEnded as codexRolloutTurnEndedFromText } from "../../adapters/outbound/agent-integrations/codex/codex-rollout-turn-detection.ts";
 import {
   createAgentSessionBlockCompletedEventFromUpdate,
@@ -223,6 +225,16 @@ export function createLiveBackendContractMessageAdapter(
         env: { TIDE_SOCKET: tideSocket },
       },
     }),
+    opencode: createOpencodeAgentIntegration({
+      resolveExecutable: () => resolveExecutable("opencode"),
+      readProviderState: ({ cwd }) => readOpencodeProviderStateFromHome(homeDir, cwd),
+      defaultCwd: process.cwd(),
+      tideMcp: {
+        command: bootstrapArtifacts.tideMcpCommandPath,
+        args: [],
+        env: { TIDE_SOCKET: tideSocket },
+      },
+    }),
   };
   let service: ThreadRuntimeService;
   const ptyLauncher = createPythonPtyProcessLauncher();
@@ -341,7 +353,7 @@ export function createLiveBackendContractMessageAdapter(
       // The composer menu enables these and shows the rest disabled. Evaluated per
       // thread.list so a CLI installed after launch is picked up.
       detectAvailableAgents: () =>
-        (["codex", "claude", "gemini"] as const).filter(
+        (["codex", "claude", "gemini", "opencode"] as const).filter(
           (agentId) =>
             integrations[agentId] !== undefined &&
             resolveExecutable(executableForAgent(agentId)) !== undefined,
@@ -1288,10 +1300,11 @@ const providerCliCommands = {
   codex: "codex",
   claude: "claude",
   gemini: "gemini",
+  opencode: "opencode",
 } as const;
 
 function executableForAgent(
-  agentId: "codex" | "claude" | "gemini",
+  agentId: "codex" | "claude" | "gemini" | "opencode",
 ): string {
   return providerCliCommands[agentId];
 }

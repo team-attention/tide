@@ -1,5 +1,6 @@
-// Gemini structured runtime client — ACP mode (the Agent Client Protocol Zed
-// speaks; gemini-cli implements it natively via `gemini --acp`).
+// Shared ACP (Agent Client Protocol) runtime client. Used by every provider
+// that speaks ACP over stdio — gemini (`gemini --acp`) and opencode
+// (`opencode acp`). Identical protocol shape verified live for both.
 //
 // EVIDENCE-BASED (live transcripts /tmp/tide-proto-evidence/gemini/ + the
 // bundled @agentclientprotocol/sdk schemas inside gemini-cli 0.46):
@@ -26,8 +27,8 @@
 //   trust is a Tide product decision, same as the other providers.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-import type { PromptChoice, PromptState } from "../../../../application/domains/thread/thread.ts";
-import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
+import type { PromptChoice, PromptState, ProviderCliAgentId } from "../../../../application/domains/thread/thread.ts";
+import type { DiscoveredProviderSessionRef, ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   StructuredClientCallbacks,
   StructuredRuntimeClient,
@@ -36,23 +37,27 @@ import type {
 
 export const GEMINI_OPTION_PREFIX = "structured:gemini-option:";
 
-export interface CreateGeminiAcpClientInput extends StructuredClientCallbacks {
+export interface CreateAcpClientInput extends StructuredClientCallbacks {
   plan: ProviderLaunchPlan;
   threadId: string;
   runtimeId: string;
+  agentId: ProviderCliAgentId;
+  sessionRefKind: DiscoveredProviderSessionRef["kind"];
   initialPrompt?: string;
   resumeSessionId?: string;
 }
 
-export function createGeminiAcpClient(input: CreateGeminiAcpClientInput): StructuredRuntimeClient {
-  return new GeminiAcpClient(input);
+export function createAcpClient(input: CreateAcpClientInput): StructuredRuntimeClient {
+  return new AcpClient(input);
 }
 
-class GeminiAcpClient implements StructuredRuntimeClient {
+class AcpClient implements StructuredRuntimeClient {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly onEvent: StructuredClientCallbacks["onEvent"];
   private readonly tideThreadId: string;
   private readonly runtimeId: string;
+  private readonly agentId: ProviderCliAgentId;
+  private readonly sessionRefKind: DiscoveredProviderSessionRef["kind"];
   private readonly protocolParams: Record<string, unknown>;
   private buffer = "";
   private requestId = 0;
@@ -69,10 +74,12 @@ class GeminiAcpClient implements StructuredRuntimeClient {
   private readonly pendingPermissions = new Map<string, number | string>();
   private readonly queuedPrompts: string[] = [];
 
-  constructor(input: CreateGeminiAcpClientInput) {
+  constructor(input: CreateAcpClientInput) {
     this.onEvent = input.onEvent;
     this.tideThreadId = input.threadId;
     this.runtimeId = input.runtimeId;
+    this.agentId = input.agentId;
+    this.sessionRefKind = input.sessionRefKind;
     this.protocolParams = isRecord(input.plan.protocolParams) ? input.plan.protocolParams : {};
     this.child = spawn(input.plan.command, input.plan.args, {
       cwd: input.plan.cwd,
@@ -106,7 +113,7 @@ class GeminiAcpClient implements StructuredRuntimeClient {
     return this.child.pid ?? undefined;
   }
 
-  private bootstrap(input: CreateGeminiAcpClientInput): void {
+  private bootstrap(input: CreateAcpClientInput): void {
     this.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
@@ -151,7 +158,7 @@ class GeminiAcpClient implements StructuredRuntimeClient {
     this.sessionId = sessionId;
     this.onEvent({
       kind: "session_ref",
-      ref: { agentId: "gemini", kind: "gemini_session", value: sessionId },
+      ref: { agentId: this.agentId, kind: this.sessionRefKind, value: sessionId },
     });
     // Approval mode is an ACP session mode (default/autoEdit/yolo/plan) — set
     // it when the launch options ask for a non-default mode.
@@ -518,7 +525,7 @@ class GeminiAcpClient implements StructuredRuntimeClient {
     const promptState: PromptState = {
       promptId,
       threadId: this.tideThreadId,
-      agentId: "gemini",
+      agentId: this.agentId,
       kind: "approval",
       message: title,
       choices,

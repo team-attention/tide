@@ -16,7 +16,7 @@ import type {
 } from "../../../application/domains/thread/thread.ts";
 import { createClaudeStreamJsonClient } from "./structured/claude-stream-json-client.ts";
 import { createCodexAppServerClient } from "./structured/codex-app-server-client.ts";
-import { createGeminiAcpClient } from "./structured/gemini-acp-client.ts";
+import { createAcpClient } from "./structured/acp-client.ts";
 import type {
   StructuredProviderEvent,
   StructuredRuntimeClient,
@@ -257,11 +257,13 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           onEvent: emit,
         });
         break;
-      case "gemini_acp":
-        client = createGeminiAcpClient({
+      case "acp":
+        client = createAcpClient({
           plan: runtimePlan,
           threadId,
           runtimeId,
+          agentId,
+          sessionRefKind: agentId === "opencode" ? "opencode_session" : "gemini_session",
           initialPrompt,
           resumeSessionId: resumeRef,
           onEvent: emit,
@@ -283,7 +285,12 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
 }
 
 function isProviderCliAgentId(agentId: AgentId): agentId is ProviderCliAgentId {
-  return agentId === "codex" || agentId === "claude" || agentId === "gemini";
+  return (
+    agentId === "codex" ||
+    agentId === "claude" ||
+    agentId === "gemini" ||
+    agentId === "opencode"
+  );
 }
 
 function defaultClock(): string {

@@ -195,7 +195,7 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
         GEMINI_CLI_TRUST_WORKSPACE: "true",
       },
       cwd: input.cwd,
-      transport: "gemini_acp",
+      transport: "acp",
       protocolParams: {
         cwd: input.cwd,
         modeId: geminiAcpModeId(input.launchOptions),

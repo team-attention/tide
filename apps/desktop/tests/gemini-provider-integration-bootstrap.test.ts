@@ -61,7 +61,7 @@ test("gemini_start_plan_uses_acp_transport_and_no_argv_prompt", async () => {
     agentId: "gemini",
     initialPrompt: "hello",
   });
-  assert.equal(plan.transport, "gemini_acp");
+  assert.equal(plan.transport, "acp");
   assert.equal(plan.args[0], "--acp");
   assert.equal(plan.args.includes("--session-id"), false);
   assert.equal(plan.args.includes("--prompt-interactive"), false);
@@ -107,7 +107,7 @@ test("gemini_resume_plan_stays_on_acp_transport", async () => {
       transcriptPath: "/sessions/session-x.jsonl",
     },
   });
-  assert.equal(plan.transport, "gemini_acp");
+  assert.equal(plan.transport, "acp");
   assert.equal(plan.args.includes("--resume"), false);
 });
 

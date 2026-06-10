@@ -53,6 +53,16 @@ export function readClaudeProviderStateFromHome(
   };
 }
 
+export function readOpencodeProviderStateFromHome(
+  homeDir: string,
+  _cwd: string,
+): { authenticated: boolean } {
+  // opencode stores provider credentials at ~/.local/share/opencode/auth.json;
+  // authenticated == at least one credential present.
+  const auth = readJsonFile(join(homeDir, ".local", "share", "opencode", "auth.json"));
+  return { authenticated: auth !== undefined && Object.keys(auth).length > 0 };
+}
+
 export function readGeminiProviderStateFromHome(
   homeDir: string,
   _cwd: string,

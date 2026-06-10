@@ -19,7 +19,7 @@ import { createLiveBackendContractMessageAdapter } from "../src/backend/infrastr
 import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const providerCliAgents = new Set(["codex", "claude", "antigravity", "gemini"]);
+const providerCliAgents = new Set(["codex", "claude", "gemini", "opencode"]);
 const selectableAgents = new Set([...providerCliAgents, "openai_api"]);
 
 const options = parseArgs(process.argv.slice(2));

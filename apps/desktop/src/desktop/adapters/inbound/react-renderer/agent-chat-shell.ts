@@ -2024,6 +2024,8 @@ function agentMonogramFor(agentId: string): string {
       return "Cl";
     case "gemini":
       return "Ge";
+    case "opencode":
+      return "Oc";
     case "antigravity":
       return "Ag";
     case "openai_api":

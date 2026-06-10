@@ -51,7 +51,7 @@ import {
 } from "../app-chrome/app-chrome-state.ts";
 import { worktreeRepoRootForCwd } from "../../../../shared/worktree-path.ts";
 
-export type ProductShellAgentIdentity = "codex" | "claude" | "antigravity" | "gemini" | "openai_api";
+export type ProductShellAgentIdentity = "codex" | "claude" | "antigravity" | "gemini" | "opencode" | "openai_api";
 
 export type ProductShellLeftUiMenu =
   | { kind: "thread"; threadId: string }

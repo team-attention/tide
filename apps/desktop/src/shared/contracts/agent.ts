@@ -1,4 +1,4 @@
-export type ProviderCliAgentId = "codex" | "claude" | "gemini";
+export type ProviderCliAgentId = "codex" | "claude" | "gemini" | "opencode";
 export type TideApiAgentId = "openai_api";
 export type AgentId = ProviderCliAgentId | TideApiAgentId;
 
@@ -25,6 +25,7 @@ export interface ProviderSessionRefDto {
     | "claude_transcript"
     | "antigravity_conversation"
     | "gemini_session"
+    | "opencode_session"
     | "provider_native";
   value: string;
   transcriptPath?: string;
