@@ -180,6 +180,7 @@ import type {
   AgentChatChoiceSurfaceView,
   AgentChatCommandOption,
   AgentChatComposerSurfaceKind,
+  AgentChatThreadScope,
 } from "../../../application/domains/agent-chat/agent-chat-shell-state.ts";
 import {
   applyThemePreference,
@@ -2142,6 +2143,22 @@ function createAgentChatColumn(
   handlers: ProductShellHandlers,
 ): ReactElement {
   const title = viewModel.agentChat.thread?.title ?? "New Thread";
+  // Which project/directory this thread lives in — so a pinned thread (pulled
+  // out of its project group in the left rail) is still identifiable. Shown as a
+  // muted breadcrumb after the title, like the Claude app. The chat VM doesn't
+  // carry scope, so resolve it from the product-shell thread lists.
+  const activeThreadId = viewModel.agentChat.thread?.threadId;
+  const activeThread =
+    activeThreadId === undefined
+      ? undefined
+      : [
+          ...viewModel.flatThreads,
+          ...viewModel.pinnedThreads,
+          ...viewModel.projectGroups.flatMap((group) => group.threads),
+        ].find((thread) => thread.threadId === activeThreadId);
+  const scope = activeThread?.scope;
+  const scopeLabel = scope === undefined ? null : threadScopeLabel(scope);
+  const scopePath = scope === undefined ? undefined : scope.kind === "project" ? scope.cwd : "Scratch thread";
 
   return createElement(
     "section",
@@ -2167,6 +2184,14 @@ function createAgentChatColumn(
             ),
         createElement(Pin, { size: 14, strokeWidth: 1.9, "aria-hidden": true }),
         createElement("span", { className: "column-top-row__title" }, title),
+        scopeLabel === null
+          ? null
+          : createElement(
+              "span",
+              { className: "column-top-row__scope", title: scopePath },
+              createElement(Folder, { size: 12, strokeWidth: 1.9, "aria-hidden": true }),
+              createElement("span", null, scopeLabel),
+            ),
       ),
       // Trailing kept as a spacer; the Workbench/FileTree toggles now live in the
       // fixed window-level cluster at the top-right.
@@ -4510,7 +4535,7 @@ function createPinnedSection(
       ? null
       : [
           ...pinnedProjects.map((project) => createProjectGroup(project, handlers)),
-          ...pinnedThreads.map((thread) => createThreadRow(thread, handlers)),
+          ...pinnedThreads.map((thread) => createThreadRow(thread, handlers, true)),
         ],
   );
 }
@@ -4635,9 +4660,18 @@ function createThreadSection(
   );
 }
 
+function threadScopeLabel(scope: AgentChatThreadScope): string {
+  return scope.kind === "project"
+    ? scope.cwd.split("/").filter((seg: string) => seg.length > 0).pop() ?? scope.cwd
+    : "Scratch";
+}
+
 function createThreadRow(
   thread: ProductShellThreadView,
   handlers: ProductShellHandlers,
+  // Pinned rows are pulled out of their project group, so show which project/dir
+  // they belong to as a subtitle.
+  showScope = false,
 ): ReactElement {
   return createElement(
     "div",
@@ -4691,7 +4725,14 @@ function createThreadRow(
               onDoubleClick: () => handlers.onThreadRenameStart(thread.threadId),
             },
             createElement(AgentIdentityIcon, { agentId: thread.agentId }),
-            createElement("span", { className: "thread-row__title" }, thread.title),
+            showScope
+              ? createElement(
+                  "span",
+                  { className: "thread-row__label" },
+                  createElement("span", { className: "thread-row__title" }, thread.title),
+                  createElement("span", { className: "thread-row__scope" }, threadScopeLabel(thread.scope)),
+                )
+              : createElement("span", { className: "thread-row__title" }, thread.title),
           ),
       thread.archiveConfirming
         ? createElement(
