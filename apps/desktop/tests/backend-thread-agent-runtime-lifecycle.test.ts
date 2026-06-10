@@ -1013,45 +1013,81 @@ test("answering_prompt_with_choice_id_only_writes_provider_native_value", async 
   assert.equal(result.promptState, null);
 });
 
-test("recording_provider_prompt_state_marks_thread_waiting_without_runtime_start", async () => {
+test("recording_provider_prompt_state_marks_a_live_thread_waiting_and_survives_hydrate", async () => {
   // Spec: docs_v2/specs/provider-signal-prompt-ingress.md
+  // A provider prompt belongs to a LIVE runtime (the answer is replayed as
+  // keystrokes on its PTY). Start a runtime, record the prompt, and confirm it
+  // is still pending on hydrate — the in-session thread-switch case.
   const fakes = createFakes();
   const service = createThreadRuntimeService({
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
-    initialThreads: [threadSeed("thread-provider-prompt")],
   });
+  const started = await service.startThread({
+    initialMessage: "do work",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "scratch", scratchCwd: "/tmp/thread-provider-prompt" },
+  });
+  assert.equal(started.ok, true);
+  const threadId = started.ok ? started.thread.threadId : "";
+
   const providerPrompt: PromptState = {
     promptId: "prompt-provider",
-    threadId: "thread-provider-prompt",
+    threadId,
     agentId: "codex",
     kind: "permission",
     message: "Allow command?",
     choices: [
-      {
-        choiceId: "allow",
-        label: "Allow once",
-        providerValue: "allow_once",
-      },
+      { choiceId: "allow", label: "Allow once", providerValue: "allow_once" },
     ],
     source: "provider_hook",
   };
 
-  const result = await service.recordProviderPromptState({
-    threadId: "thread-provider-prompt",
-    promptState: providerPrompt,
-  });
-  const hydrated = await service.hydrateThread({
-    threadId: "thread-provider-prompt",
-  });
+  const result = await service.recordProviderPromptState({ threadId, promptState: providerPrompt });
+  const hydrated = await service.hydrateThread({ threadId });
 
   assert.equal(result.ok, true);
   assert.equal(result.runtimeState, "waiting_for_approval");
   assert.equal(result.thread.promptState?.promptId, "prompt-provider");
+  // Live runtime → the prompt survives hydrate (in-session re-open).
   assert.equal(hydrated.thread.lastKnownState, "waiting_for_approval");
-  assert.equal(hydrated.thread.lifecycleState, "waiting_for_approval");
-  assert.deepEqual(fakes.runtime.events, []);
+  assert.equal(hydrated.thread.promptState?.promptId, "prompt-provider");
+});
+
+test("hydrating_a_thread_with_no_live_runtime_drops_the_stale_prompt_and_idles", async () => {
+  // The prompt is answerable ONLY while the runtime that asked it is alive. A
+  // thread restored from persistence (app restart) or whose runtime died keeps a
+  // stale waiting state + (possibly) a prompt; resurrecting a permission card for
+  // a dead PTY is a lie. Hydrate must reconcile it to idle so the composer works
+  // and the user can send a follow-up (which resumes the provider session).
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-restored", {
+        runtimeState: "waiting_for_approval",
+        lastKnownState: "waiting_for_approval",
+        lifecycleState: "waiting_for_approval",
+        promptState: {
+          promptId: "stale-prompt",
+          threadId: "thread-restored",
+          agentId: "codex",
+          kind: "permission",
+          message: "Allow command?",
+          source: "provider_hook",
+        },
+      }),
+    ],
+  });
+
+  const hydrated = await service.hydrateThread({ threadId: "thread-restored" });
+  assert.equal(hydrated.ok, true);
+  assert.equal(hydrated.thread.runtimeState, "idle");
+  assert.equal(hydrated.thread.lastKnownState, "idle");
+  assert.equal(hydrated.thread.promptState, undefined);
 });
 
 test("provider_prompt_state_for_a_different_agent_binding_is_rejected", async () => {

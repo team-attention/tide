@@ -675,6 +675,29 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       return failure("thread_not_found", "Thread was not found.");
     }
 
+    // A pending prompt is ONLY answerable while the runtime that asked it is
+    // alive: the answer is replayed as keystrokes on that runtime's hidden PTY.
+    // After an app restart (runtime gone, prompt not persisted) or a mid-session
+    // runtime death, a leftover waiting state is STALE — resurrecting a permission
+    // card for a dead process is a lie (answering writes to nothing). So when no
+    // runtime is alive, reconcile the thread to idle on hydrate: drop the stale
+    // prompt and let the composer work, so the user can send a follow-up (which
+    // resumes the provider session). The CLI behaves the same — a killed session
+    // does not re-ask; you start the next turn.
+    if (
+      thread.activeRuntimeHandle === undefined &&
+      (thread.runtimeState === "waiting_for_approval" ||
+        thread.runtimeState === "waiting_for_input" ||
+        thread.runtimeState === "running" ||
+        thread.runtimeState === "starting")
+    ) {
+      thread.runtimeState = "idle";
+      thread.lastKnownState = "idle";
+      thread.lifecycleState = "open";
+      thread.promptState = undefined;
+      thread.updatedAt = this.clock();
+    }
+
     return {
       ok: true,
       thread: snapshotThread(thread),
