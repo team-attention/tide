@@ -3285,3 +3285,65 @@ test("stop_clears_the_pending_prompt_and_its_queue", async () => {
   const stale = await service.answerPrompt({ threadId, promptId: "p2", value: "x" });
   assert.equal(stale.ok, false);
 });
+
+test("turn_end_during_a_pending_prompt_settles_and_drops_the_dead_cards", async () => {
+  // The provider's turn-end (interrupt while an approval is open, or a deny
+  // cancelling the rest of a batch) invalidates its own pending requests. The
+  // settle signal is ONE-SHOT — dropping it because the thread was
+  // waiting_for_approval left the thread "Working" forever once the stale card
+  // was answered (adversarial review finding).
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+  });
+  const started = await service.startThread({
+    initialMessage: "do work",
+    agentBinding: { agentId: "claude" },
+    scope: { kind: "scratch", scratchCwd: "/tmp/thread-settle-while-waiting" },
+  });
+  const threadId = started.ok ? started.thread.threadId : "";
+  for (const [id, msg] of [["p1", "WebFetch: a"], ["p2", "WebFetch: b"]]) {
+    await service.recordProviderPromptState({
+      threadId,
+      promptState: { promptId: id, threadId, agentId: "claude", kind: "approval", message: msg, source: "provider_hook" },
+    });
+  }
+  // Turn ends while the card (p1) is visible and p2 queued.
+  const settled = await service.recordTurnComplete({ threadId });
+  assert.equal(settled.ok, true);
+  const after = await service.hydrateThread({ threadId });
+  assert.equal(after.thread.runtimeState, "idle");
+  assert.equal(after.thread.promptState, undefined);
+  // The dead cards are gone; answering them is rejected, not typed into nothing.
+  const stale = await service.answerPrompt({ threadId, promptId: "p1", value: "x" });
+  assert.equal(stale.ok, false);
+});
+
+test("prompt_recorded_after_stop_is_rejected_not_resurrected", async () => {
+  // A hook frame written just before Stop can be read by the signal poll's grace
+  // cycles AFTER the runtime died. Recording it would resurrect a card on a dead
+  // runtime and re-arm polling (adversarial review finding).
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+  });
+  const started = await service.startThread({
+    initialMessage: "do work",
+    agentBinding: { agentId: "claude" },
+    scope: { kind: "scratch", scratchCwd: "/tmp/thread-prompt-after-stop" },
+  });
+  const threadId = started.ok ? started.thread.threadId : "";
+  await service.stopAgentRuntime({ threadId });
+  const late = await service.recordProviderPromptState({
+    threadId,
+    promptState: { promptId: "late", threadId, agentId: "claude", kind: "approval", message: "WebFetch: x", source: "provider_hook" },
+  });
+  assert.equal(late.ok, false);
+  const after = await service.hydrateThread({ threadId });
+  assert.equal(after.thread.promptState, undefined);
+  assert.equal(after.thread.runtimeState, "stopped");
+});

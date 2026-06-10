@@ -1674,6 +1674,20 @@ async function emitPromptState(input: {
       prompt: result.promptState,
     },
   });
+  // Announce the waiting state too: prompt.changed alone leaves a BACKGROUND
+  // thread's rail row without its attention dot/notification (adversarial
+  // review finding) — the rail listens to agentRuntime.stateChanged.
+  input.onEvent?.({
+    contractVersion: CONTRACT_VERSION,
+    eventId: nextEventId(),
+    kind: "agentRuntime.stateChanged",
+    emittedAt: new Date().toISOString(),
+    payload: {
+      threadId: result.thread.threadId,
+      state: result.runtimeState,
+      changedAt: result.thread.updatedAt,
+    },
+  });
 }
 
 async function recordDiscoveredProviderSessionRef(input: {

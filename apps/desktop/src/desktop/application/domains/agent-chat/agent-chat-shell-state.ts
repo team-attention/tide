@@ -1072,10 +1072,19 @@ export function applyAgentChatBackendEvent(
     }
     case "contract.error": {
       const payload = event.payload as { message?: string };
+      // A stale/duplicate prompt answer (double-click, card already promoted
+      // away, runtime just stopped) is NOT a thread failure: the backend simply
+      // rejected one command, and the authoritative prompt/runtime state arrives
+      // via prompt.changed / stateChanged. Flipping the whole thread to "failed"
+      // here marked HEALTHY threads failed (adversarial review finding).
+      const message = payload.message ?? "Contract error";
+      if (/Prompt State/.test(message)) {
+        return state;
+      }
       return {
         ...state,
         runtimeState: "failed",
-        errorMessage: payload.message ?? "Contract error",
+        errorMessage: message,
       };
     }
     default:

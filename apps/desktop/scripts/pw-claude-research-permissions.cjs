@@ -10,8 +10,12 @@ const os = require("node:os");
 const fs = require("node:fs");
 
 const repo = path.resolve(__dirname, "..");
+// The fetches are REQUIRED wording: a softer prompt let claude answer from
+// search snippets alone, skipping WebFetch — which made the multi-permission
+// assertion flaky. Demanding two fetches also reproduces the original batched
+// two-WebFetch hang this E2E exists to guard against.
 const PROMPT =
-  "Use web search to find Figma's (ticker FIG) most recent short interest, then use web fetch on ONE source page to confirm the number, then reply with the short interest value.";
+  "Find Figma's (ticker FIG) most recent short interest. You MUST use web search first, then you MUST use the web fetch tool on TWO different source pages to confirm the number (do not skip the fetches), then reply with the short interest value.";
 
 const log = (o) => console.log(JSON.stringify(o));
 const checks = [];

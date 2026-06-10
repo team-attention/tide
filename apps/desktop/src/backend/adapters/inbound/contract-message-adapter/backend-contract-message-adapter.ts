@@ -535,6 +535,16 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     result: StopAgentRuntimeResult,
   ): BackendEventEnvelope[] {
     return [
+      // Stop clears the card+queue in the service; without this event the
+      // renderer keeps a zombie card pinned (adversarial review finding).
+      {
+        contractVersion: CONTRACT_VERSION,
+        eventId: this.nextEventId(),
+        requestId: command.requestId,
+        kind: "prompt.changed",
+        emittedAt: this.clock(),
+        payload: { threadId: result.thread.threadId, prompt: null },
+      },
       this.agentRuntimeStateChangedEvent(command, result.thread, result.runtimeState),
       // When stopping consumed a queued follow-up, surface its user block.
       ...(result.submittedBlock === undefined

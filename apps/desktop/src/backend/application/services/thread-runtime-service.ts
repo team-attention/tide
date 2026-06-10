@@ -569,6 +569,8 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   idGenerator: () => string;
   onAsyncEvent?: (event: ThreadRuntimeAsyncEvent) => Promise<void> | void;
   threads = new ThreadStore();
+  // threadId -> promptId currently being written to the runtime (answer claim).
+  private readonly answeringPromptByThread = new Map<string, string>();
   private readonly threadCrud: ThreadCrudService;
   private readonly workbenchRuntime: WorkbenchRuntime;
   private readonly workbenchFileOps: WorkbenchFileOperations;
@@ -897,9 +899,15 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     // While a turn is genuinely in flight, queue the input Tide-side and flush it when
     // the turn completes (recordTurnComplete). The user can interrupt to send sooner.
     // (An idle thread takes the path below and sends immediately.)
+    // "Busy" includes waiting on a prompt card: writing composer text into the
+    // open TUI box would blind-answer it (adversarial review finding). The text
+    // queues and flushes when the turn completes.
     const busy =
       thread.activeRuntimeHandle !== undefined &&
-      (thread.runtimeState === "running" || thread.runtimeState === "starting");
+      (thread.runtimeState === "running" ||
+        thread.runtimeState === "starting" ||
+        thread.runtimeState === "waiting_for_approval" ||
+        thread.runtimeState === "waiting_for_input");
     if (busy) {
       thread.pendingInput = {
         kind: "composer_input",
@@ -996,6 +1004,15 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         "Active Agent Runtime is required to answer Prompt State.",
       );
     }
+    // Claim the answer SYNCHRONOUSLY before the (multi-keystroke) async write: a
+    // concurrent duplicate answer passing the checks above would interleave raw
+    // bytes into the same TUI box and could silently answer the NEXT box
+    // (adversarial review finding). Duplicates fail fast as prompt_not_found.
+    if (this.answeringPromptByThread.get(input.threadId) === input.promptId) {
+      return failure("prompt_not_found", "Prompt State is already being answered.");
+    }
+    this.answeringPromptByThread.set(input.threadId, input.promptId);
+    try {
 
     await this.agentRuntimePort.writeInput(thread.activeRuntimeHandle, {
       kind: "prompt_answer",
@@ -1040,6 +1057,9 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       runtimeState: thread.runtimeState,
       promptState: null,
     };
+    } finally {
+      this.answeringPromptByThread.delete(input.threadId);
+    }
   }
 
   async recordProviderPromptState(
@@ -1056,6 +1076,17 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       return failure(
         "agent_binding_locked",
         "Provider Prompt State must belong to the Thread Agent Binding.",
+      );
+    }
+    // Prompts die with the runtime — and may not be BORN without one either. A
+    // signal poll's grace cycles can deliver a prompt written just before Stop;
+    // recording it would resurrect a card on a dead runtime (answer fails with
+    // agent_runtime_unavailable) and re-arm the pollers for the 90-minute cap
+    // (adversarial review finding, verified line-by-line).
+    if (thread.activeRuntimeHandle === undefined) {
+      return failure(
+        "agent_runtime_unavailable",
+        "Prompt State requires a live Agent Runtime.",
       );
     }
 
@@ -1245,6 +1276,11 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       await this.agentRuntimePort.stop(thread.activeRuntimeHandle);
     }
     thread.activeRuntimeHandle = undefined;
+    // Prompts die with the runtime — cleared HERE, before the queued-follow-up
+    // branch below, so the old runtime's card/queue can never leak into the new
+    // runtime that branch starts (adversarial review finding).
+    thread.promptState = undefined;
+    thread.promptQueue = undefined;
 
     // Stop consumes a queued follow-up: ending the current turn immediately runs the
     // message the user queued behind it (codex/Claude Code behavior). With no queue,
@@ -1276,9 +1312,6 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     thread.lifecycleState = "open";
     thread.lastKnownState = "idle";
     thread.pendingInput = undefined;
-    // Prompts die with the runtime: a card for a stopped PTY is unanswerable.
-    thread.promptState = undefined;
-    thread.promptQueue = undefined;
     thread.updatedAt = this.clock();
 
     return {
@@ -1416,13 +1449,27 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     }
 
     // Only react to a turn ending while busy; ignore duplicate/late Stop signals.
-    if (thread.runtimeState !== "running" && thread.runtimeState !== "starting") {
+    // BUSY includes waiting on a prompt: the provider's turn-end definitively
+    // invalidates its own pending requests (interrupt while an approval is open,
+    // deny cancelling the rest of a batch). Dropping the settle here instead —
+    // as this guard used to — discarded the ONE-SHOT settle signal and left the
+    // thread "Working" forever once the stale card was answered (adversarial
+    // review finding, verified line-by-line).
+    if (
+      thread.runtimeState !== "running" &&
+      thread.runtimeState !== "starting" &&
+      thread.runtimeState !== "waiting_for_approval" &&
+      thread.runtimeState !== "waiting_for_input"
+    ) {
       return {
         ok: true,
         thread: snapshotThread(thread),
         runtimeState: thread.runtimeState,
       };
     }
+    // The ended turn's pending interactions are dead; drop card + queue.
+    thread.promptState = undefined;
+    thread.promptQueue = undefined;
 
     const queued = thread.pendingInput;
     if (queued !== undefined && queued.kind === "composer_input") {
