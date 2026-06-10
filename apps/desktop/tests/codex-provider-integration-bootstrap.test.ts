@@ -329,20 +329,22 @@ test("provider_specific_agent_integrations_stay_under_backend_adapters", () => {
   );
 });
 
-test("codex_turn_end_from_hook_and_rollout_outcome", () => {
+test("codex_turn_end_settles_without_content_but_keeps_notice", () => {
   const integration = codexIntegration();
-  // codex-stop hook carries the final answer.
+  // codex-stop hook only settles; content comes from the rollout history reader, so
+  // the hook carries NO answer (empty outcome) - never produced twice.
   assert.deepEqual(
     integration.turnEndFromHook("codex-stop", { last_assistant_message: "done" }),
-    { finalMessage: "done" },
+    {},
   );
   assert.equal(integration.turnEndFromHook("agent-running", {}), null);
-  // Rollout task_complete with an answer is the authoritative history outcome.
+  // Rollout task_complete with an answer: turn-end settles with NO finalMessage (the
+  // reader already rendered "rolled"), so nothing is duplicated.
   const rollout = [
     JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "hi" } }),
     JSON.stringify({ type: "event_msg", payload: { type: "task_complete", last_agent_message: "rolled" } }),
   ].join("\n");
-  assert.deepEqual(integration.turnEndFromHistory(rollout, "hi"), { finalMessage: "rolled" });
+  assert.deepEqual(integration.turnEndFromHistory(rollout, "hi"), {});
   // No credits + no answer surfaces a notice instead of an empty turn.
   const noCredits = [
     JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "hi" } }),

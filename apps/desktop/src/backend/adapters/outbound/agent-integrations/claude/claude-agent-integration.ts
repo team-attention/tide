@@ -222,19 +222,18 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     return { kind: "immediate" };
   }
 
-  turnEndFromHook(eventName: string, payload: unknown): AgentTurnOutcome | null {
-    // Claude's turn-end is the runtime-keyed `agent-idle` Stop hook — the reliable
-    // signal to settle the turn. Empirically the transcript receives the assistant
-    // answer ~0.3s BEFORE this hook fires, so the history reader is the content source
-    // and renders the reply; `last_assistant_message` here is a runtime-keyed *fallback*
-    // (used only if the transcript hasn't yielded the reply yet — e.g. an unflushed
-    // session file under heavy concurrent spawns). The live-backend's one-source rule
-    // suppresses this fallback once the reader has shown the turn's answer.
+  turnEndFromHook(eventName: string, _payload: unknown): AgentTurnOutcome | null {
+    // Claude's turn-end is the runtime-keyed `agent-idle` Stop hook: ONLY a signal to
+    // settle the turn — it carries no content. Empirically the transcript receives the
+    // assistant answer ~0.3s BEFORE this hook fires, so the history reader is the SOLE
+    // content source and renders every segment (intro text, tools, the reply). Returning
+    // an empty outcome settles the turn without producing a second copy of the answer —
+    // which is why there is no answer dedup anywhere. (We intentionally do NOT read
+    // last_assistant_message here; doing so created the duplicate this design removes.)
     if (eventName !== "agent-idle") {
       return null;
     }
-    const record = isRecord(payload) ? payload : undefined;
-    return { finalMessage: stringValue(record?.last_assistant_message) };
+    return {};
   }
 
   turnEndFromHistory(): AgentTurnOutcome | null {

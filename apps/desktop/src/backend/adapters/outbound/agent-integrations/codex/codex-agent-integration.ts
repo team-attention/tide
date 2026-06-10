@@ -233,25 +233,31 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     return { kind: "tool_surface_ready" };
   }
 
-  turnEndFromHook(eventName: string, payload: unknown): AgentTurnOutcome | null {
-    // The codex-stop hook carries the final answer in `last_assistant_message`. It
-    // is unreliable (often never fires), which is why turnEndFromHistory exists as
-    // the authoritative path — but when it does fire it is the fastest answer.
+  turnEndFromHook(eventName: string, _payload: unknown): AgentTurnOutcome | null {
+    // The codex-stop hook is ONLY a settle signal (it often never fires, which is why
+    // turnEndFromHistory is the authoritative settle path). Like claude, content comes
+    // solely from the rollout history reader, so this carries no answer — settling
+    // without re-producing it keeps the answer single-sourced (no dedup).
     if (eventName !== "codex-stop") {
       return null;
     }
-    const record = isRecord(payload) ? payload : undefined;
-    return { finalMessage: stringValue(record?.last_assistant_message) };
+    return {};
   }
 
   turnEndFromHistory(
     rolloutTailText: string,
     expectedUserMessage: string | undefined,
   ): AgentTurnOutcome | null {
-    // Authoritative codex turn-end: the rollout's typed task_complete / turn_aborted,
-    // carrying the final answer or a credits/rate-limit notice. See
-    // codexTurnOutcomeFromRollout.
-    return codexTurnOutcomeFromRollout(rolloutTailText, expectedUserMessage);
+    // Authoritative codex turn-end: the rollout's typed task_complete / turn_aborted.
+    // The rollout history reader is the SOLE content source for the answer, so turn-end
+    // only settles (+ surfaces a notice when the turn produced none — aborted /
+    // out-of-credits). We deliberately drop finalMessage here so the answer is never
+    // produced twice (no dedup needed). See codexTurnOutcomeFromRollout.
+    const outcome = codexTurnOutcomeFromRollout(rolloutTailText, expectedUserMessage);
+    if (outcome === null) {
+      return null;
+    }
+    return outcome.notice !== undefined ? { notice: outcome.notice } : {};
   }
 
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {

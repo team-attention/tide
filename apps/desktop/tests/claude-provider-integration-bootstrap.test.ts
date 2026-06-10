@@ -315,12 +315,13 @@ test("claude_provider_specific_agent_integration_stays_under_backend_adapters", 
   );
 });
 
-test("claude_turn_end_from_agent_idle_hook_carries_final_answer", () => {
+test("claude_agent_idle_hook_settles_without_carrying_content", () => {
   const integration = claudeIntegration();
-  // agent-idle ends the turn and yields the final answer from the hook payload.
+  // agent-idle ends the turn but carries NO answer content: the transcript history
+  // reader is the sole content source, so the hook only signals settle (empty outcome).
   assert.deepEqual(
     integration.turnEndFromHook("agent-idle", { last_assistant_message: "the answer" }),
-    { finalMessage: "the answer" },
+    {},
   );
   // Other hook events are not turn-end; claude has no history-driven turn-end.
   assert.equal(integration.turnEndFromHook("agent-running", {}), null);

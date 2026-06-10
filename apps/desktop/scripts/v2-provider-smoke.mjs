@@ -63,6 +63,12 @@ const submitted = submitProductShellComposerDraft(shellState);
 if (submitted.command?.kind !== "thread.start") {
   throw new Error("Product Shell did not emit thread.start.");
 }
+if (process.env.TIDE_PROVIDER_SMOKE_PERMISSION) {
+  submitted.command.payload.launchOptions = {
+    ...submitted.command.payload.launchOptions,
+    permission: process.env.TIDE_PROVIDER_SMOKE_PERMISSION,
+  };
+}
 shellState = submitted.state;
 
 const adapter = createLiveBackendContractMessageAdapter({
