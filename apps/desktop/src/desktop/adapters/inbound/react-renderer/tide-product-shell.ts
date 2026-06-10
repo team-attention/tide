@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  Columns2,
+  Rows2,
   ChevronRight,
   CornerDownRight,
   Minimize2,
@@ -142,6 +144,8 @@ import {
   toggleProductShellThreadPin,
   toggleProductShellWorkbenchWithLauncher,
   toggleProductShellWorkbenchFullscreen,
+  toggleProductShellWorkbenchLayoutMode,
+  setProductShellWorkbenchSplitWeights,
   updateProductShellBrowserActionResult,
   updateProductShellBrowserSnapshot,
   updateProductShellBackgroundBrowserActionResult,
@@ -399,6 +403,8 @@ interface ProductShellHandlers {
   onLeftUiToggle: () => void;
   onWorkbenchToggle: () => void;
   onWorkbenchFullscreenToggle: () => void;
+  onWorkbenchLayoutModeToggle: () => void;
+  onWorkbenchSplitResize: (weights: Record<string, number>) => void;
   onNewWorkbenchPane: () => void;
   onFileTreeToggle: () => void;
   onResizeStart: (
@@ -1296,6 +1302,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       }),
     onWorkbenchFullscreenToggle: () =>
       setShellState((state) => toggleProductShellWorkbenchFullscreen(state)),
+    onWorkbenchLayoutModeToggle: () =>
+      setShellState((state) => toggleProductShellWorkbenchLayoutMode(state)),
+    onWorkbenchSplitResize: (weights) =>
+      setShellState((state) => setProductShellWorkbenchSplitWeights(state, weights)),
     onNewWorkbenchPane: () =>
       setShellState((state) => {
         const result = openProductShellWorkbenchLauncher(state);
@@ -2351,6 +2361,14 @@ function createWorkbenchColumn(
       createElement(
         "div",
         { className: "column-top-row__trailing" },
+        // Only meaningful with 2+ panes; the toggle still shows so the affordance
+        // is discoverable.
+        createIconButton(
+          viewModel.workbenchLayoutMode === "split" ? "Tab group" : "Split panes",
+          createElement(viewModel.workbenchLayoutMode === "split" ? Rows2 : Columns2, { size: 15, strokeWidth: 1.9 }),
+          handlers.onWorkbenchLayoutModeToggle,
+          "top-row-button",
+        ),
         createIconButton(
           viewModel.workbenchFullscreen ? "Exit fullscreen" : "Fullscreen pane",
           createElement(viewModel.workbenchFullscreen ? Minimize2 : Maximize2, { size: 15, strokeWidth: 1.9 }),
@@ -2366,6 +2384,9 @@ function createWorkbenchColumn(
           { className: "workbench-column__pane", "data-pane-kind": "editor-picker" },
           createEditorPickerPane(viewModel.editorPicker, handlers),
         )
+      : viewModel.workbenchLayoutMode === "split" &&
+        viewModel.appChrome.visibleWorkbenchPanes.length > 1
+      ? createWorkbenchSplit(viewModel, handlers, workbenchTabIcon)
       : activeTab && activePane
       ? createElement(
           "section",
@@ -2391,6 +2412,117 @@ function createWorkbenchColumn(
           }),
         ),
   );
+}
+
+// Split mode: every visible pane tiled left-to-right, each in its own card with a
+// title bar + close, separated by draggable dividers that re-weight the two
+// adjacent panes. (Tab-group mode remains the default single-pane view.) This is
+// the first step toward Tide-Terminal-style free arrangement; 2D drag-to-reflow
+// is a follow-up — the layout model already carries per-pane weights.
+function createWorkbenchSplit(
+  viewModel: ProductShellViewModel,
+  handlers: ProductShellHandlers,
+  paneIcon: (kind: string) => ReactElement,
+): ReactElement {
+  const panes = viewModel.appChrome.visibleWorkbenchPanes;
+  const weightOf = (paneId: string): number => {
+    const w = viewModel.workbenchSplitWeights[paneId];
+    return typeof w === "number" && w > 0.08 ? w : 1;
+  };
+  const children: ReactElement[] = [];
+  panes.forEach((pane, index) => {
+    children.push(
+      createElement(
+        "section",
+        {
+          key: pane.paneId,
+          className: "workbench-split__pane",
+          style: { flexGrow: weightOf(pane.paneId), flexBasis: "0", flexShrink: 1, minWidth: "0" } as CSSProperties,
+          "data-pane-id": pane.paneId,
+          "data-pane-kind": pane.kind,
+        },
+        createElement(
+          "div",
+          { className: "workbench-split__pane-header" },
+          createElement("span", { className: "workbench-split__pane-icon", "aria-hidden": true }, paneIcon(pane.kind)),
+          createElement("span", { className: "workbench-split__pane-title" }, pane.title ?? pane.kind),
+          createElement(
+            "button",
+            {
+              type: "button",
+              className: "workbench-split__pane-close",
+              title: "Close Pane",
+              "aria-label": "Close Pane",
+              onClick: () => handlers.onCloseWorkbenchPane(pane.paneId),
+            },
+            createElement(X, { size: 13, strokeWidth: 2.2, "aria-hidden": true }),
+          ),
+        ),
+        createElement(
+          "div",
+          { className: "workbench-split__pane-body" },
+          createWorkbenchPaneContent(pane, handlers, viewModel.editorDrafts[pane.paneId]),
+        ),
+      ),
+    );
+    if (index < panes.length - 1) {
+      const right = panes[index + 1];
+      children.push(
+        createSplitDivider(pane.paneId, right.paneId, weightOf(pane.paneId), weightOf(right.paneId), handlers),
+      );
+    }
+  });
+  return createElement("div", { className: "workbench-split" }, ...children);
+}
+
+// A draggable divider between two split panes. On drag it re-weights only the two
+// adjacent panes (their combined size is preserved), live, via onWorkbenchSplitResize.
+function createSplitDivider(
+  leftId: string,
+  rightId: string,
+  leftWeight: number,
+  rightWeight: number,
+  handlers: ProductShellHandlers,
+): ReactElement {
+  return createElement("div", {
+    key: `divider-${leftId}-${rightId}`,
+    className: "workbench-split__divider",
+    role: "separator",
+    "aria-orientation": "vertical",
+    onPointerDown: (event: {
+      currentTarget: HTMLElement;
+      clientX: number;
+      pointerId: number;
+      preventDefault: () => void;
+    }) => {
+      event.preventDefault();
+      const divider = event.currentTarget;
+      const leftEl = divider.previousElementSibling as HTMLElement | null;
+      const rightEl = divider.nextElementSibling as HTMLElement | null;
+      if (leftEl === null || rightEl === null) {
+        return;
+      }
+      const startX = event.clientX;
+      const startLeftPx = leftEl.getBoundingClientRect().width;
+      const combinedPx = startLeftPx + rightEl.getBoundingClientRect().width;
+      const weightSum = leftWeight + rightWeight;
+      if (combinedPx <= 0 || weightSum <= 0) {
+        return;
+      }
+      const MIN_PX = 120;
+      const onMove = (e: PointerEvent) => {
+        const nextLeftPx = Math.max(MIN_PX, Math.min(combinedPx - MIN_PX, startLeftPx + (e.clientX - startX)));
+        const leftW = weightSum * (nextLeftPx / combinedPx);
+        handlers.onWorkbenchSplitResize({ [leftId]: leftW, [rightId]: weightSum - leftW });
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+  });
 }
 
 // In-pane editor file picker: the Launcher pad becomes a searchable file list. The

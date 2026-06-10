@@ -125,6 +125,9 @@ export interface AppChromeViewModel {
   statusBar: AppChromeStatusBarView;
   workbenchTabStrip: WorkbenchTabStripView;
   activeWorkbenchPane?: AppChromeWorkbenchPaneRef;
+  // All visible panes (full refs), in tab order — for split-mode tiling. In
+  // tab-group mode only activeWorkbenchPane is shown.
+  visibleWorkbenchPanes: AppChromeWorkbenchPaneRef[];
   errorMessage?: string;
 }
 
@@ -343,6 +346,7 @@ export function createAppChromeViewModel(
       overflowTabs: tabs.slice(maxVisibleTabs),
     },
     activeWorkbenchPane,
+    visibleWorkbenchPanes: visiblePanes,
     errorMessage: state.errorMessage,
   };
 }

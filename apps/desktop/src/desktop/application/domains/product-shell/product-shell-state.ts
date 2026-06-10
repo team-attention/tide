@@ -135,6 +135,11 @@ export interface ProductShellState {
   // The active workbench pane is expanded to fill the window (focus mode). The
   // left rail / chat / filetree columns are hidden while on.
   workbenchFullscreen: boolean;
+  // Tab-group mode (default: one visible pane + tab strip) vs split mode (all
+  // panes tiled side by side, resizable). Like the Tide Terminal workspace.
+  workbenchLayoutMode: "tabs" | "split";
+  // Per-pane flex weights for split mode, keyed by paneId (default 1 each).
+  workbenchSplitWeights: Record<string, number>;
   fileTreeOpen: boolean;
   leftUiMenu: ProductShellLeftUiMenu | null;
   archiveConfirmThreadId: string | null;
@@ -356,6 +361,8 @@ export interface ProductShellViewModel {
   threadsLoaded: boolean;
   workbenchOpen: boolean;
   workbenchFullscreen: boolean;
+  workbenchLayoutMode: "tabs" | "split";
+  workbenchSplitWeights: Record<string, number>;
   fileTreeOpen: boolean;
   searchQuery: string;
   searchActive: boolean;
@@ -514,6 +521,8 @@ export function createProductShellState(
     leftUiOpen: true,
     workbenchOpen: false,
     workbenchFullscreen: false,
+    workbenchLayoutMode: "tabs",
+    workbenchSplitWeights: {},
     fileTreeOpen: false,
     leftUiMenu: null,
     archiveConfirmThreadId: null,
@@ -653,6 +662,8 @@ export function createProductShellViewModel(
     threadsLoaded: state.threadsLoaded,
     workbenchOpen: state.workbenchOpen,
     workbenchFullscreen: state.workbenchFullscreen,
+    workbenchLayoutMode: state.workbenchLayoutMode,
+    workbenchSplitWeights: state.workbenchSplitWeights,
     fileTreeOpen: state.fileTreeOpen,
     searchQuery: state.searchQuery,
     searchActive: state.searchActive,
@@ -809,6 +820,24 @@ export function toggleProductShellWorkbench(state: ProductShellState): ProductSh
     // Leaving/closing the workbench can't leave a dangling fullscreen.
     workbenchFullscreen: state.workbenchOpen ? false : state.workbenchFullscreen,
   };
+}
+
+// Switch the workbench between tab-group and split (tiled, resizable) modes.
+export function toggleProductShellWorkbenchLayoutMode(state: ProductShellState): ProductShellState {
+  return {
+    ...state,
+    workbenchLayoutMode: state.workbenchLayoutMode === "tabs" ? "split" : "tabs",
+    // Re-equalize weights on entering split so a stale weight can't dominate.
+    workbenchSplitWeights: state.workbenchLayoutMode === "tabs" ? {} : state.workbenchSplitWeights,
+  };
+}
+
+// Set the flex weights of two adjacent split panes after a divider drag.
+export function setProductShellWorkbenchSplitWeights(
+  state: ProductShellState,
+  weights: Record<string, number>,
+): ProductShellState {
+  return { ...state, workbenchSplitWeights: { ...state.workbenchSplitWeights, ...weights } };
 }
 
 // Expand the active workbench pane to fill the window (focus mode), or restore.
