@@ -3978,7 +3978,27 @@ function WorkbenchTerminalView(props: {
         background: "#1b1b1d",
         foreground: "#e4e4e6",
         cursor: "#e4e4e6",
+        cursorAccent: "#1b1b1d",
         selectionBackground: "#3a3a40",
+        // A full ANSI palette (One Dark-aligned, matching the editor syntax
+        // theme) — without it, colored CLI output fell back to xterm's stock
+        // colors, which clashed on the dark background ("colors look off").
+        black: "#3b4048",
+        red: "#e06c75",
+        green: "#98c379",
+        yellow: "#e5c07b",
+        blue: "#61afef",
+        magenta: "#c678dd",
+        cyan: "#56b6c2",
+        white: "#d7dae0",
+        brightBlack: "#5c6370",
+        brightRed: "#e06c75",
+        brightGreen: "#98c379",
+        brightYellow: "#e5c07b",
+        brightBlue: "#61afef",
+        brightMagenta: "#c678dd",
+        brightCyan: "#56b6c2",
+        brightWhite: "#ffffff",
       },
     });
     term.open(host);

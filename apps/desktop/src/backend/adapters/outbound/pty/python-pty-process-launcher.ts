@@ -113,6 +113,26 @@ if not command:
     sys.exit(2)
 
 master_fd, slave_fd = os.openpty()
+
+# Give the slave a sane interactive line discipline. A freshly opened PTY can
+# ship with ECHOE cleared, which makes the kernel erase the input buffer on
+# Backspace but NOT emit the visual BS-SP-BS — so at a shell prompt Backspace
+# looks like it does nothing. Force canonical mode + visible erase (VERASE=DEL,
+# matching what xterm sends). Full-screen apps (vim, less) still set raw mode
+# themselves, so this only governs the shell's own line editing.
+try:
+    attrs = termios.tcgetattr(slave_fd)
+    attrs[0] |= termios.ICRNL | getattr(termios, "IUTF8", 0)
+    attrs[1] |= termios.OPOST | termios.ONLCR
+    attrs[3] |= (
+        termios.ICANON | termios.ECHO | termios.ECHOE | termios.ECHOK
+        | termios.ISIG | termios.IEXTEN
+    )
+    attrs[6][termios.VERASE] = 0x7f
+    termios.tcsetattr(slave_fd, termios.TCSANOW, attrs)
+except (termios.error, OSError):
+    pass
+
 fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
 child = subprocess.Popen(
     command,
