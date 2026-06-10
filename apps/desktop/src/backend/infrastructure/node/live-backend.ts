@@ -217,6 +217,11 @@ export function createLiveBackendContractMessageAdapter(
       resolveExecutable: () => resolveExecutable("gemini"),
       readProviderState: ({ cwd }) => readGeminiProviderStateFromHome(homeDir, cwd),
       defaultCwd: process.cwd(),
+      tideMcp: {
+        command: bootstrapArtifacts.tideMcpCommandPath,
+        args: [],
+        env: { TIDE_SOCKET: tideSocket },
+      },
     }),
   };
   let service: ThreadRuntimeService;

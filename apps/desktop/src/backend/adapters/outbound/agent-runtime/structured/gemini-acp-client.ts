@@ -114,7 +114,9 @@ class GeminiAcpClient implements StructuredRuntimeClient {
     }, () => {
       const sessionParams = {
         cwd: this.protocolParams.cwd ?? process.cwd(),
-        mcpServers: [],
+        mcpServers: Array.isArray(this.protocolParams.mcpServers)
+          ? this.protocolParams.mcpServers
+          : [],
       };
       if (input.resumeSessionId !== undefined) {
         this.request("session/load", { sessionId: input.resumeSessionId, ...sessionParams }, (response) => {

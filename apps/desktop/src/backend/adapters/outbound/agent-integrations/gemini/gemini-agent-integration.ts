@@ -25,20 +25,28 @@ export type GeminiProviderStateReader = (input: {
   executablePath: string;
 }) => Promise<GeminiProviderState> | GeminiProviderState;
 
+export interface GeminiTideMcpConfig {
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
 export interface CreateGeminiAgentIntegrationInput {
   resolveExecutable: GeminiExecutableResolver;
   readProviderState: GeminiProviderStateReader;
   defaultCwd?: string;
-  // Tide-owned gemini settings file carrying the Tide hook registrations
-  // Mints the per-runtime session id passed via `--session-id`, so the thread's
-  // session binding is deterministic at launch. Injectable for tests.
+  // The Tide MCP Tool Surface, attached to the ACP session via session/new
+  // params.mcpServers (the same surface claude/codex get). gemini loads it only
+  // in a trusted folder — Tide forces trust via GEMINI_CLI_TRUST_WORKSPACE.
+  tideMcp?: GeminiTideMcpConfig;
+  // Mints the per-runtime session id. Injectable for tests.
   mintSessionId?: () => string;
 }
 
 const geminiCapabilities: AgentIntegrationCapabilities = {
   supportsHiddenPty: true,
   supportsResume: true,
-  supportsTideMcp: false,
+  supportsTideMcp: true,
   supportsHooks: true,
   supportsReadableHistory: true,
   requiresTerminalKeyProtocol: true,
@@ -71,12 +79,14 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
   private readonly resolveExecutable: GeminiExecutableResolver;
   private readonly readProviderState: GeminiProviderStateReader;
   private readonly defaultCwd: string;
+  private readonly tideMcp?: GeminiTideMcpConfig;
   private readonly mintSessionId: () => string;
 
   constructor(input: CreateGeminiAgentIntegrationInput) {
     this.resolveExecutable = input.resolveExecutable;
     this.readProviderState = input.readProviderState;
     this.defaultCwd = input.defaultCwd ?? ".";
+    this.tideMcp = input.tideMcp;
     this.mintSessionId = input.mintSessionId ?? (() => randomUUID());
   }
 
@@ -189,6 +199,21 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
       protocolParams: {
         cwd: input.cwd,
         modeId: geminiAcpModeId(input.launchOptions),
+        ...(this.tideMcp !== undefined
+          ? {
+              mcpServers: [
+                {
+                  name: "tide",
+                  command: this.tideMcp.command,
+                  args: this.tideMcp.args,
+                  env: Object.entries(this.tideMcp.env ?? {}).map(([name, value]) => ({
+                    name,
+                    value,
+                  })),
+                },
+              ],
+            }
+          : {}),
       },
       expectedSignalSources: expectedSignalSources.map((source) => ({ ...source })),
     };
