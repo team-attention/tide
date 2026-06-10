@@ -860,6 +860,33 @@ app.on("child-process-gone", (_event, details) => {
 app.commandLine.appendSwitch("use-mock-keychain");
 app.commandLine.appendSwitch("password-store", "basic");
 
+// Single-instance lock: a second launch (double-clicked dock icon, second
+// `electron .`) must NOT start a second backend against the same data root +
+// MCP socket — two backends tangle the shared provider-signal spool and socket
+// and corrupt turns. The second instance focuses the existing window and quits.
+// (The dev `npm start` kills the old instance first, so it always gets the new
+// build; this lock is the safety net for the packaged app.)
+//
+// Skipped when TIDE_APP_DATA_ROOT is set — that override is ONLY used by the
+// headless test/verification harnesses, which intentionally run several isolated
+// instances at once (each with its own temp data root); the lock is keyed by
+// Electron userData, not the data root, so without this they would collide.
+if (process.env.TIDE_APP_DATA_ROOT === undefined) {
+  if (!app.requestSingleInstanceLock()) {
+    app.quit();
+  } else {
+    app.on("second-instance", () => {
+      const [existing] = BrowserWindow.getAllWindows();
+      if (existing !== undefined) {
+        if (existing.isMinimized()) {
+          existing.restore();
+        }
+        existing.focus();
+      }
+    });
+  }
+}
+
 void app.whenReady().then(() => {
   // Dev (`electron .`) shows the default Electron dock icon; point it at the
   // brand icon. The packaged app uses the bundle icon (electron-builder) instead.
