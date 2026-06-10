@@ -141,6 +141,7 @@ import {
   toggleProductShellProject,
   toggleProductShellThreadPin,
   toggleProductShellWorkbenchWithLauncher,
+  toggleProductShellWorkbenchFullscreen,
   updateProductShellBrowserActionResult,
   updateProductShellBrowserSnapshot,
   updateProductShellBackgroundBrowserActionResult,
@@ -397,6 +398,7 @@ interface ProductShellHandlers {
   onThreadSelect: (threadId: string) => void;
   onLeftUiToggle: () => void;
   onWorkbenchToggle: () => void;
+  onWorkbenchFullscreenToggle: () => void;
   onNewWorkbenchPane: () => void;
   onFileTreeToggle: () => void;
   onResizeStart: (
@@ -1274,6 +1276,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         dispatchBackendCommand(result.command);
         return result.state;
       }),
+    onWorkbenchFullscreenToggle: () =>
+      setShellState((state) => toggleProductShellWorkbenchFullscreen(state)),
     onNewWorkbenchPane: () =>
       setShellState((state) => {
         const result = openProductShellWorkbenchLauncher(state);
@@ -1720,6 +1724,21 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThreadId]);
+
+  // Escape exits workbench-pane fullscreen.
+  useEffect(() => {
+    if (!shellState.workbenchFullscreen) {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setShellState((state) => toggleProductShellWorkbenchFullscreen(state));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shellState.workbenchFullscreen]);
 
   const quickOpenFiles = useMemo<QuickOpenFile[]>(
     () =>
@@ -2244,7 +2263,12 @@ function createWorkbenchColumn(
 
   return createElement(
     "aside",
-    { className: "workbench-column", "aria-label": "Workbench", "data-column": "workbench" },
+    {
+      className: "workbench-column",
+      "aria-label": "Workbench",
+      "data-column": "workbench",
+      "data-fullscreen": viewModel.workbenchFullscreen ? "true" : "false",
+    },
     createColumnResizeHandle("workbench", "left", handlers),
     createElement(
       "header",
@@ -2309,6 +2333,12 @@ function createWorkbenchColumn(
       createElement(
         "div",
         { className: "column-top-row__trailing" },
+        createIconButton(
+          viewModel.workbenchFullscreen ? "Exit fullscreen" : "Fullscreen pane",
+          createElement(viewModel.workbenchFullscreen ? Minimize2 : Maximize2, { size: 15, strokeWidth: 1.9 }),
+          handlers.onWorkbenchFullscreenToggle,
+          "top-row-button",
+        ),
         createIconButton("New Pane", createElement(Plus, { size: 16, strokeWidth: 1.9 }), handlers.onNewWorkbenchPane, "top-row-button"),
       ),
     ),

@@ -132,6 +132,9 @@ export interface ProductShellState {
   activeThreadId: string | null;
   leftUiOpen: boolean;
   workbenchOpen: boolean;
+  // The active workbench pane is expanded to fill the window (focus mode). The
+  // left rail / chat / filetree columns are hidden while on.
+  workbenchFullscreen: boolean;
   fileTreeOpen: boolean;
   leftUiMenu: ProductShellLeftUiMenu | null;
   archiveConfirmThreadId: string | null;
@@ -352,6 +355,7 @@ export interface ProductShellViewModel {
   // False on a cold boot until the first thread list arrives — drives the rail skeleton.
   threadsLoaded: boolean;
   workbenchOpen: boolean;
+  workbenchFullscreen: boolean;
   fileTreeOpen: boolean;
   searchQuery: string;
   searchActive: boolean;
@@ -509,6 +513,7 @@ export function createProductShellState(
     activeThreadId: null,
     leftUiOpen: true,
     workbenchOpen: false,
+    workbenchFullscreen: false,
     fileTreeOpen: false,
     leftUiMenu: null,
     archiveConfirmThreadId: null,
@@ -647,6 +652,7 @@ export function createProductShellViewModel(
     leftUiOpen: state.leftUiOpen,
     threadsLoaded: state.threadsLoaded,
     workbenchOpen: state.workbenchOpen,
+    workbenchFullscreen: state.workbenchFullscreen,
     fileTreeOpen: state.fileTreeOpen,
     searchQuery: state.searchQuery,
     searchActive: state.searchActive,
@@ -800,6 +806,19 @@ export function toggleProductShellWorkbench(state: ProductShellState): ProductSh
   return {
     ...state,
     workbenchOpen: !state.workbenchOpen,
+    // Leaving/closing the workbench can't leave a dangling fullscreen.
+    workbenchFullscreen: state.workbenchOpen ? false : state.workbenchFullscreen,
+  };
+}
+
+// Expand the active workbench pane to fill the window (focus mode), or restore.
+// Forces the workbench open when entering fullscreen.
+export function toggleProductShellWorkbenchFullscreen(state: ProductShellState): ProductShellState {
+  const next = !state.workbenchFullscreen;
+  return {
+    ...state,
+    workbenchFullscreen: next,
+    workbenchOpen: next ? true : state.workbenchOpen,
   };
 }
 

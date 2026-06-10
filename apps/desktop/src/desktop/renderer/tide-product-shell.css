@@ -3071,6 +3071,16 @@ button {
   background: var(--tide-bg);
 }
 
+/* Fullscreen / focus mode: the workbench pane fills the whole window, over the
+   left rail + chat + filetree. Escape or the toggle exits. */
+.workbench-column[data-fullscreen="true"] {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  border-left: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .workbench-column__top-row,
 .file-tree-column__top-row {
   padding: 0 12px;
