@@ -196,7 +196,11 @@ test("claude_permission_prompt_detection_reads_hook_event_name_from_payload", ()
   assert.equal(notification, null);
 });
 
-test("claude_question_prompt_detection_uses_pretooluse_ask_user_question", () => {
+test("claude_pretooluse_does_not_surface_a_premature_question_prompt", () => {
+  // PreToolUse(AskUserQuestion) fires BEFORE claude renders the question box; an
+  // answer collected that early is typed into a menu that does not exist yet and
+  // evaporates (verified live). The question box is owned by the PTY scrape once
+  // it is actually on screen, so the hook path must surface nothing.
   const integration = claudeIntegration();
 
   const question = integration.detectPromptState({
@@ -210,21 +214,7 @@ test("claude_question_prompt_detection_uses_pretooluse_ask_user_question", () =>
       },
     },
   });
-  const otherPreToolUse = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "provider_hook",
-    eventName: "PreToolUse",
-    payload: {
-      tool_name: "Bash",
-      tool_input: {
-        command: "git status",
-      },
-    },
-  });
-
-  assert.equal(question?.kind, "question");
-  assert.equal(question?.message, "Which branch should Tide use?");
-  assert.equal(otherPreToolUse, null);
+  assert.equal(question, null);
 });
 
 // Claude's shell-command permission is an interactive boxed menu in the hidden PTY

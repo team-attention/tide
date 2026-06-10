@@ -112,20 +112,18 @@ const adapter = createLiveBackendContractMessageAdapter({
     if (answered.has(prompt.promptId)) {
       return;
     }
-    // A prompt with the SAME kind+message as one we already answered is the same
-    // underlying box surfacing twice (different promptIds) — the double-prompt
-    // failure mode. Record it and do NOT answer again (a human would not see the
-    // box anymore either).
+    // A prompt with the SAME kind+message surfacing again right after one was
+    // answered is the double-prompt failure mode (one box, two promptIds). Record
+    // it for the verdict — but still answer it, so a LEGITIMATE repeat (the agent
+    // genuinely asking twice with an identical message) cannot hang the run; a
+    // stray Enter/Esc into a box-less TUI is harmless.
     const signature = `${prompt.kind}:${prompt.message}`;
-    const alreadyAnswered = [...answered.values()].some(
-      (p) => `${p.kind}:${p.message}` === signature,
-    );
-    if (alreadyAnswered) {
+    const last = [...answered.values()].at(-1);
+    if (last !== undefined && `${last.kind}:${last.message}` === signature && Date.now() - last.at < 3000) {
       doubleSurfaced.push({ promptId: prompt.promptId, signature });
       log({ phase: "double-prompt", message: prompt.message });
-      return;
     }
-    answered.set(prompt.promptId, { kind: prompt.kind, message: prompt.message });
+    answered.set(prompt.promptId, { kind: prompt.kind, message: prompt.message, at: Date.now() });
     const choices = prompt.choices ?? [];
     const wantDeny = deny && choices.length > 1;
     const choice =

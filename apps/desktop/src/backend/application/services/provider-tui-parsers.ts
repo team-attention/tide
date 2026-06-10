@@ -107,7 +107,10 @@ export function parseCodexApprovalPrompt(raw: string): CodexApprovalPrompt | nul
   let defaultIndex = 0;
   let firstOptionLine = -1;
   for (let i = 0; i < lines.length; i += 1) {
-    const match = lines[i].match(/^\s*([>❯›])?\s*(\d+)\.\s+(.+?)\s*$/);
+    // Cell-painted TUIs (claude) can drop the space after the option number
+    // ("❯1.OPTION_ALPHA"), so the separator is optional. The footer gate above
+    // keeps ordinary numbered prose from matching.
+    const match = lines[i].match(/^\s*([>❯›])?\s*(\d+)\.\s*(.+?)\s*$/);
     if (match === null) {
       continue;
     }

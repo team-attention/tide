@@ -292,9 +292,11 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     if (hookEvent === "PermissionRequest") {
       return this.detectPermissionPrompt(input);
     }
-    if (hookEvent === "PreToolUse") {
-      return this.detectAskUserQuestion(input);
-    }
+    // PreToolUse(AskUserQuestion) is deliberately NOT surfaced: it fires BEFORE
+    // claude renders the question box, so an answer collected here is typed into
+    // a menu that does not exist yet and evaporates (verified live). The question
+    // box is owned by the PTY scrape below, which fires when the box is actually
+    // on screen and carries its real options as menu-navigation choices.
     if (hookEvent === "Elicitation") {
       return this.detectElicitation(input);
     }
@@ -310,6 +312,13 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       ? input.payload.tool_input
       : undefined;
     const toolName = stringValue(input.payload.tool_name);
+    // AskUserQuestion's PermissionRequest must NOT surface as Allow/Deny: the box
+    // claude renders for it IS the question menu, so a hook-driven "Allow" (Enter)
+    // would blindly pick whatever option the cursor is on (verified live). The PTY
+    // scrape owns that box and surfaces the real question with its options.
+    if (toolName === "AskUserQuestion") {
+      return null;
+    }
     const message =
       stringValue(toolInput?.description) ??
       stringValue(toolInput?.command) ??
@@ -345,33 +354,6 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
         },
       ],
       defaultChoiceId: "claude-perm-allow",
-      source: "provider_hook",
-    };
-  }
-
-  private detectAskUserQuestion(
-    input: AgentPromptSignalInput,
-  ): PromptState | null {
-    if (!isRecord(input.payload)) {
-      return null;
-    }
-    if (stringValue(input.payload.tool_name) !== "AskUserQuestion") {
-      return null;
-    }
-    const toolInput = isRecord(input.payload.tool_input)
-      ? input.payload.tool_input
-      : undefined;
-    const message = questionMessage(toolInput?.questions);
-    if (message === undefined) {
-      return null;
-    }
-
-    return {
-      promptId: claudePromptId(input.payload, "question", message),
-      threadId: input.threadId,
-      agentId: "claude",
-      kind: "question",
-      message,
       source: "provider_hook",
     };
   }
@@ -527,23 +509,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function questionMessage(value: unknown): string | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  for (const question of value) {
-    const text =
-      stringValue(question) ??
-      (isRecord(question)
-        ? stringValue(question.text) ?? stringValue(question.question)
-        : undefined);
-    if (text !== undefined) {
-      return text;
-    }
-  }
-  return undefined;
 }
 
 function claudePromptId(

@@ -143,3 +143,24 @@ test("codex_approval_box_painted_with_cursor_positioning_parses", () => {
   assert.equal(prompt?.defaultIndex, 0);
   assert.ok(prompt?.question.endsWith("?"));
 });
+
+test("claude_question_box_painted_without_option_spaces_parses", () => {
+  // Captured from a LIVE Claude Code hidden PTY (AskUserQuestion): cell painting
+  // drops the space after the option number and puts each description on its own
+  // line; the cursor row is "❯1.OPTION_ALPHA".
+  const raw =
+    "\x1b[30;2H ☐ Option" +
+    "\x1b[31;2HWhich option do you prefer?" +
+    "\x1b[32;2H❯1.OPTION_ALPHA" +
+    "\x1b[33;2HChoose OPTION_ALPHA." +
+    "\x1b[34;2H2.OPTION_BETA" +
+    "\x1b[35;2HChoose OPTION_BETA." +
+    "\x1b[36;2H3. Type something." +
+    "\x1b[38;2HEnter to select · ↑/↓ to navigate · Esc to cancel";
+  const prompt = parseCodexApprovalPrompt(raw);
+  assert.notEqual(prompt, null);
+  assert.equal(prompt?.question, "Which option do you prefer?");
+  assert.equal(prompt?.options[0]?.label, "OPTION_ALPHA");
+  assert.equal(prompt?.options[1]?.label, "OPTION_BETA");
+  assert.equal(prompt?.defaultIndex, 0);
+});
