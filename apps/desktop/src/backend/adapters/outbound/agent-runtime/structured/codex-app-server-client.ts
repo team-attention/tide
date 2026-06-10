@@ -147,6 +147,24 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     this.codexThreadId = id;
+    // Surface codex skills in the composer "$" menu (the replacement for the
+    // removed listCustomPrompts; verified shape via generate-ts bindings).
+    this.request("skills/list", { cwds: [] }, (result) => {
+      const data = Array.isArray(result.data) ? result.data : [];
+      const commands = data
+        .filter((d): d is Record<string, unknown> => isRecord(d))
+        .flatMap((d) => (Array.isArray(d.skills) ? d.skills : []))
+        .filter((sk): sk is Record<string, unknown> => isRecord(sk))
+        .map((sk) => ({
+          name: stringField(sk, "name") ?? "",
+          description: stringField(sk, "description") ?? stringField(sk, "shortDescription") ?? "Codex skill",
+          trigger: "$" as const,
+        }))
+        .filter((c) => c.name.length > 0);
+      if (commands.length > 0) {
+        this.onEvent({ kind: "commands", commands });
+      }
+    });
     const path = thread !== undefined ? stringField(thread, "path") : undefined;
     this.onEvent({
       kind: "session_ref",

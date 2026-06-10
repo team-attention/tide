@@ -454,7 +454,22 @@ class GeminiAcpClient implements StructuredRuntimeClient {
         });
       }
     }
-    // available_commands_update / plan / current_mode_update: later slices.
+    if (kind === "available_commands_update") {
+      const list = Array.isArray(update.availableCommands) ? update.availableCommands : [];
+      const commands = list
+        .filter((c): c is Record<string, unknown> => isRecord(c))
+        .map((c) => ({
+          name: stringField(c, "name") ?? "",
+          description: stringField(c, "description") ?? "Gemini command",
+          trigger: "/" as const,
+        }))
+        .filter((c) => c.name.length > 0);
+      if (commands.length > 0) {
+        this.onEvent({ kind: "commands", commands });
+      }
+      return;
+    }
+    // plan / current_mode_update: later slices.
   }
 
   private flushStreams(): void {

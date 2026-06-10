@@ -1718,6 +1718,18 @@ export function applyProductShellBackendEvent(
       }
       return withThreads;
     }
+    case "agentRuntime.commandsChanged": {
+      // The provider protocol's real slash-commands/skills (claude init,
+      // codex skills/list, gemini available_commands_update) — authoritative and
+      // richer than the pre-turn file discovery, so they replace providerCommands.
+      const commandsPayload = event.payload as {
+        commands?: AgentChatCommandOption[];
+      };
+      if (commandsPayload.commands === undefined || commandsPayload.commands.length === 0) {
+        return nextState;
+      }
+      return setProductShellProviderCommands(nextState, commandsPayload.commands);
+    }
     case "workbench.changed": {
       const payload = event.payload as {
         threadId?: string;

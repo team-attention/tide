@@ -41,6 +41,13 @@ export type StructuredProviderEvent =
   | { kind: "prompt"; promptState: PromptState }
   // The provider withdrew a pending interaction (e.g. interrupt cancelled it).
   | { kind: "prompt_withdrawn"; promptId: string }
+  // The provider's available slash-commands / skills (claude init slash_commands
+  // + skills, codex skills/list, gemini available_commands_update). Surfaced in
+  // the composer "/" (commands) and "$" (skills) menus.
+  | {
+      kind: "commands";
+      commands: Array<{ name: string; description: string; trigger: "/" | "$" }>;
+    }
   // The turn ended. `notice` carries a user-visible failure/limit message.
   | {
       kind: "turn_completed";

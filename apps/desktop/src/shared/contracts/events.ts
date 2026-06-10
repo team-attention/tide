@@ -29,6 +29,7 @@ export type BackendEventKind =
   | "thread.renamed"
   | "agentRuntime.stateChanged"
   | "agentRuntime.usageChanged"
+  | "agentRuntime.commandsChanged"
   | "providerReadiness.changed"
   | "prompt.changed"
   | "agentSessionBlock.upserted"
@@ -53,6 +54,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "thread.renamed",
   "agentRuntime.stateChanged",
   "agentRuntime.usageChanged",
+  "agentRuntime.commandsChanged",
   "providerReadiness.changed",
   "prompt.changed",
   "agentSessionBlock.upserted",
@@ -115,6 +117,13 @@ export interface BackendEventPayloadByKind {
   "agentRuntime.usageChanged": {
     threadId: ThreadId;
     usage: AgentRuntimeUsageDto;
+  };
+  // The agent's available slash-commands (trigger "/") and skills (trigger "$"),
+  // captured from the provider protocol at session start. Per agent.
+  "agentRuntime.commandsChanged": {
+    threadId: ThreadId;
+    agentId: ProviderCliAgentId;
+    commands: Array<{ name: string; description: string; trigger: "/" | "$" }>;
   };
   "providerReadiness.changed": {
     threadId?: ThreadId;

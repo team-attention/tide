@@ -960,6 +960,20 @@ export function createLiveAgentSessionEventProjector(input: {
         });
         return;
       }
+      if (event.kind === "commands") {
+        input.onEvent?.({
+          contractVersion: CONTRACT_VERSION,
+          eventId: nextEventId(),
+          kind: "agentRuntime.commandsChanged",
+          emittedAt: new Date().toISOString(),
+          payload: {
+            threadId: eventInput.threadId,
+            agentId: eventInput.agentId,
+            commands: event.commands,
+          },
+        });
+        return;
+      }
       if (event.kind === "prompt_withdrawn") {
         // The provider cancelled its own pending interaction. The next
         // turn_completed (which always follows) clears card+queue in

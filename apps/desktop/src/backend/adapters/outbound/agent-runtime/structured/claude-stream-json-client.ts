@@ -264,6 +264,19 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
           ref: { agentId: this.agentId, kind: "claude_transcript", value: sessionId },
         });
       }
+      const slashCommands = Array.isArray(message.slash_commands) ? message.slash_commands : [];
+      const skills = Array.isArray(message.skills) ? message.skills : [];
+      const commands = [
+        ...slashCommands
+          .filter((n): n is string => typeof n === "string")
+          .map((name) => ({ name, description: "Claude command", trigger: "/" as const })),
+        ...skills
+          .filter((n): n is string => typeof n === "string")
+          .map((name) => ({ name, description: "Claude skill", trigger: "$" as const })),
+      ];
+      if (commands.length > 0) {
+        this.onEvent({ kind: "commands", commands });
+      }
       this.initSeen = true;
       return;
     }
