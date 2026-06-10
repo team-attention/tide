@@ -4,6 +4,14 @@
   --tide-bg: #fdfdfc;
   --tide-surface: #f4f3f0;
   --tide-selection: #eeedea;
+  /* A text-selection highlight that's actually readable in the code editor
+     (the faint --tide-selection washed out over the near-white editor bg, so a
+     drag selection looked like it never took). */
+  --tide-editor-selection: rgba(57, 112, 240, 0.26);
+  /* A faint current-line cue. Must stay subtle: a rectangular/box selection puts
+     a cursor on every row, so a heavy active-line band (the old --tide-hover)
+     turned box-select into noisy full-width stripes. */
+  --tide-editor-active-line: rgba(52, 48, 56, 0.05);
   --tide-line: #e4e2de;
   --tide-text: #242424;
   --tide-muted: #8a8781;
@@ -3763,16 +3771,21 @@ button {
 
 .workbench-editor-cm .cm-activeLine,
 .workbench-editor-cm .cm-activeLineGutter {
-  background: var(--tide-hover);
+  background: var(--tide-editor-active-line);
 }
 
 .workbench-editor-cm .cm-editor.cm-focused {
   outline: none;
 }
 
+/* The authoritative selection styling lives in an EditorView.theme extension
+   (correct CodeMirror specificity, beats the baseTheme focused-selection rule);
+   these mirror it for the unfocused/native paths. !important so CodeMirror's
+   injected baseTheme can't win. */
 .workbench-editor-cm .cm-selectionBackground,
+.workbench-editor-cm .cm-focused .cm-selectionBackground,
 .workbench-editor-cm .cm-content ::selection {
-  background: var(--tide-selection);
+  background: var(--tide-editor-selection) !important;
 }
 
 .workbench-editor-references {
