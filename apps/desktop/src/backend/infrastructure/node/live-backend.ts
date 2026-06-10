@@ -1015,18 +1015,24 @@ export function createLiveAgentSessionEventProjector(input: {
         eventName: signalFrame.eventName,
         payload: signalFrame.payload,
       });
-      const payload = promptStatePayload(promptState) ?? {
-        type: "provider_signal",
-        eventName: signalFrame.eventName,
-        payload: signalFrame.payload,
-      };
+      // A prompt is an EPHEMERAL live interaction (the card the user answers), NOT
+      // a conversation block. Surface it via Prompt State only — appending it as an
+      // approval_prompt frame ALSO rendered a permanent "Approval" block in the
+      // history, so each permission showed up twice (the static block + the live
+      // card) and lingered after answering (verified live). The PTY-scrape path
+      // already surfaces prompts this way. The raw hook is still recorded as a
+      // non-rendering provider_signal frame for the audit/session trail.
       const frame = await service.appendRawAgentFrame({
         threadId: frameInput.threadId,
         agentId: frameInput.agentId,
         source: "hook_payload",
         sourceRef: signalFrame.sourceRef,
         payloadKind: "json",
-        payload,
+        payload: {
+          type: "provider_signal",
+          eventName: signalFrame.eventName,
+          payload: signalFrame.payload,
+        },
         body: JSON.stringify(signalFrame.payload),
       });
       const readResult = reader.read({
@@ -1043,7 +1049,7 @@ export function createLiveAgentSessionEventProjector(input: {
         });
       }
       await emitPromptState({
-        promptState: readResult.promptState ?? promptState ?? undefined,
+        promptState: promptState ?? readResult.promptState ?? undefined,
         service,
         onEvent: input.onEvent,
       });
@@ -1493,26 +1499,6 @@ export function createLiveAgentSessionEventProjector(input: {
     }): Promise<void> {
       await appendFrameAndEmit(frameInput);
     },
-  };
-}
-
-function promptStatePayload(
-  promptState: PromptState | null | undefined,
-): Record<string, unknown> | undefined {
-  if (promptState === null || promptState === undefined) {
-    return undefined;
-  }
-  return {
-    type:
-      promptState.kind === "approval" || promptState.kind === "permission"
-        ? "approval_prompt"
-        : promptState.kind === "choice"
-          ? "choice_prompt"
-          : "question_prompt",
-    promptId: promptState.promptId,
-    message: promptState.message,
-    choices: promptState.choices,
-    defaultChoiceId: promptState.defaultChoiceId,
   };
 }
 
