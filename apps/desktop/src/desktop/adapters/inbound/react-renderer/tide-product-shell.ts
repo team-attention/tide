@@ -3272,6 +3272,14 @@ function WorkbenchMarkdownView(props: {
     }
     let last: HTMLElement | null = null;
     let dragging = false;
+    // A press is "pending" until the pointer moves past a small threshold — only
+    // THEN does it become a multi-block sweep. Without this, a click that drifts
+    // a few px swept across adjacent short blocks (list items), picking 10+ at
+    // once. A clean click toggles exactly the one block under the pointer.
+    let pending = false;
+    let pressX = 0;
+    let pressY = 0;
+    const DRAG_THRESHOLD_SQ = 36; // 6px
     // While dragging, whether we are adding blocks or removing them (decided by
     // the first block under the pointer).
     let dragAdds = true;
@@ -3296,7 +3304,12 @@ function WorkbenchMarkdownView(props: {
       const block = blockOf(event.target);
       if (block === null) return;
       event.preventDefault();
-      dragging = true;
+      pending = true;
+      dragging = false;
+      pressX = event.clientX;
+      pressY = event.clientY;
+      // The pressed block toggles immediately; a sweep (below) only starts once
+      // the pointer crosses the threshold.
       dragAdds = !pickedRef.current.has(block);
       apply(block, dragAdds);
     };
@@ -3307,11 +3320,19 @@ function WorkbenchMarkdownView(props: {
       if (block !== null && !pickedRef.current.has(block)) {
         block.classList.add("workbench-md-pick-hover");
       }
+      if (pending && !dragging) {
+        const dx = event.clientX - pressX;
+        const dy = event.clientY - pressY;
+        if (dx * dx + dy * dy > DRAG_THRESHOLD_SQ) {
+          dragging = true;
+        }
+      }
       if (dragging && block !== null) {
         apply(block, dragAdds);
       }
     };
     const onUp = () => {
+      pending = false;
       dragging = false;
     };
     // Suppress the native click/selection so picking never also selects text.
