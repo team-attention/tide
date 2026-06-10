@@ -21,6 +21,7 @@
 //   Unauthenticated: result.is_error=true + synthetic "Not logged in" message.
 // - interrupt: control_request {"subtype":"interrupt"} from client; not wired
 //   yet (Tide's Stop kills the runtime, same semantics as the PTY transport).
+import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 import type { PromptChoice, PromptState } from "../../../../application/domains/thread/thread.ts";
@@ -189,6 +190,16 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     });
   }
 
+  async interrupt(): Promise<void> {
+    // The CLI replies with a result(error_during_execution) that flows to
+    // turn_completed; the process stays usable for the next turn.
+    this.writeLine({
+      type: "control_request",
+      request_id: `int-${randomUUID()}`,
+      request: { subtype: "interrupt" },
+    });
+  }
+
   async stop(): Promise<void> {
     this.exited = true;
     try {
@@ -285,9 +296,14 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     if (type === "result") {
       const isError = message.is_error === true;
       const resultText = typeof message.result === "string" ? message.result : undefined;
+      // A user interrupt yields result(error_during_execution) with
+      // terminal_reason "aborted_streaming" — not a real failure, so no notice.
+      const aborted =
+        message.subtype === "error_during_execution" &&
+        (message.terminal_reason === "aborted_streaming" || message.terminal_reason === "aborted");
       this.onEvent({
         kind: "turn_completed",
-        ...(isError && resultText !== undefined ? { notice: resultText } : {}),
+        ...(isError && !aborted && resultText !== undefined ? { notice: resultText } : {}),
         usage: claudeUsage(message),
       });
       return;

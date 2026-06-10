@@ -190,6 +190,14 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     // Raw terminal bytes have no meaning on a structured transport.
   }
 
+  async interrupt(handle: AgentRuntimeHandle): Promise<void> {
+    const runtime = this.runtimes.get(handle.runtimeId);
+    if (runtime === undefined) {
+      return;
+    }
+    await runtime.client.interrupt();
+  }
+
   async stop(handle: AgentRuntimeHandle): Promise<void> {
     const runtime = this.runtimes.get(handle.runtimeId);
     if (runtime === undefined) {

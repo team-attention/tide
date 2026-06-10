@@ -382,6 +382,12 @@ class OpenAiApiAgentRuntimePort implements AgentRuntimePort {
     });
   }
 
+  async interrupt(handle: AgentRuntimeHandle): Promise<void> {
+    // The OpenAI API lane has no long-lived turn to abort mid-flight; dropping
+    // the runtime ends the in-flight request.
+    this.runtimes.delete(handle.runtimeId);
+  }
+
   async stop(handle: AgentRuntimeHandle): Promise<void> {
     this.runtimes.delete(handle.runtimeId);
   }

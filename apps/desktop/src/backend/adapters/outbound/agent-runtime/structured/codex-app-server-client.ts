@@ -196,19 +196,19 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     this.writeLine({ id: serverRequestId, result: { decision } });
   }
 
+  async interrupt(): Promise<void> {
+    // turn/interrupt aborts the turn → turn/completed status:interrupted; the
+    // app-server process stays alive for the next turn.
+    if (this.codexThreadId !== undefined && this.activeTurnId !== undefined) {
+      this.request("turn/interrupt", {
+        threadId: this.codexThreadId,
+        turnId: this.activeTurnId,
+      }, () => undefined);
+    }
+  }
+
   async stop(): Promise<void> {
     this.exited = true;
-    // Best-effort graceful interrupt, then kill.
-    if (this.codexThreadId !== undefined && this.activeTurnId !== undefined) {
-      try {
-        this.request("turn/interrupt", {
-          threadId: this.codexThreadId,
-          turnId: this.activeTurnId,
-        }, () => undefined);
-      } catch {
-        // closing anyway
-      }
-    }
     this.child.kill("SIGTERM");
     setTimeout(() => {
       try {
@@ -335,9 +335,8 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       if (status === "failed") {
         const error = turn !== undefined && isRecord(turn.error) ? turn.error : undefined;
         notice = (error !== undefined ? stringField(error, "message") : undefined) ?? "Codex turn failed.";
-      } else if (status === "interrupted") {
-        notice = "Turn interrupted.";
       }
+      // status "interrupted" is a user Stop — no notice (benign).
       this.activeTurnId = undefined;
       this.onEvent({
         kind: "turn_completed",

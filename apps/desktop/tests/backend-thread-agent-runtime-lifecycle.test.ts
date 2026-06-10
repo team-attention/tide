@@ -1276,10 +1276,13 @@ test("stopping_agent_runtime_preserves_thread_metadata", async () => {
   const hydrated = await service.hydrateThread({ threadId: "thread-stop" });
 
   assert.equal(result.ok, true);
-  assert.equal(result.runtimeState, "stopped");
+  // Stop is now a true INTERRUPT: the turn aborts (idle), the runtime stays
+  // alive + resumable (handle kept), and the protocol interrupt is sent — not a
+  // process kill. See docs_v2/specs/structured-agent-runtime.md.
+  assert.equal(result.runtimeState, "idle");
   assert.equal(hydrated.thread.threadId, "thread-stop");
-  assert.equal(hydrated.runtimeState, "stopped");
-  assert.deepEqual(fakes.runtime.events, ["stop"]);
+  assert.equal(hydrated.runtimeState, "idle");
+  assert.deepEqual(fakes.runtime.events, ["interrupt"]);
 });
 
 test("stopping_with_a_queued_follow_up_consumes_it_into_the_next_turn", async () => {
@@ -1291,12 +1294,17 @@ test("stopping_with_a_queued_follow_up_consumes_it_into_the_next_turn", async ()
   const stopped = await service.stopAgentRuntime({ threadId: "thread-busy" });
 
   assert.equal(stopped.ok, true);
-  // Consumed → the runtime is running the queued message, not stopped.
+  // Stop INTERRUPTS the turn (no kill) and stays `running`, retaining the queue.
   assert.equal(stopped.runtimeState, "running");
-  assert.equal(stopped.submittedBlock?.body, "queued follow up");
-  // The current turn was stopped, then the queued message was written to the runtime.
-  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput", "stop", "resume", "writeInput"]);
-  assert.equal(fakes.runtime.writes[1]?.input.value, "queued follow up");
+  // The aborted turn-end then flushes the queued message onto the SAME live
+  // runtime (no respawn).
+  const completed = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(completed.ok && completed.flushedInput, "queued follow up");
+  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput", "interrupt", "writeInput"]);
+  assert.equal(
+    fakes.runtime.writes[fakes.runtime.writes.length - 1]?.input.value,
+    "queued follow up",
+  );
 });
 
 test("raw_agent_frames_receive_monotonic_thread_local_sequences", async () => {
@@ -2774,6 +2782,7 @@ class FakeAgentRuntimePort implements AgentRuntimePort {
   resumes: AgentRuntimeResumeInput[] = [];
   writes: { handle: AgentRuntimeHandle; input: TerminalInput }[] = [];
   stops: AgentRuntimeHandle[] = [];
+  interrupts: AgentRuntimeHandle[] = [];
 
   async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
     this.events.push("start");
@@ -2801,6 +2810,11 @@ class FakeAgentRuntimePort implements AgentRuntimePort {
   ): Promise<void> {
     this.events.push("writeInput");
     this.writes.push({ handle, input });
+  }
+
+  async interrupt(handle: AgentRuntimeHandle): Promise<void> {
+    this.events.push("interrupt");
+    this.interrupts.push(handle);
   }
 
   async stop(handle: AgentRuntimeHandle): Promise<void> {
@@ -3280,8 +3294,12 @@ test("stop_clears_the_pending_prompt_and_its_queue", async () => {
   }
   await service.stopAgentRuntime({ threadId });
   const after = await service.hydrateThread({ threadId });
+  // Interrupt clears the pending card + queue (they died with the turn) and
+  // settles to idle, keeping the runtime alive.
   assert.equal(after.thread.promptState, undefined);
-  // A later answer to the dead queue is rejected, not typed into nothing.
+  assert.equal(after.thread.promptQueue, undefined);
+  assert.equal(after.runtimeState, "idle");
+  // Answering the now-cleared prompt is rejected (no card to answer).
   const stale = await service.answerPrompt({ threadId, promptId: "p2", value: "x" });
   assert.equal(stale.ok, false);
 });
@@ -3331,19 +3349,19 @@ test("prompt_recorded_after_stop_is_rejected_not_resurrected", async () => {
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
   });
-  const started = await service.startThread({
-    initialMessage: "do work",
-    agentBinding: { agentId: "claude" },
-    scope: { kind: "scratch", scratchCwd: "/tmp/thread-prompt-after-stop" },
+  // A thread with NO live runtime handle must reject a prompt (it could never
+  // be answered). Seed an open thread with no activeRuntimeHandle.
+  const service2 = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id2"),
+    initialThreads: [threadSeed("thread-noruntime", { runtimeState: "idle" })],
   });
-  const threadId = started.ok ? started.thread.threadId : "";
-  await service.stopAgentRuntime({ threadId });
-  const late = await service.recordProviderPromptState({
-    threadId,
-    promptState: { promptId: "late", threadId, agentId: "claude", kind: "approval", message: "WebFetch: x", source: "provider_hook" },
+  const late = await service2.recordProviderPromptState({
+    threadId: "thread-noruntime",
+    promptState: { promptId: "late", threadId: "thread-noruntime", agentId: "codex", kind: "approval", message: "x", source: "provider_hook" },
   });
   assert.equal(late.ok, false);
-  const after = await service.hydrateThread({ threadId });
+  const after = await service2.hydrateThread({ threadId: "thread-noruntime" });
   assert.equal(after.thread.promptState, undefined);
-  assert.equal(after.thread.runtimeState, "stopped");
 });

@@ -249,19 +249,20 @@ class GeminiAcpClient implements StructuredRuntimeClient {
     });
   }
 
+  async interrupt(): Promise<void> {
+    // session/cancel resolves the open session/prompt with stopReason:cancelled;
+    // the ACP process stays alive for the next prompt.
+    if (this.sessionId !== undefined && this.turnOpen) {
+      this.writeLine({
+        jsonrpc: "2.0",
+        method: "session/cancel",
+        params: { sessionId: this.sessionId },
+      });
+    }
+  }
+
   async stop(): Promise<void> {
     this.exited = true;
-    if (this.sessionId !== undefined && this.turnOpen) {
-      try {
-        this.writeLine({
-          jsonrpc: "2.0",
-          method: "session/cancel",
-          params: { sessionId: this.sessionId },
-        });
-      } catch {
-        // closing anyway
-      }
-    }
     this.child.kill("SIGTERM");
     setTimeout(() => {
       try {

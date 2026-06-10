@@ -1270,48 +1270,44 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       return failure("thread_not_found", "Thread was not found.");
     }
 
+    // TRUE INTERRUPT: abort the in-flight turn via the provider's protocol, but
+    // keep the runtime ALIVE and resumable — the next message reuses the same
+    // session with no respawn. (Process teardown happens on app quit / a
+    // duplicate-runtime reap, not here.) The interrupt makes the provider emit
+    // its turn-end (claude result / codex turn:interrupted / gemini cancelled),
+    // which drives recordTurnComplete.
     if (thread.activeRuntimeHandle !== undefined) {
-      thread.runtimeState = "stopping";
-      thread.updatedAt = this.clock();
-      await this.agentRuntimePort.stop(thread.activeRuntimeHandle);
+      await this.agentRuntimePort.interrupt(thread.activeRuntimeHandle);
     }
-    thread.activeRuntimeHandle = undefined;
-    // Prompts die with the runtime — cleared HERE, before the queued-follow-up
-    // branch below, so the old runtime's card/queue can never leak into the new
-    // runtime that branch starts (adversarial review finding).
+    // Prompts die with the interrupted turn.
     thread.promptState = undefined;
     thread.promptQueue = undefined;
 
-    // Stop consumes a queued follow-up: ending the current turn immediately runs the
-    // message the user queued behind it (codex/Claude Code behavior). With no queue,
-    // it just settles to stopped.
-    const queued = thread.pendingInput;
-    if (queued !== undefined && queued.kind === "composer_input") {
-      thread.pendingInput = undefined;
-      const handle = await this.activeOrResumedHandle(thread);
-      const submittedBlock = this.appendLocalUserMessageBlock(thread, queued.value);
+    // A queued follow-up is consumed on the SAME live runtime: stay `running` so
+    // the aborted turn-end's recordTurnComplete flushes it (no respawn, and no
+    // race with starting a new turn before the old one's abort lands). Requires
+    // a live handle — without one there is nothing to flush onto.
+    if (
+      thread.pendingInput?.kind === "composer_input" &&
+      thread.activeRuntimeHandle !== undefined
+    ) {
       thread.runtimeState = "running";
-      thread.runtimeStartedAt = this.clock();
       thread.lifecycleState = "running";
       thread.lastKnownState = "running";
       thread.updatedAt = this.clock();
-      await this.agentRuntimePort.writeInput(handle, {
-        kind: "composer_input",
-        value: queued.value,
-        submittedAt: this.clock(),
-      });
       return {
         ok: true,
         thread: snapshotThread(thread),
         runtimeState: thread.runtimeState,
-        submittedBlock,
       };
     }
 
-    thread.runtimeState = "stopped";
+    // Plain interrupt: settle to idle now (the aborted turn-end no-ops on idle),
+    // keeping the runtime alive for the next message.
+    thread.pendingInput = undefined;
+    thread.runtimeState = "idle";
     thread.lifecycleState = "open";
     thread.lastKnownState = "idle";
-    thread.pendingInput = undefined;
     thread.updatedAt = this.clock();
 
     return {

@@ -53,6 +53,12 @@ export type StructuredProviderEvent =
 export interface StructuredRuntimeClient {
   // Routes composer input and prompt answers to the protocol.
   write(input: StructuredRuntimeWrite): Promise<void>;
+  // Abort the in-flight turn via the provider's protocol interrupt, leaving the
+  // process ALIVE and resumable (claude control_request:interrupt / codex
+  // turn/interrupt / gemini session/cancel). The provider emits its turn-end so
+  // the thread settles; the next message reuses this same session.
+  interrupt(): Promise<void>;
+  // Tear the process down (thread teardown / duplicate-runtime reap).
   stop(): Promise<void>;
   pid?: number;
 }

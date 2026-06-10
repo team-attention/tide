@@ -67,6 +67,12 @@ class AgentRuntimeRouterPort implements AgentRuntimePort {
       : this.providerCliRuntime.writeInput(handle, input);
   }
 
+  interrupt(handle: AgentRuntimeHandle): Promise<void> {
+    return runtimeLaneForAgent(handle.agentId) === "tide_api"
+      ? this.tideApiRuntime.interrupt(handle)
+      : this.providerCliRuntime.interrupt(handle);
+  }
+
   stop(handle: AgentRuntimeHandle): Promise<void> {
     return runtimeLaneForAgent(handle.agentId) === "tide_api"
       ? this.tideApiRuntime.stop(handle)
