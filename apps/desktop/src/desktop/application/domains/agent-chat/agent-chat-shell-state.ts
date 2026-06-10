@@ -1387,6 +1387,7 @@ function createActiveComposerSurface(
           agentMenuRow("codex", "Codex CLI", binding.agentId),
           agentMenuRow("claude", "Claude Code", binding.agentId),
           agentMenuRow("gemini", "Gemini CLI", binding.agentId),
+          agentMenuRow("opencode", "opencode", binding.agentId),
         ],
       };
     case "model_menu":

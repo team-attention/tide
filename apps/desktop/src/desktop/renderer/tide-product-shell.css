@@ -4063,7 +4063,9 @@ button {
 .workbench-md-preview *::selection,
 .agent-session ::selection,
 .agent-session *::selection {
-  background: rgba(37, 99, 235, 0.4);
+  /* Same themeable highlight as the code editor, so selection reads clearly in
+     both light and dark and stays consistent across transcript/preview/editor. */
+  background: var(--tide-editor-selection);
 }
 
 /* Obsidian-style reading view, conformed to the Figma editor typography. */
