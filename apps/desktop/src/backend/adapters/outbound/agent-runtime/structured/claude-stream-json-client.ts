@@ -31,6 +31,7 @@ import type {
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
+import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 
 export const STRUCTURED_ALLOW_TOKEN = "structured:allow";
 export const STRUCTURED_DENY_TOKEN = "structured:deny";
@@ -66,6 +67,9 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   private initialPrompt?: string;
   private initSeen = false;
   private exited = false;
+  private readonly scanUpdate = createUpdateNoticeScanner((message) =>
+    this.onEvent({ kind: "runtime_notice", level: "info", message }),
+  );
   // Live streaming state: the id of the assistant message currently streaming
   // (from message_start) and the accumulated text per content-block index. The
   // matching complete `assistant` message finalizes these by the SAME blockId.
@@ -98,6 +102,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
         process.stderr.write(`[tide-claude-sj ${this.runtimeId}] ${chunk}`);
       }
+      this.scanUpdate(chunk);
     });
     this.child.on("error", (error) => {
       // spawn failures (missing binary, bad cwd) emit 'error' and may never

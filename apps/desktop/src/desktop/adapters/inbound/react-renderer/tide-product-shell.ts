@@ -1089,6 +1089,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // for input/approval), so the user is pulled back even when Tide is in the
   // background. Re-notifies if a thread returns to attention after resolving.
   const notifiedAttentionRef = useRef<Set<string>>(new Set());
+  // Update-available notices already shown (dedupe across threads/runtimes).
+  const notifiedUpdatesRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (typeof Notification === "undefined") {
       return;
@@ -1183,6 +1185,22 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         const payload = event.payload as { paneId?: unknown; chunk?: unknown };
         if (typeof payload.paneId === "string" && typeof payload.chunk === "string") {
           routeProductShellTerminalOutput(payload.paneId, payload.chunk);
+        }
+        return;
+      }
+      // An agent CLI printed an "update available" banner — surface it once as a
+      // non-blocking native notification (no transcript noise, no React state).
+      if (event.kind === "agentRuntime.noticePosted") {
+        const payload = event.payload as { message?: unknown; agentId?: unknown };
+        const message = typeof payload.message === "string" ? payload.message : "";
+        if (
+          message.length > 0 &&
+          !notifiedUpdatesRef.current.has(message) &&
+          typeof Notification !== "undefined" &&
+          Notification.permission === "granted"
+        ) {
+          notifiedUpdatesRef.current.add(message);
+          new Notification(`Tide — ${String(payload.agentId ?? "agent")} update available`, { body: message });
         }
         return;
       }

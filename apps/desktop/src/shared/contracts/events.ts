@@ -30,6 +30,7 @@ export type BackendEventKind =
   | "agentRuntime.stateChanged"
   | "agentRuntime.usageChanged"
   | "agentRuntime.commandsChanged"
+  | "agentRuntime.noticePosted"
   | "providerReadiness.changed"
   | "prompt.changed"
   | "agentSessionBlock.upserted"
@@ -55,6 +56,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "agentRuntime.stateChanged",
   "agentRuntime.usageChanged",
   "agentRuntime.commandsChanged",
+  "agentRuntime.noticePosted",
   "providerReadiness.changed",
   "prompt.changed",
   "agentSessionBlock.upserted",
@@ -124,6 +126,14 @@ export interface BackendEventPayloadByKind {
     threadId: ThreadId;
     agentId: ProviderCliAgentId;
     commands: Array<{ name: string; description: string; trigger: "/" | "$" }>;
+  };
+  // A non-blocking, out-of-band runtime notice (e.g. an "update available"
+  // banner the provider CLI printed). Surfaced as a native OS notification.
+  "agentRuntime.noticePosted": {
+    threadId: ThreadId;
+    agentId: ProviderCliAgentId;
+    level: "info";
+    message: string;
   };
   "providerReadiness.changed": {
     threadId?: ThreadId;

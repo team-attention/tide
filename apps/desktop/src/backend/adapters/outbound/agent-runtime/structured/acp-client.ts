@@ -34,6 +34,7 @@ import type {
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
+import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 
 export const GEMINI_OPTION_PREFIX = "structured:gemini-option:";
 
@@ -62,6 +63,9 @@ class AcpClient implements StructuredRuntimeClient {
   private buffer = "";
   private requestId = 0;
   private exited = false;
+  private readonly scanUpdate = createUpdateNoticeScanner((message) =>
+    this.onEvent({ kind: "runtime_notice", level: "info", message }),
+  );
   private sessionId?: string;
   private turnOpen = false;
   private recordIndex = 0;
@@ -93,6 +97,7 @@ class AcpClient implements StructuredRuntimeClient {
       if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
         process.stderr.write(`[tide-gemini-acp ${this.runtimeId}] ${chunk}`);
       }
+      this.scanUpdate(chunk);
     });
     this.child.on("error", () => {
       if (!this.exited) {

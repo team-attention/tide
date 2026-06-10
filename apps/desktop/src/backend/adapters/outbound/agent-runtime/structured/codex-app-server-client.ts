@@ -30,6 +30,7 @@ import type {
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
+import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 
 export const CODEX_ACCEPT_TOKEN = "structured:accept";
 export const CODEX_DECLINE_TOKEN = "structured:decline";
@@ -84,6 +85,9 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   // itemId -> accumulated reasoning summary text (model_reasoning_summary=detailed).
   private readonly reasoningBodies = new Map<string, string>();
   private flushScheduled = false;
+  private readonly scanUpdate = createUpdateNoticeScanner((message) =>
+    this.onEvent({ kind: "runtime_notice", level: "info", message }),
+  );
 
   constructor(input: CreateCodexAppServerClientInput) {
     this.onEvent = input.onEvent;
@@ -102,6 +106,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
         process.stderr.write(`[tide-codex-as ${this.runtimeId}] ${chunk}`);
       }
+      this.scanUpdate(chunk);
     });
     this.child.on("error", () => {
       if (!this.exited) {

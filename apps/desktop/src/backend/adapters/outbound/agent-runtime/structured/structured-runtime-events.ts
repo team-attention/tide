@@ -48,6 +48,10 @@ export type StructuredProviderEvent =
       kind: "commands";
       commands: Array<{ name: string; description: string; trigger: "/" | "$" }>;
     }
+  // A non-blocking, out-of-band notice from the runtime process (currently an
+  // "update available" banner the CLI printed to stderr). Surfaced as a native
+  // OS notification, never a transcript block.
+  | { kind: "runtime_notice"; level: "info"; message: string }
   // The turn ended. `notice` carries a user-visible failure/limit message.
   | {
       kind: "turn_completed";
