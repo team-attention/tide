@@ -16,8 +16,17 @@
   --tide-text: #242424;
   --tide-muted: #8a8781;
   --tide-action: #343038;
+  /* Text/icons sitting ON an --tide-action-colored surface (a filled accent
+     button). In dark the accent surface flips light, so this flips dark. */
+  --tide-on-action: #ffffff;
   --tide-danger: #ba322f;
   --tide-line-strong: #d9d6cf;
+  /* Neutral "ink" over a surface — scrollbar thumbs + skeleton shimmer. Held as
+     an RGB triplet so the alpha-composited rules theme with one override. */
+  --tide-ink-rgb: 60, 55, 60;
+  /* Semantic diff add/remove. Tuned for the light surface; flipped in dark. */
+  --tide-diff-add: #1a7f37;
+  --tide-diff-del: #cf222e;
   --tide-hover: color-mix(in srgb, var(--tide-selection) 72%, transparent);
   --tide-shadow-popover: 0 8px 18px -10px rgb(52 48 56 / 12%);
   --tide-shadow-composer: 0 8px 11px rgba(52, 48, 56, 0.13);
@@ -29,6 +38,70 @@
   --agent-antigravity-bg: var(--tide-selection);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
+
+/* ============================================================================
+   DARK THEME — additive override. The light palette above is the default
+   (no data-theme attribute === light). renderer-entry sets data-theme="dark"
+   on <html> from the saved preference (light | dark | auto→follows the OS).
+   Anything that reads a --tide-* token re-themes via these overrides; the one
+   hard-coded palette that can't be alpha-flipped (code syntax) is restated.
+   The Workbench terminal stays dark in BOTH themes by design (ANSI legibility).
+   ========================================================================== */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --tide-bg: #1a1917;
+  --tide-surface: #232220;
+  --tide-selection: #302d29;
+  --tide-editor-selection: rgba(86, 140, 255, 0.32);
+  --tide-editor-active-line: rgba(255, 255, 255, 0.045);
+  --tide-line: #36332e;
+  --tide-text: #ecebe7;
+  --tide-muted: #9a948a;
+  --tide-action: #ecebe7;
+  --tide-on-action: #1a1917;
+  --tide-danger: #f0625f;
+  --tide-line-strong: #494540;
+  --tide-ink-rgb: 232, 230, 224;
+  --tide-diff-add: #3fb950;
+  --tide-diff-del: #f85149;
+  --tide-hover: color-mix(in srgb, var(--tide-selection) 72%, transparent);
+  --tide-shadow-popover: 0 8px 18px -10px rgb(0 0 0 / 60%);
+  --tide-shadow-composer: 0 8px 14px rgba(0, 0, 0, 0.5);
+}
+
+/* Code syntax — One Dark palette (the light One Light set above is solid colors
+   that can't theme through a token, so it's restated for dark). */
+[data-theme="dark"] .tok-keyword,
+[data-theme="dark"] .tok-controlKeyword,
+[data-theme="dark"] .tok-moduleKeyword,
+[data-theme="dark"] .tok-operatorKeyword { color: #c678dd; }
+[data-theme="dark"] .tok-string,
+[data-theme="dark"] .tok-string2,
+[data-theme="dark"] .tok-special.tok-string { color: #98c379; }
+[data-theme="dark"] .tok-comment,
+[data-theme="dark"] .tok-lineComment,
+[data-theme="dark"] .tok-blockComment { color: #7f848e; }
+[data-theme="dark"] .tok-number,
+[data-theme="dark"] .tok-bool,
+[data-theme="dark"] .tok-atom { color: #d19a66; }
+[data-theme="dark"] .tok-typeName,
+[data-theme="dark"] .tok-className,
+[data-theme="dark"] .tok-namespace { color: #e5c07b; }
+[data-theme="dark"] .tok-function,
+[data-theme="dark"] .tok-function.tok-variableName,
+[data-theme="dark"] .tok-macroName { color: #61afef; }
+[data-theme="dark"] .tok-propertyName { color: #e06c75; }
+[data-theme="dark"] .tok-variableName,
+[data-theme="dark"] .tok-definition.tok-variableName { color: #abb2bf; }
+[data-theme="dark"] .tok-operator,
+[data-theme="dark"] .tok-punctuation,
+[data-theme="dark"] .tok-bracket,
+[data-theme="dark"] .tok-separator { color: #828997; }
+[data-theme="dark"] .tok-meta,
+[data-theme="dark"] .tok-annotation { color: #d19a66; }
+[data-theme="dark"] .tok-link,
+[data-theme="dark"] .tok-url { color: #61afef; }
+[data-theme="dark"] .tok-heading { color: #e06c75; }
 
 * {
   box-sizing: border-box;
@@ -63,7 +136,7 @@ button {
    over content with padding, and the track is transparent. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(60, 55, 60, 0.28) transparent;
+  scrollbar-color: rgba(var(--tide-ink-rgb), 0.28) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -77,14 +150,14 @@ button {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(60, 55, 60, 0.24);
+  background: rgba(var(--tide-ink-rgb), 0.24);
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: padding-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(60, 55, 60, 0.42);
+  background: rgba(var(--tide-ink-rgb), 0.42);
   background-clip: padding-box;
 }
 
@@ -503,6 +576,49 @@ button {
 
 .settings-modal__hint {
   font-size: 11.5px;
+  color: var(--tide-muted);
+}
+
+/* Theme picker: three selectable cards (Light / Dark / Auto). */
+.settings-theme {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.settings-theme__option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--tide-line);
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.settings-theme__option:hover {
+  background: var(--tide-selection);
+}
+
+.settings-theme__option[data-active="true"] {
+  border-color: var(--tide-action);
+  background: var(--tide-selection);
+}
+
+.settings-theme__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tide-text);
+}
+
+.settings-theme__hint {
+  font-size: 11px;
+  line-height: 1.35;
   color: var(--tide-muted);
 }
 
@@ -1671,11 +1787,11 @@ button {
 }
 
 .diff-stat--add {
-  color: #1a7f37;
+  color: var(--tide-diff-add);
 }
 
 .diff-stat--del {
-  color: #cf222e;
+  color: var(--tide-diff-del);
 }
 
 .agent-session-turn__diff-body {
@@ -1703,19 +1819,19 @@ button {
 }
 
 .diff-line--add {
-  background: rgba(26, 127, 55, 0.12);
+  background: color-mix(in srgb, var(--tide-diff-add) 14%, transparent);
 }
 
 .diff-line--add .diff-line__sign {
-  color: #1a7f37;
+  color: var(--tide-diff-add);
 }
 
 .diff-line--del {
-  background: rgba(207, 34, 46, 0.12);
+  background: color-mix(in srgb, var(--tide-diff-del) 14%, transparent);
 }
 
 .diff-line--del .diff-line__sign {
-  color: #cf222e;
+  color: var(--tide-diff-del);
 }
 
 /* Codex-style collapsed tool-activity summary: a quiet one-line row that
@@ -3311,7 +3427,7 @@ button {
   border: 0;
   border-radius: 999px;
   background: var(--tide-action);
-  color: #fff;
+  color: var(--tide-on-action);
   font: 600 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
   cursor: pointer;
 }
@@ -3337,9 +3453,9 @@ button {
 .workbench-browser-bar__to-chat[data-active="true"] {
   border-color: var(--tide-action, var(--tide-text));
   background: var(--tide-action, var(--tide-text));
-  color: #fff;
+  color: var(--tide-on-action);
 }
-.workbench-browser-bar__to-chat[data-active="true"] svg { color: #fff; }
+.workbench-browser-bar__to-chat[data-active="true"] svg { color: var(--tide-on-action); }
 
 /* Square icon-only "open in external browser" button on the browser toolbar. */
 .workbench-browser-bar__external {
@@ -3425,8 +3541,8 @@ button {
   font-weight: 500;
 }
 
-.workbench-diff__stat-add { color: #1a7f37; font-variant-numeric: tabular-nums; }
-.workbench-diff__stat-del { color: #c0392b; font-variant-numeric: tabular-nums; }
+.workbench-diff__stat-add { color: var(--tide-diff-add); font-variant-numeric: tabular-nums; }
+.workbench-diff__stat-del { color: var(--tide-diff-del); font-variant-numeric: tabular-nums; }
 .workbench-diff__stat-label { color: var(--tide-muted); font-weight: 400; }
 
 .workbench-diff-row {
@@ -3467,10 +3583,10 @@ button {
 
 /* A subtle colored bar on the left edge of changed rows (VS Code gutter cue). */
 .workbench-diff-row--added {
-  background: color-mix(in srgb, #2f9e44 11%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, #2f9e44 55%, transparent);
+  background: color-mix(in srgb, var(--tide-diff-add) 11%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--tide-diff-add) 55%, transparent);
 }
-.workbench-diff-row--added .workbench-diff-row__marker { color: #1a7f37; }
+.workbench-diff-row--added .workbench-diff-row__marker { color: var(--tide-diff-add); }
 
 .workbench-diff-row--removed {
   background: color-mix(in srgb, var(--tide-danger) 10%, transparent);
@@ -3910,16 +4026,16 @@ button {
 .workbench-md-toggle__pick[data-active="true"] {
   border-color: var(--tide-action, var(--tide-text));
   background: var(--tide-action, var(--tide-text));
-  color: #fff;
+  color: var(--tide-on-action);
 }
-.workbench-md-toggle__pick[data-active="true"] svg { color: #fff; }
+.workbench-md-toggle__pick[data-active="true"] svg { color: var(--tide-on-action); }
 
 .workbench-md-toggle__pick--add {
   border-color: var(--tide-action, var(--tide-text));
   background: var(--tide-action, var(--tide-text));
-  color: #fff;
+  color: var(--tide-on-action);
 }
-.workbench-md-toggle__pick--add svg { color: #fff; }
+.workbench-md-toggle__pick--add svg { color: var(--tide-on-action); }
 
 /* While picking blocks, the preview doesn't select text — the drag picks blocks. */
 .workbench-md[data-md-picking="true"] .workbench-md-preview {
@@ -3971,7 +4087,7 @@ button {
   font-weight: 700;
   font-size: 25px;
   line-height: 30px;
-  color: #29252d;
+  color: var(--tide-text);
 }
 
 .markdown-body h2 {
@@ -3979,7 +4095,7 @@ button {
   font-weight: 700;
   font-size: 19px;
   line-height: 26px;
-  color: #29252d;
+  color: var(--tide-text);
 }
 
 .markdown-body h3 {
@@ -4349,9 +4465,9 @@ button.file-tree-row {
 .agent-skeleton__line {
   background: linear-gradient(
     90deg,
-    rgba(60, 55, 60, 0.06) 25%,
-    rgba(60, 55, 60, 0.13) 37%,
-    rgba(60, 55, 60, 0.06) 63%
+    rgba(var(--tide-ink-rgb), 0.06) 25%,
+    rgba(var(--tide-ink-rgb), 0.13) 37%,
+    rgba(var(--tide-ink-rgb), 0.06) 63%
   );
   background-size: 400% 100%;
   animation: tide-skeleton-shimmer 1.4s ease infinite;
@@ -4401,9 +4517,9 @@ button.file-tree-row {
 .file-tree-skeleton__label {
   background: linear-gradient(
     90deg,
-    rgba(60, 55, 60, 0.06) 25%,
-    rgba(60, 55, 60, 0.13) 37%,
-    rgba(60, 55, 60, 0.06) 63%
+    rgba(var(--tide-ink-rgb), 0.06) 25%,
+    rgba(var(--tide-ink-rgb), 0.13) 37%,
+    rgba(var(--tide-ink-rgb), 0.06) 63%
   );
   background-size: 400% 100%;
   animation: tide-skeleton-shimmer 1.4s ease infinite;
@@ -4470,9 +4586,9 @@ button.file-tree-row {
 .rail-skeleton__label {
   background: linear-gradient(
     90deg,
-    rgba(60, 55, 60, 0.06) 25%,
-    rgba(60, 55, 60, 0.13) 37%,
-    rgba(60, 55, 60, 0.06) 63%
+    rgba(var(--tide-ink-rgb), 0.06) 25%,
+    rgba(var(--tide-ink-rgb), 0.13) 37%,
+    rgba(var(--tide-ink-rgb), 0.06) 63%
   );
   background-size: 400% 100%;
   animation: tide-skeleton-shimmer 1.4s ease infinite;
@@ -4495,22 +4611,22 @@ button.file-tree-row {
   min-height: 240px;
   padding: 40px 24px;
   text-align: center;
-  color: rgba(60, 55, 60, 0.55);
+  color: rgba(var(--tide-ink-rgb), 0.55);
 }
 .agent-session-empty__icon {
-  color: rgba(60, 55, 60, 0.32);
+  color: rgba(var(--tide-ink-rgb), 0.32);
   margin-bottom: 2px;
 }
 .agent-session-empty__title {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: rgba(60, 55, 60, 0.7);
+  color: rgba(var(--tide-ink-rgb), 0.7);
 }
 .agent-session-empty__hint {
   margin: 0;
   font-size: 12.5px;
   line-height: 1.5;
   max-width: 280px;
-  color: rgba(60, 55, 60, 0.48);
+  color: rgba(var(--tide-ink-rgb), 0.48);
 }

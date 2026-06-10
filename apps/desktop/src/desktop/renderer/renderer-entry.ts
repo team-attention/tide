@@ -20,6 +20,12 @@ import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 import "@xterm/xterm/css/xterm.css";
 import "./tide-product-shell.css";
+import { applyThemePreference, loadThemePreference, watchSystemTheme } from "./theme.ts";
+
+// The inline script in index.html already set the boot theme to avoid a flash;
+// re-apply from the source of truth and keep "auto" in sync with the OS.
+applyThemePreference(loadThemePreference());
+watchSystemTheme(loadThemePreference);
 
 export function createInitialRendererElement() {
   return createElement(TideProductShell, {

@@ -4,6 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tide</title>
+    <script>
+      // Apply the saved theme synchronously, before any CSS/JS, so a dark user
+      // never sees a flash of the light default. Mirrors renderer/theme.ts.
+      (function () {
+        try {
+          var pref = localStorage.getItem("tide.theme") || "auto";
+          var dark =
+            pref === "dark" ||
+            (pref === "auto" &&
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+        } catch (e) {
+          /* default light */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

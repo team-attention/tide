@@ -20,6 +20,7 @@ import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 import "@xterm/xterm/css/xterm.css";
 import "./tide-product-shell.css";
+import { applyThemePreference } from "./theme.ts";
 
 const CLAUDE_MD_PREVIEW = [
   "# Tide — Project Rules",
@@ -459,6 +460,13 @@ const root = document.getElementById("root");
 if (root) {
   try {
     const params = new URLSearchParams(location.search);
+    // ?theme=dark|light|auto lets the harness be screenshotted in either theme.
+    const themeParam = params.get("theme");
+    applyThemePreference(
+      themeParam === "dark" || themeParam === "light" || themeParam === "auto"
+        ? themeParam
+        : "light",
+    );
     const wantsBrowser = params.get("pane") === "browser";
     const wantsQueued = params.get("mode") === "queued";
     const wantsRich = params.get("mode") === "rich";

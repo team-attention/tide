@@ -177,6 +177,12 @@ import type {
   AgentChatCommandOption,
   AgentChatComposerSurfaceKind,
 } from "../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import {
+  applyThemePreference,
+  loadThemePreference,
+  saveThemePreference,
+  type TideThemePreference,
+} from "../../../renderer/theme.ts";
 
 const LIST_SETTINGS_STORAGE_KEY = "tide.listSettings";
 
@@ -442,6 +448,7 @@ interface ProductShellHandlers {
   onOpenSettings: () => void;
   onCloseSettings: () => void;
   onWorktreeSettingsChange: (patch: Partial<ProductShellWorktreeSettings>) => void;
+  onThemeChange: (pref: TideThemePreference) => void;
   onPinnedProjectSelect: (projectId: string) => void;
   onAddProject: () => void;
   onNewScratchThread: () => void;
@@ -865,6 +872,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       })
     );
   });
+  // Theme preference (light/dark/auto). Renderer-local: the DOM + localStorage are
+  // the source of truth (applied at boot by renderer-entry / index.html); this
+  // useState only drives the Settings radio's selected state.
+  const [themePref, setThemePref] = useState<TideThemePreference>(loadThemePreference);
+
   // Remember the Start Composer's agent/model choice: whenever it changes while no
   // thread is active, persist it so the NEXT New Thread (this launch or the next)
   // defaults to it.
@@ -1532,6 +1544,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         persistWorktreeSettings(next.worktreeSettings);
         return next;
       }),
+    onThemeChange: (pref) => {
+      setThemePref(pref);
+      saveThemePreference(pref);
+      applyThemePreference(pref);
+    },
     onPinnedProjectSelect: (projectId) =>
       setShellState((state) => {
         const result = selectProductShellChoiceSurfaceRow(
@@ -1770,7 +1787,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       panes: layoutVm.backgroundBrowserPanes,
       handlers,
     }),
-    viewModel.settingsOpen ? createSettingsModal(viewModel.worktreeSettings, handlers) : null,
+    viewModel.settingsOpen ? createSettingsModal(viewModel.worktreeSettings, themePref, handlers) : null,
     quickOpenVisible
       ? createElement(QuickOpenPalette, {
           files: quickOpenFiles,
@@ -1851,8 +1868,15 @@ function createWindowChromeToggles(
 // App Settings modal (centered overlay). Currently hosts worktree creation
 // options: the directory pattern and files to copy into a new worktree.
 // See docs_v2/specs/worktree-creation.md.
+const THEME_OPTIONS: { value: TideThemePreference; label: string; hint: string }[] = [
+  { value: "light", label: "Light", hint: "Always light" },
+  { value: "dark", label: "Dark", hint: "Always dark" },
+  { value: "auto", label: "Auto", hint: "Follow the system (changes by time of day)" },
+];
+
 function createSettingsModal(
   worktree: ProductShellWorktreeSettings,
+  theme: TideThemePreference,
   handlers: ProductShellHandlers,
 ): ReactElement {
   return createElement(
@@ -1875,6 +1899,31 @@ function createSettingsModal(
           createElement(X, { size: 16, strokeWidth: 1.9 }),
           handlers.onCloseSettings,
           "settings-modal__close",
+        ),
+      ),
+      createElement(
+        "section",
+        { className: "settings-modal__section" },
+        createElement("h3", { className: "settings-modal__section-title" }, "Appearance"),
+        createElement(
+          "div",
+          { className: "settings-theme", role: "group", "aria-label": "Theme" },
+          ...THEME_OPTIONS.map((option) =>
+            createElement(
+              "button",
+              {
+                key: option.value,
+                type: "button",
+                className: "settings-theme__option",
+                "data-active": theme === option.value ? "true" : "false",
+                "aria-pressed": theme === option.value,
+                title: option.hint,
+                onClick: () => handlers.onThemeChange(option.value),
+              },
+              createElement("span", { className: "settings-theme__label" }, option.label),
+              createElement("span", { className: "settings-theme__hint" }, option.hint),
+            ),
+          ),
         ),
       ),
       createElement(
