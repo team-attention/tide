@@ -144,6 +144,14 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
             scope: "provider",
             message:
               "Gemini CLI sign-in is required before starting a Thread (run `gemini` and sign in).",
+            // Same setup affordance as claude/codex: open the CLI in a Tide
+            // terminal so the user can sign in, then retry preflight.
+            setup: {
+              command: executablePath,
+              args: [],
+              cwd,
+              expectedCompletion: "retry_preflight",
+            },
           },
         ],
         capabilities: geminiCapabilities,
