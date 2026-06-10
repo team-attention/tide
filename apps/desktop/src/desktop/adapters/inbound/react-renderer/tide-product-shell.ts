@@ -4791,7 +4791,12 @@ function createIconButton(
 }
 
 function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
-  if (agentId === "claude" || agentId === "antigravity" || agentId === "openai_api") {
+  if (
+    agentId === "claude" ||
+    agentId === "gemini" ||
+    agentId === "antigravity" ||
+    agentId === "openai_api"
+  ) {
     return agentId;
   }
   return "codex";

@@ -839,6 +839,11 @@ export function createLiveAgentSessionEventProjector(input: {
     string,
     { sinceMs: number; seenKeys: Set<string>; pollingStarted: boolean }
   >();
+  // Gemini session binding: gemini does not hand Tide its session id, so each runtime
+  // discovers its own `~/.gemini/.../chats/session-*.jsonl`. These prevent two threads
+  // from binding the same file (the cause of "different threads, identical answer").
+  const geminiBoundPathByRuntime = new Map<string, string>();
+  const geminiClaimedSessionPaths = new Set<string>();
   // SINGLE CONTENT SOURCE - why there is no answer dedup anywhere. A turn's content
   // (answer text, reasoning, tool calls) is produced ONLY by the agent history reader
   // (claude transcript / codex rollout / gemini session). The turn-end SIGNAL (claude
@@ -1557,9 +1562,25 @@ export function createLiveAgentSessionEventProjector(input: {
       { sinceMs: Date.now() - 15_000, seenKeys: new Set<string>(), pollingStarted: false };
     geminiHistoryByRuntime.set(frameInput.runtimeId, historyState);
 
-    const boundPath =
+    // Bind each gemini thread to ITS OWN session file. Already-bound threads keep their
+    // ref; a fresh thread claims the most-recent session that matches its prompt and is
+    // not already claimed by another runtime (geminiClaimedSessionPaths). The find +
+    // claim is synchronous (no await between), so two concurrent threads can't grab the
+    // same file - the root cause of the "different threads, identical answer" bug.
+    let boundPath =
       hydrated.thread.agentBinding.providerSessionRef?.transcriptPath ??
-      findRecentGeminiSessionPath(input.homeDir, historyState.sinceMs);
+      geminiBoundPathByRuntime.get(frameInput.runtimeId);
+    if (boundPath === undefined) {
+      const candidate = findRecentGeminiSessionPath(input.homeDir, historyState.sinceMs, {
+        exclude: geminiClaimedSessionPaths,
+        expectedUserMessage,
+      });
+      if (candidate !== undefined) {
+        geminiClaimedSessionPaths.add(candidate);
+        geminiBoundPathByRuntime.set(frameInput.runtimeId, candidate);
+        boundPath = candidate;
+      }
+    }
     if (boundPath === undefined) {
       return;
     }
@@ -2278,6 +2299,7 @@ function rebuildAdoptedConversation(seed: ThreadSeed): AgentSessionBlock[] {
 function findRecentGeminiSessionPath(
   homeDir: string,
   sinceMs: number,
+  options?: { exclude?: ReadonlySet<string>; expectedUserMessage?: string },
 ): string | undefined {
   const tmpRoot = join(homeDir, ".gemini", "tmp");
   let projectDirs: string[];
@@ -2288,7 +2310,13 @@ function findRecentGeminiSessionPath(
   } catch {
     return undefined;
   }
-  let best: { path: string; mtimeMs: number } | undefined;
+  // Two candidate tiers so concurrent gemini threads never bind the same file:
+  // a session whose FIRST user message matches this thread's prompt wins outright
+  // (exact attribution), otherwise fall back to the most-recent unclaimed session.
+  let matched: { path: string; mtimeMs: number } | undefined;
+  let fallback: { path: string; mtimeMs: number } | undefined;
+  const exclude = options?.exclude;
+  const wanted = options?.expectedUserMessage?.trim();
   for (const project of projectDirs) {
     const chatsDir = join(tmpRoot, project, "chats");
     let names: string[];
@@ -2302,17 +2330,62 @@ function findRecentGeminiSessionPath(
         continue;
       }
       const path = join(chatsDir, name);
+      if (exclude?.has(path)) {
+        continue;
+      }
       try {
         const mtimeMs = statSync(path).mtimeMs;
-        if (mtimeMs >= sinceMs && (best === undefined || mtimeMs > best.mtimeMs)) {
-          best = { path, mtimeMs };
+        if (mtimeMs < sinceMs) {
+          continue;
+        }
+        if (fallback === undefined || mtimeMs > fallback.mtimeMs) {
+          fallback = { path, mtimeMs };
+        }
+        if (
+          wanted !== undefined &&
+          geminiSessionFirstUserMessageMatches(path, wanted) &&
+          (matched === undefined || mtimeMs > matched.mtimeMs)
+        ) {
+          matched = { path, mtimeMs };
         }
       } catch {
         // Skip files that vanished between listing and stat.
       }
     }
   }
-  return best?.path;
+  return (matched ?? fallback)?.path;
+}
+
+// True when the gemini session file's first user turn equals the expected prompt, so a
+// thread binds to ITS OWN session even when several start at once.
+function geminiSessionFirstUserMessageMatches(path: string, wanted: string): boolean {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return false;
+  }
+  for (const line of text.split("\n")) {
+    if (line.trim().length === 0) {
+      continue;
+    }
+    try {
+      const record = JSON.parse(line) as Record<string, unknown>;
+      const role = record.role ?? record.type;
+      const content =
+        typeof record.content === "string"
+          ? record.content
+          : typeof (record as { text?: unknown }).text === "string"
+            ? (record as { text: string }).text
+            : undefined;
+      if ((role === "user" || role === "human") && content !== undefined) {
+        return content.trim() === wanted;
+      }
+    } catch {
+      // Ignore unparseable lines.
+    }
+  }
+  return false;
 }
 
 function latestUserMessageForProviderHistory(
