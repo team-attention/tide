@@ -246,6 +246,9 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       "--output-format",
       "stream-json",
       "--verbose",
+      // Stream partial message deltas so Tide can render the answer
+      // token-by-token (the structured client coalesces them into live updates).
+      "--include-partial-messages",
       "--permission-prompt-tool",
       "stdio",
       "--mcp-config",

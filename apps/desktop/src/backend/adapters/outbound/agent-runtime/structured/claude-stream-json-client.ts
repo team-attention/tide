@@ -62,10 +62,18 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   private readonly runtimeId: string;
   private readonly agentId = "claude" as const;
   private buffer = "";
-  private recordIndex = 0;
   private initialPrompt?: string;
   private initSeen = false;
   private exited = false;
+  // Live streaming state: the id of the assistant message currently streaming
+  // (from message_start) and the accumulated text per content-block index. The
+  // matching complete `assistant` message finalizes these by the SAME blockId.
+  private streamMessageId?: string;
+  private readonly streamBlocks = new Map<
+    number,
+    { kind: "agent" | "reasoning"; body: string }
+  >();
+  private flushScheduled = false;
   // promptId -> the protocol request awaiting a control_response.
   private readonly pendingPermissions = new Map<string, PendingPermission>();
 
@@ -248,7 +256,14 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       this.initSeen = true;
       return;
     }
+    if (type === "stream_event") {
+      this.handleStreamEvent(isRecord(message.event) ? message.event : {});
+      return;
+    }
     if (type === "assistant" || type === "user") {
+      // The complete message finalizes whatever streamed (same blockId scheme),
+      // so flush any pending delta first, then persist.
+      this.flushStream();
       this.emitContentRecords(message);
       return;
     }
@@ -277,8 +292,75 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       });
       return;
     }
-    // stream_event (partial deltas), rate_limit_event, keep_alive: not consumed
-    // yet — complete messages carry the content this slice renders.
+    // rate_limit_event, keep_alive: ignored.
+  }
+
+  // --- Live streaming (requires --include-partial-messages) ---
+  // message_start gives the message id; content_block_delta carries text_delta /
+  // thinking_delta per content-block index. We accumulate and flush coalesced
+  // content_delta events (UI-only). The complete `assistant` message then
+  // finalizes the same blockIds. Verified shapes live (claude 2.1.170).
+  private handleStreamEvent(event: Record<string, unknown>): void {
+    const eventType = event.type;
+    if (eventType === "message_start") {
+      const inner = isRecord(event.message) ? event.message : {};
+      this.streamMessageId = stringField(inner, "id");
+      this.streamBlocks.clear();
+      return;
+    }
+    if (eventType === "content_block_delta") {
+      const index = typeof event.index === "number" ? event.index : 0;
+      const delta = isRecord(event.delta) ? event.delta : {};
+      let kind: "agent" | "reasoning" | undefined;
+      let text: string | undefined;
+      if (delta.type === "text_delta" && typeof delta.text === "string") {
+        kind = "agent";
+        text = delta.text;
+      } else if (delta.type === "thinking_delta" && typeof delta.thinking === "string") {
+        kind = "reasoning";
+        text = delta.thinking;
+      }
+      if (kind === undefined || text === undefined) {
+        return;
+      }
+      const slot = this.streamBlocks.get(index) ?? { kind, body: "" };
+      slot.body += text;
+      this.streamBlocks.set(index, slot);
+      this.scheduleFlush();
+      return;
+    }
+    if (eventType === "message_stop") {
+      this.flushStream();
+    }
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushScheduled) {
+      return;
+    }
+    this.flushScheduled = true;
+    // Coalesce token deltas into ~50ms UI updates so streaming feels live
+    // without flooding IPC/React with one event per token.
+    setTimeout(() => this.flushStream(), 50).unref();
+  }
+
+  private flushStream(): void {
+    this.flushScheduled = false;
+    if (this.streamMessageId === undefined) {
+      return;
+    }
+    for (const [index, slot] of this.streamBlocks) {
+      if (slot.body.length === 0) {
+        continue;
+      }
+      this.onEvent({
+        kind: "content_delta",
+        blockId: `structured:${this.runtimeId}:${this.streamMessageId}:${index}`,
+        role: slot.kind,
+        blockKind: slot.kind === "reasoning" ? "reasoning" : "agent_message",
+        body: slot.body,
+      });
+    }
   }
 
   private emitContentRecords(message: Record<string, unknown>): void {
@@ -287,14 +369,16 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       return;
     }
     const role = inner.role;
-    for (const item of inner.content) {
+    // Key every block by the message id + its content-block index, so a
+    // streamed block (content_delta used the same key) is FINALIZED here rather
+    // than duplicated. Falls back to the runtime id for messages with no id.
+    const messageId = stringField(inner, "id") ?? this.streamMessageId ?? "msg";
+    inner.content.forEach((item, index) => {
       if (!isRecord(item)) {
-        continue;
+        return;
       }
-      const index = this.recordIndex;
-      const blockId = `structured:${this.runtimeId}:${index}`;
+      const blockId = `structured:${this.runtimeId}:${messageId}:${index}`;
       if (item.type === "text" && role === "assistant" && typeof item.text === "string" && item.text.length > 0) {
-        this.recordIndex += 1;
         this.emitRecord(blockId, {
           type: "message",
           role: "agent",
@@ -303,10 +387,9 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
           body: item.text,
           sourceRuntimeId: this.runtimeId,
         }, item.text);
-        continue;
+        return;
       }
       if (item.type === "thinking" && typeof item.thinking === "string" && item.thinking.length > 0) {
-        this.recordIndex += 1;
         this.emitRecord(blockId, {
           type: "reasoning",
           role: "reasoning",
@@ -315,10 +398,9 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
           body: item.thinking,
           sourceRuntimeId: this.runtimeId,
         }, item.thinking);
-        continue;
+        return;
       }
       if (item.type === "tool_use" && typeof item.id === "string") {
-        this.recordIndex += 1;
         const argumentsText = JSON.stringify(item.input ?? {});
         this.emitRecord(`${blockId}:${item.id}`, {
           type: "tool_call",
@@ -330,10 +412,9 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
           blockId: `${blockId}:${item.id}`,
           sourceRuntimeId: this.runtimeId,
         }, bounded(argumentsText));
-        continue;
+        return;
       }
       if (item.type === "tool_result" && typeof item.tool_use_id === "string") {
-        this.recordIndex += 1;
         const output = toolResultText(item.content);
         this.emitRecord(`${blockId}:${item.tool_use_id}`, {
           type: "tool_result",
@@ -346,7 +427,10 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
           sourceRuntimeId: this.runtimeId,
         }, bounded(output));
       }
-    }
+    });
+    // The message is finalized; clear streaming state for the next message.
+    this.streamMessageId = undefined;
+    this.streamBlocks.clear();
   }
 
   private emitRecord(sourceRef: string, payload: Record<string, unknown>, body: string): void {

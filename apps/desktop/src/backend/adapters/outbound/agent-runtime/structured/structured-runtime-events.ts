@@ -15,11 +15,24 @@ export type StructuredProviderEvent =
   | { kind: "session_ref"; ref: DiscoveredProviderSessionRef }
   // One conversation record (message / reasoning / tool_call / tool_result).
   // `payload` uses the SAME shapes the provider history connectors emit, so the
-  // existing frame→block reader pipeline renders it unchanged.
+  // existing frame→block reader pipeline renders it unchanged. This is the
+  // FINAL, persisted form of a block.
   | {
       kind: "content_record";
       sourceRef: string;
       payload: Record<string, unknown>;
+      body: string;
+    }
+  // A live STREAMING update for an in-flight message/reasoning block. UI-only:
+  // it upserts the block (text flows token-by-token) WITHOUT the reader/persist
+  // pipeline — per-token disk writes would blow the perf budget. The matching
+  // `content_record` (SAME blockId) finalizes + persists when the block
+  // completes. Carries the full accumulated body each time (idempotent upsert).
+  | {
+      kind: "content_delta";
+      blockId: string;
+      role: "agent" | "reasoning";
+      blockKind: "agent_message" | "reasoning";
       body: string;
     }
   // The provider is waiting on the user (tool permission, question). The

@@ -921,6 +921,32 @@ export function createLiveAgentSessionEventProjector(input: {
         });
         return;
       }
+      if (event.kind === "content_delta") {
+        // Live streaming: upsert the block in the in-memory cache and emit the
+        // UI event ONLY — no frame append, no reader, no persist (per-token disk
+        // writes would blow the perf budget). The matching content_record
+        // finalizes + persists the same blockId when the block completes.
+        const now = new Date().toISOString();
+        const blocks = new Map(
+          (blocksByThread.get(eventInput.threadId) ?? []).map((b) => [b.blockId, b]),
+        );
+        const existing = blocks.get(event.blockId);
+        const block: AgentSessionBlock = {
+          blockId: event.blockId,
+          threadId: eventInput.threadId,
+          agentId: eventInput.agentId,
+          kind: event.blockKind,
+          role: event.role,
+          sourceFrameIds: existing?.sourceFrameIds ?? [],
+          status: "streaming",
+          body: event.body,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        };
+        emitBlockUpdate({ update: { kind: "upsert", block }, blocks, onEvent: input.onEvent });
+        blocksByThread.set(eventInput.threadId, [...blocks.values()]);
+        return;
+      }
       if (event.kind === "prompt") {
         await emitPromptState({
           promptState: event.promptState,

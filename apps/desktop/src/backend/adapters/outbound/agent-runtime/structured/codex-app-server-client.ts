@@ -73,6 +73,10 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private readonly pendingApprovals = new Map<string, number | string>();
   private readonly queuedWrites: string[] = [];
   private ready = false;
+  // Live streaming: itemId -> accumulated agentMessage text. The complete
+  // item/completed finalizes the same blockId (msg:<itemId>).
+  private readonly streamBodies = new Map<string, string>();
+  private flushScheduled = false;
 
   constructor(input: CreateCodexAppServerClientInput) {
     this.onEvent = input.onEvent;
@@ -295,7 +299,19 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
 
+    if (method === "item/agentMessage/delta") {
+      // Live token streaming. {itemId, delta} — accumulate and flush coalesced
+      // content_delta (UI-only); item/completed finalizes the same blockId.
+      const itemId = stringField(params, "itemId");
+      const delta = stringField(params, "delta");
+      if (itemId !== undefined && delta !== undefined) {
+        this.streamBodies.set(itemId, (this.streamBodies.get(itemId) ?? "") + delta);
+        this.scheduleFlush();
+      }
+      return;
+    }
     if (method === "item/completed") {
+      this.flushStream();
       this.emitItem(isRecord(params.item) ? params.item : undefined);
       return;
     }
@@ -387,16 +403,19 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     const itemId = stringField(item, "id") ?? String(this.recordIndex);
     const blockBase = `structured:${this.runtimeId}:${this.recordIndex}`;
     if (itemType === "agentMessage") {
-      const text = stringField(item, "text");
+      // Finalize the streamed text under the SAME blockId the deltas used
+      // (msg:<itemId>), so streaming → final is one block, never duplicated.
+      const text = stringField(item, "text") ?? this.streamBodies.get(itemId);
+      this.streamBodies.delete(itemId);
       if (text === undefined) {
         return;
       }
-      this.recordIndex += 1;
-      this.emitRecord(blockBase, {
+      const blockId = `structured:${this.runtimeId}:msg:${itemId}`;
+      this.emitRecord(blockId, {
         type: "message",
         role: "agent",
         status: "complete",
-        blockId: blockBase,
+        blockId,
         body: text,
         sourceRuntimeId: this.runtimeId,
       }, text);
@@ -487,6 +506,31 @@ class CodexAppServerClient implements StructuredRuntimeClient {
 
   private emitRecord(sourceRef: string, payload: Record<string, unknown>, body: string): void {
     this.onEvent({ kind: "content_record", sourceRef, payload, body });
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushScheduled) {
+      return;
+    }
+    this.flushScheduled = true;
+    // Coalesce token deltas into ~50ms UI updates (avoid one event per token).
+    setTimeout(() => this.flushStream(), 50).unref();
+  }
+
+  private flushStream(): void {
+    this.flushScheduled = false;
+    for (const [itemId, body] of this.streamBodies) {
+      if (body.length === 0) {
+        continue;
+      }
+      this.onEvent({
+        kind: "content_delta",
+        blockId: `structured:${this.runtimeId}:msg:${itemId}`,
+        role: "agent",
+        blockKind: "agent_message",
+        body,
+      });
+    }
   }
 }
 
