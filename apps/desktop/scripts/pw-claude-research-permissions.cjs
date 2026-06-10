@@ -87,7 +87,10 @@ const check = (ok, label, detail) => { checks.push(ok); log({ phase: ok ? "ok" :
       // exclude the user's own prompt echo
       shellText.replace(PROMPT, "").match(/\d{2}/);
     const working = /Working|Thinking/i.test(shellText);
-    if (!working && approved.size > 0 && hasNumberAnswer) { answered = true; break; }
+    // Exit only after BOTH fetch permissions were approved: the search summary
+    // alone contains a plausible number, and between search and the first fetch
+    // card there is a no-Working instant that faked "answered" (seen live).
+    if (!working && approved.size >= 3 && hasNumberAnswer) { answered = true; break; }
 
     // Periodic progress shot
     if (Date.now() - lastWorkingShotAt > 20000) { await shot("working"); lastWorkingShotAt = Date.now(); }

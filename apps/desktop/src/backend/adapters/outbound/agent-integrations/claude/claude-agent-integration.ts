@@ -386,7 +386,25 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     initialPrompt?: string;
     sessionId?: string;
   }): ProviderLaunchPlan {
+    // STRUCTURED TRANSPORT: the stream-json control protocol over plain stdio —
+    // no hidden PTY, no TUI. Evidence-based (live transcripts, claude 2.1.170;
+    // the official Agent SDK passes exactly these flags):
+    // - --permission-prompt-tool stdio is REQUIRED for can_use_tool permission
+    //   requests to arrive; without it tools are silently auto-blocked.
+    // - --verbose is required for stream-json output in --print mode.
+    // - the workspace-trust dialog does not exist in non-TTY mode by design
+    //   (claude --help): Tide's own trust flow remains the gate.
+    // - the first user message is written to stdin AFTER the init message by the
+    //   structured client (replaces PTY startup delays and readiness gates).
     const args = [
+      "--print",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--permission-prompt-tool",
+      "stdio",
       "--mcp-config",
       this.mcpConfigPath,
       "--settings",
@@ -403,29 +421,12 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       args.push("--session-id", input.sessionId);
     }
 
-    // Claude delivers its first message as a positional [prompt] at launch. Unlike
-    // codex it registers its MCP tools before running the turn, so the launch-time
-    // prompt is reliable and avoids the finicky TUI-typing path. Its readiness gate
-    // is therefore `immediate`. See agent-turn-handoff-readiness.md.
-    if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
-      args.push(input.initialPrompt);
-    }
-
     return {
       command: input.executablePath,
       args,
-      env: {
-        TERM: "xterm-256color",
-        COLORTERM: "truecolor",
-      },
+      env: {},
       cwd: input.cwd,
-      inputTiming: {
-        startupDelayMs: 5000,
-        preSubmitDelayMs: 350,
-      },
-      // Claude's TUI negotiates the extended (CSI-u) keyboard protocol on the
-      // hidden PTY, so plain "\r" does not submit; Enter is "\x1b[13u".
-      submitKeySequence: "\x1b[13u",
+      transport: "claude_stream_json",
       expectedSignalSources: expectedSignalSources.map((source) => ({
         ...source,
       })),

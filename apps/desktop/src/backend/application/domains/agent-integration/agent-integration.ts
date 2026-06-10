@@ -37,6 +37,12 @@ export interface ProviderLaunchPlan {
   args: string[];
   env: Record<string, string>;
   cwd: string;
+  // How Tide talks to the spawned process. "hidden_pty" (default) wraps the
+  // interactive TUI in a pseudo-terminal and infers everything from scrapes,
+  // hooks, and history files. Structured transports speak the provider's own
+  // machine protocol over plain stdio — events, permissions, and turn ends are
+  // native protocol messages (see docs_v2/specs/structured-agent-runtime.md).
+  transport?: "hidden_pty" | "claude_stream_json" | "codex_app_server" | "gemini_acp";
   inputTiming?: {
     startupDelayMs?: number;
     preSubmitDelayMs?: number;

@@ -22,6 +22,11 @@ import type {
   AgentId,
   ProviderCliAgentId,
 } from "../../../application/domains/thread/thread.ts";
+import { createClaudeStreamJsonClient } from "./structured/claude-stream-json-client.ts";
+import type {
+  StructuredProviderEvent,
+  StructuredRuntimeClient,
+} from "./structured/structured-runtime-events.ts";
 
 export type AgentIntegrationRegistry = Record<ProviderCliAgentId, AgentIntegrationPort>;
 
@@ -68,6 +73,15 @@ interface RuntimeProcessState {
   autoRespondedPatterns: Set<string>;
 }
 
+// A structured-transport runtime: the provider's machine protocol over plain
+// stdio. None of the PTY machinery (startup delays, submit keys, menu
+// navigation, auto-responders) exists here — input routing is protocol-native.
+interface StructuredRuntimeState {
+  client: StructuredRuntimeClient;
+  threadId: string;
+  agentId: ProviderCliAgentId;
+}
+
 export interface CreateAgentIntegrationRuntimePortInput {
   integrations: AgentIntegrationRegistry;
   launcher: PtyProcessLauncher;
@@ -89,6 +103,14 @@ export interface CreateAgentIntegrationRuntimePortInput {
     // (claude/gemini minted --session-id). Recorded as the thread's binding
     // before the first history poll — deterministic, never recency-discovered.
     providerSessionRef?: DiscoveredProviderSessionRef;
+  }) => Promise<void> | void;
+  // Normalized protocol events from STRUCTURED runtimes (content records,
+  // prompts, turn ends, session refs). PTY runtimes never emit these.
+  onProviderEvent?: (input: {
+    threadId: string;
+    agentId: ProviderCliAgentId;
+    runtimeId: string;
+    event: StructuredProviderEvent;
   }) => Promise<void> | void;
   clock?: () => string;
   idGenerator?: () => string;
@@ -157,7 +179,9 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
   private readonly readinessRegistry?: RuntimeReadinessRegistry;
+  private readonly onProviderEvent?: CreateAgentIntegrationRuntimePortInput["onProviderEvent"];
   private readonly processes = new Map<string, RuntimeProcessState>();
+  private readonly structuredRuntimes = new Map<string, StructuredRuntimeState>();
 
   constructor(input: CreateAgentIntegrationRuntimePortInput) {
     this.integrations = input.integrations;
@@ -167,6 +191,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     this.clock = input.clock ?? defaultClock;
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
     this.readinessRegistry = input.readinessRegistry;
+    this.onProviderEvent = input.onProviderEvent;
   }
 
   async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
@@ -189,6 +214,19 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     });
     traceAgentRuntime(`plan ${input.agentBinding.agentId} command=${plan.command}`);
 
+    if (plan.transport !== undefined && plan.transport !== "hidden_pty") {
+      // Structured transports deliver the first turn themselves, gated on the
+      // protocol's own readiness signal (e.g. claude's init message) — no PTY
+      // startup delays, no MCP readiness registry.
+      return this.spawnStructuredRuntime(
+        input.threadId,
+        input.agentBinding.agentId,
+        plan,
+        runtimeId,
+        input.initialPrompt,
+      );
+    }
+
     const handle = await this.spawnRuntime(
       input.threadId,
       input.agentBinding.agentId,
@@ -202,6 +240,57 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     // port does nothing here. See docs_v2/specs/agent-turn-handoff-readiness.md.
     this.deliverFirstTurn(handle, integration.initialTurnReadiness(), input.initialPrompt);
     return handle;
+  }
+
+  private spawnStructuredRuntime(
+    threadId: string,
+    agentId: ProviderCliAgentId,
+    plan: ProviderLaunchPlan,
+    runtimeId: string,
+    initialPrompt?: string,
+  ): AgentRuntimeHandle {
+    // One live runtime per thread (same invariant as the PTY path).
+    for (const [existingRuntimeId, state] of this.structuredRuntimes) {
+      if (state.threadId === threadId) {
+        void Promise.resolve(state.client.stop()).catch(() => undefined);
+        this.structuredRuntimes.delete(existingRuntimeId);
+      }
+    }
+    const runtimePlan: ProviderLaunchPlan = {
+      ...plan,
+      env: {
+        ...plan.env,
+        TIDE_THREAD_ID: threadId,
+        TIDE_RUNTIME_ID: runtimeId,
+        TIDE_AGENT_ID: agentId,
+      },
+    };
+    const emit = (event: StructuredProviderEvent): void => {
+      void this.onProviderEvent?.({ threadId, agentId, runtimeId, event });
+    };
+    let client: StructuredRuntimeClient;
+    switch (plan.transport) {
+      case "claude_stream_json":
+        client = createClaudeStreamJsonClient({
+          plan: runtimePlan,
+          threadId,
+          runtimeId,
+          initialPrompt,
+          onEvent: emit,
+        });
+        break;
+      default:
+        throw new Error(`Unsupported structured transport: ${String(plan.transport)}`);
+    }
+    this.structuredRuntimes.set(runtimeId, { client, threadId, agentId });
+    traceAgentRuntime(`spawned structured ${agentId} runtime=${runtimeId}`);
+    if (runtimePlan.providerSessionRef !== undefined) {
+      emit({
+        kind: "session_ref",
+        ref: { ...runtimePlan.providerSessionRef },
+      });
+    }
+    return { runtimeId, threadId, agentId };
   }
 
   private deliverFirstTurn(
@@ -256,10 +345,36 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       runtimeId,
     });
 
+    if (plan.transport !== undefined && plan.transport !== "hidden_pty") {
+      return this.spawnStructuredRuntime(
+        input.threadId,
+        input.agentBinding.agentId,
+        plan,
+        runtimeId,
+      );
+    }
     return this.spawnRuntime(input.threadId, input.agentBinding.agentId, plan, runtimeId);
   }
 
   async writeInput(handle: AgentRuntimeHandle, input: TerminalInput): Promise<void> {
+    const structured = this.structuredRuntimes.get(handle.runtimeId);
+    if (structured !== undefined) {
+      if (input.kind === "composer_input") {
+        await structured.client.write({ kind: "composer_input", value: input.value });
+        return;
+      }
+      if (input.kind === "prompt_answer") {
+        await structured.client.write({
+          kind: "prompt_answer",
+          promptId: input.promptId,
+          choiceId: input.choiceId,
+          value: input.value,
+        });
+        return;
+      }
+      // Raw terminal bytes have no meaning on a structured transport.
+      return;
+    }
     const processState = this.processes.get(handle.runtimeId);
     if (processState === undefined) {
       throw new Error("Agent Runtime handle was not found.");
@@ -311,6 +426,12 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   }
 
   async stop(handle: AgentRuntimeHandle): Promise<void> {
+    const structured = this.structuredRuntimes.get(handle.runtimeId);
+    if (structured !== undefined) {
+      await structured.client.stop();
+      this.structuredRuntimes.delete(handle.runtimeId);
+      return;
+    }
     const processState = this.processes.get(handle.runtimeId);
     if (processState === undefined) {
       return;

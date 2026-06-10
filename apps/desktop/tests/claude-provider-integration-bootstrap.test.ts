@@ -65,29 +65,29 @@ test("claude_preflight_reports_auth_onboarding_directory_trust_and_hook_bootstra
   assert.equal(result.launchPlan, undefined);
 });
 
-test("claude_ready_preflight_returns_hidden_pty_start_plan_with_settings_mcp_context_and_terminal_env", async () => {
+test("claude_ready_preflight_returns_structured_stream_json_plan", async () => {
   const integration = claudeIntegration();
 
   const result = await integration.preflight(basePreflightInput);
 
   assert.equal(result.ready, true);
-  assert.equal(result.capabilities.requiresTerminalKeyProtocol, true);
+  // Structured transport: the stream-json control protocol over plain stdio.
+  assert.equal(result.launchPlan?.transport, "claude_stream_json");
   assert.equal(result.launchPlan?.command, "/usr/local/bin/claude");
   assert.equal(result.launchPlan?.cwd, "/repo");
-  assert.equal(result.launchPlan?.env.TERM, "xterm-256color");
-  assert.equal(result.launchPlan?.env.COLORTERM, "truecolor");
-  assert.deepEqual(result.launchPlan?.inputTiming, {
-    startupDelayMs: 5000,
-    preSubmitDelayMs: 350,
-  });
-  assert.deepEqual(result.launchPlan?.args.slice(0, 6), [
-    "--mcp-config",
-    "/tmp/tide-claude-mcp.json",
-    "--settings",
-    "/tmp/tide-claude-settings.json",
-    "--append-system-prompt",
-    "Use Tide MCP tools for Tide Workbench surfaces.",
-  ]);
+  const args = result.launchPlan?.args ?? [];
+  const joined = args.join(" ");
+  assert.ok(joined.includes("--print"));
+  assert.ok(joined.includes("--input-format stream-json"));
+  assert.ok(joined.includes("--output-format stream-json"));
+  // REQUIRED for can_use_tool permission requests (hidden flag; the official
+  // Agent SDK passes exactly this).
+  assert.ok(joined.includes("--permission-prompt-tool stdio"));
+  assert.ok(joined.includes(`--mcp-config /tmp/tide-claude-mcp.json`));
+  assert.ok(joined.includes(`--settings /tmp/tide-claude-settings.json`));
+  // No TUI: no startup delays, no submit-key, no PTY env.
+  assert.equal(result.launchPlan?.inputTiming, undefined);
+  assert.equal(result.launchPlan?.submitKeySequence, undefined);
   assert.deepEqual(
     result.launchPlan?.expectedSignalSources.map((source) => source.kind),
     ["pty_transcript", "provider_hook", "provider_history", "tide_mcp"],
@@ -132,17 +132,21 @@ test("claude_resume_plan_uses_provider_native_session_ref", async () => {
   assert.equal(plan.cwd, "/repo");
 });
 
-test("claude_launch_plan_does_not_use_print_stream_json_or_remote_control_runtime", async () => {
+test("claude_start_plan_mints_session_id_and_keeps_initial_prompt_off_argv", async () => {
+  // The structured client delivers the first user message over stdin AFTER the
+  // protocol's init line — a positional [prompt] arg would race MCP/tool setup
+  // and bypass the protocol's readiness signal.
   const integration = claudeIntegration();
-
-  const result = await integration.preflight(basePreflightInput);
-  const args = result.launchPlan?.args ?? [];
-  const joinedArgs = args.join(" ");
-
-  assert.equal(args.includes("--print"), false);
-  assert.equal(args.includes("-p"), false);
-  assert.equal(joinedArgs.includes("stream-json"), false);
-  assert.equal(args.includes("--remote"), false);
+  const plan = await integration.buildStartPlan({
+    agentId: "claude",
+    scope: projectScope,
+    initialPrompt: "hello world",
+  });
+  assert.equal(plan.transport, "claude_stream_json");
+  assert.equal(plan.args.includes("hello world"), false);
+  const sessionFlag = plan.args.indexOf("--session-id");
+  assert.notEqual(sessionFlag, -1);
+  assert.equal(plan.providerSessionRef?.value, plan.args[sessionFlag + 1]);
 });
 
 test("claude_hook_owns_permission_prompts_and_each_call_is_distinct", () => {

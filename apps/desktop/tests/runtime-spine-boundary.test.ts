@@ -128,10 +128,12 @@ test("runtime_port_has_no_hardcoded_provider_key_sequences", () => {
     "the codex hook-trust auto-answer belongs on the codex launch plan (autoRespondPrompts)",
   );
 
+  // claude moved to the structured stream-json transport: there is no TUI to
+  // submit into, so its plan declares a transport instead of a submit key.
   const claudeAdapter = read(
     "src/backend/adapters/outbound/agent-integrations/claude/claude-agent-integration.ts",
   );
-  assert.ok(claudeAdapter.includes("submitKeySequence"));
+  assert.ok(claudeAdapter.includes('transport: "claude_stream_json"'));
   const codexAdapter = read(
     "src/backend/adapters/outbound/agent-integrations/codex/codex-agent-integration.ts",
   );

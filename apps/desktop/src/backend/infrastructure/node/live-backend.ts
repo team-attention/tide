@@ -85,6 +85,7 @@ import {
   createAgentIntegrationProviderReadinessPort,
   type AgentIntegrationRegistry,
 } from "../../adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts";
+import type { StructuredProviderEvent } from "../../adapters/outbound/agent-runtime/structured/structured-runtime-events.ts";
 import {
   createAgentRuntimeRouterPort,
   createProviderReadinessRouterPort,
@@ -271,6 +272,9 @@ export function createLiveBackendContractMessageAdapter(
     },
     onRuntimeStarted: (runtime) => {
       projector.trackRuntime(runtime);
+    },
+    onProviderEvent: (providerEvent) => {
+      void projector.ingestStructuredProviderEvent(providerEvent);
     },
   });
   const tideApiRuntimePort = createOpenAiApiAgentRuntimePort({
@@ -1499,7 +1503,121 @@ export function createLiveAgentSessionEventProjector(input: {
     }): Promise<void> {
       await appendFrameAndEmit(frameInput);
     },
+    // Normalized protocol events from a STRUCTURED provider runtime (the
+    // runtime-event spine realized): content records flow through the same
+    // frame→block reader as everything else; prompts/turn-ends/session-refs hit
+    // the service directly. NO pollers exist for these runtimes — the protocol
+    // pushes. See docs_v2/specs/structured-agent-runtime.md.
+    async ingestStructuredProviderEvent(eventInput: {
+      threadId: string;
+      agentId: ProviderCliAgentId;
+      runtimeId: string;
+      event: StructuredProviderEvent;
+    }): Promise<void> {
+      const service = input.service();
+      const event = eventInput.event;
+      if (event.kind === "session_ref") {
+        await recordDiscoveredProviderSessionRef({
+          service,
+          persistence: input.persistence,
+          threadId: eventInput.threadId,
+          providerSessionRef: event.ref,
+        });
+        return;
+      }
+      if (event.kind === "content_record") {
+        await appendFrameAndEmit({
+          threadId: eventInput.threadId,
+          agentId: eventInput.agentId,
+          source: "provider_history",
+          sourceRef: event.sourceRef,
+          payloadKind: "provider_record",
+          payload: event.payload,
+          body: event.body,
+        });
+        return;
+      }
+      if (event.kind === "prompt") {
+        await emitPromptState({
+          promptState: event.promptState,
+          service,
+          onEvent: input.onEvent,
+        });
+        return;
+      }
+      if (event.kind === "prompt_withdrawn") {
+        // The provider cancelled its own pending interaction. The next
+        // turn_completed (which always follows) clears card+queue in
+        // recordTurnComplete; nothing to do eagerly.
+        return;
+      }
+      if (event.kind === "turn_completed") {
+        if (event.usage !== undefined) {
+          emitStructuredUsage({
+            threadId: eventInput.threadId,
+            usage: event.usage,
+            onEvent: input.onEvent,
+          });
+        }
+        const nextBlocks = new Map(
+          (blocksByThread.get(eventInput.threadId) ?? []).map((block) => [
+            block.blockId,
+            block,
+          ]),
+        );
+        const outcome: AgentTurnOutcome =
+          event.notice !== undefined
+            ? { notice: { severity: "error", message: event.notice } }
+            : {};
+        await ingestTurnOutcomeAndSettle({
+          outcome,
+          threadId: eventInput.threadId,
+          agentId: eventInput.agentId,
+          runtimeId: eventInput.runtimeId,
+          nextBlocks,
+        });
+        blocksByThread.set(eventInput.threadId, [...nextBlocks.values()]);
+        return;
+      }
+      if (event.kind === "runtime_exited") {
+        // A crash mid-turn must not strand the thread "Working": settle it.
+        // (recordTurnComplete is a no-op when the thread is already idle.)
+        await emitTurnComplete({
+          threadId: eventInput.threadId,
+          service,
+          onEvent: input.onEvent,
+        });
+      }
+    },
   };
+}
+
+// Token usage reported natively by a structured protocol turn (claude result
+// modelUsage; codex thread/tokenUsage/updated; gemini _meta.quota).
+function emitStructuredUsage(input: {
+  threadId: string;
+  usage: { inputTokens?: number; outputTokens?: number; contextWindow?: number; totalTokens?: number };
+  onEvent?: (event: BackendEventEnvelope) => void;
+}): void {
+  const total = input.usage.totalTokens;
+  if (total === undefined) {
+    return;
+  }
+  input.onEvent?.({
+    contractVersion: CONTRACT_VERSION,
+    eventId: nextEventId(),
+    kind: "agentRuntime.usageChanged",
+    emittedAt: new Date().toISOString(),
+    payload: {
+      threadId: input.threadId,
+      usage: {
+        totalTokens: total,
+        ...(input.usage.contextWindow !== undefined
+          ? { contextWindow: input.usage.contextWindow }
+          : {}),
+      },
+    },
+  });
 }
 
 function emitBlockUpdate(input: {
