@@ -130,6 +130,12 @@ export interface ThreadRecord {
   cachedBlocks: AgentSessionBlockReference[];
   pendingInput?: PendingInput;
   promptState?: PromptState;
+  // Prompts that arrived while another was already pending, surfaced one at a
+  // time (FIFO). A turn can raise several prompts at once — e.g. claude batching
+  // two WebFetch calls fires two PermissionRequest hooks in the same instant —
+  // and the single prompt slot would drop all but the last, leaving the agent
+  // waiting forever on the unanswered one. Each answer promotes the next.
+  promptQueue?: PromptState[];
   activeRuntimeHandle?: AgentRuntimeHandle;
   rawFrameSequence: number;
   mcpToolCallCount: number;

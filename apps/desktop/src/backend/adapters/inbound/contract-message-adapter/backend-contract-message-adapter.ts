@@ -120,7 +120,13 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         const typedCommand = command as BackendCommandEnvelope<"thread.hydrate">;
         return this.handleServiceResult(
           typedCommand,
-          await this.service.hydrateThread(typedCommand.payload),
+          // Explicit user open: reconcile a thread left waiting on a dead runtime
+          // (app restart / runtime death) back to idle so it isn't frozen and a
+          // stale permission card isn't resurrected.
+          await this.service.hydrateThread({
+            ...typedCommand.payload,
+            reconcileStaleRuntime: true,
+          }),
           (result) => [
             this.threadHydratedEvent(typedCommand, result),
             this.commandCompletedEvent(typedCommand),
@@ -376,6 +382,12 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
             toAgentSessionBlockDto(result.thread, block),
           ),
           runtimeState: result.runtimeState,
+          // Always present (null when none): hydrate is the source of truth for
+          // the pending prompt when a thread is (re)opened.
+          prompt:
+            result.thread.promptState === undefined
+              ? null
+              : toPromptStateDto(result.thread.promptState),
           workbenchPanes: result.thread.workbench.panes.map(toWorkbenchPaneRefDto),
           fileTree:
             result.thread.workbench.fileTree === undefined
@@ -523,6 +535,16 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     result: StopAgentRuntimeResult,
   ): BackendEventEnvelope[] {
     return [
+      // Stop clears the card+queue in the service; without this event the
+      // renderer keeps a zombie card pinned (adversarial review finding).
+      {
+        contractVersion: CONTRACT_VERSION,
+        eventId: this.nextEventId(),
+        requestId: command.requestId,
+        kind: "prompt.changed",
+        emittedAt: this.clock(),
+        payload: { threadId: result.thread.threadId, prompt: null },
+      },
       this.agentRuntimeStateChangedEvent(command, result.thread, result.runtimeState),
       // When stopping consumed a queued follow-up, surface its user block.
       ...(result.submittedBlock === undefined

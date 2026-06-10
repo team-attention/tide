@@ -65,29 +65,29 @@ test("claude_preflight_reports_auth_onboarding_directory_trust_and_hook_bootstra
   assert.equal(result.launchPlan, undefined);
 });
 
-test("claude_ready_preflight_returns_hidden_pty_start_plan_with_settings_mcp_context_and_terminal_env", async () => {
+test("claude_ready_preflight_returns_structured_stream_json_plan", async () => {
   const integration = claudeIntegration();
 
   const result = await integration.preflight(basePreflightInput);
 
   assert.equal(result.ready, true);
-  assert.equal(result.capabilities.requiresTerminalKeyProtocol, true);
+  // Structured transport: the stream-json control protocol over plain stdio.
+  assert.equal(result.launchPlan?.transport, "claude_stream_json");
   assert.equal(result.launchPlan?.command, "/usr/local/bin/claude");
   assert.equal(result.launchPlan?.cwd, "/repo");
-  assert.equal(result.launchPlan?.env.TERM, "xterm-256color");
-  assert.equal(result.launchPlan?.env.COLORTERM, "truecolor");
-  assert.deepEqual(result.launchPlan?.inputTiming, {
-    startupDelayMs: 5000,
-    preSubmitDelayMs: 350,
-  });
-  assert.deepEqual(result.launchPlan?.args.slice(0, 6), [
-    "--mcp-config",
-    "/tmp/tide-claude-mcp.json",
-    "--settings",
-    "/tmp/tide-claude-settings.json",
-    "--append-system-prompt",
-    "Use Tide MCP tools for Tide Workbench surfaces.",
-  ]);
+  const args = result.launchPlan?.args ?? [];
+  const joined = args.join(" ");
+  assert.ok(joined.includes("--print"));
+  assert.ok(joined.includes("--input-format stream-json"));
+  assert.ok(joined.includes("--output-format stream-json"));
+  // REQUIRED for can_use_tool permission requests (hidden flag; the official
+  // Agent SDK passes exactly this).
+  assert.ok(joined.includes("--permission-prompt-tool stdio"));
+  assert.ok(joined.includes(`--mcp-config /tmp/tide-claude-mcp.json`));
+  assert.ok(joined.includes(`--settings /tmp/tide-claude-settings.json`));
+  // No TUI: no startup delays, no submit-key, no PTY env.
+  assert.equal(result.launchPlan?.inputTiming, undefined);
+  assert.equal(result.launchPlan?.submitKeySequence, undefined);
   assert.deepEqual(
     result.launchPlan?.expectedSignalSources.map((source) => source.kind),
     ["pty_transcript", "provider_hook", "provider_history", "tide_mcp"],
@@ -132,39 +132,46 @@ test("claude_resume_plan_uses_provider_native_session_ref", async () => {
   assert.equal(plan.cwd, "/repo");
 });
 
-test("claude_launch_plan_does_not_use_print_stream_json_or_remote_control_runtime", async () => {
+test("claude_start_plan_mints_session_id_and_keeps_initial_prompt_off_argv", async () => {
+  // The structured client delivers the first user message over stdin AFTER the
+  // protocol's init line — a positional [prompt] arg would race MCP/tool setup
+  // and bypass the protocol's readiness signal.
   const integration = claudeIntegration();
-
-  const result = await integration.preflight(basePreflightInput);
-  const args = result.launchPlan?.args ?? [];
-  const joinedArgs = args.join(" ");
-
-  assert.equal(args.includes("--print"), false);
-  assert.equal(args.includes("-p"), false);
-  assert.equal(joinedArgs.includes("stream-json"), false);
-  assert.equal(args.includes("--remote"), false);
+  const plan = await integration.buildStartPlan({
+    agentId: "claude",
+    scope: projectScope,
+    initialPrompt: "hello world",
+  });
+  assert.equal(plan.transport, "claude_stream_json");
+  assert.equal(plan.args.includes("hello world"), false);
+  const sessionFlag = plan.args.indexOf("--session-id");
+  assert.notEqual(sessionFlag, -1);
+  assert.equal(plan.providerSessionRef?.value, plan.args[sessionFlag + 1]);
 });
 
-test("claude_permission_prompt_detection_reads_hook_event_name_from_payload", () => {
+test("claude_hook_owns_permission_prompts_and_each_call_is_distinct", () => {
+  // ONE OWNER PER BOX KIND: tool permissions are owned by the PermissionRequest
+  // hook (it fires once per requested call, SEQUENTIALLY — verified live:
+  // WebSearch then two WebFetch hooks), so a multi-permission turn surfaces a
+  // distinct card per call without the PTY-scrape fragility. The scrape skips
+  // permission boxes; the hook skips AskUserQuestion (that box is scrape-owned).
   const integration = claudeIntegration();
 
-  // Real signal shape: Tide normalizes the event to "agent-needs-input" and the actual
-  // claude hook is in payload.hook_event_name. Keying off the normalized event (as the
-  // code used to) surfaced nothing -> WebSearch/tool permission hung forever.
-  const prompt = integration.detectPromptState({
+  const bash = integration.detectPromptState({
     threadId: "thread-1",
     source: "provider_hook",
     eventName: "agent-needs-input",
     payload: {
       hook_event_name: "PermissionRequest",
       tool_name: "Bash",
-      tool_input: {
-        description: "Run a fixture command",
-        command: "python3 -c 'print(\"CLAUDE_PERMISSION_FIXTURE\")'",
-      },
+      tool_input: { description: "Run a fixture command", command: "echo hi" },
     },
   });
-  // A real WebSearch permission (no description/command) still surfaces, named by tool.
+  assert.equal(bash?.kind, "approval");
+  assert.equal(bash?.message, "Run a fixture command");
+  assert.equal(bash?.defaultChoiceId, "claude-perm-allow");
+  assert.equal(bash?.choices?.length, 2);
+
   const webSearch = integration.detectPromptState({
     threadId: "thread-1",
     source: "provider_hook",
@@ -175,28 +182,37 @@ test("claude_permission_prompt_detection_reads_hook_event_name_from_payload", ()
       tool_input: { query: "Figma FIG short interest" },
     },
   });
-  const notification = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "provider_hook",
-    eventName: "agent-needs-input",
-    payload: {
-      hook_event_name: "Notification",
-      message: "Claude needs your permission",
-    },
-  });
-
-  assert.equal(prompt?.kind, "approval");
-  assert.equal(prompt?.message, "Run a fixture command");
-  // Allow drives the PTY box (Enter on default); Deny cancels it (Esc).
-  assert.equal(prompt?.choices?.length, 2);
-  assert.equal(prompt?.defaultChoiceId, "claude-perm-allow");
   assert.equal(webSearch?.kind, "approval");
-  assert.equal(webSearch?.message, "Claude Code permission required for WebSearch.");
-  // A bare Notification has no tool/choices to drive — not surfaced as an approval here.
-  assert.equal(notification, null);
+  // The message embeds the call's distinguishing target (query/url/command...)
+  // so batched same-tool calls get DISTINCT prompts (and the user sees what is
+  // actually being requested).
+  assert.equal(webSearch?.message, "WebSearch: Figma FIG short interest");
+  // A bare Notification and AskUserQuestion permission do not surface as a card.
+  assert.equal(
+    integration.detectPromptState({
+      threadId: "thread-1",
+      source: "provider_hook",
+      eventName: "agent-needs-input",
+      payload: { hook_event_name: "Notification", message: "needs input" },
+    }),
+    null,
+  );
+  assert.equal(
+    integration.detectPromptState({
+      threadId: "thread-1",
+      source: "provider_hook",
+      eventName: "agent-needs-input",
+      payload: { hook_event_name: "PermissionRequest", tool_name: "AskUserQuestion" },
+    }),
+    null,
+  );
 });
 
-test("claude_question_prompt_detection_uses_pretooluse_ask_user_question", () => {
+test("claude_pretooluse_does_not_surface_a_premature_question_prompt", () => {
+  // PreToolUse(AskUserQuestion) fires BEFORE claude renders the question box; an
+  // answer collected that early is typed into a menu that does not exist yet and
+  // evaporates (verified live). The question box is owned by the PTY scrape once
+  // it is actually on screen, so the hook path must surface nothing.
   const integration = claudeIntegration();
 
   const question = integration.detectPromptState({
@@ -210,21 +226,7 @@ test("claude_question_prompt_detection_uses_pretooluse_ask_user_question", () =>
       },
     },
   });
-  const otherPreToolUse = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "provider_hook",
-    eventName: "PreToolUse",
-    payload: {
-      tool_name: "Bash",
-      tool_input: {
-        command: "git status",
-      },
-    },
-  });
-
-  assert.equal(question?.kind, "question");
-  assert.equal(question?.message, "Which branch should Tide use?");
-  assert.equal(otherPreToolUse, null);
+  assert.equal(question, null);
 });
 
 // Claude's shell-command permission is an interactive boxed menu in the hidden PTY
@@ -244,7 +246,11 @@ const CLAUDE_TUI_APPROVAL_FRAME = [
   "\x1b[2mEsc to cancel · Tab to amend · ctrl+e to explain\x1b[0m",
 ].join("\n");
 
-test("claude_maps_a_scraped_permission_box_into_a_prompt_state_with_choices", () => {
+test("claude_pty_scrape_skips_permission_boxes_the_hook_owns_them", () => {
+  // A "Do you want to proceed?" box is a PERMISSION box — owned by the
+  // PermissionRequest hook. The PTY scrape must NOT also surface it (two cards
+  // for one box wedged the next turn's prompt, verified live). The scrape returns
+  // null here; the hook test above covers the surfaced card.
   const integration = claudeIntegration();
 
   const prompt = integration.detectPromptState({
@@ -253,27 +259,7 @@ test("claude_maps_a_scraped_permission_box_into_a_prompt_state_with_choices", ()
     text: CLAUDE_TUI_APPROVAL_FRAME,
   });
 
-  assert.notEqual(prompt, null);
-  assert.equal(prompt?.agentId, "claude");
-  assert.equal(prompt?.kind, "approval");
-  assert.equal(prompt?.source, "pty");
-  assert.equal(prompt?.message, "Do you want to proceed?");
-  // Cursor (❯) is on option 1 → that is the default choice.
-  assert.equal(prompt?.defaultChoiceId, "claude-opt-1");
-  assert.deepEqual(
-    prompt?.choices?.map((choice) => ({
-      label: choice.label,
-      providerValue: choice.providerValue,
-    })),
-    [
-      { label: "Yes", providerValue: "codex-menu:0" },
-      {
-        label: "Yes, and always allow access to tmp/ from this project",
-        providerValue: "codex-menu:1",
-      },
-      { label: "No", providerValue: "codex-menu:2" },
-    ],
-  );
+  assert.equal(prompt, null);
 });
 
 test("claude_elicitation_prompt_detection_uses_elicitation_event", () => {

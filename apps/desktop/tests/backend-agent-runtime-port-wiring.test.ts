@@ -32,21 +32,126 @@ import {
   claudeProviderSessionRefFromTranscriptPath,
   codexProviderSessionRefFromRolloutPath,
   createLiveAgentSessionEventProjector,
-  providerSessionRefFromProviderSignalPayload,
   readCodexProviderSessionRefsFromHome,
-  readCodexProviderHistoryFramesFromHome,
-  readClaudeProviderHistoryFramesFromHome,
   readClaudeProviderSessionRefsFromHome,
   rebuildCodexConversation,
   rebuildClaudeConversation,
   rebuildAntigravityConversation,
   readProviderSignalFramesFromSpool,
-  readAntigravityProviderHistoryFramesFromHome,
   readAntigravityProviderStateFromHome,
   readClaudeProviderStateFromHome,
   readCodexProviderStateFromHome,
   threadStorageRecordFromThreadSummary,
 } from "../src/backend/infrastructure/node/live-backend.ts";
+import {
+  createCodexHistoryConnector,
+  readCodexHistoryFrames,
+} from "../src/backend/adapters/outbound/agent-integrations/codex/codex-history-connector.ts";
+import {
+  createClaudeHistoryConnector,
+  readClaudeHistoryFrames,
+} from "../src/backend/adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
+import {
+  createAntigravityHistoryConnector,
+  readAntigravityHistoryFrames,
+} from "../src/backend/adapters/outbound/agent-integrations/antigravity/antigravity-history-connector.ts";
+import type { ProviderHistoryFrame } from "../src/backend/application/ports/outbound/agent-integration-port.ts";
+
+// Test-side twins of the shared history loop: read the bound session file's tail
+// and hand it to the adapter's pure readFrames — the same composition
+// emitProviderHistory performs in live-backend.
+function readCodexProviderHistoryFramesFromHome(input: {
+  homeDir: string;
+  threadId: string;
+  runtimeId: string;
+  sinceMs: number;
+  seenKeys: Set<string>;
+  expectedUserMessage?: string;
+  boundRolloutPath?: string;
+}): ProviderHistoryFrame[] {
+  if (input.boundRolloutPath === undefined) {
+    return [];
+  }
+  let tailText: string;
+  try {
+    tailText = fs.readFileSync(input.boundRolloutPath, "utf8");
+  } catch {
+    return [];
+  }
+  return readCodexHistoryFrames({
+    threadId: input.threadId,
+    runtimeId: input.runtimeId,
+    sessionRef: codexProviderSessionRefFromRolloutPath(input.boundRolloutPath),
+    tailText,
+    seenKeys: input.seenKeys,
+    expectedUserMessage: input.expectedUserMessage,
+  });
+}
+
+function readClaudeProviderHistoryFramesFromHome(input: {
+  homeDir: string;
+  threadId: string;
+  runtimeId: string;
+  sinceMs: number;
+  seenKeys: Set<string>;
+  expectedUserMessage?: string;
+  boundTranscriptPath?: string;
+}): ProviderHistoryFrame[] {
+  if (input.boundTranscriptPath === undefined) {
+    return [];
+  }
+  let tailText: string;
+  try {
+    tailText = fs.readFileSync(input.boundTranscriptPath, "utf8");
+  } catch {
+    return [];
+  }
+  return readClaudeHistoryFrames({
+    threadId: input.threadId,
+    runtimeId: input.runtimeId,
+    sessionRef: claudeProviderSessionRefFromTranscriptPath(input.boundTranscriptPath),
+    tailText,
+    seenKeys: input.seenKeys,
+    expectedUserMessage: input.expectedUserMessage,
+  });
+}
+
+function readAntigravityProviderHistoryFramesFromHome(input: {
+  homeDir: string;
+  threadId: string;
+  runtimeId: string;
+  sinceMs: number;
+  seenKeys: Set<string>;
+  boundTranscriptPath?: string;
+}): ProviderHistoryFrame[] {
+  if (input.boundTranscriptPath === undefined) {
+    return [];
+  }
+  let tailText: string;
+  try {
+    tailText = fs.readFileSync(input.boundTranscriptPath, "utf8");
+  } catch {
+    return [];
+  }
+  return readAntigravityHistoryFrames({
+    threadId: input.threadId,
+    runtimeId: input.runtimeId,
+    sessionRef: antigravityProviderSessionRefFromTranscriptPath(input.boundTranscriptPath),
+    tailText,
+    seenKeys: input.seenKeys,
+  });
+}
+
+// The hook-payload session-ref derivation moved into each adapter's history
+// connector; this twin dispatches the same way tests used to.
+function providerSessionRefFromProviderSignalPayload(
+  agentId: "codex" | "claude",
+  payload: unknown,
+) {
+  const connector =
+    agentId === "codex" ? createCodexHistoryConnector() : createClaudeHistoryConnector();
+  return connector.sessionRefFromHookPayload(payload);
+}
 import { createFileAppStorage } from "../src/backend/adapters/outbound/app-storage/file-app-storage.ts";
 import {
   ensureProviderBootstrapArtifacts,
@@ -2241,6 +2346,24 @@ class FakeAgentIntegration implements AgentIntegrationPort {
 
   initialTurnReadiness(): RuntimeReadinessGate {
     return this.readinessGate;
+  }
+
+  history() {
+    // Use the real per-provider connectors so projector tests exercise the same
+    // parsing/binding the live loop does.
+    if (this.agentId === "codex") {
+      return createCodexHistoryConnector();
+    }
+    if (this.agentId === "claude") {
+      return createClaudeHistoryConnector();
+    }
+    if (this.agentId === "antigravity") {
+      return createAntigravityHistoryConnector();
+    }
+    return {
+      readFrames: () => [],
+      sessionRefFromHookPayload: () => undefined,
+    };
   }
 }
 

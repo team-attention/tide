@@ -999,7 +999,9 @@ function createAgentSessionTurn(block: AgentChatBlockView): ReactElement | null 
       : role === "user" && block.body.includes("**↳ ")
         ? renderUserAttachmentBody(block.body)
         : createElement("p", { className: "agent-session-turn__body" }, block.body),
-    block.rawFallback && block.rawFallback !== block.body
+    // Prompt blocks are historical markers for an interactive card; their raw
+    // fallback is the hook's JSON payload — runtime transport, not content.
+    block.rawFallback && block.rawFallback !== block.body && !block.kind.endsWith("_prompt")
       ? createElement("pre", { className: "agent-session-turn__raw" }, block.rawFallback)
       : null,
     // Hover actions on a completed agent answer: copy the answer, or retry the

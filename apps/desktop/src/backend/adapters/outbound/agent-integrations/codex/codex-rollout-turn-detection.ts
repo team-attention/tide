@@ -69,11 +69,15 @@ export function codexRolloutTurnEnded(
   return detectCodexRolloutTurnEnd(rolloutTailText, expectedUserMessage).ended;
 }
 
-// Uniform turn outcome from the codex rollout: the final answer if codex produced
-// one, otherwise a user-facing notice explaining why it did not (aborted, or
-// out-of-credits / rate-limited — codex finishes an empty turn in ~2s with
-// `task_complete.last_agent_message: null` and `token_count.rate_limits.credits.
-// has_credits: false`). Returns null while the current turn is still running.
+// Uniform turn outcome from the codex rollout. SETTLE-ONLY: the answer text
+// renders exclusively via the rollout history frame reader (the rollout always
+// carries the final answer as an `agent_message` event; `task_complete.
+// last_agent_message` is a duplicate copy and returning it here would render the
+// answer twice). This produces at most a user-facing notice explaining a turn
+// that ended with NO usable answer (aborted, or out-of-credits / rate-limited —
+// codex finishes an empty turn in ~2s with `task_complete.last_agent_message:
+// null` and `token_count.rate_limits.credits.has_credits: false`). Returns null
+// while the current turn is still running.
 export function codexTurnOutcomeFromRollout(
   rolloutTailText: string,
   expectedUserMessage: string | undefined,
@@ -107,7 +111,8 @@ export function codexTurnOutcomeFromRollout(
     }
   }
   if (finalMessage !== undefined && finalMessage.trim().length > 0) {
-    return { finalMessage };
+    // The turn produced an answer; the reader renders it. Settle silently.
+    return {};
   }
   if (detection.reason === "aborted") {
     return {

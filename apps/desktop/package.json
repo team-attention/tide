@@ -1,7 +1,7 @@
 {
   "name": "tide-v2",
   "productName": "Tide",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Tide v2 Electron app scaffold.",
   "main": "out/main/electron-main.js",
   "author": "Tide",
@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "node scripts/v2-tooling-command.mjs electron-vite dev",
     "build": "node scripts/v2-tooling-command.mjs electron-vite build",
-    "start": "npm run build && electron .",
+    "start": "npm run build && electron . --tide-dev-app",
     "typecheck": "node scripts/v2-tooling-command.mjs tsc --noEmit",
     "test": "npm run test:v2",
     "test:v2": "node --test --experimental-strip-types tests/*.test.ts",
@@ -18,7 +18,8 @@
     "test:architecture": "node --test --experimental-strip-types tests/shared-contracts.test.ts tests/backend-thread-agent-runtime-lifecycle.test.ts tests/desktop-agent-chat-composer-shell.test.ts",
     "test:smoke:providers": "node --experimental-strip-types scripts/v2-provider-smoke.mjs",
     "test:smoke:electron": "node --experimental-strip-types scripts/v2-electron-runtime-smoke.mjs",
-    "package:mac": "node scripts/v2-tooling-command.mjs electron-builder --mac"
+    "package:mac": "node scripts/v2-tooling-command.mjs electron-builder --mac",
+    "prestart": "pkill -f 'Electron .* --tide-dev-app' 2>/dev/null; sleep 1; exit 0"
   },
   "dependencies": {
     "@codemirror/lang-css": "^6.3.1",

@@ -378,6 +378,9 @@ function promptBlockFromFrame(
       promptId,
       message: stringField(payload.message) ?? "",
       choices,
+      // The adapter's pre-selected option (e.g. Allow). Dropped here = the
+      // Prompt Card renders with nothing selected and Submit disabled.
+      defaultChoiceId: stringField(payload.defaultChoiceId),
     },
     rawFallback: rawText(frame),
     createdAt: frame.observedAt,
@@ -476,6 +479,7 @@ function promptStateFromBlock(
     kind: promptKindForBlock(block.kind),
     message: stringField(block.data?.message) ?? block.body ?? "",
     choices: promptChoices(block.data?.choices),
+    defaultChoiceId: stringField(block.data?.defaultChoiceId),
     source: promptSource(frame),
   };
 }

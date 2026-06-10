@@ -1,27 +1,15 @@
 import type { AgentTurnOutcome } from "../../../../application/ports/outbound/agent-integration-port.ts";
+import { joinTextContent, parseJsonObject } from "../shared/provider-record-json.ts";
 
-// Gemini turn-end detection from its session JSONL
-// (~/.gemini/tmp/<cwd-slug>/chats/session-*.jsonl). Gemini writes the same shape as
-// the other providers' transcripts: a `{type:"user", content:[{text}]}` record for
-// the prompt and a `{type:"gemini", content:"<answer>"}` record for the model's
-// reply. The latest `gemini` record after the current turn's user message IS the
-// final answer = the turn end. This is gemini's lifecycle knowledge and lives in the
-// gemini Agent Integration. See docs_v2/specs/gemini-agent-integration.md.
-
-function parseJsonObject(line: string): Record<string, unknown> | undefined {
-  if (line.trim().length === 0) {
-    return undefined;
-  }
-  try {
-    const parsed = JSON.parse(line);
-    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}
+// Gemini turn-end detection from its session JSONL — the adapter-internal
+// FALLBACK behind the AfterAgent hook (the authoritative turn-end signal; see
+// gemini-agent-integration). Settle-only: content renders exclusively via the
+// gemini history frame reader (single content source), so this never returns a
+// finalMessage.
+//
+// Turn boundary rule (mirrors antigravity): a `gemini` record carrying visible
+// content and NO toolCalls is the final answer of a turn. A mid-turn model step
+// (toolCalls present) must not settle the turn early.
 
 function geminiUserRecordMatches(
   record: Record<string, unknown> | undefined,
@@ -34,16 +22,7 @@ function geminiUserRecordMatches(
   if (typeof content === "string") {
     return content === expectedUserMessage;
   }
-  if (Array.isArray(content)) {
-    return content.some(
-      (item) =>
-        item !== null &&
-        typeof item === "object" &&
-        !Array.isArray(item) &&
-        (item as Record<string, unknown>).text === expectedUserMessage,
-    );
-  }
-  return false;
+  return joinTextContent(content) === expectedUserMessage;
 }
 
 export function geminiTurnOutcomeFromSession(
@@ -68,11 +47,17 @@ export function geminiTurnOutcomeFromSession(
 
   for (let i = lines.length - 1; i > latestUserIndex; i -= 1) {
     const record = parseJsonObject(lines[i] ?? "");
-    if (record?.type === "gemini" && typeof record.content === "string") {
-      const finalMessage = record.content.trim();
-      if (finalMessage.length > 0) {
-        return { finalMessage };
-      }
+    if (record?.type !== "gemini") {
+      continue;
+    }
+    const toolCalls = Array.isArray(record.toolCalls) ? record.toolCalls : [];
+    if (toolCalls.length > 0) {
+      // Mid-turn model step — the turn is still running.
+      return null;
+    }
+    if (typeof record.content === "string" && record.content.trim().length > 0) {
+      // Final answer record. Content renders via the history reader; only settle.
+      return {};
     }
   }
   return null;

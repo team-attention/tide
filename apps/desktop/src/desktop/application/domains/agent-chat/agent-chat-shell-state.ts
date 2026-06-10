@@ -949,6 +949,7 @@ export function applyAgentChatBackendEvent(
         blocks?: AgentChatBlock[];
         providerReadiness?: AgentChatProviderReadiness;
         runtimeState?: AgentRuntimeStateName;
+        prompt?: AgentChatPromptState | null;
         workbenchPanes?: { visible?: boolean }[];
       };
       return {
@@ -961,6 +962,11 @@ export function applyAgentChatBackendEvent(
         providerReadiness: payload.providerReadiness ?? state.providerReadiness,
         providerReadinessActionPending: false,
         runtimeState: payload.runtimeState ?? state.runtimeState,
+        // Hydrate is the source of truth for the pending prompt: a thread opened
+        // while waiting on an approval/question must show its card (it surfaced
+        // as prompt.changed before this thread was on screen). `undefined` =
+        // old-style payload without the field; keep whatever we had.
+        promptState: payload.prompt !== undefined ? payload.prompt : state.promptState,
         // Hydrate is the source of truth for this thread (its persisted blocks).
         // Drop any optimistic "queued input" row left over from before a thread
         // switch — otherwise the real user block (now in blocks) renders twice.
@@ -1066,10 +1072,19 @@ export function applyAgentChatBackendEvent(
     }
     case "contract.error": {
       const payload = event.payload as { message?: string };
+      // A stale/duplicate prompt answer (double-click, card already promoted
+      // away, runtime just stopped) is NOT a thread failure: the backend simply
+      // rejected one command, and the authoritative prompt/runtime state arrives
+      // via prompt.changed / stateChanged. Flipping the whole thread to "failed"
+      // here marked HEALTHY threads failed (adversarial review finding).
+      const message = payload.message ?? "Contract error";
+      if (/Prompt State/.test(message)) {
+        return state;
+      }
       return {
         ...state,
         runtimeState: "failed",
-        errorMessage: payload.message ?? "Contract error",
+        errorMessage: message,
       };
     }
     default:
@@ -1510,9 +1525,10 @@ const PERMISSION_OPTIONS: Record<string, { default: string; options: PermissionO
   gemini: {
     default: "default",
     options: [
-      { id: "gemini-auto", value: "default", label: "Auto-approve", detail: "Run tools without prompting" },
+      { id: "gemini-ask", value: "default", label: "Ask permissions", detail: "Approve tools manually" },
       { id: "gemini-edit", value: "auto_edit", label: "Auto edits", detail: "Auto-approve edits only" },
       { id: "gemini-plan", value: "plan", label: "Plan mode", detail: "Read-only planning" },
+      { id: "gemini-yolo", value: "yolo", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
     ],
   },
   openai_api: {

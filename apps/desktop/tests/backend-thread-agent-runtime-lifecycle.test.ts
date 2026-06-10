@@ -1013,45 +1013,81 @@ test("answering_prompt_with_choice_id_only_writes_provider_native_value", async 
   assert.equal(result.promptState, null);
 });
 
-test("recording_provider_prompt_state_marks_thread_waiting_without_runtime_start", async () => {
+test("recording_provider_prompt_state_marks_a_live_thread_waiting_and_survives_hydrate", async () => {
   // Spec: docs_v2/specs/provider-signal-prompt-ingress.md
+  // A provider prompt belongs to a LIVE runtime (the answer is replayed as
+  // keystrokes on its PTY). Start a runtime, record the prompt, and confirm it
+  // is still pending on hydrate — the in-session thread-switch case.
   const fakes = createFakes();
   const service = createThreadRuntimeService({
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
-    initialThreads: [threadSeed("thread-provider-prompt")],
   });
+  const started = await service.startThread({
+    initialMessage: "do work",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "scratch", scratchCwd: "/tmp/thread-provider-prompt" },
+  });
+  assert.equal(started.ok, true);
+  const threadId = started.ok ? started.thread.threadId : "";
+
   const providerPrompt: PromptState = {
     promptId: "prompt-provider",
-    threadId: "thread-provider-prompt",
+    threadId,
     agentId: "codex",
     kind: "permission",
     message: "Allow command?",
     choices: [
-      {
-        choiceId: "allow",
-        label: "Allow once",
-        providerValue: "allow_once",
-      },
+      { choiceId: "allow", label: "Allow once", providerValue: "allow_once" },
     ],
     source: "provider_hook",
   };
 
-  const result = await service.recordProviderPromptState({
-    threadId: "thread-provider-prompt",
-    promptState: providerPrompt,
-  });
-  const hydrated = await service.hydrateThread({
-    threadId: "thread-provider-prompt",
-  });
+  const result = await service.recordProviderPromptState({ threadId, promptState: providerPrompt });
+  const hydrated = await service.hydrateThread({ threadId });
 
   assert.equal(result.ok, true);
   assert.equal(result.runtimeState, "waiting_for_approval");
   assert.equal(result.thread.promptState?.promptId, "prompt-provider");
+  // Live runtime → the prompt survives hydrate (in-session re-open).
   assert.equal(hydrated.thread.lastKnownState, "waiting_for_approval");
-  assert.equal(hydrated.thread.lifecycleState, "waiting_for_approval");
-  assert.deepEqual(fakes.runtime.events, []);
+  assert.equal(hydrated.thread.promptState?.promptId, "prompt-provider");
+});
+
+test("hydrating_a_thread_with_no_live_runtime_drops_the_stale_prompt_and_idles", async () => {
+  // The prompt is answerable ONLY while the runtime that asked it is alive. A
+  // thread restored from persistence (app restart) or whose runtime died keeps a
+  // stale waiting state + (possibly) a prompt; resurrecting a permission card for
+  // a dead PTY is a lie. Hydrate must reconcile it to idle so the composer works
+  // and the user can send a follow-up (which resumes the provider session).
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-restored", {
+        runtimeState: "waiting_for_approval",
+        lastKnownState: "waiting_for_approval",
+        lifecycleState: "waiting_for_approval",
+        promptState: {
+          promptId: "stale-prompt",
+          threadId: "thread-restored",
+          agentId: "codex",
+          kind: "permission",
+          message: "Allow command?",
+          source: "provider_hook",
+        },
+      }),
+    ],
+  });
+
+  const hydrated = await service.hydrateThread({ threadId: "thread-restored", reconcileStaleRuntime: true });
+  assert.equal(hydrated.ok, true);
+  assert.equal(hydrated.thread.runtimeState, "idle");
+  assert.equal(hydrated.thread.lastKnownState, "idle");
+  assert.equal(hydrated.thread.promptState, undefined);
 });
 
 test("provider_prompt_state_for_a_different_agent_binding_is_rejected", async () => {
@@ -3135,3 +3171,179 @@ function sourceFiles(root: string): string[] {
 
   return files;
 }
+
+test("batched_prompts_queue_and_each_answer_promotes_the_next", async () => {
+  // A turn can raise SEVERAL prompts at once (claude batching two WebFetch calls
+  // fires two PermissionRequest hooks in the same instant). The single prompt
+  // slot used to drop all but the last — the user answered one card and the agent
+  // hung forever on the unanswered call. Prompts now queue FIFO; each answer
+  // writes to the PTY and promotes the next card.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+  });
+  const started = await service.startThread({
+    initialMessage: "fetch two pages",
+    agentBinding: { agentId: "claude" },
+    scope: { kind: "scratch", scratchCwd: "/tmp/thread-batched" },
+  });
+  assert.equal(started.ok, true);
+  const threadId = started.ok ? started.thread.threadId : "";
+  const permission = (promptId: string, message: string): PromptState => ({
+    promptId,
+    threadId,
+    agentId: "claude",
+    kind: "approval",
+    message,
+    choices: [{ choiceId: "allow", label: "Allow", providerValue: "codex-menu:0" }],
+    defaultChoiceId: "allow",
+    source: "provider_hook",
+  });
+
+  // Two distinct permissions arrive back-to-back (batched calls).
+  const first = await service.recordProviderPromptState({
+    threadId,
+    promptState: permission("perm-fetch-marketbeat", "WebFetch: marketbeat.com"),
+  });
+  const second = await service.recordProviderPromptState({
+    threadId,
+    promptState: permission("perm-fetch-fintel", "WebFetch: fintel.io"),
+  });
+  // The FIRST card stays visible; the second queues behind it.
+  assert.equal(first.ok && first.promptState.promptId, "perm-fetch-marketbeat");
+  assert.equal(second.ok && second.promptState.promptId, "perm-fetch-marketbeat");
+
+  // Re-delivery of an already-queued prompt is idempotent (hook spool re-polls).
+  const replay = await service.recordProviderPromptState({
+    threadId,
+    promptState: permission("perm-fetch-fintel", "WebFetch: fintel.io"),
+  });
+  assert.equal(replay.ok && replay.promptState.promptId, "perm-fetch-marketbeat");
+
+  // Answering the first writes to the PTY and PROMOTES the second card.
+  const answered = await service.answerPrompt({
+    threadId,
+    promptId: "perm-fetch-marketbeat",
+    choiceId: "allow",
+    value: "codex-menu:0",
+  });
+  assert.equal(answered.ok, true);
+  assert.equal(answered.ok && answered.promptState?.promptId, "perm-fetch-fintel");
+  const midway = await service.hydrateThread({ threadId });
+  assert.equal(midway.thread.promptState?.promptId, "perm-fetch-fintel");
+  assert.equal(midway.thread.runtimeState, "waiting_for_approval");
+
+  // Answering the last one resumes the turn.
+  const final = await service.answerPrompt({
+    threadId,
+    promptId: "perm-fetch-fintel",
+    choiceId: "allow",
+    value: "codex-menu:0",
+  });
+  assert.equal(final.ok && final.promptState, null);
+  const after = await service.hydrateThread({ threadId });
+  assert.equal(after.thread.runtimeState, "running");
+  // Both answers reached the runtime as prompt_answer writes.
+  const answers = fakes.runtime.writes.filter((w) => w.input.kind === "prompt_answer");
+  assert.equal(answers.length, 2);
+});
+
+test("stop_clears_the_pending_prompt_and_its_queue", async () => {
+  // Prompts die with the runtime: after Stop, no card may linger (it would write
+  // keystrokes to a dead PTY).
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+  });
+  const started = await service.startThread({
+    initialMessage: "do work",
+    agentBinding: { agentId: "claude" },
+    scope: { kind: "scratch", scratchCwd: "/tmp/thread-stop-queue" },
+  });
+  const threadId = started.ok ? started.thread.threadId : "";
+  for (const [id, msg] of [["p1", "WebFetch: a"], ["p2", "WebFetch: b"]]) {
+    await service.recordProviderPromptState({
+      threadId,
+      promptState: {
+        promptId: id,
+        threadId,
+        agentId: "claude",
+        kind: "approval",
+        message: msg,
+        source: "provider_hook",
+      },
+    });
+  }
+  await service.stopAgentRuntime({ threadId });
+  const after = await service.hydrateThread({ threadId });
+  assert.equal(after.thread.promptState, undefined);
+  // A later answer to the dead queue is rejected, not typed into nothing.
+  const stale = await service.answerPrompt({ threadId, promptId: "p2", value: "x" });
+  assert.equal(stale.ok, false);
+});
+
+test("turn_end_during_a_pending_prompt_settles_and_drops_the_dead_cards", async () => {
+  // The provider's turn-end (interrupt while an approval is open, or a deny
+  // cancelling the rest of a batch) invalidates its own pending requests. The
+  // settle signal is ONE-SHOT — dropping it because the thread was
+  // waiting_for_approval left the thread "Working" forever once the stale card
+  // was answered (adversarial review finding).
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+  });
+  const started = await service.startThread({
+    initialMessage: "do work",
+    agentBinding: { agentId: "claude" },
+    scope: { kind: "scratch", scratchCwd: "/tmp/thread-settle-while-waiting" },
+  });
+  const threadId = started.ok ? started.thread.threadId : "";
+  for (const [id, msg] of [["p1", "WebFetch: a"], ["p2", "WebFetch: b"]]) {
+    await service.recordProviderPromptState({
+      threadId,
+      promptState: { promptId: id, threadId, agentId: "claude", kind: "approval", message: msg, source: "provider_hook" },
+    });
+  }
+  // Turn ends while the card (p1) is visible and p2 queued.
+  const settled = await service.recordTurnComplete({ threadId });
+  assert.equal(settled.ok, true);
+  const after = await service.hydrateThread({ threadId });
+  assert.equal(after.thread.runtimeState, "idle");
+  assert.equal(after.thread.promptState, undefined);
+  // The dead cards are gone; answering them is rejected, not typed into nothing.
+  const stale = await service.answerPrompt({ threadId, promptId: "p1", value: "x" });
+  assert.equal(stale.ok, false);
+});
+
+test("prompt_recorded_after_stop_is_rejected_not_resurrected", async () => {
+  // A hook frame written just before Stop can be read by the signal poll's grace
+  // cycles AFTER the runtime died. Recording it would resurrect a card on a dead
+  // runtime and re-arm polling (adversarial review finding).
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+  });
+  const started = await service.startThread({
+    initialMessage: "do work",
+    agentBinding: { agentId: "claude" },
+    scope: { kind: "scratch", scratchCwd: "/tmp/thread-prompt-after-stop" },
+  });
+  const threadId = started.ok ? started.thread.threadId : "";
+  await service.stopAgentRuntime({ threadId });
+  const late = await service.recordProviderPromptState({
+    threadId,
+    promptState: { promptId: "late", threadId, agentId: "claude", kind: "approval", message: "WebFetch: x", source: "provider_hook" },
+  });
+  assert.equal(late.ok, false);
+  const after = await service.hydrateThread({ threadId });
+  assert.equal(after.thread.promptState, undefined);
+  assert.equal(after.thread.runtimeState, "stopped");
+});

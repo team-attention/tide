@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   AgentTurnOutcome,
   AgentIntegrationCapabilities,
@@ -8,6 +10,7 @@ import type {
   AgentPromptSignalInput,
   AgentResumePlanInput,
   AgentStartPlanInput,
+  ProviderHistoryConnector,
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
@@ -25,6 +28,7 @@ import {
   parseCodexApprovalPrompt,
   PTY_CANCEL_TOKEN,
 } from "../../../../application/services/provider-tui-parsers.ts";
+import { createClaudeHistoryConnector } from "./claude-history-connector.ts";
 
 export interface ClaudeProviderState {
   authenticated: boolean;
@@ -50,6 +54,14 @@ export interface CreateClaudeAgentIntegrationInput {
   settingsPath: string;
   tideContextPrompt: string;
   defaultCwd?: string;
+  // Locates the on-disk transcript for a minted session id (infra-injected).
+  // The path is NOT computed from the cwd: claude munges its OWN getcwd (the
+  // canonical kernel path), which can differ from Tide's spelling via symlinks
+  // (/var -> /private/var) or casing — a guessed path silently reads nothing.
+  locateSessionFile?: (sessionId: string) => string | undefined;
+  // Mints the per-runtime session id passed via `--session-id`, so the thread's
+  // session binding is deterministic at launch. Injectable for tests.
+  mintSessionId?: () => string;
 }
 
 const claudeCapabilities: AgentIntegrationCapabilities = {
@@ -94,6 +106,8 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
   private readonly settingsPath: string;
   private readonly tideContextPrompt: string;
   private readonly defaultCwd: string;
+  private readonly mintSessionId: () => string;
+  private readonly historyConnector: ProviderHistoryConnector;
 
   constructor(input: CreateClaudeAgentIntegrationInput) {
     this.resolveExecutable = input.resolveExecutable;
@@ -102,6 +116,10 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     this.settingsPath = input.settingsPath;
     this.tideContextPrompt = input.tideContextPrompt;
     this.defaultCwd = input.defaultCwd ?? ".";
+    this.mintSessionId = input.mintSessionId ?? (() => randomUUID());
+    this.historyConnector = createClaudeHistoryConnector({
+      locateSessionFile: input.locateSessionFile,
+    });
   }
 
   async preflight(
@@ -195,12 +213,17 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     const executablePath = (await this.resolveExecutable("claude")) ?? "claude";
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
 
+    // Mint the session id and pass it via --session-id so this thread's session
+    // binding is deterministic at launch (transcript path is known before the
+    // first poll) — never discovered by file recency.
+    const sessionId = this.mintSessionId();
     return this.claudeLaunchPlan({
       executablePath,
       cwd,
       resumeRef: undefined,
       launchOptions: input.launchOptions,
       initialPrompt: input.initialPrompt,
+      sessionId,
     });
   }
 
@@ -237,6 +260,10 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     return {};
   }
 
+  history(): ProviderHistoryConnector {
+    return this.historyConnector;
+  }
+
   turnEndFromHistory(): AgentTurnOutcome | null {
     // Claude's settle signal is the agent-idle hook (above); the transcript supplies the
     // content via the history reader, so there is no separate history-driven outcome.
@@ -244,10 +271,17 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
   }
 
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {
-    // Claude's shell-command / tool permission is an interactive boxed menu in the
-    // hidden PTY (the Notification hook only signals "needs input" without the
-    // Allow/Deny choices). Scrape that frame — same vertical arrow-nav menu as codex
-    // — so the turn can't hang on an unseen "Do you want to proceed?" prompt.
+    // ONE OWNER PER BOX KIND:
+    // - PERMISSION boxes ("Do you want to proceed?") are owned by the
+    //   PermissionRequest HOOK. It fires once per requested call, SEQUENTIALLY as
+    //   claude reaches each tool (verified live: a WebSearch hook, then two
+    //   WebFetch hooks), so the count is right and there is no PTY-parsing
+    //   fragility. The PTY scrape does NOT surface these (it returns null for
+    //   permission-worded boxes) — surfacing both produced two cards for one box
+    //   and wedged the next turn's prompt.
+    // - QUESTION boxes (AskUserQuestion) ARE owned by the PTY scrape: their hook
+    //   fires before the box renders and carries no selectable options, so the
+    //   box on screen is the only actionable source.
     if (input.source === "pty_transcript") {
       return detectClaudeTuiApprovalPrompt(input.threadId, input.text);
     }
@@ -255,18 +289,12 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       return null;
     }
 
-    // Tide normalizes every claude hook (PermissionRequest, PreToolUse, Elicitation,
-    // Notification) to the single signal event `agent-needs-input`, so the REAL hook is
-    // in the payload's `hook_event_name`. Branch on that — keying off `input.eventName`
-    // (always "agent-needs-input") matched nothing, so claude's permission prompts were
-    // never surfaced and the turn hung "Working" forever waiting on an unseen box.
+    // Tide normalizes every claude hook to the single signal event
+    // `agent-needs-input`; the REAL hook is in payload.hook_event_name.
     const hookEvent = stringValue(input.payload.hook_event_name) ?? input.eventName;
 
     if (hookEvent === "PermissionRequest") {
       return this.detectPermissionPrompt(input);
-    }
-    if (hookEvent === "PreToolUse") {
-      return this.detectAskUserQuestion(input);
     }
     if (hookEvent === "Elicitation") {
       return this.detectElicitation(input);
@@ -283,68 +311,50 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       ? input.payload.tool_input
       : undefined;
     const toolName = stringValue(input.payload.tool_name);
+    // AskUserQuestion's PermissionRequest must NOT surface as Allow/Deny: the box
+    // claude renders for it IS the question menu (the PTY scrape owns it).
+    if (toolName === "AskUserQuestion") {
+      return null;
+    }
+    // The distinguishing target of THIS call (the URL fetched, command run, path
+    // edited, query searched). Including it makes each call's message — and thus
+    // its content-derived promptId — UNIQUE, so a batched turn that fires several
+    // same-tool permissions (e.g. two WebFetch calls on different URLs, with no
+    // call_id and no description) does not collapse into one card that approves
+    // only one call and hangs on the rest. Verified live: WebFetch×2 (marketbeat
+    // + fintel) shared "permission required for WebFetch." and hung.
+    const target =
+      stringValue(toolInput?.command) ??
+      stringValue(toolInput?.url) ??
+      stringValue(toolInput?.query) ??
+      stringValue(toolInput?.path) ??
+      stringValue(toolInput?.file_path) ??
+      stringValue(toolInput?.pattern);
     const message =
       stringValue(toolInput?.description) ??
-      stringValue(toolInput?.command) ??
-      (toolName === undefined
-        ? undefined
-        : `Claude Code permission required for ${toolName}.`);
-
+      (toolName !== undefined && target !== undefined
+        ? `${toolName}: ${target}`
+        : toolName !== undefined
+          ? `Claude Code permission required for ${toolName}.`
+          : undefined);
     if (message === undefined) {
       return null;
     }
-
     return {
+      // Per-call id so each permission is a distinct prompt (a batched turn fires
+      // several). call_id when claude provides one, else the unique message above.
       promptId: claudePromptId(input.payload, "permission", message),
       threadId: input.threadId,
       agentId: "claude",
       kind: "approval",
       message,
-      // claude shows the actual Allow/Deny box in the hidden PTY. Drive it from here:
-      // Allow = Enter on the default option (claude defaults to allow); Deny = Esc, which
-      // cancels the box regardless of its option count. Routed by the runtime port's
-      // prompt_answer path. This unblocks tools (WebSearch/WebFetch/…) whose box the PTY
-      // scraper doesn't recognize, instead of hanging on an unseen prompt.
+      // claude's actual Allow/Deny box is in the hidden PTY. Allow = Enter on the
+      // default option; Deny = Esc (cancels regardless of option layout).
       choices: [
-        {
-          choiceId: "claude-perm-allow",
-          label: "Allow",
-          providerValue: encodeCodexMenuNavigation(0),
-        },
-        {
-          choiceId: "claude-perm-deny",
-          label: "Deny",
-          providerValue: PTY_CANCEL_TOKEN,
-        },
+        { choiceId: "claude-perm-allow", label: "Allow", providerValue: encodeCodexMenuNavigation(0) },
+        { choiceId: "claude-perm-deny", label: "Deny", providerValue: PTY_CANCEL_TOKEN },
       ],
       defaultChoiceId: "claude-perm-allow",
-      source: "provider_hook",
-    };
-  }
-
-  private detectAskUserQuestion(
-    input: AgentPromptSignalInput,
-  ): PromptState | null {
-    if (!isRecord(input.payload)) {
-      return null;
-    }
-    if (stringValue(input.payload.tool_name) !== "AskUserQuestion") {
-      return null;
-    }
-    const toolInput = isRecord(input.payload.tool_input)
-      ? input.payload.tool_input
-      : undefined;
-    const message = questionMessage(toolInput?.questions);
-    if (message === undefined) {
-      return null;
-    }
-
-    return {
-      promptId: claudePromptId(input.payload, "question", message),
-      threadId: input.threadId,
-      agentId: "claude",
-      kind: "question",
-      message,
       source: "provider_hook",
     };
   }
@@ -374,8 +384,27 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     resumeRef?: string;
     launchOptions?: Record<string, unknown>;
     initialPrompt?: string;
+    sessionId?: string;
   }): ProviderLaunchPlan {
+    // STRUCTURED TRANSPORT: the stream-json control protocol over plain stdio —
+    // no hidden PTY, no TUI. Evidence-based (live transcripts, claude 2.1.170;
+    // the official Agent SDK passes exactly these flags):
+    // - --permission-prompt-tool stdio is REQUIRED for can_use_tool permission
+    //   requests to arrive; without it tools are silently auto-blocked.
+    // - --verbose is required for stream-json output in --print mode.
+    // - the workspace-trust dialog does not exist in non-TTY mode by design
+    //   (claude --help): Tide's own trust flow remains the gate.
+    // - the first user message is written to stdin AFTER the init message by the
+    //   structured client (replaces PTY startup delays and readiness gates).
     const args = [
+      "--print",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--permission-prompt-tool",
+      "stdio",
       "--mcp-config",
       this.mcpConfigPath,
       "--settings",
@@ -388,30 +417,31 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     if (input.resumeRef !== undefined) {
       args.push("--resume", input.resumeRef);
     }
-
-    // Claude delivers its first message as a positional [prompt] at launch. Unlike
-    // codex it registers its MCP tools before running the turn, so the launch-time
-    // prompt is reliable and avoids the finicky TUI-typing path. Its readiness gate
-    // is therefore `immediate`. See agent-turn-handoff-readiness.md.
-    if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
-      args.push(input.initialPrompt);
+    if (input.sessionId !== undefined) {
+      args.push("--session-id", input.sessionId);
     }
 
     return {
       command: input.executablePath,
       args,
-      env: {
-        TERM: "xterm-256color",
-        COLORTERM: "truecolor",
-      },
+      env: {},
       cwd: input.cwd,
-      inputTiming: {
-        startupDelayMs: 5000,
-        preSubmitDelayMs: 350,
-      },
+      transport: "claude_stream_json",
       expectedSignalSources: expectedSignalSources.map((source) => ({
         ...source,
       })),
+      ...(input.sessionId !== undefined
+        ? {
+            providerSessionRef: {
+              agentId: "claude" as const,
+              kind: "claude_transcript" as const,
+              value: input.sessionId,
+              // The on-disk transcript path is resolved by the history connector
+              // (by session id) once claude creates the file, and confirmed by the
+              // hook payload's transcript_path.
+            },
+          }
+        : {}),
     };
   }
 }
@@ -479,23 +509,6 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function questionMessage(value: unknown): string | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  for (const question of value) {
-    const text =
-      stringValue(question) ??
-      (isRecord(question)
-        ? stringValue(question.text) ?? stringValue(question.question)
-        : undefined);
-    if (text !== undefined) {
-      return text;
-    }
-  }
-  return undefined;
-}
-
 function claudePromptId(
   payload: Record<string, unknown>,
   kind: string,
@@ -525,14 +538,19 @@ function detectClaudeTuiApprovalPrompt(
   if (parsed === null) {
     return null;
   }
+  // Permission boxes ("Do you want to proceed?" / "...allow Claude to...?") are
+  // owned by the PermissionRequest hook — the scrape must NOT also surface them
+  // (two cards for one box wedged the next turn's prompt, verified live). The
+  // scrape owns only the QUESTION/choice menu (AskUserQuestion).
+  if (/\b(proceed|trust|allow|permission)\b/i.test(parsed.question)) {
+    return null;
+  }
   const choices: PromptChoice[] = parsed.options.map((option, position) => ({
     choiceId: `claude-opt-${option.index}`,
     label: option.label,
     providerValue: encodeCodexMenuNavigation(position - parsed.defaultIndex),
   }));
-  const kind: PromptKind = /\b(proceed|trust|allow|permission)\b/i.test(parsed.question)
-    ? "approval"
-    : "choice";
+  const kind: PromptKind = "choice";
   return {
     promptId: `claude:${codexApprovalPromptSignature(parsed)}`,
     threadId,

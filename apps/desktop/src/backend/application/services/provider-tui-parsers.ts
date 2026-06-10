@@ -17,9 +17,30 @@ export interface ScrapedModelOption {
 
 // Removes ANSI/OSC/cursor control sequences from raw PTY output, leaving the
 // visible text. Also collapses the no-break spaces some TUIs use for layout.
+//
+// IMPORTANT: modern TUIs (codex 0.13x) repaint by absolute cursor positioning
+// (CSI row;colH) instead of emitting "\n". Verified against a live codex approval
+// box: the whole boxed menu arrives as CUP-prefixed segments with zero newlines,
+// so a naive strip collapses it into one line and every per-line parser silently
+// fails. Translate row-positioning sequences into line breaks BEFORE stripping so
+// the visible text keeps its line structure.
 export function stripTerminalSequences(raw: string): string {
   return raw
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "") // OSC ... BEL / ST
+    .replace(/\x1b\[[0-9;]*[Hf]/g, "\n") // CUP/HVP absolute moves -> line break
+    .replace(/\x1b\[\d*[ABEF]/g, "\n") // cursor up/down/next/prev line -> line break
+    // Cursor-forward is how cell-painting TUIs (claude) skip the gap BETWEEN
+    // words instead of writing a space character: stripping it silently fused
+    // words ("Doyouwanttoproceed?"), which both mangled the user-facing prompt
+    // message and weakened the parsers. Render it as the spaces it represents
+    // (capped — a huge skip is layout, not a word gap).
+    .replace(/\x1b\[(\d*)C/g, (_match, count: string) =>
+      " ".repeat(Math.min(Number(count.length > 0 ? count : "1"), 16)),
+    )
+    // Cursor-to-column (CHA) is the OTHER word-gap idiom (claude paints
+    // "Do[5G]you[9G]want[14G]to[17G]proceed?" — captured live): one jump per
+    // word gap. Render it as a single space so words stay separate.
+    .replace(/\x1b\[\d*G/g, " ")
     .replace(/\x1b[@-Z\\-_]/g, "") // single-char escapes
     .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "") // CSI sequences
     .replace(/\x1b[PX^_].*?\x1b\\/g, "") // DCS/PM/APC/SOS strings
@@ -79,7 +100,7 @@ export interface CodexApprovalPrompt {
 // Parses codex's boxed interactive approval/choice menu from hidden-PTY output.
 // codex raises these for shell-command and (non-Tide) MCP tool approval; they have
 // no hook, so they only exist in the live TUI. Shape (ANSI-stripped):
-//   Allow the <server> MCP server to run tool "<tool>"?
+//   Allow the <server> MCP server to run tool "<tool>"?     (cursor: > / \u276f / \u203a)
 //   > 1. Allow                  Run the tool and continue.
 //     2. Allow for this session ...
 //     3. Always allow           ...
@@ -93,12 +114,42 @@ export function parseCodexApprovalPrompt(raw: string): CodexApprovalPrompt | nul
     return null;
   }
 
-  const lines = text.split(/\r?\n/);
+  // A rolling PTY buffer can hold MORE THAN ONE box (an already-answered box still
+  // painted on screen + the new one). The ACTIVE prompt is always the LAST box, so
+  // split on the box footer and parse the final segment — parsing the whole buffer
+  // at once mixed two boxes' options and re-surfaced the stale (answered) one,
+  // which permanently suppressed the next box of a batched turn (verified live:
+  // claude WebSearch→WebFetch, the WebFetch box never appeared).
+  const allLines = text.split(/\r?\n/);
+  const footer = /esc to cancel|to submit/i;
+  let segmentStart = 0;
+  let parsed: CodexApprovalPrompt | null = null;
+  for (let i = 0; i < allLines.length; i += 1) {
+    if (!footer.test(allLines[i] ?? "")) {
+      continue;
+    }
+    const segment = allLines.slice(segmentStart, i + 1);
+    const candidate = parseCodexApprovalBox(segment);
+    if (candidate !== null) {
+      parsed = candidate; // keep the last valid box
+    }
+    segmentStart = i + 1;
+  }
+  return parsed;
+}
+
+// Parses ONE codex/claude approval box (lines from just after the previous box's
+// footer through this box's footer). See parseCodexApprovalPrompt for why boxes
+// are split first.
+function parseCodexApprovalBox(lines: string[]): CodexApprovalPrompt | null {
   const options: CodexApprovalOption[] = [];
   let defaultIndex = 0;
   let firstOptionLine = -1;
   for (let i = 0; i < lines.length; i += 1) {
-    const match = lines[i].match(/^\s*([>❯])?\s*(\d+)\.\s+(.+?)\s*$/);
+    // Cell-painted TUIs (claude) can drop the space after the option number
+    // ("❯1.OPTION_ALPHA"), so the separator is optional. The footer gate above
+    // keeps ordinary numbered prose from matching.
+    const match = lines[i].match(/^\s*([>❯›])?\s*(\d+)\.\s*(.+?)\s*$/);
     if (match === null) {
       continue;
     }
@@ -133,7 +184,11 @@ export function parseCodexApprovalPrompt(raw: string): CodexApprovalPrompt | nul
       break;
     }
   }
-  if (question.length === 0) {
+  // A sliding PTY buffer can cut a box mid-text, leaving a truncated tail like
+  // "ed?" (from "...proceed?") that slips past the permission-word filter and
+  // surfaces as a garbage card (seen live). A real box question is a sentence;
+  // reject fragments.
+  if (question.length < 8) {
     return null;
   }
 

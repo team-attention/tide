@@ -255,6 +255,12 @@ export type { ServiceError, ServiceErrorCode, ServiceResult };
 
 export interface HydrateThreadInput {
   threadId: ThreadId;
+  // True ONLY on an explicit user thread-open (the contract adapter). When set,
+  // hydrate reconciles a thread whose runtime is dead but left in a running/
+  // waiting state back to idle (drops the stale prompt). MUST stay false on the
+  // internal polling reads (emitProviderHistory/pollWhileRunning call hydrate
+  // every cycle); reconciling there would race-kill a live turn.
+  reconcileStaleRuntime?: boolean;
 }
 
 export interface HydrateThreadResult {
@@ -563,6 +569,8 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   idGenerator: () => string;
   onAsyncEvent?: (event: ThreadRuntimeAsyncEvent) => Promise<void> | void;
   threads = new ThreadStore();
+  // threadId -> promptId currently being written to the runtime (answer claim).
+  private readonly answeringPromptByThread = new Map<string, string>();
   private readonly threadCrud: ThreadCrudService;
   private readonly workbenchRuntime: WorkbenchRuntime;
   private readonly workbenchFileOps: WorkbenchFileOperations;
@@ -673,6 +681,31 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     const thread = this.threads.get(input.threadId);
     if (thread === undefined) {
       return failure("thread_not_found", "Thread was not found.");
+    }
+
+    // A pending prompt is ONLY answerable while the runtime that asked it is
+    // alive: the answer is replayed as keystrokes on that runtime's hidden PTY.
+    // After an app restart (runtime gone, prompt not persisted) or a mid-session
+    // runtime death, a leftover waiting state is STALE — resurrecting a permission
+    // card for a dead process is a lie (answering writes to nothing). On an
+    // EXPLICIT user open, reconcile such a thread to idle: drop the stale prompt
+    // and let the composer work, so the next message resumes the provider session.
+    // This NEVER runs on the internal polling reads (reconcileStaleRuntime stays
+    // false there) — mutating on every poll would race-kill a live turn.
+    if (
+      input.reconcileStaleRuntime === true &&
+      thread.activeRuntimeHandle === undefined &&
+      (thread.runtimeState === "waiting_for_approval" ||
+        thread.runtimeState === "waiting_for_input" ||
+        thread.runtimeState === "running" ||
+        thread.runtimeState === "starting")
+    ) {
+      thread.runtimeState = "idle";
+      thread.lastKnownState = "idle";
+      thread.lifecycleState = "open";
+      thread.promptState = undefined;
+      thread.promptQueue = undefined;
+      thread.updatedAt = this.clock();
     }
 
     return {
@@ -866,9 +899,15 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     // While a turn is genuinely in flight, queue the input Tide-side and flush it when
     // the turn completes (recordTurnComplete). The user can interrupt to send sooner.
     // (An idle thread takes the path below and sends immediately.)
+    // "Busy" includes waiting on a prompt card: writing composer text into the
+    // open TUI box would blind-answer it (adversarial review finding). The text
+    // queues and flushes when the turn completes.
     const busy =
       thread.activeRuntimeHandle !== undefined &&
-      (thread.runtimeState === "running" || thread.runtimeState === "starting");
+      (thread.runtimeState === "running" ||
+        thread.runtimeState === "starting" ||
+        thread.runtimeState === "waiting_for_approval" ||
+        thread.runtimeState === "waiting_for_input");
     if (busy) {
       thread.pendingInput = {
         kind: "composer_input",
@@ -965,6 +1004,15 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         "Active Agent Runtime is required to answer Prompt State.",
       );
     }
+    // Claim the answer SYNCHRONOUSLY before the (multi-keystroke) async write: a
+    // concurrent duplicate answer passing the checks above would interleave raw
+    // bytes into the same TUI box and could silently answer the NEXT box
+    // (adversarial review finding). Duplicates fail fast as prompt_not_found.
+    if (this.answeringPromptByThread.get(input.threadId) === input.promptId) {
+      return failure("prompt_not_found", "Prompt State is already being answered.");
+    }
+    this.answeringPromptByThread.set(input.threadId, input.promptId);
+    try {
 
     await this.agentRuntimePort.writeInput(thread.activeRuntimeHandle, {
       kind: "prompt_answer",
@@ -973,6 +1021,28 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       promptId: input.promptId,
       submittedAt: this.clock(),
     });
+
+    // Promote the next queued prompt (a batched multi-permission turn) so the
+    // user answers them one at a time instead of the agent hanging on the ones
+    // the single slot dropped. With none queued, the turn resumes running.
+    const next = (thread.promptQueue ?? []).shift();
+    if (next !== undefined) {
+      const nextKnown: LastKnownState =
+        runtimeStateForPromptKind(next.kind) === "waiting_for_approval"
+          ? "waiting_for_approval"
+          : "waiting_for_input";
+      thread.promptState = next;
+      thread.runtimeState = runtimeStateForPromptKind(next.kind);
+      thread.lifecycleState = nextKnown;
+      thread.lastKnownState = nextKnown;
+      thread.updatedAt = this.clock();
+      return {
+        ok: true,
+        thread: snapshotThread(thread),
+        runtimeState: thread.runtimeState,
+        promptState: next,
+      };
+    }
 
     thread.promptState = undefined;
     thread.runtimeState = "running";
@@ -987,6 +1057,9 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       runtimeState: thread.runtimeState,
       promptState: null,
     };
+    } finally {
+      this.answeringPromptByThread.delete(input.threadId);
+    }
   }
 
   async recordProviderPromptState(
@@ -1005,11 +1078,46 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         "Provider Prompt State must belong to the Thread Agent Binding.",
       );
     }
+    // Prompts die with the runtime — and may not be BORN without one either. A
+    // signal poll's grace cycles can deliver a prompt written just before Stop;
+    // recording it would resurrect a card on a dead runtime (answer fails with
+    // agent_runtime_unavailable) and re-arm the pollers for the 90-minute cap
+    // (adversarial review finding, verified line-by-line).
+    if (thread.activeRuntimeHandle === undefined) {
+      return failure(
+        "agent_runtime_unavailable",
+        "Prompt State requires a live Agent Runtime.",
+      );
+    }
 
     const promptState = {
       ...input.promptState,
       choices: input.promptState.choices?.map((choice) => ({ ...choice })),
     };
+
+    // Idempotent: a redraw/re-poll of the SAME prompt (by id) updates in place
+    // and never duplicates. A prompt already queued behind the current one is
+    // likewise ignored.
+    if (thread.promptState?.promptId === promptState.promptId) {
+      thread.promptState = promptState;
+      thread.updatedAt = this.clock();
+      return { ok: true, thread: snapshotThread(thread), runtimeState: thread.runtimeState, promptState };
+    }
+    if ((thread.promptQueue ?? []).some((p) => p.promptId === promptState.promptId)) {
+      // Already queued: report the still-visible prompt (the queue invariant is
+      // that a queue only exists while a prompt is visible).
+      return { ok: true, thread: snapshotThread(thread), runtimeState: thread.runtimeState, promptState: thread.promptState ?? promptState };
+    }
+
+    // A different prompt is already pending → QUEUE this one (don't clobber the
+    // visible card). It surfaces when the current one is answered. This is what
+    // makes a batched multi-permission turn answerable instead of hanging.
+    if (thread.promptState !== undefined) {
+      thread.promptQueue = [...(thread.promptQueue ?? []), promptState];
+      thread.updatedAt = this.clock();
+      return { ok: true, thread: snapshotThread(thread), runtimeState: thread.runtimeState, promptState: thread.promptState };
+    }
+
     const nextRuntimeState = runtimeStateForPromptKind(input.promptState.kind);
     const nextKnownState: LastKnownState = nextRuntimeState === "waiting_for_approval"
       ? "waiting_for_approval"
@@ -1043,12 +1151,22 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       );
     }
 
+    const existing = thread.agentBinding.providerSessionRef;
     if (
-      thread.agentBinding.providerSessionRef !== undefined &&
-      !providerSessionRefsEqual(
-        thread.agentBinding.providerSessionRef,
-        input.providerSessionRef,
-      )
+      existing !== undefined &&
+      (existing.kind !== input.providerSessionRef.kind ||
+        existing.value !== input.providerSessionRef.value)
+    ) {
+      // A DIFFERENT session may never steal the binding.
+      return {
+        ok: true,
+        thread: snapshotThread(thread),
+        runtimeState: thread.runtimeState,
+      };
+    }
+    if (
+      existing !== undefined &&
+      providerSessionRefsEqual(existing, input.providerSessionRef)
     ) {
       return {
         ok: true,
@@ -1057,7 +1175,19 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       };
     }
 
-    thread.agentBinding.providerSessionRef = { ...input.providerSessionRef };
+    // Same session (kind+value): allow the paths to be REFINED — the launch plan
+    // may know the session id before the provider materializes the file, and the
+    // hook later reports the authoritative on-disk path (which can differ from any
+    // plan-time guess via symlinks/casing). Never erase a known path with undefined.
+    const transcriptPath =
+      input.providerSessionRef.transcriptPath ?? existing?.transcriptPath;
+    const logPath = input.providerSessionRef.logPath ?? existing?.logPath;
+    thread.agentBinding.providerSessionRef = {
+      kind: input.providerSessionRef.kind,
+      value: input.providerSessionRef.value,
+      ...(transcriptPath !== undefined ? { transcriptPath } : {}),
+      ...(logPath !== undefined ? { logPath } : {}),
+    };
     thread.updatedAt = this.clock();
 
     return {
@@ -1146,6 +1276,11 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       await this.agentRuntimePort.stop(thread.activeRuntimeHandle);
     }
     thread.activeRuntimeHandle = undefined;
+    // Prompts die with the runtime — cleared HERE, before the queued-follow-up
+    // branch below, so the old runtime's card/queue can never leak into the new
+    // runtime that branch starts (adversarial review finding).
+    thread.promptState = undefined;
+    thread.promptQueue = undefined;
 
     // Stop consumes a queued follow-up: ending the current turn immediately runs the
     // message the user queued behind it (codex/Claude Code behavior). With no queue,
@@ -1314,13 +1449,27 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     }
 
     // Only react to a turn ending while busy; ignore duplicate/late Stop signals.
-    if (thread.runtimeState !== "running" && thread.runtimeState !== "starting") {
+    // BUSY includes waiting on a prompt: the provider's turn-end definitively
+    // invalidates its own pending requests (interrupt while an approval is open,
+    // deny cancelling the rest of a batch). Dropping the settle here instead —
+    // as this guard used to — discarded the ONE-SHOT settle signal and left the
+    // thread "Working" forever once the stale card was answered (adversarial
+    // review finding, verified line-by-line).
+    if (
+      thread.runtimeState !== "running" &&
+      thread.runtimeState !== "starting" &&
+      thread.runtimeState !== "waiting_for_approval" &&
+      thread.runtimeState !== "waiting_for_input"
+    ) {
       return {
         ok: true,
         thread: snapshotThread(thread),
         runtimeState: thread.runtimeState,
       };
     }
+    // The ended turn's pending interactions are dead; drop card + queue.
+    thread.promptState = undefined;
+    thread.promptQueue = undefined;
 
     const queued = thread.pendingInput;
     if (queued !== undefined && queued.kind === "composer_input") {

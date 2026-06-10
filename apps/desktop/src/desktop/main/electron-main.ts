@@ -366,6 +366,14 @@ async function ensureBackendProcess(): Promise<BackendHandshake> {
     env: {
       ...process.env,
       TIDE_APP_DATA_ROOT: resolveAppDataRoot(),
+      // The node-capable runtime for Tide's hook/MCP subprocess scripts
+      // (provider-signal-runner, tide-mcp-stdio run `ELECTRON_RUN_AS_NODE=1
+      // $TIDE_BIN <script>`). Inside the utility process, process.execPath is
+      // the Electron HELPER binary, which is NOT node-runnable — a hook spawned
+      // with it never exits, the provider waits out its hook timeout, and the
+      // turn hangs (verified live: gemini AfterAgent stuck "Executing Hook").
+      // The MAIN process execPath is the real Electron binary, which is.
+      TIDE_BIN: process.env.TIDE_BIN ?? process.execPath,
     },
     stdio: "pipe",
   });
@@ -851,6 +859,33 @@ app.on("child-process-gone", (_event, details) => {
 // has no effect on macOS — keep it for Linux parity.)
 app.commandLine.appendSwitch("use-mock-keychain");
 app.commandLine.appendSwitch("password-store", "basic");
+
+// Single-instance lock: a second launch (double-clicked dock icon, second
+// `electron .`) must NOT start a second backend against the same data root +
+// MCP socket — two backends tangle the shared provider-signal spool and socket
+// and corrupt turns. The second instance focuses the existing window and quits.
+// (The dev `npm start` kills the old instance first, so it always gets the new
+// build; this lock is the safety net for the packaged app.)
+//
+// Skipped when TIDE_APP_DATA_ROOT is set — that override is ONLY used by the
+// headless test/verification harnesses, which intentionally run several isolated
+// instances at once (each with its own temp data root); the lock is keyed by
+// Electron userData, not the data root, so without this they would collide.
+if (process.env.TIDE_APP_DATA_ROOT === undefined) {
+  if (!app.requestSingleInstanceLock()) {
+    app.quit();
+  } else {
+    app.on("second-instance", () => {
+      const [existing] = BrowserWindow.getAllWindows();
+      if (existing !== undefined) {
+        if (existing.isMinimized()) {
+          existing.restore();
+        }
+        existing.focus();
+      }
+    });
+  }
+}
 
 void app.whenReady().then(() => {
   // Dev (`electron .`) shows the default Electron dock icon; point it at the
