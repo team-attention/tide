@@ -305,6 +305,9 @@ function codexSetupAction(
 function codexConfigArgs(tideMcp: CodexTideMcpConfig | undefined): string[] {
   const config = [
     'plugins."browser-use@openai-bundled".enabled=false',
+    // Stream the model's reasoning summary so Tide can show codex's thinking
+    // (without this, reasoning items arrive empty — verified live).
+    "model_reasoning_summary=detailed",
   ];
 
   if (tideMcp !== undefined) {

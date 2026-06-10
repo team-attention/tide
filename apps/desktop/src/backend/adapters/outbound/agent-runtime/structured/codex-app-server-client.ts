@@ -76,6 +76,8 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   // Live streaming: itemId -> accumulated agentMessage text. The complete
   // item/completed finalizes the same blockId (msg:<itemId>).
   private readonly streamBodies = new Map<string, string>();
+  // itemId -> accumulated reasoning summary text (model_reasoning_summary=detailed).
+  private readonly reasoningBodies = new Map<string, string>();
   private flushScheduled = false;
 
   constructor(input: CreateCodexAppServerClientInput) {
@@ -317,6 +319,24 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
 
+    if (method === "item/reasoning/summaryTextDelta") {
+      const itemId = stringField(params, "itemId");
+      const delta = stringField(params, "delta");
+      if (itemId !== undefined && delta !== undefined) {
+        this.reasoningBodies.set(itemId, (this.reasoningBodies.get(itemId) ?? "") + delta);
+        this.scheduleFlush();
+      }
+      return;
+    }
+    if (method === "item/reasoning/summaryPartAdded") {
+      // A new summary part: separate it from the previous with a blank line.
+      const itemId = stringField(params, "itemId");
+      const existing = itemId !== undefined ? this.reasoningBodies.get(itemId) : undefined;
+      if (itemId !== undefined && existing !== undefined && existing.length > 0) {
+        this.reasoningBodies.set(itemId, existing + "\n\n");
+      }
+      return;
+    }
     if (method === "item/agentMessage/delta") {
       // Live token streaming. {itemId, delta} — accumulate and flush coalesced
       // content_delta (UI-only); item/completed finalizes the same blockId.
@@ -439,18 +459,20 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     if (itemType === "reasoning") {
-      const summary = Array.isArray(item.summary)
+      const fromItem = Array.isArray(item.summary)
         ? item.summary.filter((entry): entry is string => typeof entry === "string").join("\n\n")
         : "";
+      const summary = fromItem.trim().length > 0 ? fromItem : (this.reasoningBodies.get(itemId) ?? "");
+      this.reasoningBodies.delete(itemId);
       if (summary.trim().length === 0) {
         return;
       }
-      this.recordIndex += 1;
-      this.emitRecord(blockBase, {
+      const reasonBlock = `structured:${this.runtimeId}:reason:${itemId}`;
+      this.emitRecord(reasonBlock, {
         type: "reasoning",
         role: "reasoning",
         status: "complete",
-        blockId: blockBase,
+        blockId: reasonBlock,
         body: summary,
         sourceRuntimeId: this.runtimeId,
       }, summary);
@@ -545,6 +567,18 @@ class CodexAppServerClient implements StructuredRuntimeClient {
         blockId: `structured:${this.runtimeId}:msg:${itemId}`,
         role: "agent",
         blockKind: "agent_message",
+        body,
+      });
+    }
+    for (const [itemId, body] of this.reasoningBodies) {
+      if (body.length === 0) {
+        continue;
+      }
+      this.onEvent({
+        kind: "content_delta",
+        blockId: `structured:${this.runtimeId}:reason:${itemId}`,
+        role: "reasoning",
+        blockKind: "reasoning",
         body,
       });
     }
