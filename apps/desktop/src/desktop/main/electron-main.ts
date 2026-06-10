@@ -7,8 +7,9 @@ import {
   discoverProviderCommands,
   type CommandFs,
 } from "./provider-command-discovery.ts";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { computeWorktreePath, sanitizeWorktreeBranch, worktreeRepoRootForCwd } from "../../shared/worktree-path.ts";
+import { classifyTopLevelNavigation } from "./window-navigation-policy.ts";
 import {
   CONTRACT_VERSION,
   createContractErrorEvent,
@@ -579,6 +580,16 @@ function resolveAppDataRoot(): string {
   return process.env.TIDE_APP_DATA_ROOT ?? app.getPath("userData");
 }
 
+// The URL the main host renderer is loaded from — the dev-server origin in
+// development, or the packaged renderer's file:// document. The navigation
+// policy treats this as "the app" and everything else as off-app.
+function appRendererUrl(): string {
+  return (
+    process.env.ELECTRON_RENDERER_URL ??
+    pathToFileURL(join(mainDir, "../renderer/index.html")).href
+  );
+}
+
 function createMainWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -905,17 +916,41 @@ void app.whenReady().then(() => {
   });
 });
 
-// A page inside a Browser Pane <webview> that opens a popup (target=_blank,
-// window.open) would otherwise spawn a blank top-level BrowserWindow. Deny the
-// popup and navigate the originating webview in place instead, so links stay in
-// the pane and never produce a stray empty window.
 app.on("web-contents-created", (_event, contents) => {
-  if (contents.getType() !== "webview") {
+  // A page inside a Browser Pane <webview> that opens a popup (target=_blank,
+  // window.open) would otherwise spawn a blank top-level BrowserWindow. Deny the
+  // popup and navigate the originating webview in place instead, so links stay
+  // in the pane and never produce a stray empty window.
+  if (contents.getType() === "webview") {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) {
+        void contents.loadURL(url).catch(() => undefined);
+      }
+      return { action: "deny" };
+    });
     return;
   }
+
+  // The MAIN host renderer (the React app). Its top-level webContents must never
+  // navigate off-app: a chat markdown link is a plain <a href>, and a default
+  // click would replace the whole app with the external page with no way back
+  // (the "window freezes on the linked site" bug). Off-app links open in the
+  // system browser; window.open / target=_blank never spawns a window.
+  const guard = (event: { preventDefault: () => void }, url: string): void => {
+    const verdict = classifyTopLevelNavigation(url, appRendererUrl());
+    if (verdict === "allow") {
+      return;
+    }
+    event.preventDefault();
+    if (verdict === "open_external") {
+      void shell.openExternal(url).catch(() => undefined);
+    }
+  };
+  contents.on("will-navigate", guard);
+  contents.on("will-redirect", guard);
   contents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) {
-      void contents.loadURL(url).catch(() => undefined);
+    if (classifyTopLevelNavigation(url, appRendererUrl()) === "open_external") {
+      void shell.openExternal(url).catch(() => undefined);
     }
     return { action: "deny" };
   });
