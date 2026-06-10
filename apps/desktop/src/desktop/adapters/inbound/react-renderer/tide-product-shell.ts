@@ -100,6 +100,7 @@ import {
   openProductShellThreadFromLeftUi,
   selectProductShellFileTreeEntry,
   openProductShellFileInEditor,
+  openProductShellBrowserAtUrl,
   setProductShellSearchQuery,
   toggleProductShellSearch,
   selectProductShellChoiceSurfaceRow,
@@ -409,6 +410,7 @@ interface ProductShellHandlers {
     rowId: string,
   ) => void;
   onOpenFile: (path: string) => void;
+  onOpenBrowserPane: (url: string) => void;
   onAddAttachment: (attachment: {
     name: string;
     mediaType: string;
@@ -1384,6 +1386,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         dispatchBackendCommand(result.command);
         return result.state;
       }),
+    onOpenBrowserPane: (url) =>
+      setShellState((state) => {
+        const result = openProductShellBrowserAtUrl(state, url);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
     onAddAttachment: (attachment) =>
       setShellState((state) => {
         const id =
@@ -2123,6 +2131,7 @@ function createAgentChatColumn(
       onComposerSurfaceChange: handlers.onComposerSurfaceChange,
       onChoiceSurfaceRowSelect: handlers.onChoiceSurfaceRowSelect,
       onOpenFile: handlers.onOpenFile,
+      onOpenBrowserPane: handlers.onOpenBrowserPane,
       onAddAttachment: handlers.onAddAttachment,
       onRemoveAttachment: handlers.onRemoveAttachment,
       onRemoveContextChip: handlers.onRemoveContextChip,
@@ -2716,6 +2725,22 @@ function WorkbenchBrowserPane(props: {
         },
         createElement(FileText, { size: 13, strokeWidth: 1.8, "aria-hidden": true }),
         "Add page",
+      ),
+      createElement(
+        "button",
+        {
+          type: "button",
+          className: "workbench-browser-bar__external",
+          title: "Open this page in your default browser",
+          "aria-label": "Open in external browser",
+          onClick: () => {
+            const url = props.pane.url ?? address;
+            if (url.length > 0 && typeof window !== "undefined" && window.tide) {
+              void window.tide.openExternal(url);
+            }
+          },
+        },
+        createElement(ExternalLink, { size: 13, strokeWidth: 1.8, "aria-hidden": true }),
       ),
       pickMode && pickCount > 0
         ? createElement(

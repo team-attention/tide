@@ -3333,6 +3333,27 @@ button {
 }
 .workbench-browser-bar__to-chat[data-active="true"] svg { color: #fff; }
 
+/* Square icon-only "open in external browser" button on the browser toolbar. */
+.workbench-browser-bar__external {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-bg);
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.workbench-browser-bar__external:hover {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
 .workbench-browser-webview {
   display: flex;
   /* `<webview>` is a replaced element with a short intrinsic height; a 0 flex

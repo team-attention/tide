@@ -70,6 +70,7 @@ declare global {
       unregisterProject(cwd: string): Promise<{ projectId: string; name: string; cwd: string }[]>;
       renameProject(cwd: string, name: string): Promise<{ projectId: string; name: string; cwd: string }[]>;
       revealInFinder(cwd: string): Promise<void>;
+      openExternal(url: string): Promise<void>;
       createWorktree(cwd: string, name: string, options?: { baseDirPattern?: string; copyFiles?: string[] }): Promise<{ entries: { projectId: string; name: string; cwd: string }[]; createdCwd: string | null }>;
       removeWorktree(cwd: string): Promise<{ entries: { projectId: string; name: string; cwd: string }[] }>;
       gitContext(cwd: string): Promise<{

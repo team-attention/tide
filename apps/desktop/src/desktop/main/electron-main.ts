@@ -222,6 +222,15 @@ ipcMain.handle("tide:reveal-in-finder", async (_event, cwd: unknown) => {
   }
 });
 
+// Open a web URL in the user's default system browser (the "open external"
+// affordance on the in-app Browser Pane). Restricted to http(s) so a renderer
+// can't hand arbitrary schemes (file:, javascript:, …) to the OS.
+ipcMain.handle("tide:open-external", async (_event, url: unknown) => {
+  if (typeof url === "string" && /^https?:\/\//i.test(url)) {
+    await shell.openExternal(url);
+  }
+});
+
 // --- Git context for the Worktree/Branch menus (read-only) ---
 interface GitContext {
   isGitRepo: boolean;

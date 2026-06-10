@@ -37,6 +37,7 @@ export interface TidePreloadSurface {
   unregisterProject(cwd: string): Promise<ProjectRegistryEntry[]>;
   renameProject(cwd: string, name: string): Promise<ProjectRegistryEntry[]>;
   revealInFinder(cwd: string): Promise<void>;
+  openExternal(url: string): Promise<void>;
   createWorktree(
     cwd: string,
     name: string,
@@ -79,6 +80,9 @@ export const tidePreloadSurface: TidePreloadSurface = {
   },
   revealInFinder(cwd) {
     return ipcRenderer.invoke("tide:reveal-in-finder", cwd) as Promise<void>;
+  },
+  openExternal(url) {
+    return ipcRenderer.invoke("tide:open-external", url) as Promise<void>;
   },
   createWorktree(cwd, name, options) {
     return ipcRenderer.invoke("tide:create-worktree", cwd, name, options) as Promise<{

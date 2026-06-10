@@ -207,7 +207,17 @@ export type ProductShellBackendCommand =
       kind: "workbench.command";
       payload: {
         threadId: string;
-        command: "open_launcher" | "open_browser" | "open_terminal";
+        command: "open_launcher" | "open_terminal";
+      };
+    }
+  | {
+      kind: "workbench.command";
+      payload: {
+        threadId: string;
+        command: "open_browser";
+        // Optional initial URL/title — set when opening the pane AT a link (a
+        // chat link click). Absent for a blank "open browser" launcher action.
+        data?: { url?: string; title?: string };
       };
     }
   | {
@@ -1146,6 +1156,26 @@ export function openProductShellFileInEditor(
     command: {
       kind: "workbench.command",
       payload: { threadId: state.activeThreadId, command: "open_editor", data: { path } },
+    },
+  };
+}
+
+// Opens an http(s) link (clicked in a chat message) in the Workbench Browser
+// Pane, opening the Workbench column if needed — the default destination for a
+// chat link, so it never replaces the app window. The pane's own toolbar offers
+// "open in external browser" for when the user wants their system browser.
+export function openProductShellBrowserAtUrl(
+  state: ProductShellState,
+  url: string,
+): ProductShellUpdateResult {
+  if (state.activeThreadId === null || url.length === 0) {
+    return { state, command: null };
+  }
+  return {
+    state: { ...state, workbenchOpen: true },
+    command: {
+      kind: "workbench.command",
+      payload: { threadId: state.activeThreadId, command: "open_browser", data: { url } },
     },
   };
 }

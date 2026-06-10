@@ -71,6 +71,9 @@ export interface AgentChatShellProps {
   onAnswerPromptText?: (value: string) => void;
   // Opens a file (from a Read tool's file chip) in the Workbench editor.
   onOpenFile?: (path: string) => void;
+  // Opens an http(s) link (clicked in a chat message) in the in-app Browser
+  // Pane — never the top-level window.
+  onOpenBrowserPane?: (url: string) => void;
   // A pasted image attachment: name, mediaType, and base64 of the image bytes.
   onAddAttachment?: (attachment: {
     name: string;
@@ -274,7 +277,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       "data-runtime-state": viewModel.runtimeState,
     },
     props.showThreadHeader === false ? null : createThreadHeader(viewModel),
-    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt, props.onEditQueued, props.onResend, props.onQuote),
+    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt, props.onEditQueued, props.onResend, props.onQuote, props.onOpenBrowserPane),
     createComposerStack(viewModel, handlers),
     transcriptSel === null || props.onQuote === undefined
       ? null
@@ -629,6 +632,7 @@ function createAgentSession(
   onEditQueued?: () => void,
   onResend?: (text: string) => void,
   onQuote?: (text: string) => void,
+  onOpenBrowserPane?: (url: string) => void,
 ): ReactElement {
   // Show a live "working" indicator only until the agent produces its block:
   // a streaming block carries its own caret, and a complete block means the turn
@@ -695,6 +699,16 @@ function createAgentSession(
         if (onEditQueued && target.closest("[data-edit-queued]")) {
           event.preventDefault();
           onEditQueued();
+          return;
+        }
+        // An http(s) link in chat opens in the in-app Browser Pane, never the
+        // top-level window (which would replace the whole app).
+        const browserUrl = onOpenBrowserPane
+          ? target.closest("[data-open-browser-link]")?.getAttribute("data-open-browser-link")
+          : null;
+        if (browserUrl) {
+          event.preventDefault();
+          onOpenBrowserPane?.(browserUrl);
           return;
         }
         const path = onOpenFile ? target.closest("[data-open-file]")?.getAttribute("data-open-file") : null;
@@ -928,6 +942,12 @@ markdown.renderer.rules.link_open = (tokens, index, options, _env, self) => {
     token.attrSet("data-open-file", decodeURIComponent(href.slice("file://".length)));
     token.attrSet("class", "md-file-link");
     token.attrSet("href", "#");
+  } else if (href && (href.startsWith("http://") || href.startsWith("https://"))) {
+    // Open in the in-app Browser Pane (the session click delegation handles it),
+    // NOT the top-level window. The real href is kept so right-click still works
+    // and the main-process navigation guard remains a backstop.
+    token.attrSet("data-open-browser-link", href);
+    token.attrSet("class", "md-ext-link");
   }
   return self.renderToken(tokens, index, options);
 };
