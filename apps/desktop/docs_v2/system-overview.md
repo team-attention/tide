@@ -110,6 +110,12 @@ equivalent — same policy, Tide owns the trust decision).
   paths: `notinstalled`, `notauth`, `trust` (blocked → Trust → live answer),
   `concurrency` (two same-provider threads, answers never cross), `followup`
   (second turn into the live TUI).
+- `node scripts/pw-provider-e2e.cjs <claude|codex|gemini>` — the REAL built
+  Electron app driven by Playwright like a human: agent chip, permission mode
+  menu, send, the rendered Prompt Card's real Allow/Submit buttons, answer
+  rendered once, follow-up turn, and the approved tool's side effect on disk.
+  This is the layer that catches packaged-app-only failures (e.g. the Electron
+  Helper hook hang the headless harnesses could never see).
 - `TIDE_DEBUG_PTY=1` on any harness dumps raw PTY output for diagnosis.
 
 All of the above pass as of this snapshot.
