@@ -1302,7 +1302,7 @@ button {
   justify-content: center;
   /* Center the content column so turns + composer share one column. */
   align-items: center;
-  gap: 22px;
+  gap: 14px;
 }
 
 /* A real conversation is top-anchored so it can scroll to the latest message;
@@ -1325,6 +1325,10 @@ button {
   align-self: center;
   display: grid;
   gap: 4px;
+  /* Anchor the hover action bar, which is floated out of flow (below) so it
+     reserves NO vertical space — it used to sit in-flow at opacity:0 and pad
+     every agent turn by ~28px, blowing out the transcript spacing. */
+  position: relative;
 }
 
 .agent-session-turn--agent {
@@ -2373,13 +2377,17 @@ button {
 /* Per-answer hover actions (copy / retry): quiet, revealed only on hover or
    keyboard focus so the transcript stays clean (like the Codex/Claude apps). */
 .agent-turn-actions {
+  /* Floated out of flow: a hover affordance that sits in the gap just below the
+     turn, reserving no layout height (so turns stay tight). */
+  position: absolute;
+  top: 100%;
+  left: -4px;
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-top: 2px;
-  margin-left: -5px;
+  margin-top: -2px;
   opacity: 0;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   transition: opacity 0.12s ease, transform 0.12s ease;
   pointer-events: none;
 }
