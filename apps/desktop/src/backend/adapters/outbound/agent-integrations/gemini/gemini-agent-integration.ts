@@ -50,6 +50,8 @@ const geminiCapabilities: AgentIntegrationCapabilities = {
   supportsHooks: true,
   supportsReadableHistory: true,
   requiresTerminalKeyProtocol: true,
+  // ACP has session/cancel but no mid-turn input injection — follow-up queues.
+  supportsTurnSteer: false,
 };
 
 const expectedSignalSources: ProviderSignalSource[] = [

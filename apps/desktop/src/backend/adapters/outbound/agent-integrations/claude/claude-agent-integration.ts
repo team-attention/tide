@@ -57,6 +57,9 @@ const claudeCapabilities: AgentIntegrationCapabilities = {
   supportsHooks: true,
   supportsReadableHistory: true,
   requiresTerminalKeyProtocol: true,
+  // The stream-json control protocol has no mid-turn input injection — a
+  // second user message during a turn queues until the turn ends.
+  supportsTurnSteer: false,
 };
 
 const expectedSignalSources: ProviderSignalSource[] = [

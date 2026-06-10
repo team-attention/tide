@@ -687,6 +687,66 @@ test("input_sent_while_a_turn_is_running_is_queued_not_sent", async () => {
   assert.equal(fakes.runtime.writes.length, 1);
 });
 
+test("input_during_a_running_turn_is_steered_when_the_provider_supports_it", async () => {
+  // A steer-capable provider (codex turn/steer) injects follow-up input INTO the
+  // running turn instead of queuing it: status "sent", a user block appended, and
+  // the runtime receives the second writeInput while still running. The runtime
+  // client (not the service) turns that write into turn/steer from its turn state.
+  const { fakes, service } = busyThreadService();
+  fakes.readiness.setResult({
+    ready: true,
+    agentId: "codex",
+    blockers: [],
+    capabilities: { supportsTurnSteer: true },
+  });
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  const steered = await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
+
+  assert.equal(steered.ok, true);
+  assert.equal(steered.status, "sent");
+  assert.equal(steered.runtimeState, "running");
+  assert.ok(steered.submittedBlock !== undefined);
+  // Both inputs reached the live runtime; nothing was queued.
+  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput", "writeInput"]);
+  assert.equal(fakes.runtime.writes[1]?.input.value, "second");
+});
+
+test("input_during_a_prompt_card_is_queued_even_for_a_steer_capable_provider", async () => {
+  // Steer only applies to a genuinely running turn — never over an open prompt
+  // card (waiting_for_approval), which the user must answer first. The input
+  // queues and flushes on settle, exactly like a non-steering provider.
+  const { fakes, service } = busyThreadService();
+  fakes.readiness.setResult({
+    ready: true,
+    agentId: "codex",
+    blockers: [],
+    capabilities: { supportsTurnSteer: true },
+  });
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  await service.recordProviderPromptState({
+    threadId: "thread-busy",
+    promptState: {
+      promptId: "p1",
+      threadId: "thread-busy",
+      agentId: "codex",
+      kind: "approval",
+      message: "Run command?",
+      choices: [
+        { choiceId: "allow", label: "Allow", providerValue: "structured:accept" },
+        { choiceId: "deny", label: "Deny", providerValue: "structured:decline" },
+      ],
+      defaultChoiceId: "allow",
+      source: "provider_hook",
+    },
+  });
+  const queued = await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
+
+  assert.equal(queued.ok, true);
+  assert.equal(queued.status, "queued");
+  // The second input did NOT reach the runtime (only the first turn's writeInput).
+  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput"]);
+});
+
 test("recording_turn_complete_flushes_the_queued_input_into_the_next_turn", async () => {
   const { fakes, service } = busyThreadService();
   await service.sendComposerInput({ threadId: "thread-busy", input: "first" });

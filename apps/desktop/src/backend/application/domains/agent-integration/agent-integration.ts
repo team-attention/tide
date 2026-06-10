@@ -30,6 +30,12 @@ export interface AgentIntegrationCapabilities {
   supportsHooks: boolean;
   supportsReadableHistory: boolean;
   requiresTerminalKeyProtocol: boolean;
+  // The provider protocol can inject new user input INTO an already-running turn
+  // (mid-turn steer), instead of forcing the input to wait for the turn to end.
+  // Evidence-based: ONLY codex declares this — its app-server exposes turn/steer
+  // {threadId, input, expectedTurnId}. claude/gemini/opencode have no mid-turn
+  // injection primitive, so their follow-up input queues until the turn settles.
+  supportsTurnSteer: boolean;
 }
 
 export interface ProviderLaunchPlan {

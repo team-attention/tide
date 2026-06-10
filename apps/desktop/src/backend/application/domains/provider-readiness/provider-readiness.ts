@@ -30,10 +30,22 @@ export interface ProviderReadinessBlocker {
   setup?: ProviderSetupSurfaceAction;
 }
 
+// A focused, backend-only summary of the provider's runtime capabilities,
+// surfaced through the readiness check so the service can route follow-up input
+// correctly (e.g. mid-turn steer). NOT part of the renderer DTO — the renderer
+// never needs it; the backend decides on the basis of it.
+export interface ProviderRuntimeCapabilitySummary {
+  // The provider can inject new input into the active turn (codex turn/steer).
+  supportsTurnSteer: boolean;
+}
+
 export interface ProviderReadinessResult {
   agentId: AgentId;
   ready: boolean;
   blockers: ProviderReadinessBlocker[];
+  // Present for Provider CLI agents (derived from the integration's declared
+  // capabilities). Absent for Tide API agents.
+  capabilities?: ProviderRuntimeCapabilitySummary;
 }
 
 export interface ProviderReadinessCheckInput {

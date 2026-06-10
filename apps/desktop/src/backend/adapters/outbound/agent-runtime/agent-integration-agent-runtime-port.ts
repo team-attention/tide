@@ -89,6 +89,8 @@ export function createAgentIntegrationProviderReadinessPort(
           setup: blocker.setup,
           action: blocker.setup === undefined ? "none" : "open_terminal",
         })),
+        // Surface the runtime capabilities the service routes on (mid-turn steer).
+        capabilities: { supportsTurnSteer: result.capabilities.supportsTurnSteer },
       };
     },
   };

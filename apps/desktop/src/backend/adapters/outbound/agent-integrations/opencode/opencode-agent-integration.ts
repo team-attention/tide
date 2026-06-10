@@ -52,6 +52,8 @@ const opencodeCapabilities: AgentIntegrationCapabilities = {
   supportsHooks: false,
   supportsReadableHistory: true,
   requiresTerminalKeyProtocol: false,
+  // ACP has session/cancel but no mid-turn input injection — follow-up queues.
+  supportsTurnSteer: false,
 };
 
 const expectedSignalSources: ProviderSignalSource[] = [

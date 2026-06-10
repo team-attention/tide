@@ -1237,6 +1237,7 @@ class FakeAgentIntegration implements AgentIntegrationPort {
         supportsHooks: true,
         supportsReadableHistory: true,
         requiresTerminalKeyProtocol: this.agentId === "claude",
+        supportsTurnSteer: this.agentId === "codex",
       },
       launchPlan: this.plan,
     };

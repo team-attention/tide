@@ -52,6 +52,9 @@ const codexCapabilities: AgentIntegrationCapabilities = {
   supportsHooks: true,
   supportsReadableHistory: true,
   requiresTerminalKeyProtocol: false,
+  // codex app-server exposes turn/steer — new input is injected into the active
+  // turn (expectedTurnId precondition) instead of queued until it ends.
+  supportsTurnSteer: true,
 };
 
 const expectedSignalSources: ProviderSignalSource[] = [

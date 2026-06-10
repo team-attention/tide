@@ -61,6 +61,11 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private exited = false;
   private codexThreadId?: string;
   private activeTurnId?: string;
+  // True between issuing turn/start and learning the turn id from its result.
+  // In that window a steer can't carry expectedTurnId yet, so it parks in
+  // pendingSteerText and flushes the instant the id lands.
+  private turnStartInFlight = false;
+  private readonly pendingSteerText: string[] = [];
   private lastUsage?: {
     inputTokens?: number;
     outputTokens?: number;
@@ -188,12 +193,52 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       this.queuedWrites.push(text);
       return;
     }
+    // A turn is already running → STEER: inject this input into the active turn
+    // instead of starting a second one (codex serves one turn at a time).
+    if (this.activeTurnId !== undefined) {
+      this.steerTurn(text);
+      return;
+    }
+    // A turn/start is mid-flight but its id isn't known yet — steer once it is.
+    if (this.turnStartInFlight) {
+      this.pendingSteerText.push(text);
+      return;
+    }
+    this.turnStartInFlight = true;
     this.request("turn/start", {
       threadId: this.codexThreadId,
       input: [{ type: "text", text }],
     }, (result) => {
       const turn = isRecord(result.turn) ? result.turn : undefined;
       this.activeTurnId = turn !== undefined ? stringField(turn, "id") : undefined;
+      this.turnStartInFlight = false;
+      if (this.activeTurnId !== undefined) {
+        for (const pending of this.pendingSteerText.splice(0)) {
+          this.steerTurn(pending);
+        }
+      }
+    });
+  }
+
+  // turn/steer injects new user input into the ACTIVE turn (expectedTurnId is a
+  // required precondition; the request fails if it doesn't match the live turn).
+  // The same turn continues — exactly one turn/completed still ends it.
+  // EVIDENCE: codex app-server bindings (codex-cli 0.136) TurnSteerParams =
+  // {threadId, input, expectedTurnId} → TurnSteerResponse {turnId}.
+  private steerTurn(text: string): void {
+    if (this.codexThreadId === undefined || this.activeTurnId === undefined) {
+      this.pendingSteerText.push(text);
+      return;
+    }
+    this.request("turn/steer", {
+      threadId: this.codexThreadId,
+      input: [{ type: "text", text }],
+      expectedTurnId: this.activeTurnId,
+    }, (result) => {
+      const turnId = stringField(result, "turnId");
+      if (turnId !== undefined) {
+        this.activeTurnId = turnId;
+      }
     });
   }
 
@@ -246,6 +291,9 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   ): void {
     this.requestId += 1;
     this.pendingResponses.set(this.requestId, onResult);
+    if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
+      process.stderr.write(`[tide-codex-as ${this.runtimeId}] -> ${method}\n`);
+    }
     this.writeLine({ id: this.requestId, method, params });
   }
 
@@ -376,11 +424,19 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       }
       // status "interrupted" is a user Stop — no notice (benign).
       this.activeTurnId = undefined;
+      this.turnStartInFlight = false;
+      // Any input parked for a steer that never found a live turn (e.g. the turn
+      // errored before its id landed) carries over as the next turn — the client
+      // owns delivering input the service already handed it.
+      const carryOver = this.pendingSteerText.splice(0);
       this.onEvent({
         kind: "turn_completed",
         ...(notice !== undefined ? { notice } : {}),
         ...(this.lastUsage !== undefined ? { usage: this.lastUsage } : {}),
       });
+      for (const text of carryOver) {
+        this.startTurn(text);
+      }
       return;
     }
     // thread/started, turn/started, item/started, deltas, status changes:

@@ -909,6 +909,35 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         thread.runtimeState === "waiting_for_approval" ||
         thread.runtimeState === "waiting_for_input");
     if (busy) {
+      // MID-TURN STEER: when the provider can inject input INTO the running turn
+      // (codex turn/steer) and the turn is genuinely in flight — `running`, never
+      // a `waiting_*` prompt card, which the user must answer first — deliver the
+      // input now instead of queuing it for the turn's end. The runtime client
+      // owns the start-vs-steer decision from its own turn state; the service only
+      // gates on the declared capability (no agentId branch). Other providers fall
+      // through to the queue below.
+      if (
+        thread.runtimeState === "running" &&
+        readiness.capabilities?.supportsTurnSteer === true &&
+        thread.activeRuntimeHandle !== undefined
+      ) {
+        const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
+        thread.runtimeStartedAt = this.clock();
+        thread.updatedAt = this.clock();
+        await this.agentRuntimePort.writeInput(thread.activeRuntimeHandle, {
+          kind: "composer_input",
+          value: message,
+          submittedAt: this.clock(),
+        });
+        return {
+          ok: true,
+          status: "sent",
+          thread: snapshotThread(thread),
+          runtimeState: thread.runtimeState,
+          providerReadiness: readiness,
+          submittedBlock,
+        };
+      }
       thread.pendingInput = {
         kind: "composer_input",
         value: message,
