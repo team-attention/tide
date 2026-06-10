@@ -21,6 +21,9 @@ import {
   updateComposerDraft,
   addComposerAttachment,
   removeComposerAttachment,
+  addComposerContextChip,
+  removeComposerContextChip,
+  setComposerContextChipComment,
   type AgentChatShellState,
 } from "../src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts";
 import {
@@ -277,6 +280,90 @@ test("the_queued_row_renders_an_edit_affordance_while_a_turn_runs", () => {
   assert.ok(markup.includes("대기 중"));
   assert.ok(markup.includes("composer-steer"));
   assert.ok(markup.includes("Edit queued message"));
+});
+
+test("an_editor_code_selection_added_to_chat_is_folded_into_the_sent_message", () => {
+  // Content→chat: selecting code in the editor and clicking "Add to chat" stages
+  // a context chip; on send it is prepended to the message as a labeled,
+  // fenced-code reference (with the user's per-region comment), and the chips
+  // clear so the next message is clean. This is the full editor→composer→backend
+  // contract the renderer panes drive via onAddContentToChat.
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const withChip = addComposerContextChip(hydrated, {
+    id: "chip-1",
+    kind: "code",
+    label: "thread.ts L10-12",
+    text: "`thread.ts` (L10-12)\n```ts\nexport type AgentId = string;\n```",
+  }).state;
+  const commented = setComposerContextChipComment(withChip, "chip-1", "what is this type for?").state;
+  const drafted = updateComposerDraft(commented, "explain").state;
+
+  // The composer renders the staged chip (label + remove + comment affordance).
+  const markup = renderShell(drafted);
+  assert.ok(markup.includes("thread.ts L10-12"));
+
+  const result = submitComposer(drafted);
+  const command = result.command ? toBackendCommandDraft(result.command) : null;
+  assert.equal(command?.kind, "composer.sendInput");
+  const input = command?.kind === "composer.sendInput" ? String(command.payload.input) : "";
+  // Labeled header, the per-region comment, the fenced code, then the draft.
+  assert.ok(input.includes("**↳ thread.ts L10-12**"));
+  assert.ok(input.includes("what is this type for?"));
+  assert.ok(input.includes("```ts\nexport type AgentId = string;\n```"));
+  assert.ok(input.trimEnd().endsWith("explain"));
+  // Chips clear on send.
+  assert.equal(result.state.composer.contextChips.length, 0);
+});
+
+test("a_message_with_only_an_added_chip_and_no_draft_is_still_a_valid_send", () => {
+  // Adding content to chat WITHOUT typing is a complete message — the staged
+  // chip alone is sent (a blank-draft, no-chip, no-attachment composer is the
+  // only no-op).
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const withChip = addComposerContextChip(hydrated, {
+    id: "chip-1",
+    kind: "terminal",
+    label: "npm test",
+    text: "```\nnpm test → 564 passing\n```",
+  }).state;
+
+  const result = submitComposer(withChip);
+  const command = result.command ? toBackendCommandDraft(result.command) : null;
+  assert.equal(command?.kind, "composer.sendInput");
+  const input = command?.kind === "composer.sendInput" ? String(command.payload.input) : "";
+  assert.ok(input.includes("**↳ npm test**"));
+  assert.ok(input.includes("npm test → 564 passing"));
+});
+
+test("removing_a_staged_chip_drops_it_from_the_next_message", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const withTwo = addComposerContextChip(
+    addComposerContextChip(hydrated, {
+      id: "chip-1",
+      kind: "code",
+      label: "keep.ts",
+      text: "kept",
+    }).state,
+    { id: "chip-2", kind: "code", label: "drop.ts", text: "dropped" },
+  ).state;
+  const pruned = removeComposerContextChip(withTwo, "chip-2").state;
+  const drafted = updateComposerDraft(pruned, "go").state;
+
+  const result = submitComposer(drafted);
+  const command = result.command ? toBackendCommandDraft(result.command) : null;
+  const input = command?.kind === "composer.sendInput" ? String(command.payload.input) : "";
+  assert.ok(input.includes("**↳ keep.ts**"));
+  assert.ok(!input.includes("drop.ts"));
+  assert.ok(!input.includes("dropped"));
 });
 
 test("follow_up_carries_a_changed_model_in_launch_options", () => {
