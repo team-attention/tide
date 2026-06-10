@@ -1125,10 +1125,18 @@ export function createLiveAgentSessionEventProjector(input: {
       hardCap -= 1;
       await emit();
       const hydrated = await input.service().hydrateThread({ threadId });
+      // A turn is still "in flight" while it runs AND while it waits on the user for an
+      // approval/input prompt. Polling MUST continue through the wait: after the user
+      // answers, the agent resumes and may emit MORE signals (e.g. a second permission
+      // for WebFetch after WebSearch). Winding the poller down during the wait — which
+      // can take longer than the idle grace — left those later prompts unread, hanging
+      // the turn "Working" forever. Only idle/settled/errored turns wind down.
       const running =
         hydrated.ok &&
         (hydrated.thread.runtimeState === "running" ||
-          hydrated.thread.runtimeState === "starting");
+          hydrated.thread.runtimeState === "starting" ||
+          hydrated.thread.runtimeState === "waiting_for_approval" ||
+          hydrated.thread.runtimeState === "waiting_for_input");
       if (running) {
         idleGrace = 3;
       } else if (--idleGrace <= 0) {
