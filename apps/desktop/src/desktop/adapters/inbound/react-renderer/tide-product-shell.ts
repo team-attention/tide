@@ -1,9 +1,13 @@
 import { createElement, Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
 import {
   Archive,
+  ArrowLeft,
+  ArrowRight,
   Check,
   ChevronRight,
   CornerDownRight,
+  Minimize2,
+  RotateCw,
   Crosshair,
   ExternalLink,
   FileText,
@@ -2623,6 +2627,35 @@ function WorkbenchBrowserPane(props: {
       setAddress(props.pane.url);
     }
   }, [props.pane.url]);
+  // Back/forward availability, tracked from the webview's own navigation events.
+  const [nav, setNav] = useState<{ canBack: boolean; canForward: boolean }>({ canBack: false, canForward: false });
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (webview === null) {
+      return undefined;
+    }
+    const update = () => {
+      try {
+        setNav({
+          canBack: typeof webview.canGoBack === "function" ? webview.canGoBack() : false,
+          canForward: typeof webview.canGoForward === "function" ? webview.canGoForward() : false,
+        });
+      } catch {
+        // webview not yet attached
+      }
+    };
+    webview.addEventListener("did-navigate", update);
+    webview.addEventListener("did-navigate-in-page", update);
+    webview.addEventListener("did-finish-load", update);
+    return () => {
+      webview.removeEventListener("did-navigate", update);
+      webview.removeEventListener("did-navigate-in-page", update);
+      webview.removeEventListener("did-finish-load", update);
+    };
+  }, [props.pane.paneId]);
+  const goBack = () => webviewRef.current?.goBack?.();
+  const goForward = () => webviewRef.current?.goForward?.();
+  const reload = () => webviewRef.current?.reload?.();
   const navigate = () => {
     const url = normalizeBrowserUrl(address);
     if (url.length === 0) {
@@ -2720,6 +2753,42 @@ function WorkbenchBrowserPane(props: {
           navigate();
         },
       },
+      createElement(
+        "button",
+        {
+          type: "button",
+          className: "workbench-browser-bar__nav",
+          title: "Back",
+          "aria-label": "Back",
+          disabled: !nav.canBack,
+          onClick: goBack,
+        },
+        createElement(ArrowLeft, { size: 15, strokeWidth: 1.9, "aria-hidden": true }),
+      ),
+      createElement(
+        "button",
+        {
+          type: "button",
+          className: "workbench-browser-bar__nav",
+          title: "Forward",
+          "aria-label": "Forward",
+          disabled: !nav.canForward,
+          onClick: goForward,
+        },
+        createElement(ArrowRight, { size: 15, strokeWidth: 1.9, "aria-hidden": true }),
+      ),
+      createElement(
+        "button",
+        {
+          type: "button",
+          className: "workbench-browser-bar__nav",
+          title: props.pane.loading ? "Stop / reloading" : "Reload",
+          "aria-label": "Reload",
+          onClick: reload,
+          "data-loading": props.pane.loading ? "true" : "false",
+        },
+        createElement(RotateCw, { size: 14, strokeWidth: 1.9, "aria-hidden": true }),
+      ),
       createElement("input", {
         className: "workbench-browser-bar__input",
         "aria-label": "Browser address input",
@@ -2731,20 +2800,12 @@ function WorkbenchBrowserPane(props: {
         onChange: (event: { currentTarget: { value: string } }) =>
           setAddress(event.currentTarget.value),
       }),
-      props.pane.loading
-        ? createElement("span", { className: "workbench-browser-bar__status" }, "loading")
-        : null,
-      createElement(
-        "button",
-        { type: "submit", className: "workbench-browser-bar__go", "aria-label": "Go" },
-        "Go",
-      ),
       createElement(
         "button",
         {
           type: "button",
-          className: "workbench-browser-bar__to-chat",
-          title: "Add this page (as a document) to the chat composer",
+          className: "workbench-browser-bar__icon",
+          title: "Add this page to the chat composer",
           "aria-label": "Add this page to chat",
           onClick: () => {
             const url = props.pane.url ?? address;
@@ -2772,14 +2833,13 @@ function WorkbenchBrowserPane(props: {
             }
           },
         },
-        createElement(FileText, { size: 13, strokeWidth: 1.8, "aria-hidden": true }),
-        "Add page",
+        createElement(FileText, { size: 14, strokeWidth: 1.8, "aria-hidden": true }),
       ),
       createElement(
         "button",
         {
           type: "button",
-          className: "workbench-browser-bar__external",
+          className: "workbench-browser-bar__icon",
           title: "Open this page in your default browser",
           "aria-label": "Open in external browser",
           onClick: () => {
@@ -2789,7 +2849,7 @@ function WorkbenchBrowserPane(props: {
             }
           },
         },
-        createElement(ExternalLink, { size: 13, strokeWidth: 1.8, "aria-hidden": true }),
+        createElement(ExternalLink, { size: 14, strokeWidth: 1.8, "aria-hidden": true }),
       ),
       pickMode && pickCount > 0
         ? createElement(
@@ -2809,15 +2869,14 @@ function WorkbenchBrowserPane(props: {
         "button",
         {
           type: "button",
-          className: "workbench-browser-bar__to-chat",
+          className: "workbench-browser-bar__icon",
           "data-active": pickMode ? "true" : "false",
           title: pickMode ? "Cancel element pick" : "Pick elements/components to add to chat",
           "aria-label": "Pick elements to add to chat",
           "aria-pressed": pickMode,
           onClick: () => setPickMode((prev) => !prev),
         },
-        createElement(Crosshair, { size: 13, strokeWidth: 1.8, "aria-hidden": true }),
-        pickMode ? "Cancel" : "Pick element",
+        createElement(Crosshair, { size: 14, strokeWidth: 1.8, "aria-hidden": true }),
       ),
     ),
     createElement("webview", {
@@ -2965,6 +3024,11 @@ type BrowserWebViewElement = HTMLElement & {
   executeJavaScript?: (code: string) => Promise<unknown>;
   getURL?: () => string;
   loadURL?: (url: string) => Promise<void>;
+  goBack?: () => void;
+  goForward?: () => void;
+  reload?: () => void;
+  canGoBack?: () => boolean;
+  canGoForward?: () => boolean;
 };
 
 // Turn a user-typed address into a navigable URL: keep explicit schemes, treat a

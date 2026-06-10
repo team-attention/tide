@@ -3428,16 +3428,35 @@ button {
   color: var(--tide-muted);
 }
 
-.workbench-browser-bar__go {
+/* Back / Forward / Reload nav buttons (left of the address bar). */
+.workbench-browser-bar__nav {
   flex: 0 0 auto;
-  height: 28px;
-  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: var(--tide-action);
-  color: var(--tide-on-action);
-  font: 600 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
   cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.workbench-browser-bar__nav:hover:not(:disabled) {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+.workbench-browser-bar__nav:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+.workbench-browser-bar__nav[data-loading="true"] svg {
+  animation: tide-spin 0.8s linear infinite;
+}
+@keyframes tide-spin {
+  to { transform: rotate(360deg); }
 }
 
 .workbench-browser-bar__to-chat {
@@ -3465,8 +3484,9 @@ button {
 }
 .workbench-browser-bar__to-chat[data-active="true"] svg { color: var(--tide-on-action); }
 
-/* Square icon-only "open in external browser" button on the browser toolbar. */
-.workbench-browser-bar__external {
+/* Square icon-only action buttons on the right of the toolbar (add page / open
+   external / pick element). */
+.workbench-browser-bar__icon {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -3481,9 +3501,14 @@ button {
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.workbench-browser-bar__external:hover {
+.workbench-browser-bar__icon:hover {
   background: var(--tide-selection);
   color: var(--tide-text);
+}
+.workbench-browser-bar__icon[data-active="true"] {
+  border-color: var(--tide-action);
+  background: var(--tide-action);
+  color: var(--tide-on-action);
 }
 
 .workbench-browser-webview {
