@@ -1510,9 +1510,10 @@ const PERMISSION_OPTIONS: Record<string, { default: string; options: PermissionO
   gemini: {
     default: "default",
     options: [
-      { id: "gemini-auto", value: "default", label: "Auto-approve", detail: "Run tools without prompting" },
+      { id: "gemini-ask", value: "default", label: "Ask permissions", detail: "Approve tools manually" },
       { id: "gemini-edit", value: "auto_edit", label: "Auto edits", detail: "Auto-approve edits only" },
       { id: "gemini-plan", value: "plan", label: "Plan mode", detail: "Read-only planning" },
+      { id: "gemini-yolo", value: "yolo", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
     ],
   },
   openai_api: {

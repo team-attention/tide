@@ -821,6 +821,11 @@ export function createLiveAgentSessionEventProjector(input: {
     string,
     { seenKeys: Set<string>; pollingStarted: boolean }
   >();
+  // Launch-assigned session refs (minted --session-id) per runtime. trackRuntime
+  // records them onto the thread immediately, but at runtime start the thread
+  // metadata may not be persisted yet — the history loop retries from this map
+  // until the binding sticks, so the deterministic assignment is never lost.
+  const planSessionRefByRuntime = new Map<string, AdapterProviderSessionRef>();
   // SINGLE CONTENT SOURCE - why there is no answer dedup anywhere. A turn's content
   // (answer text, reasoning, tool calls) is produced ONLY by the agent history reader
   // (claude transcript / codex rollout / gemini session). The turn-end SIGNAL (claude
@@ -1161,16 +1166,29 @@ export function createLiveAgentSessionEventProjector(input: {
     // the connector — by id, never by recency. Unbound → read nothing this cycle;
     // the hook binds within ~1s and the next poll reads it.
     const boundRef = hydrated.thread.agentBinding.providerSessionRef;
-    if (boundRef === undefined) {
+    const planRef = planSessionRefByRuntime.get(frameInput.runtimeId);
+    if (boundRef === undefined && planRef !== undefined) {
+      // The launch-time record raced thread creation; bind now and proceed.
+      await recordDiscoveredProviderSessionRef({
+        service,
+        persistence: input.persistence,
+        threadId: frameInput.threadId,
+        providerSessionRef: planRef,
+      });
+    }
+    if (boundRef === undefined && planRef === undefined) {
       return;
     }
-    let sessionRef: AdapterProviderSessionRef = {
-      agentId: frameInput.agentId,
-      kind: boundRef.kind,
-      value: boundRef.value,
-      transcriptPath: boundRef.transcriptPath,
-      logPath: boundRef.logPath,
-    };
+    let sessionRef: AdapterProviderSessionRef =
+      boundRef !== undefined
+        ? {
+            agentId: frameInput.agentId,
+            kind: boundRef.kind,
+            value: boundRef.value,
+            transcriptPath: boundRef.transcriptPath,
+            logPath: boundRef.logPath,
+          }
+        : { ...(planRef as AdapterProviderSessionRef) };
     if (sessionRef.transcriptPath === undefined && connector.resolveSessionRef !== undefined) {
       const resolved = connector.resolveSessionRef(sessionRef);
       if (resolved?.transcriptPath !== undefined) {
@@ -1389,6 +1407,7 @@ export function createLiveAgentSessionEventProjector(input: {
       // thread BEFORE the first poll, so history reads never wait on a hook and can
       // never bind another runtime's session.
       if (runtime.providerSessionRef !== undefined) {
+        planSessionRefByRuntime.set(runtime.runtimeId, runtime.providerSessionRef);
         void recordDiscoveredProviderSessionRef({
           service: input.service(),
           persistence: input.persistence,
@@ -1407,6 +1426,13 @@ export function createLiveAgentSessionEventProjector(input: {
       source: "stdout" | "stderr";
       body: string;
     }): Promise<void> {
+      if (process.env.TIDE_DEBUG_PTY === "1") {
+        // Diagnostic tap for the self-driving harnesses: dump raw PTY output so a
+        // failing prompt-surfacing run shows WHAT the provider actually rendered.
+        process.stderr.write(
+          `[tide-pty ${frameInput.agentId} ${frameInput.runtimeId}] ${JSON.stringify(frameInput.body)}\n`,
+        );
+      }
       await appendFrameAndEmit({
         threadId: frameInput.threadId,
         agentId: frameInput.agentId,

@@ -118,3 +118,28 @@ test("codexApprovalPromptSignature is stable per box and distinct across boxes",
     codexApprovalPromptSignature(other),
   );
 });
+
+test("codex_approval_box_painted_with_cursor_positioning_parses", () => {
+  // Captured from a LIVE codex 0.136 hidden PTY (ask-for-approval shell command):
+  // the box is painted with absolute cursor moves (CSI row;colH), NOT newlines,
+  // and the cursor row uses U+203A "›". A newline-naive strip collapses the box
+  // into one line and the per-line option regex never matches — the approval
+  // prompt then never surfaces and the turn hangs "Working" forever.
+  const raw =
+    "\x1b[?2026h" +
+    "\x1b[24;2H\x1b[0m• Running\x1b[1mtouch /tmp/tide-perm-probe-codex.txt\x1b[0m" +
+    "\x1b[26;2HWould you like to run the following command?" +
+    "\x1b[27;2HReason: Do you want to allow creating /tmp/tide-perm-probe-codex.txt?" +
+    "\x1b[28;2H$ touch /tmp/tide-perm-probe-codex.txt" +
+    "\x1b[30;2H› 1. Yes, proceed (y)" +
+    "\x1b[31;2H  2. Yes, and don't ask again for commands that start with `touch /tmp/tide-perm-probe-codex.txt` (p)" +
+    "\x1b[32;2H  3. No, and tell Codex what to do differently (esc)" +
+    "\x1b[34;2HPress enter to confirm or esc to cancel" +
+    "\x1b[?2026l";
+  const prompt = parseCodexApprovalPrompt(raw);
+  assert.notEqual(prompt, null);
+  assert.equal(prompt?.options.length, 3);
+  assert.equal(prompt?.options[0]?.label, "Yes, proceed (y)");
+  assert.equal(prompt?.defaultIndex, 0);
+  assert.ok(prompt?.question.endsWith("?"));
+});

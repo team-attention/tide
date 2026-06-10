@@ -17,9 +17,18 @@ export interface ScrapedModelOption {
 
 // Removes ANSI/OSC/cursor control sequences from raw PTY output, leaving the
 // visible text. Also collapses the no-break spaces some TUIs use for layout.
+//
+// IMPORTANT: modern TUIs (codex 0.13x) repaint by absolute cursor positioning
+// (CSI row;colH) instead of emitting "\n". Verified against a live codex approval
+// box: the whole boxed menu arrives as CUP-prefixed segments with zero newlines,
+// so a naive strip collapses it into one line and every per-line parser silently
+// fails. Translate row-positioning sequences into line breaks BEFORE stripping so
+// the visible text keeps its line structure.
 export function stripTerminalSequences(raw: string): string {
   return raw
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "") // OSC ... BEL / ST
+    .replace(/\x1b\[[0-9;]*[Hf]/g, "\n") // CUP/HVP absolute moves -> line break
+    .replace(/\x1b\[\d*[ABEF]/g, "\n") // cursor up/down/next/prev line -> line break
     .replace(/\x1b[@-Z\\-_]/g, "") // single-char escapes
     .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "") // CSI sequences
     .replace(/\x1b[PX^_].*?\x1b\\/g, "") // DCS/PM/APC/SOS strings
@@ -79,7 +88,7 @@ export interface CodexApprovalPrompt {
 // Parses codex's boxed interactive approval/choice menu from hidden-PTY output.
 // codex raises these for shell-command and (non-Tide) MCP tool approval; they have
 // no hook, so they only exist in the live TUI. Shape (ANSI-stripped):
-//   Allow the <server> MCP server to run tool "<tool>"?
+//   Allow the <server> MCP server to run tool "<tool>"?     (cursor: > / \u276f / \u203a)
 //   > 1. Allow                  Run the tool and continue.
 //     2. Allow for this session ...
 //     3. Always allow           ...
@@ -98,7 +107,7 @@ export function parseCodexApprovalPrompt(raw: string): CodexApprovalPrompt | nul
   let defaultIndex = 0;
   let firstOptionLine = -1;
   for (let i = 0; i < lines.length; i += 1) {
-    const match = lines[i].match(/^\s*([>❯])?\s*(\d+)\.\s+(.+?)\s*$/);
+    const match = lines[i].match(/^\s*([>❯›])?\s*(\d+)\.\s+(.+?)\s*$/);
     if (match === null) {
       continue;
     }
