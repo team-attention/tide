@@ -145,40 +145,54 @@ test("claude_launch_plan_does_not_use_print_stream_json_or_remote_control_runtim
   assert.equal(args.includes("--remote"), false);
 });
 
-test("claude_permission_prompt_detection_uses_permission_request_not_notification", () => {
+test("claude_permission_prompt_detection_reads_hook_event_name_from_payload", () => {
   const integration = claudeIntegration();
 
+  // Real signal shape: Tide normalizes the event to "agent-needs-input" and the actual
+  // claude hook is in payload.hook_event_name. Keying off the normalized event (as the
+  // code used to) surfaced nothing -> WebSearch/tool permission hung forever.
   const prompt = integration.detectPromptState({
     threadId: "thread-1",
     source: "provider_hook",
-    eventName: "PermissionRequest",
+    eventName: "agent-needs-input",
     payload: {
+      hook_event_name: "PermissionRequest",
       tool_name: "Bash",
       tool_input: {
         description: "Run a fixture command",
         command: "python3 -c 'print(\"CLAUDE_PERMISSION_FIXTURE\")'",
       },
-      permission_suggestions: [
-        {
-          behavior: "allow",
-          type: "addRules",
-        },
-      ],
+    },
+  });
+  // A real WebSearch permission (no description/command) still surfaces, named by tool.
+  const webSearch = integration.detectPromptState({
+    threadId: "thread-1",
+    source: "provider_hook",
+    eventName: "agent-needs-input",
+    payload: {
+      hook_event_name: "PermissionRequest",
+      tool_name: "WebSearch",
+      tool_input: { query: "Figma FIG short interest" },
     },
   });
   const notification = integration.detectPromptState({
     threadId: "thread-1",
     source: "provider_hook",
-    eventName: "Notification",
+    eventName: "agent-needs-input",
     payload: {
-      notification_type: "permission_prompt",
+      hook_event_name: "Notification",
       message: "Claude needs your permission",
     },
   });
 
-  assert.equal(prompt?.kind, "permission");
-  assert.equal(prompt?.source, "provider_hook");
+  assert.equal(prompt?.kind, "approval");
   assert.equal(prompt?.message, "Run a fixture command");
+  // Allow drives the PTY box (Enter on default); Deny cancels it (Esc).
+  assert.equal(prompt?.choices?.length, 2);
+  assert.equal(prompt?.defaultChoiceId, "claude-perm-allow");
+  assert.equal(webSearch?.kind, "approval");
+  assert.equal(webSearch?.message, "Claude Code permission required for WebSearch.");
+  // A bare Notification has no tool/choices to drive — not surfaced as an approval here.
   assert.equal(notification, null);
 });
 

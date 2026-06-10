@@ -23,6 +23,7 @@ import {
   codexApprovalPromptSignature,
   encodeCodexMenuNavigation,
   parseCodexApprovalPrompt,
+  PTY_CANCEL_TOKEN,
 } from "../../../../application/services/provider-tui-parsers.ts";
 
 export interface ClaudeProviderState {
@@ -254,13 +255,20 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       return null;
     }
 
-    if (input.eventName === "PermissionRequest") {
+    // Tide normalizes every claude hook (PermissionRequest, PreToolUse, Elicitation,
+    // Notification) to the single signal event `agent-needs-input`, so the REAL hook is
+    // in the payload's `hook_event_name`. Branch on that — keying off `input.eventName`
+    // (always "agent-needs-input") matched nothing, so claude's permission prompts were
+    // never surfaced and the turn hung "Working" forever waiting on an unseen box.
+    const hookEvent = stringValue(input.payload.hook_event_name) ?? input.eventName;
+
+    if (hookEvent === "PermissionRequest") {
       return this.detectPermissionPrompt(input);
     }
-    if (input.eventName === "PreToolUse") {
+    if (hookEvent === "PreToolUse") {
       return this.detectAskUserQuestion(input);
     }
-    if (input.eventName === "Elicitation") {
+    if (hookEvent === "Elicitation") {
       return this.detectElicitation(input);
     }
 
@@ -290,8 +298,26 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       promptId: claudePromptId(input.payload, "permission", message),
       threadId: input.threadId,
       agentId: "claude",
-      kind: "permission",
+      kind: "approval",
       message,
+      // claude shows the actual Allow/Deny box in the hidden PTY. Drive it from here:
+      // Allow = Enter on the default option (claude defaults to allow); Deny = Esc, which
+      // cancels the box regardless of its option count. Routed by the runtime port's
+      // prompt_answer path. This unblocks tools (WebSearch/WebFetch/…) whose box the PTY
+      // scraper doesn't recognize, instead of hanging on an unseen prompt.
+      choices: [
+        {
+          choiceId: "claude-perm-allow",
+          label: "Allow",
+          providerValue: encodeCodexMenuNavigation(0),
+        },
+        {
+          choiceId: "claude-perm-deny",
+          label: "Deny",
+          providerValue: PTY_CANCEL_TOKEN,
+        },
+      ],
+      defaultChoiceId: "claude-perm-allow",
       source: "provider_hook",
     };
   }

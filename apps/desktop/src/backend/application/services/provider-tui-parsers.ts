@@ -148,6 +148,11 @@ export interface CodexMenuNavigation {
 
 const CODEX_MENU_TOKEN_PREFIX = "codex-menu:";
 
+// Answer token meaning "cancel/dismiss the agent's interactive box" — replayed as the
+// Escape key on the PTY. Used by claude permission prompts surfaced from the hook (a
+// Deny), where the exact box layout isn't known but Esc reliably cancels the box.
+export const PTY_CANCEL_TOKEN = "pty-key:esc";
+
 // Encodes the navigation a `PromptState.choice.providerValue` carries for a codex TUI
 // menu option. `steps` is the signed offset of the option from the cursor's default
 // row (down is positive). The runtime port decodes this back into key events.

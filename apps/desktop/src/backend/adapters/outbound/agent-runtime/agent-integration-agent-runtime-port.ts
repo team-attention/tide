@@ -15,6 +15,7 @@ import type { RuntimeReadinessRegistry } from "../../../application/services/run
 import {
   type CodexMenuNavigation,
   decodeCodexMenuNavigation,
+  PTY_CANCEL_TOKEN,
 } from "../../../application/services/provider-tui-parsers.ts";
 import type {
   AgentId,
@@ -275,6 +276,13 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       input.kind === "prompt_answer" &&
       (processState.agentId === "codex" || processState.agentId === "claude")
     ) {
+      // Deny / dismiss a permission box: Escape reliably cancels the agent's TUI box
+      // even when its exact option layout is unknown (hook-surfaced claude prompts).
+      if (input.value === PTY_CANCEL_TOKEN) {
+        await processState.handle.write("\x1b");
+        traceAgentRuntime(`wrote ${processState.agentId} cancel(esc) runtime=${handle.runtimeId}`);
+        return;
+      }
       const navigation = decodeCodexMenuNavigation(input.value);
       if (navigation !== null) {
         await sendCodexMenuNavigation(processState.handle, navigation);
