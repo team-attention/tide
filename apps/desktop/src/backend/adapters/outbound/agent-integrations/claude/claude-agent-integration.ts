@@ -271,10 +271,17 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
   }
 
   detectPromptState(input: AgentPromptSignalInput): PromptState | null {
-    // Claude's shell-command / tool permission is an interactive boxed menu in the
-    // hidden PTY (the Notification hook only signals "needs input" without the
-    // Allow/Deny choices). Scrape that frame — same vertical arrow-nav menu as codex
-    // — so the turn can't hang on an unseen "Do you want to proceed?" prompt.
+    // ONE OWNER PER BOX KIND:
+    // - PERMISSION boxes ("Do you want to proceed?") are owned by the
+    //   PermissionRequest HOOK. It fires once per requested call, SEQUENTIALLY as
+    //   claude reaches each tool (verified live: a WebSearch hook, then two
+    //   WebFetch hooks), so the count is right and there is no PTY-parsing
+    //   fragility. The PTY scrape does NOT surface these (it returns null for
+    //   permission-worded boxes) — surfacing both produced two cards for one box
+    //   and wedged the next turn's prompt.
+    // - QUESTION boxes (AskUserQuestion) ARE owned by the PTY scrape: their hook
+    //   fires before the box renders and carries no selectable options, so the
+    //   box on screen is the only actionable source.
     if (input.source === "pty_transcript") {
       return detectClaudeTuiApprovalPrompt(input.threadId, input.text);
     }
@@ -282,21 +289,13 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       return null;
     }
 
-    // Tide normalizes every claude hook (PermissionRequest, PreToolUse, Elicitation,
-    // Notification) to the single signal event `agent-needs-input`, so the REAL hook is
-    // in the payload's `hook_event_name`. Branch on that — keying off `input.eventName`
-    // (always "agent-needs-input") matched nothing, so claude's permission prompts were
-    // never surfaced and the turn hung "Working" forever waiting on an unseen box.
+    // Tide normalizes every claude hook to the single signal event
+    // `agent-needs-input`; the REAL hook is in payload.hook_event_name.
     const hookEvent = stringValue(input.payload.hook_event_name) ?? input.eventName;
 
     if (hookEvent === "PermissionRequest") {
       return this.detectPermissionPrompt(input);
     }
-    // PreToolUse(AskUserQuestion) is deliberately NOT surfaced: it fires BEFORE
-    // claude renders the question box, so an answer collected here is typed into
-    // a menu that does not exist yet and evaporates (verified live). The question
-    // box is owned by the PTY scrape below, which fires when the box is actually
-    // on screen and carries its real options as menu-navigation choices.
     if (hookEvent === "Elicitation") {
       return this.detectElicitation(input);
     }
@@ -313,9 +312,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       : undefined;
     const toolName = stringValue(input.payload.tool_name);
     // AskUserQuestion's PermissionRequest must NOT surface as Allow/Deny: the box
-    // claude renders for it IS the question menu, so a hook-driven "Allow" (Enter)
-    // would blindly pick whatever option the cursor is on (verified live). The PTY
-    // scrape owns that box and surfaces the real question with its options.
+    // claude renders for it IS the question menu (the PTY scrape owns it).
     if (toolName === "AskUserQuestion") {
       return null;
     }
@@ -325,33 +322,22 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       (toolName === undefined
         ? undefined
         : `Claude Code permission required for ${toolName}.`);
-
     if (message === undefined) {
       return null;
     }
-
     return {
+      // Per-call id so each sequential permission is a distinct prompt (a batched
+      // turn fires several). Falls back to a content id when claude omits call_id.
       promptId: claudePromptId(input.payload, "permission", message),
       threadId: input.threadId,
       agentId: "claude",
       kind: "approval",
       message,
-      // claude shows the actual Allow/Deny box in the hidden PTY. Drive it from here:
-      // Allow = Enter on the default option (claude defaults to allow); Deny = Esc, which
-      // cancels the box regardless of its option count. Routed by the runtime port's
-      // prompt_answer path. This unblocks tools (WebSearch/WebFetch/…) whose box the PTY
-      // scraper doesn't recognize, instead of hanging on an unseen prompt.
+      // claude's actual Allow/Deny box is in the hidden PTY. Allow = Enter on the
+      // default option; Deny = Esc (cancels regardless of option layout).
       choices: [
-        {
-          choiceId: "claude-perm-allow",
-          label: "Allow",
-          providerValue: encodeCodexMenuNavigation(0),
-        },
-        {
-          choiceId: "claude-perm-deny",
-          label: "Deny",
-          providerValue: PTY_CANCEL_TOKEN,
-        },
+        { choiceId: "claude-perm-allow", label: "Allow", providerValue: encodeCodexMenuNavigation(0) },
+        { choiceId: "claude-perm-deny", label: "Deny", providerValue: PTY_CANCEL_TOKEN },
       ],
       defaultChoiceId: "claude-perm-allow",
       source: "provider_hook",
@@ -536,14 +522,19 @@ function detectClaudeTuiApprovalPrompt(
   if (parsed === null) {
     return null;
   }
+  // Permission boxes ("Do you want to proceed?" / "...allow Claude to...?") are
+  // owned by the PermissionRequest hook — the scrape must NOT also surface them
+  // (two cards for one box wedged the next turn's prompt, verified live). The
+  // scrape owns only the QUESTION/choice menu (AskUserQuestion).
+  if (/\b(proceed|trust|allow|permission)\b/i.test(parsed.question)) {
+    return null;
+  }
   const choices: PromptChoice[] = parsed.options.map((option, position) => ({
     choiceId: `claude-opt-${option.index}`,
     label: option.label,
     providerValue: encodeCodexMenuNavigation(position - parsed.defaultIndex),
   }));
-  const kind: PromptKind = /\b(proceed|trust|allow|permission)\b/i.test(parsed.question)
-    ? "approval"
-    : "choice";
+  const kind: PromptKind = "choice";
   return {
     promptId: `claude:${codexApprovalPromptSignature(parsed)}`,
     threadId,

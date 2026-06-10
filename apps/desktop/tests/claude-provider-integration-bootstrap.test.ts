@@ -145,26 +145,29 @@ test("claude_launch_plan_does_not_use_print_stream_json_or_remote_control_runtim
   assert.equal(args.includes("--remote"), false);
 });
 
-test("claude_permission_prompt_detection_reads_hook_event_name_from_payload", () => {
+test("claude_hook_owns_permission_prompts_and_each_call_is_distinct", () => {
+  // ONE OWNER PER BOX KIND: tool permissions are owned by the PermissionRequest
+  // hook (it fires once per requested call, SEQUENTIALLY — verified live:
+  // WebSearch then two WebFetch hooks), so a multi-permission turn surfaces a
+  // distinct card per call without the PTY-scrape fragility. The scrape skips
+  // permission boxes; the hook skips AskUserQuestion (that box is scrape-owned).
   const integration = claudeIntegration();
 
-  // Real signal shape: Tide normalizes the event to "agent-needs-input" and the actual
-  // claude hook is in payload.hook_event_name. Keying off the normalized event (as the
-  // code used to) surfaced nothing -> WebSearch/tool permission hung forever.
-  const prompt = integration.detectPromptState({
+  const bash = integration.detectPromptState({
     threadId: "thread-1",
     source: "provider_hook",
     eventName: "agent-needs-input",
     payload: {
       hook_event_name: "PermissionRequest",
       tool_name: "Bash",
-      tool_input: {
-        description: "Run a fixture command",
-        command: "python3 -c 'print(\"CLAUDE_PERMISSION_FIXTURE\")'",
-      },
+      tool_input: { description: "Run a fixture command", command: "echo hi" },
     },
   });
-  // A real WebSearch permission (no description/command) still surfaces, named by tool.
+  assert.equal(bash?.kind, "approval");
+  assert.equal(bash?.message, "Run a fixture command");
+  assert.equal(bash?.defaultChoiceId, "claude-perm-allow");
+  assert.equal(bash?.choices?.length, 2);
+
   const webSearch = integration.detectPromptState({
     threadId: "thread-1",
     source: "provider_hook",
@@ -175,25 +178,27 @@ test("claude_permission_prompt_detection_reads_hook_event_name_from_payload", ()
       tool_input: { query: "Figma FIG short interest" },
     },
   });
-  const notification = integration.detectPromptState({
-    threadId: "thread-1",
-    source: "provider_hook",
-    eventName: "agent-needs-input",
-    payload: {
-      hook_event_name: "Notification",
-      message: "Claude needs your permission",
-    },
-  });
-
-  assert.equal(prompt?.kind, "approval");
-  assert.equal(prompt?.message, "Run a fixture command");
-  // Allow drives the PTY box (Enter on default); Deny cancels it (Esc).
-  assert.equal(prompt?.choices?.length, 2);
-  assert.equal(prompt?.defaultChoiceId, "claude-perm-allow");
   assert.equal(webSearch?.kind, "approval");
   assert.equal(webSearch?.message, "Claude Code permission required for WebSearch.");
-  // A bare Notification has no tool/choices to drive — not surfaced as an approval here.
-  assert.equal(notification, null);
+  // A bare Notification and AskUserQuestion permission do not surface as a card.
+  assert.equal(
+    integration.detectPromptState({
+      threadId: "thread-1",
+      source: "provider_hook",
+      eventName: "agent-needs-input",
+      payload: { hook_event_name: "Notification", message: "needs input" },
+    }),
+    null,
+  );
+  assert.equal(
+    integration.detectPromptState({
+      threadId: "thread-1",
+      source: "provider_hook",
+      eventName: "agent-needs-input",
+      payload: { hook_event_name: "PermissionRequest", tool_name: "AskUserQuestion" },
+    }),
+    null,
+  );
 });
 
 test("claude_pretooluse_does_not_surface_a_premature_question_prompt", () => {
@@ -234,7 +239,11 @@ const CLAUDE_TUI_APPROVAL_FRAME = [
   "\x1b[2mEsc to cancel · Tab to amend · ctrl+e to explain\x1b[0m",
 ].join("\n");
 
-test("claude_maps_a_scraped_permission_box_into_a_prompt_state_with_choices", () => {
+test("claude_pty_scrape_skips_permission_boxes_the_hook_owns_them", () => {
+  // A "Do you want to proceed?" box is a PERMISSION box — owned by the
+  // PermissionRequest hook. The PTY scrape must NOT also surface it (two cards
+  // for one box wedged the next turn's prompt, verified live). The scrape returns
+  // null here; the hook test above covers the surfaced card.
   const integration = claudeIntegration();
 
   const prompt = integration.detectPromptState({
@@ -243,27 +252,7 @@ test("claude_maps_a_scraped_permission_box_into_a_prompt_state_with_choices", ()
     text: CLAUDE_TUI_APPROVAL_FRAME,
   });
 
-  assert.notEqual(prompt, null);
-  assert.equal(prompt?.agentId, "claude");
-  assert.equal(prompt?.kind, "approval");
-  assert.equal(prompt?.source, "pty");
-  assert.equal(prompt?.message, "Do you want to proceed?");
-  // Cursor (❯) is on option 1 → that is the default choice.
-  assert.equal(prompt?.defaultChoiceId, "claude-opt-1");
-  assert.deepEqual(
-    prompt?.choices?.map((choice) => ({
-      label: choice.label,
-      providerValue: choice.providerValue,
-    })),
-    [
-      { label: "Yes", providerValue: "codex-menu:0" },
-      {
-        label: "Yes, and always allow access to tmp/ from this project",
-        providerValue: "codex-menu:1",
-      },
-      { label: "No", providerValue: "codex-menu:2" },
-    ],
-  );
+  assert.equal(prompt, null);
 });
 
 test("claude_elicitation_prompt_detection_uses_elicitation_event", () => {

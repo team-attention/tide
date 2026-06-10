@@ -164,3 +164,39 @@ test("claude_question_box_painted_without_option_spaces_parses", () => {
   assert.equal(prompt?.options[1]?.label, "OPTION_BETA");
   assert.equal(prompt?.defaultIndex, 0);
 });
+
+test("claude_word_gap_idioms_cha_and_cursor_forward_become_spaces", () => {
+  // Captured live from claude's hidden PTY: words are painted with cursor-to-
+  // column jumps between them, NOT space characters. Stripping those fused the
+  // question into "Doyouwanttoproceed?", which broke both the user-facing
+  // message and the \b-based approval classification.
+  const raw =
+    "\x1b[38;2;153;153;153mClaude wants to search the web for: Figma short interest\r\x1b[1C\x1b[2B" +
+    "\x1b[39mDo\x1b[5Gyou\x1b[9Gwant\x1b[14Gto\x1b[17Gproceed?\r\x1b[1C\x1b[1B" +
+    "\x1b[38;2;177;185;249m❯\x1b[4G\x1b[38;2;153;153;153m1. Yes\r\x1b[1C\x1b[1B" +
+    "\x1b[4G2. No, and tell Claude what to do differently (esc)\r\x1b[1C\x1b[1B" +
+    "Enter to confirm · Esc to cancel";
+  const prompt = parseCodexApprovalPrompt(raw);
+  assert.notEqual(prompt, null);
+  assert.equal(prompt?.question, "Do you want to proceed?");
+  assert.equal(prompt?.options[0]?.label, "Yes");
+  assert.equal(prompt?.options.length, 2);
+});
+
+test("two_boxes_in_one_buffer_parses_the_last_active_box", () => {
+  // The rolling PTY buffer can hold an already-answered box still painted on
+  // screen PLUS the newly-rendered one. The active prompt is the LAST box; the
+  // parser must return it (returning the stale first box re-surfaced an answered
+  // prompt and suppressed the new one — claude WebSearch→WebFetch hang).
+  const box = (q, opt1) =>
+    `${q}\r\x1b[1C\x1b[2B` +
+    `\x1b[39m❯\x1b[4G1. ${opt1}\r\x1b[1C\x1b[1B` +
+    `\x1b[4G2. No, and tell Claude what to do differently (esc)\r\x1b[1C\x1b[1B` +
+    `Enter to confirm · Esc to cancel\r\x1b[2B`;
+  const raw = box("Do you want to proceed?", "Yes") +
+    box("Do you want to allow Claude to fetch this content?", "Yes");
+  const prompt = parseCodexApprovalPrompt(raw);
+  assert.notEqual(prompt, null);
+  // The SECOND (active) box, not the stale first one.
+  assert.equal(prompt?.question, "Do you want to allow Claude to fetch this content?");
+});

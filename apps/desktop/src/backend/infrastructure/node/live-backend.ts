@@ -842,7 +842,7 @@ export function createLiveAgentSessionEventProjector(input: {
   // buffer when the prompt clears. See docs_v2/specs/agent-prompt-surfacing.md.
   const ptyPromptByRuntime = new Map<
     string,
-    { buffer: string; surfacedSignature?: string }
+    { buffer: string; surfacedSignature?: string; answeredSignatures: Set<string> }
   >();
 
   // Uniform turn settle. Every Agent Integration produces an AgentTurnOutcome from
@@ -1316,14 +1316,22 @@ export function createLiveAgentSessionEventProjector(input: {
     }
 
     const state =
-      ptyPromptByRuntime.get(frameInput.runtimeId) ?? { buffer: "" };
+      ptyPromptByRuntime.get(frameInput.runtimeId) ??
+      { buffer: "", answeredSignatures: new Set<string>() };
     ptyPromptByRuntime.set(frameInput.runtimeId, state);
 
-    // A prompt we surfaced was answered/cleared → its box text is stale; drop it.
+    // A prompt we surfaced was answered/cleared → its box text is stale; drop it
+    // AND remember its signature: the answered box stays painted on screen for a
+    // few frames before the provider dismisses it, and re-scraping that repaint
+    // re-surfaced the SAME prompt — re-occupying the slot and permanently
+    // suppressing the NEXT box of a batched turn (verified live: claude's second
+    // WebFetch box never surfaced). An answered signature never surfaces again
+    // for this runtime.
     if (
       state.surfacedSignature !== undefined &&
       hydrated.thread.promptState === undefined
     ) {
+      state.answeredSignatures.add(state.surfacedSignature);
       state.buffer = "";
       state.surfacedSignature = undefined;
     }
@@ -1341,6 +1349,9 @@ export function createLiveAgentSessionEventProjector(input: {
       text: state.buffer,
     });
     if (promptState === null) {
+      return;
+    }
+    if (state.answeredSignatures.has(promptState.promptId)) {
       return;
     }
     state.surfacedSignature = promptState.promptId;
