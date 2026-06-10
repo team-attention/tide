@@ -109,6 +109,7 @@ import {
   openProductShellBrowserAtUrl,
   setProductShellSearchQuery,
   toggleProductShellSearch,
+  selectBackgroundCompletions,
   selectProductShellChoiceSurfaceRow,
   selectProductShellLauncherAction,
   setProductShellEditorPickerFilter,
@@ -1113,6 +1114,29 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     }
     notifiedAttentionRef.current = current;
   }, [shellState.threads]);
+
+  // Notify when a thread finishes a turn IN THE BACKGROUND (you were viewing
+  // another thread), so off-screen agent work doesn't need babysitting to know
+  // it's done. Uniform across agents — driven only by the per-thread running flag.
+  const prevRunningRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (typeof Notification === "undefined") {
+      return;
+    }
+    const nowRunning = new Set(
+      shellState.threads.filter((thread) => thread.running === true).map((thread) => thread.threadId),
+    );
+    if (Notification.permission === "granted") {
+      for (const thread of selectBackgroundCompletions(
+        prevRunningRef.current,
+        shellState.threads,
+        shellState.activeThreadId,
+      )) {
+        new Notification("Tide — agent finished", { body: thread.title });
+      }
+    }
+    prevRunningRef.current = nowRunning;
+  }, [shellState.threads, shellState.activeThreadId]);
 
   // The agent-chat column never shrinks below the composer's usable width.
   const CHAT_MIN = 440;

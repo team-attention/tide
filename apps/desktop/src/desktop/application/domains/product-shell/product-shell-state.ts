@@ -822,6 +822,26 @@ export function toggleProductShellWorkbench(state: ProductShellState): ProductSh
   };
 }
 
+// Threads that just finished a turn IN THE BACKGROUND — they were running, are no
+// longer running, are not now waiting on the user (that's the separate attention
+// path), and are not the thread the user is currently viewing. Uniform across
+// every agent: it reads only the per-thread `running` flag the runtime lifecycle
+// sets. Used to notify the user that off-screen agent work completed (so they
+// don't have to babysit a background thread to know it's done).
+export function selectBackgroundCompletions(
+  previousRunning: ReadonlySet<string>,
+  threads: ProductShellThread[],
+  activeThreadId: string | null,
+): ProductShellThread[] {
+  return threads.filter(
+    (thread) =>
+      previousRunning.has(thread.threadId) &&
+      thread.running !== true &&
+      thread.attention !== true &&
+      thread.threadId !== activeThreadId,
+  );
+}
+
 // Switch the workbench between tab-group and split (tiled, resizable) modes.
 export function toggleProductShellWorkbenchLayoutMode(state: ProductShellState): ProductShellState {
   return {
