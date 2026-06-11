@@ -680,6 +680,138 @@ function busyThreadService() {
   return { fakes, service };
 }
 
+// ── Mid-thread Launch Option changes ──────────────────────────────────────
+// Spec: docs_v2/specs/mid-thread-launch-option-changes.md
+
+test("update_thread_launch_options_applies_live_and_persists", async () => {
+  const { fakes, service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+
+  const result = await service.updateThreadLaunchOptions({
+    threadId: "thread-busy",
+    launchOptions: { model: "gpt-5.4" },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.applied, "live");
+  assert.equal(result.thread.launchOptions?.model, "gpt-5.4");
+  assert.deepEqual(fakes.runtime.sessionConfigUpdates[0]?.changedKeys, ["model"]);
+});
+
+test("update_thread_launch_options_without_live_runtime_only_changes_spawn_options", async () => {
+  const { fakes, service } = busyThreadService();
+
+  const result = await service.updateThreadLaunchOptions({
+    threadId: "thread-busy",
+    launchOptions: { model: "gpt-5.4" },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.applied, "none");
+  assert.equal(fakes.runtime.sessionConfigUpdates.length, 0);
+  // The next send resumes the provider session WITH the changed options.
+  await service.sendComposerInput({ threadId: "thread-busy", input: "go" });
+  assert.equal(fakes.runtime.resumes[0]?.launchOptions?.model, "gpt-5.4");
+});
+
+test("update_thread_launch_options_with_unchanged_values_is_a_no_op", async () => {
+  const { fakes, service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  await service.updateThreadLaunchOptions({
+    threadId: "thread-busy",
+    launchOptions: { model: "gpt-5.4" },
+  });
+
+  const repeat = await service.updateThreadLaunchOptions({
+    threadId: "thread-busy",
+    launchOptions: { model: "gpt-5.4" },
+  });
+
+  assert.equal(repeat.ok, true);
+  assert.equal(repeat.applied, "none");
+  assert.equal(fakes.runtime.sessionConfigUpdates.length, 1);
+});
+
+test("restart_required_change_restarts_the_runtime_at_the_next_send", async () => {
+  const { fakes, service } = busyThreadService();
+  fakes.runtime.sessionConfigResult = "restart_required";
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  await service.recordTurnComplete({ threadId: "thread-busy" });
+
+  const result = await service.updateThreadLaunchOptions({
+    threadId: "thread-busy",
+    launchOptions: { reasoning: "xhigh" },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.applied, "next_turn");
+
+  await service.sendComposerInput({ threadId: "thread-busy", input: "next" });
+  // The idle process is stopped and a fresh provider-native resume carries the
+  // new options before the message is written — all under the turn spinner.
+  assert.deepEqual(fakes.runtime.events, [
+    "resume",
+    "writeInput",
+    "applySessionConfig",
+    "stop",
+    "resume",
+    "writeInput",
+  ]);
+  assert.equal(fakes.runtime.resumes[1]?.launchOptions?.reasoning, "xhigh");
+});
+
+test("restart_required_change_mid_turn_applies_when_the_queued_input_flushes", async () => {
+  const { fakes, service } = busyThreadService();
+  fakes.runtime.sessionConfigResult = "restart_required";
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  // Mid-turn: change options, then queue a follow-up. The in-flight turn is
+  // never interrupted; the restart happens when the queued input flushes.
+  await service.updateThreadLaunchOptions({
+    threadId: "thread-busy",
+    launchOptions: { model: "gpt-5.2" },
+  });
+  const queued = await service.sendComposerInput({
+    threadId: "thread-busy",
+    input: "follow-up",
+  });
+  assert.equal(queued.ok, true);
+  assert.equal(queued.status, "queued");
+  assert.equal(fakes.runtime.stops.length, 0);
+
+  const done = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(done.ok, true);
+  assert.equal(done.flushedInput, "follow-up");
+  assert.equal(fakes.runtime.stops.length, 1);
+  assert.equal(fakes.runtime.resumes[1]?.launchOptions?.model, "gpt-5.2");
+  assert.equal(fakes.runtime.writes[1]?.input.value, "follow-up");
+});
+
+test("send_input_launch_options_apply_to_the_live_session", async () => {
+  // Options piggybacked on composer.sendInput route through the same merge/
+  // apply path as the explicit command (no silent drop on follow-ups).
+  const { fakes, service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  await service.recordTurnComplete({ threadId: "thread-busy" });
+
+  await service.sendComposerInput({
+    threadId: "thread-busy",
+    input: "second",
+    launchOptions: { model: "gpt-5.2" },
+  });
+
+  assert.equal(fakes.runtime.sessionConfigUpdates.length, 1);
+  assert.deepEqual(fakes.runtime.sessionConfigUpdates[0]?.changedKeys, ["model"]);
+});
+
+test("update_thread_launch_options_for_a_missing_thread_fails", async () => {
+  const { service } = busyThreadService();
+  const result = await service.updateThreadLaunchOptions({
+    threadId: "thread-unknown",
+    launchOptions: { model: "gpt-5.4" },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "thread_not_found");
+});
+
 test("input_sent_while_a_turn_is_running_is_queued_not_sent", async () => {
   // A second input during a live turn queues Tide-side (an idle thread sends at once).
   const { fakes, service } = busyThreadService();
@@ -2905,6 +3037,12 @@ class FakeAgentRuntimePort implements AgentRuntimePort {
   writes: { handle: AgentRuntimeHandle; input: TerminalInput }[] = [];
   stops: AgentRuntimeHandle[] = [];
   interrupts: AgentRuntimeHandle[] = [];
+  sessionConfigUpdates: {
+    handle: AgentRuntimeHandle;
+    launchOptions: Record<string, unknown>;
+    changedKeys: string[];
+  }[] = [];
+  sessionConfigResult: "applied" | "restart_required" = "applied";
 
   async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
     this.events.push("start");
@@ -2932,6 +3070,15 @@ class FakeAgentRuntimePort implements AgentRuntimePort {
   ): Promise<void> {
     this.events.push("writeInput");
     this.writes.push({ handle, input });
+  }
+
+  async applySessionConfig(
+    handle: AgentRuntimeHandle,
+    input: { launchOptions: Record<string, unknown>; changedKeys: string[] },
+  ): Promise<"applied" | "restart_required"> {
+    this.events.push("applySessionConfig");
+    this.sessionConfigUpdates.push({ handle, ...input });
+    return this.sessionConfigResult;
   }
 
   async interrupt(handle: AgentRuntimeHandle): Promise<void> {

@@ -9,6 +9,8 @@ import type {
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
+  SessionConfigUpdateInput,
+  SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   ThreadScope,
@@ -218,6 +220,41 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       launchOptions: input.launchOptions,
       runtimeId: input.runtimeId,
     });
+  }
+
+  // Mid-thread Launch Options change. Model + reasoning effort apply LIVE as
+  // turn/start overrides ("for this turn and subsequent turns", codex-cli 0.136
+  // bindings). A permission change maps to sandbox + approvalPolicy; the
+  // per-turn `sandboxPolicy` is a structured object Tide cannot safely
+  // construct, so it restarts instead — thread/resume accepts the same simple
+  // sandbox/approvalPolicy values the start path already maps.
+  buildSessionConfigUpdate(input: SessionConfigUpdateInput): SessionConfigUpdatePlan {
+    const params: Record<string, unknown> = {};
+    for (const key of input.changedKeys) {
+      if (key === "model") {
+        const model = stringValue(input.launchOptions.model);
+        if (model === undefined) {
+          return { kind: "restart" };
+        }
+        params.model = model;
+        continue;
+      }
+      if (key === "reasoning") {
+        const reasoning = stringValue(input.launchOptions.reasoning);
+        if (
+          reasoning !== "low" &&
+          reasoning !== "medium" &&
+          reasoning !== "high" &&
+          reasoning !== "xhigh"
+        ) {
+          return { kind: "restart" };
+        }
+        params.effort = reasoning;
+        continue;
+      }
+      return { kind: "restart" };
+    }
+    return { kind: "live", protocolParams: params };
   }
 
   private codexLaunchPlan(input: {

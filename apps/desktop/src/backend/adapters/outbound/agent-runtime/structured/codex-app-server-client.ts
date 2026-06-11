@@ -84,6 +84,11 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   // pendingSteerText and flushes the instant the id lands.
   private turnStartInFlight = false;
   private readonly pendingSteerText: string[] = [];
+  // Mid-thread Launch Options changes (model/effort), delivered as turn/start
+  // overrides — the protocol applies them "for this turn and subsequent turns"
+  // (codex-cli 0.136 bindings: TurnStartParams). Re-sent on every turn/start;
+  // idempotent. See mid-thread-launch-option-changes.md.
+  private turnOverrides: Record<string, unknown> = {};
   private lastUsage?: {
     inputTokens?: number;
     outputTokens?: number;
@@ -152,7 +157,13 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     }, () => {
       this.notify("initialized", {});
       if (input.resumeThreadId !== undefined) {
-        this.request("thread/resume", { threadId: input.resumeThreadId }, (result) => {
+        // Re-send the launch protocolParams (model/sandbox/approvalPolicy):
+        // ThreadResumeParams accepts them as overrides, so a resume respawn
+        // after a mid-thread options change launches with the new values.
+        this.request("thread/resume", {
+          threadId: input.resumeThreadId,
+          ...this.protocolParams,
+        }, (result) => {
           this.adoptThread(result);
         });
         return;
@@ -230,6 +241,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     this.request("turn/start", {
       threadId: this.codexThreadId,
       input: codexTurnInput(text, attachments),
+      ...this.turnOverrides,
     }, (result) => {
       const turn = isRecord(result.turn) ? result.turn : undefined;
       this.activeTurnId = turn !== undefined ? stringField(turn, "id") : undefined;
@@ -281,6 +293,12 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     this.pendingApprovals.delete(promptId);
     const decision = input.value === CODEX_DECLINE_TOKEN ? "decline" : "accept";
     this.writeLine({ id: serverRequestId, result: { decision } });
+  }
+
+  // Mid-thread Launch Options change. The integration maps to TurnStartParams
+  // override keys (model/effort); they ride every subsequent turn/start.
+  applyConfig(protocolParams: Record<string, unknown>): void {
+    this.turnOverrides = { ...this.turnOverrides, ...protocolParams };
   }
 
   async interrupt(): Promise<void> {

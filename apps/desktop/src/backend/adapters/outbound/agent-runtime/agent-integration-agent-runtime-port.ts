@@ -2,6 +2,8 @@ import type {
   AgentRuntimeHandle,
   AgentRuntimeResumeInput,
   AgentRuntimeStartInput,
+  AgentSessionConfigInput,
+  AgentSessionConfigResult,
   TerminalInput,
 } from "../../../application/domains/agent-runtime/agent-runtime.ts";
 import type { ComposerAttachmentRef } from "../../../application/domains/thread/thread.ts";
@@ -163,6 +165,9 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       agentId: input.agentBinding.agentId,
       providerSessionRef,
       scope: input.scope,
+      // The thread's CURRENT options: a resume respawn after a mid-thread
+      // model/permission/effort change must launch with the new values.
+      launchOptions: input.launchOptions,
       runtimeId,
     });
     return this.spawnRuntime(
@@ -197,6 +202,36 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       });
     }
     // Raw terminal bytes have no meaning on a structured transport.
+  }
+
+  // Mid-thread Launch Options change. The integration decides live-vs-restart
+  // (provider knowledge); the structured client delivers live updates to the
+  // protocol. Everything else — missing runtime, no integration hook, no client
+  // hook — degrades to restart_required, never to a silent no-op.
+  async applySessionConfig(
+    handle: AgentRuntimeHandle,
+    input: AgentSessionConfigInput,
+  ): Promise<AgentSessionConfigResult> {
+    const runtime = this.runtimes.get(handle.runtimeId);
+    if (runtime === undefined) {
+      return "restart_required";
+    }
+    const integration = this.integrations[runtime.agentId];
+    const plan = integration.buildSessionConfigUpdate?.({
+      launchOptions: input.launchOptions,
+      changedKeys: input.changedKeys,
+    });
+    if (plan === undefined || plan.kind === "restart") {
+      return "restart_required";
+    }
+    if (runtime.client.applyConfig === undefined) {
+      return "restart_required";
+    }
+    runtime.client.applyConfig(plan.protocolParams);
+    traceAgentRuntime(
+      `applySessionConfig ${runtime.agentId} runtime=${handle.runtimeId} keys=${input.changedKeys.join(",")}`,
+    );
+    return "applied";
   }
 
   async interrupt(handle: AgentRuntimeHandle): Promise<void> {

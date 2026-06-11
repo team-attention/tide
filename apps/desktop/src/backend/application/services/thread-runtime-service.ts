@@ -321,6 +321,21 @@ export interface SendComposerInput {
   attachments?: ComposerAttachmentInput[];
 }
 
+// Mid-thread Launch Options change (model/permission/reasoning) on an active
+// Thread. See docs_v2/specs/mid-thread-launch-option-changes.md.
+export interface UpdateThreadLaunchOptionsInput {
+  threadId: ThreadId;
+  launchOptions: Record<string, unknown>;
+}
+
+export interface UpdateThreadLaunchOptionsResult {
+  thread: ThreadSnapshot;
+  // "live" = the running session was reconfigured; "next_turn" = a runtime
+  // restart is pending and happens transparently at the next send; "none" =
+  // nothing changed or no live runtime exists (spawn-time options apply).
+  applied: "live" | "next_turn" | "none";
+}
+
 export interface TrustWorkspaceInput {
   threadId: ThreadId;
 }
@@ -509,6 +524,9 @@ export interface ThreadRuntimeService {
   sendComposerInput(
     input: SendComposerInput,
   ): Promise<ServiceResult<SendComposerInputResult>>;
+  updateThreadLaunchOptions(
+    input: UpdateThreadLaunchOptionsInput,
+  ): Promise<ServiceResult<UpdateThreadLaunchOptionsResult>>;
   editPendingInput(
     input: EditPendingInputInput,
   ): Promise<ServiceResult<EditPendingInputResult>>;
@@ -876,6 +894,12 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       );
     }
 
+    // Launch options carried on the send (the composer's current model/
+    // permission/reasoning) route through the same merge/apply path as the
+    // explicit thread.setLaunchOptions command — a follow-up send can never
+    // silently drop a changed setting again.
+    await this.mergeAndApplyLaunchOptions(thread, input.launchOptions);
+
     // Materialize pasted images and fold their paths into the message before any
     // readiness/busy branch, so a queued or deferred send still carries them.
     const { text: message, attachments: messageAttachments } =
@@ -885,7 +909,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     const readiness = await this.providerReadinessPort.check({
       agentId: thread.agentBinding.agentId,
       scope: thread.scope,
-      launchOptions: input.launchOptions ?? thread.launchOptions,
+      launchOptions: thread.launchOptions,
     });
 
     if (!readiness.ready) {
@@ -893,7 +917,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         kind: "composer_input",
         value: message,
         capturedAt: this.clock(),
-        launchOptions: cloneLaunchOptions(input.launchOptions ?? thread.launchOptions),
+        launchOptions: cloneLaunchOptions(thread.launchOptions),
         attachments: attachmentsForRuntime,
       });
       thread.updatedAt = this.clock();
@@ -954,7 +978,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         kind: "composer_input",
         value: message,
         capturedAt: this.clock(),
-        launchOptions: cloneLaunchOptions(input.launchOptions ?? thread.launchOptions),
+        launchOptions: cloneLaunchOptions(thread.launchOptions),
         attachments: attachmentsForRuntime,
       });
       thread.updatedAt = this.clock();
@@ -967,6 +991,10 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       };
     }
 
+    // A restart-required options change is consumed here, at the turn boundary:
+    // the idle process is stopped and activeOrResumedHandle respawns it via the
+    // provider-native resume with the new options (covered by the spinner).
+    await this.consumePendingRuntimeRestart(thread);
     const handle = await this.activeOrResumedHandle(thread);
     const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
     thread.runtimeState = "running";
@@ -1023,6 +1051,74 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   private writePendingInputs(thread: ThreadRecord, queue: PendingInput[]): void {
     thread.pendingInput = queue[0];
     thread.pendingInputQueue = queue.length > 1 ? queue.slice(1) : undefined;
+  }
+
+  // Mid-thread Launch Options change (model/permission/reasoning). Persists the
+  // merged options on the thread record and applies them to the live runtime —
+  // protocol-native when the provider supports it, otherwise via a transparent
+  // restart at the next turn. Spec: mid-thread-launch-option-changes.md.
+  async updateThreadLaunchOptions(
+    input: UpdateThreadLaunchOptionsInput,
+  ): Promise<ServiceResult<UpdateThreadLaunchOptionsResult>> {
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+    const applied = await this.mergeAndApplyLaunchOptions(thread, input.launchOptions);
+    return { ok: true, thread: snapshotThread(thread), applied };
+  }
+
+  // Merge new Launch Options into the thread record and route the change to the
+  // live runtime. Shared by the explicit thread.setLaunchOptions command and
+  // the launch options piggybacked on composer.sendInput.
+  private async mergeAndApplyLaunchOptions(
+    thread: ThreadRecord,
+    launchOptions: Record<string, unknown> | undefined,
+  ): Promise<"live" | "next_turn" | "none"> {
+    if (launchOptions === undefined) {
+      return "none";
+    }
+    const previous = thread.launchOptions ?? {};
+    const changedKeys = RUNTIME_LAUNCH_OPTION_KEYS.filter(
+      (key) => key in launchOptions && launchOptions[key] !== previous[key],
+    );
+    if (changedKeys.length === 0) {
+      return "none";
+    }
+    thread.launchOptions = { ...previous, ...launchOptions };
+    thread.updatedAt = this.clock();
+    if (thread.activeRuntimeHandle === undefined) {
+      // No live session — the next spawn/resume reads thread.launchOptions.
+      return "none";
+    }
+    const result = await this.agentRuntimePort.applySessionConfig(
+      thread.activeRuntimeHandle,
+      { launchOptions: { ...thread.launchOptions }, changedKeys },
+    );
+    if (result === "applied") {
+      // NOTE: an earlier restart-required change stays pending — the restart
+      // re-applies every current option at spawn, so nothing is lost.
+      return thread.pendingRuntimeRestart === true ? "next_turn" : "live";
+    }
+    thread.pendingRuntimeRestart = true;
+    return "next_turn";
+  }
+
+  // Consume a pending restart-required options change at a turn boundary: stop
+  // the (idle — never mid-turn) process and clear the handle so the caller's
+  // activeOrResumedHandle respawns via provider-native resume with the thread's
+  // current options. No UI state of its own; the turn spinner covers it.
+  private async consumePendingRuntimeRestart(thread: ThreadRecord): Promise<void> {
+    if (thread.pendingRuntimeRestart !== true) {
+      return;
+    }
+    thread.pendingRuntimeRestart = false;
+    const handle = thread.activeRuntimeHandle;
+    if (handle === undefined) {
+      return;
+    }
+    thread.activeRuntimeHandle = undefined;
+    await this.agentRuntimePort.stop(handle);
   }
 
   // Edit the queued (not-yet-sent) Composer message. The runtime has not seen the
@@ -1323,6 +1419,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     }
 
     try {
+      await this.consumePendingRuntimeRestart(thread);
       await this.activeOrResumedHandle(thread);
     } catch (error) {
       return failure(
@@ -1558,6 +1655,9 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     const queued = thread.pendingInput;
     if (queued !== undefined && queued.kind === "composer_input") {
       this.promoteNextPendingInput(thread);
+      // An options change that needs a runtime restart applies before the
+      // flushed turn starts (the ended turn's process is idle now).
+      await this.consumePendingRuntimeRestart(thread);
       const handle = await this.activeOrResumedHandle(thread);
       const submittedBlock = this.appendLocalUserMessageBlock(thread, queued.value);
       thread.runtimeState = "running";
@@ -1768,6 +1868,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     promptValue: string,
     promptAttachments?: ComposerAttachmentRef[],
   ): Promise<{ handle: AgentRuntimeHandle; deliveredViaLaunch: boolean }> {
+    await this.consumePendingRuntimeRestart(thread);
     if (thread.activeRuntimeHandle !== undefined) {
       return { handle: thread.activeRuntimeHandle, deliveredViaLaunch: false };
     }
@@ -1834,11 +1935,19 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
             threadId: thread.threadId,
             agentBinding: cloneAgentBinding(thread.agentBinding),
             scope: cloneScope(thread.scope),
+            // Current options, not launch-time ones: a resume respawn after a
+            // mid-thread model/permission/effort change uses the new values.
+            launchOptions: cloneLaunchOptions(thread.launchOptions),
           });
     thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
     return handle;
   }
 }
+
+// The Launch Option keys that affect a live Agent Runtime mid-thread. The rest
+// (worktree, branch, …) are start-time Execution Context and never change on an
+// active thread. See docs_v2/specs/mid-thread-launch-option-changes.md.
+const RUNTIME_LAUNCH_OPTION_KEYS = ["model", "permission", "reasoning"] as const;
 
 function promptAnswerValue(
   promptState: PromptState,

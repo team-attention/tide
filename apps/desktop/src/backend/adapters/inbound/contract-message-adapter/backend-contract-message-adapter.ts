@@ -13,6 +13,7 @@ import type {
   StartThreadResult,
   StopAgentRuntimeResult,
   ThreadRuntimeService,
+  UpdateThreadLaunchOptionsResult,
   ThreadSnapshot,
   ProviderReadinessResult,
   TrustWorkspaceResult,
@@ -171,6 +172,17 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           (result) => [
             this.threadRenamedEvent(typedCommand, result),
             this.commandCompletedEvent(typedCommand),
+          ],
+        );
+      }
+      case "thread.setLaunchOptions": {
+        const typedCommand = command as BackendCommandEnvelope<"thread.setLaunchOptions">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.updateThreadLaunchOptions(typedCommand.payload),
+          (result) => [
+            this.threadLaunchOptionsChangedEvent(typedCommand, result),
+            this.commandCompletedEvent(typedCommand, { applied: result.applied }),
           ],
         );
       }
@@ -342,6 +354,22 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       eventId: this.nextEventId(),
       requestId: command.requestId,
       kind: "thread.pinChanged",
+      emittedAt: this.clock(),
+      payload: {
+        thread: toThreadSummaryDto(result.thread),
+      },
+    };
+  }
+
+  private threadLaunchOptionsChangedEvent(
+    command: BackendCommandEnvelope,
+    result: UpdateThreadLaunchOptionsResult,
+  ): BackendEventEnvelope<"thread.launchOptionsChanged"> {
+    return {
+      contractVersion: CONTRACT_VERSION,
+      eventId: this.nextEventId(),
+      requestId: command.requestId,
+      kind: "thread.launchOptionsChanged",
       emittedAt: this.clock(),
       payload: {
         thread: toThreadSummaryDto(result.thread),

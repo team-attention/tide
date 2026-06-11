@@ -185,6 +185,24 @@ export interface AgentResumePlanInput {
   runtimeId?: string;
 }
 
+// A mid-thread Launch Options change, asked of the integration: can the LIVE
+// session be reconfigured through the provider protocol?
+export interface SessionConfigUpdateInput {
+  // The thread's full merged Launch Options after the change.
+  launchOptions: Record<string, unknown>;
+  // Which option keys actually changed (e.g. ["model"]).
+  changedKeys: string[];
+}
+
+// "live": protocolParams carry the provider-protocol values the structured
+// client delivers to the running session (claude control_request fields, codex
+// turn/start overrides, ACP modeId). "restart": the live session cannot take
+// this change — the runtime must be restarted via provider-native resume.
+// See docs_v2/specs/mid-thread-launch-option-changes.md.
+export type SessionConfigUpdatePlan =
+  | { kind: "live"; protocolParams: Record<string, unknown> }
+  | { kind: "restart" };
+
 export interface AgentPromptSignalInput {
   threadId: ThreadId;
   source: "pty_transcript" | "provider_hook" | "provider_history";
@@ -217,6 +235,12 @@ export interface AgentIntegrationPort {
   ): Promise<AgentIntegrationPreflightResult>;
   buildStartPlan(input: AgentStartPlanInput): Promise<ProviderLaunchPlan>;
   buildResumePlan(input: AgentResumePlanInput): Promise<ProviderLaunchPlan>;
+  // Optional: how a mid-thread Launch Options change applies to a live session.
+  // Absent ⇒ the runtime port treats every change as restart-required
+  // (conservative default — never a silent no-op).
+  buildSessionConfigUpdate?(
+    input: SessionConfigUpdateInput,
+  ): SessionConfigUpdatePlan;
 }
 
 export type RuntimeReadinessGate =

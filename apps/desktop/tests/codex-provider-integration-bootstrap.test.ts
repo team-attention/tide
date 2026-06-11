@@ -181,6 +181,36 @@ test("codex_launch_plan_maps_reasoning_effort_to_config_override", async () => {
   );
 });
 
+// Spec: docs_v2/specs/mid-thread-launch-option-changes.md
+test("codex_session_config_update_applies_model_and_effort_live", () => {
+  const integration = codexIntegration();
+
+  const plan = integration.buildSessionConfigUpdate?.({
+    launchOptions: { model: "gpt-5.4", reasoning: "xhigh" },
+    changedKeys: ["model", "reasoning"],
+  });
+
+  // turn/start overrides ("for this turn and subsequent turns").
+  assert.deepEqual(plan, {
+    kind: "live",
+    protocolParams: { model: "gpt-5.4", effort: "xhigh" },
+  });
+});
+
+test("codex_session_config_update_restarts_for_permission_changes", () => {
+  const integration = codexIntegration();
+
+  // permission = sandbox + approvalPolicy; the per-turn sandboxPolicy is a
+  // structured object Tide can't construct — restart via thread/resume.
+  assert.deepEqual(
+    integration.buildSessionConfigUpdate?.({
+      launchOptions: { permission: "full-access" },
+      changedKeys: ["permission"],
+    }),
+    { kind: "restart" },
+  );
+});
+
 test("codex_resume_plan_stays_on_app_server_transport", async () => {
   const integration = codexIntegration();
   const providerSessionRef: ProviderSessionRef = {

@@ -96,6 +96,28 @@ test("gemini_launch_env_forces_workspace_trust", async () => {
   assert.equal(plan.env.GEMINI_CLI_TRUST_WORKSPACE, "true");
 });
 
+// Spec: docs_v2/specs/mid-thread-launch-option-changes.md
+test("gemini_session_config_update_applies_permission_live_and_restarts_for_model", () => {
+  const integration = geminiIntegration();
+
+  // Permission is an ACP session mode — live via session/set_mode.
+  assert.deepEqual(
+    integration.buildSessionConfigUpdate?.({
+      launchOptions: { permission: "bypass" },
+      changedKeys: ["permission"],
+    }),
+    { kind: "live", protocolParams: { modeId: "yolo" } },
+  );
+  // Model is `--model` spawn argv — restart (session/load keeps the chat).
+  assert.deepEqual(
+    integration.buildSessionConfigUpdate?.({
+      launchOptions: { model: "gemini-3-flash" },
+      changedKeys: ["model"],
+    }),
+    { kind: "restart" },
+  );
+});
+
 test("gemini_resume_plan_stays_on_acp_transport", async () => {
   // Resume is session/load IN protocol (agentCapabilities.loadSession) — the
   // runtime port hands the session id to the ACP client, not to argv.

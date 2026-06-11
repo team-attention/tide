@@ -276,6 +276,10 @@ export type AgentChatBackendCommand =
       payload: { threadId: string; value: string; index?: number };
     }
   | {
+      kind: "thread.setLaunchOptions";
+      payload: { threadId: string; launchOptions: Record<string, unknown> };
+    }
+  | {
       kind: "agentRuntime.stop";
       payload: { threadId: string };
     }
@@ -1033,6 +1037,24 @@ export function applyAgentChatBackendEvent(
         queuedInputs: [],
       };
     }
+    case "thread.launchOptionsChanged": {
+      // Backend confirmation of a mid-thread model/permission/effort change
+      // (this surface patched optimistically; another window or a send-time
+      // merge may not have). Only for the thread on screen.
+      const payload = event.payload as { thread?: AgentChatThreadSummary };
+      const summary = payload.thread;
+      if (
+        summary === undefined ||
+        state.thread === null ||
+        state.thread.threadId !== summary.threadId
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        thread: { ...state.thread, launchOptions: summary.launchOptions },
+      };
+    }
     case "agentRuntime.stateChanged": {
       const payload = event.payload as {
         state: AgentRuntimeStateName;
@@ -1703,19 +1725,38 @@ function row(
   return { rowId, label, detail, meta, icon, selected, danger, disabled };
 }
 
+// The Launch Option keys that affect a running Agent Runtime — a mid-thread
+// change to these is sent to the backend (thread.setLaunchOptions) so it
+// actually applies. Worktree/branch stay Start-Composer-local.
+const RUNTIME_LAUNCH_OPTION_KEYS: ReadonlySet<string> = new Set([
+  "model",
+  "permission",
+  "reasoning",
+]);
+
 function updateComposerLaunchOptions(
   state: AgentChatShellState,
   patch: Record<string, unknown>,
 ): AgentChatShellUpdateResult {
+  // For an active thread the launch options live on the thread (that's what
+  // launchOptionsForState reads), so the chip updates optimistically here; the
+  // backend command below persists the change and applies it to the live
+  // runtime. See docs_v2/specs/mid-thread-launch-option-changes.md.
+  const mergedThreadOptions = state.thread
+    ? { ...state.thread.launchOptions, ...patch }
+    : undefined;
+  const sendToBackend =
+    state.thread !== undefined &&
+    state.thread !== null &&
+    mergedThreadOptions !== undefined &&
+    Object.keys(patch).some((key) => RUNTIME_LAUNCH_OPTION_KEYS.has(key));
   return {
     state: {
       ...state,
-      // For an active thread the launch options live on the thread (that's what
-      // launchOptionsForState reads), so a model/reasoning/permission change must
-      // patch there too — otherwise it has no effect on follow-ups.
-      thread: state.thread
-        ? { ...state.thread, launchOptions: { ...state.thread.launchOptions, ...patch } }
-        : state.thread,
+      thread:
+        state.thread && mergedThreadOptions !== undefined
+          ? { ...state.thread, launchOptions: mergedThreadOptions }
+          : state.thread,
       composer: {
         ...state.composer,
         activeSurface: null,
@@ -1728,7 +1769,16 @@ function updateComposerLaunchOptions(
         },
       },
     },
-    command: null,
+    command:
+      sendToBackend && state.thread
+        ? {
+            kind: "thread.setLaunchOptions",
+            payload: {
+              threadId: state.thread.threadId,
+              launchOptions: mergedThreadOptions ?? {},
+            },
+          }
+        : null,
   };
 }
 

@@ -546,6 +546,70 @@ test("follow_up_carries_a_changed_model_in_launch_options", () => {
   );
 });
 
+// Spec: docs_v2/specs/mid-thread-launch-option-changes.md — a model/permission/
+// effort change on an ACTIVE thread is sent to the backend (it must actually
+// apply to the runtime), while the chip patches optimistically.
+test("model_change_on_an_active_thread_sends_thread_set_launch_options", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const result = selectAgentChatChoiceSurfaceRow(
+    setComposerActiveSurface(hydrated, "model_menu").state,
+    "model_menu",
+    "model:gpt-5.4",
+  );
+
+  assert.equal(result.command?.kind, "thread.setLaunchOptions");
+  assert.equal(
+    result.command?.kind === "thread.setLaunchOptions" &&
+      result.command.payload.threadId,
+    "thread-shell",
+  );
+  assert.equal(
+    result.command?.kind === "thread.setLaunchOptions" &&
+      result.command.payload.launchOptions.model,
+    "gpt-5.4",
+  );
+  // Optimistic chip patch stays in place.
+  assert.equal(result.state.thread?.launchOptions?.model, "gpt-5.4");
+});
+
+test("model_change_in_the_start_composer_stays_local", () => {
+  // Before a thread starts there is nothing to reconfigure — the options ride
+  // thread.start as before.
+  const result = selectAgentChatChoiceSurfaceRow(
+    setComposerActiveSurface(createAgentChatShellState(), "model_menu").state,
+    "model_menu",
+    "model:gpt-5.5",
+  );
+  assert.equal(result.command, null);
+});
+
+test("launch_options_changed_event_updates_only_the_open_thread", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+
+  const updated = applyBackendEventToAgentChatShell(
+    hydrated,
+    backendEvent("thread.launchOptionsChanged", {
+      thread: { ...thread, launchOptions: { model: "gpt-5.2" } },
+    }),
+  );
+  assert.equal(updated.thread?.launchOptions?.model, "gpt-5.2");
+
+  // An event for a different thread leaves this surface untouched.
+  const other = applyBackendEventToAgentChatShell(
+    hydrated,
+    backendEvent("thread.launchOptionsChanged", {
+      thread: { ...thread, threadId: "thread-other", launchOptions: { model: "gpt-5.2" } },
+    }),
+  );
+  assert.equal(other.thread?.launchOptions?.model, undefined);
+});
+
 test("hydrating_thread_with_workbench_panes_marks_workbench_open", () => {
   const state = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),

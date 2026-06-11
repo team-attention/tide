@@ -27,6 +27,7 @@ export type BackendEventKind =
   | "thread.archived"
   | "thread.pinChanged"
   | "thread.renamed"
+  | "thread.launchOptionsChanged"
   | "agentRuntime.stateChanged"
   | "agentRuntime.usageChanged"
   | "agentRuntime.commandsChanged"
@@ -53,6 +54,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "thread.archived",
   "thread.pinChanged",
   "thread.renamed",
+  "thread.launchOptionsChanged",
   "agentRuntime.stateChanged",
   "agentRuntime.usageChanged",
   "agentRuntime.commandsChanged",
@@ -109,6 +111,11 @@ export interface BackendEventPayloadByKind {
     thread: ThreadSummaryDto;
   };
   "thread.renamed": {
+    thread: ThreadSummaryDto;
+  };
+  // The thread's Launch Options changed mid-thread (model/permission/reasoning).
+  // Persisted like rename/pin so the change survives restart.
+  "thread.launchOptionsChanged": {
     thread: ThreadSummaryDto;
   };
   "agentRuntime.stateChanged": {

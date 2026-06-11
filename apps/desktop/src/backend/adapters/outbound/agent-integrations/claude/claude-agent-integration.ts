@@ -11,6 +11,8 @@ import type {
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
   ProviderSignalSource,
+  SessionConfigUpdateInput,
+  SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   ThreadScope,
@@ -224,6 +226,35 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     });
   }
 
+  // Mid-thread Launch Options change. Model + permission apply LIVE through the
+  // stream-json control protocol (set_model / set_permission_mode — the Agent
+  // SDK path, verified in claude 2.1.173). Effort is `--effort` argv only, and
+  // the "Claude default" model sentinel has no live "unset" — both restart the
+  // runtime (claude --resume keeps the conversation).
+  buildSessionConfigUpdate(input: SessionConfigUpdateInput): SessionConfigUpdatePlan {
+    const params: Record<string, unknown> = {};
+    for (const key of input.changedKeys) {
+      if (key === "model") {
+        const model = stringValue(input.launchOptions.model);
+        if (model === undefined || model === "Claude default") {
+          return { kind: "restart" };
+        }
+        params.model = model;
+        continue;
+      }
+      if (key === "permission") {
+        const permission = stringValue(input.launchOptions.permission);
+        if (permission === undefined || !CLAUDE_PERMISSION_MODES.has(permission)) {
+          return { kind: "restart" };
+        }
+        params.permissionMode = permission;
+        continue;
+      }
+      return { kind: "restart" };
+    }
+    return { kind: "live", protocolParams: params };
+  }
+
   private claudeLaunchPlan(input: {
     executablePath: string;
     cwd: string;
@@ -314,6 +345,17 @@ function cwdFromScope(scope: ThreadScope | undefined, fallback: string): string 
   return scope.kind === "project" ? scope.cwd : scope.scratchCwd;
 }
 
+// The values `--permission-mode` (and the set_permission_mode control request)
+// accept — claude's own mode names.
+const CLAUDE_PERMISSION_MODES: ReadonlySet<string> = new Set([
+  "acceptEdits",
+  "auto",
+  "bypassPermissions",
+  "default",
+  "dontAsk",
+  "plan",
+]);
+
 function claudeLaunchOptionArgs(
   launchOptions: Record<string, unknown> | undefined,
 ): string[] {
@@ -324,14 +366,7 @@ function claudeLaunchOptionArgs(
   }
 
   const permission = stringValue(launchOptions?.permission);
-  if (
-    permission === "acceptEdits" ||
-    permission === "auto" ||
-    permission === "bypassPermissions" ||
-    permission === "default" ||
-    permission === "dontAsk" ||
-    permission === "plan"
-  ) {
+  if (permission !== undefined && CLAUDE_PERMISSION_MODES.has(permission)) {
     args.push("--permission-mode", permission);
   }
 

@@ -336,6 +336,30 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     });
   }
 
+  // Mid-thread Launch Options change, applied to the LIVE session via the
+  // stream-json control protocol (the same set_model / set_permission_mode
+  // requests the official Agent SDK sends; both subtypes verified present in
+  // claude 2.1.173). Fire-and-forget like interrupt(): the success/error
+  // control_response is visible under TIDE_DEBUG_STRUCTURED.
+  applyConfig(protocolParams: Record<string, unknown>): void {
+    const model = protocolParams.model;
+    if (typeof model === "string" && model.length > 0) {
+      this.writeLine({
+        type: "control_request",
+        request_id: `cfg-${randomUUID()}`,
+        request: { subtype: "set_model", model },
+      });
+    }
+    const permissionMode = protocolParams.permissionMode;
+    if (typeof permissionMode === "string" && permissionMode.length > 0) {
+      this.writeLine({
+        type: "control_request",
+        request_id: `cfg-${randomUUID()}`,
+        request: { subtype: "set_permission_mode", mode: permissionMode },
+      });
+    }
+  }
+
   async interrupt(): Promise<void> {
     // The CLI replies with a result(error_during_execution) that flows to
     // turn_completed; the process stays usable for the next turn.

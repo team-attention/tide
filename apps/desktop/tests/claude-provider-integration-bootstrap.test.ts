@@ -110,6 +110,43 @@ test("claude_launch_plan_applies_provider_native_model_and_permission_mode", asy
   assert.equal(plan.args[plan.args.indexOf("--permission-mode") + 1], "acceptEdits");
 });
 
+// Spec: docs_v2/specs/mid-thread-launch-option-changes.md
+test("claude_session_config_update_applies_model_and_permission_live", () => {
+  const integration = claudeIntegration();
+
+  const plan = integration.buildSessionConfigUpdate?.({
+    launchOptions: { model: "claude-sonnet-4-6", permission: "acceptEdits" },
+    changedKeys: ["model", "permission"],
+  });
+
+  assert.deepEqual(plan, {
+    kind: "live",
+    protocolParams: { model: "claude-sonnet-4-6", permissionMode: "acceptEdits" },
+  });
+});
+
+test("claude_session_config_update_restarts_for_effort_and_default_model", () => {
+  const integration = claudeIntegration();
+
+  // `--effort` is spawn argv only — no live control request.
+  assert.deepEqual(
+    integration.buildSessionConfigUpdate?.({
+      launchOptions: { reasoning: "xhigh" },
+      changedKeys: ["reasoning"],
+    }),
+    { kind: "restart" },
+  );
+  // The "Claude default" sentinel has no live "unset model" — restart and let
+  // the spawn argv simply omit --model.
+  assert.deepEqual(
+    integration.buildSessionConfigUpdate?.({
+      launchOptions: { model: "Claude default" },
+      changedKeys: ["model"],
+    }),
+    { kind: "restart" },
+  );
+});
+
 test("claude_resume_plan_uses_provider_native_session_ref", async () => {
   const integration = claudeIntegration();
   const providerSessionRef: ProviderSessionRef = {

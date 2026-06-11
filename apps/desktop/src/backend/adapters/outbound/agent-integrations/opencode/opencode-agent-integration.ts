@@ -7,6 +7,7 @@ import type {
   AgentStartPlanInput,
   ProviderLaunchPlan,
   ProviderSignalSource,
+  SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { ThreadScope } from "../../../../application/domains/thread/thread.ts";
 
@@ -138,6 +139,13 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
     const executablePath = (await this.resolveExecutable("opencode")) ?? "opencode";
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
     return this.opencodeLaunchPlan({ executablePath, cwd, resumeRef: input.providerSessionRef.value });
+  }
+
+  // opencode's launch plan consumes no model/permission Launch Options, so a
+  // mid-thread change has nothing to deliver — and restarting would change
+  // nothing either. Explicit live no-op (not the restart default).
+  buildSessionConfigUpdate(): SessionConfigUpdatePlan {
+    return { kind: "live", protocolParams: {} };
   }
 
   private opencodeLaunchPlan(input: {

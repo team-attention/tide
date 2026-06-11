@@ -1549,6 +1549,27 @@ function applyProductShellThreadRenamedEvent(
   };
 }
 
+// Keep the rail's thread summaries in sync with a mid-thread Launch Options
+// change so reopening the thread re-derives the right model/permission chips.
+function applyProductShellThreadLaunchOptionsChangedEvent(
+  state: ProductShellState,
+  event: AgentChatBackendEvent,
+): ProductShellState {
+  const payload = event.payload as { thread?: AgentChatThreadSummary };
+  const summary = payload.thread;
+  if (!summary) {
+    return state;
+  }
+  return {
+    ...state,
+    threads: state.threads.map((thread) =>
+      thread.threadId === summary.threadId
+        ? { ...thread, launchOptions: cloneLaunchOptions(summary.launchOptions) }
+        : thread,
+    ),
+  };
+}
+
 export function toggleProductShellThreadPin(
   state: ProductShellState,
   threadId: string,
@@ -1924,6 +1945,8 @@ export function applyProductShellBackendEvent(
       return applyProductShellThreadPinChangedEvent(nextState, event);
     case "thread.renamed":
       return applyProductShellThreadRenamedEvent(nextState, event);
+    case "thread.launchOptionsChanged":
+      return applyProductShellThreadLaunchOptionsChangedEvent(nextState, event);
     case "agentRuntime.stateChanged": {
       const payload = event.payload as { threadId?: string; state?: string };
       // Update the thread's rail status for EVERY thread regardless of focus, so

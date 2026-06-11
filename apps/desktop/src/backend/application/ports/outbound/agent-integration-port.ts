@@ -20,6 +20,8 @@ export type {
   ProviderSignalSource,
   ProviderSignalSourceKind,
   RuntimeReadinessGate,
+  SessionConfigUpdateInput,
+  SessionConfigUpdatePlan,
 } from "../../domains/agent-integration/agent-integration.ts";
 export type {
   AgentBinding,

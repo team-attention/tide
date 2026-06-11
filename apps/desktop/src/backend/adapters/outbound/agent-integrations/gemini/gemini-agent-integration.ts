@@ -9,6 +9,8 @@ import type {
   AgentStartPlanInput,
   ProviderLaunchPlan,
   ProviderSignalSource,
+  SessionConfigUpdateInput,
+  SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { ThreadScope } from "../../../../application/domains/thread/thread.ts";
 
@@ -170,6 +172,22 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
       launchOptions: input.launchOptions,
       resumeRef: input.providerSessionRef.value,
     });
+  }
+
+  // Mid-thread Launch Options change. Permission is an ACP session mode and
+  // applies LIVE via session/set_mode (callable any time). The model is a
+  // `--model` spawn argv — a model change restarts the runtime; session/load
+  // restores the conversation.
+  buildSessionConfigUpdate(input: SessionConfigUpdateInput): SessionConfigUpdatePlan {
+    for (const key of input.changedKeys) {
+      if (key !== "permission") {
+        return { kind: "restart" };
+      }
+    }
+    return {
+      kind: "live",
+      protocolParams: { modeId: geminiAcpModeId(input.launchOptions) },
+    };
   }
 
   private geminiLaunchPlan(input: {

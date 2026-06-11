@@ -2,6 +2,8 @@ import type {
   AgentRuntimeHandle,
   AgentRuntimeResumeInput,
   AgentRuntimeStartInput,
+  AgentSessionConfigInput,
+  AgentSessionConfigResult,
   TerminalInput,
 } from "../../../application/domains/agent-runtime/agent-runtime.ts";
 import type { AgentRuntimePort } from "../../../application/ports/outbound/agent-runtime-port.ts";
@@ -321,6 +323,21 @@ class OpenAiApiAgentRuntimePort implements AgentRuntimePort {
       account,
     });
     return handle;
+  }
+
+  // Tide API Agents read launch options per request (model is resolved on every
+  // writeInput), so a mid-thread change applies live by updating the stored
+  // options — no restart machinery exists or is needed here.
+  async applySessionConfig(
+    handle: AgentRuntimeHandle,
+    input: AgentSessionConfigInput,
+  ): Promise<AgentSessionConfigResult> {
+    const runtime = this.runtimes.get(handle.runtimeId);
+    if (runtime === undefined) {
+      return "restart_required";
+    }
+    runtime.launchOptions = cloneLaunchOptions(input.launchOptions);
+    return "applied";
   }
 
   async writeInput(handle: AgentRuntimeHandle, input: TerminalInput): Promise<void> {

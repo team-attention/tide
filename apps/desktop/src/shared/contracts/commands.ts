@@ -10,6 +10,7 @@ export type BackendCommandKind =
   | "thread.archive"
   | "thread.setPinned"
   | "thread.rename"
+  | "thread.setLaunchOptions"
   | "agentRuntime.resume"
   | "composer.sendInput"
   | "composer.editQueuedInput"
@@ -27,6 +28,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "thread.archive",
   "thread.setPinned",
   "thread.rename",
+  "thread.setLaunchOptions",
   "agentRuntime.resume",
   "composer.sendInput",
   "composer.editQueuedInput",
@@ -66,6 +68,11 @@ export interface BackendCommandPayloadByKind {
   "thread.archive": { threadId: ThreadId; archived: boolean };
   "thread.setPinned": { threadId: ThreadId; pinned: boolean };
   "thread.rename": { threadId: ThreadId; title: string };
+  // Update an active Thread's Launch Options (model/permission/reasoning). The
+  // backend persists the merged options and applies them to the live Agent
+  // Runtime (protocol-native update, or a deferred restart at the next turn).
+  // See docs_v2/specs/mid-thread-launch-option-changes.md.
+  "thread.setLaunchOptions": { threadId: ThreadId; launchOptions: JsonObject };
   "agentRuntime.resume": { threadId: ThreadId };
   "composer.sendInput": {
     threadId: ThreadId;

@@ -64,6 +64,12 @@ export type StructuredProviderEvent =
 export interface StructuredRuntimeClient {
   // Routes composer input and prompt answers to the protocol.
   write(input: StructuredRuntimeWrite): Promise<void>;
+  // Apply a live session reconfiguration (mid-thread Launch Options change).
+  // `protocolParams` are the provider-protocol values produced by the Agent
+  // Integration's buildSessionConfigUpdate (claude control_request fields /
+  // codex turn/start overrides / ACP modeId). Clients without this method
+  // cannot be live-reconfigured (the runtime port reports restart_required).
+  applyConfig?(protocolParams: Record<string, unknown>): void;
   // Abort the in-flight turn via the provider's protocol interrupt, leaving the
   // process ALIVE and resumable (claude control_request:interrupt / codex
   // turn/interrupt / gemini session/cancel). The provider emits its turn-end so

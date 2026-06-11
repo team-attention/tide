@@ -471,7 +471,8 @@ async function persistThreadEvents(
       event.kind !== "thread.hydrated" &&
       event.kind !== "thread.archived" &&
       event.kind !== "thread.pinChanged" &&
-      event.kind !== "thread.renamed"
+      event.kind !== "thread.renamed" &&
+      event.kind !== "thread.launchOptionsChanged"
     ) {
       continue;
     }

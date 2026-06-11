@@ -204,6 +204,25 @@ test("provider_readiness_port_reports_provider_account_blocker_for_tide_api_agen
   assert.equal(gemini.preflightInputs.length, 0);
 });
 
+// Spec: docs_v2/specs/mid-thread-launch-option-changes.md — a session-config
+// update for a runtime the port does not know degrades to restart_required
+// (the conservative default), never to a silent "applied".
+test("apply_session_config_without_a_live_runtime_requires_restart", async () => {
+  const codex = fakeIntegration("codex", startPlan("codex"));
+  const claude = fakeIntegration("claude", startPlan("claude"));
+  const gemini = fakeIntegration("gemini", startPlan("gemini"));
+  const port = createAgentIntegrationAgentRuntimePort({
+    integrations: { codex, claude, gemini },
+  });
+
+  const result = await port.applySessionConfig(
+    { runtimeId: "runtime-unknown", threadId: "thread-1", agentId: "codex" },
+    { launchOptions: { model: "gpt-5.4" }, changedKeys: ["model"] },
+  );
+
+  assert.equal(result, "restart_required");
+});
+
 // Spec: docs_v2/specs/agent-prompt-surfacing.md — answering a codex TUI menu replays
 // keyed navigation on the live PTY, not typed text.
 test("python_pty_process_launcher_round_trips_terminal_input_with_real_pty", { skip: SKIP_REAL_PTY_IN_CI }, async () => {

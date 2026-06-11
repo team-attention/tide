@@ -154,6 +154,12 @@ export interface ThreadRecord {
   // waiting forever on the unanswered one. Each answer promotes the next.
   promptQueue?: PromptState[];
   activeRuntimeHandle?: AgentRuntimeHandle;
+  // A mid-thread Launch Options change could not be applied to the live session
+  // (the provider protocol has no live update for it). Consumed at the next
+  // turn boundary: the old process is stopped and the provider-native resume
+  // respawns with the new options. In-memory only — after an app restart there
+  // is no live process and the fresh spawn reads the persisted launchOptions.
+  pendingRuntimeRestart?: boolean;
   rawFrameSequence: number;
   mcpToolCallCount: number;
   workbench: WorkbenchState;

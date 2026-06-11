@@ -41,4 +41,23 @@ export interface AgentRuntimeResumeInput {
   threadId: ThreadId;
   agentBinding: AgentBinding;
   scope?: ThreadScope;
+  // The thread's CURRENT Launch Options. A resume respawn must honor options
+  // changed since the original launch (model/permission/effort), not the ones
+  // the session was first started with. See
+  // docs_v2/specs/mid-thread-launch-option-changes.md.
+  launchOptions?: Record<string, unknown>;
 }
+
+// A mid-thread Launch Options change to apply to a LIVE runtime session.
+export interface AgentSessionConfigInput {
+  // The thread's full merged Launch Options after the change.
+  launchOptions: Record<string, unknown>;
+  // Which option keys actually changed (e.g. ["model"]).
+  changedKeys: string[];
+}
+
+// "applied" = the running session now uses the new options (protocol-native
+// update). "restart_required" = the protocol cannot reconfigure the live
+// session; the caller must restart the runtime (provider-native resume) before
+// the next turn.
+export type AgentSessionConfigResult = "applied" | "restart_required";

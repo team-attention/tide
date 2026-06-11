@@ -96,6 +96,9 @@ class AcpClient implements StructuredRuntimeClient {
     this.onEvent({ kind: "runtime_notice", level: "info", message }),
   );
   private sessionId?: string;
+  // A mid-thread mode change that arrived before session/new (or session/load)
+  // resolved; applied right after the session is adopted.
+  private pendingModeId?: string;
   private turnOpen = false;
   private recordIndex = 0;
   // streaming accumulation: one growing block per message/thought run
@@ -196,8 +199,10 @@ class AcpClient implements StructuredRuntimeClient {
       ref: { agentId: this.agentId, kind: this.sessionRefKind, value: sessionId },
     });
     // Approval mode is an ACP session mode (default/autoEdit/yolo/plan) — set
-    // it when the launch options ask for a non-default mode.
-    const modeId = stringField(this.protocolParams, "modeId");
+    // it when the launch options ask for a non-default mode. A mid-thread
+    // change that arrived before the session was adopted applies now instead.
+    const modeId = this.pendingModeId ?? stringField(this.protocolParams, "modeId");
+    this.pendingModeId = undefined;
     if (modeId !== undefined && modeId !== "default") {
       this.request("session/set_mode", { sessionId, modeId }, () => undefined);
     }
@@ -205,6 +210,21 @@ class AcpClient implements StructuredRuntimeClient {
       this.queuedPrompts.push({ text: initialPrompt, attachments: initialAttachments });
     }
     this.flushQueuedPrompt();
+  }
+
+  // Mid-thread Launch Options change: the only live-updatable ACP setting is
+  // the session mode (permission). session/set_mode is valid at any time —
+  // including back to "default". See mid-thread-launch-option-changes.md.
+  applyConfig(protocolParams: Record<string, unknown>): void {
+    const modeId = stringField(protocolParams, "modeId");
+    if (modeId === undefined) {
+      return;
+    }
+    if (this.sessionId === undefined) {
+      this.pendingModeId = modeId;
+      return;
+    }
+    this.request("session/set_mode", { sessionId: this.sessionId, modeId }, () => undefined);
   }
 
   private flushQueuedPrompt(): void {

@@ -2,6 +2,8 @@ import type {
   AgentRuntimeHandle,
   AgentRuntimeResumeInput,
   AgentRuntimeStartInput,
+  AgentSessionConfigInput,
+  AgentSessionConfigResult,
   TerminalInput,
 } from "../../../application/domains/agent-runtime/agent-runtime.ts";
 import type { AgentRuntimePort } from "../../../application/ports/outbound/agent-runtime-port.ts";
@@ -65,6 +67,15 @@ class AgentRuntimeRouterPort implements AgentRuntimePort {
     return runtimeLaneForAgent(handle.agentId) === "tide_api"
       ? this.tideApiRuntime.writeInput(handle, input)
       : this.providerCliRuntime.writeInput(handle, input);
+  }
+
+  applySessionConfig(
+    handle: AgentRuntimeHandle,
+    input: AgentSessionConfigInput,
+  ): Promise<AgentSessionConfigResult> {
+    return runtimeLaneForAgent(handle.agentId) === "tide_api"
+      ? this.tideApiRuntime.applySessionConfig(handle, input)
+      : this.providerCliRuntime.applySessionConfig(handle, input);
   }
 
   interrupt(handle: AgentRuntimeHandle): Promise<void> {
