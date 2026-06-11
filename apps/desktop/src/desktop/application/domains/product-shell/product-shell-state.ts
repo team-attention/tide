@@ -50,6 +50,15 @@ import {
   type AppChromeViewModel,
 } from "../app-chrome/app-chrome-state.ts";
 import { worktreeRepoRootForCwd } from "../../../../shared/worktree-path.ts";
+import {
+  reconcileTree,
+  applyDrop,
+  setRatioAtPath,
+  type WorkbenchSplitNode,
+  type DropZone,
+  type SplitDirection,
+} from "./workbench-split-tree.ts";
+export type { WorkbenchSplitNode, DropZone, SplitDirection };
 
 export type ProductShellAgentIdentity = "codex" | "claude" | "antigravity" | "gemini" | "opencode" | "openai_api";
 
@@ -135,11 +144,12 @@ export interface ProductShellState {
   // The active workbench pane is expanded to fill the window (focus mode). The
   // left rail / chat / filetree columns are hidden while on.
   workbenchFullscreen: boolean;
-  // Tab-group mode (default: one visible pane + tab strip) vs split mode (all
-  // panes tiled side by side, resizable). Like the Tide Terminal workspace.
+  // Tab-group mode (default: one visible pane + tab strip) vs split mode (panes
+  // arranged in a draggable binary split-tree). Like the Tide Terminal workspace.
   workbenchLayoutMode: "tabs" | "split";
-  // Per-pane flex weights for split mode, keyed by paneId (default 1 each).
-  workbenchSplitWeights: Record<string, number>;
+  // The split-mode layout tree (null until entering split). Reconciled against
+  // the live visible panes on read.
+  workbenchLayoutTree: WorkbenchSplitNode | null;
   fileTreeOpen: boolean;
   leftUiMenu: ProductShellLeftUiMenu | null;
   archiveConfirmThreadId: string | null;
@@ -362,7 +372,7 @@ export interface ProductShellViewModel {
   workbenchOpen: boolean;
   workbenchFullscreen: boolean;
   workbenchLayoutMode: "tabs" | "split";
-  workbenchSplitWeights: Record<string, number>;
+  workbenchLayoutTree: WorkbenchSplitNode | null;
   fileTreeOpen: boolean;
   searchQuery: string;
   searchActive: boolean;
@@ -522,7 +532,7 @@ export function createProductShellState(
     workbenchOpen: false,
     workbenchFullscreen: false,
     workbenchLayoutMode: "tabs",
-    workbenchSplitWeights: {},
+    workbenchLayoutTree: null,
     fileTreeOpen: false,
     leftUiMenu: null,
     archiveConfirmThreadId: null,
@@ -663,7 +673,10 @@ export function createProductShellViewModel(
     workbenchOpen: state.workbenchOpen,
     workbenchFullscreen: state.workbenchFullscreen,
     workbenchLayoutMode: state.workbenchLayoutMode,
-    workbenchSplitWeights: state.workbenchSplitWeights,
+    workbenchLayoutTree: reconcileTree(
+      state.workbenchLayoutTree,
+      state.appChrome.workbenchPanes.filter((pane) => pane.visible).map((pane) => pane.paneId),
+    ),
     fileTreeOpen: state.fileTreeOpen,
     searchQuery: state.searchQuery,
     searchActive: state.searchActive,
@@ -842,22 +855,50 @@ export function selectBackgroundCompletions(
   );
 }
 
-// Switch the workbench between tab-group and split (tiled, resizable) modes.
+// Visible workbench pane ids, in tab order — the live set the split tree is
+// reconciled against.
+function workbenchVisiblePaneIds(state: ProductShellState): string[] {
+  return state.appChrome.workbenchPanes.filter((pane) => pane.visible).map((pane) => pane.paneId);
+}
+
+// Switch the workbench between tab-group and split (draggable tree) modes.
 export function toggleProductShellWorkbenchLayoutMode(state: ProductShellState): ProductShellState {
+  const enteringSplit = state.workbenchLayoutMode === "tabs";
   return {
     ...state,
-    workbenchLayoutMode: state.workbenchLayoutMode === "tabs" ? "split" : "tabs",
-    // Re-equalize weights on entering split so a stale weight can't dominate.
-    workbenchSplitWeights: state.workbenchLayoutMode === "tabs" ? {} : state.workbenchSplitWeights,
+    workbenchLayoutMode: enteringSplit ? "split" : "tabs",
+    workbenchLayoutTree: enteringSplit
+      ? reconcileTree(state.workbenchLayoutTree, workbenchVisiblePaneIds(state))
+      : state.workbenchLayoutTree,
   };
 }
 
-// Set the flex weights of two adjacent split panes after a divider drag.
-export function setProductShellWorkbenchSplitWeights(
+// Re-arrange the split tree when a pane is dropped onto another pane's edge
+// (split) or center (swap).
+export function applyProductShellWorkbenchDrop(
   state: ProductShellState,
-  weights: Record<string, number>,
+  draggedPaneId: string,
+  targetPaneId: string,
+  zone: DropZone,
 ): ProductShellState {
-  return { ...state, workbenchSplitWeights: { ...state.workbenchSplitWeights, ...weights } };
+  const tree = reconcileTree(state.workbenchLayoutTree, workbenchVisiblePaneIds(state));
+  if (tree === null) {
+    return state;
+  }
+  return { ...state, workbenchLayoutTree: applyDrop(tree, draggedPaneId, targetPaneId, zone) };
+}
+
+// Resize a split after a divider drag (path = sequence of "a"/"b" to the split).
+export function setProductShellWorkbenchSplitRatio(
+  state: ProductShellState,
+  path: ("a" | "b")[],
+  ratio: number,
+): ProductShellState {
+  const tree = reconcileTree(state.workbenchLayoutTree, workbenchVisiblePaneIds(state));
+  if (tree === null) {
+    return state;
+  }
+  return { ...state, workbenchLayoutTree: setRatioAtPath(tree, path, ratio) };
 }
 
 // Expand the active workbench pane to fill the window (focus mode), or restore.

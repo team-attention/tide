@@ -14,6 +14,7 @@ import {
   openProductShellThread,
   submitProductShellComposerDraft,
   updateProductShellComposerDraft,
+  toggleProductShellWorkbenchLayoutMode,
 } from "../application/domains/product-shell/product-shell-state.ts";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
@@ -131,6 +132,38 @@ function figmaFixtureState() {
       },
     },
   });
+}
+
+// Split-layout fixture: three visible workbench panes with split mode on, so the
+// draggable binary split-tree (tiling + dividers + pane-header drag handles) can
+// be screenshotted and drag-drop exercised. Not shipped.
+function splitFixtureState() {
+  const editorPane = (paneId: string, title: string, body: string) => ({
+    paneId,
+    kind: "editor" as const,
+    title,
+    visible: true,
+    revision: `${paneId}:rev`,
+    updatedAt: "2026-05-31T00:00:00.000Z",
+    filePath: `/Users/you/Workspace/tide/${title}`,
+    relativePath: title,
+    bodyTextPreview: body,
+    byteLength: 4096,
+    truncated: false,
+  });
+  const multi = applyProductShellBackendEvent({ ...figmaFixtureState(), fileTreeOpen: false }, {
+    kind: "workbench.changed",
+    payload: {
+      threadId: "thread-master-plan",
+      activePaneId: "pane-a",
+      panes: [
+        editorPane("pane-a", "CLAUDE.md", CLAUDE_MD_PREVIEW),
+        editorPane("pane-b", "AGENTS.md", "# Agents\n\nSecond pane content for split layout."),
+        editorPane("pane-c", "README.md", "# Tide\n\nThird pane content for split layout."),
+      ],
+    },
+  });
+  return toggleProductShellWorkbenchLayoutMode(multi);
 }
 
 // Queued-message fixture: a running turn with a follow-up queued behind it, so the
@@ -472,9 +505,12 @@ if (root) {
     const wantsRich = params.get("mode") === "rich";
     const wantsRichQueued = params.get("mode") === "rich-queued";
     const wantsPrompt = params.get("mode") === "prompt";
+    const wantsSplit = params.get("mode") === "split";
     const wantsDiff = params.get("pane") === "diff";
     // FileTree column is gated by fileTreeOpen; flip it on for the fixture.
-    const state = wantsDiff
+    const state = wantsSplit
+      ? splitFixtureState()
+      : wantsDiff
       ? diffFixtureState()
       : wantsBrowser
       ? browserFixtureState()

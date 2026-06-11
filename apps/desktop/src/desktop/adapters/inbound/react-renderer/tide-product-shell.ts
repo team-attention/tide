@@ -146,7 +146,11 @@ import {
   toggleProductShellWorkbenchWithLauncher,
   toggleProductShellWorkbenchFullscreen,
   toggleProductShellWorkbenchLayoutMode,
-  setProductShellWorkbenchSplitWeights,
+  applyProductShellWorkbenchDrop,
+  setProductShellWorkbenchSplitRatio,
+  type WorkbenchSplitNode,
+  type DropZone,
+  type SplitDirection,
   updateProductShellBrowserActionResult,
   updateProductShellBrowserSnapshot,
   updateProductShellBackgroundBrowserActionResult,
@@ -405,7 +409,8 @@ interface ProductShellHandlers {
   onWorkbenchToggle: () => void;
   onWorkbenchFullscreenToggle: () => void;
   onWorkbenchLayoutModeToggle: () => void;
-  onWorkbenchSplitResize: (weights: Record<string, number>) => void;
+  onWorkbenchPaneDrop: (draggedPaneId: string, targetPaneId: string, zone: DropZone) => void;
+  onWorkbenchSplitRatio: (path: ("a" | "b")[], ratio: number) => void;
   onNewWorkbenchPane: () => void;
   onFileTreeToggle: () => void;
   onResizeStart: (
@@ -1328,8 +1333,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       setShellState((state) => toggleProductShellWorkbenchFullscreen(state)),
     onWorkbenchLayoutModeToggle: () =>
       setShellState((state) => toggleProductShellWorkbenchLayoutMode(state)),
-    onWorkbenchSplitResize: (weights) =>
-      setShellState((state) => setProductShellWorkbenchSplitWeights(state, weights)),
+    onWorkbenchPaneDrop: (draggedPaneId, targetPaneId, zone) =>
+      setShellState((state) => applyProductShellWorkbenchDrop(state, draggedPaneId, targetPaneId, zone)),
+    onWorkbenchSplitRatio: (path, ratio) =>
+      setShellState((state) => setProductShellWorkbenchSplitRatio(state, path, ratio)),
     onNewWorkbenchPane: () =>
       setShellState((state) => {
         const result = openProductShellWorkbenchLauncher(state);
@@ -2325,6 +2332,10 @@ function createWorkbenchColumn(
     createElement(
       "header",
       { className: "workbench-column__top-row column-top-row", "aria-label": "Workbench Top Row" },
+      // When fullscreen, the workbench is the top-left window element, so its
+      // header must reserve the macOS traffic-light zone (collapses to 0 in
+      // native fullscreen) — otherwise the first tab sits under the lights.
+      viewModel.workbenchFullscreen ? createTrafficControls() : null,
       createElement(
         "div",
         { className: "workbench-tabs", role: "tablist", "aria-label": "Workbench Tab Strip" },
@@ -2409,8 +2420,14 @@ function createWorkbenchColumn(
           createEditorPickerPane(viewModel.editorPicker, handlers),
         )
       : viewModel.workbenchLayoutMode === "split" &&
+        viewModel.workbenchLayoutTree !== null &&
         viewModel.appChrome.visibleWorkbenchPanes.length > 1
-      ? createWorkbenchSplit(viewModel, handlers, workbenchTabIcon)
+      ? createElement(WorkbenchSplitView, {
+          tree: viewModel.workbenchLayoutTree,
+          viewModel,
+          handlers,
+          paneIcon: workbenchTabIcon,
+        })
       : activeTab && activePane
       ? createElement(
           "section",
@@ -2438,115 +2455,235 @@ function createWorkbenchColumn(
   );
 }
 
-// Split mode: every visible pane tiled left-to-right, each in its own card with a
-// title bar + close, separated by draggable dividers that re-weight the two
-// adjacent panes. (Tab-group mode remains the default single-pane view.) This is
-// the first step toward Tide-Terminal-style free arrangement; 2D drag-to-reflow
-// is a follow-up — the layout model already carries per-pane weights.
-function createWorkbenchSplit(
-  viewModel: ProductShellViewModel,
-  handlers: ProductShellHandlers,
-  paneIcon: (kind: string) => ReactElement,
-): ReactElement {
-  const panes = viewModel.appChrome.visibleWorkbenchPanes;
-  const weightOf = (paneId: string): number => {
-    const w = viewModel.workbenchSplitWeights[paneId];
-    return typeof w === "number" && w > 0.08 ? w : 1;
-  };
-  const children: ReactElement[] = [];
-  panes.forEach((pane, index) => {
-    children.push(
-      createElement(
-        "section",
-        {
-          key: pane.paneId,
-          className: "workbench-split__pane",
-          style: { flexGrow: weightOf(pane.paneId), flexBasis: "0", flexShrink: 1, minWidth: "0" } as CSSProperties,
-          "data-pane-id": pane.paneId,
-          "data-pane-kind": pane.kind,
-        },
-        createElement(
-          "div",
-          { className: "workbench-split__pane-header" },
-          createElement("span", { className: "workbench-split__pane-icon", "aria-hidden": true }, paneIcon(pane.kind)),
-          createElement("span", { className: "workbench-split__pane-title" }, pane.title ?? pane.kind),
-          createElement(
-            "button",
-            {
-              type: "button",
-              className: "workbench-split__pane-close",
-              title: "Close Pane",
-              "aria-label": "Close Pane",
-              onClick: () => handlers.onCloseWorkbenchPane(pane.paneId),
-            },
-            createElement(X, { size: 13, strokeWidth: 2.2, "aria-hidden": true }),
-          ),
-        ),
-        createElement(
-          "div",
-          { className: "workbench-split__pane-body" },
-          createWorkbenchPaneContent(pane, handlers, viewModel.editorDrafts[pane.paneId]),
-        ),
-      ),
-    );
-    if (index < panes.length - 1) {
-      const right = panes[index + 1];
-      children.push(
-        createSplitDivider(pane.paneId, right.paneId, weightOf(pane.paneId), weightOf(right.paneId), handlers),
-      );
-    }
-  });
-  return createElement("div", { className: "workbench-split" }, ...children);
+// Split mode: panes arranged in a draggable binary split-tree (the Tide Terminal
+// model). Drag a pane's header onto another pane's edge to split (top/bottom =>
+// stacked, left/right => side-by-side) or its center to swap; dividers resize the
+// two sides. The tree lives in renderer-local product-shell state.
+type SplitDragState = { paneId: string };
+type SplitDropState = {
+  paneId: string;
+  zone: DropZone;
+  rect: { left: number; top: number; width: number; height: number };
+};
+
+// Nearest-edge drop zone from the cursor's relative position in a pane (center
+// band => swap).
+function computeDropZone(relX: number, relY: number): DropZone {
+  if (relX > 0.34 && relX < 0.66 && relY > 0.34 && relY < 0.66) {
+    return "center";
+  }
+  const dist: [DropZone, number][] = [
+    ["left", relX],
+    ["right", 1 - relX],
+    ["top", relY],
+    ["bottom", 1 - relY],
+  ];
+  dist.sort((a, b) => a[1] - b[1]);
+  return dist[0][0];
 }
 
-// A draggable divider between two split panes. On drag it re-weights only the two
-// adjacent panes (their combined size is preserved), live, via onWorkbenchSplitResize.
-function createSplitDivider(
-  leftId: string,
-  rightId: string,
-  leftWeight: number,
-  rightWeight: number,
-  handlers: ProductShellHandlers,
-): ReactElement {
-  return createElement("div", {
-    key: `divider-${leftId}-${rightId}`,
-    className: "workbench-split__divider",
-    role: "separator",
-    "aria-orientation": "vertical",
-    onPointerDown: (event: {
-      currentTarget: HTMLElement;
-      clientX: number;
-      pointerId: number;
-      preventDefault: () => void;
-    }) => {
-      event.preventDefault();
-      const divider = event.currentTarget;
-      const leftEl = divider.previousElementSibling as HTMLElement | null;
-      const rightEl = divider.nextElementSibling as HTMLElement | null;
-      if (leftEl === null || rightEl === null) {
+// The highlighted region (relative to the split container) the dragged pane would
+// occupy for a given zone over a target pane.
+function dropPreviewRect(
+  target: DOMRect,
+  container: DOMRect,
+  zone: DropZone,
+): { left: number; top: number; width: number; height: number } {
+  let left = target.left - container.left;
+  let top = target.top - container.top;
+  let width = target.width;
+  let height = target.height;
+  if (zone === "left") {
+    width = width / 2;
+  } else if (zone === "right") {
+    left += width / 2;
+    width = width / 2;
+  } else if (zone === "top") {
+    height = height / 2;
+  } else if (zone === "bottom") {
+    top += height / 2;
+    height = height / 2;
+  }
+  return { left, top, width, height };
+}
+
+function WorkbenchSplitView(props: {
+  tree: WorkbenchSplitNode;
+  viewModel: ProductShellViewModel;
+  handlers: ProductShellHandlers;
+  paneIcon: (kind: string) => ReactElement;
+}): ReactElement {
+  const { tree, viewModel, handlers, paneIcon } = props;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const dropRef = useRef<SplitDropState | null>(null);
+  const [drag, setDrag] = useState<SplitDragState | null>(null);
+  const [drop, setDrop] = useState<SplitDropState | null>(null);
+  const commitDrop = (next: SplitDropState | null): void => {
+    dropRef.current = next;
+    setDrop(next);
+  };
+
+  // Pane header = drag handle. Pointer-based (not HTML5 DnD) so it works over the
+  // webview/terminal panes; a full-cover overlay (mounted once active) keeps
+  // pointer events flowing even above an embedded <webview>.
+  const beginPaneDrag = (paneId: string) => (event: {
+    button: number;
+    clientX: number;
+    clientY: number;
+    preventDefault: () => void;
+  }): void => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let active = false;
+    const onMove = (e: PointerEvent): void => {
+      if (!active) {
+        if (Math.hypot(e.clientX - startX, e.clientY - startY) < 6) {
+          return;
+        }
+        active = true;
+        setDrag({ paneId });
+      }
+      const container = containerRef.current;
+      if (container === null) {
         return;
       }
-      const startX = event.clientX;
-      const startLeftPx = leftEl.getBoundingClientRect().width;
-      const combinedPx = startLeftPx + rightEl.getBoundingClientRect().width;
-      const weightSum = leftWeight + rightWeight;
-      if (combinedPx <= 0 || weightSum <= 0) {
+      const panes = Array.from(container.querySelectorAll<HTMLElement>(".workbench-split__pane"));
+      const hit = panes.find((p) => {
+        const r = p.getBoundingClientRect();
+        return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      });
+      const targetId = hit?.getAttribute("data-pane-id") ?? null;
+      if (hit === undefined || targetId === null || targetId === paneId) {
+        commitDrop(null);
         return;
       }
-      const MIN_PX = 120;
-      const onMove = (e: PointerEvent) => {
-        const nextLeftPx = Math.max(MIN_PX, Math.min(combinedPx - MIN_PX, startLeftPx + (e.clientX - startX)));
-        const leftW = weightSum * (nextLeftPx / combinedPx);
-        handlers.onWorkbenchSplitResize({ [leftId]: leftW, [rightId]: weightSum - leftW });
-      };
-      const onUp = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-      };
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-    },
-  });
+      const r = hit.getBoundingClientRect();
+      const zone = computeDropZone((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+      commitDrop({ paneId: targetId, zone, rect: dropPreviewRect(r, container.getBoundingClientRect(), zone) });
+    };
+    const onUp = (): void => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      const landed = dropRef.current;
+      if (active && landed !== null) {
+        handlers.onWorkbenchPaneDrop(paneId, landed.paneId, landed.zone);
+      }
+      setDrag(null);
+      commitDrop(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // Divider between the two children of the split at `path`; drag sets that
+  // split's ratio from the cursor position within the parent node element.
+  const dividerDrag = (dir: SplitDirection, path: ("a" | "b")[]) => (event: {
+    currentTarget: HTMLElement;
+    preventDefault: () => void;
+  }): void => {
+    event.preventDefault();
+    const nodeEl = event.currentTarget.parentElement;
+    if (nodeEl === null) {
+      return;
+    }
+    const onMove = (e: PointerEvent): void => {
+      const r = nodeEl.getBoundingClientRect();
+      const ratio = dir === "row" ? (e.clientX - r.left) / r.width : (e.clientY - r.top) / r.height;
+      handlers.onWorkbenchSplitRatio(path, ratio);
+    };
+    const onUp = (): void => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const renderPaneCard = (paneId: string): ReactElement | null => {
+    const pane = viewModel.appChrome.visibleWorkbenchPanes.find((p) => p.paneId === paneId);
+    if (pane === undefined) {
+      return null;
+    }
+    const isDropTarget = drop !== null && drop.paneId === paneId;
+    return createElement(
+      "section",
+      {
+        key: pane.paneId,
+        className:
+          "workbench-split__pane" +
+          (drag !== null && drag.paneId === pane.paneId ? " is-dragging" : "") +
+          (isDropTarget ? " is-drop-target" : ""),
+        "data-pane-id": pane.paneId,
+        "data-pane-kind": pane.kind,
+      },
+      createElement(
+        "div",
+        { className: "workbench-split__pane-header", onPointerDown: beginPaneDrag(pane.paneId) },
+        createElement("span", { className: "workbench-split__pane-icon", "aria-hidden": true }, paneIcon(pane.kind)),
+        createElement("span", { className: "workbench-split__pane-title" }, pane.title ?? pane.kind),
+        createElement(
+          "button",
+          {
+            type: "button",
+            className: "workbench-split__pane-close",
+            title: "Close Pane",
+            "aria-label": "Close Pane",
+            onPointerDown: (e: { stopPropagation: () => void }) => e.stopPropagation(),
+            onClick: () => handlers.onCloseWorkbenchPane(pane.paneId),
+          },
+          createElement(X, { size: 13, strokeWidth: 2.2, "aria-hidden": true }),
+        ),
+      ),
+      createElement(
+        "div",
+        { className: "workbench-split__pane-body" },
+        createWorkbenchPaneContent(pane, handlers, viewModel.editorDrafts[pane.paneId]),
+      ),
+    );
+  };
+
+  const renderNode = (node: WorkbenchSplitNode, path: ("a" | "b")[]): ReactElement | null => {
+    if (node.type === "leaf") {
+      return renderPaneCard(node.paneId);
+    }
+    const slotStyle = (grow: number): CSSProperties => ({
+      flexGrow: grow,
+      flexBasis: "0",
+      flexShrink: 1,
+      minWidth: "0",
+      minHeight: "0",
+      display: "flex",
+    });
+    return createElement(
+      "div",
+      { className: `workbench-split__node workbench-split__node--${node.dir}`, key: `n-${path.join("") || "root"}` },
+      createElement("div", { className: "workbench-split__slot", style: slotStyle(node.ratio) }, renderNode(node.a, [...path, "a"])),
+      createElement("div", {
+        className: `workbench-split__divider workbench-split__divider--${node.dir}`,
+        role: "separator",
+        "aria-orientation": node.dir === "row" ? "vertical" : "horizontal",
+        onPointerDown: dividerDrag(node.dir, path),
+      }),
+      createElement("div", { className: "workbench-split__slot", style: slotStyle(1 - node.ratio) }, renderNode(node.b, [...path, "b"])),
+    );
+  };
+
+  return createElement(
+    "div",
+    { className: "workbench-split", ref: containerRef },
+    renderNode(tree, []),
+    drag !== null ? createElement("div", { className: "workbench-split__drag-overlay" }) : null,
+    drop !== null
+      ? createElement("div", {
+          className: `workbench-split__drop-preview workbench-split__drop-preview--${drop.zone}`,
+          style: { left: drop.rect.left, top: drop.rect.top, width: drop.rect.width, height: drop.rect.height } as CSSProperties,
+        })
+      : null,
+  );
 }
 
 // In-pane editor file picker: the Launcher pad becomes a searchable file list. The

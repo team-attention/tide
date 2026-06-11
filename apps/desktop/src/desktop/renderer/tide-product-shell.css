@@ -3218,6 +3218,7 @@ button {
 
 /* Split mode: panes tiled left-to-right with draggable dividers. */
 .workbench-split {
+  position: relative;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -3225,12 +3226,36 @@ button {
   flex-direction: row;
   background: var(--tide-bg);
 }
+/* A split node tiles its two slots along its direction; the slots' flex-grow is
+   the split ratio. Recurses to arbitrary depth (the binary split-tree). */
+.workbench-split__node {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.workbench-split__node--row {
+  flex-direction: row;
+}
+.workbench-split__node--col {
+  flex-direction: column;
+}
+.workbench-split__slot {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
 .workbench-split__pane {
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+.workbench-split__pane.is-dragging {
+  opacity: 0.5;
 }
 .workbench-split__pane-header {
   flex: 0 0 auto;
@@ -3244,6 +3269,11 @@ button {
   color: var(--tide-text);
   font-size: 12px;
   font-weight: 550;
+  cursor: grab;
+  user-select: none;
+}
+.workbench-split__pane-header:active {
+  cursor: grabbing;
 }
 .workbench-split__pane-icon {
   display: inline-flex;
@@ -3283,13 +3313,43 @@ button {
 }
 .workbench-split__divider {
   flex: 0 0 auto;
-  width: 6px;
-  cursor: col-resize;
   background: var(--tide-line);
   transition: background 0.12s ease;
+  z-index: 1;
+}
+.workbench-split__divider--row {
+  width: 6px;
+  cursor: col-resize;
+}
+.workbench-split__divider--col {
+  height: 6px;
+  cursor: row-resize;
 }
 .workbench-split__divider:hover {
   background: var(--tide-action);
+}
+
+/* During a pane drag, a transparent full-cover layer keeps pointer events in the
+   host renderer (so tracking survives over embedded <webview>/terminal panes). */
+.workbench-split__drag-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  cursor: grabbing;
+}
+/* The translucent region the dragged pane would land in (split half or swap). */
+.workbench-split__drop-preview {
+  position: absolute;
+  z-index: 60;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--tide-action) 22%, transparent);
+  border: 2px solid var(--tide-action);
+  border-radius: 6px;
+  transition: left 0.08s ease, top 0.08s ease, width 0.08s ease, height 0.08s ease;
+}
+.workbench-split__drop-preview--center {
+  background: color-mix(in srgb, var(--tide-action) 14%, transparent);
+  border-style: dashed;
 }
 
 .workbench-column__kind {
