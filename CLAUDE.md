@@ -8,6 +8,23 @@ This repo hosts **two independent Tide products** that share the brand but not c
 | **Terminal** (v1) | `apps/terminal/` | Rust + WGPU native macOS app | `cargo` (run from `apps/terminal/`) |
 | **Desktop** (v2) | `apps/desktop/` | Electron + Node + React | `npm` (run from `apps/desktop/`) |
 
+## Before building, define the work
+
+Whenever a request means **creating or changing** something — a feature, a fix, a
+refactor, anything you'd write code for — do not start until these three are explicit.
+They are the contract for the work:
+
+1. **Goal** — exactly what is wanted, as a concrete outcome, not a vague direction.
+2. **Current state & gap** — how it works today and precisely what's missing or wrong.
+   If you can't state the gap, you don't understand the task yet.
+3. **Verification scenario** — the concrete steps that prove it's done: what you'll do,
+   what you expect to see. If you can't name how you'd check it, you can't claim it works.
+
+If any of the three is missing or ambiguous, **ask before writing code** — one focused
+round of questions to pin it down. Don't guess the goal, don't invent a gap, and don't
+build something you have no way to verify. Filling these in *is* the first step of the
+work, not overhead.
+
 ## Rules
 
 - **Each app is self-contained.** Its build files (`Cargo.toml` / `package.json`),
