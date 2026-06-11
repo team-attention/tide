@@ -3730,6 +3730,22 @@ function WorkbenchMarkdownView(props: {
   // Render once per source string (cached), so unrelated re-renders don't
   // re-parse the whole file. Spec D8.
   const previewHtml = useMemo(() => renderMarkdownCached(markdownRenderer, props.value), [props.value]);
+  // Memoize the preview ELEMENT (not just its html): when the drag-select
+  // "Add to chat" toolbar toggles (a setSelToolbar state change), a re-created
+  // preview element gets reconciled and its text nodes detach — collapsing the
+  // live selection on mouse-release (same bug fixed in the chat transcript). A
+  // stable element reference makes React skip the subtree, so the selection
+  // survives. Deps: only previewHtml (ref/className are stable).
+  const previewBody = useMemo(
+    () =>
+      createElement("div", {
+        ref: previewRef,
+        className: "workbench-md-preview markdown-body",
+        "aria-label": "Markdown preview",
+        dangerouslySetInnerHTML: { __html: previewHtml },
+      }),
+    [previewHtml],
+  );
   const toggle = (target: "preview" | "edit", label: string) =>
     createElement(
       "button",
@@ -3802,12 +3818,7 @@ function WorkbenchMarkdownView(props: {
       ? createElement(
           Fragment,
           null,
-          createElement("div", {
-            ref: previewRef,
-            className: "workbench-md-preview markdown-body",
-            "aria-label": "Markdown preview",
-            dangerouslySetInnerHTML: { __html: previewHtml },
-          }),
+          previewBody,
           selToolbar === null
             ? null
             : createElement(
