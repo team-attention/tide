@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { codexTurnInput } from "../src/backend/adapters/outbound/agent-runtime/structured/codex-app-server-client.ts";
 import { acpPromptBlocks } from "../src/backend/adapters/outbound/agent-runtime/structured/acp-client.ts";
+import { claudeUserContent } from "../src/backend/adapters/outbound/agent-runtime/structured/claude-stream-json-client.ts";
 
 // A 1x1 PNG.
 const PNG_B64 =
@@ -51,4 +52,46 @@ test("ACP prompt blocks with no attachments are exactly the text block (no regre
 test("ACP skips an unreadable attachment rather than failing the turn", () => {
   const blocks = acpPromptBlocks("hi", [{ path: "/no/such/file.png", mediaType: "image/png" }]);
   assert.deepEqual(blocks, [{ type: "text", text: "hi" }]);
+});
+
+test("claude content carries a NATIVE inline base64 image block + strips the path marker", () => {
+  // Claude gets the image INLINE on the wire (verified accepted by stream-json) —
+  // no file read, so the "[Attached image: <path>]" marker is stripped.
+  const dir = mkdtempSync(join(tmpdir(), "claude-img-"));
+  try {
+    const path = join(dir, "shot.png");
+    writeFileSync(path, Buffer.from(PNG_B64, "base64"));
+    const content = claudeUserContent("look at this\n\n[Attached image: " + path + "]", [
+      { path, mediaType: "image/png" },
+    ]);
+    assert.equal(content.length, 2);
+    assert.deepEqual(content[0], { type: "text", text: "look at this" }); // marker stripped
+    assert.equal(content[1].type, "image");
+    assert.deepEqual(content[1].source, { type: "base64", media_type: "image/png", data: PNG_B64 });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("claude content with no attachments is exactly the text block (no regression, no strip)", () => {
+  assert.deepEqual(claudeUserContent("hello"), [{ type: "text", text: "hello" }]);
+  // No attachments → the marker regex never runs, body untouched.
+  assert.deepEqual(claudeUserContent("a [Attached image: x] b"), [
+    { type: "text", text: "a [Attached image: x] b" },
+  ]);
+});
+
+test("claude image-only message (no text) sends just the image block", () => {
+  const dir = mkdtempSync(join(tmpdir(), "claude-img2-"));
+  try {
+    const path = join(dir, "only.png");
+    writeFileSync(path, Buffer.from(PNG_B64, "base64"));
+    const content = claudeUserContent("[Attached image: " + path + "]", [
+      { path, mediaType: "image/png" },
+    ]);
+    assert.equal(content.length, 1);
+    assert.equal(content[0].type, "image");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -55,7 +55,7 @@ export interface CreateClaudeStreamJsonClientInput extends StructuredClientCallb
 // claude would otherwise try to open). With no attachments the content is exactly
 // the text block — byte-identical to before.
 const ATTACHED_IMAGE_LINE_RE = /\n*\[Attached image:[^\]]*\]/g;
-function claudeUserContent(
+export function claudeUserContent(
   text: string,
   attachments?: ComposerAttachmentRef[],
 ): Array<Record<string, unknown>> {

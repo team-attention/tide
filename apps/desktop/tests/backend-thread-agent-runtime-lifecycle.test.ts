@@ -480,8 +480,9 @@ test("sends_attachment_paths_when_the_message_text_is_empty", async () => {
 
   assert.equal(
     fakes.runtime.writes[0]?.input.value,
-    "[Attached image: /repo/.tide/attachments/0-only.png]",
+    "[Attached image: /app-data/attachments/thread-img/0-only.png]",
   );
+  assert.equal(fakes.runtime.writes[0]?.input.attachments?.length, 1);
 });
 
 // --- UC-1: Grant Workspace Trust ---

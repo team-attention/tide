@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, existsSync, readFileSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,41 +10,37 @@ import { createNodeComposerAttachmentStorePort } from "../src/backend/adapters/o
 const PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 
-test("attachments materialize inside the workspace, gitignored so they don't pollute the repo", async () => {
-  // Agents refuse to read files outside their trusted workspace, so attachments
-  // must stay under the thread cwd — but a self-contained .tide/.gitignore keeps
-  // them out of the user's git and Tide's (gitignore-honoring) file tree.
-  const cwd = mkdtempSync(join(tmpdir(), "tide-att-"));
+test("attachments materialize under Tide's app-data dir (keyed by threadId), NOT the user's repo", async () => {
+  // The bytes are read back into inline base64 for the provider + as the
+  // transcript thumbnail — never the user's repo, so no .gitignore is needed.
+  const baseDir = mkdtempSync(join(tmpdir(), "tide-att-base-"));
   try {
-    const store = createNodeComposerAttachmentStorePort();
+    const store = createNodeComposerAttachmentStorePort(baseDir);
     const paths = await store.materialize({
-      cwd,
+      threadId: "thread-xyz",
       attachments: [{ name: "shot.png", mediaType: "image/png", dataBase64: PNG_B64 }],
     });
     assert.equal(paths.length, 1);
-    assert.ok(paths[0].startsWith(join(cwd, ".tide", "attachments")), paths[0]);
+    // Lives under <baseDir>/<threadId>/, never inside any repo working tree.
+    assert.ok(paths[0].startsWith(join(baseDir, "thread-xyz")), paths[0]);
     assert.ok(existsSync(paths[0]));
-
-    const gitignore = join(cwd, ".tide", ".gitignore");
-    assert.ok(existsSync(gitignore), ".tide/.gitignore should be created");
-    assert.equal(readFileSync(gitignore, "utf8"), "*\n");
+    assert.ok(paths[0].endsWith("shot.png"));
+    // The bytes round-trip.
+    assert.equal(readFileSync(paths[0]).toString("base64"), PNG_B64);
+    // No .gitignore — the old repo-pollution mitigation is gone entirely.
+    assert.equal(existsSync(join(baseDir, ".gitignore")), false);
+    assert.equal(existsSync(join(baseDir, "thread-xyz", ".gitignore")), false);
   } finally {
-    rmSync(cwd, { recursive: true, force: true });
+    rmSync(baseDir, { recursive: true, force: true });
   }
 });
 
-test("a user's existing .tide/.gitignore is never clobbered", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "tide-att2-"));
+test("empty attachments materialize nothing", async () => {
+  const baseDir = mkdtempSync(join(tmpdir(), "tide-att-empty-"));
   try {
-    mkdirSync(join(cwd, ".tide"), { recursive: true });
-    writeFileSync(join(cwd, ".tide", ".gitignore"), "# mine\nkeep-me\n");
-    const store = createNodeComposerAttachmentStorePort();
-    await store.materialize({
-      cwd,
-      attachments: [{ name: "a.png", mediaType: "image/png", dataBase64: PNG_B64 }],
-    });
-    assert.equal(readFileSync(join(cwd, ".tide", ".gitignore"), "utf8"), "# mine\nkeep-me\n");
+    const store = createNodeComposerAttachmentStorePort(baseDir);
+    assert.deepEqual(await store.materialize({ threadId: "t", attachments: [] }), []);
   } finally {
-    rmSync(cwd, { recursive: true, force: true });
+    rmSync(baseDir, { recursive: true, force: true });
   }
 });
