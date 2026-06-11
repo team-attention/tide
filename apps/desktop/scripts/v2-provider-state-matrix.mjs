@@ -23,6 +23,10 @@ import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const caseName = args[args.indexOf("--case") + 1];
+// The live-turn cases (concurrency/followup) run against this agent; default
+// gemini for back-compat. opencode shares gemini's ACP path, so both work.
+const agentArgIndex = args.indexOf("--agent");
+const agent = agentArgIndex >= 0 ? args[agentArgIndex + 1] : "gemini";
 const log = (o) => console.log(JSON.stringify(o));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -120,7 +124,7 @@ async function notinstalled() {
   // readiness blocker instead of spawning anything or hanging.
   process.env.PATH = "/var/empty";
   const adapter = await makeAdapter();
-  for (const agentId of ["claude", "codex", "gemini"]) {
+  for (const agentId of ["claude", "codex", "gemini", "opencode"]) {
     const events = await adapter.handleMessage(
       startThreadCommand(agentId, "hello?"),
     );
@@ -152,7 +156,7 @@ async function notauth() {
   // applicable) instead of spawning a CLI that dies on a login screen.
   const freshHome = mkdtempSync(path.join(tmpdir(), "tide-matrix-home-"));
   const adapter = await makeAdapter({ HOME: freshHome });
-  for (const agentId of ["claude", "codex", "gemini"]) {
+  for (const agentId of ["claude", "codex", "gemini", "opencode"]) {
     const events = await adapter.handleMessage(
       startThreadCommand(agentId, "hello?"),
     );
@@ -235,8 +239,8 @@ async function concurrency() {
   const tokenA = `TOKEN_ALPHA_${stamp}`;
   const tokenB = `TOKEN_BRAVO_${stamp}`;
   const [startA, startB] = await Promise.all([
-    adapter.handleMessage(startThreadCommand("gemini", `Reply with exactly: ${tokenA}`)),
-    adapter.handleMessage(startThreadCommand("gemini", `Reply with exactly: ${tokenB}`)),
+    adapter.handleMessage(startThreadCommand(agent, `Reply with exactly: ${tokenA}`)),
+    adapter.handleMessage(startThreadCommand(agent, `Reply with exactly: ${tokenB}`)),
   ]);
   const threadA = startA.find((e) => e.kind === "thread.started")?.payload.thread.threadId;
   const threadB = startB.find((e) => e.kind === "thread.started")?.payload.thread.threadId;
@@ -266,7 +270,7 @@ async function followup() {
   const first = `FIRST_${stamp}`;
   const second = `SECOND_${stamp}`;
   const startEvents = await adapter.handleMessage(
-    startThreadCommand("gemini", `Reply with exactly: ${first}`),
+    startThreadCommand(agent, `Reply with exactly: ${first}`),
   );
   const threadId = startEvents.find((e) => e.kind === "thread.started")?.payload.thread.threadId;
   check(threadId !== undefined, "followup_thread_started", { threadId });

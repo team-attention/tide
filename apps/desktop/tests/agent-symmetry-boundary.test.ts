@@ -84,13 +84,16 @@ test("every provider-CLI agent has an integration factory module", () => {
   }
 });
 
-test("the canonical provider smoke harness names every provider-CLI agent", () => {
-  // v2-provider-smoke.mjs is the answer+settle gate run per agent; a new agent must
-  // be added to its known set. (permission-flow/state-matrix coverage is enforced
-  // after Phase 2.2 wires opencode into them.)
-  const smoke = read("scripts/v2-provider-smoke.mjs");
-  for (const id of EXPECTED_PROVIDER_CLI_IDS) {
-    assert.match(smoke, new RegExp(`["']${id}["']`), `v2-provider-smoke.mjs must name ${id}`);
+test("the canonical provider harnesses name every provider-CLI agent", () => {
+  // A new agent must be added to the answer+settle gate AND the permission flow,
+  // so the e2e gate produces a real column for it (closes the A7 harness asymmetry).
+  for (const harness of ["scripts/v2-provider-smoke.mjs", "scripts/v2-provider-permission-flow.mjs"]) {
+    const source = read(harness);
+    for (const id of EXPECTED_PROVIDER_CLI_IDS) {
+      // The agent appears either as a quoted string (smoke's Set) or an object
+      // key (permission-flow's SCENARIOS map).
+      assert.match(source, new RegExp(`["']${id}["']|\\b${id}:`), `${harness} must name ${id}`);
+    }
   }
 });
 

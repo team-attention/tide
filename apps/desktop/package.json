@@ -22,6 +22,7 @@
     "test:architecture": "node --test --experimental-strip-types tests/shared-contracts.test.ts tests/backend-thread-agent-runtime-lifecycle.test.ts tests/desktop-agent-chat-composer-shell.test.ts",
     "test:smoke:providers": "node --experimental-strip-types scripts/v2-provider-smoke.mjs",
     "test:smoke:electron": "node --experimental-strip-types scripts/v2-electron-runtime-smoke.mjs",
+    "e2e": "node --experimental-strip-types scripts/e2e-run.mjs",
     "package:mac": "node scripts/v2-tooling-command.mjs electron-builder --mac",
     "prestart": "pkill -f 'Electron .* --tide-dev-app' 2>/dev/null; sleep 1; exit 0"
   },

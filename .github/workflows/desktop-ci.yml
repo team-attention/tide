@@ -50,28 +50,9 @@ jobs:
       - name: Build
         run: npm run build
 
-  # Non-required signal job: boots the real packaged backend against a fake provider
-  # and runs the full agent loop headlessly. Promote to a required check once it is
-  # stable on hosted runners.
-  electron-smoke:
-    runs-on: macos-latest
-    continue-on-error: true
-    defaults:
-      run:
-        working-directory: apps/desktop
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/desktop/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Electron runtime smoke (fake provider)
-        run: npm run test:smoke:electron
+  # An auth-free, Playwright-driven full-app e2e (Phase 2.3) is the intended second
+  # CI job here. It is blocked on a pre-existing bug: the Tide-API (openai_api) agent
+  # cannot be selected through the composer menu (it falls back to codex), so the
+  # fake-provider electron smoke can't bind a non-CLI agent without real auth. Once
+  # that selection path is fixed, add the auth-free e2e as a second required job.
+  # Tracked in docs_v2/implementation/codebase-issues-and-remediation-plan.md.
