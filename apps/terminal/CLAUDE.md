@@ -50,9 +50,14 @@ All code lives in tide-app (monocrate). Each module is a bounded context:
 | editor | `domain/editor/` | Text buffer & cursor | EditorState |
 | input | `domain/input/` | Keybinding resolution | Router, Hotkey, GlobalAction |
 | tree | `domain/tree/` | Filesystem & git status | FsTree |
-| platform | `adapter/outward/platform_native/` | Native macOS windowing | PlatformEvent, PlatformWindow |
-| renderer | `adapter/outward/renderer/` | GPU rendering pipeline | WgpuRenderer, GlyphAtlas |
-| lsp | `adapter/outward/lsp_client/` | Language server protocol | LspClient, LspManager |
+| pane | `domain/pane/` | Per-PaneKind state | TerminalPane, EditorPane, BrowserPane, DiffPane |
+| modal | `domain/modal/` | ModalStack popups | FileFinderState, GitSwitcherState, ContextMenuState |
+| state | `domain/state/` | Grouped App state | WorkspaceManager, GatewayStatus, BackgroundServices |
+| services | `application/services/` | Use-case orchestration on App | action, pane_create, file_tree, session, workspace |
+| gateway (cli) | `adapter/inward/cli_adapter/` | Agent Gateway: MCP/CLI dispatch over the Unix socket | GatewayServer, CliPorts |
+| platform | `adapter/outward/platform_adapter/` (macos/) | Native macOS windowing | PlatformEvent, PlatformWindow |
+| renderer | `adapter/outward/renderer_adapter/` | GPU rendering pipeline | WgpuRenderer, GlyphAtlas |
+| lsp | `adapter/outward/lsp_adapter/` | Language server protocol | LspClient, LspManager |
 
 Aliases in `main.rs`: `pub(crate) use domain::terminal as tide_terminal;` etc. — `crate::tide_X::` paths work everywhere.
 
@@ -62,7 +67,7 @@ When adding a new feature or fixing a bug, follow this order. **Do not skip step
 
 ```
 1. Spec   → Understand the system → Clarify requirements with user → Write spec
-2. Test   → Write behavior tests for each Business Rule (crates/tide-app/src/behavior_tests.rs)
+2. Test   → Write behavior tests for each Business Rule (crates/tide-app/src/application/behavior_tests/)
 3. Code   → Write code that passes the tests
 ```
 
@@ -192,7 +197,7 @@ If the inward adapter needs behavior that no existing port provides, **add a new
 - `docs/domain/*.md` — Per-context deep dives
 - `docs/specs/*.md` — Use Case specs with Business Rules (testable)
 - `docs/testing/behavior-tests.md` — How to write behavior tests
-- `crates/tide-app/src/behavior_tests/` — Living specification (537+ tests)
+- `crates/tide-app/src/application/behavior_tests/` — Living specification (test count: see CI)
 
 ## Tooling-Dictated Paths
 
