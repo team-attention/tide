@@ -152,14 +152,42 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   );
   // Hidden <input type=file> for the "Files and images" composer-menu action.
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  // On entering a thread, jump to the most recent message (not the top).
+  // Sticky auto-scroll: keep the transcript pinned to the bottom as content
+  // streams in / new turns arrive, but ONLY while the user is already near the
+  // bottom — if they scroll up to read history, don't yank them back down.
   const threadId = viewModel.thread?.threadId;
+  const stickToBottomRef = useRef(true);
+  // On entering a thread, jump to the most recent message and re-arm stickiness.
   useEffect(() => {
     const el = sessionRef.current;
     if (el) {
       el.scrollTop = el.scrollHeight;
     }
+    stickToBottomRef.current = true;
   }, [threadId]);
+  // Track whether the user is pinned to the bottom (within a small threshold).
+  useEffect(() => {
+    const el = sessionRef.current;
+    if (el === null) {
+      return undefined;
+    }
+    const onScroll = () => {
+      stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+  // As new content lands (streaming chunks, a new turn, the working indicator),
+  // follow it to the bottom when stuck.
+  useEffect(() => {
+    if (!stickToBottomRef.current) {
+      return;
+    }
+    const el = sessionRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [viewModel.blocks, viewModel.runtimeState]);
   // Escape dismisses the active chip/command popover and the image lightbox — the
   // expected keyboard companion to the outside-click backdrop. Only listens while
   // something is open, so it never swallows Escape from the rest of the app.

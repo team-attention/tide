@@ -200,6 +200,9 @@ import {
 } from "../../../renderer/theme.ts";
 
 const LIST_SETTINGS_STORAGE_KEY = "tide.listSettings";
+// Bumped when a default flips and existing stores should adopt it once. Schema 2
+// turns "group worktrees by repo" on by default (worktree-start-experience).
+const LIST_SETTINGS_SCHEMA = 2;
 
 // List-display settings are a renderer-local pref (no backend contract); persist
 // them in localStorage so the grouping/sort choice survives reloads.
@@ -212,8 +215,17 @@ function loadListSettings(): ProductShellListSettings {
     if (raw === null) {
       return { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS };
     }
-    const parsed = JSON.parse(raw) as Partial<ProductShellListSettings>;
-    return { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, ...parsed };
+    const { schema, ...parsed } = JSON.parse(raw) as Partial<ProductShellListSettings> & {
+      schema?: number;
+    };
+    const merged = { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, ...parsed };
+    // One-time migration: pre-schema-2 stores predate the worktrees-by-repo
+    // default, so adopt the new default once. A later user toggle persists
+    // schema 2, after which an explicit off choice sticks.
+    if ((schema ?? 1) < LIST_SETTINGS_SCHEMA) {
+      merged.groupWorktreesByRepo = DEFAULT_PRODUCT_SHELL_LIST_SETTINGS.groupWorktreesByRepo;
+    }
+    return merged;
   } catch {
     return { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS };
   }
@@ -224,7 +236,10 @@ function persistListSettings(settings: ProductShellListSettings): void {
     return;
   }
   try {
-    localStorage.setItem(LIST_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    localStorage.setItem(
+      LIST_SETTINGS_STORAGE_KEY,
+      JSON.stringify({ ...settings, schema: LIST_SETTINGS_SCHEMA }),
+    );
   } catch {
     // Best-effort; ignore quota/serialization errors.
   }

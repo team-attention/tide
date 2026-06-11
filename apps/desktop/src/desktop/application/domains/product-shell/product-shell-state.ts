@@ -106,7 +106,12 @@ export interface ProductShellListSettings {
 export const DEFAULT_PRODUCT_SHELL_LIST_SETTINGS: ProductShellListSettings = {
   groupBy: "project",
   sortBy: "recent",
-  groupWorktreesByRepo: false,
+  // Worktree Threads nest under their parent repo Project by default; the new
+  // worktree start flow scopes new work to a `<repo>.worktree/<branch>` cwd, and
+  // a per-worktree top-level Project would fragment the repo's threads. The Left
+  // UI "Group under repo" toggle can flip this off. See
+  // docs_v2/specs/worktree-start-experience.md (supersedes the prior default).
+  groupWorktreesByRepo: true,
   showExternalSessions: false,
 };
 
@@ -322,6 +327,10 @@ export interface ProductShellThreadView extends ProductShellThread {
   archiveConfirming: boolean;
   renaming: boolean;
   contextMenuOpen: boolean;
+  // Set when this Thread's scope cwd is a `<repo>.worktree/<branch>` worktree:
+  // the branch (= worktree dir basename), shown as a badge so a worktree Thread
+  // is identifiable when nested under its parent repo's group.
+  worktreeBranch?: string;
 }
 
 export interface ProductShellProjectGroupView {
@@ -2837,6 +2846,10 @@ function toThreadView(
   thread: ProductShellThread,
   state: ProductShellState,
 ): ProductShellThreadView {
+  const worktreeCwd =
+    thread.scope.kind === "project" && worktreeRepoRootForCwd(thread.scope.cwd) !== null
+      ? thread.scope.cwd
+      : null;
   return {
     ...thread,
     active: thread.threadId === state.activeThreadId,
@@ -2844,6 +2857,10 @@ function toThreadView(
     renaming: state.renamingThreadId === thread.threadId,
     contextMenuOpen:
       state.leftUiMenu?.kind === "thread" && state.leftUiMenu.threadId === thread.threadId,
+    worktreeBranch:
+      worktreeCwd === null
+        ? undefined
+        : (worktreeCwd.split("/").filter((seg) => seg.length > 0).pop() ?? undefined),
   };
 }
 
