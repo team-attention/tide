@@ -371,6 +371,48 @@ test("multiple_followups_stack_then_reconcile_to_the_backend_queue_on_state_chan
   assert.deepEqual(afterFlush.queuedInputs, ["second"]);
 });
 
+test("queued_messages_stay_docked_in_the_steer_stack_while_a_prompt_is_open", () => {
+  // A queued follow-up must not jump into the transcript when an Allow/Deny card
+  // opens (chatState=waiting_for_approval) and back to the steer stack when it closes.
+  const running = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "running" }),
+  );
+  const queued = submitComposer(updateComposerDraft(running, "queued one").state).state;
+  const withPrompt = applyBackendEventToAgentChatShell(
+    queued,
+    backendEvent("prompt.changed", { threadId: "thread-shell", prompt }),
+  );
+
+  // Still docked as a "대기 중" steer chip even though a prompt is open.
+  const html = renderShell(withPrompt);
+  assert.match(html, /대기 중/);
+  assert.match(html, /queued one/);
+});
+
+test("an_idle_send_runs_and_its_optimistic_chip_reconciles_away_not_queued", () => {
+  // Regression: after a turn ends, typing + sending must RUN the message, not leave
+  // it queued. The optimistic chip clears when the command's stateChanged carries
+  // the backend's (empty) queue — no more "sent AND queued".
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const sent = submitComposer(updateComposerDraft(hydrated, "run me").state);
+  assert.deepEqual(sent.state.queuedInputs, ["run me"]); // instant optimistic chip
+
+  const reconciled = applyBackendEventToAgentChatShell(
+    sent.state,
+    backendEvent("agentRuntime.stateChanged", {
+      threadId: "thread-shell",
+      state: "running",
+      changedAt: "2026-05-29T00:00:01.000Z",
+      queuedInputs: [],
+    }),
+  );
+  assert.deepEqual(reconciled.queuedInputs, []);
+});
+
 test("editing_with_no_queued_message_is_a_noop", () => {
   const hydrated = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),

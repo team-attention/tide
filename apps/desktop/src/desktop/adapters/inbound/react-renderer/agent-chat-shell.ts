@@ -808,9 +808,12 @@ function createAgentSession(
       : groupSessionItems(blocks).map(renderSessionItem),
     working ? createElement(AgentWorkingIndicator, { runtimeStartedAt }) : null,
     // An optimistic just-sent message (idle send) still shows in the transcript
-    // until its real block arrives. Messages QUEUED behind a live turn dock to the
-    // Composer instead (Codex-style "steer"), so they aren't done here.
-    chatState !== "running"
+    // until its real block arrives. Messages QUEUED behind a live turn — including
+    // while it waits on a prompt — dock to the Composer "steer" stack instead, so
+    // they aren't done here (only when the turn is genuinely idle/ready).
+    chatState !== "running" &&
+    chatState !== "waiting_for_approval" &&
+    chatState !== "waiting_for_input"
       ? queuedInputs.map((queued, index) => createQueuedInputRow(queued, false, index))
       : null,
   );
@@ -1879,7 +1882,12 @@ function createComposerStack(
     viewModel.usage ? createUsageMeter(viewModel.usage) : null,
     // Messages queued behind a live turn dock here, atop the Composer (Codex-style
     // "steer"): a FIFO stack, each visible as pending and editable before it runs.
-    viewModel.queuedInputs.length > 0 && viewModel.chatState === "running"
+    // "Live" includes waiting on a prompt — the queue must not jump to the transcript
+    // and back when an Allow/Deny card opens and closes.
+    viewModel.queuedInputs.length > 0 &&
+    (viewModel.chatState === "running" ||
+      viewModel.chatState === "waiting_for_approval" ||
+      viewModel.chatState === "waiting_for_input")
       ? createQueuedSteerStack(
           viewModel.queuedInputs,
           handlers.onEditQueued,

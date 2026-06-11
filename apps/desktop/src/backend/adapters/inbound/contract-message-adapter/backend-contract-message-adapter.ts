@@ -587,6 +587,10 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         threadId: thread.threadId,
         state,
         changedAt: thread.updatedAt,
+        // Carry the authoritative queue so the renderer reconciles: an idle send
+        // runs (queue stays empty) and its optimistic chip clears; a busy send
+        // queues and the chip stays. Without this the chip never reconciled.
+        queuedInputs: thread.queuedInputs,
       },
     };
   }
