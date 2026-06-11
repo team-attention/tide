@@ -118,6 +118,38 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     document.addEventListener("mouseup", onUp);
     return () => document.removeEventListener("mouseup", onUp);
   }, []);
+  // Memoize the transcript so that showing/hiding the "Add to chat" toolbar
+  // (a transcriptSel state change) does NOT re-render the transcript subtree.
+  // Re-rendering it rebuilt the message DOM and COLLAPSED the user's drag
+  // selection the instant they released the mouse (the highlight vanished while
+  // the toolbar appeared). A stable element reference makes React skip the
+  // subtree, so the native selection survives. Deps exclude transcriptSel.
+  const sessionView = useMemo(
+    () =>
+      createAgentSession(
+        viewModel.blocks,
+        viewModel.chatState,
+        viewModel.queuedInput,
+        props.onOpenFile,
+        sessionRef,
+        viewModel.thread?.runtimeStartedAt,
+        props.onEditQueued,
+        props.onResend,
+        props.onQuote,
+        props.onOpenBrowserPane,
+      ),
+    [
+      viewModel.blocks,
+      viewModel.chatState,
+      viewModel.queuedInput,
+      props.onOpenFile,
+      viewModel.thread?.runtimeStartedAt,
+      props.onEditQueued,
+      props.onResend,
+      props.onQuote,
+      props.onOpenBrowserPane,
+    ],
+  );
   // Hidden <input type=file> for the "Files and images" composer-menu action.
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // On entering a thread, jump to the most recent message (not the top).
@@ -277,7 +309,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       "data-runtime-state": viewModel.runtimeState,
     },
     props.showThreadHeader === false ? null : createThreadHeader(viewModel),
-    createAgentSession(viewModel.blocks, viewModel.chatState, viewModel.queuedInput, props.onOpenFile, sessionRef, viewModel.thread?.runtimeStartedAt, props.onEditQueued, props.onResend, props.onQuote, props.onOpenBrowserPane),
+    sessionView,
     createComposerStack(viewModel, handlers),
     transcriptSel === null || props.onQuote === undefined
       ? null

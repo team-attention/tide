@@ -2304,6 +2304,15 @@ function createWorkbenchColumn(
   const tabs = viewModel.appChrome.workbenchTabStrip.visibleTabs;
   const activeTab = tabs.find((tab) => tab.active) ?? tabs[0];
   const activePane = viewModel.appChrome.activeWorkbenchPane;
+  // Split mode shows every pane with its OWN header (title + close, the drag
+  // handle), so the global top tab strip would be a redundant second header
+  // layer. When split is active we drop the strip (the per-pane headers are the
+  // tabs) but keep the top row's global actions + traffic-light reserve.
+  const splitActive =
+    viewModel.editorPicker === null &&
+    viewModel.workbenchLayoutMode === "split" &&
+    viewModel.workbenchLayoutTree !== null &&
+    viewModel.appChrome.visibleWorkbenchPanes.length > 1;
   const tabIconSize = 13;
   const workbenchTabIcon = (kind: string): ReactElement => {
     switch (kind) {
@@ -2336,7 +2345,9 @@ function createWorkbenchColumn(
       // header must reserve the macOS traffic-light zone (collapses to 0 in
       // native fullscreen) — otherwise the first tab sits under the lights.
       viewModel.workbenchFullscreen ? createTrafficControls() : null,
-      createElement(
+      splitActive
+        ? createElement("span", { className: "workbench-tabs__empty workbench-tabs__empty--split" }, "Split view")
+        : createElement(
         "div",
         { className: "workbench-tabs", role: "tablist", "aria-label": "Workbench Tab Strip" },
         tabs.length === 0
@@ -2419,9 +2430,7 @@ function createWorkbenchColumn(
           { className: "workbench-column__pane", "data-pane-kind": "editor-picker" },
           createEditorPickerPane(viewModel.editorPicker, handlers),
         )
-      : viewModel.workbenchLayoutMode === "split" &&
-        viewModel.workbenchLayoutTree !== null &&
-        viewModel.appChrome.visibleWorkbenchPanes.length > 1
+      : splitActive && viewModel.workbenchLayoutTree !== null
       ? createElement(WorkbenchSplitView, {
           tree: viewModel.workbenchLayoutTree,
           viewModel,
