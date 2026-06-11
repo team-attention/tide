@@ -1020,10 +1020,23 @@ export function applyAgentChatBackendEvent(
       };
     }
     case "agentRuntime.stateChanged": {
-      const payload = event.payload as { state: AgentRuntimeStateName };
+      const payload = event.payload as { state: AgentRuntimeStateName; changedAt?: string };
+      // Re-anchor the working timer to the NEW turn's start. `changedAt` is when
+      // the runtime went active (= the turn start). Only on the non-active →
+      // active edge, so a redundant "running" event can't reset it mid-turn.
+      // Without this, stateChanged only updated runtimeState and the timer kept
+      // the FIRST turn's runtimeStartedAt — so "Working… Xs" counted from the
+      // session start across every later turn.
+      const wasActive = state.runtimeState === "running" || state.runtimeState === "starting";
+      const isActive = payload.state === "running" || payload.state === "starting";
+      const nextThread =
+        !wasActive && isActive && state.thread !== null && payload.changedAt !== undefined
+          ? { ...state.thread, runtimeStartedAt: payload.changedAt }
+          : state.thread;
       return {
         ...state,
         runtimeState: payload.state,
+        thread: nextThread,
       };
     }
     case "providerReadiness.changed": {
