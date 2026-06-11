@@ -2757,7 +2757,10 @@ function createWorkbenchPaneContent(
 ): ReactElement {
   switch (pane.kind) {
     case "browser":
-      return createElement(WorkbenchBrowserPane, { pane, handlers });
+      // Key by paneId so a different/new browser pane fully remounts (fresh
+      // webview + initial src) instead of reusing the prior pane's webview,
+      // which left the old page showing after close-and-reopen.
+      return createElement(WorkbenchBrowserPane, { key: pane.paneId, pane, handlers });
     case "editor":
       return createElement(WorkbenchEditorPane, { pane, draft: editorDraft, handlers });
     case "diff":
@@ -2897,6 +2900,14 @@ function WorkbenchBrowserPane(props: {
 }): ReactElement {
   const webviewRef = useRef<BrowserWebViewElement | null>(null);
   const executedActionIdsRef = useRef<Set<string>>(new Set());
+  // The webview `src` is PINNED to the pane's initial URL and never re-bound to
+  // pane.url. A page load fires did-finish-load → snapshot, which writes the
+  // resolved URL (e.g. google's ?zx=… cache-buster) back into pane.url; binding
+  // src to that re-set the attribute, reloaded the page, fired another snapshot
+  // with a fresh ?zx, and looped forever. Subsequent navigation goes through
+  // webview.loadURL (see the effect below), not src. The component is keyed by
+  // paneId at the call site, so a new pane remounts with its own initial src.
+  const initialSrcRef = useRef(props.pane.url ?? "about:blank");
   const [address, setAddress] = useState(props.pane.url ?? "");
   // Floating "Add selection" toolbar that follows an in-page text selection. The
   // <webview> is isolated, so we poll its selection + bounding rect and map it
@@ -3028,6 +3039,35 @@ function WorkbenchBrowserPane(props: {
       webview.removeEventListener("did-finish-load", update);
     };
   }, [props.pane.paneId]);
+  // Apply EXTERNAL navigation (agent action / chat link → open_browser →
+  // pane.url) via the webview API. `requestedUrlRef` tracks the URL we last
+  // intended to be at — seeded with the initial src so we never re-load it at
+  // mount, and updated to absorb the did-finish-load snapshot (which writes the
+  // resolved ?zx URL back into pane.url). We only loadURL when the target is a
+  // genuinely new destination — so the snapshot echo is a no-op (no reload loop)
+  // while real navigation (incl. from about:blank) still works.
+  const requestedUrlRef = useRef(initialSrcRef.current);
+  useEffect(() => {
+    const webview = webviewRef.current;
+    const target = props.pane.url;
+    if (webview?.loadURL === undefined || target === undefined || target.length === 0) {
+      return;
+    }
+    if (target === requestedUrlRef.current) {
+      return; // already handled (initial src, or a prior navigation/echo)
+    }
+    let current = "";
+    try {
+      current = typeof webview.getURL === "function" ? webview.getURL() : "";
+    } catch {
+      return; // not dom-ready yet — the initial src load is in flight
+    }
+    requestedUrlRef.current = target;
+    if (target === current) {
+      return; // snapshot echo: the webview is already here
+    }
+    void webview.loadURL(target).catch(() => undefined);
+  }, [props.pane.url, props.pane.paneId]);
   const goBack = () => webviewRef.current?.goBack?.();
   const goForward = () => webviewRef.current?.goForward?.();
   const reload = () => webviewRef.current?.reload?.();
@@ -3258,7 +3298,7 @@ function WorkbenchBrowserPane(props: {
       ref: webviewRef,
       className: "workbench-browser-webview",
       "data-browser-pane-webview": props.pane.paneId,
-      src: props.pane.url ?? "about:blank",
+      src: initialSrcRef.current,
       partition: "persist:tide-workbench-browser",
     }),
     browserSelToolbar === null

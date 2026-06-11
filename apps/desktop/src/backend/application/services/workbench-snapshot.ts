@@ -174,13 +174,17 @@ export function launcherPaneActions(): LauncherPaneState["actions"] {
 export function firstBrowserPane(
   workbench: WorkbenchState,
 ): BrowserPaneState | undefined {
+  // Only a VISIBLE browser pane is reusable. close_pane merely hides a pane
+  // (visible=false) rather than removing it; without this filter, opening a
+  // browser after closing one reused the hidden pane with its stale URL/page
+  // instead of starting fresh.
   const activePane = workbench.panes.find(
     (pane): pane is BrowserPaneState =>
-      pane.kind === "browser" && pane.paneId === workbench.activePaneId,
+      pane.kind === "browser" && pane.paneId === workbench.activePaneId && pane.visible,
   );
   return (
     activePane ??
-    workbench.panes.find((pane): pane is BrowserPaneState => pane.kind === "browser")
+    workbench.panes.find((pane): pane is BrowserPaneState => pane.kind === "browser" && pane.visible)
   );
 }
 
