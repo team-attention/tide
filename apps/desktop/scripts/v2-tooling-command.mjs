@@ -3,9 +3,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { assertNodeVersion } from "./assert-node-version.mjs";
 
 const [, , toolName, ...toolArgs] = process.argv;
 const repoRoot = process.cwd();
+
+assertNodeVersion();
 
 if (!toolName) {
   console.error("usage: v2-tooling-command <tool> [...args]");

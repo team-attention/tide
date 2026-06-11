@@ -1,0 +1,77 @@
+name: Desktop CI
+
+# Runs on every push and PR that touches the v2 Electron app (apps/desktop), so a
+# commit between release tags can never break the build/tests silently. The release
+# workflow (desktop-release.yml) stays the only thing that signs/notarizes/ships.
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop-ci.yml"
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop-ci.yml"
+
+# A newer push to the same branch/PR cancels the older in-flight run.
+concurrency:
+  group: desktop-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Required gate: types + behavior tests + production build. Fast (suite ~6s) and
+  # needs no secrets. Real-PTY tests self-skip on CI=true (tests/pty-ci-gate.ts).
+  verify:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  # Non-required signal job: boots the real packaged backend against a fake provider
+  # and runs the full agent loop headlessly. Promote to a required check once it is
+  # stable on hosted runners.
+  electron-smoke:
+    runs-on: macos-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Electron runtime smoke (fake provider)
+        run: npm run test:smoke:electron

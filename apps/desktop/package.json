@@ -7,11 +7,15 @@
   "author": "Tide",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
   "scripts": {
     "dev": "node scripts/v2-tooling-command.mjs electron-vite dev",
     "build": "node scripts/v2-tooling-command.mjs electron-vite build",
     "start": "npm run build && electron . --tide-dev-app",
     "typecheck": "node scripts/v2-tooling-command.mjs tsc --noEmit",
+    "pretest": "node scripts/assert-node-version.mjs",
     "test": "npm run test:v2",
     "test:v2": "node --test --experimental-strip-types tests/*.test.ts",
     "test:watch": "node --test --watch --experimental-strip-types tests/*.test.ts",
@@ -48,7 +52,6 @@
     "electron-vite": "^5.0.0",
     "jsdom": "^29.1.1",
     "playwright": "^1.60.0",
-    "vite": "^7.3.3",
-    "vitest": "^4.1.7"
+    "vite": "^7.3.3"
   }
 }
