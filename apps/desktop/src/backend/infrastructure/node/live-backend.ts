@@ -867,7 +867,7 @@ export function createLiveAgentSessionEventProjector(input: {
       }
       const sessionId = args.sessionId ?? args.runtimeId;
       const blockId = `provider:${args.threadId}:${sessionId}:${kind}:${(hash >>> 0).toString(36)}`;
-      const hydrated = await service.hydrateThread({ threadId: args.threadId });
+      const hydrated = service.peekThread(args.threadId);
       if (!hydrated.ok) {
         return;
       }
@@ -948,7 +948,7 @@ export function createLiveAgentSessionEventProjector(input: {
       payload: frameInput.payload,
       body: frameInput.body,
     });
-    const hydrated = await service.hydrateThread({ threadId: frameInput.threadId });
+    const hydrated = service.peekThread(frameInput.threadId);
     if (!hydrated.ok) {
       return;
     }
@@ -1247,7 +1247,7 @@ async function persistThreadBlocksUnsafe(input: {
   service: ThreadRuntimeService;
   threadId: string;
 }): Promise<void> {
-  const hydrated = await input.service.hydrateThread({ threadId: input.threadId });
+  const hydrated = input.service.peekThread(input.threadId);
   if (!hydrated.ok || hydrated.blocks.length === 0) {
     return;
   }

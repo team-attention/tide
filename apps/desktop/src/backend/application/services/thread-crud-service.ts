@@ -92,7 +92,7 @@ export class ThreadCrudService {
           input.includeArchived === true || thread.lifecycleState !== "archived",
       )
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-      .map(snapshotThread);
+      .map((thread) => snapshotThread(thread));
     return { ok: true, threads };
   }
 

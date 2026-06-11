@@ -57,7 +57,13 @@ export function normalizeThreadSeed(seed: ThreadSeed): ThreadRecord {
   };
 }
 
-export function snapshotThread(thread: ThreadRecord): ThreadSnapshot {
+// `shareBlocks` returns the live cachedBlocks reference instead of a deep clone —
+// for internal read-only callers on the streaming hot path (peekThread) that never
+// mutate the snapshot's blocks. External callers omit it and get the safe clone.
+export function snapshotThread(
+  thread: ThreadRecord,
+  options?: { shareBlocks?: boolean },
+): ThreadSnapshot {
   return {
     threadId: thread.threadId,
     title: thread.title,
@@ -71,7 +77,9 @@ export function snapshotThread(thread: ThreadRecord): ThreadSnapshot {
     pinned: thread.pinned ?? false,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
-    cachedBlocks: cloneBlocks(thread.cachedBlocks),
+    cachedBlocks: options?.shareBlocks
+      ? thread.cachedBlocks
+      : cloneBlocks(thread.cachedBlocks),
     pendingInput: clonePendingInput(thread.pendingInput),
     // Publish the real follow-up queue (head + tail) as texts so the renderer can
     // display it authoritatively instead of guessing from events.

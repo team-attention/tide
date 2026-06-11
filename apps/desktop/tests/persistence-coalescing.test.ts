@@ -63,6 +63,15 @@ function createCountingFixture() {
         blocks: [block],
       };
     },
+    // Synchronous non-cloning read used by the projector hot path (Phase 4.3).
+    peekThread() {
+      return {
+        ok: true as const,
+        thread: { threadId: THREAD, agentBinding: { agentId: AGENT } },
+        runtimeState: "running",
+        blocks: [block],
+      };
+    },
     async appendRawAgentFrame(frame: Record<string, unknown>) {
       return { ...frame, frameId: "frame-1" };
     },

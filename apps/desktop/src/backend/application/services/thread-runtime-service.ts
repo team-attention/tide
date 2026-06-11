@@ -520,6 +520,12 @@ export interface ThreadRuntimeService {
   setThreadPinned(input: SetThreadPinnedInput): Promise<ServiceResult<SetThreadPinnedResult>>;
   renameThread(input: RenameThreadInput): Promise<ServiceResult<RenameThreadResult>>;
   hydrateThread(input: HydrateThreadInput): Promise<ServiceResult<HydrateThreadResult>>;
+  // Internal, NON-CLONING read for hot-path callers (the live projector + persist)
+  // that only READ thread/binding/blocks and never mutate them. hydrateThread deep-
+  // clones blocks twice (snapshot + top-level) for external safety; on the streaming
+  // hot path that is wasted CPU (perf E4). peekThread shares block references and
+  // never reconciles stale runtime state. Synchronous: no I/O.
+  peekThread(threadId: string): ServiceResult<HydrateThreadResult>;
   startThread(input: StartThreadInput): Promise<ServiceResult<StartThreadResult>>;
   sendComposerInput(
     input: SendComposerInput,
@@ -735,6 +741,19 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       thread: snapshotThread(thread),
       runtimeState: thread.runtimeState,
       blocks: cloneBlocks(thread.cachedBlocks),
+    };
+  }
+
+  peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
+    const thread = this.threads.get(threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+    return {
+      ok: true,
+      thread: snapshotThread(thread, { shareBlocks: true }),
+      runtimeState: thread.runtimeState,
+      blocks: thread.cachedBlocks,
     };
   }
 
