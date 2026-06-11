@@ -1,5 +1,6 @@
 import {
   createElement,
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -13,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import MarkdownIt from "markdown-it";
+import { renderMarkdownCached } from "./markdown-rendering.ts";
 import {
   ArrowUp,
   Bot,
@@ -899,7 +901,7 @@ function renderSessionItem(item: SessionRenderItem): ReactElement | null {
   if (item.block.role === "reasoning" || item.block.kind === "reasoning") {
     return createElement(ReasoningTurn, { key: item.block.blockId, block: item.block });
   }
-  return createAgentSessionTurn(item.block);
+  return createElement(AgentSessionTurn, { key: item.block.blockId, block: item.block });
 }
 
 // Reasoning/thinking renders as a quiet, collapsible disclosure — secondary to the
@@ -943,7 +945,7 @@ function ReasoningTurn({ block }: { block: AgentChatBlockView }): ReactElement {
     expanded
       ? createElement("div", {
           className: "agent-reasoning__body",
-          dangerouslySetInnerHTML: { __html: markdown.render(block.body) },
+          dangerouslySetInnerHTML: { __html: renderMarkdownToHtml(block.body) },
         })
       : null,
   );
@@ -1056,10 +1058,19 @@ function escapeAttr(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+// Render the agent-chat markdown body through the shared per-instance cache.
+// A streaming turn re-renders the whole transcript on every chunk; without this
+// it is O(blocks × chunks) markdown parses per turn (perf E2). renderMarkdownCached
+// memoizes by source string AND returns the same string reference for a repeat
+// source, so dangerouslySetInnerHTML skips the DOM mutation for unchanged bodies.
+function renderMarkdownToHtml(body: string): string {
+  return renderMarkdownCached(markdown, body);
+}
+
 function renderAgentMarkdown(body: string): ReactElement {
   return createElement("div", {
     className: "agent-session-turn__body agent-session-turn__body--md",
-    dangerouslySetInnerHTML: { __html: markdown.render(body) },
+    dangerouslySetInnerHTML: { __html: renderMarkdownToHtml(body) },
   });
 }
 
@@ -1070,7 +1081,7 @@ function renderUserAttachmentBody(body: string): ReactElement {
   return createElement("div", {
     className:
       "agent-session-turn__body agent-session-turn__body--md agent-session-turn__body--attachments",
-    dangerouslySetInnerHTML: { __html: markdown.render(body) },
+    dangerouslySetInnerHTML: { __html: renderMarkdownToHtml(body) },
   });
 }
 
@@ -1118,6 +1129,24 @@ function renderUserBody(body: string): ReactElement {
     ),
   );
 }
+
+// A message/event turn wrapped in React.memo: during a streaming turn the whole
+// transcript re-renders, but a turn whose content is unchanged is skipped by the
+// comparator instead of rebuilding its (markdown) subtree (perf E2). Keyed by
+// blockId at the call site; compared on the stable content fields.
+const AgentSessionTurn = memo(
+  function AgentSessionTurn({ block }: { block: AgentChatBlockView }): ReactElement | null {
+    return createAgentSessionTurn(block);
+  },
+  (prev, next) =>
+    prev.block.blockId === next.block.blockId &&
+    prev.block.body === next.block.body &&
+    prev.block.status === next.block.status &&
+    prev.block.kind === next.block.kind &&
+    prev.block.role === next.block.role &&
+    prev.block.title === next.block.title &&
+    prev.block.rawFallback === next.block.rawFallback,
+);
 
 function createAgentSessionTurn(block: AgentChatBlockView): ReactElement | null {
   if (block.role === "tool") {

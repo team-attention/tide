@@ -1442,7 +1442,59 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     setIsResizing(true);
   };
   useEffect(() => {
-    return props.onBackendEvent?.((event) => {
+    // The async push channel can deliver one agentSessionBlock.upserted per
+    // streamed chunk — applying each as its own setState re-renders the whole
+    // shell at chunk rate (perf E3). Coalesce a burst into ONE state update per
+    // animation frame: order is preserved (a single ordered buffer folded in
+    // sequence), and the per-thread "broadcast" gating still keeps background
+    // threads out of the viewed surface. Terminal output and update-notices stay
+    // immediate — they early-return without touching shell state.
+    const pending: AgentChatBackendEvent[] = [];
+    let frame: number | null = null;
+
+    const flushPending = (): void => {
+      frame = null;
+      if (pending.length === 0) {
+        return;
+      }
+      const batch = pending.splice(0);
+      setShellState((state) => {
+        let next = state;
+        let activated = false;
+        for (const event of batch) {
+          next = applyProductShellBackendEvent(next, event, "broadcast");
+          if (event.kind === "thread.started" || event.kind === "thread.hydrated") {
+            activated = true;
+          }
+        }
+        // When a thread becomes active (started/hydrated) with the FileTree shown,
+        // populate it. refresh_file_tree is idempotent, so one dispatch per batch
+        // is enough even if several activations coalesced.
+        if (activated && next.fileTreeOpen && next.activeThreadId) {
+          dispatchBackendCommand({
+            kind: "workbench.command",
+            payload: {
+              threadId: next.activeThreadId,
+              command: "refresh_file_tree",
+              data: { maxDepth: 1, maxEntries: 400 },
+            },
+          });
+        }
+        return next;
+      });
+    };
+
+    const scheduleFlush = (): void => {
+      if (frame !== null) {
+        return;
+      }
+      frame =
+        typeof requestAnimationFrame === "function"
+          ? requestAnimationFrame(flushPending)
+          : (setTimeout(flushPending, 16) as unknown as number);
+    };
+
+    const unsubscribe = props.onBackendEvent?.((event) => {
       // Terminal output is a hot path: write it straight to the GPU terminal and
       // skip the React reducer so streaming bytes never re-render the shell.
       if (event.kind === "workbench.terminalOutput") {
@@ -1468,33 +1520,20 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         }
         return;
       }
-      setShellState((state) => {
-        // These arrive over the async push channel — including other threads
-        // running in the background — so they must never populate a surface they
-        // don't belong to (e.g. drop another thread's answer into the thread the
-        // user is viewing, or into the empty New Thread composer).
-        const next = applyProductShellBackendEvent(state, event, "broadcast");
-        // When a thread becomes active (started/hydrated) with the FileTree
-        // shown, populate it — covers the new-thread first message and any
-        // thread activation, not just manual toggle. refresh_file_tree is
-        // idempotent, so a duplicate dispatch is harmless.
-        if (
-          (event.kind === "thread.started" || event.kind === "thread.hydrated") &&
-          next.fileTreeOpen &&
-          next.activeThreadId
-        ) {
-          dispatchBackendCommand({
-            kind: "workbench.command",
-            payload: {
-              threadId: next.activeThreadId,
-              command: "refresh_file_tree",
-              data: { maxDepth: 1, maxEntries: 400 },
-            },
-          });
-        }
-        return next;
-      });
+      pending.push(event);
+      scheduleFlush();
     });
+
+    return () => {
+      if (frame !== null) {
+        if (typeof cancelAnimationFrame === "function") {
+          cancelAnimationFrame(frame);
+        } else {
+          clearTimeout(frame);
+        }
+      }
+      unsubscribe?.();
+    };
   }, [props.onBackendEvent]);
   // Deriving the view model sorts threads, clones the file tree, and builds project
   // groups — too expensive to redo when only transient UI state (column widths during
