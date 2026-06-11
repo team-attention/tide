@@ -834,18 +834,16 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     ) {
       return { text, attachments: [] };
     }
-    const cwd = threadRoot(thread);
-    if (cwd === undefined) {
-      return { text, attachments: [] };
-    }
+    // Written under Tide's app-data dir (keyed by threadId), NEVER the user's
+    // repo — so attachments never pollute git and need no .gitignore.
     const paths = await this.composerAttachmentStorePort.materialize({
-      cwd,
+      threadId: thread.threadId,
       attachments,
     });
-    // The path rides the message text as "[Attached image: <path>]" — claude
-    // reads it via its file tool and the transcript renders it as a thumbnail —
-    // AND ships as a structured ref so codex/gemini/opencode (no file-read tool)
-    // get it in their native image-input format. See ComposerAttachmentRef.
+    // Each client reads these bytes back into its NATIVE inline image input
+    // (claude image block / codex localImage / ACP image ContentBlock); the path
+    // also rides the message text as "[Attached image: <path>]" purely so the
+    // transcript renders a thumbnail (claude strips it, having the image inline).
     const refs: ComposerAttachmentRef[] = paths.map((path, index) => ({
       path,
       mediaType: attachments[index]?.mediaType ?? "image/png",

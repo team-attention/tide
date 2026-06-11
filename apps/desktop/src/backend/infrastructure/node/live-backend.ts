@@ -308,7 +308,7 @@ export function createLiveBackendContractMessageAdapter(
     ptyTranscriptPort: createMemoryPtyTranscriptPort(),
     workspaceCommandPort: createNodeWorkspaceCommandPort(),
     workspaceFilePort: createNodeWorkspaceFilePort(),
-    composerAttachmentStorePort: createNodeComposerAttachmentStorePort(),
+    composerAttachmentStorePort: createNodeComposerAttachmentStorePort(join(appDataRoot, "attachments")),
     providerTrustPort: createNodeProviderTrustPort(homeDir, bootstrapArtifacts.codexHome),
     ensureScratchDirectory: (threadId: string) => {
       const dir = join(appDataRoot, "scratch", threadId);
@@ -479,7 +479,10 @@ async function persistThreadEvents(
     if (payload.thread === undefined) {
       continue;
     }
-    const saved = await persistence.saveThreadMetadata(
+    // Preserve the persisted cache pointer + ref paths: this summary-derived record
+    // doesn't model them, and a wholesale save would orphan the thread's
+    // agent-session-cache (making a reopened thread look empty after restart).
+    const saved = await persistence.saveThreadMetadataPreservingCache(
       threadStorageRecordFromThreadSummary(payload.thread),
     );
     if (!saved.ok) {
@@ -641,6 +644,10 @@ export function threadSeedFromStorageRecord(record: ThreadStorageRecord): Thread
     lifecycleState: record.archived ? "archived" : "open",
     runtimeState: "not_started",
     lastKnownState,
+    // Carry the persisted pin through restore. Without this the restored thread is
+    // unpinned in memory, and the next metadata event (e.g. opening it →
+    // thread.hydrated) writes pinned=false back to disk, erasing the pin.
+    pinned: record.pinned,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };

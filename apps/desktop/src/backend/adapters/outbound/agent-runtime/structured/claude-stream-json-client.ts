@@ -23,8 +23,9 @@
 //   yet (Tide's Stop kills the runtime, same semantics as the PTY transport).
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { readFileSync } from "node:fs";
 
-import type { PromptChoice, PromptState } from "../../../../application/domains/thread/thread.ts";
+import type { ComposerAttachmentRef, PromptChoice, PromptState } from "../../../../application/domains/thread/thread.ts";
 import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   StructuredClientCallbacks,
@@ -42,6 +43,42 @@ export interface CreateClaudeStreamJsonClientInput extends StructuredClientCallb
   threadId: string;
   runtimeId: string;
   initialPrompt?: string;
+  initialAttachments?: ComposerAttachmentRef[];
+}
+
+// Build a claude user-message content array: the text plus a NATIVE inline image
+// block per attachment ({type:"image", source:{type:"base64", media_type, data}},
+// the Anthropic Messages shape — VERIFIED accepted by `claude --print
+// --input-format stream-json`). The bytes go inline on the wire, so claude never
+// reads a file — no on-disk attachment, no repo pollution. The "[Attached image:
+// <path>]" marker that fed the old file-read path is stripped (it's now dead text
+// claude would otherwise try to open). With no attachments the content is exactly
+// the text block — byte-identical to before.
+const ATTACHED_IMAGE_LINE_RE = /\n*\[Attached image:[^\]]*\]/g;
+function claudeUserContent(
+  text: string,
+  attachments?: ComposerAttachmentRef[],
+): Array<Record<string, unknown>> {
+  if (attachments === undefined || attachments.length === 0) {
+    return [{ type: "text", text }];
+  }
+  const cleaned = text.replace(ATTACHED_IMAGE_LINE_RE, "").trim();
+  const content: Array<Record<string, unknown>> = [];
+  if (cleaned.length > 0) {
+    content.push({ type: "text", text: cleaned });
+  }
+  for (const attachment of attachments) {
+    try {
+      const data = readFileSync(attachment.path).toString("base64");
+      content.push({
+        type: "image",
+        source: { type: "base64", media_type: attachment.mediaType, data },
+      });
+    } catch {
+      // Unreadable attachment — skip it rather than fail the whole turn.
+    }
+  }
+  return content.length > 0 ? content : [{ type: "text", text }];
 }
 
 export function createClaudeStreamJsonClient(
@@ -142,7 +179,10 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
       this.writeLine({
         type: "user",
-        message: { role: "user", content: [{ type: "text", text: input.initialPrompt }] },
+        message: {
+          role: "user",
+          content: claudeUserContent(input.initialPrompt, input.initialAttachments),
+        },
       });
       this.initialPrompt = undefined;
     }
@@ -156,7 +196,10 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     if (input.kind === "composer_input") {
       this.writeLine({
         type: "user",
-        message: { role: "user", content: [{ type: "text", text: input.value }] },
+        message: {
+          role: "user",
+          content: claudeUserContent(input.value, input.attachments),
+        },
       });
       return;
     }

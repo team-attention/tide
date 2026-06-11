@@ -113,6 +113,14 @@ export interface ThreadPersistenceService {
   saveThreadMetadata(
     record: ThreadStorageRecord,
   ): Promise<PersistenceResult<ThreadStorageRecord>>;
+  // Like saveThreadMetadata, but preserves persistence-only fields the incoming
+  // record (built from a runtime ThreadSummaryDto) does not model — the agent
+  // session `cache` pointer and the runtime-derived ref `transcriptPath`/`logPath`
+  // — so a metadata-only event (hydrated/started/pin/rename) never orphans the
+  // persisted transcript. See docs_v2/specs/persistence.md.
+  saveThreadMetadataPreservingCache(
+    record: ThreadStorageRecord,
+  ): Promise<PersistenceResult<ThreadStorageRecord>>;
   loadThreadMetadata(
     threadId: ThreadId,
   ): Promise<PersistenceResult<ThreadStorageRecord>>;
@@ -226,6 +234,35 @@ class FileBackedThreadPersistenceService implements ThreadPersistenceService {
     await this.storage.writeJsonAtomic(threadRecordPath(record.threadId), record);
     await this.upsertThreadIndex(record);
     return { ok: true, value: record };
+  }
+
+  async saveThreadMetadataPreservingCache(
+    record: ThreadStorageRecord,
+  ): Promise<PersistenceResult<ThreadStorageRecord>> {
+    const existing = await this.loadThreadMetadata(record.threadId);
+    if (!existing.ok) {
+      // No prior record (brand-new thread) — nothing to preserve.
+      return this.saveThreadMetadata(record);
+    }
+    const prior = existing.value;
+    // The cache pointer lives only in storage (the runtime summary doesn't carry
+    // it). Keep the prior pointer when the incoming record has none, so opening or
+    // renaming a thread doesn't strand its agent-session-cache.jsonl.
+    const cache = record.cache ?? prior.cache;
+    // Likewise keep the runtime-derived transcript/log paths on the provider ref.
+    const mergedRecord: ThreadStorageRecord = {
+      ...record,
+      cache,
+      agentBinding: {
+        ...record.agentBinding,
+        providerSessionRef: mergeRefPaths(
+          record.agentBinding.providerSessionRef,
+          prior.agentBinding.providerSessionRef,
+        ),
+      },
+      providerSessionRef: mergeRefPaths(record.providerSessionRef, prior.providerSessionRef),
+    };
+    return this.saveThreadMetadata(mergedRecord);
   }
 
   async loadThreadMetadata(
@@ -342,6 +379,15 @@ class FileBackedThreadPersistenceService implements ThreadPersistenceService {
       };
     }
 
+    // Recovery: the metadata `cache` pointer was lost but the cache file is still
+    // on disk — read it so a prior conversation isn't shown as empty.
+    if (!thread.cache) {
+      const orphaned = await this.readOrphanedCache(threadId);
+      if (orphaned.ok && orphaned.value.length > 0) {
+        return { ok: true, value: { thread, blocks: orphaned.value, rebuilt: false } };
+      }
+    }
+
     if (thread.providerSessionRef && input.rebuildBlocks) {
       const rebuiltBlocks = await input.rebuildBlocks(thread);
       const saved = await this.writeAgentSessionCache(threadId, {
@@ -416,8 +462,26 @@ class FileBackedThreadPersistenceService implements ThreadPersistenceService {
     if (!thread.cache) {
       return { ok: true, value: [] };
     }
+    return this.readCacheRowsAt(thread.cache.cachePath);
+  }
 
-    const rows = await this.storage.readJsonl(thread.cache.cachePath);
+  // Recover blocks from the conventional cache file when the metadata `cache`
+  // pointer was dropped (a metadata-only save can strand it) but the file remains.
+  // Keeps a prior transcript visible instead of showing an empty pane.
+  private async readOrphanedCache(
+    threadId: ThreadId,
+  ): Promise<PersistenceResult<AgentSessionBlock[]>> {
+    const cachePath = agentSessionCachePath(threadId);
+    if (!(await this.storage.exists(cachePath))) {
+      return { ok: true, value: [] };
+    }
+    return this.readCacheRowsAt(cachePath);
+  }
+
+  private async readCacheRowsAt(
+    cachePath: string,
+  ): Promise<PersistenceResult<AgentSessionBlock[]>> {
+    const rows = await this.storage.readJsonl(cachePath);
     const blocks: AgentSessionBlock[] = [];
     for (const row of rows) {
       const cacheRow = row as AgentSessionCacheRow;
@@ -566,6 +630,22 @@ function threadIndexPath(): string {
 
 function agentSessionCachePath(threadId: ThreadId): string {
   return `threads/${threadId}/agent-session-cache.jsonl`;
+}
+
+// Fill the runtime-derived transcript/log paths from a prior record when the
+// incoming ref lacks them, so a metadata-only save doesn't blank them out.
+function mergeRefPaths<T extends { transcriptPath?: string; logPath?: string }>(
+  incoming: T | undefined,
+  prior: { transcriptPath?: string; logPath?: string } | undefined,
+): T | undefined {
+  if (incoming === undefined) {
+    return undefined;
+  }
+  return {
+    ...incoming,
+    transcriptPath: incoming.transcriptPath ?? prior?.transcriptPath,
+    logPath: incoming.logPath ?? prior?.logPath,
+  };
 }
 
 function byteLength(value: string): number {

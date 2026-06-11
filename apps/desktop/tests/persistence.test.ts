@@ -128,6 +128,98 @@ test("stale_agent_session_cache_rebuilds_from_provider_history", async () => {
   assert.equal(rebuildCalls, 1);
 });
 
+test("hydrate_recovers_blocks_when_the_cache_pointer_was_dropped", async () => {
+  // Regression: a metadata-only save (thread.hydrated/renamed/pinned) used to
+  // overwrite thread.json without the `cache` pointer, orphaning the cache file
+  // and making a reopened thread look empty. Hydrate now recovers from the file.
+  const { service } = await createService();
+  await service.saveThreadMetadata(threadRecord("thread-orphan"));
+  await service.writeAgentSessionCache("thread-orphan", {
+    blocks: [block("block-1", "kept")],
+    sourceFingerprint: "source-a",
+  });
+  // Simulate the clobber: a wholesale metadata save with no cache pointer.
+  await service.saveThreadMetadata(threadRecord("thread-orphan"));
+  const cleared = await service.loadThreadMetadata("thread-orphan");
+  assert.equal(cleared.ok && cleared.value.cache, undefined);
+
+  const hydrated = await service.hydrateThread("thread-orphan", {});
+  assert.equal(hydrated.ok, true);
+  assert.deepEqual(
+    hydrated.ok && hydrated.value.blocks.map((cachedBlock) => cachedBlock.body),
+    ["kept"],
+  );
+});
+
+test("preserving_save_keeps_the_cache_pointer_through_metadata_only_events", async () => {
+  const { service } = await createService();
+  await service.saveThreadMetadata(threadRecord("thread-keep"));
+  await service.writeAgentSessionCache("thread-keep", {
+    blocks: [block("block-1", "kept")],
+    sourceFingerprint: "source-a",
+  });
+  // A summary-derived record (no cache pointer) saved via the preserving path
+  // must keep the existing pointer, so the fast valid-cache path still works.
+  const preserved = await service.saveThreadMetadataPreservingCache(threadRecord("thread-keep"));
+  assert.equal(preserved.ok, true);
+  const loaded = await service.loadThreadMetadata("thread-keep");
+  assert.equal(
+    loaded.ok && loaded.value.cache?.cachePath,
+    "threads/thread-keep/agent-session-cache.jsonl",
+  );
+
+  let rebuildCalls = 0;
+  const hydrated = await service.hydrateThread("thread-keep", {
+    currentSourceFingerprint: "source-a",
+    rebuildBlocks: async () => {
+      rebuildCalls += 1;
+      return [];
+    },
+  });
+  assert.deepEqual(
+    hydrated.ok && hydrated.value.blocks.map((cachedBlock) => cachedBlock.body),
+    ["kept"],
+  );
+  assert.equal(rebuildCalls, 0);
+});
+
+test("preserving_save_keeps_the_runtime_transcript_path_on_the_provider_ref", async () => {
+  const { service } = await createService();
+  await service.saveThreadMetadata(threadRecord("thread-ref"));
+  await service.attachProviderSessionRef("thread-ref", {
+    agentId: "claude",
+    kind: "claude_transcript",
+    value: "sess-1",
+    transcriptPath: "/home/.claude/projects/x/sess-1.jsonl",
+    observedAt: later,
+  });
+  // The summary-derived record carries the session value but not the machine-
+  // specific transcriptPath; the preserving save keeps the prior path.
+  await service.saveThreadMetadataPreservingCache(
+    threadRecord("thread-ref", {
+      agentBinding: {
+        agentId: "claude",
+        providerSessionRef: { kind: "claude_transcript", value: "sess-1" },
+      },
+      providerSessionRef: {
+        agentId: "claude",
+        kind: "claude_transcript",
+        value: "sess-1",
+        observedAt: later,
+      },
+    }),
+  );
+  const loaded = await service.loadThreadMetadata("thread-ref");
+  assert.equal(
+    loaded.ok && loaded.value.providerSessionRef?.transcriptPath,
+    "/home/.claude/projects/x/sess-1.jsonl",
+  );
+  assert.equal(
+    loaded.ok && loaded.value.agentBinding.providerSessionRef?.transcriptPath,
+    "/home/.claude/projects/x/sess-1.jsonl",
+  );
+});
+
 test("pty_transcript_ring_enforces_frame_and_byte_limits", () => {
   const ring = createPtyTranscriptRing({ maxFrames: 3, maxBytes: 8 });
 

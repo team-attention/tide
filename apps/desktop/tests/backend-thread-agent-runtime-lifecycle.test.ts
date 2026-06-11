@@ -420,7 +420,8 @@ test("materializes_pasted_images_into_the_thread_workspace", async () => {
   });
 
   assert.equal(fakes.composerAttachments.calls.length, 1);
-  assert.equal(fakes.composerAttachments.calls[0].cwd, "/repo");
+  // Materialized under Tide's app-data dir keyed by threadId (NOT the repo).
+  assert.ok(fakes.composerAttachments.calls[0].threadId.length > 0);
   assert.equal(fakes.composerAttachments.calls[0].attachments[0].name, "shot.png");
 });
 
@@ -443,10 +444,14 @@ test("appends_attachment_path_references_to_the_message_text", async () => {
     ],
   });
 
-  assert.equal(
-    fakes.runtime.writes[0]?.input.value,
-    "Compare these\n\n[Attached image: /repo/.tide/attachments/0-a.png]\n[Attached image: /repo/.tide/attachments/1-b.png]",
-  );
+  // The folded "[Attached image: <app-data path>]" lines drive the transcript
+  // thumbnail; the agent also gets each attachment natively (codex localImage).
+  const value = fakes.runtime.writes[0]?.input.value ?? "";
+  assert.match(value, /^Compare these\n\n/);
+  assert.match(value, /\[Attached image: \/app-data\/attachments\/[^/]+\/0-a\.png\]/);
+  assert.match(value, /\[Attached image: \/app-data\/attachments\/[^/]+\/1-b\.png\]/);
+  // ...and the native image refs ride alongside the text.
+  assert.equal(fakes.runtime.writes[0]?.input.attachments?.length, 2);
 });
 
 test("sends_attachment_paths_when_the_message_text_is_empty", async () => {
@@ -2822,16 +2827,16 @@ class FakeProviderTrustPort implements ProviderTrustPort {
 }
 
 class FakeComposerAttachmentStorePort implements ComposerAttachmentStorePort {
-  calls: { cwd: string; attachments: ComposerAttachmentInput[] }[] = [];
+  calls: { threadId: string; attachments: ComposerAttachmentInput[] }[] = [];
 
   async materialize(input: {
-    cwd: string;
+    threadId: string;
     attachments: ComposerAttachmentInput[];
   }): Promise<string[]> {
     this.calls.push(input);
     return input.attachments.map(
       (attachment, index) =>
-        `${input.cwd}/.tide/attachments/${index}-${attachment.name}`,
+        `/app-data/attachments/${input.threadId}/${index}-${attachment.name}`,
     );
   }
 }

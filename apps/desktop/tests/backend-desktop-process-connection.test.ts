@@ -762,6 +762,9 @@ test("thread_summary_storage_record_preserves_scope_and_agent_binding", () => {
   assert.equal(record.executionContext.cwd, "/repo/tide");
   assert.equal(record.providerSessionRef?.observedAt, later);
   assert.equal(seed.threadId, "thread-summary");
+  // The persisted pin must survive restore, else reopening the thread writes
+  // pinned=false back to disk and erases it.
+  assert.equal(seed.pinned, true);
   assert.equal(seed.agentBinding.providerSessionRef?.value, "rollout-1");
   assert.deepEqual(seed.scope, { kind: "project", projectId: "tide", cwd: "/repo/tide" });
   assert.deepEqual(record.launchOptions, {

@@ -254,6 +254,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           threadId,
           runtimeId,
           initialPrompt,
+          initialAttachments,
           onEvent: emit,
         });
         break;

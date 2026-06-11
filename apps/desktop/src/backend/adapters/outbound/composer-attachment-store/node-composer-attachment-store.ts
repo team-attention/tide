@@ -6,8 +6,6 @@ import type {
   ComposerAttachmentStorePort,
 } from "../../../application/ports/outbound/composer-attachment-store-port.ts";
 
-const ATTACHMENT_DIR = ".tide/attachments";
-
 const EXTENSION_BY_MEDIA_TYPE: Record<string, string> = {
   "image/png": ".png",
   "image/jpeg": ".jpg",
@@ -18,28 +16,24 @@ const EXTENSION_BY_MEDIA_TYPE: Record<string, string> = {
   "image/svg+xml": ".svg",
 };
 
-export function createNodeComposerAttachmentStorePort(): ComposerAttachmentStorePort {
+// Attachments are written under Tide's app-data dir (`<appDataRoot>/attachments/
+// <threadId>/`), NEVER the user's repo. The bytes are read back into inline
+// base64 for the provider (claude image block / codex localImage / ACP image
+// ContentBlock) and used as the transcript thumbnail — so nothing lands in the
+// user's git, and there is no .gitignore to manage.
+export function createNodeComposerAttachmentStorePort(
+  attachmentsBaseDir: string,
+): ComposerAttachmentStorePort {
   return {
     async materialize(input: {
-      cwd: string;
+      threadId: string;
       attachments: ComposerAttachmentInput[];
     }): Promise<string[]> {
       if (input.attachments.length === 0) {
         return [];
       }
-      const dir = path.join(input.cwd, ATTACHMENT_DIR);
+      const dir = path.join(attachmentsBaseDir, input.threadId);
       await mkdir(dir, { recursive: true });
-
-      // Attachments MUST live inside the workspace — agents refuse to read files
-      // outside their trusted directory (verified: claude returns "permission
-      // wasn't granted to read that file" for an out-of-cwd path). To keep them
-      // from polluting the user's git, drop a self-contained `.tide/.gitignore`
-      // that ignores everything under .tide. Git then never reports it, and
-      // Tide's own file tree (which honors .gitignore) hides it too. Written
-      // once (wx) so a user's own customization is never clobbered.
-      await writeFile(path.join(input.cwd, ".tide", ".gitignore"), "*\n", {
-        flag: "wx",
-      }).catch(() => undefined);
 
       const stamp = Date.now();
       const paths: string[] = [];
