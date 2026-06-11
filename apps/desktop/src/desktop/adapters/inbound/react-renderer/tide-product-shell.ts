@@ -29,7 +29,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Pin,
-  PinOff,
   Plus,
   Search,
   Settings,
@@ -117,6 +116,7 @@ import {
   setProductShellEditorPickerFilter,
   selectProductShellEditorPickerFile,
   archiveProductShellProjectChats,
+  archiveProductShellWorktreeChats,
   cancelProductShellProjectRename,
   setProductShellComposerActiveSurface,
   setProductShellComposerFolderScope,
@@ -136,6 +136,7 @@ import {
   openProductShellWorkbenchLauncher,
   interruptProductShellRuntime,
   editProductShellQueuedInput,
+  removeProductShellQueuedInput,
   submitProductShellComposerDraft,
   addProductShellComposerAttachment,
   removeProductShellComposerAttachment,
@@ -460,7 +461,8 @@ interface ProductShellHandlers {
   onAnswerPromptText: (value: string) => void;
   onSubmit: () => void;
   onInterrupt: () => void;
-  onEditQueued: () => void;
+  onEditQueued: (index: number) => void;
+  onRemoveQueued: (index: number) => void;
   onResend: (text: string) => void;
   onQuote: (text: string) => void;
   onComposerSurfaceChange: (surface: AgentChatComposerSurfaceKind | null) => void;
@@ -1255,7 +1257,17 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     bridge
       .deleteWorktree(target.cwd, worktreeDeleteRequest({ keepBranch, branchMerged: target.branchMerged }))
       .then((result) =>
-        setShellState((state) => setProductShellRegisteredProjects(state, result.entries)),
+        setShellState((state) => {
+          // Update the registry from Main's authoritative entries, then archive the
+          // Threads that lived in the deleted worktree and drop it from the Composer's
+          // worktree list — both reflect the deletion instantly (no manual refresh).
+          const withRegistry = setProductShellRegisteredProjects(state, result.entries);
+          const archived = archiveProductShellWorktreeChats(withRegistry, target.cwd);
+          for (const command of archived.commands) {
+            dispatchBackendCommand(command);
+          }
+          return archived.state;
+        }),
       )
       .catch(() => {});
   };
@@ -1654,9 +1666,15 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         dispatchBackendCommand(result.command);
         return result.state;
       }),
-    onEditQueued: () =>
+    onEditQueued: (index) =>
       setShellState((state) => {
-        const result = editProductShellQueuedInput(state);
+        const result = editProductShellQueuedInput(state, index);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onRemoveQueued: (index) =>
+      setShellState((state) => {
+        const result = removeProductShellQueuedInput(state, index);
         dispatchBackendCommand(result.command);
         return result.state;
       }),
@@ -2604,6 +2622,7 @@ function createAgentChatColumn(
       onSubmit: handlers.onSubmit,
       onInterrupt: handlers.onInterrupt,
       onEditQueued: handlers.onEditQueued,
+      onRemoveQueued: handlers.onRemoveQueued,
       onResend: handlers.onResend,
       onQuote: handlers.onQuote,
       onComposerSurfaceChange: handlers.onComposerSurfaceChange,
@@ -5419,6 +5438,15 @@ function createThreadRow(
         "data-thread-row": thread.threadId,
         "data-active": thread.active,
         onMouseLeave: thread.archiveConfirming ? handlers.onLeftUiTransientClear : undefined,
+        // Right-click anywhere on the row opens the same Thread context menu as
+        // the ⋯ overflow button (Pin / Archive / Delete worktree).
+        onContextMenu: (event: { preventDefault: () => void; currentTarget: HTMLElement }) => {
+          event.preventDefault();
+          handlers.onLeftUiMenuOpen(
+            { kind: "thread", threadId: thread.threadId },
+            menuAnchorFromEvent(event),
+          );
+        },
       },
       thread.renaming
         ? createElement("input", {
@@ -5498,18 +5526,16 @@ function createThreadRow(
             createElement(
               "span",
               { key: "actions", className: "thread-row__actions" },
+              // One ⋯ overflow opens the Thread context menu (Pin / Archive /
+              // Delete worktree), mirroring the project row's menu pattern.
               createIconButton(
-                thread.pinned ? "Unpin Thread" : "Pin Thread",
-                thread.pinned
-                  ? createElement(PinOff, { size: 14, strokeWidth: 1.9 })
-                  : createElement(Pin, { size: 14, strokeWidth: 1.9 }),
-                () => handlers.onThreadPinToggle(thread.threadId),
-                "thread-row__action",
-              ),
-              createIconButton(
-                "Archive Thread",
-                createElement(Archive, { size: 14, strokeWidth: 1.9 }),
-                () => handlers.onThreadArchiveIntent(thread.threadId),
+                "Thread menu",
+                createElement(MoreHorizontal, { size: 15, strokeWidth: 1.9 }),
+                (event) =>
+                  handlers.onLeftUiMenuOpen(
+                    { kind: "thread", threadId: thread.threadId },
+                    menuAnchorFromEvent(event),
+                  ),
                 "thread-row__action",
               ),
             ),
@@ -5596,12 +5622,16 @@ function createLeftUiContextMenuOverlay(
   listSettings: ProductShellListSettings,
 ): ReactElement {
   const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
+  const viewportW = typeof window === "undefined" ? 1200 : window.innerWidth;
   const width = menu.kind === "project" ? 244 : menu.kind === "list_settings" ? 200 : 200;
   const estimated = menu.kind === "project" ? 230 : menu.kind === "list_settings" ? 230 : 110;
   const openUp = anchor.bottom + estimated > viewportH;
+  // The trigger (⋯) sits at the right edge of the narrow left rail, so right-align
+  // the menu to it (open leftward) — left-aligning would spill over into the chat.
+  const left = Math.max(8, Math.min(anchor.right - width, viewportW - width - 8));
   const style: Record<string, string> = {
     position: "fixed",
-    left: `${anchor.left}px`,
+    left: `${left}px`,
     zIndex: "60",
   };
   if (openUp) {

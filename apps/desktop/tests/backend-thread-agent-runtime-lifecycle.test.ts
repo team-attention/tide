@@ -777,6 +777,49 @@ test("recording_turn_complete_with_no_queue_returns_the_runtime_to_idle", async 
   assert.equal(done.flushedInput, undefined);
 });
 
+test("stacked_followups_flush_in_fifo_order_one_per_turn_end", async () => {
+  // Several follow-ups queued behind a live turn run in submission order, one per
+  // turn-end; the runtime stays running until the queue drains, then goes idle.
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" }); // runs now
+  const q1 = await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
+  const q2 = await service.sendComposerInput({ threadId: "thread-busy", input: "third" });
+  assert.equal(q1.status, "queued");
+  assert.equal(q2.status, "queued");
+
+  const done1 = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(done1.flushedInput, "second");
+  assert.equal(done1.runtimeState, "running");
+
+  const done2 = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(done2.flushedInput, "third");
+  assert.equal(done2.runtimeState, "running");
+
+  const done3 = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(done3.flushedInput, undefined);
+  assert.equal(done3.runtimeState, "idle");
+});
+
+test("editing_a_queued_followup_by_index_targets_that_message_and_keeps_the_rest", async () => {
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" }); // runs now
+  await service.sendComposerInput({ threadId: "thread-busy", input: "second" }); // queued head
+  await service.sendComposerInput({ threadId: "thread-busy", input: "third" }); // queued tail
+
+  // "first" is running, so the queued list (head-first) is [second, third].
+  // Discard the tail ("third") at index 1 with a blank value.
+  const removed = await service.editPendingInput({ threadId: "thread-busy", value: "  ", index: 1 });
+  assert.equal(removed.ok, true);
+  assert.equal(removed.status, "discarded");
+
+  // The head ("second") still flushes first; the removed tail does not run.
+  const done1 = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(done1.flushedInput, "second");
+  const done2 = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(done2.flushedInput, undefined);
+  assert.equal(done2.runtimeState, "idle");
+});
+
 test("a_full_session_composes_send_queue_edit_prompt_answer_and_turn_end_flush", async () => {
   // Proves the seamless features work TOGETHER in one flow (not just in isolation):
   // send -> queue a follow-up -> edit the queued message -> a provider prompt

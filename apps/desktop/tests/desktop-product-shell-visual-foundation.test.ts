@@ -1760,13 +1760,16 @@ test("composer_button_is_stop_while_running_but_becomes_send_when_typing_a_follo
       payload: { threadId: "thread-workbench", state: "running", changedAt: "2026-05-29T00:00:00.000Z" },
     },
   );
-  // Running with an empty composer → Stop (interrupt) button.
+  // Running with an empty composer → the Stop (interrupt) button, no Send.
   const stopHtml = renderProductShell(running);
   assert.match(stopHtml, /aria-label="Interrupt"/);
+  assert.doesNotMatch(stopHtml, /class="composer-shell__send"/);
 
-  // Start typing a follow-up → the button becomes Send (no interrupt button).
+  // Start typing a follow-up → the button becomes Send so you can queue it; the
+  // composer Stop is gone (interrupt lives on the queued rows instead).
   const typing = updateProductShellComposerDraft(running, "follow up");
   const sendHtml = renderProductShell(typing);
+  assert.match(sendHtml, /class="composer-shell__send"/);
   assert.doesNotMatch(sendHtml, /aria-label="Interrupt"/);
 });
 
@@ -1785,7 +1788,9 @@ test("submitting_during_a_running_turn_shows_a_queued_row_then_clears_on_flush",
   // Queued behind the live turn: composer.sendInput + the "대기 중" badge (the agent
   // is genuinely running).
   assert.equal(submitted.command?.kind, "composer.sendInput");
-  assert.equal(createProductShellViewModel(submitted.state).agentChat.queuedInput, "follow up while busy");
+  assert.deepEqual(createProductShellViewModel(submitted.state).agentChat.queuedInputs, [
+    "follow up while busy",
+  ]);
   const queuedHtml = renderProductShell(submitted.state);
   assert.match(queuedHtml, /대기 중/);
   assert.match(queuedHtml, /follow up while busy/);
@@ -1817,7 +1822,7 @@ test("submitting_during_a_running_turn_shows_a_queued_row_then_clears_on_flush",
       },
     },
   });
-  assert.equal(createProductShellViewModel(flushed).agentChat.queuedInput, null);
+  assert.deepEqual(createProductShellViewModel(flushed).agentChat.queuedInputs, []);
 });
 
 test("starting_a_thread_in_a_new_project_adds_that_project_to_the_rail", () => {

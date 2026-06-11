@@ -776,6 +776,9 @@ export function toggleProductShellSearch(
 export function startNewProductShellScratchThread(state: ProductShellState): ProductShellState {
   return {
     ...state,
+    // Preserve the thread we're leaving so its in-progress composer (draft +
+    // attachments) survives if the user returns to it.
+    agentChatByThreadId: preserveActiveAgentChat(state, ""),
     activeThreadId: null,
     workbenchOpen: false,
     fileTreeOpen: false,
@@ -803,6 +806,9 @@ export function startNewProductShellThread(
     : defaultStartScope(state);
   return {
     ...state,
+    // Preserve the thread we're leaving so its in-progress composer (draft +
+    // attachments) survives if the user returns to it.
+    agentChatByThreadId: preserveActiveAgentChat(state, ""),
     activeThreadId: null,
     workbenchOpen: false,
     fileTreeOpen: false,
@@ -1064,6 +1070,36 @@ export function archiveProductShellProjectChats(
       threads: remaining,
       projects: projectsFromThreads(remaining),
       leftUiMenu: null,
+      activeThreadId: archived.some((thread) => thread.threadId === state.activeThreadId)
+        ? null
+        : state.activeThreadId,
+    },
+    commands: archived.map((thread) => ({
+      kind: "thread.archive" as const,
+      payload: { threadId: thread.threadId, archived: true },
+    })),
+  };
+}
+
+// Deleting a worktree removes its directory, so the Threads that lived there can
+// no longer run. Archive them (optimistically dropping them; the backend
+// thread.archived events confirm) and drop the worktree from the Composer's
+// worktree list, so the sidebar AND the Composer reflect the deletion immediately
+// — no manual refresh. Threads are matched by cwd (the worktree path).
+export function archiveProductShellWorktreeChats(
+  state: ProductShellState,
+  cwd: string,
+): { state: ProductShellState; commands: { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }[] } {
+  const inWorktree = (thread: ProductShellThread) =>
+    thread.scope.kind === "project" && thread.scope.cwd === cwd;
+  const archived = state.threads.filter(inWorktree);
+  const remaining = state.threads.filter((thread) => !inWorktree(thread));
+  return {
+    state: {
+      ...state,
+      threads: remaining,
+      projects: projectsFromThreads(remaining),
+      gitWorktrees: state.gitWorktrees.filter((worktree) => worktree.path !== cwd),
       activeThreadId: archived.some((thread) => thread.threadId === state.activeThreadId)
         ? null
         : state.activeThreadId,
@@ -1815,16 +1851,34 @@ export function interruptProductShellRuntime(
 // editor, keeping the model simple. Spec: docs_v2/specs/composer-message-edit.md.
 export function editProductShellQueuedInput(
   state: ProductShellState,
+  index: number,
 ): ProductShellUpdateResult {
-  const queued = state.agentChat.queuedInput;
-  if (queued === null) {
+  const queued = state.agentChat.queuedInputs[index];
+  if (queued === undefined) {
     return { state, command: null };
   }
-  // Discard the backend queue (blank edit), then load the text into the draft.
-  const discarded = editQueuedInput(state.agentChat, "");
+  // Discard that queued message (blank edit at its index), then load its text into
+  // the draft so it can be edited and re-sent.
+  const discarded = editQueuedInput(state.agentChat, index, "");
   const withDraft = updateComposerDraft(discarded.state, queued);
   return {
     state: { ...state, agentChat: withDraft.state },
+    command: discarded.command,
+  };
+}
+
+// Discard a queued message at `index` outright (the 삭제 / delete control). Unlike
+// edit, it does NOT pull the text back into the composer.
+export function removeProductShellQueuedInput(
+  state: ProductShellState,
+  index: number,
+): ProductShellUpdateResult {
+  if (state.agentChat.queuedInputs[index] === undefined) {
+    return { state, command: null };
+  }
+  const discarded = editQueuedInput(state.agentChat, index, "");
+  return {
+    state: { ...state, agentChat: discarded.state },
     command: discarded.command,
   };
 }
@@ -2810,7 +2864,10 @@ function applyProductShellThreadEvent(
     // Recompute projects so a thread started in a not-yet-listed project (e.g.
     // slice) appears in the rail immediately.
     projects: projectsFromThreads(threads),
-    agentChat: updateComposerDraft(state.agentChat, "").state,
+    // Keep the active thread's composer as-is: a thread.started/hydrated is a DATA
+    // update, not a reason to wipe an in-progress draft + attachments (a send already
+    // clears the composer itself). Clobbering it lost the composer on switch-back.
+    agentChat: state.agentChat,
     workbenchOpen: shellThread.workbenchPanes.some((pane) => pane.visible),
     fileTree:
       payload.fileTree === undefined

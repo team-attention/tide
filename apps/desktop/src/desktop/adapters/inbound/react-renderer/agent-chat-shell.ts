@@ -60,7 +60,8 @@ export interface AgentChatShellProps {
   onSubmit?: () => void;
   onInterrupt?: () => void;
   // Edit the queued (not-yet-sent) message: pull it back into the Composer.
-  onEditQueued?: () => void;
+  onEditQueued?: (index: number) => void;
+  onRemoveQueued?: (index: number) => void;
   // Resend a prompt (retry an answer): submits the given text as a new turn.
   onResend?: (text: string) => void;
   onQuote?: (text: string) => void;
@@ -130,7 +131,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       createAgentSession(
         viewModel.blocks,
         viewModel.chatState,
-        viewModel.queuedInput,
+        viewModel.queuedInputs,
         props.onOpenFile,
         sessionRef,
         viewModel.thread?.runtimeStartedAt,
@@ -142,7 +143,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     [
       viewModel.blocks,
       viewModel.chatState,
-      viewModel.queuedInput,
+      viewModel.queuedInputs,
       props.onOpenFile,
       viewModel.thread?.runtimeStartedAt,
       props.onEditQueued,
@@ -230,6 +231,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     onSubmit: props.onSubmit,
     onInterrupt: props.onInterrupt,
     onEditQueued: props.onEditQueued,
+    onRemoveQueued: props.onRemoveQueued,
     onComposerSurfaceChange: props.onComposerSurfaceChange,
     onOpenSurface: openSurface,
     // Intercept the "Files and images" composer-menu row to open a native file
@@ -494,7 +496,8 @@ interface ComposerHandlers {
   onDraftChange?: (draft: string) => void;
   onSubmit?: () => void;
   onInterrupt?: () => void;
-  onEditQueued?: () => void;
+  onEditQueued?: (index: number) => void;
+  onRemoveQueued?: (index: number) => void;
   onRemoveContextChip?: (id: string) => void;
   onSetContextChipComment?: (id: string, comment: string) => void;
   onComposerSurfaceChange?: (surface: AgentChatComposerSurfaceKind | null) => void;
@@ -643,11 +646,12 @@ function createProviderReadiness(
 // The "대기 중" (waiting) badge only appears when the agent is genuinely busy and the
 // message is actually queued behind the live turn — never on an idle send, which goes
 // straight through.
-function createQueuedInputRow(queuedInput: string, queued: boolean): ReactElement {
+function createQueuedInputRow(queuedInput: string, queued: boolean, index = 0): ReactElement {
   const hasAttachments = queuedInput.includes("**↳ ");
   return createElement(
     "article",
     {
+      key: `queued-${index}`,
       className: queued
         ? "agent-session-turn agent-session-turn--user agent-session-turn--queued"
         : "agent-session-turn agent-session-turn--user",
@@ -686,11 +690,11 @@ function createQueuedInputRow(queuedInput: string, queued: boolean): ReactElemen
 function createAgentSession(
   blocks: AgentChatBlockView[],
   chatState: AgentChatShellViewModel["chatState"],
-  queuedInput: string | null,
+  queuedInputs: string[],
   onOpenFile?: (path: string) => void,
   sessionRef?: { current: HTMLElement | null },
   runtimeStartedAt?: string,
-  onEditQueued?: () => void,
+  onEditQueued?: (index: number) => void,
   onResend?: (text: string) => void,
   onQuote?: (text: string) => void,
   onOpenBrowserPane?: (url: string) => void,
@@ -767,9 +771,10 @@ function createAgentSession(
           }
           return;
         }
-        if (onEditQueued && target.closest("[data-edit-queued]")) {
+        const editQueued = onEditQueued ? target.closest("[data-edit-queued]") : null;
+        if (editQueued) {
           event.preventDefault();
-          onEditQueued();
+          onEditQueued?.(Number(editQueued.getAttribute("data-queued-index")) || 0);
           return;
         }
         // An http(s) link in chat opens in the in-app Browser Pane, never the
@@ -797,16 +802,16 @@ function createAgentSession(
           // nothing) shows a placeholder instead of a blank void. But once a message
           // is submitted it shows as the optimistic/queued "You" row below — there IS
           // content, so the "No messages here" placeholder must not render alongside it.
-          chatState === "ready" && queuedInput === null
+          chatState === "ready" && queuedInputs.length === 0
           ? createAgentSessionEmptyPlaceholder()
           : null
       : groupSessionItems(blocks).map(renderSessionItem),
     working ? createElement(AgentWorkingIndicator, { runtimeStartedAt }) : null,
     // An optimistic just-sent message (idle send) still shows in the transcript
-    // until its real block arrives. A message QUEUED behind a live turn is docked
-    // to the Composer instead (Codex-style "steer"), so it isn't done here.
-    queuedInput !== null && chatState !== "running"
-      ? createQueuedInputRow(queuedInput, false)
+    // until its real block arrives. Messages QUEUED behind a live turn dock to the
+    // Composer instead (Codex-style "steer"), so they aren't done here.
+    chatState !== "running"
+      ? queuedInputs.map((queued, index) => createQueuedInputRow(queued, false, index))
       : null,
   );
 }
@@ -1809,36 +1814,41 @@ function createComposer(
           },
           createElement(Mic, { size: 15, strokeWidth: 2, "aria-hidden": true }),
         ),
-        // While the agent runs, the button stops the turn — UNLESS you've started
-        // typing a follow-up, in which case it becomes Send so you can queue it (the
-        // codex/Claude Code pattern). Submitting clears the draft, so it flips back
-        // to Stop.
+        // While the agent runs with an EMPTY composer, the button is Stop (interrupt).
+        // Start typing a follow-up and it becomes Send so you can queue it. Interrupt
+        // while a draft/queue exists lives on the queued rows instead (createQueuedSteerStack).
         viewModel.chatState === "running" && viewModel.composer.draft.trim().length === 0
-          ? createElement(
-              "button",
-              {
-                type: "button",
-                className: "composer-shell__send composer-shell__send--stop",
-                title: "Interrupt",
-                "aria-label": "Interrupt",
-                onClick: () => handlers.onInterrupt?.(),
-              },
-              createElement(Square, { size: 13, strokeWidth: 0, fill: "currentColor", "aria-hidden": true }),
-              createElement("span", { className: "visually-hidden" }, "Interrupt"),
-            )
-          : createElement(
-              "button",
-              {
-                type: "submit",
-                className: "composer-shell__send",
-                title: viewModel.composer.submitLabel,
-                "aria-label": viewModel.composer.submitLabel,
-              },
-              createElement(ArrowUp, { size: 17, strokeWidth: 2.4, "aria-hidden": true }),
-              createElement("span", { className: "visually-hidden" }, viewModel.composer.submitLabel),
-            ),
+          ? createComposerStopButton(handlers.onInterrupt)
+          : createComposerSendButton(viewModel.composer.submitLabel),
       ),
     ),
+  );
+}
+
+// Submit button: queues the draft (mid-run) or starts the turn (idle).
+function createComposerSendButton(label: string): ReactElement {
+  return createElement(
+    "button",
+    { key: "send", type: "submit", className: "composer-shell__send", title: label, "aria-label": label },
+    createElement(ArrowUp, { size: 17, strokeWidth: 2.4, "aria-hidden": true }),
+    createElement("span", { className: "visually-hidden" }, label),
+  );
+}
+
+// Stop button: interrupts the live turn (a queued follow-up then runs next).
+function createComposerStopButton(onInterrupt?: () => void): ReactElement {
+  return createElement(
+    "button",
+    {
+      key: "stop",
+      type: "button",
+      className: "composer-shell__send composer-shell__send--stop",
+      title: "Interrupt",
+      "aria-label": "Interrupt",
+      onClick: () => onInterrupt?.(),
+    },
+    createElement(Square, { size: 13, strokeWidth: 0, fill: "currentColor", "aria-hidden": true }),
+    createElement("span", { className: "visually-hidden" }, "Interrupt"),
   );
 }
 
@@ -1862,43 +1872,87 @@ function createComposerStack(
         })
       : null,
     viewModel.usage ? createUsageMeter(viewModel.usage) : null,
-    // A message queued behind a live turn docks here, attached to the top of the
-    // Composer (Codex-style "steer"): visible as pending, editable before it runs.
-    viewModel.queuedInput !== null && viewModel.chatState === "running"
-      ? createQueuedSteerChip(viewModel.queuedInput, handlers.onEditQueued)
+    // Messages queued behind a live turn dock here, atop the Composer (Codex-style
+    // "steer"): a FIFO stack, each visible as pending and editable before it runs.
+    viewModel.queuedInputs.length > 0 && viewModel.chatState === "running"
+      ? createQueuedSteerStack(
+          viewModel.queuedInputs,
+          handlers.onEditQueued,
+          handlers.onInterrupt,
+          handlers.onRemoveQueued,
+        )
       : null,
     createComposer(viewModel, handlers),
   );
 }
 
-// The pending "steer" message docked to the top of the Composer while a turn is
-// live. Shows the queued text with a "대기 중" badge; clicking 수정 pulls it back
-// into the Composer input.
-function createQueuedSteerChip(
-  queuedInput: string,
-  onEditQueued?: () => void,
+// The pending "steer" messages docked to the top of the Composer while a turn is
+// live: a FIFO stack of queued follow-ups. Each row carries three controls —
+// 인터럽트 (cut the live turn so the queue runs now), 수정 (pull it back into the
+// Composer to edit), and 삭제 (discard it). The stack is height-capped and scrolls
+// (CSS), so a long queue never pushes the Composer off-screen.
+function createQueuedSteerStack(
+  queuedInputs: string[],
+  onEditQueued?: (index: number) => void,
+  onInterrupt?: () => void,
+  onRemoveQueued?: (index: number) => void,
 ): ReactElement {
   return createElement(
     "div",
-    { className: "composer-steer", "data-queued": true },
-    createElement(CornerDownRight, {
-      size: 13,
-      strokeWidth: 1.9,
-      className: "composer-steer__icon",
-      "aria-hidden": true,
-    }),
-    createElement("span", { className: "composer-steer__badge" }, "대기 중"),
-    createElement("span", { className: "composer-steer__text" }, queuedInput),
-    createElement(
-      "button",
-      {
-        type: "button",
-        className: "composer-steer__edit",
-        "aria-label": "Edit queued message",
-        title: "Edit queued message",
-        onClick: () => onEditQueued?.(),
-      },
-      "수정",
+    { className: "composer-steer-stack" },
+    ...queuedInputs.map((queuedInput, index) =>
+      createElement(
+        "div",
+        { key: `steer-${index}`, className: "composer-steer", "data-queued": true },
+        createElement(CornerDownRight, {
+          size: 13,
+          strokeWidth: 1.9,
+          className: "composer-steer__icon",
+          "aria-hidden": true,
+        }),
+        createElement("span", { className: "composer-steer__badge" }, "대기 중"),
+        createElement("span", { className: "composer-steer__text" }, queuedInput),
+        createElement(
+          "span",
+          { className: "composer-steer__actions" },
+          // 인터럽트: cut the live turn so the queue runs now.
+          createElement(
+            "button",
+            {
+              type: "button",
+              className: "composer-steer__interrupt",
+              "aria-label": "Interrupt the current turn and run the queue",
+              title: "끊고 실행 (인터럽트)",
+              onClick: () => onInterrupt?.(),
+            },
+            createElement(Square, { size: 11, strokeWidth: 0, fill: "currentColor", "aria-hidden": true }),
+          ),
+          // 수정: pull this message back into the Composer to edit.
+          createElement(
+            "button",
+            {
+              type: "button",
+              className: "composer-steer__edit",
+              "aria-label": "Edit queued message",
+              title: "수정",
+              onClick: () => onEditQueued?.(index),
+            },
+            "수정",
+          ),
+          // 삭제: discard this queued message.
+          createElement(
+            "button",
+            {
+              type: "button",
+              className: "composer-steer__delete",
+              "aria-label": "Delete queued message",
+              title: "삭제",
+              onClick: () => onRemoveQueued?.(index),
+            },
+            createElement(Trash2, { size: 13, strokeWidth: 1.9, "aria-hidden": true }),
+          ),
+        ),
+      ),
     ),
   );
 }
@@ -1931,6 +1985,49 @@ function PromptCard(props: {
       props.onSelectChoice(selectedId);
     }
   };
+  // Keyboard: ↑/↓ move between options (incl. "Other…"), ⌘/Ctrl+Enter submits from
+  // anywhere in the card (including the free-text field). The composer's own keys
+  // are never hijacked. Mirrors the "⌘↵" hint on the Submit button.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const inEditable =
+        target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
+      if (inEditable && target?.closest(".prompt-card") === null) {
+        return;
+      }
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        submit();
+        return;
+      }
+      if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !inEditable) {
+        const ids = [...choices.map((choice) => choice.choiceId), ...(hasChoices ? ["__other"] : [])];
+        if (ids.length === 0) {
+          return;
+        }
+        event.preventDefault();
+        const current = otherActive
+          ? ids.indexOf("__other")
+          : selectedId !== null
+          ? ids.indexOf(selectedId)
+          : -1;
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        const nextIndex =
+          current < 0 ? (delta > 0 ? 0 : ids.length - 1) : (current + delta + ids.length) % ids.length;
+        const nextId = ids[nextIndex];
+        if (nextId === "__other") {
+          setOtherActive(true);
+          setSelectedId(null);
+        } else {
+          setOtherActive(false);
+          setSelectedId(nextId);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [choices, hasChoices, otherActive, selectedId, otherText, props]);
   const kindLabel =
     props.prompt.kind === "approval"
       ? "Approval needed"

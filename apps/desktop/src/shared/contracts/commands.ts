@@ -74,10 +74,12 @@ export interface BackendCommandPayloadByKind {
     attachments?: ComposerAttachment[];
   };
   // Edit the queued (not-yet-sent) Composer message in place. A blank value
-  // discards the queued input. See docs_v2/specs/composer-message-edit.md.
+  // discards the queued input. `index` selects which queued message (0 = the
+  // head/next to run; omitted = 0). See docs_v2/specs/composer-message-edit.md.
   "composer.editQueuedInput": {
     threadId: ThreadId;
     value: string;
+    index?: number;
   };
   "prompt.answer": {
     promptId: string;

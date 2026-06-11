@@ -70,9 +70,10 @@ export interface AgentChatShellState {
   // Real provider slash-commands/skills for the active cwd+agent, injected by
   // the product shell (discovered from provider files). Empty until provided.
   availableCommands?: AgentChatCommandOption[];
-  // Composer input submitted during a live turn: held (queued) and shown as a
-  // "queued" row until the turn ends and the backend flushes it as a real block.
-  queuedInput: string | null;
+  // Composer inputs submitted during a live turn: held (queued) FIFO and shown as
+  // a stack of "queued" rows until the turn ends and the backend flushes the head
+  // as a real block (then the next runs). Empty when nothing is queued.
+  queuedInputs: string[];
   // Last-known context/token usage for this thread's runtime (from the provider
   // transcript). Drives the quiet usage chip in the thread header.
   usage: AgentChatUsage | null;
@@ -270,7 +271,7 @@ export type AgentChatBackendCommand =
     }
   | {
       kind: "composer.editQueuedInput";
-      payload: { threadId: string; value: string };
+      payload: { threadId: string; value: string; index?: number };
     }
   | {
       kind: "agentRuntime.stop";
@@ -317,7 +318,7 @@ export interface AgentChatShellViewModel {
   blocks: AgentChatBlockView[];
   composer: AgentChatComposerView;
   workbenchOpen: boolean;
-  queuedInput: string | null;
+  queuedInputs: string[];
   usage: AgentChatUsageView | null;
   errorMessage?: string;
 }
@@ -442,7 +443,7 @@ export function createAgentChatShellState(input?: {
       },
     },
     workbenchOpen: false,
-    queuedInput: null,
+    queuedInputs: [],
     usage: null,
   };
 }
@@ -781,7 +782,7 @@ export function interruptComposer(
   // message runs next. Keep the optimistic row + stay running (the backend confirms
   // with the new turn). With no queue it's a plain interrupt: settle to idle instantly
   // so the Working indicator/timer stops and the next message is a fresh turn.
-  if (state.queuedInput !== null) {
+  if (state.queuedInputs.length > 0) {
     return {
       state,
       command: {
@@ -856,7 +857,7 @@ export function submitComposer(
     // user block arrives. Without this a follow-up looked like it vanished until
     // the backend recorded it. Draft + attachments always clear on send.
     return {
-      state: { ...state, queuedInput: input, composer: composerAfterSend },
+      state: { ...state, queuedInputs: [...state.queuedInputs, input], composer: composerAfterSend },
       command: {
         kind: "composer.sendInput",
         payload: {
@@ -896,7 +897,7 @@ export function submitComposer(
       ...state,
       thread: optimisticThread,
       runtimeState: "starting",
-      queuedInput: null,
+      queuedInputs: [],
       composer: composerAfterSend,
     },
     command: {
@@ -913,23 +914,27 @@ export function submitComposer(
   };
 }
 
-// Edit the queued (not-yet-sent) message shown as the queued row. The runtime has
-// not seen it, so this only updates the optimistic queued row and asks the backend
-// to correct its pendingInput. A blank value discards the queued message.
+// Edit/remove a queued (not-yet-sent) message at `index` in the follow-up stack.
+// The runtime has not seen it, so this only updates the optimistic stack and asks
+// the backend to correct its queued input. A blank value discards that message.
 // Spec: docs_v2/specs/composer-message-edit.md.
 export function editQueuedInput(
   state: AgentChatShellState,
+  index: number,
   value: string,
 ): AgentChatShellUpdateResult {
-  if (!state.thread || state.queuedInput === null) {
+  if (!state.thread || state.queuedInputs[index] === undefined) {
     return { state, command: null };
   }
   const discards = value.trim().length === 0;
+  const queuedInputs = discards
+    ? state.queuedInputs.filter((_, i) => i !== index)
+    : state.queuedInputs.map((entry, i) => (i === index ? value : entry));
   return {
-    state: { ...state, queuedInput: discards ? null : value },
+    state: { ...state, queuedInputs },
     command: {
       kind: "composer.editQueuedInput",
-      payload: { threadId: state.thread.threadId, value },
+      payload: { threadId: state.thread.threadId, value, index },
     },
   };
 }
@@ -976,11 +981,16 @@ export function applyAgentChatBackendEvent(
         // as prompt.changed before this thread was on screen). `undefined` =
         // old-style payload without the field; keep whatever we had.
         promptState: payload.prompt !== undefined ? payload.prompt : state.promptState,
-        // Hydrate is the source of truth for this thread (its persisted blocks).
-        // Drop any optimistic "queued input" row left over from before a thread
-        // switch — otherwise the real user block (now in blocks) renders twice.
-        // If the input is genuinely still queued, its user block arrives live.
-        queuedInput: null,
+        // Keep follow-ups that are STILL queued across a thread switch (so the queue
+        // doesn't vanish when you leave and return), but drop any whose message
+        // already ran while away — it's now a real user block in `blocks`, so showing
+        // the chip too would render it twice.
+        queuedInputs: state.queuedInputs.filter(
+          (queued) =>
+            !(payload.blocks ?? []).some(
+              (block) => block.role === "user" && block.body === queued,
+            ),
+        ),
         // Usage is per-thread; a fresh hydrate clears the previous thread's chip
         // until a usageChanged for this thread arrives.
         usage: null,
@@ -1021,7 +1031,7 @@ export function applyAgentChatBackendEvent(
         ...state,
         thread: payload.thread,
         runtimeState: payload.runtimeState,
-        queuedInput: null,
+        queuedInputs: [],
       };
     }
     case "agentRuntime.stateChanged": {
@@ -1062,13 +1072,21 @@ export function applyAgentChatBackendEvent(
     }
     case "agentSessionBlock.upserted": {
       const payload = event.payload as { block: AgentChatBlock };
-      // A real user block means a queued input was flushed — drop the optimistic
-      // "queued" row so it isn't shown twice.
-      const clearsQueue = payload.block.role === "user" && state.queuedInput !== null;
+      // A real user block means THAT queued message ran — drop the optimistic row
+      // whose text matches it (by content, not blind head-shift). Matching by value
+      // keeps the visible order correct even if blocks arrive out of order or a
+      // provider emits the same user block twice (a duplicate just finds no match).
+      let queuedInputs = state.queuedInputs;
+      if (payload.block.role === "user" && queuedInputs.length > 0) {
+        const matchIndex = queuedInputs.indexOf(payload.block.body ?? "");
+        if (matchIndex >= 0) {
+          queuedInputs = queuedInputs.filter((_, index) => index !== matchIndex);
+        }
+      }
       return {
         ...state,
         blocks: upsertBlock(state.blocks, payload.block),
-        queuedInput: clearsQueue ? null : state.queuedInput,
+        queuedInputs,
       };
     }
     case "agentSessionBlock.completed": {
@@ -1159,7 +1177,7 @@ export function createAgentChatShellViewModel(
       })),
     },
     workbenchOpen: state.workbenchOpen,
-    queuedInput: state.queuedInput,
+    queuedInputs: state.queuedInputs,
     usage: usageView(state.usage),
     errorMessage: state.errorMessage,
   };

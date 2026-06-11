@@ -5,7 +5,10 @@ import {
   applyProductShellBackendEvent,
   createProductShellState,
   editProductShellQueuedInput,
+  removeProductShellQueuedInput,
   openProductShellThreadFromLeftUi,
+  addProductShellComposerAttachment,
+  startNewProductShellScratchThread,
   submitProductShellComposerDraft,
   updateProductShellComposerDraft,
 } from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
@@ -49,12 +52,12 @@ test("editing the queued message pulls it back into the composer and discards th
   state = clickThread(state, "thread-a");
   state = updateProductShellComposerDraft(state, "teh typo");
   state = submitProductShellComposerDraft(state).state;
-  assert.equal(state.agentChat.queuedInput, "teh typo");
+  assert.deepEqual(state.agentChat.queuedInputs, ["teh typo"]);
 
-  const edited = editProductShellQueuedInput(state);
+  const edited = editProductShellQueuedInput(state, 0);
 
   // The queued row clears and its text returns to the composer for editing.
-  assert.equal(edited.state.agentChat.queuedInput, null);
+  assert.deepEqual(edited.state.agentChat.queuedInputs, []);
   assert.equal(edited.state.agentChat.composer.draft, "teh typo");
   // The backend is told to discard its queued pendingInput (a blank edit).
   assert.equal(edited.command?.kind, "composer.editQueuedInput");
@@ -275,4 +278,78 @@ test("the active thread opening a browser still opens its workbench", () => {
   });
 
   assert.equal(state.workbenchOpen, true);
+});
+
+test("composer draft+attachments survive switching to another thread and back", () => {
+  const att = { id: "att-1", name: "x.png", mediaType: "image/png", dataBase64: "AAAA" };
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = applyProductShellBackendEvent(state, hydrated("thread-b", "codex", []));
+  state = clickThread(state, "thread-a");
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = addProductShellComposerAttachment(state, att);
+  state = updateProductShellComposerDraft(state, "in progress");
+  state = clickThread(state, "thread-b");
+  state = applyProductShellBackendEvent(state, hydrated("thread-b", "codex", []));
+  state = clickThread(state, "thread-a");
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  assert.equal(state.agentChat.composer.attachments.length, 1, "attachment survives thread->thread->back");
+  assert.equal(state.agentChat.composer.draft, "in progress", "draft survives thread->thread->back");
+});
+
+test("composer draft+attachments survive clicking New thread and returning", () => {
+  const att = { id: "att-2", name: "y.png", mediaType: "image/png", dataBase64: "BBBB" };
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = clickThread(state, "thread-a");
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = addProductShellComposerAttachment(state, att);
+  state = updateProductShellComposerDraft(state, "half-written");
+  state = startNewProductShellScratchThread(state);
+  state = clickThread(state, "thread-a");
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  assert.equal(state.agentChat.composer.attachments.length, 1, "attachment survives thread->New thread->back");
+  assert.equal(state.agentChat.composer.draft, "half-written", "draft survives thread->New thread->back");
+});
+
+test("queued follow-ups survive switching to another thread and back", () => {
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = applyProductShellBackendEvent(state, hydrated("thread-b", "codex", []));
+  state = clickThread(state, "thread-a");
+  // Mark A running so follow-ups queue behind the live turn.
+  state = applyProductShellBackendEvent(state, {
+    kind: "agentRuntime.stateChanged" as const,
+    payload: { threadId: "thread-a", state: "running", changedAt: "2026-06-04T00:00:00.000Z" },
+  });
+  state = submitProductShellComposerDraft(updateProductShellComposerDraft(state, "1")).state;
+  state = submitProductShellComposerDraft(updateProductShellComposerDraft(state, "2")).state;
+  state = submitProductShellComposerDraft(updateProductShellComposerDraft(state, "3")).state;
+  assert.deepEqual(state.agentChat.queuedInputs, ["1", "2", "3"]);
+
+  // Switch away and back. Hydrate returns only the persisted conversation (the
+  // still-pending queue is NOT in those blocks), so the queue must be kept.
+  state = clickThread(state, "thread-b");
+  state = applyProductShellBackendEvent(state, hydrated("thread-b", "codex", []));
+  state = clickThread(state, "thread-a");
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+
+  assert.deepEqual(state.agentChat.queuedInputs, ["1", "2", "3"], "queue survives the round-trip");
+});
+
+test("deleting a queued message discards it without pulling it into the composer", () => {
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = clickThread(state, "thread-a");
+  state = updateProductShellComposerDraft(state, "discard me");
+  state = submitProductShellComposerDraft(state).state;
+  assert.deepEqual(state.agentChat.queuedInputs, ["discard me"]);
+
+  const removed = removeProductShellQueuedInput(state, 0);
+
+  // The row is gone AND the composer draft stays empty (unlike 수정, which pulls back).
+  assert.deepEqual(removed.state.agentChat.queuedInputs, []);
+  assert.equal(removed.state.agentChat.composer.draft, "");
+  assert.equal(removed.command?.kind, "composer.editQueuedInput");
+  assert.equal(removed.command?.payload.value, "");
 });

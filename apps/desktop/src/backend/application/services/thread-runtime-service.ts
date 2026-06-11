@@ -343,6 +343,9 @@ export interface SendComposerInputResult {
 export interface EditPendingInputInput {
   threadId: ThreadId;
   value: string;
+  // Which queued message to edit/discard: 0 (or omitted) = the head/next to run;
+  // 1..N = a message further back in the follow-up queue.
+  index?: number;
 }
 
 export interface EditPendingInputResult {
@@ -759,13 +762,13 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
 
     if (!readiness.ready) {
       thread.lifecycleState = "open";
-      thread.pendingInput = {
+      this.enqueuePendingInput(thread, {
         kind: "composer_input",
         value: message,
         capturedAt,
         launchOptions: cloneLaunchOptions(input.launchOptions),
         attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
-      };
+      });
       thread.updatedAt = this.clock();
 
       return {
@@ -886,13 +889,13 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     });
 
     if (!readiness.ready) {
-      thread.pendingInput = {
+      this.enqueuePendingInput(thread, {
         kind: "composer_input",
         value: message,
         capturedAt: this.clock(),
         launchOptions: cloneLaunchOptions(input.launchOptions ?? thread.launchOptions),
         attachments: attachmentsForRuntime,
-      };
+      });
       thread.updatedAt = this.clock();
 
       return {
@@ -947,13 +950,13 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
           submittedBlock,
         };
       }
-      thread.pendingInput = {
+      this.enqueuePendingInput(thread, {
         kind: "composer_input",
         value: message,
         capturedAt: this.clock(),
         launchOptions: cloneLaunchOptions(input.launchOptions ?? thread.launchOptions),
         attachments: attachmentsForRuntime,
-      };
+      });
       thread.updatedAt = this.clock();
       return {
         ok: true,
@@ -989,9 +992,43 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     };
   }
 
+  // --- Composer follow-up queue (head = pendingInput, tail = pendingInputQueue) ---
+
+  // Enqueue a follow-up: fill the empty head slot, else append to the FIFO tail.
+  private enqueuePendingInput(thread: ThreadRecord, pending: PendingInput): void {
+    if (thread.pendingInput === undefined) {
+      thread.pendingInput = pending;
+    } else {
+      (thread.pendingInputQueue ??= []).push(pending);
+    }
+  }
+
+  // Promote the next queued follow-up into the head slot once the head ran/was
+  // dropped (FIFO). Clears the tail array when empty so the single-queue path stays
+  // byte-identical (head undefined, no tail). Replaces `pendingInput = undefined`.
+  private promoteNextPendingInput(thread: ThreadRecord): void {
+    thread.pendingInput = thread.pendingInputQueue?.shift();
+    if (thread.pendingInputQueue !== undefined && thread.pendingInputQueue.length === 0) {
+      thread.pendingInputQueue = undefined;
+    }
+  }
+
+  // The whole follow-up queue, head first — for index-addressed edits/removals.
+  private pendingInputsOf(thread: ThreadRecord): PendingInput[] {
+    return thread.pendingInput === undefined
+      ? []
+      : [thread.pendingInput, ...(thread.pendingInputQueue ?? [])];
+  }
+
+  private writePendingInputs(thread: ThreadRecord, queue: PendingInput[]): void {
+    thread.pendingInput = queue[0];
+    thread.pendingInputQueue = queue.length > 1 ? queue.slice(1) : undefined;
+  }
+
   // Edit the queued (not-yet-sent) Composer message. The runtime has not seen the
-  // queued input, so editing only mutates Tide-owned pendingInput — no provider
-  // rewind, identical for every Agent. A blank value discards the queued input.
+  // queued input, so editing only mutates Tide-owned state — no provider rewind,
+  // identical for every Agent. A blank value discards that queued message; `index`
+  // (default 0 = the head/next to run) selects which one in the follow-up queue.
   // Spec: docs_v2/specs/composer-message-edit.md.
   async editPendingInput(
     input: EditPendingInputInput,
@@ -1000,7 +1037,9 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     if (thread === undefined) {
       return failure("thread_not_found", "Thread was not found.");
     }
-    const pending = thread.pendingInput;
+    const index = input.index ?? 0;
+    const queue = this.pendingInputsOf(thread);
+    const pending = queue[index];
     if (pending === undefined || pending.kind !== "composer_input") {
       return failure(
         "no_pending_input",
@@ -1008,21 +1047,26 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       );
     }
 
-    if (input.value.trim().length === 0) {
-      thread.pendingInput = undefined;
-      thread.updatedAt = this.clock();
-      return { ok: true, thread: snapshotThread(thread), status: "discarded" };
+    const discards = input.value.trim().length === 0;
+    if (discards) {
+      queue.splice(index, 1);
+    } else {
+      queue[index] = {
+        kind: "composer_input",
+        value: input.value,
+        capturedAt: this.clock(),
+        // Preserve the queued message's launch options + attachments across the edit.
+        launchOptions: cloneLaunchOptions(pending.launchOptions),
+        attachments: pending.attachments,
+      };
     }
-
-    thread.pendingInput = {
-      kind: "composer_input",
-      value: input.value,
-      capturedAt: this.clock(),
-      // Preserve the queued message's launch options across the edit.
-      launchOptions: cloneLaunchOptions(pending.launchOptions),
-    };
+    this.writePendingInputs(thread, queue);
     thread.updatedAt = this.clock();
-    return { ok: true, thread: snapshotThread(thread), status: "edited" };
+    return {
+      ok: true,
+      thread: snapshotThread(thread),
+      status: discards ? "discarded" : "edited",
+    };
   }
 
   async answerPrompt(
@@ -1343,8 +1387,10 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     }
 
     // Plain interrupt: settle to idle now (the aborted turn-end no-ops on idle),
-    // keeping the runtime alive for the next message.
+    // keeping the runtime alive for the next message. With no live handle to flush
+    // onto, any queued follow-ups are dropped (the user chose to interrupt).
     thread.pendingInput = undefined;
+    thread.pendingInputQueue = undefined;
     thread.runtimeState = "idle";
     thread.lifecycleState = "open";
     thread.lastKnownState = "idle";
@@ -1451,7 +1497,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     );
     thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
     thread.runtimeState = "running";
-    thread.pendingInput = undefined;
+    this.promoteNextPendingInput(thread);
     thread.updatedAt = this.clock();
     if (!deliveredViaLaunch) {
       await this.agentRuntimePort.writeInput(handle, {
@@ -1511,7 +1557,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
 
     const queued = thread.pendingInput;
     if (queued !== undefined && queued.kind === "composer_input") {
-      thread.pendingInput = undefined;
+      this.promoteNextPendingInput(thread);
       const handle = await this.activeOrResumedHandle(thread);
       const submittedBlock = this.appendLocalUserMessageBlock(thread, queued.value);
       thread.runtimeState = "running";
@@ -1662,7 +1708,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
           attachments: pendingInput.attachments,
         });
       }
-      thread.pendingInput = undefined;
+      this.promoteNextPendingInput(thread);
       thread.updatedAt = this.clock();
       const threadSnapshot = snapshotThread(thread);
       this.emitAsyncEvent({

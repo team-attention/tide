@@ -140,7 +140,12 @@ export interface ThreadRecord {
   createdAt: string;
   updatedAt: string;
   cachedBlocks: AgentSessionBlockReference[];
+  // `pendingInput` is the HEAD of the Composer follow-up queue (the next message
+  // to run); `pendingInputQueue` holds the rest, FIFO. Splitting head+tail keeps
+  // the single-queued path byte-identical (tail empty) while letting the user
+  // stack several follow-ups behind a live turn — each turn-end promotes the next.
   pendingInput?: PendingInput;
+  pendingInputQueue?: PendingInput[];
   promptState?: PromptState;
   // Prompts that arrived while another was already pending, surfaced one at a
   // time (FIFO). A turn can raise several prompts at once — e.g. claude batching

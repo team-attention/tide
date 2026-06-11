@@ -1084,11 +1084,15 @@ button {
 
 .thread-row:hover .thread-row__time,
 .thread-row:hover .thread-row__attention,
-.thread-row:hover .thread-row__running {
+.thread-row:hover .thread-row__running,
+.thread-row--menu-open .thread-row__time,
+.thread-row--menu-open .thread-row__attention,
+.thread-row--menu-open .thread-row__running {
   display: none;
 }
 
-.thread-row:hover .thread-row__actions {
+.thread-row:hover .thread-row__actions,
+.thread-row--menu-open .thread-row__actions {
   display: inline-flex;
 }
 
@@ -2650,12 +2654,23 @@ button {
 /* Pending "steer" message docked to the top of the Composer while a turn runs.
    Sits just above the input, visually attached (negative margin tucks it close
    under the composer-stack gap). */
+/* The queued follow-up "steer" stack, docked atop the Composer. Height-capped so a
+   long queue scrolls instead of pushing the Composer off-screen; one chip sits well
+   under the cap, so the single-queue case looks unchanged. */
+.composer-steer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 168px;
+  overflow-y: auto;
+  margin-bottom: -8px;
+}
+
 .composer-steer {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 7px 10px 7px 12px;
-  margin-bottom: -8px;
   border: 1px solid var(--tide-line);
   border-radius: 12px;
   background: var(--tide-surface);
@@ -2707,6 +2722,55 @@ button {
 .composer-steer__edit:hover {
   background: var(--tide-selection);
   color: var(--tide-text);
+}
+
+/* Interrupt control on a queued row: cut the live turn so the queue runs now. */
+.composer-steer__interrupt {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.composer-steer__interrupt:hover {
+  background: var(--tide-danger, #e5484d);
+  color: #fff;
+}
+
+/* The three per-row controls: 인터럽트 / 수정 / 삭제, grouped at the right. */
+.composer-steer__actions {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.composer-steer__delete {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.composer-steer__delete:hover {
+  background: var(--tide-danger, #e5484d);
+  color: #fff;
 }
 
 .agent-chat-shell__composer-stack {
