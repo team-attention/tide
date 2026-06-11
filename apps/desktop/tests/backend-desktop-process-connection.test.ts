@@ -722,8 +722,11 @@ test("live_backend_records_runtime_output_blocks_before_hydrate_snapshots", () =
   const source = readRepoFile("src/backend/infrastructure/node/live-backend.ts");
 
   assert.match(source, /const appendFrameAndEmit = async/);
-  // Blocks are recorded into the thread cache (and persisted) before snapshots.
-  assert.match(source, /await recordBlockUpdateInThreadCache\(input\.persistence,\s*service,\s*update\)/);
+  // Blocks are recorded into the service's authoritative in-memory state before
+  // snapshots; the disk write is COALESCED behind a debounced schedule (Phase 4.1)
+  // rather than a full-conversation write per block update.
+  assert.match(source, /await recordBlockUpdateInService\(service,\s*update\)/);
+  assert.match(source, /schedulePersist\(frameInput\.threadId\)/);
 });
 
 test("live_backend_awaits_tide_api_structured_frame_projection_for_push_events", () => {

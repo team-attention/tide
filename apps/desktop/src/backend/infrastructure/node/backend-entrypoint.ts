@@ -48,6 +48,23 @@ const adapter = createLiveBackendContractMessageAdapter({
 let activeParentCommandCount = 0;
 const bufferedBackendEvents: BackendEventEnvelope[] = [];
 
+// On a clean quit Electron sends SIGTERM to the utilityProcess. Flush the
+// coalesced conversation-cache writes so the trailing debounce window is never
+// lost, then exit. (A hard kill skips this — acceptable for a best-effort cache.)
+let shuttingDown = false;
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, () => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    void adapter
+      .flushPendingPersists()
+      .catch(() => {})
+      .finally(() => process.exit(0));
+  });
+}
+
 export const backendHandshake: BackendHandshake = {
   contractVersion: CONTRACT_VERSION,
   backendInstanceId,

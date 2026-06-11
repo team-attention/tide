@@ -347,6 +347,7 @@ export function createLiveBackendContractMessageAdapter(
   }
 
   return createPersistentLiveBackendAdapter({
+    flushPendingPersists: () => projector.flushPendingPersists(),
     adapter: createBackendContractMessageAdapter({
       service,
       // Detect which provider-CLI agents are installed locally (executable resolves).
@@ -372,6 +373,7 @@ function createPersistentLiveBackendAdapter(input: {
   persistence: ThreadPersistenceService;
   homeDir: string;
   appDataRoot: string;
+  flushPendingPersists: () => Promise<void>;
 }) {
   let restorePromise: Promise<void> | null = null;
 
@@ -450,6 +452,8 @@ function createPersistentLiveBackendAdapter(input: {
       await persistThreadEvents(input.persistence, input.service, events);
       return events;
     },
+    // Flush coalesced conversation-cache writes (wired to backend shutdown).
+    flushPendingPersists: input.flushPendingPersists,
   };
 }
 
@@ -756,6 +760,76 @@ export function createLiveAgentSessionEventProjector(input: {
 }) {
   const reader = createFixtureAgentSessionReader();
   const blocksByThread = new Map<string, AgentSessionBlock[]>();
+
+  // Conversation-cache persistence is COALESCED. A streaming turn produces many
+  // content_record block updates; persisting the full conversation on each one is
+  // O(messages) full-disk writes per turn (see docs perf E1). Instead we record
+  // blocks in the service synchronously (authoritative, in-memory) and schedule a
+  // trailing debounced disk write, with a hard flush at the durability-critical
+  // moments: turn end, prompt open, runtime exit, and backend shutdown. The cache
+  // is a best-effort restore optimization, so losing at most the last debounce
+  // window of an INCOMPLETE turn on a hard kill is acceptable; every settled state
+  // is always flushed. `TIDE_DEBUG_PERSIST=1` logs each actual write.
+  const PERSIST_DEBOUNCE_MS = 300;
+  const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const persistInFlight = new Map<string, Promise<void>>();
+  let persistWriteCount = 0;
+
+  const runPersist = async (threadId: string): Promise<void> => {
+    // Serialize per thread so two atomic writes never race on the same tmp file.
+    const prior = persistInFlight.get(threadId) ?? Promise.resolve();
+    const next = prior
+      .catch(() => {})
+      .then(async () => {
+        if (process.env.TIDE_DEBUG_PERSIST === "1") {
+          persistWriteCount += 1;
+          process.stdout.write(
+            `[tide-persist] write #${persistWriteCount} thread=${threadId}\n`,
+          );
+        }
+        await persistThreadBlocks({
+          persistence: input.persistence,
+          service: input.service(),
+          threadId,
+        });
+      });
+    persistInFlight.set(threadId, next);
+    await next;
+    if (persistInFlight.get(threadId) === next) {
+      persistInFlight.delete(threadId);
+    }
+  };
+
+  const schedulePersist = (threadId: string): void => {
+    const existing = persistTimers.get(threadId);
+    if (existing !== undefined) {
+      clearTimeout(existing);
+    }
+    const timer = setTimeout(() => {
+      persistTimers.delete(threadId);
+      void runPersist(threadId);
+    }, PERSIST_DEBOUNCE_MS);
+    // Never keep the event loop alive solely for a pending best-effort cache write.
+    if (typeof timer.unref === "function") {
+      timer.unref();
+    }
+    persistTimers.set(threadId, timer);
+  };
+
+  const flushPersist = async (threadId: string): Promise<void> => {
+    const timer = persistTimers.get(threadId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      persistTimers.delete(threadId);
+    }
+    await runPersist(threadId);
+  };
+
+  const flushAllPersists = async (): Promise<void> => {
+    const ids = new Set<string>([...persistTimers.keys(), ...persistInFlight.keys()]);
+    await Promise.all([...ids].map((id) => flushPersist(id)));
+  };
+
   // Last usage signature emitted per thread, so identical usage isn't re-emitted
   // on every history poll (the chip would otherwise churn every tick).
 
@@ -830,9 +904,10 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...args.nextBlocks.values()],
       });
       for (const update of result.blockUpdates) {
-        await recordBlockUpdateInThreadCache(input.persistence, service, update);
+        await recordBlockUpdateInService(service, update);
         emitBlockUpdate({ update, blocks: args.nextBlocks, onEvent: input.onEvent });
       }
+      schedulePersist(args.threadId);
     };
 
     // finalMessage is content ONLY for one-shot agents (gemini), whose single session
@@ -850,6 +925,8 @@ export function createLiveAgentSessionEventProjector(input: {
       service,
       onEvent: input.onEvent,
     });
+    // Turn settled — the conversation's durable state matters now; flush eagerly.
+    await flushPersist(args.threadId);
   };
 
   const appendFrameAndEmit = async (frameInput: {
@@ -891,9 +968,10 @@ export function createLiveAgentSessionEventProjector(input: {
         blocks: nextBlocks,
         onEvent: input.onEvent,
       });
-      await recordBlockUpdateInThreadCache(input.persistence, service, update);
+      await recordBlockUpdateInService(service, update);
     }
     blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
+    schedulePersist(frameInput.threadId);
     await emitPromptState({
       promptState: readResult.promptState,
       service,
@@ -979,6 +1057,10 @@ export function createLiveAgentSessionEventProjector(input: {
           service,
           onEvent: input.onEvent,
         });
+        // A prompt pauses the turn waiting on the user; make the conversation up
+        // to this point durable so a restart shows it (the stale prompt itself is
+        // reconciled away on reopen).
+        await flushPersist(eventInput.threadId);
         return;
       }
       if (event.kind === "commands") {
@@ -1052,7 +1134,13 @@ export function createLiveAgentSessionEventProjector(input: {
           service,
           onEvent: input.onEvent,
         });
+        await flushPersist(eventInput.threadId);
       }
+    },
+    // Flush every pending debounced conversation-cache write immediately. Wired to
+    // backend shutdown so a clean quit never loses the trailing debounce window.
+    async flushPendingPersists(): Promise<void> {
+      await flushAllPersists();
     },
   };
 }
@@ -1113,26 +1201,22 @@ function emitBlockUpdate(input: {
   }
 }
 
-async function recordBlockUpdateInThreadCache(
-  persistence: ThreadPersistenceService,
+// Record a block update in the service's authoritative in-memory state ONLY.
+// Disk persistence is coalesced separately (schedulePersist/flushPersist in the
+// projector) so a streaming turn doesn't rewrite the whole conversation per block.
+async function recordBlockUpdateInService(
   service: ThreadRuntimeService,
   update: AgentSessionBlockUpdate,
 ): Promise<void> {
-  let threadId: string | undefined;
   if (update.kind === "upsert") {
     await service.recordAgentSessionBlock({
       threadId: update.block.threadId,
       block: update.block,
     });
-    threadId = update.block.threadId;
   } else if (update.kind === "reset") {
     for (const block of update.blocks) {
       await service.recordAgentSessionBlock({ threadId: block.threadId, block });
     }
-    threadId = update.blocks[0]?.threadId;
-  }
-  if (threadId !== undefined) {
-    await persistThreadBlocks({ persistence, service, threadId });
   }
 }
 
