@@ -718,10 +718,14 @@ export function selectAgentChatChoiceSurfaceRow(
       // inserts the token into the draft and closes the surface.
       if (rowId.startsWith("command:")) {
         const token = rowId.slice("command:".length);
+        // Replace only the in-progress trigger token, preserving any text typed
+        // before it (e.g. "explain /go" + pick "/goal" → "explain /goal ").
+        const active = activeComposerTrigger(state.composer.draft);
+        const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : "";
         return {
           state: {
             ...state,
-            composer: { ...state.composer, draft: `${token} `, activeSurface: null },
+            composer: { ...state.composer, draft: `${prefix}${token} `, activeSurface: null },
           },
           command: null,
         };
@@ -1462,9 +1466,9 @@ function createActiveComposerSurface(
       // Real provider commands/skills for the active cwd+agent (discovered from
       // provider files, injected by the product shell), filtered by what the
       // user has typed after the leading / or $.
-      const draft = state.composer.draft;
-      const trigger = draft.startsWith("$") ? "$" : "/";
-      const query = draft.slice(1).trim().toLowerCase();
+      const active = activeComposerTrigger(state.composer.draft);
+      const trigger = active?.trigger ?? "/";
+      const query = (active?.query ?? "").trim().toLowerCase();
       const commands = (state.availableCommands ?? []).filter(
         (command) =>
           command.trigger === trigger &&
@@ -1780,6 +1784,7 @@ function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
       // explicit `--model` id.
       return [
         { value: "Claude default", label: "Default", detail: "Opus 4.8" },
+        { value: "claude-fable-5", label: "Fable 5" },
         { value: "claude-opus-4-8", label: "Opus 4.8" },
         { value: "claude-opus-4-8[1m]", label: "Opus 4.8 (1M context)" },
         { value: "claude-sonnet-4-6", label: "Sonnet 4.6" },
@@ -2127,11 +2132,31 @@ function permissionLabelForValue(agentId: string, value: string): string {
   return config.options.find((option) => option.value === normalized)?.label ?? value;
 }
 
+// The trigger token the user is currently typing: a trigger char that starts a
+// word (preceded by start-of-text or whitespace) and runs to the end of the
+// draft (no trailing whitespace yet). This mirrors the provider apps, whose
+// suggestion menu stays open while you type the token ANYWHERE in the message,
+// not only as the very first character. Returns the trigger, the query typed
+// after it, and the index of the trigger char (so a pick can splice in place).
+const COMPOSER_TRIGGER_PATTERN = /(?:^|\s)([/$@!])(\S*)$/;
+
+function activeComposerTrigger(
+  draft: string,
+): { trigger: "/" | "$" | "@" | "!"; query: string; tokenStart: number } | null {
+  const match = draft.match(COMPOSER_TRIGGER_PATTERN);
+  if (match === null) {
+    return null;
+  }
+  const query = match[2];
+  return {
+    trigger: match[1] as "/" | "$" | "@" | "!",
+    query,
+    tokenStart: draft.length - query.length - 1,
+  };
+}
+
 function composerSurfaceForDraft(draft: string): AgentChatComposerSurfaceKind | null {
-  const first = draft.trimStart().slice(0, 1);
-  return first === "/" || first === "$" || first === "@" || first === "!"
-    ? "command_suggestions"
-    : null;
+  return activeComposerTrigger(draft) === null ? null : "command_suggestions";
 }
 
 function cloneStringRecord(

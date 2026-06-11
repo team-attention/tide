@@ -941,6 +941,53 @@ test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", 
   assert.match(slashHtml, /\/work/);
 });
 
+test("slash_menu_triggers_on_the_token_under_the_cursor_mid_message", () => {
+  // The provider apps keep the command menu open while you type a trigger token
+  // ANYWHERE in the message, not only as the first character. Tide used to open
+  // it only when "/" was the very first char (start-anchored).
+  const commands = [
+    { name: "check", description: "Check repo evidence", trigger: "/" as const },
+    { name: "work", description: "Run actionable work", trigger: "/" as const },
+  ];
+
+  // Mid-message "/" with a query opens the menu and filters to the match.
+  const midTyped = {
+    ...updateComposerDraft(createAgentChatShellState(), "explain /che").state,
+    availableCommands: commands,
+  };
+  assert.equal(midTyped.composer.activeSurface, "command_suggestions");
+  const midHtml = renderShell(midTyped);
+  assert.match(midHtml, /\/check/);
+  assert.doesNotMatch(midHtml, /\/work/);
+
+  // Finishing the token (trailing space) closes the menu again.
+  assert.equal(updateComposerDraft(midTyped, "explain /check ").state.composer.activeSurface, null);
+
+  // A "/" inside a word/path (no leading boundary) does NOT open the menu.
+  assert.equal(
+    updateComposerDraft(createAgentChatShellState(), "look at src/app.ts").state.composer.activeSurface,
+    null,
+  );
+});
+
+test("picking_a_command_mid_message_splices_in_place_and_keeps_the_prefix", () => {
+  const opened = {
+    ...updateComposerDraft(createAgentChatShellState(), "explain /ch").state,
+    availableCommands: [{ name: "check", description: "Check repo evidence", trigger: "/" as const }],
+  };
+  const picked = selectAgentChatChoiceSurfaceRow(opened, "command_suggestions", "command:/check").state;
+  assert.equal(picked.composer.draft, "explain /check ");
+  assert.equal(picked.composer.activeSurface, null);
+});
+
+test("claude_model_menu_lists_fable_5", () => {
+  const claudeModelMenu = setComposerActiveSurface(
+    selectComposerAgent(createAgentChatShellState(), "claude").state,
+    "model_menu",
+  ).state;
+  assert.match(renderShell(claudeModelMenu), /Fable 5/);
+});
+
 test("openai_api_readiness_mentions_provider_account_not_hidden_pty", () => {
   const openAiState = selectComposerAgent(createAgentChatShellState(), "openai_api").state;
   const blocked = applyAgentChatBackendEvent(openAiState, {

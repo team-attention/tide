@@ -53,8 +53,16 @@ export function createClaudeStreamJsonClient(
 interface PendingPermission {
   requestId: string;
   toolInput: unknown;
-  // For AskUserQuestion: the question text an answer must be keyed by.
-  question?: string;
+  // For AskUserQuestion: sequential multi-question state. claude can ask several
+  // questions in ONE call and requires EVERY one answered, so we surface them one
+  // at a time, accumulate answers keyed by question text, and only allow the tool
+  // once all are collected. (Answering just the first left the rest unanswered →
+  // "The user did not answer the questions".)
+  askUserQuestion?: {
+    questions: unknown[];
+    answers: Record<string, string>;
+    index: number;
+  };
 }
 
 class ClaudeStreamJsonClient implements StructuredRuntimeClient {
@@ -171,25 +179,110 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       });
       return;
     }
-    // AskUserQuestion answers ride the allow response: updatedInput gains
-    // answers keyed by the question text mapping to the chosen option label
-    // (verified live: 11-askuserquestion-answered.jsonl — the turn proceeded
-    // with the chosen value).
-    let updatedInput = pending.toolInput;
     const optionLabel = input.value.startsWith(STRUCTURED_OPTION_PREFIX)
       ? input.value.slice(STRUCTURED_OPTION_PREFIX.length)
       : undefined;
-    if (optionLabel !== undefined && pending.question !== undefined && isRecord(pending.toolInput)) {
-      updatedInput = {
-        ...pending.toolInput,
-        answers: { [pending.question]: optionLabel },
-      };
+    // AskUserQuestion: record this question's answer (keyed by its text), then
+    // surface the NEXT question, or — once every question is answered — allow the
+    // tool with the full answers map. claude requires ALL questions answered.
+    if (pending.askUserQuestion !== undefined) {
+      const { questions, answers, index } = pending.askUserQuestion;
+      const currentQuestion = isRecord(questions[index])
+        ? stringField(questions[index] as Record<string, unknown>, "question")
+        : undefined;
+      const nextAnswers =
+        optionLabel !== undefined && currentQuestion !== undefined
+          ? { ...answers, [currentQuestion]: optionLabel }
+          : answers;
+      const nextIndex = index + 1;
+      if (
+        nextIndex < questions.length &&
+        this.surfaceAskUserQuestion(
+          pending.requestId,
+          isRecord(pending.toolInput) ? pending.toolInput : {},
+          questions,
+          nextAnswers,
+          nextIndex,
+        )
+      ) {
+        return; // more questions to ask before allowing the tool
+      }
+      this.sendAskUserQuestionAllow(pending.requestId, pending.toolInput, nextAnswers);
+      return;
     }
+    // Generic permission allow: no answer payload.
     this.writeLine({
       type: "control_response",
       response: {
         subtype: "success",
         request_id: pending.requestId,
+        response: { behavior: "allow", updatedInput: pending.toolInput },
+      },
+    });
+  }
+
+  // Surface AskUserQuestion's question at `index` as a choice prompt; returns
+  // false if it has no answerable options (caller then falls back to a generic
+  // allow/deny permission for the whole tool).
+  private surfaceAskUserQuestion(
+    requestId: string,
+    toolInput: Record<string, unknown>,
+    questions: unknown[],
+    answers: Record<string, string>,
+    index: number,
+  ): boolean {
+    const question = isRecord(questions[index]) ? questions[index] : undefined;
+    const questionText = question !== undefined ? stringField(question, "question") : undefined;
+    const options = question !== undefined && Array.isArray(question.options) ? question.options : [];
+    const optionChoices: PromptChoice[] = options
+      .map((option) =>
+        isRecord(option) && typeof option.label === "string"
+          ? {
+              choiceId: `opt-${option.label}`,
+              label: option.label,
+              providerValue: `${STRUCTURED_OPTION_PREFIX}${option.label}`,
+            }
+          : undefined,
+      )
+      .filter((choice): choice is PromptChoice => choice !== undefined);
+    if (questionText === undefined || optionChoices.length === 0) {
+      return false;
+    }
+    const promptId = `claude-auq-${requestId}-${index}`;
+    this.pendingPermissions.set(promptId, {
+      requestId,
+      toolInput,
+      askUserQuestion: { questions, answers, index },
+    });
+    const total = questions.length;
+    this.onEvent({
+      kind: "prompt",
+      promptState: {
+        promptId,
+        threadId: this.threadId,
+        agentId: this.agentId,
+        kind: "choice",
+        // Number multi-question prompts so the user knows more are coming.
+        message: total > 1 ? `(${index + 1}/${total}) ${questionText}` : questionText,
+        choices: optionChoices,
+        defaultChoiceId: optionChoices[0]?.choiceId,
+        source: "provider_hook",
+      },
+    });
+    return true;
+  }
+
+  private sendAskUserQuestionAllow(
+    requestId: string,
+    toolInput: unknown,
+    answers: Record<string, string>,
+  ): void {
+    const updatedInput = isRecord(toolInput) ? { ...toolInput, answers } : toolInput;
+    this.writeLine({
+      type: "control_response",
+      response: {
+        subtype: "success",
+        request_id: requestId,
         response: { behavior: "allow", updatedInput },
       },
     });
@@ -484,39 +577,12 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     const toolInput = isRecord(request.input) ? request.input : {};
     const promptId = `claude-perm-${requestId}`;
 
-    // AskUserQuestion's can_use_tool carries the FULL question with options —
-    // surface it as a choice card whose answer is injected via updatedInput.
+    // AskUserQuestion's can_use_tool carries the FULL set of questions, each with
+    // options. claude requires EVERY question answered, so surface them one at a
+    // time (Q1 → on answer → Q2 → …) and inject all answers via updatedInput.
     if (toolName === "AskUserQuestion") {
       const questions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
-      const first = isRecord(questions[0]) ? questions[0] : undefined;
-      const questionText = first !== undefined ? stringField(first, "question") : undefined;
-      const options = first !== undefined && Array.isArray(first.options) ? first.options : [];
-      const optionChoices: PromptChoice[] = options
-        .map((option) =>
-          isRecord(option) && typeof option.label === "string"
-            ? {
-                choiceId: `opt-${option.label}`,
-                label: option.label,
-                providerValue: `${STRUCTURED_OPTION_PREFIX}${option.label}`,
-              }
-            : undefined,
-        )
-        .filter((choice): choice is PromptChoice => choice !== undefined);
-      if (questionText !== undefined && optionChoices.length > 0) {
-        this.pendingPermissions.set(promptId, { requestId, toolInput, question: questionText });
-        this.onEvent({
-          kind: "prompt",
-          promptState: {
-            promptId,
-            threadId: this.threadId,
-            agentId: this.agentId,
-            kind: "choice",
-            message: questionText,
-            choices: optionChoices,
-            defaultChoiceId: optionChoices[0]?.choiceId,
-            source: "provider_hook",
-          },
-        });
+      if (questions.length > 0 && this.surfaceAskUserQuestion(requestId, toolInput, questions, {}, 0)) {
         return;
       }
     }
