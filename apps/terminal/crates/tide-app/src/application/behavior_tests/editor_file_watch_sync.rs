@@ -264,9 +264,9 @@ fn file_watch_event_triggers_git_poll_for_retained_editor_context() {
     std::fs::write(&real_path, "after\n").unwrap();
     app.update();
 
-    let cwds = rx.try_recv().expect("expected git poll trigger");
+    let requests = rx.try_recv().expect("expected git poll trigger");
     assert!(
-        cwds.contains(&repo_root),
+        requests.iter().any(|r| r.cwd == repo_root),
         "git poll should include the retained editor context cwd"
     );
 

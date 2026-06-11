@@ -128,25 +128,27 @@ impl crate::FileOpsPort for App {
     /// If a DiffPane with the same CWD already exists, focus and refresh it.
     /// Opens in the dock (right panel), same as browser/editor panes.
     fn open_diff_pane(&mut self, cwd: PathBuf) {
-        // Check if already open anywhere -> refresh and focus
-        for (&tab_id, pane) in &mut self.panes {
-            if let PaneKind::Diff(dp) = pane {
-                if dp.cwd == cwd {
-                    dp.refresh();
-                    self.focus.focused = Some(tab_id);
-                    self.router.set_focused(tab_id);
-                    self.focus.focus_area = crate::state::FocusArea::Dock;
-                    self.cache.invalidate_chrome();
-                    self.cache.invalidate_pane(tab_id);
-                    return;
-                }
-            }
+        // Check if already open anywhere -> focus and request a fresh poll.
+        // Diff content is produced by the background git poller (no synchronous
+        // git on the app thread).
+        let existing = self.panes.iter().find_map(|(&tab_id, pane)| match pane {
+            PaneKind::Diff(dp) if dp.cwd == cwd => Some(tab_id),
+            _ => None,
+        });
+        if let Some(tab_id) = existing {
+            self.focus.focused = Some(tab_id);
+            self.router.set_focused(tab_id);
+            self.focus.focus_area = crate::state::FocusArea::Dock;
+            self.cache.invalidate_chrome();
+            self.cache.invalidate_pane(tab_id);
+            self.trigger_git_poll();
+            return;
         }
 
-        // Create new DiffPane in the dock
+        // Create new (empty) DiffPane in the dock; the poller populates it.
         let context_terminal = self.resolve_context_terminal_id();
         let new_id = self.layout.alloc_id();
-        let dp = crate::pane::diff::DiffPane::new(new_id, cwd);
+        let dp = crate::pane::diff::DiffPane::new_empty(new_id, cwd);
         self.panes.insert(new_id, PaneKind::Diff(dp));
         if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
             self.add_pane_to_dock(new_id, Some(tid));
@@ -169,6 +171,12 @@ impl crate::FileOpsPort for App {
         self.router.set_focused(new_id);
         self.cache.invalidate_chrome();
         self.compute_layout();
+        // Ask the poller for this cwd's diff now that a DiffPane wants it.
+        self.trigger_git_poll();
+    }
+
+    fn request_git_poll(&self) {
+        self.trigger_git_poll();
     }
 }
 

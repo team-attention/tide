@@ -126,6 +126,9 @@ fn add_markdown_editor(app: &mut App, terminal_id: u64, contents: &str) -> u64 {
 fn add_diff(app: &mut App, anchor_id: u64) -> u64 {
     let diff_id = app.layout.split(anchor_id, SplitDirection::Horizontal);
     let mut diff = DiffPane::new_empty(diff_id, PathBuf::from("/tmp"));
+    // Exercise unified-mode capture deterministically (side_by_side defaults to
+    // true now that the render path no longer forces it).
+    diff.side_by_side = false;
     diff.files = vec![DiffFileEntry {
         status: "M".into(),
         path: "src/lib.rs".into(),

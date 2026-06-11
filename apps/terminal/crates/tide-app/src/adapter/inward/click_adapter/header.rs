@@ -178,9 +178,9 @@ pub(crate) fn check_header_click(
                     return true;
                 }
                 HeaderHitAction::DiffRefresh => {
-                    if let Some(PaneKind::Diff(dp)) = ctx.pane_mut(zone.pane_id) {
-                        dp.refresh();
-                    }
+                    // Diff content comes from the background git poller; ask it
+                    // to re-run now instead of spawning git on the app thread.
+                    ctx.request_git_poll();
                     ctx.invalidate_chrome();
                     ctx.invalidate_pane(zone.pane_id);
                     return true;

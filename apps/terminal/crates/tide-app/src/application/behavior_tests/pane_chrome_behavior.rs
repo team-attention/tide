@@ -1074,15 +1074,20 @@ fn terminal_cwd_change_clears_stale_git_badges_before_poll_results_arrive() {
 #[test]
 fn git_poller_prefers_the_latest_cwd_request_after_quick_repo_switches() {
     // UC-7 BR-32: The background git poller must prefer the latest queued cwd refresh request before publishing repo chrome results.
-    let older = vec![PathBuf::from("/tmp/tide-life")];
-    let latest = vec![PathBuf::from("/tmp/tide-minder")];
-    let newest = vec![PathBuf::from("/tmp/tide-timetable")];
-    let (tx, rx) = std::sync::mpsc::channel::<Vec<PathBuf>>();
+    use crate::state::background::GitPollRequest;
+    let req = |p: &str| GitPollRequest {
+        cwd: PathBuf::from(p),
+        wants_diff: false,
+    };
+    let older = vec![req("/tmp/tide-life")];
+    let latest = vec![req("/tmp/tide-minder")];
+    let newest = vec![req("/tmp/tide-timetable")];
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<GitPollRequest>>();
     tx.send(latest.clone()).unwrap();
     tx.send(newest.clone()).unwrap();
 
     let coalesced =
-        crate::application::services::file_tree_service::latest_git_poll_cwds(&rx, older);
+        crate::application::services::file_tree_service::latest_git_poll_requests(&rx, older);
 
     assert_eq!(coalesced, newest);
 }

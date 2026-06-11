@@ -44,7 +44,7 @@ pub fn detect_git_info(cwd: &Path) -> Option<GitInfo> {
     Some(GitInfo { branch, status })
 }
 
-fn detect_branch(cwd: &Path) -> Option<String> {
+pub fn detect_branch(cwd: &Path) -> Option<String> {
     // rev-parse fails when there are no commits yet (fresh git init),
     // so fall back to symbolic-ref which works on unborn branches.
     let text = run_git(&["rev-parse", "--abbrev-ref", "HEAD"], cwd)
