@@ -854,12 +854,16 @@ export function submitComposer(
   const composerAfterSend = { ...state.composer, draft: "", attachments: [], contextChips: [] };
 
   if (state.thread) {
-    // Show the sent message immediately as a pending row, whether the turn is busy
-    // (genuinely queued) or idle (about to run) — it clears the instant the real
-    // user block arrives. Without this a follow-up looked like it vanished until
-    // the backend recorded it. Draft + attachments always clear on send.
+    // Optimistically show the sent message as a pending row (instant feedback, and
+    // it hides the empty-thread placeholder). The backend's authoritative queue —
+    // carried on the command's agentRuntime.stateChanged — then reconciles it: an
+    // idle send runs (queue empty → the row clears), a busy send keeps it queued.
     return {
-      state: { ...state, queuedInputs: [...state.queuedInputs, input], composer: composerAfterSend },
+      state: {
+        ...state,
+        queuedInputs: [...state.queuedInputs, input],
+        composer: composerAfterSend,
+      },
       command: {
         kind: "composer.sendInput",
         payload: {
