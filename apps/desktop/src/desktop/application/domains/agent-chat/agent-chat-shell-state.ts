@@ -1721,6 +1721,8 @@ function composerAgentIdForRow(
       return "antigravity";
     case "gemini":
       return "gemini";
+    case "opencode":
+      return "opencode";
     case "openai-api":
       return "openai_api";
     default:

@@ -1010,6 +1010,22 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
   assert.doesNotMatch(html, /data-choice-surface/);
 });
 
+test("every offered provider-agent row actually binds its agent (no silent no-op)", () => {
+  // Regression: the opencode row was rendered + enabled but composerAgentIdForRow
+  // had no "opencode" case, so selecting it returned null and the handler treated
+  // it as a no-op — the agent never switched. Cover every offered agent so a new
+  // menu row can never again be selectable-but-dead.
+  for (const agentId of ["codex", "claude", "gemini", "opencode"] as const) {
+    const opened = setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state;
+    const selected = selectAgentChatChoiceSurfaceRow(opened, "agent_menu", agentId).state;
+    assert.equal(
+      selected.composer.startOptions.agentBinding.agentId,
+      agentId,
+      `selecting the ${agentId} row should bind the thread to ${agentId}`,
+    );
+  }
+});
+
 test("project_menu_lists_real_injected_projects_not_a_hardcoded_set", () => {
   const base: AgentChatShellState = {
     ...createAgentChatShellState({
