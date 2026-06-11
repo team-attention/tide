@@ -44,7 +44,7 @@ export interface TidePreloadSurface {
   createWorktree(
     cwd: string,
     name: string,
-    options?: { baseDirPattern?: string; copyFiles?: string[] },
+    options?: { baseDirPattern?: string; copyFiles?: string[]; baseBranch?: string },
   ): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
   removeWorktree(cwd: string): Promise<{ entries: ProjectRegistryEntry[] }>;
   gitContext(cwd: string): Promise<GitContext>;

@@ -8,7 +8,7 @@ import {
   type CommandFs,
 } from "./provider-command-discovery.ts";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { computeWorktreePath, sanitizeWorktreeBranch, worktreeRepoRootForCwd } from "../../shared/worktree-path.ts";
+import { computeWorktreePath, sanitizeWorktreeBranch, worktreeAddArgs, worktreeRepoRootForCwd } from "../../shared/worktree-path.ts";
 import { classifyTopLevelNavigation } from "./window-navigation-policy.ts";
 import {
   CONTRACT_VERSION,
@@ -151,13 +151,18 @@ ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown, name: unknow
   if (typeof cwd !== "string" || cwd.length === 0) {
     return { entries: current, createdCwd: null };
   }
-  const opts = (options ?? {}) as { baseDirPattern?: unknown; copyFiles?: unknown };
+  const opts = (options ?? {}) as {
+    baseDirPattern?: unknown;
+    copyFiles?: unknown;
+    baseBranch?: unknown;
+  };
   const baseDirPattern = typeof opts.baseDirPattern === "string" && opts.baseDirPattern.length > 0
     ? opts.baseDirPattern
     : undefined;
   const copyFiles = Array.isArray(opts.copyFiles)
     ? opts.copyFiles.filter((entry): entry is string => typeof entry === "string")
     : [];
+  const baseBranch = typeof opts.baseBranch === "string" ? opts.baseBranch : undefined;
   const rawName = typeof name === "string" ? name.trim() : "";
   const branch = sanitizeWorktreeBranch(
     rawName.length > 0 ? rawName : `${basename(cwd) || "tide"}-wt`,
@@ -166,7 +171,7 @@ ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown, name: unknow
   const created = await new Promise<boolean>((resolve) => {
     execFile(
       "git",
-      ["-C", cwd, "worktree", "add", "-b", branch, worktreePath],
+      worktreeAddArgs({ repoCwd: cwd, branch, worktreePath, baseBranch }),
       { maxBuffer: 4 * 1024 * 1024 },
       (error) => resolve(!error),
     );

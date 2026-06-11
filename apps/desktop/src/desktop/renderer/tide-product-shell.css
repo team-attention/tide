@@ -971,6 +971,41 @@ button {
   flex: 1 1 auto;
 }
 
+/* A worktree Thread nested under its repo group shows the title with a small
+   branch badge so it stays identifiable. */
+.thread-row__title-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+.thread-row__title-row .thread-row__title {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-row__branch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 42%;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tide-action) 12%, transparent);
+  color: var(--tide-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.thread-row__branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Pinned thread rows stack the title over a muted project/dir subtitle so they
    stay identifiable outside their project group. */
 .thread-row__label {
@@ -1400,6 +1435,32 @@ button {
    right-aligned bubble is too cramped for code/quotes). */
 .agent-session-turn--user:has(.agent-session-turn__body--attachments) {
   justify-content: flex-start;
+}
+
+/* A user message with an attached image: a media bubble holding the (path-free)
+   text + image thumbnails stacked, instead of the raw "[Attached image: …]". */
+.agent-session-turn__body--media {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent-session-turn__media-text {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.agent-session-turn__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agent-session-turn__image {
+  display: block;
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 10px;
+  border: 1px solid var(--tide-line);
+  object-fit: contain;
+  background: var(--tide-bg);
 }
 .agent-session-turn__body--attachments {
   max-width: min(800px, 100%);

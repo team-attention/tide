@@ -15,6 +15,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  GitBranch,
   GitBranchPlus,
   GitCompare,
   Globe,
@@ -40,6 +41,7 @@ import {
 } from "lucide-react";
 import { fileIconFor } from "./file-icons.ts";
 import { computeWorktreePath, worktreeRepoRootForCwd } from "../../../../shared/worktree-path.ts";
+import { resolveWorktreeName } from "../../../../shared/worktree-name.ts";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 // xterm core is CommonJS and safe to import in any environment (it does not
@@ -118,6 +120,8 @@ import {
   cancelProductShellProjectRename,
   setProductShellComposerActiveSurface,
   setProductShellComposerFolderScope,
+  setProductShellComposerNewWorktreeIntent,
+  resolveProductShellComposerNewWorktree,
   setProductShellGitContext,
   setProductShellProviderCommands,
   setProductShellRegisteredProjects,
@@ -390,7 +394,7 @@ export interface ProjectRegistryBridge {
   createWorktree(
     cwd: string,
     name: string,
-    options?: { baseDirPattern?: string; copyFiles?: string[] },
+    options?: { baseDirPattern?: string; copyFiles?: string[]; baseBranch?: string },
   ): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
   removeWorktree(cwd: string): Promise<{ entries: ProjectRegistryEntry[] }>;
   gitContext(cwd: string): Promise<GitContextResult>;
@@ -807,9 +811,26 @@ function ContentSearchPanel(props: {
   );
 }
 
+// A short random worktree name, used when there is no typed name and the first
+// message yields no usable ASCII slug (e.g. an all-Korean message). crypto-backed
+// so repeats don't collide. See docs_v2/specs/worktree-start-experience.md.
+function makeWorktreeHash(): string {
+  const bytes = new Uint8Array(3);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `wt-${hex}`;
+}
+
 // Inline "new worktree" name input (opened from the composer worktree/branch
-// menu): one name drives the branch + a sibling `<repo>.worktree/<branch>` dir.
-// Shows a live path preview so the user sees where it lands without thinking.
+// menu). The name is OPTIONAL: leaving it blank defers naming to send time, where
+// the worktree/branch name is derived from the first message (or a hash). The
+// worktree is created on send, not here. Shows a live path preview when named.
 function WorktreeNameInput(props: {
   baseCwd: string;
   baseDirPattern: string;
@@ -849,10 +870,10 @@ function WorktreeNameInput(props: {
       createElement("input", {
         ref: inputRef,
         className: "worktree-create__input",
-        placeholder: "branch name (e.g. fix-login)",
+        placeholder: "name (optional — auto-named from your first message)",
         value: name,
         spellCheck: false,
-        "aria-label": "Worktree branch name",
+        "aria-label": "Worktree branch name (optional)",
         onChange: (event: ChangeEvent<HTMLInputElement>) => setName(event.currentTarget.value),
         onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement>) => {
           if (event.key === "Enter") {
@@ -867,7 +888,9 @@ function WorktreeNameInput(props: {
       createElement(
         "div",
         { className: "worktree-create__preview" },
-        preview.length > 0 ? preview : "A new branch + sibling worktree directory",
+        preview.length > 0
+          ? preview
+          : "Created on send · named from your first message, or a short hash",
       ),
       createElement(
         "div",
@@ -882,10 +905,9 @@ function WorktreeNameInput(props: {
           {
             type: "button",
             className: "worktree-create__confirm",
-            disabled: name.trim().length === 0,
             onClick: () => props.onSubmit(name),
           },
-          "Create",
+          "Use worktree",
         ),
       ),
     ),
@@ -1032,30 +1054,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     });
   };
 
-  // Create a git worktree off the composer's current scope and re-scope the
-  // Start Composer to it, so the next thread runs in the new worktree.
+  // "New worktree" is a deferred intent: record the (optional) name on the Start
+  // Composer and create the worktree on send (see onSubmit), so the name can be
+  // derived from the first message. No git command runs here.
   const submitWorktreeCreate = (name: string) => {
-    const trimmed = name.trim();
-    const base = worktreeCreate?.baseCwd;
-    const bridge = props.projectBridge;
     setWorktreeCreate(null);
-    if (trimmed.length === 0 || base === undefined || bridge === undefined) {
-      return;
-    }
-    const { baseDirPattern, copyFiles } = shellState.worktreeSettings;
-    bridge
-      .createWorktree(base, trimmed, { baseDirPattern, copyFiles })
-      .then((result) => {
-        setShellState((state) => {
-          let next = setProductShellRegisteredProjects(state, result.entries);
-          if (result.createdCwd !== null) {
-            next = setProductShellComposerFolderScope(next, result.createdCwd);
-            dispatchBackendCommand(refreshStartPageFileTree(next));
-          }
-          return next;
-        });
-      })
-      .catch(() => {});
+    setShellState((state) => setProductShellComposerNewWorktreeIntent(state, { name }));
   };
 
   // Fetch real git branches/worktrees whenever the active Project cwd changes,
@@ -1396,6 +1400,50 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         return;
       }
       lastSubmitAtRef.current = now;
+
+      // Deferred "New worktree": create the worktree first (name derived from the
+      // first message when not typed), then submit the draft scoped to it. The
+      // worktree/branch name is decided once, here, so no live directory is moved.
+      const composer = shellState.agentChat.composer;
+      const launch = composer.startOptions.launchOptions ?? {};
+      const scope = composer.startOptions.scope;
+      const bridge = props.projectBridge;
+      if (launch.worktree === "new" && scope?.kind === "project" && bridge !== undefined) {
+        const typedName = typeof launch.newWorktreeName === "string" ? launch.newWorktreeName : "";
+        const baseBranch = typeof launch.branch === "string" ? launch.branch : undefined;
+        const name = resolveWorktreeName({
+          typedName,
+          firstMessage: composer.draft,
+          makeHash: makeWorktreeHash,
+        });
+        const { baseDirPattern, copyFiles } = shellState.worktreeSettings;
+        bridge
+          .createWorktree(scope.cwd, name, { baseDirPattern, copyFiles, baseBranch })
+          .then((result) => {
+            if (result.createdCwd === null) {
+              // Creation failed (e.g. the branch already exists). Keep the draft +
+              // intent so the user can rename and retry; allow an immediate resend.
+              lastSubmitAtRef.current = 0;
+              return;
+            }
+            setShellState((state) => {
+              let next = setProductShellRegisteredProjects(state, result.entries);
+              next = resolveProductShellComposerNewWorktree(next, {
+                cwd: result.createdCwd as string,
+                branch: name,
+              });
+              const submitted = submitProductShellComposerDraft(next);
+              dispatchBackendCommand(submitted.command);
+              dispatchBackendCommand(refreshStartPageFileTree(submitted.state));
+              return submitted.state;
+            });
+          })
+          .catch(() => {
+            lastSubmitAtRef.current = 0;
+          });
+        return;
+      }
+
       setShellState((state) => {
         const result = submitProductShellComposerDraft(state);
         dispatchBackendCommand(result.command);
@@ -5180,7 +5228,19 @@ function createThreadRow(
                   createElement("span", { className: "thread-row__title" }, thread.title),
                   createElement("span", { className: "thread-row__scope" }, threadScopeLabel(thread.scope)),
                 )
-              : createElement("span", { className: "thread-row__title" }, thread.title),
+              : thread.worktreeBranch !== undefined
+                ? createElement(
+                    "span",
+                    { className: "thread-row__title-row" },
+                    createElement("span", { className: "thread-row__title" }, thread.title),
+                    createElement(
+                      "span",
+                      { className: "thread-row__branch", title: `Worktree: ${thread.worktreeBranch}` },
+                      createElement(GitBranch, { size: 11, strokeWidth: 1.9, "aria-hidden": true }),
+                      createElement("span", { className: "thread-row__branch-name" }, thread.worktreeBranch),
+                    ),
+                  )
+                : createElement("span", { className: "thread-row__title" }, thread.title),
           ),
       thread.archiveConfirming
         ? createElement(

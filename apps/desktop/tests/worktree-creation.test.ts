@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   computeWorktreePath,
   sanitizeWorktreeBranch,
+  worktreeAddArgs,
   worktreeRepoRootForCwd,
 } from "../src/shared/worktree-path.ts";
 import {
@@ -46,6 +47,29 @@ test("derives_repo_root_from_a_worktree_cwd", () => {
   // Inverse of the default rule, used to group worktree Projects under their repo.
   assert.equal(worktreeRepoRootForCwd("/Users/me/repo.worktree/feature-login"), "/Users/me/repo");
   assert.equal(worktreeRepoRootForCwd("/Users/me/repo"), null);
+});
+
+test("worktree_create_git_args_include_base_branch", () => {
+  // Spec: docs_v2/specs/worktree-start-experience.md D4 — an optional base branch
+  // is appended as the `git worktree add` start point; omitted args branch off HEAD.
+  assert.deepEqual(
+    worktreeAddArgs({ repoCwd: "/repo", branch: "fix-login", worktreePath: "/repo.worktree/fix-login" }),
+    ["-C", "/repo", "worktree", "add", "-b", "fix-login", "/repo.worktree/fix-login"],
+  );
+  assert.deepEqual(
+    worktreeAddArgs({
+      repoCwd: "/repo",
+      branch: "fix-login",
+      worktreePath: "/repo.worktree/fix-login",
+      baseBranch: "develop",
+    }),
+    ["-C", "/repo", "worktree", "add", "-b", "fix-login", "/repo.worktree/fix-login", "develop"],
+  );
+  // A blank base branch is treated as "off HEAD" (no trailing arg).
+  assert.deepEqual(
+    worktreeAddArgs({ repoCwd: "/repo", branch: "x", worktreePath: "/p", baseBranch: "  " }),
+    ["-C", "/repo", "worktree", "add", "-b", "x", "/p"],
+  );
 });
 
 // --- UC-3: Inline worktree name input (Desktop) ---

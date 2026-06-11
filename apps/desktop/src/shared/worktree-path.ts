@@ -41,3 +41,20 @@ export function worktreeRepoRootForCwd(cwd: string): string | null {
   const match = cwd.replace(/\/+$/, "").match(/^(.*)\.worktree\/[^/]+$/);
   return match === null ? null : match[1];
 }
+
+// Args for `git worktree add` (run with execFile, no shell): create a new branch
+// `branch` at `worktreePath`, optionally based off `baseBranch` (defaults to the
+// repo's current HEAD when unset). See docs_v2/specs/worktree-start-experience.md.
+export function worktreeAddArgs(input: {
+  repoCwd: string;
+  branch: string;
+  worktreePath: string;
+  baseBranch?: string;
+}): string[] {
+  const args = ["-C", input.repoCwd, "worktree", "add", "-b", input.branch, input.worktreePath];
+  const base = input.baseBranch?.trim();
+  if (base !== undefined && base.length > 0) {
+    args.push(base);
+  }
+  return args;
+}

@@ -1065,6 +1065,51 @@ function renderUserAttachmentBody(body: string): ReactElement {
   });
 }
 
+// A pasted/attached image rides the message as a `[Attached image: <abs path>]`
+// line (the agent needs the path to read the file). In the USER's transcript we
+// render it as a thumbnail instead of the raw path, and drop the path text from
+// the visible message — keep the picture, hide the plumbing.
+const ATTACHED_IMAGE_RE = /\[Attached image:\s*([^\]]+?)\]/g;
+function renderUserBody(body: string): ReactElement {
+  const images: string[] = [];
+  let match: RegExpExecArray | null;
+  ATTACHED_IMAGE_RE.lastIndex = 0;
+  while ((match = ATTACHED_IMAGE_RE.exec(body)) !== null) {
+    const path = match[1].trim();
+    if (/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(path)) {
+      images.push(path);
+    }
+  }
+  const text = body.replace(ATTACHED_IMAGE_RE, "").trim();
+  if (images.length === 0) {
+    return text.includes("**↳ ")
+      ? renderUserAttachmentBody(body)
+      : createElement("p", { className: "agent-session-turn__body" }, body);
+  }
+  // Image(s) present → a media bubble: the (path-free) text, then thumbnails.
+  return createElement(
+    "div",
+    { className: "agent-session-turn__body agent-session-turn__body--media" },
+    text.length > 0
+      ? createElement("p", { className: "agent-session-turn__media-text" }, text)
+      : null,
+    createElement(
+      "div",
+      { className: "agent-session-turn__images" },
+      ...images.map((path, index) =>
+        createElement("img", {
+          key: `att-${index}`,
+          className: "agent-session-turn__image",
+          src: `file://${encodeURI(path)}`,
+          alt: "Attached image",
+          loading: "lazy",
+          draggable: false,
+        }),
+      ),
+    ),
+  );
+}
+
 function createAgentSessionTurn(block: AgentChatBlockView): ReactElement | null {
   if (block.role === "tool") {
     return createToolLogTurn(block);
@@ -1089,8 +1134,8 @@ function createAgentSessionTurn(block: AgentChatBlockView): ReactElement | null 
       : null,
     role === "agent"
       ? renderAgentMarkdown(block.body)
-      : role === "user" && block.body.includes("**↳ ")
-        ? renderUserAttachmentBody(block.body)
+      : role === "user"
+        ? renderUserBody(block.body)
         : createElement("p", { className: "agent-session-turn__body" }, block.body),
     // Prompt blocks are historical markers for an interactive card; their raw
     // fallback is the hook's JSON payload — runtime transport, not content.

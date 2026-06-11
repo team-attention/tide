@@ -6,6 +6,7 @@ import {
   createProductShellState,
   createProductShellViewModel,
   setProductShellListSettings,
+  DEFAULT_PRODUCT_SHELL_LIST_SETTINGS,
   type ProductShellState,
   type ProductShellThread,
 } from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
@@ -167,6 +168,41 @@ test("worktree_projects_group_under_their_repo_when_enabled", () => {
     listSettings: { ...state.listSettings, groupWorktreesByRepo: false },
   });
   assert.deepEqual(off.projectGroups.map((g) => g.projectId).sort(), ["repo", "wt"]);
+});
+
+test("worktree_threads_group_under_repo_by_default", () => {
+  // Spec: docs_v2/specs/worktree-start-experience.md D5 — the default flips on, so
+  // a worktree Thread nests under its repo group (not a separate top-level Project)
+  // and its view carries the branch badge derived from the worktree cwd.
+  assert.equal(DEFAULT_PRODUCT_SHELL_LIST_SETTINGS.groupWorktreesByRepo, true);
+
+  const base = createProductShellState({ includeFixtureData: false });
+  const state: ProductShellState = {
+    ...base,
+    projects: [
+      { projectId: "repo", name: "repo", cwd: "/repo" },
+      { projectId: "wt", name: "feature", cwd: "/repo.worktree/feature-login" },
+    ],
+    threads: [
+      thread("t-repo", "Repo thread", {
+        scope: { kind: "project", projectId: "repo", cwd: "/repo" },
+      }),
+      thread("t-wt", "Worktree thread", {
+        scope: { kind: "project", projectId: "wt", cwd: "/repo.worktree/feature-login" },
+      }),
+    ],
+    // No listSettings override: rely on the default.
+  };
+
+  const vm = createProductShellViewModel(state);
+  assert.deepEqual(vm.projectGroups.map((g) => g.projectId), ["repo"]);
+  const repo = vm.projectGroups.find((g) => g.projectId === "repo");
+  assert.deepEqual(repo?.threads.map((t) => t.threadId).sort(), ["t-repo", "t-wt"]);
+
+  const worktreeView = repo?.threads.find((t) => t.threadId === "t-wt");
+  assert.equal(worktreeView?.worktreeBranch, "feature-login");
+  const repoView = repo?.threads.find((t) => t.threadId === "t-repo");
+  assert.equal(repoView?.worktreeBranch, undefined);
 });
 
 test("setting_list_settings_patches_only_given_fields", () => {

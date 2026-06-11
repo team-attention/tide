@@ -1347,10 +1347,23 @@ function startContextItems(options: AgentChatStartOptions): AgentChatContextItem
     projectOrScratch,
     {
       label: "Worktree",
-      value: String(options.launchOptions?.worktree ?? "current folder"),
+      value: worktreeContextValue(options.launchOptions),
     },
     { label: "Branch", value: String(options.launchOptions?.branch ?? "main") },
   ];
+}
+
+// The Worktree chip label. A pending "create on send" intent (worktree === "new")
+// renders as "New worktree" (with the typed name when given), so the chip never
+// shows the raw "new" sentinel. See docs_v2/specs/worktree-start-experience.md.
+function worktreeContextValue(launchOptions: Record<string, unknown> | undefined): string {
+  const worktree = launchOptions?.worktree;
+  if (worktree === "new") {
+    const typed = launchOptions?.newWorktreeName;
+    const name = typeof typed === "string" ? typed.trim() : "";
+    return name.length > 0 ? `New worktree: ${name}` : "New worktree (auto)";
+  }
+  return String(worktree ?? "current folder");
 }
 
 function formatAgentLabel(agentId: string): string {
@@ -1736,6 +1749,53 @@ export function setComposerFolderScope(
     projectId: basenameOf(cwd),
     cwd,
   });
+}
+
+// Mark the Start Composer to create a new git worktree on send. The optional name
+// is stored verbatim; the final worktree/branch name is resolved deterministically
+// at send time (typed name → first-message slug → hash). The base branch comes
+// from the Branch menu (`launchOptions.branch`). Start Composer only — an active
+// Thread can't change its worktree. See docs_v2/specs/worktree-start-experience.md.
+export function setComposerNewWorktreeIntent(
+  state: AgentChatShellState,
+  intent: { name?: string },
+): AgentChatShellUpdateResult {
+  if (state.thread) {
+    return { state, command: null };
+  }
+  return updateComposerLaunchOptions(state, {
+    worktree: "new",
+    newWorktreeName: intent.name?.trim() ?? "",
+  });
+}
+
+// After the worktree is created at send time, scope the Start Composer to it and
+// reset the worktree launch option (the new cwd IS now its own "current folder").
+// `branch` is the new worktree's branch (= the resolved name we created with).
+export function resolveComposerNewWorktreeIntent(
+  state: AgentChatShellState,
+  resolved: { cwd: string; branch: string },
+): AgentChatShellUpdateResult {
+  const scoped = updateComposerScope(state, {
+    kind: "project",
+    projectId: basenameOf(resolved.cwd),
+    cwd: resolved.cwd,
+  }).state;
+  const current = scoped.composer.startOptions.launchOptions ?? {};
+  const nextOptions: Record<string, unknown> = { ...current };
+  delete nextOptions.newWorktreeName;
+  nextOptions.worktree = "current folder";
+  nextOptions.branch = resolved.branch;
+  return {
+    state: {
+      ...scoped,
+      composer: {
+        ...scoped.composer,
+        startOptions: { ...scoped.composer.startOptions, launchOptions: nextOptions },
+      },
+    },
+    command: null,
+  };
 }
 
 function composerAgentIdForRow(

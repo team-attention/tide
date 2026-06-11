@@ -16,6 +16,8 @@ import {
   selectAgentChatChoiceSurfaceRow,
   selectComposerAgent,
   setComposerActiveSurface,
+  setComposerNewWorktreeIntent,
+  resolveComposerNewWorktreeIntent,
   submitComposer,
   editQueuedInput,
   updateComposerDraft,
@@ -98,6 +100,58 @@ test("sending_an_empty_start_composer_draft_emits_no_command", () => {
   const result = submitComposer(state);
 
   assert.equal(result.command, null);
+});
+
+// Spec: docs_v2/specs/worktree-start-experience.md
+
+test("new_worktree_intent_defers_creation_and_labels_the_worktree_chip", () => {
+  const base = createAgentChatShellState({
+    startOptions: {
+      agentBinding: { agentId: "claude" },
+      scope: { kind: "project", projectId: "repo", cwd: "/repo" },
+      launchOptions: { worktree: "current folder", branch: "main" },
+    },
+  });
+
+  // Blank name → pending intent; the chip reads "New worktree (auto)" (never "new").
+  const auto = setComposerNewWorktreeIntent(base, { name: "" }).state;
+  assert.equal(auto.composer.startOptions.launchOptions?.worktree, "new");
+  assert.equal(auto.composer.startOptions.launchOptions?.newWorktreeName, "");
+  const autoItems = createAgentChatShellViewModel(auto).composer.contextItems;
+  assert.equal(autoItems.find((item) => item.label === "Worktree")?.value, "New worktree (auto)");
+
+  // Typed name → chip reads "New worktree: <name>".
+  const named = setComposerNewWorktreeIntent(base, { name: "spike" }).state;
+  const namedItems = createAgentChatShellViewModel(named).composer.contextItems;
+  assert.equal(namedItems.find((item) => item.label === "Worktree")?.value, "New worktree: spike");
+});
+
+test("resolving_new_worktree_intent_rescopes_and_resets_launch_options", () => {
+  const base = createAgentChatShellState({
+    startOptions: {
+      agentBinding: { agentId: "claude" },
+      scope: { kind: "project", projectId: "repo", cwd: "/repo" },
+      launchOptions: { worktree: "new", newWorktreeName: "x", branch: "develop" },
+    },
+  });
+
+  const resolved = resolveComposerNewWorktreeIntent(base, {
+    cwd: "/repo.worktree/fix-login",
+    branch: "fix-login",
+  }).state;
+
+  // The Start Composer is scoped to the created worktree cwd...
+  assert.deepEqual(resolved.composer.startOptions.scope, {
+    kind: "project",
+    projectId: "fix-login",
+    cwd: "/repo.worktree/fix-login",
+  });
+  // ...and the worktree sentinel is reset (the new cwd is now its own folder),
+  // the branch reflects the created branch, and the pending name is dropped.
+  const options = resolved.composer.startOptions.launchOptions ?? {};
+  assert.equal(options.worktree, "current folder");
+  assert.equal(options.branch, "fix-login");
+  assert.equal("newWorktreeName" in options, false);
 });
 
 // --- UC-2: Compose Composer Attachments ---
@@ -542,6 +596,31 @@ test("agent_session_block_upserts_render_one_visible_block_per_block_id", () => 
   assert.equal(view.blocks.length, 1);
   assert.equal(view.blocks[0].body, "hello");
   assert.match(renderShell(withUpdatedBlock), /hello/);
+});
+
+test("an attached image renders as a thumbnail, not the raw '[Attached image: path]'", () => {
+  // The agent gets the image PATH in the message (to read the file); the user's
+  // transcript should show a preview and drop the path plumbing.
+  const state = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("agentSessionBlock.upserted", {
+      block: {
+        blockId: "u1",
+        threadId: "thread-shell",
+        agentId: "codex",
+        kind: "agent_message",
+        role: "user",
+        status: "complete",
+        body: "look at this\n\n[Attached image: /tmp/My Pics/x.png]",
+        updatedAt: later,
+      },
+    }),
+  );
+  const html = renderShell(state);
+  assert.match(html, /class="agent-session-turn__image"/); // a thumbnail element
+  assert.match(html, /src="file:\/\/\/tmp\/My%20Pics\/x\.png"/); // file:// w/ encoded path
+  assert.doesNotMatch(html, /Attached image:/); // raw path text is gone
+  assert.match(html, /look at this/); // the message text stays
 });
 
 function withToolBlocks(

@@ -9,6 +9,8 @@ import {
   answerPromptText,
   setComposerActiveSurface,
   setComposerFolderScope,
+  setComposerNewWorktreeIntent,
+  resolveComposerNewWorktreeIntent,
   interruptComposer,
   submitComposer,
   editQueuedInput,
@@ -1138,6 +1140,30 @@ export function setProductShellComposerFolderScope(
   return {
     ...state,
     agentChat: setComposerFolderScope(state.agentChat, cwd).state,
+  };
+}
+
+// Mark the Start Composer to create a new git worktree on send (deferred). See
+// docs_v2/specs/worktree-start-experience.md.
+export function setProductShellComposerNewWorktreeIntent(
+  state: ProductShellState,
+  intent: { name?: string },
+): ProductShellState {
+  return {
+    ...state,
+    agentChat: setComposerNewWorktreeIntent(state.agentChat, intent).state,
+  };
+}
+
+// After the worktree is created at send time, re-scope the Start Composer to it
+// and reset the worktree launch option to the new cwd's "current folder".
+export function resolveProductShellComposerNewWorktree(
+  state: ProductShellState,
+  resolved: { cwd: string; branch: string },
+): ProductShellState {
+  return {
+    ...state,
+    agentChat: resolveComposerNewWorktreeIntent(state.agentChat, resolved).state,
   };
 }
 
