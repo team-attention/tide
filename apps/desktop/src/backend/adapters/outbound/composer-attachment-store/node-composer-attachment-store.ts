@@ -30,6 +30,17 @@ export function createNodeComposerAttachmentStorePort(): ComposerAttachmentStore
       const dir = path.join(input.cwd, ATTACHMENT_DIR);
       await mkdir(dir, { recursive: true });
 
+      // Attachments MUST live inside the workspace — agents refuse to read files
+      // outside their trusted directory (verified: claude returns "permission
+      // wasn't granted to read that file" for an out-of-cwd path). To keep them
+      // from polluting the user's git, drop a self-contained `.tide/.gitignore`
+      // that ignores everything under .tide. Git then never reports it, and
+      // Tide's own file tree (which honors .gitignore) hides it too. Written
+      // once (wx) so a user's own customization is never clobbered.
+      await writeFile(path.join(input.cwd, ".tide", ".gitignore"), "*\n", {
+        flag: "wx",
+      }).catch(() => undefined);
+
       const stamp = Date.now();
       const paths: string[] = [];
       for (let index = 0; index < input.attachments.length; index += 1) {
