@@ -1805,21 +1805,15 @@ test("submitting_during_a_running_turn_shows_a_queued_row_then_clears_on_flush",
   assert.doesNotMatch(idleHtml, /대기 중/);
   assert.match(idleHtml, /send while idle/);
 
-  // When the turn ends and the queued input is flushed as a real user block,
-  // the optimistic queued row clears.
+  // The backend is authoritative: when it flushes the queued input, the turn's
+  // agentRuntime.stateChanged carries the now-empty queue and the row clears.
   const flushed = applyProductShellBackendEvent(submitted.state, {
-    kind: "agentSessionBlock.upserted",
+    kind: "agentRuntime.stateChanged",
     payload: {
-      block: {
-        blockId: "block-flushed-user",
-        threadId: "thread-workbench",
-        agentId: "codex",
-        kind: "user_message",
-        role: "user",
-        status: "complete",
-        body: "follow up while busy",
-        updatedAt: "2026-05-29T00:00:02.000Z",
-      },
+      threadId: "thread-workbench",
+      state: "running",
+      changedAt: "2026-05-29T00:00:02.000Z",
+      queuedInputs: [],
     },
   });
   assert.deepEqual(createProductShellViewModel(flushed).agentChat.queuedInputs, []);

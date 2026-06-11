@@ -115,6 +115,9 @@ export interface BackendEventPayloadByKind {
     threadId: ThreadId;
     state: AgentRuntimeStateDto;
     changedAt: string;
+    // The thread's follow-up queue after this transition (head-first). Lets the
+    // renderer reflect a flush (queue shrank) live. Absent → unchanged.
+    queuedInputs?: string[];
   };
   "agentRuntime.usageChanged": {
     threadId: ThreadId;

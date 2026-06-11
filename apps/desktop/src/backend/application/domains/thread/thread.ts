@@ -174,6 +174,10 @@ export interface ThreadSnapshot {
   updatedAt: string;
   cachedBlocks: AgentSessionBlockReference[];
   pendingInput?: PendingInput;
+  // The Composer follow-up queue as plain texts, head-first (pendingInput then the
+  // tail). This is what the renderer DISPLAYS — the backend is authoritative, so the
+  // renderer never guesses the queue. See docs_v2/specs/backend-authoritative-composer-queue.md.
+  queuedInputs: string[];
   promptState?: PromptState;
   workbench: WorkbenchSnapshot;
 }

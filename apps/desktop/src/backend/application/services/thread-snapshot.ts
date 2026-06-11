@@ -73,6 +73,14 @@ export function snapshotThread(thread: ThreadRecord): ThreadSnapshot {
     updatedAt: thread.updatedAt,
     cachedBlocks: cloneBlocks(thread.cachedBlocks),
     pendingInput: clonePendingInput(thread.pendingInput),
+    // Publish the real follow-up queue (head + tail) as texts so the renderer can
+    // display it authoritatively instead of guessing from events.
+    queuedInputs: [
+      ...(thread.pendingInput ? [thread.pendingInput] : []),
+      ...(thread.pendingInputQueue ?? []),
+    ]
+      .filter((pending) => pending.kind === "composer_input")
+      .map((pending) => pending.value),
     promptState: clonePromptState(thread.promptState),
     workbench: snapshotWorkbench(thread.workbench),
   };

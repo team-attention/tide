@@ -184,6 +184,8 @@ export interface AgentChatThreadSummary {
   // indicator shows elapsed since this, so reopening a running thread keeps the
   // real time instead of resetting to 0.
   runtimeStartedAt?: string;
+  // The backend's authoritative follow-up queue (head-first) at hydrate time.
+  queuedInputs?: string[];
 }
 
 export type AgentChatThreadScope =
@@ -981,16 +983,9 @@ export function applyAgentChatBackendEvent(
         // as prompt.changed before this thread was on screen). `undefined` =
         // old-style payload without the field; keep whatever we had.
         promptState: payload.prompt !== undefined ? payload.prompt : state.promptState,
-        // Keep follow-ups that are STILL queued across a thread switch (so the queue
-        // doesn't vanish when you leave and return), but drop any whose message
-        // already ran while away — it's now a real user block in `blocks`, so showing
-        // the chip too would render it twice.
-        queuedInputs: state.queuedInputs.filter(
-          (queued) =>
-            !(payload.blocks ?? []).some(
-              (block) => block.role === "user" && block.body === queued,
-            ),
-        ),
+        // Seed the queue from the backend's authoritative snapshot (the renderer
+        // never guesses it). Absent only on old payloads → keep what we have.
+        queuedInputs: payload.thread.queuedInputs ?? state.queuedInputs,
         // Usage is per-thread; a fresh hydrate clears the previous thread's chip
         // until a usageChanged for this thread arrives.
         usage: null,
@@ -1035,7 +1030,11 @@ export function applyAgentChatBackendEvent(
       };
     }
     case "agentRuntime.stateChanged": {
-      const payload = event.payload as { state: AgentRuntimeStateName; changedAt?: string };
+      const payload = event.payload as {
+        state: AgentRuntimeStateName;
+        changedAt?: string;
+        queuedInputs?: string[];
+      };
       // Re-anchor the working timer to the NEW turn's start. `changedAt` is when
       // the runtime went active (= the turn start). Only on the non-active →
       // active edge, so a redundant "running" event can't reset it mid-turn.
@@ -1052,6 +1051,9 @@ export function applyAgentChatBackendEvent(
         ...state,
         runtimeState: payload.state,
         thread: nextThread,
+        // The backend is authoritative for the follow-up queue: reflect it on every
+        // transition (a flush shrinks it). Absent → keep the optimistic list.
+        queuedInputs: payload.queuedInputs ?? state.queuedInputs,
       };
     }
     case "providerReadiness.changed": {
@@ -1072,21 +1074,11 @@ export function applyAgentChatBackendEvent(
     }
     case "agentSessionBlock.upserted": {
       const payload = event.payload as { block: AgentChatBlock };
-      // A real user block means THAT queued message ran — drop the optimistic row
-      // whose text matches it (by content, not blind head-shift). Matching by value
-      // keeps the visible order correct even if blocks arrive out of order or a
-      // provider emits the same user block twice (a duplicate just finds no match).
-      let queuedInputs = state.queuedInputs;
-      if (payload.block.role === "user" && queuedInputs.length > 0) {
-        const matchIndex = queuedInputs.indexOf(payload.block.body ?? "");
-        if (matchIndex >= 0) {
-          queuedInputs = queuedInputs.filter((_, index) => index !== matchIndex);
-        }
-      }
+      // The queue is backend-authoritative now (agentRuntime.stateChanged carries it),
+      // so a user block never mutates queuedInputs here — no more guessing/desync.
       return {
         ...state,
         blocks: upsertBlock(state.blocks, payload.block),
-        queuedInputs,
       };
     }
     case "agentSessionBlock.completed": {

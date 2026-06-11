@@ -343,7 +343,7 @@ test("editing_the_queued_message_with_blank_value_discards_the_queued_row", () =
   assert.equal(discarded.command?.kind, "composer.editQueuedInput");
 });
 
-test("multiple_followups_stack_as_steer_chips_and_flush_fifo_on_user_blocks", () => {
+test("multiple_followups_stack_then_reconcile_to_the_backend_queue_on_state_change", () => {
   const hydrated = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),
     backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "running" }),
@@ -351,27 +351,21 @@ test("multiple_followups_stack_as_steer_chips_and_flush_fifo_on_user_blocks", ()
   const first = submitComposer(updateComposerDraft(hydrated, "first").state);
   const second = submitComposer(updateComposerDraft(first.state, "second").state);
 
-  // Both follow-ups stack in submission order — the user can SEE several queued.
+  // Optimistic stack in submission order — the user SEES several queued instantly.
   assert.deepEqual(second.state.queuedInputs, ["first", "second"]);
   const html = renderShell(second.state);
   assert.match(html, /first/);
   assert.match(html, /second/);
 
-  // The head's real user block flushes ONLY the first optimistic chip (FIFO); the
-  // rest stay queued and run on later turn-ends.
+  // The backend is authoritative: when it flushes the head, agentRuntime.stateChanged
+  // carries the reduced queue and the renderer reflects it (no user-block guessing).
   const afterFlush = applyBackendEventToAgentChatShell(
     second.state,
-    backendEvent("agentSessionBlock.upserted", {
-      block: {
-        blockId: "u-first",
-        threadId: "thread-shell",
-        agentId: "codex",
-        kind: "agent_message",
-        role: "user",
-        status: "complete",
-        body: "first",
-        updatedAt: "2026-05-29T00:00:01.000Z",
-      },
+    backendEvent("agentRuntime.stateChanged", {
+      threadId: "thread-shell",
+      state: "running",
+      changedAt: "2026-05-29T00:00:01.000Z",
+      queuedInputs: ["second"],
     }),
   );
   assert.deepEqual(afterFlush.queuedInputs, ["second"]);
@@ -1569,34 +1563,22 @@ function walkSourceFiles(root: string): string[] {
   return files;
 }
 
-test("hydrating drops a queued input only if its message already ran, else keeps it", () => {
-  // After switching away and back, hydrate reloads the persisted blocks. A queued
-  // follow-up whose message already RAN is in those blocks → drop the chip (no
-  // double render). One that is STILL pending is NOT in blocks → keep it, so the
-  // queue doesn't vanish on the round-trip.
+test("hydrating seeds the queue from the backend snapshot (authoritative)", () => {
+  // On open/switch, the renderer takes the backend's real queue verbatim — it does
+  // not guess from blocks. The backend already dropped any messages that ran while
+  // away, so the snapshot's queuedInputs is exactly what to show.
   const withQueued: AgentChatShellState = {
     ...createAgentChatShellState(),
     thread,
     runtimeState: "running",
-    queuedInputs: ["already ran", "still pending"],
+    queuedInputs: ["stale optimistic"],
   };
 
   const hydrated = applyAgentChatBackendEvent(
     withQueued,
     backendEvent("thread.hydrated", {
-      thread,
-      blocks: [
-        {
-          blockId: "u1",
-          threadId: "thread-shell",
-          agentId: "codex",
-          kind: "agent_message",
-          role: "user",
-          status: "complete",
-          body: "already ran",
-          updatedAt: "2026-05-29T00:00:01.000Z",
-        },
-      ],
+      thread: { ...thread, queuedInputs: ["still pending"] },
+      blocks: [],
       runtimeState: "running",
     }),
   );

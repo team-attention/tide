@@ -16,6 +16,9 @@ export interface ThreadSummaryDto {
   // When the current turn started running (set at each turn start). Lets the
   // Working indicator show elapsed-since-turn-start even after reopening a thread.
   runtimeStartedAt?: string;
+  // The Composer follow-up queue (head-first pending message texts), authoritative
+  // from the backend. Absent on older payloads → treat as empty.
+  queuedInputs?: string[];
 }
 
 export type ThreadScopeDto =

@@ -592,6 +592,7 @@ export function backendEventsFromThreadRuntimeAsyncEvent(
             threadId: event.thread.threadId,
             state: event.runtimeState,
             changedAt: event.thread.updatedAt,
+            queuedInputs: event.thread.queuedInputs,
           },
         },
       ];
@@ -1224,6 +1225,7 @@ async function emitTurnComplete(input: {
       threadId: result.thread.threadId,
       state: result.runtimeState,
       changedAt: result.thread.updatedAt,
+      queuedInputs: result.thread.queuedInputs,
     },
   });
 }
@@ -1267,6 +1269,7 @@ async function emitPromptState(input: {
       threadId: result.thread.threadId,
       state: result.runtimeState,
       changedAt: result.thread.updatedAt,
+      queuedInputs: result.thread.queuedInputs,
     },
   });
 }

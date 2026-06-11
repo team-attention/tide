@@ -800,6 +800,19 @@ test("stacked_followups_flush_in_fifo_order_one_per_turn_end", async () => {
   assert.equal(done3.runtimeState, "idle");
 });
 
+test("the_thread_snapshot_publishes_the_followup_queue_head_first", async () => {
+  // The renderer DISPLAYS this (backend-authoritative); it never guesses the queue.
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" }); // runs now
+  await service.sendComposerInput({ threadId: "thread-busy", input: "second" }); // queued head
+  const q2 = await service.sendComposerInput({ threadId: "thread-busy", input: "third" }); // queued tail
+  assert.deepEqual(q2.thread.queuedInputs, ["second", "third"]);
+
+  // Flushing the head shrinks the published queue.
+  const done = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.deepEqual(done.thread.queuedInputs, ["third"]);
+});
+
 test("editing_a_queued_followup_by_index_targets_that_message_and_keeps_the_rest", async () => {
   const { service } = busyThreadService();
   await service.sendComposerInput({ threadId: "thread-busy", input: "first" }); // runs now

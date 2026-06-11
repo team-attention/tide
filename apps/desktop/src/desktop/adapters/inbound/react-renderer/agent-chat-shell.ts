@@ -1651,6 +1651,11 @@ function createComposer(
           if (
             event.key === "Enter" &&
             !event.shiftKey &&
+            // ⌘/Ctrl+Enter belongs to the prompt card (answer Allow/Deny) — never
+            // submit the composer draft on it, or answering a prompt would flush
+            // the in-progress follow-up as the prompt's answer.
+            !event.metaKey &&
+            !event.ctrlKey &&
             !event.nativeEvent.isComposing &&
             event.keyCode !== 229
           ) {
@@ -1985,22 +1990,23 @@ function PromptCard(props: {
       props.onSelectChoice(selectedId);
     }
   };
-  // Keyboard: ↑/↓ move between options (incl. "Other…"), ⌘/Ctrl+Enter submits from
-  // anywhere in the card (including the free-text field). The composer's own keys
-  // are never hijacked. Mirrors the "⌘↵" hint on the Submit button.
+  // Keyboard: ↑/↓ move between options (incl. "Other…"); ⌘/Ctrl+Enter submits the
+  // prompt from anywhere (composer included) — mirrors the "⌘↵" hint. Plain Enter
+  // and arrows in a text field are left alone so the composer keeps working.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const inEditable =
-        target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
-      if (inEditable && target?.closest(".prompt-card") === null) {
-        return;
-      }
+      // ⌘/Ctrl+Enter submits the prompt from ANYWHERE (composer included), so you can
+      // answer Allow/Deny without the composer draft being flushed as the answer.
       if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         submit();
         return;
       }
+      // Arrows move options only when focus is NOT in a text field, so they don't
+      // hijack the composer's or the Other field's cursor.
+      const target = event.target as HTMLElement | null;
+      const inEditable =
+        target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
       if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !inEditable) {
         const ids = [...choices.map((choice) => choice.choiceId), ...(hasChoices ? ["__other"] : [])];
         if (ids.length === 0) {
