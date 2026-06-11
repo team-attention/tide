@@ -1550,7 +1550,14 @@ button {
   text-transform: lowercase;
 }
 
-.agent-session-turn__body--md .md-code__copy {
+.agent-session-turn__body--md .md-code__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.agent-session-turn__body--md .md-code__copy,
+.agent-session-turn__body--md .md-code__quote {
   border: 0;
   background: transparent;
   color: var(--tide-muted);
@@ -1561,7 +1568,8 @@ button {
   border-radius: 6px;
 }
 
-.agent-session-turn__body--md .md-code__copy:hover {
+.agent-session-turn__body--md .md-code__copy:hover,
+.agent-session-turn__body--md .md-code__quote:hover {
   background: var(--tide-selection);
   color: var(--tide-action);
 }
@@ -2419,15 +2427,23 @@ button {
 /* Per-answer hover actions (copy / retry): quiet, revealed only on hover or
    keyboard focus so the transcript stays clean (like the Codex/Claude apps). */
 .agent-turn-actions {
-  /* Floated out of flow: a hover affordance that sits in the gap just below the
-     turn, reserving no layout height (so turns stay tight). */
+  /* Floated out of flow: a hover affordance in the gap below the turn, reserving
+     no layout height (so turns stay tight). A solid surface + border + shadow +
+     z-index makes it a clean floating toolbar instead of transparently
+     overlapping whatever sits below (e.g. the next turn's tool-call row). */
   position: absolute;
   top: 100%;
   left: -4px;
   display: flex;
   align-items: center;
-  gap: 2px;
-  margin-top: -2px;
+  gap: 1px;
+  margin-top: -7px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--tide-surface);
+  border: 1px solid var(--tide-line);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  z-index: 4;
   opacity: 0;
   transform: translateY(-2px);
   transition: opacity 0.12s ease, transform 0.12s ease;

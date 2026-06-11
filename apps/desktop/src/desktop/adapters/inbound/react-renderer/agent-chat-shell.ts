@@ -693,6 +693,16 @@ function createAgentSession(
           void navigator.clipboard?.writeText(pre?.textContent ?? "");
           return;
         }
+        // Add a specific code block to the composer as a quoted chip (reply to it).
+        const quoteCode = onQuote ? target.closest(".md-code__quote") : null;
+        if (quoteCode) {
+          const pre = quoteCode.closest(".md-code")?.querySelector("pre");
+          const text = pre?.textContent ?? "";
+          if (text.trim().length > 0) {
+            onQuote?.(text.trim());
+          }
+          return;
+        }
         // Copy a whole agent answer (hover action). Flash the button to confirm.
         const copyAnswer = target.closest(".agent-turn-actions__btn--copy");
         if (copyAnswer) {
@@ -996,7 +1006,10 @@ markdown.renderer.rules.fence = (tokens, index) => {
   return (
     `<div class="md-code">` +
     `<div class="md-code__header"><span class="md-code__lang">${escapeAttr(label)}</span>` +
-    `<button type="button" class="md-code__copy" data-copy aria-label="Copy code">Copy</button></div>` +
+    `<span class="md-code__actions">` +
+    `<button type="button" class="md-code__quote" data-quote-code aria-label="Add code to chat">Add to chat</button>` +
+    `<button type="button" class="md-code__copy" data-copy aria-label="Copy code">Copy</button>` +
+    `</span></div>` +
     `<pre class="md-code__pre"><code>${codeHtml}</code></pre>` +
     `</div>`
   );
