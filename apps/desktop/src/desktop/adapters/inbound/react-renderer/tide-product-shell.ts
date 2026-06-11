@@ -1784,6 +1784,33 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThreadId]);
 
+  // Cmd+W (routed from the app menu as a "close intent"): close the focused
+  // Workbench pane if one is open, else close the active thread by returning to
+  // the start composer. Never closes the window (Shift+Cmd+W does that). A ref
+  // keeps the latest state/handlers without re-subscribing the IPC each render.
+  const closeIntentRef = useRef<{ paneId: string | undefined; workbenchOpen: boolean; hasThread: boolean }>({
+    paneId: undefined,
+    workbenchOpen: false,
+    hasThread: false,
+  });
+  closeIntentRef.current = {
+    paneId: shellState.appChrome.activeWorkbenchPaneId ?? undefined,
+    workbenchOpen: shellState.workbenchOpen,
+    hasThread: shellState.activeThreadId !== null,
+  };
+  useEffect(() => {
+    const off = window.tide?.onCloseIntent?.(() => {
+      const { paneId, workbenchOpen, hasThread } = closeIntentRef.current;
+      if (workbenchOpen && paneId !== undefined) {
+        handlers.onCloseWorkbenchPane(paneId);
+      } else if (hasThread) {
+        handlers.onNewThread();
+      }
+    });
+    return off;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Escape exits workbench-pane fullscreen.
   useEffect(() => {
     if (!shellState.workbenchFullscreen) {

@@ -31,11 +31,7 @@ import {
   providerSetupSurfaceInputFromData,
 } from "./workbench-command-data.ts";
 import type { WorkbenchFileOperations } from "./workbench-file-operations.ts";
-import {
-  activeLauncherPaneId,
-  openWorkbenchLauncher,
-  removeLauncherPane,
-} from "./workbench-launcher.ts";
+import { openWorkbenchLauncher } from "./workbench-launcher.ts";
 import type { WorkbenchRuntime } from "./workbench-runtime.ts";
 import {
   firstVisiblePane,
@@ -150,14 +146,15 @@ export class WorkbenchCommandHandler {
         };
       }
       case "open_browser": {
-        const consumedLauncher = activeLauncherPaneId(thread);
+        // Don't consume the launcher: it stays as its own pane so the user can
+        // fan out (launcher → browser → editor → terminal) with all panes
+        // coexisting as tabs/splits.
         const opened = openBrowserOutput(thread, input.data, this.idGenerator, this.clock);
         const pane = workbenchPaneById(thread.workbench, opened.pane.paneId);
         if (pane !== undefined) {
           pane.visible = true;
           thread.workbench.activePaneId = pane.paneId;
         }
-        removeLauncherPane(thread, consumedLauncher);
         thread.workbench.focusOwner = "workbench";
         thread.updatedAt = this.clock();
         return {
@@ -259,7 +256,6 @@ export class WorkbenchCommandHandler {
         };
       }
       case "open_editor": {
-        const consumedLauncher = activeLauncherPaneId(thread);
         const opened = await this.workbenchFileOps.openFileOutput(thread, input.data);
         if (!opened.ok) {
           return failure(opened.error.code, opened.error.message);
@@ -269,7 +265,6 @@ export class WorkbenchCommandHandler {
           pane.visible = true;
           thread.workbench.activePaneId = pane.paneId;
         }
-        removeLauncherPane(thread, consumedLauncher);
         thread.workbench.focusOwner = "workbench";
         thread.updatedAt = this.clock();
         return {
@@ -280,7 +275,6 @@ export class WorkbenchCommandHandler {
         };
       }
       case "open_terminal": {
-        const consumedLauncher = activeLauncherPaneId(thread);
         const root = threadRoot(thread);
         if (root === undefined) {
           return failure(
@@ -304,7 +298,6 @@ export class WorkbenchCommandHandler {
         });
         await this.workbenchRuntime.ensureWorkbenchTerminalRunning(thread, pane);
         thread.workbench.activePaneId = pane.paneId;
-        removeLauncherPane(thread, consumedLauncher);
         thread.workbench.focusOwner = "workbench";
         thread.updatedAt = this.clock();
         return {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, utilityProcess, type UtilityProcess } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from "electron";
 import { basename, dirname, join } from "node:path";
 import { readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
@@ -951,10 +951,44 @@ function maybeOfferMoveToApplications(): boolean {
   }
 }
 
+// Own the application menu so Cmd+W does NOT close the whole window (Electron's
+// default Window menu binds CmdOrCtrl+W to role:"close"). Instead Cmd+W sends a
+// "close intent" to the renderer, which closes the focused Workbench pane, else
+// the active thread → start composer. Shift+Cmd+W still closes the window. The
+// standard app/edit/view roles are kept so copy/paste/reload/quit still work.
+function installApplicationMenu(): void {
+  const isMac = process.platform === "darwin";
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac ? [{ role: "appMenu" } as MenuItemConstructorOptions] : []),
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    {
+      label: "Window",
+      submenu: [
+        { role: "minimize" },
+        { role: "zoom" },
+        {
+          label: "Close",
+          accelerator: "CmdOrCtrl+W",
+          click: () => {
+            BrowserWindow.getFocusedWindow()?.webContents.send("tide:close-intent");
+          },
+        },
+        { label: "Close Window", accelerator: "Shift+CmdOrCtrl+W", role: "close" },
+        ...(isMac
+          ? [{ type: "separator" } as MenuItemConstructorOptions, { role: "front" } as MenuItemConstructorOptions]
+          : []),
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 void app.whenReady().then(() => {
   if (maybeOfferMoveToApplications()) {
     return; // relaunching from /Applications
   }
+  installApplicationMenu();
   // Dev (`electron .`) shows the default Electron dock icon; point it at the
   // brand icon. The packaged app uses the bundle icon (electron-builder) instead.
   try {

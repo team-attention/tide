@@ -1171,10 +1171,17 @@ export function selectProductShellLauncherAction(
     (pane) => pane.kind === "launcher" && pane.visible,
   );
   const action = launcher?.actions?.find((candidate) => candidate.actionId === actionId);
-  if (action === undefined || !action.enabled) {
+  // The EMPTY-workbench launcher is a synthetic, frontend-only pane (no backend
+  // launcher pane), so `launcher`/`action` are undefined — but its action buttons
+  // are the standard set. Allow the known launcher commands to fire even without a
+  // real launcher pane (else clicking them on an empty workbench silently no-ops).
+  const KNOWN_LAUNCHER_COMMANDS = ["open_terminal", "open_browser", "open_editor"];
+  const enabledOnRealLauncher = action !== undefined && action.enabled;
+  const knownOnSyntheticLauncher = launcher === undefined && KNOWN_LAUNCHER_COMMANDS.includes(actionId);
+  if (!enabledOnRealLauncher && !knownOnSyntheticLauncher) {
     return { state, command: null };
   }
-  if (action.actionId === "open_terminal") {
+  if (actionId === "open_terminal") {
     return {
       state,
       command: {
@@ -1186,7 +1193,7 @@ export function selectProductShellLauncherAction(
       },
     };
   }
-  if (action.actionId === "open_browser") {
+  if (actionId === "open_browser") {
     return {
       state,
       command: {
@@ -1198,7 +1205,7 @@ export function selectProductShellLauncherAction(
       },
     };
   }
-  if (action.actionId === "open_editor") {
+  if (actionId === "open_editor") {
     // The Editor launcher entry turns the Launcher pad into an in-pane file picker
     // (a searchable file list right where you clicked). Load the tree behind it; the
     // picker reads it, and choosing a file opens it in the Editor (consuming the

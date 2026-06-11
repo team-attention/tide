@@ -70,6 +70,7 @@ declare global {
       transport: "message_port";
       sendBackendCommand(command: BackendCommandEnvelope): Promise<BackendEventEnvelope[]>;
       onBackendEvent(listener: (event: BackendEventEnvelope) => void): () => void;
+      onCloseIntent(listener: () => void): () => void;
       openDirectory(): Promise<string | null>;
       listProjects(): Promise<{ projectId: string; name: string; cwd: string }[]>;
       registerProject(cwd: string): Promise<{ projectId: string; name: string; cwd: string }[]>;

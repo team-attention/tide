@@ -30,6 +30,9 @@ export interface TidePreloadSurface {
   transport: "message_port";
   sendBackendCommand(command: BackendCommandEnvelope): Promise<BackendEventEnvelope[]>;
   onBackendEvent(listener: (event: BackendEventEnvelope) => void): () => void;
+  // Cmd+W "close intent" from the application menu — the renderer decides what to
+  // close (a focused Workbench pane, else the active thread → start composer).
+  onCloseIntent(listener: () => void): () => void;
   // Native folder picker + persisted project registry (Main-owned).
   openDirectory(): Promise<string | null>;
   listProjects(): Promise<ProjectRegistryEntry[]>;
@@ -61,6 +64,13 @@ export const tidePreloadSurface: TidePreloadSurface = {
     ipcRenderer.on("tide:backend-event", wrappedListener);
     return () => {
       ipcRenderer.removeListener("tide:backend-event", wrappedListener);
+    };
+  },
+  onCloseIntent(listener) {
+    const wrapped = () => listener();
+    ipcRenderer.on("tide:close-intent", wrapped);
+    return () => {
+      ipcRenderer.removeListener("tide:close-intent", wrapped);
     };
   },
   openDirectory() {
