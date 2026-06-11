@@ -37,6 +37,7 @@ import {
   Sparkles,
   Square,
   Terminal,
+  Trash2,
   Wrench,
   X,
 } from "lucide-react";
@@ -2128,8 +2129,8 @@ function createChoiceRows(
   return createElement(
     "div",
     { className: "choice-surface__rows" },
-    rows.map((row) =>
-      createElement(
+    rows.map((row) => {
+      const rowButton = createElement(
         "button",
         {
           key: row.rowId,
@@ -2146,8 +2147,31 @@ function createChoiceRows(
         createElement("span", { className: "choice-surface__row-label" }, row.label),
         row.detail ? createElement("span", { className: "choice-surface__row-detail" }, row.detail) : null,
         row.meta ? createElement("span", { className: "choice-surface__row-meta" }, row.meta) : null,
-      ),
-    ),
+      );
+      // A trailing affordance (e.g. delete a worktree) routes through the same
+      // row-select callback with its own rowId; can't nest in the row button, so
+      // wrap both in a row container. Rows without an action stay a bare button.
+      if (row.action === undefined) {
+        return rowButton;
+      }
+      const action = row.action;
+      return createElement(
+        "div",
+        { key: row.rowId, className: "choice-surface__row-wrap" },
+        rowButton,
+        createElement(
+          "button",
+          {
+            type: "button",
+            className: "choice-surface__row-action",
+            "aria-label": action.label,
+            title: action.label,
+            onClick: () => onRowSelect?.(surface.surfaceKind, action.rowId),
+          },
+          choiceRowIcon(action.icon),
+        ),
+      );
+    }),
   );
 }
 
@@ -2200,6 +2224,7 @@ function choiceRowIcon(icon: string | undefined): ReactNode {
     file: createElement(FileText, { size: 15, strokeWidth: 1.85 }),
     panel: createElement(PanelsTopLeft, { size: 15, strokeWidth: 1.85 }),
     tool: createElement(Wrench, { size: 15, strokeWidth: 1.85 }),
+    trash: createElement(Trash2, { size: 14, strokeWidth: 1.85 }),
   };
   // Unknown values render nothing rather than leaking a stray glyph string.
   return lucide[icon] ?? null;

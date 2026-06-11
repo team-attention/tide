@@ -40,7 +40,7 @@ import {
   X,
 } from "lucide-react";
 import { fileIconFor } from "./file-icons.ts";
-import { computeWorktreePath, worktreeRepoRootForCwd } from "../../../../shared/worktree-path.ts";
+import { computeWorktreePath, worktreeDeleteRequest, worktreeRepoRootForCwd } from "../../../../shared/worktree-path.ts";
 import { resolveWorktreeName } from "../../../../shared/worktree-name.ts";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
@@ -397,6 +397,21 @@ export interface ProjectRegistryBridge {
     options?: { baseDirPattern?: string; copyFiles?: string[]; baseBranch?: string },
   ): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
   removeWorktree(cwd: string): Promise<{ entries: ProjectRegistryEntry[] }>;
+  worktreeInfo(cwd: string): Promise<{
+    repoRoot: string | null;
+    branch: string | null;
+    branchMerged: boolean;
+    isWorktree: boolean;
+  }>;
+  deleteWorktree(
+    cwd: string,
+    options: { deleteBranch: boolean; force: boolean },
+  ): Promise<{
+    entries: ProjectRegistryEntry[];
+    worktreeRemoved: boolean;
+    branch: string | null;
+    branchDeleted: boolean;
+  }>;
   gitContext(cwd: string): Promise<GitContextResult>;
   listCommands(cwd: string, agentId: string): Promise<AgentChatCommandOption[]>;
 }
@@ -493,6 +508,10 @@ interface ProductShellHandlers {
   onThreadArchiveIntent: (threadId: string) => void;
   onThreadArchiveConfirm: (threadId: string) => void;
   onThreadPinToggle: (threadId: string) => void;
+  // The branch of the worktree a Thread runs in, or null when the Thread is not
+  // in a (default-rule) worktree — drives the "Delete worktree" menu item.
+  threadWorktreeBranch: (threadId: string) => string | null;
+  onThreadDeleteWorktree: (threadId: string) => void;
   onThreadRenameStart: (threadId: string) => void;
   onThreadRenameSubmit: (threadId: string, title: string) => void;
   onThreadRenameCancel: () => void;
@@ -827,17 +846,26 @@ function makeWorktreeHash(): string {
   return `wt-${hex}`;
 }
 
-// Inline "new worktree" name input (opened from the composer worktree/branch
-// menu). The name is OPTIONAL: leaving it blank defers naming to send time, where
-// the worktree/branch name is derived from the first message (or a hash). The
-// worktree is created on send, not here. Shows a live path preview when named.
+// Inline "new worktree" form (opened from the composer worktree menu). The name
+// is OPTIONAL: leaving it blank defers naming to send time, where the
+// worktree/branch name is derived from the first message (or a hash). A base
+// branch picker chooses what the new worktree branches off (default: current).
+// The worktree is created on send, not here. Shows a live path preview when named.
 function WorktreeNameInput(props: {
   baseCwd: string;
   baseDirPattern: string;
-  onSubmit: (name: string) => void;
+  branches: { name: string; kind: "local" | "remote"; current: boolean }[];
+  onSubmit: (name: string, baseBranch: string) => void;
   onClose: () => void;
 }): ReactElement {
   const [name, setName] = useState("");
+  // Local branches before remote; default to the repo's current branch.
+  const orderedBranches = [...props.branches].sort(
+    (a, b) => Number(a.kind === "remote") - Number(b.kind === "remote"),
+  );
+  const [baseBranch, setBaseBranch] = useState(
+    () => props.branches.find((branch) => branch.current)?.name ?? "",
+  );
   const inputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     inputRef.current?.focus();
@@ -878,19 +906,42 @@ function WorktreeNameInput(props: {
         onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement>) => {
           if (event.key === "Enter") {
             event.preventDefault();
-            props.onSubmit(name);
+            props.onSubmit(name, baseBranch);
           } else if (event.key === "Escape") {
             event.preventDefault();
             props.onClose();
           }
         },
       }),
+      orderedBranches.length > 0
+        ? createElement(
+            "label",
+            { className: "worktree-create__field" },
+            createElement("span", { className: "worktree-create__field-label" }, "Branch from"),
+            createElement(
+              "select",
+              {
+                className: "worktree-create__select",
+                value: baseBranch,
+                "aria-label": "Base branch for the new worktree",
+                onChange: (event: ChangeEvent<HTMLSelectElement>) => setBaseBranch(event.currentTarget.value),
+              },
+              orderedBranches.map((branch) =>
+                createElement(
+                  "option",
+                  { key: `${branch.kind}:${branch.name}`, value: branch.name },
+                  branch.current ? `${branch.name} (current)` : branch.kind === "remote" ? `${branch.name} (remote)` : branch.name,
+                ),
+              ),
+            ),
+          )
+        : null,
       createElement(
         "div",
         { className: "worktree-create__preview" },
         preview.length > 0
-          ? preview
-          : "Created on send · named from your first message, or a short hash",
+          ? `${preview}${baseBranch.length > 0 ? ` · off ${baseBranch}` : ""}`
+          : `Created on send · named from your first message, or a short hash${baseBranch.length > 0 ? ` · off ${baseBranch}` : ""}`,
       ),
       createElement(
         "div",
@@ -905,9 +956,101 @@ function WorktreeNameInput(props: {
           {
             type: "button",
             className: "worktree-create__confirm",
-            onClick: () => props.onSubmit(name),
+            onClick: () => props.onSubmit(name, baseBranch),
           },
           "Use worktree",
+        ),
+      ),
+    ),
+  );
+}
+
+// The worktree being deleted (branch + git/merge facts from worktreeInfo, plus
+// the threads-here/running facts from product-shell state).
+export interface WorktreeDeleteTarget {
+  cwd: string;
+  branch: string;
+  branchMerged: boolean;
+  threadCount: number;
+  anyRunning: boolean;
+}
+
+// Confirm dialog for deleting a worktree (and, by default, its branch). Blocks
+// while an agent runs in it; warns before discarding unmerged commits; a "Keep
+// branch" checkbox removes only the directory. See
+// docs_v2/specs/worktree-branch-deletion.md.
+export function WorktreeDeleteDialog(props: {
+  target: WorktreeDeleteTarget;
+  onConfirm: (keepBranch: boolean) => void;
+  onClose: () => void;
+}): ReactElement {
+  const [keepBranch, setKeepBranch] = useState(false);
+  const { branch, branchMerged, threadCount, anyRunning } = props.target;
+  const willDeleteBranch = !keepBranch;
+  const unmerged = willDeleteBranch && !branchMerged;
+  const body = anyRunning
+    ? `An agent is still running in this worktree. Stop it first, then delete.`
+    : threadCount > 0
+      ? `${threadCount} thread${threadCount === 1 ? "" : "s"} run in this worktree — they'll become unavailable (their history is kept).`
+      : `This removes the worktree directory on disk.`;
+  return createElement(
+    "div",
+    {
+      className: "worktree-create-backdrop",
+      role: "dialog",
+      "aria-label": "Delete worktree",
+      onMouseDown: (event: { target: EventTarget | null; currentTarget: EventTarget | null }) => {
+        if (event.target === event.currentTarget) {
+          props.onClose();
+        }
+      },
+    },
+    createElement(
+      "div",
+      { className: "worktree-create worktree-delete" },
+      createElement(
+        "div",
+        { className: "worktree-create__title" },
+        createElement(Trash2, { size: 15, strokeWidth: 1.9, "aria-hidden": true }),
+        `Delete worktree · ${branch}`,
+      ),
+      createElement("div", { className: "worktree-create__preview" }, body),
+      anyRunning
+        ? null
+        : createElement(
+            "label",
+            { className: "worktree-delete__check" },
+            createElement("input", {
+              type: "checkbox",
+              checked: keepBranch,
+              onChange: (event: ChangeEvent<HTMLInputElement>) => setKeepBranch(event.currentTarget.checked),
+            }),
+            createElement("span", null, `Keep branch ${branch}`),
+          ),
+      unmerged
+        ? createElement(
+            "div",
+            { className: "worktree-delete__warn" },
+            `Branch "${branch}" has unmerged commits — deleting it discards them.`,
+          )
+        : null,
+      createElement(
+        "div",
+        { className: "worktree-create__actions" },
+        createElement(
+          "button",
+          { type: "button", className: "worktree-create__cancel", onClick: () => props.onClose() },
+          "Cancel",
+        ),
+        createElement(
+          "button",
+          {
+            type: "button",
+            className: "worktree-create__confirm worktree-delete__confirm",
+            disabled: anyRunning,
+            onClick: () => props.onConfirm(keepBranch),
+          },
+          willDeleteBranch ? "Delete worktree + branch" : "Delete worktree",
         ),
       ),
     ),
@@ -977,6 +1120,9 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   const [contentSearchVisible, setContentSearchVisible] = useState(false);
   // Inline "new worktree" name input opened from the composer worktree/branch menu.
   const [worktreeCreate, setWorktreeCreate] = useState<{ baseCwd: string } | null>(null);
+  // Worktree delete confirmation (opened from a Thread row menu or the composer
+  // worktree menu). See docs_v2/specs/worktree-branch-deletion.md.
+  const [worktreeDelete, setWorktreeDelete] = useState<WorktreeDeleteTarget | null>(null);
   // Track the window width so the layout can auto-collapse columns that no
   // longer fit (responsive narrow-screen handling).
   const [windowWidth, setWindowWidth] = useState(
@@ -1057,9 +1203,61 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // "New worktree" is a deferred intent: record the (optional) name on the Start
   // Composer and create the worktree on send (see onSubmit), so the name can be
   // derived from the first message. No git command runs here.
-  const submitWorktreeCreate = (name: string) => {
+  const submitWorktreeCreate = (name: string, baseBranch: string) => {
     setWorktreeCreate(null);
-    setShellState((state) => setProductShellComposerNewWorktreeIntent(state, { name }));
+    setShellState((state) =>
+      setProductShellComposerNewWorktreeIntent(state, {
+        name,
+        baseBranch: baseBranch.length > 0 ? baseBranch : undefined,
+      }),
+    );
+  };
+
+  // Open the worktree delete dialog for a worktree cwd: reads the branch + merged
+  // status (Main IPC) and the threads-here/running facts (state). Shared by the
+  // Thread-row menu and the Composer worktree-menu trash affordance.
+  const openWorktreeDeleteByCwd = (cwd: string) => {
+    const bridge = props.projectBridge;
+    if (bridge === undefined) {
+      return;
+    }
+    const here = shellState.threads.filter(
+      (entry) => entry.scope.kind === "project" && entry.scope.cwd === cwd,
+    );
+    const fallbackBranch = cwd.split("/").filter((seg) => seg.length > 0).pop() ?? cwd;
+    bridge
+      .worktreeInfo(cwd)
+      .then((info) => {
+        // Only worktrees are deletable (never the main repo / a non-worktree cwd).
+        if (!info.isWorktree) {
+          return;
+        }
+        setWorktreeDelete({
+          cwd,
+          branch: info.branch ?? fallbackBranch,
+          branchMerged: info.branchMerged,
+          threadCount: here.length,
+          anyRunning: here.some((entry) => entry.running === true),
+        });
+      })
+      .catch(() => {});
+  };
+
+  // Delete the open worktree target: remove the dir and (unless "Keep branch")
+  // its branch, forcing only when the user accepted the unmerged warning.
+  const confirmWorktreeDelete = (keepBranch: boolean) => {
+    const target = worktreeDelete;
+    const bridge = props.projectBridge;
+    setWorktreeDelete(null);
+    if (target === null || bridge === undefined) {
+      return;
+    }
+    bridge
+      .deleteWorktree(target.cwd, worktreeDeleteRequest({ keepBranch, branchMerged: target.branchMerged }))
+      .then((result) =>
+        setShellState((state) => setProductShellRegisteredProjects(state, result.entries)),
+      )
+      .catch(() => {});
   };
 
   // Fetch real git branches/worktrees whenever the active Project cwd changes,
@@ -1496,6 +1694,15 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         setShellState((state) => setProductShellComposerActiveSurface(state, null));
         return;
       }
+      // The trailing trash on a worktree row opens the delete dialog for that
+      // worktree (the cwd is carried in the rowId). See
+      // docs_v2/specs/worktree-branch-deletion.md.
+      if (surfaceKind === "worktree_menu" && rowId.startsWith("delete-worktree:")) {
+        const cwd = rowId.slice("delete-worktree:".length);
+        setShellState((state) => setProductShellComposerActiveSurface(state, null));
+        openWorktreeDeleteByCwd(cwd);
+        return;
+      }
       // "New worktree" / "Create new branch" open an inline name input; creation
       // runs on submit and re-scopes the composer to the new worktree.
       if (
@@ -1707,6 +1914,23 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         dispatchBackendCommand(result.command);
         return result.state;
       }),
+    threadWorktreeBranch: (threadId) => {
+      const thread = shellState.threads.find((entry) => entry.threadId === threadId);
+      if (thread === undefined || thread.scope.kind !== "project") {
+        return null;
+      }
+      return worktreeRepoRootForCwd(thread.scope.cwd) !== null
+        ? (thread.scope.cwd.split("/").filter((seg) => seg.length > 0).pop() ?? null)
+        : null;
+    },
+    // Open the worktree delete dialog for the worktree a Thread runs in.
+    onThreadDeleteWorktree: (threadId) => {
+      const thread = shellState.threads.find((entry) => entry.threadId === threadId);
+      setShellState((state) => openProductShellLeftUiMenu(state, null));
+      if (thread !== undefined && thread.scope.kind === "project") {
+        openWorktreeDeleteByCwd(thread.scope.cwd);
+      }
+    },
     onThreadRenameStart: (threadId) =>
       setShellState((state) => startProductShellThreadRename(state, threadId)),
     onThreadRenameSubmit: (threadId, title) =>
@@ -1984,8 +2208,16 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       ? createElement(WorktreeNameInput, {
           baseCwd: worktreeCreate.baseCwd,
           baseDirPattern: shellState.worktreeSettings.baseDirPattern,
+          branches: shellState.gitBranches,
           onSubmit: submitWorktreeCreate,
           onClose: () => setWorktreeCreate(null),
+        })
+      : null,
+    worktreeDelete !== null
+      ? createElement(WorktreeDeleteDialog, {
+          target: worktreeDelete,
+          onConfirm: confirmWorktreeDelete,
+          onClose: () => setWorktreeDelete(null),
         })
       : null,
   );
@@ -5417,6 +5649,16 @@ function createLeftUiContextMenu(
             icon: createElement(Archive, { size: 15, strokeWidth: 1.9 }),
             onClick: () => handlers.onThreadArchiveIntent(menu.threadId),
           },
+          ...(handlers.threadWorktreeBranch(menu.threadId) !== null
+            ? [
+                {
+                  label: `Delete worktree (${handlers.threadWorktreeBranch(menu.threadId)})…`,
+                  icon: createElement(Trash2, { size: 15, strokeWidth: 1.9 }),
+                  onClick: () => handlers.onThreadDeleteWorktree(menu.threadId),
+                  danger: true,
+                } satisfies ContextMenuItem,
+              ]
+            : []),
         ]
       : [
           {

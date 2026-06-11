@@ -1147,7 +1147,7 @@ export function setProductShellComposerFolderScope(
 // docs_v2/specs/worktree-start-experience.md.
 export function setProductShellComposerNewWorktreeIntent(
   state: ProductShellState,
-  intent: { name?: string },
+  intent: { name?: string; baseBranch?: string },
 ): ProductShellState {
   return {
     ...state,

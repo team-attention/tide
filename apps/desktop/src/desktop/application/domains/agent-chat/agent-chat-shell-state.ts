@@ -402,6 +402,11 @@ export interface AgentChatChoiceSurfaceRowView {
   // A row for a real feature that is not wired up yet: shown greyed and
   // non-interactive instead of silently doing nothing when clicked.
   disabled?: boolean;
+  // An optional trailing affordance (e.g. a trash button) rendered beside the
+  // row. Clicking it routes through the same row-select callback with this
+  // `rowId`, so no extra handler plumbing is needed. See
+  // docs_v2/specs/worktree-branch-deletion.md.
+  action?: { rowId: string; label: string; icon?: string };
 }
 
 export interface AgentChatBackendEvent {
@@ -1758,15 +1763,21 @@ export function setComposerFolderScope(
 // Thread can't change its worktree. See docs_v2/specs/worktree-start-experience.md.
 export function setComposerNewWorktreeIntent(
   state: AgentChatShellState,
-  intent: { name?: string },
+  intent: { name?: string; baseBranch?: string },
 ): AgentChatShellUpdateResult {
   if (state.thread) {
     return { state, command: null };
   }
-  return updateComposerLaunchOptions(state, {
+  const patch: Record<string, unknown> = {
     worktree: "new",
     newWorktreeName: intent.name?.trim() ?? "",
-  });
+  };
+  // The base branch the new worktree is created off is stored in `branch` (what
+  // the send path reads as the `git worktree add` start point).
+  if (intent.baseBranch !== undefined && intent.baseBranch.length > 0) {
+    patch.branch = intent.baseBranch;
+  }
+  return updateComposerLaunchOptions(state, patch);
 }
 
 // After the worktree is created at send time, scope the Start Composer to it and
@@ -2053,9 +2064,12 @@ function worktreeMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRow
   ];
   for (const worktree of worktrees.filter((entry) => !entry.current)) {
     const label = worktree.branch ?? basenameOf(worktree.path);
-    rows.push(
-      row(`worktree:${worktree.path}`, label, worktree.path, undefined, "folder", selected === worktree.path),
-    );
+    const entry = row(`worktree:${worktree.path}`, label, worktree.path, undefined, "folder", selected === worktree.path);
+    // A trailing trash affordance opens the delete dialog (Desktop adapter
+    // special-cases the `delete-worktree:` rowId). See
+    // docs_v2/specs/worktree-branch-deletion.md.
+    entry.action = { rowId: `delete-worktree:${worktree.path}`, label: `Delete worktree ${label}`, icon: "trash" };
+    rows.push(entry);
   }
   // Selecting this opens an inline name input (handled in the Desktop adapter):
   // it creates a git worktree off the current scope and re-scopes the composer.

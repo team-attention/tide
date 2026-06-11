@@ -95,6 +95,7 @@ export function clonePendingInput(
     : {
         ...pendingInput,
         launchOptions: cloneLaunchOptions(pendingInput.launchOptions),
+        attachments: pendingInput.attachments?.map((ref) => ({ ...ref })),
       };
 }
 

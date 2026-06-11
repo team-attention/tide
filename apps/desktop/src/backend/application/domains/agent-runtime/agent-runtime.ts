@@ -1,4 +1,4 @@
-import type { AgentBinding, AgentId, ThreadId, ThreadScope } from "../thread/thread.ts";
+import type { AgentBinding, AgentId, ComposerAttachmentRef, ThreadId, ThreadScope } from "../thread/thread.ts";
 
 export type AgentRuntimeState =
   | "not_started"
@@ -23,6 +23,7 @@ export interface TerminalInput {
   submittedAt: string;
   promptId?: string;
   choiceId?: string;
+  attachments?: ComposerAttachmentRef[];
 }
 
 export interface AgentRuntimeStartInput {
@@ -33,6 +34,7 @@ export interface AgentRuntimeStartInput {
   // First user message, delivered to provider CLIs as the launch-time initial
   // prompt (see AgentStartPlanInput.initialPrompt).
   initialPrompt?: string;
+  initialAttachments?: ComposerAttachmentRef[];
 }
 
 export interface AgentRuntimeResumeInput {

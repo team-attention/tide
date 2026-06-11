@@ -7,7 +7,7 @@
 // Every shape here is evidence-based: captured live from the real CLIs
 // (transcripts under /tmp/tide-proto-evidence/, summarized in
 // docs_v2/specs/structured-agent-runtime.md). Do not extend from memory.
-import type { PromptState } from "../../../../application/domains/thread/thread.ts";
+import type { ComposerAttachmentRef, PromptState } from "../../../../application/domains/thread/thread.ts";
 import type { DiscoveredProviderSessionRef } from "../../../../application/ports/outbound/agent-integration-port.ts";
 
 export type StructuredProviderEvent =
@@ -75,7 +75,7 @@ export interface StructuredRuntimeClient {
 }
 
 export type StructuredRuntimeWrite =
-  | { kind: "composer_input"; value: string }
+  | { kind: "composer_input"; value: string; attachments?: ComposerAttachmentRef[] }
   | { kind: "prompt_answer"; promptId?: string; choiceId?: string; value: string };
 
 export interface StructuredClientCallbacks {

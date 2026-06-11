@@ -124,6 +124,13 @@ test("new_worktree_intent_defers_creation_and_labels_the_worktree_chip", () => {
   const named = setComposerNewWorktreeIntent(base, { name: "spike" }).state;
   const namedItems = createAgentChatShellViewModel(named).composer.contextItems;
   assert.equal(namedItems.find((item) => item.label === "Worktree")?.value, "New worktree: spike");
+
+  // A base branch chosen in the inline form is stored as the launch branch (the
+  // `git worktree add` start point read at send). The Branch chip reflects it.
+  const based = setComposerNewWorktreeIntent(base, { name: "spike", baseBranch: "develop" }).state;
+  assert.equal(based.composer.startOptions.launchOptions?.branch, "develop");
+  const basedItems = createAgentChatShellViewModel(based).composer.contextItems;
+  assert.equal(basedItems.find((item) => item.label === "Branch")?.value, "develop");
 });
 
 test("resolving_new_worktree_intent_rescopes_and_resets_launch_options", () => {
@@ -152,6 +159,34 @@ test("resolving_new_worktree_intent_rescopes_and_resets_launch_options", () => {
   assert.equal(options.worktree, "current folder");
   assert.equal(options.branch, "fix-login");
   assert.equal("newWorktreeName" in options, false);
+});
+
+test("composer_worktree_menu_offers_delete_on_existing_worktrees", () => {
+  // Spec: docs_v2/specs/worktree-branch-deletion.md — each existing worktree row
+  // carries a trailing delete action (routed via a `delete-worktree:` rowId).
+  const base = createAgentChatShellState({
+    startOptions: {
+      agentBinding: { agentId: "claude" },
+      scope: { kind: "project", projectId: "repo", cwd: "/repo" },
+      launchOptions: { worktree: "current folder" },
+    },
+  });
+  const state: AgentChatShellState = {
+    ...setComposerActiveSurface(base, "worktree_menu").state,
+    availableWorktrees: [
+      { path: "/repo", branch: "main", current: true },
+      { path: "/repo.worktree/fix-login", branch: "fix-login", current: false },
+    ],
+  };
+
+  const surface = createAgentChatShellViewModel(state).composer.activeSurface;
+  const worktreeRow = surface?.rows.find(
+    (entry) => entry.rowId === "worktree:/repo.worktree/fix-login",
+  );
+  assert.equal(worktreeRow?.action?.rowId, "delete-worktree:/repo.worktree/fix-login");
+  // The "current folder" / new-worktree affordances carry no delete action.
+  assert.equal(surface?.rows.find((entry) => entry.rowId === "worktree:current")?.action, undefined);
+  assert.equal(surface?.rows.find((entry) => entry.rowId === "new-worktree")?.action, undefined);
 });
 
 // --- UC-2: Compose Composer Attachments ---

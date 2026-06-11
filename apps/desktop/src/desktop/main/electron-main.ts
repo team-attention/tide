@@ -8,7 +8,15 @@ import {
   type CommandFs,
 } from "./provider-command-discovery.ts";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { computeWorktreePath, sanitizeWorktreeBranch, worktreeAddArgs, worktreeRepoRootForCwd } from "../../shared/worktree-path.ts";
+import {
+  computeWorktreePath,
+  sanitizeWorktreeBranch,
+  worktreeAddArgs,
+  worktreeRemoveArgs,
+  branchDeleteArgs,
+  branchMergedArgs,
+  worktreeRepoRootForCwd,
+} from "../../shared/worktree-path.ts";
 import { classifyTopLevelNavigation } from "./window-navigation-policy.ts";
 import {
   CONTRACT_VERSION,
@@ -285,6 +293,78 @@ ipcMain.handle("tide:git-context", async (_event, cwd: unknown): Promise<GitCont
   }
   if (pending) worktrees.push({ ...pending, current: pending.path === cwd });
   return { isGitRepo: true, currentBranch, branches, worktrees };
+});
+
+// Run git with explicit, prebuilt args (the worktree-path helpers already include
+// `-C <repo>`), surfacing the exit status (needed for merge-base / branch -d).
+function execGitArgs(args: string[]): Promise<{ ok: boolean; stdout: string }> {
+  return new Promise((resolve) => {
+    execFile("git", args, { maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+      resolve({ ok: !error, stdout: stdout ?? "" });
+    });
+  });
+}
+
+// The repo's main worktree root for any worktree cwd: fast path via the Tide
+// default rule, else derive from git's common dir (handles custom path patterns).
+async function repoRootForWorktree(cwd: string): Promise<string | null> {
+  const byRule = worktreeRepoRootForCwd(cwd);
+  if (byRule !== null) {
+    return byRule;
+  }
+  const common = (await runGit(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim();
+  if (common.length === 0) {
+    return null;
+  }
+  return dirname(common.replace(/\/+$/, ""));
+}
+
+// Read-only facts for the worktree delete dialog (branch + whether it's merged).
+// See docs_v2/specs/worktree-branch-deletion.md.
+ipcMain.handle("tide:worktree-info", async (_event, cwd: unknown) => {
+  const info = { repoRoot: null as string | null, branch: null as string | null, branchMerged: false, isWorktree: false };
+  if (typeof cwd !== "string" || cwd.length === 0) {
+    return info;
+  }
+  const repoRoot = await repoRootForWorktree(cwd);
+  info.repoRoot = repoRoot;
+  info.isWorktree = repoRoot !== null && repoRoot !== cwd.replace(/\/+$/, "");
+  const branch = (await runGit(cwd, ["rev-parse", "--abbrev-ref", "HEAD"])).trim();
+  info.branch = branch.length > 0 && branch !== "HEAD" ? branch : null;
+  if (repoRoot !== null && info.branch !== null) {
+    info.branchMerged = (await execGitArgs(branchMergedArgs(repoRoot, info.branch))).ok;
+  }
+  return info;
+});
+
+// Remove a worktree directory and, when requested, delete its branch. The branch
+// is deleted only after the worktree is gone (it can't be deleted while checked
+// out), and force (`-D`) is used only when the caller acknowledged unmerged loss.
+ipcMain.handle("tide:delete-worktree", async (_event, cwd: unknown, options: unknown) => {
+  const current = await readProjectRegistry();
+  const fail = { entries: current, worktreeRemoved: false, branch: null as string | null, branchDeleted: false };
+  if (typeof cwd !== "string" || cwd.length === 0) {
+    return fail;
+  }
+  const opts = (options ?? {}) as { deleteBranch?: unknown; force?: unknown };
+  const deleteBranch = opts.deleteBranch === true;
+  const force = opts.force === true;
+  const repoRoot = await repoRootForWorktree(cwd);
+  if (repoRoot === null) {
+    return fail;
+  }
+  const rawBranch = (await runGit(cwd, ["rev-parse", "--abbrev-ref", "HEAD"])).trim();
+  const branch = rawBranch.length > 0 && rawBranch !== "HEAD" ? rawBranch : null;
+  const removed = await execGitArgs(worktreeRemoveArgs(repoRoot, cwd));
+  let branchDeleted = false;
+  if (removed.ok && deleteBranch && branch !== null) {
+    branchDeleted = (await execGitArgs(branchDeleteArgs(repoRoot, branch, force))).ok;
+  }
+  const entries = removed.ok ? current.filter((entry) => entry.cwd !== cwd) : current;
+  if (removed.ok) {
+    await writeProjectRegistry(entries);
+  }
+  return { entries, worktreeRemoved: removed.ok, branch, branchDeleted };
 });
 
 // Real provider slash-commands/skills for a cwd, read from the providers' files

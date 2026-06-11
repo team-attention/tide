@@ -47,6 +47,21 @@ export interface TidePreloadSurface {
     options?: { baseDirPattern?: string; copyFiles?: string[]; baseBranch?: string },
   ): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
   removeWorktree(cwd: string): Promise<{ entries: ProjectRegistryEntry[] }>;
+  worktreeInfo(cwd: string): Promise<{
+    repoRoot: string | null;
+    branch: string | null;
+    branchMerged: boolean;
+    isWorktree: boolean;
+  }>;
+  deleteWorktree(
+    cwd: string,
+    options: { deleteBranch: boolean; force: boolean },
+  ): Promise<{
+    entries: ProjectRegistryEntry[];
+    worktreeRemoved: boolean;
+    branch: string | null;
+    branchDeleted: boolean;
+  }>;
   gitContext(cwd: string): Promise<GitContext>;
   listCommands(cwd: string, agentId: string): Promise<ProviderCommandSuggestion[]>;
 }
@@ -103,6 +118,22 @@ export const tidePreloadSurface: TidePreloadSurface = {
   removeWorktree(cwd) {
     return ipcRenderer.invoke("tide:remove-worktree", cwd) as Promise<{
       entries: ProjectRegistryEntry[];
+    }>;
+  },
+  worktreeInfo(cwd) {
+    return ipcRenderer.invoke("tide:worktree-info", cwd) as Promise<{
+      repoRoot: string | null;
+      branch: string | null;
+      branchMerged: boolean;
+      isWorktree: boolean;
+    }>;
+  },
+  deleteWorktree(cwd, options) {
+    return ipcRenderer.invoke("tide:delete-worktree", cwd, options) as Promise<{
+      entries: ProjectRegistryEntry[];
+      worktreeRemoved: boolean;
+      branch: string | null;
+      branchDeleted: boolean;
     }>;
   },
   gitContext(cwd) {

@@ -1,0 +1,54 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { codexTurnInput } from "../src/backend/adapters/outbound/agent-runtime/structured/codex-app-server-client.ts";
+import { acpPromptBlocks } from "../src/backend/adapters/outbound/agent-runtime/structured/acp-client.ts";
+
+// A 1x1 PNG.
+const PNG_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+
+test("codex turn input carries a NATIVE localImage item per attachment (not just path text)", () => {
+  // Codex has no file-read tool, so the "[Attached image: <path>]" text alone is
+  // invisible to it — the localImage item is what lets it see the image.
+  const input = codexTurnInput("look at this", [
+    { path: "/work/.tide/attachments/shot.png", mediaType: "image/png" },
+  ]);
+  assert.deepEqual(input, [
+    { type: "text", text: "look at this" },
+    { type: "localImage", path: "/work/.tide/attachments/shot.png" },
+  ]);
+});
+
+test("codex turn input with no attachments is exactly the text item (no regression)", () => {
+  assert.deepEqual(codexTurnInput("hi"), [{ type: "text", text: "hi" }]);
+  assert.deepEqual(codexTurnInput("hi", []), [{ type: "text", text: "hi" }]);
+});
+
+test("ACP prompt blocks carry a NATIVE image ContentBlock (base64) per attachment", () => {
+  const dir = mkdtempSync(join(tmpdir(), "acp-img-"));
+  try {
+    const path = join(dir, "shot.png");
+    writeFileSync(path, Buffer.from(PNG_B64, "base64"));
+    const blocks = acpPromptBlocks("see this", [{ path, mediaType: "image/png" }]);
+    assert.equal(blocks.length, 2);
+    assert.deepEqual(blocks[0], { type: "text", text: "see this" });
+    assert.equal(blocks[1].type, "image");
+    assert.equal(blocks[1].mimeType, "image/png");
+    assert.equal(blocks[1].data, PNG_B64); // file read → base64
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("ACP prompt blocks with no attachments are exactly the text block (no regression)", () => {
+  assert.deepEqual(acpPromptBlocks("hi"), [{ type: "text", text: "hi" }]);
+});
+
+test("ACP skips an unreadable attachment rather than failing the turn", () => {
+  const blocks = acpPromptBlocks("hi", [{ path: "/no/such/file.png", mediaType: "image/png" }]);
+  assert.deepEqual(blocks, [{ type: "text", text: "hi" }]);
+});

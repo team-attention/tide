@@ -24,6 +24,7 @@ import type {
   AgentBinding,
   AgentId,
   AgentSessionBlockReference,
+  ComposerAttachmentRef,
   LastKnownState,
   PendingInput,
   PromptState,
@@ -747,11 +748,8 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     // Materialize any pasted images and fold their paths into the message so the
     // Agent can read them. Done before readiness so a deferred (not-ready) send
     // still carries the references. See composer-image-attachments spec.
-    const message = await this.composeMessageWithAttachments(
-      thread,
-      input.initialMessage,
-      input.attachments,
-    );
+    const { text: message, attachments: messageAttachments } =
+      await this.composeMessageWithAttachments(thread, input.initialMessage, input.attachments);
 
     const readiness = await this.providerReadinessPort.check({
       agentId: thread.agentBinding.agentId,
@@ -766,6 +764,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         value: message,
         capturedAt,
         launchOptions: cloneLaunchOptions(input.launchOptions),
+        attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
       };
       thread.updatedAt = this.clock();
 
@@ -789,12 +788,14 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     // launch argv, so they still receive it via writeInput.
     const deliverPromptViaLaunch =
       thread.agentBinding.runtimeSource?.kind === "provider_cli";
+    const attachmentsForRuntime = messageAttachments.length > 0 ? messageAttachments : undefined;
     const handle = await this.agentRuntimePort.start({
       threadId,
       agentBinding: cloneAgentBinding(thread.agentBinding),
       scope: cloneScope(thread.scope),
       launchOptions: thread.launchOptions,
       initialPrompt: deliverPromptViaLaunch ? message : undefined,
+      initialAttachments: deliverPromptViaLaunch ? attachmentsForRuntime : undefined,
     });
     const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
 
@@ -807,6 +808,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         kind: "composer_input",
         value: message,
         submittedAt: this.clock(),
+        attachments: attachmentsForRuntime,
       });
     }
 
@@ -824,27 +826,36 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     thread: ThreadRecord,
     text: string,
     attachments: ComposerAttachmentInput[] | undefined,
-  ): Promise<string> {
+  ): Promise<{ text: string; attachments: ComposerAttachmentRef[] }> {
     if (
       attachments === undefined ||
       attachments.length === 0 ||
       this.composerAttachmentStorePort === undefined
     ) {
-      return text;
+      return { text, attachments: [] };
     }
     const cwd = threadRoot(thread);
     if (cwd === undefined) {
-      return text;
+      return { text, attachments: [] };
     }
     const paths = await this.composerAttachmentStorePort.materialize({
       cwd,
       attachments,
     });
-    const lines = paths.map((p) => `[Attached image: ${p}]`);
+    // The path rides the message text as "[Attached image: <path>]" — claude
+    // reads it via its file tool and the transcript renders it as a thumbnail —
+    // AND ships as a structured ref so codex/gemini/opencode (no file-read tool)
+    // get it in their native image-input format. See ComposerAttachmentRef.
+    const refs: ComposerAttachmentRef[] = paths.map((path, index) => ({
+      path,
+      mediaType: attachments[index]?.mediaType ?? "image/png",
+    }));
+    const lines = refs.map((ref) => `[Attached image: ${ref.path}]`);
     if (lines.length === 0) {
-      return text;
+      return { text, attachments: [] };
     }
-    return text.length > 0 ? `${text}\n\n${lines.join("\n")}` : lines.join("\n");
+    const folded = text.length > 0 ? `${text}\n\n${lines.join("\n")}` : lines.join("\n");
+    return { text: folded, attachments: refs };
   }
 
   async sendComposerInput(
@@ -866,11 +877,9 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
 
     // Materialize pasted images and fold their paths into the message before any
     // readiness/busy branch, so a queued or deferred send still carries them.
-    const message = await this.composeMessageWithAttachments(
-      thread,
-      input.input,
-      input.attachments,
-    );
+    const { text: message, attachments: messageAttachments } =
+      await this.composeMessageWithAttachments(thread, input.input, input.attachments);
+    const attachmentsForRuntime = messageAttachments.length > 0 ? messageAttachments : undefined;
 
     const readiness = await this.providerReadinessPort.check({
       agentId: thread.agentBinding.agentId,
@@ -884,6 +893,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         value: message,
         capturedAt: this.clock(),
         launchOptions: cloneLaunchOptions(input.launchOptions ?? thread.launchOptions),
+        attachments: attachmentsForRuntime,
       };
       thread.updatedAt = this.clock();
 
@@ -928,6 +938,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
           kind: "composer_input",
           value: message,
           submittedAt: this.clock(),
+          attachments: attachmentsForRuntime,
         });
         return {
           ok: true,
@@ -943,6 +954,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         value: message,
         capturedAt: this.clock(),
         launchOptions: cloneLaunchOptions(input.launchOptions ?? thread.launchOptions),
+        attachments: attachmentsForRuntime,
       };
       thread.updatedAt = this.clock();
       return {
@@ -966,6 +978,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       kind: "composer_input",
       value: message,
       submittedAt: this.clock(),
+      attachments: attachmentsForRuntime,
     });
 
     return {
@@ -1432,6 +1445,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       thread,
       pendingInput.launchOptions,
       pendingInput.value,
+      pendingInput.attachments,
     );
     const submittedBlock = this.appendLocalUserMessageBlock(
       thread,
@@ -1446,6 +1460,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         kind: "composer_input",
         value: pendingInput.value,
         submittedAt: this.clock(),
+        attachments: pendingInput.attachments,
       });
     }
     const threadSnapshot = snapshotThread(thread);
@@ -1510,6 +1525,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         kind: "composer_input",
         value: queued.value,
         submittedAt: this.clock(),
+        attachments: queued.attachments,
       });
       return {
         ok: true,
@@ -1630,6 +1646,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         thread,
         pendingInput.launchOptions,
         pendingInput.value,
+        pendingInput.attachments,
       );
       const submittedBlock = this.appendLocalUserMessageBlock(
         thread,
@@ -1644,6 +1661,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
           kind: "composer_input",
           value: pendingInput.value,
           submittedAt: this.clock(),
+          attachments: pendingInput.attachments,
         });
       }
       thread.pendingInput = undefined;
@@ -1704,6 +1722,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     thread: ThreadRecord,
     launchOptions: Record<string, unknown> | undefined,
     promptValue: string,
+    promptAttachments?: ComposerAttachmentRef[],
   ): Promise<{ handle: AgentRuntimeHandle; deliveredViaLaunch: boolean }> {
     if (thread.activeRuntimeHandle !== undefined) {
       return { handle: thread.activeRuntimeHandle, deliveredViaLaunch: false };
@@ -1725,6 +1744,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       scope: cloneScope(thread.scope),
       launchOptions,
       initialPrompt: deliverPromptViaLaunch ? promptValue : undefined,
+      initialAttachments: deliverPromptViaLaunch ? promptAttachments : undefined,
     });
     return { handle, deliveredViaLaunch: deliverPromptViaLaunch };
   }

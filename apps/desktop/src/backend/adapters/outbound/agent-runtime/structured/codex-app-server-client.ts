@@ -23,7 +23,7 @@
 //   turn: the model is told and continues (verified live, 02-deny-flow.jsonl).
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-import type { PromptState } from "../../../../application/domains/thread/thread.ts";
+import type { ComposerAttachmentRef, PromptState } from "../../../../application/domains/thread/thread.ts";
 import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   StructuredClientCallbacks,
@@ -40,8 +40,25 @@ export interface CreateCodexAppServerClientInput extends StructuredClientCallbac
   threadId: string;
   runtimeId: string;
   initialPrompt?: string;
+  initialAttachments?: ComposerAttachmentRef[];
   // thread/resume target (the rollout/thread id) when resuming.
   resumeThreadId?: string;
+}
+
+// Build the codex turn input array: the text plus a NATIVE localImage item per
+// attachment. Codex has no file-read tool, so the "[Attached image: <path>]" text
+// alone is invisible to it — the localImage item is what actually lets it see the
+// image. EVIDENCE: codex app-server UserInput union (v0.136 generate-ts bindings)
+// has { type: "localImage", path, detail? }.
+export function codexTurnInput(
+  text: string,
+  attachments?: ComposerAttachmentRef[],
+): Array<Record<string, unknown>> {
+  const items: Array<Record<string, unknown>> = [{ type: "text", text }];
+  for (const attachment of attachments ?? []) {
+    items.push({ type: "localImage", path: attachment.path });
+  }
+  return items;
 }
 
 export function createCodexAppServerClient(
@@ -146,7 +163,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       }, (result) => {
         this.adoptThread(result);
         if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
-          this.startTurn(input.initialPrompt);
+          this.startTurn(input.initialPrompt, input.initialAttachments);
         }
       });
     });
@@ -193,7 +210,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     }
   }
 
-  private startTurn(text: string): void {
+  private startTurn(text: string, attachments?: ComposerAttachmentRef[]): void {
     if (this.codexThreadId === undefined) {
       this.queuedWrites.push(text);
       return;
@@ -201,7 +218,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     // A turn is already running → STEER: inject this input into the active turn
     // instead of starting a second one (codex serves one turn at a time).
     if (this.activeTurnId !== undefined) {
-      this.steerTurn(text);
+      this.steerTurn(text, attachments);
       return;
     }
     // A turn/start is mid-flight but its id isn't known yet — steer once it is.
@@ -212,7 +229,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     this.turnStartInFlight = true;
     this.request("turn/start", {
       threadId: this.codexThreadId,
-      input: [{ type: "text", text }],
+      input: codexTurnInput(text, attachments),
     }, (result) => {
       const turn = isRecord(result.turn) ? result.turn : undefined;
       this.activeTurnId = turn !== undefined ? stringField(turn, "id") : undefined;
@@ -230,14 +247,14 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   // The same turn continues — exactly one turn/completed still ends it.
   // EVIDENCE: codex app-server bindings (codex-cli 0.136) TurnSteerParams =
   // {threadId, input, expectedTurnId} → TurnSteerResponse {turnId}.
-  private steerTurn(text: string): void {
+  private steerTurn(text: string, attachments?: ComposerAttachmentRef[]): void {
     if (this.codexThreadId === undefined || this.activeTurnId === undefined) {
       this.pendingSteerText.push(text);
       return;
     }
     this.request("turn/steer", {
       threadId: this.codexThreadId,
-      input: [{ type: "text", text }],
+      input: codexTurnInput(text, attachments),
       expectedTurnId: this.activeTurnId,
     }, (result) => {
       const turnId = stringField(result, "turnId");
@@ -253,7 +270,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
         this.queuedWrites.push(input.value);
         return;
       }
-      this.startTurn(input.value);
+      this.startTurn(input.value, input.attachments);
       return;
     }
     const promptId = input.promptId ?? "";

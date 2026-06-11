@@ -89,11 +89,22 @@ export interface PromptState {
   source: "pty" | "provider_signal" | "provider_hook";
 }
 
+// A materialized image attachment, sent to providers in their NATIVE image-input
+// format (codex localImage item / ACP image ContentBlock). The path also rides
+// the message text as "[Attached image: <path>]" — that text is what claude reads
+// (it has a file-read tool) and what the transcript renders as a thumbnail — but
+// codex/gemini/opencode have no file-read tool, so they need the native item.
+export interface ComposerAttachmentRef {
+  path: string;
+  mediaType: string;
+}
+
 export interface PendingInput {
   kind: "composer_input";
   value: string;
   capturedAt: string;
   launchOptions?: Record<string, unknown>;
+  attachments?: ComposerAttachmentRef[];
 }
 
 export interface AgentSessionBlockReference {

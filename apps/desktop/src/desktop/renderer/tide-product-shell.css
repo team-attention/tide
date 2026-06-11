@@ -2109,6 +2109,31 @@ button {
 }
 .worktree-create__input:focus { border-color: var(--tide-line-strong, var(--tide-muted)); }
 
+/* Base-branch picker row in the New worktree form. */
+.worktree-create__field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.worktree-create__field-label {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  color: var(--tide-muted);
+}
+.worktree-create__select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+.worktree-create__select:focus { border-color: var(--tide-line-strong, var(--tide-muted)); }
+
 .worktree-create__preview {
   color: var(--tide-muted);
   font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2148,6 +2173,37 @@ button {
   color: var(--tide-bg);
 }
 .worktree-create__confirm:disabled { opacity: 0.4; cursor: default; }
+
+/* Delete dialog: a wrapping sentence (not a path), an opt-out checkbox, and a
+   red unmerged-commits warning. See docs_v2/specs/worktree-branch-deletion.md. */
+.worktree-delete .worktree-create__preview {
+  direction: ltr;
+  white-space: normal;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.worktree-delete__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--tide-text);
+  cursor: pointer;
+}
+.worktree-delete__check input { cursor: pointer; }
+.worktree-delete__warn {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tide-danger, #d8453b) 12%, transparent);
+  color: var(--tide-danger, #d8453b);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.worktree-delete__confirm {
+  background: var(--tide-danger, #d8453b);
+  color: #fff;
+}
 
 /* Quick Open (Cmd+P): a centered command palette over a dim backdrop. */
 .quick-open-backdrop {
@@ -2764,6 +2820,40 @@ button {
   font-size: 14px;
   text-align: left;
   cursor: pointer;
+}
+
+/* A worktree row with a trailing trash affordance: the row fills, the trash sits
+   at the right and reveals on hover. See docs_v2/specs/worktree-branch-deletion.md. */
+.choice-surface__row-wrap {
+  display: flex;
+  align-items: center;
+}
+.choice-surface__row-wrap .choice-surface__row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.choice-surface__row-action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.choice-surface__row-wrap:hover .choice-surface__row-action,
+.choice-surface__row-action:focus-visible {
+  opacity: 1;
+}
+.choice-surface__row-action:hover {
+  background: color-mix(in srgb, var(--tide-danger) 14%, transparent);
+  color: var(--tide-danger);
 }
 
 .choice-surface__row-detail {

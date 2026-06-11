@@ -6,6 +6,10 @@ import {
   computeWorktreePath,
   sanitizeWorktreeBranch,
   worktreeAddArgs,
+  worktreeRemoveArgs,
+  branchDeleteArgs,
+  branchMergedArgs,
+  worktreeDeleteRequest,
   worktreeRepoRootForCwd,
 } from "../src/shared/worktree-path.ts";
 import {
@@ -70,6 +74,49 @@ test("worktree_create_git_args_include_base_branch", () => {
     worktreeAddArgs({ repoCwd: "/repo", branch: "x", worktreePath: "/p", baseBranch: "  " }),
     ["-C", "/repo", "worktree", "add", "-b", "x", "/p"],
   );
+});
+
+// --- Deletion: docs_v2/specs/worktree-branch-deletion.md ---
+
+test("worktree_remove_args_force_remove_the_path", () => {
+  assert.deepEqual(
+    worktreeRemoveArgs("/repo", "/repo.worktree/fix-login"),
+    ["-C", "/repo", "worktree", "remove", "--force", "/repo.worktree/fix-login"],
+  );
+});
+
+test("branch_delete_args_use_force_flag_only_when_forced", () => {
+  // D3: merged branch → `-d` (safe); unmerged + acknowledged → `-D` (force).
+  assert.deepEqual(branchDeleteArgs("/repo", "fix-login", false), [
+    "-C", "/repo", "branch", "-d", "fix-login",
+  ]);
+  assert.deepEqual(branchDeleteArgs("/repo", "fix-login", true), [
+    "-C", "/repo", "branch", "-D", "fix-login",
+  ]);
+});
+
+test("branch_merged_args_test_ancestor_of_head", () => {
+  assert.deepEqual(branchMergedArgs("/repo", "fix-login"), [
+    "-C", "/repo", "merge-base", "--is-ancestor", "fix-login", "HEAD",
+  ]);
+});
+
+test("worktree_delete_request_forces_only_for_unmerged_branch", () => {
+  // D2: default (keepBranch=false) deletes the branch.
+  // D3: force is requested ONLY when deleting an unmerged branch — never else.
+  assert.deepEqual(worktreeDeleteRequest({ keepBranch: false, branchMerged: true }), {
+    deleteBranch: true,
+    force: false,
+  });
+  assert.deepEqual(worktreeDeleteRequest({ keepBranch: false, branchMerged: false }), {
+    deleteBranch: true,
+    force: true,
+  });
+  // Keep-branch never deletes and never forces, regardless of merge state.
+  assert.deepEqual(worktreeDeleteRequest({ keepBranch: true, branchMerged: false }), {
+    deleteBranch: false,
+    force: false,
+  });
 });
 
 // --- UC-3: Inline worktree name input (Desktop) ---

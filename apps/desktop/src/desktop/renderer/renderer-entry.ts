@@ -44,9 +44,12 @@ export function createInitialRendererElement() {
             createWorktree: (
               cwd: string,
               name: string,
-              options?: { baseDirPattern?: string; copyFiles?: string[] },
+              options?: { baseDirPattern?: string; copyFiles?: string[]; baseBranch?: string },
             ) => window.tide!.createWorktree(cwd, name, options),
             removeWorktree: (cwd: string) => window.tide!.removeWorktree(cwd),
+            worktreeInfo: (cwd: string) => window.tide!.worktreeInfo(cwd),
+            deleteWorktree: (cwd: string, options: { deleteBranch: boolean; force: boolean }) =>
+              window.tide!.deleteWorktree(cwd, options),
             gitContext: (cwd: string) => window.tide!.gitContext(cwd),
             listCommands: (cwd: string, agentId: string) => window.tide!.listCommands(cwd, agentId),
           },
@@ -78,8 +81,10 @@ declare global {
       renameProject(cwd: string, name: string): Promise<{ projectId: string; name: string; cwd: string }[]>;
       revealInFinder(cwd: string): Promise<void>;
       openExternal(url: string): Promise<void>;
-      createWorktree(cwd: string, name: string, options?: { baseDirPattern?: string; copyFiles?: string[] }): Promise<{ entries: { projectId: string; name: string; cwd: string }[]; createdCwd: string | null }>;
+      createWorktree(cwd: string, name: string, options?: { baseDirPattern?: string; copyFiles?: string[]; baseBranch?: string }): Promise<{ entries: { projectId: string; name: string; cwd: string }[]; createdCwd: string | null }>;
       removeWorktree(cwd: string): Promise<{ entries: { projectId: string; name: string; cwd: string }[] }>;
+      worktreeInfo(cwd: string): Promise<{ repoRoot: string | null; branch: string | null; branchMerged: boolean; isWorktree: boolean }>;
+      deleteWorktree(cwd: string, options: { deleteBranch: boolean; force: boolean }): Promise<{ entries: { projectId: string; name: string; cwd: string }[]; worktreeRemoved: boolean; branch: string | null; branchDeleted: boolean }>;
       gitContext(cwd: string): Promise<{
         isGitRepo: boolean;
         currentBranch: string | null;

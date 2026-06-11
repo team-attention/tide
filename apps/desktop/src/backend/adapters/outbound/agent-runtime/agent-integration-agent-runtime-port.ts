@@ -4,6 +4,7 @@ import type {
   AgentRuntimeStartInput,
   TerminalInput,
 } from "../../../application/domains/agent-runtime/agent-runtime.ts";
+import type { ComposerAttachmentRef } from "../../../application/domains/thread/thread.ts";
 import type { AgentRuntimePort } from "../../../application/ports/outbound/agent-runtime-port.ts";
 import type {
   AgentIntegrationPort,
@@ -141,6 +142,8 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       plan,
       runtimeId,
       input.initialPrompt,
+      undefined,
+      input.initialAttachments,
     );
   }
 
@@ -178,7 +181,11 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       throw new Error("Agent Runtime handle was not found.");
     }
     if (input.kind === "composer_input") {
-      await runtime.client.write({ kind: "composer_input", value: input.value });
+      await runtime.client.write({
+        kind: "composer_input",
+        value: input.value,
+        attachments: input.attachments,
+      });
       return;
     }
     if (input.kind === "prompt_answer") {
@@ -216,6 +223,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     runtimeId: string,
     initialPrompt?: string,
     resumeRef?: string,
+    initialAttachments?: ComposerAttachmentRef[],
   ): AgentRuntimeHandle {
     // One live runtime per thread: tear down any existing one so a thread can
     // never double-run (two clients on one session tangle the turn).
@@ -255,6 +263,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           threadId,
           runtimeId,
           initialPrompt,
+          initialAttachments,
           resumeThreadId: resumeRef,
           onEvent: emit,
         });
@@ -267,6 +276,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           agentId,
           sessionRefKind: agentId === "opencode" ? "opencode_session" : "gemini_session",
           initialPrompt,
+          initialAttachments,
           resumeSessionId: resumeRef,
           onEvent: emit,
         });

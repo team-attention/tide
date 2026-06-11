@@ -26,8 +26,9 @@
 //   GEMINI_CLI_TRUST_WORKSPACE=true env override (source-verified) — workspace
 //   trust is a Tide product decision, same as the other providers.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { readFileSync } from "node:fs";
 
-import type { PromptChoice, PromptState, ProviderCliAgentId } from "../../../../application/domains/thread/thread.ts";
+import type { ComposerAttachmentRef, PromptChoice, PromptState, ProviderCliAgentId } from "../../../../application/domains/thread/thread.ts";
 import type { DiscoveredProviderSessionRef, ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   StructuredClientCallbacks,
@@ -45,7 +46,35 @@ export interface CreateAcpClientInput extends StructuredClientCallbacks {
   agentId: ProviderCliAgentId;
   sessionRefKind: DiscoveredProviderSessionRef["kind"];
   initialPrompt?: string;
+  initialAttachments?: ComposerAttachmentRef[];
   resumeSessionId?: string;
+}
+
+interface AcpQueuedPrompt {
+  text: string;
+  attachments?: ComposerAttachmentRef[];
+}
+
+// Build the ACP session/prompt content blocks: the text plus a NATIVE image
+// ContentBlock per attachment ({type:"image", mimeType, data:<base64>} — the
+// ACP/MCP image content shape, confirmed in the opencode + gemini ACP bundles).
+// ACP agents have no file-read tool, so the "[Attached image: <path>]" text alone
+// is invisible to them — this is what actually lets them see the image. The file
+// is read synchronously (a just-materialized small image on the send path).
+export function acpPromptBlocks(
+  text: string,
+  attachments?: ComposerAttachmentRef[],
+): Array<Record<string, unknown>> {
+  const blocks: Array<Record<string, unknown>> = [{ type: "text", text }];
+  for (const attachment of attachments ?? []) {
+    try {
+      const data = readFileSync(attachment.path).toString("base64");
+      blocks.push({ type: "image", mimeType: attachment.mediaType, data });
+    } catch {
+      // Unreadable attachment — skip it rather than fail the whole turn.
+    }
+  }
+  return blocks;
 }
 
 export function createAcpClient(input: CreateAcpClientInput): StructuredRuntimeClient {
@@ -76,7 +105,7 @@ class AcpClient implements StructuredRuntimeClient {
   private thoughtBlockId?: string;
   private readonly pendingResponses = new Map<number, (message: Record<string, unknown>) => void>();
   private readonly pendingPermissions = new Map<string, number | string>();
-  private readonly queuedPrompts: string[] = [];
+  private readonly queuedPrompts: AcpQueuedPrompt[] = [];
 
   constructor(input: CreateAcpClientInput) {
     this.onEvent = input.onEvent;
@@ -137,7 +166,7 @@ class AcpClient implements StructuredRuntimeClient {
         return;
       }
       this.request("session/new", sessionParams, (response) => {
-        this.adoptSession(response, undefined, input.initialPrompt);
+        this.adoptSession(response, undefined, input.initialPrompt, input.initialAttachments);
       });
     });
   }
@@ -146,6 +175,7 @@ class AcpClient implements StructuredRuntimeClient {
     response: Record<string, unknown>,
     knownSessionId?: string,
     initialPrompt?: string,
+    initialAttachments?: ComposerAttachmentRef[],
   ): void {
     if (response.error !== undefined) {
       const error = isRecord(response.error) ? response.error : {};
@@ -172,7 +202,7 @@ class AcpClient implements StructuredRuntimeClient {
       this.request("session/set_mode", { sessionId, modeId }, () => undefined);
     }
     if (initialPrompt !== undefined && initialPrompt.length > 0) {
-      this.queuedPrompts.push(initialPrompt);
+      this.queuedPrompts.push({ text: initialPrompt, attachments: initialAttachments });
     }
     this.flushQueuedPrompt();
   }
@@ -185,18 +215,18 @@ class AcpClient implements StructuredRuntimeClient {
     if (next === undefined) {
       return;
     }
-    this.startTurn(next);
+    this.startTurn(next.text, next.attachments);
   }
 
-  private startTurn(text: string): void {
+  private startTurn(text: string, attachments?: ComposerAttachmentRef[]): void {
     if (this.sessionId === undefined) {
-      this.queuedPrompts.push(text);
+      this.queuedPrompts.push({ text, attachments });
       return;
     }
     this.turnOpen = true;
     this.request("session/prompt", {
       sessionId: this.sessionId,
-      prompt: [{ type: "text", text }],
+      prompt: acpPromptBlocks(text, attachments),
     }, (response) => {
       this.turnOpen = false;
       this.flushStreams();
@@ -238,10 +268,10 @@ class AcpClient implements StructuredRuntimeClient {
       // ACP turns are sequential: a prompt while one is open queues and runs
       // when the open session/prompt resolves.
       if (this.turnOpen || this.sessionId === undefined) {
-        this.queuedPrompts.push(input.value);
+        this.queuedPrompts.push({ text: input.value, attachments: input.attachments });
         return;
       }
-      this.startTurn(input.value);
+      this.startTurn(input.value, input.attachments);
       return;
     }
     const promptId = input.promptId ?? "";

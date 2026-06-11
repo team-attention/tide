@@ -58,3 +58,34 @@ export function worktreeAddArgs(input: {
   }
   return args;
 }
+
+// Args for deleting a worktree + its branch (run with execFile, no shell). See
+// docs_v2/specs/worktree-branch-deletion.md. Remove the worktree dir before the
+// branch — a branch can't be deleted while checked out in its worktree.
+export function worktreeRemoveArgs(repoCwd: string, worktreePath: string): string[] {
+  return ["-C", repoCwd, "worktree", "remove", "--force", worktreePath];
+}
+
+// `git branch -d|-D <branch>`: force (`-D`) is required for an unmerged branch and
+// is only used after an explicit user acknowledgment (no silent commit loss).
+export function branchDeleteArgs(repoCwd: string, branch: string, force: boolean): string[] {
+  return ["-C", repoCwd, "branch", force ? "-D" : "-d", branch];
+}
+
+// Tests whether `branch`'s commits are all reachable from the repo's HEAD (i.e.
+// merged). `merge-base --is-ancestor` exits 0 when merged, 1 when not.
+export function branchMergedArgs(repoCwd: string, branch: string): string[] {
+  return ["-C", repoCwd, "merge-base", "--is-ancestor", branch, "HEAD"];
+}
+
+// Maps the delete dialog's choice to deleteWorktree options. The branch is
+// deleted unless "Keep branch" is ticked; force (`-D`) is requested ONLY when
+// deleting an unmerged branch — never otherwise, so commits are never lost
+// silently. See docs_v2/specs/worktree-branch-deletion.md.
+export function worktreeDeleteRequest(input: {
+  keepBranch: boolean;
+  branchMerged: boolean;
+}): { deleteBranch: boolean; force: boolean } {
+  const deleteBranch = !input.keepBranch;
+  return { deleteBranch, force: deleteBranch && !input.branchMerged };
+}
