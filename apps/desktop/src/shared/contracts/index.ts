@@ -1,4 +1,5 @@
 export * from "./agent.ts";
+export * from "./agent-descriptors.ts";
 export * from "./agent-runtime.ts";
 export * from "./agent-session-block.ts";
 export * from "./commands.ts";

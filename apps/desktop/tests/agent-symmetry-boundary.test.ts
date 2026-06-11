@@ -1,0 +1,120 @@
+// Phase 1 symmetry guard (docs_v2/implementation/codebase-issues-and-remediation-plan.md).
+//
+// Adding (or re-adding) an agent must mean ONE descriptor entry plus its backend
+// integration factory — not edits scattered across the UI, the runtime port, and
+// infra. These tests make that structural: every provider-CLI agent id has a
+// descriptor, a session-ref kind, an integration factory, and harness coverage;
+// and the hot consolidation points may not re-grow a hardcoded agent-id list or a
+// `=== "claude"`-style branch.
+
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import {
+  AGENT_DESCRIPTORS,
+  PROVIDER_CLI_AGENT_IDS,
+  agentDescriptor,
+  isProviderCliAgentId,
+  sessionRefKindForAgent,
+} from "../src/shared/contracts/agent-descriptors.ts";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(here, "..");
+
+function read(rel: string): string {
+  return fs.readFileSync(path.join(root, rel), "utf8");
+}
+
+// The canonical provider-CLI agent ids. The contract type ProviderCliAgentId is a
+// compile-time union; this is its runtime twin, and the descriptor table + helpers
+// must agree with it. Adding an id to the type without updating this list (and a
+// descriptor) is the exact fan-out this guard prevents.
+const EXPECTED_PROVIDER_CLI_IDS = ["codex", "claude", "gemini", "opencode"] as const;
+
+test("every provider-CLI agent id has a descriptor and a session-ref kind", () => {
+  for (const id of EXPECTED_PROVIDER_CLI_IDS) {
+    const descriptor = agentDescriptor(id);
+    assert.ok(descriptor !== undefined, `missing descriptor for ${id}`);
+    assert.equal(descriptor.isProviderCli, true, `${id} must be a provider-CLI descriptor`);
+    assert.ok(descriptor.displayName.length > 0, `${id} needs a displayName`);
+    assert.ok(descriptor.monogram.length > 0, `${id} needs a monogram`);
+    assert.ok(sessionRefKindForAgent(id).length > 0, `${id} needs a sessionRefKind`);
+    assert.ok(descriptor.permission.options.length > 0, `${id} needs permission modes`);
+  }
+});
+
+test("PROVIDER_CLI_AGENT_IDS is derived from the descriptor table and matches the canonical list", () => {
+  assert.deepEqual(
+    [...PROVIDER_CLI_AGENT_IDS].sort(),
+    [...EXPECTED_PROVIDER_CLI_IDS].sort(),
+  );
+  // Derived purely from descriptors flagged isProviderCli (no hand-listing).
+  const derived = Object.values(AGENT_DESCRIPTORS)
+    .filter((descriptor) => descriptor.isProviderCli)
+    .map((descriptor) => descriptor.id)
+    .sort();
+  assert.deepEqual(derived, [...EXPECTED_PROVIDER_CLI_IDS].sort());
+});
+
+test("isProviderCliAgentId accepts provider CLIs and rejects the Tide API agent and unknowns", () => {
+  for (const id of EXPECTED_PROVIDER_CLI_IDS) {
+    assert.equal(isProviderCliAgentId(id), true, `${id} should be a provider CLI`);
+  }
+  assert.equal(isProviderCliAgentId("openai_api"), false);
+  assert.equal(isProviderCliAgentId("antigravity"), false);
+  assert.equal(isProviderCliAgentId("bogus"), false);
+});
+
+test("every provider-CLI agent has an integration factory module", () => {
+  for (const id of EXPECTED_PROVIDER_CLI_IDS) {
+    const file = `src/backend/adapters/outbound/agent-integrations/${id}/${id}-agent-integration.ts`;
+    assert.ok(
+      fs.existsSync(path.join(root, file)),
+      `missing integration factory ${file}`,
+    );
+    const source = read(file);
+    assert.match(
+      source,
+      new RegExp(`create${id[0].toUpperCase()}${id.slice(1)}AgentIntegration`),
+      `${file} must export create${id[0].toUpperCase()}${id.slice(1)}AgentIntegration`,
+    );
+  }
+});
+
+test("the canonical provider smoke harness names every provider-CLI agent", () => {
+  // v2-provider-smoke.mjs is the answer+settle gate run per agent; a new agent must
+  // be added to its known set. (permission-flow/state-matrix coverage is enforced
+  // after Phase 2.2 wires opencode into them.)
+  const smoke = read("scripts/v2-provider-smoke.mjs");
+  for (const id of EXPECTED_PROVIDER_CLI_IDS) {
+    assert.match(smoke, new RegExp(`["']${id}["']`), `v2-provider-smoke.mjs must name ${id}`);
+  }
+});
+
+test("the runtime port derives agent membership and session-ref kind from the registry", () => {
+  const source = read(
+    "src/backend/adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts",
+  );
+  // No re-grown hardcoded provider-CLI id chain.
+  assert.doesNotMatch(
+    source,
+    /agentId === "codex"[\s\S]*agentId === "claude"[\s\S]*agentId === "opencode"/,
+    "runtime port must not hardcode the provider-CLI id list — derive it from the registry",
+  );
+  // No inline sessionRefKind ternary; it comes from sessionRefKindForAgent.
+  assert.doesNotMatch(source, /sessionRefKind:\s*agentId === "opencode"/);
+  assert.match(source, /sessionRefKindForAgent\(agentId\)/);
+});
+
+test("infra detectAvailableAgents iterates the registry, not a hardcoded array", () => {
+  const source = read("src/backend/infrastructure/node/live-backend.ts");
+  assert.match(source, /PROVIDER_CLI_AGENT_IDS\.filter/);
+  assert.doesNotMatch(
+    source,
+    /\["codex",\s*"claude",\s*"gemini",\s*"opencode"\]/,
+    "detectAvailableAgents must use PROVIDER_CLI_AGENT_IDS, not a literal id array",
+  );
+});

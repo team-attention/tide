@@ -17,6 +17,10 @@ import type {
   AgentId,
   ProviderCliAgentId,
 } from "../../../application/domains/thread/thread.ts";
+import {
+  isProviderCliAgentId,
+  sessionRefKindForAgent,
+} from "../../../../shared/contracts/agent-descriptors.ts";
 import { createClaudeStreamJsonClient } from "./structured/claude-stream-json-client.ts";
 import { createCodexAppServerClient } from "./structured/codex-app-server-client.ts";
 import { createAcpClient } from "./structured/acp-client.ts";
@@ -310,7 +314,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           threadId,
           runtimeId,
           agentId,
-          sessionRefKind: agentId === "opencode" ? "opencode_session" : "gemini_session",
+          sessionRefKind: sessionRefKindForAgent(agentId),
           initialPrompt,
           initialAttachments,
           resumeSessionId: resumeRef,
@@ -330,15 +334,6 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     }
     return { runtimeId, threadId, agentId };
   }
-}
-
-function isProviderCliAgentId(agentId: AgentId): agentId is ProviderCliAgentId {
-  return (
-    agentId === "codex" ||
-    agentId === "claude" ||
-    agentId === "gemini" ||
-    agentId === "opencode"
-  );
 }
 
 function defaultClock(): string {

@@ -1561,6 +1561,11 @@ function createActiveComposerSurface(
 // Claude mirrors the Claude app's mode list, Antigravity uses the same friendly
 // shape. `value` is what flows to the Agent Integration (which maps it to the
 // provider's real flags); `label`/`detail` are the human presentation.
+// Permission presentation is the desktop layer's own vocabulary (this domain is
+// deliberately isolated from shared/contracts). Each agent's config carries a
+// `legacyValueMap`: raw permission values from threads created before the friendly
+// modes, mapped to the closest current mode — DATA, not the per-agent `=== "codex"`
+// branches this replaced.
 interface PermissionOption {
   id: string;
   value: string;
@@ -1569,7 +1574,13 @@ interface PermissionOption {
   danger?: boolean;
 }
 
-const PERMISSION_OPTIONS: Record<string, { default: string; options: PermissionOption[] }> = {
+interface PermissionConfig {
+  default: string;
+  options: PermissionOption[];
+  legacyValueMap?: Record<string, string>;
+}
+
+const PERMISSION_OPTIONS: Record<string, PermissionConfig> = {
   codex: {
     default: "approve-for-me",
     options: [
@@ -1577,6 +1588,16 @@ const PERMISSION_OPTIONS: Record<string, { default: string; options: PermissionO
       { id: "codex-auto", value: "approve-for-me", label: "Approve for me", detail: "Only unsafe actions ask" },
       { id: "codex-full", value: "full-access", label: "Full access", detail: "Unrestricted files & internet", danger: true },
     ],
+    legacyValueMap: {
+      "read-only": "ask-for-approval",
+      untrusted: "ask-for-approval",
+      "on-request": "ask-for-approval",
+      "workspace-write": "approve-for-me",
+      "on-failure": "approve-for-me",
+      "danger-full-access": "full-access",
+      never: "full-access",
+      "dangerously-bypass-approvals-and-sandbox": "full-access",
+    },
   },
   claude: {
     default: "default",
@@ -1587,6 +1608,7 @@ const PERMISSION_OPTIONS: Record<string, { default: string; options: PermissionO
       { id: "claude-auto", value: "auto", label: "Auto mode", detail: "Run autonomously" },
       { id: "claude-bypass", value: "bypassPermissions", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
     ],
+    legacyValueMap: { dontAsk: "acceptEdits" },
   },
   antigravity: {
     default: "default",
@@ -1615,26 +1637,16 @@ const PERMISSION_OPTIONS: Record<string, { default: string; options: PermissionO
   },
 };
 
-function permissionConfigForAgent(agentId: string): { default: string; options: PermissionOption[] } {
+function permissionConfigForAgent(agentId: string): PermissionConfig {
   return PERMISSION_OPTIONS[agentId] ?? PERMISSION_OPTIONS.codex;
 }
 
-// Legacy raw permission values (from threads created before the friendly modes)
-// map to the closest current mode so the chip + selected row still make sense.
 function normalizePermissionValue(agentId: string, value: string): string {
   const config = permissionConfigForAgent(agentId);
   if (config.options.some((option) => option.value === value)) {
     return value;
   }
-  if (agentId === "codex") {
-    if (value === "read-only" || value === "untrusted" || value === "on-request") return "ask-for-approval";
-    if (value === "workspace-write" || value === "on-failure") return "approve-for-me";
-    if (value === "danger-full-access" || value === "never" || value === "dangerously-bypass-approvals-and-sandbox") {
-      return "full-access";
-    }
-  }
-  if (agentId === "claude" && value === "dontAsk") return "acceptEdits";
-  return value;
+  return config.legacyValueMap?.[value] ?? value;
 }
 
 function permissionRowsForAgent(agentId: string, currentValue: string): AgentChatChoiceSurfaceRowView[] {

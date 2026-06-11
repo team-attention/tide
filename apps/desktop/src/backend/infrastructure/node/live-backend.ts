@@ -148,6 +148,7 @@ import {
 } from "../../application/services/thread-runtime-service.ts";
 import {
   CONTRACT_VERSION,
+  PROVIDER_CLI_AGENT_IDS,
   type BackendEventEnvelope,
   type ThreadSummaryDto,
 } from "../../../shared/contracts/index.ts";
@@ -354,7 +355,7 @@ export function createLiveBackendContractMessageAdapter(
       // The composer menu enables these and shows the rest disabled. Evaluated per
       // thread.list so a CLI installed after launch is picked up.
       detectAvailableAgents: () =>
-        (["codex", "claude", "gemini", "opencode"] as const).filter(
+        PROVIDER_CLI_AGENT_IDS.filter(
           (agentId) =>
             integrations[agentId] !== undefined &&
             resolveExecutable(executableForAgent(agentId)) !== undefined,

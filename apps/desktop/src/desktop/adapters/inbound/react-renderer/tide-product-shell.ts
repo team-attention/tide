@@ -190,6 +190,7 @@ import {
   type ProductShellViewModel,
 } from "../../../application/domains/product-shell/product-shell-state.ts";
 import { AgentChatShell } from "./agent-chat-shell.ts";
+import { agentDescriptor } from "../../../../shared/contracts/agent-descriptors.ts";
 import type {
   AgentChatBackendEvent,
   AgentChatChoiceSurfaceView,
@@ -2467,22 +2468,10 @@ export function fitColumnsToWidth(input: {
 }
 
 // Two-letter monogram per provider (Codex/Claude both start with C, so we use
-// a distinct 2-char code for each). Rendered as a small rounded text badge.
+// a distinct 2-char code for each). Sourced from the agent descriptor registry;
+// antigravity is legacy (not a launchable descriptor agent) but still rendered.
 export function agentMonogram(agentId: ProductShellAgentIdentity): string {
-  switch (agentId) {
-    case "codex":
-      return "Co";
-    case "claude":
-      return "Cl";
-    case "antigravity":
-      return "Ag";
-    case "gemini":
-      return "Ge";
-    case "opencode":
-      return "Oc";
-    case "openai_api":
-      return "AI";
-  }
+  return agentDescriptor(agentId)?.monogram ?? (agentId === "antigravity" ? "Ag" : "Co");
 }
 
 export function AgentIdentityIcon(props: { agentId: ProductShellAgentIdentity | string }): ReactElement {
@@ -5844,18 +5833,5 @@ function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
 }
 
 function agentLabel(agentId: ProductShellAgentIdentity): string {
-  switch (agentId) {
-    case "codex":
-      return "Codex CLI";
-    case "claude":
-      return "Claude Code";
-    case "antigravity":
-      return "Antigravity CLI";
-    case "gemini":
-      return "Gemini CLI";
-    case "opencode":
-      return "opencode";
-    case "openai_api":
-      return "OpenAI API";
-  }
+  return agentDescriptor(agentId)?.displayName ?? (agentId === "antigravity" ? "Antigravity CLI" : "Codex CLI");
 }
