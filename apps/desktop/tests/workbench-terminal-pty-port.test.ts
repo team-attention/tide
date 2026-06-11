@@ -8,8 +8,9 @@ import test from "node:test";
 
 import { createPythonPtyProcessLauncher } from "../src/backend/adapters/outbound/pty/python-pty-process-launcher.ts";
 import { createPtyWorkbenchTerminalPort } from "../src/backend/adapters/outbound/pty/workbench-terminal-pty-port.ts";
+import { SKIP_REAL_PTY_IN_CI } from "./pty-ci-gate.ts";
 
-test("workbench_terminal_pty_port_runs_a_live_command_and_reports_exit", async () => {
+test("workbench_terminal_pty_port_runs_a_live_command_and_reports_exit", { skip: SKIP_REAL_PTY_IN_CI }, async () => {
   // The Terminal Pane is backed by a real PTY session: it launches a command,
   // streams its output, and reports process exit.
   const port = createPtyWorkbenchTerminalPort({
@@ -47,7 +48,7 @@ test("workbench_terminal_pty_port_runs_a_live_command_and_reports_exit", async (
   assert.equal(exit.exitCode, 0);
 });
 
-test("workbench_terminal_pty_port_accepts_interactive_input", async () => {
+test("workbench_terminal_pty_port_accepts_interactive_input", { skip: SKIP_REAL_PTY_IN_CI }, async () => {
   // Composer/terminal input is written to the same live PTY session.
   const port = createPtyWorkbenchTerminalPort({
     launcher: createPythonPtyProcessLauncher(),

@@ -129,6 +129,7 @@ import {
 } from "../src/backend/infrastructure/node/provider-bootstrap-artifacts.ts";
 import { createPythonPtyProcessLauncher } from "../src/backend/adapters/outbound/pty/python-pty-process-launcher.ts";
 import { createPtyProviderSetupSurfaceTerminalPort } from "../src/backend/adapters/outbound/pty/provider-setup-surface-pty-port.ts";
+import { SKIP_REAL_PTY_IN_CI } from "./pty-ci-gate.ts";
 import type {
   AgentRuntimeHandle,
   AgentRuntimeStartInput,
@@ -205,7 +206,7 @@ test("provider_readiness_port_reports_provider_account_blocker_for_tide_api_agen
 
 // Spec: docs_v2/specs/agent-prompt-surfacing.md — answering a codex TUI menu replays
 // keyed navigation on the live PTY, not typed text.
-test("python_pty_process_launcher_round_trips_terminal_input_with_real_pty", async () => {
+test("python_pty_process_launcher_round_trips_terminal_input_with_real_pty", { skip: SKIP_REAL_PTY_IN_CI }, async () => {
   const launcher = createPythonPtyProcessLauncher();
   let output = "";
   let resolveSeen: (() => void) | undefined;
@@ -243,7 +244,7 @@ test("python_pty_process_launcher_round_trips_terminal_input_with_real_pty", asy
   assert.doesNotMatch(output, /tcgetattr\/ioctl|Operation not supported on socket/);
 });
 
-test("python_pty_process_launcher_sets_terminal_window_size_for_provider_tuis", async () => {
+test("python_pty_process_launcher_sets_terminal_window_size_for_provider_tuis", { skip: SKIP_REAL_PTY_IN_CI }, async () => {
   const launcher = createPythonPtyProcessLauncher();
   let output = "";
   let resolveSeen: (() => void) | undefined;
@@ -282,7 +283,7 @@ test("python_pty_process_launcher_sets_terminal_window_size_for_provider_tuis", 
   assert.match(output, /120x40/);
 });
 
-test("python_pty_process_launcher_replies_to_basic_terminal_queries", async () => {
+test("python_pty_process_launcher_replies_to_basic_terminal_queries", { skip: SKIP_REAL_PTY_IN_CI }, async () => {
   const launcher = createPythonPtyProcessLauncher();
   let output = "";
   let resolveSeen: (() => void) | undefined;
