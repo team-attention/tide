@@ -255,19 +255,24 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       askUserQuestion: { questions, answers, index },
     });
     const total = questions.length;
-    this.onEvent({
-      kind: "prompt",
-      promptState: {
-        promptId,
-        threadId: this.threadId,
-        agentId: this.agentId,
-        kind: "choice",
-        // Number multi-question prompts so the user knows more are coming.
-        message: total > 1 ? `(${index + 1}/${total}) ${questionText}` : questionText,
-        choices: optionChoices,
-        defaultChoiceId: optionChoices[0]?.choiceId,
-        source: "provider_hook",
-      },
+    const promptState = {
+      promptId,
+      threadId: this.threadId,
+      agentId: this.agentId,
+      kind: "choice" as const,
+      // Number multi-question prompts so the user knows more are coming.
+      message: total > 1 ? `(${index + 1}/${total}) ${questionText}` : questionText,
+      choices: optionChoices,
+      defaultChoiceId: optionChoices[0]?.choiceId,
+      source: "provider_hook" as const,
+    };
+    // Defer the emit: a follow-up question (Q2…) is surfaced WHILE the previous
+    // one is being answered, so emitting synchronously would queue it behind the
+    // about-to-be-cleared prior prompt — and the queue path re-emits the stale
+    // prior prompt, clobbering this one in the UI. setImmediate lets the answer
+    // flow settle (prompt cleared) so this surfaces cleanly as the visible card.
+    setImmediate(() => {
+      this.onEvent({ kind: "prompt", promptState });
     });
     return true;
   }
