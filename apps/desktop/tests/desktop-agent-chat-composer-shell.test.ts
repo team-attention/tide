@@ -1010,12 +1010,11 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
   assert.doesNotMatch(html, /data-choice-surface/);
 });
 
-test("every offered provider-agent row actually binds its agent (no silent no-op)", () => {
-  // Regression: the opencode row was rendered + enabled but composerAgentIdForRow
-  // had no "opencode" case, so selecting it returned null and the handler treated
-  // it as a no-op — the agent never switched. Cover every offered agent so a new
-  // menu row can never again be selectable-but-dead.
-  for (const agentId of ["codex", "claude", "gemini", "opencode"] as const) {
+test("active provider-agent rows bind; the coming-soon row is an intentional no-op", () => {
+  // Regression: every selectable agent row must actually bind its agent (the
+  // opencode row was once rendered+enabled but composerAgentIdForRow lacked its
+  // case, so it was a SILENT no-op). The active agents must bind...
+  for (const agentId of ["codex", "claude", "gemini"] as const) {
     const opened = setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state;
     const selected = selectAgentChatChoiceSurfaceRow(opened, "agent_menu", agentId).state;
     assert.equal(
@@ -1024,6 +1023,16 @@ test("every offered provider-agent row actually binds its agent (no silent no-op
       `selecting the ${agentId} row should bind the thread to ${agentId}`,
     );
   }
+  // ...and opencode is "Coming soon": its row is disabled, so selecting it must
+  // leave the bound agent unchanged (an intentional no-op, not a missing mapping).
+  const base = setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state;
+  const before = base.composer.startOptions.agentBinding.agentId;
+  const afterOpencode = selectAgentChatChoiceSurfaceRow(base, "agent_menu", "opencode").state;
+  assert.equal(
+    afterOpencode.composer.startOptions.agentBinding.agentId,
+    before,
+    "selecting the coming-soon opencode row must not change the bound agent",
+  );
 });
 
 test("project_menu_lists_real_injected_projects_not_a_hardcoded_set", () => {

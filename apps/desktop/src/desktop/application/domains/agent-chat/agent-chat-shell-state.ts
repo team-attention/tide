@@ -683,8 +683,8 @@ export function selectAgentChatChoiceSurfaceRow(
   switch (surfaceKind) {
     case "agent_menu": {
       const agentId = composerAgentIdForRow(rowId);
-      // Selecting a disabled (undetected) agent is a no-op.
-      if (agentId === null || !isAgentAvailable(agentId)) {
+      // Selecting a disabled (undetected or coming-soon) agent is a no-op.
+      if (agentId === null || !isAgentAvailable(agentId) || isAgentComingSoon(agentId)) {
         return { state, command: null };
       }
       return selectComposerAgent(state, agentId);
@@ -1590,6 +1590,14 @@ function isAgentAvailable(agentId: string): boolean {
   return availableProviderAgents === null || availableProviderAgents.includes(agentId);
 }
 
+// Agents shown in the composer menu but not yet wired for real use — rendered
+// disabled with a "Coming soon" hint, never selectable or chosen as the start
+// default. opencode's CLI is detected, but its runtime start path isn't ready.
+const COMING_SOON_AGENTS: ReadonlySet<string> = new Set(["opencode"]);
+function isAgentComingSoon(agentId: string): boolean {
+  return COMING_SOON_AGENTS.has(agentId);
+}
+
 // Provider-CLI agents offered in the composer menu (antigravity is hidden for now).
 const OFFERED_PROVIDER_AGENTS = ["codex", "claude", "gemini", "opencode"] as const;
 
@@ -1601,11 +1609,14 @@ export function resolveStartAgentId(preferred: string | undefined): AgentChatAge
   if (
     preferred !== undefined &&
     (OFFERED_PROVIDER_AGENTS as readonly string[]).includes(preferred) &&
-    isAgentAvailable(preferred)
+    isAgentAvailable(preferred) &&
+    !isAgentComingSoon(preferred)
   ) {
     return preferred as AgentChatAgentId;
   }
-  const firstAvailable = OFFERED_PROVIDER_AGENTS.find((agentId) => isAgentAvailable(agentId));
+  const firstAvailable = OFFERED_PROVIDER_AGENTS.find(
+    (agentId) => isAgentAvailable(agentId) && !isAgentComingSoon(agentId),
+  );
   return (firstAvailable ?? "codex") as AgentChatAgentId;
 }
 
@@ -1617,15 +1628,16 @@ function agentMenuRow(
   selectedAgentId: string,
 ): AgentChatChoiceSurfaceRowView {
   const selected = selectedAgentId === agentId;
+  const comingSoon = isAgentComingSoon(agentId);
   return row(
     agentId,
     label,
-    "Agent Integration",
+    comingSoon ? "Coming soon" : "Agent Integration",
     undefined,
     selected ? "check" : `identity:${agentId}`,
     selected,
     false,
-    !isAgentAvailable(agentId),
+    comingSoon || !isAgentAvailable(agentId),
   );
 }
 
