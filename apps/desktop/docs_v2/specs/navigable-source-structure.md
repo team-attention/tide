@@ -1,5 +1,23 @@
 # Spec: Navigable Source Structure (whole-app decomposition)
 
+> **Status: IMPLEMENTED** (2026-06-12). Navigation guide:
+> `docs_v2/implementation/source-map.md`. Deviations from the target tree
+> below, chosen during the moves:
+> - `product-shell/chat-column.ts` exists (the agent-chat column assembly).
+> - The contract adapter kept its dispatch class whole; `dto/{thread,workbench}-dtos.ts`,
+>   `error-codes.ts`, `envelope-support.ts` were extracted instead of `routes/`
+>   (splitting the class's case handlers is a rewrite, not a move).
+> - Live-backend provider helpers landed in `live-provider-discovery.ts`
+>   (still infrastructure; relocating them into adapters stays Phase-5.2 work).
+> - `thread-runtime-service.ts` was not shrunk: it is ~400 lines of API types
+>   plus one 1,382-line lifecycle class; the class split remains the
+>   `thread-runtime-service-decomposition.md` collaborator refactor (pinned).
+> - The electron smoke's dead `antigravity` default was replaced with a direct
+>   `openai_api` thread.start binding (audit Phase-2.3's prescribed fix), making
+>   `npm run test:smoke:electron` the auth-free end-to-end gate; it passed
+>   against the decomposed app, as did the 682-test suite, typecheck, build,
+>   and a pw-smoke screenshot pass.
+
 ## Scope
 
 Restructure the entire Tide v2 source tree (`src/desktop`, `src/backend`,

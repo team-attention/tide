@@ -23,6 +23,7 @@ Each spec must be narrow enough to test and implement as one slice.
 
 | Spec | Status | Purpose |
 |------|--------|---------|
+| [Navigable Source Structure](navigable-source-structure.md) | Implemented | Whole-app decomposition: feature/concern directories, ordered CSS area files, size ratchet; navigation guide in implementation/source-map.md. |
 | [Provider Evidence Harness](provider-evidence-harness.md) | Drafted | Repeatably collect provider PTY, readiness, prompt, and history-reference evidence before implementing real Agent Integrations. |
 | [Composer Agent Runtime Source](composer-agent-runtime-source.md) | Drafted | Keep one visible Composer Agent chip while distinguishing Provider CLI Agents from Tide API Agents and source-specific Model Chip behavior. |
 | [Provider Setup Surface Workbench Command](provider-setup-surface-workbench-command.md) | Drafted | Connect Provider Readiness setup actions to Thread-scoped Workbench Terminal Panes. |

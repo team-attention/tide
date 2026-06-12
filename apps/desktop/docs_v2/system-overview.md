@@ -34,13 +34,18 @@ live-backend.ts  ── the shared spine: ONE flow for every agent
    │                (boundary-tested: zero `agentId === …` branches)
    ▼
 Agent Integration adapters  ── ALL per-agent knowledge
-   │   claude / codex / gemini / antigravity
+   │   claude / codex / gemini / opencode
    ▼
-real CLI process (hidden PTY)  +  that CLI's own history file
+real CLI process (structured protocol: stream-json / app-server / ACP)
+   +  that CLI's own history file
 ```
 
 Rule: **the spine is identical for all agents; anything agent-specific belongs in
 the adapter.** Enforced by `tests/runtime-spine-boundary.test.ts`.
+
+File-level navigation ("where do I change X") lives in
+[implementation/source-map.md](implementation/source-map.md); the directory
+structure it describes is enforced by `tests/file-size-ratchet.test.ts`.
 
 ## 2. The provider abstraction (one port, four adapters)
 

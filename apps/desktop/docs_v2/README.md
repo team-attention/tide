@@ -13,6 +13,7 @@ Do not share glossary ownership between the two folders. When a v2 product term 
 
 - [Glossary](glossary.md)
 - [Master Plan](master-plan.md)
+- [Source Map — "where do I change X"](implementation/source-map.md)
 - [Specs](specs/README.md)
 - [Electron + Node Architecture Decisions](implementation/electron-node-architecture-decisions.md)
 - [Concrete Design Backlog](implementation/concrete-design-backlog.md)

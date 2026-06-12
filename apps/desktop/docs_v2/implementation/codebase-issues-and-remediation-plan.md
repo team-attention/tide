@@ -31,9 +31,19 @@ Done and committed (each slice typecheck + test verified; suite 684 green):
 
 Remaining / deferred (with the reason):
 
-- **Phase 3 god-file splitting (3.1–3.4):** the ratchet tracks + guards the targets;
-  the actual moves are careful per-slice work needing the dev-harness visual loop
-  (cross-layer helper entanglement + no headless pixel verification here).
+- **Phase 3 god-file splitting (3.1–3.4): DONE 2026-06-12** (spec:
+  `specs/navigable-source-structure.md`, navigation guide:
+  `implementation/source-map.md`). All eight pinned god-files were decomposed
+  or shrunk except `thread-runtime-service.ts` (its class split remains the
+  `thread-runtime-service-decomposition.md` refactor): product-shell →
+  30 feature modules + 9 ordered CSS area files; agent-chat → 20 modules;
+  both state stores → concern modules behind barrels; electron-main →
+  6 process modules; services/ grouped into thread/workbench/tide-mcp/
+  provider/support; contract-adapter DTOs/errors extracted; live-projector +
+  live-provider-discovery extracted. Verified per slice (typecheck + 682-test
+  suite + build) and end-to-end via the now-auth-free electron smoke
+  (the dead `antigravity` smoke default was replaced with a direct
+  `openai_api` binding — the 2.3 fix below).
 - **Phase 2.3 auth-free CI e2e:** blocked on a found pre-existing bug — the Tide-API
   (`openai_api`) agent can't be selected through the composer menu (it's intentionally
   CLI-only there), so the fake-provider electron smoke can't bind a non-CLI agent

@@ -20,7 +20,7 @@ import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 const require = createRequire(import.meta.url);
 const electronPath = require("electron");
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const selectableAgents = new Set(["codex", "claude", "antigravity", "gemini", "openai_api"]);
+const selectableAgents = new Set(["codex", "claude", "gemini", "opencode", "openai_api"]);
 
 const options = parseArgs(process.argv.slice(2));
 if (options.help) {
@@ -149,6 +149,20 @@ function createStartCommand(input) {
   if (submitted.command?.kind !== "thread.start") {
     throw new Error("Product Shell did not emit thread.start.");
   }
+  if (input.agent === "openai_api") {
+    // The Tide-API agent is intentionally not selectable through the composer
+    // menu (CLI agents only there), so the menu path above falls back to the
+    // default CLI agent. Build the binding directly against the contract shape
+    // (tests/shared-contracts.test.ts pins thread.start + tide_api source).
+    submitted.command.payload.agentBinding = {
+      agentId: "openai_api",
+      runtimeSource: { kind: "tide_api", provider: "openai" },
+    };
+    submitted.command.payload.launchOptions = {
+      model: "gpt-5.5",
+      permission: "Auto-review",
+    };
+  }
   return submitted.command;
 }
 
@@ -212,7 +226,7 @@ function parseSmokeResult(stdout) {
 
 function parseArgs(args) {
   const parsed = {
-    agent: process.env.TIDE_ELECTRON_SMOKE_AGENT ?? "antigravity",
+    agent: process.env.TIDE_ELECTRON_SMOKE_AGENT ?? "openai_api",
     timeoutMs: Number(process.env.TIDE_ELECTRON_SMOKE_TIMEOUT_MS ?? 75000),
     appDataRoot: process.env.TIDE_ELECTRON_SMOKE_APP_DATA_ROOT,
     message: process.env.TIDE_ELECTRON_SMOKE_MESSAGE,
@@ -257,6 +271,12 @@ function parseArgs(args) {
 
   if (!Number.isFinite(parsed.timeoutMs) || parsed.timeoutMs < 1000) {
     throw new Error("--timeout-ms must be at least 1000.");
+  }
+
+  // The Tide-API agent is the auth-free path: default to the fake OpenAI
+  // server unless the caller explicitly wired a real endpoint.
+  if (parsed.agent === "openai_api" && process.env.TIDE_ELECTRON_SMOKE_FAKE_OPENAI === undefined && !args.includes("--fake-openai")) {
+    parsed.fakeOpenAi = true;
   }
 
   return parsed;
@@ -340,10 +360,10 @@ function parseJsonOrNull(value) {
 }
 
 function printHelp() {
-  console.log(`Usage: npm run test:smoke:electron -- --agent antigravity
+  console.log(`Usage: npm run test:smoke:electron -- --agent openai_api
 
 Options:
-  --agent codex|claude|antigravity|openai_api
+  --agent codex|claude|gemini|opencode|openai_api
   --timeout-ms 75000
   --app-data-root /tmp/tide-electron-smoke
   --message "Prompt text"
