@@ -6,6 +6,7 @@ import { claudeThinkingText } from "../src/backend/infrastructure/node/live-back
 import {
   rebuildCodexConversation,
   rebuildClaudeConversation,
+  rebuildGeminiConversation,
 } from "../src/backend/infrastructure/node/provider-conversation-rebuilders.ts";
 
 // Spec: docs_v2/specs/agent-chat-fidelity-reasoning-actions.md
@@ -74,4 +75,51 @@ test("rebuildClaudeConversation emits reasoning from thinking content", () => {
   assert.equal(blocks[0].body, "Plan the change.");
   assert.equal(blocks[1].role, "agent");
   assert.equal(blocks[1].body, "Applied.");
+});
+
+// Phase 5.3 — gemini threads must restore their conversation from the gemini
+// session JSONL on reopen, like codex/claude (was the "No messages here" gap).
+test("rebuildGeminiConversation restores user, reasoning, tool, and answer blocks", () => {
+  const session = [
+    JSON.stringify({ sessionId: "s1", projectHash: "p", startTime: "t" }),
+    JSON.stringify({ type: "user", content: "List the files." }),
+    JSON.stringify({
+      type: "gemini",
+      id: "g1",
+      thoughts: [{ subject: "Plan", description: "I'll run ls." }],
+      toolCalls: [
+        {
+          id: "call-1",
+          name: "run_shell_command",
+          args: { command: "ls" },
+          result: [{ functionResponse: { response: { output: "a.txt\nb.txt" } } }],
+        },
+      ],
+      content: "There are two files: a.txt and b.txt.",
+    }),
+  ].join("\n");
+  const blocks = rebuildGeminiConversation(session, "thread-1", "s1", "gemini");
+  assert.deepEqual(
+    blocks.map((b) => b.role),
+    ["user", "reasoning", "tool", "tool", "agent"],
+  );
+  assert.deepEqual(
+    blocks.map((b) => b.kind),
+    ["user_message", "reasoning", "tool_call", "tool_result", "agent_message"],
+  );
+  assert.equal(blocks[0].body, "List the files.");
+  assert.equal(blocks[1].body, "Plan\nI'll run ls.");
+  assert.match(blocks[3].body, /a\.txt/);
+  assert.equal(blocks[4].body, "There are two files: a.txt and b.txt.");
+});
+
+test("rebuildGeminiConversation skips header and $set patch lines", () => {
+  const session = [
+    JSON.stringify({ sessionId: "s1" }),
+    JSON.stringify({ $set: { foo: "bar" } }),
+    JSON.stringify({ type: "user", content: "hi" }),
+  ].join("\n");
+  const blocks = rebuildGeminiConversation(session, "t", "s1", "gemini");
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].role, "user");
 });
