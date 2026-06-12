@@ -494,23 +494,41 @@ class LspCodeIntelligencePort implements WorkspaceCodeIntelligencePort {
     }
     const existing = this.clients.get(root);
     if (existing !== undefined) {
-      return existing.isAlive() ? existing : undefined;
+      // ALWAYS gate on readiness — a concurrent first query may still be in
+      // the initialize handshake, and didOpen before `initialized` is a
+      // protocol violation servers may ignore or punish.
+      const existingReady = await existing.whenReady();
+      return existingReady && existing.isAlive() ? existing : undefined;
     }
     const client = new LspClient({
       executable: this.executable,
       args: this.spec.args,
       root,
       onUnexpectedExit: () => {
-        this.failed = true;
+        this.markFailed();
       },
     });
     this.clients.set(root, client);
     const ready = await client.whenReady();
     if (!ready) {
-      this.failed = true;
+      this.markFailed();
       return undefined;
     }
     return client;
+  }
+
+  // Flipping `failed` must also TEAR DOWN every live server — a slow-to-
+  // initialize or half-dead rust-analyzer would otherwise keep running for the
+  // whole backend lifetime while the engine never sends it another query.
+  private markFailed(): void {
+    if (this.failed) {
+      return;
+    }
+    this.failed = true;
+    for (const client of this.clients.values()) {
+      void client.dispose();
+    }
+    this.clients.clear();
   }
 
   private unavailable(message: string): {

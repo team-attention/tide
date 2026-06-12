@@ -245,3 +245,47 @@ test("AskUserQuestion: Skip (empty answer) leaves the question unanswered, optio
     await client.stop();
   }
 });
+
+test("AskUserQuestion: a cancel landing in the deferred-emit window leaves no ghost prompt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const events: StructuredProviderEvent[] = [];
+  // The fake emits the question and IMMEDIATELY withdraws it — both lines land
+  // in one stdin chunk, so the cancel processes before the deferred prompt
+  // emit fires. The gate must swallow the emit (no card nothing can answer).
+  const request = JSON.stringify({
+    type: "control_request",
+    request_id: "req-1",
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "AskUserQuestion",
+      input: { questions: [{ question: "Q?", header: "Q", options: [{ label: "A" }] }] },
+    },
+  });
+  const cancel = JSON.stringify({ type: "control_cancel_request", request_id: "req-1" });
+  const script = [
+    'const fs = require("node:fs");',
+    `console.log(${JSON.stringify(`${request}\n${cancel}`)});`,
+    "setInterval(() => {}, 1000);",
+  ].join("\n");
+  const client = createClaudeStreamJsonClient({
+    plan: {
+      command: process.execPath,
+      args: ["-e", script],
+      env: { TIDE_FAKE_OUT: receivedFile },
+      cwd: tmpdir(),
+      transport: "claude_stream_json",
+      expectedSignalSources: [],
+    },
+    threadId: "thread-1",
+    runtimeId: "rt-1",
+    onEvent: (event) => events.push(event),
+  });
+  try {
+    // Give the deferred emit window time to elapse.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.equal(events.some((event) => event.kind === "prompt"), false);
+  } finally {
+    await client.stop();
+  }
+});

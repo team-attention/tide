@@ -25,6 +25,20 @@ import {
 // owns extension behavior, code-editor.ts owns the React component.
 // Spec: workbench-editor-language-intelligence.
 
+// Buffers past this size stay un-queried: every query ships the WHOLE buffer
+// over IPC (full-text sync), and the save path enforces a comparable limit.
+const MAX_INTEL_BUFFER_CHARS = 1_500_000;
+
+// Shared gate for every query source. Read-only (truncated) panes must NOT
+// query: their TRUNCATED text would be pushed as the file's overlay/document
+// state and poison cross-file intelligence with garbage content.
+export function codeIntelQueryAllowed(
+  ctx: Pick<CodeIntelContext, "language" | "readOnly">,
+  docLength: number,
+): boolean {
+  return !ctx.readOnly && hasCodeIntelligence(ctx.language) && docLength <= MAX_INTEL_BUFFER_CHARS;
+}
+
 // What the intel extensions need from the component at query time. Read through
 // a getter (a ref to the latest props) because the shell re-renders per
 // keystroke while the extensions are built once per mounted editor.
@@ -106,7 +120,7 @@ function createOccurrencePlugin(getContext: () => CodeIntelContext) {
       }
       private async query(): Promise<void> {
         const ctx = getContext();
-        if (!hasCodeIntelligence(ctx.language)) {
+        if (!codeIntelQueryAllowed(ctx, this.view.state.doc.length)) {
           return;
         }
         const selection = this.view.state.selection.main;
@@ -169,6 +183,17 @@ const signatureField = StateField.define<Tooltip | null>({
       return null;
     }
     if (tr.docChanged) {
+      // A whole-document replacement is a pane being reused for ANOTHER file
+      // (unkeyed editor + new value) — call-site help cannot survive that.
+      let fullReplace = false;
+      tr.changes.iterChangedRanges((fromA, toA) => {
+        if (fromA === 0 && toA >= tr.startState.doc.length) {
+          fullReplace = true;
+        }
+      });
+      if (fullReplace) {
+        return null;
+      }
       value = { ...value, pos: tr.changes.mapPos(value.pos) };
     }
     // Leaving the call's line dismisses the help (VS Code behavior).
@@ -238,7 +263,7 @@ function createSignaturePlugin(getContext: () => CodeIntelContext) {
       }
       private async query(): Promise<void> {
         const ctx = getContext();
-        if (ctx.readOnly || !hasCodeIntelligence(ctx.language)) {
+        if (!codeIntelQueryAllowed(ctx, this.view.state.doc.length)) {
           return;
         }
         const doc = this.view.state.doc;
@@ -374,7 +399,7 @@ function createCmdLinkPlugin() {
 function createCompletionSource(getContext: () => CodeIntelContext) {
   return async (context: CompletionContext): Promise<CompletionResult | null> => {
     const ctx = getContext();
-    if (ctx.readOnly || !hasCodeIntelligence(ctx.language)) {
+    if (!codeIntelQueryAllowed(ctx, context.state.doc.length)) {
       return null;
     }
     const word = context.matchBefore(/[\w$]*/);
@@ -417,7 +442,7 @@ function createCompletionSource(getContext: () => CodeIntelContext) {
 function createHoverExtension(getContext: () => CodeIntelContext) {
   return hoverTooltip(async (view, pos): Promise<Tooltip | null> => {
     const ctx = getContext();
-    if (!hasCodeIntelligence(ctx.language)) {
+    if (!codeIntelQueryAllowed(ctx, view.state.doc.length)) {
       return null;
     }
     const doc = view.state.doc;
@@ -460,7 +485,7 @@ function createDiagnosticsExtension(getContext: () => CodeIntelContext) {
   return linter(
     async (view): Promise<Diagnostic[]> => {
       const ctx = getContext();
-      if (ctx.readOnly || !hasCodeIntelligence(ctx.language)) {
+      if (!codeIntelQueryAllowed(ctx, view.state.doc.length)) {
         return [];
       }
       const doc = view.state.doc;

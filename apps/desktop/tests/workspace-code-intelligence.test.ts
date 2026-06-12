@@ -208,3 +208,69 @@ test("non-TypeScript extensions get a clean unavailable error", async () => {
     assert.match(result.error.message, /TypeScript and JavaScript files\.$/);
   }
 });
+
+test("a root tsconfig drives diagnostics (ts-extension imports stay clean)", async () => {
+  // Tide's own repo style: explicit .ts import specifiers, legal only with
+  // allowImportingTsExtensions — hardcoded compiler options flagged TS5097 on
+  // every import line of a real project.
+  const configuredRoot = mkdtempSync(path.join(os.tmpdir(), "tide-code-intel-cfg-"));
+  try {
+    writeFileSync(
+      path.join(configuredRoot, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          module: "nodenext",
+          moduleResolution: "nodenext",
+          target: "es2022",
+          allowImportingTsExtensions: true,
+          noEmit: true,
+        },
+      }),
+    );
+    writeFileSync(path.join(configuredRoot, "util.ts"), UTIL_SOURCE);
+    writeFileSync(
+      path.join(configuredRoot, "main.ts"),
+      'import { add } from "./util.ts";\n\nexport const total = add(1, 2);\n',
+    );
+    const configuredPort = createTypeScriptCodeIntelligencePort();
+    try {
+      const result = await configuredPort.getDiagnostics({
+        root: configuredRoot,
+        path: path.join(configuredRoot, "main.ts"),
+      });
+      assert.equal(result.ok, true);
+      assert.deepEqual(result.ok ? result.diagnostics : undefined, []);
+    } finally {
+      await configuredPort.dispose?.();
+    }
+  } finally {
+    rmSync(configuredRoot, { recursive: true, force: true });
+  }
+});
+
+test("on-disk edits made outside the editor invalidate stale answers", async () => {
+  // Agents edit files directly on disk (the core Tide flow). The persistent
+  // service must observe the change — hover after renaming util's export type
+  // must reflect the NEW disk content without any overlay involved.
+  const before = await port.getHover({ root, path: mainPath, ...positionOf(MAIN_SOURCE, "total") });
+  assert.equal(before.ok && before.hover !== null, true);
+  if (before.ok && before.hover !== null) {
+    assert.match(before.hover.contents, /const total: number/);
+  }
+
+  const rewritten = UTIL_SOURCE.replace(
+    "export function add(first: number, second: number): number {\n  return first + second;\n}",
+    'export function add(first: number, second: number): string {\n  return String(first + second);\n}',
+  );
+  assert.notEqual(rewritten, UTIL_SOURCE);
+  writeFileSync(utilPath, rewritten);
+  try {
+    const after_ = await port.getHover({ root, path: mainPath, ...positionOf(MAIN_SOURCE, "total") });
+    assert.equal(after_.ok && after_.hover !== null, true);
+    if (after_.ok && after_.hover !== null) {
+      assert.match(after_.hover.contents, /const total: string/);
+    }
+  } finally {
+    writeFileSync(utilPath, UTIL_SOURCE);
+  }
+});

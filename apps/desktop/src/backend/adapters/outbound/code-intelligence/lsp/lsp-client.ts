@@ -11,6 +11,22 @@ import { pathToFileURL } from "node:url";
 const REQUEST_TIMEOUT_MS = 8_000;
 const SHUTDOWN_GRACE_MS = 1_000;
 
+// ONE process-level exit hook for ALL clients (a per-instance process.on("exit")
+// accumulates listeners past the MaxListeners warning with one server per root).
+const liveClients = new Set<LspClient>();
+let exitHookInstalled = false;
+function installExitHook(): void {
+  if (exitHookInstalled) {
+    return;
+  }
+  exitHookInstalled = true;
+  process.on("exit", () => {
+    for (const client of liveClients) {
+      client.killNow();
+    }
+  });
+}
+
 interface JsonRpcMessage {
   jsonrpc?: string;
   id?: number | string;
@@ -47,22 +63,26 @@ export class LspClient {
   private alive = true;
   private disposed = false;
   // Backend teardown must never leak rust-analyzer/gopls orphans (memory note
-  // v2-agy-process-leak): kill synchronously when this process exits.
-  private readonly killOnProcessExit = (): void => {
+  // v2-agy-process-leak): the shared exit hook kills every live client, and the
+  // TIDE_RUNTIME_ID env tag lets reap-orphaned-agents collect survivors of a
+  // HARD kill (where no exit handler runs) at the next backend startup.
+  killNow(): void {
     try {
       this.child.kill("SIGKILL");
     } catch {
       // Already gone.
     }
-  };
+  }
 
   constructor(input: LspClientInput) {
     this.input = input;
     this.child = spawn(input.executable, input.args, {
       cwd: input.root,
       stdio: ["pipe", "pipe", "ignore"],
+      env: { ...process.env, TIDE_RUNTIME_ID: `tide-lsp-${process.pid}` },
     });
-    process.on("exit", this.killOnProcessExit);
+    installExitHook();
+    liveClients.add(this);
     this.child.on("error", () => this.markDead());
     this.child.on("exit", () => this.markDead());
     // A dying server can EPIPE buffered writes; the exit handler owns state.
@@ -198,7 +218,7 @@ export class LspClient {
       return;
     }
     this.alive = false;
-    process.removeListener("exit", this.killOnProcessExit);
+    liveClients.delete(this);
     for (const entry of this.pending.values()) {
       clearTimeout(entry.timer);
       entry.resolve(null);

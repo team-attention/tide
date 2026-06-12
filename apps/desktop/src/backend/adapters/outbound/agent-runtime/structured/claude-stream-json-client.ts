@@ -324,8 +324,13 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     // about-to-be-cleared prior prompt — and the queue path re-emits the stale
     // prior prompt, clobbering this one in the UI. setImmediate lets the answer
     // flow settle (prompt cleared) so this surfaces cleanly as the visible card.
+    // Gated on the pending entry: a control_cancel_request landing inside this
+    // window already withdrew the interaction — emitting then would show a
+    // ghost card nothing can answer.
     setImmediate(() => {
-      this.onEvent({ kind: "prompt", promptState });
+      if (this.pendingPermissions.has(promptId)) {
+        this.onEvent({ kind: "prompt", promptState });
+      }
     });
     return true;
   }

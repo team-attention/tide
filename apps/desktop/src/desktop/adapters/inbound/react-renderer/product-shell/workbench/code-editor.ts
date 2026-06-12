@@ -147,6 +147,11 @@ export function WorkbenchCodeEditor(props: {
     if (menuSelection === null || view === undefined || props.readOnly) {
       return;
     }
+    // The doc can be replaced while the menu is open (agent edit, pane swap);
+    // only delete if the captured range still holds the captured text.
+    if (view.state.sliceDoc(menuSelection.from, menuSelection.to) !== menuSelection.text) {
+      return;
+    }
     void navigator.clipboard?.writeText(menuSelection.text);
     view.dispatch({
       changes: { from: menuSelection.from, to: menuSelection.to },

@@ -155,3 +155,20 @@ Bring the Editor Pane to VS Code/Warp-level language intelligence:
   `@codemirror/language`, `@lezer/highlight` (promote from transitive), plus
   language packs `@codemirror/lang-python|go|html|yaml|sql|xml|cpp|java` and
   `@codemirror/legacy-modes` (shell, TOML).
+- The TS engine honors the root's `tsconfig.json` (parsed once per project,
+  fallback defaults when absent); disk files version by mtime+size so edits
+  made OUTSIDE the editor (agent writes) invalidate stale ASTs; projects are
+  LRU-capped (4) and buffer-equal overlays are released.
+- LSP children carry `TIDE_RUNTIME_ID` so reap-orphaned-agents collects
+  hard-kill survivors; a single process-exit hook kills all live clients; an
+  engine failure tears down its servers (no stranded rust-analyzer).
+
+## Accepted Residual Risks (adversarially reviewed 2026-06-12)
+
+- TS queries run on the backend event loop; a cold first query on a large
+  root costs ~0.5–1s. Follow-up if felt: move the engine to a worker thread.
+- LSP completion `textEdit` ranges are simplified to insert-at-word-start.
+- A pane switch inside the occurrence debounce can send one query with the
+  old buffer for the new path; the next query self-heals the overlay.
+- Free-text prompt answers that literally start with `structured:option:`
+  would be misread as an option pick (deliberately not defended).

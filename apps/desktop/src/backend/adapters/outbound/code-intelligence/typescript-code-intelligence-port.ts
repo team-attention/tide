@@ -4,7 +4,7 @@
 // perf bug this replaces. Dirty editor buffers arrive as `content` and overlay
 // the on-disk text via versioned script snapshots, so answers track what the
 // user sees, not what was last saved.
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import * as ts from "typescript";
 
@@ -30,8 +30,13 @@ const SOURCE_EXTENSIONS = new Set([
   ".jsx",
   ".mts",
   ".cts",
+  ".mjs",
+  ".cjs",
 ]);
 const MAX_SOURCE_FILES = 2000;
+// Projects are per Thread root and a session can touch many roots (worktrees!);
+// keep only the most recently used services alive.
+const MAX_PROJECTS = 4;
 const MAX_REFERENCES = 200;
 const MAX_COMPLETIONS = 80;
 // A project's file list is trusted until a queried file is unknown or the
@@ -48,9 +53,11 @@ const SKIPPED_DIRECTORIES = new Set([
   "target",
 ]);
 
-// Stable identity matters: the language service deep-compares options between
-// builds, and a fresh object per call defeats its program-reuse fast path.
-const COMPILER_OPTIONS: ts.CompilerOptions = {
+// Fallback when the root has no tsconfig.json. Stable identity matters: the
+// language service deep-compares options between builds, and a fresh object
+// per call defeats its program-reuse fast path — both the fallback and a
+// parsed tsconfig are computed ONCE per project.
+const FALLBACK_COMPILER_OPTIONS: ts.CompilerOptions = {
   allowJs: true,
   checkJs: false,
   jsx: ts.JsxEmit.ReactJSX,
@@ -59,8 +66,26 @@ const COMPILER_OPTIONS: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2022,
 };
 
+// The project's REAL tsconfig drives diagnostics — hardcoded options flagged
+// false errors on any repo whose config diverges (e.g. Tide itself needs
+// allowImportingTsExtensions or every .ts-suffixed import squiggles TS5097).
+function compilerOptionsFor(root: string): ts.CompilerOptions {
+  const configPath = ts.findConfigFile(root, ts.sys.fileExists, "tsconfig.json");
+  if (configPath === undefined) {
+    return FALLBACK_COMPILER_OPTIONS;
+  }
+  const read = ts.readConfigFile(configPath, ts.sys.readFile);
+  if (read.error !== undefined || read.config === undefined) {
+    return FALLBACK_COMPILER_OPTIONS;
+  }
+  const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, path.dirname(configPath));
+  // noEmit diagnostics only — emit-oriented options can stay as configured.
+  return { ...parsed.options, noEmit: true };
+}
+
 interface ProjectState {
   root: string;
+  compilerOptions: ts.CompilerOptions;
   service: ts.LanguageService;
   fileNames: string[];
   // Monotonic per-file counters; bumped whenever the effective content of a
@@ -382,10 +407,20 @@ class TypeScriptCodeIntelligencePort implements WorkspaceCodeIntelligencePort {
   private projectFor(root: string): ProjectState {
     const existing = this.projects.get(root);
     if (existing !== undefined) {
+      // Refresh recency (Map preserves insertion order — re-insert moves it last).
+      this.projects.delete(root);
+      this.projects.set(root, existing);
       return existing;
     }
     const project = createProject(root);
     this.projects.set(root, project);
+    // Evict the least recently used project past the cap; a re-query simply
+    // rebuilds it (slow first answer, no unbounded service/AST accumulation).
+    while (this.projects.size > MAX_PROJECTS) {
+      const oldestRoot = this.projects.keys().next().value as string;
+      this.projects.get(oldestRoot)?.service.dispose();
+      this.projects.delete(oldestRoot);
+    }
     return project;
   }
 
@@ -402,10 +437,19 @@ class TypeScriptCodeIntelligencePort implements WorkspaceCodeIntelligencePort {
       }
       return;
     }
-    if (project.overlays.get(filePath) !== content) {
-      project.overlays.set(filePath, content);
-      bumpVersion(project, filePath);
+    if (project.overlays.get(filePath) === content) {
+      return;
     }
+    // A buffer identical to disk needs no overlay — keeping one would pin the
+    // file to this text forever and shadow later on-disk edits (agent writes).
+    if (safeReadText(filePath) === content) {
+      if (project.overlays.delete(filePath)) {
+        bumpVersion(project, filePath);
+      }
+      return;
+    }
+    project.overlays.set(filePath, content);
+    bumpVersion(project, filePath);
   }
 
   private ensureFileKnown(project: ProjectState, filePath: string): void {
@@ -429,6 +473,7 @@ class TypeScriptCodeIntelligencePort implements WorkspaceCodeIntelligencePort {
 function createProject(root: string): ProjectState {
   const project: ProjectState = {
     root,
+    compilerOptions: compilerOptionsFor(root),
     // Assigned right below; the host closes over `project` so the service can
     // observe live file-list/overlay/version state.
     service: undefined as unknown as ts.LanguageService,
@@ -438,7 +483,7 @@ function createProject(root: string): ProjectState {
     lastScanAt: Date.now(),
   };
   const host: ts.LanguageServiceHost = {
-    getCompilationSettings: () => COMPILER_OPTIONS,
+    getCompilationSettings: () => project.compilerOptions,
     getCurrentDirectory: () => root,
     getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
     getScriptFileNames: () => project.fileNames,
@@ -450,7 +495,20 @@ function createProject(root: string): ProjectState {
       const text = safeReadText(fileName);
       return text === undefined ? undefined : ts.ScriptSnapshot.fromString(text);
     },
-    getScriptVersion: (fileName) => String(project.fileVersions.get(fileName) ?? 0),
+    getScriptVersion: (fileName) => {
+      const counter = project.fileVersions.get(fileName) ?? 0;
+      if (project.overlays.has(fileName)) {
+        return `overlay:${counter}`;
+      }
+      // Disk files version by mtime+size so edits made OUTSIDE the editor
+      // (agents writing files — the core Tide flow) invalidate stale ASTs.
+      try {
+        const stat = statSync(fileName);
+        return `disk:${counter}:${stat.mtimeMs}:${stat.size}`;
+      } catch {
+        return `missing:${counter}`;
+      }
+    },
     fileExists: ts.sys.fileExists,
     readFile: ts.sys.readFile,
     readDirectory: ts.sys.readDirectory,
