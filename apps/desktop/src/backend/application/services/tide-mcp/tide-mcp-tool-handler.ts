@@ -1,21 +1,21 @@
-import type { AgentId, ThreadId, ThreadRecord, ThreadSnapshot } from "../domains/thread/thread.ts";
+import type { AgentId, ThreadId, ThreadRecord, ThreadSnapshot } from "../../domains/thread/thread.ts";
 import type {
   TideMcpToolDefinition,
   TideMcpToolName,
-} from "../domains/workbench/workbench.ts";
-import { TIDE_MCP_WORKBENCH_TOOL_NAMES } from "../domains/workbench/workbench.ts";
-import { failure, type ServiceResult } from "./service-result.ts";
-import { snapshotThread } from "./thread-snapshot.ts";
-import type { ThreadRuntimeAsyncEvent } from "./thread-runtime-events.ts";
-import type { ThreadStore } from "./thread-store.ts";
+} from "../../domains/workbench/workbench.ts";
+import { TIDE_MCP_WORKBENCH_TOOL_NAMES } from "../../domains/workbench/workbench.ts";
+import { failure, type ServiceResult } from "../support/service-result.ts";
+import { snapshotThread } from "../thread/thread-snapshot.ts";
+import type { ThreadRuntimeAsyncEvent } from "../thread/thread-runtime-events.ts";
+import type { ThreadStore } from "../thread/thread-store.ts";
 import {
   actBrowserOutput,
   observeBrowserOutput,
   openBrowserOutput,
-} from "./workbench-browser-operations.ts";
-import type { WorkbenchExecOperations } from "./workbench-exec-operations.ts";
-import type { WorkbenchFileOperations } from "./workbench-file-operations.ts";
-import { snapshotWorkbench } from "./workbench-snapshot.ts";
+} from "../workbench/workbench-browser-operations.ts";
+import type { WorkbenchExecOperations } from "../workbench/workbench-exec-operations.ts";
+import type { WorkbenchFileOperations } from "../workbench/workbench-file-operations.ts";
+import { snapshotWorkbench } from "../workbench/workbench-snapshot.ts";
 import type {
   TideMcpToolOutput,
   TideObserveThreadOutput,

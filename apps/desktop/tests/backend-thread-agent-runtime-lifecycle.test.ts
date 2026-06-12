@@ -26,7 +26,7 @@ import {
   type ComposerAttachmentInput,
   type ComposerAttachmentStorePort,
   type ProviderTrustPort,
-} from "../src/backend/application/services/thread-runtime-service.ts";
+} from "../src/backend/application/services/thread/thread-runtime-service.ts";
 import type { AgentSessionBlock } from "../src/backend/application/domains/agent-session/agent-session-block.ts";
 import type {
   WorkspaceCodeDefinitionResult,

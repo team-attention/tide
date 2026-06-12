@@ -1,12 +1,12 @@
-import type { AgentSessionBlock } from "../domains/agent-session/agent-session-block.ts";
+import type { AgentSessionBlock } from "../../domains/agent-session/agent-session-block.ts";
 import type {
   AgentBinding,
   AgentId,
   LastKnownState,
   ThreadId,
   ThreadScope,
-} from "../domains/thread/thread.ts";
-import type { AppStoragePort } from "../ports/outbound/app-storage-port.ts";
+} from "../../domains/thread/thread.ts";
+import type { AppStoragePort } from "../../ports/outbound/app-storage-port.ts";
 
 export const THREAD_STORAGE_VERSION = 1;
 

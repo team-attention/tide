@@ -12,7 +12,7 @@ import {
   createThreadPersistenceService,
   shouldRecheckProviderReadinessBeforeInput,
   type ThreadStorageRecord,
-} from "../src/backend/application/services/thread-persistence-service.ts";
+} from "../src/backend/application/services/thread/thread-persistence-service.ts";
 import { createFileAppStorage } from "../src/backend/adapters/outbound/app-storage/file-app-storage.ts";
 
 const now = "2026-05-27T00:00:00.000Z";

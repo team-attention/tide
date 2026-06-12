@@ -15,7 +15,7 @@ import {
   threadSeedFromStorageRecord,
   threadStorageRecordFromThreadSummary,
 } from "../src/backend/infrastructure/node/live-backend.ts";
-import { createThreadPersistenceService } from "../src/backend/application/services/thread-persistence-service.ts";
+import { createThreadPersistenceService } from "../src/backend/application/services/thread/thread-persistence-service.ts";
 import {
   createThreadRuntimeService,
   type AgentRuntimeHandle,
@@ -30,7 +30,7 @@ import {
   type TerminalInput,
   type ThreadSeed,
   type ThreadRuntimeAsyncEvent,
-} from "../src/backend/application/services/thread-runtime-service.ts";
+} from "../src/backend/application/services/thread/thread-runtime-service.ts";
 import { createMessagePortBackendClient } from "../src/desktop/adapters/outbound/backend-client/message-port-backend-client.ts";
 import {
   createProductShellState,

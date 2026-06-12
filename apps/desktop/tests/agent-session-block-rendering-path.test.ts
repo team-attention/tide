@@ -10,7 +10,7 @@ import {
 } from "../src/backend/application/domains/agent-session/agent-session-block.ts";
 import type { RawAgentFrame } from "../src/backend/application/domains/agent-session/raw-agent-frame.ts";
 import type { ThreadSnapshot } from "../src/backend/application/domains/thread/thread.ts";
-import { createFixtureAgentSessionReader } from "../src/backend/application/services/fixture-agent-session-reader.ts";
+import { createFixtureAgentSessionReader } from "../src/backend/application/services/thread/fixture-agent-session-reader.ts";
 import {
   createAgentSessionBlockCompletedEventFromUpdate,
   createAgentSessionBlockUpsertedEventFromBlock,

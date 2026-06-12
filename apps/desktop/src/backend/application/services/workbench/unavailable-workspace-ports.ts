@@ -1,6 +1,6 @@
-import type { WorkspaceCodeIntelligencePort } from "../ports/outbound/workspace-code-intelligence-port.ts";
-import type { WorkspaceCommandPort } from "../ports/outbound/workspace-command-port.ts";
-import type { WorkspaceFilePort } from "../ports/outbound/workspace-file-port.ts";
+import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
+import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
+import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port.ts";
 
 // Null-object port implementations used when a workspace capability is not
 // configured. Each method returns a clean "unavailable" Contract-shaped error

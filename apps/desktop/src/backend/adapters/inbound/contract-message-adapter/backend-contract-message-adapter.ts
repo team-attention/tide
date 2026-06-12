@@ -17,7 +17,7 @@ import type {
   ThreadSnapshot,
   ProviderReadinessResult,
   TrustWorkspaceResult,
-} from "../../../application/services/thread-runtime-service.ts";
+} from "../../../application/services/thread/thread-runtime-service.ts";
 import {
   CONTRACT_VERSION,
   createCommandAcceptedEvent,

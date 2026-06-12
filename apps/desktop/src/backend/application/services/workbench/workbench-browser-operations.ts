@@ -1,21 +1,21 @@
-import type { ThreadRecord } from "../domains/thread/thread.ts";
+import type { ThreadRecord } from "../../domains/thread/thread.ts";
 import type {
   BrowserPaneActionRequest,
   BrowserPaneState,
-} from "../domains/workbench/workbench.ts";
-import { failure, type ServiceResult } from "./service-result.ts";
+} from "../../domains/workbench/workbench.ts";
+import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
   browserActionKindFromInput,
   browserTitleFromUrl,
   optionalRawString,
   optionalString,
-} from "./service-value-helpers.ts";
+} from "../support/service-value-helpers.ts";
 import { browserPaneRef, firstBrowserPane } from "./workbench-snapshot.ts";
 import type {
   TideActBrowserOutput,
   TideObserveBrowserOutput,
   TideOpenBrowserOutput,
-} from "./tide-mcp-output.ts";
+} from "../tide-mcp/tide-mcp-output.ts";
 
 // Browser Pane operations for the Workbench: open/reveal/navigate a Browser Pane,
 // observe it, and queue a click/type action. Pure functions over the thread's

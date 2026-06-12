@@ -1,29 +1,29 @@
-import type { ThreadRecord } from "../domains/thread/thread.ts";
+import type { ThreadRecord } from "../../domains/thread/thread.ts";
 import type {
   TerminalPaneState,
   WorkbenchPaneSnapshotRef,
-} from "../domains/workbench/workbench.ts";
-import type { WorkspaceCodeIntelligencePort } from "../ports/outbound/workspace-code-intelligence-port.ts";
+} from "../../domains/workbench/workbench.ts";
+import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
 import type {
   WorkspaceCommandPort,
   WorkspaceCommandRun,
-} from "../ports/outbound/workspace-command-port.ts";
-import { arrayOfStrings } from "./record-helpers.ts";
-import { failure, type ServiceResult } from "./service-result.ts";
+} from "../../ports/outbound/workspace-command-port.ts";
+import { arrayOfStrings } from "../support/record-helpers.ts";
+import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
   boundedTranscriptPreview,
   commandByteLimit,
   commandName,
   commandTimeoutMs,
   optionalString,
-} from "./service-value-helpers.ts";
-import { threadRoot } from "./thread-snapshot.ts";
+} from "../support/service-value-helpers.ts";
+import { threadRoot } from "../thread/thread-snapshot.ts";
 import type {
   TideGoToDefinitionOutput,
   TideGoToReferencesOutput,
   TideOpenTerminalOutput,
   TideRunTerminalCommandOutput,
-} from "./tide-mcp-output.ts";
+} from "../tide-mcp/tide-mcp-output.ts";
 import { editorPanePositionFromData } from "./workbench-command-data.ts";
 import type { WorkbenchFileOperations } from "./workbench-file-operations.ts";
 import type { WorkbenchRuntime } from "./workbench-runtime.ts";

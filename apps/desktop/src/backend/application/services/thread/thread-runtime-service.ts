@@ -1,25 +1,25 @@
 import type {
   AgentSessionBlock,
-} from "../domains/agent-session/agent-session-block.ts";
+} from "../../domains/agent-session/agent-session-block.ts";
 import {
   createLocalUserMessageBlock,
-} from "../domains/agent-session/agent-session-block.ts";
+} from "../../domains/agent-session/agent-session-block.ts";
 import type {
   RawAgentFrame,
   RawAgentFramePayloadKind,
   RawAgentFrameSource,
-} from "../domains/agent-session/raw-agent-frame.ts";
+} from "../../domains/agent-session/raw-agent-frame.ts";
 import type {
   AgentRuntimeHandle,
   AgentRuntimeResumeInput,
   AgentRuntimeStartInput,
   AgentRuntimeState,
   TerminalInput,
-} from "../domains/agent-runtime/agent-runtime.ts";
+} from "../../domains/agent-runtime/agent-runtime.ts";
 import type {
   ProviderReadinessCheckInput,
   ProviderReadinessResult,
-} from "../domains/provider-readiness/provider-readiness.ts";
+} from "../../domains/provider-readiness/provider-readiness.ts";
 import type {
   AgentBinding,
   AgentId,
@@ -35,7 +35,7 @@ import type {
   ThreadScope,
   ThreadSeed,
   ThreadSnapshot,
-} from "../domains/thread/thread.ts";
+} from "../../domains/thread/thread.ts";
 import type {
   BrowserPaneRef,
   BrowserPaneActionRequest,
@@ -52,8 +52,8 @@ import type {
   WorkbenchFileTreeView,
   WorkbenchSnapshot,
   WorkbenchState,
-} from "../domains/workbench/workbench.ts";
-import { TIDE_MCP_WORKBENCH_TOOL_NAMES } from "../domains/workbench/workbench.ts";
+} from "../../domains/workbench/workbench.ts";
+import { TIDE_MCP_WORKBENCH_TOOL_NAMES } from "../../domains/workbench/workbench.ts";
 import {
   cloneAgentBinding,
   cloneBlocks,
@@ -73,23 +73,23 @@ import {
   createUnavailableWorkspaceCodeIntelligencePort,
   createUnavailableWorkspaceCommandPort,
   createUnavailableWorkspaceFilePort,
-} from "./unavailable-workspace-ports.ts";
-import { boundedDiffText, unifiedContentDiff } from "./diff-text.ts";
+} from "../workbench/unavailable-workspace-ports.ts";
+import { boundedDiffText, unifiedContentDiff } from "../support/diff-text.ts";
 import { ThreadStore } from "./thread-store.ts";
 import { normalizeThreadSeed, snapshotThread, threadRoot } from "./thread-snapshot.ts";
 import {
   activeLauncherPaneId,
   openWorkbenchLauncher,
   removeLauncherPane,
-} from "./workbench-launcher.ts";
-import { WorkbenchRuntime } from "./workbench-runtime.ts";
+} from "../workbench/workbench-launcher.ts";
+import { WorkbenchRuntime } from "../workbench/workbench-runtime.ts";
 import {
   actBrowserOutput,
   observeBrowserOutput,
   openBrowserOutput,
-} from "./workbench-browser-operations.ts";
-import { WorkbenchFileOperations } from "./workbench-file-operations.ts";
-import { WorkbenchExecOperations } from "./workbench-exec-operations.ts";
+} from "../workbench/workbench-browser-operations.ts";
+import { WorkbenchFileOperations } from "../workbench/workbench-file-operations.ts";
+import { WorkbenchExecOperations } from "../workbench/workbench-exec-operations.ts";
 import {
   boundedBrowserTextPreview,
   boundedTranscriptPreview,
@@ -109,7 +109,7 @@ import {
   setupLaunchPreview,
   titleFromMessage,
   titleFromRelativePath,
-} from "./service-value-helpers.ts";
+} from "../support/service-value-helpers.ts";
 import {
   arrayOfStrings,
   cloneEnv,
@@ -118,7 +118,7 @@ import {
   recordOfStrings,
   shallowRecordEqual,
   stringField,
-} from "./record-helpers.ts";
+} from "../support/record-helpers.ts";
 import {
   browserPaneRef,
   diffPaneRef,
@@ -129,7 +129,7 @@ import {
   snapshotWorkbench,
   terminalPaneRef,
   workbenchPaneById,
-} from "./workbench-snapshot.ts";
+} from "../workbench/workbench-snapshot.ts";
 import {
   browserPaneActionResultFromData,
   browserPaneSnapshotFromData,
@@ -138,31 +138,31 @@ import {
   providerSetupSurfaceActionFromData,
   providerSetupSurfaceInputFromData,
   type ProviderSetupSurfaceActionInput,
-} from "./workbench-command-data.ts";
-import type { AgentRuntimePort } from "../ports/outbound/agent-runtime-port.ts";
+} from "../workbench/workbench-command-data.ts";
+import type { AgentRuntimePort } from "../../ports/outbound/agent-runtime-port.ts";
 import type {
   WorkspaceCodeIntelligenceErrorCode,
   WorkspaceCodeIntelligencePort,
-} from "../ports/outbound/workspace-code-intelligence-port.ts";
-import type { ProviderReadinessPort } from "../ports/outbound/provider-readiness-port.ts";
+} from "../../ports/outbound/workspace-code-intelligence-port.ts";
+import type { ProviderReadinessPort } from "../../ports/outbound/provider-readiness-port.ts";
 import type {
   ProviderSetupSurfaceExit,
   ProviderSetupSurfaceHandle,
   ProviderSetupSurfaceOutput,
   ProviderSetupSurfaceStartInput,
   ProviderSetupSurfaceTerminalPort,
-} from "../ports/outbound/provider-setup-surface-terminal-port.ts";
-import type { PtyTranscriptPort } from "../ports/outbound/pty-transcript-port.ts";
+} from "../../ports/outbound/provider-setup-surface-terminal-port.ts";
+import type { PtyTranscriptPort } from "../../ports/outbound/pty-transcript-port.ts";
 import type {
   ComposerAttachmentInput,
   ComposerAttachmentStorePort,
-} from "../ports/outbound/composer-attachment-store-port.ts";
-import type { ProviderTrustPort } from "../ports/outbound/provider-trust-port.ts";
+} from "../../ports/outbound/composer-attachment-store-port.ts";
+import type { ProviderTrustPort } from "../../ports/outbound/provider-trust-port.ts";
 import type {
   WorkspaceCommandErrorCode,
   WorkspaceCommandPort,
   WorkspaceCommandRun,
-} from "../ports/outbound/workspace-command-port.ts";
+} from "../../ports/outbound/workspace-command-port.ts";
 import type {
   WorkspaceFileErrorCode,
   WorkspaceFileEdit,
@@ -170,13 +170,13 @@ import type {
   WorkspaceFileRead,
   WorkspaceFileTree,
   WorkspaceFileWrite,
-} from "../ports/outbound/workspace-file-port.ts";
+} from "../../ports/outbound/workspace-file-port.ts";
 import type {
   WorkbenchTerminalExit,
   WorkbenchTerminalHandle,
   WorkbenchTerminalOutput,
   WorkbenchTerminalPort,
-} from "../ports/outbound/workbench-terminal-port.ts";
+} from "../../ports/outbound/workbench-terminal-port.ts";
 
 const DEFAULT_WORKBENCH_TERMINAL_COMMAND = "sh";
 
@@ -246,12 +246,12 @@ export interface CreateThreadRuntimeServiceInput {
 import type { ThreadRuntimeAsyncEvent } from "./thread-runtime-events.ts";
 export type { ThreadRuntimeAsyncEvent };
 
-import { failure } from "./service-result.ts";
+import { failure } from "../support/service-result.ts";
 import type {
   ServiceError,
   ServiceErrorCode,
   ServiceResult,
-} from "./service-result.ts";
+} from "../support/service-result.ts";
 export type { ServiceError, ServiceErrorCode, ServiceResult };
 
 export interface HydrateThreadInput {
@@ -472,7 +472,7 @@ import type {
   TideOpenTerminalOutput,
   TideReadFileOutput,
   TideRunTerminalCommandOutput,
-} from "./tide-mcp-output.ts";
+} from "../tide-mcp/tide-mcp-output.ts";
 export type {
   TideActBrowserOutput,
   TideEditFileOutput,
@@ -493,7 +493,7 @@ import {
   type TideMcpSessionRef,
   type TideMcpToolCallInput,
   type TideMcpToolCallResult,
-} from "./tide-mcp-tool-handler.ts";
+} from "../tide-mcp/tide-mcp-tool-handler.ts";
 export type { TideMcpSessionRef, TideMcpToolCallInput, TideMcpToolCallResult };
 import {
   WorkbenchCommandHandler,
@@ -503,7 +503,7 @@ import {
   type ReadWorkspaceFileTreeResult,
   type SearchWorkspaceContentInput,
   type SearchWorkspaceContentResult,
-} from "./workbench-command-handler.ts";
+} from "../workbench/workbench-command-handler.ts";
 export type {
   WorkbenchCommandInput,
   WorkbenchCommandResult,

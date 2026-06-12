@@ -9,7 +9,7 @@ import {
   codexSessionDescriptor,
   discoverLocalSessions,
   type DiscoveryFs,
-} from "../src/backend/application/services/provider-session-discovery.ts";
+} from "../src/backend/application/services/provider/provider-session-discovery.ts";
 
 const CWD = "/Users/you/Workspace/tide";
 

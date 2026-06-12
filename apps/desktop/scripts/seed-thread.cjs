@@ -28,7 +28,7 @@ const record = {
 };
 
 const code = `
-import { createThreadPersistenceService } from ${JSON.stringify(path.join(repo, "src/backend/application/services/thread-persistence-service.ts"))};
+import { createThreadPersistenceService } from ${JSON.stringify(path.join(repo, "src/backend/application/services/thread/thread-persistence-service.ts"))};
 import { createFileAppStorage } from ${JSON.stringify(path.join(repo, "src/backend/adapters/outbound/app-storage/file-app-storage.ts"))};
 const svc = createThreadPersistenceService({ storage: createFileAppStorage({ appDataRoot: ${JSON.stringify(dataRoot)} }) });
 const res = await svc.saveThreadMetadata(${JSON.stringify(record)});

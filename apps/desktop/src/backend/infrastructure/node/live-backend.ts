@@ -68,7 +68,7 @@ import {
   toWorkbenchPaneRefDto,
 } from "../../adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts";
 import { createTideMcpSocketServer } from "../../adapters/inbound/tide-mcp-server/tide-mcp-socket-bridge.ts";
-import { createRuntimeReadinessRegistry } from "../../application/services/runtime-readiness-registry.ts";
+import { createRuntimeReadinessRegistry } from "../../application/services/provider/runtime-readiness-registry.ts";
 import { createTideMcpToolSurfaceAdapter } from "../../adapters/inbound/tide-mcp-tool-surface/tide-mcp-tool-surface-adapter.ts";
 import {
   createAgentIntegrationAgentRuntimePort,
@@ -123,20 +123,20 @@ import type {
   AgentTurnOutcome,
   DiscoveredProviderSessionRef as AdapterProviderSessionRef,
 } from "../../application/ports/outbound/agent-integration-port.ts";
-import { createFixtureAgentSessionReader } from "../../application/services/fixture-agent-session-reader.ts";
+import { createFixtureAgentSessionReader } from "../../application/services/thread/fixture-agent-session-reader.ts";
 import {
   adoptedThreadSeedsFromSessions,
   discoverLocalSessions,
   isInternalSessionTitle,
   type DiscoveryFs,
-} from "../../application/services/provider-session-discovery.ts";
+} from "../../application/services/provider/provider-session-discovery.ts";
 import {
   createThreadPersistenceService,
   THREAD_STORAGE_VERSION,
   type ProviderSessionRefRecord,
   type ThreadPersistenceService,
   type ThreadStorageRecord,
-} from "../../application/services/thread-persistence-service.ts";
+} from "../../application/services/thread/thread-persistence-service.ts";
 import {
   createThreadRuntimeService,
   type PtyTranscriptPort,
@@ -145,7 +145,7 @@ import {
   type ThreadSeed,
   type ThreadRuntimeAsyncEvent,
   type ThreadRuntimeService,
-} from "../../application/services/thread-runtime-service.ts";
+} from "../../application/services/thread/thread-runtime-service.ts";
 import {
   CONTRACT_VERSION,
   PROVIDER_CLI_AGENT_IDS,

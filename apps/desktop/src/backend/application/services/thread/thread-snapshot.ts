@@ -2,7 +2,7 @@ import type {
   ThreadRecord,
   ThreadSeed,
   ThreadSnapshot,
-} from "../domains/thread/thread.ts";
+} from "../../domains/thread/thread.ts";
 import {
   cloneAgentBinding,
   cloneBlocks,
@@ -14,7 +14,7 @@ import {
   cloneWorkbenchState,
   defaultWorkbenchState,
 } from "./thread-runtime-clone.ts";
-import { snapshotWorkbench } from "./workbench-snapshot.ts";
+import { snapshotWorkbench } from "../workbench/workbench-snapshot.ts";
 
 // Maps between Thread domain shapes: a persisted ThreadSeed into a live
 // ThreadRecord, and a ThreadRecord into an immutable ThreadSnapshot DTO returned

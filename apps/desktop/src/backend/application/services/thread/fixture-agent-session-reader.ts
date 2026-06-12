@@ -6,15 +6,15 @@ import type {
   AgentSessionReadInput,
   AgentSessionReadResult,
   AgentSessionReader,
-} from "../domains/agent-session/agent-session-block.ts";
-import type { RawAgentFrame } from "../domains/agent-session/raw-agent-frame.ts";
+} from "../../domains/agent-session/agent-session-block.ts";
+import type { RawAgentFrame } from "../../domains/agent-session/raw-agent-frame.ts";
 import type {
   AgentId,
   PromptChoice,
   PromptKind,
   PromptState,
   ThreadId,
-} from "../domains/thread/thread.ts";
+} from "../../domains/thread/thread.ts";
 
 export function createFixtureAgentSessionReader(): AgentSessionReader {
   return new FixtureAgentSessionReader();

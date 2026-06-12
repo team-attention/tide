@@ -3,12 +3,12 @@ import {
   recordField,
   recordOfStrings,
   stringField,
-} from "./record-helpers.ts";
+} from "../support/record-helpers.ts";
 import {
   boundedBrowserTextPreview,
   optionalRawString,
   optionalString,
-} from "./service-value-helpers.ts";
+} from "../support/service-value-helpers.ts";
 
 // Parsers that coerce untyped Tide MCP / workbench command `data` payloads into
 // the typed shapes the service acts on. Pure: depend only on leaf value/record

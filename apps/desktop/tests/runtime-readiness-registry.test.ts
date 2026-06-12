@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createRuntimeReadinessRegistry } from "../src/backend/application/services/runtime-readiness-registry.ts";
+import { createRuntimeReadinessRegistry } from "../src/backend/application/services/provider/runtime-readiness-registry.ts";
 
 test("awaitToolSurface resolves after the runtime is marked ready", async () => {
   const registry = createRuntimeReadinessRegistry();

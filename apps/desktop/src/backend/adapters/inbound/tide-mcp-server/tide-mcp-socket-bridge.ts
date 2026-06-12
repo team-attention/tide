@@ -14,9 +14,9 @@ import type {
   TideMcpToolCallInput,
   TideMcpToolCallResult,
   TideMcpToolDefinition,
-} from "../../../application/services/thread-runtime-service.ts";
+} from "../../../application/services/thread/thread-runtime-service.ts";
 import type { TideMcpToolSurfaceAdapter } from "../tide-mcp-tool-surface/tide-mcp-tool-surface-adapter.ts";
-import type { RuntimeReadinessRegistry } from "../../../application/services/runtime-readiness-registry.ts";
+import type { RuntimeReadinessRegistry } from "../../../application/services/provider/runtime-readiness-registry.ts";
 
 export interface TideMcpSocketServer {
   readonly socketPath: string;

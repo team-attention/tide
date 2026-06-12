@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { firstBrowserPane } from "../src/backend/application/services/workbench-snapshot.ts";
+import { firstBrowserPane } from "../src/backend/application/services/workbench/workbench-snapshot.ts";
 import type {
   WorkbenchState,
   BrowserPaneState,

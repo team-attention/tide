@@ -1,4 +1,4 @@
-import type { ThreadId, ThreadRecord } from "../domains/thread/thread.ts";
+import type { ThreadId, ThreadRecord } from "../../domains/thread/thread.ts";
 
 // The single owner of in-memory Thread state. Every service collaborator shares
 // ONE ThreadStore instance, so Thread state stays single-source with no copies or

@@ -4,7 +4,7 @@
 // discovery, conversation rebuilders) plus the persistence-coupled record type.
 // See docs_v2/specs/provider-history-connector.md.
 
-import type { ProviderSessionRefRecord } from "../../application/services/thread-persistence-service.ts";
+import type { ProviderSessionRefRecord } from "../../application/services/thread/thread-persistence-service.ts";
 
 export type DiscoveredProviderSessionRef = Omit<ProviderSessionRefRecord, "observedAt">;
 

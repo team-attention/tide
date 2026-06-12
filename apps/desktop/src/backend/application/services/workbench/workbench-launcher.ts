@@ -1,5 +1,5 @@
-import type { ThreadRecord } from "../domains/thread/thread.ts";
-import type { LauncherPaneState } from "../domains/workbench/workbench.ts";
+import type { ThreadRecord } from "../../domains/thread/thread.ts";
+import type { LauncherPaneState } from "../../domains/workbench/workbench.ts";
 import { launcherPaneActions } from "./workbench-snapshot.ts";
 
 // Launcher Pane management for a Thread's Workbench. Pure functions over the

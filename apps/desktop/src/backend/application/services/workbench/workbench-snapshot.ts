@@ -9,10 +9,10 @@ import type {
   WorkbenchPaneSnapshotRef,
   WorkbenchSnapshot,
   WorkbenchState,
-} from "../domains/workbench/workbench.ts";
-import { TIDE_MCP_WORKBENCH_TOOL_NAMES } from "../domains/workbench/workbench.ts";
-import { cloneFileTreeView } from "./thread-runtime-clone.ts";
-import { cloneEnv } from "./record-helpers.ts";
+} from "../../domains/workbench/workbench.ts";
+import { TIDE_MCP_WORKBENCH_TOOL_NAMES } from "../../domains/workbench/workbench.ts";
+import { cloneFileTreeView } from "../thread/thread-runtime-clone.ts";
+import { cloneEnv } from "../support/record-helpers.ts";
 
 // Maps Workbench domain state into snapshot/pane-ref shapes for Agent Session and
 // Tide MCP observe output. Pure: depends only on domain types and leaf clone

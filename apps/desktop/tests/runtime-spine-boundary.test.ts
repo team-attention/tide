@@ -30,7 +30,7 @@ test("infra_live_backend_does_not_reimplement_codex_turn_detection", () => {
 });
 
 test("thread_runtime_service_does_not_reimplement_codex_turn_detection", () => {
-  const source = read("src/backend/application/services/thread-runtime-service.ts");
+  const source = read("src/backend/application/services/thread/thread-runtime-service.ts");
   for (const literal of codexTurnEndLiterals) {
     assert.equal(
       source.includes(literal),

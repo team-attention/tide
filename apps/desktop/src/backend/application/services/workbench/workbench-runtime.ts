@@ -1,31 +1,31 @@
-import type { ThreadId, ThreadRecord } from "../domains/thread/thread.ts";
+import type { ThreadId, ThreadRecord } from "../../domains/thread/thread.ts";
 import type {
   BrowserPaneState,
   TerminalPaneState,
-} from "../domains/workbench/workbench.ts";
+} from "../../domains/workbench/workbench.ts";
 import type {
   ProviderSetupSurfaceExit,
   ProviderSetupSurfaceHandle,
   ProviderSetupSurfaceOutput,
   ProviderSetupSurfaceTerminalPort,
-} from "../ports/outbound/provider-setup-surface-terminal-port.ts";
+} from "../../ports/outbound/provider-setup-surface-terminal-port.ts";
 import type {
   WorkbenchTerminalExit,
   WorkbenchTerminalHandle,
   WorkbenchTerminalOutput,
   WorkbenchTerminalPort,
-} from "../ports/outbound/workbench-terminal-port.ts";
-import { cloneEnv, shallowRecordEqual } from "./record-helpers.ts";
+} from "../../ports/outbound/workbench-terminal-port.ts";
+import { cloneEnv, shallowRecordEqual } from "../support/record-helpers.ts";
 import {
   boundedTranscriptPreview,
   commandName,
   errorMessage,
   setupLaunchPreview,
-} from "./service-value-helpers.ts";
-import { snapshotThread } from "./thread-snapshot.ts";
-import type { ThreadRuntimeAsyncEvent } from "./thread-runtime-events.ts";
+} from "../support/service-value-helpers.ts";
+import { snapshotThread } from "../thread/thread-snapshot.ts";
+import type { ThreadRuntimeAsyncEvent } from "../thread/thread-runtime-events.ts";
 import type { ProviderSetupSurfaceActionInput } from "./workbench-command-data.ts";
-import type { ThreadStore } from "./thread-store.ts";
+import type { ThreadStore } from "../thread/thread-store.ts";
 
 export interface WorkbenchTerminalOpenInput {
   command: string;

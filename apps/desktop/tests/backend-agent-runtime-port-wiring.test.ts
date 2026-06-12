@@ -26,7 +26,7 @@ import type {
   ProviderLaunchPlan,
   RuntimeReadinessGate,
 } from "../src/backend/application/ports/outbound/agent-integration-port.ts";
-import type { RuntimeReadinessRegistry } from "../src/backend/application/services/runtime-readiness-registry.ts";
+import type { RuntimeReadinessRegistry } from "../src/backend/application/services/provider/runtime-readiness-registry.ts";
 import {
   claudeProviderSessionRefFromTranscriptPath,
   codexProviderSessionRefFromRolloutPath,
@@ -144,8 +144,8 @@ import {
   createThreadRuntimeService,
   type RawAgentFrame,
   type ThreadSeed,
-} from "../src/backend/application/services/thread-runtime-service.ts";
-import { createThreadPersistenceService } from "../src/backend/application/services/thread-persistence-service.ts";
+} from "../src/backend/application/services/thread/thread-runtime-service.ts";
+import { createThreadPersistenceService } from "../src/backend/application/services/thread/thread-persistence-service.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const now = "2026-05-29T00:00:00.000Z";

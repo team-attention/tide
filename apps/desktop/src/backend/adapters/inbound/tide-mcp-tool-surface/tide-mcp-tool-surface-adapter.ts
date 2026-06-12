@@ -4,7 +4,7 @@ import type {
   TideMcpToolCallInput,
   TideMcpToolCallResult,
   TideMcpToolDefinition,
-} from "../../../application/services/thread-runtime-service.ts";
+} from "../../../application/services/thread/thread-runtime-service.ts";
 
 export interface TideMcpToolSurfaceAdapter {
   listTools(): TideMcpToolDefinition[];

@@ -32,7 +32,7 @@ import {
   type RawAgentFrame,
   type TerminalInput,
   type ThreadSeed,
-} from "../src/backend/application/services/thread-runtime-service.ts";
+} from "../src/backend/application/services/thread/thread-runtime-service.ts";
 
 const now = "2026-05-29T00:00:00.000Z";
 

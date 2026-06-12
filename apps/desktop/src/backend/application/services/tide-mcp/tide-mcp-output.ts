@@ -1,5 +1,5 @@
-import type { AgentRuntimeState } from "../domains/agent-runtime/agent-runtime.ts";
-import type { AgentId, ThreadId } from "../domains/thread/thread.ts";
+import type { AgentRuntimeState } from "../../domains/agent-runtime/agent-runtime.ts";
+import type { AgentId, ThreadId } from "../../domains/thread/thread.ts";
 import type {
   BrowserPaneActionRequest,
   BrowserPaneRef,
@@ -7,7 +7,7 @@ import type {
   WorkbenchPaneId,
   WorkbenchPaneSnapshotRef,
   WorkbenchSnapshot,
-} from "../domains/workbench/workbench.ts";
+} from "../../domains/workbench/workbench.ts";
 
 // Tide MCP tool output shapes — the typed results the Tide MCP tool surface
 // returns for observe/open/act/read/edit/navigate/terminal operations. Pure

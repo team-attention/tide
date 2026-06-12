@@ -2,8 +2,8 @@ import type {
   ThreadId,
   ThreadSeed,
   ThreadSnapshot,
-} from "../domains/thread/thread.ts";
-import { failure, type ServiceResult } from "./service-result.ts";
+} from "../../domains/thread/thread.ts";
+import { failure, type ServiceResult } from "../support/service-result.ts";
 import { normalizeThreadSeed, snapshotThread } from "./thread-snapshot.ts";
 import type { ThreadStore } from "./thread-store.ts";
 

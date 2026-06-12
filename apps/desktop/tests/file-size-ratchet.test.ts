@@ -24,7 +24,7 @@ const MAX_LINES = 800;
 // Each may shrink or hold, never grow. Lower these as collaborators are extracted.
 const PINNED_MAX: Record<string, number> = {
   "desktop/adapters/inbound/react-renderer/tide-product-shell.ts": 1445,
-  "backend/application/services/thread-runtime-service.ts": 1996,
+  "backend/application/services/thread/thread-runtime-service.ts": 1996,
   "backend/infrastructure/node/live-backend.ts": 1685,
   "backend/adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts": 1013,
 };

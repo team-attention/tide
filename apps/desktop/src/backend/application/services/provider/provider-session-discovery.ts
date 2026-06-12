@@ -7,7 +7,7 @@
 // The core is pure: directory listing and file reads are injected so it can be
 // unit-tested with a fake filesystem before touching real provider history.
 
-import type { ThreadSeed } from "./thread-runtime-service.ts";
+import type { ThreadSeed } from "../thread/thread-runtime-service.ts";
 
 export type DiscoveredAgentId = "codex" | "claude";
 

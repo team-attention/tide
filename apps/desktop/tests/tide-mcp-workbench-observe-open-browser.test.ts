@@ -25,7 +25,7 @@ import {
   type TerminalInput,
   type ThreadRuntimeAsyncEvent,
   type ThreadSeed,
-} from "../src/backend/application/services/thread-runtime-service.ts";
+} from "../src/backend/application/services/thread/thread-runtime-service.ts";
 import type {
   WorkbenchTerminalHandle,
   WorkbenchTerminalPort,

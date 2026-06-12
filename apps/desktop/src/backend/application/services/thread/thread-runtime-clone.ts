@@ -1,8 +1,8 @@
-import type { AgentSessionBlock } from "../domains/agent-session/agent-session-block.ts";
+import type { AgentSessionBlock } from "../../domains/agent-session/agent-session-block.ts";
 import type {
   AgentRuntimeHandle,
   AgentRuntimeState,
-} from "../domains/agent-runtime/agent-runtime.ts";
+} from "../../domains/agent-runtime/agent-runtime.ts";
 import type {
   AgentBinding,
   AgentSessionBlockReference,
@@ -10,12 +10,12 @@ import type {
   PromptState,
   ProviderSessionRef,
   ThreadScope,
-} from "../domains/thread/thread.ts";
+} from "../../domains/thread/thread.ts";
 import type {
   WorkbenchFileTreeView,
   WorkbenchState,
-} from "../domains/workbench/workbench.ts";
-import type { WorkspaceFileTree } from "../ports/outbound/workspace-file-port.ts";
+} from "../../domains/workbench/workbench.ts";
+import type { WorkspaceFileTree } from "../../ports/outbound/workspace-file-port.ts";
 
 // Pure deep-clone and small mapping helpers for Thread/Workbench domain state.
 // Extracted from thread-runtime-service.ts to keep the service focused on

@@ -1,6 +1,6 @@
 import type { AgentSessionBlock } from "../../application/domains/agent-session/agent-session-block.ts";
 import type { AgentId } from "../../application/domains/thread/thread.ts";
-import type { ThreadStorageRecord } from "../../application/services/thread-persistence-service.ts";
+import type { ThreadStorageRecord } from "../../application/services/thread/thread-persistence-service.ts";
 import { readBoundedTail } from "./live-backend-fs.ts";
 import {
   claudeAssistantTextContent,

@@ -1,11 +1,11 @@
-import type { AgentRuntimeState } from "../domains/agent-runtime/agent-runtime.ts";
-import type { ProviderReadinessResult } from "../domains/provider-readiness/provider-readiness.ts";
+import type { AgentRuntimeState } from "../../domains/agent-runtime/agent-runtime.ts";
+import type { ProviderReadinessResult } from "../../domains/provider-readiness/provider-readiness.ts";
 import type {
   AgentSessionBlockReference,
   ThreadId,
   ThreadSnapshot,
-} from "../domains/thread/thread.ts";
-import type { WorkbenchPaneId } from "../domains/workbench/workbench.ts";
+} from "../../domains/thread/thread.ts";
+import type { WorkbenchPaneId } from "../../domains/workbench/workbench.ts";
 
 // The async event vocabulary the Backend pushes to Desktop outside a direct
 // command response (background turns, terminal output, readiness/state changes).

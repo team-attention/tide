@@ -1,26 +1,26 @@
 import type {
   ThreadId,
   ThreadSnapshot,
-} from "../domains/thread/thread.ts";
+} from "../../domains/thread/thread.ts";
 import type {
   WorkbenchFileTreeView,
   WorkbenchSnapshot,
-} from "../domains/workbench/workbench.ts";
-import type { WorkspaceCodeIntelligencePort } from "../ports/outbound/workspace-code-intelligence-port.ts";
-import type { WorkspaceCommandPort } from "../ports/outbound/workspace-command-port.ts";
-import type { WorkspaceFilePort } from "../ports/outbound/workspace-file-port.ts";
-import { arrayOfStrings } from "./record-helpers.ts";
-import { failure, type ServiceResult } from "./service-result.ts";
+} from "../../domains/workbench/workbench.ts";
+import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
+import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
+import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port.ts";
+import { arrayOfStrings } from "../support/record-helpers.ts";
+import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
   fileByteLimit,
   fileTreeMaxDepth,
   fileTreeMaxEntries,
   numberFromData,
   optionalString,
-} from "./service-value-helpers.ts";
-import { cloneFileTreeView } from "./thread-runtime-clone.ts";
-import { snapshotThread, threadRoot } from "./thread-snapshot.ts";
-import type { ThreadStore } from "./thread-store.ts";
+} from "../support/service-value-helpers.ts";
+import { cloneFileTreeView } from "../thread/thread-runtime-clone.ts";
+import { snapshotThread, threadRoot } from "../thread/thread-snapshot.ts";
+import type { ThreadStore } from "../thread/thread-store.ts";
 import { openBrowserOutput } from "./workbench-browser-operations.ts";
 import {
   browserPaneActionResultFromData,

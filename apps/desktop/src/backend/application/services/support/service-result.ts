@@ -1,6 +1,6 @@
-import type { WorkspaceCodeIntelligenceErrorCode } from "../ports/outbound/workspace-code-intelligence-port.ts";
-import type { WorkspaceCommandErrorCode } from "../ports/outbound/workspace-command-port.ts";
-import type { WorkspaceFileErrorCode } from "../ports/outbound/workspace-file-port.ts";
+import type { WorkspaceCodeIntelligenceErrorCode } from "../../ports/outbound/workspace-code-intelligence-port.ts";
+import type { WorkspaceCommandErrorCode } from "../../ports/outbound/workspace-command-port.ts";
+import type { WorkspaceFileErrorCode } from "../../ports/outbound/workspace-file-port.ts";
 
 // The service result/error contract shared by ThreadRuntimeService and its
 // collaborators. Extracted from thread-runtime-service.ts so collaborators can

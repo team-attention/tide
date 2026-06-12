@@ -1,30 +1,30 @@
-import type { ThreadRecord } from "../domains/thread/thread.ts";
+import type { ThreadRecord } from "../../domains/thread/thread.ts";
 import type {
   DiffPaneState,
   EditorPaneState,
   WorkbenchPaneSnapshotRef,
-} from "../domains/workbench/workbench.ts";
+} from "../../domains/workbench/workbench.ts";
 import type {
   WorkspaceFileEdit,
   WorkspaceFilePort,
   WorkspaceFileRead,
   WorkspaceFileWrite,
-} from "../ports/outbound/workspace-file-port.ts";
-import { boundedDiffText, unifiedContentDiff } from "./diff-text.ts";
-import { literalStringField } from "./record-helpers.ts";
-import { failure, type ServiceResult } from "./service-result.ts";
+} from "../../ports/outbound/workspace-file-port.ts";
+import { boundedDiffText, unifiedContentDiff } from "../support/diff-text.ts";
+import { literalStringField } from "../support/record-helpers.ts";
+import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
   expectedOccurrences,
   fileByteLimit,
   optionalString,
   titleFromRelativePath,
-} from "./service-value-helpers.ts";
-import { threadRoot } from "./thread-snapshot.ts";
+} from "../support/service-value-helpers.ts";
+import { threadRoot } from "../thread/thread-snapshot.ts";
 import type {
   TideEditFileOutput,
   TideOpenFileOutput,
   TideReadFileOutput,
-} from "./tide-mcp-output.ts";
+} from "../tide-mcp/tide-mcp-output.ts";
 import { diffPaneRef, editorPaneRef } from "./workbench-snapshot.ts";
 
 // File/editor operations for the Workbench: read a file, open it in an Editor
