@@ -192,6 +192,7 @@ impl crate::App {
             "notify" => cli_notify(self, params),
             // Test driver (E2E harness) — inert unless TIDE_TERMINAL_TEST_DRIVER=1.
             "test-poll-state" if test_driver_enabled() => Ok(cli_test_poll_state(self)),
+            "test-inject-event" if test_driver_enabled() => cli_test_inject_event(self, params),
             _ => Err(CliError::MethodNotFound(method.to_string())),
         }
     }
@@ -203,6 +204,23 @@ impl crate::App {
 /// compiled release binary — see docs/testing/e2e-tests.md.)
 fn test_driver_enabled() -> bool {
     std::env::var("TIDE_TERMINAL_TEST_DRIVER").as_deref() == Ok("1")
+}
+
+/// Inject a synthetic `PlatformEvent` (deserialized from `params.event`) into the
+/// app's queue. The app-thread loop drains it through the **same**
+/// `handle_platform_event` path as real OS input — so the full Modal → FocusArea
+/// → Router → TextInput stack gets exercised over the gateway, no display needed.
+pub(crate) fn cli_test_inject_event(
+    ctx: &mut crate::App,
+    params: Value,
+) -> Result<Value, CliError> {
+    let event_value = params
+        .get("event")
+        .ok_or_else(|| CliError::InvalidParams("test-inject-event requires `event`".into()))?;
+    let event: crate::tide_platform::PlatformEvent = serde_json::from_value(event_value.clone())
+        .map_err(|e| CliError::InvalidParams(format!("invalid PlatformEvent: {e}")))?;
+    ctx.injected_events.push(event);
+    Ok(json!({"ok": true}))
 }
 
 /// Report app-thread quiescence so the E2E harness can wait for idle instead of

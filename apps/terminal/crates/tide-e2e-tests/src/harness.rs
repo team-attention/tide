@@ -247,6 +247,13 @@ impl TestApp {
         self.rpc_call("test-poll-state", json!({}))
     }
 
+    /// Inject a synthetic `PlatformEvent` (a serde-serialized `PlatformEvent`
+    /// JSON value) through the real event path — keyboard/mouse/IME E2E without
+    /// macOS accessibility permissions. Test-driver only.
+    pub fn inject_event(&self, event: Value) -> Result<Value, Box<dyn Error>> {
+        self.rpc_call("test-inject-event", json!({ "event": event }))
+    }
+
     /// Wait until the app reports idle (no pending redraw or layout animation),
     /// polling `test-poll-state`. Use this to synchronize after an action whose
     /// effects settle asynchronously, instead of a fixed sleep.

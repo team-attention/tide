@@ -58,21 +58,24 @@ release binary — the hardening step.)
 - **`test-poll-state`** → returns app-thread quiescence flags (`needs_redraw`,
   `animating`, `idle`) so the harness can wait for idle instead of polling
   observable side effects. Read-only; runs on the app thread between event
-  batches. Harness: `app.poll_state()` and `app.wait_for_idle(timeout)`.
+  batches. Harness: `app.poll_state()` and `app.wait_for_idle(timeout)` (the
+  polling form of await-idle).
+- **`test-inject-event`** → deserializes a `PlatformEvent` (Key/Modifiers/Mouse/
+  IME — `serde` derives are on `Key`/`Modifiers`/`MouseButton`/`PlatformEvent`)
+  and queues it; the app-thread loop feeds it through the **same**
+  `handle_platform_event` path as real OS input, so the whole input stack
+  (Modal → FocusArea → Router → TextInput; Invariants #4/#6) is reachable over
+  the gateway without macOS accessibility permissions. Harness: `app.inject_event(json)`.
 
-**Still deferred:**
+**Still deferred (need a display / GPU):**
 
-- **`test-await-idle { quiet_ms, timeout_ms }`** → a deferred response fulfilled
-  from the event-loop tick once the app has been quiescent for `quiet_ms`. Reuses
-  the `subscribe` deferred-channel pattern (`CliCommand.notification_tx`).
-- **`test-inject-event { event }`** → deserializes a `PlatformEvent`
-  (Key/Modifiers/Mouse/Scroll/IME) and feeds it through the **same** `event_tx`
-  the macOS callback uses, so the whole input stack (Modal → FocusArea → Router →
-  TextInput; Architecture Invariants #4/#6) gets real E2E coverage without macOS
-  accessibility permissions. Requires a feature-gated `serde` derive on
-  `PlatformEvent` and routing the command where the event loop holds the window.
+- **`test-await-idle { quiet_ms, timeout_ms }`** → a *push* (deferred-response)
+  form of `wait_for_idle`, fulfilled from the event-loop tick once the app has
+  been quiescent for `quiet_ms` (reusing the `subscribe` deferred-channel
+  pattern). The polling `wait_for_idle` already covers the use case, so this is
+  an optimization, not a gap.
 - **`test-screenshot { path }`** → render-thread WGPU readback to PNG, for visual
-  regression artifacts on failure.
+  regression artifacts on failure. Needs GPU/display.
 - **`test-quit`** → graceful shutdown (Drop-kill stays as the fallback).
 
 First E2E targets once the driver lands (blueprint §E-5): input-routing priority

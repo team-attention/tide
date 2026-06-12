@@ -776,6 +776,16 @@ impl App {
                 }
             }
 
+            // E2E test driver: feed any injected synthetic events through the
+            // real platform-event path (same as OS input).
+            if !self.injected_events.is_empty() {
+                let injected: Vec<_> = self.injected_events.drain(..).collect();
+                for event in injected {
+                    handle_platform_event(&mut self, event, &window);
+                    self.sync_ime_proxies(&window);
+                }
+            }
+
             // Poll background sources (PTY output, file watcher, git)
             self.poll_background_events(&window);
             if self.tide_window_close_requested {

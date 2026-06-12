@@ -217,6 +217,10 @@ pub(crate) struct App {
     // Pending platform commands queued by notification routing, drained by event loop.
     pub(crate) pending_platform_commands: Vec<crate::tide_platform::WindowCommand>,
 
+    // E2E test driver: synthetic platform events queued by `test-inject-event`,
+    // drained through the real event path by the app-thread loop.
+    pub(crate) injected_events: Vec<crate::tide_platform::PlatformEvent>,
+
     // True after this App has requested its owning Tide Window to close.
     pub(crate) tide_window_close_requested: bool,
 
@@ -276,6 +280,7 @@ impl App {
             gateway: state::GatewayStatus::new(),
             cli_dispatch: None,
             pending_platform_commands: Vec::new(),
+            injected_events: Vec::new(),
             tide_window_close_requested: false,
             notified_panes: std::collections::HashSet::new(),
             agent_notification_snippets: HashMap::new(),
