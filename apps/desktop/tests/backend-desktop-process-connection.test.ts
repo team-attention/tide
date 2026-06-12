@@ -719,7 +719,8 @@ test("workbench_terminal_output_async_event_maps_to_a_streaming_contract_event",
 
 test("live_backend_records_runtime_output_blocks_before_hydrate_snapshots", () => {
   // Spec: docs_v2/specs/agent-session-block-rendering-path.md
-  const source = readRepoFile("src/backend/infrastructure/node/live-backend.ts");
+  // The projection path lives in live-projector.ts (navigable-source-structure).
+  const source = readRepoFile("src/backend/infrastructure/node/live-projector.ts");
 
   assert.match(source, /const appendFrameAndEmit = async/);
   // Blocks are recorded into the service's authoritative in-memory state before

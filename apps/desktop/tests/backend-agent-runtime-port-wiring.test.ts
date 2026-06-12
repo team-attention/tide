@@ -428,8 +428,9 @@ test("live_backend_uses_pty_port_for_provider_setup_surface", () => {
 
 test("live_agent_session_projection_emits_prompt_changed_for_prompt_state", () => {
   // Spec: docs_v2/specs/provider-signal-prompt-ingress.md
+  // The projection path lives in live-projector.ts (navigable-source-structure).
   const source = fs.readFileSync(
-    path.join(repoRoot, "src/backend/infrastructure/node/live-backend.ts"),
+    path.join(repoRoot, "src/backend/infrastructure/node/live-projector.ts"),
     "utf8",
   );
 
