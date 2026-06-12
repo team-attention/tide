@@ -1,5 +1,5 @@
 import type { AgentChatBackendEvent, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerSurfaceKind } from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
-import type { DropZone, ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellLeftUiMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings } from "../../../../application/domains/product-shell/product-shell-state.ts";
+import type { DropZone, ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings } from "../../../../application/domains/product-shell/product-shell-state.ts";
 import type { TideThemePreference } from "../theme.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
@@ -73,7 +73,7 @@ export interface ProductShellHandlers {
   onNewThreadInProject: (projectId: string) => void;
   onProjectToggle: (projectId: string) => void;
   onThreadSelect: (threadId: string) => void;
-  onLeftUiToggle: () => void;
+  onLeftRailToggle: () => void;
   onWorkbenchToggle: () => void;
   onWorkbenchFullscreenToggle: () => void;
   onWorkbenchLayoutModeToggle: () => void;
@@ -114,7 +114,7 @@ export interface ProductShellHandlers {
   onLauncherAction: (actionId: string) => void;
   onEditorPickerFilter: (filter: string) => void;
   onEditorPickerSelect: (relativePath: string) => void;
-  onLeftUiMenuOpen: (menu: ProductShellLeftUiMenu | null, rect?: MenuAnchorRect) => void;
+  onLeftRailMenuOpen: (menu: ProductShellLeftRailMenu | null, rect?: MenuAnchorRect) => void;
   isSectionCollapsed: (title: string) => boolean;
   onToggleSection: (title: string) => void;
   onListSettingsChange: (patch: Partial<ProductShellListSettings>) => void;
@@ -152,7 +152,7 @@ export interface ProductShellHandlers {
   onThreadRenameCancel: () => void;
   onSearchQueryChange: (query: string) => void;
   onSearchToggle: () => void;
-  onLeftUiTransientClear: () => void;
+  onLeftRailTransientClear: () => void;
   onFocusWorkbenchPane: (paneId: string) => void;
   onCloseWorkbenchPane: (paneId: string) => void;
   onFileTreeEntryOpen: (entryId: string) => void;

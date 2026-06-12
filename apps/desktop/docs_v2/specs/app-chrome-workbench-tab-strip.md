@@ -28,7 +28,7 @@ It does not define final visual theme, icon asset production, full split layout 
 - `docs_v2/implementation/concrete-design-backlog.md` selects minimal Thread-scoped chrome and says App Chrome should be a compact command surface, not another navigation system.
 - `docs_v2/implementation/concrete-design-backlog.md` says status candidates include Backend connection, selected Agent, Agent Runtime state, Provider Readiness issue, and active Project/Branch when Workbench is open.
 - `docs_v2/implementation/concrete-design-backlog.md` says Workbench tabs should represent visible Workbench Panes only and not include the hidden Agent Runtime.
-- `docs_v2/master-plan.md` says the Left UI remains work history, not a status dashboard.
+- `docs_v2/master-plan.md` says the Left Rail remains work history, not a status dashboard.
 
 ## Decisions
 
@@ -212,7 +212,7 @@ Chrome emits BackendCommands:
 1. Backend emits Provider Readiness blocker.
 2. Status Bar shows small attention state.
 3. Composer shows the actionable setup/trust state.
-4. Left UI does not create a global queue.
+4. Left Rail does not create a global queue.
 
 ### UC-3: Workbench opens Browser Pane
 

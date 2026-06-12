@@ -13,7 +13,7 @@ export function startProductShellWorktreeCreate(
   state: ProductShellState,
   projectId: string,
 ): ProductShellState {
-  return { ...state, creatingWorktreeForProjectId: projectId, leftUiMenu: null };
+  return { ...state, creatingWorktreeForProjectId: projectId, leftRailMenu: null };
 }
 
 export function cancelProductShellWorktreeCreate(

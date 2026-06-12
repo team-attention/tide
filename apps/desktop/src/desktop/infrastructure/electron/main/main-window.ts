@@ -36,7 +36,7 @@ export function createMainWindow(): BrowserWindow {
     title: tideDesktopMainEntrypoint.productName,
     // Frameless: no native title bar so the app's own top row is the chrome.
     // Keep the native traffic lights (functional) and place them inside the
-    // Left UI Top Row to match the canonical Figma (one set of controls, not two).
+    // Left Rail Top Row to match the canonical Figma (one set of controls, not two).
     titleBarStyle: "hidden",
     trafficLightPosition: { x: 19, y: 19 },
     webPreferences: {
@@ -48,7 +48,7 @@ export function createMainWindow(): BrowserWindow {
   });
 
   // Tell the renderer when native fullscreen hides the macOS traffic lights, so
-  // the Left UI top row can reclaim the space they normally reserve.
+  // the Left Rail top row can reclaim the space they normally reserve.
   const sendFullscreen = (isFullscreen: boolean) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send("tide:fullscreen-changed", isFullscreen);

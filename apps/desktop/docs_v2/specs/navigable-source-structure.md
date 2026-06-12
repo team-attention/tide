@@ -111,7 +111,7 @@ react-renderer/
     chrome.ts                      # window-chrome toggles, traffic controls, icon button, resize handle
     settings.ts                    # settings modal, theme options, list/worktree/start localStorage
     left-rail/
-      left-rail.ts                 # createLeftUi column assembly
+      left-rail.ts                 # createLeftRail column assembly
       project-section.ts           # project groups + per-project thread list
       pinned-section.ts
       thread-section.ts

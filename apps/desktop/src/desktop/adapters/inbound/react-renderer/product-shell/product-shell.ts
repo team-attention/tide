@@ -13,7 +13,7 @@ import { WorktreeNameInput, makeWorktreeHash } from "./dialogs/worktree-name-inp
 import { fitColumnsToWidth, useColumnPresence } from "./layout.ts";
 import { QuickOpenPalette } from "./search/quick-open.ts";
 import type { QuickOpenFile } from "./search/quick-open.ts";
-import { createLeftUi } from "./left-rail/left-rail.ts";
+import { createLeftRail } from "./left-rail/left-rail.ts";
 import { createAgentChatColumn } from "./chat-column.ts";
 import { createWorkbenchColumn } from "./workbench/workbench.ts";
 import { createFileTreeColumn } from "./file-tree.ts";
@@ -99,7 +99,7 @@ import { renderMarkdownCached, taskListPlugin } from "../markdown-rendering.ts";
 import {
   applyProductShellBackendEvent,
   closeProductShellWorkbenchPane,
-  clearProductShellLeftUiTransientState,
+  clearProductShellLeftRailTransientState,
   confirmProductShellThreadArchive,
   createProductShellState,
   createProductShellViewModel,
@@ -108,9 +108,9 @@ import {
   goToProductShellEditorDefinition,
   goToProductShellEditorReferences,
   moveProductShellEditorCursor,
-  openProductShellLeftUiMenu,
+  openProductShellLeftRailMenu,
   openProductShellThread,
-  openProductShellThreadFromLeftUi,
+  openProductShellThreadFromLeftRail,
   selectProductShellFileTreeEntry,
   openProductShellFileInEditor,
   openProductShellBrowserAtUrl,
@@ -151,7 +151,7 @@ import {
   refreshStartPageFileTree,
   searchProductShellContentCommand,
   type ProductShellContentSearch,
-  toggleProductShellLeftUi,
+  toggleProductShellLeftRail,
   toggleProductShellProject,
   toggleProductShellThreadPin,
   toggleProductShellWorkbenchWithLauncher,
@@ -188,7 +188,7 @@ import {
   type ProductShellAgentIdentity,
   type ProductShellBrowserActionResult,
   type ProductShellBrowserSnapshot,
-  type ProductShellLeftUiMenu,
+  type ProductShellLeftRailMenu,
   type ProductShellProjectGroupView,
   type ProductShellPinnedProjectView,
   type ProductShellState,
@@ -561,13 +561,13 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         if (edge === "workbench") {
           // Handle on the workbench's left edge: dragging right shrinks it.
           const reserved =
-            (viewModel.leftUiOpen ? current.left : 0) +
+            (viewModel.leftRailOpen ? current.left : 0) +
             (viewModel.fileTreeOpen ? current.fileTree : 0);
           const max = Math.max(320, total - reserved - CHAT_MIN);
           return { ...current, workbench: clamp(start.workbench - dx, 320, max) };
         }
         const reserved =
-          (viewModel.leftUiOpen ? current.left : 0) +
+          (viewModel.leftRailOpen ? current.left : 0) +
           (viewModel.workbenchOpen ? current.workbench : 0);
         const max = Math.max(240, total - reserved - CHAT_MIN);
         return { ...current, fileTree: clamp(start.fileTree - dx, 240, max) };
@@ -731,7 +731,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Auto-collapse columns that no longer fit the window at their min widths.
   const eff = fitColumnsToWidth({
     windowWidth,
-    leftUiOpen: viewModel.leftUiOpen,
+    leftRailOpen: viewModel.leftRailOpen,
     workbenchOpen: viewModel.workbenchOpen,
     fileTreeOpen: viewModel.fileTreeOpen,
   });
@@ -741,7 +741,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       : { ...viewModel, workbenchOpen: eff.workbenchOpen, fileTreeOpen: eff.fileTreeOpen };
 
   // Animate columns open/closed by keeping them mounted across an exit transition.
-  const leftPresence = useColumnPresence(layoutVm.leftUiOpen);
+  const leftPresence = useColumnPresence(layoutVm.leftRailOpen);
   const workbenchPresence = useColumnPresence(layoutVm.workbenchOpen);
   const fileTreePresence = useColumnPresence(layoutVm.fileTreeOpen);
 
@@ -829,7 +829,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     {
       className: [
         "tide-product-shell",
-        layoutVm.leftUiOpen ? "tide-product-shell--left-open" : "tide-product-shell--left-closed",
+        layoutVm.leftRailOpen ? "tide-product-shell--left-open" : "tide-product-shell--left-closed",
         layoutVm.workbenchOpen ? "tide-product-shell--workbench-open" : "tide-product-shell--workbench-closed",
         layoutVm.fileTreeOpen ? "tide-product-shell--file-tree-open" : "tide-product-shell--file-tree-closed",
         isResizing ? "tide-product-shell--resizing" : "",
@@ -873,7 +873,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         } as CSSProperties,
       },
       leftPresence.mounted
-        ? createLeftUi(layoutVm, handlers, { menu: shellState.leftUiMenu, anchor: menuAnchor })
+        ? createLeftRail(layoutVm, handlers, { menu: shellState.leftRailMenu, anchor: menuAnchor })
         : null,
       createAgentChatColumn(layoutVm, handlers),
       workbenchPresence.mounted ? createWorkbenchColumn(layoutVm, handlers) : null,

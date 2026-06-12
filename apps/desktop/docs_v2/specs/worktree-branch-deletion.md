@@ -9,7 +9,7 @@ sits only on a worktree's top-level Project context menu — which the
 unreachable for grouped worktrees.
 
 In scope:
-- A **delete affordance in two places**: (1) the Left UI worktree **Thread row**
+- A **delete affordance in two places**: (1) the Left Rail worktree **Thread row**
   context menu, and (2) the Composer **Worktree menu** (a trash control on each
   existing worktree row).
 - **Worktree + branch deleted together by default**, with a "Keep branch"

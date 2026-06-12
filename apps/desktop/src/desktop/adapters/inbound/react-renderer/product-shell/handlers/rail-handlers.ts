@@ -1,4 +1,4 @@
-import { archiveProductShellProjectChats, cancelProductShellProjectRename, cancelProductShellThreadRename, cancelProductShellWorktreeCreate, clearProductShellLeftUiTransientState, confirmProductShellThreadArchive, openProductShellLeftUiMenu, openProductShellThreadFromLeftUi, selectProductShellChoiceSurfaceRow, setProductShellListSettings, setProductShellRegisteredProjects, showProductShellThreadArchiveConfirm, startNewProductShellScratchThread, startNewProductShellThread, startProductShellProjectRename, startProductShellThreadRename, startProductShellWorktreeCreate, submitProductShellThreadRename, toggleProductShellLeftUi, toggleProductShellProject, toggleProductShellProjectPin, toggleProductShellThreadPin } from "../../../../../application/domains/product-shell/product-shell-state.ts";
+import { archiveProductShellProjectChats, cancelProductShellProjectRename, cancelProductShellThreadRename, cancelProductShellWorktreeCreate, clearProductShellLeftRailTransientState, confirmProductShellThreadArchive, openProductShellLeftRailMenu, openProductShellThreadFromLeftRail, selectProductShellChoiceSurfaceRow, setProductShellListSettings, setProductShellRegisteredProjects, showProductShellThreadArchiveConfirm, startNewProductShellScratchThread, startNewProductShellThread, startProductShellProjectRename, startProductShellThreadRename, startProductShellWorktreeCreate, submitProductShellThreadRename, toggleProductShellLeftRail, toggleProductShellProject, toggleProductShellProjectPin, toggleProductShellThreadPin } from "../../../../../application/domains/product-shell/product-shell-state.ts";
 import { persistListSettings } from "../settings.ts";
 import { projectCwdById } from "../product-shell.ts";
 import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree-path.ts";
@@ -7,7 +7,7 @@ import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree-path.t
 import type { ProductShellHandlers } from "../types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
-export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onNewThread" | "onNewThreadInProject" | "onProjectToggle" | "onThreadSelect" | "onLeftUiToggle" | "onLeftUiMenuOpen" | "onToggleSection" | "onListSettingsChange" | "onProjectRevealInFinder" | "onProjectArchiveChats" | "onProjectRemove" | "onProjectDeleteWorktree" | "onProjectPinToggle" | "onProjectRenameStart" | "onProjectRenameCancel" | "onProjectRenameSubmit" | "onProjectCreateWorktree" | "onProjectCreateWorktreeSubmit" | "onProjectCreateWorktreeCancel" | "onPinnedProjectSelect" | "onAddProject" | "onNewScratchThread" | "onThreadArchiveIntent" | "onThreadArchiveConfirm" | "onThreadPinToggle" | "onThreadDeleteWorktree" | "onThreadRenameStart" | "onThreadRenameSubmit" | "onThreadRenameCancel" | "onLeftUiTransientClear" | "isSectionCollapsed" | "isProjectRemovable" | "isProjectWorktree" | "threadWorktreeBranch"> {
+export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onNewThread" | "onNewThreadInProject" | "onProjectToggle" | "onThreadSelect" | "onLeftRailToggle" | "onLeftRailMenuOpen" | "onToggleSection" | "onListSettingsChange" | "onProjectRevealInFinder" | "onProjectArchiveChats" | "onProjectRemove" | "onProjectDeleteWorktree" | "onProjectPinToggle" | "onProjectRenameStart" | "onProjectRenameCancel" | "onProjectRenameSubmit" | "onProjectCreateWorktree" | "onProjectCreateWorktreeSubmit" | "onProjectCreateWorktreeCancel" | "onPinnedProjectSelect" | "onAddProject" | "onNewScratchThread" | "onThreadArchiveIntent" | "onThreadArchiveConfirm" | "onThreadPinToggle" | "onThreadDeleteWorktree" | "onThreadRenameStart" | "onThreadRenameSubmit" | "onThreadRenameCancel" | "onLeftRailTransientClear" | "isSectionCollapsed" | "isProjectRemovable" | "isProjectWorktree" | "threadWorktreeBranch"> {
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onNewThread: () => setShellState((state) => startNewProductShellThread(state)),
@@ -17,7 +17,7 @@ export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<Produc
       setShellState((state) => toggleProductShellProject(state, projectId)),
     onThreadSelect: (threadId) =>
       setShellState((state) => {
-        const result = openProductShellThreadFromLeftUi(state, threadId, {
+        const result = openProductShellThreadFromLeftRail(state, threadId, {
           backendTransportAvailable: props.onBackendCommand !== undefined,
         });
         dispatchBackendCommand(result.command);
@@ -35,10 +35,10 @@ export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<Produc
         }
         return result.state;
       }),
-    onLeftUiToggle: () => setShellState((state) => toggleProductShellLeftUi(state)),
-    onLeftUiMenuOpen: (menu, rect) => {
+    onLeftRailToggle: () => setShellState((state) => toggleProductShellLeftRail(state)),
+    onLeftRailMenuOpen: (menu, rect) => {
       setMenuAnchor(rect ?? null);
-      setShellState((state) => openProductShellLeftUiMenu(state, menu));
+      setShellState((state) => openProductShellLeftRailMenu(state, menu));
     },
     onToggleSection: (title) =>
       setCollapsedSections((current) => ({ ...current, [title]: !current[title] })),
@@ -53,7 +53,7 @@ export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<Produc
       if (cwd !== undefined) {
         props.projectBridge?.revealInFinder(cwd);
       }
-      setShellState((state) => openProductShellLeftUiMenu(state, null));
+      setShellState((state) => openProductShellLeftRailMenu(state, null));
     },
     onProjectArchiveChats: (projectId) =>
       setShellState((state) => {
@@ -72,12 +72,12 @@ export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<Produc
           .then((entries) => setShellState((state) => setProductShellRegisteredProjects(state, entries)))
           .catch(() => {});
       }
-      setShellState((state) => openProductShellLeftUiMenu(state, null));
+      setShellState((state) => openProductShellLeftRailMenu(state, null));
     },
     onProjectDeleteWorktree: (projectId) => {
       const cwd = projectCwdById(shellState, projectId);
       const bridge = props.projectBridge;
-      setShellState((state) => openProductShellLeftUiMenu(state, null));
+      setShellState((state) => openProductShellLeftRailMenu(state, null));
       if (cwd === undefined || bridge === undefined) {
         return;
       }
@@ -162,7 +162,7 @@ export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<Produc
       }),
     onThreadDeleteWorktree: (threadId) => {
       const thread = shellState.threads.find((entry) => entry.threadId === threadId);
-      setShellState((state) => openProductShellLeftUiMenu(state, null));
+      setShellState((state) => openProductShellLeftRailMenu(state, null));
       if (thread !== undefined && thread.scope.kind === "project") {
         openWorktreeDeleteByCwd(thread.scope.cwd);
       }
@@ -177,8 +177,8 @@ export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<Produc
       }),
     onThreadRenameCancel: () =>
       setShellState((state) => cancelProductShellThreadRename(state)),
-    onLeftUiTransientClear: () =>
-      setShellState((state) => clearProductShellLeftUiTransientState(state)),
+    onLeftRailTransientClear: () =>
+      setShellState((state) => clearProductShellLeftRailTransientState(state)),
     isSectionCollapsed: (title) => collapsedSections[title] === true,
     isProjectRemovable: (projectId) =>
       !shellState.threads.some(

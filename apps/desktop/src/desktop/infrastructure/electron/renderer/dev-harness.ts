@@ -472,8 +472,8 @@ function measure(): void {
     interLoaded: (document as unknown as { fonts?: { check(f: string): boolean } }).fonts?.check(
       "500 12px Inter",
     ),
-    leftRailW: px('[data-column="left-ui"]'), // Figma 256
-    topRowH: pxH(".left-ui__top-row"), // Figma 52
+    leftRailW: px('[data-column="left-rail"]'), // Figma 256
+    topRowH: pxH(".left-rail__top-row"), // Figma 52
     fileTreeW: px('[aria-label="FileTree"]'), // Figma 344
     fileTreeSearchH: pxH(".file-tree-column__search"), // Figma 32
     fileRowH: pxH(".file-tree-row"), // Figma 30

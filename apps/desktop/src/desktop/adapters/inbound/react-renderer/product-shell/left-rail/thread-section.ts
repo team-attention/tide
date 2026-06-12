@@ -19,7 +19,7 @@ export function createThreadSection(
   const collapsed = handlers.isSectionCollapsed(title);
   return createElement(
     "section",
-    { className: "left-ui-section", "aria-label": title },
+    { className: "left-rail-section", "aria-label": title },
     createSectionHeader(
       title,
       threads.length,

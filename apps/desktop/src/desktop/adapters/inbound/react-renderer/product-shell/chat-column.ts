@@ -43,13 +43,13 @@ export function createAgentChatColumn(
       createElement(
         "div",
         { className: "column-top-row__leading" },
-        viewModel.leftUiOpen ? null : createTrafficControls(),
-        viewModel.leftUiOpen
+        viewModel.leftRailOpen ? null : createTrafficControls(),
+        viewModel.leftRailOpen
           ? null
           : createIconButton(
-              "Open Left UI",
+              "Open Left Rail",
               createElement(PanelLeftOpen, { size: 15, strokeWidth: 1.9 }),
-              handlers.onLeftUiToggle,
+              handlers.onLeftRailToggle,
               "top-row-button",
             ),
         createElement(Pin, { size: 14, strokeWidth: 1.9, "aria-hidden": true }),

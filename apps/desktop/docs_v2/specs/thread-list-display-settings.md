@@ -2,7 +2,7 @@
 
 ## Scope
 
-Give the Left UI thread list user-configurable display settings, persisted across
+Give the Left Rail thread list user-configurable display settings, persisted across
 sessions:
 - **Group by**: Project (default) or Thread (flat list, no project grouping).
 - **Sort**: Last activity (default), Created, or Name.
@@ -44,7 +44,7 @@ sessions:
 
 ## Domain Model
 
-- **List Display Settings**: user prefs controlling how the Left UI thread list is
+- **List Display Settings**: user prefs controlling how the Left Rail thread list is
   grouped and sorted.
 
 ## Contracts
@@ -53,7 +53,7 @@ sessions:
 
 ## Flow
 
-1. User opens list settings (Left UI menu) and picks group/sort/worktree options.
+1. User opens list settings (Left Rail menu) and picks group/sort/worktree options.
 2. The reducer updates `state.listSettings`; the renderer persists to localStorage.
 3. `createProductShellViewModel` branches on `listSettings` to build either grouped
    or flat, sorted output.
@@ -78,7 +78,7 @@ sessions:
 
 - Pure changes in `product-shell-state.ts` (view-model branch + a
   `setProductShellListSettings` reducer).
-- Renderer: a list-settings menu in the Left UI + localStorage load/save.
+- Renderer: a list-settings menu in the Left Rail + localStorage load/save.
 
 ## Location
 

@@ -2,7 +2,7 @@
 
 ## Scope
 
-This spec connects the Desktop Product Shell Left UI to Backend-owned Thread state.
+This spec connects the Desktop Product Shell Left Rail to Backend-owned Thread state.
 
 Included:
 
@@ -11,10 +11,10 @@ Included:
 - Backend service listing of current non-archived Threads, sorted by updated time descending.
 - Product Shell startup that requests the Backend Thread list instead of using fixture Threads in the real renderer path.
 - Product Shell state update from `thread.listed`.
-- A `thread.archive` BackendCommand and `thread.archived` BackendEvent that toggle a Thread's archived state, persist it (event-driven), and update the Left UI (the inline archive-confirm button drops the Thread from the visible list).
-- A `thread.setPinned` BackendCommand and `thread.pinChanged` BackendEvent that toggle a Thread's pinned state, persist it (event-driven), and update the Left UI (the hover pin button flips pin state and the Pinned shortcuts list). The Thread record carries a real `pinned` flag instead of a hardcoded `false`.
-- A `thread.rename` BackendCommand and `thread.renamed` BackendEvent that set a manual Thread title (trimmed + whitespace-collapsed; empty rejected), persist it (event-driven), and update the Left UI (double-click a Thread row to inline-rename).
-- Left UI search: a Product Shell `searchQuery` that filters the loaded Threads by title (case-insensitive substring) across Pinned, Projects, and Scratch, hiding empty Project groups while searching. This is a client-side filter over already-loaded Threads; searching archived Threads via Backend is a later slice.
+- A `thread.archive` BackendCommand and `thread.archived` BackendEvent that toggle a Thread's archived state, persist it (event-driven), and update the Left Rail (the inline archive-confirm button drops the Thread from the visible list).
+- A `thread.setPinned` BackendCommand and `thread.pinChanged` BackendEvent that toggle a Thread's pinned state, persist it (event-driven), and update the Left Rail (the hover pin button flips pin state and the Pinned shortcuts list). The Thread record carries a real `pinned` flag instead of a hardcoded `false`.
+- A `thread.rename` BackendCommand and `thread.renamed` BackendEvent that set a manual Thread title (trimmed + whitespace-collapsed; empty rejected), persist it (event-driven), and update the Left Rail (double-click a Thread row to inline-rename).
+- Left Rail search: a Product Shell `searchQuery` that filters the loaded Threads by title (case-insensitive substring) across Pinned, Projects, and Scratch, hiding empty Project groups while searching. This is a client-side filter over already-loaded Threads; searching archived Threads via Backend is a later slice.
 
 Out of scope:
 
@@ -24,7 +24,7 @@ Out of scope:
 
 ## Evidence
 
-- `docs_v2/master-plan.md` says Left UI is work history and shows existing Threads grouped by Project and Scratch.
+- `docs_v2/master-plan.md` says Left Rail is work history and shows existing Threads grouped by Project and Scratch.
 - `docs_v2/master-plan.md` says Thread is the primary product object and Project organizes Threads and provides Execution Context.
 - `src/desktop/application/domains/product-shell/product-shell-state.ts` currently creates fixture `initialThreads` in `createProductShellState`.
 - `src/shared/contracts/commands.ts` currently has `thread.hydrate` and `thread.start`, but no Thread list command.
@@ -41,7 +41,7 @@ Backend replies with `thread.listed`, not with fixture data in Desktop.
 
 ### D2. Default list excludes archived Threads
 
-The default `thread.list` payload omits archived Threads because archived Threads are hidden from the default Left UI.
+The default `thread.list` payload omits archived Threads because archived Threads are hidden from the default Left Rail.
 
 An `includeArchived` boolean may be sent for future archived views.
 
@@ -100,7 +100,7 @@ BackendEventPayloadByKind["thread.listed"] = {
 | Shared Contracts accept Thread list command and event | `thread_list_contracts_round_trip_thread_summaries` |
 | Backend lists non-archived Threads sorted by updated time | `thread_list_returns_visible_threads_sorted_by_updated_time` |
 | Contract adapter emits accepted, listed, and completed events | `thread_list_contract_events_return_backend_thread_summaries` |
-| Product Shell applies Backend Thread list to Left UI | `product_shell_applies_thread_listed_event_to_left_ui` |
+| Product Shell applies Backend Thread list to Left Rail | `product_shell_applies_thread_listed_event_to_left_ui` |
 | Real renderer starts Product Shell without fixture Threads and requests list | `product_shell_requests_backend_thread_list_on_mount_without_fixture_threads` |
 | Backend archives a Thread and keeps it retrievable | `archiving_a_thread_excludes_it_from_the_default_list_but_keeps_it_retrievable` |
 | Archiving a missing Thread is rejected | `archiving_a_missing_thread_returns_thread_not_found` |
@@ -114,7 +114,7 @@ BackendEventPayloadByKind["thread.listed"] = {
 | Product Shell rename submit emits the command optimistically | `submitting_thread_rename_emits_command_and_updates_title_optimistically` |
 | Empty rename emits no command | `submitting_an_empty_thread_rename_emits_no_command` |
 | Product Shell applies the renamed event | `thread_renamed_event_updates_thread_title` |
-| Left UI search filters Threads by title | `search_query_filters_threads_by_title_in_the_left_ui` |
+| Left Rail search filters Threads by title | `search_query_filters_threads_by_title_in_the_left_ui` |
 
 ## Implementation Notes
 

@@ -57,7 +57,7 @@ export function createProductShellViewModel(
     // projectId, so a project pinned + listed expands consistently in both.
     expanded: searching || !state.collapsedProjectIds.includes(project.projectId),
     contextMenuOpen:
-      state.leftUiMenu?.kind === "project" && state.leftUiMenu.projectId === project.projectId,
+      state.leftRailMenu?.kind === "project" && state.leftRailMenu.projectId === project.projectId,
     pinned: state.pinnedProjectIds.includes(project.projectId),
     renaming: state.renamingProjectId === project.projectId,
     creatingWorktree: state.creatingWorktreeForProjectId === project.projectId,
@@ -75,7 +75,7 @@ export function createProductShellViewModel(
   const topLevelProjects = projects.filter((project) => !worktreeRemap.has(project.projectId));
   return {
     activeThreadId: state.activeThreadId,
-    leftUiOpen: state.leftUiOpen,
+    leftRailOpen: state.leftRailOpen,
     threadsLoaded: state.threadsLoaded,
     workbenchOpen: state.workbenchOpen,
     workbenchFullscreen: state.workbenchFullscreen,
@@ -149,7 +149,7 @@ export function deriveBackgroundBrowserPanes(
   });
 }
 
-// The Projects shown in the Left UI and Project menu: the union of explicitly
+// The Projects shown in the Left Rail and Project menu: the union of explicitly
 // registered projects and thread-derived projects, deduped by projectId.
 function displayedProjects(state: ProductShellState): ProductShellProject[] {
   const byId = new Map<string, ProductShellProject>();
@@ -177,7 +177,7 @@ export function agentChatWithProjects(state: ProductShellState): AgentChatShellS
   };
 }
 
-// Sort threads for the Left UI list. "recent"/"created" newest-first by the
+// Sort threads for the Left Rail list. "recent"/"created" newest-first by the
 // matching timestamp (missing timestamps sort last, preserving stable order);
 // "name" is title A–Z. See docs_v2/specs/thread-list-display-settings.md.
 function sortProductShellThreads(
@@ -314,7 +314,7 @@ function toThreadView(
     archiveConfirming: state.archiveConfirmThreadId === thread.threadId,
     renaming: state.renamingThreadId === thread.threadId,
     contextMenuOpen:
-      state.leftUiMenu?.kind === "thread" && state.leftUiMenu.threadId === thread.threadId,
+      state.leftRailMenu?.kind === "thread" && state.leftRailMenu.threadId === thread.threadId,
     worktreeBranch:
       worktreeCwd === null
         ? undefined

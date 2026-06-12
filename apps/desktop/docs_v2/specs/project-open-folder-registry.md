@@ -2,7 +2,7 @@
 
 ## Scope
 
-Codex-style project onboarding for Tide's Left UI Projects section and the
+Codex-style project onboarding for Tide's Left Rail Projects section and the
 Composer Project menu. A user opens a real directory; it is registered as a
 persisted Project that stays listed even with no Threads, and scopes the new
 Thread. Scratch remains the no-Project path. Worktree is unchanged (a separate

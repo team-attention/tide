@@ -5,7 +5,7 @@
 Redesign how a user starts work in a new git worktree from the Start Composer, so
 the worktree, optional branch, and optional name are chosen in the composer, the
 worktree is created **at send time** with a deterministic name, and the resulting
-worktree Thread is grouped **under its parent repo Project** in the Left UI.
+worktree Thread is grouped **under its parent repo Project** in the Left Rail.
 
 In scope:
 
@@ -164,7 +164,7 @@ launchOptions.newWorktree = { name?: string; baseBranch?: string };
    `createWorktree(repoCwd, "fix-the-login-redirect-bug", { baseBranch })`.
 4. Worktree `<repo>.worktree/fix-the-login-redirect-bug` + branch of the same name
    are created off the base; the Thread starts there.
-5. Left UI: the Thread appears under the repo Project group with a branch badge.
+5. Left Rail: the Thread appears under the repo Project group with a branch badge.
 
 ### UC-2: New worktree, blank name, Korean first message
 

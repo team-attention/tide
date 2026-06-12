@@ -28,9 +28,9 @@ import {
   goToProductShellEditorDefinition,
   goToProductShellEditorReferences,
   moveProductShellEditorCursor,
-  openProductShellLeftUiMenu,
+  openProductShellLeftRailMenu,
   openProductShellThread,
-  openProductShellThreadFromLeftUi,
+  openProductShellThreadFromLeftRail,
   selectProductShellFileTreeEntry,
   selectProductShellChoiceSurfaceRow,
   selectProductShellLauncherAction,
@@ -45,7 +45,7 @@ import {
   toggleProductShellFileTree,
   toggleProductShellFileTreeWithRefresh,
   interruptProductShellRuntime,
-  toggleProductShellLeftUi,
+  toggleProductShellLeftRail,
   toggleProductShellProject,
   toggleProductShellWorkbench,
   toggleProductShellWorkbenchWithLauncher,
@@ -77,7 +77,7 @@ test("product_shell_renders_left_ui_agent_chat_composer_and_app_chrome", () => {
   const html = renderProductShell();
 
   assert.match(html, /class="[^"]*\btide-product-shell\b/);
-  assert.match(html, /aria-label="Left UI"/);
+  assert.match(html, /aria-label="Left Rail"/);
   assert.match(html, /aria-label="Agent Chat"/);
   assert.match(html, /aria-label="Composer"/);
   assert.match(html, /aria-label="Agent Chat Top Row"/);
@@ -188,7 +188,7 @@ test("switching_threads_preserves_each_threads_agent_chat_state", () => {
     payload: { threads: [summary("thread-a", "A"), summary("thread-b", "B")] },
   });
 
-  const openA = openProductShellThreadFromLeftUi(base, "thread-a", {
+  const openA = openProductShellThreadFromLeftRail(base, "thread-a", {
     backendTransportAvailable: true,
   }).state;
   const aBlocked = applyProductShellBackendEvent(openA, {
@@ -206,13 +206,13 @@ test("switching_threads_preserves_each_threads_agent_chat_state", () => {
   });
   assert.equal(aBlocked.agentChat.providerReadiness?.ready, false);
 
-  const onB = openProductShellThreadFromLeftUi(aBlocked, "thread-b", {
+  const onB = openProductShellThreadFromLeftRail(aBlocked, "thread-b", {
     backendTransportAvailable: true,
   }).state;
   // B has its own (clean) state — A's blocker did not bleed into it.
   assert.equal(onB.agentChat.providerReadiness, null);
 
-  const backToA = openProductShellThreadFromLeftUi(onB, "thread-a", {
+  const backToA = openProductShellThreadFromLeftRail(onB, "thread-a", {
     backendTransportAvailable: true,
   }).state;
   assert.equal(backToA.activeThreadId, "thread-a");
@@ -359,7 +359,7 @@ test("search_query_filters_threads_by_title_in_the_left_ui", () => {
 
 test("left_ui_search_is_a_nav_row_until_activated", () => {
   // Spec: docs_v2/specs/desktop-product-shell-visual-foundation.md
-  // Canonical Figma workbench frame (1223:2): the Left UI "Search" entry is a
+  // Canonical Figma workbench frame (1223:2): the Left Rail "Search" entry is a
   // nav row (icon + "Search"), like "New thread". The inline filter input
   // belongs only to the FileTree. Activating Search reveals the inline input.
   const resting = renderProductShell();
@@ -671,7 +671,7 @@ test("opening_thread_from_left_ui_marks_it_active_and_hydrates_follow_up_compose
 });
 
 test("product_shell_thread_selection_switches_focus_locally_and_emits_thread_hydrate", () => {
-  const result = openProductShellThreadFromLeftUi(
+  const result = openProductShellThreadFromLeftRail(
     createProductShellState(),
     "thread-workbench",
     { backendTransportAvailable: true },
@@ -1877,7 +1877,7 @@ test("interrupt_stops_a_running_turn_and_shows_a_stop_button", () => {
 test("product_shell_uses_column_owned_top_rows_without_global_window_chrome", () => {
   const html = renderProductShell();
 
-  assert.match(html, /aria-label="Left UI Top Row"/);
+  assert.match(html, /aria-label="Left Rail Top Row"/);
   assert.match(html, /aria-label="Agent Chat Top Row"/);
   assert.doesNotMatch(html, /tide-window-chrome/);
   assert.doesNotMatch(html, /aria-label="Tide Window Chrome"/);
@@ -2419,15 +2419,15 @@ test("product_shell_start_command_uses_contract_runtime_source_shape", () => {
 
 test("shell_columns_can_close_without_losing_top_row_alignment", () => {
   const state = toggleProductShellWorkbench(
-    toggleProductShellFileTree(toggleProductShellLeftUi(openProductShellThread(createProductShellState(), "thread-workbench"))),
+    toggleProductShellFileTree(toggleProductShellLeftRail(openProductShellThread(createProductShellState(), "thread-workbench"))),
   );
   const view = createProductShellViewModel(state);
   const html = renderProductShell(state);
 
-  assert.equal(view.leftUiOpen, false);
+  assert.equal(view.leftRailOpen, false);
   assert.equal(view.workbenchOpen, false);
   assert.equal(view.fileTreeOpen, true);
-  assert.doesNotMatch(html, /aria-label="Left UI"/);
+  assert.doesNotMatch(html, /aria-label="Left Rail"/);
   assert.match(html, /aria-label="Agent Chat Top Row"/);
   assert.match(html, /aria-label="FileTree Top Row"/);
 });
@@ -2446,24 +2446,24 @@ test("thread_archive_intent_replaces_actions_with_one_confirm_pill", () => {
 
 test("left_ui_context_menus_match_figma_items_and_keep_rows_highlighted", () => {
   const threadHtml = renderProductShell(
-    openProductShellLeftUiMenu(createProductShellState(), {
+    openProductShellLeftRailMenu(createProductShellState(), {
       kind: "thread",
       threadId: "thread-workbench",
     }),
   );
   const projectHtml = renderProductShell(
-    openProductShellLeftUiMenu(createProductShellState(), {
+    openProductShellLeftRailMenu(createProductShellState(), {
       kind: "project",
       projectId: "tide",
     }),
   );
 
   assert.match(extractByDataAttribute(threadHtml, "data-thread-row", "thread-workbench"), /thread-row--menu-open/);
-  assert.match(threadHtml, /data-left-ui-menu-kind="thread"/);
+  assert.match(threadHtml, /data-left-rail-menu-kind="thread"/);
   assert.match(threadHtml, /Pin \/ unpin/);
   assert.match(threadHtml, /Archive/);
   assert.match(extractByDataAttribute(projectHtml, "data-project-row", "tide"), /project-row--menu-open/);
-  assert.match(projectHtml, /data-left-ui-menu-kind="project"/);
+  assert.match(projectHtml, /data-left-rail-menu-kind="project"/);
   assert.match(projectHtml, /Pin project/);
   assert.match(projectHtml, /Open in Finder/);
   assert.match(projectHtml, /Create permanent worktree/);

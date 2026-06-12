@@ -306,12 +306,12 @@ Desktop UX layout defines the main visible product structure.
 Target layout:
 
 ```text
-Left UI | Agent Chat | Workbench
+Left Rail | Agent Chat | Workbench
 ```
 
 Default surfaces:
 
-- Left UI for work history.
+- Left Rail for work history.
 - Agent Chat for Agent Session and Composer.
 - Workbench only when needed.
 
@@ -319,7 +319,7 @@ Default surfaces:
 
 | Option | Description |
 |--------|-------------|
-| A. Thread-first layout | Left UI, focused Agent Chat, optional Workbench. |
+| A. Thread-first layout | Left Rail, focused Agent Chat, optional Workbench. |
 | B. IDE-first layout | Project/FileTree/Workbench dominate the first screen. |
 | C. Terminal-first layout | Terminal or Workbench is the primary starting surface. |
 
@@ -345,7 +345,7 @@ The product is a focused coding-agent chat app, not a terminal multiplexer and n
 - Agent Chat empty, loading, running, waiting, failed, and completed states.
 - Composer placement and resize behavior.
 - responsive behavior when Workbench opens.
-- keyboard focus order across Left UI, Agent Chat, Composer, and Workbench.
+- keyboard focus order across Left Rail, Agent Chat, Composer, and Workbench.
 
 ## 7. App Chrome And Micro-Interactions
 

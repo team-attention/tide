@@ -8,7 +8,7 @@ export function setProductShellSearchQuery(
   return { ...state, searchQuery: query, searchActive: true };
 }
 
-// The Left UI "Search" entry is a nav row by default (matching the canonical
+// The Left Rail "Search" entry is a nav row by default (matching the canonical
 // Figma frame); activating it reveals the inline filter input. Closing it
 // clears any in-progress query so the row returns to its resting state.
 export function toggleProductShellSearch(

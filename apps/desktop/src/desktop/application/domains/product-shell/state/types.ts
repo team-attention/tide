@@ -5,7 +5,7 @@ import type { WorkbenchSplitNode } from "../workbench-split-tree.ts";
 
 export type ProductShellAgentIdentity = "codex" | "claude" | "gemini" | "opencode" | "openai_api";
 
-export type ProductShellLeftUiMenu =
+export type ProductShellLeftRailMenu =
   | { kind: "thread"; threadId: string }
   | { kind: "project"; projectId: string }
   | { kind: "list_settings" };
@@ -35,7 +35,7 @@ export type ProductShellListGroupBy = "project" | "thread";
 
 export type ProductShellListSortBy = "recent" | "created" | "name";
 
-// User prefs for how the Left UI thread list is grouped and sorted.
+// User prefs for how the Left Rail thread list is grouped and sorted.
 // See docs_v2/specs/thread-list-display-settings.md.
 export interface ProductShellListSettings {
   groupBy: ProductShellListGroupBy;
@@ -82,7 +82,7 @@ export interface ProductShellProject {
 
 export interface ProductShellState {
   activeThreadId: string | null;
-  leftUiOpen: boolean;
+  leftRailOpen: boolean;
   workbenchOpen: boolean;
   // The active workbench pane is expanded to fill the window (focus mode). The
   // left rail / chat / filetree columns are hidden while on.
@@ -94,13 +94,13 @@ export interface ProductShellState {
   // the live visible panes on read.
   workbenchLayoutTree: WorkbenchSplitNode | null;
   fileTreeOpen: boolean;
-  leftUiMenu: ProductShellLeftUiMenu | null;
+  leftRailMenu: ProductShellLeftRailMenu | null;
   archiveConfirmThreadId: string | null;
   renamingThreadId: string | null;
   searchQuery: string;
   searchActive: boolean;
   // Project rows the user has collapsed. Projects are expanded by default; a
-  // collapsed project hides its thread rows in the Left UI.
+  // collapsed project hides its thread rows in the Left Rail.
   collapsedProjectIds: string[];
   // Folder paths the user has expanded. Folders are collapsed by default. The
   // full tree is loaded upfront, so expanding only reveals loaded children.
@@ -142,7 +142,7 @@ export interface ProductShellState {
   contentSearch: ProductShellContentSearch | null;
   editorDrafts: Record<string, ProductShellEditorDraft>;
   nextLocalThreadNumber: number;
-  // How the Left UI thread list is grouped/sorted (persisted in the renderer).
+  // How the Left Rail thread list is grouped/sorted (persisted in the renderer).
   listSettings: ProductShellListSettings;
   // App-level worktree creation settings (persisted in the renderer).
   worktreeSettings: ProductShellWorktreeSettings;
@@ -313,7 +313,7 @@ export interface ProductShellEditorPickerView {
 
 export interface ProductShellViewModel {
   activeThreadId: string | null;
-  leftUiOpen: boolean;
+  leftRailOpen: boolean;
   // False on a cold boot until the first thread list arrives — drives the rail skeleton.
   threadsLoaded: boolean;
   workbenchOpen: boolean;

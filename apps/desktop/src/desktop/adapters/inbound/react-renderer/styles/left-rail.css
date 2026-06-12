@@ -1,13 +1,13 @@
 /* Columns clip their content so a collapsing track slides cleanly to 0 instead
    of reflowing/spilling during the animation. */
-.left-ui,
+.left-rail,
 .workbench-column,
 .file-tree-column {
   overflow: hidden;
   min-width: 0;
 }
 
-.left-ui {
+.left-rail {
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -17,7 +17,7 @@
   background: var(--tide-surface);
 }
 
-.left-ui__top-row {
+.left-rail__top-row {
   justify-content: flex-start;
   gap: 18px;
   padding: 0 16px;
@@ -25,14 +25,14 @@
 }
 
 /* Drag-resize handles sit on column edges. */
-.left-ui,
+.left-rail,
 .workbench-column,
 .file-tree-column {
   position: relative;
 }
 
-.left-ui__nav,
-.left-ui-section {
+.left-rail__nav,
+.left-rail-section {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -41,7 +41,7 @@
 
 /* Thread/project/scratch sections fill the rail and scroll; Settings pins to
    the bottom (canonical left rail). */
-.left-ui__sections {
+.left-rail__sections {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -50,13 +50,13 @@
   gap: 18px;
 }
 
-.left-ui__search-row {
+.left-rail__search-row {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.left-ui__search-row > :first-child {
+.left-rail__search-row > :first-child {
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -81,7 +81,7 @@
   color: var(--tide-text);
 }
 
-.left-ui-context-menu__label {
+.left-rail-context-menu__label {
   padding: 6px 12px 2px;
   font-size: 11px;
   font-weight: 600;
@@ -90,12 +90,12 @@
   text-transform: uppercase;
 }
 
-.left-ui__footer {
+.left-rail__footer {
   flex: 0 0 auto;
   padding: 0 10px 6px;
 }
 
-.left-ui-search {
+.left-rail-search {
   width: 100%;
   height: 32px;
   display: flex;
@@ -106,11 +106,11 @@
   color: var(--tide-muted);
 }
 
-.left-ui-search:focus-within {
+.left-rail-search:focus-within {
   background: var(--tide-selection);
 }
 
-.left-ui-search__input {
+.left-rail-search__input {
   flex: 1 1 auto;
   min-width: 0;
   border: 0;
@@ -119,15 +119,15 @@
   font: inherit;
 }
 
-.left-ui-search__input::placeholder {
+.left-rail-search__input::placeholder {
   color: var(--tide-muted);
 }
 
-.left-ui-search__input:focus {
+.left-rail-search__input:focus {
   outline: none;
 }
 
-.left-ui-nav-row,
+.left-rail-nav-row,
 .thread-row,
 .project-row {
   width: 100%;
@@ -141,20 +141,20 @@
   text-align: left;
 }
 
-.left-ui-nav-row {
+.left-rail-nav-row {
   gap: 10px;
   padding: 0 8px;
   font-size: 14px;
   cursor: pointer;
 }
 
-.left-ui-nav-row:hover,
+.left-rail-nav-row:hover,
 .thread-row:hover,
 .project-row:hover {
   background: var(--tide-selection);
 }
 
-.left-ui-section__header {
+.left-rail-section__header {
   height: 30px;
   display: flex;
   align-items: center;
@@ -163,7 +163,7 @@
   padding: 0 8px;
 }
 
-.left-ui-section__toggle {
+.left-rail-section__toggle {
   flex: 1 1 auto;
   min-width: 0;
   /* Fill the header height so it reads as a row, not a thin text-height strip. */
@@ -182,12 +182,12 @@
   padding: 0 6px;
 }
 
-.left-ui-section__toggle:hover {
+.left-rail-section__toggle:hover {
   background: var(--tide-selection);
 }
 
 /* + button on Projects/Scratch headers, revealed on section hover. */
-.left-ui-section__action {
+.left-rail-section__action {
   flex: 0 0 auto;
   width: 24px;
   height: 24px;
@@ -195,28 +195,28 @@
   opacity: 0;
 }
 
-.left-ui-section:hover .left-ui-section__action {
+.left-rail-section:hover .left-rail-section__action {
   opacity: 1;
 }
 
-.left-ui-section__action:hover {
+.left-rail-section__action:hover {
   background: var(--tide-selection);
   color: var(--tide-action);
 }
 
 /* Chevron points down when expanded, right when collapsed. */
-.left-ui-section__chevron {
+.left-rail-section__chevron {
   color: var(--tide-muted);
   flex-shrink: 0;
   transform: rotate(90deg);
   transition: transform 0.14s ease;
 }
 
-.left-ui-section__toggle--collapsed .left-ui-section__chevron {
+.left-rail-section__toggle--collapsed .left-rail-section__chevron {
   transform: rotate(0deg);
 }
 
-.left-ui-section__title {
+.left-rail-section__title {
   color: var(--tide-muted);
   font-size: 12px;
   font-weight: 520;
@@ -572,13 +572,13 @@
 
 /* Transparent full-viewport layer that catches the outside click closing an
    open left-rail context menu. */
-.left-ui-context-menu-backdrop {
+.left-rail-context-menu-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
 }
 
-.left-ui-context-menu {
+.left-rail-context-menu {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -589,15 +589,15 @@
   box-shadow: var(--tide-shadow-popover);
 }
 
-.left-ui-context-menu--thread {
+.left-rail-context-menu--thread {
   padding: 5px;
 }
 
-.left-ui-context-menu--project {
+.left-rail-context-menu--project {
   padding: 5px;
 }
 
-.left-ui-context-menu__item {
+.left-rail-context-menu__item {
   height: 30px;
   display: flex;
   align-items: center;
@@ -614,17 +614,17 @@
   cursor: pointer;
 }
 
-.left-ui-context-menu__item:hover {
+.left-rail-context-menu__item:hover {
   background: var(--tide-selection);
 }
 
 /* Not-yet-wired items read as pending, not interactive. */
-.left-ui-context-menu__item--disabled {
+.left-rail-context-menu__item--disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.left-ui-context-menu__item--disabled:hover {
+.left-rail-context-menu__item--disabled:hover {
   background: none;
 }
 
@@ -656,11 +656,11 @@
   flex-shrink: 0;
 }
 
-.left-ui-context-menu__item--danger {
+.left-rail-context-menu__item--danger {
   color: var(--tide-danger);
 }
 
-.left-ui-context-menu__icon {
+.left-rail-context-menu__icon {
   width: 18px;
   height: 18px;
   display: inline-flex;
@@ -670,7 +670,7 @@
   color: var(--tide-muted);
 }
 
-.left-ui-context-menu__item--danger .left-ui-context-menu__icon {
+.left-rail-context-menu__item--danger .left-rail-context-menu__icon {
   color: var(--tide-danger);
 }
 

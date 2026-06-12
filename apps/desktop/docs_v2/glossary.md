@@ -59,7 +59,7 @@ Use implementation terms only when describing the current code boundary that bac
 | **Raw Agent Frame** | A small observed unit from Agent Runtime output before rendering. It can come from the PTY transcript, provider hooks, provider logs, provider history, or command stdout/stderr inside the hidden PTY session. |
 | **Provider Signal** | Machine-readable evidence emitted by the Agent Runtime's provider, such as hook payloads, provider logs, transcript files, or session metadata. Provider Signals enrich Agent Session rendering without becoming a separate runtime control path. |
 | **PTY Transcript** | The captured terminal input/output stream for an interactive Agent Runtime. It is the baseline evidence for the hidden PTY session. |
-| **Last Known State** | Tide's last observed Thread state, such as idle, running, waiting for input, waiting for approval, failed, or archived. It is internal state used for resume and attention UI, not a default Left UI grouping. |
+| **Last Known State** | Tide's last observed Thread state, such as idle, running, waiting for input, waiting for approval, failed, or archived. It is internal state used for resume and attention UI, not a default Left Rail grouping. |
 | **Launch Options** | Provider-native settings applied when starting an Agent Runtime, such as initial model, permission mode, cwd, branch, worktree, sandbox, profile, or config arguments. |
 | **In-Session Commands** | Provider-native commands available after the Agent Runtime starts, such as slash commands, model pickers, skill commands, plugin commands, shell escapes, or other interactive command menus. |
 | **Permission Chip** | A Composer chip that shows the selected provider-native permission or approval value for the Thread. |
@@ -74,13 +74,13 @@ Use implementation terms only when describing the current code boundary that bac
 | **Workbench** | The optional visible work area inside a Thread. It contains Workbench Panes such as Browser, Diff, Editor, or Terminal, plus Workbench Views such as FileTree and context-artifact views. It does not include the hidden Agent Runtime by default. |
 | **Workbench Pane** | A visible Pane inside the Workbench, such as Browser Pane, Diff Pane, Editor Pane, or Terminal Pane. |
 | **Workbench View** | A visible non-Pane view inside the Workbench, such as FileTree View or a context-artifact view. |
-| **Left UI** | The left-side work history area. It contains New thread, Search, Sidebar options, Pinned, and either Projects/Scratch or Threads depending on Group by mode. |
-| **Sidebar Options** | The top-level Left UI entry that controls grouping and sorting. It exposes Group by and Sort by choices without attaching those controls to a specific section header. |
-| **Group By** | The Left UI grouping mode. `By project` shows Pinned, Projects, and Scratch. `By thread` shows Pinned and Threads. |
+| **Left Rail** | The left-side work history area. It contains New thread, Search, Sidebar options, Pinned, and either Projects/Scratch or Threads depending on Group by mode. |
+| **Sidebar Options** | The top-level Left Rail entry that controls grouping and sorting. It exposes Group by and Sort by choices without attaching those controls to a specific section header. |
+| **Group By** | The Left Rail grouping mode. `By project` shows Pinned, Projects, and Scratch. `By thread` shows Pinned and Threads. |
 | **Sort By** | The Thread ordering mode, independent from Group By. Current choices are Created and Updated. |
-| **Thread Row** | A compact row in the Left UI showing Agent icon, Thread title, and last activity time. |
-| **Project Row** | A grouping row in the Left UI for one Project. Clicking the row expands or collapses its Threads. Hover shows Project actions. |
-| **Scratch** | A Left UI section for Threads started without an explicit Project. Each Scratch Thread receives a Tide-managed per-thread working directory. |
+| **Thread Row** | A compact row in the Left Rail showing Agent icon, Thread title, and last activity time. |
+| **Project Row** | A grouping row in the Left Rail for one Project. Clicking the row expands or collapses its Threads. Hover shows Project actions. |
+| **Scratch** | A Left Rail section for Threads started without an explicit Project. Each Scratch Thread receives a Tide-managed per-thread working directory. |
 | **Scratch Thread** | A Thread under Scratch. It behaves like a normal Thread but uses a Tide-managed working directory instead of a user-selected Project folder. |
 
 ## Product To Implementation Mapping

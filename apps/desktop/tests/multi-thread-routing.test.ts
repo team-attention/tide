@@ -6,7 +6,7 @@ import {
   createProductShellState,
   editProductShellQueuedInput,
   removeProductShellQueuedInput,
-  openProductShellThreadFromLeftUi,
+  openProductShellThreadFromLeftRail,
   addProductShellComposerAttachment,
   startNewProductShellScratchThread,
   submitProductShellComposerDraft,
@@ -41,7 +41,7 @@ function hydrated(threadId: string, agentId: string, blocks: unknown[]) {
 }
 
 function clickThread(state: ReturnType<typeof createProductShellState>, threadId: string) {
-  return openProductShellThreadFromLeftUi(state, threadId, {
+  return openProductShellThreadFromLeftRail(state, threadId, {
     backendTransportAvailable: true,
   }).state;
 }

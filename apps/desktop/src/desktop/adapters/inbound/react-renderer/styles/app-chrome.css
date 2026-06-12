@@ -143,7 +143,7 @@
 
 .top-row-button,
 .project-row__action,
-.left-ui-section__action,
+.left-rail-section__action,
 .workbench-column__pane-action,
 .composer-shell__icon-button,
 .composer-shell__send {
@@ -260,7 +260,7 @@
     transition: grid-template-rows 0.2s ease;
   }
   .project-row__chevron,
-  .left-ui-section__chevron,
+  .left-rail-section__chevron,
   .file-tree-row__chevron {
     transition: transform 0.18s ease;
   }

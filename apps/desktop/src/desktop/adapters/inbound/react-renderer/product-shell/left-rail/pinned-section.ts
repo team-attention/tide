@@ -21,7 +21,7 @@ export function createPinnedSection(
   const collapsed = handlers.isSectionCollapsed("Pinned");
   return createElement(
     "section",
-    { className: "left-ui-section", "aria-label": "Pinned" },
+    { className: "left-rail-section", "aria-label": "Pinned" },
     createSectionHeader("Pinned", total, collapsed, () => handlers.onToggleSection("Pinned")),
     collapsed
       ? null

@@ -239,7 +239,7 @@ function applyProductShellThreadListEvent(
     projects: projectsFromThreads(threads),
     threads,
     threadsLoaded: true,
-    leftUiMenu: null,
+    leftRailMenu: null,
     archiveConfirmThreadId: null,
     fileTree: null,
     editorDrafts: {},

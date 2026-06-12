@@ -14,7 +14,7 @@ import {
   applyProductShellBackendEvent,
   archiveProductShellWorktreeChats,
   createProductShellState,
-  openProductShellLeftUiMenu,
+  openProductShellLeftRailMenu,
   setProductShellGitContext,
 } from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
 
@@ -52,7 +52,7 @@ function seedThreads(cwds: { threadId: string; cwd: string }[]) {
 // thread's left-rail context menu open — so we can assert what the menu offers.
 function renderThreadContextMenu(cwd: string): string {
   const seeded = seedThreads([{ threadId: "t1", cwd }]);
-  const withMenu = openProductShellLeftUiMenu(seeded, { kind: "thread", threadId: "t1" });
+  const withMenu = openProductShellLeftRailMenu(seeded, { kind: "thread", threadId: "t1" });
   return renderToStaticMarkup(createElement(TideProductShell, { initialState: withMenu }));
 }
 

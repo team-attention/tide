@@ -220,7 +220,7 @@ still-polling loop in `live-backend.ts` (task #7).
 
 ## Done and verified
 
-- **Codex-app-style Thread management** — list, archive, pin, rename, and Left UI
+- **Codex-app-style Thread management** — list, archive, pin, rename, and Left Rail
   search, each end-to-end (Shared Contracts → Backend service → event-driven
   persistence → Product Shell) with tests.
   Spec: `specs/backend-thread-list-product-shell-bootstrap.md`.
@@ -302,7 +302,7 @@ Left Rail (256) | Agent Chat + Composer | Workbench editor (tabs + breadcrumb) |
 FileTree ("Filter files…"). Top Row 52. Palette + type roles already match. The
 current Product Shell already matches this structure closely.
 
-Known divergence to fix: the Left UI "Search" is a nav row (icon + "Search"),
+Known divergence to fix: the Left Rail "Search" is a nav row (icon + "Search"),
 not an inline input — the inline input belongs only to the FileTree filter.
 
 Headless conformance loop (no Electron GUI needed): a dev-only harness
@@ -332,7 +332,7 @@ Conformed dimensions (measured in the harness against Figma frame 1223:2):
 | Workbench tab height | 30 | 30 ✓ |
 | Composer chips | 28 | 28 ✓ |
 | Composer padding | 12 | 12 ✓ |
-| Left UI Search | nav row | nav row ✓ |
+| Left Rail Search | nav row | nav row ✓ |
 
 Editor pane is now a real code editor (not a viewer): breadcrumb + CodeMirror
 filling the pane; Go to Definition / Find References on the right-click context

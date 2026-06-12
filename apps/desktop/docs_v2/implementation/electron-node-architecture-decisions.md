@@ -143,13 +143,13 @@ Desktop owns Electron windows, menus, React Renderer, Agent Chat presentation, C
 src/desktop/
   application/
     domains/
-      left-ui/
+      left-rail/
       composer/
       agent-chat/
       app-chrome/
       workbench-layout/
     services/
-      left-ui-service.ts
+      left-rail-service.ts
       composer-service.ts
       agent-chat-view-service.ts
       app-chrome-service.ts
@@ -438,7 +438,7 @@ Unknown output becomes a raw fallback block. That keeps the session visible with
 
 Use a focused Thread-first layout:
 
-- Left UI: New thread, Search, Pinned, Projects/Scratch or Threads depending on grouping.
+- Left Rail: New thread, Search, Pinned, Projects/Scratch or Threads depending on grouping.
 - Center: Agent Chat with Agent Session and Composer.
 - Workbench: optional visible work area opened by user action or explicit Agent tool use.
 

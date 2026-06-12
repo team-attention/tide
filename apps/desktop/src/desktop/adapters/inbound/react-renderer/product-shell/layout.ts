@@ -56,11 +56,11 @@ const COLUMN_MINS = { left: 180, chat: 440, workbench: 280, fileTree: 220 } as c
 // so columns reappear when the window widens again.
 export function fitColumnsToWidth(input: {
   windowWidth: number;
-  leftUiOpen: boolean;
+  leftRailOpen: boolean;
   workbenchOpen: boolean;
   fileTreeOpen: boolean;
 }): { workbenchOpen: boolean; fileTreeOpen: boolean } {
-  const base = (input.leftUiOpen ? COLUMN_MINS.left : 0) + COLUMN_MINS.chat;
+  const base = (input.leftRailOpen ? COLUMN_MINS.left : 0) + COLUMN_MINS.chat;
   const fits = (wb: boolean, ft: boolean): boolean =>
     base + (wb ? COLUMN_MINS.workbench : 0) + (ft ? COLUMN_MINS.fileTree : 0) <= input.windowWidth;
   let workbenchOpen = input.workbenchOpen;

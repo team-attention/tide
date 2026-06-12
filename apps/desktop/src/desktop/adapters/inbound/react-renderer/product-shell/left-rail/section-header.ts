@@ -18,19 +18,19 @@ export function createListSettingsButton(handlers: ProductShellHandlers): ReactE
       title: "List display settings",
       "aria-label": "List display settings",
       onClick: (event: { currentTarget: HTMLElement }) =>
-        handlers.onLeftUiMenuOpen({ kind: "list_settings" }, menuAnchorFromEvent(event)),
+        handlers.onLeftRailMenuOpen({ kind: "list_settings" }, menuAnchorFromEvent(event)),
     },
     createElement(SlidersHorizontal, { size: 15, strokeWidth: 1.9, "aria-hidden": true }),
   );
 }
 
 // The list-display settings dropdown content (Group by / Sort by), rendered in
-// the shared Left UI menu overlay with a check on the active option.
+// the shared Left Rail menu overlay with a check on the active option.
 export function createListSettingsMenu(
   settings: ProductShellListSettings,
   handlers: ProductShellHandlers,
 ): ReactElement {
-  const close = () => handlers.onLeftUiMenuOpen(null);
+  const close = () => handlers.onLeftRailMenuOpen(null);
   const optionRow = (
     label: string,
     selected: boolean,
@@ -41,7 +41,7 @@ export function createListSettingsMenu(
       {
         key: label,
         type: "button",
-        className: "left-ui-context-menu__item",
+        className: "left-rail-context-menu__item",
         onClick: () => {
           onPick();
           close();
@@ -49,18 +49,18 @@ export function createListSettingsMenu(
       },
       createElement(
         "span",
-        { className: "left-ui-context-menu__icon", "aria-hidden": true },
+        { className: "left-rail-context-menu__icon", "aria-hidden": true },
         selected ? createElement(Check, { size: 14, strokeWidth: 2 }) : null,
       ),
       createElement("span", null, label),
     );
 
   const sectionLabel = (text: string): ReactElement =>
-    createElement("div", { key: `label-${text}`, className: "left-ui-context-menu__label" }, text);
+    createElement("div", { key: `label-${text}`, className: "left-rail-context-menu__label" }, text);
 
   return createElement(
     "div",
-    { className: "left-ui-context-menu left-ui-context-menu--list_settings" },
+    { className: "left-rail-context-menu left-rail-context-menu--list_settings" },
     sectionLabel("Group by"),
     optionRow("By project", settings.groupBy === "project", () =>
       handlers.onListSettingsChange({ groupBy: "project" }),
@@ -103,7 +103,7 @@ export function createListSettingsMenu(
 export function createLeftNavRow(label: string, icon: ReactNode, onClick?: () => void): ReactElement {
   return createElement(
     "button",
-    { className: "left-ui-nav-row", type: "button", onClick },
+    { className: "left-rail-nav-row", type: "button", onClick },
     icon,
     createElement("span", null, label),
   );
@@ -119,33 +119,33 @@ export function createSectionHeader(
   // Collapsible only when there are items below; otherwise a static label.
   const toggle =
     itemCount === 0
-      ? createElement("span", { className: "left-ui-section__title" }, title)
+      ? createElement("span", { className: "left-rail-section__title" }, title)
       : createElement(
           "button",
           {
             type: "button",
-            className: `left-ui-section__toggle${collapsed ? " left-ui-section__toggle--collapsed" : ""}`,
+            className: `left-rail-section__toggle${collapsed ? " left-rail-section__toggle--collapsed" : ""}`,
             "aria-expanded": !collapsed,
             onClick: onToggle,
           },
           createElement(ChevronRight, {
             size: 12,
             strokeWidth: 2.2,
-            className: "left-ui-section__chevron",
+            className: "left-rail-section__chevron",
             "aria-hidden": true,
           }),
-          createElement("span", { className: "left-ui-section__title" }, title),
+          createElement("span", { className: "left-rail-section__title" }, title),
         );
   return createElement(
     "div",
-    { className: "left-ui-section__header" },
+    { className: "left-rail-section__header" },
     toggle,
     action
       ? createIconButton(
           action.label,
           createElement(Plus, { size: 15, strokeWidth: 2 }),
           action.onClick,
-          "left-ui-section__action",
+          "left-rail-section__action",
         )
       : null,
   );

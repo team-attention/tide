@@ -20,7 +20,7 @@ It does not define final visual polish, App Chrome details, Workbench Tab Strip 
 
 ## Evidence
 
-- `docs_v2/master-plan.md` says the baseline UX follows Codex App: Left UI, one focused Agent Chat, Composer anchored at the bottom of Agent Chat, and Workbench only when needed.
+- `docs_v2/master-plan.md` says the baseline UX follows Codex App: Left Rail, one focused Agent Chat, Composer anchored at the bottom of Agent Chat, and Workbench only when needed.
 - `docs_v2/master-plan.md` says Agent Chat owns the conversation narrative, its Composer, and the visible Agent Session.
 - `docs_v2/master-plan.md` says continuing a Thread shows Thread messages and the agent work stream.
 - `docs_v2/master-plan.md` says Agent Session preserves the meaningful content and conceptual sequence of the raw session, and may improve presentation with cards only where useful.
@@ -248,7 +248,7 @@ Desktop consumes BackendEvents:
 
 ### UC-1: First launch draft
 
-1. Desktop shows Left UI and empty Agent Chat.
+1. Desktop shows Left Rail and empty Agent Chat.
 2. Agent Chat shows the New Thread Start title and Start Composer.
 3. User types a draft.
 4. No persistent Thread is created before send.
@@ -282,7 +282,7 @@ Desktop consumes BackendEvents:
 1. User or explicit Agent tool use opens a Workbench surface.
 2. Agent Chat remains the narrative area.
 3. Composer stays anchored in Agent Chat.
-4. Layout adapts to `Left UI | Agent Chat | Workbench`.
+4. Layout adapts to `Left Rail | Agent Chat | Workbench`.
 
 ## Invariants
 

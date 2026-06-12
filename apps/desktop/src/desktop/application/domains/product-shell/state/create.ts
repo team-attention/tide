@@ -78,13 +78,13 @@ export function createProductShellState(
       : { kind: "scratch", scratchCwd: "Scratch" };
   return {
     activeThreadId: null,
-    leftUiOpen: true,
+    leftRailOpen: true,
     workbenchOpen: false,
     workbenchFullscreen: false,
     workbenchLayoutMode: "tabs",
     workbenchLayoutTree: null,
     fileTreeOpen: false,
-    leftUiMenu: null,
+    leftRailMenu: null,
     archiveConfirmThreadId: null,
     renamingThreadId: null,
     searchQuery: "",

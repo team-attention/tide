@@ -18,7 +18,7 @@ The baseline user experience follows Codex App:
 When the screen is split vertically, the default mental model is:
 
 ```text
-Left UI | Agent Chat | Workbench
+Left Rail | Agent Chat | Workbench
 ```
 
 Agent Chat owns the conversation narrative, its Composer, and the visible Agent Session. The Agent Runtime is an internal execution detail that users normally do not open or manage. The Workbench is the optional visible work area inside the active Thread. It can contain Browser, Diff, Editor, or Terminal Panes, plus FileTree and context-artifact views for inspection, editing, verification, and direct work. It does not replace Agent Chat as the narrative area.
@@ -35,8 +35,8 @@ The Tide difference is local, open, and multi-agent:
 ## Product Decisions
 
 1. The first screen follows Codex App before Tide adds new chrome.
-2. The Left UI starts with `New thread`, `Search`, and `Sidebar options`.
-3. There are no global status buckets such as `Needs attention`, `Running`, or `Recent` in the default Left UI.
+2. The Left Rail starts with `New thread`, `Search`, and `Sidebar options`.
+3. There are no global status buckets such as `Needs attention`, `Running`, or `Recent` in the default Left Rail.
 4. Thread Rows show one small Agent Icon because Tide supports multiple Agents.
 5. Thread title is derived from the first meaningful user message. Tide does not run a title-generation prompt.
 6. Project is grouping plus Execution Context, not the app root.
@@ -55,7 +55,7 @@ User goal: understand where to start without configuring the app.
 Screen:
 
 ```text
-Left UI
+Left Rail
   New thread
   Search
   Sidebar options
@@ -99,7 +99,7 @@ The screen avoids:
 
 User goal: find and reopen prior work.
 
-Left UI behavior:
+Left Rail behavior:
 
 - `Pinned` is always above the grouped work list.
 - Each Project can collapse or expand.
@@ -144,7 +144,7 @@ Default behavior:
 
 Screen before send:
 
-- Left UI remains stable.
+- Left Rail remains stable.
 - Center stays blank or shows the first-screen prompt.
 - Composer contains the user's draft.
 - Agent, Project, Worktree, and Branch controls are visible as compact start controls, not a setup form.
@@ -156,7 +156,7 @@ User goal: keep working in an existing conversation.
 Screen:
 
 ```text
-Left UI
+Left Rail
   Same active grouping mode
 
 Agent Chat
@@ -201,11 +201,11 @@ Claude Code      ready
 Antigravity CLI  ready
 ```
 
-Agent identity in the Left UI:
+Agent identity in the Left Rail:
 
 - Codex, Claude, and Antigravity appear as small Agent Icons.
 - The icon is identity, not hierarchy.
-- Agent-first grouping is not part of the default Left UI.
+- Agent-first grouping is not part of the default Left Rail.
 - Agent Icons must be polished asset-backed identities. They should not depend on ad hoc text fallback, compromised icon rendering, or low-quality placeholder shapes in product UI.
 
 ### Flow 6: Attach Context
@@ -238,9 +238,9 @@ Screen principle:
 - The Thread remains the work narrative.
 - Workbench panes/views provide visible inspection, editing, verification, and direct work context.
 - The coding Agent can observe and operate Workbench panes/views through Tide-owned tools when supported.
-- The Left UI remains work history, not a status dashboard.
+- The Left Rail remains work history, not a status dashboard.
 
-## Left UI Design
+## Left Rail Design
 
 ### Top Entries
 
@@ -254,8 +254,8 @@ Rules:
 
 - `New thread` starts a new Thread.
 - `Search` opens search across visible and archived work.
-- `Sidebar options` owns Left UI grouping and sorting controls.
-- Grouping and sorting controls do not live on `Projects` or `Scratch` headers because they affect the whole Left UI.
+- `Sidebar options` owns Left Rail grouping and sorting controls.
+- Grouping and sorting controls do not live on `Projects` or `Scratch` headers because they affect the whole Left Rail.
 
 ### Sidebar Options
 
@@ -894,7 +894,7 @@ Project rules:
 
 ### Scratch Model
 
-Scratch is a top-level Left UI section in `By project` grouping mode.
+Scratch is a top-level Left Rail section in `By project` grouping mode.
 
 Rules:
 
@@ -986,7 +986,7 @@ Binding rules:
 - Codex CLI, Claude Code, and Antigravity CLI use `provider_cli` Agent Runtime Source.
 - OpenAI API uses `tide_api` Agent Runtime Source.
 - The selected Agent controls default launch command and wrapper behavior.
-- The Agent Icon shown in the Left UI comes from the Thread's Agent Binding.
+- The Agent Icon shown in the Left Rail comes from the Thread's Agent Binding.
 - Runtime lifecycle comes from the wrapped runtime when a terminal-backed Agent is active.
 - Runtime lifecycle comes from Tide's API runtime when an API-backed Tide Agent is active.
 - Agent Binding is chosen before the Thread starts.

@@ -1,4 +1,4 @@
-import type { ProductShellBackendEventSource, ProductShellLeftUiMenu, ProductShellProject, ProductShellState, ProductShellThread, ProductShellUpdateResult } from "./types.ts";
+import type { ProductShellBackendEventSource, ProductShellLeftRailMenu, ProductShellProject, ProductShellState, ProductShellThread, ProductShellUpdateResult } from "./types.ts";
 import { formatRelativeThreadTime, previewBlocksForThread, projectsFromThreads, toAgentChatThreadSummary } from "./view-model.ts";
 import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat-shell-state.ts";
 import type { AgentChatBackendEvent, AgentChatBlock, AgentChatBranchOption, AgentChatShellState, AgentChatThreadSummary, AgentChatWorktreeOption } from "../../agent-chat/agent-chat-shell-state.ts";
@@ -14,10 +14,10 @@ export function isExternalSessionThread(threadId: string): boolean {
   return threadId.startsWith("adopted-");
 }
 
-export function toggleProductShellLeftUi(state: ProductShellState): ProductShellState {
+export function toggleProductShellLeftRail(state: ProductShellState): ProductShellState {
   return {
     ...state,
-    leftUiOpen: !state.leftUiOpen,
+    leftRailOpen: !state.leftRailOpen,
   };
 }
 
@@ -69,7 +69,7 @@ export function archiveProductShellProjectChats(
       ...state,
       threads: remaining,
       projects: projectsFromThreads(remaining),
-      leftUiMenu: null,
+      leftRailMenu: null,
       activeThreadId: archived.some((thread) => thread.threadId === state.activeThreadId)
         ? null
         : state.activeThreadId,
@@ -133,13 +133,13 @@ export function setProductShellGitContext(
   return { ...state, gitBranches: context.branches, gitWorktrees: context.worktrees };
 }
 
-export function openProductShellLeftUiMenu(
+export function openProductShellLeftRailMenu(
   state: ProductShellState,
-  menu: ProductShellLeftUiMenu | null,
+  menu: ProductShellLeftRailMenu | null,
 ): ProductShellState {
   return {
     ...state,
-    leftUiMenu: menu,
+    leftRailMenu: menu,
     archiveConfirmThreadId: null,
   };
 }
@@ -150,17 +150,17 @@ export function showProductShellThreadArchiveConfirm(
 ): ProductShellState {
   return {
     ...state,
-    leftUiMenu: null,
+    leftRailMenu: null,
     archiveConfirmThreadId: threadId,
   };
 }
 
-export function clearProductShellLeftUiTransientState(
+export function clearProductShellLeftRailTransientState(
   state: ProductShellState,
 ): ProductShellState {
   return {
     ...state,
-    leftUiMenu: null,
+    leftRailMenu: null,
     archiveConfirmThreadId: null,
     renamingThreadId: null,
   };
@@ -179,7 +179,7 @@ export function confirmProductShellThreadArchive(
       threads,
       projects: projectsFromThreads(threads),
       activeThreadId: state.activeThreadId === threadId ? null : state.activeThreadId,
-      leftUiMenu: null,
+      leftRailMenu: null,
       archiveConfirmThreadId: null,
     },
     command: { kind: "thread.archive", payload: { threadId, archived: true } },
@@ -190,7 +190,7 @@ export function startProductShellProjectRename(
   state: ProductShellState,
   projectId: string,
 ): ProductShellState {
-  return { ...state, leftUiMenu: null, renamingProjectId: projectId };
+  return { ...state, leftRailMenu: null, renamingProjectId: projectId };
 }
 
 export function cancelProductShellProjectRename(state: ProductShellState): ProductShellState {
@@ -204,14 +204,14 @@ export function toggleProductShellProjectPin(
   const pinned = state.pinnedProjectIds.includes(projectId)
     ? state.pinnedProjectIds.filter((id) => id !== projectId)
     : [...state.pinnedProjectIds, projectId];
-  return { ...state, leftUiMenu: null, pinnedProjectIds: pinned };
+  return { ...state, leftRailMenu: null, pinnedProjectIds: pinned };
 }
 
 export function startProductShellThreadRename(
   state: ProductShellState,
   threadId: string,
 ): ProductShellState {
-  return { ...state, leftUiMenu: null, archiveConfirmThreadId: null, renamingThreadId: threadId };
+  return { ...state, leftRailMenu: null, archiveConfirmThreadId: null, renamingThreadId: threadId };
 }
 
 export function cancelProductShellThreadRename(
@@ -290,7 +290,7 @@ export function toggleProductShellThreadPin(
     thread.threadId === threadId ? { ...thread, pinned: nextPinned } : thread,
   );
   return {
-    state: { ...state, threads, leftUiMenu: null },
+    state: { ...state, threads, leftRailMenu: null },
     command: { kind: "thread.setPinned", payload: { threadId, pinned: nextPinned } },
   };
 }
@@ -376,7 +376,7 @@ export function openProductShellThread(
   };
 }
 
-export function openProductShellThreadFromLeftUi(
+export function openProductShellThreadFromLeftRail(
   state: ProductShellState,
   threadId: string,
   input: { backendTransportAvailable: boolean },
@@ -412,7 +412,7 @@ export function openProductShellThreadFromLeftUi(
   return {
     state: {
       ...optimistic,
-      leftUiMenu: null,
+      leftRailMenu: null,
       archiveConfirmThreadId: null,
       // Stale-free file tree: clear on switch; the refresh_file_tree dispatched by
       // the caller (and on thread.hydrated) fills in the new thread's files.
@@ -497,7 +497,7 @@ function hydrateProductShellThread(
         : { ...updateComposerDraft(agentChat, "").state, hydrating },
     appChrome,
     workbenchOpen: thread.workbenchPanes.some((pane) => pane.visible),
-    leftUiMenu: null,
+    leftRailMenu: null,
     archiveConfirmThreadId: null,
     fileTree: null,
     editorDrafts: {},

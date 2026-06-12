@@ -15,7 +15,7 @@ export function createProjectSection(
   const collapsed = handlers.isSectionCollapsed("Projects");
   return createElement(
     "section",
-    { className: "left-ui-section", "aria-label": "Projects" },
+    { className: "left-rail-section", "aria-label": "Projects" },
     createSectionHeader(
       "Projects",
       projectGroups.length,
@@ -134,7 +134,7 @@ export function createProjectGroup(
             "Project menu",
             createElement(MoreHorizontal, { size: 15, strokeWidth: 1.9 }),
             (event) =>
-              handlers.onLeftUiMenuOpen(
+              handlers.onLeftRailMenuOpen(
                 { kind: "project", projectId: project.projectId },
                 menuAnchorFromEvent(event),
               ),

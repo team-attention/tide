@@ -1,4 +1,4 @@
-import type { ProductShellLeftUiMenu, ProductShellListSettings } from "../../../../../application/domains/product-shell/product-shell-state.ts";
+import type { ProductShellLeftRailMenu, ProductShellListSettings } from "../../../../../application/domains/product-shell/product-shell-state.ts";
 import type { MenuAnchorRect, ProductShellHandlers } from "../types.ts";
 import { createElement } from "react";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
@@ -9,8 +9,8 @@ import { Archive, FolderOpen, GitBranchPlus, Pencil, Pin, Trash2 } from "lucide-
 // Renders the left-rail context menu as a fixed popover anchored to its trigger
 // (escaping the rail's scroll-overflow clip), behind a transparent full-viewport
 // backdrop that closes it on outside click.
-export function createLeftUiContextMenuOverlay(
-  menu: ProductShellLeftUiMenu,
+export function createLeftRailContextMenuOverlay(
+  menu: ProductShellLeftRailMenu,
   anchor: MenuAnchorRect,
   onClose: () => void,
   handlers: ProductShellHandlers,
@@ -36,7 +36,7 @@ export function createLeftUiContextMenuOverlay(
   }
   return createElement(
     "div",
-    { className: "left-ui-context-menu-backdrop", onMouseDown: onClose },
+    { className: "left-rail-context-menu-backdrop", onMouseDown: onClose },
     createElement(
       "div",
       {
@@ -45,7 +45,7 @@ export function createLeftUiContextMenuOverlay(
       },
       menu.kind === "list_settings"
         ? createListSettingsMenu(listSettings, handlers)
-        : createLeftUiContextMenu(menu, handlers),
+        : createLeftRailContextMenu(menu, handlers),
     ),
   );
 }
@@ -57,8 +57,8 @@ interface ContextMenuItem {
   danger?: boolean;
 }
 
-function createLeftUiContextMenu(
-  menu: Exclude<ProductShellLeftUiMenu, { kind: "list_settings" }>,
+function createLeftRailContextMenu(
+  menu: Exclude<ProductShellLeftRailMenu, { kind: "list_settings" }>,
   handlers: ProductShellHandlers,
 ): ReactElement {
   const items: ContextMenuItem[] =
@@ -135,20 +135,20 @@ function createLeftUiContextMenu(
   return createElement(
     "div",
     {
-      className: `left-ui-context-menu left-ui-context-menu--${menu.kind}`,
-      "data-left-ui-menu-kind": menu.kind,
+      className: `left-rail-context-menu left-rail-context-menu--${menu.kind}`,
+      "data-left-rail-menu-kind": menu.kind,
     },
     items.map((item) =>
       createElement(
         "button",
         {
           key: item.label,
-          className: `left-ui-context-menu__item${item.danger ? " left-ui-context-menu__item--danger" : ""}${item.onClick ? "" : " left-ui-context-menu__item--disabled"}`,
+          className: `left-rail-context-menu__item${item.danger ? " left-rail-context-menu__item--danger" : ""}${item.onClick ? "" : " left-rail-context-menu__item--disabled"}`,
           type: "button",
           disabled: item.onClick === undefined,
           onClick: item.onClick,
         },
-        createElement("span", { className: "left-ui-context-menu__icon", "aria-hidden": true }, item.icon),
+        createElement("span", { className: "left-rail-context-menu__icon", "aria-hidden": true }, item.icon),
         createElement("span", null, item.label),
       ),
     ),

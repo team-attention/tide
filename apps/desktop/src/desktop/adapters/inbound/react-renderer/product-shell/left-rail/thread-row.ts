@@ -32,12 +32,12 @@ export function createThreadRow(
         "data-left-row-kind": "thread",
         "data-thread-row": thread.threadId,
         "data-active": thread.active,
-        onMouseLeave: thread.archiveConfirming ? handlers.onLeftUiTransientClear : undefined,
+        onMouseLeave: thread.archiveConfirming ? handlers.onLeftRailTransientClear : undefined,
         // Right-click anywhere on the row opens the same Thread context menu as
         // the ⋯ overflow button (Pin / Archive / Delete worktree).
         onContextMenu: (event: { preventDefault: () => void; currentTarget: HTMLElement }) => {
           event.preventDefault();
-          handlers.onLeftUiMenuOpen(
+          handlers.onLeftRailMenuOpen(
             { kind: "thread", threadId: thread.threadId },
             menuAnchorFromEvent(event),
           );
@@ -127,7 +127,7 @@ export function createThreadRow(
                 "Thread menu",
                 createElement(MoreHorizontal, { size: 15, strokeWidth: 1.9 }),
                 (event) =>
-                  handlers.onLeftUiMenuOpen(
+                  handlers.onLeftRailMenuOpen(
                     { kind: "thread", threadId: thread.threadId },
                     menuAnchorFromEvent(event),
                   ),
