@@ -1,0 +1,288 @@
+import type { AgentRuntimePort } from "../../ports/outbound/agent-runtime-port.ts";
+import type { ProviderReadinessPort } from "../../ports/outbound/provider-readiness-port.ts";
+import type { PtyTranscriptPort } from "../../ports/outbound/pty-transcript-port.ts";
+import type { ProviderSetupSurfaceTerminalPort } from "../../ports/outbound/provider-setup-surface-terminal-port.ts";
+import type { WorkbenchTerminalPort } from "../../ports/outbound/workbench-terminal-port.ts";
+import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
+import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port.ts";
+import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
+import type { ComposerAttachmentInput, ComposerAttachmentStorePort } from "../../ports/outbound/composer-attachment-store-port.ts";
+import type { ProviderTrustPort } from "../../ports/outbound/provider-trust-port.ts";
+import type { AgentBinding, AgentId, AgentSessionBlockReference, PromptState, ProviderSessionRef, ThreadId, ThreadScope, ThreadSeed, ThreadSnapshot } from "../../domains/thread/thread.ts";
+import type { ThreadRuntimeAsyncEvent } from "./thread-runtime-events.ts";
+import type { AgentRuntimeState } from "../../domains/agent-runtime/agent-runtime.ts";
+import type { ProviderReadinessResult } from "../../domains/provider-readiness/provider-readiness.ts";
+import type { AgentSessionBlock } from "../../domains/agent-session/agent-session-block.ts";
+import type { RawAgentFrame, RawAgentFramePayloadKind, RawAgentFrameSource } from "../../domains/agent-session/raw-agent-frame.ts";
+import type { ArchiveThreadInput, ArchiveThreadResult, ListThreadsInput, ListThreadsResult, RenameThreadInput, RenameThreadResult, RestoreThreadsInput, RestoreThreadsResult, SetThreadPinnedInput, SetThreadPinnedResult } from "./thread-crud-service.ts";
+import type { ServiceResult } from "../support/service-result.ts";
+import type { ReadWorkspaceFileTreeInput, ReadWorkspaceFileTreeResult, SearchWorkspaceContentInput, SearchWorkspaceContentResult, WorkbenchCommandInput, WorkbenchCommandResult } from "../workbench/workbench-command-handler.ts";
+import type { TideMcpToolDefinition } from "../../domains/workbench/workbench.ts";
+import type { TideMcpToolCallInput, TideMcpToolCallResult } from "../tide-mcp/tide-mcp-tool-handler.ts";
+// Thread runtime service API types (inputs/results/ports/contract), extracted
+// from thread-runtime-service.ts (navigable-source-structure).
+
+export interface CreateThreadRuntimeServiceInput {
+  agentRuntimePort: AgentRuntimePort;
+  providerReadinessPort: ProviderReadinessPort;
+  ptyTranscriptPort: PtyTranscriptPort;
+  providerSetupSurfaceTerminalPort?: ProviderSetupSurfaceTerminalPort;
+  workbenchTerminalPort?: WorkbenchTerminalPort;
+  workspaceCommandPort?: WorkspaceCommandPort;
+  workspaceFilePort?: WorkspaceFilePort;
+  workspaceCodeIntelligencePort?: WorkspaceCodeIntelligencePort;
+  composerAttachmentStorePort?: ComposerAttachmentStorePort;
+  providerTrustPort?: ProviderTrustPort;
+  // Materializes a Scratch Thread's real per-thread cwd under the Tide app-support
+  // dir (creates it). See docs_v2/specs/scratch-execution-context.md.
+  ensureScratchDirectory?: (threadId: string) => string;
+  defaultWorkbenchTerminalCommand?: string;
+  clock?: () => string;
+  idGenerator?: () => string;
+  initialThreads?: ThreadSeed[];
+  onAsyncEvent?: (event: ThreadRuntimeAsyncEvent) => Promise<void> | void;
+}
+
+export interface HydrateThreadInput {
+  threadId: ThreadId;
+  // True ONLY on an explicit user thread-open (the contract adapter). When set,
+  // hydrate reconciles a thread whose runtime is dead but left in a running/
+  // waiting state back to idle (drops the stale prompt). MUST stay false on the
+  // internal polling reads (emitProviderHistory/pollWhileRunning call hydrate
+  // every cycle); reconciling there would race-kill a live turn.
+  reconcileStaleRuntime?: boolean;
+}
+
+export interface HydrateThreadResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  blocks: AgentSessionBlockReference[];
+}
+
+export interface StartThreadInput {
+  threadId?: ThreadId;
+  initialMessage: string;
+  agentBinding: AgentBinding;
+  scope?: ThreadScope;
+  launchOptions?: Record<string, unknown>;
+  attachments?: ComposerAttachmentInput[];
+}
+
+export interface StartThreadResult {
+  status: "started" | "provider_not_ready";
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  providerReadiness: ProviderReadinessResult;
+  submittedBlock?: AgentSessionBlockReference;
+}
+
+export interface SendComposerInput {
+  threadId: ThreadId;
+  input: string;
+  agentId?: AgentId;
+  launchOptions?: Record<string, unknown>;
+  attachments?: ComposerAttachmentInput[];
+}
+
+// Mid-thread Launch Options change (model/permission/reasoning) on an active
+// Thread. See docs_v2/specs/mid-thread-launch-option-changes.md.
+export interface UpdateThreadLaunchOptionsInput {
+  threadId: ThreadId;
+  launchOptions: Record<string, unknown>;
+}
+
+export interface UpdateThreadLaunchOptionsResult {
+  thread: ThreadSnapshot;
+  // "live" = the running session was reconfigured; "next_turn" = a runtime
+  // restart is pending and happens transparently at the next send; "none" =
+  // nothing changed or no live runtime exists (spawn-time options apply).
+  applied: "live" | "next_turn" | "none";
+}
+
+export interface TrustWorkspaceInput {
+  threadId: ThreadId;
+}
+
+export interface TrustWorkspaceResult {
+  status: "trusted" | "still_not_ready";
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  providerReadiness: ProviderReadinessResult;
+}
+
+export interface SendComposerInputResult {
+  status: "sent" | "queued" | "provider_not_ready";
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  providerReadiness: ProviderReadinessResult;
+  submittedBlock?: AgentSessionBlockReference;
+}
+
+export interface EditPendingInputInput {
+  threadId: ThreadId;
+  value: string;
+  // Which queued message to edit/discard: 0 (or omitted) = the head/next to run;
+  // 1..N = a message further back in the follow-up queue.
+  index?: number;
+}
+
+export interface EditPendingInputResult {
+  thread: ThreadSnapshot;
+  status: "edited" | "discarded";
+}
+
+export interface AnswerPromptInput {
+  threadId: ThreadId;
+  promptId: string;
+  value?: string;
+  choiceId?: string;
+}
+
+export interface AnswerPromptResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  promptState: PromptState | null;
+}
+
+export interface RecordProviderPromptStateInput {
+  threadId: ThreadId;
+  promptState: PromptState;
+}
+
+export interface RecordProviderPromptStateResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  promptState: PromptState;
+}
+
+export interface RecordProviderSessionRefInput {
+  threadId: ThreadId;
+  agentId: AgentId;
+  providerSessionRef: ProviderSessionRef;
+}
+
+export interface RecordProviderSessionRefResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+}
+
+export interface RecordAgentSessionBlockInput {
+  threadId: ThreadId;
+  block: AgentSessionBlock;
+}
+
+export interface RecordAgentSessionBlockResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  blocks: AgentSessionBlockReference[];
+}
+
+export interface ResumeAgentRuntimeInput {
+  threadId: ThreadId;
+}
+
+export interface ResumeAgentRuntimeResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+}
+
+export interface StopAgentRuntimeInput {
+  threadId: ThreadId;
+}
+
+export interface StopAgentRuntimeResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  // When stopping consumed a queued follow-up, the local user block for it.
+  submittedBlock?: AgentSessionBlockReference;
+}
+
+export interface RecordTurnCompleteInput {
+  threadId: ThreadId;
+}
+
+export interface RecordTurnCompleteResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  /** A queued Composer input flushed to the now-idle runtime, if any. */
+  flushedInput?: string;
+  /** The local user-message block created for a flushed queued input, if any. */
+  submittedBlock?: AgentSessionBlockReference;
+}
+
+export interface AppendRawAgentFrameInput {
+  threadId: ThreadId;
+  agentId: AgentId;
+  source: RawAgentFrameSource;
+  sourceRef?: string;
+  payloadKind?: RawAgentFramePayloadKind;
+  payload?: unknown;
+  body?: string;
+  truncated?: boolean;
+}
+
+export interface ThreadRuntimeService {
+  restoreThreads(input: RestoreThreadsInput): Promise<ServiceResult<RestoreThreadsResult>>;
+  listThreads(input: ListThreadsInput): Promise<ServiceResult<ListThreadsResult>>;
+  archiveThread(input: ArchiveThreadInput): Promise<ServiceResult<ArchiveThreadResult>>;
+  setThreadPinned(input: SetThreadPinnedInput): Promise<ServiceResult<SetThreadPinnedResult>>;
+  renameThread(input: RenameThreadInput): Promise<ServiceResult<RenameThreadResult>>;
+  hydrateThread(input: HydrateThreadInput): Promise<ServiceResult<HydrateThreadResult>>;
+  // Internal, NON-CLONING read for hot-path callers (the live projector + persist)
+  // that only READ thread/binding/blocks and never mutate them. hydrateThread deep-
+  // clones blocks twice (snapshot + top-level) for external safety; on the streaming
+  // hot path that is wasted CPU (perf E4). peekThread shares block references and
+  // never reconciles stale runtime state. Synchronous: no I/O.
+  peekThread(threadId: string): ServiceResult<HydrateThreadResult>;
+  startThread(input: StartThreadInput): Promise<ServiceResult<StartThreadResult>>;
+  sendComposerInput(
+    input: SendComposerInput,
+  ): Promise<ServiceResult<SendComposerInputResult>>;
+  updateThreadLaunchOptions(
+    input: UpdateThreadLaunchOptionsInput,
+  ): Promise<ServiceResult<UpdateThreadLaunchOptionsResult>>;
+  editPendingInput(
+    input: EditPendingInputInput,
+  ): Promise<ServiceResult<EditPendingInputResult>>;
+  answerPrompt(input: AnswerPromptInput): Promise<ServiceResult<AnswerPromptResult>>;
+  recordProviderPromptState(
+    input: RecordProviderPromptStateInput,
+  ): Promise<ServiceResult<RecordProviderPromptStateResult>>;
+  recordProviderSessionRef(
+    input: RecordProviderSessionRefInput,
+  ): Promise<ServiceResult<RecordProviderSessionRefResult>>;
+  recordAgentSessionBlock(
+    input: RecordAgentSessionBlockInput,
+  ): Promise<ServiceResult<RecordAgentSessionBlockResult>>;
+  resumeAgentRuntime(
+    input: ResumeAgentRuntimeInput,
+  ): Promise<ServiceResult<ResumeAgentRuntimeResult>>;
+  stopAgentRuntime(
+    input: StopAgentRuntimeInput,
+  ): Promise<ServiceResult<StopAgentRuntimeResult>>;
+  trustWorkspace(
+    input: TrustWorkspaceInput,
+  ): Promise<ServiceResult<TrustWorkspaceResult>>;
+  recordTurnComplete(
+    input: RecordTurnCompleteInput,
+  ): Promise<ServiceResult<RecordTurnCompleteResult>>;
+  handleWorkbenchCommand(
+    input: WorkbenchCommandInput,
+  ): Promise<ServiceResult<WorkbenchCommandResult>>;
+  readWorkspaceFileTree(
+    input: ReadWorkspaceFileTreeInput,
+  ): Promise<ServiceResult<ReadWorkspaceFileTreeResult>>;
+  searchWorkspaceContent(
+    input: SearchWorkspaceContentInput,
+  ): Promise<ServiceResult<SearchWorkspaceContentResult>>;
+  appendRawAgentFrame(input: AppendRawAgentFrameInput): Promise<RawAgentFrame>;
+  listTideMcpTools(): TideMcpToolDefinition[];
+  handleTideMcpToolCall(
+    input: TideMcpToolCallInput,
+  ): Promise<ServiceResult<TideMcpToolCallResult>>;
+}
+
+// The Launch Option keys that affect a live Agent Runtime mid-thread. The rest
+// (worktree, branch, …) are start-time Execution Context and never change on an
+// active thread. See docs_v2/specs/mid-thread-launch-option-changes.md.
+export const RUNTIME_LAUNCH_OPTION_KEYS = ["model", "permission", "reasoning"] as const;
