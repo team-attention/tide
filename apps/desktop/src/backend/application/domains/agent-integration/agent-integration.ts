@@ -52,24 +52,10 @@ export interface ProviderLaunchPlan {
   // Structured-transport session parameters that ride the protocol instead of
   // argv (codex thread/start approvalPolicy/sandbox/model; gemini session/new).
   protocolParams?: Record<string, unknown>;
-  inputTiming?: {
-    startupDelayMs?: number;
-    preSubmitDelayMs?: number;
-  };
-  // The key sequence that submits typed input in this provider's TUI. Defaults
-  // to "\r"; claude uses CSI-u Enter ("\x1b[13u") because its TUI negotiates the
-  // extended keyboard protocol on the hidden PTY. Provider knowledge — declared
-  // here so the runtime port stays provider-neutral.
-  submitKeySequence?: string;
-  // One-shot TUI prompts this provider renders at startup that Tide must answer
-  // automatically (e.g. codex's "Hooks need review" trust box for Tide's own
-  // generated hooks). The runtime port replays `response` keys (with a beat
-  // between them) the first time `pattern` appears in PTY output.
-  autoRespondPrompts?: Array<{
-    pattern: string;
-    response: string[];
-    interKeyDelayMs?: number;
-  }>;
+  // Signal sources the spawned process exposes. Consumed by the live PTY ports
+  // (workbench terminal + provider setup surface). The structured runtimes ignore
+  // it. (The PTY-era scrape fields — inputTiming/submitKeySequence/autoRespondPrompts
+  // — were deleted with the scrape transport; see structured-agent-runtime.md.)
   expectedSignalSources: ProviderSignalSource[];
   // The provider session this launch will run as, when the adapter can assign or
   // derive it at plan time (claude/gemini mint a session id and pass it via
