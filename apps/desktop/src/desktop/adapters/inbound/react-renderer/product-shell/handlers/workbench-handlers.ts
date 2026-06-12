@@ -1,0 +1,91 @@
+import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellWorkbenchLauncher, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchLayoutMode, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell-state.ts";
+// Extracted from product-shell.ts (entry-module rule follow-up).
+
+import type { ProductShellHandlers } from "../types.ts";
+import type { ProductShellHandlerContext } from "./context.ts";
+
+export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchLayoutModeToggle" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onTerminalInput" | "onTerminalResize" | "onBrowserSnapshot" | "onBrowserActionResult" | "onBackgroundBrowserSnapshot" | "onBackgroundBrowserActionResult" | "onOpenBrowserPane"> {
+  const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
+  return {
+    onWorkbenchToggle: () =>
+      setShellState((state) => {
+        const result = toggleProductShellWorkbenchWithLauncher(state);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onWorkbenchFullscreenToggle: () =>
+      setShellState((state) => toggleProductShellWorkbenchFullscreen(state)),
+    onWorkbenchLayoutModeToggle: () =>
+      setShellState((state) => toggleProductShellWorkbenchLayoutMode(state)),
+    onWorkbenchPaneDrop: (draggedPaneId, targetPaneId, zone) =>
+      setShellState((state) => applyProductShellWorkbenchDrop(state, draggedPaneId, targetPaneId, zone)),
+    onWorkbenchSplitRatio: (path, ratio) =>
+      setShellState((state) => setProductShellWorkbenchSplitRatio(state, path, ratio)),
+    onNewWorkbenchPane: () =>
+      setShellState((state) => {
+        const result = openProductShellWorkbenchLauncher(state);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onLauncherAction: (actionId) =>
+      setShellState((state) => {
+        const result = selectProductShellLauncherAction(state, actionId);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onFocusWorkbenchPane: (paneId) =>
+      setShellState((state) => {
+        const result = focusProductShellWorkbenchPane(state, paneId);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onCloseWorkbenchPane: (paneId) =>
+      setShellState((state) => {
+        const result = closeProductShellWorkbenchPane(state, paneId);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onTerminalInput: (paneId, bytes) =>
+      setShellState((state) => {
+        const result = writeProductShellTerminalInput(state, paneId, bytes);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onTerminalResize: (paneId, cols, rows) =>
+      setShellState((state) => {
+        const result = resizeProductShellTerminal(state, paneId, cols, rows);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onBrowserSnapshot: (paneId, snapshot) =>
+      setShellState((state) => {
+        const result = updateProductShellBrowserSnapshot(state, paneId, snapshot);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onBrowserActionResult: (paneId, actionResult) =>
+      setShellState((state) => {
+        const result = updateProductShellBrowserActionResult(state, paneId, actionResult);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onBackgroundBrowserSnapshot: (threadId, paneId, snapshot) =>
+      setShellState((state) => {
+        const result = updateProductShellBackgroundBrowserSnapshot(state, threadId, paneId, snapshot);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onBackgroundBrowserActionResult: (threadId, paneId, actionResult) =>
+      setShellState((state) => {
+        const result = updateProductShellBackgroundBrowserActionResult(state, threadId, paneId, actionResult);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onOpenBrowserPane: (url) =>
+      setShellState((state) => {
+        const result = openProductShellBrowserAtUrl(state, url);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+  };
+}

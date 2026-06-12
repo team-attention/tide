@@ -1,0 +1,52 @@
+// Extracted from product-shell.ts (entry-module rule follow-up): the closure
+// context the handler factories receive. Built fresh each render by the shell
+// so capture semantics are identical to the original inline object literal.
+
+import type { Dispatch, SetStateAction } from "react";
+import type {
+  ProductShellBackendCommand,
+  ProductShellState,
+  ProductShellViewModel,
+} from "../../../../../application/domains/product-shell/product-shell-state.ts";
+import type { AgentChatBackendEvent } from "../../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { TideThemePreference } from "../../theme.ts";
+import type { MenuAnchorRect, TideProductShellProps } from "../types.ts";
+import type { WorktreeDeleteTarget } from "../dialogs/worktree-delete-dialog.ts";
+
+export interface ProductShellHandlerContext {
+  props: TideProductShellProps;
+  shellState: ProductShellState;
+  setShellState: Dispatch<SetStateAction<ProductShellState>>;
+  viewModel: ProductShellViewModel;
+  dispatchBackendCommand: (command: ProductShellBackendCommand | null) => void;
+  applyBackendEvents: (events: AgentChatBackendEvent[] | undefined) => void;
+  themePref: TideThemePreference;
+  setThemePref: Dispatch<SetStateAction<TideThemePreference>>;
+  menuAnchor: MenuAnchorRect | null;
+  setMenuAnchor: Dispatch<SetStateAction<MenuAnchorRect | null>>;
+  collapsedSections: Record<string, boolean>;
+  setCollapsedSections: Dispatch<SetStateAction<Record<string, boolean>>>;
+  columnWidths: { left: number; workbench: number; fileTree: number };
+  setColumnWidths: Dispatch<SetStateAction<{ left: number; workbench: number; fileTree: number }>>;
+  setIsResizing: Dispatch<SetStateAction<boolean>>;
+  quickOpenVisible: boolean;
+  setQuickOpenVisible: Dispatch<SetStateAction<boolean>>;
+  contentSearchVisible: boolean;
+  setContentSearchVisible: Dispatch<SetStateAction<boolean>>;
+  worktreeCreate: { baseCwd: string } | null;
+  setWorktreeCreate: Dispatch<SetStateAction<{ baseCwd: string } | null>>;
+  worktreeDelete: WorktreeDeleteTarget | null;
+  setWorktreeDelete: Dispatch<SetStateAction<WorktreeDeleteTarget | null>>;
+  windowWidth: number;
+  bodyRef: { current: HTMLDivElement | null };
+  lastSubmitAtRef: { current: number };
+  openFolderAsProject: () => Promise<void>;
+  openFolderForScope: () => Promise<void>;
+  submitWorktreeCreate: (name: string, baseBranch: string) => void;
+  openWorktreeDeleteByCwd: (cwd: string) => void;
+  confirmWorktreeDelete: (keepBranch: boolean) => void;
+  startColumnResize: (
+    edge: "left" | "workbench" | "fileTree",
+    event: { clientX: number; preventDefault: () => void },
+  ) => void;
+}
