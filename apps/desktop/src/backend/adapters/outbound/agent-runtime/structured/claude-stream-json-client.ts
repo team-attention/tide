@@ -233,9 +233,19 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       const currentQuestion = isRecord(questions[index])
         ? stringField(questions[index] as Record<string, unknown>, "question")
         : undefined;
+      // A listed option arrives as structured:option:<label>; any OTHER
+      // non-empty value is the user's typed "Other…" free-text reply, which
+      // claude accepts verbatim as the answer. An empty value is Skip (leave
+      // this question unanswered). Dropping the free-text path here lost the
+      // user's typed answers entirely ("The user did not answer the questions").
+      const answerText =
+        optionLabel ??
+        (input.value.length > 0 && input.value !== STRUCTURED_ALLOW_TOKEN
+          ? input.value
+          : undefined);
       const nextAnswers =
-        optionLabel !== undefined && currentQuestion !== undefined
-          ? { ...answers, [currentQuestion]: optionLabel }
+        answerText !== undefined && currentQuestion !== undefined
+          ? { ...answers, [currentQuestion]: answerText }
           : answers;
       const nextIndex = index + 1;
       if (
