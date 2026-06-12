@@ -512,11 +512,17 @@ impl App {
             }
         }
 
-        // Update cached repo roots (for update_file_tree_cwd)
+        // Update cached repo roots (for update_file_tree_cwd) and the per-repo
+        // worktree list (for the Git Switcher — opens without spawning git, P-5).
         for (cwd, result) in &git_results {
             self.bg
                 .cached_repo_roots
                 .insert(cwd.clone(), result.repo_root.clone());
+            if let Some(ref root) = result.repo_root {
+                self.bg
+                    .cached_worktrees
+                    .insert(root.clone(), result.worktrees.clone());
+            }
         }
 
         // Update file tree git status from poller results

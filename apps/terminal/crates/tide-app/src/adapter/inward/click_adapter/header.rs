@@ -275,7 +275,8 @@ fn open_git_switcher(
         let shell_busy = !pane.context.shell_idle;
         if let Some(ref cwd) = pane.context.cwd {
             let cwd = cwd.clone();
-            let worktrees = ctx.git_list_worktrees(&cwd);
+            // Served from the poller cache when warm (no git on the app thread).
+            let worktrees = ctx.git_worktrees_for_switcher(&cwd);
             let mut gs = GitSwitcherState::new(pane_id, worktrees, anchor_rect);
             gs.shell_busy = shell_busy;
             ctx.modal_mut().git_switcher = Some(gs);

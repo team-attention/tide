@@ -688,6 +688,22 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.ports.git.list_worktrees(cwd)
     }
 
+    fn git_worktrees_for_switcher(
+        &self,
+        cwd: &std::path::Path,
+    ) -> Vec<crate::tide_terminal::git::WorktreeInfo> {
+        // Warm path: poller cache keyed by repo root.
+        if let Some(Some(root)) = self.bg.cached_repo_roots.get(cwd) {
+            if let Some(worktrees) = self.bg.cached_worktrees.get(root) {
+                return worktrees.clone();
+            }
+        }
+        // Cold miss: list once synchronously and ask the poller to warm the
+        // cache for next time.
+        self.trigger_git_poll();
+        self.ports.git.list_worktrees(cwd)
+    }
+
     fn git_repo_root(&self, cwd: &std::path::Path) -> Option<std::path::PathBuf> {
         self.ports.git.repo_root(cwd)
     }

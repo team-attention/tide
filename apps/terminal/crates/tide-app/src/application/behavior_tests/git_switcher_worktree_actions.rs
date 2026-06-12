@@ -259,3 +259,66 @@ fn deleting_git_switcher_worktree_uses_the_main_worktree_as_git_root() {
         "delete should reuse the git switcher snapshot instead of re-querying worktrees"
     );
 }
+
+// --- UC-5: GitSwitcherOpensFromPollerCache (P-5) ---
+
+fn recording_git_app(worktrees: Vec<WorktreeInfo>) -> (App, Arc<AtomicUsize>) {
+    let mut app = test_app();
+    let calls = Arc::new(AtomicUsize::new(0));
+    app.ports.git = Box::new(RecordingGit {
+        worktrees,
+        mutations: Arc::new(Mutex::new(Vec::new())),
+        list_worktree_calls: calls.clone(),
+    });
+    (app, calls)
+}
+
+#[test]
+fn git_switcher_open_reads_worktrees_from_poller_cache_without_spawning_git() {
+    // UC-5 BR-20: a warm poller cache serves the switcher worktree list with no
+    // git on the app thread.
+    use crate::AppCorePort;
+    let cwd = PathBuf::from("/tmp/tide-switcher-cache/wt");
+    let root = PathBuf::from("/tmp/tide-switcher-cache");
+    let cached = vec![WorktreeInfo {
+        path: root.clone(),
+        branch: Some("main".to_string()),
+        commit: "aaa".to_string(),
+        is_main: true,
+        is_current: true,
+    }];
+
+    let (mut app, list_calls) = recording_git_app(vec![]);
+    app.bg.cached_repo_roots.insert(cwd.clone(), Some(root.clone()));
+    app.bg.cached_worktrees.insert(root.clone(), cached.clone());
+
+    let result = app.git_worktrees_for_switcher(&cwd);
+
+    assert_eq!(result, cached, "served from cache");
+    assert_eq!(
+        list_calls.load(Ordering::Relaxed),
+        0,
+        "warm cache must not spawn git"
+    );
+}
+
+#[test]
+fn git_switcher_open_falls_back_to_sync_list_on_cold_cache() {
+    // UC-5 BR-21: a cold cache lists once synchronously (and warms for next time).
+    use crate::AppCorePort;
+    let cwd = PathBuf::from("/tmp/tide-switcher-cold/wt");
+    let listed = vec![WorktreeInfo {
+        path: cwd.clone(),
+        branch: Some("main".to_string()),
+        commit: "bbb".to_string(),
+        is_main: true,
+        is_current: true,
+    }];
+
+    let (app, list_calls) = recording_git_app(listed.clone());
+
+    let result = app.git_worktrees_for_switcher(&cwd);
+
+    assert_eq!(result, listed, "cold miss lists synchronously once");
+    assert_eq!(list_calls.load(Ordering::Relaxed), 1);
+}

@@ -62,6 +62,27 @@ Two gaps exist in the current flow:
 - **Business Rules**:
   - BR-2: GitSwitcher resolves the main worktree path before removing a worktree and deleting its branch
 
+### UC-5: OpenGitSwitcherFromPollerCache (P-5)
+
+- **Actor**: User
+- **Trigger**: Click the git badge to open the GitSwitcher
+- **Precondition**: none
+- **Flow**:
+  1. The switcher reads the repo's worktree list from the background git poller cache (keyed by repo root).
+  2. On a cold miss it lists worktrees synchronously once and asks the poller to warm the cache for next time.
+- **Postcondition**: Opening the switcher does not spawn git on the app thread when the poller cache is warm.
+- **Business Rules**:
+  - BR-20: A warm poller cache serves the switcher worktree list with no git on the app thread.
+  - BR-21: A cold cache lists once synchronously and warms the cache.
+
+> **Deferred (tracked follow-up):** the worktree *mutations* — `git worktree add` (UC-1 create rows),
+> `git worktree remove` + `git branch -d` (UC-2), and the branch-cleanup confirm in
+> `pane_create_service` — still run synchronously on the app thread. They are infrequent, explicit,
+> destructive-adjacent actions, so they were not moved to a background job in this slice. The intended
+> design (a `WorktreeOp` worker with an `in_flight` modal state, completion follow-ups applied in
+> `poll_background_events`, and failures surfaced via the notification path) is specified in
+> `docs/research/structural-cleanup-blueprint.md` §P-5 and remains the plan.
+
 ## Invariants
 
 1. `GitSwitcher` button hit-testing keeps priority over row activation.
@@ -74,6 +95,8 @@ Two gaps exist in the current flow:
 |----|----|------|
 | UC-1: ActivateWorktreeFromGitSwitcherRow | BR-1 | `clicking_git_switcher_row_runs_the_default_switch_action()` |
 | UC-2: DeleteWorktreeFromGitSwitcher | BR-2 | `deleting_git_switcher_worktree_uses_the_main_worktree_as_git_root()` |
+| UC-5: OpenGitSwitcherFromPollerCache | BR-20 | `git_switcher_open_reads_worktrees_from_poller_cache_without_spawning_git()` |
+| UC-5: OpenGitSwitcherFromPollerCache | BR-21 | `git_switcher_open_falls_back_to_sync_list_on_cold_cache()` |
 
 ## Location
 

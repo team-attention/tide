@@ -71,6 +71,9 @@ pub(crate) struct BackgroundServices {
     pub git_poll_handle: Option<std::thread::JoinHandle<()>>,
     pub git_poll_stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub cached_repo_roots: HashMap<PathBuf, Option<PathBuf>>,
+    /// Latest worktree list per repo root, from the git poller. Lets the Git
+    /// Switcher open without spawning git on the app thread (P-5).
+    pub cached_worktrees: HashMap<PathBuf, Vec<crate::tide_terminal::git::WorktreeInfo>>,
 
     // ── Workspace-scan worker (FileFinder `/` search + `#` symbols) ──
     pub workspace_scan_tx: Option<std::sync::mpsc::Sender<WorkspaceScanRequest>>,
@@ -88,6 +91,7 @@ impl BackgroundServices {
             git_poll_handle: None,
             git_poll_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             cached_repo_roots: HashMap::new(),
+            cached_worktrees: HashMap::new(),
             workspace_scan_tx: None,
             workspace_scan_rx: None,
             workspace_scan_handle: None,

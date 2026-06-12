@@ -41,6 +41,13 @@ pub(crate) trait AppCorePort {
         &self,
         cwd: &std::path::Path,
     ) -> Vec<crate::tide_terminal::git::WorktreeInfo>;
+    /// Worktree list for the Git Switcher: served from the poller cache when
+    /// warm (no git on the app thread); on a cold miss it lists synchronously
+    /// once and warms the cache for next time (P-5).
+    fn git_worktrees_for_switcher(
+        &self,
+        cwd: &std::path::Path,
+    ) -> Vec<crate::tide_terminal::git::WorktreeInfo>;
     fn git_repo_root(&self, cwd: &std::path::Path) -> Option<std::path::PathBuf>;
     fn git_branch_exists(&self, cwd: &std::path::Path, name: &str) -> bool;
     fn git_add_worktree(
