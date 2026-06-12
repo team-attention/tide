@@ -1273,6 +1273,14 @@ impl App {
             crate::AppCorePort::invalidate_chrome(self);
         }
 
+        // Workspace text search (FileFinder `/` mode): dispatch any pending
+        // search to the background worker, and apply any results that arrived.
+        self.dispatch_pending_file_finder_search();
+        if self.consume_workspace_search_results() {
+            crate::AppCorePort::invalidate_chrome(self);
+            crate::AppCorePort::request_redraw(self);
+        }
+
         // LSP completion responses
         if self.poll_lsp() {
             // poll_lsp already invalidates the pane cache

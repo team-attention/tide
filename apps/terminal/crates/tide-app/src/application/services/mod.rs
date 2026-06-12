@@ -2,7 +2,7 @@
 
 pub(crate) mod action_service;
 mod dock_service;
-mod file_ops_service;
+pub(crate) mod file_ops_service;
 pub(crate) mod file_tree_service;
 mod focus_nav_service;
 pub(crate) mod gpu_init_service;

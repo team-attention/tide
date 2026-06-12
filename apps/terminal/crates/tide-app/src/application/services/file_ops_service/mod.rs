@@ -316,4 +316,195 @@ impl App {
         }
         entries
     }
+
+    // ── Workspace text search (FileFinder `/` mode) — background worker (P-1) ──
+
+    /// Dispatch a pending workspace text search to the background worker.
+    /// `filter` marks `pending_search` when the query changed; this drains it
+    /// and hands the scan off-thread (no filesystem I/O on the app thread).
+    pub(crate) fn dispatch_pending_file_finder_search(&mut self) {
+        let request = {
+            let finder = match self.modal.file_finder.as_mut() {
+                Some(f) if f.pending_search => f,
+                _ => return,
+            };
+            finder.pending_search = false;
+            let query = finder
+                .input
+                .text
+                .strip_prefix('/')
+                .unwrap_or(&finder.input.text)
+                .to_string();
+            crate::state::background::WorkspaceSearchRequest {
+                query_id: finder.search_request_id,
+                base_dir: finder.base_dir.clone(),
+                entries: finder.entries_arc(),
+                query,
+            }
+        };
+        self.start_workspace_search_worker();
+        if let Some(tx) = &self.bg.workspace_search_tx {
+            let _ = tx.send(request);
+        }
+    }
+
+    /// Consume workspace search results from the background worker. Returns true
+    /// when results were applied (the finder must repaint). Stale results are
+    /// dropped by `FileFinderState::apply_workspace_search_results`.
+    pub(crate) fn consume_workspace_search_results(&mut self) -> bool {
+        let results: Vec<crate::state::background::WorkspaceSearchResult> =
+            match self.bg.workspace_search_rx {
+                Some(ref rx) => rx.try_iter().collect(),
+                None => return false,
+            };
+        if results.is_empty() {
+            return false;
+        }
+        let mut changed = false;
+        if let Some(finder) = self.modal.file_finder.as_mut() {
+            for result in results {
+                if finder.apply_workspace_search_results(result.query_id, result.hits) {
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+
+    /// Start the background workspace-search worker thread (idempotent).
+    pub(crate) fn start_workspace_search_worker(&mut self) {
+        if self.bg.workspace_search_handle.is_some() {
+            return;
+        }
+        let (req_tx, req_rx) =
+            std::sync::mpsc::channel::<crate::state::background::WorkspaceSearchRequest>();
+        let (res_tx, res_rx) =
+            std::sync::mpsc::channel::<crate::state::background::WorkspaceSearchResult>();
+        self.bg.workspace_search_tx = Some(req_tx);
+        self.bg.workspace_search_rx = Some(res_rx);
+
+        let stop_flag = self.bg.workspace_search_stop.clone();
+        let waker = self.bg.event_loop_waker.clone();
+
+        let handle = std::thread::Builder::new()
+            .name("tide-workspace-search".to_string())
+            .spawn(move || {
+                run_workspace_search_worker(req_rx, res_tx, stop_flag, waker);
+            })
+            .expect("failed to spawn workspace search worker");
+        self.bg.workspace_search_handle = Some(handle);
+    }
+}
+
+/// Drain the request channel to the most recent request (latest-wins
+/// cancellation — the same idiom as the git poller).
+fn latest_workspace_search_request(
+    req_rx: &std::sync::mpsc::Receiver<crate::state::background::WorkspaceSearchRequest>,
+    mut request: crate::state::background::WorkspaceSearchRequest,
+) -> crate::state::background::WorkspaceSearchRequest {
+    while let Ok(newer) = req_rx.try_recv() {
+        request = newer;
+    }
+    request
+}
+
+fn run_workspace_search_worker(
+    req_rx: std::sync::mpsc::Receiver<crate::state::background::WorkspaceSearchRequest>,
+    res_tx: std::sync::mpsc::Sender<crate::state::background::WorkspaceSearchResult>,
+    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    waker: Option<crate::tide_platform::WakeCallback>,
+) {
+    while !stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        let mut request = match req_rx.recv_timeout(std::time::Duration::from_secs(2)) {
+            Ok(request) => request,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+        loop {
+            request = latest_workspace_search_request(&req_rx, request);
+            let current_id = request.query_id;
+            let hits = scan_workspace_for_query(
+                &request.base_dir,
+                &request.entries,
+                &request.query,
+                &stop_flag,
+            );
+            // If an even newer query arrived during the scan, redo with it
+            // (skip posting now-stale work).
+            request = latest_workspace_search_request(&req_rx, request);
+            if request.query_id != current_id {
+                continue;
+            }
+            let _ = res_tx.send(crate::state::background::WorkspaceSearchResult {
+                query_id: current_id,
+                hits,
+            });
+            if let Some(ref w) = waker {
+                w();
+            }
+            break;
+        }
+    }
+}
+
+/// Scan workspace `entries` (relative to `base_dir`) for `query`, case-insensitively,
+/// without allocating a lowercased copy of every line. Skips files larger than
+/// 256 KB via metadata (no read) and caps results.
+pub(crate) fn scan_workspace_for_query(
+    base_dir: &Path,
+    entries: &[PathBuf],
+    query: &str,
+    stop_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Vec<crate::state::WorkspaceSearchHit> {
+    let mut hits = Vec::new();
+    if query.chars().count() < 2 {
+        return hits;
+    }
+    for rel_path in entries.iter() {
+        if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        let full_path = base_dir.join(rel_path);
+        // Metadata-first: skip oversized files WITHOUT reading them.
+        match std::fs::metadata(&full_path) {
+            Ok(meta) if meta.len() <= 256 * 1024 => {}
+            _ => continue,
+        }
+        let Ok(contents) = std::fs::read_to_string(&full_path) else {
+            continue;
+        };
+        for (line_idx, line) in contents.lines().enumerate() {
+            if let Some(byte_col) = find_ascii_case_insensitive(line, query) {
+                if !line.is_char_boundary(byte_col) {
+                    continue;
+                }
+                let col = line[..byte_col].chars().count() + 1;
+                hits.push(crate::state::WorkspaceSearchHit {
+                    path: rel_path.clone(),
+                    line: line_idx + 1,
+                    col,
+                    preview: line.trim().to_string(),
+                });
+                if hits.len() >= crate::state::FILE_FINDER_MAX_WORKSPACE_SEARCH_HITS {
+                    return hits;
+                }
+            }
+        }
+    }
+    hits
+}
+
+/// Case-insensitive (ASCII-folded) substring search returning the byte offset of
+/// the first match, without allocating. Non-ASCII bytes compare exactly, so
+/// UTF-8 content is matched literally.
+fn find_ascii_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    let h = haystack.as_bytes();
+    let n = needle.as_bytes();
+    if n.is_empty() {
+        return Some(0);
+    }
+    if n.len() > h.len() {
+        return None;
+    }
+    (0..=(h.len() - n.len())).find(|&i| h[i..i + n.len()].eq_ignore_ascii_case(n))
 }

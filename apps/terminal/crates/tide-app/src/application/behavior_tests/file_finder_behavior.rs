@@ -469,8 +469,62 @@ fn slash_prefix_switches_to_workspace_search_mode() {
         finder.insert_char(ch);
     }
 
+    // Mode switches immediately; the actual scan is dispatched to the background
+    // worker (no filesystem I/O on the input path — P-1), so the finder is in a
+    // pending/searching state rather than already holding hits.
     assert_eq!(finder.mode, FileFinderMode::WorkspaceSearch);
-    assert_eq!(finder.filtered.len(), 1);
+    assert!(finder.searching, "a 2+ char /query must mark searching");
+    assert!(finder.pending_search, "must request a background dispatch");
+    assert!(
+        finder.filtered.is_empty(),
+        "hits arrive later from the worker, not synchronously"
+    );
+}
+
+#[test]
+fn workspace_search_scan_finds_matching_lines_in_background() {
+    // UC-3 BR-7a: the background worker scan finds case-insensitive matches and
+    // reports the file, 1-based line, and 1-based column.
+    use crate::application::services::file_ops_service::scan_workspace_for_query;
+
+    let base = temp_dir("workspace_search_scan");
+    let src_dir = base.join("src");
+    fs::create_dir_all(&src_dir).unwrap();
+    fs::write(
+        src_dir.join("main.rs"),
+        "fn main() {\n    let Needle = 1;\n}\n",
+    )
+    .unwrap();
+
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let hits = scan_workspace_for_query(
+        &base,
+        &[PathBuf::from("src/main.rs")],
+        "needle", // lower-case query matches "Needle"
+        &stop,
+    );
+
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].path, PathBuf::from("src/main.rs"));
+    assert_eq!(hits[0].line, 2);
+    assert_eq!(hits[0].col, 9); // 1-based column of "Needle"
+}
+
+#[test]
+fn filter_workspace_search_does_no_filesystem_read() {
+    // UC-3 BR-7b: typing a /query never reads files on the input path; it only
+    // flags a pending background search. (Pointed at a non-existent base dir so
+    // any synchronous read would simply yield nothing — the point is the state.)
+    let mut finder = FileFinderState::new(
+        PathBuf::from("/nonexistent-tide-test-dir"),
+        vec![PathBuf::from("a.rs"), PathBuf::from("b.rs")],
+    );
+    for ch in "/query".chars() {
+        finder.insert_char(ch);
+    }
+    assert!(finder.searching);
+    assert!(finder.pending_search);
+    assert!(finder.workspace_search_hits.is_empty());
 }
 
 #[test]

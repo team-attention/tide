@@ -4,6 +4,7 @@ use super::state::input_line::{abbreviate_path, expand_tilde, InputLine};
 use crate::theme::{CONTEXT_MENU_W, POPUP_INPUT_PADDING, POPUP_LINE_EXTRA};
 use crate::tide_core::{PaneId, Rect, Vec2};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 // ──────────────────────────────────────────────
 // Save-as input state (floating popup with directory + filename)
@@ -98,7 +99,7 @@ pub(crate) struct SaveConfirmState {
 
 pub(crate) const FILE_FINDER_POPUP_W: f32 = 680.0;
 pub(crate) const FILE_FINDER_MAX_VISIBLE: usize = 14;
-const FILE_FINDER_MAX_WORKSPACE_SEARCH_HITS: usize = 200;
+pub(crate) const FILE_FINDER_MAX_WORKSPACE_SEARCH_HITS: usize = 200;
 
 pub(crate) fn sort_file_finder_entries(entries: &mut [PathBuf]) {
     entries.sort_by(|left, right| {
@@ -176,10 +177,12 @@ pub(crate) struct FileFinderState {
     pub input: InputLine,
     pub base_dir: PathBuf,
     pub mode: FileFinderMode,
-    pub entries: Vec<PathBuf>, // all files (relative to base_dir)
-    pub filtered: Vec<usize>,  // indices into entries
-    pub selected: usize,       // index into filtered
-    pub scroll_offset: usize,  // scroll offset in filtered list
+    /// All files relative to `base_dir`. `Arc` so the background workspace-search
+    /// worker can be handed the list without cloning it per keystroke.
+    pub entries: Arc<Vec<PathBuf>>,
+    pub filtered: Vec<usize>, // indices into entries
+    pub selected: usize,      // index into filtered
+    pub scroll_offset: usize, // scroll offset in filtered list
     pub current_file_symbols: Vec<SymbolMatch>,
     pub workspace_symbols: Vec<SymbolMatch>,
     pub workspace_symbols_loaded: bool,
@@ -191,6 +194,16 @@ pub(crate) struct FileFinderState {
     pub symbol_source_pane_id: Option<PaneId>,
     /// When set, the selected file replaces this pane (e.g. a Launcher) instead of opening a new tab.
     pub replace_pane_id: Option<crate::tide_core::PaneId>,
+    /// True while the background worker is running a workspace text search.
+    /// Renders a transient "Searching…" row instead of an empty list.
+    pub searching: bool,
+    /// Monotonic id of the most recently dispatched workspace search; results
+    /// for older ids are stale and dropped (cancellation).
+    pub search_request_id: u64,
+    /// Set by `filter` when a new workspace text search must be dispatched;
+    /// drained by `App::dispatch_pending_file_finder_search` (keeps filesystem
+    /// I/O off the app thread / out of the domain layer).
+    pub pending_search: bool,
 }
 
 impl FileFinderState {
@@ -200,7 +213,7 @@ impl FileFinderState {
             input: InputLine::new(),
             base_dir,
             mode: FileFinderMode::Files,
-            entries,
+            entries: Arc::new(entries),
             filtered,
             selected: 0,
             scroll_offset: 0,
@@ -211,7 +224,36 @@ impl FileFinderState {
             external_hits: false,
             symbol_source_pane_id: None,
             replace_pane_id: None,
+            searching: false,
+            search_request_id: 0,
+            pending_search: false,
         }
+    }
+
+    /// Shared handle to the entry list, for dispatching a background search
+    /// without cloning the whole `Vec`.
+    pub fn entries_arc(&self) -> Arc<Vec<PathBuf>> {
+        Arc::clone(&self.entries)
+    }
+
+    /// Apply workspace text-search results from the background worker. Stale
+    /// results (older `query_id`) are dropped (cancellation). On a match the
+    /// hits replace the current set and the filtered view is rebuilt.
+    /// Returns true when the results were applied (matched the current query).
+    pub fn apply_workspace_search_results(
+        &mut self,
+        query_id: u64,
+        hits: Vec<WorkspaceSearchHit>,
+    ) -> bool {
+        if query_id != self.search_request_id {
+            return false; // stale — a newer query was dispatched
+        }
+        self.searching = false;
+        self.workspace_search_hits = hits;
+        self.filtered = (0..self.workspace_search_hits.len()).collect();
+        self.selected = 0;
+        self.scroll_offset = 0;
+        true
     }
 
     /// Populate the finder with externally-supplied search hits (e.g. LSP "Find
@@ -534,38 +576,22 @@ impl FileFinderState {
                 .collect();
             return;
         }
+        // Non-external: the scan runs on the background worker (no filesystem
+        // I/O on the app thread). Mark the search pending; the App drains
+        // `pending_search`, dispatches a request, and applies results via
+        // `apply_workspace_search_results`. (P-1)
         self.workspace_search_hits.clear();
         if query.chars().count() < 2 {
+            // Too short to search — clear and don't dispatch.
             self.filtered.clear();
+            self.searching = false;
+            self.pending_search = false;
             return;
         }
-
-        let query_lower = query.to_lowercase();
-        'files: for rel_path in &self.entries {
-            let full_path = self.base_dir.join(rel_path);
-            let Ok(contents) = std::fs::read_to_string(&full_path) else {
-                continue;
-            };
-            if contents.len() > 256 * 1024 {
-                continue;
-            }
-            for (line_idx, line) in contents.lines().enumerate() {
-                let line_lower = line.to_lowercase();
-                if let Some(byte_col) = line_lower.find(&query_lower) {
-                    let col = line[..byte_col].chars().count() + 1;
-                    self.workspace_search_hits.push(WorkspaceSearchHit {
-                        path: rel_path.clone(),
-                        line: line_idx + 1,
-                        col,
-                        preview: line.trim().to_string(),
-                    });
-                    if self.workspace_search_hits.len() >= FILE_FINDER_MAX_WORKSPACE_SEARCH_HITS {
-                        break 'files;
-                    }
-                }
-            }
-        }
-        self.filtered = (0..self.workspace_search_hits.len()).collect();
+        self.search_request_id = self.search_request_id.wrapping_add(1);
+        self.searching = true;
+        self.pending_search = true;
+        self.filtered.clear();
     }
 }
 

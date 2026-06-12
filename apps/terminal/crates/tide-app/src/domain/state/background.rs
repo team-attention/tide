@@ -1,7 +1,8 @@
-// BackgroundServices — git poll, event loop waker.
+// BackgroundServices — git poll, workspace search, event loop waker.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Results from the background git poller (one entry per CWD).
 pub(crate) type GitPollResults = HashMap<PathBuf, GitPollCwdResult>;
@@ -32,6 +33,21 @@ pub(crate) struct GitPollCwdResult {
     pub diff_cache: Option<HashMap<usize, Vec<crate::pane::diff::DiffLine>>>,
 }
 
+/// One workspace text-search job for the background search worker. `entries` is
+/// shared (Arc) so dispatching never clones the file list.
+pub(crate) struct WorkspaceSearchRequest {
+    pub query_id: u64,
+    pub base_dir: PathBuf,
+    pub entries: Arc<Vec<PathBuf>>,
+    pub query: String,
+}
+
+/// Results from the background workspace search worker, correlated by `query_id`.
+pub(crate) struct WorkspaceSearchResult {
+    pub query_id: u64,
+    pub hits: Vec<crate::state::WorkspaceSearchHit>,
+}
+
 pub(crate) struct BackgroundServices {
     pub event_loop_waker: Option<crate::tide_platform::WakeCallback>,
     pub git_poll_rx: Option<std::sync::mpsc::Receiver<GitPollResults>>,
@@ -39,6 +55,12 @@ pub(crate) struct BackgroundServices {
     pub git_poll_handle: Option<std::thread::JoinHandle<()>>,
     pub git_poll_stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub cached_repo_roots: HashMap<PathBuf, Option<PathBuf>>,
+
+    // ── Workspace text-search worker (FileFinder `/` mode) ──
+    pub workspace_search_tx: Option<std::sync::mpsc::Sender<WorkspaceSearchRequest>>,
+    pub workspace_search_rx: Option<std::sync::mpsc::Receiver<WorkspaceSearchResult>>,
+    pub workspace_search_handle: Option<std::thread::JoinHandle<()>>,
+    pub workspace_search_stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl BackgroundServices {
@@ -50,6 +72,10 @@ impl BackgroundServices {
             git_poll_handle: None,
             git_poll_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             cached_repo_roots: HashMap::new(),
+            workspace_search_tx: None,
+            workspace_search_rx: None,
+            workspace_search_handle: None,
+            workspace_search_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 }

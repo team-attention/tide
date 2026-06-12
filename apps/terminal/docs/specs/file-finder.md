@@ -88,13 +88,17 @@ Selection remains predictable:
 - **Precondition**: `FileFinder` is open
 - **Flow**:
   1. Tide switches to `FileFinderMode::WorkspaceSearch`.
-  2. Tide scans workspace files for matching text hits.
-  3. The user selects a result.
-- **Postcondition**: The result list exposes workspace text hits with file and line context.
+  2. Typing flags a pending background search (no filesystem I/O on the app thread); the finder shows a transient "Searching…" state.
+  3. A background worker scans workspace files and posts results; the latest query wins (older results are dropped).
+  4. The user selects a result.
+- **Postcondition**: The result list exposes workspace text hits with file and line context, without the keystroke ever stalling input/rendering.
 - **Business Rules**:
   - BR-7: `/query` switches `FileFinder` into `FileFinderMode::WorkspaceSearch`.
+  - BR-7a: The background worker scan finds case-insensitive matches and reports file, 1-based line, and 1-based column.
+  - BR-7b: Typing a `/query` performs no filesystem read on the input path; it only flags a pending background search (`searching` + `pending_search`).
   - BR-8: Workspace text search ignores empty and one-character queries.
   - BR-9: Selecting a `WorkspaceSearchHit` opens the target file at the hit line.
+  - BR-10: Results for a superseded query are discarded (latest-query cancellation via `search_request_id`).
 
 ### UC-4: SelectWithPointer
 - **Actor**: User
@@ -172,6 +176,8 @@ Selection remains predictable:
 | UC-2 | BR-5 | `file_finder_behavior` | `selected_current_file_symbol_targets_focused_editor` |
 | UC-2 | BR-6 | `file_finder_behavior` | `selected_workspace_symbol_opens_file_at_symbol_line` |
 | UC-3 | BR-7 | `file_finder_behavior` | `slash_prefix_switches_to_workspace_search_mode` |
+| UC-3 | BR-7a | `file_finder_behavior` | `workspace_search_scan_finds_matching_lines_in_background` |
+| UC-3 | BR-7b | `file_finder_behavior` | `filter_workspace_search_does_no_filesystem_read` |
 | UC-3 | BR-8 | `file_finder_behavior` | `workspace_search_ignores_single_character_queries` |
 | UC-3 | BR-9 | `file_finder_behavior` | `selected_workspace_search_hit_opens_file_at_matching_line` |
 | UC-4 | BR-10 | `file_finder_behavior` | `clicking_second_file_result_opens_the_clicked_file` |
