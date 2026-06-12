@@ -16,6 +16,7 @@ import {
   applyProductShellPromptState,
   createProductShellState,
   createProductShellViewModel,
+  quickOpenFilesFromState,
   closeProductShellWorkbenchPane,
   editProductShellWorkbenchEditorPane,
   focusProductShellWorkbenchPane,
@@ -461,6 +462,38 @@ test("an_existing_pane_update_does_not_reopen_a_workbench_the_user_closed", () =
     false,
     "an update to the existing pane does not re-open the closed workbench",
   );
+});
+
+// Quick Open must search EVERY loaded file: folders are collapsed by default,
+// and the rendered FileTree view hides collapsed descendants — deriving the
+// search list from that view left Cmd+P blind to all nested files.
+test("quick_open_files_include_collapsed_folder_descendants", () => {
+  const state = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        panes: [],
+        fileTree: {
+          cwdLabel: "tide",
+          entries: [
+            { id: "d-src", name: "src", relativePath: "src", depth: 0, kind: "folder" },
+            { id: "f-app", name: "app.ts", relativePath: "src/app.ts", depth: 1, kind: "file" },
+            { id: "f-readme", name: "README.md", relativePath: "README.md", depth: 0, kind: "file" },
+          ],
+        },
+      },
+    },
+  );
+  // The rendered tree hides the collapsed descendant…
+  const rendered = createProductShellViewModel(state).fileTree.entries.map((e) => e.relativePath);
+  assert.ok(!rendered.includes("src/app.ts"));
+  // …but Quick Open still sees it (and never lists folders).
+  assert.deepEqual(quickOpenFilesFromState(state), [
+    { relativePath: "src/app.ts", name: "app.ts" },
+    { relativePath: "README.md", name: "README.md" },
+  ]);
 });
 
 test("clicking_a_file_tree_folder_collapses_and_expands_its_descendants", () => {

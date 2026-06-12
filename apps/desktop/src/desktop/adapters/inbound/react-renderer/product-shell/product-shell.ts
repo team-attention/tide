@@ -103,6 +103,7 @@ import {
   confirmProductShellThreadArchive,
   createProductShellState,
   createProductShellViewModel,
+  quickOpenFilesFromState,
   editProductShellWorkbenchEditorPane,
   focusProductShellWorkbenchPane,
   goToProductShellEditorDefinition,
@@ -817,11 +818,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   }, [shellState.workbenchFullscreen]);
 
   const quickOpenFiles = useMemo<QuickOpenFile[]>(
-    () =>
-      (viewModel.fileTree?.entries ?? [])
-        .filter((entry) => entry.kind === "file")
-        .map((entry) => ({ relativePath: entry.relativePath, name: entry.name })),
-    [viewModel.fileTree],
+    () => quickOpenFilesFromState(shellState),
+    [shellState.fileTree],
   );
 
   return createElement(

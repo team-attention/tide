@@ -270,6 +270,18 @@ function createEditorPickerView(
   return { filter: state.editorPickerFilter, files };
 }
 
+// Quick Open (Cmd+P) searches EVERY loaded file. It must read the raw state
+// tree: createFileTreeView strips collapsed folders' children for RENDERING,
+// and folders start collapsed — deriving search candidates from the rendered
+// view left Quick Open blind to every nested file.
+export function quickOpenFilesFromState(
+  state: ProductShellState,
+): Array<{ relativePath: string; name: string }> {
+  return (state.fileTree?.entries ?? [])
+    .filter((entry) => entry.kind === "file")
+    .map((entry) => ({ relativePath: entry.relativePath, name: entry.name }));
+}
+
 function createFileTreeView(state: ProductShellState): ProductShellFileTreeView {
   if (state.fileTree !== null) {
     const cloned = cloneProductShellFileTree(state.fileTree);
