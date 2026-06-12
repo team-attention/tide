@@ -62,6 +62,17 @@ import {
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+// The product-shell stylesheet is an ordered @import index over styles/*.css
+// (docs_v2/specs/navigable-source-structure.md); assertions run against the
+// inlined concatenation so match/doesNotMatch cover the whole cascade.
+function readProductShellCss(): string {
+  const indexPath = path.join(repoRoot, "src/desktop/renderer/tide-product-shell.css");
+  const indexSource = fs.readFileSync(indexPath, "utf8");
+  return indexSource.replace(/@import\s+"([^"]+)";/g, (_, importPath: string) =>
+    fs.readFileSync(path.join(path.dirname(indexPath), importPath), "utf8"),
+  );
+}
+
 test("product_shell_renders_left_ui_agent_chat_composer_and_app_chrome", () => {
   const html = renderProductShell();
 
@@ -549,10 +560,7 @@ test("thread_archived_event_removes_the_thread_from_the_list", () => {
 });
 
 test("thread_rows_use_list_style_selection_not_card_blocks", () => {
-  const css = fs.readFileSync(
-    path.join(repoRoot, "src/desktop/renderer/tide-product-shell.css"),
-    "utf8",
-  );
+  const css = readProductShellCss();
 
   assert.match(css, /\.thread-row--active\s*{[^}]*background:\s*var\(--tide-selection\)/s);
   assert.doesNotMatch(css, /\.thread-row--active\s*{[^}]*linear-gradient/s);
@@ -595,10 +603,7 @@ test("composer_uses_icon_chrome_for_options_model_voice_and_send", () => {
 });
 
 test("visual_foundation_css_uses_tide_icon_key_colors_without_pure_black_shell", () => {
-  const css = fs.readFileSync(
-    path.join(repoRoot, "src/desktop/renderer/tide-product-shell.css"),
-    "utf8",
-  );
+  const css = readProductShellCss();
 
   // Palette conformed to exact Figma values (frame 1223:2 / composer 1223:91).
   assert.match(css, /--tide-bg:\s*#fdfdfc/i);
@@ -616,10 +621,7 @@ test("visual_foundation_css_uses_tide_icon_key_colors_without_pure_black_shell",
 });
 
 test("visual_foundation_css_avoids_decorative_glow_and_heavy_cards", () => {
-  const css = fs.readFileSync(
-    path.join(repoRoot, "src/desktop/renderer/tide-product-shell.css"),
-    "utf8",
-  );
+  const css = readProductShellCss();
 
   assert.doesNotMatch(css, /radial-gradient/);
   assert.doesNotMatch(css, /0 18px 60px/);
@@ -2237,10 +2239,7 @@ test("prompt_choice_surface_renders_above_composer_with_canonical_spacing", () =
     },
   );
   const html = renderProductShell(state);
-  const css = fs.readFileSync(
-    path.join(repoRoot, "src/desktop/renderer/tide-product-shell.css"),
-    "utf8",
-  );
+  const css = readProductShellCss();
 
   assert.ok(html.indexOf('aria-label="Choice Surface"') < html.indexOf('aria-label="Composer"'));
   assert.match(css, /\.agent-chat-shell__composer-stack\s*{[^}]*gap:\s*16px/s);

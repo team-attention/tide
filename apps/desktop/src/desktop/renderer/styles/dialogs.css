@@ -1,0 +1,540 @@
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.settings-modal {
+  width: min(520px, calc(100vw - 48px));
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  background: var(--tide-surface, #fff);
+  border: 1px solid var(--tide-line);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  padding: 18px 20px 22px;
+}
+
+.settings-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.settings-modal__header h2 {
+  font-size: 16px;
+  font-weight: 650;
+  margin: 0;
+}
+
+.settings-modal__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+}
+
+.settings-modal__close:hover {
+  background: color-mix(in srgb, var(--tide-muted) 14%, transparent);
+  color: var(--tide-text);
+}
+
+.settings-modal__section-title {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tide-muted);
+  margin: 8px 0 10px;
+}
+
+.settings-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 16px;
+}
+
+.settings-modal__label {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--tide-text);
+}
+
+.settings-modal__input,
+.settings-modal__textarea {
+  width: 100%;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 13px;
+  font-family: var(--tide-mono, ui-monospace, monospace);
+  padding: 7px 9px;
+  outline: none;
+  resize: vertical;
+}
+
+.settings-modal__input:focus,
+.settings-modal__textarea:focus {
+  border-color: color-mix(in srgb, var(--tide-accent, #6b7) 60%, var(--tide-line));
+}
+
+.settings-modal__hint {
+  font-size: 11.5px;
+  color: var(--tide-muted);
+}
+
+/* Theme picker: three selectable cards (Light / Dark / Auto). */
+.settings-theme {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.settings-theme__option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--tide-line);
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.settings-theme__option:hover {
+  background: var(--tide-selection);
+}
+
+.settings-theme__option[data-active="true"] {
+  border-color: var(--tide-action);
+  background: var(--tide-selection);
+}
+
+.settings-theme__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tide-text);
+}
+
+.settings-theme__hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--tide-muted);
+}
+
+/* New-worktree inline name input (from the composer worktree/branch menu). */
+.worktree-create-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 16vh;
+  background: rgba(36, 33, 38, 0.28);
+}
+
+.worktree-create {
+  width: min(440px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--tide-bg);
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 12px;
+  box-shadow: 0 24px 60px -12px rgba(36, 33, 38, 0.35);
+}
+
+.worktree-create__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--tide-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.worktree-create__title svg { color: var(--tide-muted); }
+
+.worktree-create__input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font-size: 14px;
+  outline: none;
+}
+
+.worktree-create__input:focus { border-color: var(--tide-line-strong, var(--tide-muted)); }
+
+/* Base-branch picker row in the New worktree form. */
+.worktree-create__field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.worktree-create__field-label {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  color: var(--tide-muted);
+}
+
+.worktree-create__select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.worktree-create__select:focus { border-color: var(--tide-line-strong, var(--tide-muted)); }
+
+.worktree-create__preview {
+  color: var(--tide-muted);
+  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.worktree-create__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.worktree-create__cancel,
+.worktree-create__confirm {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.worktree-create__cancel {
+  border: 1px solid var(--tide-line);
+  background: transparent;
+  color: var(--tide-text);
+}
+
+.worktree-create__cancel:hover { background: var(--tide-selection); }
+
+.worktree-create__confirm {
+  border: 1px solid transparent;
+  background: var(--tide-text);
+  color: var(--tide-bg);
+}
+
+.worktree-create__confirm:disabled { opacity: 0.4; cursor: default; }
+
+/* Delete dialog: a wrapping sentence (not a path), an opt-out checkbox, and a
+   red unmerged-commits warning. See docs_v2/specs/worktree-branch-deletion.md. */
+.worktree-delete .worktree-create__preview {
+  direction: ltr;
+  white-space: normal;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.worktree-delete__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--tide-text);
+  cursor: pointer;
+}
+
+.worktree-delete__check input { cursor: pointer; }
+
+.worktree-delete__warn {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tide-danger, #d8453b) 12%, transparent);
+  color: var(--tide-danger, #d8453b);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.worktree-delete__confirm {
+  background: var(--tide-danger, #d8453b);
+  color: #fff;
+}
+
+/* Quick Open (Cmd+P): a centered command palette over a dim backdrop. */
+.quick-open-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgba(36, 33, 38, 0.28);
+}
+
+.quick-open {
+  width: min(620px, calc(100vw - 48px));
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--tide-bg);
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 12px;
+  box-shadow: 0 24px 60px -12px rgba(36, 33, 38, 0.35);
+  overflow: hidden;
+}
+
+.quick-open__field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--tide-line);
+}
+
+.quick-open__icon { flex: 0 0 auto; color: var(--tide-muted); }
+
+.quick-open__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 15px;
+  outline: none;
+}
+
+.quick-open__input::placeholder { color: var(--tide-muted); }
+
+.quick-open__count {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.quick-open__results {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.quick-open__row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.quick-open__row[data-selected="true"] {
+  background: var(--tide-selection);
+}
+
+.quick-open__row-icon { flex: 0 0 auto; display: inline-flex; color: var(--tide-muted); }
+
+.quick-open__row-name {
+  flex: 0 0 auto;
+  color: var(--tide-text);
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.quick-open__row-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--tide-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.quick-open__empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--tide-muted);
+  font-size: 13px;
+}
+
+/* Content search (Cmd+Shift+F): a centered panel with file-grouped matches. */
+.content-search-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 10vh;
+  background: rgba(36, 33, 38, 0.28);
+}
+
+.content-search {
+  width: min(680px, calc(100vw - 48px));
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--tide-bg);
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 12px;
+  box-shadow: 0 24px 60px -12px rgba(36, 33, 38, 0.35);
+  overflow: hidden;
+}
+
+.content-search__field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--tide-line);
+}
+
+.content-search__icon { flex: 0 0 auto; color: var(--tide-muted); }
+
+.content-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 15px;
+  outline: none;
+}
+
+.content-search__input::placeholder { color: var(--tide-muted); }
+
+.content-search__count {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.content-search__results {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.content-search__empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--tide-muted);
+  font-size: 13px;
+}
+
+.content-search__group { margin-bottom: 6px; }
+
+.content-search__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 4px;
+  position: sticky;
+  top: 0;
+  background: var(--tide-bg);
+}
+
+.content-search__file-icon { flex: 0 0 auto; display: inline-flex; color: var(--tide-muted); }
+
+.content-search__file-name {
+  flex: 0 0 auto;
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.content-search__file-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--tide-muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content-search__file-count {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.content-search__match {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 10px 3px 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.content-search__match:hover { background: var(--tide-selection); }
+
+.content-search__line-no {
+  flex: 0 0 auto;
+  width: 34px;
+  text-align: right;
+  color: var(--tide-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.content-search__line {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--tide-text);
+  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

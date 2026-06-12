@@ -1,0 +1,124 @@
+.file-tree-column__body {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.file-tree-column__search {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--tide-line);
+  border-radius: 9px;
+  color: var(--tide-muted);
+  font-size: 14px;
+}
+
+.file-tree-column__entries {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.file-tree-row {
+  flex: 0 0 28px;
+  height: 28px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 calc(8px + (var(--file-tree-depth) * 18px));
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 28px;
+  text-align: left;
+  overflow: hidden;
+}
+
+button.file-tree-row {
+  cursor: pointer;
+}
+
+.file-tree-row__chevron {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  transition: transform 0.12s ease;
+}
+
+.file-tree-row__chevron--expanded {
+  transform: rotate(90deg);
+}
+
+.file-tree-row__chevron-spacer {
+  flex: 0 0 auto;
+  width: 12px;
+}
+
+.file-tree-row svg {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+}
+
+.file-tree-row--active {
+  background: var(--tide-selection);
+}
+
+/* File tree loading shimmer (shown right after a thread switch while the new tree
+   loads, instead of a blank/empty tree). */
+.file-tree-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.file-tree-skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding-left: calc(10px + var(--depth, 0) * 14px);
+  padding-right: 12px;
+}
+
+.file-tree-skeleton__icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.file-tree-skeleton__label {
+  height: 9px;
+  border-radius: 4px;
+}
+
+.file-tree-skeleton__icon,
+.file-tree-skeleton__label {
+  background: linear-gradient(
+    90deg,
+    rgba(var(--tide-ink-rgb), 0.06) 25%,
+    rgba(var(--tide-ink-rgb), 0.13) 37%,
+    rgba(var(--tide-ink-rgb), 0.06) 63%
+  );
+  background-size: 400% 100%;
+  animation: tide-skeleton-shimmer 1.4s ease infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-tree-skeleton__icon,
+  .file-tree-skeleton__label {
+    animation: none;
+  }
+}

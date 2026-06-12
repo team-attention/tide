@@ -1,0 +1,1200 @@
+.agent-chat-top-row {
+  /* Match the Workbench/FileTree headers so trailing actions align across
+     columns. */
+  padding: 0 12px;
+}
+
+.agent-chat-shell {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  /* minmax(0, 1fr) keeps the single column from growing past the stage when a
+     child (e.g. a long <pre> tool body) has a wide intrinsic size — otherwise
+     the auto-margin composer centers in an over-wide track and loses its right
+     padding. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  /* No horizontal padding: the scroll area spans the full column (scrollbar at
+     the column edge, Codex-style). Content + composer self-center at a shared
+     width so they line up. */
+  padding: 26px 0 20px;
+  overflow: hidden;
+}
+
+.agent-chat-shell--embedded {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.agent-chat-shell--start {
+  grid-template-rows: minmax(0, 1fr);
+  align-items: center;
+  justify-items: center;
+  padding-bottom: 9vh;
+}
+
+.agent-chat-shell__start-surface {
+  /* Same width basis as the content turns + composer-stack: keep a side gutter so
+     when the column narrows the composer shrinks WITH it instead of sticking to the
+     edges. */
+  width: min(760px, calc(100% - 32px));
+  display: grid;
+  /* Constrain the single column to the surface width (minmax(0,1fr)); without this the
+     implicit `auto` column grows to the heading's one-line max-content and overflows
+     the surface — spilling into the workbench — when the chat column is narrow. The h1
+     then wraps and stays centered via text-align; the composer centers via margin auto. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+}
+
+.agent-chat-shell__start-surface h1 {
+  margin: 0;
+  color: var(--tide-text);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.agent-chat-shell__thread {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-chat-shell__thread h1 {
+  max-width: 760px;
+  margin: 0;
+  color: var(--tide-text);
+  font-size: 28px;
+  font-weight: 650;
+  line-height: 1.12;
+}
+
+.agent-chat-shell__eyebrow {
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-weight: 520;
+}
+
+.agent-chat-shell__state,
+.composer-shell__context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+}
+
+.agent-session {
+  min-width: 0;
+  min-height: 0;
+  /* Vertical scroll only — content wraps, so there is never a horizontal bar. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Reserve the scrollbar on both sides so the centered content doesn't shift
+     relative to the composer (which has no scrollbar). */
+  scrollbar-gutter: stable both-edges;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  /* Center the content column so turns + composer share one column. */
+  align-items: center;
+  gap: 14px;
+}
+
+/* A real conversation is top-anchored so it can scroll to the latest message;
+   centering is only for the (short) empty state. */
+.agent-session--has-turns {
+  justify-content: flex-start;
+}
+
+.agent-session--has-turns {
+  justify-content: flex-start;
+  padding: 6px 0 12px;
+}
+
+/* Canonical (1338): default user and agent text is a flat transcript, not
+   boxed into cards. Only structured/event blocks get cards. */
+.agent-session-turn {
+  min-width: 0;
+  /* The shared content column width — matches the composer. */
+  width: min(760px, calc(100% - 32px));
+  align-self: center;
+  display: grid;
+  gap: 4px;
+  /* Anchor the hover action bar, which is floated out of flow (below) so it
+     reserves NO vertical space — it used to sit in-flow at opacity:0 and pad
+     every agent turn by ~28px, blowing out the transcript spacing. */
+  position: relative;
+}
+
+.agent-session-turn--agent {
+  color: var(--tide-text);
+}
+
+/* Codex-style: the user's message is a compact right-aligned bubble, clearly
+   distinct from the agent's flat left-aligned prose. */
+/* The user turn fills the shared column but right-aligns its bubble inside. */
+.agent-session-turn--user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.agent-session-turn--user .agent-session-turn__body {
+  max-width: 82%;
+  width: fit-content;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--tide-selection);
+  color: var(--tide-text);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* A user message carrying attached regions reads as a left-aligned card (the
+   right-aligned bubble is too cramped for code/quotes). */
+.agent-session-turn--user:has(.agent-session-turn__body--attachments) {
+  justify-content: flex-start;
+}
+
+/* A user message with an attached image: a media bubble holding the (path-free)
+   text + image thumbnails stacked, instead of the raw "[Attached image: …]". */
+.agent-session-turn__body--media {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-session-turn__media-text {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.agent-session-turn__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agent-session-turn__image {
+  display: block;
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 10px;
+  border: 1px solid var(--tide-line);
+  object-fit: contain;
+  background: var(--tide-bg);
+}
+
+.agent-session-turn__body--attachments {
+  max-width: min(800px, 100%);
+  width: 100%;
+  font-size: 14px;
+}
+
+/* The "↳ label" header for each attached region. */
+.agent-session-turn__body--attachments strong:first-child,
+.agent-session-turn__body--attachments p > strong {
+  display: inline-block;
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-session-turn__body--attachments blockquote {
+  margin: 4px 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--tide-line-strong, var(--tide-line));
+  color: var(--tide-text);
+}
+
+/* Structured/event blocks are cards (canonical 1338): white, bordered, soft
+   shadow, radius 14 — distinct from the flat user/agent transcript text. */
+.agent-session-turn--event {
+  max-width: min(800px, 100%);
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--tide-line);
+  border-radius: 14px;
+  background: var(--tide-bg);
+  box-shadow: 0 8px 9px -6px rgba(52, 48, 56, 0.12);
+}
+
+.agent-session-turn__label {
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  letter-spacing: 0.01em;
+}
+
+.agent-session-turn__body {
+  margin: 0;
+  min-width: 0;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1.68;
+  white-space: pre-wrap;
+  /* Long tokens/URLs wrap instead of forcing a horizontal scrollbar. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Rendered markdown (agent answers): flat prose with real headings, lists,
+   code, and links — not raw markdown source. */
+.agent-session-turn__body--md {
+  white-space: normal;
+}
+
+.agent-session-turn__body--md > :first-child {
+  margin-top: 0;
+}
+
+.agent-session-turn__body--md > :last-child {
+  margin-bottom: 0;
+}
+
+.agent-session-turn__body--md p {
+  margin: 0 0 10px;
+}
+
+.agent-session-turn__body--md h1,
+.agent-session-turn__body--md h2,
+.agent-session-turn__body--md h3,
+.agent-session-turn__body--md h4 {
+  margin: 16px 0 8px;
+  font-weight: 620;
+  line-height: 1.3;
+}
+
+.agent-session-turn__body--md h1 { font-size: 19px; }
+
+.agent-session-turn__body--md h2 { font-size: 17px; }
+
+.agent-session-turn__body--md h3 { font-size: 15.5px; }
+
+.agent-session-turn__body--md h4 { font-size: 15px; }
+
+.agent-session-turn__body--md ul,
+.agent-session-turn__body--md ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.agent-session-turn__body--md li {
+  margin: 3px 0;
+}
+
+.agent-session-turn__body--md li > ul,
+.agent-session-turn__body--md li > ol {
+  margin: 3px 0;
+}
+
+.agent-session-turn__body--md a {
+  color: var(--tide-action);
+  text-decoration: none;
+}
+
+.agent-session-turn__body--md a:hover {
+  text-decoration: underline;
+}
+
+.agent-session-turn__body--md code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--tide-selection);
+  font: 13px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.agent-session-turn__body--md pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow: auto;
+  background: var(--tide-selection);
+}
+
+/* Codex-style fenced code block: a header (language + Copy) over the code. */
+.agent-session-turn__body--md .md-code {
+  margin: 0 0 12px;
+  border: 1px solid var(--tide-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.agent-session-turn__body--md .md-code__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px 5px 12px;
+  border-bottom: 1px solid var(--tide-line);
+  background: var(--tide-surface);
+}
+
+.agent-session-turn__body--md .md-code__lang {
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+
+.agent-session-turn__body--md .md-code__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.agent-session-turn__body--md .md-code__copy,
+.agent-session-turn__body--md .md-code__quote {
+  border: 0;
+  background: transparent;
+  color: var(--tide-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.agent-session-turn__body--md .md-code__copy:hover,
+.agent-session-turn__body--md .md-code__quote:hover {
+  background: var(--tide-selection);
+  color: var(--tide-action);
+}
+
+.agent-session-turn__body--md .md-code__pre {
+  margin: 0;
+  border-radius: 0;
+  background: var(--tide-bg);
+}
+
+.agent-session-turn__body--md pre code {
+  padding: 0;
+  background: none;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.agent-session-turn__body--md blockquote {
+  margin: 0 0 10px;
+  padding-left: 12px;
+  border-left: 3px solid var(--tide-line);
+  color: var(--tide-muted);
+}
+
+.agent-session-turn__body--md strong {
+  font-weight: 620;
+}
+
+.agent-session-turn__body--md hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--tide-line);
+}
+
+.agent-session-turn__body--md table {
+  margin: 0 0 10px;
+  border-collapse: collapse;
+}
+
+.agent-session-turn__body--md th,
+.agent-session-turn__body--md td {
+  padding: 4px 10px;
+  border: 1px solid var(--tide-line);
+  text-align: left;
+}
+
+/* Live "working" indicator while the runtime is responding (thinking/streaming),
+   so progress is visible instead of only the final result. */
+.agent-session-working {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--tide-muted);
+  font-size: 13px;
+}
+
+.agent-session-working__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--tide-muted);
+  animation: tide-working-pulse 1.1s ease-in-out infinite;
+}
+
+.agent-session-working__dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.agent-session-working__dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+.agent-session-working__text {
+  margin-left: 4px;
+}
+
+/* A queued user turn (submitted during a live turn, not yet sent). */
+.agent-session-turn--queued {
+  opacity: 0.62;
+}
+
+.agent-session-turn__queued-badge {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--tide-selection);
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Edit the queued message before it runs. Subtle until hovered so it doesn't
+   compete with the message, but always reachable on the queued row. */
+.agent-session-turn__edit {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--tide-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.agent-session-turn__edit:hover {
+  color: var(--tide-text);
+  border-color: var(--tide-line-strong);
+  background: var(--tide-selection);
+}
+
+@keyframes tide-working-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* A still-streaming agent message shows a blinking caret after its text. */
+.agent-session-turn--agent[data-block-status="streaming"] .agent-session-turn__body::after,
+.agent-session-turn--agent[data-block-status="pending"] .agent-session-turn__body::after {
+  content: "▍";
+  margin-left: 1px;
+  color: var(--tide-muted);
+  animation: tide-caret-blink 1s steps(1) infinite;
+}
+
+@keyframes tide-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.agent-session-turn__raw {
+  max-width: 100%;
+  overflow: auto;
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  color: var(--tide-text);
+  background: var(--tide-selection);
+  font: 12px/1.5 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Provider tool calls/results: a compact, indented log entry distinct from the
+   flat message transcript — quiet by default so they read as activity, not chat. */
+.agent-session-turn--tool {
+  gap: 3px;
+  padding: 0;
+  background: transparent;
+}
+
+/* A call's tool name reads as a quiet monospace label; the result has no label
+   and its output flows directly under (a continuation), tightly spaced. */
+.agent-session-turn__tool-name {
+  font: 11.5px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--tide-muted);
+}
+
+.agent-session-turn--tool-result {
+  margin-top: -1px;
+}
+
+.agent-session-turn__tool-body {
+  max-width: 100%;
+  max-height: 220px;
+  overflow: auto;
+  margin: 2px 0 0;
+  padding: 7px 9px;
+  border-radius: 7px;
+  color: var(--tide-text);
+  background: var(--tide-selection);
+  font: 12px/1.5 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+/* Read/view tool calls render as a compact file chip, not raw args. */
+.agent-session-turn__file-chip {
+  margin: 2px 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-bg);
+  color: var(--tide-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-session-turn__file-chip:hover {
+  background: var(--tide-selection);
+  border-color: var(--tide-line-strong);
+}
+
+.agent-session-turn__file-chip-name {
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 540;
+}
+
+.agent-session-turn__file-chip-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* Edit tools render as a +/- diff (Codex/Claude-app style). */
+.agent-session-turn__diff {
+  margin: 2px 0 0;
+  border: 1px solid var(--tide-line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.agent-session-turn__diff-stat {
+  display: flex;
+  gap: 8px;
+  padding: 4px 9px;
+  border-bottom: 1px solid var(--tide-line);
+  background: var(--tide-surface);
+  font: 11px/1 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.diff-stat--add {
+  color: var(--tide-diff-add);
+}
+
+.diff-stat--del {
+  color: var(--tide-diff-del);
+}
+
+.agent-session-turn__diff-body {
+  max-height: 260px;
+  overflow: auto;
+  font: 12px/1.5 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-line__sign {
+  text-align: center;
+  color: var(--tide-muted);
+  user-select: none;
+}
+
+.diff-line__text {
+  min-width: 0;
+  padding-right: 8px;
+}
+
+.diff-line--add {
+  background: color-mix(in srgb, var(--tide-diff-add) 14%, transparent);
+}
+
+.diff-line--add .diff-line__sign {
+  color: var(--tide-diff-add);
+}
+
+.diff-line--del {
+  background: color-mix(in srgb, var(--tide-diff-del) 14%, transparent);
+}
+
+.diff-line--del .diff-line__sign {
+  color: var(--tide-diff-del);
+}
+
+/* Codex-style collapsed tool-activity summary: a quiet one-line row that
+   aggregates a run of tool calls, expandable to the per-tool detail. */
+.agent-session-tools {
+  align-self: center;
+  width: min(760px, calc(100% - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-session-tools__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 2px 2px;
+  border: none;
+  background: none;
+  color: var(--tide-muted);
+  font-size: 13.5px;
+  line-height: 20px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.12s ease;
+}
+
+.agent-session-tools__summary:hover {
+  color: var(--tide-text);
+}
+
+.agent-session-tools__icon {
+  color: var(--tide-muted);
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+.agent-session-tools__summary-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-session-tools__chevron {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.14s ease;
+}
+
+.agent-session-tools--expanded .agent-session-tools__chevron {
+  transform: rotate(180deg);
+}
+
+.agent-session-tools__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 4px;
+}
+
+/* "Files changed" list under a tool group: a compact bordered card listing the
+   distinct edited files (filename + muted parent dir), Codex-style. */
+.agent-session-tools__files {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--tide-line);
+  border-radius: 10px;
+  background: var(--tide-bg);
+  overflow: hidden;
+}
+
+.agent-session-tools__file {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-session-tools__file:hover {
+  background: var(--tide-selection);
+}
+
+.agent-session-tools__file-icon {
+  color: var(--tide-muted);
+  flex-shrink: 0;
+}
+
+.agent-session-tools__file-name {
+  flex: 0 0 auto;
+  color: var(--tide-text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.agent-session-tools__file-dir {
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--tide-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Reasoning / thinking: a quiet, collapsible disclosure that stays clearly
+   secondary to the answer (like the Codex/Claude apps). Muted summary row,
+   chevron that rotates open, and a left-railed muted body when expanded. */
+.agent-reasoning {
+  align-self: center;
+  width: min(760px, calc(100% - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-reasoning__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  padding: 2px 2px;
+  margin: 0;
+  border: none;
+  background: none;
+  color: var(--tide-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.agent-reasoning__summary:hover {
+  color: var(--tide-text);
+}
+
+.agent-reasoning__icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+/* Gentle shimmer on the thinking label while the reasoning is still streaming. */
+.agent-reasoning--streaming .agent-reasoning__label {
+  background: linear-gradient(
+    100deg,
+    var(--tide-muted) 30%,
+    var(--tide-text) 50%,
+    var(--tide-muted) 70%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: agent-reasoning-shimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes agent-reasoning-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.agent-reasoning__chevron {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.16s ease;
+}
+
+.agent-reasoning--expanded .agent-reasoning__chevron {
+  transform: rotate(180deg);
+}
+
+.agent-reasoning__body {
+  margin: 0 0 2px;
+  padding-left: 11px;
+  border-left: 2px solid var(--tide-line);
+  color: var(--tide-muted);
+  font-size: 13.5px;
+  line-height: 1.62;
+  overflow-wrap: anywhere;
+}
+
+.agent-reasoning__body > :first-child { margin-top: 0; }
+
+.agent-reasoning__body > :last-child { margin-bottom: 0; }
+
+.agent-reasoning__body p {
+  margin: 0 0 8px;
+}
+
+.agent-reasoning__body code {
+  font-family: var(--tide-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.92em;
+}
+
+/* Per-answer hover actions (copy / retry): quiet, revealed only on hover or
+   keyboard focus so the transcript stays clean (like the Codex/Claude apps). */
+.agent-turn-actions {
+  /* Floated out of flow: a hover affordance in the gap below the turn, reserving
+     no layout height (so turns stay tight). A solid surface + border + shadow +
+     z-index makes it a clean floating toolbar instead of transparently
+     overlapping whatever sits below (e.g. the next turn's tool-call row). */
+  position: absolute;
+  top: 100%;
+  left: -4px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin-top: -7px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--tide-surface);
+  border: 1px solid var(--tide-line);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  z-index: 4;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  pointer-events: none;
+}
+
+.agent-session-turn--agent:hover .agent-turn-actions,
+.agent-turn-actions:focus-within {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.agent-turn-actions__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.agent-turn-actions__btn:hover {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+.agent-turn-actions__icon--check {
+  display: none;
+  color: #3a9c5e;
+}
+
+.agent-turn-actions__btn--done .agent-turn-actions__icon--copy {
+  display: none;
+}
+
+.agent-turn-actions__btn--done .agent-turn-actions__icon--check {
+  display: inline-flex;
+}
+
+.agent-turn-actions__btn--done {
+  color: #3a9c5e;
+}
+
+.agent-chat-shell__composer-stack {
+  /* Same width basis as the content turns so the composer lines up exactly. */
+  width: min(760px, calc(100% - 32px));
+  display: grid;
+  gap: 16px;
+  margin: 0 auto;
+}
+
+.image-lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: zoom-out;
+}
+
+.image-lightbox__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.5);
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body h1 {
+  margin: 24px 0 12px;
+  font-weight: 700;
+  font-size: 25px;
+  line-height: 30px;
+  color: var(--tide-text);
+}
+
+.markdown-body h2 {
+  margin: 22px 0 10px;
+  font-weight: 700;
+  font-size: 19px;
+  line-height: 26px;
+  color: var(--tide-text);
+}
+
+.markdown-body h3 {
+  margin: 18px 0 8px;
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--tide-text);
+}
+
+.markdown-body h4 {
+  margin: 16px 0 6px;
+  font-weight: 600;
+  font-size: 14.5px;
+  line-height: 22px;
+  color: var(--tide-text);
+}
+
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 14px 0 6px;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--tide-muted);
+  text-transform: none;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0 0 12px;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 24px;
+}
+
+.markdown-body li {
+  margin: 4px 0;
+}
+
+.markdown-body a {
+  color: var(--tide-action);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body code {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--tide-surface);
+  border: 1px solid var(--tide-line);
+  font: 13px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.markdown-body pre {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--tide-surface);
+  border: 1px solid var(--tide-line);
+  overflow: auto;
+}
+
+.markdown-body pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12.5px;
+}
+
+.markdown-body blockquote {
+  margin: 0 0 12px;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--tide-line-strong);
+  color: var(--tide-muted);
+}
+
+.markdown-body hr {
+  margin: 20px 0;
+  border: 0;
+  border-top: 1px solid var(--tide-line);
+}
+
+.markdown-body del {
+  color: var(--tide-muted);
+}
+
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+/* Highlighted fenced code (md-fence) reuses the shared tok-* token colors. */
+.markdown-body pre.md-fence {
+  background: var(--tide-surface);
+}
+
+/* A wide table scrolls horizontally inside its own block instead of clipping or
+   widening the reading column. Shared rule with the agent-chat surface. */
+.markdown-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 14px;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 6px 12px;
+  border: 1px solid var(--tide-line);
+  text-align: left;
+}
+
+.markdown-body thead th {
+  background: var(--tide-surface);
+  font-weight: 650;
+}
+
+/* GFM task lists: a read-only checkbox flush with its label, no list bullet. */
+.markdown-body .contains-task-list {
+  list-style: none;
+  padding-left: 4px;
+}
+
+.markdown-body .task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.markdown-body .task-list-item-checkbox {
+  margin: 5px 0 0;
+  flex: 0 0 auto;
+}
+
+/* Loading skeleton shown while an opened thread's blocks load from the backend, so
+   switching into a thread feels responsive instead of flashing blank. */
+.agent-session-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 12px 0;
+}
+
+.agent-skeleton__bubble {
+  align-self: flex-end;
+  width: 200px;
+  max-width: 60%;
+  height: 36px;
+  border-radius: 16px;
+}
+
+.agent-skeleton__agent {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  max-width: 80%;
+}
+
+.agent-skeleton__line {
+  height: 13px;
+  border-radius: 6px;
+}
+
+.agent-skeleton__bubble,
+.agent-skeleton__line {
+  background: linear-gradient(
+    90deg,
+    rgba(var(--tide-ink-rgb), 0.06) 25%,
+    rgba(var(--tide-ink-rgb), 0.13) 37%,
+    rgba(var(--tide-ink-rgb), 0.06) 63%
+  );
+  background-size: 400% 100%;
+  animation: tide-skeleton-shimmer 1.4s ease infinite;
+}
+
+@keyframes tide-skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-skeleton__bubble,
+  .agent-skeleton__line {
+    animation: none;
+  }
+}
+
+/* Empty state for a loaded thread with no messages to show. */
+.agent-session-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 240px;
+  padding: 40px 24px;
+  text-align: center;
+  color: rgba(var(--tide-ink-rgb), 0.55);
+}
+
+.agent-session-empty__icon {
+  color: rgba(var(--tide-ink-rgb), 0.32);
+  margin-bottom: 2px;
+}
+
+.agent-session-empty__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(var(--tide-ink-rgb), 0.7);
+}
+
+.agent-session-empty__hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  max-width: 280px;
+  color: rgba(var(--tide-ink-rgb), 0.48);
+}
