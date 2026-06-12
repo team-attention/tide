@@ -53,6 +53,14 @@ fn terminal_context_surface_resize_capacity(
         .max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH)
 }
 
+/// The context for an in-flight CLI/MCP command: which pane issued it (for
+/// cross-workspace routing) and, for `subscribe`, the notification channel.
+/// Present only while a command is dispatching; see `App::cli_dispatch`.
+pub(crate) struct CliDispatch {
+    pub caller_pane: Option<PaneId>,
+    pub subscribe_tx: Option<std::sync::mpsc::Sender<String>>,
+}
+
 /// Aggregates all outward port implementations. Injected into App.
 pub(crate) struct Ports {
     pub clock: Box<dyn ClockPort>,
@@ -188,11 +196,10 @@ pub(crate) struct App {
     // Agent Gateway status
     pub(crate) gateway: state::GatewayStatus,
 
-    // Temporary: holds notification_tx for subscribe command during dispatch
-    pub(crate) pending_subscribe_tx: Option<std::sync::mpsc::Sender<String>>,
-
-    // Temporary: holds the caller PaneId while a CLI command is dispatching.
-    pub(crate) pending_cli_caller_pane: Option<PaneId>,
+    // Active CLI/MCP dispatch context (caller pane + subscribe channel). Set
+    // and cleared in exactly one place — `handle_cli_command_with_subscribe` —
+    // so it is only ever readable during a dispatch.
+    pub(crate) cli_dispatch: Option<CliDispatch>,
 
     // Pending platform commands queued by notification routing, drained by event loop.
     pub(crate) pending_platform_commands: Vec<crate::tide_platform::WindowCommand>,
@@ -257,8 +264,7 @@ impl App {
             bg: state::BackgroundServices::new(),
             assoc: state::PaneAssociations::new(),
             gateway: state::GatewayStatus::new(),
-            pending_subscribe_tx: None,
-            pending_cli_caller_pane: None,
+            cli_dispatch: None,
             pending_platform_commands: Vec::new(),
             tide_window_close_requested: false,
             notified_panes: std::collections::HashSet::new(),
@@ -1209,11 +1215,17 @@ impl crate::application::ports::inward::GatewayPort for App {
         true
     }
     fn take_subscribe_tx(&mut self) -> Option<std::sync::mpsc::Sender<String>> {
-        self.pending_subscribe_tx.take()
+        debug_assert!(
+            self.cli_dispatch.is_some(),
+            "take_subscribe_tx called outside a CLI dispatch"
+        );
+        self.cli_dispatch
+            .as_mut()
+            .and_then(|d| d.subscribe_tx.take())
     }
 
     fn cli_caller_pane(&self) -> Option<PaneId> {
-        self.pending_cli_caller_pane
+        self.cli_dispatch.as_ref().and_then(|d| d.caller_pane)
     }
 
     fn toggle_auto_integration(&mut self) {

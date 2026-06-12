@@ -228,7 +228,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
     /// If focused is a terminal, returns it. Otherwise follows the association chain.
     fn resolve_context_terminal_id(&self) -> Option<crate::tide_core::PaneId> {
         // CLI caller pane takes precedence — the agent explicitly told us which terminal it runs in.
-        if let Some(caller) = self.pending_cli_caller_pane {
+        if let Some(caller) = self.cli_dispatch.as_ref().and_then(|d| d.caller_pane) {
             if matches!(self.panes.get(&caller), Some(PaneKind::Terminal(_))) {
                 return Some(caller);
             }

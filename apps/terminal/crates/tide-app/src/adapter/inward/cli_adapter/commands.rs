@@ -68,7 +68,21 @@ impl crate::App {
     pub(crate) fn handle_cli_command(
         &mut self,
         method: &str,
+        params: Value,
+    ) -> Result<Value, CliError> {
+        self.handle_cli_command_with_subscribe(method, params, None)
+    }
+
+    /// Dispatch a CLI command, supplying the `subscribe` notification channel.
+    /// Establishes the per-dispatch [`CliDispatch`] context (caller pane +
+    /// subscribe channel), set and cleared here and nowhere else, so handlers
+    /// can read it through `cli_caller_pane()` / `take_subscribe_tx()` only
+    /// while a command is in flight.
+    pub(crate) fn handle_cli_command_with_subscribe(
+        &mut self,
+        method: &str,
         mut params: Value,
+        subscribe_tx: Option<std::sync::mpsc::Sender<String>>,
     ) -> Result<Value, CliError> {
         // Extract and strip _caller_pane so handlers never see it (BR-5)
         let caller_pane = params
@@ -76,7 +90,10 @@ impl crate::App {
             .and_then(|m| m.remove("_caller_pane"))
             .and_then(|v| v.as_u64());
 
-        self.pending_cli_caller_pane = caller_pane;
+        self.cli_dispatch = Some(crate::app::CliDispatch {
+            caller_pane,
+            subscribe_tx,
+        });
 
         // Find target workspace for the caller pane (UC-2, UC-4)
         let need_swap = caller_pane
@@ -117,7 +134,10 @@ impl crate::App {
             }
         }
 
-        self.pending_cli_caller_pane = None;
+        // Clear the dispatch context — the single place it is torn down. The
+        // flow above has no early return between set and clear, so the context
+        // never outlives a dispatch.
+        self.cli_dispatch = None;
 
         result
     }
@@ -3079,11 +3099,12 @@ fn cli_subscribe(ctx: &mut crate::App, params: Value) -> Result<Value, CliError>
         })
         .unwrap_or_default();
 
+    let caller_pane = ctx.cli_dispatch.as_ref().and_then(|d| d.caller_pane);
     let tx = ctx
         .take_subscribe_tx()
         .ok_or_else(|| CliError::InvalidParams("subscribe requires notification channel".into()))?;
 
-    ctx.gateway_subscribe(ctx.pending_cli_caller_pane, tx, event_filter);
+    ctx.gateway_subscribe(caller_pane, tx, event_filter);
     Ok(json!({"ok": true}))
 }
 
@@ -3092,7 +3113,9 @@ fn active_artifact_json(artifact: &crate::ContextArtifact) -> Value {
 }
 
 fn caller_terminal_id(ctx: &crate::App) -> Result<crate::tide_core::PaneId, CliError> {
-    ctx.pending_cli_caller_pane
+    ctx.cli_dispatch
+        .as_ref()
+        .and_then(|d| d.caller_pane)
         .ok_or_else(|| CliError::InvalidParams("caller pane required".into()))
 }
 

@@ -852,15 +852,15 @@ impl App {
                         self.sync_ime_proxies(&window);
                     }
                     AppEvent::CliCommand(cmd) => {
-                        // For subscribe commands, store the notification channel
-                        if cmd.method == "subscribe" {
-                            if let Some(notif_tx) = cmd.notification_tx {
-                                self.pending_subscribe_tx = Some(notif_tx);
-                            }
-                        }
-                        let result = self.handle_cli_command(&cmd.method, cmd.params);
+                        // The subscribe notification channel (None for every
+                        // other method) is handed straight into the dispatch
+                        // context — no ambient App field to set/clear.
+                        let result = self.handle_cli_command_with_subscribe(
+                            &cmd.method,
+                            cmd.params,
+                            cmd.notification_tx,
+                        );
                         let _ = cmd.response_tx.send(result);
-                        self.pending_subscribe_tx = None;
                         // CLI commands (e.g. focus-pane, open-terminal) may
                         // change focus state.  Sync IME proxies so the macOS
                         // first responder matches the new focus — otherwise
