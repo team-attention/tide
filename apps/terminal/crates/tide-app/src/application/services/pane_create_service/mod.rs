@@ -1136,18 +1136,13 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             .unwrap_or_else(|| bc.cwd.clone());
         // Close the pane first so the terminal process releases the directory
         self.close_pane_final(bc.pane_id);
-        // Remove worktree (directory is now free)
-        if let Err(e) = self
-            .ports
-            .git
-            .remove_worktree(&main_cwd, &bc.worktree_path, true)
-        {
-            log::error!("Failed to remove worktree: {}", e);
-        }
-        // Delete the branch from the main repo
-        if let Err(e) = self.ports.git.delete_branch(&main_cwd, &bc.branch, true) {
-            log::error!("Failed to delete branch: {}", e);
-        }
+        // Remove worktree + delete branch off the app thread (the slow git part).
+        self.dispatch_worktree_job(crate::state::background::WorktreeJob::Remove {
+            main_cwd,
+            wt_path: bc.worktree_path,
+            delete_branch: Some(bc.branch),
+            force: true,
+        });
     }
 
     fn confirm_branch_keep(&mut self) {
@@ -1161,6 +1156,163 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
     fn cancel_branch_cleanup(&mut self) {
         if self.modal.clear_branch_cleanup() {
             self.cache.invalidate_chrome();
+        }
+    }
+}
+
+// ── Worktree mutation worker (P-5 Part B) ──────────────────────────────────
+
+impl App {
+    /// Start the background worktree-mutation worker thread (idempotent). Also a
+    /// no-op when a job channel is already installed (lets tests pre-install a
+    /// channel to capture dispatched jobs without spawning the real worker).
+    pub(crate) fn start_worktree_worker(&mut self) {
+        if self.bg.worktree_job_handle.is_some() || self.bg.worktree_job_tx.is_some() {
+            return;
+        }
+        let (job_tx, job_rx) = std::sync::mpsc::channel::<crate::state::background::WorktreeJob>();
+        let (res_tx, res_rx) =
+            std::sync::mpsc::channel::<crate::state::background::WorktreeJobResult>();
+        self.bg.worktree_job_tx = Some(job_tx);
+        self.bg.worktree_job_rx = Some(res_rx);
+        let stop = self.bg.worktree_job_stop.clone();
+        let waker = self.bg.event_loop_waker.clone();
+        let handle = std::thread::Builder::new()
+            .name("tide-worktree-ops".to_string())
+            .spawn(move || run_worktree_worker(job_rx, res_tx, stop, waker))
+            .expect("failed to spawn worktree worker");
+        self.bg.worktree_job_handle = Some(handle);
+    }
+
+    /// Dispatch a worktree mutation off the app thread (no blocking git on the
+    /// app thread). Follow-ups are applied when the result arrives.
+    pub(crate) fn dispatch_worktree_job(&mut self, job: crate::state::background::WorktreeJob) {
+        self.start_worktree_worker();
+        if let Some(tx) = &self.bg.worktree_job_tx {
+            let _ = tx.send(job);
+        }
+    }
+
+    /// Apply completed worktree-job results: copy configured files into a new
+    /// worktree and run the follow-up (cd / split), or log failures. Returns
+    /// true when the UI should redraw.
+    pub(crate) fn consume_worktree_job_results(&mut self) -> bool {
+        use crate::state::background::{WorktreeFollowUp, WorktreeJobResult};
+        use crate::tide_core::TerminalBackend;
+        let results: Vec<WorktreeJobResult> = match self.bg.worktree_job_rx {
+            Some(ref rx) => rx.try_iter().collect(),
+            None => return false,
+        };
+        if results.is_empty() {
+            return false;
+        }
+        let mut changed = false;
+        for result in results {
+            match result {
+                WorktreeJobResult::Added {
+                    result,
+                    root,
+                    wt_path,
+                    follow_up,
+                } => match result {
+                    Ok(()) => {
+                        self.settings
+                            .worktree
+                            .copy_files_to_worktree(&root, &wt_path);
+                        match follow_up {
+                            WorktreeFollowUp::CdTerminalIfIdle { pane_id } => {
+                                if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id) {
+                                    if pane.context.shell_idle {
+                                        let cmd = format!(
+                                            "cd {}\n",
+                                            crate::state::input_line::shell_escape(
+                                                &wt_path.to_string_lossy()
+                                            )
+                                        );
+                                        pane.backend.write(cmd.as_bytes());
+                                    }
+                                }
+                                changed = true;
+                            }
+                            WorktreeFollowUp::SplitPane { pane_id } => {
+                                use crate::ActionPort;
+                                self.split_pane_from(
+                                    pane_id,
+                                    crate::tide_core::SplitDirection::Vertical,
+                                    Some(wt_path),
+                                );
+                                changed = true;
+                            }
+                            WorktreeFollowUp::None => {}
+                        }
+                    }
+                    Err(e) => log::error!("Worktree create failed: {}", e),
+                },
+                WorktreeJobResult::Removed { result, wt_path } => {
+                    if let Err(e) = result {
+                        log::error!("Worktree remove failed ({}): {}", wt_path.display(), e);
+                    }
+                }
+            }
+        }
+        changed
+    }
+}
+
+fn run_worktree_worker(
+    job_rx: std::sync::mpsc::Receiver<crate::state::background::WorktreeJob>,
+    res_tx: std::sync::mpsc::Sender<crate::state::background::WorktreeJobResult>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    waker: Option<crate::tide_platform::WakeCallback>,
+) {
+    use crate::adapter::outward::git_adapter::git_cli;
+    use crate::state::background::{WorktreeJob, WorktreeJobResult};
+    while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+        let job = match job_rx.recv_timeout(std::time::Duration::from_secs(2)) {
+            Ok(j) => j,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+        let result = match job {
+            WorktreeJob::Add {
+                cwd,
+                wt_path,
+                branch,
+                new_branch,
+                root,
+                follow_up,
+            } => {
+                let r = git_cli::add_worktree(&cwd, &wt_path, &branch, new_branch);
+                WorktreeJobResult::Added {
+                    result: r,
+                    root,
+                    wt_path,
+                    follow_up,
+                }
+            }
+            WorktreeJob::Remove {
+                main_cwd,
+                wt_path,
+                delete_branch,
+                force,
+            } => {
+                let mut r = git_cli::remove_worktree(&main_cwd, &wt_path, force);
+                if r.is_ok() {
+                    if let Some(branch) = delete_branch {
+                        if let Err(e) = git_cli::delete_branch(&main_cwd, &branch, force) {
+                            r = Err(format!(
+                                "worktree removed but branch '{}' delete failed: {}",
+                                branch, e
+                            ));
+                        }
+                    }
+                }
+                WorktreeJobResult::Removed { result: r, wt_path }
+            }
+        };
+        let _ = res_tx.send(result);
+        if let Some(ref w) = waker {
+            w();
         }
     }
 }

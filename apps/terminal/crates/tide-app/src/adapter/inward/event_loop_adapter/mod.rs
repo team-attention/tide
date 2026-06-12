@@ -1281,6 +1281,14 @@ impl App {
             crate::AppCorePort::request_redraw(self);
         }
 
+        // Worktree mutation jobs (add/remove): apply completed follow-ups
+        // (copy files, cd/split) and surface failures.
+        if self.consume_worktree_job_results() {
+            crate::AppCorePort::invalidate_chrome(self);
+            self.compute_layout();
+            crate::AppCorePort::request_redraw(self);
+        }
+
         // LSP completion responses
         if self.poll_lsp() {
             // poll_lsp already invalidates the pane cache

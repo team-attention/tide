@@ -336,23 +336,16 @@ pub(crate) fn handle_git_switcher_button(
                     let settings = ctx.persistence_load_settings();
                     let wt_path = settings.worktree.compute_worktree_path(&root, &query);
                     let new_branch = !ctx.git_branch_exists(&cwd, &query);
-                    match ctx.git_add_worktree(&cwd, &wt_path, &query, new_branch) {
-                        Ok(()) => {
-                            settings.worktree.copy_files_to_worktree(&root, &wt_path);
-                            if let Some(PaneKind::Terminal(pane)) = ctx.pane_mut(pane_id) {
-                                if pane.context.shell_idle {
-                                    let cmd = format!(
-                                        "cd {}\n",
-                                        shell_escape(&wt_path.to_string_lossy())
-                                    );
-                                    pane.backend.write(cmd.as_bytes());
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("Failed to create worktree: {}", e);
-                        }
-                    }
+                    // Run `git worktree add` off the app thread; cd the terminal
+                    // when it completes (no multi-second freeze on the click).
+                    ctx.dispatch_worktree_add(
+                        cwd,
+                        wt_path,
+                        query,
+                        new_branch,
+                        root,
+                        crate::state::background::WorktreeFollowUp::CdTerminalIfIdle { pane_id },
+                    );
                 }
             } else {
                 let gs = ctx.modal().git_switcher.as_ref().unwrap();
@@ -407,16 +400,12 @@ pub(crate) fn handle_git_switcher_button(
             };
             if let Some(main_cwd) = main_cwd {
                 if !is_main {
-                    if let Err(e) = ctx.git_remove_worktree(&main_cwd, &wt_path, true) {
-                        log::error!("Failed to remove worktree: {}", e);
-                    }
-                    if let Some(ref branch) = branch_name {
-                        if branch != "main" && branch != "master" {
-                            if let Err(e) = ctx.git_delete_branch(&main_cwd, branch, true) {
-                                log::error!("Failed to delete branch: {}", e);
-                            }
-                        }
-                    }
+                    // Run remove + branch-delete off the app thread; remove the
+                    // row optimistically so the click stays instant and a second
+                    // click can't re-target the same (now-gone) row.
+                    let delete_branch =
+                        branch_name.filter(|b| b != "main" && b != "master");
+                    ctx.dispatch_worktree_remove(main_cwd, wt_path.clone(), delete_branch, true);
                 }
             }
 
@@ -440,15 +429,16 @@ pub(crate) fn handle_git_switcher_button(
                     let settings = ctx.persistence_load_settings();
                     let wt_path = settings.worktree.compute_worktree_path(&root, &query);
                     let new_branch = !ctx.git_branch_exists(&cwd, &query);
-                    match ctx.git_add_worktree(&cwd, &wt_path, &query, new_branch) {
-                        Ok(()) => {
-                            settings.worktree.copy_files_to_worktree(&root, &wt_path);
-                            ctx.split_pane_from(pane_id, SplitDirection::Vertical, Some(wt_path));
-                        }
-                        Err(e) => {
-                            log::error!("Failed to create worktree: {}", e);
-                        }
-                    }
+                    // Run `git worktree add` off the app thread; split a new pane
+                    // rooted in the worktree when it completes.
+                    ctx.dispatch_worktree_add(
+                        cwd,
+                        wt_path,
+                        query,
+                        new_branch,
+                        root,
+                        crate::state::background::WorktreeFollowUp::SplitPane { pane_id },
+                    );
                 }
             } else {
                 let gs = ctx.modal().git_switcher.as_ref().unwrap();

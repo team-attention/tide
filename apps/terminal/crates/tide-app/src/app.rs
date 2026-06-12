@@ -754,6 +754,40 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.ports.git.delete_branch(cwd, name, force)
     }
 
+    fn dispatch_worktree_add(
+        &mut self,
+        cwd: std::path::PathBuf,
+        wt_path: std::path::PathBuf,
+        branch: String,
+        new_branch: bool,
+        root: std::path::PathBuf,
+        follow_up: crate::state::background::WorktreeFollowUp,
+    ) {
+        self.dispatch_worktree_job(crate::state::background::WorktreeJob::Add {
+            cwd,
+            wt_path,
+            branch,
+            new_branch,
+            root,
+            follow_up,
+        });
+    }
+
+    fn dispatch_worktree_remove(
+        &mut self,
+        main_cwd: std::path::PathBuf,
+        wt_path: std::path::PathBuf,
+        delete_branch: Option<String>,
+        force: bool,
+    ) {
+        self.dispatch_worktree_job(crate::state::background::WorktreeJob::Remove {
+            main_cwd,
+            wt_path,
+            delete_branch,
+            force,
+        });
+    }
+
     fn persistence_load_settings(&self) -> crate::state::settings::TideSettings {
         self.ports.persistence.load_settings()
     }

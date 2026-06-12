@@ -64,6 +64,50 @@ pub(crate) enum WorkspaceScanResult {
     },
 }
 
+/// What to do on the app thread after a worktree is successfully added.
+#[derive(Clone, Debug)]
+pub(crate) enum WorktreeFollowUp {
+    None,
+    /// `cd` the terminal into the new worktree if its shell is idle.
+    CdTerminalIfIdle { pane_id: crate::tide_core::PaneId },
+    /// Split a new terminal pane rooted in the new worktree.
+    SplitPane { pane_id: crate::tide_core::PaneId },
+}
+
+/// A worktree mutation to run off the app thread (the slow git part). Follow-ups
+/// (copy files, cd/split, errors) are applied on the app thread when the result
+/// arrives. (P-5)
+pub(crate) enum WorktreeJob {
+    Add {
+        cwd: PathBuf,
+        wt_path: PathBuf,
+        branch: String,
+        new_branch: bool,
+        root: PathBuf,
+        follow_up: WorktreeFollowUp,
+    },
+    Remove {
+        main_cwd: PathBuf,
+        wt_path: PathBuf,
+        delete_branch: Option<String>,
+        force: bool,
+    },
+}
+
+/// Result of a worktree job, applied on the app thread.
+pub(crate) enum WorktreeJobResult {
+    Added {
+        result: Result<(), String>,
+        root: PathBuf,
+        wt_path: PathBuf,
+        follow_up: WorktreeFollowUp,
+    },
+    Removed {
+        result: Result<(), String>,
+        wt_path: PathBuf,
+    },
+}
+
 pub(crate) struct BackgroundServices {
     pub event_loop_waker: Option<crate::tide_platform::WakeCallback>,
     pub git_poll_rx: Option<std::sync::mpsc::Receiver<GitPollResults>>,
@@ -80,6 +124,12 @@ pub(crate) struct BackgroundServices {
     pub workspace_scan_rx: Option<std::sync::mpsc::Receiver<WorkspaceScanResult>>,
     pub workspace_scan_handle: Option<std::thread::JoinHandle<()>>,
     pub workspace_scan_stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+
+    // ── Worktree mutation worker (add/remove off the app thread, P-5) ──
+    pub worktree_job_tx: Option<std::sync::mpsc::Sender<WorktreeJob>>,
+    pub worktree_job_rx: Option<std::sync::mpsc::Receiver<WorktreeJobResult>>,
+    pub worktree_job_handle: Option<std::thread::JoinHandle<()>>,
+    pub worktree_job_stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl BackgroundServices {
@@ -96,6 +146,10 @@ impl BackgroundServices {
             workspace_scan_rx: None,
             workspace_scan_handle: None,
             workspace_scan_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            worktree_job_tx: None,
+            worktree_job_rx: None,
+            worktree_job_handle: None,
+            worktree_job_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 }
