@@ -4,6 +4,48 @@ _Audited 2026-06-11 against main (`6950d502`, v0.1.41). Every issue below carrie
 file:line evidence captured during the audit; re-verify line numbers before acting
 on a slice, the files move._
 
+## Implementation status (branch `v2-remediation-impl`, 2026-06-12)
+
+Done and committed (each slice typecheck + test verified; suite 684 green):
+
+- **Phase 0 — guardrails:** `desktop-ci.yml` (typecheck + test + build on every
+  push/PR); node engine pinned (`engines` + `.nvmrc` + `assert-node-version`
+  preflight on `pretest`/tooling); script hygiene (15 canonical + `scripts/README.md`,
+  45 probes → `scripts/archive/`, vitest dropped).
+- **Phase 4 — performance:** E1 conversation-persistence coalescing (debounce +
+  turn/prompt/exit/shutdown flush, `tests/persistence-coalescing.test.ts`); E2/E3
+  renderer memoization (shared markdown cache, per-block `React.memo`, rAF event
+  coalescing); E4 non-cloning `peekThread` on the projector hot path.
+- **Phase 1 — registry:** `shared/contracts/agent-descriptors.ts` is the single
+  agent-id birthplace (id list, displayName, monogram, sessionRefKind, permission
+  modes); backend runtime port + infra + UI identity helpers derive from it; legacy
+  permission normalization is data (`legacyValueMap`), not `=== "codex"` branches;
+  `tests/agent-symmetry-boundary.test.ts` (7 guards).
+- **Phase 2 — e2e gate:** `npm run e2e` (`scripts/e2e-run.mjs`) — SKIP-honest per-agent
+  PASS/FAIL/SKIP matrix derived from the registry; opencode wired into permission-flow
+  + state-matrix (concurrency/followup now `--agent`-parameterized).
+- **Phase 3 — ratchet:** `tests/file-size-ratchet.test.ts` pins the 8 god-files at
+  their current line counts (may shrink, never grow) and caps new files at 800.
+- **Phase 5 (partial):** gemini conversation rebuild on reopen (A4 P0 — was "No
+  messages here"); dead PTY scrape fields removed from `ProviderLaunchPlan`.
+
+Remaining / deferred (with the reason):
+
+- **Phase 3 god-file splitting (3.1–3.4):** the ratchet tracks + guards the targets;
+  the actual moves are careful per-slice work needing the dev-harness visual loop
+  (cross-layer helper entanglement + no headless pixel verification here).
+- **Phase 2.3 auth-free CI e2e:** blocked on a found pre-existing bug — the Tide-API
+  (`openai_api`) agent can't be selected through the composer menu (it's intentionally
+  CLI-only there), so the fake-provider electron smoke can't bind a non-CLI agent
+  without real auth. Fix: have the smoke build the `openai_api` `thread.start`
+  command directly, then add the Playwright click-path as a required CI job.
+- **Phase 2.4 shared Playwright driver:** refactor; needs the built app to verify.
+- **Phase 5.2 bootstrap-artifact removal:** needs a live launch transcript per
+  provider (evidence discipline) — not headless-safe.
+- **Phase 1 model/effort menus + full antigravity excision:** model lists need the
+  runtime-accuracy decision; antigravity is demoted to a UI fallback (still tested
+  legacy behavior), not purged.
+
 ## 0. The product, restated
 
 This section is the contract the rest of the document serves. From

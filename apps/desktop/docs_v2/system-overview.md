@@ -3,9 +3,19 @@
 _Snapshot: 2026-06-10 (v2-uniform-provider-abstraction). Supersedes the previous
 snapshot's "Open problems" — every item in it is resolved below._
 
-Tide v2 wraps interactive CLI coding agents (Codex, Claude Code, Gemini) so that,
-to the user, they all behave like one uniform chat. The shared flow lives in one
-place; each agent's quirks are isolated in its adapter.
+Tide v2 wraps interactive CLI coding agents (Codex, Claude Code, Gemini, and
+opencode) so that, to the user, they all behave like one uniform chat. The shared
+flow lives in one place; each agent's quirks are isolated in its adapter.
+
+> Update (2026-06-12, branch `v2-remediation-impl`): the four shipped provider-CLI
+> agents are **codex / claude / gemini / opencode**. Antigravity is demoted to a UI
+> fallback (not a launchable `ProviderCliAgentId`). All declarative agent knowledge
+> (id list, display name, monogram, session-ref kind, permission modes) now lives in
+> one registry — `shared/contracts/agent-descriptors.ts` — and the runtime port,
+> infra, and UI derive from it (guarded by `tests/agent-symmetry-boundary.test.ts`).
+> See `implementation/codebase-issues-and-remediation-plan.md` for the broader pass
+> (CI on push, persistence/render perf coalescing, the `npm run e2e` gate, the
+> file-size ratchet, and gemini conversation restore).
 
 ---
 
