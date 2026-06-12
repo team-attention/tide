@@ -42,111 +42,6 @@ pub(crate) enum AppEvent {
     ReloadSettings,
 }
 
-fn parse_browser_page_map(
-    value: Option<&serde_json::Value>,
-) -> Option<crate::pane::browser::BrowserPageMap> {
-    let value = value?;
-    let regions = parse_browser_page_elements(
-        value.get("regions").and_then(|v| v.as_array()),
-        crate::pane::browser::BrowserPageElementKind::Region,
-    );
-    let interactables = parse_browser_page_elements(
-        value.get("interactables").and_then(|v| v.as_array()),
-        crate::pane::browser::BrowserPageElementKind::Interactable,
-    );
-    if regions.is_empty() && interactables.is_empty() {
-        return None;
-    }
-    Some(crate::pane::browser::BrowserPageMap {
-        regions,
-        interactables,
-        truncated_regions: value
-            .get("truncated_regions")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-        truncated_interactables: value
-            .get("truncated_interactables")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-    })
-}
-
-fn parse_browser_page_elements(
-    values: Option<&Vec<serde_json::Value>>,
-    kind: crate::pane::browser::BrowserPageElementKind,
-) -> Vec<crate::pane::browser::BrowserPageElement> {
-    values
-        .into_iter()
-        .flatten()
-        .filter_map(|value| parse_browser_page_element(value, kind.clone()))
-        .collect()
-}
-
-fn parse_browser_page_element(
-    value: &serde_json::Value,
-    kind: crate::pane::browser::BrowserPageElementKind,
-) -> Option<crate::pane::browser::BrowserPageElement> {
-    let reference = value
-        .get("ref")
-        .or_else(|| value.get("reference"))
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.trim().is_empty())?
-        .to_string();
-    let rect = parse_browser_page_rect(value.get("rect")?)?;
-    Some(crate::pane::browser::BrowserPageElement {
-        reference,
-        kind,
-        role: value
-            .get("role")
-            .and_then(|v| v.as_str())
-            .map(str::to_string)
-            .filter(|s| !s.trim().is_empty()),
-        tag: value
-            .get("tag")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        label: value
-            .get("label")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        text: value
-            .get("text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        value: value
-            .get("value")
-            .and_then(|v| v.as_str())
-            .map(str::to_string),
-        placeholder: value
-            .get("placeholder")
-            .and_then(|v| v.as_str())
-            .map(str::to_string),
-        action: value
-            .get("action")
-            .and_then(|v| v.as_str())
-            .map(str::to_string),
-        disabled: value
-            .get("disabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-        rect,
-    })
-}
-
-fn parse_browser_page_rect(value: &serde_json::Value) -> Option<crate::tide_core::Rect> {
-    let x = value.get("x").and_then(|v| v.as_f64())? as f32;
-    let y = value.get("y").and_then(|v| v.as_f64())? as f32;
-    let width = value.get("width").and_then(|v| v.as_f64())? as f32;
-    let height = value.get("height").and_then(|v| v.as_f64())? as f32;
-    if width <= 0.0 || height <= 0.0 {
-        return None;
-    }
-    Some(crate::tide_core::Rect::new(x, y, width, height))
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlatformEventOutcome {
     Continue,
@@ -496,7 +391,9 @@ impl App {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
                     .filter(|s| !s.trim().is_empty());
-                let page_map = parse_browser_page_map(parsed.get("page_map"));
+                let page_map = crate::pane::browser::BrowserPageMap::from_bridge_json(
+                    parsed.get("page_map"),
+                );
 
                 let snapshot =
                     if text.trim().is_empty() && page_title.is_none() && page_url.is_none() {

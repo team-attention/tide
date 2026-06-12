@@ -189,6 +189,86 @@ impl BrowserPageMap {
             .chain(self.regions.iter())
             .find(|element| element.reference == reference)
     }
+
+    /// Parse a Browser Pane bridge `page_map` JSON payload into a `BrowserPageMap`.
+    /// Returns `None` when there are no regions or interactables. (Lives here in
+    /// the domain — the event-loop adapter just hands the JSON over.)
+    pub(crate) fn from_bridge_json(value: Option<&serde_json::Value>) -> Option<Self> {
+        let value = value?;
+        let regions =
+            parse_page_elements(value.get("regions").and_then(|v| v.as_array()), BrowserPageElementKind::Region);
+        let interactables = parse_page_elements(
+            value.get("interactables").and_then(|v| v.as_array()),
+            BrowserPageElementKind::Interactable,
+        );
+        if regions.is_empty() && interactables.is_empty() {
+            return None;
+        }
+        Some(BrowserPageMap {
+            regions,
+            interactables,
+            truncated_regions: value
+                .get("truncated_regions")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            truncated_interactables: value
+                .get("truncated_interactables")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        })
+    }
+}
+
+fn parse_page_elements(
+    values: Option<&Vec<serde_json::Value>>,
+    kind: BrowserPageElementKind,
+) -> Vec<BrowserPageElement> {
+    values
+        .into_iter()
+        .flatten()
+        .filter_map(|value| parse_page_element(value, kind.clone()))
+        .collect()
+}
+
+fn parse_page_element(
+    value: &serde_json::Value,
+    kind: BrowserPageElementKind,
+) -> Option<BrowserPageElement> {
+    let reference = value
+        .get("ref")
+        .or_else(|| value.get("reference"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())?
+        .to_string();
+    let rect = parse_page_rect(value.get("rect")?)?;
+    Some(BrowserPageElement {
+        reference,
+        kind,
+        role: value
+            .get("role")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .filter(|s| !s.trim().is_empty()),
+        tag: value.get("tag").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        label: value.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        text: value.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        value: value.get("value").and_then(|v| v.as_str()).map(str::to_string),
+        placeholder: value.get("placeholder").and_then(|v| v.as_str()).map(str::to_string),
+        action: value.get("action").and_then(|v| v.as_str()).map(str::to_string),
+        disabled: value.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false),
+        rect,
+    })
+}
+
+fn parse_page_rect(value: &serde_json::Value) -> Option<crate::tide_core::Rect> {
+    let x = value.get("x").and_then(|v| v.as_f64())? as f32;
+    let y = value.get("y").and_then(|v| v.as_f64())? as f32;
+    let width = value.get("width").and_then(|v| v.as_f64())? as f32;
+    let height = value.get("height").and_then(|v| v.as_f64())? as f32;
+    if width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+    Some(crate::tide_core::Rect::new(x, y, width, height))
 }
 
 /// Visible Browser Pane automation marker owned by Browser Pane state.

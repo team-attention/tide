@@ -2349,7 +2349,7 @@ fn cli_send_keys(
 
             for key in keys {
                 let key_str = key.as_str().unwrap_or("");
-                let bytes = translate_key(key_str);
+                let bytes = crate::tide_input::translate_key(key_str);
                 tp.backend.write(&bytes);
             }
 
@@ -4062,24 +4062,3 @@ fn classify_codex_completed_turn_payload(
     crate::state::gateway_status::AgentStatus::Idle
 }
 
-fn translate_key(key: &str) -> Vec<u8> {
-    match key {
-        "Enter" => vec![b'\r'],
-        "Tab" => vec![b'\t'],
-        "Space" => vec![b' '],
-        "Escape" | "Esc" => vec![0x1b],
-        "BSpace" | "Backspace" => vec![0x7f],
-        "Delete" | "Del" => vec![0x1b, b'[', b'3', b'~'],
-        "Up" => vec![0x1b, b'[', b'A'],
-        "Down" => vec![0x1b, b'[', b'B'],
-        "Right" => vec![0x1b, b'[', b'C'],
-        "Left" => vec![0x1b, b'[', b'D'],
-        "Home" => vec![0x1b, b'[', b'H'],
-        "End" => vec![0x1b, b'[', b'F'],
-        s if s.starts_with("C-") && s.len() == 3 => {
-            let ch = s.as_bytes()[2];
-            vec![ch.wrapping_sub(b'a').wrapping_add(1)]
-        }
-        s => s.as_bytes().to_vec(),
-    }
-}
