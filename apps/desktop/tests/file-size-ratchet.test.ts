@@ -25,7 +25,6 @@ const MAX_LINES = 800;
 const PINNED_MAX: Record<string, number> = {
   "desktop/adapters/inbound/react-renderer/tide-product-shell.ts": 1445,
   "desktop/application/domains/product-shell/product-shell-state.ts": 3055,
-  "desktop/adapters/inbound/react-renderer/agent-chat-shell.ts": 2445,
   "desktop/application/domains/agent-chat/agent-chat-shell-state.ts": 2353,
   "backend/application/services/thread-runtime-service.ts": 1996,
   "backend/infrastructure/node/live-backend.ts": 1685,
