@@ -27,6 +27,7 @@ pub(crate) use adapter::inward::event_loop_adapter as event_loop;
 pub(crate) use adapter::outward::view as rendering;
 pub(crate) use application as action;
 pub(crate) use application::services as update;
+pub(crate) use domain::agent;
 pub(crate) use domain::pane;
 pub(crate) use domain::state;
 pub(crate) use rendering::header;

@@ -1,5 +1,6 @@
 // Domain layer: pure business logic, state, and algorithms.
 
+pub(crate) mod agent;
 pub(crate) mod modal;
 pub(crate) mod pane;
 pub(crate) mod state;
