@@ -51,7 +51,14 @@ Remaining / deferred (with the reason):
   command directly, then add the Playwright click-path as a required CI job.
 - **Phase 2.4 shared Playwright driver:** refactor; needs the built app to verify.
 - **Phase 5.2 bootstrap-artifact removal:** needs a live launch transcript per
-  provider (evidence discipline) — not headless-safe.
+  provider (evidence discipline) — not headless-safe. **Relocation half DONE
+  2026-06-12:** locateClaudeTranscriptFile/claudeProjectTranscriptsDir +
+  tideClaudeContextPrompt → claude adapter, locateGeminiSessionFile → gemini
+  adapter, providerCliCommands/executable resolution →
+  agent-integrations/shared/provider-cli-commands.ts (the duplicate
+  claudeProjectDirName in infra was deleted in favor of the adapter's);
+  agent-symmetry-boundary now forbids quoted provider home-path literals in
+  infrastructure live/+entrypoints/.
 - **Phase 1 model/effort menus + full antigravity excision:** model lists need the
   runtime-accuracy decision; antigravity is demoted to a UI fallback (still tested
   legacy behavior), not purged.

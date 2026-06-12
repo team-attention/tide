@@ -120,3 +120,29 @@ test("infra detectAvailableAgents iterates the registry, not a hardcoded array",
     "detectAvailableAgents must use PROVIDER_CLI_AGENT_IDS, not a literal id array",
   );
 });
+
+// Audit 5.2 / A5: provider home-path knowledge (.claude/.codex/.gemini file
+// layouts) belongs to the agent integrations. The live spine and entrypoints
+// may dispatch per provider, but must not hardcode provider path literals —
+// those moved to claude-history-connector / gemini-history-connector /
+// agent-integrations/shared/provider-cli-commands.
+test("infrastructure live/entrypoints contain no quoted provider home-path literals", () => {
+  const dirs = [
+    "src/backend/infrastructure/node/live",
+    "src/backend/infrastructure/node/entrypoints",
+  ];
+  const violations: string[] = [];
+  for (const dir of dirs) {
+    for (const entry of fs.readdirSync(path.join(root, dir))) {
+      if (!entry.endsWith(".ts")) continue;
+      const rel = `${dir}/${entry}`;
+      const source = read(rel);
+      for (const [index, line] of source.split("\n").entries()) {
+        if (/["'`]\.(claude|codex|gemini)\b/.test(line)) {
+          violations.push(`${rel}:${index + 1}: ${line.trim()}`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(violations, [], `\n${violations.join("\n")}`);
+});

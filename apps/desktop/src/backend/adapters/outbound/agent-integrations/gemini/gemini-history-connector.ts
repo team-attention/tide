@@ -1,3 +1,5 @@
+import { join } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
 import type {
   DiscoveredProviderSessionRef,
   ProviderHistoryConnector,
@@ -276,4 +278,51 @@ function geminiToolResultText(result: unknown): string | undefined {
     .filter((text): text is string => typeof text === "string" && text.length > 0);
   const joined = parts.join("\n");
   return joined.length > 0 ? joined : undefined;
+}
+
+// Relocated from infrastructure (audit A5/5.2).
+export function locateGeminiSessionFile(
+  homeDir: string,
+  sessionId: string,
+): string | undefined {
+  const tmpRoot = join(homeDir, ".gemini", "tmp");
+  let projectDirs: string[];
+  try {
+    projectDirs = readdirSync(tmpRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return undefined;
+  }
+  const idFragment = sessionId.slice(0, 8);
+  for (const project of projectDirs) {
+    const chatsDir = join(tmpRoot, project, "chats");
+    let names: string[];
+    try {
+      names = readdirSync(chatsDir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!name.startsWith("session-") || !/\.jsonl?$/.test(name)) {
+        continue;
+      }
+      // The filename embeds the first 8 chars of the session id; the header line
+      // carries the full id. Both must match.
+      if (!name.includes(idFragment)) {
+        continue;
+      }
+      const path = join(chatsDir, name);
+      try {
+        const headerLine = readFileSync(path, "utf8").split("\n", 1)[0] ?? "";
+        const header = JSON.parse(headerLine) as Record<string, unknown>;
+        if (header.sessionId === sessionId) {
+          return path;
+        }
+      } catch {
+        // Skip unreadable/partial files; the next poll retries.
+      }
+    }
+  }
+  return undefined;
 }

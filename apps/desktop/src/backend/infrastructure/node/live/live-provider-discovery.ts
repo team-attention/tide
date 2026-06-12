@@ -1,50 +1,25 @@
+import { claudeProjectTranscriptsDir } from "../../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
 import { spawnSync } from "node:child_process";
+
 import { readBoundedHead, readBoundedTail, readTextFile } from "./live-backend-fs.ts";
+
 import { basename, join } from "node:path";
+
 import { adoptedThreadSeedsFromSessions, discoverLocalSessions } from "../../../application/services/provider/provider-session-discovery.ts";
+
 import type { DiscoveryFs } from "../../../application/services/provider/provider-session-discovery.ts";
+
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+
 import { recentCodexRollouts } from "../provider/recent-provider-files.ts";
+
 import type { ThreadStorageRecord } from "../../../application/services/thread/thread-persistence-service.ts";
+
 import type { ThreadSeed } from "../../../application/services/thread/thread-runtime-service.ts";
+
 import type { AgentSessionBlock } from "../../../application/domains/agent-session/agent-session-block.ts";
+
 import { rebuildClaudeConversation, rebuildCodexConversation } from "../provider/provider-conversation-rebuilders.ts";
-// Extracted from live-backend.ts (spec: navigable-source-structure).
-
-// Provider CLI command names: pure registry data, the only place infrastructure
-// may know a provider-specific value.
-const providerCliCommands = {
-  codex: "codex",
-  claude: "claude",
-  gemini: "gemini",
-  opencode: "opencode",
-} as const;
-
-export function executableForAgent(
-  agentId: "codex" | "claude" | "gemini" | "opencode",
-): string {
-  return providerCliCommands[agentId];
-}
-
-export function resolveExecutable(command: string): string | undefined {
-  const result = spawnSync("which", [command], {
-    encoding: "utf8",
-  });
-  if (result.status !== 0) {
-    return undefined;
-  }
-  const resolved = result.stdout.trim();
-  return resolved.length > 0 ? resolved : undefined;
-}
-
-// Reads the leading bytes of a file (codex session_meta and the first user turn
-// live near the top), bounded so large transcripts stay cheap to scan.
-
-// Encodes a cwd into Claude's project directory name (path separators and dots
-// become dashes, e.g. /Users/x/tide -> -Users-x-tide).
-function claudeProjectDirName(cwd: string): string {
-  return cwd.replace(/[/.]/g, "-");
-}
 
 interface RegisteredProjectEntry {
   projectId: string;
@@ -78,7 +53,7 @@ function readRegisteredProjects(appDataRoot: string): RegisteredProjectEntry[] {
 function createDiscoveryFs(homeDir: string): DiscoveryFs {
   return {
     listClaudeTranscripts: (cwd) => {
-      const dir = join(homeDir, ".claude", "projects", claudeProjectDirName(cwd));
+      const dir = claudeProjectTranscriptsDir(homeDir, cwd);
       let entries;
       try {
         entries = readdirSync(dir, { withFileTypes: true });
@@ -168,83 +143,6 @@ export function rebuildAdoptedConversation(seed: ThreadSeed): AgentSessionBlock[
     return rebuildClaudeConversation(text, seed.threadId, ref.value, agentId);
   }
   return [];
-}
-
-// Locates the on-disk gemini session file for a Tide-minted session id:
-// ~/.gemini/tmp/<project>/chats/session-<ts>-<uuid8>.jsonl whose header line
-// carries the full sessionId. Deterministic — keyed by the assigned id, never by
-// recency — so concurrent same-prompt threads can never swap sessions.
-// Locates the on-disk claude transcript for a Tide-minted session id:
-// ~/.claude/projects/<munged-cwd>/<session-id>.jsonl. Deterministic — keyed by
-// the assigned id (the filename IS the id), never by recency. The project dir is
-// scanned because claude munges its OWN canonical cwd, which can differ from
-// Tide's spelling via symlinks (/var -> /private/var) or casing.
-export function locateClaudeTranscriptFile(
-  homeDir: string,
-  sessionId: string,
-): string | undefined {
-  const projectsRoot = join(homeDir, ".claude", "projects");
-  let projectDirs: string[];
-  try {
-    projectDirs = readdirSync(projectsRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch {
-    return undefined;
-  }
-  for (const project of projectDirs) {
-    const candidate = join(projectsRoot, project, `${sessionId}.jsonl`);
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return undefined;
-}
-
-export function locateGeminiSessionFile(
-  homeDir: string,
-  sessionId: string,
-): string | undefined {
-  const tmpRoot = join(homeDir, ".gemini", "tmp");
-  let projectDirs: string[];
-  try {
-    projectDirs = readdirSync(tmpRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch {
-    return undefined;
-  }
-  const idFragment = sessionId.slice(0, 8);
-  for (const project of projectDirs) {
-    const chatsDir = join(tmpRoot, project, "chats");
-    let names: string[];
-    try {
-      names = readdirSync(chatsDir);
-    } catch {
-      continue;
-    }
-    for (const name of names) {
-      if (!name.startsWith("session-") || !/\.jsonl?$/.test(name)) {
-        continue;
-      }
-      // The filename embeds the first 8 chars of the session id; the header line
-      // carries the full id. Both must match.
-      if (!name.includes(idFragment)) {
-        continue;
-      }
-      const path = join(chatsDir, name);
-      try {
-        const headerLine = readFileSync(path, "utf8").split("\n", 1)[0] ?? "";
-        const header = JSON.parse(headerLine) as Record<string, unknown>;
-        if (header.sessionId === sessionId) {
-          return path;
-        }
-      } catch {
-        // Skip unreadable/partial files; the next poll retries.
-      }
-    }
-  }
-  return undefined;
 }
 
 function latestUserMessageForProviderHistory(
