@@ -224,6 +224,12 @@ fn deleting_git_switcher_worktree_uses_the_main_worktree_as_git_root() {
         crate::tide_core::Rect::new(32.0, 20.0, 120.0, 24.0),
     ));
     let baseline_list_calls = list_worktree_calls.load(Ordering::Relaxed);
+    let _ = &mutations; // mutations now run on the worker thread via git_cli, not the port
+
+    // Intercept the dispatched worktree job (the worker runs git off-thread; the
+    // mutation no longer goes through the injected GitPort).
+    let (job_tx, job_rx) = std::sync::mpsc::channel();
+    app.bg.worktree_job_tx = Some(job_tx);
 
     crate::adapter::inward::click_adapter::header::handle_git_switcher_button(
         &mut app,
@@ -242,20 +248,134 @@ fn deleting_git_switcher_worktree_uses_the_main_worktree_as_git_root() {
         crate::SwitcherButton::Delete(2),
     );
 
-    let mutations = mutations.lock().unwrap().clone();
-    assert!(mutations.contains(&GitMutation::RemoveWorktree {
-        cwd: main_worktree.clone(),
-        path: delete_worktree,
-        force: true,
-    }));
-    assert!(mutations.contains(&GitMutation::DeleteBranch {
-        cwd: main_worktree,
-        branch: "feature/delete".to_string(),
-        force: true,
-    }));
+    // UC-2 BR-2: the dispatched Remove job resolves the main worktree as its root.
+    let job = job_rx.try_recv().expect("delete should dispatch a worktree job");
+    match job {
+        crate::state::background::WorktreeJob::Remove {
+            main_cwd,
+            wt_path,
+            delete_branch,
+            force,
+        } => {
+            assert_eq!(main_cwd, main_worktree);
+            assert_eq!(wt_path, delete_worktree);
+            assert_eq!(delete_branch, Some("feature/delete".to_string()));
+            assert!(force);
+        }
+        _ => panic!("expected a Remove job"),
+    }
+
+    // The row is removed optimistically so the click stays instant.
+    assert!(app
+        .modal
+        .git_switcher
+        .as_ref()
+        .map_or(true, |gs| gs.worktrees.iter().all(|w| w.path != delete_worktree)));
     assert_eq!(
         list_worktree_calls.load(Ordering::Relaxed),
         baseline_list_calls,
         "delete should reuse the git switcher snapshot instead of re-querying worktrees"
     );
+}
+
+// --- UC-5: GitSwitcherOpensFromPollerCache (P-5) ---
+
+fn recording_git_app(worktrees: Vec<WorktreeInfo>) -> (App, Arc<AtomicUsize>) {
+    let mut app = test_app();
+    let calls = Arc::new(AtomicUsize::new(0));
+    app.ports.git = Box::new(RecordingGit {
+        worktrees,
+        mutations: Arc::new(Mutex::new(Vec::new())),
+        list_worktree_calls: calls.clone(),
+    });
+    (app, calls)
+}
+
+#[test]
+fn git_switcher_open_reads_worktrees_from_poller_cache_without_spawning_git() {
+    // UC-5 BR-20: a warm poller cache serves the switcher worktree list with no
+    // git on the app thread.
+    use crate::AppCorePort;
+    let cwd = PathBuf::from("/tmp/tide-switcher-cache/wt");
+    let root = PathBuf::from("/tmp/tide-switcher-cache");
+    let cached = vec![WorktreeInfo {
+        path: root.clone(),
+        branch: Some("main".to_string()),
+        commit: "aaa".to_string(),
+        is_main: true,
+        is_current: true,
+    }];
+
+    let (mut app, list_calls) = recording_git_app(vec![]);
+    app.bg.cached_repo_roots.insert(cwd.clone(), Some(root.clone()));
+    app.bg.cached_worktrees.insert(root.clone(), cached.clone());
+
+    let result = app.git_worktrees_for_switcher(&cwd);
+
+    assert_eq!(result, cached, "served from cache");
+    assert_eq!(
+        list_calls.load(Ordering::Relaxed),
+        0,
+        "warm cache must not spawn git"
+    );
+}
+
+#[test]
+fn git_switcher_open_falls_back_to_sync_list_on_cold_cache() {
+    // UC-5 BR-21: a cold cache lists once synchronously (and warms for next time).
+    use crate::AppCorePort;
+    let cwd = PathBuf::from("/tmp/tide-switcher-cold/wt");
+    let listed = vec![WorktreeInfo {
+        path: cwd.clone(),
+        branch: Some("main".to_string()),
+        commit: "bbb".to_string(),
+        is_main: true,
+        is_current: true,
+    }];
+
+    let (app, list_calls) = recording_git_app(listed.clone());
+
+    let result = app.git_worktrees_for_switcher(&cwd);
+
+    assert_eq!(result, listed, "cold miss lists synchronously once");
+    assert_eq!(list_calls.load(Ordering::Relaxed), 1);
+}
+
+// --- UC-6: Worktree mutations run off the app thread (P-5 Part B) ---
+
+#[test]
+fn dispatch_worktree_add_sends_job_without_blocking() {
+    // UC-6 BR-22: a worktree mutation is handed to the background worker (no
+    // synchronous git on the app thread).
+    use crate::state::background::{WorktreeFollowUp, WorktreeJob};
+    let mut app = test_app();
+    let (job_tx, job_rx) = std::sync::mpsc::channel();
+    app.bg.worktree_job_tx = Some(job_tx);
+
+    app.dispatch_worktree_job(WorktreeJob::Add {
+        cwd: PathBuf::from("/tmp/repo"),
+        wt_path: PathBuf::from("/tmp/repo/.worktree/feat"),
+        branch: "feat".to_string(),
+        new_branch: true,
+        root: PathBuf::from("/tmp/repo"),
+        follow_up: WorktreeFollowUp::CdTerminalIfIdle { pane_id: 7 },
+    });
+
+    let job = job_rx.try_recv().expect("add should dispatch a worktree job");
+    match job {
+        WorktreeJob::Add {
+            branch,
+            new_branch,
+            follow_up,
+            ..
+        } => {
+            assert_eq!(branch, "feat");
+            assert!(new_branch);
+            assert!(matches!(
+                follow_up,
+                WorktreeFollowUp::CdTerminalIfIdle { pane_id: 7 }
+            ));
+        }
+        _ => panic!("expected an Add job"),
+    }
 }

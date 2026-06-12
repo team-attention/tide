@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 use crate::tide_core::{Color, PaneId, Rect, Renderer, TextStyle, Vec2};
 use crate::tide_renderer::WgpuRenderer;
-use crate::tide_terminal::git;
 
 /// A line in a unified diff.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +39,14 @@ pub struct DiffPane {
     pub side_by_side: bool,
     /// Text selection (virtual row, col) coordinates.
     pub selection: Option<crate::pane::Selection>,
+    /// False until the first `apply_poll_data` arrives from the git poller.
+    /// While false the pane renders a loading state instead of a (misleading)
+    /// clean tree — diff content comes only from the background poller now.
+    pub loaded: bool,
+    /// Longest content line across expanded diffs, cached so horizontal-scroll
+    /// clamping is O(1) instead of O(all diff text) per tick. Recomputed
+    /// whenever content or expansion changes.
+    cached_max_line_len: usize,
 }
 
 /// A paired row for side-by-side diff display.
@@ -95,25 +102,10 @@ fn pair_diff_lines(lines: &[DiffLine]) -> Vec<SbsRow<'_>> {
 }
 
 impl DiffPane {
-    pub fn new(_id: PaneId, cwd: PathBuf) -> Self {
-        let mut dp = Self {
-            cwd,
-            files: Vec::new(),
-            expanded: HashSet::new(),
-            diff_cache: HashMap::new(),
-            scroll: 0.0,
-            scroll_target: 0.0,
-            h_scroll: HashMap::new(),
-            selected: None,
-            generation: 1,
-            side_by_side: false,
-            selection: None,
-        };
-        dp.refresh();
-        dp
-    }
-
-    /// Create a DiffPane without calling git (for tests and deferred population).
+    /// Create an empty DiffPane. Content is populated entirely by the
+    /// background git poller via `apply_poll_data` — opening a DiffPane never
+    /// spawns git on the app thread. Until the first poll result arrives the
+    /// pane renders a loading state (`loaded == false`).
     pub fn new_empty(_id: PaneId, cwd: PathBuf) -> Self {
         Self {
             cwd,
@@ -125,8 +117,10 @@ impl DiffPane {
             h_scroll: HashMap::new(),
             selected: None,
             generation: 1,
-            side_by_side: false,
+            side_by_side: true,
             selection: None,
+            loaded: false,
+            cached_max_line_len: 0,
         }
     }
 
@@ -147,6 +141,11 @@ impl DiffPane {
             .map(|(i, f)| (f.path.as_str(), (i, self.expanded.contains(&i))))
             .collect();
 
+        // First poll result settles the loading state (BR-6/BR-7), even when
+        // the content is unchanged (e.g. a clean tree: empty → empty).
+        let was_loaded = self.loaded;
+        self.loaded = true;
+
         // Check if anything actually changed
         let same_files = files.len() == self.files.len()
             && files.iter().enumerate().all(|(i, f)| {
@@ -155,7 +154,12 @@ impl DiffPane {
                 })
             });
         if same_files {
-            return; // Nothing changed — skip update entirely
+            // Content unchanged. Repaint once if we just left the loading state
+            // so the renderer drops the "Loading…" row (cache is keyed on generation).
+            if !was_loaded {
+                self.generation = self.generation.wrapping_add(1);
+            }
+            return;
         }
 
         // Rebuild expanded set, preserving state for files that existed before
@@ -174,88 +178,33 @@ impl DiffPane {
         self.files = files;
         self.diff_cache = diff_cache;
         self.expanded = new_expanded;
+        self.recompute_max_line_len();
         self.generation = self.generation.wrapping_add(1);
     }
 
-    /// Reload file list from git status.
-    pub fn refresh(&mut self) {
-        let entries = git::status_files(&self.cwd);
-
-        // Get numstat for additions/deletions
-        let numstat = self.load_numstat();
-
-        self.files = entries
-            .into_iter()
-            .map(|e| {
-                let (add, del) = numstat.get(&e.path).copied().unwrap_or((0, 0));
-                DiffFileEntry {
-                    status: e.status.clone(),
-                    path: e.path,
-                    additions: add,
-                    deletions: del,
-                }
-            })
-            .collect();
-
-        // Auto-expand all files and preload their diffs
-        self.expanded.clear();
-        self.diff_cache.clear();
-        for i in 0..self.files.len() {
-            let lines = self.load_diff_lines(&self.files[i].path.clone());
-            self.diff_cache.insert(i, lines);
-            self.expanded.insert(i);
-        }
-        self.generation = self.generation.wrapping_add(1);
-    }
-
-    fn load_numstat(&self) -> HashMap<String, (usize, usize)> {
-        let mut map = HashMap::new();
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["diff", "--numstat"])
-            .current_dir(&self.cwd)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output()
-        {
-            if output.status.success() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                for line in text.lines() {
-                    let parts: Vec<&str> = line.split('\t').collect();
-                    if parts.len() >= 3 {
-                        let add = parts[0].parse().unwrap_or(0);
-                        let del = parts[1].parse().unwrap_or(0);
-                        map.insert(parts[2].to_string(), (add, del));
+    /// Recompute the cached longest content line across expanded diffs.
+    /// Called whenever content or expansion changes; `max_line_len` reads the
+    /// cached value so per-tick horizontal-scroll clamping stays O(1).
+    fn recompute_max_line_len(&mut self) {
+        let mut max = 0;
+        for (i, _) in self.files.iter().enumerate() {
+            if self.expanded.contains(&i) {
+                if let Some(lines) = self.diff_cache.get(&i) {
+                    for line in lines {
+                        let len = match line {
+                            DiffLine::Added(t)
+                            | DiffLine::Removed(t)
+                            | DiffLine::Header(t)
+                            | DiffLine::Context(t) => t.chars().count(),
+                        };
+                        if len > max {
+                            max = len;
+                        }
                     }
                 }
             }
         }
-        map
-    }
-
-    fn load_diff_lines(&self, path: &str) -> Vec<DiffLine> {
-        match git::file_diff(&self.cwd, path) {
-            Some(diff_text) => diff_text
-                .lines()
-                .filter_map(|l| {
-                    if l.starts_with("@@") {
-                        Some(DiffLine::Header(l.to_string()))
-                    } else if l.starts_with('+') && !l.starts_with("+++") {
-                        Some(DiffLine::Added(l[1..].to_string()))
-                    } else if l.starts_with('-') && !l.starts_with("---") {
-                        Some(DiffLine::Removed(l[1..].to_string()))
-                    } else if !l.starts_with("diff ")
-                        && !l.starts_with("index ")
-                        && !l.starts_with("---")
-                        && !l.starts_with("+++")
-                    {
-                        Some(DiffLine::Context(l.to_string()))
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
-            None => Vec::new(),
-        }
+        self.cached_max_line_len = max;
     }
 
     /// Total lines for the diff pane (file entries + expanded diff lines).
@@ -280,27 +229,10 @@ impl DiffPane {
         count
     }
 
-    /// Longest content line length across all expanded diffs.
+    /// Longest content line length across all expanded diffs (cached; see
+    /// `recompute_max_line_len`).
     pub fn max_line_len(&self) -> usize {
-        let mut max = 0;
-        for (i, _) in self.files.iter().enumerate() {
-            if self.expanded.contains(&i) {
-                if let Some(lines) = self.diff_cache.get(&i) {
-                    for line in lines {
-                        let len = match line {
-                            DiffLine::Added(t)
-                            | DiffLine::Removed(t)
-                            | DiffLine::Header(t)
-                            | DiffLine::Context(t) => t.chars().count(),
-                        };
-                        if len > max {
-                            max = len;
-                        }
-                    }
-                }
-            }
-        }
-        max
+        self.cached_max_line_len
     }
 
     /// Given a visual row (relative to scroll), find which file index it
@@ -318,17 +250,16 @@ impl DiffPane {
                 row_idx += 1;
             }
             if row_idx == target_row {
-                // Clicked on file header → toggle
+                // Clicked on file header → toggle. Diff lines are pre-loaded by
+                // the poller; if a cache entry is somehow missing the body just
+                // renders empty (no synchronous git on the app thread).
                 if self.expanded.contains(&fi) {
                     self.expanded.remove(&fi);
                 } else {
-                    if !self.diff_cache.contains_key(&fi) {
-                        let lines = self.load_diff_lines(&self.files[fi].path.clone());
-                        self.diff_cache.insert(fi, lines);
-                    }
                     self.expanded.insert(fi);
                 }
                 self.selected = Some(fi);
+                self.recompute_max_line_len();
                 self.generation = self.generation.wrapping_add(1);
                 return;
             }
@@ -516,12 +447,9 @@ impl DiffPane {
             if self.expanded.contains(&fi) {
                 self.expanded.remove(&fi);
             } else {
-                if !self.diff_cache.contains_key(&fi) {
-                    let lines = self.load_diff_lines(&self.files[fi].path.clone());
-                    self.diff_cache.insert(fi, lines);
-                }
                 self.expanded.insert(fi);
             }
+            self.recompute_max_line_len();
             self.generation = self.generation.wrapping_add(1);
         }
     }
@@ -549,6 +477,31 @@ impl DiffPane {
         let cell_size = renderer.cell_size();
         let visible_rows = (rect.height / cell_size.height).floor() as usize;
         let scroll = self.scroll as usize;
+
+        // Until the first poll result arrives, render a loading state rather
+        // than a (misleading) empty/clean tree. Diff content comes only from
+        // the background git poller now (no synchronous git on the app thread).
+        if !self.loaded {
+            let dim_style = TextStyle {
+                foreground: dimmed_color,
+                background: None,
+                bold: false,
+                dim: true,
+                italic: false,
+                underline: false,
+            };
+            for (col, ch) in "Loading changes…".chars().enumerate() {
+                renderer.draw_grid_cell(
+                    ch,
+                    0,
+                    col,
+                    dim_style,
+                    cell_size,
+                    Vec2::new(rect.x, rect.y),
+                );
+            }
+            return;
+        }
 
         let mut row_idx = 0usize; // global virtual row
         let mut vi = 0usize; // visual row being drawn

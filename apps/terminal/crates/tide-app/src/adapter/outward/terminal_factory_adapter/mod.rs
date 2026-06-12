@@ -9,7 +9,12 @@ type BoxErr = Box<dyn std::error::Error>;
 
 // ── Real implementation (production) ──
 
-pub(crate) struct RealTerminalFactory;
+/// Owns the explicit terminal spawn config (gateway socket + agent integration),
+/// installed once at startup via `set_spawn_config`.
+#[derive(Default)]
+pub(crate) struct RealTerminalFactory {
+    config: crate::tide_terminal::TerminalSpawnConfig,
+}
 
 impl TerminalFactoryPort for RealTerminalFactory {
     fn create_terminal(
@@ -30,6 +35,7 @@ impl TerminalFactoryPort for RealTerminalFactory {
             dark_mode,
             tide_window_id,
             workspace_name,
+            Some(&self.config),
         )
     }
 
@@ -50,7 +56,16 @@ impl TerminalFactoryPort for RealTerminalFactory {
             pane_id.map(|id| id as u64),
             Some(tide_window_id),
             workspace_name,
+            Some(&self.config),
         )
+    }
+
+    fn set_spawn_config(&mut self, config: crate::tide_terminal::TerminalSpawnConfig) {
+        self.config = config;
+    }
+
+    fn set_auto_integration(&mut self, enabled: bool) {
+        self.config.auto_integration = enabled;
     }
 }
 
@@ -83,4 +98,7 @@ impl TerminalFactoryPort for NoopTerminalFactory {
     ) -> Result<crate::tide_terminal::Terminal, BoxErr> {
         Err("NoopTerminalFactory: no terminal in tests".into())
     }
+
+    fn set_spawn_config(&mut self, _config: crate::tide_terminal::TerminalSpawnConfig) {}
+    fn set_auto_integration(&mut self, _enabled: bool) {}
 }

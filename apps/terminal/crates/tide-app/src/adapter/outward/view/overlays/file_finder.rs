@@ -533,6 +533,29 @@ pub(super) fn render_file_finder(
         }
     }
 
+    // Empty-state row: a transient loading label while a background scan runs
+    // (FileFinder `/` search or `#` symbols), otherwise "No matches".
+    if finder.filtered.is_empty() {
+        let label = if finder.searching {
+            "Searching…"
+        } else if finder.workspace_symbols_loading {
+            "Loading symbols…"
+        } else if !finder.input.text.is_empty() {
+            "No matches"
+        } else {
+            ""
+        };
+        if !label.is_empty() {
+            let ty = list_top + (line_height - cell_height) / 2.0;
+            renderer.draw_top_text(
+                label,
+                Vec2::new(text_x, ty),
+                text_style(dir_dim),
+                list_clip,
+            );
+        }
+    }
+
     if finder.filtered.len() > max_visible {
         let track_h = max_visible as f32 * line_height;
         let track_x = popup_x + popup_w - 5.0;

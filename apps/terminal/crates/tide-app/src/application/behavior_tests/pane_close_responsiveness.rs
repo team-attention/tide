@@ -129,6 +129,7 @@ fn consume_git_poll_results_updates_terminal_current_worktree_context() {
             }),
             worktree_count: 2,
             current_worktree: Some(current_worktree.clone()),
+            worktrees: vec![current_worktree.clone()],
             repo_root: Some(PathBuf::from("/tmp/tide-main-repo")),
             status_entries: vec![],
             diff_files: None,

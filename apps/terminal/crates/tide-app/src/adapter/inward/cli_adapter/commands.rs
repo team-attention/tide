@@ -2,11 +2,8 @@
 // All command functions are free functions taking port trait bounds.
 // App.handle_cli_command() is the thin dispatch bridge.
 
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::pane::browser::{
@@ -14,6 +11,10 @@ use crate::pane::browser::{
     BrowserPane, BrowserSelectionSnapshot, BrowserSnapshot, BROWSER_PAGE_MAP_INTERACTABLE_LIMIT,
     BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES, BROWSER_PAGE_MAP_REGION_LIMIT,
     BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES, BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES,
+};
+use crate::agent::notification::{
+    classify_codex_completed_turn_payload, codex_stop_notification_snippet,
+    resolve_codex_stop_payload, wrapped_agent_notification_snippet_from_payload, CodexStopResolution,
 };
 use crate::pane::PaneKind;
 use crate::state::gateway_status::{AgentInfo, AgentStatus};
@@ -68,7 +69,21 @@ impl crate::App {
     pub(crate) fn handle_cli_command(
         &mut self,
         method: &str,
+        params: Value,
+    ) -> Result<Value, CliError> {
+        self.handle_cli_command_with_subscribe(method, params, None)
+    }
+
+    /// Dispatch a CLI command, supplying the `subscribe` notification channel.
+    /// Establishes the per-dispatch [`CliDispatch`] context (caller pane +
+    /// subscribe channel), set and cleared here and nowhere else, so handlers
+    /// can read it through `cli_caller_pane()` / `take_subscribe_tx()` only
+    /// while a command is in flight.
+    pub(crate) fn handle_cli_command_with_subscribe(
+        &mut self,
+        method: &str,
         mut params: Value,
+        subscribe_tx: Option<std::sync::mpsc::Sender<String>>,
     ) -> Result<Value, CliError> {
         // Extract and strip _caller_pane so handlers never see it (BR-5)
         let caller_pane = params
@@ -76,7 +91,10 @@ impl crate::App {
             .and_then(|m| m.remove("_caller_pane"))
             .and_then(|v| v.as_u64());
 
-        self.pending_cli_caller_pane = caller_pane;
+        self.cli_dispatch = Some(crate::app::CliDispatch {
+            caller_pane,
+            subscribe_tx,
+        });
 
         // Find target workspace for the caller pane (UC-2, UC-4)
         let need_swap = caller_pane
@@ -117,7 +135,10 @@ impl crate::App {
             }
         }
 
-        self.pending_cli_caller_pane = None;
+        // Clear the dispatch context — the single place it is torn down. The
+        // flow above has no early return between set and clear, so the context
+        // never outlives a dispatch.
+        self.cli_dispatch = None;
 
         result
     }
@@ -169,9 +190,50 @@ impl crate::App {
             "remove-context-artifact" => cli_remove_context_artifact(self, params),
             "send-context-artifact" => cli_send_context_artifact(self, params),
             "notify" => cli_notify(self, params),
+            // Test driver (E2E harness) — inert unless TIDE_TERMINAL_TEST_DRIVER=1.
+            "test-poll-state" if test_driver_enabled() => Ok(cli_test_poll_state(self)),
+            "test-inject-event" if test_driver_enabled() => cli_test_inject_event(self, params),
             _ => Err(CliError::MethodNotFound(method.to_string())),
         }
     }
+}
+
+/// Whether the E2E test-driver gateway methods are enabled. Off by default so
+/// they are inert in normal use; the harness sets the env var. (A future
+/// `#[cfg(feature = "test-driver")]` gate would also keep them out of the
+/// compiled release binary — see docs/testing/e2e-tests.md.)
+fn test_driver_enabled() -> bool {
+    std::env::var("TIDE_TERMINAL_TEST_DRIVER").as_deref() == Ok("1")
+}
+
+/// Inject a synthetic `PlatformEvent` (deserialized from `params.event`) into the
+/// app's queue. The app-thread loop drains it through the **same**
+/// `handle_platform_event` path as real OS input — so the full Modal → FocusArea
+/// → Router → TextInput stack gets exercised over the gateway, no display needed.
+pub(crate) fn cli_test_inject_event(
+    ctx: &mut crate::App,
+    params: Value,
+) -> Result<Value, CliError> {
+    let event_value = params
+        .get("event")
+        .ok_or_else(|| CliError::InvalidParams("test-inject-event requires `event`".into()))?;
+    let event: crate::tide_platform::PlatformEvent = serde_json::from_value(event_value.clone())
+        .map_err(|e| CliError::InvalidParams(format!("invalid PlatformEvent: {e}")))?;
+    ctx.injected_events.push(event);
+    Ok(json!({"ok": true}))
+}
+
+/// Report app-thread quiescence so the E2E harness can wait for idle instead of
+/// racing async PTY/render side effects. Runs on the app thread between event
+/// batches, so the event queue is already drained when this is read.
+pub(crate) fn cli_test_poll_state(ctx: &crate::App) -> Value {
+    let needs_redraw = ctx.cache.needs_redraw;
+    let animating = ctx.layout_animation_active();
+    json!({
+        "needs_redraw": needs_redraw,
+        "animating": animating,
+        "idle": !needs_redraw && !animating,
+    })
 }
 
 // ── Phase 1: Observe ─────────────────────────────────────────────
@@ -2306,7 +2368,7 @@ fn cli_send_keys(
 
             for key in keys {
                 let key_str = key.as_str().unwrap_or("");
-                let bytes = translate_key(key_str);
+                let bytes = crate::tide_input::translate_key(key_str);
                 tp.backend.write(&bytes);
             }
 
@@ -3079,11 +3141,12 @@ fn cli_subscribe(ctx: &mut crate::App, params: Value) -> Result<Value, CliError>
         })
         .unwrap_or_default();
 
+    let caller_pane = ctx.cli_dispatch.as_ref().and_then(|d| d.caller_pane);
     let tx = ctx
         .take_subscribe_tx()
         .ok_or_else(|| CliError::InvalidParams("subscribe requires notification channel".into()))?;
 
-    ctx.gateway_subscribe(ctx.pending_cli_caller_pane, tx, event_filter);
+    ctx.gateway_subscribe(caller_pane, tx, event_filter);
     Ok(json!({"ok": true}))
 }
 
@@ -3092,7 +3155,9 @@ fn active_artifact_json(artifact: &crate::ContextArtifact) -> Value {
 }
 
 fn caller_terminal_id(ctx: &crate::App) -> Result<crate::tide_core::PaneId, CliError> {
-    ctx.pending_cli_caller_pane
+    ctx.cli_dispatch
+        .as_ref()
+        .and_then(|d| d.caller_pane)
         .ok_or_else(|| CliError::InvalidParams("caller pane required".into()))
 }
 
@@ -3719,321 +3784,4 @@ fn cli_notify(
     Ok(json!({"ok": true}))
 }
 
-fn wrapped_agent_notification_snippet_from_payload(
-    event: &str,
-    agent_hint: &str,
-    payload: Option<&Value>,
-) -> Option<String> {
-    match agent_hint {
-        "codex" if event == "codex-turn-complete" => payload
-            .and_then(codex_completed_turn_notification_snippet)
-            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
-        "codex" if event == "agent-needs-input" => payload
-            .and_then(codex_permission_request_notification_snippet)
-            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
-        "claude" => payload
-            .and_then(claude_notification_snippet)
-            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
-        "gemini" => payload
-            .and_then(|value| gemini_notification_snippet(event, value))
-            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
-        _ => None,
-    }
-}
 
-fn codex_completed_turn_notification_snippet(payload: &Value) -> Option<String> {
-    serde_json::from_value::<CodexCompletedTurnPayload>(payload.clone())
-        .ok()
-        .and_then(|payload| {
-            if payload.payload_type == "agent-turn-complete" {
-                payload.last_assistant_message
-            } else {
-                None
-            }
-        })
-}
-
-fn codex_stop_notification_snippet(resolution: &CodexStopResolution) -> Option<String> {
-    match resolution {
-        CodexStopResolution::IgnoreSubagent => None,
-        CodexStopResolution::Resolved { assistant_message } => assistant_message
-            .as_deref()
-            .and_then(crate::state::gateway_status::normalize_notification_snippet),
-    }
-}
-
-fn codex_permission_request_notification_snippet(payload: &Value) -> Option<String> {
-    serde_json::from_value::<CodexPermissionRequestHookPayload>(payload.clone())
-        .ok()
-        .and_then(|payload| {
-            if payload
-                .hook_event_name
-                .as_deref()
-                .is_some_and(|event_name| {
-                    event_name != "PermissionRequest" && event_name != "permissionRequest"
-                })
-            {
-                return None;
-            }
-            payload.tool_input.and_then(|tool_input| {
-                tool_input.description.or_else(|| {
-                    tool_input
-                        .command
-                        .map(|command| format!("Approve command: {command}"))
-                })
-            })
-        })
-}
-
-fn claude_notification_snippet(payload: &Value) -> Option<String> {
-    serde_json::from_value::<ClaudeHookPayload>(payload.clone())
-        .ok()
-        .and_then(|payload| payload.message)
-}
-
-fn gemini_notification_snippet(event: &str, payload: &Value) -> Option<String> {
-    serde_json::from_value::<GeminiHookPayload>(payload.clone())
-        .ok()
-        .and_then(|payload| match event {
-            "agent-idle" => payload.prompt_response.or(payload.message),
-            "agent-needs-input" => payload.message.or(payload.prompt_response),
-            _ => None,
-        })
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-struct CodexCompletedTurnPayload {
-    #[serde(rename = "type")]
-    payload_type: String,
-    #[serde(default)]
-    input_messages: Vec<String>,
-    last_assistant_message: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct CodexStopHookPayload {
-    #[serde(alias = "hook-event-name")]
-    hook_event_name: Option<String>,
-    #[serde(alias = "transcript-path")]
-    transcript_path: Option<PathBuf>,
-    #[serde(alias = "last-assistant-message")]
-    last_assistant_message: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CodexPermissionRequestHookPayload {
-    #[serde(alias = "hook-event-name")]
-    hook_event_name: Option<String>,
-    tool_input: Option<CodexPermissionRequestToolInput>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CodexPermissionRequestToolInput {
-    command: Option<String>,
-    description: Option<String>,
-}
-
-#[derive(Debug)]
-enum CodexStopResolution {
-    IgnoreSubagent,
-    Resolved { assistant_message: Option<String> },
-}
-
-#[derive(Debug)]
-enum CodexTranscriptResolution {
-    IgnoreSubagent,
-    MainThreadMessage(Option<String>),
-}
-
-#[derive(Debug, Deserialize)]
-struct ClaudeHookPayload {
-    message: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GeminiHookPayload {
-    message: Option<String>,
-    prompt_response: Option<String>,
-}
-
-fn resolve_codex_stop_payload(payload: Option<&Value>) -> CodexStopResolution {
-    let Some(payload) = payload else {
-        return CodexStopResolution::Resolved {
-            assistant_message: None,
-        };
-    };
-    let Ok(payload) = serde_json::from_value::<CodexStopHookPayload>(payload.clone()) else {
-        return CodexStopResolution::Resolved {
-            assistant_message: None,
-        };
-    };
-    if payload
-        .hook_event_name
-        .as_deref()
-        .is_some_and(|event_name| event_name != "Stop")
-    {
-        return CodexStopResolution::Resolved {
-            assistant_message: None,
-        };
-    }
-
-    if let Some(transcript_path) = payload.transcript_path.as_deref() {
-        match read_codex_transcript_resolution(transcript_path) {
-            Some(CodexTranscriptResolution::IgnoreSubagent) => {
-                return CodexStopResolution::IgnoreSubagent;
-            }
-            Some(CodexTranscriptResolution::MainThreadMessage(assistant_message)) => {
-                return CodexStopResolution::Resolved {
-                    assistant_message: assistant_message.or(payload.last_assistant_message),
-                };
-            }
-            None => {}
-        }
-    }
-
-    CodexStopResolution::Resolved {
-        assistant_message: payload.last_assistant_message,
-    }
-}
-
-fn read_codex_transcript_resolution(
-    transcript_path: &std::path::Path,
-) -> Option<CodexTranscriptResolution> {
-    let file = File::open(transcript_path).ok()?;
-    let reader = BufReader::new(file);
-    let mut last_assistant_message = None;
-    let mut response_item_final_assistant_message = None;
-    let mut event_msg_final_assistant_message = None;
-    let mut task_complete_assistant_message = None;
-
-    for line in reader.lines() {
-        let line = line.ok()?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let value: Value = serde_json::from_str(trimmed).ok()?;
-
-        if value.get("type").and_then(Value::as_str) == Some("session_meta")
-            && value.pointer("/payload/source/subagent").is_some()
-        {
-            return Some(CodexTranscriptResolution::IgnoreSubagent);
-        }
-
-        let Some(payload) = value.get("payload") else {
-            continue;
-        };
-
-        match value.get("type").and_then(Value::as_str) {
-            Some("response_item") => {
-                if payload.get("type").and_then(Value::as_str) != Some("message")
-                    || payload.get("role").and_then(Value::as_str) != Some("assistant")
-                {
-                    continue;
-                }
-
-                let message = codex_transcript_message_text(payload);
-                if message.is_some() {
-                    last_assistant_message = message.clone();
-                }
-                if payload.get("phase").and_then(Value::as_str) == Some("final_answer") {
-                    response_item_final_assistant_message = message;
-                }
-            }
-            Some("event_msg") => match payload.get("type").and_then(Value::as_str) {
-                Some("agent_message") => {
-                    let message = payload
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .filter(|text| !text.trim().is_empty())
-                        .map(str::to_string);
-                    if message.is_some() {
-                        last_assistant_message = message.clone();
-                    }
-                    if payload.get("phase").and_then(Value::as_str) == Some("final_answer") {
-                        event_msg_final_assistant_message = message;
-                    }
-                }
-                Some("task_complete") => {
-                    let message = payload
-                        .get("last_agent_message")
-                        .and_then(Value::as_str)
-                        .filter(|text| !text.trim().is_empty())
-                        .map(str::to_string);
-                    if message.is_some() {
-                        last_assistant_message = message.clone();
-                        task_complete_assistant_message = message;
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-
-    Some(CodexTranscriptResolution::MainThreadMessage(
-        response_item_final_assistant_message
-            .or(event_msg_final_assistant_message)
-            .or(task_complete_assistant_message)
-            .or(last_assistant_message),
-    ))
-}
-
-fn codex_transcript_message_text(payload: &Value) -> Option<String> {
-    let content = payload.get("content")?.as_array()?;
-    let text = content
-        .iter()
-        .filter_map(|item| {
-            if item.get("type").and_then(Value::as_str) == Some("output_text") {
-                item.get("text").and_then(Value::as_str)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
-    if text.is_empty() {
-        None
-    } else {
-        Some(text)
-    }
-}
-
-fn classify_codex_completed_turn_payload(
-    payload: Option<&Value>,
-) -> crate::state::gateway_status::AgentStatus {
-    let Some(payload) = payload else {
-        return crate::state::gateway_status::AgentStatus::Idle;
-    };
-    let Ok(payload) = serde_json::from_value::<CodexCompletedTurnPayload>(payload.clone()) else {
-        return crate::state::gateway_status::AgentStatus::Idle;
-    };
-    if payload.payload_type != "agent-turn-complete" {
-        return crate::state::gateway_status::AgentStatus::Idle;
-    }
-
-    crate::state::gateway_status::AgentStatus::Idle
-}
-
-fn translate_key(key: &str) -> Vec<u8> {
-    match key {
-        "Enter" => vec![b'\r'],
-        "Tab" => vec![b'\t'],
-        "Space" => vec![b' '],
-        "Escape" | "Esc" => vec![0x1b],
-        "BSpace" | "Backspace" => vec![0x7f],
-        "Delete" | "Del" => vec![0x1b, b'[', b'3', b'~'],
-        "Up" => vec![0x1b, b'[', b'A'],
-        "Down" => vec![0x1b, b'[', b'B'],
-        "Right" => vec![0x1b, b'[', b'C'],
-        "Left" => vec![0x1b, b'[', b'D'],
-        "Home" => vec![0x1b, b'[', b'H'],
-        "End" => vec![0x1b, b'[', b'F'],
-        s if s.starts_with("C-") && s.len() == 3 => {
-            let ch = s.as_bytes()[2];
-            vec![ch.wrapping_sub(b'a').wrapping_add(1)]
-        }
-        s => s.as_bytes().to_vec(),
-    }
-}

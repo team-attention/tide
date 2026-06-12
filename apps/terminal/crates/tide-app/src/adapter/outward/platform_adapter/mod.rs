@@ -14,7 +14,9 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 // ──────────────────────────────────────────────
 
 /// Platform-agnostic event delivered by the native backend.
-#[derive(Debug, Clone)]
+/// `Deserialize` enables the E2E test driver to inject synthetic events
+/// (`test-inject-event`) through the real event path.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum PlatformEvent {
     /// A key was pressed. `chars` contains the text produced (if any).
     KeyDown {
@@ -100,7 +102,7 @@ pub enum PlatformEvent {
 }
 
 /// Mouse button identifiers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MouseButton {
     Left,
     Right,

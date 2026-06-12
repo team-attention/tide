@@ -62,6 +62,34 @@ Two gaps exist in the current flow:
 - **Business Rules**:
   - BR-2: GitSwitcher resolves the main worktree path before removing a worktree and deleting its branch
 
+### UC-5: OpenGitSwitcherFromPollerCache (P-5)
+
+- **Actor**: User
+- **Trigger**: Click the git badge to open the GitSwitcher
+- **Precondition**: none
+- **Flow**:
+  1. The switcher reads the repo's worktree list from the background git poller cache (keyed by repo root).
+  2. On a cold miss it lists worktrees synchronously once and asks the poller to warm the cache for next time.
+- **Postcondition**: Opening the switcher does not spawn git on the app thread when the poller cache is warm.
+- **Business Rules**:
+  - BR-20: A warm poller cache serves the switcher worktree list with no git on the app thread.
+  - BR-21: A cold cache lists once synchronously and warms the cache.
+
+### UC-6: WorktreeMutationsRunOffTheAppThread (P-5 Part B)
+
+- **Actor**: User
+- **Trigger**: Create a worktree (GitSwitcher create rows), delete a worktree (UC-2), or confirm branch cleanup on pane close
+- **Precondition**: none
+- **Flow**:
+  1. The handler computes the paths (fast git metadata) and dispatches a `WorktreeJob` (`Add`/`Remove`) to the background worktree worker — no `git worktree add/remove` or `git branch -d` on the app thread.
+  2. For delete, the GitSwitcher row is removed **optimistically** so the click stays instant and can't be re-targeted.
+  3. On completion the app thread applies the follow-up: for `Add`, copy configured files into the worktree and `cd` the terminal (if idle) or split a new pane; failures are logged.
+- **Postcondition**: worktree create/remove/branch-delete never freeze the app thread; the multi-second git work runs in the background.
+- **Business Rules**:
+  - BR-22: A worktree mutation is handed to the background worker, not run synchronously on the app thread.
+  - BR-23: GitSwitcher delete resolves the main worktree path (from the in-memory snapshot) as the mutation root before dispatching.
+  - BR-24: Delete removes the row optimistically (instant UI; prevents double-submit on the same row).
+
 ## Invariants
 
 1. `GitSwitcher` button hit-testing keeps priority over row activation.
@@ -74,6 +102,10 @@ Two gaps exist in the current flow:
 |----|----|------|
 | UC-1: ActivateWorktreeFromGitSwitcherRow | BR-1 | `clicking_git_switcher_row_runs_the_default_switch_action()` |
 | UC-2: DeleteWorktreeFromGitSwitcher | BR-2 | `deleting_git_switcher_worktree_uses_the_main_worktree_as_git_root()` |
+| UC-5: OpenGitSwitcherFromPollerCache | BR-20 | `git_switcher_open_reads_worktrees_from_poller_cache_without_spawning_git()` |
+| UC-5: OpenGitSwitcherFromPollerCache | BR-21 | `git_switcher_open_falls_back_to_sync_list_on_cold_cache()` |
+| UC-6: WorktreeMutationsRunOffTheAppThread | BR-22 | `dispatch_worktree_add_sends_job_without_blocking()` |
+| UC-6: WorktreeMutationsRunOffTheAppThread | BR-23/BR-24 | `deleting_git_switcher_worktree_uses_the_main_worktree_as_git_root()` |
 
 ## Location
 

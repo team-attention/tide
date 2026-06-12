@@ -599,7 +599,10 @@ fn open_browser_pane_routes_to_caller_terminal_dock() {
     // Simulate: agent in t2 calls open-browser, but stage_focused = t1
     app.focus.stage_focused = Some(t1);
     app.focus.focused = Some(t1);
-    app.pending_cli_caller_pane = Some(t2);
+    app.cli_dispatch = Some(crate::app::CliDispatch {
+        caller_pane: Some(t2),
+        subscribe_tx: None,
+    });
 
     app.open_browser_pane(None);
 

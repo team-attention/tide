@@ -53,6 +53,14 @@ fn terminal_context_surface_resize_capacity(
         .max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH)
 }
 
+/// The context for an in-flight CLI/MCP command: which pane issued it (for
+/// cross-workspace routing) and, for `subscribe`, the notification channel.
+/// Present only while a command is dispatching; see `App::cli_dispatch`.
+pub(crate) struct CliDispatch {
+    pub caller_pane: Option<PaneId>,
+    pub subscribe_tx: Option<std::sync::mpsc::Sender<String>>,
+}
+
 /// Aggregates all outward port implementations. Injected into App.
 pub(crate) struct Ports {
     pub clock: Box<dyn ClockPort>,
@@ -68,6 +76,14 @@ pub(crate) struct Ports {
     pub platform: Box<dyn PlatformPort>,
 }
 
+// Safety: the outward ports are a dependency-injection seam of trait objects,
+// which are not auto-`Send`. `Ports` is owned by `App`, which is moved to its
+// window's app thread and used only there; the production adapters are `Send`,
+// and test doubles run synchronously on the test thread. Asserting `Send` here
+// (instead of a blanket `unsafe impl Send for App`) localizes the claim to this
+// DI boundary and lets every other `App` field be checked structurally.
+unsafe impl Send for Ports {}
+
 impl Ports {
     pub fn noop() -> Self {
         Self {
@@ -79,7 +95,7 @@ impl Ports {
             process: Box::new(NoopProcess),
             persistence: Box::new(NoopPersistence),
             git: Box::new(NoopGit),
-            terminal_factory: Box::new(RealTerminalFactory),
+            terminal_factory: Box::new(RealTerminalFactory::default()),
             file_watcher: Box::new(NoopFileWatcher),
             lsp: Box::new(NoopLsp),
             gpu: Box::new(NoopGpu),
@@ -94,7 +110,7 @@ impl Ports {
             process: Box::new(SystemProcess),
             persistence: Box::new(RealPersistence),
             git: Box::new(RealGit),
-            terminal_factory: Box::new(RealTerminalFactory),
+            terminal_factory: Box::new(RealTerminalFactory::default()),
             file_watcher: Box::new(RealFileWatcher::new()),
             lsp: Box::new(RealLsp::new()),
             gpu: Box::new(RealGpu::new()),
@@ -177,6 +193,11 @@ pub(crate) struct App {
     // Loaded settings
     pub(crate) settings: state::settings::TideSettings,
 
+    // Explicit terminal spawn config (gateway socket + agent integration),
+    // built at startup and pushed into the terminal factory. Replaces the
+    // former domain process-global statics.
+    pub(crate) terminal_spawn_config: crate::tide_terminal::TerminalSpawnConfig,
+
     // Background services (grouped)
     pub(crate) bg: state::BackgroundServices,
 
@@ -188,14 +209,17 @@ pub(crate) struct App {
     // Agent Gateway status
     pub(crate) gateway: state::GatewayStatus,
 
-    // Temporary: holds notification_tx for subscribe command during dispatch
-    pub(crate) pending_subscribe_tx: Option<std::sync::mpsc::Sender<String>>,
-
-    // Temporary: holds the caller PaneId while a CLI command is dispatching.
-    pub(crate) pending_cli_caller_pane: Option<PaneId>,
+    // Active CLI/MCP dispatch context (caller pane + subscribe channel). Set
+    // and cleared in exactly one place — `handle_cli_command_with_subscribe` —
+    // so it is only ever readable during a dispatch.
+    pub(crate) cli_dispatch: Option<CliDispatch>,
 
     // Pending platform commands queued by notification routing, drained by event loop.
     pub(crate) pending_platform_commands: Vec<crate::tide_platform::WindowCommand>,
+
+    // E2E test driver: synthetic platform events queued by `test-inject-event`,
+    // drained through the real event path by the app-thread loop.
+    pub(crate) injected_events: Vec<crate::tide_platform::PlatformEvent>,
 
     // True after this App has requested its owning Tide Window to close.
     pub(crate) tide_window_close_requested: bool,
@@ -207,11 +231,11 @@ pub(crate) struct App {
     pub(crate) agent_notification_snippets: HashMap<PaneId, String>,
 }
 
-// Safety: App contains raw pointers (content_view_ptr, window_ptr) and browser
-// WebViewHandles that are not inherently Send. These are only used for webview
-// management which will be dispatched back to the main thread via WindowCommand.
-// All other fields (wgpu resources, channels, atomics) are Send-safe.
-unsafe impl Send for App {}
+// `App` is `Send` structurally: every field is `Send`, with the genuinely
+// non-`Send` holders (the port adapters that wrap raw platform pointers, and the
+// browser `WebViewHandle`) carrying their own localized `unsafe impl Send`
+// documented at the holder. `App` is moved to its window's app thread and used
+// only there.
 
 impl App {
     pub(crate) fn new() -> Self {
@@ -249,17 +273,14 @@ impl App {
             header_hit_zones: Vec::new(),
             ws: state::WorkspaceManager::new(),
             context_artifacts: state::ContextArtifactStore::new(),
-            settings: {
-                let s = state::settings::load_settings();
-                crate::tide_terminal::set_auto_integration(s.auto_integration);
-                s
-            },
+            settings: state::settings::load_settings(),
+            terminal_spawn_config: crate::tide_terminal::TerminalSpawnConfig::default(),
             bg: state::BackgroundServices::new(),
             assoc: state::PaneAssociations::new(),
             gateway: state::GatewayStatus::new(),
-            pending_subscribe_tx: None,
-            pending_cli_caller_pane: None,
+            cli_dispatch: None,
             pending_platform_commands: Vec::new(),
+            injected_events: Vec::new(),
             tide_window_close_requested: false,
             notified_panes: std::collections::HashSet::new(),
             agent_notification_snippets: HashMap::new(),
@@ -307,7 +328,10 @@ impl App {
 
     pub(crate) fn reload_settings_from_persistence(&mut self) {
         let settings = self.ports.persistence.load_settings();
-        crate::tide_terminal::set_auto_integration(settings.auto_integration);
+        self.terminal_spawn_config.auto_integration = settings.auto_integration;
+        self.ports
+            .terminal_factory
+            .set_auto_integration(settings.auto_integration);
         if settings.keybindings.is_empty() {
             self.router.keybinding_map = None;
         } else {
@@ -688,6 +712,22 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.ports.git.list_worktrees(cwd)
     }
 
+    fn git_worktrees_for_switcher(
+        &self,
+        cwd: &std::path::Path,
+    ) -> Vec<crate::tide_terminal::git::WorktreeInfo> {
+        // Warm path: poller cache keyed by repo root.
+        if let Some(Some(root)) = self.bg.cached_repo_roots.get(cwd) {
+            if let Some(worktrees) = self.bg.cached_worktrees.get(root) {
+                return worktrees.clone();
+            }
+        }
+        // Cold miss: list once synchronously and ask the poller to warm the
+        // cache for next time.
+        self.trigger_git_poll();
+        self.ports.git.list_worktrees(cwd)
+    }
+
     fn git_repo_root(&self, cwd: &std::path::Path) -> Option<std::path::PathBuf> {
         self.ports.git.repo_root(cwd)
     }
@@ -722,6 +762,40 @@ impl crate::application::ports::inward::AppCorePort for App {
         force: bool,
     ) -> Result<(), String> {
         self.ports.git.delete_branch(cwd, name, force)
+    }
+
+    fn dispatch_worktree_add(
+        &mut self,
+        cwd: std::path::PathBuf,
+        wt_path: std::path::PathBuf,
+        branch: String,
+        new_branch: bool,
+        root: std::path::PathBuf,
+        follow_up: crate::state::background::WorktreeFollowUp,
+    ) {
+        self.dispatch_worktree_job(crate::state::background::WorktreeJob::Add {
+            cwd,
+            wt_path,
+            branch,
+            new_branch,
+            root,
+            follow_up,
+        });
+    }
+
+    fn dispatch_worktree_remove(
+        &mut self,
+        main_cwd: std::path::PathBuf,
+        wt_path: std::path::PathBuf,
+        delete_branch: Option<String>,
+        force: bool,
+    ) {
+        self.dispatch_worktree_job(crate::state::background::WorktreeJob::Remove {
+            main_cwd,
+            wt_path,
+            delete_branch,
+            force,
+        });
     }
 
     fn persistence_load_settings(&self) -> crate::state::settings::TideSettings {
@@ -1193,16 +1267,25 @@ impl crate::application::ports::inward::GatewayPort for App {
         true
     }
     fn take_subscribe_tx(&mut self) -> Option<std::sync::mpsc::Sender<String>> {
-        self.pending_subscribe_tx.take()
+        debug_assert!(
+            self.cli_dispatch.is_some(),
+            "take_subscribe_tx called outside a CLI dispatch"
+        );
+        self.cli_dispatch
+            .as_mut()
+            .and_then(|d| d.subscribe_tx.take())
     }
 
     fn cli_caller_pane(&self) -> Option<PaneId> {
-        self.pending_cli_caller_pane
+        self.cli_dispatch.as_ref().and_then(|d| d.caller_pane)
     }
 
     fn toggle_auto_integration(&mut self) {
         self.settings.auto_integration = !self.settings.auto_integration;
-        crate::tide_terminal::set_auto_integration(self.settings.auto_integration);
+        self.terminal_spawn_config.auto_integration = self.settings.auto_integration;
+        self.ports
+            .terminal_factory
+            .set_auto_integration(self.settings.auto_integration);
         if self.settings.auto_integration {
             self.queue_notification_permission_request();
         }

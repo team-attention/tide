@@ -26,4 +26,11 @@ pub(crate) trait TerminalFactoryPort {
         tide_window_id: TideWindowId,
         workspace_name: Option<&str>,
     ) -> Result<crate::tide_terminal::Terminal, BoxErr>;
+
+    /// Install the spawn config (gateway socket + agent integration dirs/flag)
+    /// once it is known at startup. Spawned terminals export it into their env.
+    fn set_spawn_config(&mut self, config: crate::tide_terminal::TerminalSpawnConfig);
+
+    /// Update whether agent auto-integration is enabled (settings toggle).
+    fn set_auto_integration(&mut self, enabled: bool);
 }

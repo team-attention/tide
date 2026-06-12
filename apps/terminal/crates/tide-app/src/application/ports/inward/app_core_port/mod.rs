@@ -41,6 +41,13 @@ pub(crate) trait AppCorePort {
         &self,
         cwd: &std::path::Path,
     ) -> Vec<crate::tide_terminal::git::WorktreeInfo>;
+    /// Worktree list for the Git Switcher: served from the poller cache when
+    /// warm (no git on the app thread); on a cold miss it lists synchronously
+    /// once and warms the cache for next time (P-5).
+    fn git_worktrees_for_switcher(
+        &self,
+        cwd: &std::path::Path,
+    ) -> Vec<crate::tide_terminal::git::WorktreeInfo>;
     fn git_repo_root(&self, cwd: &std::path::Path) -> Option<std::path::PathBuf>;
     fn git_branch_exists(&self, cwd: &std::path::Path, name: &str) -> bool;
     fn git_add_worktree(
@@ -62,6 +69,25 @@ pub(crate) trait AppCorePort {
         name: &str,
         force: bool,
     ) -> Result<(), String>;
+    /// Dispatch `git worktree add` off the app thread (P-5). On success the
+    /// follow-up (cd / split) is applied when the job completes.
+    fn dispatch_worktree_add(
+        &mut self,
+        cwd: std::path::PathBuf,
+        wt_path: std::path::PathBuf,
+        branch: String,
+        new_branch: bool,
+        root: std::path::PathBuf,
+        follow_up: crate::state::background::WorktreeFollowUp,
+    );
+    /// Dispatch `git worktree remove` (and optional branch delete) off the app thread (P-5).
+    fn dispatch_worktree_remove(
+        &mut self,
+        main_cwd: std::path::PathBuf,
+        wt_path: std::path::PathBuf,
+        delete_branch: Option<String>,
+        force: bool,
+    );
     fn persistence_load_settings(&self) -> crate::state::settings::TideSettings;
 
     // ── Geometry queries ──

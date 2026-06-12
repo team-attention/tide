@@ -126,6 +126,9 @@ fn add_markdown_editor(app: &mut App, terminal_id: u64, contents: &str) -> u64 {
 fn add_diff(app: &mut App, anchor_id: u64) -> u64 {
     let diff_id = app.layout.split(anchor_id, SplitDirection::Horizontal);
     let mut diff = DiffPane::new_empty(diff_id, PathBuf::from("/tmp"));
+    // Exercise unified-mode capture deterministically (side_by_side defaults to
+    // true now that the render path no longer forces it).
+    diff.side_by_side = false;
     diff.files = vec![DiffFileEntry {
         status: "M".into(),
         path: "src/lib.rs".into(),
@@ -648,10 +651,10 @@ fn submit_context_comment_composer_creates_artifact_and_delivers_to_paired_termi
     );
 
     let (tx, rx) = mpsc::channel::<String>();
-    app.pending_subscribe_tx = Some(tx);
-    app.handle_cli_command(
+    app.handle_cli_command_with_subscribe(
         "subscribe",
         json!({"events": ["context-artifact-delivered"], "_caller_pane": terminal_id}),
+        Some(tx),
     )
     .unwrap();
 
@@ -709,10 +712,10 @@ fn submit_context_comment_composer_delivery_event_includes_artifact_body() {
     );
 
     let (tx, rx) = mpsc::channel::<String>();
-    app.pending_subscribe_tx = Some(tx);
-    app.handle_cli_command(
+    app.handle_cli_command_with_subscribe(
         "subscribe",
         json!({"events": ["context-artifact-delivered"], "_caller_pane": terminal_id}),
+        Some(tx),
     )
     .unwrap();
 
@@ -921,18 +924,18 @@ fn send_contextartifact_targets_only_the_paired_agent() {
     }
 
     let (tx_a, rx_a) = mpsc::channel::<String>();
-    app.pending_subscribe_tx = Some(tx_a);
-    app.handle_cli_command(
+    app.handle_cli_command_with_subscribe(
         "subscribe",
         json!({"events": ["context-artifact-delivered"], "_caller_pane": terminal_a}),
+        Some(tx_a),
     )
     .unwrap();
 
     let (tx_b, rx_b) = mpsc::channel::<String>();
-    app.pending_subscribe_tx = Some(tx_b);
-    app.handle_cli_command(
+    app.handle_cli_command_with_subscribe(
         "subscribe",
         json!({"events": ["context-artifact-delivered"], "_caller_pane": terminal_b}),
+        Some(tx_b),
     )
     .unwrap();
 

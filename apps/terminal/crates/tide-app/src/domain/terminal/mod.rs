@@ -12,7 +12,7 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
@@ -30,8 +30,13 @@ use unicode_width::UnicodeWidthChar;
 
 mod color;
 pub mod git;
+mod grid_sync;
 mod key_input;
+mod urls;
 mod wheel_input;
+
+use grid_sync::*;
+pub(crate) use urls::{terminal_url_regex, trim_url_trailing};
 
 use crate::tide_core::{
     Color, CursorShape, CursorState, TerminalBackend, TerminalCell, TerminalGrid, TideWindowId,
@@ -41,48 +46,82 @@ use crate::tide_core::{
 const SCROLLBACK_LINES: usize = 10_000;
 
 /// Whether agent auto-integration is enabled (wrapper PATH injection + shell integration).
-/// Updated at runtime when the user toggles the setting.
-static AUTO_INTEGRATION_ENABLED: AtomicBool = AtomicBool::new(true);
-
-/// Set the auto-integration enabled flag. Called when the user toggles the setting.
-pub fn set_auto_integration(enabled: bool) {
-    AUTO_INTEGRATION_ENABLED.store(enabled, Ordering::Relaxed);
+/// Explicit terminal spawn configuration — the Agent Gateway socket, agent
+/// wrapper / shell-integration directories, and whether auto-integration is on.
+/// Built once in `main` (per process), owned by the terminal factory, and passed
+/// into the spawn functions. Replaces the former process-global statics so this
+/// configuration is explicit data, not ambient global state in the domain.
+#[derive(Clone, Default)]
+pub struct TerminalSpawnConfig {
+    /// Agent Gateway socket path; exported as `TIDE_TERMINAL_SOCKET` to every PTY.
+    pub gateway_socket: Option<String>,
+    /// Directory of agent wrapper scripts (claude, codex, …), prepended to PATH
+    /// via the shell-integration hook so wrappers shadow the real binaries.
+    pub agent_wrapper_dir: Option<String>,
+    /// Directory of shell-integration files (.zshenv for the ZDOTDIR hijack).
+    pub shell_integration_dir: Option<String>,
+    /// Whether agent auto-integration (wrapper + shell hook) is enabled.
+    pub auto_integration: bool,
 }
 
-/// Global socket path for the Agent Gateway. Set once on app startup.
-/// Every PTY spawned after this is set will export TIDE_TERMINAL_SOCKET.
-static GATEWAY_SOCKET_PATH: OnceLock<String> = OnceLock::new();
+impl TerminalSpawnConfig {
+    /// Build a spawn config, discovering the agent wrapper / shell-integration
+    /// directories from the running `.app` bundle.
+    pub fn discover(gateway_socket: Option<String>, auto_integration: bool) -> Self {
+        let (agent_wrapper_dir, shell_integration_dir) = discover_agent_dirs();
+        Self {
+            gateway_socket,
+            agent_wrapper_dir,
+            shell_integration_dir,
+            auto_integration,
+        }
+    }
 
-/// Set the Agent Gateway socket path. Called once from main after server starts.
-pub fn set_gateway_socket_path(path: String) {
-    let _ = GATEWAY_SOCKET_PATH.set(path);
+    /// Inject the Agent Gateway and (when auto-integration is on) the wrapper /
+    /// shell-integration environment into a child PTY's env map. The gateway
+    /// socket is always exported; the ZDOTDIR hijack only when auto-integration
+    /// is enabled. (Behaviour preserved from the former statics.)
+    pub fn apply_integration_env(&self, env: &mut std::collections::HashMap<String, String>) {
+        if let Some(socket) = &self.gateway_socket {
+            env.insert(String::from("TIDE_TERMINAL_SOCKET"), socket.clone());
+        }
+        // Agent wrappers: ZDOTDIR hijack + __TIDE_TERMINAL_WRAPPER_DIR env var.
+        // Only injected when auto-integration is enabled.
+        // Direct PATH injection doesn't work on macOS because /etc/zprofile
+        // runs path_helper which reconstructs PATH from scratch.
+        // Instead, ZDOTDIR points to shell-integration/ which has a .zshenv
+        // that registers a precmd hook to prepend the wrapper bin/ to PATH
+        // after all init files have run (including path_helper).
+        if self.auto_integration {
+            if let Some(wrapper_dir) = &self.agent_wrapper_dir {
+                env.insert(String::from("__TIDE_TERMINAL_WRAPPER_DIR"), wrapper_dir.clone());
+            }
+            if let Some(shell_dir) = &self.shell_integration_dir {
+                // Save user's original ZDOTDIR before overwriting
+                if let Ok(orig) = std::env::var("ZDOTDIR") {
+                    env.insert(String::from("__TIDE_TERMINAL_ORIG_ZDOTDIR"), orig);
+                }
+                env.insert(String::from("ZDOTDIR"), shell_dir.clone());
+            }
+        }
+    }
 }
 
-/// Directory containing agent wrapper scripts (claude, codex, gemini, agy, opencode).
-/// Resolved from the .app bundle's Contents/Resources/bin/ at startup.
-/// Prepended to PATH in every PTY so wrappers shadow the real binaries.
-static AGENT_WRAPPER_DIR: OnceLock<String> = OnceLock::new();
 
-/// Directory containing shell integration files (.zshenv for ZDOTDIR hijack).
-/// Resolved from the .app bundle's Contents/Resources/shell-integration/ at startup.
-static SHELL_INTEGRATION_DIR: OnceLock<String> = OnceLock::new();
-
-static URL_RE: OnceLock<regex::Regex> = OnceLock::new();
-
-/// Discover agent wrapper and shell integration directories from the .app bundle.
-/// Called once from main after the gateway socket is ready.
-/// Looks for `Contents/Resources/bin/` and `Contents/Resources/shell-integration/`
-/// relative to the running binary's location.
-pub fn discover_agent_resources() {
+/// Discover agent wrapper and shell-integration directories from the running
+/// `.app` bundle. Returns `(agent_wrapper_dir, shell_integration_dir)`. Looks for
+/// `Contents/Resources/.../bin/` and `.../shell-integration/` relative to the
+/// running binary.
+fn discover_agent_dirs() -> (Option<String>, Option<String>) {
     let exe = match std::env::current_exe() {
         Ok(p) => p,
-        Err(_) => return,
+        Err(_) => return (None, None),
     };
 
     // exe is at Contents/MacOS/Tide → go up to Contents/, then into Resources/
     let contents_dir = match exe.parent().and_then(|p| p.parent()) {
         Some(d) => d,
-        None => return,
+        None => return (None, None),
     };
 
     // cargo-bundle preserves relative paths: resources end up at
@@ -90,597 +129,16 @@ pub fn discover_agent_resources() {
     let res_base = contents_dir.join("Resources/crates/tide-app/resources");
 
     let bin_dir = res_base.join("bin");
-    if bin_dir.is_dir() {
-        let _ = AGENT_WRAPPER_DIR.set(bin_dir.to_string_lossy().to_string());
-    }
+    let agent_wrapper_dir = bin_dir
+        .is_dir()
+        .then(|| bin_dir.to_string_lossy().to_string());
 
     let shell_dir = res_base.join("shell-integration");
-    if shell_dir.is_dir() {
-        let _ = SHELL_INTEGRATION_DIR.set(shell_dir.to_string_lossy().to_string());
-    }
-}
+    let shell_integration_dir = shell_dir
+        .is_dir()
+        .then(|| shell_dir.to_string_lossy().to_string());
 
-/// Simple dimensions struct that implements alacritty_terminal's Dimensions trait.
-struct TermDimensions {
-    cols: usize,
-    rows: usize,
-}
-
-impl TermDimensions {
-    fn new(cols: usize, rows: usize) -> Self {
-        Self { cols, rows }
-    }
-}
-
-impl Dimensions for TermDimensions {
-    fn columns(&self) -> usize {
-        self.cols
-    }
-
-    fn screen_lines(&self) -> usize {
-        self.rows
-    }
-
-    fn total_lines(&self) -> usize {
-        self.rows + SCROLLBACK_LINES
-    }
-}
-
-// ──────────────────────────────────────────────
-// Shared snapshot: exchange point between sync thread and main thread
-// ──────────────────────────────────────────────
-
-struct SharedSnapshot {
-    grid: TerminalGrid,
-    inverse_cursor: Option<(u16, u16)>,
-    url_ranges: Vec<Vec<(usize, usize)>>,
-    wrapped_rows: Vec<bool>,
-    generation: u64,
-    cursor: CursorState,
-}
-
-// ──────────────────────────────────────────────
-// Event listener (PTY thread → sync thread signaling)
-// ──────────────────────────────────────────────
-
-/// Event listener that sets a dirty flag when the terminal has new output,
-/// forwards PtyWrite events back to the PTY, and wakes the sync thread.
-#[derive(Clone)]
-struct TermEventListener {
-    dirty: Arc<AtomicBool>,
-    /// Lazily initialized after EventLoop creation so PtyWrite can be forwarded.
-    pty_writer: Arc<Mutex<Option<Notifier>>>,
-    /// Handle to the grid sync thread — unparked when new output arrives.
-    sync_thread: Arc<Mutex<Option<std::thread::Thread>>>,
-    /// Dark/light mode — used to resolve OSC 10/11 color queries.
-    dark_mode: Arc<AtomicBool>,
-    /// Mode 2031: app opted in to dark/light color-scheme notifications.
-    mode_2031: Arc<AtomicBool>,
-    /// OSC 9 notification messages queued for main thread processing.
-    notifications: Arc<Mutex<Vec<String>>>,
-}
-
-impl TermEventListener {
-    /// Resolve a color index to an RGB value for OSC 10/11/12 responses.
-    ///
-    /// Index mapping (from vte/alacritty_terminal):
-    ///   0-15   = Named ANSI colors (Black..BrightWhite)
-    ///   16-255 = 256-color palette
-    ///   256    = Foreground (OSC 10)
-    ///   257    = Background (OSC 11)
-    ///   258    = Cursor     (OSC 12)
-    fn resolve_color(&self, index: usize) -> AnsiRgb {
-        let dark = self.dark_mode.load(Ordering::Relaxed);
-        match index {
-            // Foreground (OSC 10)
-            256 => {
-                if dark {
-                    AnsiRgb {
-                        r: 230,
-                        g: 232,
-                        b: 242,
-                    } // dark fg: (0.9, 0.91, 0.95)
-                } else {
-                    AnsiRgb {
-                        r: 26,
-                        g: 20,
-                        b: 13,
-                    } // light fg: (0.10, 0.08, 0.05)
-                }
-            }
-            // Background (OSC 11) — report the actual visible pane background
-            257 => {
-                if dark {
-                    AnsiRgb {
-                        r: 14,
-                        g: 14,
-                        b: 16,
-                    } // dark pane_bg: (0.055, 0.055, 0.063)
-                } else {
-                    AnsiRgb {
-                        r: 255,
-                        g: 255,
-                        b: 255,
-                    } // light pane_bg: #FFFFFF
-                }
-            }
-            // Cursor (OSC 12) — use foreground color
-            258 => {
-                if dark {
-                    AnsiRgb {
-                        r: 230,
-                        g: 232,
-                        b: 242,
-                    }
-                } else {
-                    AnsiRgb {
-                        r: 26,
-                        g: 20,
-                        b: 13,
-                    }
-                }
-            }
-            // Named ANSI colors (0-15)
-            0..=15 => {
-                let color =
-                    Terminal::named_color_to_rgb(dark, Terminal::index_to_named(index as u8));
-                AnsiRgb {
-                    r: (color.r * 255.0) as u8,
-                    g: (color.g * 255.0) as u8,
-                    b: (color.b * 255.0) as u8,
-                }
-            }
-            // 256-color palette (16-255)
-            16..=255 => {
-                let color = Terminal::indexed_color_fallback(index as u8);
-                AnsiRgb {
-                    r: (color.r * 255.0) as u8,
-                    g: (color.g * 255.0) as u8,
-                    b: (color.b * 255.0) as u8,
-                }
-            }
-            _ => AnsiRgb { r: 0, g: 0, b: 0 },
-        }
-    }
-}
-
-impl EventListener for TermEventListener {
-    fn send_event(&self, event: Event) {
-        match &event {
-            Event::PtyWrite(text) => {
-                if let Ok(guard) = self.pty_writer.lock() {
-                    if let Some(notifier) = guard.as_ref() {
-                        let _ = notifier
-                            .0
-                            .send(Msg::Input(Cow::Owned(text.clone().into_bytes())));
-                    }
-                }
-            }
-            Event::ColorRequest(index, formatter) => {
-                let rgb = self.resolve_color(*index);
-                let response = formatter(rgb);
-                if let Ok(guard) = self.pty_writer.lock() {
-                    if let Some(notifier) = guard.as_ref() {
-                        let _ = notifier
-                            .0
-                            .send(Msg::Input(Cow::Owned(response.into_bytes())));
-                    }
-                }
-                return; // No need to mark dirty or wake sync thread
-            }
-            Event::Notification(msg) => {
-                if let Ok(mut queue) = self.notifications.lock() {
-                    queue.push(msg.clone());
-                }
-                // Mark dirty + wake so main thread processes the notification
-            }
-            Event::PrivateModeUpdate(2031, enabled) => {
-                // Mode 2031: app opts in/out of color-scheme change notifications.
-                self.mode_2031.store(*enabled, Ordering::Relaxed);
-                // Immediately report current mode: CSI ? 997 ; N n (1=dark, 2=light)
-                if *enabled {
-                    let mode = if self.dark_mode.load(Ordering::Relaxed) {
-                        1
-                    } else {
-                        2
-                    };
-                    let response = format!("\x1b[?997;{}n", mode);
-                    if let Ok(guard) = self.pty_writer.lock() {
-                        if let Some(notifier) = guard.as_ref() {
-                            let _ = notifier
-                                .0
-                                .send(Msg::Input(Cow::Owned(response.into_bytes())));
-                        }
-                    }
-                }
-                return;
-            }
-            _ => {}
-        }
-        self.dirty.store(true, Ordering::Relaxed);
-        // Wake the sync thread to process new output
-        if let Ok(guard) = self.sync_thread.lock() {
-            if let Some(ref thread) = *guard {
-                thread.unpark();
-            }
-        }
-    }
-}
-
-// ──────────────────────────────────────────────
-// GridSyncer: owns all state for grid synchronization (runs on sync thread)
-// ──────────────────────────────────────────────
-
-struct GridSyncer {
-    term: Arc<FairMutex<Term<TermEventListener>>>,
-    raw_buf: Vec<(char, AnsiColor, AnsiColor, CellFlags)>,
-    prev_raw_buf: Vec<(char, AnsiColor, AnsiColor, CellFlags)>,
-    palette_buf: [Option<AnsiRgb>; 256],
-    grid: TerminalGrid,
-    inverse_cursor: Option<(u16, u16)>,
-    cached_cursor: CursorState,
-    url_ranges: Vec<Vec<(usize, usize)>>,
-    wrapped_rows: Vec<bool>,
-    grid_generation: u64,
-    url_row_buf: String,
-    dark_mode: Arc<AtomicBool>,
-    dark_mode_changed: Arc<AtomicBool>,
-    stay_at_bottom: Arc<AtomicBool>,
-}
-
-impl GridSyncer {
-    /// Run one grid synchronization cycle.
-    /// Phase 1: Lock Term briefly to copy raw cell data + palette.
-    /// Phase 2: Convert colors and diff against previous frame (no lock held).
-    fn sync(&mut self) {
-        // Check if dark mode changed — force full re-render
-        if self.dark_mode_changed.swap(false, Ordering::Relaxed) {
-            self.prev_raw_buf.clear();
-        }
-
-        let dark_mode = self.dark_mode.load(Ordering::Relaxed);
-        let stay_at_bottom = self.stay_at_bottom.load(Ordering::Relaxed);
-
-        // Phase 1: Hold lock briefly — copy raw cell data + palette + cursor
-        let (cols, total_lines) = {
-            let mut term = self.term.lock();
-
-            if stay_at_bottom {
-                term.scroll_display(Scroll::Bottom);
-            }
-
-            let grid = term.grid();
-            let cols = grid.columns();
-            let total_lines = grid.screen_lines();
-            let display_offset = grid.display_offset();
-            let total_cells = cols * total_lines;
-
-            // Copy color palette
-            let colors = term.colors();
-            for i in 0..256 {
-                self.palette_buf[i] = colors[i];
-            }
-
-            // Copy raw cell data into flat buffer
-            self.raw_buf.resize(
-                total_cells,
-                (
-                    ' ',
-                    AnsiColor::Named(NamedColor::Foreground),
-                    AnsiColor::Named(NamedColor::Background),
-                    CellFlags::empty(),
-                ),
-            );
-            self.wrapped_rows.resize(total_lines, false);
-            for line_idx in 0..total_lines {
-                let line = Line(line_idx as i32 - display_offset as i32);
-                let base = line_idx * cols;
-                let grid_line = &grid[line];
-                let line_length = grid_line.line_length();
-                self.wrapped_rows[line_idx] = line_length.0 != 0
-                    && grid_line[line_length - 1]
-                        .flags
-                        .contains(CellFlags::WRAPLINE);
-                for col_idx in 0..cols {
-                    let point = Point::new(line, Column(col_idx));
-                    let cell = &grid[point];
-                    self.raw_buf[base + col_idx] = (cell.c, cell.fg, cell.bg, cell.flags);
-                }
-            }
-
-            // Read cursor state while we have the lock
-            let cursor_point = grid.cursor.point;
-            let cursor_shape = match term.cursor_style().shape {
-                alacritty_terminal::vte::ansi::CursorShape::Block => CursorShape::Block,
-                alacritty_terminal::vte::ansi::CursorShape::Beam => CursorShape::Beam,
-                alacritty_terminal::vte::ansi::CursorShape::Underline => CursorShape::Underline,
-                _ => CursorShape::Block,
-            };
-            let cursor_visible = term.mode().contains(TermMode::SHOW_CURSOR);
-
-            self.cached_cursor = CursorState {
-                row: cursor_point.line.0 as u16,
-                col: cursor_point.column.0 as u16,
-                visible: cursor_visible,
-                shape: cursor_shape,
-            };
-
-            (cols, total_lines)
-        }; // Lock released here!
-
-        // Phase 2: Diff with previous frame — only convert changed cells
-        let total_cells = cols * total_lines;
-        let same_size = self.prev_raw_buf.len() == total_cells;
-
-        // Scan for the last INVERSE cell — TUI apps (Ink/Claude Code) draw their
-        // visual cursor as an INVERSE cell while hiding the real terminal cursor.
-        self.inverse_cursor = None;
-        for idx in (0..total_cells).rev() {
-            let flags = self.raw_buf[idx].3;
-            if flags.contains(CellFlags::INVERSE) && !flags.contains(CellFlags::WIDE_CHAR_SPACER) {
-                let row = idx / cols;
-                let col = idx % cols;
-                self.inverse_cursor = Some((row as u16, col as u16));
-                break;
-            }
-        }
-
-        // Apply INVERSE cursor fallback to cached_cursor
-        if !self.cached_cursor.visible {
-            if let Some((inv_row, inv_col)) = self.inverse_cursor {
-                self.cached_cursor.row = inv_row;
-                self.cached_cursor.col = inv_col;
-            }
-        }
-
-        let cells = &mut self.grid.cells;
-        cells.resize_with(total_lines, || vec![TerminalCell::default(); cols]);
-
-        let mut any_changed = false;
-
-        for (line_idx, row) in cells.iter_mut().enumerate().take(total_lines) {
-            row.resize_with(cols, TerminalCell::default);
-            let base = line_idx * cols;
-
-            for (col_idx, tc) in row.iter_mut().enumerate().take(cols) {
-                let idx = base + col_idx;
-                let raw = self.raw_buf[idx];
-
-                // Skip unchanged cells (same char, fg, bg, flags)
-                if same_size && self.prev_raw_buf[idx] == raw {
-                    continue;
-                }
-                any_changed = true;
-
-                let (c, fg, bg, flags) = raw;
-
-                if flags.contains(CellFlags::WIDE_CHAR_SPACER) {
-                    tc.character = '\0';
-                    // Preserve background for selection/ANSI highlights on
-                    // the second half of wide characters (Korean, CJK, etc.).
-                    let mut bg_color = Terminal::convert_color(dark_mode, &bg, &self.palette_buf);
-                    let mut bg_is_default = matches!(bg, AnsiColor::Named(NamedColor::Background));
-                    if flags.contains(CellFlags::INVERSE) {
-                        let fg_color = Terminal::convert_color(dark_mode, &fg, &self.palette_buf);
-                        bg_color = fg_color;
-                        bg_is_default = false;
-                    }
-                    // Remap mismatched true-color backgrounds (see main cell path below).
-                    let effective_bg = if flags.contains(CellFlags::INVERSE) {
-                        &fg
-                    } else {
-                        &bg
-                    };
-                    if !bg_is_default {
-                        if let AnsiColor::Spec(_) = effective_bg {
-                            let bg_lum =
-                                0.2126 * bg_color.r + 0.7152 * bg_color.g + 0.0722 * bg_color.b;
-                            if !dark_mode && bg_lum < 0.5 {
-                                bg_color = Terminal::remap_bg_for_light(bg_color);
-                            } else if dark_mode && bg_lum > 0.7 {
-                                bg_color = Terminal::remap_bg_for_dark(bg_color);
-                            }
-                        }
-                    }
-                    tc.style.background = if bg_is_default { None } else { Some(bg_color) };
-                    continue;
-                }
-
-                let mut fg_color = Terminal::convert_color(dark_mode, &fg, &self.palette_buf);
-                let mut bg_color = Terminal::convert_color(dark_mode, &bg, &self.palette_buf);
-                let mut bg_is_default = matches!(bg, AnsiColor::Named(NamedColor::Background));
-
-                // SGR 7: swap foreground and background
-                if flags.contains(CellFlags::INVERSE) {
-                    std::mem::swap(&mut fg_color, &mut bg_color);
-                    bg_is_default = false;
-                }
-
-                // Remap mismatched true-color (Spec) backgrounds for the current
-                // theme. Apps that haven't detected the theme change via OSC 11
-                // or Mode 2031 send dark bgs in light mode (or bright bgs in dark
-                // mode). Remap them to theme-appropriate equivalents.
-                // Named/indexed colors are already mode-aware via our palette.
-                let effective_bg = if flags.contains(CellFlags::INVERSE) {
-                    &fg
-                } else {
-                    &bg
-                };
-                if !bg_is_default {
-                    if let AnsiColor::Spec(_) = effective_bg {
-                        let bg_lum =
-                            0.2126 * bg_color.r + 0.7152 * bg_color.g + 0.0722 * bg_color.b;
-                        if !dark_mode && bg_lum < 0.5 {
-                            bg_color = Terminal::remap_bg_for_light(bg_color);
-                        } else if dark_mode && bg_lum > 0.7 {
-                            bg_color = Terminal::remap_bg_for_dark(bg_color);
-                        }
-                    }
-                }
-
-                if dark_mode {
-                    fg_color = Terminal::ensure_dark_fg_contrast(fg_color);
-                } else {
-                    fg_color = Terminal::ensure_light_fg_contrast(fg_color);
-                }
-
-                let background = if bg_is_default { None } else { Some(bg_color) };
-
-                tc.character = c;
-                tc.style.bold = flags.contains(CellFlags::BOLD);
-                tc.style.dim = flags.contains(CellFlags::DIM);
-                tc.style.italic = flags.contains(CellFlags::ITALIC);
-                tc.style.underline = flags.contains(CellFlags::UNDERLINE)
-                    || flags.contains(CellFlags::DOUBLE_UNDERLINE)
-                    || flags.contains(CellFlags::UNDERCURL);
-
-                tc.style.foreground = if tc.style.dim {
-                    Color::new(
-                        fg_color.r * 0.65,
-                        fg_color.g * 0.65,
-                        fg_color.b * 0.65,
-                        fg_color.a,
-                    )
-                } else {
-                    fg_color
-                };
-                tc.style.background = background;
-            }
-        }
-
-        // Swap buffers for next frame's diff
-        std::mem::swap(&mut self.prev_raw_buf, &mut self.raw_buf);
-
-        if any_changed || !same_size {
-            self.grid_generation += 1;
-        }
-
-        cells.truncate(total_lines);
-        self.grid.cols = cols as u16;
-        self.grid.rows = total_lines as u16;
-
-        // Scan for URLs in the visible grid
-        if any_changed || !same_size {
-            self.detect_urls();
-        }
-    }
-
-    /// Detect URLs in the grid and store column ranges per row.
-    fn detect_urls(&mut self) {
-        let re = terminal_url_regex();
-
-        let rows = self.grid.cells.len();
-        self.url_ranges.resize(rows, Vec::new());
-
-        for (row_idx, row) in self.grid.cells.iter().enumerate() {
-            self.url_ranges[row_idx].clear();
-            self.url_row_buf.clear();
-            for c in row.iter() {
-                self.url_row_buf.push(if c.character == '\0' {
-                    ' '
-                } else {
-                    c.character
-                });
-            }
-            for m in re.find_iter(&self.url_row_buf) {
-                let url = trim_url_trailing(m.as_str());
-                let start_col = self.url_row_buf[..m.start()].chars().count();
-                let end_col = start_col + url.chars().count();
-                self.url_ranges[row_idx].push((start_col, end_col));
-            }
-        }
-        self.url_ranges.truncate(rows);
-    }
-}
-
-pub(crate) fn terminal_url_regex() -> &'static regex::Regex {
-    URL_RE.get_or_init(|| regex::Regex::new(r#"https?://[^\s<>"{}|\\^`\[\]]+"#).unwrap())
-}
-
-/// Trim unbalanced trailing parentheses and punctuation from a URL match.
-/// Preserves balanced parens (e.g. Wikipedia URLs like `https://en.wikipedia.org/wiki/Foo_(bar)`).
-pub(crate) fn trim_url_trailing(url: &str) -> &str {
-    let mut end = url.len();
-    loop {
-        if end == 0 {
-            break;
-        }
-        let last = url.as_bytes()[end - 1];
-        // Strip trailing punctuation that's unlikely part of a URL
-        if matches!(last, b'.' | b',' | b';') {
-            end -= 1;
-            continue;
-        }
-        // Strip unbalanced closing paren
-        if last == b')' {
-            let s = &url[..end];
-            let opens = s.bytes().filter(|&b| b == b'(').count();
-            let closes = s.bytes().filter(|&b| b == b')').count();
-            if closes > opens {
-                end -= 1;
-                continue;
-            }
-        }
-        break;
-    }
-    &url[..end]
-}
-
-// ──────────────────────────────────────────────
-// Sync thread entry point
-// ──────────────────────────────────────────────
-
-fn grid_sync_thread_main(
-    thread_handle: Arc<Mutex<Option<std::thread::Thread>>>,
-    mut syncer: GridSyncer,
-    dirty: Arc<AtomicBool>,
-    snapshot: Arc<Mutex<SharedSnapshot>>,
-    snapshot_ready: Arc<AtomicBool>,
-    waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>>,
-    shutdown: Arc<AtomicBool>,
-) {
-    // Install our thread handle so PTY thread / main thread can unpark us
-    {
-        let mut guard = thread_handle.lock().unwrap();
-        *guard = Some(std::thread::current());
-    }
-
-    loop {
-        // Process all pending dirty flags before parking
-        while dirty.swap(false, Ordering::Relaxed) {
-            if shutdown.load(Ordering::Relaxed) {
-                return;
-            }
-
-            syncer.sync();
-
-            // Copy results into shared snapshot
-            {
-                let mut snap = snapshot.lock().unwrap();
-                snap.grid.clone_from(&syncer.grid);
-                snap.inverse_cursor = syncer.inverse_cursor;
-                snap.url_ranges.clone_from(&syncer.url_ranges);
-                snap.wrapped_rows.clone_from(&syncer.wrapped_rows);
-                snap.generation = syncer.grid_generation;
-                snap.cursor = syncer.cached_cursor;
-            }
-            snapshot_ready.store(true, Ordering::Relaxed);
-
-            // Wake main thread event loop
-            if let Ok(guard) = waker.lock() {
-                if let Some(f) = guard.as_ref() {
-                    f();
-                }
-            }
-        }
-
-        // Park until PTY thread or main thread unparks us
-        std::thread::park();
-
-        if shutdown.load(Ordering::Relaxed) {
-            return;
-        }
-    }
+    (agent_wrapper_dir, shell_integration_dir)
 }
 
 // ──────────────────────────────────────────────
@@ -749,6 +207,7 @@ impl Terminal {
 
     /// Create a new terminal backend, optionally starting in the given directory.
     /// If `pane_id` is provided, sets the `TIDE_TERMINAL_PANE` env var for the child process.
+    /// No agent integration env is injected (use `with_cwd_for_window` with a config for that).
     pub fn with_cwd(
         cols: u16,
         rows: u16,
@@ -756,7 +215,7 @@ impl Terminal {
         dark_mode: bool,
         pane_id: Option<u64>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::with_cwd_for_window(cols, rows, cwd, dark_mode, pane_id, None, None)
+        Self::with_cwd_for_window(cols, rows, cwd, dark_mode, pane_id, None, None, None)
     }
 
     pub fn with_cwd_for_window(
@@ -767,6 +226,7 @@ impl Terminal {
         pane_id: Option<u64>,
         tide_window_id: Option<TideWindowId>,
         workspace_name: Option<&str>,
+        spawn_config: Option<&TerminalSpawnConfig>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let cell_width = 8;
         let cell_height = 16;
@@ -814,11 +274,6 @@ impl Terminal {
         } else {
             env.insert(String::from("COLORFGBG"), String::from("0;15"));
         }
-        // Agent Gateway: export socket path, pane id, and workspace name
-        // so child processes can discover Tide
-        if let Some(socket_path) = GATEWAY_SOCKET_PATH.get() {
-            env.insert(String::from("TIDE_TERMINAL_SOCKET"), socket_path.clone());
-        }
         if let Some(id) = pane_id {
             env.insert(String::from("TIDE_TERMINAL_PANE"), id.to_string());
         }
@@ -836,24 +291,10 @@ impl Terminal {
         if let Ok(exe) = std::env::current_exe() {
             env.insert(String::from("TIDE_TERMINAL_BIN"), exe.to_string_lossy().to_string());
         }
-        // Agent wrappers: ZDOTDIR hijack + __TIDE_TERMINAL_WRAPPER_DIR env var.
-        // Only injected when auto-integration is enabled.
-        // Direct PATH injection doesn't work on macOS because /etc/zprofile
-        // runs path_helper which reconstructs PATH from scratch.
-        // Instead, ZDOTDIR points to shell-integration/ which has a .zshenv
-        // that registers a precmd hook to prepend the wrapper bin/ to PATH
-        // after all init files have run (including path_helper).
-        if AUTO_INTEGRATION_ENABLED.load(Ordering::Relaxed) {
-            if let Some(wrapper_dir) = AGENT_WRAPPER_DIR.get() {
-                env.insert(String::from("__TIDE_TERMINAL_WRAPPER_DIR"), wrapper_dir.clone());
-            }
-            if let Some(shell_dir) = SHELL_INTEGRATION_DIR.get() {
-                // Save user's original ZDOTDIR before overwriting
-                if let Ok(orig) = std::env::var("ZDOTDIR") {
-                    env.insert(String::from("__TIDE_TERMINAL_ORIG_ZDOTDIR"), orig);
-                }
-                env.insert(String::from("ZDOTDIR"), shell_dir.clone());
-            }
+        // Agent Gateway socket + (when auto-integration is on) the wrapper /
+        // shell-integration env, from the explicit spawn config.
+        if let Some(config) = spawn_config {
+            config.apply_integration_env(&mut env);
         }
         let pty_config = tty::Options {
             shell: Some(tty::Shell::new(shell, vec![String::from("--login")])),

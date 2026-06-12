@@ -1,6 +1,7 @@
 // Pane types: Terminal, Editor, Browser, Diff, Launcher.
 
 pub(crate) mod browser;
+pub(crate) mod browser_bridge;
 pub(crate) mod diff;
 pub(crate) mod editor;
 
@@ -140,6 +141,8 @@ pub struct TerminalPane {
 }
 
 impl TerminalPane {
+    /// Construct a terminal pane with no agent-integration env (tests / simple
+    /// cases). Use `with_cwd_for_window` with a spawn config for integration.
     pub fn with_cwd(
         id: PaneId,
         cols: u16,
@@ -155,6 +158,7 @@ impl TerminalPane {
             dark_mode,
             crate::tide_core::TideWindowId::default(),
             None,
+            None,
         )
     }
 
@@ -166,6 +170,7 @@ impl TerminalPane {
         dark_mode: bool,
         tide_window_id: crate::tide_core::TideWindowId,
         workspace_name: Option<&str>,
+        spawn_config: Option<&crate::tide_terminal::TerminalSpawnConfig>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let backend = Terminal::with_cwd_for_window(
             cols,
@@ -175,6 +180,7 @@ impl TerminalPane {
             Some(id),
             Some(tide_window_id),
             workspace_name,
+            spawn_config,
         )?;
         Ok(Self {
             id,

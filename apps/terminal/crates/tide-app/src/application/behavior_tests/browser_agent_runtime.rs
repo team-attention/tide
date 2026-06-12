@@ -722,18 +722,18 @@ fn browser_context_artifact_delivers_only_to_paired_agent() {
     }
 
     let (tx_a, rx_a) = mpsc::channel::<String>();
-    app.pending_subscribe_tx = Some(tx_a);
-    app.handle_cli_command(
+    app.handle_cli_command_with_subscribe(
         "subscribe",
         json!({"events": ["context-artifact-delivered"], "_caller_pane": terminal_a}),
+        Some(tx_a),
     )
     .unwrap();
 
     let (tx_b, rx_b) = mpsc::channel::<String>();
-    app.pending_subscribe_tx = Some(tx_b);
-    app.handle_cli_command(
+    app.handle_cli_command_with_subscribe(
         "subscribe",
         json!({"events": ["context-artifact-delivered"], "_caller_pane": terminal_b}),
+        Some(tx_b),
     )
     .unwrap();
 

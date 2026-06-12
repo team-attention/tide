@@ -4,6 +4,7 @@ mod app;
 pub(crate) mod ime_proxy;
 mod view;
 pub mod webview;
+mod webview_url;
 mod window;
 
 pub(crate) use app::with_window;

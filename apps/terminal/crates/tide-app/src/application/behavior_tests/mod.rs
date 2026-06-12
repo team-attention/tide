@@ -16,6 +16,7 @@ mod diff_auto_refresh;
 mod dock_behavior;
 mod dock_global_behavior;
 mod dock_placeholder_behavior;
+mod e2e_driver_behavior;
 mod editor_behavior;
 mod editor_file_watch_sync;
 mod editor_polish_behavior;

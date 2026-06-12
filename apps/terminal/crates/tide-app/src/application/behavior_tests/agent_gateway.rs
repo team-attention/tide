@@ -1195,11 +1195,10 @@ fn subscribe_registers_owner_pane_for_delivery() {
     // UC-9 BR-38: Subscribe stores the caller Pane for owner-scoped delivery.
     let (mut app, terminal_id) = app_with_terminal();
     let (tx, _rx) = std::sync::mpsc::channel::<String>();
-    app.pending_subscribe_tx = Some(tx);
-
-    let result = app.handle_cli_command(
+    let result = app.handle_cli_command_with_subscribe(
         "subscribe",
         json!({"events": ["focus-changed"], "_caller_pane": terminal_id}),
+        Some(tx),
     );
     assert!(result.is_ok());
     assert_eq!(app.gateway.subscribers.len(), 1);
@@ -4266,3 +4265,4 @@ fn notification_activation_with_missing_pane_is_no_op() {
         Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
 }
+

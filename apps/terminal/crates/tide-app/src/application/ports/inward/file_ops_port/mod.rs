@@ -11,6 +11,10 @@ pub(crate) trait FileOpsPort {
     fn close_file_finder(&mut self);
     fn ensure_file_finder_workspace_symbols_loaded(&mut self);
     fn open_diff_pane(&mut self, cwd: PathBuf);
+    /// Ask the background git poller to re-run for the current CWDs (e.g. the
+    /// DiffRefresh header button). Diff content is produced off-thread; this
+    /// never spawns git on the app thread.
+    fn request_git_poll(&self);
     /// Open the editor right-click context menu (Go to Definition / Find
     /// References) for the identifier under `position` in `pane_id`. Returns
     /// `true` when an identifier was found and the menu was opened.

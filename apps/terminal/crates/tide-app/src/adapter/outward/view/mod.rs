@@ -2,6 +2,7 @@ mod chrome;
 mod cursor;
 mod grid;
 pub(crate) mod header;
+pub(crate) mod header_status;
 mod hover;
 mod ime;
 pub(crate) mod launcher;
@@ -187,9 +188,6 @@ impl App {
 
         // ── Pre-render: mutable pane state preparation ──
         for &(id, rect) in &visual_pane_rects {
-            if let Some(PaneKind::Diff(dp)) = self.panes.get_mut(&id) {
-                dp.side_by_side = true;
-            }
             let pane_bar = bar_offset_for(id, &self.panes, &self.modal.save_confirm);
             if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&id) {
                 let content_rect =

@@ -14,7 +14,8 @@ use crate::AppCorePort;
 use crate::PaneLifecyclePort;
 
 /// Results from the background git poller (one entry per CWD).
-use crate::state::background::{GitPollCwdResult, GitPollResults};
+use crate::adapter::outward::git_adapter::git_cli;
+use crate::state::background::{GitPollCwdResult, GitPollRequest, GitPollResults};
 
 pub(crate) fn sync_terminal_badge_runtime_context(
     context: &mut crate::pane::TerminalContext,
@@ -39,34 +40,66 @@ pub(crate) fn sync_terminal_badge_runtime_context(
     changed
 }
 
-pub(crate) fn latest_git_poll_cwds(
-    cwd_rx: &std::sync::mpsc::Receiver<Vec<PathBuf>>,
-    mut cwds: Vec<PathBuf>,
-) -> Vec<PathBuf> {
-    while let Ok(newer_cwds) = cwd_rx.try_recv() {
-        cwds = newer_cwds;
+pub(crate) fn latest_git_poll_requests(
+    req_rx: &std::sync::mpsc::Receiver<Vec<GitPollRequest>>,
+    mut requests: Vec<GitPollRequest>,
+) -> Vec<GitPollRequest> {
+    while let Ok(newer) = req_rx.try_recv() {
+        requests = newer;
     }
-    cwds
+    requests
+}
+
+/// Decide whether the main thread wants per-file diff data for `cwd`. True when
+/// a DiffPane is open for that exact cwd, or for a cwd sharing its repo root.
+/// Pure so the gating logic is testable without git. (UC-1 BR-4)
+pub(crate) fn cwd_wants_diff(
+    cwd: &Path,
+    repo_root: Option<&Path>,
+    diff_pane_cwds: &HashSet<PathBuf>,
+    diff_pane_repo_roots: &HashSet<PathBuf>,
+) -> bool {
+    diff_pane_cwds.contains(cwd)
+        || repo_root.map_or(false, |root| diff_pane_repo_roots.contains(root))
 }
 
 fn collect_git_poll_results_for_cwds(
-    cwds: Vec<PathBuf>,
+    requests: Vec<GitPollRequest>,
     stop_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> GitPollResults {
     let mut results: GitPollResults = std::collections::HashMap::new();
-    for cwd in cwds {
+    for GitPollRequest { cwd, wants_diff } in requests {
         if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
             break;
         }
-        let git_info = crate::tide_terminal::git::detect_git_info(&cwd);
-        let worktrees = crate::tide_terminal::git::list_worktrees(&cwd);
-        let worktree_count = worktrees.len();
-        let current_worktree = worktrees.into_iter().find(|wt| wt.is_current);
-        let repo_root = crate::tide_terminal::git::repo_root(&cwd);
-        let status_entries = crate::tide_terminal::git::status_files(&cwd);
+        // One spawn each for status, numstat, worktrees, repo_root, branch —
+        // derive both badge stats and diff data from the shared results instead
+        // of re-running `git status` / `git diff --numstat` (P-4).
+        let status_entries = git_cli::status_files(&cwd);
+        let numstat = git_cli::diff_numstat(&cwd);
+        let worktrees = git_cli::list_worktrees(&cwd);
+        let repo_root = git_cli::repo_root(&cwd);
+        let branch = git_cli::detect_branch(&cwd);
 
-        let (diff_files, diff_cache) = if !status_entries.is_empty() {
-            let numstat = crate::tide_terminal::git::diff_numstat(&cwd);
+        let (additions, deletions) = numstat
+            .values()
+            .fold((0usize, 0usize), |(a, d), &(na, nd)| (a + na, d + nd));
+        let git_info = branch.map(|branch| crate::tide_terminal::git::GitInfo {
+            branch,
+            status: crate::tide_terminal::git::GitStatus {
+                changed_files: status_entries.len(),
+                additions,
+                deletions,
+            },
+        });
+
+        let worktree_count = worktrees.len();
+        let current_worktree = worktrees.iter().find(|wt| wt.is_current).cloned();
+
+        // Per-file diffs only when a DiffPane wants them; always `Some` (possibly
+        // empty) for wants-diff cwds so a loading DiffPane can settle on a clean
+        // tree (UC-1 BR-4, UC-2 BR-7).
+        let (diff_files, diff_cache) = if wants_diff {
             let files: Vec<crate::pane::diff::DiffFileEntry> = status_entries
                 .iter()
                 .map(|e| {
@@ -81,7 +114,7 @@ fn collect_git_poll_results_for_cwds(
                 .collect();
             let mut cache = std::collections::HashMap::new();
             for (i, entry) in files.iter().enumerate() {
-                let lines = crate::tide_terminal::git::file_diff_lines(&cwd, &entry.path);
+                let lines = git_cli::file_diff_lines(&cwd, &entry.path);
                 cache.insert(i, lines);
             }
             (Some(files), Some(cache))
@@ -95,6 +128,7 @@ fn collect_git_poll_results_for_cwds(
                 git_info,
                 worktree_count,
                 current_worktree,
+                worktrees,
                 repo_root,
                 status_entries,
                 diff_files,
@@ -285,11 +319,42 @@ impl App {
     /// Used when file tree filesystem events require a git status refresh.
     pub(crate) fn trigger_git_poll(&self) {
         if let Some(ref tx) = self.bg.git_poll_cwd_tx {
-            let cwds = self.git_poll_cwds();
-            if !cwds.is_empty() {
-                let _ = tx.send(cwds.into_iter().collect());
+            let requests = self.git_poll_requests();
+            if !requests.is_empty() {
+                let _ = tx.send(requests);
             }
         }
+    }
+
+    /// Build the poller work list: every polled cwd, tagged with whether an open
+    /// DiffPane wants per-file diff data for it (P-4 wants-diff gating).
+    fn git_poll_requests(&self) -> Vec<GitPollRequest> {
+        let diff_pane_cwds: HashSet<PathBuf> = self
+            .panes
+            .values()
+            .filter_map(|pane| match pane {
+                PaneKind::Diff(dp) => Some(dp.cwd.clone()),
+                _ => None,
+            })
+            .collect();
+        let diff_pane_repo_roots: HashSet<PathBuf> = diff_pane_cwds
+            .iter()
+            .filter_map(|cwd| self.bg.cached_repo_roots.get(cwd).cloned().flatten())
+            .collect();
+
+        self.git_poll_cwds()
+            .into_iter()
+            .map(|cwd| {
+                let repo_root = self.bg.cached_repo_roots.get(&cwd).cloned().flatten();
+                let wants_diff = cwd_wants_diff(
+                    &cwd,
+                    repo_root.as_deref(),
+                    &diff_pane_cwds,
+                    &diff_pane_repo_roots,
+                );
+                GitPollRequest { cwd, wants_diff }
+            })
+            .collect()
     }
 
     fn git_poll_cwds(&self) -> HashSet<PathBuf> {
@@ -448,11 +513,17 @@ impl App {
             }
         }
 
-        // Update cached repo roots (for update_file_tree_cwd)
+        // Update cached repo roots (for update_file_tree_cwd) and the per-repo
+        // worktree list (for the Git Switcher — opens without spawning git, P-5).
         for (cwd, result) in &git_results {
             self.bg
                 .cached_repo_roots
                 .insert(cwd.clone(), result.repo_root.clone());
+            if let Some(ref root) = result.repo_root {
+                self.bg
+                    .cached_worktrees
+                    .insert(root.clone(), result.worktrees.clone());
+            }
         }
 
         // Update file tree git status from poller results
@@ -530,28 +601,26 @@ impl App {
         let stop_flag = self.bg.git_poll_stop.clone();
         let waker = self.bg.event_loop_waker.clone();
 
-        // We need to send CWD list to the thread. We'll use a shared list.
-        // The thread will re-read pane CWDs via a shared channel.
-        // Simpler approach: thread polls at fixed interval, main thread sends CWD list.
-        let (cwd_tx, cwd_rx) = std::sync::mpsc::channel::<Vec<std::path::PathBuf>>();
-        // Store cwd_tx for the main thread to send CWD updates
-        // We'll repurpose the periodic check to send CWDs
+        // The main thread sends poll requests (cwd + wants_diff) via this channel.
+        // The worker drains to the latest request set before each run so quick
+        // repo switches coalesce to the newest work (P-4).
+        let (cwd_tx, cwd_rx) = std::sync::mpsc::channel::<Vec<GitPollRequest>>();
 
         let handle = std::thread::spawn(move || {
             while !stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                // Wait for CWD list from main thread (with timeout)
-                let mut cwds = match cwd_rx.recv_timeout(std::time::Duration::from_secs(2)) {
-                    Ok(cwds) => cwds,
+                // Wait for a request set from the main thread (with timeout)
+                let mut requests = match cwd_rx.recv_timeout(std::time::Duration::from_secs(2)) {
+                    Ok(requests) => requests,
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                 };
 
                 loop {
-                    cwds = latest_git_poll_cwds(&cwd_rx, cwds);
-                    let results = collect_git_poll_results_for_cwds(cwds.clone(), &stop_flag);
-                    let newest_cwds = latest_git_poll_cwds(&cwd_rx, cwds.clone());
-                    if newest_cwds != cwds {
-                        cwds = newest_cwds;
+                    requests = latest_git_poll_requests(&cwd_rx, requests);
+                    let results = collect_git_poll_results_for_cwds(requests.clone(), &stop_flag);
+                    let newest = latest_git_poll_requests(&cwd_rx, requests.clone());
+                    if newest != requests {
+                        requests = newest;
                         continue;
                     }
 

@@ -27,6 +27,7 @@ pub(crate) use adapter::inward::event_loop_adapter as event_loop;
 pub(crate) use adapter::outward::view as rendering;
 pub(crate) use application as action;
 pub(crate) use application::services as update;
+pub(crate) use domain::agent;
 pub(crate) use domain::pane;
 pub(crate) use domain::state;
 pub(crate) use rendering::header;
@@ -93,6 +94,13 @@ fn configure_window_app(
     app.queue_notification_permission_request_if_auto_integration_enabled();
     app.gateway.listening = gateway_info.listening;
     app.gateway.socket_path = gateway_info.socket_path.clone();
+    // Build the explicit terminal spawn config (gateway socket + discovered agent
+    // integration dirs). Pushed into the terminal factory once real ports are
+    // installed (init_phase1).
+    app.terminal_spawn_config = crate::tide_terminal::TerminalSpawnConfig::discover(
+        gateway_info.socket_path.clone(),
+        app.settings.auto_integration,
+    );
     app.gateway.connected_clients_shared = gateway_info.connected_clients_shared.clone();
     app.bg.event_loop_waker = Some(combined_waker.clone());
     app.ports.file_watcher.init(Some(combined_waker));
@@ -305,9 +313,9 @@ fn main() {
             Ok(server) => {
                 let path = server.socket_path.to_string_lossy().to_string();
                 log::info!("Agent Gateway listening on {}", path);
-                crate::tide_terminal::set_gateway_socket_path(path);
-                // Discover agent wrapper scripts in .app bundle Resources
-                crate::tide_terminal::discover_agent_resources();
+                // The socket path flows into each App's TerminalSpawnConfig via
+                // GatewayRuntimeInfo (configure_window_app); the agent wrapper /
+                // shell-integration dirs are discovered there too.
                 Some(server)
             }
             Err(e) => {
