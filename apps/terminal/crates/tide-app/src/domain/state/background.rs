@@ -33,19 +33,35 @@ pub(crate) struct GitPollCwdResult {
     pub diff_cache: Option<HashMap<usize, Vec<crate::pane::diff::DiffLine>>>,
 }
 
-/// One workspace text-search job for the background search worker. `entries` is
-/// shared (Arc) so dispatching never clones the file list.
-pub(crate) struct WorkspaceSearchRequest {
-    pub query_id: u64,
-    pub base_dir: PathBuf,
-    pub entries: Arc<Vec<PathBuf>>,
-    pub query: String,
+/// One job for the background workspace-scan worker (FileFinder). `entries` is
+/// shared (Arc) so dispatching never clones the file list. Both kinds keep
+/// filesystem reads off the app thread (P-1 `/` search, P-2 `#` symbols).
+pub(crate) enum WorkspaceScanRequest {
+    /// `/` text search across workspace files, correlated by `query_id`.
+    Search {
+        query_id: u64,
+        base_dir: PathBuf,
+        entries: Arc<Vec<PathBuf>>,
+        query: String,
+    },
+    /// `#` workspace-symbol index build, correlated by `request_id`.
+    Symbols {
+        request_id: u64,
+        base_dir: PathBuf,
+        entries: Arc<Vec<PathBuf>>,
+    },
 }
 
-/// Results from the background workspace search worker, correlated by `query_id`.
-pub(crate) struct WorkspaceSearchResult {
-    pub query_id: u64,
-    pub hits: Vec<crate::state::WorkspaceSearchHit>,
+/// Results from the background workspace-scan worker, correlated by id.
+pub(crate) enum WorkspaceScanResult {
+    Search {
+        query_id: u64,
+        hits: Vec<crate::state::WorkspaceSearchHit>,
+    },
+    Symbols {
+        request_id: u64,
+        symbols: Vec<crate::state::SymbolMatch>,
+    },
 }
 
 pub(crate) struct BackgroundServices {
@@ -56,11 +72,11 @@ pub(crate) struct BackgroundServices {
     pub git_poll_stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub cached_repo_roots: HashMap<PathBuf, Option<PathBuf>>,
 
-    // ── Workspace text-search worker (FileFinder `/` mode) ──
-    pub workspace_search_tx: Option<std::sync::mpsc::Sender<WorkspaceSearchRequest>>,
-    pub workspace_search_rx: Option<std::sync::mpsc::Receiver<WorkspaceSearchResult>>,
-    pub workspace_search_handle: Option<std::thread::JoinHandle<()>>,
-    pub workspace_search_stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    // ── Workspace-scan worker (FileFinder `/` search + `#` symbols) ──
+    pub workspace_scan_tx: Option<std::sync::mpsc::Sender<WorkspaceScanRequest>>,
+    pub workspace_scan_rx: Option<std::sync::mpsc::Receiver<WorkspaceScanResult>>,
+    pub workspace_scan_handle: Option<std::thread::JoinHandle<()>>,
+    pub workspace_scan_stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl BackgroundServices {
@@ -72,10 +88,10 @@ impl BackgroundServices {
             git_poll_handle: None,
             git_poll_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             cached_repo_roots: HashMap::new(),
-            workspace_search_tx: None,
-            workspace_search_rx: None,
-            workspace_search_handle: None,
-            workspace_search_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            workspace_scan_tx: None,
+            workspace_scan_rx: None,
+            workspace_scan_handle: None,
+            workspace_scan_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 }

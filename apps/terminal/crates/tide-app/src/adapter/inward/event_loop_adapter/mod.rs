@@ -1273,10 +1273,10 @@ impl App {
             crate::AppCorePort::invalidate_chrome(self);
         }
 
-        // Workspace text search (FileFinder `/` mode): dispatch any pending
-        // search to the background worker, and apply any results that arrived.
+        // FileFinder background scans (`/` search + `#` symbols): dispatch any
+        // pending search, then apply any results that arrived from the worker.
         self.dispatch_pending_file_finder_search();
-        if self.consume_workspace_search_results() {
+        if self.consume_workspace_scan_results() {
             crate::AppCorePort::invalidate_chrome(self);
             crate::AppCorePort::request_redraw(self);
         }

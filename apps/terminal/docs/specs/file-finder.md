@@ -80,7 +80,9 @@ Selection remains predictable:
   - BR-3: `@query` switches `FileFinder` into `FileFinderMode::Symbols` and searches the focused `Editor Pane`.
   - BR-4: `#query` switches `FileFinder` into `FileFinderMode::WorkspaceSymbols` and searches workspace `SymbolMatch` items.
   - BR-5: Selecting a current-file `SymbolMatch` targets the focused `Editor Pane` instead of opening a new `Pane`.
-  - BR-6: Selecting a workspace `SymbolMatch` opens the target file at the symbol line.
+  - BR-6: Selecting a workspace `SymbolMatch` opens the target file at the symbol line. The `#` index is built once, on demand, by the background workspace-scan worker (off the app thread — it reads every workspace file); the finder shows a "Loading symbols…" state until it arrives and does not re-dispatch while loading or once loaded.
+
+> Note: the FileFinder open *walk* (`gather_finder_entries`) stays synchronous — it traverses directories without reading file contents and is bounded by `max_depth`. Only the content-reading scans (`/` search, `#` symbols) run on the background worker. Making the walk async is deferred until profiling shows the walk itself stalls.
 
 ### UC-3: SearchWorkspaceText
 - **Actor**: User

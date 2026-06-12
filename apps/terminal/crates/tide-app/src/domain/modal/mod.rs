@@ -204,6 +204,12 @@ pub(crate) struct FileFinderState {
     /// drained by `App::dispatch_pending_file_finder_search` (keeps filesystem
     /// I/O off the app thread / out of the domain layer).
     pub pending_search: bool,
+    /// True while the background worker is building the `#` workspace-symbol
+    /// index (P-2). Renders a "Loading symbols…" row instead of an empty list.
+    pub workspace_symbols_loading: bool,
+    /// Monotonic id of the most recently dispatched symbol-index build; older
+    /// results are stale and dropped.
+    pub symbols_request_id: u64,
 }
 
 impl FileFinderState {
@@ -227,7 +233,29 @@ impl FileFinderState {
             searching: false,
             search_request_id: 0,
             pending_search: false,
+            workspace_symbols_loading: false,
+            symbols_request_id: 0,
         }
+    }
+
+    /// Begin an asynchronous `#` workspace-symbol index build: bump the request
+    /// id (cancelling older builds) and mark loading. Returns the new id for the
+    /// dispatcher to tag its request with.
+    pub fn begin_workspace_symbols_load(&mut self) -> u64 {
+        self.symbols_request_id = self.symbols_request_id.wrapping_add(1);
+        self.workspace_symbols_loading = true;
+        self.symbols_request_id
+    }
+
+    /// Apply a workspace-symbol index from the background worker. Stale results
+    /// (older `request_id`) are dropped. Returns true when applied.
+    pub fn apply_workspace_symbols(&mut self, request_id: u64, symbols: Vec<SymbolMatch>) -> bool {
+        if request_id != self.symbols_request_id {
+            return false;
+        }
+        self.workspace_symbols_loading = false;
+        self.set_workspace_symbols(symbols);
+        true
     }
 
     /// Shared handle to the entry list, for dispatching a background search

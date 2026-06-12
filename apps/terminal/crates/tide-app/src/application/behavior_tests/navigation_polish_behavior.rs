@@ -113,7 +113,12 @@ fn opening_file_finder_defers_workspace_symbol_indexing() {
 
 #[test]
 fn workspace_symbol_mode_loads_symbol_index_once_on_demand() {
-    // UC-2 BR-5, BR-6: WorkspaceSymbols mode lazy-loads the index once and remembers the loaded state.
+    // UC-2 BR-5, BR-6: WorkspaceSymbols mode loads the index once, off the app
+    // thread (P-2). `ensure` dispatches to the background worker (loading, not
+    // loaded); results applied via apply_workspace_symbols settle it; a second
+    // `ensure` does not re-dispatch.
+    use crate::application::services::file_ops_service::scan_workspace_symbols;
+
     let root = temp_root("load_workspace_symbols");
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/header.rs"), "fn render_header() {}\n").unwrap();
@@ -123,37 +128,38 @@ fn workspace_symbol_mode_loads_symbol_index_once_on_demand() {
     if let Some(ref mut finder) = app.modal.file_finder {
         finder.set_query("#render_header".to_string());
     }
+
+    // First ensure: dispatches an async build, marks loading (no synchronous read).
     app.ensure_file_finder_workspace_symbols_loaded();
-    let first_len = app
-        .modal
-        .file_finder
-        .as_ref()
-        .expect("file finder")
-        .workspace_symbols
-        .len();
-    assert_eq!(
-        app.modal.file_finder.as_ref().expect("file finder").mode,
-        crate::state::FileFinderMode::WorkspaceSymbols
-    );
+    let (req_id, base_dir, entries) = {
+        let finder = app.modal.file_finder.as_ref().expect("file finder");
+        assert_eq!(finder.mode, crate::state::FileFinderMode::WorkspaceSymbols);
+        assert!(finder.workspace_symbols_loading, "must mark loading");
+        assert!(!finder.workspace_symbols_loaded, "not loaded synchronously");
+        (
+            finder.symbols_request_id,
+            finder.base_dir.clone(),
+            finder.entries_arc(),
+        )
+    };
+
+    // Simulate the worker producing the index and the App applying it.
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let symbols = scan_workspace_symbols(&base_dir, &entries, &stop);
+    let first_len = {
+        let finder = app.modal.file_finder.as_mut().expect("file finder");
+        assert!(finder.apply_workspace_symbols(req_id, symbols));
+        assert!(finder.workspace_symbols_loaded);
+        assert!(!finder.workspace_symbols_loading);
+        finder.workspace_symbols.len()
+    };
     assert!(first_len > 0);
-    assert!(
-        app.modal
-            .file_finder
-            .as_ref()
-            .expect("file finder")
-            .workspace_symbols_loaded
-    );
 
+    // Second ensure: already loaded → no re-dispatch (request id unchanged).
     app.ensure_file_finder_workspace_symbols_loaded();
-    let second_len = app
-        .modal
-        .file_finder
-        .as_ref()
-        .expect("file finder")
-        .workspace_symbols
-        .len();
-
-    assert_eq!(second_len, first_len);
+    let finder = app.modal.file_finder.as_ref().expect("file finder");
+    assert_eq!(finder.symbols_request_id, req_id, "must not re-dispatch");
+    assert_eq!(finder.workspace_symbols.len(), first_len);
 }
 
 // --- UC-3: GoToDefinitionFromModifierClick ---

@@ -533,11 +533,13 @@ pub(super) fn render_file_finder(
         }
     }
 
-    // Empty-state row: a transient "Searching…" while the background worker
-    // runs (FileFinder `/` mode), otherwise "No matches".
+    // Empty-state row: a transient loading label while a background scan runs
+    // (FileFinder `/` search or `#` symbols), otherwise "No matches".
     if finder.filtered.is_empty() {
         let label = if finder.searching {
             "Searching…"
+        } else if finder.workspace_symbols_loading {
+            "Loading symbols…"
         } else if !finder.input.text.is_empty() {
             "No matches"
         } else {

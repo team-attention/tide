@@ -194,29 +194,30 @@ impl App {
     }
 
     pub(crate) fn ensure_file_finder_workspace_symbols_loaded(&mut self) {
-        let needs_workspace_symbols = self
-            .modal
-            .file_finder
-            .as_ref()
-            .map(|finder| {
-                finder.mode == crate::state::FileFinderMode::WorkspaceSymbols
-                    && !finder.workspace_symbols_loaded
-            })
-            .unwrap_or(false);
-        if !needs_workspace_symbols {
-            return;
-        }
-
-        let (base_dir, entries) = {
-            let finder = self.modal.file_finder.as_ref().expect("file finder");
-            (finder.base_dir.clone(), finder.entries.clone())
-        };
-        let workspace_symbols = self.build_workspace_file_finder_symbols(&base_dir, &entries);
-
-        if let Some(ref mut finder) = self.modal.file_finder {
-            if !finder.workspace_symbols_loaded {
-                finder.set_workspace_symbols(workspace_symbols);
+        // Dispatch the `#` workspace-symbol index build to the background worker
+        // (it reads every workspace file — never on the app thread). The
+        // `workspace_symbols_loading` guard prevents re-dispatching per keystroke.
+        let request = {
+            let finder = match self.modal.file_finder.as_mut() {
+                Some(f) => f,
+                None => return,
+            };
+            let needs = finder.mode == crate::state::FileFinderMode::WorkspaceSymbols
+                && !finder.workspace_symbols_loaded
+                && !finder.workspace_symbols_loading;
+            if !needs {
+                return;
             }
+            let request_id = finder.begin_workspace_symbols_load();
+            crate::state::background::WorkspaceScanRequest::Symbols {
+                request_id,
+                base_dir: finder.base_dir.clone(),
+                entries: finder.entries_arc(),
+            }
+        };
+        self.start_workspace_scan_worker();
+        if let Some(tx) = &self.bg.workspace_scan_tx {
+            let _ = tx.send(request);
         }
         self.cache.invalidate_chrome();
     }
@@ -335,116 +336,165 @@ impl App {
                 .strip_prefix('/')
                 .unwrap_or(&finder.input.text)
                 .to_string();
-            crate::state::background::WorkspaceSearchRequest {
+            crate::state::background::WorkspaceScanRequest::Search {
                 query_id: finder.search_request_id,
                 base_dir: finder.base_dir.clone(),
                 entries: finder.entries_arc(),
                 query,
             }
         };
-        self.start_workspace_search_worker();
-        if let Some(tx) = &self.bg.workspace_search_tx {
+        self.start_workspace_scan_worker();
+        if let Some(tx) = &self.bg.workspace_scan_tx {
             let _ = tx.send(request);
         }
     }
 
-    /// Consume workspace search results from the background worker. Returns true
-    /// when results were applied (the finder must repaint). Stale results are
-    /// dropped by `FileFinderState::apply_workspace_search_results`.
-    pub(crate) fn consume_workspace_search_results(&mut self) -> bool {
-        let results: Vec<crate::state::background::WorkspaceSearchResult> =
-            match self.bg.workspace_search_rx {
-                Some(ref rx) => rx.try_iter().collect(),
-                None => return false,
-            };
+    /// Consume workspace-scan results (`/` search + `#` symbols) from the
+    /// background worker. Returns true when results were applied (the finder
+    /// must repaint). Stale results are dropped by the finder's id checks.
+    pub(crate) fn consume_workspace_scan_results(&mut self) -> bool {
+        use crate::state::background::WorkspaceScanResult;
+        let results: Vec<WorkspaceScanResult> = match self.bg.workspace_scan_rx {
+            Some(ref rx) => rx.try_iter().collect(),
+            None => return false,
+        };
         if results.is_empty() {
             return false;
         }
         let mut changed = false;
         if let Some(finder) = self.modal.file_finder.as_mut() {
             for result in results {
-                if finder.apply_workspace_search_results(result.query_id, result.hits) {
-                    changed = true;
-                }
+                let applied = match result {
+                    WorkspaceScanResult::Search { query_id, hits } => {
+                        finder.apply_workspace_search_results(query_id, hits)
+                    }
+                    WorkspaceScanResult::Symbols {
+                        request_id,
+                        symbols,
+                    } => finder.apply_workspace_symbols(request_id, symbols),
+                };
+                changed |= applied;
             }
         }
         changed
     }
 
-    /// Start the background workspace-search worker thread (idempotent).
-    pub(crate) fn start_workspace_search_worker(&mut self) {
-        if self.bg.workspace_search_handle.is_some() {
+    /// Start the background workspace-scan worker thread (idempotent).
+    pub(crate) fn start_workspace_scan_worker(&mut self) {
+        if self.bg.workspace_scan_handle.is_some() {
             return;
         }
         let (req_tx, req_rx) =
-            std::sync::mpsc::channel::<crate::state::background::WorkspaceSearchRequest>();
+            std::sync::mpsc::channel::<crate::state::background::WorkspaceScanRequest>();
         let (res_tx, res_rx) =
-            std::sync::mpsc::channel::<crate::state::background::WorkspaceSearchResult>();
-        self.bg.workspace_search_tx = Some(req_tx);
-        self.bg.workspace_search_rx = Some(res_rx);
+            std::sync::mpsc::channel::<crate::state::background::WorkspaceScanResult>();
+        self.bg.workspace_scan_tx = Some(req_tx);
+        self.bg.workspace_scan_rx = Some(res_rx);
 
-        let stop_flag = self.bg.workspace_search_stop.clone();
+        let stop_flag = self.bg.workspace_scan_stop.clone();
         let waker = self.bg.event_loop_waker.clone();
 
         let handle = std::thread::Builder::new()
-            .name("tide-workspace-search".to_string())
+            .name("tide-workspace-scan".to_string())
             .spawn(move || {
-                run_workspace_search_worker(req_rx, res_tx, stop_flag, waker);
+                run_workspace_scan_worker(req_rx, res_tx, stop_flag, waker);
             })
-            .expect("failed to spawn workspace search worker");
-        self.bg.workspace_search_handle = Some(handle);
+            .expect("failed to spawn workspace scan worker");
+        self.bg.workspace_scan_handle = Some(handle);
     }
 }
 
-/// Drain the request channel to the most recent request (latest-wins
-/// cancellation — the same idiom as the git poller).
-fn latest_workspace_search_request(
-    req_rx: &std::sync::mpsc::Receiver<crate::state::background::WorkspaceSearchRequest>,
-    mut request: crate::state::background::WorkspaceSearchRequest,
-) -> crate::state::background::WorkspaceSearchRequest {
-    while let Ok(newer) = req_rx.try_recv() {
-        request = newer;
-    }
-    request
-}
-
-fn run_workspace_search_worker(
-    req_rx: std::sync::mpsc::Receiver<crate::state::background::WorkspaceSearchRequest>,
-    res_tx: std::sync::mpsc::Sender<crate::state::background::WorkspaceSearchResult>,
+fn run_workspace_scan_worker(
+    req_rx: std::sync::mpsc::Receiver<crate::state::background::WorkspaceScanRequest>,
+    res_tx: std::sync::mpsc::Sender<crate::state::background::WorkspaceScanResult>,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     waker: Option<crate::tide_platform::WakeCallback>,
 ) {
+    use crate::state::background::{WorkspaceScanRequest, WorkspaceScanResult};
     while !stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-        let mut request = match req_rx.recv_timeout(std::time::Duration::from_secs(2)) {
+        let first = match req_rx.recv_timeout(std::time::Duration::from_secs(2)) {
             Ok(request) => request,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
         };
-        loop {
-            request = latest_workspace_search_request(&req_rx, request);
-            let current_id = request.query_id;
-            let hits = scan_workspace_for_query(
-                &request.base_dir,
-                &request.entries,
-                &request.query,
-                &stop_flag,
-            );
-            // If an even newer query arrived during the scan, redo with it
-            // (skip posting now-stale work).
-            request = latest_workspace_search_request(&req_rx, request);
-            if request.query_id != current_id {
-                continue;
+
+        // Drain the queued batch. Coalesce searches (only the latest matters,
+        // fast typing) but run every symbol-index build.
+        let mut batch = vec![first];
+        while let Ok(more) = req_rx.try_recv() {
+            batch.push(more);
+        }
+        let mut latest_search = None;
+        let mut symbol_jobs = Vec::new();
+        for request in batch {
+            match request {
+                search @ WorkspaceScanRequest::Search { .. } => latest_search = Some(search),
+                symbols @ WorkspaceScanRequest::Symbols { .. } => symbol_jobs.push(symbols),
             }
-            let _ = res_tx.send(crate::state::background::WorkspaceSearchResult {
-                query_id: current_id,
-                hits,
-            });
+        }
+
+        let post = |result: WorkspaceScanResult| {
+            let _ = res_tx.send(result);
             if let Some(ref w) = waker {
                 w();
             }
+        };
+
+        for job in symbol_jobs {
+            if let WorkspaceScanRequest::Symbols {
+                request_id,
+                base_dir,
+                entries,
+            } = job
+            {
+                let symbols = scan_workspace_symbols(&base_dir, &entries, &stop_flag);
+                post(WorkspaceScanResult::Symbols {
+                    request_id,
+                    symbols,
+                });
+            }
+        }
+        if let Some(WorkspaceScanRequest::Search {
+            query_id,
+            base_dir,
+            entries,
+            query,
+        }) = latest_search
+        {
+            let hits = scan_workspace_for_query(&base_dir, &entries, &query, &stop_flag);
+            post(WorkspaceScanResult::Search { query_id, hits });
+        }
+    }
+}
+
+/// Scan workspace `entries` (relative to `base_dir`) for symbol definitions
+/// (P-2 `#` mode). Metadata-first 256 KB skip, capped at 3000 symbols. Runs on
+/// the background worker — never the app thread.
+pub(crate) fn scan_workspace_symbols(
+    base_dir: &Path,
+    entries: &[PathBuf],
+    stop_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Vec<crate::state::SymbolMatch> {
+    let mut symbols = Vec::new();
+    for rel_path in entries.iter() {
+        if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        let full_path = base_dir.join(rel_path);
+        match std::fs::metadata(&full_path) {
+            Ok(meta) if meta.len() <= 256 * 1024 => {}
+            _ => continue,
+        }
+        let Ok(contents) = std::fs::read_to_string(&full_path) else {
+            continue;
+        };
+        let lines: Vec<String> = contents.lines().map(|line| line.to_string()).collect();
+        symbols.extend(crate::state::collect_symbol_matches(rel_path, &lines));
+        if symbols.len() >= 3000 {
             break;
         }
     }
+    symbols
 }
 
 /// Scan workspace `entries` (relative to `base_dir`) for `query`, case-insensitively,
