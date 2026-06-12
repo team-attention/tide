@@ -198,7 +198,19 @@ desktop/adapters/inbound
 
 React is an inbound adapter. It turns user gestures and render lifecycle events into Desktop application calls. Effects such as Backend IPC, Browser Pane control, clipboard, file dialogs, and shell opening sit behind outbound ports.
 
-Electron infrastructure wires processes, windows, preload, paths, permissions, and Backend process supervision. It is composition and platform plumbing, not application policy.
+> **Reality note (2026-06-12).** The Desktop tree implements this boundary
+> without a `ports/` or `services/` directory: the application layer
+> (`application/domains/**/state/`) performs **no IO at all** — state
+> transitions return command objects (`ProductShellBackendCommand`,
+> `AgentChatBackendCommand`) and the inbound adapter forwards them to the
+> outbound `backend-client` adapter (effects-as-data instead of injected port
+> interfaces). The two port-shaped interfaces that do exist live with their
+> adapters: `MessagePortBackendClient` (outbound backend-client) and
+> `ProjectRegistryBridge` (renderer→main IPC surface, react-renderer types).
+> Backend keeps real `application/ports/outbound/` because its services
+> perform IO. If Desktop ever grows an application services layer that calls
+> effects directly, introduce the ports listed above at that point — not
+> before.
 
 ### Shared Contracts Boundary
 

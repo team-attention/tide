@@ -18,7 +18,9 @@ Both `desktop/` and `backend/` have exactly the same three top-level layers
 
 ```
 adapters/         code that talks to the outside (inbound: UI/IPC; outbound: clients)
-application/      domains (state/models) + ports + services — the app's own logic
+application/      the app's own logic — backend: domains + ports + services;
+                  desktop: domains only (state is pure and returns command
+                  objects instead of doing IO, so it needs no ports)
 infrastructure/   composition roots and platform plumbing (entrypoints, processes)
 ```
 
