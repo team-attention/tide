@@ -170,7 +170,10 @@ platform plumbing), mirroring `backend/infrastructure/node/`:
 ## Enforcement
 
 `tests/file-size-ratchet.test.ts` caps every new source file at 800 lines
-(target ≤ 500) and pins the remaining large files so they can only shrink:
-the product-shell component (1,445), `thread-runtime-service.ts` (1,996 — its
-class split is specced in `thread-runtime-service-decomposition.md`), and
-`live-backend.ts` (814).
+(target ≤ 500). Only two legacy pins remain, both shrink-only:
+`product-shell/product-shell.ts` (942) and
+`services/thread/thread-runtime-service.ts` (1,506 — facade + the remaining
+lifecycle cluster; its further split is specced in
+`thread-runtime-service-decomposition.md`). `tests/agent-symmetry-boundary.test.ts`
+additionally forbids quoted provider home-path literals in
+`infrastructure/node/{live,entrypoints}/`.
