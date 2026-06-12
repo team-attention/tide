@@ -29,7 +29,7 @@ import {
   branchDeleteArgs,
   branchMergedArgs,
   worktreeRepoRootForCwd,
-} from "../../../../shared/worktree-path.ts";
+} from "../../../../shared/worktree/path.ts";
 
 import { classifyTopLevelNavigation } from "./window-navigation-policy.ts";
 

@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { resolveAppDataRoot } from "./backend-bridge.ts";
 import { readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
-import { worktreeRepoRootForCwd } from "../../../../shared/worktree-path.ts";
+import { worktreeRepoRootForCwd } from "../../../../shared/worktree/path.ts";
 // Extracted from electron-main.ts (spec: navigable-source-structure).
 
 // --- Persisted project registry (Codex-style "open folder") ---

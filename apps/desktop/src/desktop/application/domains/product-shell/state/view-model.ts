@@ -1,6 +1,6 @@
 import type { ProductShellBackgroundBrowserPane, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellProject, ProductShellProjectGroupView, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellViewModel } from "./types.ts";
 import { isExternalSessionThread } from "./thread-list.ts";
-import { worktreeRepoRootForCwd } from "../../../../../shared/worktree-path.ts";
+import { worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 import { reconcileTree } from "../workbench-split-tree.ts";
 import { createAgentChatShellViewModel } from "../../agent-chat/agent-chat-shell-state.ts";
 import type { AgentChatBlock, AgentChatShellState, AgentChatThreadSummary } from "../../agent-chat/agent-chat-shell-state.ts";

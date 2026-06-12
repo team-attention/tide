@@ -53,7 +53,7 @@ import {
   type AppChromeViewModel,
 } from "../app-chrome/app-chrome-state.ts";
 
-import { worktreeRepoRootForCwd } from "../../../../shared/worktree-path.ts";
+import { worktreeRepoRootForCwd } from "../../../../shared/worktree/path.ts";
 
 import {
   reconcileTree,

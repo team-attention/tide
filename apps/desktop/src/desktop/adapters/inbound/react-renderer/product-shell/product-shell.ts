@@ -64,9 +64,9 @@ import {
 
 import { fileIconFor } from "../file-icons.ts";
 
-import { computeWorktreePath, worktreeDeleteRequest, worktreeRepoRootForCwd } from "../../../../../shared/worktree-path.ts";
+import { computeWorktreePath, worktreeDeleteRequest, worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 
-import { resolveWorktreeName } from "../../../../../shared/worktree-name.ts";
+import { resolveWorktreeName } from "../../../../../shared/worktree/name.ts";
 
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 

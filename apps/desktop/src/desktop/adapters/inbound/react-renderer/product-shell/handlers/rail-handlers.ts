@@ -1,7 +1,7 @@
 import { archiveProductShellProjectChats, cancelProductShellProjectRename, cancelProductShellThreadRename, cancelProductShellWorktreeCreate, clearProductShellLeftRailTransientState, confirmProductShellThreadArchive, openProductShellLeftRailMenu, openProductShellThreadFromLeftRail, selectProductShellChoiceSurfaceRow, setProductShellListSettings, setProductShellRegisteredProjects, showProductShellThreadArchiveConfirm, startNewProductShellScratchThread, startNewProductShellThread, startProductShellProjectRename, startProductShellThreadRename, startProductShellWorktreeCreate, submitProductShellThreadRename, toggleProductShellLeftRail, toggleProductShellProject, toggleProductShellProjectPin, toggleProductShellThreadPin } from "../../../../../application/domains/product-shell/product-shell-state.ts";
 import { persistListSettings } from "../settings.ts";
 import { projectCwdById } from "../product-shell.ts";
-import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree-path.ts";
+import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree/path.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
 import type { ProductShellHandlers } from "../types.ts";

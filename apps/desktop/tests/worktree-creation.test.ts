@@ -11,7 +11,7 @@ import {
   branchMergedArgs,
   worktreeDeleteRequest,
   worktreeRepoRootForCwd,
-} from "../src/shared/worktree-path.ts";
+} from "../src/shared/worktree/path.ts";
 import {
   createProductShellState,
   createProductShellViewModel,

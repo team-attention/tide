@@ -1,5 +1,5 @@
 import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptText, editProductShellQueuedInput, interruptProductShellRuntime, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import { resolveWorktreeName } from "../../../../../../shared/worktree-name.ts";
+import { resolveWorktreeName } from "../../../../../../shared/worktree/name.ts";
 import { makeWorktreeHash } from "../dialogs/worktree-name-input.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 

@@ -6,7 +6,7 @@ import {
   slugFromMessage,
   resolveWorktreeName,
   disambiguateWorktreeName,
-} from "../src/shared/worktree-name.ts";
+} from "../src/shared/worktree/name.ts";
 
 // --- D2: ASCII slug ---
 

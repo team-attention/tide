@@ -1,6 +1,6 @@
 import { createElement, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
-import { computeWorktreePath } from "../../../../../../shared/worktree-path.ts";
+import { computeWorktreePath } from "../../../../../../shared/worktree/path.ts";
 import { GitBranchPlus } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
