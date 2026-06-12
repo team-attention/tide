@@ -637,30 +637,45 @@ opportunity allows (each split is an independent, safe PR).
 ### Implementation status (2026-06-12)
 
 Done and on `terminal-rev` (each its own commit, `cargo test` + `lint-arch.sh`
-green after every slice; suite grew 1458 → 1466):
+green after every slice; suite grew 1458 → 1472):
 
 - **Phase 0** — D-1, D-2. ✅
 - **Phase 1** — P-3+P-6+M-1 (diff cluster), P-4 (poller single-spawn + wants_diff),
   P-1 (finder search worker), P-2 (`#` symbols worker), P-5 **Part A** (Git Switcher
-  opens from the poller cache). ✅
-- **Phase 2** — M-2 (CliDispatch context). ✅
+  opens from the poller cache), **P-5 Part B** (worktree add/remove/branch-delete as
+  background jobs + optimistic delete). ✅
+- **Phase 2** — M-2 (CliDispatch context), **M-3** (TerminalSpawnConfig replaces the
+  domain spawn-config statics; env injection unit-tested), **M-4** (git CLI I/O moved
+  to `git_adapter/git_cli`, types stay in domain), **M-5** (blanket `unsafe impl Send
+  for App` replaced by localized impls on Ports/WebViewHandle/Highlighter). ✅
+- **Phase 3 (partial)** — the architecturally-valuable splits: **S-7** (browser
+  page-map parser → domain), **S-1 (core)** (provider notification interpretation →
+  `domain/agent/notification`; `translate_key` → `domain/input`), **S-6** (browser JS
+  bridge builders → `browser_bridge`). ✅
 - **Phase 4** — E-2 (e2e lane gated `#[ignore]` + `scripts/e2e.sh`), E-3 (harness
   `wait_for_pane_contains` / `wait_for_idle`; `wait_until` already existed), E-4
   (`docs/testing/e2e-tests.md`), and the first E-1 step: the `test-poll-state`
   gateway method (runtime-gated by `TIDE_TERMINAL_TEST_DRIVER=1`) + harness
   `poll_state`/`wait_for_idle`, with in-process behavior tests. ✅
 
-Deferred (tracked; behavior-neutral or destructive-adjacent, lower priority than
-the perf + testability work above — each carries wide blast radius with no
-user-visible change, so they wait for the E-1 test-driver to provide a regression
-net first):
+Remaining (pure size-reduction motion of interleaved/coupled files, or
+display-blocked):
 
-- **P-5 Part B** — worktree *mutations* (add/remove/branch-delete) as background
-  jobs. Infrequent explicit destructive-adjacent actions; design in §P-5, noted in
-  `git-switcher-worktree-actions.md`.
-- **M-3** — `TerminalSpawnConfig` (remove the `domain/terminal` process-global
-  statics + the `App::new` side effect). Wide: changes the `TerminalFactoryPort`
-  signature and every spawn site; payoff (multi-config tests) is currently unconsumed.
+- **Phase 3 size-only splits** — the rest of S-1 (interleaved browser/observe/panes
+  command handlers), S-2 (header.rs), S-3 (webview.rs objc2 delegates), S-4 (modal —
+  FileFinderState et al. are interleaved with shared helpers), S-5 (terminal
+  grid_sync, tightly coupled to `Terminal`), S-8 (the 4k-line agent_gateway test
+  file). These reduce file size with zero behaviour change; the code is interleaved
+  or tightly coupled, so each is a focused, independently-verifiable PR rather than a
+  clean line-range move.
+- **E-1 rest** — `test-inject-event` (needs `serde` derives on `Key`/`Modifiers`/
+  `MouseButton`/`PlatformEvent` + an injected-event queue drained in the loop),
+  `test-await-idle` (deferred-response), `test-screenshot` (wgpu readback). The
+  mechanism is implementable but the payoff (real-window input/visual E2E) can only be
+  verified with a display.
+
+  Older deferral notes below are superseded by the status above where they overlap.
+
 - **M-4** — move `domain/terminal/git.rs` to `git_adapter` (the duplicated DiffPane
   parsers were already deleted in P-3; what remains is pure relocation + a
   `GitPort`-types move).
