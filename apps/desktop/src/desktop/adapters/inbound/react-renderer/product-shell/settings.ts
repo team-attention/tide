@@ -1,6 +1,6 @@
 import { DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS } from "../../../../application/domains/product-shell/product-shell-state.ts";
 import type { PreferredStartComposer, ProductShellListSettings, ProductShellWorktreeSettings } from "../../../../application/domains/product-shell/product-shell-state.ts";
-import type { TideThemePreference } from "../../../../adapters/inbound/react-renderer/theme.ts";
+import type { TideThemePreference } from "../theme.ts";
 import type { ProductShellHandlers } from "./types.ts";
 import { createElement } from "react";
 import type { ChangeEvent, ReactElement } from "react";

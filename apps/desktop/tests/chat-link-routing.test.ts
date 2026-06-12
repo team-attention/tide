@@ -12,8 +12,8 @@ import {
   createAgentChatShellState,
   createAgentChatShellViewModel,
 } from "../src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts";
-import { applyBackendEventToAgentChatShell } from "../src/desktop/adapters/inbound/react-renderer/agent-chat-contract-adapter.ts";
-import { AgentChatShell } from "../src/desktop/adapters/inbound/react-renderer/agent-chat-shell.ts";
+import { applyBackendEventToAgentChatShell } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/contract-adapter.ts";
+import { AgentChatShell } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.ts";
 import {
   openProductShellBrowserAtUrl,
   type ProductShellState,

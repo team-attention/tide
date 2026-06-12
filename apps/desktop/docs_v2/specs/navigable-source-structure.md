@@ -31,6 +31,15 @@
 > output paths (`out/main`, `out/preload`, `out/renderer`) are unchanged.
 > §Styles below reflects the original plan location; the source map is
 > authoritative.
+>
+> **Entry-module rule follow-up (same day):** every react-renderer feature
+> directory now names its assembler after itself — `product-shell/product-shell.ts`
+> (was root `tide-product-shell.ts`), `agent-chat/agent-chat.ts` (was root
+> `agent-chat-shell.ts`), `workbench/workbench.ts`, `transcript/transcript.ts`,
+> `left-rail/left-rail.ts`, `composer/composer.ts` — and contract translation
+> is `<feature>/contract-adapter.ts` (agent-chat, app-chrome). The stylesheet
+> index is `styles/index.css`. Rule documented in source-map.md §The
+> entry-module rule.
 
 ## Scope
 

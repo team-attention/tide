@@ -44,7 +44,7 @@ Editor Pane text model, stable file identity, and a save path.
   state with file identity, text preview, byte length, truncation, and revision.
 - `src/backend/application/ports/outbound/workspace-file-port.ts` currently has
   read and exact-replace methods, but no whole-file human save method.
-- `src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts` currently
+- `src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts` currently
   renders Editor Pane text through a `<pre>` preview block.
 
 ## Decisions

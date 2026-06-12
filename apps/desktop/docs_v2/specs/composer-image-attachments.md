@@ -102,4 +102,4 @@ In scope:
 - `src/shared/contracts/commands.ts`
 - `src/backend/application/services/thread-runtime-service.ts`
 - `src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts`
-- `src/desktop/adapters/inbound/react-renderer/agent-chat-shell.ts`
+- `src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.ts`

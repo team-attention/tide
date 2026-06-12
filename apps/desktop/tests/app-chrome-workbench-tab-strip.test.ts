@@ -17,8 +17,8 @@ import {
 import {
   applyBackendEventToAppChrome,
   toBackendCommandDraft,
-} from "../src/desktop/adapters/inbound/react-renderer/app-chrome-contract-adapter.ts";
-import { AppChrome } from "../src/desktop/adapters/inbound/react-renderer/app-chrome.ts";
+} from "../src/desktop/adapters/inbound/react-renderer/app-chrome/contract-adapter.ts";
+import { AppChrome } from "../src/desktop/adapters/inbound/react-renderer/app-chrome/app-chrome.ts";
 import {
   CONTRACT_VERSION,
   type BackendEventEnvelope,

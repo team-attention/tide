@@ -33,7 +33,7 @@ It does not cover:
   excludes a native browser WebView and renders only Browser metadata.
 - `src/desktop/infrastructure/electron/main/electron-main.ts` creates the main BrowserWindow without
   `webviewTag`.
-- `src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts` currently
+- `src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts` currently
   renders Browser Pane URL and preview text but no page-hosting element.
 
 ## Decisions

@@ -54,7 +54,7 @@ import {
   updateProductShellComposerDraft,
   writeProductShellTerminalInput,
 } from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
-import { AgentIdentityIcon, TideProductShell } from "../src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts";
+import { AgentIdentityIcon, TideProductShell } from "../src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts";
 import {
   CONTRACT_VERSION,
   validateBackendCommandEnvelope,
@@ -66,7 +66,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 // (docs_v2/specs/navigable-source-structure.md); assertions run against the
 // inlined concatenation so match/doesNotMatch cover the whole cascade.
 function readProductShellCss(): string {
-  const indexPath = path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/tide-product-shell.css");
+  const indexPath = path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/styles/index.css");
   const indexSource = fs.readFileSync(indexPath, "utf8");
   return indexSource.replace(/@import\s+"([^"]+)";/g, (_, importPath: string) =>
     fs.readFileSync(path.join(path.dirname(indexPath), importPath), "utf8"),
@@ -137,7 +137,7 @@ test("product_shell_applies_thread_listed_event_to_left_ui", () => {
 test("product_shell_requests_backend_thread_list_on_mount_without_fixture_threads", () => {
   // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
   const source = fs.readFileSync(
-    path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts"),
+    path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts"),
     "utf8",
   );
 

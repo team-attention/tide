@@ -2,12 +2,12 @@ import type {
   BackendCommandPayloadByKind,
   BackendEventEnvelope,
   JsonObject,
-} from "../../../../shared/contracts/index.ts";
+} from "../../../../../shared/contracts/index.ts";
 import {
   applyAgentChatBackendEvent,
   type AgentChatBackendCommand,
   type AgentChatShellState,
-} from "../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+} from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
 
 export type AgentChatBackendCommandDraft = {
   kind: "thread.start";

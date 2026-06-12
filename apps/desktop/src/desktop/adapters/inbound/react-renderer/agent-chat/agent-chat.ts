@@ -1,10 +1,10 @@
-import type { AgentChatShellProps, AnchorRect } from "./agent-chat/types.ts";
-import { createAgentSession } from "./agent-chat/transcript/session.ts";
-import { createChipPopover } from "./agent-chat/composer/context-chips.ts";
-import { attachImageFile } from "./agent-chat/composer/attachments.ts";
-import { createNewThreadStartSurface } from "./agent-chat/start-surface.ts";
-import { createThreadHeader } from "./agent-chat/thread-header.ts";
-import { createComposerStack } from "./agent-chat/composer/composer.ts";
+import type { AgentChatShellProps, AnchorRect } from "./types.ts";
+import { createAgentSession } from "./transcript/transcript.ts";
+import { createChipPopover } from "./composer/context-chips.ts";
+import { attachImageFile } from "./composer/attachments.ts";
+import { createNewThreadStartSurface } from "./start-surface.ts";
+import { createThreadHeader } from "./thread-header.ts";
+import { createComposerStack } from "./composer/composer.ts";
 import {
   createElement,
   memo,
@@ -23,7 +23,7 @@ import {
 
 import MarkdownIt from "markdown-it";
 
-import { renderMarkdownCached } from "./markdown-rendering.ts";
+import { renderMarkdownCached } from "../markdown-rendering.ts";
 
 import {
   ArrowUp,
@@ -54,9 +54,9 @@ import {
   X,
 } from "lucide-react";
 
-import { fileIconFor } from "./file-icons.ts";
+import { fileIconFor } from "../file-icons.ts";
 
-import { guessLanguage, highlightToHtml } from "./code-highlight.ts";
+import { guessLanguage, highlightToHtml } from "../code-highlight.ts";
 
 import type {
   AgentChatBlockView,
@@ -65,7 +65,7 @@ import type {
   AgentChatContextItem,
   AgentChatComposerSurfaceKind,
   AgentChatShellViewModel,
-} from "../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+} from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
 
 export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   const viewModel = props.viewModel;
@@ -342,6 +342,6 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
 
 // Decomposed into ./agent-chat/ (spec: navigable-source-structure). The chat shell
 // component stays here; moved pieces are re-exported for path compatibility.
-export { toolBodyText } from "./agent-chat/transcript/tool-log.ts";
-export { editDiffLines } from "./agent-chat/transcript/tool-diff.ts";
-export type { AgentChatShellProps } from "./agent-chat/types.ts";
+export { toolBodyText } from "./transcript/tool-log.ts";
+export { editDiffLines } from "./transcript/tool-diff.ts";
+export type { AgentChatShellProps } from "./types.ts";

@@ -1,12 +1,12 @@
 import type {
   BackendCommandPayloadByKind,
   BackendEventEnvelope,
-} from "../../../../shared/contracts/index.ts";
+} from "../../../../../shared/contracts/index.ts";
 import {
   applyAppChromeBackendEvent,
   type AppChromeBackendCommand,
   type AppChromeState,
-} from "../../../application/domains/app-chrome/app-chrome-state.ts";
+} from "../../../../application/domains/app-chrome/app-chrome-state.ts";
 
 export type AppChromeBackendCommandDraft = {
   kind: "workbench.command";

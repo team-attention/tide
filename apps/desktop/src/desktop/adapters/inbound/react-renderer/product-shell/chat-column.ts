@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 import { threadScopeLabel } from "./left-rail/thread-section.ts";
 import { createIconButton, createTrafficControls } from "./chrome.ts";
 import { Folder, PanelLeftOpen, Pin } from "lucide-react";
-import { AgentChatShell } from "../agent-chat-shell.ts";
+import { AgentChatShell } from "../agent-chat/agent-chat.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createAgentChatColumn(

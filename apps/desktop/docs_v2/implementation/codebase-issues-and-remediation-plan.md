@@ -203,9 +203,9 @@ Current sizes (`wc -l`, audit day):
 
 | File | Lines | Top-level decls | Contents crammed together |
 |---|---|---|---|
-| `desktop/adapters/inbound/react-renderer/tide-product-shell.ts` | **5,822** | 92 | Shell component (~1,350 lines, lines 1062–2410), content-search panel, worktree dialogs, **all six workbench panes** (browser ~460, markdown ~575, editor, diff, terminal ~313, launcher), background webview, left-rail section builders (project/pinned/thread), icons, column-fit math |
+| `desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts` | **5,822** | 92 | Shell component (~1,350 lines, lines 1062–2410), content-search panel, worktree dialogs, **all six workbench panes** (browser ~460, markdown ~575, editor, diff, terminal ~313, launcher), background webview, left-rail section builders (project/pinned/thread), icons, column-fit math |
 | `desktop/application/domains/product-shell/product-shell-state.ts` | **3,054** | — | Whole-app view state: thread list, projects, workbench, dialogs, menus, queue, event application |
-| `desktop/adapters/inbound/react-renderer/agent-chat-shell.ts` | **2,415** | — | Transcript rendering, markdown, tool blocks, reasoning, composer, readiness surface, paste/attachments |
+| `desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.ts` | **2,415** | — | Transcript rendering, markdown, tool blocks, reasoning, composer, readiness surface, paste/attachments |
 | `desktop/application/domains/agent-chat/agent-chat-shell-state.ts` | **2,340** | — | Chat view state + per-agent permission/model vocab (A2) + composer/queue logic |
 | `backend/application/services/thread-runtime-service.ts` | 1,976 | — | Lifecycle core + facade (post-decomposition) |
 | `backend/infrastructure/node/live-backend.ts` | 1,599 | — | Wiring + projector closure + adoption/discovery + provider helpers (A5) |

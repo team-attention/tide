@@ -41,13 +41,32 @@ the agent/provider actually *does* is `backend/`.
    (the dispatch switch), which calls a service under
    `src/backend/application/services/<domain>/`.
 
+## The entry-module rule
+
+Inside `react-renderer/`, every feature directory follows one convention:
+
+- **`<dir>/<dir>.ts` is the entry** — the module that assembles/mounts
+  everything in that directory (`product-shell/product-shell.ts` is the shell
+  component; `left-rail/left-rail.ts` builds the rail; `workbench/workbench.ts`
+  builds the workbench column; `transcript/transcript.ts` builds the
+  transcript; `composer/composer.ts` builds the composer).
+- **`contract-adapter.ts`** (where present) translates shared-contract
+  envelopes ↔ that feature's state vocabulary (`agent-chat/contract-adapter.ts`,
+  `app-chrome/contract-adapter.ts`).
+- **Every other file is a detail module** called by the entry (rows, sections,
+  panes, menus). A directory without a same-named module (e.g. `dialogs/`,
+  `search/`, `state/`) is a flat bag whose pieces the parent entry mounts
+  directly.
+
+So to read any feature top-down: open `<dir>/<dir>.ts` and follow its calls.
+
 ## Desktop: view layer (`src/desktop/adapters/inbound/react-renderer/`)
 
 | You want to change… | Go to |
 |---|---|
-| Shell layout, column wiring, top bar assembly | `tide-product-shell.ts` (the shell component) |
+| Shell layout, column wiring, top bar assembly | `product-shell/product-shell.ts` (the shell component + the feature's re-exported API) |
 | Left rail: rows, sections, headers, context menu | `product-shell/left-rail/` (`thread-row.ts`, `project-section.ts`, `pinned-section.ts`, `thread-section.ts`, `section-header.ts`, `context-menu.ts`, `skeletons.ts`) |
-| Workbench panes (browser / editor / markdown / diff / terminal / launcher) | `product-shell/workbench/` — one file per pane, plus `split-view.ts`, `workbench-column.ts`, `pane-chrome.ts`, `pane-content.ts` |
+| Workbench panes (browser / editor / markdown / diff / terminal / launcher) | `product-shell/workbench/` — one file per pane, entry `workbench.ts`, plus `split-view.ts`, `pane-chrome.ts`, `pane-content.ts` |
 | File tree column | `product-shell/file-tree.ts` |
 | Quick Open (Cmd+P) / content search (Cmd+Shift+F) | `product-shell/search/` |
 | Worktree dialogs | `product-shell/dialogs/` |
@@ -55,16 +74,19 @@ the agent/provider actually *does* is `backend/`.
 | Window chrome toggles, traffic lights, resize handles | `product-shell/chrome.ts` |
 | Column sizing math | `product-shell/layout.ts` |
 | Agent monograms/icons | `product-shell/agent-identity.ts` |
-| Chat transcript (turns, markdown, tool log, reasoning) | `agent-chat/transcript/` (`session.ts`, `agent-turn.ts`, `user-turn.ts`, `tool-log.ts`, `tool-diff.ts`, `markdown.ts`, `reasoning.ts`, `working-indicator.ts`, `file-chip.ts`) |
+| Chat transcript (turns, markdown, tool log, reasoning) | `agent-chat/transcript/` (entry `transcript.ts`, `agent-turn.ts`, `user-turn.ts`, `tool-log.ts`, `tool-diff.ts`, `markdown.ts`, `reasoning.ts`, `working-indicator.ts`, `file-chip.ts`) |
 | Composer (input box, chips, menus, steer queue, usage) | `agent-chat/composer/` (`composer.ts`, `context-chips.ts`, `choice-surface.ts`, `steer-queue.ts`, `attachments.ts`, `usage-meter.ts`) |
 | Thread header / provider readiness / start surface / prompt cards | `agent-chat/thread-header.ts`, `readiness.ts`, `start-surface.ts`, `prompt-card.ts` |
 
-`tide-product-shell.ts` and `agent-chat-shell.ts` keep the shell components and
-re-export the moved API, so old import paths still work.
+The chat column's root component is `agent-chat/agent-chat.ts`; backend-event/
+command translation for the chat lives in `agent-chat/contract-adapter.ts`.
+The workbench tab strip is `app-chrome/app-chrome.ts` (+ its
+`contract-adapter.ts`). Shared leaf utilities stay at the react-renderer root:
+`markdown-rendering.ts`, `code-highlight.ts`, `file-icons.ts`, `theme.ts`.
 
 ## Desktop: CSS (`src/desktop/adapters/inbound/react-renderer/`)
 
-Styles live next to the markup adapter. `tide-product-shell.css` is an
+Styles live next to the markup adapter. `styles/index.css` is an
 **ordered @import index** over `styles/` — import order preserves the cascade,
 so never reorder it casually.
 

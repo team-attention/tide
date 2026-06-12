@@ -31,8 +31,8 @@ import {
 import {
   applyBackendEventToAgentChatShell,
   toBackendCommandDraft,
-} from "../src/desktop/adapters/inbound/react-renderer/agent-chat-contract-adapter.ts";
-import { AgentChatShell } from "../src/desktop/adapters/inbound/react-renderer/agent-chat-shell.ts";
+} from "../src/desktop/adapters/inbound/react-renderer/agent-chat/contract-adapter.ts";
+import { AgentChatShell } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.ts";
 import {
   CONTRACT_VERSION,
   type AgentSessionBlockDto,
@@ -961,7 +961,7 @@ test("desktop_application_shell_state_does_not_import_react_backend_or_shared_co
 
 test("composer_shell_command_adapter_only_claims_shell_owned_backend_command_kinds", () => {
   const source = readRepoFile(
-    "src/desktop/adapters/inbound/react-renderer/agent-chat-contract-adapter.ts",
+    "src/desktop/adapters/inbound/react-renderer/agent-chat/contract-adapter.ts",
   );
 
   assert.doesNotMatch(source, /BackendCommandKind/);

@@ -7,7 +7,7 @@
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 
-import { TideProductShell } from "../../../adapters/inbound/react-renderer/tide-product-shell.ts";
+import { TideProductShell } from "../../../adapters/inbound/react-renderer/product-shell/product-shell.ts";
 import {
   applyProductShellBackendEvent,
   createProductShellState,
@@ -20,7 +20,7 @@ import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 import "@xterm/xterm/css/xterm.css";
-import "../../../adapters/inbound/react-renderer/tide-product-shell.css";
+import "../../../adapters/inbound/react-renderer/styles/index.css";
 import { applyThemePreference } from "../../../adapters/inbound/react-renderer/theme.ts";
 
 const CLAUDE_MD_PREVIEW = [
@@ -231,7 +231,7 @@ function richTranscriptFixtureState() {
           kind: "tool_call",
           role: "tool",
           title: "Read",
-          body: JSON.stringify({ file_path: "/Users/you/Workspace/tide/src/desktop/adapters/inbound/react-renderer/agent-chat-shell.ts" }),
+          body: JSON.stringify({ file_path: "/Users/you/Workspace/tide/src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.ts" }),
           updatedAt: at(3),
         }),
         block({
@@ -239,7 +239,7 @@ function richTranscriptFixtureState() {
           kind: "tool_call",
           role: "tool",
           title: "Shell",
-          body: JSON.stringify({ command: "rg -n \"agent-session-turn\" src/desktop/adapters/inbound/react-renderer/tide-product-shell.css | head" }),
+          body: JSON.stringify({ command: "rg -n \"agent-session-turn\" src/desktop/adapters/inbound/react-renderer/styles/index.css | head" }),
           updatedAt: at(4),
         }),
         block({
@@ -278,7 +278,7 @@ function richTranscriptFixtureState() {
           role: "tool",
           title: "Edit",
           body: JSON.stringify({
-            file_path: "src/desktop/adapters/inbound/react-renderer/tide-product-shell.css",
+            file_path: "src/desktop/adapters/inbound/react-renderer/styles/index.css",
             old_string: ".agent-session-turn {\n  margin-bottom: 16px;\n}",
             new_string: ".agent-session-turn {\n  margin-bottom: 22px;\n  line-height: 1.62;\n}",
           }),

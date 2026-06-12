@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fitColumnsToWidth } from "../src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts";
+import { fitColumnsToWidth } from "../src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts";
 
 // Mins: left 180, chat 440, workbench 280, fileTree 220 (sum with left = 1120).
 

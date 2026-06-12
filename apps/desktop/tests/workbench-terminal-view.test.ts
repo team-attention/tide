@@ -49,7 +49,7 @@ const {
   openProductShellThread,
 } = await import("../src/desktop/application/domains/product-shell/product-shell-state.ts");
 const { TideProductShell } = await import(
-  "../src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts"
+  "../src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts"
 );
 
 function terminalState() {

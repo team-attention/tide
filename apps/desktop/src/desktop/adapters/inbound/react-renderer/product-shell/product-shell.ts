@@ -1,19 +1,19 @@
-import type { MenuAnchorRect, ProductShellHandlers, TideProductShellProps } from "./product-shell/types.ts";
-import { createSettingsModal, loadListSettings, loadPreferredStartComposer, loadWorktreeSettings, persistListSettings, persistPreferredStartComposer, persistWorktreeSettings } from "./product-shell/settings.ts";
-import { WorktreeDeleteDialog } from "./product-shell/dialogs/worktree-delete-dialog.ts";
-import type { WorktreeDeleteTarget } from "./product-shell/dialogs/worktree-delete-dialog.ts";
-import { routeProductShellTerminalOutput } from "./product-shell/workbench/terminal-pane.ts";
-import { WorktreeNameInput, makeWorktreeHash } from "./product-shell/dialogs/worktree-name-input.ts";
-import { fitColumnsToWidth, useColumnPresence } from "./product-shell/layout.ts";
-import { QuickOpenPalette } from "./product-shell/search/quick-open.ts";
-import type { QuickOpenFile } from "./product-shell/search/quick-open.ts";
-import { createLeftUi } from "./product-shell/left-rail/left-rail.ts";
-import { createAgentChatColumn } from "./product-shell/chat-column.ts";
-import { createWorkbenchColumn } from "./product-shell/workbench/workbench-column.ts";
-import { createFileTreeColumn } from "./product-shell/file-tree.ts";
-import { createWindowChromeToggles } from "./product-shell/chrome.ts";
-import { BackgroundBrowserHost } from "./product-shell/workbench/browser-pane.ts";
-import { ContentSearchPanel } from "./product-shell/search/content-search.ts";
+import type { MenuAnchorRect, ProductShellHandlers, TideProductShellProps } from "./types.ts";
+import { createSettingsModal, loadListSettings, loadPreferredStartComposer, loadWorktreeSettings, persistListSettings, persistPreferredStartComposer, persistWorktreeSettings } from "./settings.ts";
+import { WorktreeDeleteDialog } from "./dialogs/worktree-delete-dialog.ts";
+import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.ts";
+import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.ts";
+import { WorktreeNameInput, makeWorktreeHash } from "./dialogs/worktree-name-input.ts";
+import { fitColumnsToWidth, useColumnPresence } from "./layout.ts";
+import { QuickOpenPalette } from "./search/quick-open.ts";
+import type { QuickOpenFile } from "./search/quick-open.ts";
+import { createLeftUi } from "./left-rail/left-rail.ts";
+import { createAgentChatColumn } from "./chat-column.ts";
+import { createWorkbenchColumn } from "./workbench/workbench.ts";
+import { createFileTreeColumn } from "./file-tree.ts";
+import { createWindowChromeToggles } from "./chrome.ts";
+import { BackgroundBrowserHost } from "./workbench/browser-pane.ts";
+import { ContentSearchPanel } from "./search/content-search.ts";
 import { createElement, Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
 
 import {
@@ -56,11 +56,11 @@ import {
   X,
 } from "lucide-react";
 
-import { fileIconFor } from "./file-icons.ts";
+import { fileIconFor } from "../file-icons.ts";
 
-import { computeWorktreePath, worktreeDeleteRequest, worktreeRepoRootForCwd } from "../../../../shared/worktree-path.ts";
+import { computeWorktreePath, worktreeDeleteRequest, worktreeRepoRootForCwd } from "../../../../../shared/worktree-path.ts";
 
-import { resolveWorktreeName } from "../../../../shared/worktree-name.ts";
+import { resolveWorktreeName } from "../../../../../shared/worktree-name.ts";
 
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 
@@ -86,9 +86,9 @@ import { markdown as markdownLang } from "@codemirror/lang-markdown";
 
 import MarkdownIt from "markdown-it";
 
-import { guessLanguage, highlightToHtml } from "./code-highlight.ts";
+import { guessLanguage, highlightToHtml } from "../code-highlight.ts";
 
-import { renderMarkdownCached, taskListPlugin } from "./markdown-rendering.ts";
+import { renderMarkdownCached, taskListPlugin } from "../markdown-rendering.ts";
 
 import {
   applyProductShellBackendEvent,
@@ -188,11 +188,11 @@ import {
   type ProductShellState,
   type ProductShellThreadView,
   type ProductShellViewModel,
-} from "../../../application/domains/product-shell/product-shell-state.ts";
+} from "../../../../application/domains/product-shell/product-shell-state.ts";
 
-import { AgentChatShell } from "./agent-chat-shell.ts";
+import { AgentChatShell } from "../agent-chat/agent-chat.ts";
 
-import { agentDescriptor } from "../../../../shared/contracts/agent-descriptors.ts";
+import { agentDescriptor } from "../../../../../shared/contracts/agent-descriptors.ts";
 
 import type {
   AgentChatBackendEvent,
@@ -200,14 +200,14 @@ import type {
   AgentChatCommandOption,
   AgentChatComposerSurfaceKind,
   AgentChatThreadScope,
-} from "../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+} from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
 
 import {
   applyThemePreference,
   loadThemePreference,
   saveThemePreference,
   type TideThemePreference,
-} from "../../../adapters/inbound/react-renderer/theme.ts";
+} from "../theme.ts";
 
 export function TideProductShell(props: TideProductShellProps): ReactElement {
   const [shellState, setShellState] = useState(() => {
@@ -1438,7 +1438,7 @@ function projectCwdById(state: ProductShellState, projectId: string): string | u
 
 // Decomposed into ./product-shell/ (spec: navigable-source-structure). The shell
 // component stays here; moved pieces are re-exported for path compatibility.
-export { WorktreeDeleteDialog, type WorktreeDeleteTarget } from "./product-shell/dialogs/worktree-delete-dialog.ts";
-export { AgentIdentityIcon, agentMonogram } from "./product-shell/agent-identity.ts";
-export { fitColumnsToWidth } from "./product-shell/layout.ts";
-export type { ProjectRegistryEntry, GitContextResult, ProjectRegistryBridge, TideProductShellProps } from "./product-shell/types.ts";
+export { WorktreeDeleteDialog, type WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.ts";
+export { AgentIdentityIcon, agentMonogram } from "./agent-identity.ts";
+export { fitColumnsToWidth } from "./layout.ts";
+export type { ProjectRegistryEntry, GitContextResult, ProjectRegistryBridge, TideProductShellProps } from "./types.ts";

@@ -5,7 +5,7 @@ import type {
   AppChromeViewModel,
   ChromeActionView,
   WorkbenchTabView,
-} from "../../../application/domains/app-chrome/app-chrome-state.ts";
+} from "../../../../application/domains/app-chrome/app-chrome-state.ts";
 
 export interface AppChromeProps {
   viewModel: AppChromeViewModel;

@@ -28,7 +28,7 @@ JavaScript execution from the Agent.
   explicitly leaves click/type automation to a later spec.
 - `src/backend/application/domains/workbench/workbench.ts` already models
   Browser Pane refs and available Tide MCP tools.
-- `src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts` already
+- `src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts` already
   owns WebView snapshot extraction and dispatches `workbench.command`
   `update_browser_snapshot`.
 

@@ -3,12 +3,12 @@
    cascade. Find styles by area: thread rows → left-rail.css, transcript → chat-transcript.css,
    composer/menus → composer.css, workbench panes → panes.css, modals/palettes → dialogs.css. */
 
-@import "./styles/base.css";
-@import "./styles/app-chrome.css";
-@import "./styles/left-rail.css";
-@import "./styles/chat-transcript.css";
-@import "./styles/composer.css";
-@import "./styles/workbench.css";
-@import "./styles/panes.css";
-@import "./styles/file-tree.css";
-@import "./styles/dialogs.css";
+@import "./base.css";
+@import "./app-chrome.css";
+@import "./left-rail.css";
+@import "./chat-transcript.css";
+@import "./composer.css";
+@import "./workbench.css";
+@import "./panes.css";
+@import "./file-tree.css";
+@import "./dialogs.css";

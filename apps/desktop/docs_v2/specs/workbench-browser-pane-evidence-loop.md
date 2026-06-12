@@ -26,7 +26,7 @@ screenshots, auth popup handling, downloads, or Browser session persistence.
 - `src/backend/application/services/thread-runtime-service.ts` currently stores
   `BrowserPaneState.bodyTextPreview`, but `openBrowserOutput` only sets URL,
   title, loading, revision, and updatedAt.
-- `src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts` renders a
+- `src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts` renders a
   `<webview>` for Browser Panes and can dispatch `workbench.command` through
   Product Shell handlers.
 

@@ -9,7 +9,7 @@ import {
   TideProductShell,
   WorktreeDeleteDialog,
   type WorktreeDeleteTarget,
-} from "../src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts";
+} from "../src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts";
 import {
   applyProductShellBackendEvent,
   archiveProductShellWorktreeChats,
