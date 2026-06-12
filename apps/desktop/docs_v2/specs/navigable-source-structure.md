@@ -17,6 +17,20 @@
 >   `npm run test:smoke:electron` the auth-free end-to-end gate; it passed
 >   against the decomposed app, as did the 682-test suite, typecheck, build,
 >   and a pw-smoke screenshot pass.
+>
+> **Layer consolidation follow-up (same day):** the desktop top level had
+> drifted into two mixed taxonomies (hexagon layers + `main/ preload/
+> renderer/` process dirs). Per the decided shape in
+> `electron-node-architecture-decisions.md` §Desktop Boundary, `src/desktop/`
+> is now exactly `adapters/ application/ infrastructure/` (same as backend):
+> the Electron process surfaces moved to `infrastructure/electron/{main,
+> preload, renderer}/` (mirroring `backend/infrastructure/node/`), and the
+> stylesheet tree (`tide-product-shell.css` + `styles/`) plus `theme.ts` moved
+> into `adapters/inbound/react-renderer/` next to the markup they style. Build
+> entries in `electron.vite.config.mjs` follow the new source paths; built
+> output paths (`out/main`, `out/preload`, `out/renderer`) are unchanged.
+> §Styles below reflects the original plan location; the source map is
+> authoritative.
 
 ## Scope
 

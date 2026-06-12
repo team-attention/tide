@@ -7,7 +7,7 @@
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 
-import { TideProductShell } from "../adapters/inbound/react-renderer/tide-product-shell.ts";
+import { TideProductShell } from "../../../adapters/inbound/react-renderer/tide-product-shell.ts";
 import {
   applyProductShellBackendEvent,
   createProductShellState,
@@ -15,13 +15,13 @@ import {
   submitProductShellComposerDraft,
   updateProductShellComposerDraft,
   toggleProductShellWorkbenchLayoutMode,
-} from "../application/domains/product-shell/product-shell-state.ts";
+} from "../../../application/domains/product-shell/product-shell-state.ts";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 import "@xterm/xterm/css/xterm.css";
-import "./tide-product-shell.css";
-import { applyThemePreference } from "./theme.ts";
+import "../../../adapters/inbound/react-renderer/tide-product-shell.css";
+import { applyThemePreference } from "../../../adapters/inbound/react-renderer/theme.ts";
 
 const CLAUDE_MD_PREVIEW = [
   "# Tide — Project Rules",
@@ -239,7 +239,7 @@ function richTranscriptFixtureState() {
           kind: "tool_call",
           role: "tool",
           title: "Shell",
-          body: JSON.stringify({ command: "rg -n \"agent-session-turn\" src/desktop/renderer/tide-product-shell.css | head" }),
+          body: JSON.stringify({ command: "rg -n \"agent-session-turn\" src/desktop/adapters/inbound/react-renderer/tide-product-shell.css | head" }),
           updatedAt: at(4),
         }),
         block({
@@ -278,7 +278,7 @@ function richTranscriptFixtureState() {
           role: "tool",
           title: "Edit",
           body: JSON.stringify({
-            file_path: "src/desktop/renderer/tide-product-shell.css",
+            file_path: "src/desktop/adapters/inbound/react-renderer/tide-product-shell.css",
             old_string: ".agent-session-turn {\n  margin-bottom: 16px;\n}",
             new_string: ".agent-session-turn {\n  margin-bottom: 22px;\n  line-height: 1.62;\n}",
           }),

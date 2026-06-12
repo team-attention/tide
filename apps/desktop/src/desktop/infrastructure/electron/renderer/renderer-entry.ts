@@ -1,17 +1,17 @@
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 
-import { TideProductShell } from "../adapters/inbound/react-renderer/tide-product-shell.ts";
+import { TideProductShell } from "../../../adapters/inbound/react-renderer/tide-product-shell.ts";
 import type {
   AgentChatBackendEvent,
-} from "../application/domains/agent-chat/agent-chat-shell-state.ts";
-import type { ProductShellBackendCommand } from "../application/domains/product-shell/product-shell-state.ts";
+} from "../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { ProductShellBackendCommand } from "../../../application/domains/product-shell/product-shell-state.ts";
 import {
   CONTRACT_VERSION,
   sanitizeJsonValue,
   type BackendCommandEnvelope,
   type BackendEventEnvelope,
-} from "../../shared/contracts/index.ts";
+} from "../../../../shared/contracts/index.ts";
 // Inter (OFL-1.1, self-hosted) is the canonical Figma typeface; load the weights
 // the design uses (regular / medium / semibold) so the UI does not fall back to
 // the platform system font.
@@ -19,8 +19,8 @@ import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 import "@xterm/xterm/css/xterm.css";
-import "./tide-product-shell.css";
-import { applyThemePreference, loadThemePreference, watchSystemTheme } from "./theme.ts";
+import "../../../adapters/inbound/react-renderer/tide-product-shell.css";
+import { applyThemePreference, loadThemePreference, watchSystemTheme } from "../../../adapters/inbound/react-renderer/theme.ts";
 
 // The inline script in index.html already set the boot theme to avoid a flash;
 // re-apply from the source of truth and keep "auto" in sync with the OS.

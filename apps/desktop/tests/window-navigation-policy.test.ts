@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { classifyTopLevelNavigation } from "../src/desktop/main/window-navigation-policy.ts";
+import { classifyTopLevelNavigation } from "../src/desktop/infrastructure/electron/main/window-navigation-policy.ts";
 
 const PACKAGED = "file:///Applications/Tide.app/Contents/Resources/app/out/renderer/index.html";
 const DEV = "http://localhost:5173/";

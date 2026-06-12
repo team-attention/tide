@@ -207,7 +207,7 @@ import {
   loadThemePreference,
   saveThemePreference,
   type TideThemePreference,
-} from "../../../renderer/theme.ts";
+} from "../../../adapters/inbound/react-renderer/theme.ts";
 
 export function TideProductShell(props: TideProductShellProps): ReactElement {
   const [shellState, setShellState] = useState(() => {

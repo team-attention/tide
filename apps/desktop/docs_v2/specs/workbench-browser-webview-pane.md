@@ -31,7 +31,7 @@ It does not cover:
   than opening the OS default browser.
 - `docs_v2/specs/desktop-workbench-pane-content-rendering.md` currently
   excludes a native browser WebView and renders only Browser metadata.
-- `src/desktop/main/electron-main.ts` creates the main BrowserWindow without
+- `src/desktop/infrastructure/electron/main/electron-main.ts` creates the main BrowserWindow without
   `webviewTag`.
 - `src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts` currently
   renders Browser Pane URL and preview text but no page-hosting element.

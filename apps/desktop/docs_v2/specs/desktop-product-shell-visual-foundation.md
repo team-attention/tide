@@ -317,6 +317,6 @@ This slice consumes existing Desktop view models and fixture Left UI data. Compo
 ## Implementation Notes
 
 - Keep this as a Desktop renderer slice.
-- Keep CSS in `src/desktop/renderer/`.
+- Keep CSS in `src/desktop/infrastructure/electron/renderer/`.
 - Use `lucide-react` for common command icons.
 - Keep bespoke Agent Icons small and structural until final brand assets are created.

@@ -1,6 +1,6 @@
 import type { AgentChatBackendEvent, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerSurfaceKind } from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
 import type { DropZone, ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellLeftUiMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings } from "../../../../application/domains/product-shell/product-shell-state.ts";
-import type { TideThemePreference } from "../../../../renderer/theme.ts";
+import type { TideThemePreference } from "../../../../adapters/inbound/react-renderer/theme.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export interface ProjectRegistryEntry {

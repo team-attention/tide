@@ -306,9 +306,9 @@ Known divergence to fix: the Left UI "Search" is a nav row (icon + "Search"),
 not an inline input — the inline input belongs only to the FileTree filter.
 
 Headless conformance loop (no Electron GUI needed): a dev-only harness
-(`src/desktop/renderer/dev-harness.html`/`.ts`, not in the production build
+(`src/desktop/infrastructure/electron/renderer/dev-harness.html`/`.ts`, not in the production build
 input) mounts the real Product Shell with a Figma-matching fixture. Serve it
-with `npx vite src/desktop/renderer --port 5199` and open
+with `npx vite src/desktop/infrastructure/electron/renderer --port 5199` and open
 `/dev-harness.html?probe=N` (bump N to bust the snapshot cache). The harness
 reports layout (column order, rail width, top-row height, editor/composer
 presence) via `document.title` because the Browser Pane snapshot extractor does

@@ -66,7 +66,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 // (docs_v2/specs/navigable-source-structure.md); assertions run against the
 // inlined concatenation so match/doesNotMatch cover the whole cascade.
 function readProductShellCss(): string {
-  const indexPath = path.join(repoRoot, "src/desktop/renderer/tide-product-shell.css");
+  const indexPath = path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/tide-product-shell.css");
   const indexSource = fs.readFileSync(indexPath, "utf8");
   return indexSource.replace(/@import\s+"([^"]+)";/g, (_, importPath: string) =>
     fs.readFileSync(path.join(path.dirname(indexPath), importPath), "utf8"),
@@ -647,7 +647,7 @@ test("agent_icons_use_deterministic_identity_palette", () => {
 
 test("renderer_entry_mounts_product_shell_not_bare_agent_chat", () => {
   const renderer = fs.readFileSync(
-    path.join(repoRoot, "src/desktop/renderer/renderer-entry.ts"),
+    path.join(repoRoot, "src/desktop/infrastructure/electron/renderer/renderer-entry.ts"),
     "utf8",
   );
 

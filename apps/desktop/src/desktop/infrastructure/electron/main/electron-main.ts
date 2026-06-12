@@ -29,7 +29,7 @@ import {
   branchDeleteArgs,
   branchMergedArgs,
   worktreeRepoRootForCwd,
-} from "../../shared/worktree-path.ts";
+} from "../../../../shared/worktree-path.ts";
 
 import { classifyTopLevelNavigation } from "./window-navigation-policy.ts";
 
@@ -43,7 +43,7 @@ import {
   validateBackendCommandEnvelope,
   validateBackendEventEnvelope,
   validateBackendHandshake,
-} from "../../shared/contracts/index.ts";
+} from "../../../../shared/contracts/index.ts";
 
 ipcMain.handle("tide:open-directory", async () => {
   const result = await dialog.showOpenDialog({

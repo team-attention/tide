@@ -135,7 +135,7 @@ export function resolveWorktreeName(input: {
 }): string;
 ```
 
-Main IPC (`src/desktop/preload/index.ts`, `electron-main.ts`) — extend creation
+Main IPC (`src/desktop/infrastructure/electron/preload/index.ts`, `electron-main.ts`) — extend creation
 to accept a base branch (additive, backward compatible):
 
 ```ts
@@ -231,7 +231,7 @@ randomness), injected into the pure rule so tests stay deterministic.
 ## Location
 
 - `src/shared/worktree-name.ts` (new), `src/shared/worktree-path.ts`
-- `src/desktop/main/electron-main.ts`, `src/desktop/preload/index.ts`
+- `src/desktop/infrastructure/electron/main/electron-main.ts`, `src/desktop/infrastructure/electron/preload/index.ts`
 - `src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts`
 - `src/desktop/application/domains/product-shell/product-shell-state.ts`
 - `src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts`, `renderer-entry.ts`

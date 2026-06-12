@@ -14,7 +14,7 @@ export interface TideDesktopMainEntrypoint {
 export const tideDesktopMainEntrypoint: TideDesktopMainEntrypoint = {
   productName: "Tide",
   backendEntrypoint: "src/backend/infrastructure/node/backend-entrypoint.ts",
-  rendererRoot: "src/desktop/renderer",
+  rendererRoot: "src/desktop/infrastructure/electron/renderer",
 };
 
 // The URL the main host renderer is loaded from — the dev-server origin in

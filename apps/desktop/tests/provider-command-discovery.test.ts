@@ -7,7 +7,7 @@ import {
   parseClaudeCommand,
   parseCodexSkill,
   type CommandFs,
-} from "../src/desktop/main/provider-command-discovery.ts";
+} from "../src/desktop/infrastructure/electron/main/provider-command-discovery.ts";
 
 test("claude_command_md_parses_name_and_description", () => {
   const md = "---\ndescription: Check repository evidence.\nargument-hint: \"[seed]\"\n---\n# body";

@@ -11,7 +11,7 @@ export default {
     build: {
       rollupOptions: {
         input: {
-          "electron-main": "src/desktop/main/electron-main.ts",
+          "electron-main": "src/desktop/infrastructure/electron/main/electron-main.ts",
           "backend-entrypoint": "src/backend/infrastructure/node/backend-entrypoint.ts",
         },
       },
@@ -21,7 +21,7 @@ export default {
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: "src/desktop/preload/index.ts",
+        input: "src/desktop/infrastructure/electron/preload/index.ts",
         output: {
           format: "cjs",
           entryFileNames: "index.cjs",
@@ -30,10 +30,10 @@ export default {
     },
   },
   renderer: {
-    root: "src/desktop/renderer",
+    root: "src/desktop/infrastructure/electron/renderer",
     build: {
       rollupOptions: {
-        input: "src/desktop/renderer/index.html",
+        input: "src/desktop/infrastructure/electron/renderer/index.html",
       },
     },
   },

@@ -12,7 +12,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 // The Electron main process is electron-main.ts plus its sibling main/ modules
 // (spec: navigable-source-structure); spec assertions read the whole unit.
 function readMainProcessSource(): string {
-  const dir = path.join(repoRoot, "src/desktop/main");
+  const dir = path.join(repoRoot, "src/desktop/infrastructure/electron/main");
   return fs
     .readdirSync(dir)
     .filter((name) => name.endsWith(".ts"))
@@ -136,13 +136,13 @@ test("electron_vite_config_maps_main_preload_renderer_and_backend_paths", () => 
   const config = fs.readFileSync(path.join(repoRoot, "electron.vite.config.mjs"), "utf8");
   const main = readMainProcessSource();
 
-  assert.match(config, /src\/desktop\/main\/electron-main\.ts/);
+  assert.match(config, /src\/desktop\/infrastructure\/electron\/main\/electron-main\.ts/);
   assert.match(config, /src\/backend\/infrastructure\/node\/backend-entrypoint\.ts/);
-  assert.match(config, /src\/desktop\/preload\/index\.ts/);
+  assert.match(config, /src\/desktop\/infrastructure\/electron\/preload\/index\.ts/);
   assert.match(config, /entryFileNames:\s*"index\.cjs"/);
   assert.match(config, /format:\s*"cjs"/);
-  assert.match(config, /src\/desktop\/renderer/);
-  assert.match(config, /src\/desktop\/renderer\/index\.html/);
+  assert.match(config, /src\/desktop\/infrastructure\/electron\/renderer/);
+  assert.match(config, /src\/desktop\/infrastructure\/electron\/renderer\/index\.html/);
   assert.match(main, /src\/backend\/infrastructure\/node\/backend-entrypoint\.ts/);
   assert.match(main, /backend-entrypoint\.js/);
   assert.match(main, /index\.cjs/);
@@ -194,7 +194,7 @@ test("electron_main_smoke_result_is_compact_enough_for_raw_pty_output", () => {
 });
 
 test("renderer_entry_mounts_the_react_app_into_the_root_element", () => {
-  const renderer = fs.readFileSync(path.join(repoRoot, "src/desktop/renderer/renderer-entry.ts"), "utf8");
+  const renderer = fs.readFileSync(path.join(repoRoot, "src/desktop/infrastructure/electron/renderer/renderer-entry.ts"), "utf8");
 
   assert.match(renderer, /createRoot/);
   assert.match(renderer, /document\.getElementById\("root"\)/);

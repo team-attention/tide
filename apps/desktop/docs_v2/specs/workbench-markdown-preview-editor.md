@@ -139,4 +139,4 @@ own block; it does not clip on the right edge or widen the page.
 
 - `src/desktop/adapters/inbound/react-renderer/markdown-rendering.ts` (new)
 - `src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts`
-- `src/desktop/renderer/tide-product-shell.css`
+- `src/desktop/adapters/inbound/react-renderer/tide-product-shell.css`

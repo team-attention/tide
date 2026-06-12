@@ -363,4 +363,4 @@ and exercises the real preload/Main/Backend transport.
 - Keep tests deterministic by default.
 - Keep Backend process entry testable without launching full Electron where possible.
 - Add scripts before implementation specs start depending on them.
-- When real electron-vite is installed, renderer input must point at `src/desktop/renderer/index.html` because Tide v2 keeps Desktop source under `src/desktop`, not electron-vite's default `src/renderer`.
+- When real electron-vite is installed, renderer input must point at `src/desktop/infrastructure/electron/renderer/index.html` because Tide v2 keeps Desktop source under `src/desktop`, not electron-vite's default `src/renderer`.

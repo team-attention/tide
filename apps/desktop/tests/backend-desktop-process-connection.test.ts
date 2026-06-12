@@ -831,8 +831,8 @@ test("live_backend_restores_persisted_threads_before_thread_list", async () => {
 
 test("electron_main_and_preload_expose_backend_event_push_channel", () => {
   const mainSource = readMainProcessSource();
-  const preloadSource = readRepoFile("src/desktop/preload/index.ts");
-  const rendererSource = readRepoFile("src/desktop/renderer/renderer-entry.ts");
+  const preloadSource = readRepoFile("src/desktop/infrastructure/electron/preload/index.ts");
+  const rendererSource = readRepoFile("src/desktop/infrastructure/electron/renderer/renderer-entry.ts");
 
   assert.match(mainSource, /webContents\.send\("tide:backend-event"/);
   assert.match(preloadSource, /onBackendEvent/);
@@ -853,7 +853,7 @@ test("electron_main_defers_unscoped_backend_events_emitted_during_pending_comman
 });
 
 test("renderer_entry_surfaces_missing_backend_transport", () => {
-  const rendererSource = readRepoFile("src/desktop/renderer/renderer-entry.ts");
+  const rendererSource = readRepoFile("src/desktop/infrastructure/electron/renderer/renderer-entry.ts");
 
   assert.match(rendererSource, /backend_transport_unavailable/);
   assert.match(rendererSource, /Run Tide through the Electron app to start Agents/);
@@ -1202,7 +1202,7 @@ function sequentialIdGenerator(prefix: string): () => string {
 // (spec: navigable-source-structure); spec assertions read the whole unit.
 function readMainProcessSource(): string {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const dir = path.join(repoRoot, "src/desktop/main");
+  const dir = path.join(repoRoot, "src/desktop/infrastructure/electron/main");
   return fs
     .readdirSync(dir)
     .filter((name) => name.endsWith(".ts"))

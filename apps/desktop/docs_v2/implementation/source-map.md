@@ -13,15 +13,24 @@ src/
   shared/    process-boundary contracts (DTOs + envelopes) — nothing else
 ```
 
-A UI change almost always touches `desktop/` twice — once in the **view layer**
-(markup, in `adapters/inbound/react-renderer/`) and once in **CSS**
-(`renderer/styles/`). Behavior changes touch the **state layer**
-(`application/domains/`). Anything the agent/provider actually *does* is
-`backend/`.
+Both `desktop/` and `backend/` have exactly the same three top-level layers
+(per `electron-node-architecture-decisions.md` §Desktop Boundary):
+
+```
+adapters/         code that talks to the outside (inbound: UI/IPC; outbound: clients)
+application/      domains (state/models) + ports + services — the app's own logic
+infrastructure/   composition roots and platform plumbing (entrypoints, processes)
+```
+
+A UI change almost always touches `desktop/` twice — once in **markup**
+(`adapters/inbound/react-renderer/...`) and once in **CSS**
+(`adapters/inbound/react-renderer/styles/`, right next to the markup).
+Behavior changes touch the **state layer** (`application/domains/`). Anything
+the agent/provider actually *does* is `backend/`.
 
 ## Worked example: "the button on a thread row in the left thread list"
 
-1. Style → `src/desktop/renderer/styles/left-rail.css` (thread rows, sections,
+1. Style → `src/desktop/adapters/inbound/react-renderer/styles/left-rail.css` (thread rows, sections,
    rail menus live here; search `.thread-row`).
 2. Markup/handlers → `src/desktop/adapters/inbound/react-renderer/product-shell/left-rail/thread-row.ts`.
 3. What clicking it *does* → `src/desktop/application/domains/product-shell/state/thread-list.ts`.
@@ -51,10 +60,11 @@ A UI change almost always touches `desktop/` twice — once in the **view layer*
 `tide-product-shell.ts` and `agent-chat-shell.ts` keep the shell components and
 re-export the moved API, so old import paths still work.
 
-## Desktop: CSS (`src/desktop/renderer/`)
+## Desktop: CSS (`src/desktop/adapters/inbound/react-renderer/`)
 
-`tide-product-shell.css` is an **ordered @import index** over `styles/` —
-import order preserves the cascade, so never reorder it casually.
+Styles live next to the markup adapter. `tide-product-shell.css` is an
+**ordered @import index** over `styles/` — import order preserves the cascade,
+so never reorder it casually.
 
 | Area | File |
 |---|---|
@@ -91,7 +101,19 @@ import order preserves the cascade, so never reorder it casually.
 The old `product-shell-state.ts` / `agent-chat-shell-state.ts` paths are pure
 re-export barrels.
 
-## Desktop: Electron main (`src/desktop/main/`)
+## Desktop: process shells (`src/desktop/infrastructure/electron/`)
+
+The three Electron process surfaces are infrastructure (composition +
+platform plumbing), mirroring `backend/infrastructure/node/`:
+
+| Surface | Where |
+|---|---|
+| Main process | `main/` (below) |
+| Preload bridge | `preload/index.ts` |
+| Renderer web shell (index.html, entry, dev-harness) | `renderer/` |
+| Backend process supervisor abstraction | `backend-process-supervisor.ts` |
+
+### Main process (`infrastructure/electron/main/`)
 
 | Concern | File |
 |---|---|

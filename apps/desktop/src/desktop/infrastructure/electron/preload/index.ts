@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   BackendCommandEnvelope,
   BackendEventEnvelope,
-} from "../../shared/contracts/index.ts";
+} from "../../../../shared/contracts/index.ts";
 
 export interface ProjectRegistryEntry {
   projectId: string;

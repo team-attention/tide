@@ -93,7 +93,7 @@ interface GitContext {
 - renderer: fetch git context on active project cwd change.
 
 ## Location
-- `src/desktop/main/electron-main.ts`, `src/desktop/preload/index.ts`
+- `src/desktop/infrastructure/electron/main/electron-main.ts`, `src/desktop/infrastructure/electron/preload/index.ts`
 - `src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts`
 - `src/desktop/application/domains/product-shell/product-shell-state.ts`
 - `src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts`, `renderer-entry.ts`

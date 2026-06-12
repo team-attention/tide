@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createContractErrorEvent, createContractErrorPayload, validateBackendEventEnvelope, validateBackendHandshake } from "../../shared/contracts/index.ts";
-import type { BackendCommandEnvelope, BackendEventEnvelope, BackendHandshake } from "../../shared/contracts/index.ts";
+import { createContractErrorEvent, createContractErrorPayload, validateBackendEventEnvelope, validateBackendHandshake } from "../../../../shared/contracts/index.ts";
+import type { BackendCommandEnvelope, BackendEventEnvelope, BackendHandshake } from "../../../../shared/contracts/index.ts";
 import { BrowserWindow, app, utilityProcess } from "electron";
 import type { UtilityProcess } from "electron";
 // Extracted from electron-main.ts (spec: navigable-source-structure).

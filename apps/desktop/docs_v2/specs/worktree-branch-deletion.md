@@ -158,8 +158,8 @@ shell state, the branch/merged facts from `worktreeInfo`.
 
 ## Location
 - `src/shared/worktree-path.ts`
-- `src/desktop/main/electron-main.ts`, `src/desktop/preload/index.ts`
+- `src/desktop/infrastructure/electron/main/electron-main.ts`, `src/desktop/infrastructure/electron/preload/index.ts`
 - `src/desktop/application/domains/product-shell/product-shell-state.ts`
 - `src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts` (composer row trash)
 - `src/desktop/adapters/inbound/react-renderer/tide-product-shell.ts`, `renderer-entry.ts`
-- `src/desktop/renderer/tide-product-shell.css`
+- `src/desktop/adapters/inbound/react-renderer/tide-product-shell.css`

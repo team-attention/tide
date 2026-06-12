@@ -6,7 +6,7 @@
     <title>Tide</title>
     <script>
       // Apply the saved theme synchronously, before any CSS/JS, so a dark user
-      // never sees a flash of the light default. Mirrors renderer/theme.ts.
+      // never sees a flash of the light default. Mirrors adapters/inbound/react-renderer/theme.ts.
       (function () {
         try {
           var pref = localStorage.getItem("tide.theme") || "auto";
