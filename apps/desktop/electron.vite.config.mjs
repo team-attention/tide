@@ -12,7 +12,7 @@ export default {
       rollupOptions: {
         input: {
           "electron-main": "src/desktop/infrastructure/electron/main/electron-main.ts",
-          "backend-entrypoint": "src/backend/infrastructure/node/backend-entrypoint.ts",
+          "backend-entrypoint": "src/backend/infrastructure/node/entrypoints/backend-entrypoint.ts",
         },
       },
     },

@@ -1,7 +1,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { isSymlink } from "./live-backend-fs.ts";
+import { isSymlink } from "../live/live-backend-fs.ts";
 import { providerBootstrapArtifactsForHome } from "./provider-bootstrap-artifacts.ts";
 
 // Scans each provider's history directory for recently-modified transcript/rollout

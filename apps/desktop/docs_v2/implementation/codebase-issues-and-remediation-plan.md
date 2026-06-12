@@ -208,7 +208,7 @@ Current sizes (`wc -l`, audit day):
 | `desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.ts` | **2,415** | — | Transcript rendering, markdown, tool blocks, reasoning, composer, readiness surface, paste/attachments |
 | `desktop/application/domains/agent-chat/agent-chat-shell-state.ts` | **2,340** | — | Chat view state + per-agent permission/model vocab (A2) + composer/queue logic |
 | `backend/application/services/thread-runtime-service.ts` | 1,976 | — | Lifecycle core + facade (post-decomposition) |
-| `backend/infrastructure/node/live-backend.ts` | 1,599 | — | Wiring + projector closure + adoption/discovery + provider helpers (A5) |
+| `backend/infrastructure/node/live/live-backend.ts` | 1,599 | — | Wiring + projector closure + adoption/discovery + provider helpers (A5) |
 | `desktop/main/electron-main.ts` | 1,144 | 41 fns / 15 `ipcMain` sites | Window policy, menus, IPC bridge, backend supervisor wiring, attachments, fullscreen, close-intent |
 | `backend/adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts` | 1,012 | — | Every contract command's routing in one switch |
 

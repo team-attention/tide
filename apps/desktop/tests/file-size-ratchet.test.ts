@@ -25,7 +25,7 @@ const MAX_LINES = 800;
 const PINNED_MAX: Record<string, number> = {
   "desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts": 942,
   "backend/application/services/thread/thread-runtime-service.ts": 1996,
-  "backend/infrastructure/node/live-backend.ts": 814,
+  "backend/infrastructure/node/live/live-backend.ts": 814,
 };
 
 function listSourceFiles(dir: string): string[] {

@@ -163,9 +163,9 @@ platform plumbing), mirroring `backend/infrastructure/node/`:
 | Contract command routing (the dispatch switch) | `adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts`; DTO mappers in `…/dto/`, error mapping in `…/error-codes.ts` |
 | Per-provider adapters (claude/codex/gemini/opencode) | `adapters/outbound/agent-integrations/<agent>/` |
 | Protocol clients (stream-json / app-server / ACP) | `adapters/outbound/agent-runtime/structured/` |
-| Live wiring (composition root) | `infrastructure/node/live-backend.ts` |
-| Streaming projection (provider events → blocks/persist) | `infrastructure/node/live-projector.ts` |
-| External-session adoption / provider file locations | `infrastructure/node/live-provider-discovery.ts` |
+| Live wiring (composition root) | `infrastructure/node/live/live-backend.ts` |
+| Streaming projection (provider events → blocks/persist) | `infrastructure/node/live/live-projector.ts` |
+| External-session adoption / provider file locations | `infrastructure/node/live/live-provider-discovery.ts` |
 
 ## Enforcement
 

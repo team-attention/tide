@@ -24,7 +24,7 @@ import {
   submitProductShellComposerDraft,
   updateProductShellComposerDraft,
 } from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
-import { createLiveBackendContractMessageAdapter } from "../src/backend/infrastructure/node/live-backend.ts";
+import { createLiveBackendContractMessageAdapter } from "../src/backend/infrastructure/node/live/live-backend.ts";
 import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

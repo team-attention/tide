@@ -38,7 +38,7 @@ import {
   readClaudeProviderStateFromHome,
   readCodexProviderStateFromHome,
   threadStorageRecordFromThreadSummary,
-} from "../src/backend/infrastructure/node/live-backend.ts";
+} from "../src/backend/infrastructure/node/live/live-backend.ts";
 import {
   createCodexHistoryConnector,
   readCodexHistoryFrames,
@@ -126,7 +126,7 @@ import { createFileAppStorage } from "../src/backend/adapters/outbound/app-stora
 import {
   ensureProviderBootstrapArtifacts,
   providerBootstrapArtifactsForHome,
-} from "../src/backend/infrastructure/node/provider-bootstrap-artifacts.ts";
+} from "../src/backend/infrastructure/node/provider/provider-bootstrap-artifacts.ts";
 import { createPythonPtyProcessLauncher } from "../src/backend/adapters/outbound/pty/python-pty-process-launcher.ts";
 import { createPtyProviderSetupSurfaceTerminalPort } from "../src/backend/adapters/outbound/pty/provider-setup-surface-pty-port.ts";
 import { SKIP_REAL_PTY_IN_CI } from "./pty-ci-gate.ts";
@@ -417,7 +417,7 @@ test("provider_setup_surface_pty_port_forwards_terminal_input_and_exit", async (
 test("live_backend_uses_pty_port_for_provider_setup_surface", () => {
   // Spec: docs_v2/specs/provider-setup-surface-terminal-lifecycle.md
   const source = fs.readFileSync(
-    path.join(repoRoot, "src/backend/infrastructure/node/live-backend.ts"),
+    path.join(repoRoot, "src/backend/infrastructure/node/live/live-backend.ts"),
     "utf8",
   );
 
@@ -430,7 +430,7 @@ test("live_agent_session_projection_emits_prompt_changed_for_prompt_state", () =
   // Spec: docs_v2/specs/provider-signal-prompt-ingress.md
   // The projection path lives in live-projector.ts (navigable-source-structure).
   const source = fs.readFileSync(
-    path.join(repoRoot, "src/backend/infrastructure/node/live-projector.ts"),
+    path.join(repoRoot, "src/backend/infrastructure/node/live/live-projector.ts"),
     "utf8",
   );
 

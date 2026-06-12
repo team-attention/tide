@@ -72,6 +72,6 @@ fires once per turn (a new terminal planner message = a turn just ended).
 
 ## Location
 
-`src/backend/infrastructure/node/live-backend.ts`
+`src/backend/infrastructure/node/live/live-backend.ts`
 (`antigravityConversationItems`, `readAntigravityProviderHistoryFramesFromHome`,
 `emitAntigravityHistory`). Tests: `tests/backend-agent-runtime-port-wiring.test.ts`.

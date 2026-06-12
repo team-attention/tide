@@ -95,7 +95,7 @@ per-agent matrix above — those cannot be exercised headlessly.
 Capture the app log and the thread's provider session ref. The turn-end and
 streaming paths are now provider-owned in the Agent Integration adapters, so a
 failure localizes to one `adapters/outbound/agent-integrations/<agent>/` file plus
-the (still-polling) loop in `infrastructure/node/live-backend.ts`. The next
+the (still-polling) loop in `infrastructure/node/live/live-backend.ts`. The next
 structural step (task #7) replaces those polling loops with per-runtime
 `AgentRuntimeEventSource`s — do that migration against whichever agent fails here,
 verifying with this checklist.

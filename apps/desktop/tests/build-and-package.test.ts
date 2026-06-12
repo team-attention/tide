@@ -137,13 +137,13 @@ test("electron_vite_config_maps_main_preload_renderer_and_backend_paths", () => 
   const main = readMainProcessSource();
 
   assert.match(config, /src\/desktop\/infrastructure\/electron\/main\/electron-main\.ts/);
-  assert.match(config, /src\/backend\/infrastructure\/node\/backend-entrypoint\.ts/);
+  assert.match(config, /src\/backend\/infrastructure\/node\/entrypoints\/backend-entrypoint\.ts/);
   assert.match(config, /src\/desktop\/infrastructure\/electron\/preload\/index\.ts/);
   assert.match(config, /entryFileNames:\s*"index\.cjs"/);
   assert.match(config, /format:\s*"cjs"/);
   assert.match(config, /src\/desktop\/infrastructure\/electron\/renderer/);
   assert.match(config, /src\/desktop\/infrastructure\/electron\/renderer\/index\.html/);
-  assert.match(main, /src\/backend\/infrastructure\/node\/backend-entrypoint\.ts/);
+  assert.match(main, /src\/backend\/infrastructure\/node\/entrypoints\/backend-entrypoint\.ts/);
   assert.match(main, /backend-entrypoint\.js/);
   assert.match(main, /index\.cjs/);
   assert.match(main, /utilityProcess\.fork/);

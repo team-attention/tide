@@ -18,7 +18,7 @@ It covers:
 - `docs_v2/specs/provider-integration-bootstrap.md` requires Codex hook/bootstrap config, Claude `--settings` plus `--mcp-config`, and Antigravity plugin-owned `hooks.json` plus `mcp_config.json`.
 - `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` says Antigravity runtime hook loading was proven for a global plugin with root `hooks.json`, and production bootstrap must verify the installed-layout contract.
 - v1 wrapper files under `crates/tide-app/resources/bin/` show Codex overlay, Claude settings/MCP files, and provider hook command injection as the reference pattern.
-- Current v2 live wiring in `src/backend/infrastructure/node/live-backend.ts` passes Claude paths under missing `docs_v2/mcp` files, marks Codex hook bootstrap ready unconditionally, and does not pass an Antigravity plugin install source.
+- Current v2 live wiring in `src/backend/infrastructure/node/live/live-backend.ts` passes Claude paths under missing `docs_v2/mcp` files, marks Codex hook bootstrap ready unconditionally, and does not pass an Antigravity plugin install source.
 
 ## Decisions
 
@@ -99,6 +99,6 @@ Provider state readers use these readiness checks:
 
 ## Implementation Notes
 
-- Keep filesystem writing in `src/backend/infrastructure/node/provider-bootstrap-artifacts.ts`.
+- Keep filesystem writing in `src/backend/infrastructure/node/provider/provider-bootstrap-artifacts.ts`.
 - Keep provider-specific launch-plan construction in Agent Integration adapters.
 - Re-export only the minimal helpers needed by tests and live wiring.

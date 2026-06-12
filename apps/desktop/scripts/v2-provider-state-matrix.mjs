@@ -39,7 +39,7 @@ if (run === undefined) {
 
 function makeAdapter(envOverrides = {}, onEvent) {
   // Imported lazily so a case can mutate process.env (PATH masking) first.
-  return import("../src/backend/infrastructure/node/live-backend.ts").then(
+  return import("../src/backend/infrastructure/node/live/live-backend.ts").then(
     ({ createLiveBackendContractMessageAdapter }) => {
       const appDataRoot = mkdtempSync(path.join(tmpdir(), `tide-matrix-${caseName}-`));
       return createLiveBackendContractMessageAdapter({

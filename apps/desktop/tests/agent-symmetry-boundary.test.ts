@@ -112,7 +112,7 @@ test("the runtime port derives agent membership and session-ref kind from the re
 });
 
 test("infra detectAvailableAgents iterates the registry, not a hardcoded array", () => {
-  const source = read("src/backend/infrastructure/node/live-backend.ts");
+  const source = read("src/backend/infrastructure/node/live/live-backend.ts");
   assert.match(source, /PROVIDER_CLI_AGENT_IDS\.filter/);
   assert.doesNotMatch(
     source,

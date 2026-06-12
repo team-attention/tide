@@ -23,7 +23,7 @@ It covers:
 - `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` records that Antigravity hook and transcript evidence includes `conversationId` and `transcriptPath`, and that `agy --conversation <conversation-id>` resumes the same Raw Agent Session.
 - `src/backend/application/services/thread-runtime-service.ts` resumes a Thread only when `thread.agentBinding.providerSessionRef` exists.
 - `src/backend/application/services/thread-persistence-service.ts` can attach `providerSessionRef` to persisted Thread metadata.
-- `src/backend/infrastructure/node/live-backend.ts` currently projects Antigravity transcript frames into Agent Session Blocks and attaches Antigravity references, but it does not attach Codex rollout or Claude transcript references.
+- `src/backend/infrastructure/node/live/live-backend.ts` currently projects Antigravity transcript frames into Agent Session Blocks and attaches Antigravity references, but it does not attach Codex rollout or Claude transcript references.
 
 ## Decisions
 

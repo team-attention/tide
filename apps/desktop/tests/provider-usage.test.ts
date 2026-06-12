@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseProviderUsage } from "../src/backend/infrastructure/node/provider-usage.ts";
+import { parseProviderUsage } from "../src/backend/infrastructure/node/provider/provider-usage.ts";
 
 // Spec: docs_v2/specs/agent-chat-fidelity-reasoning-actions.md (usage meter slice)
 

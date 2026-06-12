@@ -1,10 +1,10 @@
-import { readBoundedTail } from "./live-backend-fs.ts";
+import { readBoundedTail } from "../live/live-backend-fs.ts";
 import {
   inputTextContentEquals,
   parseJsonObject,
   recordField,
   stringField,
-} from "./live-backend-json.ts";
+} from "../live/live-backend-json.ts";
 import {
   claudeProviderSessionRefFromTranscriptPath,
   codexProviderSessionRefFromRolloutPath,

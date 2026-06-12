@@ -39,7 +39,7 @@ Out of scope (consume the spine, specified elsewhere):
 
 As-is, observed in the current code (2026-06-06):
 
-- `src/backend/infrastructure/node/live-backend.ts` (3221 lines) contains
+- `src/backend/infrastructure/node/live/live-backend.ts` (3221 lines) contains
   `codexRolloutTurnEnded(...)`: it tail-reads the codex rollout JSONL
   (`readBoundedTail(path, 256*1024)`), splits lines, and scans for `event_msg`
   payload types `task_complete` / `turn_aborted` to decide a turn ended. It runs

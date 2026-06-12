@@ -85,5 +85,5 @@ The hook script accepts:
 
 ## Implementation Notes
 
-- Keep the hook script generated under `src/backend/infrastructure/node/provider-bootstrap-artifacts.ts`.
-- Keep spool parsing in `src/backend/infrastructure/node/live-backend.ts` until a broader Provider Signal adapter boundary is justified.
+- Keep the hook script generated under `src/backend/infrastructure/node/provider/provider-bootstrap-artifacts.ts`.
+- Keep spool parsing in `src/backend/infrastructure/node/live/live-backend.ts` until a broader Provider Signal adapter boundary is justified.

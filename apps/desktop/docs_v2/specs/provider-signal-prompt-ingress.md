@@ -19,7 +19,7 @@ It does not implement provider hook file installation, filesystem watching, a fu
 - `docs_v2/specs/provider-integration-bootstrap.md` defines `detectPromptState` on provider-specific Agent Integrations and evidence-gated prompt detection rules.
 - `src/backend/application/services/fixture-agent-session-reader.ts` already returns `promptState` when a structured Raw Agent Frame projects to an approval, question, or choice prompt block.
 - `src/backend/application/services/thread-runtime-service.ts` already routes `prompt.answer` to the active Agent Runtime and clears Prompt State.
-- `src/backend/infrastructure/node/live-backend.ts` currently emits Agent Session Block events from provider output but does not persist or emit returned Prompt State.
+- `src/backend/infrastructure/node/live/live-backend.ts` currently emits Agent Session Block events from provider output but does not persist or emit returned Prompt State.
 
 ## Decisions
 

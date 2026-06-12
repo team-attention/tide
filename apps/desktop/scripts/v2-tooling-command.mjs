@@ -45,7 +45,7 @@ function runScaffoldFallback(tool, args) {
     assertPath("src/desktop/infrastructure/electron/main/electron-main.ts");
     assertPath("src/desktop/infrastructure/electron/preload/index.ts");
     assertPath("src/desktop/infrastructure/electron/renderer/index.html");
-    assertPath("src/backend/infrastructure/node/backend-entrypoint.ts");
+    assertPath("src/backend/infrastructure/node/entrypoints/backend-entrypoint.ts");
     writeManifest("dist/v2-build-manifest.json", {
       tool: "electron-vite",
       command,
@@ -54,7 +54,7 @@ function runScaffoldFallback(tool, args) {
         main: "src/desktop/infrastructure/electron/main/electron-main.ts",
         preload: "src/desktop/infrastructure/electron/preload/index.ts",
         renderer: "src/desktop/infrastructure/electron/renderer/index.html",
-        backend: "src/backend/infrastructure/node/backend-entrypoint.ts",
+        backend: "src/backend/infrastructure/node/entrypoints/backend-entrypoint.ts",
       },
     });
     return { ok: true, message: "v2 build scaffold verified." };

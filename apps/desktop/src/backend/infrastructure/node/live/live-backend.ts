@@ -35,26 +35,26 @@ import {
   readCodexProviderStateFromHome,
   readGeminiProviderStateFromHome,
   readOpencodeProviderStateFromHome,
-} from "./provider-state-readers.ts";
+} from "../provider/provider-state-readers.ts";
 
 import {
   claudeProviderSessionRefFromTranscriptPath,
   codexProviderSessionRefFromRolloutPath,
   type DiscoveredProviderSessionRef,
-} from "./provider-session-ref.ts";
+} from "../provider/provider-session-ref.ts";
 
 import {
   rebuildClaudeConversation,
   rebuildCodexConversation,
   rebuildConversationFromProviderHistory,
-} from "./provider-conversation-rebuilders.ts";
+} from "../provider/provider-conversation-rebuilders.ts";
 
-import { recentCodexRollouts } from "./recent-provider-files.ts";
+import { recentCodexRollouts } from "../provider/recent-provider-files.ts";
 
 import {
   readClaudeProviderSessionRefsFromHome,
   readCodexProviderSessionRefsFromHome,
-} from "./provider-history-readers.ts";
+} from "../provider/provider-history-readers.ts";
 
 export {
   readClaudeProviderSessionRefsFromHome,
@@ -78,104 +78,104 @@ export {
   readCodexProviderStateFromHome,
 };
 
-import { createBackendContractMessageAdapter } from "../../adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts";
+import { createBackendContractMessageAdapter } from "../../../adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts";
 import {
   toAgentSessionBlockDto,
   toProviderReadinessDto,
   toThreadSummaryDto,
-} from "../../adapters/inbound/contract-message-adapter/dto/thread-dtos.ts";
-import { toWorkbenchPaneRefDto } from "../../adapters/inbound/contract-message-adapter/dto/workbench-dtos.ts";
+} from "../../../adapters/inbound/contract-message-adapter/dto/thread-dtos.ts";
+import { toWorkbenchPaneRefDto } from "../../../adapters/inbound/contract-message-adapter/dto/workbench-dtos.ts";
 
-import { createTideMcpSocketServer } from "../../adapters/inbound/tide-mcp-server/tide-mcp-socket-bridge.ts";
+import { createTideMcpSocketServer } from "../../../adapters/inbound/tide-mcp-server/tide-mcp-socket-bridge.ts";
 
-import { createRuntimeReadinessRegistry } from "../../application/services/provider/runtime-readiness-registry.ts";
+import { createRuntimeReadinessRegistry } from "../../../application/services/provider/runtime-readiness-registry.ts";
 
-import { createTideMcpToolSurfaceAdapter } from "../../adapters/inbound/tide-mcp-tool-surface/tide-mcp-tool-surface-adapter.ts";
+import { createTideMcpToolSurfaceAdapter } from "../../../adapters/inbound/tide-mcp-tool-surface/tide-mcp-tool-surface-adapter.ts";
 
 import {
   createAgentIntegrationAgentRuntimePort,
   createAgentIntegrationProviderReadinessPort,
   type AgentIntegrationRegistry,
-} from "../../adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts";
+} from "../../../adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts";
 
-import type { StructuredProviderEvent } from "../../adapters/outbound/agent-runtime/structured/structured-runtime-events.ts";
+import type { StructuredProviderEvent } from "../../../adapters/outbound/agent-runtime/structured/structured-runtime-events.ts";
 
 import {
   createAgentRuntimeRouterPort,
   createProviderReadinessRouterPort,
-} from "../../adapters/outbound/agent-runtime/agent-runtime-router-port.ts";
+} from "../../../adapters/outbound/agent-runtime/agent-runtime-router-port.ts";
 
 import {
   createEnvironmentOpenAiProviderAccountReader,
   createOpenAiApiAgentRuntimePort,
   createOpenAiProviderAccountReadinessPort,
   createOpenAiResponsesClient,
-} from "../../adapters/outbound/agent-runtime/openai-api-agent-runtime-port.ts";
+} from "../../../adapters/outbound/agent-runtime/openai-api-agent-runtime-port.ts";
 
-import { createFileAppStorage } from "../../adapters/outbound/app-storage/file-app-storage.ts";
+import { createFileAppStorage } from "../../../adapters/outbound/app-storage/file-app-storage.ts";
 
 import {
   createClaudeAgentIntegration,
   type ClaudeProviderState,
-} from "../../adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
+} from "../../../adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
 
 import {
   createCodexAgentIntegration,
   type CodexProviderState,
-} from "../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
+} from "../../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
 
-import { createGeminiAgentIntegration } from "../../adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts";
+import { createGeminiAgentIntegration } from "../../../adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts";
 
-import { createOpencodeAgentIntegration } from "../../adapters/outbound/agent-integrations/opencode/opencode-agent-integration.ts";
+import { createOpencodeAgentIntegration } from "../../../adapters/outbound/agent-integrations/opencode/opencode-agent-integration.ts";
 
-import { codexRolloutTurnEnded as codexRolloutTurnEndedFromText } from "../../adapters/outbound/agent-integrations/codex/codex-rollout-turn-detection.ts";
+import { codexRolloutTurnEnded as codexRolloutTurnEndedFromText } from "../../../adapters/outbound/agent-integrations/codex/codex-rollout-turn-detection.ts";
 
 import {
   createAgentSessionBlockCompletedEventFromUpdate,
   createAgentSessionBlockUpsertedEventFromBlock,
-} from "../../adapters/outbound/desktop-contract/agent-session-block-event-adapter.ts";
+} from "../../../adapters/outbound/desktop-contract/agent-session-block-event-adapter.ts";
 
-import { createTypeScriptCodeIntelligencePort } from "../../adapters/outbound/code-intelligence/typescript-code-intelligence-port.ts";
+import { createTypeScriptCodeIntelligencePort } from "../../../adapters/outbound/code-intelligence/typescript-code-intelligence-port.ts";
 
-import { createPythonPtyProcessLauncher } from "../../adapters/outbound/pty/python-pty-process-launcher.ts";
+import { createPythonPtyProcessLauncher } from "../../../adapters/outbound/pty/python-pty-process-launcher.ts";
 
-import { createPtyProviderSetupSurfaceTerminalPort } from "../../adapters/outbound/pty/provider-setup-surface-pty-port.ts";
+import { createPtyProviderSetupSurfaceTerminalPort } from "../../../adapters/outbound/pty/provider-setup-surface-pty-port.ts";
 
-import { createPtyWorkbenchTerminalPort } from "../../adapters/outbound/pty/workbench-terminal-pty-port.ts";
+import { createPtyWorkbenchTerminalPort } from "../../../adapters/outbound/pty/workbench-terminal-pty-port.ts";
 
-import { createNodeWorkspaceCommandPort } from "../../adapters/outbound/workspace-command/node-workspace-command-port.ts";
+import { createNodeWorkspaceCommandPort } from "../../../adapters/outbound/workspace-command/node-workspace-command-port.ts";
 
-import { createNodeWorkspaceFilePort } from "../../adapters/outbound/workspace-file/node-workspace-file-port.ts";
+import { createNodeWorkspaceFilePort } from "../../../adapters/outbound/workspace-file/node-workspace-file-port.ts";
 
-import { createNodeComposerAttachmentStorePort } from "../../adapters/outbound/composer-attachment-store/node-composer-attachment-store.ts";
+import { createNodeComposerAttachmentStorePort } from "../../../adapters/outbound/composer-attachment-store/node-composer-attachment-store.ts";
 
-import { createNodeProviderTrustPort } from "../../adapters/outbound/provider-trust/node-provider-trust-port.ts";
+import { createNodeProviderTrustPort } from "../../../adapters/outbound/provider-trust/node-provider-trust-port.ts";
 
 import {
   ensureProviderBootstrapArtifacts,
   providerBootstrapArtifactsForHome,
-} from "./provider-bootstrap-artifacts.ts";
+} from "../provider/provider-bootstrap-artifacts.ts";
 
 import type {
   AgentSessionBlock,
   AgentSessionBlockUpdate,
-} from "../../application/domains/agent-session/agent-session-block.ts";
+} from "../../../application/domains/agent-session/agent-session-block.ts";
 
-import type { AgentId, ProviderCliAgentId, PromptState } from "../../application/domains/thread/thread.ts";
+import type { AgentId, ProviderCliAgentId, PromptState } from "../../../application/domains/thread/thread.ts";
 
 import type {
   AgentTurnOutcome,
   DiscoveredProviderSessionRef as AdapterProviderSessionRef,
-} from "../../application/ports/outbound/agent-integration-port.ts";
+} from "../../../application/ports/outbound/agent-integration-port.ts";
 
-import { createFixtureAgentSessionReader } from "../../application/services/thread/fixture-agent-session-reader.ts";
+import { createFixtureAgentSessionReader } from "../../../application/services/thread/fixture-agent-session-reader.ts";
 
 import {
   adoptedThreadSeedsFromSessions,
   discoverLocalSessions,
   isInternalSessionTitle,
   type DiscoveryFs,
-} from "../../application/services/provider/provider-session-discovery.ts";
+} from "../../../application/services/provider/provider-session-discovery.ts";
 
 import {
   createThreadPersistenceService,
@@ -183,7 +183,7 @@ import {
   type ProviderSessionRefRecord,
   type ThreadPersistenceService,
   type ThreadStorageRecord,
-} from "../../application/services/thread/thread-persistence-service.ts";
+} from "../../../application/services/thread/thread-persistence-service.ts";
 
 import {
   createThreadRuntimeService,
@@ -193,14 +193,14 @@ import {
   type ThreadSeed,
   type ThreadRuntimeAsyncEvent,
   type ThreadRuntimeService,
-} from "../../application/services/thread/thread-runtime-service.ts";
+} from "../../../application/services/thread/thread-runtime-service.ts";
 
 import {
   CONTRACT_VERSION,
   PROVIDER_CLI_AGENT_IDS,
   type BackendEventEnvelope,
   type ThreadSummaryDto,
-} from "../../../shared/contracts/index.ts";
+} from "../../../../shared/contracts/index.ts";
 
 export interface CreateLiveBackendContractMessageAdapterInput {
   onEvent?: (event: BackendEventEnvelope) => void;

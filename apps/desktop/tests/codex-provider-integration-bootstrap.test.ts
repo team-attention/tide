@@ -10,7 +10,7 @@ import { readCodexHistoryFrames } from "../src/backend/adapters/outbound/agent-i
 import {
   ensureProviderBootstrapArtifacts,
   providerBootstrapArtifactsForHome,
-} from "../src/backend/infrastructure/node/provider-bootstrap-artifacts.ts";
+} from "../src/backend/infrastructure/node/provider/provider-bootstrap-artifacts.ts";
 import {
   createCodexAgentIntegration,
   type CodexProviderState,

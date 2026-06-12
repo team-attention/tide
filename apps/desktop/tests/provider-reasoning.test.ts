@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { codexReasoningText } from "../src/backend/infrastructure/node/provider-history-helpers.ts";
-import { claudeThinkingText } from "../src/backend/infrastructure/node/live-backend-json.ts";
+import { codexReasoningText } from "../src/backend/infrastructure/node/provider/provider-history-helpers.ts";
+import { claudeThinkingText } from "../src/backend/infrastructure/node/live/live-backend-json.ts";
 import {
   rebuildCodexConversation,
   rebuildClaudeConversation,
   rebuildGeminiConversation,
-} from "../src/backend/infrastructure/node/provider-conversation-rebuilders.ts";
+} from "../src/backend/infrastructure/node/provider/provider-conversation-rebuilders.ts";
 
 // Spec: docs_v2/specs/agent-chat-fidelity-reasoning-actions.md
 

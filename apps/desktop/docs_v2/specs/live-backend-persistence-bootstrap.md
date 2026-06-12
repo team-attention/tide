@@ -19,7 +19,7 @@ It does not cover Agent Session Cache rebuild, provider session reference discov
 - `docs_v2/specs/persistence.md` says Desktop Main resolves the Electron app data root and passes it to Backend at startup.
 - `docs_v2/specs/persistence.md` says Tide-owned Thread metadata is the product navigation source of truth.
 - `src/desktop/infrastructure/electron/main/electron-main.ts` currently calls `utilityProcess.fork(resolveBackendEntrypointPath())` without an app data root option.
-- `src/backend/infrastructure/node/live-backend.ts` currently creates `ThreadRuntimeService` without file-backed storage or initial persisted Threads.
+- `src/backend/infrastructure/node/live/live-backend.ts` currently creates `ThreadRuntimeService` without file-backed storage or initial persisted Threads.
 - `src/backend/application/services/thread-persistence-service.ts` already writes `thread.json`, `threads/index.json`, and can rebuild the index from per-Thread metadata.
 - `docs_v2/specs/backend-thread-list-product-shell-bootstrap.md` defines `thread.list` as the Backend-owned source for Product Shell startup.
 

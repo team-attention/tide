@@ -28,7 +28,7 @@ new Desktop command channel.
   Workbench state for tools such as `tide_open_browser`, `tide_open_file`,
   `tide_edit_file`, `tide_go_to_definition`, `tide_open_terminal`, and
   `tide_run_terminal_command`.
-- `src/backend/infrastructure/node/live-backend.ts` already projects
+- `src/backend/infrastructure/node/live/live-backend.ts` already projects
   `workbench_changed` async events into `workbench.changed` BackendEvents.
 
 ## Decisions

@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createLiveAgentSessionEventProjector } from "../src/backend/infrastructure/node/live-backend.ts";
+import { createLiveAgentSessionEventProjector } from "../src/backend/infrastructure/node/live/live-backend.ts";
 
 const THREAD = "thread-coalesce";
 const AGENT = "claude" as const;

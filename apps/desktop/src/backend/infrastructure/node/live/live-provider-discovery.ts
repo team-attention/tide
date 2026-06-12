@@ -1,14 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { readBoundedHead, readBoundedTail, readTextFile } from "./live-backend-fs.ts";
 import { basename, join } from "node:path";
-import { adoptedThreadSeedsFromSessions, discoverLocalSessions } from "../../application/services/provider/provider-session-discovery.ts";
-import type { DiscoveryFs } from "../../application/services/provider/provider-session-discovery.ts";
+import { adoptedThreadSeedsFromSessions, discoverLocalSessions } from "../../../application/services/provider/provider-session-discovery.ts";
+import type { DiscoveryFs } from "../../../application/services/provider/provider-session-discovery.ts";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { recentCodexRollouts } from "./recent-provider-files.ts";
-import type { ThreadStorageRecord } from "../../application/services/thread/thread-persistence-service.ts";
-import type { ThreadSeed } from "../../application/services/thread/thread-runtime-service.ts";
-import type { AgentSessionBlock } from "../../application/domains/agent-session/agent-session-block.ts";
-import { rebuildClaudeConversation, rebuildCodexConversation } from "./provider-conversation-rebuilders.ts";
+import { recentCodexRollouts } from "../provider/recent-provider-files.ts";
+import type { ThreadStorageRecord } from "../../../application/services/thread/thread-persistence-service.ts";
+import type { ThreadSeed } from "../../../application/services/thread/thread-runtime-service.ts";
+import type { AgentSessionBlock } from "../../../application/domains/agent-session/agent-session-block.ts";
+import { rebuildClaudeConversation, rebuildCodexConversation } from "../provider/provider-conversation-rebuilders.ts";
 // Extracted from live-backend.ts (spec: navigable-source-structure).
 
 // Provider CLI command names: pure registry data, the only place infrastructure

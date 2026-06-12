@@ -11,11 +11,11 @@ import {
   readGeminiHistoryFrames,
 } from "../src/backend/adapters/outbound/agent-integrations/gemini/gemini-history-connector.ts";
 import { geminiTurnOutcomeFromSession } from "../src/backend/adapters/outbound/agent-integrations/gemini/gemini-session-turn-detection.ts";
-import { locateGeminiSessionFile } from "../src/backend/infrastructure/node/live-backend.ts";
+import { locateGeminiSessionFile } from "../src/backend/infrastructure/node/live/live-backend.ts";
 import {
   ensureProviderBootstrapArtifacts,
   providerBootstrapArtifactsForHome,
-} from "../src/backend/infrastructure/node/provider-bootstrap-artifacts.ts";
+} from "../src/backend/infrastructure/node/provider/provider-bootstrap-artifacts.ts";
 
 // Spec: docs_v2/specs/provider-history-connector.md + gemini-agent-integration.md
 

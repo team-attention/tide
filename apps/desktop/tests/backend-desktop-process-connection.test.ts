@@ -14,7 +14,7 @@ import {
   createLiveBackendContractMessageAdapter,
   threadSeedFromStorageRecord,
   threadStorageRecordFromThreadSummary,
-} from "../src/backend/infrastructure/node/live-backend.ts";
+} from "../src/backend/infrastructure/node/live/live-backend.ts";
 import { createThreadPersistenceService } from "../src/backend/application/services/thread/thread-persistence-service.ts";
 import {
   createThreadRuntimeService,
@@ -564,7 +564,7 @@ test("electron_main_uses_utility_process_for_backend_without_importing_backend_i
 });
 
 test("backend_entrypoint_reads_utility_process_parent_port", () => {
-  const source = readRepoFile("src/backend/infrastructure/node/backend-entrypoint.ts");
+  const source = readRepoFile("src/backend/infrastructure/node/entrypoints/backend-entrypoint.ts");
 
   assert.match(source, /process[\s\S]*parentPort/);
   assert.match(source, /processParentPort !== undefined/);
@@ -574,7 +574,7 @@ test("backend_entrypoint_reads_utility_process_parent_port", () => {
 
 test("backend_entrypoint_buffers_unscoped_backend_events_emitted_during_command_handling", () => {
   // Spec: docs_v2/specs/backend-desktop-process-connection.md
-  const source = readRepoFile("src/backend/infrastructure/node/backend-entrypoint.ts");
+  const source = readRepoFile("src/backend/infrastructure/node/entrypoints/backend-entrypoint.ts");
 
   assert.match(source, /onEvent:\s*postOrBufferBackendEvent/);
   assert.match(source, /activeParentCommandCount/);
@@ -594,7 +594,7 @@ test("electron_main_passes_app_data_root_to_backend_process", () => {
 
 test("live_backend_wires_file_storage_restore_and_thread_event_persistence", () => {
   // Spec: docs_v2/specs/live-backend-persistence-bootstrap.md
-  const source = readRepoFile("src/backend/infrastructure/node/live-backend.ts");
+  const source = readRepoFile("src/backend/infrastructure/node/live/live-backend.ts");
 
   assert.match(source, /createFileAppStorage/);
   assert.match(source, /createThreadPersistenceService/);
@@ -720,7 +720,7 @@ test("workbench_terminal_output_async_event_maps_to_a_streaming_contract_event",
 test("live_backend_records_runtime_output_blocks_before_hydrate_snapshots", () => {
   // Spec: docs_v2/specs/agent-session-block-rendering-path.md
   // The projection path lives in live-projector.ts (navigable-source-structure).
-  const source = readRepoFile("src/backend/infrastructure/node/live-projector.ts");
+  const source = readRepoFile("src/backend/infrastructure/node/live/live-projector.ts");
 
   assert.match(source, /const appendFrameAndEmit = async/);
   // Blocks are recorded into the service's authoritative in-memory state before
@@ -732,7 +732,7 @@ test("live_backend_records_runtime_output_blocks_before_hydrate_snapshots", () =
 
 test("live_backend_awaits_tide_api_structured_frame_projection_for_push_events", () => {
   // Spec: docs_v2/specs/tide-api-agent-runtime.md
-  const source = readRepoFile("src/backend/infrastructure/node/live-backend.ts");
+  const source = readRepoFile("src/backend/infrastructure/node/live/live-backend.ts");
 
   assert.match(source, /onRawFrame:\s*\(frame\)\s*=>\s*{\s*return projector\.ingestStructuredFrame\(frame\);\s*}/s);
   assert.doesNotMatch(source, /onRawFrame:\s*\(frame\)\s*=>\s*{\s*void projector\.ingestStructuredFrame\(frame\);/s);

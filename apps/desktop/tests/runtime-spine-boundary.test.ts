@@ -19,7 +19,7 @@ function read(rel: string): string {
 const codexTurnEndLiterals = ['"turn_aborted"', '"task_complete"'];
 
 test("infra_live_backend_does_not_reimplement_codex_turn_detection", () => {
-  const source = read("src/backend/infrastructure/node/live-backend.ts");
+  const source = read("src/backend/infrastructure/node/live/live-backend.ts");
   for (const literal of codexTurnEndLiterals) {
     assert.equal(
       source.includes(literal),
@@ -59,7 +59,7 @@ test("codex_turn_detection_lives_in_the_codex_agent_integration", () => {
 const turnEndHookLiterals = ['"codex-stop"', '"agent-idle"'];
 
 test("infra_live_backend_does_not_hardcode_turn_end_hook_events", () => {
-  const source = read("src/backend/infrastructure/node/live-backend.ts");
+  const source = read("src/backend/infrastructure/node/live/live-backend.ts");
   for (const literal of turnEndHookLiterals) {
     assert.equal(
       source.includes(literal),
@@ -75,7 +75,7 @@ test("infra_live_backend_does_not_hardcode_turn_end_hook_events", () => {
 // knowledge lives in each Agent Integration's connector.
 // See docs_v2/specs/provider-history-connector.md.
 test("infra_live_backend_has_zero_provider_branches", () => {
-  const source = read("src/backend/infrastructure/node/live-backend.ts");
+  const source = read("src/backend/infrastructure/node/live/live-backend.ts");
   for (const literal of [
     'agentId === "codex"',
     'agentId === "claude"',

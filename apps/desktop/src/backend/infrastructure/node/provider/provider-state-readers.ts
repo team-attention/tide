@@ -1,15 +1,15 @@
 import { join } from "node:path";
 
-import type { ClaudeProviderState } from "../../adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
-import type { GeminiProviderState } from "../../adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts";
-import type { CodexProviderState } from "../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
+import type { ClaudeProviderState } from "../../../adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
+import type { GeminiProviderState } from "../../../adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts";
+import type { CodexProviderState } from "../../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
 import {
   isClaudeBootstrapReady,
   isMcpBootstrapReady,
   providerBootstrapArtifactsForHome,
 } from "./provider-bootstrap-artifacts.ts";
-import { readJsonFile, readTextFile } from "./live-backend-fs.ts";
-import { arrayOfStrings, recordField, stringField } from "./live-backend-json.ts";
+import { readJsonFile, readTextFile } from "../live/live-backend-fs.ts";
+import { arrayOfStrings, recordField, stringField } from "../live/live-backend-json.ts";
 
 // Reads provider-owned readiness state (auth, onboarding, directory trust, hook/
 // plugin bootstrap) from the user's home directory for each provider CLI.

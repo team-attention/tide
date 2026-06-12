@@ -166,22 +166,22 @@ behavior-preserving and test-guarded (548 tests), done in safe leaf-cluster slic
   most cross-method flow). Extract only at a clean seam.
 
 - **`live-backend.ts` (infra, 3221 lines) decomposition — IN PROGRESS:**
-  - `infrastructure/node/live-backend-fs.ts` — bounded fs read primitives.
-  - `infrastructure/node/live-backend-json.ts` — pure JSON/record coercion parsers.
-  - `infrastructure/node/provider-state-readers.ts` — provider readiness state from `$HOME`.
-  - `infrastructure/node/provider-session-ref.ts` — session-ref builders/parsers.
-  - `infrastructure/node/provider-history-helpers.ts` — the shared parsing helpers
+  - `infrastructure/node/live/live-backend-fs.ts` — bounded fs read primitives.
+  - `infrastructure/node/live/live-backend-json.ts` — pure JSON/record coercion parsers.
+  - `infrastructure/node/provider/provider-state-readers.ts` — provider readiness state from `$HOME`.
+  - `infrastructure/node/provider/provider-session-ref.ts` — session-ref builders/parsers.
+  - `infrastructure/node/provider/provider-history-helpers.ts` — the shared parsing helpers
     used by BOTH the provider-history frame readers and the conversation rebuilders
     (joinTextContent, boundedToolText, codex tool-frame, claude tool-use/result,
     antigravityConversationItems + `AntigravityConversationItem`).
-  - `infrastructure/node/provider-conversation-rebuilders.ts` — rebuild an Agent
+  - `infrastructure/node/provider/provider-conversation-rebuilders.ts` — rebuild an Agent
     Session (ordered blocks) from provider transcript/rollout history for Thread
     reopen (rebuildCodex/Claude/Antigravity + rebuildConversationFromProviderHistory;
     re-exported from live-backend for tests).
-  - `infrastructure/node/recent-provider-files.ts` — scans each provider's history
+  - `infrastructure/node/provider/recent-provider-files.ts` — scans each provider's history
     dir for recent transcript/rollout files (recentCodexRollouts/ClaudeTranscripts/
     AntigravityTranscripts + recentProviderFiles).
-  - `infrastructure/node/provider-history-readers.ts` — reads each provider's own
+  - `infrastructure/node/provider/provider-history-readers.ts` — reads each provider's own
     on-disk history (codex rollout / claude transcript / antigravity transcript) and
     the hook-signal spool into bounded provider-record frames for the live projector:
     the 4 frame interfaces (Codex/Claude/Antigravity ProviderHistoryFrame +

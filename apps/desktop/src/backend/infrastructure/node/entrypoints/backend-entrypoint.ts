@@ -3,10 +3,10 @@ import {
   type BackendCommandEnvelope,
   type BackendEventEnvelope,
   type BackendHandshake,
-} from "../../../shared/contracts/index.ts";
-import { createLiveBackendContractMessageAdapter } from "./live-backend.ts";
-import { reapOrphanedTideAgentProcesses } from "./reap-orphaned-agents.ts";
-import { resolveAugmentedPath } from "./resolve-shell-path.ts";
+} from "../../../../shared/contracts/index.ts";
+import { createLiveBackendContractMessageAdapter } from "../live/live-backend.ts";
+import { reapOrphanedTideAgentProcesses } from "../live/reap-orphaned-agents.ts";
+import { resolveAugmentedPath } from "../live/resolve-shell-path.ts";
 import { runTideMcpStdioBridgeFromEnv } from "./tide-mcp-stdio-entrypoint.ts";
 
 // A Finder/Dock-launched packaged app only inherits the minimal launchd PATH, so

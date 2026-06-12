@@ -1,17 +1,17 @@
-import type { ThreadPersistenceService } from "../../application/services/thread/thread-persistence-service.ts";
-import type { AgentIntegrationRegistry } from "../../adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts";
-import { createFixtureAgentSessionReader } from "../../application/services/thread/fixture-agent-session-reader.ts";
-import type { AgentSessionBlock, AgentSessionBlockUpdate } from "../../application/domains/agent-session/agent-session-block.ts";
-import type { AgentTurnOutcome } from "../../application/ports/outbound/agent-integration-port.ts";
-import type { RawAgentFrame } from "../../application/services/thread/thread-runtime-service.ts";
-import type { StructuredProviderEvent } from "../../adapters/outbound/agent-runtime/structured/structured-runtime-events.ts";
-import { createAgentSessionBlockCompletedEventFromUpdate, createAgentSessionBlockUpsertedEventFromBlock } from "../../adapters/outbound/desktop-contract/agent-session-block-event-adapter.ts";
-import type { PromptState } from "../../application/domains/thread/thread.ts";
-import type { DiscoveredProviderSessionRef } from "./provider-session-ref.ts";
-import type { ThreadRuntimeService } from "../../application/services/thread/thread-runtime-service.ts";
-import { CONTRACT_VERSION } from "../../../shared/contracts/index.ts";
-import type { BackendEventEnvelope, ProviderCliAgentId } from "../../../shared/contracts/index.ts";
-import { toAgentSessionBlockDto } from "../../adapters/inbound/contract-message-adapter/dto/thread-dtos.ts";
+import type { ThreadPersistenceService } from "../../../application/services/thread/thread-persistence-service.ts";
+import type { AgentIntegrationRegistry } from "../../../adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts";
+import { createFixtureAgentSessionReader } from "../../../application/services/thread/fixture-agent-session-reader.ts";
+import type { AgentSessionBlock, AgentSessionBlockUpdate } from "../../../application/domains/agent-session/agent-session-block.ts";
+import type { AgentTurnOutcome } from "../../../application/ports/outbound/agent-integration-port.ts";
+import type { RawAgentFrame } from "../../../application/services/thread/thread-runtime-service.ts";
+import type { StructuredProviderEvent } from "../../../adapters/outbound/agent-runtime/structured/structured-runtime-events.ts";
+import { createAgentSessionBlockCompletedEventFromUpdate, createAgentSessionBlockUpsertedEventFromBlock } from "../../../adapters/outbound/desktop-contract/agent-session-block-event-adapter.ts";
+import type { PromptState } from "../../../application/domains/thread/thread.ts";
+import type { DiscoveredProviderSessionRef } from "../provider/provider-session-ref.ts";
+import type { ThreadRuntimeService } from "../../../application/services/thread/thread-runtime-service.ts";
+import { CONTRACT_VERSION } from "../../../../shared/contracts/index.ts";
+import type { BackendEventEnvelope, ProviderCliAgentId } from "../../../../shared/contracts/index.ts";
+import { toAgentSessionBlockDto } from "../../../adapters/inbound/contract-message-adapter/dto/thread-dtos.ts";
 // Extracted from live-backend.ts (spec: navigable-source-structure).
 
 export function createLiveAgentSessionEventProjector(input: {

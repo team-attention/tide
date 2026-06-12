@@ -112,5 +112,5 @@ through the existing `restoreThreads` path, emitted to Desktop as the normal
 
 - `src/backend/application/services/provider-session-discovery.ts` — pure
   discovery core (injected fs readers; descriptor parsers).
-- `src/backend/infrastructure/node/live-backend.ts` — wiring: registry read,
+- `src/backend/infrastructure/node/live/live-backend.ts` — wiring: registry read,
   directory scans, seed merge in `restorePersistedThreads`.

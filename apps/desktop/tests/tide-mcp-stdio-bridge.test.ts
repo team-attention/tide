@@ -41,7 +41,7 @@ test("backend_entrypoint_mcp_mode_reaches_stdio_bridge_without_electron_parent_p
     process.execPath,
     [
       "--experimental-strip-types",
-      "src/backend/infrastructure/node/backend-entrypoint.ts",
+      "src/backend/infrastructure/node/entrypoints/backend-entrypoint.ts",
       "mcp",
     ],
     {

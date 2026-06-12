@@ -108,6 +108,6 @@ queuedInputs?: string[]; // head-first pending composer-input texts; [] when non
 
 - `src/shared/contracts/{thread,events}.ts`
 - `src/backend/application/services/{thread-snapshot,thread-runtime-service}.ts`
-- `src/backend/infrastructure/node/live-backend.ts`
+- `src/backend/infrastructure/node/live/live-backend.ts`
 - `src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts`
 - `src/desktop/application/domains/product-shell/product-shell-state.ts`

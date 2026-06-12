@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveAugmentedPath } from "../src/backend/infrastructure/node/resolve-shell-path.ts";
+import { resolveAugmentedPath } from "../src/backend/infrastructure/node/live/resolve-shell-path.ts";
 
 // Why: a Finder-launched packaged app only gets the minimal launchd PATH, so the
 // Agent Runtime's `which <cli>` cannot find provider CLIs in ~/.local/bin etc.

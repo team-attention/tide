@@ -5,13 +5,13 @@
 export {
   boundedToolText,
   joinTextContent,
-} from "../../adapters/outbound/agent-integrations/shared/provider-record-json.ts";
+} from "../../../adapters/outbound/agent-integrations/shared/provider-record-json.ts";
 export {
   codexReasoningText,
   codexToolFramePayload,
   codexToolOutputText,
-} from "../../adapters/outbound/agent-integrations/codex/codex-history-connector.ts";
+} from "../../../adapters/outbound/agent-integrations/codex/codex-history-connector.ts";
 export {
   claudeToolResultItems,
   claudeToolUseItems,
-} from "../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
+} from "../../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";

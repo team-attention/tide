@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 
-import { runTideMcpSocketBackedLineDelimitedStdio } from "../../adapters/inbound/tide-mcp-server/tide-mcp-socket-bridge.ts";
+import { runTideMcpSocketBackedLineDelimitedStdio } from "../../../adapters/inbound/tide-mcp-server/tide-mcp-socket-bridge.ts";
 
 export async function runTideMcpStdioBridgeFromEnv(
   env: NodeJS.ProcessEnv = process.env,

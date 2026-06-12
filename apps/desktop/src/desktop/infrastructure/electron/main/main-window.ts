@@ -13,7 +13,7 @@ export interface TideDesktopMainEntrypoint {
 
 export const tideDesktopMainEntrypoint: TideDesktopMainEntrypoint = {
   productName: "Tide",
-  backendEntrypoint: "src/backend/infrastructure/node/backend-entrypoint.ts",
+  backendEntrypoint: "src/backend/infrastructure/node/entrypoints/backend-entrypoint.ts",
   rendererRoot: "src/desktop/infrastructure/electron/renderer",
 };
 

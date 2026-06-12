@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { reapOrphanedTideAgentProcesses } from "../src/backend/infrastructure/node/reap-orphaned-agents.ts";
+import { reapOrphanedTideAgentProcesses } from "../src/backend/infrastructure/node/live/reap-orphaned-agents.ts";
 
 // A startup sweep that reaps Tide-spawned agents orphaned by a hard kill, without
 // ever touching a live session's agents.
