@@ -1338,6 +1338,14 @@ pub struct WebViewHandle {
     _script_handler: Retained<TideScriptMessageHandler>,
 }
 
+// Safety: `WebViewHandle` retains objc2 objects (the WKWebView and its
+// delegates) which are not auto-`Send`. A handle lives inside a `BrowserPane` in
+// the app thread's pane set; every webview operation is dispatched to the main
+// thread via `WindowCommand`, so the retained objects are only ever touched on
+// the main thread. Localizing the `Send` claim here keeps `App` structurally
+// `Send` without a blanket `unsafe impl Send for App`.
+unsafe impl Send for WebViewHandle {}
+
 impl Drop for WebViewHandle {
     fn drop(&mut self) {
         cleanup_pending_handlers(self.tide_window_id, self.pane_id);

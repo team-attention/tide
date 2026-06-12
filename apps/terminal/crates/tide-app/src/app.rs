@@ -76,6 +76,14 @@ pub(crate) struct Ports {
     pub platform: Box<dyn PlatformPort>,
 }
 
+// Safety: the outward ports are a dependency-injection seam of trait objects,
+// which are not auto-`Send`. `Ports` is owned by `App`, which is moved to its
+// window's app thread and used only there; the production adapters are `Send`,
+// and test doubles run synchronously on the test thread. Asserting `Send` here
+// (instead of a blanket `unsafe impl Send for App`) localizes the claim to this
+// DI boundary and lets every other `App` field be checked structurally.
+unsafe impl Send for Ports {}
+
 impl Ports {
     pub fn noop() -> Self {
         Self {
@@ -214,11 +222,11 @@ pub(crate) struct App {
     pub(crate) agent_notification_snippets: HashMap<PaneId, String>,
 }
 
-// Safety: App contains raw pointers (content_view_ptr, window_ptr) and browser
-// WebViewHandles that are not inherently Send. These are only used for webview
-// management which will be dispatched back to the main thread via WindowCommand.
-// All other fields (wgpu resources, channels, atomics) are Send-safe.
-unsafe impl Send for App {}
+// `App` is `Send` structurally: every field is `Send`, with the genuinely
+// non-`Send` holders (the port adapters that wrap raw platform pointers, and the
+// browser `WebViewHandle`) carrying their own localized `unsafe impl Send`
+// documented at the holder. `App` is moved to its window's app thread and used
+// only there.
 
 impl App {
     pub(crate) fn new() -> Self {

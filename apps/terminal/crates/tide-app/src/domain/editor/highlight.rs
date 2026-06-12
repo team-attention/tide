@@ -90,6 +90,14 @@ pub struct Highlighter {
     cache: RefCell<HighlightCache>,
 }
 
+// Safety: `Highlighter` holds syntect/oniguruma state (SyntaxSet + cached
+// ParseState/HighlightState) that uses raw pointers and so is not auto-`Send`.
+// A `Highlighter` is owned by an `EditorPane`, which lives only in the app
+// thread's pane set and is never accessed from another thread. Localizing the
+// `Send` claim here (rather than a blanket `unsafe impl Send for App`) keeps the
+// app structurally `Send` while documenting exactly why this holder is safe.
+unsafe impl Send for Highlighter {}
+
 fn syntax_color(r: u8, g: u8, b: u8) -> SyntectColor {
     SyntectColor { r, g, b, a: 255 }
 }
