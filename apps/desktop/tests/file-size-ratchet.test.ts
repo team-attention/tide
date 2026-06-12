@@ -24,7 +24,6 @@ const MAX_LINES = 800;
 // Each may shrink or hold, never grow. Lower these as collaborators are extracted.
 const PINNED_MAX: Record<string, number> = {
   "desktop/adapters/inbound/react-renderer/tide-product-shell.ts": 1445,
-  "desktop/application/domains/agent-chat/agent-chat-shell-state.ts": 2353,
   "backend/application/services/thread-runtime-service.ts": 1996,
   "backend/infrastructure/node/live-backend.ts": 1685,
   "desktop/main/electron-main.ts": 1145,
