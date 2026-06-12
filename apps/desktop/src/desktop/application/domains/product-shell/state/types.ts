@@ -161,6 +161,21 @@ export type ProductShellBackendCommand =
       kind: "workspace.searchContent";
       payload: { cwd: string; query: string; maxResults?: number; maxFiles?: number };
     }
+  | {
+      // Editor language-intelligence query (spec:
+      // workbench-editor-language-intelligence). Answered by a
+      // workspace.codeIntelResult event returned to the CALLER (the awaiting
+      // CodeMirror extension) — the result never enters shell state.
+      kind: "workspace.codeIntel";
+      payload: {
+        cwd: string;
+        path: string;
+        kind: "completion" | "hover" | "highlights" | "signature" | "diagnostics";
+        content?: string;
+        line?: number;
+        character?: number;
+      };
+    }
   | { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }
   | { kind: "thread.setPinned"; payload: { threadId: string; pinned: boolean } }
   | { kind: "thread.rename"; payload: { threadId: string; title: string } }
@@ -224,6 +239,9 @@ export type ProductShellBackendCommand =
         data: {
           line: number;
           character: number;
+          // The pane's live draft content when dirty — the backend resolves
+          // against what's on screen instead of the file on disk.
+          content?: string;
         };
       };
     }

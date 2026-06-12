@@ -89,6 +89,7 @@ import {
 import { boundedDiffText, unifiedContentDiff } from "../support/diff-text.ts";
 
 import { ThreadStore } from "./thread-store.ts";
+import { promptAnswerValue } from "./prompt-answer-value.ts";
 
 import { normalizeThreadSeed, snapshotThread, threadRoot } from "./thread-snapshot.ts";
 
@@ -345,6 +346,8 @@ import {
   type ReadWorkspaceFileTreeResult,
   type SearchWorkspaceContentInput,
   type SearchWorkspaceContentResult,
+  type QueryWorkspaceCodeIntelInput,
+  type QueryWorkspaceCodeIntelResult,
 } from "../workbench/workbench-command-handler.ts";
 
 export type {
@@ -354,29 +357,14 @@ export type {
   ReadWorkspaceFileTreeResult,
   SearchWorkspaceContentInput,
   SearchWorkspaceContentResult,
+  QueryWorkspaceCodeIntelInput,
+  QueryWorkspaceCodeIntelResult,
 };
 
 export function createThreadRuntimeService(
   input: CreateThreadRuntimeServiceInput,
 ): ThreadRuntimeService {
   return new InMemoryThreadRuntimeService(input);
-}
-
-function promptAnswerValue(
-  promptState: PromptState,
-  input: AnswerPromptInput,
-): string {
-  if (input.value !== undefined && input.value.length > 0) {
-    return input.value;
-  }
-
-  const choiceId = input.choiceId;
-  if (choiceId === undefined) {
-    return input.value ?? "";
-  }
-
-  return promptState.choices?.find((choice) => choice.choiceId === choiceId)?.providerValue ??
-    choiceId;
 }
 
 function defaultClock(): string {
@@ -1275,6 +1263,12 @@ searchWorkspaceContent(
     input: SearchWorkspaceContentInput,
   ): Promise<ServiceResult<SearchWorkspaceContentResult>> {
     return this.workbenchCmd.searchWorkspaceContent(input);
+  }
+
+queryWorkspaceCodeIntel(
+    input: QueryWorkspaceCodeIntelInput,
+  ): Promise<ServiceResult<QueryWorkspaceCodeIntelResult>> {
+    return this.workbenchCmd.queryWorkspaceCodeIntel(input);
   }
 
 // Tide MCP tool surface is owned by TideMcpToolHandler (shares the store + ops).

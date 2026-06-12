@@ -9,6 +9,17 @@ import { json as jsonLanguage } from "@codemirror/lang-json";
 import { rust } from "@codemirror/lang-rust";
 import { css as cssLanguage } from "@codemirror/lang-css";
 import { markdown as markdownLang } from "@codemirror/lang-markdown";
+import { python } from "@codemirror/lang-python";
+import { go } from "@codemirror/lang-go";
+import { html as htmlLang } from "@codemirror/lang-html";
+import { yaml as yamlLang } from "@codemirror/lang-yaml";
+import { sql } from "@codemirror/lang-sql";
+import { xml as xmlLang } from "@codemirror/lang-xml";
+import { cpp } from "@codemirror/lang-cpp";
+import { java } from "@codemirror/lang-java";
+import { StreamLanguage } from "@codemirror/language";
+import { shell as shellMode } from "@codemirror/legacy-modes/mode/shell";
+import { toml as tomlMode } from "@codemirror/legacy-modes/mode/toml";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function WorkbenchEditorPane(props: {
@@ -127,13 +138,23 @@ function createWorkbenchEditorReferences(
   );
 }
 
-function inferEditorLanguage(path: string | undefined): string {
+export function inferEditorLanguage(path: string | undefined): string {
   const ext = (path ?? "").split(".").pop()?.toLowerCase() ?? "";
   if (["ts", "tsx", "js", "jsx", "mts", "cts"].includes(ext)) return "ts";
   if (ext === "json") return "json";
   if (ext === "rs") return "rust";
   if (ext === "css") return "css";
   if (["md", "markdown", "mdx"].includes(ext)) return "markdown";
+  if (ext === "py") return "python";
+  if (ext === "go") return "go";
+  if (["html", "htm"].includes(ext)) return "html";
+  if (["yaml", "yml"].includes(ext)) return "yaml";
+  if (ext === "sql") return "sql";
+  if (["xml", "svg"].includes(ext)) return "xml";
+  if (["c", "cc", "cpp", "cxx", "h", "hpp"].includes(ext)) return "cpp";
+  if (ext === "java") return "java";
+  if (["sh", "bash", "zsh"].includes(ext)) return "shell";
+  if (ext === "toml") return "toml";
   return "text";
 }
 
@@ -149,6 +170,27 @@ export function editorLanguageExtensions(language: string) {
       return [cssLanguage()];
     case "markdown":
       return [markdownLang()];
+    case "python":
+      return [python()];
+    case "go":
+      return [go()];
+    case "html":
+      return [htmlLang()];
+    case "yaml":
+      return [yamlLang()];
+    case "sql":
+      return [sql()];
+    case "xml":
+      return [xmlLang()];
+    case "cpp":
+      return [cpp()];
+    case "java":
+      return [java()];
+    // No Lezer grammar published; the legacy CM5 stream modes still tokenize.
+    case "shell":
+      return [StreamLanguage.define(shellMode)];
+    case "toml":
+      return [StreamLanguage.define(tomlMode)];
     default:
       return [];
   }

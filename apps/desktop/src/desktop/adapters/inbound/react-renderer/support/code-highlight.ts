@@ -9,6 +9,14 @@ import { jsonLanguage } from "@codemirror/lang-json";
 import { tsxLanguage } from "@codemirror/lang-javascript";
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import { rustLanguage } from "@codemirror/lang-rust";
+import { pythonLanguage } from "@codemirror/lang-python";
+import { goLanguage } from "@codemirror/lang-go";
+import { yamlLanguage } from "@codemirror/lang-yaml";
+import { htmlLanguage } from "@codemirror/lang-html";
+import { StandardSQL } from "@codemirror/lang-sql";
+import { xmlLanguage } from "@codemirror/lang-xml";
+import { cppLanguage } from "@codemirror/lang-cpp";
+import { javaLanguage } from "@codemirror/lang-java";
 
 const PARSERS: Record<string, Parser> = {
   ts: tsxLanguage.parser,
@@ -26,6 +34,24 @@ const PARSERS: Record<string, Parser> = {
   rs: rustLanguage.parser,
   md: markdownLanguage.parser,
   markdown: markdownLanguage.parser,
+  python: pythonLanguage.parser,
+  py: pythonLanguage.parser,
+  go: goLanguage.parser,
+  golang: goLanguage.parser,
+  yaml: yamlLanguage.parser,
+  yml: yamlLanguage.parser,
+  html: htmlLanguage.parser,
+  htm: htmlLanguage.parser,
+  sql: StandardSQL.language.parser,
+  xml: xmlLanguage.parser,
+  svg: xmlLanguage.parser,
+  cpp: cppLanguage.parser,
+  cxx: cppLanguage.parser,
+  cc: cppLanguage.parser,
+  c: cppLanguage.parser,
+  h: cppLanguage.parser,
+  hpp: cppLanguage.parser,
+  java: javaLanguage.parser,
 };
 
 function escapeHtml(text: string): string {

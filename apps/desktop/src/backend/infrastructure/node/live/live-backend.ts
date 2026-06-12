@@ -138,7 +138,7 @@ import {
   createAgentSessionBlockUpsertedEventFromBlock,
 } from "../../../adapters/outbound/desktop-contract/agent-session-block-event-adapter.ts";
 
-import { createTypeScriptCodeIntelligencePort } from "../../../adapters/outbound/code-intelligence/typescript-code-intelligence-port.ts";
+import { createWorkspaceCodeIntelligenceRouter } from "../../../adapters/outbound/code-intelligence/code-intelligence-router.ts";
 
 import { createPythonPtyProcessLauncher } from "../../../adapters/outbound/pty/python-pty-process-launcher.ts";
 
@@ -377,7 +377,9 @@ export function createLiveBackendContractMessageAdapter(
       // (libc realpath) returns the true on-disk casing, matching the provider's getcwd.
       return realpathSync.native(dir);
     },
-    workspaceCodeIntelligencePort: createTypeScriptCodeIntelligencePort(),
+    // TS in-process + LSP-on-PATH engines behind one router (spec:
+    // workbench-editor-language-intelligence).
+    workspaceCodeIntelligencePort: createWorkspaceCodeIntelligenceRouter(),
     defaultWorkbenchTerminalCommand: env.SHELL ?? "sh",
     onAsyncEvent: (event) => {
       emitBackendEvents(backendEventsFromThreadRuntimeAsyncEvent(event));

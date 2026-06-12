@@ -1,4 +1,5 @@
 import type { AgentBindingDto } from "./agent.ts";
+import type { WorkspaceCodeIntelKindDto } from "./code-intel.ts";
 import type { ThreadId, WorkbenchPaneId } from "./ids.ts";
 import type { JsonObject } from "./json.ts";
 import type { ThreadScopeDto } from "./thread.ts";
@@ -19,7 +20,8 @@ export type BackendCommandKind =
   | "provider.trustWorkspace"
   | "workbench.command"
   | "workspace.readFileTree"
-  | "workspace.searchContent";
+  | "workspace.searchContent"
+  | "workspace.codeIntel";
 
 export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "thread.list",
@@ -38,6 +40,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "workbench.command",
   "workspace.readFileTree",
   "workspace.searchContent",
+  "workspace.codeIntel",
 ];
 
 /**
@@ -116,5 +119,18 @@ export interface BackendCommandPayloadByKind {
     query: string;
     maxResults?: number;
     maxFiles?: number;
+  };
+  // Editor language-intelligence query (completion/hover/highlights/signature/
+  // diagnostics) for one file under `cwd`. `content` carries the live (possibly
+  // unsaved) buffer so results match what the user sees. Answered by a
+  // workspace.codeIntelResult event with the same requestId — never stored in
+  // Workbench state. Spec: workbench-editor-language-intelligence.
+  "workspace.codeIntel": {
+    cwd: string;
+    path: string;
+    kind: WorkspaceCodeIntelKindDto;
+    content?: string;
+    line?: number;
+    character?: number;
   };
 }

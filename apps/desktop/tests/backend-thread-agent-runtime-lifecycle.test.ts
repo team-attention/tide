@@ -3296,6 +3296,28 @@ class FakeWorkspaceCodeIntelligencePort implements WorkspaceCodeIntelligencePort
     }
     return { ok: true, locations: this.references, truncated: false };
   }
+
+  // The language-intelligence queries added by workbench-editor-language-
+  // intelligence are not exercised by these scenarios - answer "unavailable".
+  async getCompletions() {
+    return { ok: false as const, error: { code: "workspace_code_intelligence_unavailable" as const, message: "Not available in this fake." } };
+  }
+
+  async getHover() {
+    return { ok: false as const, error: { code: "workspace_code_intelligence_unavailable" as const, message: "Not available in this fake." } };
+  }
+
+  async getDocumentHighlights() {
+    return { ok: false as const, error: { code: "workspace_code_intelligence_unavailable" as const, message: "Not available in this fake." } };
+  }
+
+  async getSignatureHelp() {
+    return { ok: false as const, error: { code: "workspace_code_intelligence_unavailable" as const, message: "Not available in this fake." } };
+  }
+
+  async getDiagnostics() {
+    return { ok: false as const, error: { code: "workspace_code_intelligence_unavailable" as const, message: "Not available in this fake." } };
+  }
 }
 
 class FakeWorkspaceFilePort implements WorkspaceFilePort {

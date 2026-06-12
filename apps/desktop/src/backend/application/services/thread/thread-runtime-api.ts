@@ -16,7 +16,7 @@ import type { AgentSessionBlock } from "../../domains/agent-session/agent-sessio
 import type { RawAgentFrame, RawAgentFramePayloadKind, RawAgentFrameSource } from "../../domains/agent-session/raw-agent-frame.ts";
 import type { ArchiveThreadInput, ArchiveThreadResult, ListThreadsInput, ListThreadsResult, RenameThreadInput, RenameThreadResult, RestoreThreadsInput, RestoreThreadsResult, SetThreadPinnedInput, SetThreadPinnedResult } from "./thread-crud-service.ts";
 import type { ServiceResult } from "../support/service-result.ts";
-import type { ReadWorkspaceFileTreeInput, ReadWorkspaceFileTreeResult, SearchWorkspaceContentInput, SearchWorkspaceContentResult, WorkbenchCommandInput, WorkbenchCommandResult } from "../workbench/workbench-command-handler.ts";
+import type { QueryWorkspaceCodeIntelInput, QueryWorkspaceCodeIntelResult, ReadWorkspaceFileTreeInput, ReadWorkspaceFileTreeResult, SearchWorkspaceContentInput, SearchWorkspaceContentResult, WorkbenchCommandInput, WorkbenchCommandResult } from "../workbench/workbench-command-handler.ts";
 import type { TideMcpToolDefinition } from "../../domains/workbench/workbench.ts";
 import type { TideMcpToolCallInput, TideMcpToolCallResult } from "../tide-mcp/tide-mcp-tool-handler.ts";
 // Thread runtime service API types (inputs/results/ports/contract), extracted
@@ -275,6 +275,9 @@ export interface ThreadRuntimeService {
   searchWorkspaceContent(
     input: SearchWorkspaceContentInput,
   ): Promise<ServiceResult<SearchWorkspaceContentResult>>;
+  queryWorkspaceCodeIntel(
+    input: QueryWorkspaceCodeIntelInput,
+  ): Promise<ServiceResult<QueryWorkspaceCodeIntelResult>>;
   appendRawAgentFrame(input: AppendRawAgentFrameInput): Promise<RawAgentFrame>;
   listTideMcpTools(): TideMcpToolDefinition[];
   handleTideMcpToolCall(

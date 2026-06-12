@@ -1,14 +1,17 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
-import { createElement, useEffect, useRef, useState } from "react";
+import { createElement, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap } from "@codemirror/view";
 import type { ViewUpdate } from "@codemirror/view";
 import { editorLanguageExtensions } from "./editor-pane.ts";
+import { codeIntelligenceExtensions } from "./code-intel-extensions.ts";
+import type { CodeIntelContext } from "./code-intel-extensions.ts";
 import { CornerDownRight } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
+// Language-intelligence extensions: spec workbench-editor-language-intelligence.
 
 // Real code editor: CodeMirror 6 (MIT). Grammar-based highlighting, line
 // numbers, selection, editing. Read-only Panes still render highlighted via
@@ -29,13 +32,18 @@ export function WorkbenchCodeEditor(props: {
   const editorRef = useRef<ReactCodeMirrorRef>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   // The text selection captured when the context menu opened (before the caret is
-  // moved to the clicked symbol), so "Add selection to chat" uses it.
-  const [menuSelection, setMenuSelection] = useState<{ text: string; fromLine: number; toLine: number } | null>(null);
+  // moved to the clicked symbol), so "Add selection to chat" / Cut / Copy use it.
+  const [menuSelection, setMenuSelection] = useState<
+    { text: string; from: number; to: number; fromLine: number; toLine: number } | null
+  >(null);
   // A floating "Add to chat" button anchored to the current text selection.
   const [selToolbar, setSelToolbar] = useState<
     { x: number; y: number; text: string; fromLine: number; toLine: number } | null
   >(null);
   const nav = props.navigationTarget;
+  // Latest props for the intel extensions (built once, see useMemo below).
+  const propsRef = useRef(props);
+  propsRef.current = props;
 
   // Attach a code selection to the composer as a chip (shared by the right-click
   // menu and the floating selection toolbar).
@@ -74,6 +82,20 @@ export function WorkbenchCodeEditor(props: {
     },
   ]);
 
+  // Language-intelligence extensions, built ONCE per mounted editor: the shell
+  // re-renders on every keystroke and react-codemirror reconfigures on each new
+  // extensions array, so these must keep their instances (module-level fields
+  // keep their values across reconfigure) and read live props via propsRef.
+  const codeIntelExtensions = useMemo(() => {
+    const getContext = (): CodeIntelContext => ({
+      paneId: propsRef.current.paneId,
+      language: propsRef.current.language,
+      readOnly: propsRef.current.readOnly,
+      handlers: propsRef.current.handlers,
+    });
+    return codeIntelligenceExtensions(getContext);
+  }, []);
+
   // Right-click targets the symbol under the pointer (move the caret there so
   // the LSP query resolves the clicked identifier), then opens the editor
   // context menu with Go to Definition / Find References.
@@ -90,6 +112,8 @@ export function WorkbenchCodeEditor(props: {
       if (!sel.empty) {
         setMenuSelection({
           text: view.state.sliceDoc(sel.from, sel.to),
+          from: sel.from,
+          to: sel.to,
           fromLine: view.state.doc.lineAt(sel.from).number,
           toLine: view.state.doc.lineAt(sel.to).number,
         });
@@ -110,6 +134,43 @@ export function WorkbenchCodeEditor(props: {
     if (menuSelection !== null) {
       attachCodeSelection(menuSelection);
     }
+  };
+
+  const copySelection = () => {
+    if (menuSelection !== null) {
+      void navigator.clipboard?.writeText(menuSelection.text);
+    }
+  };
+
+  const cutSelection = () => {
+    const view = editorRef.current?.view;
+    if (menuSelection === null || view === undefined || props.readOnly) {
+      return;
+    }
+    void navigator.clipboard?.writeText(menuSelection.text);
+    view.dispatch({
+      changes: { from: menuSelection.from, to: menuSelection.to },
+      selection: { anchor: menuSelection.from },
+      userEvent: "delete.cut",
+    });
+  };
+
+  const pasteIntoEditor = () => {
+    const view = editorRef.current?.view;
+    if (view === undefined || props.readOnly) {
+      return;
+    }
+    void navigator.clipboard?.readText().then((text) => {
+      if (typeof text !== "string" || text.length === 0) {
+        return;
+      }
+      const sel = view.state.selection.main;
+      view.dispatch({
+        changes: { from: sel.from, to: sel.to, insert: text },
+        selection: { anchor: sel.from + text.length },
+        userEvent: "input.paste",
+      });
+    });
   };
 
   const menuItem = (label: string, onSelect: () => void, disabled = false) =>
@@ -174,8 +235,15 @@ export function WorkbenchCodeEditor(props: {
         lineNumbers: true,
         foldGutter: false,
         highlightActiveLine: !props.readOnly,
+        // Replaced by the explicit autocompletion({override}) extension above.
+        autocompletion: false,
       },
-      extensions: [saveKeymap, EditorView.lineWrapping, ...editorLanguageExtensions(props.language)],
+      extensions: [
+        saveKeymap,
+        EditorView.lineWrapping,
+        ...codeIntelExtensions,
+        ...editorLanguageExtensions(props.language),
+      ],
       onChange: (next: string) => props.handlers.onEditorDraftChange(props.paneId, next),
       onUpdate: (update: ViewUpdate) => {
         if (!update.selectionSet) {
@@ -239,6 +307,10 @@ export function WorkbenchCodeEditor(props: {
               style: { left: `${contextMenu.x}px`, top: `${contextMenu.y}px` } as CSSProperties,
             },
             menuItem("Add selection to chat", addSelectionToChat, menuSelection === null),
+            createElement("div", { className: "workbench-editor-menu__sep", role: "separator" }),
+            menuItem("Cut", cutSelection, props.readOnly || menuSelection === null),
+            menuItem("Copy", copySelection, menuSelection === null),
+            menuItem("Paste", pasteIntoEditor, props.readOnly),
             createElement("div", { className: "workbench-editor-menu__sep", role: "separator" }),
             menuItem("Go to Definition", () => props.handlers.onEditorGoToDefinition(props.paneId)),
             menuItem("Find References", () => props.handlers.onEditorGoToReferences(props.paneId)),

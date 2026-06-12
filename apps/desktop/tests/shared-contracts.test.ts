@@ -48,6 +48,56 @@ test("BackendCommandEnvelope accepts Contract Version 1 and rejects unsupported 
   assert.equal(result.error.code, "unsupported_contract_version");
 });
 
+// Spec: workbench-editor-language-intelligence — the editor's query round-trip
+// (workspace.codeIntel command → workspace.codeIntelResult event) must pass
+// envelope validation in both directions with the full union payload.
+test("workspace_code_intel_contracts_round_trip", () => {
+  const command = {
+    contractVersion: CONTRACT_VERSION,
+    requestId: "req-code-intel",
+    kind: "workspace.codeIntel",
+    issuedAt: "2026-06-12T00:00:00.000Z",
+    payload: {
+      cwd: "/repo/tide",
+      path: "/repo/tide/src/index.ts",
+      kind: "completion",
+      content: "const value = 1;\nval",
+      line: 1,
+      character: 3,
+    },
+  };
+  assert.equal(validateBackendCommandEnvelope(command).ok, true);
+
+  const event = {
+    contractVersion: CONTRACT_VERSION,
+    eventId: "evt-code-intel",
+    requestId: "req-code-intel",
+    kind: "workspace.codeIntelResult",
+    emittedAt: "2026-06-12T00:00:00.001Z",
+    payload: {
+      kind: "completion",
+      ok: true,
+      completions: [
+        { label: "value", kind: "const", insertText: "value", sortText: "11" },
+      ],
+      highlights: [{ line: 0, character: 6, length: 5, kind: "write" }],
+      diagnostics: [
+        { line: 0, character: 0, length: 5, message: "x", severity: "error" },
+      ],
+      hover: { contents: "const value: number", line: 0, character: 6, length: 5 },
+      signature: {
+        signatures: [{ label: "fn(a: string)", parameters: [{ label: "a: string" }] }],
+        activeSignature: 0,
+        activeParameter: 0,
+      },
+    },
+  };
+  const validated = validateBackendEventEnvelope(event);
+  assert.equal(validated.ok, true);
+  const reparsed = JSON.parse(JSON.stringify(event));
+  assert.equal(validateBackendEventEnvelope(reparsed).ok, true);
+});
+
 test("BackendCommandEnvelope rejects missing RequestId before Backend services", () => {
   const { requestId: _requestId, ...withoutRequestId } = commandEnvelope;
   const result = validateBackendCommandEnvelope(withoutRequestId);

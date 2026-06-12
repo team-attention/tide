@@ -501,6 +501,83 @@
   background: var(--tide-line);
 }
 
+/* ---- Editor language intelligence (spec: workbench-editor-language-intelligence) ---- */
+
+/* All uses of the symbol under the cursor; write-occurrences slightly stronger.
+   Built on the theme ink so both light and dark stay subtle. */
+.workbench-editor-cm .cm-tide-occurrence {
+  background: rgba(var(--tide-ink-rgb), 0.09);
+  border-radius: 2px;
+}
+
+.workbench-editor-cm .cm-tide-occurrence--write {
+  background: rgba(var(--tide-ink-rgb), 0.17);
+}
+
+/* Cmd/Ctrl held over a word: the go-to-definition link affordance. */
+.workbench-editor-cm .cm-tide-cmdlink {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* CodeMirror's default tooltip chrome is unthemed white — restyle every editor
+   tooltip (hover, signature help, autocomplete) as an app panel. */
+.workbench-editor-cm .cm-tooltip {
+  background: var(--tide-surface);
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 6px;
+  color: var(--tide-text);
+  box-shadow: var(--tide-shadow-popover);
+  overflow: hidden;
+}
+
+.cm-tide-hover,
+.cm-tide-signature {
+  max-width: 480px;
+  padding: 7px 10px;
+  font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.cm-tide-hover {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* The active call parameter inside signature help. */
+.cm-tide-signature strong {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.workbench-editor-cm .cm-tooltip-autocomplete > ul {
+  font: 12px/1.7 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  max-height: 240px;
+}
+
+.workbench-editor-cm .cm-tooltip-autocomplete > ul > li {
+  padding: 2px 8px;
+  color: var(--tide-text);
+}
+
+.workbench-editor-cm .cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+.workbench-editor-cm .cm-completionIcon {
+  color: var(--tide-muted);
+}
+
+.workbench-editor-cm .cm-completionDetail {
+  margin-left: 8px;
+  color: var(--tide-muted);
+  font-style: normal;
+}
+
 /* Floating "Add to chat" button anchored to the current editor text selection. */
 .editor-selection-toolbar {
   position: fixed;

@@ -159,6 +159,132 @@ test("renderer_command_reaches_backend_adapter_and_returns_backend_events", asyn
   assert.equal(received[1].payload.thread.threadId, "thread-process");
 });
 
+// Spec: workbench-editor-language-intelligence — a workspace.codeIntel query
+// round-trips to a requestId-correlated workspace.codeIntelResult event. With
+// no engine configured the result is a QUIET miss (ok:false + message), never
+// a contract.error per keystroke.
+test("workspace_code_intel_query_round_trips_as_code_intel_result_event", async () => {
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+    initialThreads: [threadSeed("thread-process")],
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+  });
+  const port = new LoopbackMessagePort(async (message) =>
+    adapter.handleMessage(message),
+  );
+  const received: BackendEventEnvelope[] = [];
+  const client = createMessagePortBackendClient({
+    port,
+    onEvent: (event) => received.push(event),
+  });
+
+  const result = client.postCommandEnvelope(
+    commandEnvelope("workspace.codeIntel", {
+      cwd: "/repo/tide",
+      path: "/repo/tide/src/index.ts",
+      kind: "completion",
+      content: "const a = 1;",
+      line: 0,
+      character: 5,
+    }),
+  );
+  await port.flush();
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    received.map((event) => event.kind),
+    ["command.accepted", "workspace.codeIntelResult", "command.completed"],
+  );
+  assertBackendEventsAreContractEnvelopes(received);
+  assert.equal(received[1].requestId, "req-workspace.codeIntel");
+  assert.equal(received[1].payload.kind, "completion");
+  assert.equal(received[1].payload.ok, false);
+  assert.equal(typeof received[1].payload.message, "string");
+});
+
+// Regression: completion items carry nested OPTIONAL fields (insertText/detail
+// may be undefined). The result event must be deep-sanitized or the envelope
+// fails JSON validation in the bridge and silently never reaches the editor —
+// autocomplete then looks "empty" while hover (no nested undefineds) works.
+test("workspace_code_intel_result_with_nested_undefined_fields_survives_the_contract_boundary", async () => {
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+    initialThreads: [threadSeed("thread-process")],
+    workspaceCodeIntelligencePort: {
+      async findDefinition() {
+        return { ok: false, error: { code: "workspace_code_definition_not_found", message: "x" } };
+      },
+      async findReferences() {
+        return { ok: false, error: { code: "workspace_code_references_not_found", message: "x" } };
+      },
+      async getCompletions() {
+        return {
+          ok: true,
+          completions: [
+            { label: "parse", kind: "method", detail: undefined, insertText: undefined, sortText: "11" },
+          ],
+        };
+      },
+      async getHover() {
+        return { ok: true, hover: null };
+      },
+      async getDocumentHighlights() {
+        return { ok: true, highlights: [] };
+      },
+      async getSignatureHelp() {
+        return { ok: true, signature: null };
+      },
+      async getDiagnostics() {
+        return { ok: true, diagnostics: [] };
+      },
+    },
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+  });
+  const port = new LoopbackMessagePort(async (message) =>
+    adapter.handleMessage(message),
+  );
+  const received: BackendEventEnvelope[] = [];
+  const client = createMessagePortBackendClient({
+    port,
+    onEvent: (event) => received.push(event),
+  });
+
+  client.postCommandEnvelope(
+    commandEnvelope("workspace.codeIntel", {
+      cwd: "/repo/tide",
+      path: "/repo/tide/src/index.ts",
+      kind: "completion",
+      content: "JSON.",
+      line: 0,
+      character: 5,
+    }),
+  );
+  await port.flush();
+
+  // The result event must SURVIVE envelope validation (it is the second event).
+  assert.deepEqual(
+    received.map((event) => event.kind),
+    ["command.accepted", "workspace.codeIntelResult", "command.completed"],
+  );
+  assertBackendEventsAreContractEnvelopes(received);
+  assert.equal(received[1].payload.ok, true);
+  assert.deepEqual(received[1].payload.completions, [
+    { label: "parse", kind: "method", sortText: "11" },
+  ]);
+});
+
 test("thread_start_contract_events_include_local_user_message_block_before_completion", async () => {
   // Spec: docs_v2/specs/thread-launch-options-contract.md
   const service = createThreadRuntimeService({

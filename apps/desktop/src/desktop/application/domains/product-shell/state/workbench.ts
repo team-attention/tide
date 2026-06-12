@@ -398,7 +398,9 @@ export function goToProductShellEditorDefinition(
         threadId: state.activeThreadId,
         command: "go_to_definition",
         targetPaneId: paneId,
-        data: position,
+        // A dirty draft rides along so the backend resolves against what's on
+        // screen, not the stale on-disk file.
+        data: draft?.dirty === true ? { ...position, content } : position,
       },
     },
   };
@@ -432,7 +434,8 @@ export function goToProductShellEditorReferences(
         threadId: state.activeThreadId,
         command: "go_to_references",
         targetPaneId: paneId,
-        data: position,
+        // Same dirty-buffer ride-along as go_to_definition.
+        data: draft?.dirty === true ? { ...position, content } : position,
       },
     },
   };

@@ -295,6 +295,38 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           ],
         );
       }
+      case "workspace.codeIntel": {
+        const typedCommand = command as BackendCommandEnvelope<"workspace.codeIntel">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.queryWorkspaceCodeIntel(typedCommand.payload),
+          (result) => [
+            {
+              contractVersion: CONTRACT_VERSION,
+              eventId: this.nextEventId(),
+              requestId: typedCommand.requestId,
+              kind: "workspace.codeIntelResult",
+              emittedAt: this.clock(),
+              // Deep-sanitized: engine items carry nested optional fields
+              // (insertText/detail = undefined) that a top-level omit misses,
+              // and an envelope with ANY undefined fails the bridge's JSON
+              // validation — the event would silently vanish (the same trap as
+              // the renderer-side sanitizeJsonValue boundary fix).
+              payload: sanitizeJsonValue({
+                kind: result.kind,
+                ok: result.available,
+                message: result.message,
+                completions: result.completions,
+                hover: result.hover,
+                highlights: result.highlights,
+                signature: result.signature,
+                diagnostics: result.diagnostics,
+              }) as unknown as BackendEventEnvelope<"workspace.codeIntelResult">["payload"],
+            } satisfies BackendEventEnvelope<"workspace.codeIntelResult">,
+            this.commandCompletedEvent(typedCommand, { handled: true }),
+          ],
+        );
+      }
     }
   }
 

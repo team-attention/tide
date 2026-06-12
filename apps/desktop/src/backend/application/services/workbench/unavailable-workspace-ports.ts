@@ -81,24 +81,34 @@ export function createUnavailableWorkspaceCommandPort(): WorkspaceCommandPort {
 }
 
 export function createUnavailableWorkspaceCodeIntelligencePort(): WorkspaceCodeIntelligencePort {
+  const unavailable = {
+    ok: false as const,
+    error: {
+      code: "workspace_code_intelligence_unavailable" as const,
+      message: "Workspace code intelligence is not configured.",
+    },
+  };
   return {
     async findDefinition() {
-      return {
-        ok: false,
-        error: {
-          code: "workspace_code_intelligence_unavailable",
-          message: "Workspace code intelligence is not configured.",
-        },
-      };
+      return unavailable;
     },
     async findReferences() {
-      return {
-        ok: false,
-        error: {
-          code: "workspace_code_intelligence_unavailable",
-          message: "Workspace code intelligence is not configured.",
-        },
-      };
+      return unavailable;
+    },
+    async getCompletions() {
+      return unavailable;
+    },
+    async getHover() {
+      return unavailable;
+    },
+    async getDocumentHighlights() {
+      return unavailable;
+    },
+    async getSignatureHelp() {
+      return unavailable;
+    },
+    async getDiagnostics() {
+      return unavailable;
     },
   };
 }

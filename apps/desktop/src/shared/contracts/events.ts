@@ -1,5 +1,13 @@
 import type { AgentRuntimeStateDto, AgentRuntimeUsageDto } from "./agent-runtime.ts";
 import type { AgentSessionBlockDto } from "./agent-session-block.ts";
+import type {
+  WorkspaceCodeCompletionDto,
+  WorkspaceCodeDiagnosticDto,
+  WorkspaceCodeHoverDto,
+  WorkspaceCodeIntelKindDto,
+  WorkspaceCodeRangeDto,
+  WorkspaceCodeSignatureHelpDto,
+} from "./code-intel.ts";
 import type { ContractErrorPayload } from "./errors.ts";
 import type {
   BackendConnectionChangedPayload,
@@ -39,7 +47,8 @@ export type BackendEventKind =
   | "workbench.changed"
   | "workbench.terminalOutput"
   | "workspace.fileTreeLoaded"
-  | "workspace.contentSearchResults";
+  | "workspace.contentSearchResults"
+  | "workspace.codeIntelResult";
 
 export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "backend.connectionChanged",
@@ -67,6 +76,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "workbench.terminalOutput",
   "workspace.fileTreeLoaded",
   "workspace.contentSearchResults",
+  "workspace.codeIntelResult",
 ];
 
 export interface BackendEventPayloadByKind {
@@ -187,6 +197,19 @@ export interface BackendEventPayloadByKind {
     matches: WorkspaceContentSearchMatchDto[];
     fileCount: number;
     truncated: boolean;
+  };
+  // Answer to a workspace.codeIntel query (same requestId). `ok:false` carries
+  // a human-readable `message` (e.g. no language support for the file); the
+  // editor then simply shows nothing. Spec: workbench-editor-language-intelligence.
+  "workspace.codeIntelResult": {
+    kind: WorkspaceCodeIntelKindDto;
+    ok: boolean;
+    message?: string;
+    completions?: WorkspaceCodeCompletionDto[];
+    hover?: WorkspaceCodeHoverDto | null;
+    highlights?: WorkspaceCodeRangeDto[];
+    signature?: WorkspaceCodeSignatureHelpDto | null;
+    diagnostics?: WorkspaceCodeDiagnosticDto[];
   };
 }
 

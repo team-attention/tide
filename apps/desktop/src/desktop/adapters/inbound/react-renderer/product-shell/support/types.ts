@@ -163,6 +163,17 @@ export interface ProductShellHandlers {
   onEditorSave: (paneId: string) => void;
   onEditorGoToDefinition: (paneId: string) => void;
   onEditorGoToReferences: (paneId: string) => void;
+  // Editor language-intelligence query (workspace.codeIntel round-trip). The
+  // result payload goes straight back to the calling CodeMirror extension —
+  // it never enters shell state, so typing/hovering can't re-render the shell.
+  // Returns the workspace.codeIntelResult payload, or null on miss/error.
+  onEditorCodeIntel: (input: {
+    paneId: string;
+    kind: "completion" | "hover" | "highlights" | "signature" | "diagnostics";
+    content: string;
+    line?: number;
+    character?: number;
+  }) => Promise<Record<string, unknown> | null>;
   onBrowserSnapshot: (paneId: string, snapshot: ProductShellBrowserSnapshot) => void;
   onBrowserActionResult: (paneId: string, result: ProductShellBrowserActionResult) => void;
   // Background (non-active thread) Browser Pane updates, routed by the pane's threadId.
