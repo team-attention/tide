@@ -1,6 +1,7 @@
 // Pane types: Terminal, Editor, Browser, Diff, Launcher.
 
 pub(crate) mod browser;
+pub(crate) mod browser_bridge;
 pub(crate) mod diff;
 pub(crate) mod editor;
 

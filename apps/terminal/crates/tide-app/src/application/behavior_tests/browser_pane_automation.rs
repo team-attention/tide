@@ -411,35 +411,37 @@ fn browser_action_source_requests_snapshot_refresh_after_live_input_dispatch() {
 fn browser_automation_cursor_is_injected_through_the_browser_bridge_dom_path() {
     // UC-3 BR-13 / BR-16: visible Browser Automation Cursor is cursor-shaped, DOM-injected, and updated before click events through the Browser Pane helper path.
     let browser_source = include_str!("../../domain/pane/browser.rs");
+    // The bridge JS lives in the extracted browser_bridge module (S-6).
+    let bridge_source = include_str!("../../domain/pane/browser_bridge.rs");
     let layout_source = include_str!("../../layout_compute.rs");
 
-    assert!(browser_source.contains("window.__tideSetAutomationCursor = (payload) => {"));
-    assert!(browser_source.contains("window.__tideClearAutomationCursor = () => {"));
+    assert!(bridge_source.contains("window.__tideSetAutomationCursor = (payload) => {"));
+    assert!(bridge_source.contains("window.__tideClearAutomationCursor = () => {"));
     assert!(
-        browser_source.contains("document.createElementNS('http://www.w3.org/2000/svg', 'svg')")
+        bridge_source.contains("document.createElementNS('http://www.w3.org/2000/svg', 'svg')")
     );
-    assert!(browser_source.contains("shape.setAttribute('viewBox', '0 0 24 24')"));
-    assert!(browser_source.contains(
+    assert!(bridge_source.contains("shape.setAttribute('viewBox', '0 0 24 24')"));
+    assert!(bridge_source.contains(
         "cursor.style.transition = 'left 280ms cubic-bezier(0.2, 0.8, 0.2, 1), top 280ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease-out';"
     ));
-    assert!(browser_source.contains("window.__tideAutomationCursorLastPoint"));
-    assert!(browser_source.contains("window.__tideAutomationCursorMotionDurationMs"));
-    assert!(browser_source.contains("const motionMs = window.__tideAutomationCursorMotionDurationMs(origin, target, payload.motionMs);"));
-    assert!(!browser_source.contains("cursor.style.transition = 'none';"));
-    assert!(!browser_source.contains("label.dataset.role = 'label';"));
+    assert!(bridge_source.contains("window.__tideAutomationCursorLastPoint"));
+    assert!(bridge_source.contains("window.__tideAutomationCursorMotionDurationMs"));
+    assert!(bridge_source.contains("const motionMs = window.__tideAutomationCursorMotionDurationMs(origin, target, payload.motionMs);"));
+    assert!(!bridge_source.contains("cursor.style.transition = 'none';"));
+    assert!(!bridge_source.contains("label.dataset.role = 'label';"));
     assert!(
-        browser_source.contains("(document.body || document.documentElement).appendChild(cursor);")
+        bridge_source.contains("(document.body || document.documentElement).appendChild(cursor);")
     );
     assert!(
-        browser_source.contains("window.__tideBrowserAutomationClick = (x, y, delayMs = 0) => {")
+        bridge_source.contains("window.__tideBrowserAutomationClick = (x, y, delayMs = 0) => {")
     );
-    assert!(browser_source.contains("const clickDelayMs = Math.max(0, delayMs + 45);"));
-    assert!(browser_source
+    assert!(bridge_source.contains("const clickDelayMs = Math.max(0, delayMs + 45);"));
+    assert!(bridge_source
         .contains("window.setTimeout(() => requestAnimationFrame(fireClick), clickDelayMs);"));
-    assert!(browser_source
+    assert!(bridge_source
         .contains("window.__tideBrowserAutomationTypeAt = (x, y, text, delayMs = 0) => {"));
-    assert!(browser_source.contains("const typeDelayMs = Math.max(0, delayMs + 45);"));
-    assert!(browser_source
+    assert!(bridge_source.contains("const typeDelayMs = Math.max(0, delayMs + 45);"));
+    assert!(bridge_source
         .contains("window.setTimeout(() => requestAnimationFrame(focusAndType), typeDelayMs);"));
     assert!(browser_source.contains("self.sync_automation_cursor_overlay();"));
     assert!(layout_source.contains("browser_native_views_obscured_by_overlays"));
