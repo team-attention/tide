@@ -658,21 +658,33 @@ green after every slice; suite grew 1458 → 1472):
   gateway method (runtime-gated by `TIDE_TERMINAL_TEST_DRIVER=1`) + harness
   `poll_state`/`wait_for_idle`, with in-process behavior tests. ✅
 
-Remaining (pure size-reduction motion of interleaved/coupled files, or
-display-blocked):
+Then the deferred set was taken on (2026-06-12, commits `4b2fb9da`→`37df36e0`,
+suite 1468 → 1474 green):
 
-- **Phase 3 size-only splits** — the rest of S-1 (interleaved browser/observe/panes
-  command handlers), S-2 (header.rs), S-3 (webview.rs objc2 delegates), S-4 (modal —
-  FileFinderState et al. are interleaved with shared helpers), S-5 (terminal
-  grid_sync, tightly coupled to `Terminal`), S-8 (the 4k-line agent_gateway test
-  file). These reduce file size with zero behaviour change; the code is interleaved
-  or tightly coupled, so each is a focused, independently-verifiable PR rather than a
-  clean line-range move.
-- **E-1 rest** — `test-inject-event` (needs `serde` derives on `Key`/`Modifiers`/
-  `MouseButton`/`PlatformEvent` + an injected-event queue drained in the loop),
-  `test-await-idle` (deferred-response), `test-screenshot` (wgpu readback). The
-  mechanism is implementable but the payoff (real-window input/visual E2E) can only be
-  verified with a display.
+- **P-5 Part B** ✅ — worktree add/remove/branch-delete as background jobs
+  (WorktreeJob worker; optimistic delete-row removal; follow-ups in
+  `poll_background_events`).
+- **M-3** ✅ — `TerminalSpawnConfig` replaces the four domain spawn-config statics
+  and the `App::new` side effect; env injection extracted to
+  `apply_integration_env` and unit-tested. (Live PTY integration still merits a
+  packaged-app eyeball.)
+- **M-4** ✅ — git CLI I/O moved to `git_adapter/git_cli`; data types stay in domain.
+- **M-5** ✅ — blanket `unsafe impl Send for App` replaced by localized impls on
+  `Ports` / `WebViewHandle` / `Highlighter`; App is structurally `Send`.
+- **Phase 3** ✅ (every oversized file now has a real extraction) — S-1 (provider
+  notification interp + `translate_key` → domain), S-2 (`header_status`), S-3
+  (`webview_url`), S-4 (`git_switcher`), S-5 (`urls` + `grid_sync`, the full
+  machinery), S-6 (`browser_bridge`), S-7 (page-map → domain), S-8 (`e2e_driver`
+  tests). The largest files (commands, header, webview, modal, the gateway test
+  file) are reduced but not yet exhaustively de-interleaved into the exact N-file
+  blueprint layout — the residual is more careful per-item refactoring, each a
+  focused PR.
+- **E-1** ✅ (mostly) — `test-poll-state` + `test-inject-event` (serde derives on
+  `Key`/`Modifiers`/`MouseButton`/`PlatformEvent`; injected-event queue drained
+  through the real `handle_platform_event` path; in-process tests) + harness
+  `poll_state`/`inject_event`/`wait_for_idle`. **Remaining:** `test-screenshot`
+  (GPU/display readback) and the push form of `test-await-idle` (polling
+  `wait_for_idle` already covers it).
 
   Older deferral notes below are superseded by the status above where they overlap.
 
