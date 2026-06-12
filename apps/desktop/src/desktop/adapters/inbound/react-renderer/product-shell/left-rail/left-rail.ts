@@ -1,0 +1,108 @@
+import type { ProductShellLeftUiMenu, ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell-state.ts";
+import type { MenuAnchorRect, ProductShellHandlers } from "../types.ts";
+import { createElement } from "react";
+import type { ReactElement } from "react";
+import { createColumnResizeHandle, createIconButton, createTrafficControls } from "../chrome.ts";
+import { createLeftUiContextMenuOverlay } from "./context-menu.ts";
+import { MessageSquarePlus, PanelLeftClose, Search, Settings } from "lucide-react";
+import { createLeftNavRow, createListSettingsButton } from "./section-header.ts";
+import { createRailSkeleton } from "./skeletons.ts";
+import { createPinnedSection } from "./pinned-section.ts";
+import { createThreadSection } from "./thread-section.ts";
+import { createProjectSection } from "./project-section.ts";
+// Extracted from tide-product-shell.ts (spec: navigable-source-structure).
+
+export function createLeftUi(
+  viewModel: ProductShellViewModel,
+  handlers: ProductShellHandlers,
+  contextMenu: { menu: ProductShellLeftUiMenu | null; anchor: MenuAnchorRect | null },
+): ReactElement {
+  return createElement(
+    "aside",
+    { className: "left-ui", "aria-label": "Left UI", "data-column": "left-ui" },
+    createColumnResizeHandle("left", "right", handlers),
+    contextMenu.menu
+      ? createLeftUiContextMenuOverlay(
+          contextMenu.menu,
+          contextMenu.anchor ?? { left: 12, top: 120, bottom: 150, right: 256 },
+          () => handlers.onLeftUiMenuOpen(null),
+          handlers,
+          viewModel.listSettings,
+        )
+      : null,
+    createElement(
+      "header",
+      { className: "left-ui__top-row column-top-row", "aria-label": "Left UI Top Row" },
+      createTrafficControls(),
+      createIconButton(
+        "Close Left UI",
+        createElement(PanelLeftClose, { size: 15, strokeWidth: 1.9 }),
+        handlers.onLeftUiToggle,
+        "top-row-button",
+      ),
+    ),
+    createElement(
+      "nav",
+      { className: "left-ui__nav", "aria-label": "Left UI actions" },
+      createLeftNavRow("New thread", createElement(MessageSquarePlus, { size: 16, strokeWidth: 1.9 }), handlers.onNewThread),
+      createElement(
+        "div",
+        { className: "left-ui__search-row" },
+        viewModel.searchActive
+          ? createElement(
+              "div",
+              { className: "left-ui-search" },
+              createElement(Search, { size: 16, strokeWidth: 1.9, "aria-hidden": true }),
+              createElement("input", {
+                className: "left-ui-search__input",
+                type: "search",
+                "aria-label": "Search threads",
+                placeholder: "Search",
+                autoFocus: true,
+                value: viewModel.searchQuery,
+                onChange: (event: { currentTarget: { value: string } }) =>
+                  handlers.onSearchQueryChange(event.currentTarget.value),
+                onKeyDown: (event: { key: string }) => {
+                  if (event.key === "Escape") {
+                    handlers.onSearchToggle();
+                  }
+                },
+              }),
+            )
+          : createLeftNavRow("Search", createElement(Search, { size: 16, strokeWidth: 1.9 }), handlers.onSearchToggle),
+        createListSettingsButton(handlers),
+      ),
+    ),
+    createElement(
+      "div",
+      { className: "left-ui__sections" },
+      ...(!viewModel.threadsLoaded
+        ? [createRailSkeleton()]
+        : viewModel.listSettings.groupBy === "thread"
+        ? [
+            // Thread mode still surfaces pinned threads in a Pinned section (no
+            // project groups); the flat list then excludes them to avoid dupes.
+            createPinnedSection([], viewModel.pinnedThreads, handlers),
+            createThreadSection(
+              "Threads",
+              viewModel.flatThreads.filter((thread) => !thread.pinned),
+              handlers,
+            ),
+          ]
+        : [
+            createPinnedSection(viewModel.pinnedProjects, viewModel.pinnedThreads, handlers),
+            createProjectSection(viewModel.projectGroups, handlers),
+            createThreadSection("Scratch", viewModel.scratchThreads, handlers),
+          ]),
+    ),
+    createElement(
+      "div",
+      { className: "left-ui__footer" },
+      createLeftNavRow(
+        "Settings",
+        createElement(Settings, { size: 16, strokeWidth: 1.9 }),
+        handlers.onOpenSettings,
+      ),
+    ),
+  );
+}

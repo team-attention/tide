@@ -23,7 +23,7 @@ const MAX_LINES = 800;
 // Pinned ceilings for the known god-files (the Phase 3 decomposition backlog).
 // Each may shrink or hold, never grow. Lower these as collaborators are extracted.
 const PINNED_MAX: Record<string, number> = {
-  "desktop/adapters/inbound/react-renderer/tide-product-shell.ts": 5838,
+  "desktop/adapters/inbound/react-renderer/tide-product-shell.ts": 1445,
   "desktop/application/domains/product-shell/product-shell-state.ts": 3055,
   "desktop/adapters/inbound/react-renderer/agent-chat-shell.ts": 2445,
   "desktop/application/domains/agent-chat/agent-chat-shell-state.ts": 2353,
