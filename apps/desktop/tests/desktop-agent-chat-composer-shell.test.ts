@@ -575,6 +575,30 @@ test("model_change_on_an_active_thread_sends_thread_set_launch_options", () => {
   assert.equal(result.state.thread?.launchOptions?.model, "gpt-5.4");
 });
 
+// Permission mode must take the SAME mid-thread path as model: a change on an
+// active thread sends thread.setLaunchOptions so the backend live-applies it
+// (claude set_permission_mode / gemini set_mode) or restarts-with-resume.
+test("permission_change_on_an_active_thread_sends_thread_set_launch_options", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const result = selectAgentChatChoiceSurfaceRow(
+    setComposerActiveSurface(hydrated, "permission_menu").state,
+    "permission_menu",
+    "codex-full",
+  );
+
+  assert.equal(result.command?.kind, "thread.setLaunchOptions");
+  assert.equal(
+    result.command?.kind === "thread.setLaunchOptions" &&
+      result.command.payload.launchOptions.permission,
+    "full-access",
+  );
+  // Optimistic chip patch stays in place.
+  assert.equal(result.state.thread?.launchOptions?.permission, "full-access");
+});
+
 test("model_change_in_the_start_composer_stays_local", () => {
   // Before a thread starts there is nothing to reconfigure — the options ride
   // thread.start as before.
