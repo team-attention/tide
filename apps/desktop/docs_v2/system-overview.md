@@ -8,8 +8,9 @@ opencode) so that, to the user, they all behave like one uniform chat. The share
 flow lives in one place; each agent's quirks are isolated in its adapter.
 
 > Update (2026-06-12, branch `v2-remediation-impl`): the four shipped provider-CLI
-> agents are **codex / claude / gemini / opencode**. Antigravity is demoted to a UI
-> fallback (not a launchable `ProviderCliAgentId`). All declarative agent knowledge
+> agents are **codex / claude / gemini / opencode** (opencode is a coming-soon
+> placeholder). Antigravity has been fully removed from every layer (it was wired but
+> could not authenticate when spawned). All declarative agent knowledge
 > (id list, display name, monogram, session-ref kind, permission modes) now lives in
 > one registry — `shared/contracts/agent-descriptors.ts` — and the runtime port,
 > infra, and UI derive from it (guarded by `tests/agent-symmetry-boundary.test.ts`).
