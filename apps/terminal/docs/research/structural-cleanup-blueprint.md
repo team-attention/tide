@@ -634,6 +634,41 @@ Each slice: (spec new/amended) → behavior tests → code → `cargo test` + `l
 Phases 1–2 and Phase 4's E-1/E-2 are worth doing soon; Phase 3 can interleave as
 opportunity allows (each split is an independent, safe PR).
 
+### Implementation status (2026-06-12)
+
+Done and on `terminal-rev` (each its own commit, `cargo test` + `lint-arch.sh`
+green after every slice; suite grew 1458 → 1466):
+
+- **Phase 0** — D-1, D-2. ✅
+- **Phase 1** — P-3+P-6+M-1 (diff cluster), P-4 (poller single-spawn + wants_diff),
+  P-1 (finder search worker), P-2 (`#` symbols worker), P-5 **Part A** (Git Switcher
+  opens from the poller cache). ✅
+- **Phase 2** — M-2 (CliDispatch context). ✅
+- **Phase 4** — E-2 (e2e lane gated `#[ignore]` + `scripts/e2e.sh`), E-3 (harness
+  `wait_for_pane_contains`; `wait_until` already existed), E-4 (`docs/testing/e2e-tests.md`). ✅
+
+Deferred (tracked; behavior-neutral or destructive-adjacent, lower priority than
+the perf + testability work above — each carries wide blast radius with no
+user-visible change, so they wait for the E-1 test-driver to provide a regression
+net first):
+
+- **P-5 Part B** — worktree *mutations* (add/remove/branch-delete) as background
+  jobs. Infrequent explicit destructive-adjacent actions; design in §P-5, noted in
+  `git-switcher-worktree-actions.md`.
+- **M-3** — `TerminalSpawnConfig` (remove the `domain/terminal` process-global
+  statics + the `App::new` side effect). Wide: changes the `TerminalFactoryPort`
+  signature and every spawn site; payoff (multi-config tests) is currently unconsumed.
+- **M-4** — move `domain/terminal/git.rs` to `git_adapter` (the duplicated DiffPane
+  parsers were already deleted in P-3; what remains is pure relocation + a
+  `GitPort`-types move).
+- **M-5** — `MainThreadCell` to retire the blanket `unsafe impl Send for App`
+  (compile-time only; pairs with S-3).
+- **Phase 3** — all module splits (S-1…S-8). Pure mechanical motion; each an
+  independent safe PR.
+- **Phase 4 E-1** — the gated Gateway test-driver (`test-poll-state` →
+  `test-await-idle` → `test-inject-event` → `test-screenshot`) and E-5 targets.
+  Specced in `docs/testing/e2e-tests.md`; `test-poll-state` is the low-risk first step.
+
 ### Explicitly out of scope (decided, not forgotten)
 
 - Full "no I/O in domain" purge (`tree`, `settings`, `editor/buffer`) — high churn, no current payoff (M-4 scope note).

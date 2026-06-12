@@ -108,3 +108,28 @@ pub fn wait_until(
     }
     Err(format!("timed out waiting for: {description}"))
 }
+
+/// Poll `capture_pane` until the pane content contains `needle` (default 2s
+/// budget, 100ms interval). Use this instead of asserting immediately after
+/// `send_keys` — the PTY round-trip is asynchronous, so an immediate capture
+/// races the output. Panics on timeout with the last captured content.
+pub fn wait_for_pane_contains(app: &TestApp, pane_id: u64, needle: &str) {
+    let last = std::cell::RefCell::new(String::new());
+    let result = wait_until(
+        std::time::Duration::from_secs(2),
+        std::time::Duration::from_millis(100),
+        &format!("pane {pane_id} content to contain {needle:?}"),
+        || {
+            if let Ok(capture) = app.capture_pane(pane_id) {
+                if let Some(content) = capture.get("content").and_then(|v| v.as_str()) {
+                    *last.borrow_mut() = content.to_string();
+                    return content.contains(needle);
+                }
+            }
+            false
+        },
+    );
+    if let Err(message) = result {
+        panic!("{message}.\nLast captured content:\n{}", last.borrow());
+    }
+}

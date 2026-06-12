@@ -5,6 +5,7 @@ use tide_e2e_tests::assertions::{assert_pane_count, focused_pane_id, pane_ids};
 use tide_e2e_tests::harness::TestApp;
 
 #[test]
+#[ignore = "e2e: launches a real windowed app; run via scripts/e2e.sh"]
 fn test_launch_and_list_panes() {
     let app = TestApp::launch().expect("failed to launch Tide");
     let panes = app.list_panes().expect("list_panes failed");
@@ -16,6 +17,7 @@ fn test_launch_and_list_panes() {
 }
 
 #[test]
+#[ignore = "e2e: launches a real windowed app; run via scripts/e2e.sh"]
 fn test_open_terminal() {
     let app = TestApp::launch().expect("failed to launch Tide");
     let initial_count = pane_ids(&app).len();
@@ -31,6 +33,7 @@ fn test_open_terminal() {
 }
 
 #[test]
+#[ignore = "e2e: launches a real windowed app; run via scripts/e2e.sh"]
 fn test_split_vertical() {
     let app = TestApp::launch().expect("failed to launch Tide");
 
@@ -40,6 +43,7 @@ fn test_split_vertical() {
 }
 
 #[test]
+#[ignore = "e2e: launches a real windowed app; run via scripts/e2e.sh"]
 fn test_split_horizontal() {
     let app = TestApp::launch().expect("failed to launch Tide");
 
@@ -49,6 +53,7 @@ fn test_split_horizontal() {
 }
 
 #[test]
+#[ignore = "e2e: launches a real windowed app; run via scripts/e2e.sh"]
 fn test_close_pane() {
     let app = TestApp::launch().expect("failed to launch Tide");
 
