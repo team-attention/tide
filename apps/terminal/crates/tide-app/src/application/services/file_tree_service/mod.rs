@@ -14,6 +14,7 @@ use crate::AppCorePort;
 use crate::PaneLifecyclePort;
 
 /// Results from the background git poller (one entry per CWD).
+use crate::adapter::outward::git_adapter::git_cli;
 use crate::state::background::{GitPollCwdResult, GitPollRequest, GitPollResults};
 
 pub(crate) fn sync_terminal_badge_runtime_context(
@@ -74,11 +75,11 @@ fn collect_git_poll_results_for_cwds(
         // One spawn each for status, numstat, worktrees, repo_root, branch —
         // derive both badge stats and diff data from the shared results instead
         // of re-running `git status` / `git diff --numstat` (P-4).
-        let status_entries = crate::tide_terminal::git::status_files(&cwd);
-        let numstat = crate::tide_terminal::git::diff_numstat(&cwd);
-        let worktrees = crate::tide_terminal::git::list_worktrees(&cwd);
-        let repo_root = crate::tide_terminal::git::repo_root(&cwd);
-        let branch = crate::tide_terminal::git::detect_branch(&cwd);
+        let status_entries = git_cli::status_files(&cwd);
+        let numstat = git_cli::diff_numstat(&cwd);
+        let worktrees = git_cli::list_worktrees(&cwd);
+        let repo_root = git_cli::repo_root(&cwd);
+        let branch = git_cli::detect_branch(&cwd);
 
         let (additions, deletions) = numstat
             .values()
@@ -113,7 +114,7 @@ fn collect_git_poll_results_for_cwds(
                 .collect();
             let mut cache = std::collections::HashMap::new();
             for (i, entry) in files.iter().enumerate() {
-                let lines = crate::tide_terminal::git::file_diff_lines(&cwd, &entry.path);
+                let lines = git_cli::file_diff_lines(&cwd, &entry.path);
                 cache.insert(i, lines);
             }
             (Some(files), Some(cache))

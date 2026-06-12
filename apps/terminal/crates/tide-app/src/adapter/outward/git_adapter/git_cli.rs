@@ -1,0 +1,368 @@
+// Git CLI I/O. Lives in the outward git adapter (not domain) — every function
+// here shells out to `git`. The shared data types (GitInfo, WorktreeInfo, …)
+// stay in `domain/terminal/git.rs` so domain and services depend only on data,
+// never on this I/O. All functions are safe to call only from background
+// threads (they may block on git).
+
+use std::path::Path;
+use std::process::Command;
+
+use crate::tide_terminal::git::{BranchInfo, GitInfo, GitStatus, StatusEntry, WorktreeInfo};
+
+/// Run a git command. Returns None if the command fails.
+/// Safe to call from background threads only (may block on git I/O).
+fn run_git(args: &[&str], cwd: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        None
+    }
+}
+
+/// Detect git branch and status for the given working directory.
+/// Returns None if not inside a git repo or git is not available.
+pub fn detect_git_info(cwd: &Path) -> Option<GitInfo> {
+    let branch = detect_branch(cwd)?;
+    let status = detect_status(cwd);
+    Some(GitInfo { branch, status })
+}
+
+pub fn detect_branch(cwd: &Path) -> Option<String> {
+    // rev-parse fails when there are no commits yet (fresh git init),
+    // so fall back to symbolic-ref which works on unborn branches.
+    let text = run_git(&["rev-parse", "--abbrev-ref", "HEAD"], cwd)
+        .or_else(|| run_git(&["symbolic-ref", "--short", "HEAD"], cwd))?;
+    let branch = text.trim().to_string();
+    if branch.is_empty() {
+        None
+    } else {
+        Some(branch)
+    }
+}
+
+/// List files with their status from `git status --porcelain`.
+pub fn status_files(cwd: &Path) -> Vec<StatusEntry> {
+    let text = match run_git(&["status", "--porcelain"], cwd) {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
+    text.lines()
+        .filter(|l| l.len() >= 4)
+        .map(|l| StatusEntry {
+            status: l[..2].to_string(),
+            path: l[3..].to_string(),
+        })
+        .collect()
+}
+
+/// Get unified diff for a single file.
+/// For untracked files, generates a synthetic diff showing all lines as added.
+pub fn file_diff(cwd: &Path, path: &str) -> Option<String> {
+    let text = run_git(&["diff", "--", path], cwd);
+    if let Some(ref t) = text {
+        if !t.is_empty() {
+            return Some(t.clone());
+        }
+    }
+    // Untracked or staged-only file: try reading file content as all-added
+    let full_path = cwd.join(path);
+    let content = std::fs::read_to_string(&full_path).ok()?;
+    if content.is_empty() {
+        return None;
+    }
+    let line_count = content.lines().count();
+    let mut result = format!("@@ -0,0 +1,{} @@\n", line_count);
+    for line in content.lines() {
+        result.push('+');
+        result.push_str(line);
+        result.push('\n');
+    }
+    Some(result)
+}
+
+/// Parse `git diff --numstat` output into a map of path → (additions, deletions).
+pub fn diff_numstat(cwd: &Path) -> std::collections::HashMap<String, (usize, usize)> {
+    let mut map = std::collections::HashMap::new();
+    if let Some(text) = run_git(&["diff", "--numstat"], cwd) {
+        for line in text.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 3 {
+                let add = parts[0].parse().unwrap_or(0);
+                let del = parts[1].parse().unwrap_or(0);
+                map.insert(parts[2].to_string(), (add, del));
+            }
+        }
+    }
+    map
+}
+
+/// Get unified diff for a file and parse into DiffLine entries.
+/// Suitable for calling from background threads.
+pub fn file_diff_lines(cwd: &Path, path: &str) -> Vec<crate::pane::diff::DiffLine> {
+    use crate::pane::diff::DiffLine;
+    match file_diff(cwd, path) {
+        Some(diff_text) => diff_text
+            .lines()
+            .filter_map(|l| {
+                if l.starts_with("@@") {
+                    Some(DiffLine::Header(l.to_string()))
+                } else if l.starts_with('+') && !l.starts_with("+++") {
+                    Some(DiffLine::Added(l[1..].to_string()))
+                } else if l.starts_with('-') && !l.starts_with("---") {
+                    Some(DiffLine::Removed(l[1..].to_string()))
+                } else if !l.starts_with("diff ")
+                    && !l.starts_with("index ")
+                    && !l.starts_with("---")
+                    && !l.starts_with("+++")
+                {
+                    Some(DiffLine::Context(l.to_string()))
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
+/// List local branches only.
+pub fn list_branches(cwd: &Path) -> Vec<BranchInfo> {
+    let text = match run_git(&["branch", "--format=%(HEAD) %(refname:short)"], cwd) {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
+    text.lines()
+        .filter(|l| l.len() >= 2)
+        .map(|l| {
+            let is_current = l.starts_with('*');
+            let name = l[2..].trim().to_string();
+            BranchInfo {
+                name,
+                is_current,
+                is_remote: false,
+            }
+        })
+        .collect()
+}
+
+/// List all worktrees for the repository containing `cwd`.
+pub fn list_worktrees(cwd: &Path) -> Vec<WorktreeInfo> {
+    let text = match run_git(&["worktree", "list", "--porcelain"], cwd) {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
+
+    // Determine the canonical path of `cwd` for is_current detection
+    let cwd_canonical = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+
+    // Determine the main worktree path using git-common-dir (more reliable than positional)
+    let main_wt_canonical = run_git(&["rev-parse", "--git-common-dir"], cwd).map(|s| {
+        let common = std::path::PathBuf::from(s.trim());
+        // git-common-dir returns the .git dir; its parent is the main worktree
+        let abs = if common.is_absolute() {
+            common
+        } else {
+            cwd.join(common)
+        };
+        std::fs::canonicalize(abs.parent().unwrap_or(&abs))
+            .unwrap_or_else(|_| abs.parent().unwrap_or(&abs).to_path_buf())
+    });
+
+    let mut worktrees = Vec::new();
+    let mut current_path: Option<std::path::PathBuf> = None;
+    let mut current_commit = String::new();
+    let mut current_branch: Option<String> = None;
+
+    let flush = |path: std::path::PathBuf,
+                 branch: Option<String>,
+                 commit: String,
+                 main_canon: &Option<std::path::PathBuf>,
+                 cwd_canon: &std::path::PathBuf|
+     -> WorktreeInfo {
+        let path_canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        let is_main = main_canon
+            .as_ref()
+            .map(|m| *m == path_canonical)
+            .unwrap_or(false);
+        // Check if cwd is within this worktree (handles subdirectories)
+        let is_current = cwd_canon.starts_with(&path_canonical);
+        WorktreeInfo {
+            path,
+            branch,
+            commit,
+            is_main,
+            is_current,
+        }
+    };
+
+    for line in text.lines() {
+        if let Some(path_str) = line.strip_prefix("worktree ") {
+            // Flush previous entry
+            if let Some(path) = current_path.take() {
+                worktrees.push(flush(
+                    path,
+                    current_branch.take(),
+                    std::mem::take(&mut current_commit),
+                    &main_wt_canonical,
+                    &cwd_canonical,
+                ));
+            }
+            current_path = Some(std::path::PathBuf::from(path_str));
+            current_commit = String::new();
+            current_branch = None;
+        } else if let Some(hash) = line.strip_prefix("HEAD ") {
+            current_commit = hash.to_string();
+        } else if let Some(branch_ref) = line.strip_prefix("branch ") {
+            // branch refs/heads/main → "main"
+            current_branch = Some(
+                branch_ref
+                    .strip_prefix("refs/heads/")
+                    .unwrap_or(branch_ref)
+                    .to_string(),
+            );
+        }
+        // "bare", "detached", blank lines are skipped
+    }
+
+    // Flush last entry
+    if let Some(path) = current_path.take() {
+        worktrees.push(flush(
+            path,
+            current_branch.take(),
+            current_commit,
+            &main_wt_canonical,
+            &cwd_canonical,
+        ));
+    }
+
+    worktrees
+}
+
+/// Add a new worktree. If `new_branch` is true, creates a new branch.
+pub fn add_worktree(cwd: &Path, path: &Path, branch: &str, new_branch: bool) -> Result<(), String> {
+    let path_str = path.to_string_lossy().to_string();
+    let mut args = vec!["worktree", "add"];
+    if new_branch {
+        args.push("-b");
+        args.push(branch);
+        args.push(&path_str);
+    } else {
+        args.push(&path_str);
+        args.push(branch);
+    }
+
+    let output = Command::new("git")
+        .args(&args)
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Delete a local branch. Uses -d (safe delete, fails if unmerged) or -D (force).
+pub fn delete_branch(cwd: &Path, branch: &str, force: bool) -> Result<(), String> {
+    let flag = if force { "-D" } else { "-d" };
+    let output = Command::new("git")
+        .args(["branch", flag, branch])
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Remove a worktree. If `force` is true, uses --force flag.
+pub fn remove_worktree(cwd: &Path, path: &Path, force: bool) -> Result<(), String> {
+    let path_str = path.to_string_lossy().to_string();
+    let mut args = vec!["worktree", "remove"];
+    if force {
+        args.push("--force");
+    }
+    args.push(&path_str);
+
+    let output = Command::new("git")
+        .args(&args)
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Count worktrees for a repo (lightweight, for badge display).
+pub fn count_worktrees(cwd: &Path) -> usize {
+    let text = match run_git(&["worktree", "list", "--porcelain"], cwd) {
+        Some(t) => t,
+        None => return 0,
+    };
+    text.lines().filter(|l| l.starts_with("worktree ")).count()
+}
+
+/// Check whether a local branch with the given name exists.
+pub fn branch_exists(cwd: &Path, branch: &str) -> bool {
+    run_git(
+        &["rev-parse", "--verify", &format!("refs/heads/{}", branch)],
+        cwd,
+    )
+    .is_some()
+}
+
+/// Get the root directory of the repository (the top-level working directory).
+pub fn repo_root(cwd: &Path) -> Option<std::path::PathBuf> {
+    let text = run_git(&["rev-parse", "--show-toplevel"], cwd)?;
+    let root = text.trim();
+    if root.is_empty() {
+        None
+    } else {
+        Some(std::path::PathBuf::from(root))
+    }
+}
+
+fn detect_status(cwd: &Path) -> GitStatus {
+    let mut status = GitStatus::default();
+
+    if let Some(text) = run_git(&["status", "--porcelain"], cwd) {
+        status.changed_files = text.lines().filter(|l| !l.is_empty()).count();
+    }
+
+    if let Some(text) = run_git(&["diff", "--numstat"], cwd) {
+        for line in text.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 2 {
+                status.additions += parts[0].parse::<usize>().unwrap_or(0);
+                status.deletions += parts[1].parse::<usize>().unwrap_or(0);
+            }
+        }
+    }
+
+    status
+}

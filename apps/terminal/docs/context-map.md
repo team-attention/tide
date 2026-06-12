@@ -83,6 +83,20 @@ adapter/inward → application/services → domain
 5. **App → Renderer**: `WgpuRenderer.begin_frame()` / `draw_*()` / `end_frame()`
 6. **App → Platform**: `WindowCommand` channel for redraw requests, IME proxy management
 
+## I/O boundary decisions
+
+- **Git I/O is adapter-owned.** The git CLI calls live in
+  `adapter/outward/git_adapter/git_cli.rs`, reached through `GitPort`. The shared
+  data shapes (`GitInfo`, `WorktreeInfo`, …) stay in `domain/terminal/git.rs` —
+  pure data, no I/O — so domain and services depend only on types. The background
+  git poller (`file_tree_service`) calls `git_cli` free functions directly because
+  it runs on its own thread and can't hold the `Box<dyn GitPort>`; this is an
+  accepted exception (the I/O is at least out of domain).
+- **File I/O in `tree`, `settings`, `editor/buffer` is accepted legacy.** These
+  domain modules touch `std::fs` directly. They are stable, cohesive, and tested;
+  routing them through ports buys nothing today and is deferred until a feature
+  forces it.
+
 ## Invariants Across Contexts
 
 - A `PaneId` is unique within a `WorkspaceManager` — no two panes share the same ID
