@@ -1,6 +1,3 @@
-import { join } from "node:path";
-
-import type { ProviderCliAgentId } from "../../application/domains/thread/thread.ts";
 import { readBoundedTail } from "./live-backend-fs.ts";
 import {
   inputTextContentEquals,
@@ -18,18 +15,11 @@ import {
   recentCodexRollouts,
 } from "./recent-provider-files.ts";
 
-// Reads the Tide hook-signal spool into runtime-keyed frames, plus the
-// ADOPTION-time provider session discovery (find sessions Tide never ran, to
-// import them as threads). The LIVE per-provider history readers live in each
+// ADOPTION-time provider session discovery: find codex/claude sessions Tide never
+// ran (to import them as threads), confirming each file by the turn's expected user
+// message rather than recency. The LIVE per-provider history readers live in each
 // provider's Agent Integration (ProviderHistoryConnector) — see
 // docs_v2/specs/provider-history-connector.md.
-
-export interface ProviderSignalSpoolFrame {
-  source: "hook_payload";
-  sourceRef: string;
-  eventName: string;
-  payload: unknown;
-}
 
 export function readCodexProviderSessionRefsFromHome(input: {
   homeDir: string;
@@ -82,52 +72,6 @@ export function readClaudeProviderSessionRefsFromHome(input: {
     );
   }
   return providerSessionRefs;
-}
-
-export function readProviderSignalFramesFromSpool(input: {
-  spoolDir: string;
-  threadId: string;
-  agentId: ProviderCliAgentId;
-  runtimeId: string;
-  seenKeys: Set<string>;
-}): ProviderSignalSpoolFrame[] {
-  const spoolPath = join(input.spoolDir, `${input.runtimeId}.jsonl`);
-  const spoolText = readBoundedTail(spoolPath, 128 * 1024);
-  if (spoolText === undefined) {
-    return [];
-  }
-
-  const frames: ProviderSignalSpoolFrame[] = [];
-  const lines = spoolText.split(/\r?\n/);
-  for (let index = 0; index < lines.length; index += 1) {
-    const record = parseJsonObject(lines[index]);
-    if (record === undefined) {
-      continue;
-    }
-    if (
-      stringField(record, "threadId") !== input.threadId ||
-      stringField(record, "runtimeId") !== input.runtimeId ||
-      stringField(record, "agent") !== input.agentId
-    ) {
-      continue;
-    }
-    const eventName = stringField(record, "event");
-    if (eventName === undefined) {
-      continue;
-    }
-    const frameKey = `${spoolPath}:${index}`;
-    if (input.seenKeys.has(frameKey)) {
-      continue;
-    }
-    input.seenKeys.add(frameKey);
-    frames.push({
-      source: "hook_payload",
-      sourceRef: spoolPath,
-      eventName,
-      payload: record.payload,
-    });
-  }
-  return frames;
 }
 
 // Confirms a codex rollout / claude transcript actually contains the turn's
