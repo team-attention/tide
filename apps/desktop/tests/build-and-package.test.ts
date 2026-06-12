@@ -9,6 +9,18 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+// The Electron main process is electron-main.ts plus its sibling main/ modules
+// (spec: navigable-source-structure); spec assertions read the whole unit.
+function readMainProcessSource(): string {
+  const dir = path.join(repoRoot, "src/desktop/main");
+  return fs
+    .readdirSync(dir)
+    .filter((name) => name.endsWith(".ts"))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(dir, name), "utf8"))
+    .join("\n");
+}
+
 test("build_scaffold_keeps_shared_contracts_as_public_export_surface", async () => {
   const contracts = await import("../src/shared/contracts/index.ts");
 
@@ -110,7 +122,7 @@ test("electron_runtime_smoke_can_expect_provider_not_ready_and_open_setup_surfac
     path.join(repoRoot, "scripts/v2-electron-runtime-smoke.mjs"),
     "utf8",
   );
-  const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
+  const main = readMainProcessSource();
 
   assert.match(smokeScript, /--expect-provider-not-ready/);
   assert.match(smokeScript, /--open-setup-surface/);
@@ -122,7 +134,7 @@ test("electron_runtime_smoke_can_expect_provider_not_ready_and_open_setup_surfac
 
 test("electron_vite_config_maps_main_preload_renderer_and_backend_paths", () => {
   const config = fs.readFileSync(path.join(repoRoot, "electron.vite.config.mjs"), "utf8");
-  const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
+  const main = readMainProcessSource();
 
   assert.match(config, /src\/desktop\/main\/electron-main\.ts/);
   assert.match(config, /src\/backend\/infrastructure\/node\/backend-entrypoint\.ts/);
@@ -139,7 +151,7 @@ test("electron_vite_config_maps_main_preload_renderer_and_backend_paths", () => 
 });
 
 test("electron_main_creates_a_browser_window_and_loads_the_renderer", () => {
-  const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
+  const main = readMainProcessSource();
 
   assert.match(main, /BrowserWindow/);
   assert.match(main, /app\.whenReady\(\)/);
@@ -150,7 +162,7 @@ test("electron_main_creates_a_browser_window_and_loads_the_renderer", () => {
 
 test("electron_main_enables_webview_tag_for_workbench_browser_panes", () => {
   // Spec: docs_v2/specs/workbench-browser-webview-pane.md
-  const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
+  const main = readMainProcessSource();
 
   assert.match(main, /webviewTag:\s*true/);
   assert.match(main, /nodeIntegration:\s*false/);
@@ -158,7 +170,7 @@ test("electron_main_enables_webview_tag_for_workbench_browser_panes", () => {
 });
 
 test("electron_main_has_opt_in_runtime_smoke_hook", () => {
-  const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
+  const main = readMainProcessSource();
 
   assert.match(main, /TIDE_ELECTRON_SMOKE_COMMAND/);
   assert.match(main, /runElectronRuntimeSmoke/);
@@ -173,7 +185,7 @@ test("electron_main_has_opt_in_runtime_smoke_hook", () => {
 });
 
 test("electron_main_smoke_result_is_compact_enough_for_raw_pty_output", () => {
-  const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
+  const main = readMainProcessSource();
 
   assert.match(main, /startEventKinds: eventKinds\(startEvents\)/);
   assert.match(main, /pushedEventKinds: eventKinds\(pushedEvents\)/);

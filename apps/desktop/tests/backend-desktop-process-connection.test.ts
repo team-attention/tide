@@ -548,7 +548,7 @@ test("desktop_main_supervisor_does_not_import_provider_or_pty_modules", () => {
 });
 
 test("electron_main_uses_utility_process_for_backend_without_importing_backend_internals", () => {
-  const source = readRepoFile("src/desktop/main/electron-main.ts");
+  const source = readMainProcessSource();
 
   assert.match(source, /utilityProcess\.fork/);
   assert.match(source, /backend-entrypoint\.js/);
@@ -585,7 +585,7 @@ test("backend_entrypoint_buffers_unscoped_backend_events_emitted_during_command_
 
 test("electron_main_passes_app_data_root_to_backend_process", () => {
   // Spec: docs_v2/specs/live-backend-persistence-bootstrap.md
-  const source = readRepoFile("src/desktop/main/electron-main.ts");
+  const source = readMainProcessSource();
 
   assert.match(source, /app\.getPath\("userData"\)/);
   assert.match(source, /TIDE_APP_DATA_ROOT/);
@@ -829,7 +829,7 @@ test("live_backend_restores_persisted_threads_before_thread_list", async () => {
 });
 
 test("electron_main_and_preload_expose_backend_event_push_channel", () => {
-  const mainSource = readRepoFile("src/desktop/main/electron-main.ts");
+  const mainSource = readMainProcessSource();
   const preloadSource = readRepoFile("src/desktop/preload/index.ts");
   const rendererSource = readRepoFile("src/desktop/renderer/renderer-entry.ts");
 
@@ -842,7 +842,7 @@ test("electron_main_and_preload_expose_backend_event_push_channel", () => {
 
 test("electron_main_defers_unscoped_backend_events_emitted_during_pending_command", () => {
   // Spec: docs_v2/specs/backend-desktop-process-connection.md
-  const mainSource = readRepoFile("src/desktop/main/electron-main.ts");
+  const mainSource = readMainProcessSource();
 
   assert.match(mainSource, /deferredBackendBroadcastEvents/);
   assert.match(mainSource, /function deferBackendEventBroadcast/);
@@ -1194,6 +1194,20 @@ function fixedClock(): string {
 function sequentialIdGenerator(prefix: string): () => string {
   let nextId = 1;
   return () => `${prefix}-${nextId++}`;
+}
+
+
+// The Electron main process is electron-main.ts plus its sibling main/ modules
+// (spec: navigable-source-structure); spec assertions read the whole unit.
+function readMainProcessSource(): string {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const dir = path.join(repoRoot, "src/desktop/main");
+  return fs
+    .readdirSync(dir)
+    .filter((name) => name.endsWith(".ts"))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(dir, name), "utf8"))
+    .join("\n");
 }
 
 function readRepoFile(relativePath: string): string {

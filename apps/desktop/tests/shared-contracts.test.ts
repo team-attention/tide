@@ -355,7 +355,9 @@ test("Desktop does not import Backend internals", () => {
   assert.deepEqual(
     findSourceMentions(
       ["src/desktop"],
-      /from\s+["'][^"']*backend|import\(["'][^"']*backend/,
+      // "backend/" as a path segment = src/backend internals; plain "backend"
+      // also appears in desktop-side module names (backend-bridge, backend-client).
+      /from\s+["'][^"']*\bbackend\/|import\(["'][^"']*\bbackend\//,
     ),
     [],
   );
