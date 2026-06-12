@@ -41,48 +41,83 @@ use crate::tide_core::{
 const SCROLLBACK_LINES: usize = 10_000;
 
 /// Whether agent auto-integration is enabled (wrapper PATH injection + shell integration).
-/// Updated at runtime when the user toggles the setting.
-static AUTO_INTEGRATION_ENABLED: AtomicBool = AtomicBool::new(true);
-
-/// Set the auto-integration enabled flag. Called when the user toggles the setting.
-pub fn set_auto_integration(enabled: bool) {
-    AUTO_INTEGRATION_ENABLED.store(enabled, Ordering::Relaxed);
+/// Explicit terminal spawn configuration — the Agent Gateway socket, agent
+/// wrapper / shell-integration directories, and whether auto-integration is on.
+/// Built once in `main` (per process), owned by the terminal factory, and passed
+/// into the spawn functions. Replaces the former process-global statics so this
+/// configuration is explicit data, not ambient global state in the domain.
+#[derive(Clone, Default)]
+pub struct TerminalSpawnConfig {
+    /// Agent Gateway socket path; exported as `TIDE_TERMINAL_SOCKET` to every PTY.
+    pub gateway_socket: Option<String>,
+    /// Directory of agent wrapper scripts (claude, codex, …), prepended to PATH
+    /// via the shell-integration hook so wrappers shadow the real binaries.
+    pub agent_wrapper_dir: Option<String>,
+    /// Directory of shell-integration files (.zshenv for the ZDOTDIR hijack).
+    pub shell_integration_dir: Option<String>,
+    /// Whether agent auto-integration (wrapper + shell hook) is enabled.
+    pub auto_integration: bool,
 }
 
-/// Global socket path for the Agent Gateway. Set once on app startup.
-/// Every PTY spawned after this is set will export TIDE_TERMINAL_SOCKET.
-static GATEWAY_SOCKET_PATH: OnceLock<String> = OnceLock::new();
+impl TerminalSpawnConfig {
+    /// Build a spawn config, discovering the agent wrapper / shell-integration
+    /// directories from the running `.app` bundle.
+    pub fn discover(gateway_socket: Option<String>, auto_integration: bool) -> Self {
+        let (agent_wrapper_dir, shell_integration_dir) = discover_agent_dirs();
+        Self {
+            gateway_socket,
+            agent_wrapper_dir,
+            shell_integration_dir,
+            auto_integration,
+        }
+    }
 
-/// Set the Agent Gateway socket path. Called once from main after server starts.
-pub fn set_gateway_socket_path(path: String) {
-    let _ = GATEWAY_SOCKET_PATH.set(path);
+    /// Inject the Agent Gateway and (when auto-integration is on) the wrapper /
+    /// shell-integration environment into a child PTY's env map. The gateway
+    /// socket is always exported; the ZDOTDIR hijack only when auto-integration
+    /// is enabled. (Behaviour preserved from the former statics.)
+    pub fn apply_integration_env(&self, env: &mut std::collections::HashMap<String, String>) {
+        if let Some(socket) = &self.gateway_socket {
+            env.insert(String::from("TIDE_TERMINAL_SOCKET"), socket.clone());
+        }
+        // Agent wrappers: ZDOTDIR hijack + __TIDE_TERMINAL_WRAPPER_DIR env var.
+        // Only injected when auto-integration is enabled.
+        // Direct PATH injection doesn't work on macOS because /etc/zprofile
+        // runs path_helper which reconstructs PATH from scratch.
+        // Instead, ZDOTDIR points to shell-integration/ which has a .zshenv
+        // that registers a precmd hook to prepend the wrapper bin/ to PATH
+        // after all init files have run (including path_helper).
+        if self.auto_integration {
+            if let Some(wrapper_dir) = &self.agent_wrapper_dir {
+                env.insert(String::from("__TIDE_TERMINAL_WRAPPER_DIR"), wrapper_dir.clone());
+            }
+            if let Some(shell_dir) = &self.shell_integration_dir {
+                // Save user's original ZDOTDIR before overwriting
+                if let Ok(orig) = std::env::var("ZDOTDIR") {
+                    env.insert(String::from("__TIDE_TERMINAL_ORIG_ZDOTDIR"), orig);
+                }
+                env.insert(String::from("ZDOTDIR"), shell_dir.clone());
+            }
+        }
+    }
 }
-
-/// Directory containing agent wrapper scripts (claude, codex, gemini, agy, opencode).
-/// Resolved from the .app bundle's Contents/Resources/bin/ at startup.
-/// Prepended to PATH in every PTY so wrappers shadow the real binaries.
-static AGENT_WRAPPER_DIR: OnceLock<String> = OnceLock::new();
-
-/// Directory containing shell integration files (.zshenv for ZDOTDIR hijack).
-/// Resolved from the .app bundle's Contents/Resources/shell-integration/ at startup.
-static SHELL_INTEGRATION_DIR: OnceLock<String> = OnceLock::new();
 
 static URL_RE: OnceLock<regex::Regex> = OnceLock::new();
 
-/// Discover agent wrapper and shell integration directories from the .app bundle.
-/// Called once from main after the gateway socket is ready.
-/// Looks for `Contents/Resources/bin/` and `Contents/Resources/shell-integration/`
-/// relative to the running binary's location.
-pub fn discover_agent_resources() {
+/// Discover agent wrapper and shell-integration directories from the running
+/// `.app` bundle. Returns `(agent_wrapper_dir, shell_integration_dir)`. Looks for
+/// `Contents/Resources/.../bin/` and `.../shell-integration/` relative to the
+/// running binary.
+fn discover_agent_dirs() -> (Option<String>, Option<String>) {
     let exe = match std::env::current_exe() {
         Ok(p) => p,
-        Err(_) => return,
+        Err(_) => return (None, None),
     };
 
     // exe is at Contents/MacOS/Tide → go up to Contents/, then into Resources/
     let contents_dir = match exe.parent().and_then(|p| p.parent()) {
         Some(d) => d,
-        None => return,
+        None => return (None, None),
     };
 
     // cargo-bundle preserves relative paths: resources end up at
@@ -90,14 +125,16 @@ pub fn discover_agent_resources() {
     let res_base = contents_dir.join("Resources/crates/tide-app/resources");
 
     let bin_dir = res_base.join("bin");
-    if bin_dir.is_dir() {
-        let _ = AGENT_WRAPPER_DIR.set(bin_dir.to_string_lossy().to_string());
-    }
+    let agent_wrapper_dir = bin_dir
+        .is_dir()
+        .then(|| bin_dir.to_string_lossy().to_string());
 
     let shell_dir = res_base.join("shell-integration");
-    if shell_dir.is_dir() {
-        let _ = SHELL_INTEGRATION_DIR.set(shell_dir.to_string_lossy().to_string());
-    }
+    let shell_integration_dir = shell_dir
+        .is_dir()
+        .then(|| shell_dir.to_string_lossy().to_string());
+
+    (agent_wrapper_dir, shell_integration_dir)
 }
 
 /// Simple dimensions struct that implements alacritty_terminal's Dimensions trait.
@@ -749,6 +786,7 @@ impl Terminal {
 
     /// Create a new terminal backend, optionally starting in the given directory.
     /// If `pane_id` is provided, sets the `TIDE_TERMINAL_PANE` env var for the child process.
+    /// No agent integration env is injected (use `with_cwd_for_window` with a config for that).
     pub fn with_cwd(
         cols: u16,
         rows: u16,
@@ -756,7 +794,7 @@ impl Terminal {
         dark_mode: bool,
         pane_id: Option<u64>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::with_cwd_for_window(cols, rows, cwd, dark_mode, pane_id, None, None)
+        Self::with_cwd_for_window(cols, rows, cwd, dark_mode, pane_id, None, None, None)
     }
 
     pub fn with_cwd_for_window(
@@ -767,6 +805,7 @@ impl Terminal {
         pane_id: Option<u64>,
         tide_window_id: Option<TideWindowId>,
         workspace_name: Option<&str>,
+        spawn_config: Option<&TerminalSpawnConfig>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let cell_width = 8;
         let cell_height = 16;
@@ -814,11 +853,6 @@ impl Terminal {
         } else {
             env.insert(String::from("COLORFGBG"), String::from("0;15"));
         }
-        // Agent Gateway: export socket path, pane id, and workspace name
-        // so child processes can discover Tide
-        if let Some(socket_path) = GATEWAY_SOCKET_PATH.get() {
-            env.insert(String::from("TIDE_TERMINAL_SOCKET"), socket_path.clone());
-        }
         if let Some(id) = pane_id {
             env.insert(String::from("TIDE_TERMINAL_PANE"), id.to_string());
         }
@@ -836,24 +870,10 @@ impl Terminal {
         if let Ok(exe) = std::env::current_exe() {
             env.insert(String::from("TIDE_TERMINAL_BIN"), exe.to_string_lossy().to_string());
         }
-        // Agent wrappers: ZDOTDIR hijack + __TIDE_TERMINAL_WRAPPER_DIR env var.
-        // Only injected when auto-integration is enabled.
-        // Direct PATH injection doesn't work on macOS because /etc/zprofile
-        // runs path_helper which reconstructs PATH from scratch.
-        // Instead, ZDOTDIR points to shell-integration/ which has a .zshenv
-        // that registers a precmd hook to prepend the wrapper bin/ to PATH
-        // after all init files have run (including path_helper).
-        if AUTO_INTEGRATION_ENABLED.load(Ordering::Relaxed) {
-            if let Some(wrapper_dir) = AGENT_WRAPPER_DIR.get() {
-                env.insert(String::from("__TIDE_TERMINAL_WRAPPER_DIR"), wrapper_dir.clone());
-            }
-            if let Some(shell_dir) = SHELL_INTEGRATION_DIR.get() {
-                // Save user's original ZDOTDIR before overwriting
-                if let Ok(orig) = std::env::var("ZDOTDIR") {
-                    env.insert(String::from("__TIDE_TERMINAL_ORIG_ZDOTDIR"), orig);
-                }
-                env.insert(String::from("ZDOTDIR"), shell_dir.clone());
-            }
+        // Agent Gateway socket + (when auto-integration is on) the wrapper /
+        // shell-integration env, from the explicit spawn config.
+        if let Some(config) = spawn_config {
+            config.apply_integration_env(&mut env);
         }
         let pty_config = tty::Options {
             shell: Some(tty::Shell::new(shell, vec![String::from("--login")])),

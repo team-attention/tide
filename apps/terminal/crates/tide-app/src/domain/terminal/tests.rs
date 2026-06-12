@@ -208,4 +208,49 @@ mod tests {
             "https://example.com/page"
         );
     }
+
+    // --- TerminalSpawnConfig env injection (M-3: replaces the former statics) ---
+
+    #[test]
+    fn spawn_config_exports_gateway_socket_unconditionally() {
+        let cfg = TerminalSpawnConfig {
+            gateway_socket: Some("/tmp/tide.sock".to_string()),
+            auto_integration: false,
+            ..Default::default()
+        };
+        let mut env = std::collections::HashMap::new();
+        cfg.apply_integration_env(&mut env);
+        assert_eq!(
+            env.get("TIDE_TERMINAL_SOCKET").map(String::as_str),
+            Some("/tmp/tide.sock")
+        );
+        // auto-integration off → no wrapper / ZDOTDIR hijack.
+        assert!(!env.contains_key("__TIDE_TERMINAL_WRAPPER_DIR"));
+        assert!(!env.contains_key("ZDOTDIR"));
+    }
+
+    #[test]
+    fn spawn_config_injects_wrapper_and_zdotdir_when_auto_integration_on() {
+        let cfg = TerminalSpawnConfig {
+            gateway_socket: Some("/tmp/tide.sock".to_string()),
+            agent_wrapper_dir: Some("/bundle/bin".to_string()),
+            shell_integration_dir: Some("/bundle/shell".to_string()),
+            auto_integration: true,
+        };
+        let mut env = std::collections::HashMap::new();
+        cfg.apply_integration_env(&mut env);
+        assert_eq!(
+            env.get("__TIDE_TERMINAL_WRAPPER_DIR").map(String::as_str),
+            Some("/bundle/bin")
+        );
+        assert_eq!(env.get("ZDOTDIR").map(String::as_str), Some("/bundle/shell"));
+    }
+
+    #[test]
+    fn spawn_config_without_socket_exports_no_gateway_var() {
+        let cfg = TerminalSpawnConfig::default();
+        let mut env = std::collections::HashMap::new();
+        cfg.apply_integration_env(&mut env);
+        assert!(!env.contains_key("TIDE_TERMINAL_SOCKET"));
+    }
 }

@@ -761,6 +761,11 @@ impl App {
     pub(crate) fn init_phase1(&mut self, window: &dyn PlatformWindow) {
         // Swap noop ports for real implementations now that we have a window.
         self.ports = crate::app::Ports::real();
+        // Install the terminal spawn config (built in configure_window_app) into
+        // the real factory so spawned terminals get the gateway/integration env.
+        self.ports
+            .terminal_factory
+            .set_spawn_config(self.terminal_spawn_config.clone());
 
         self.ports
             .platform

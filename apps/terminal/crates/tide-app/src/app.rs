@@ -95,7 +95,7 @@ impl Ports {
             process: Box::new(NoopProcess),
             persistence: Box::new(NoopPersistence),
             git: Box::new(NoopGit),
-            terminal_factory: Box::new(RealTerminalFactory),
+            terminal_factory: Box::new(RealTerminalFactory::default()),
             file_watcher: Box::new(NoopFileWatcher),
             lsp: Box::new(NoopLsp),
             gpu: Box::new(NoopGpu),
@@ -110,7 +110,7 @@ impl Ports {
             process: Box::new(SystemProcess),
             persistence: Box::new(RealPersistence),
             git: Box::new(RealGit),
-            terminal_factory: Box::new(RealTerminalFactory),
+            terminal_factory: Box::new(RealTerminalFactory::default()),
             file_watcher: Box::new(RealFileWatcher::new()),
             lsp: Box::new(RealLsp::new()),
             gpu: Box::new(RealGpu::new()),
@@ -193,6 +193,11 @@ pub(crate) struct App {
     // Loaded settings
     pub(crate) settings: state::settings::TideSettings,
 
+    // Explicit terminal spawn config (gateway socket + agent integration),
+    // built at startup and pushed into the terminal factory. Replaces the
+    // former domain process-global statics.
+    pub(crate) terminal_spawn_config: crate::tide_terminal::TerminalSpawnConfig,
+
     // Background services (grouped)
     pub(crate) bg: state::BackgroundServices,
 
@@ -264,11 +269,8 @@ impl App {
             header_hit_zones: Vec::new(),
             ws: state::WorkspaceManager::new(),
             context_artifacts: state::ContextArtifactStore::new(),
-            settings: {
-                let s = state::settings::load_settings();
-                crate::tide_terminal::set_auto_integration(s.auto_integration);
-                s
-            },
+            settings: state::settings::load_settings(),
+            terminal_spawn_config: crate::tide_terminal::TerminalSpawnConfig::default(),
             bg: state::BackgroundServices::new(),
             assoc: state::PaneAssociations::new(),
             gateway: state::GatewayStatus::new(),
@@ -321,7 +323,10 @@ impl App {
 
     pub(crate) fn reload_settings_from_persistence(&mut self) {
         let settings = self.ports.persistence.load_settings();
-        crate::tide_terminal::set_auto_integration(settings.auto_integration);
+        self.terminal_spawn_config.auto_integration = settings.auto_integration;
+        self.ports
+            .terminal_factory
+            .set_auto_integration(settings.auto_integration);
         if settings.keybindings.is_empty() {
             self.router.keybinding_map = None;
         } else {
@@ -1272,7 +1277,10 @@ impl crate::application::ports::inward::GatewayPort for App {
 
     fn toggle_auto_integration(&mut self) {
         self.settings.auto_integration = !self.settings.auto_integration;
-        crate::tide_terminal::set_auto_integration(self.settings.auto_integration);
+        self.terminal_spawn_config.auto_integration = self.settings.auto_integration;
+        self.ports
+            .terminal_factory
+            .set_auto_integration(self.settings.auto_integration);
         if self.settings.auto_integration {
             self.queue_notification_permission_request();
         }

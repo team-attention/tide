@@ -199,6 +199,9 @@ impl TerminalFactoryPort for DelayedTerminalFactory {
     ) -> Result<crate::tide_terminal::Terminal, Box<dyn std::error::Error>> {
         Err("delayed terminal factory does not pre-spawn terminals".into())
     }
+
+    fn set_spawn_config(&mut self, _config: crate::tide_terminal::TerminalSpawnConfig) {}
+    fn set_auto_integration(&mut self, _enabled: bool) {}
 }
 
 fn root_split_ratio(app: &App) -> f32 {
