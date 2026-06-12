@@ -15,6 +15,8 @@ cd "$(dirname "$0")/.."
 echo "==> Building tide-terminal (debug) for the e2e harness…"
 cargo build -p tide-app
 
-# The harness locates the binary via TIDE_TERMINAL_BIN, else target/debug/tide-terminal.
+# The harness locates the binary via TIDE_TERMINAL_BIN, else target/debug/tide-terminal,
+# and launches it with TIDE_TERMINAL_TEST_DRIVER=1 so test-driver gateway methods
+# (e.g. test-poll-state) are available.
 echo "==> Running e2e tests (serial; --ignored)…"
 cargo test -p tide-e2e-tests -- --ignored --test-threads=1 "$@"

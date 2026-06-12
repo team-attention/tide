@@ -46,16 +46,22 @@ Run the e2e lane serially (`--test-threads=1`); the v2 release pipeline already
 learned that real-PTY tests flake under parallel load. CI should retry the lane
 once before failing.
 
-## Deferred: Gateway Test Driver (blueprint §E-1)
+## Gateway Test Driver (blueprint §E-1)
 
-A richer driver is specified but **not yet implemented**. It would add gateway
-methods compiled behind `#[cfg(feature = "test-driver")]` and gated at runtime by
-`TIDE_TEST_DRIVER=1` (so release builds never ship them):
+The driver's gateway methods are gated at runtime by `TIDE_TERMINAL_TEST_DRIVER=1`
+(set by the harness's `launch`); they are inert otherwise. (A future
+`#[cfg(feature = "test-driver")]` gate would also keep them out of the compiled
+release binary — the hardening step.)
+
+**Implemented:**
 
 - **`test-poll-state`** → returns app-thread quiescence flags (`needs_redraw`,
-  animation active, queued events, PTY grid generation) so the harness can wait
-  for true idle instead of polling observable side effects. *(Lowest-risk first
-  step — a read-only state query; no deferred-response machinery.)*
+  `animating`, `idle`) so the harness can wait for idle instead of polling
+  observable side effects. Read-only; runs on the app thread between event
+  batches. Harness: `app.poll_state()` and `app.wait_for_idle(timeout)`.
+
+**Still deferred:**
+
 - **`test-await-idle { quiet_ms, timeout_ms }`** → a deferred response fulfilled
   from the event-loop tick once the app has been quiescent for `quiet_ms`. Reuses
   the `subscribe` deferred-channel pattern (`CliCommand.notification_tx`).

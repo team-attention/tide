@@ -4265,3 +4265,30 @@ fn notification_activation_with_missing_pane_is_no_op() {
         Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
 }
+
+// --- E2E test driver: test-poll-state (blueprint E-1) ---
+
+#[test]
+fn test_poll_state_reports_idle_when_settled() {
+    // A freshly settled app (no pending redraw, no layout animation) reports idle.
+    use crate::adapter::inward::cli_adapter::commands::cli_test_poll_state;
+    let mut app = App::new();
+    app.cache.needs_redraw = false;
+
+    let state = cli_test_poll_state(&app);
+    assert_eq!(state["needs_redraw"], false);
+    assert_eq!(state["animating"], false);
+    assert_eq!(state["idle"], true);
+}
+
+#[test]
+fn test_poll_state_reports_busy_when_a_redraw_is_pending() {
+    // A pending redraw means the app is not yet idle.
+    use crate::adapter::inward::cli_adapter::commands::cli_test_poll_state;
+    let mut app = App::new();
+    app.cache.needs_redraw = true;
+
+    let state = cli_test_poll_state(&app);
+    assert_eq!(state["needs_redraw"], true);
+    assert_eq!(state["idle"], false);
+}

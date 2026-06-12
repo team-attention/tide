@@ -46,6 +46,8 @@ impl TestApp {
             .env("TMPDIR", &tmpdir_path)
             // Prevent Tide from reading any user configuration
             .env("XDG_CONFIG_HOME", &config_dir)
+            // Enable the gateway test-driver methods (e.g. test-poll-state).
+            .env("TIDE_TERMINAL_TEST_DRIVER", "1")
             .spawn()
             .map_err(|e| format!("failed to launch Tide at {}: {e}", bin_path.display()))?;
 
@@ -237,6 +239,28 @@ impl TestApp {
     /// Get the layout tree of the active workspace.
     pub fn get_layout(&self) -> Result<Value, Box<dyn Error>> {
         self.rpc_call("get-layout", json!({}))
+    }
+
+    /// Query app-thread quiescence flags (test-driver). Requires the spawned
+    /// binary to have `TIDE_TERMINAL_TEST_DRIVER=1` (set by `launch`).
+    pub fn poll_state(&self) -> Result<Value, Box<dyn Error>> {
+        self.rpc_call("test-poll-state", json!({}))
+    }
+
+    /// Wait until the app reports idle (no pending redraw or layout animation),
+    /// polling `test-poll-state`. Use this to synchronize after an action whose
+    /// effects settle asynchronously, instead of a fixed sleep.
+    pub fn wait_for_idle(&self, timeout: Duration) -> Result<(), Box<dyn Error>> {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if let Ok(state) = self.poll_state() {
+                if state.get("idle").and_then(|v| v.as_bool()) == Some(true) {
+                    return Ok(());
+                }
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        Err("timed out waiting for app to become idle".into())
     }
 
     /// Return the path to the Unix socket.

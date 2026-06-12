@@ -189,9 +189,32 @@ impl crate::App {
             "remove-context-artifact" => cli_remove_context_artifact(self, params),
             "send-context-artifact" => cli_send_context_artifact(self, params),
             "notify" => cli_notify(self, params),
+            // Test driver (E2E harness) — inert unless TIDE_TERMINAL_TEST_DRIVER=1.
+            "test-poll-state" if test_driver_enabled() => Ok(cli_test_poll_state(self)),
             _ => Err(CliError::MethodNotFound(method.to_string())),
         }
     }
+}
+
+/// Whether the E2E test-driver gateway methods are enabled. Off by default so
+/// they are inert in normal use; the harness sets the env var. (A future
+/// `#[cfg(feature = "test-driver")]` gate would also keep them out of the
+/// compiled release binary — see docs/testing/e2e-tests.md.)
+fn test_driver_enabled() -> bool {
+    std::env::var("TIDE_TERMINAL_TEST_DRIVER").as_deref() == Ok("1")
+}
+
+/// Report app-thread quiescence so the E2E harness can wait for idle instead of
+/// racing async PTY/render side effects. Runs on the app thread between event
+/// batches, so the event queue is already drained when this is read.
+pub(crate) fn cli_test_poll_state(ctx: &crate::App) -> Value {
+    let needs_redraw = ctx.cache.needs_redraw;
+    let animating = ctx.layout_animation_active();
+    json!({
+        "needs_redraw": needs_redraw,
+        "animating": animating,
+        "idle": !needs_redraw && !animating,
+    })
 }
 
 // ── Phase 1: Observe ─────────────────────────────────────────────

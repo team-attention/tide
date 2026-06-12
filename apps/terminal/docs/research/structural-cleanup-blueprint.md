@@ -645,7 +645,10 @@ green after every slice; suite grew 1458 → 1466):
   opens from the poller cache). ✅
 - **Phase 2** — M-2 (CliDispatch context). ✅
 - **Phase 4** — E-2 (e2e lane gated `#[ignore]` + `scripts/e2e.sh`), E-3 (harness
-  `wait_for_pane_contains`; `wait_until` already existed), E-4 (`docs/testing/e2e-tests.md`). ✅
+  `wait_for_pane_contains` / `wait_for_idle`; `wait_until` already existed), E-4
+  (`docs/testing/e2e-tests.md`), and the first E-1 step: the `test-poll-state`
+  gateway method (runtime-gated by `TIDE_TERMINAL_TEST_DRIVER=1`) + harness
+  `poll_state`/`wait_for_idle`, with in-process behavior tests. ✅
 
 Deferred (tracked; behavior-neutral or destructive-adjacent, lower priority than
 the perf + testability work above — each carries wide blast radius with no
