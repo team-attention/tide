@@ -1,12 +1,12 @@
-import type { AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
-import type { ComposerHandlers } from "../types.ts";
+import type { AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import type { ComposerHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import { handleComposerPaste } from "./attachments.ts";
 import { ArrowUp, ChevronDown, Mic, Plus, ShieldCheck, Square, X } from "lucide-react";
 import { chipAnchorFromEvent, contextChipIcon, createContextChip } from "./context-chips.ts";
-import { createProviderReadiness } from "../readiness.ts";
-import { PromptCard } from "../prompt-card.ts";
+import { createProviderReadiness } from "../readiness/readiness.ts";
+import { PromptCard } from "../prompt-card/prompt-card.ts";
 import { createUsageMeter } from "./usage-meter.ts";
 import { createQueuedSteerStack } from "./steer-queue.ts";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).

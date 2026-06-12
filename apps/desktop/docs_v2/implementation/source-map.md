@@ -37,7 +37,7 @@ the agent/provider actually *does* is `backend/`.
 2. Markup/handlers → `src/desktop/adapters/inbound/react-renderer/product-shell/left-rail/thread-row.ts`.
 3. What clicking it *does* → `src/desktop/application/domains/product-shell/state/thread-list.ts`.
 4. If the action goes to the backend → the command lands in
-   `src/backend/adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts`
+   `src/backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts`
    (the dispatch switch), which calls a service under
    `src/backend/application/services/<domain>/`.
 
@@ -58,6 +58,12 @@ Inside `react-renderer/`, every feature directory follows one convention:
   `search/`, `state/`) is a flat bag whose pieces the parent entry mounts
   directly.
 
+- **Level consistency:** a directory that has subdirectories keeps at most two
+  loose files — its own `<dir>.ts` entry/public surface and `contract-adapter.ts`.
+  Everything else lives in a subdirectory (single-file directories are fine;
+  cross-feature utilities go in `support/`). Mechanically checkable: if a dir
+  has subdirs, `ls` shows only directories plus those two names.
+
 So to read any feature top-down: open `<dir>/<dir>.ts` and follow its calls.
 
 ## Desktop: view layer (`src/desktop/adapters/inbound/react-renderer/`)
@@ -67,16 +73,16 @@ So to read any feature top-down: open `<dir>/<dir>.ts` and follow its calls.
 | Shell layout, column wiring, top bar assembly | `product-shell/product-shell.ts` (the shell component + the feature's re-exported API) |
 | Left rail: rows, sections, headers, context menu | `product-shell/left-rail/` (`thread-row.ts`, `project-section.ts`, `pinned-section.ts`, `thread-section.ts`, `section-header.ts`, `context-menu.ts`, `skeletons.ts`) |
 | Workbench panes (browser / editor / markdown / diff / terminal / launcher) | `product-shell/workbench/` — one file per pane, entry `workbench.ts`, plus `split-view.ts`, `pane-chrome.ts`, `pane-content.ts` |
-| File tree column | `product-shell/file-tree.ts` |
+| File tree column | `product-shell/file-tree/file-tree.ts` |
 | Quick Open (Cmd+P) / content search (Cmd+Shift+F) | `product-shell/search/` |
 | Worktree dialogs | `product-shell/dialogs/` |
-| Settings modal, theme picker, list-settings persistence | `product-shell/settings.ts` |
-| Window chrome toggles, traffic lights, resize handles | `product-shell/chrome.ts` |
-| Column sizing math | `product-shell/layout.ts` |
-| Agent monograms/icons | `product-shell/agent-identity.ts` |
+| Settings modal, theme picker, list-settings persistence | `product-shell/settings/settings.ts` |
+| Window chrome toggles, traffic lights, resize handles | `product-shell/chrome/chrome.ts` |
+| Column sizing math | `product-shell/support/layout.ts` |
+| Agent monograms/icons | `product-shell/support/agent-identity.ts` |
 | Chat transcript (turns, markdown, tool log, reasoning) | `agent-chat/transcript/` (entry `transcript.ts`, `agent-turn.ts`, `user-turn.ts`, `tool-log.ts`, `tool-diff.ts`, `markdown.ts`, `reasoning.ts`, `working-indicator.ts`, `file-chip.ts`) |
 | Composer (input box, chips, menus, steer queue, usage) | `agent-chat/composer/` (`composer.ts`, `context-chips.ts`, `choice-surface.ts`, `steer-queue.ts`, `attachments.ts`, `usage-meter.ts`) |
-| Thread header / provider readiness / start surface / prompt cards | `agent-chat/thread-header.ts`, `readiness.ts`, `start-surface.ts`, `prompt-card.ts` |
+| Thread header / provider readiness / start surface / prompt cards | `agent-chat/{thread-header,readiness,start-surface,prompt-card}/` |
 
 The chat column's root component is `agent-chat/agent-chat.ts`; backend-event/
 command translation for the chat lives in `agent-chat/contract-adapter.ts`.
@@ -122,8 +128,8 @@ so never reorder it casually.
 | Launch options | — | `state/launch-options.ts` |
 | Prompt answering | `state/composer-bridge.ts` | `state/composer.ts` |
 
-The old `product-shell-state.ts` / `agent-chat-shell-state.ts` paths are pure
-re-export barrels.
+The domain public surfaces are dir-named entries: `domains/product-shell/product-shell.ts`
+and `domains/agent-chat/agent-chat.ts` (pure re-export barrels over `state/`).
 
 ## Desktop: process shells (`src/desktop/infrastructure/electron/`)
 
@@ -160,7 +166,7 @@ platform plumbing), mirroring `backend/infrastructure/node/`:
 | Cross-cutting helpers (results, records, diff text) | `application/services/support/` |
 | Domain models (thread, agent-runtime, agent-session, …) | `application/domains/` |
 | Ports (interfaces the services need) | `application/ports/outbound/` |
-| Contract command routing (the dispatch switch) | `adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts`; DTO mappers in `…/dto/`, error mapping in `…/error-codes.ts` |
+| Contract command routing (the dispatch switch) | `adapters/inbound/contract-message-adapter/contract-message-adapter.ts`; DTO mappers in `…/dto/`, error mapping in `…/error-codes.ts` |
 | Per-provider adapters (claude/codex/gemini/opencode) | `adapters/outbound/agent-integrations/<agent>/` |
 | Protocol clients (stream-json / app-server / ACP) | `adapters/outbound/agent-runtime/structured/` |
 | Live wiring (composition root) | `infrastructure/node/live/live-backend.ts` |

@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deriveBackgroundBrowserPanes } from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
+import { deriveBackgroundBrowserPanes } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
 function browserPane(paneId: string, visible = true) {
   return { paneId, kind: "browser" as const, title: "Naver", visible, revision: "r1" };

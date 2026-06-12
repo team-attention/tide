@@ -1,5 +1,5 @@
-import type { ServiceError } from "../../../application/services/thread/thread-runtime-service.ts";
-import type { ContractErrorCode } from "../../../../shared/contracts/index.ts";
+import type { ServiceError } from "../../../../application/services/thread/thread-runtime-service.ts";
+import type { ContractErrorCode } from "../../../../../shared/contracts/index.ts";
 // Extracted from backend-contract-message-adapter.ts (spec: navigable-source-structure).
 
 export function contractCodeFromServiceError(error: ServiceError): ContractErrorCode {

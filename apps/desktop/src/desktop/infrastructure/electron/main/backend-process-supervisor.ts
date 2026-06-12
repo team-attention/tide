@@ -8,7 +8,7 @@ import {
   type RendererHandshake,
   validateBackendHandshake,
   validateRendererHandshake,
-} from "../../../shared/contracts/index.ts";
+} from "../../../../shared/contracts/index.ts";
 
 export interface BackendProcessExit {
   reason: "exited" | "crashed" | "killed";

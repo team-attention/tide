@@ -1,7 +1,7 @@
-import { editProductShellWorkbenchEditorPane, goToProductShellEditorDefinition, goToProductShellEditorReferences, moveProductShellEditorCursor, openProductShellFileInEditor, saveProductShellWorkbenchEditorPane, selectProductShellEditorPickerFile, selectProductShellFileTreeEntry, setProductShellEditorPickerFilter, toggleProductShellFileTreeWithRefresh } from "../../../../../application/domains/product-shell/product-shell-state.ts";
+import { editProductShellWorkbenchEditorPane, goToProductShellEditorDefinition, goToProductShellEditorReferences, moveProductShellEditorCursor, openProductShellFileInEditor, saveProductShellWorkbenchEditorPane, selectProductShellEditorPickerFile, selectProductShellFileTreeEntry, setProductShellEditorPickerFilter, toggleProductShellFileTreeWithRefresh } from "../../../../../application/domains/product-shell/product-shell.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
-import type { ProductShellHandlers } from "../types.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
 export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onOpenFile" | "onEditorPickerFilter" | "onEditorPickerSelect" | "onEditorDraftChange" | "onEditorCursorChange" | "onEditorSave" | "onEditorGoToDefinition" | "onEditorGoToReferences" | "onFileTreeEntryOpen" | "onFileTreeToggle"> {

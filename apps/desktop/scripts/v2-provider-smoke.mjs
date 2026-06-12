@@ -14,7 +14,7 @@ import {
   setProductShellComposerActiveSurface,
   submitProductShellComposerDraft,
   updateProductShellComposerDraft,
-} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import { createLiveBackendContractMessageAdapter } from "../src/backend/infrastructure/node/live/live-backend.ts";
 import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 

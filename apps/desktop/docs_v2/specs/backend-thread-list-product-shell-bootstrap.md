@@ -26,7 +26,7 @@ Out of scope:
 
 - `docs_v2/master-plan.md` says Left Rail is work history and shows existing Threads grouped by Project and Scratch.
 - `docs_v2/master-plan.md` says Thread is the primary product object and Project organizes Threads and provides Execution Context.
-- `src/desktop/application/domains/product-shell/product-shell-state.ts` currently creates fixture `initialThreads` in `createProductShellState`.
+- `src/desktop/application/domains/product-shell/product-shell.ts` currently creates fixture `initialThreads` in `createProductShellState`.
 - `src/shared/contracts/commands.ts` currently has `thread.hydrate` and `thread.start`, but no Thread list command.
 - `src/shared/contracts/events.ts` currently has `thread.hydrated` and `thread.started`, but no Thread list event.
 - `src/backend/application/services/thread-runtime-service.ts` owns in-memory Thread records and exposes hydrate/start/resume operations.

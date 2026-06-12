@@ -1,8 +1,8 @@
-import type { ProductShellLeftRailMenu, ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import type { MenuAnchorRect, ProductShellHandlers } from "../types.ts";
+import type { ProductShellLeftRailMenu, ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
-import { createColumnResizeHandle, createIconButton, createTrafficControls } from "../chrome.ts";
+import { createColumnResizeHandle, createIconButton, createTrafficControls } from "../chrome/chrome.ts";
 import { createLeftRailContextMenuOverlay } from "./context-menu.ts";
 import { MessageSquarePlus, PanelLeftClose, Search, Settings } from "lucide-react";
 import { createLeftNavRow, createListSettingsButton } from "./section-header.ts";

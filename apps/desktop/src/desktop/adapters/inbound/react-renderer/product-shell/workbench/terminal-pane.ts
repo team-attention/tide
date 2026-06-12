@@ -2,8 +2,8 @@ import * as xtermModule from "@xterm/xterm";
 import { Fragment, createElement, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import { CornerDownRight } from "lucide-react";
-import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import type { ProductShellHandlers } from "../types.ts";
+import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // `@xterm/xterm` is CommonJS, and its export shape differs across loaders: the

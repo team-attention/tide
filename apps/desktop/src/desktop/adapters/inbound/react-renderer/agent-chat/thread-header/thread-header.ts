@@ -1,7 +1,7 @@
-import type { AgentChatShellViewModel } from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
-import { createDescription } from "./start-surface.ts";
+import { createDescription } from "../start-surface/start-surface.ts";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 export function createThreadHeader(viewModel: AgentChatShellViewModel): ReactElement {

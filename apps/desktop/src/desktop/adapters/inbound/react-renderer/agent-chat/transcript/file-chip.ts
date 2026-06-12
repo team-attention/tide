@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import type { ReactElement } from "react";
-import { fileIconFor } from "../../file-icons.ts";
+import { fileIconFor } from "../../support/file-icons.ts";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // The file path a read/view tool targets (e.g. {"file_path":"…"} or DirectoryPath).

@@ -1,8 +1,8 @@
-import type { ProductShellContentSearch } from "../../../../../application/domains/product-shell/product-shell-state.ts";
+import type { ProductShellContentSearch } from "../../../../../application/domains/product-shell/product-shell.ts";
 import { createElement, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import { Search } from "lucide-react";
-import { fileIconFor } from "../../file-icons.ts";
+import { fileIconFor } from "../../support/file-icons.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // Cmd+Shift+F project content search: a centered panel that debounces the query

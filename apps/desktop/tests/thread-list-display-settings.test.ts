@@ -9,7 +9,7 @@ import {
   DEFAULT_PRODUCT_SHELL_LIST_SETTINGS,
   type ProductShellState,
   type ProductShellThread,
-} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
 function thread(
   threadId: string,

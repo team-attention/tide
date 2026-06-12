@@ -38,7 +38,7 @@ It does not define final visual polish, App Chrome details, Workbench Tab Strip 
 - `src/shared/contracts/thread.ts` currently defines `ThreadSummaryDto` with Agent Binding and scope but no Worktree Option or Branch Option fields.
 - `src/shared/contracts/agent.ts` defines source-aware Agent Binding DTOs for Provider CLI Agents and the `openai_api` Tide API Agent.
 - `docs_v2/specs/composer-agent-runtime-source.md` defines the Agent Runtime Source split used by the Composer Agent chip and Model Chip.
-- `src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts` keeps Follow-up Composer execution context tied to Thread data and does not fabricate Worktree or Branch fields when the Shared Contract omits them.
+- `src/desktop/application/domains/agent-chat/agent-chat.ts` keeps Follow-up Composer execution context tied to Thread data and does not fabricate Worktree or Branch fields when the Shared Contract omits them.
 - `src/desktop/adapters/inbound/react-renderer/agent-chat/contract-adapter.ts` currently casts Composer shell commands to a type derived from all `BackendCommandKind` values, including commands the shell cannot emit.
 - Existing v2 TypeScript tests under `tests/*.test.ts` use `node:test`, and `package.json` routes `npm run test:v2` through that suite.
 

@@ -10,7 +10,7 @@ import {
   applyDrop,
   setRatioAtPath,
   type WorkbenchSplitNode,
-} from "../src/desktop/application/domains/product-shell/workbench-split-tree.ts";
+} from "../src/desktop/application/domains/product-shell/state/workbench-split-tree.ts";
 
 test("buildLinearTree keeps every pane, in order", () => {
   const tree = buildLinearTree(["a", "b", "c"]);

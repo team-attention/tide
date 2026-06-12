@@ -26,7 +26,7 @@ ignored-file preferences, or a full IDE tree model.
   as FileTree View.
 - `docs_v2/specs/desktop-product-shell-visual-foundation.md` says FileTree is a
   single independent right-side column attached to the active Thread's cwd.
-- `src/desktop/application/domains/product-shell/product-shell-state.ts`
+- `src/desktop/application/domains/product-shell/product-shell.ts`
   currently creates FileTree entries from hard-coded Product Shell fixture data.
 - `src/backend/application/ports/outbound/workspace-file-port.ts` already owns
   bounded workspace file access for Thread-root file tools.

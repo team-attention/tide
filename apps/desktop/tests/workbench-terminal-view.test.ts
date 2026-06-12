@@ -47,7 +47,7 @@ const {
   applyProductShellBackendEvent,
   createProductShellState,
   openProductShellThread,
-} = await import("../src/desktop/application/domains/product-shell/product-shell-state.ts");
+} = await import("../src/desktop/application/domains/product-shell/product-shell.ts");
 const { TideProductShell } = await import(
   "../src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts"
 );

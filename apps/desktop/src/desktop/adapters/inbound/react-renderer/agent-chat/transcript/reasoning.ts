@@ -1,4 +1,4 @@
-import type { AgentChatBlockView } from "../../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatBlockView } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { createElement, useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { ChevronDown, Sparkles } from "lucide-react";

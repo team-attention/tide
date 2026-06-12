@@ -1,8 +1,8 @@
-import type { AgentChatShellViewModel } from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
-import type { ComposerHandlers } from "./types.ts";
+import type { AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import type { ComposerHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement, ReactNode } from "react";
-import { createComposer } from "./composer/composer.ts";
+import { createComposer } from "../composer/composer.ts";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 export function createNewThreadStartSurface(

@@ -1,10 +1,10 @@
-import type { ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import type { ProductShellHandlers } from "../types.ts";
+import type { ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
 import { createSectionHeader } from "./section-header.ts";
 import { createThreadRow } from "./thread-row.ts";
-import type { AgentChatThreadScope } from "../../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatThreadScope } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createThreadSection(

@@ -1,6 +1,6 @@
 import MarkdownIt from "markdown-it";
-import { guessLanguage, highlightToHtml } from "../../code-highlight.ts";
-import { renderMarkdownCached } from "../../markdown-rendering.ts";
+import { guessLanguage, highlightToHtml } from "../../support/code-highlight.ts";
+import { renderMarkdownCached } from "../../support/markdown-rendering.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).

@@ -1,9 +1,9 @@
-import { setProductShellSearchQuery, setProductShellSettingsOpen, setProductShellWorktreeSettings, toggleProductShellSearch } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import { persistWorktreeSettings } from "../settings.ts";
-import { applyThemePreference, saveThemePreference } from "../../theme.ts";
+import { setProductShellSearchQuery, setProductShellSettingsOpen, setProductShellWorktreeSettings, toggleProductShellSearch } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { persistWorktreeSettings } from "../settings/settings.ts";
+import { applyThemePreference, saveThemePreference } from "../../support/theme.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
-import type { ProductShellHandlers } from "../types.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
 export function createChromeHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onResizeStart" | "onSearchQueryChange" | "onSearchToggle" | "onOpenSettings" | "onCloseSettings" | "onWorktreeSettingsChange" | "onThemeChange"> {

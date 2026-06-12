@@ -1,5 +1,5 @@
-import type { DropZone, ProductShellViewModel, SplitDirection, WorkbenchSplitNode } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import type { ProductShellHandlers } from "../types.ts";
+import type { DropZone, ProductShellViewModel, SplitDirection, WorkbenchSplitNode } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import { X } from "lucide-react";

@@ -4,20 +4,20 @@ import { createComposerHandlers } from "./handlers/composer-handlers.ts";
 import { createWorkbenchHandlers } from "./handlers/workbench-handlers.ts";
 import { createEditorHandlers } from "./handlers/editor-handlers.ts";
 import { createChromeHandlers } from "./handlers/chrome-handlers.ts";
-import type { MenuAnchorRect, ProductShellHandlers, TideProductShellProps } from "./types.ts";
-import { createSettingsModal, loadListSettings, loadPreferredStartComposer, loadWorktreeSettings, persistListSettings, persistPreferredStartComposer, persistWorktreeSettings } from "./settings.ts";
+import type { MenuAnchorRect, ProductShellHandlers, TideProductShellProps } from "./support/types.ts";
+import { createSettingsModal, loadListSettings, loadPreferredStartComposer, loadWorktreeSettings, persistListSettings, persistPreferredStartComposer, persistWorktreeSettings } from "./settings/settings.ts";
 import { WorktreeDeleteDialog } from "./dialogs/worktree-delete-dialog.ts";
 import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.ts";
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.ts";
 import { WorktreeNameInput, makeWorktreeHash } from "./dialogs/worktree-name-input.ts";
-import { fitColumnsToWidth, useColumnPresence } from "./layout.ts";
+import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
 import { QuickOpenPalette } from "./search/quick-open.ts";
 import type { QuickOpenFile } from "./search/quick-open.ts";
 import { createLeftRail } from "./left-rail/left-rail.ts";
-import { createAgentChatColumn } from "./chat-column.ts";
+import { createAgentChatColumn } from "./chat-column/chat-column.ts";
 import { createWorkbenchColumn } from "./workbench/workbench.ts";
-import { createFileTreeColumn } from "./file-tree.ts";
-import { createWindowChromeToggles } from "./chrome.ts";
+import { createFileTreeColumn } from "./file-tree/file-tree.ts";
+import { createWindowChromeToggles } from "./chrome/chrome.ts";
 import { BackgroundBrowserHost } from "./workbench/browser-pane.ts";
 import { ContentSearchPanel } from "./search/content-search.ts";
 import { createElement, Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
@@ -62,7 +62,7 @@ import {
   X,
 } from "lucide-react";
 
-import { fileIconFor } from "../file-icons.ts";
+import { fileIconFor } from "../support/file-icons.ts";
 
 import { computeWorktreePath, worktreeDeleteRequest, worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 
@@ -92,9 +92,9 @@ import { markdown as markdownLang } from "@codemirror/lang-markdown";
 
 import MarkdownIt from "markdown-it";
 
-import { guessLanguage, highlightToHtml } from "../code-highlight.ts";
+import { guessLanguage, highlightToHtml } from "../support/code-highlight.ts";
 
-import { renderMarkdownCached, taskListPlugin } from "../markdown-rendering.ts";
+import { renderMarkdownCached, taskListPlugin } from "../support/markdown-rendering.ts";
 
 import {
   applyProductShellBackendEvent,
@@ -194,7 +194,7 @@ import {
   type ProductShellState,
   type ProductShellThreadView,
   type ProductShellViewModel,
-} from "../../../../application/domains/product-shell/product-shell-state.ts";
+} from "../../../../application/domains/product-shell/product-shell.ts";
 
 import { AgentChatShell } from "../agent-chat/agent-chat.ts";
 
@@ -206,14 +206,14 @@ import type {
   AgentChatCommandOption,
   AgentChatComposerSurfaceKind,
   AgentChatThreadScope,
-} from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+} from "../../../../application/domains/agent-chat/agent-chat.ts";
 
 import {
   applyThemePreference,
   loadThemePreference,
   saveThemePreference,
   type TideThemePreference,
-} from "../theme.ts";
+} from "../support/theme.ts";
 
 export function TideProductShell(props: TideProductShellProps): ReactElement {
   const [shellState, setShellState] = useState(() => {
@@ -936,6 +936,6 @@ export function projectCwdById(state: ProductShellState, projectId: string): str
 // Decomposed into ./product-shell/ (spec: navigable-source-structure). The shell
 // component stays here; moved pieces are re-exported for path compatibility.
 export { WorktreeDeleteDialog, type WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.ts";
-export { AgentIdentityIcon, agentMonogram } from "./agent-identity.ts";
-export { fitColumnsToWidth } from "./layout.ts";
-export type { ProjectRegistryEntry, GitContextResult, ProjectRegistryBridge, TideProductShellProps } from "./types.ts";
+export { AgentIdentityIcon, agentMonogram } from "./support/agent-identity.ts";
+export { fitColumnsToWidth } from "./support/layout.ts";
+export type { ProjectRegistryEntry, GitContextResult, ProjectRegistryBridge, TideProductShellProps } from "./support/types.ts";

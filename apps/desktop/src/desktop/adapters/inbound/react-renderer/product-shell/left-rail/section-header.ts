@@ -1,9 +1,9 @@
-import type { ProductShellHandlers } from "../types.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement, ReactNode } from "react";
-import { createIconButton, menuAnchorFromEvent } from "../chrome.ts";
+import { createIconButton, menuAnchorFromEvent } from "../chrome/chrome.ts";
 import { Check, ChevronRight, Plus, SlidersHorizontal } from "lucide-react";
-import type { ProductShellListSettings } from "../../../../../application/domains/product-shell/product-shell-state.ts";
+import type { ProductShellListSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // A single icon button (sits inline at the right of the Search row) that opens

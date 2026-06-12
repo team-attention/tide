@@ -1,7 +1,7 @@
 import type { ProductShellBackendEventSource, ProductShellLeftRailMenu, ProductShellProject, ProductShellState, ProductShellThread, ProductShellUpdateResult } from "./types.ts";
 import { formatRelativeThreadTime, previewBlocksForThread, projectsFromThreads, toAgentChatThreadSummary } from "./view-model.ts";
-import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat-shell-state.ts";
-import type { AgentChatBackendEvent, AgentChatBlock, AgentChatBranchOption, AgentChatShellState, AgentChatThreadSummary, AgentChatWorktreeOption } from "../../agent-chat/agent-chat-shell-state.ts";
+import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatBackendEvent, AgentChatBlock, AgentChatBranchOption, AgentChatShellState, AgentChatThreadSummary, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
 import { agentBindingForShellAgent, cloneLaunchOptions, createStartAgentChatState, normalizeAgentId } from "./start.ts";
 import { applyAppChromeBackendEvent, createAppChromeState } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";

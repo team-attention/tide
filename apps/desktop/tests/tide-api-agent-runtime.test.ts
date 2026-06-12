@@ -7,7 +7,7 @@ import test from "node:test";
 import {
   createAgentRuntimeRouterPort,
   createProviderReadinessRouterPort,
-} from "../src/backend/adapters/outbound/agent-runtime/agent-runtime-router-port.ts";
+} from "../src/backend/adapters/outbound/agent-runtime/runtime-ports/agent-runtime-router-port.ts";
 import {
   buildOpenAiFunctionToolsFromTideTools,
   createOpenAiApiAgentRuntimePort,
@@ -18,7 +18,7 @@ import {
   type OpenAiApiAgentRuntimeFrame,
   type OpenAiProviderAccount,
   type OpenAiResponseInput,
-} from "../src/backend/adapters/outbound/agent-runtime/openai-api-agent-runtime-port.ts";
+} from "../src/backend/adapters/outbound/agent-runtime/runtime-ports/openai-api-agent-runtime-port.ts";
 import type {
   AgentRuntimeHandle,
   AgentRuntimeResumeInput,

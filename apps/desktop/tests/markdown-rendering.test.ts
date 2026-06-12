@@ -7,7 +7,7 @@ import MarkdownIt from "markdown-it";
 import {
   renderMarkdownCached,
   taskListPlugin,
-} from "../src/desktop/adapters/inbound/react-renderer/markdown-rendering.ts";
+} from "../src/desktop/adapters/inbound/react-renderer/support/markdown-rendering.ts";
 
 function makeRenderer(): MarkdownIt {
   const md = new MarkdownIt({ html: false });

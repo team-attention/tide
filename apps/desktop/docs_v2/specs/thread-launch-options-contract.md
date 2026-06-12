@@ -20,7 +20,7 @@ It does not implement provider-native in-session model switching or final model 
 - `docs_v2/specs/desktop-agent-chat-composer-shell.md` says the Follow-up Composer inherits the active Thread's Agent, Project, Worktree, and Branch, and the Agent is locked after start.
 - `src/backend/application/services/thread-runtime-service.ts` currently receives `launchOptions` in `startThread`, passes them to Provider Readiness and Agent Runtime start, and preserves them only in `pendingInput` while Provider Readiness is blocked.
 - `src/shared/contracts/thread.ts` currently exposes Agent Binding but no Launch Options on `ThreadSummaryDto`.
-- `src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts` currently renders Composer `modelLabel` from Start Composer launch options, so a Follow-up Composer can show a Codex/GPT default for an Antigravity Thread.
+- `src/desktop/application/domains/agent-chat/agent-chat.ts` currently renders Composer `modelLabel` from Start Composer launch options, so a Follow-up Composer can show a Codex/GPT default for an Antigravity Thread.
 
 ## Decisions
 

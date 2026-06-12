@@ -20,8 +20,8 @@ The smoke harness may open and close the setup surface to verify the command pat
 - `docs_v2/master-plan.md` says incomplete Provider Readiness preserves Composer input and shows a Provider Setup Surface instead of sending input into a setup screen.
 - `docs_v2/specs/provider-integration-bootstrap.md` says Provider Readiness blockers can include `ProviderSetupSurfaceAction` and Desktop shows a Provider Setup Surface action when the Agent Integration can provide one.
 - `src/shared/contracts/provider-readiness.ts` already carries `ProviderSetupSurfaceActionDto`.
-- `src/backend/adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts` currently returns `handled: false` for every `workbench.command`.
-- `src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts` currently returns no command for `provider_readiness` choice rows.
+- `src/backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts` currently returns `handled: false` for every `workbench.command`.
+- `src/desktop/application/domains/agent-chat/agent-chat.ts` currently returns no command for `provider_readiness` choice rows.
 
 ## Decisions
 

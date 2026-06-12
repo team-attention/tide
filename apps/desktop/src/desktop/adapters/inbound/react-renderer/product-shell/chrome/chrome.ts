@@ -1,5 +1,5 @@
-import type { ProductShellViewModel } from "../../../../application/domains/product-shell/product-shell-state.ts";
-import type { MenuAnchorRect, ProductShellHandlers } from "./types.ts";
+import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { FolderOpen, PanelRightClose, PanelRightOpen } from "lucide-react";

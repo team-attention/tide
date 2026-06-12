@@ -11,7 +11,7 @@ import {
   startNewProductShellScratchThread,
   submitProductShellComposerDraft,
   updateProductShellComposerDraft,
-} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
 // When several agents run at once, focus is owned by the user's actions (click a
 // thread / start a new thread set activeThreadId locally). Backend events NEVER

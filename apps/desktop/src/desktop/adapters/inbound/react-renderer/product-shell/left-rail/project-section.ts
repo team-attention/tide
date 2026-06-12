@@ -1,10 +1,10 @@
-import type { ProductShellProjectGroupView, ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import type { ProductShellHandlers } from "../types.ts";
+import type { ProductShellProjectGroupView, ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement, useState } from "react";
 import type { ReactElement } from "react";
 import { createSectionHeader } from "./section-header.ts";
 import { ChevronRight, Folder, FolderOpen, MessageSquarePlus, MoreHorizontal } from "lucide-react";
-import { createIconButton, menuAnchorFromEvent } from "../chrome.ts";
+import { createIconButton, menuAnchorFromEvent } from "../chrome/chrome.ts";
 import { createThreadRow } from "./thread-row.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 

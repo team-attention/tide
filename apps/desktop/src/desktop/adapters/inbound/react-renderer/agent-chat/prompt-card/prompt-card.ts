@@ -1,4 +1,4 @@
-import type { AgentChatShellViewModel } from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { createElement, useEffect, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).

@@ -1,8 +1,8 @@
-import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell-state.ts";
+import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
 import { createWorkbenchPaneHeading, createWorkbenchPaneMeta, formatBeforeAfterBytes } from "./pane-chrome.ts";
-import { guessLanguage, highlightToHtml } from "../../code-highlight.ts";
+import { guessLanguage, highlightToHtml } from "../../support/code-highlight.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function WorkbenchDiffPane(props: {

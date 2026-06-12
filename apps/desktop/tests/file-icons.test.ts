@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { FileCode, FileJson, FileText, File } from "lucide-react";
-import { fileIconFor } from "../src/desktop/adapters/inbound/react-renderer/file-icons.ts";
+import { fileIconFor } from "../src/desktop/adapters/inbound/react-renderer/support/file-icons.ts";
 
 test("maps source extensions to a code icon", () => {
   assert.equal(fileIconFor("main.ts"), FileCode);

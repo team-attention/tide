@@ -1,10 +1,10 @@
 import { createElement } from "react";
 import type { CSSProperties, ReactElement } from "react";
-import type { ProductShellViewModel } from "../../../../application/domains/product-shell/product-shell-state.ts";
-import type { ProductShellHandlers } from "./types.ts";
-import { createColumnResizeHandle } from "./chrome.ts";
+import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
+import { createColumnResizeHandle } from "../chrome/chrome.ts";
 import { ChevronRight, Folder, FolderOpen, Search } from "lucide-react";
-import { fileIconFor } from "../file-icons.ts";
+import { fileIconFor } from "../../support/file-icons.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // Shimmer rows shown while the active thread's file tree is (re)loading, so a thread

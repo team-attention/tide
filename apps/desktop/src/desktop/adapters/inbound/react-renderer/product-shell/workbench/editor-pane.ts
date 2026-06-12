@@ -1,5 +1,5 @@
-import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import type { ProductShellHandlers } from "../types.ts";
+import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
 import { WorkbenchMarkdownView } from "./markdown-view.ts";

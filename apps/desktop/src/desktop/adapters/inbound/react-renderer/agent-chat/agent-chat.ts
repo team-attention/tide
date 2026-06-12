@@ -1,9 +1,9 @@
-import type { AgentChatShellProps, AnchorRect } from "./types.ts";
+import type { AgentChatShellProps, AnchorRect } from "./support/types.ts";
 import { createAgentSession } from "./transcript/transcript.ts";
 import { createChipPopover } from "./composer/context-chips.ts";
 import { attachImageFile } from "./composer/attachments.ts";
-import { createNewThreadStartSurface } from "./start-surface.ts";
-import { createThreadHeader } from "./thread-header.ts";
+import { createNewThreadStartSurface } from "./start-surface/start-surface.ts";
+import { createThreadHeader } from "./thread-header/thread-header.ts";
 import { createComposerStack } from "./composer/composer.ts";
 import {
   createElement,
@@ -23,7 +23,7 @@ import {
 
 import MarkdownIt from "markdown-it";
 
-import { renderMarkdownCached } from "../markdown-rendering.ts";
+import { renderMarkdownCached } from "../support/markdown-rendering.ts";
 
 import {
   ArrowUp,
@@ -54,9 +54,9 @@ import {
   X,
 } from "lucide-react";
 
-import { fileIconFor } from "../file-icons.ts";
+import { fileIconFor } from "../support/file-icons.ts";
 
-import { guessLanguage, highlightToHtml } from "../code-highlight.ts";
+import { guessLanguage, highlightToHtml } from "../support/code-highlight.ts";
 
 import type {
   AgentChatBlockView,
@@ -65,7 +65,7 @@ import type {
   AgentChatContextItem,
   AgentChatComposerSurfaceKind,
   AgentChatShellViewModel,
-} from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+} from "../../../../application/domains/agent-chat/agent-chat.ts";
 
 export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   const viewModel = props.viewModel;
@@ -344,4 +344,4 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
 // component stays here; moved pieces are re-exported for path compatibility.
 export { toolBodyText } from "./transcript/tool-log.ts";
 export { editDiffLines } from "./transcript/tool-diff.ts";
-export type { AgentChatShellProps } from "./types.ts";
+export type { AgentChatShellProps } from "./support/types.ts";

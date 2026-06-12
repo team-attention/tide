@@ -1,6 +1,6 @@
 import type { ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellEditorDraft, ProductShellState, ProductShellUpdateResult } from "./types.ts";
-import { applyDrop, reconcileTree, setRatioAtPath } from "../workbench-split-tree.ts";
-import type { DropZone } from "../workbench-split-tree.ts";
+import { applyDrop, reconcileTree, setRatioAtPath } from "./workbench-split-tree.ts";
+import type { DropZone } from "./workbench-split-tree.ts";
 import { closeWorkbenchPane, focusWorkbenchPane, resizeWorkbenchTerminal, writeWorkbenchTerminalInput } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { shellTimestamp } from "./create.ts";

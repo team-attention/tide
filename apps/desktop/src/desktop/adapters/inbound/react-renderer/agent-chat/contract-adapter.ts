@@ -7,7 +7,7 @@ import {
   applyAgentChatBackendEvent,
   type AgentChatBackendCommand,
   type AgentChatShellState,
-} from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+} from "../../../../application/domains/agent-chat/agent-chat.ts";
 
 export type AgentChatBackendCommandDraft = {
   kind: "thread.start";

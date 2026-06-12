@@ -1,10 +1,10 @@
-import { DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS } from "../../../../application/domains/product-shell/product-shell-state.ts";
-import type { PreferredStartComposer, ProductShellListSettings, ProductShellWorktreeSettings } from "../../../../application/domains/product-shell/product-shell-state.ts";
-import type { TideThemePreference } from "../theme.ts";
-import type { ProductShellHandlers } from "./types.ts";
+import { DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { PreferredStartComposer, ProductShellListSettings, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { TideThemePreference } from "../../support/theme.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ChangeEvent, ReactElement } from "react";
-import { createIconButton } from "./chrome.ts";
+import { createIconButton } from "../chrome/chrome.ts";
 import { X } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 

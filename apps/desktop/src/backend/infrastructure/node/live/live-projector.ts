@@ -1,5 +1,5 @@
 import type { ThreadPersistenceService } from "../../../application/services/thread/thread-persistence-service.ts";
-import type { AgentIntegrationRegistry } from "../../../adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts";
+import type { AgentIntegrationRegistry } from "../../../adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts";
 import { createFixtureAgentSessionReader } from "../../../application/services/thread/fixture-agent-session-reader.ts";
 import type { AgentSessionBlock, AgentSessionBlockUpdate } from "../../../application/domains/agent-session/agent-session-block.ts";
 import type { AgentTurnOutcome } from "../../../application/ports/outbound/agent-integration-port.ts";

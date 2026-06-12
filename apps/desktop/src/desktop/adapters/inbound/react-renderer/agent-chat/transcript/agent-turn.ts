@@ -1,6 +1,6 @@
 import { createElement, memo } from "react";
 import type { ReactElement } from "react";
-import type { AgentChatBlockView } from "../../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatBlockView } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { createToolLogTurn } from "./tool-log.ts";
 import { renderAgentMarkdown } from "./markdown.ts";
 import { renderUserBody } from "./user-turn.ts";

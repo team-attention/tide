@@ -1,4 +1,4 @@
-import type { AgentChatChoiceSurfaceView } from "../../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatChoiceSurfaceView } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { createElement } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { Bot, Check, FileText, Folder, FolderPlus, GitBranch, Layers, PanelsTopLeft, Paperclip, Plus, Trash2, Wrench } from "lucide-react";

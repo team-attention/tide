@@ -1,8 +1,8 @@
 import type { ProductShellAgentIdentity, ProductShellState } from "./types.ts";
 import { preserveActiveAgentChat } from "./thread-list.ts";
 import { createAppChromeState } from "../../app-chrome/app-chrome-state.ts";
-import { createAgentChatShellState, defaultModelValueForAgent, defaultPermissionForAgent, resolveStartAgentId } from "../../agent-chat/agent-chat-shell-state.ts";
-import type { AgentChatAgentBinding, AgentChatShellState, AgentChatThreadScope } from "../../agent-chat/agent-chat-shell-state.ts";
+import { createAgentChatShellState, defaultModelValueForAgent, defaultPermissionForAgent, resolveStartAgentId } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatAgentBinding, AgentChatShellState, AgentChatThreadScope } from "../../agent-chat/agent-chat.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
 // Starts a new Thread pre-scoped to Scratch (Tide-managed working dir).

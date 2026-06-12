@@ -5,7 +5,7 @@ import {
   createProductShellState,
   startNewProductShellThread,
   setPreferredStartComposer,
-} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
 // Spec: the Start Composer remembers the last-used agent + model so the next New
 // Thread defaults to it. Module-level preference is set by the Desktop adapter

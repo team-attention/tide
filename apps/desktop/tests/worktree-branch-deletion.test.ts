@@ -16,7 +16,7 @@ import {
   createProductShellState,
   openProductShellLeftRailMenu,
   setProductShellGitContext,
-} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
 function render(target: WorktreeDeleteTarget): string {
   return renderToStaticMarkup(

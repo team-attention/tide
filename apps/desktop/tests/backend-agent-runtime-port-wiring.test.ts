@@ -14,7 +14,7 @@ import {
   type PtyProcessLauncher,
   type PtyProcessOutput,
   type PtyProcessSpawnInput,
-} from "../src/backend/adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts";
+} from "../src/backend/adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts";
 import type {
   AgentIntegrationPort,
   AgentIntegrationPreflightInput,

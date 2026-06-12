@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import {
   selectBackgroundCompletions,
   type ProductShellThread,
-} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
 function thread(over: Partial<ProductShellThread> & { threadId: string }): ProductShellThread {
   return {

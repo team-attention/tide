@@ -27,7 +27,7 @@ import {
   removeComposerContextChip,
   setComposerContextChipComment,
   type AgentChatShellState,
-} from "../src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts";
+} from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
 import {
   applyBackendEventToAgentChatShell,
   toBackendCommandDraft,

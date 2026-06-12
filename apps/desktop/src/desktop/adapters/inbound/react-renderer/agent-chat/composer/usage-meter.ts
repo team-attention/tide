@@ -1,4 +1,4 @@
-import type { AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { createElement } from "react";
 import type { ReactElement, ReactNode } from "react";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).

@@ -8,7 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { createFileAppStorage } from "../src/backend/adapters/outbound/app-storage/file-app-storage.ts";
-import { createBackendContractMessageAdapter } from "../src/backend/adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts";
+import { createBackendContractMessageAdapter } from "../src/backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts";
 import {
   backendEventsFromThreadRuntimeAsyncEvent,
   createLiveBackendContractMessageAdapter,
@@ -38,13 +38,13 @@ import {
   setProductShellComposerActiveSurface,
   submitProductShellComposerDraft,
   updateProductShellComposerDraft,
-} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import {
   createBackendProcessSupervisor,
   type BackendProcessExit,
   type BackendProcessHandle,
   type BackendProcessLauncher,
-} from "../src/desktop/infrastructure/electron/backend-process-supervisor.ts";
+} from "../src/desktop/infrastructure/electron/main/backend-process-supervisor.ts";
 import {
   CONTRACT_VERSION,
   type BackendCommandEnvelope,
@@ -539,7 +539,7 @@ test("app_close_requests_backend_shutdown_before_terminate_path", async () => {
 
 test("desktop_main_supervisor_does_not_import_provider_or_pty_modules", () => {
   const source = readRepoFile(
-    "src/desktop/infrastructure/electron/backend-process-supervisor.ts",
+    "src/desktop/infrastructure/electron/main/backend-process-supervisor.ts",
   );
 
   assert.doesNotMatch(source, /node-pty|pty-port|agent-integrations|AgentRuntimePort/);

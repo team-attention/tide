@@ -1,5 +1,5 @@
-import type { ProductShellAgentIdentity } from "../../../../application/domains/product-shell/product-shell-state.ts";
-import { agentDescriptor } from "../../../../../shared/contracts/agent-descriptors.ts";
+import type { ProductShellAgentIdentity } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { agentDescriptor } from "../../../../../../shared/contracts/agent-descriptors.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).

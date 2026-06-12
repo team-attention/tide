@@ -1,4 +1,4 @@
-import type { AgentChatChoiceSurfaceView, AgentChatComposerSurfaceKind, AgentChatShellViewModel } from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatChoiceSurfaceView, AgentChatComposerSurfaceKind, AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 export interface AgentChatShellProps {

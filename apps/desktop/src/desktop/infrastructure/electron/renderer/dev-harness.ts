@@ -15,13 +15,13 @@ import {
   submitProductShellComposerDraft,
   updateProductShellComposerDraft,
   toggleProductShellWorkbenchLayoutMode,
-} from "../../../application/domains/product-shell/product-shell-state.ts";
+} from "../../../application/domains/product-shell/product-shell.ts";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 import "@xterm/xterm/css/xterm.css";
 import "../../../adapters/inbound/react-renderer/styles/index.css";
-import { applyThemePreference } from "../../../adapters/inbound/react-renderer/theme.ts";
+import { applyThemePreference } from "../../../adapters/inbound/react-renderer/support/theme.ts";
 
 const CLAUDE_MD_PREVIEW = [
   "# Tide — Project Rules",

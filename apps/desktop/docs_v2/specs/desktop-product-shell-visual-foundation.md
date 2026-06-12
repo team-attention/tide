@@ -38,7 +38,7 @@ output streaming.
 - `crates/tide-app/src/theme.rs` shows the existing Tide palette uses warm charcoal document surfaces, warm neutral text, amber/green/blue status colors, and restrained borders.
 - `assets/icon.png` is a 128x128 Tide icon with two dominant key colors: beige average `#afa89a` and dark average `#343038`; the deeper dark average is `#29252d`.
 - `src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts` previously rendered fixture Thread Rows and Composer without React state handlers for opening a Thread, starting a Thread, or submitting Composer input.
-- `src/desktop/application/domains/product-shell/product-shell-state.ts` previously created `local-thread-*` preview Threads and rendered "Local preview" blocks instead of routing Product Shell Composer submit through BackendCommand drafts.
+- `src/desktop/application/domains/product-shell/product-shell.ts` previously created `local-thread-*` preview Threads and rendered "Local preview" blocks instead of routing Product Shell Composer submit through BackendCommand drafts.
 - `docs/glossary.md` defines V1 Terminal Context Surface as the right Dock region attached to one Stage Terminal, capable of showing Browser Pane, Diff, Editor, Launcher, secondary Terminal, or Render Pane.
 - `docs/specs/dock-placeholder.md` says an open V1 Dock must not be empty: it creates a placeholder Launcher and replaces that slot when a Browser or Editor Pane opens.
 - `docs/specs/open-terminal-codex-app.md` says the product gap is not missing agent internals; it is presenting Tide's existing open-terminal model as a Codex-app-like work surface.

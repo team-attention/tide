@@ -5,29 +5,29 @@ import type {
   AgentSessionConfigInput,
   AgentSessionConfigResult,
   TerminalInput,
-} from "../../../application/domains/agent-runtime/agent-runtime.ts";
-import type { ComposerAttachmentRef } from "../../../application/domains/thread/thread.ts";
-import type { AgentRuntimePort } from "../../../application/ports/outbound/agent-runtime-port.ts";
+} from "../../../../application/domains/agent-runtime/agent-runtime.ts";
+import type { ComposerAttachmentRef } from "../../../../application/domains/thread/thread.ts";
+import type { AgentRuntimePort } from "../../../../application/ports/outbound/agent-runtime-port.ts";
 import type {
   AgentIntegrationPort,
   ProviderLaunchPlan,
-} from "../../../application/ports/outbound/agent-integration-port.ts";
-import type { ProviderReadinessPort } from "../../../application/ports/outbound/provider-readiness-port.ts";
+} from "../../../../application/ports/outbound/agent-integration-port.ts";
+import type { ProviderReadinessPort } from "../../../../application/ports/outbound/provider-readiness-port.ts";
 import type {
   AgentId,
   ProviderCliAgentId,
-} from "../../../application/domains/thread/thread.ts";
+} from "../../../../application/domains/thread/thread.ts";
 import {
   isProviderCliAgentId,
   sessionRefKindForAgent,
-} from "../../../../shared/contracts/agent-descriptors.ts";
-import { createClaudeStreamJsonClient } from "./structured/claude-stream-json-client.ts";
-import { createCodexAppServerClient } from "./structured/codex-app-server-client.ts";
-import { createAcpClient } from "./structured/acp-client.ts";
+} from "../../../../../shared/contracts/agent-descriptors.ts";
+import { createClaudeStreamJsonClient } from "../structured/claude-stream-json-client.ts";
+import { createCodexAppServerClient } from "../structured/codex-app-server-client.ts";
+import { createAcpClient } from "../structured/acp-client.ts";
 import type {
   StructuredProviderEvent,
   StructuredRuntimeClient,
-} from "./structured/structured-runtime-events.ts";
+} from "../structured/structured-runtime-events.ts";
 
 export type AgentIntegrationRegistry = Record<ProviderCliAgentId, AgentIntegrationPort>;
 

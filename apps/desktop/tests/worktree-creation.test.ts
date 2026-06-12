@@ -19,7 +19,7 @@ import {
   cancelProductShellWorktreeCreate,
   setProductShellWorktreeSettings,
   setProductShellSettingsOpen,
-} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
 // --- UC-1: Worktree Path Rule ---
 

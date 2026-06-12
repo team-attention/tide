@@ -14,7 +14,7 @@ import {
   setProductShellComposerActiveSurface,
   submitProductShellComposerDraft,
   updateProductShellComposerDraft,
-} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 
 const require = createRequire(import.meta.url);

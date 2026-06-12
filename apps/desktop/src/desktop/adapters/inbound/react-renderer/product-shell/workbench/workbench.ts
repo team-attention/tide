@@ -1,9 +1,9 @@
-import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import type { ProductShellHandlers } from "../types.ts";
+import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
 import { Columns2, FileText, GitCompare, Globe, LayoutGrid, Maximize2, Minimize2, Plus, Rows2, Terminal, X } from "lucide-react";
-import { createColumnResizeHandle, createIconButton, createTrafficControls } from "../chrome.ts";
+import { createColumnResizeHandle, createIconButton, createTrafficControls } from "../chrome/chrome.ts";
 import { createEditorPickerPane, createWorkbenchPaneContent } from "./pane-content.ts";
 import { WorkbenchSplitView } from "./split-view.ts";
 import { WorkbenchLauncherPane, emptyWorkbenchLauncherPane } from "./launcher-pane.ts";

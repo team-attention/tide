@@ -1,4 +1,4 @@
-import type { AgentChatBlockView, AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatBlockView, AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
 import { AgentWorkingIndicator } from "./working-indicator.ts";

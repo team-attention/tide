@@ -1,11 +1,11 @@
-import type { AgentChatBlockView } from "../../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatBlockView } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { createElement, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { pickStringField, readToolFilePath, renderFileChip } from "./file-chip.ts";
 import { editDiffLines } from "./tool-diff.ts";
-import { guessLanguage, highlightToHtml } from "../../code-highlight.ts";
+import { guessLanguage, highlightToHtml } from "../../support/code-highlight.ts";
 import { ChevronDown, Wrench } from "lucide-react";
-import { fileIconFor } from "../../file-icons.ts";
+import { fileIconFor } from "../../support/file-icons.ts";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // A provider tool call/result renders as a compact log entry: a small header

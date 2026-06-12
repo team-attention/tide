@@ -1,6 +1,6 @@
-import type { AgentChatChoiceSurfaceView, AgentChatShellViewModel } from "../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatChoiceSurfaceView, AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import type { ReactElement } from "react";
-import { createChoiceSurface } from "./composer/choice-surface.ts";
+import { createChoiceSurface } from "../composer/choice-surface.ts";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 export function createProviderReadiness(

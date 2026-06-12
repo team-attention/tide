@@ -37,7 +37,7 @@ import {
   type AgentChatBranchOption,
   type AgentChatWorktreeOption,
   type AgentChatCommandOption,
-} from "../agent-chat/agent-chat-shell-state.ts";
+} from "../agent-chat/agent-chat.ts";
 
 import {
   applyAppChromeBackendEvent,
@@ -62,7 +62,7 @@ import {
   type WorkbenchSplitNode,
   type DropZone,
   type SplitDirection,
-} from "./workbench-split-tree.ts";
+} from "./state/workbench-split-tree.ts";
 
 export type { WorkbenchSplitNode, DropZone, SplitDirection };
 

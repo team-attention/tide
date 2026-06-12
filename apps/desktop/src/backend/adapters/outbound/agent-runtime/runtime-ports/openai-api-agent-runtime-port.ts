@@ -5,13 +5,13 @@ import type {
   AgentSessionConfigInput,
   AgentSessionConfigResult,
   TerminalInput,
-} from "../../../application/domains/agent-runtime/agent-runtime.ts";
-import type { AgentRuntimePort } from "../../../application/ports/outbound/agent-runtime-port.ts";
+} from "../../../../application/domains/agent-runtime/agent-runtime.ts";
+import type { AgentRuntimePort } from "../../../../application/ports/outbound/agent-runtime-port.ts";
 import type {
   ProviderReadinessCheckInput,
   ProviderReadinessResult,
-} from "../../../application/domains/provider-readiness/provider-readiness.ts";
-import type { ProviderReadinessPort } from "../../../application/ports/outbound/provider-readiness-port.ts";
+} from "../../../../application/domains/provider-readiness/provider-readiness.ts";
+import type { ProviderReadinessPort } from "../../../../application/ports/outbound/provider-readiness-port.ts";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENAI_MODEL = "gpt-5.5";

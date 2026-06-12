@@ -1,7 +1,7 @@
 import { DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS } from "./types.ts";
 import type { CreateProductShellStateInput, ProductShellProject, ProductShellState, ProductShellThread } from "./types.ts";
 import { workbenchPane } from "./workbench.ts";
-import type { AgentChatThreadScope } from "../../agent-chat/agent-chat-shell-state.ts";
+import type { AgentChatThreadScope } from "../../agent-chat/agent-chat.ts";
 import { createStartAgentChatState } from "./start.ts";
 import { createAppChromeState } from "../../app-chrome/app-chrome-state.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).

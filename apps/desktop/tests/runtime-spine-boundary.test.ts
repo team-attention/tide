@@ -98,7 +98,7 @@ test("infra_live_backend_has_zero_provider_branches", () => {
 // agent id in the port.
 test("runtime_port_has_no_hardcoded_provider_key_sequences", () => {
   const source = read(
-    "src/backend/adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts",
+    "src/backend/adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts",
   );
   assert.equal(
     source.includes('agentId === "claude" ? "\\x1b[13u"'),

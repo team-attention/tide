@@ -1,9 +1,9 @@
-import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import type { ProductShellHandlers } from "../types.ts";
+import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
 import { Search } from "lucide-react";
-import { fileIconFor } from "../../file-icons.ts";
+import { fileIconFor } from "../../support/file-icons.ts";
 import { WorkbenchBrowserPane } from "./browser-pane.ts";
 import { WorkbenchEditorPane } from "./editor-pane.ts";
 import { WorkbenchDiffPane } from "./diff-pane.ts";

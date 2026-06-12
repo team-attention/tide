@@ -1,5 +1,5 @@
-import type { ProductShellLeftRailMenu, ProductShellListSettings } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import type { MenuAnchorRect, ProductShellHandlers } from "../types.ts";
+import type { ProductShellLeftRailMenu, ProductShellListSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { createListSettingsMenu } from "./section-header.ts";

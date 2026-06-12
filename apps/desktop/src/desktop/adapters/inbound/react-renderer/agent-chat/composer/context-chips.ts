@@ -1,5 +1,5 @@
-import type { AgentChatChoiceSurfaceView, AgentChatComposerSurfaceKind, AgentChatContextItem } from "../../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
-import type { AnchorRect, ComposerHandlers } from "../types.ts";
+import type { AgentChatChoiceSurfaceView, AgentChatComposerSurfaceKind, AgentChatContextItem } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import type { AnchorRect, ComposerHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { agentMonogramFor, createChoiceSurface } from "./choice-surface.ts";

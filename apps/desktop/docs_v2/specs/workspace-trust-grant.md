@@ -93,4 +93,4 @@ In scope:
 - `src/backend/application/ports/outbound/provider-trust-port.ts`
 - `src/backend/adapters/outbound/provider-trust/node-provider-trust-port.ts`
 - `src/backend/application/services/thread-runtime-service.ts`
-- `src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts`
+- `src/desktop/application/domains/agent-chat/agent-chat.ts`

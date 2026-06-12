@@ -26,7 +26,7 @@ It does not cover:
 - `docs_v2/master-plan.md` says OpenAI API uses a Tide API Agent Runtime Source and that API key setup is Provider Account readiness, not a Provider CLI `vendor_api_key` branch.
 - `docs_v2/specs/composer-agent-runtime-source.md` says OpenAI API is a Tide API Agent, uses Provider Account readiness and Tide-owned API runtime, and does not launch a Provider CLI hidden PTY.
 - `src/shared/contracts/agent.ts` and `src/backend/application/domains/thread/thread.ts` define `openai_api` with `runtimeSource.kind = "tide_api"` and `provider = "openai"`.
-- `src/backend/adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts` currently rejects Tide API Agents in the Provider CLI runtime port and returns a Provider Account blocker from the Provider CLI readiness adapter.
+- `src/backend/adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts` currently rejects Tide API Agents in the Provider CLI runtime port and returns a Provider Account blocker from the Provider CLI readiness adapter.
 - `src/backend/application/services/thread-runtime-service.ts` owns Thread lifecycle and calls `ProviderReadinessPort.check`, `AgentRuntimePort.start`, and `AgentRuntimePort.writeInput` without knowing provider transport details.
 - `src/backend/application/domains/agent-session/raw-agent-frame.ts` already supports `structured_batch` Raw Agent Frames with JSON payloads.
 - `src/backend/application/services/fixture-agent-session-reader.ts` converts a JSON payload with `type = "message"` into an `agent_message` Agent Session Block.

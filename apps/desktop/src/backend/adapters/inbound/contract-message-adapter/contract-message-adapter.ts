@@ -1,6 +1,6 @@
-import { defaultClock, defaultIdGenerator, requestIdFromUnknown } from "./envelope-support.ts";
+import { defaultClock, defaultIdGenerator, requestIdFromUnknown } from "./support/envelope-support.ts";
 import { omitUndefinedProperties, toWorkbenchFileTreeDto, toWorkbenchPaneRefDto } from "./dto/workbench-dtos.ts";
-import { contractCodeFromServiceError, isRetryableServiceError } from "./error-codes.ts";
+import { contractCodeFromServiceError, isRetryableServiceError } from "./support/error-codes.ts";
 import { toAgentSessionBlockDto, toPromptStateDto, toProviderReadinessDto, toThreadSummaryDto } from "./dto/thread-dtos.ts";
 import type {
   AnswerPromptResult,

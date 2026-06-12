@@ -95,5 +95,5 @@ In scope:
 
 - `src/shared/contracts/commands.ts`
 - `src/backend/application/services/thread-runtime-service.ts` (+ a worktree rule module)
-- `src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts` (follow-on)
-- `src/desktop/application/domains/product-shell/product-shell-state.ts` (grouping, follow-on)
+- `src/desktop/application/domains/agent-chat/agent-chat.ts` (follow-on)
+- `src/desktop/application/domains/product-shell/product-shell.ts` (grouping, follow-on)

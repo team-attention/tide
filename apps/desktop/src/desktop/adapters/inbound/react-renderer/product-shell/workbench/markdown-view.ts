@@ -1,7 +1,7 @@
 import MarkdownIt from "markdown-it";
-import { renderMarkdownCached, taskListPlugin } from "../../markdown-rendering.ts";
-import { guessLanguage, highlightToHtml } from "../../code-highlight.ts";
-import type { ProductShellHandlers } from "../types.ts";
+import { renderMarkdownCached, taskListPlugin } from "../../support/markdown-rendering.ts";
+import { guessLanguage, highlightToHtml } from "../../support/code-highlight.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import { Fragment, createElement, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import { CornerDownRight, Crosshair } from "lucide-react";

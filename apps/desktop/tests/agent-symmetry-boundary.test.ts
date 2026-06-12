@@ -98,7 +98,7 @@ test("the canonical provider harnesses name every provider-CLI agent", () => {
 
 test("the runtime port derives agent membership and session-ref kind from the registry", () => {
   const source = read(
-    "src/backend/adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts",
+    "src/backend/adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts",
   );
   // No re-grown hardcoded provider-CLI id chain.
   assert.doesNotMatch(

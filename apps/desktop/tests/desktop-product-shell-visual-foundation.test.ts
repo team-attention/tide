@@ -53,7 +53,7 @@ import {
   updateProductShellBrowserSnapshot,
   updateProductShellComposerDraft,
   writeProductShellTerminalInput,
-} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import { AgentIdentityIcon, TideProductShell } from "../src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts";
 import {
   CONTRACT_VERSION,

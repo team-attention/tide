@@ -1,9 +1,9 @@
-import type { ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import type { ProductShellHandlers } from "../types.ts";
+import type { ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
-import { createIconButton, menuAnchorFromEvent } from "../chrome.ts";
-import { AgentIdentityIcon } from "../agent-identity.ts";
+import { createIconButton, menuAnchorFromEvent } from "../chrome/chrome.ts";
+import { AgentIdentityIcon } from "../support/agent-identity.ts";
 import { threadScopeLabel } from "./thread-section.ts";
 import { GitBranch, MoreHorizontal } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).

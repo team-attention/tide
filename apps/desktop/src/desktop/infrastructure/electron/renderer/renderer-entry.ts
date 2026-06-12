@@ -4,8 +4,8 @@ import { createRoot } from "react-dom/client";
 import { TideProductShell } from "../../../adapters/inbound/react-renderer/product-shell/product-shell.ts";
 import type {
   AgentChatBackendEvent,
-} from "../../../application/domains/agent-chat/agent-chat-shell-state.ts";
-import type { ProductShellBackendCommand } from "../../../application/domains/product-shell/product-shell-state.ts";
+} from "../../../application/domains/agent-chat/agent-chat.ts";
+import type { ProductShellBackendCommand } from "../../../application/domains/product-shell/product-shell.ts";
 import {
   CONTRACT_VERSION,
   sanitizeJsonValue,
@@ -20,7 +20,7 @@ import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 import "@xterm/xterm/css/xterm.css";
 import "../../../adapters/inbound/react-renderer/styles/index.css";
-import { applyThemePreference, loadThemePreference, watchSystemTheme } from "../../../adapters/inbound/react-renderer/theme.ts";
+import { applyThemePreference, loadThemePreference, watchSystemTheme } from "../../../adapters/inbound/react-renderer/support/theme.ts";
 
 // The inline script in index.html already set the boot theme to avoid a flash;
 // re-apply from the source of truth and keep "auto" in sync with the OS.

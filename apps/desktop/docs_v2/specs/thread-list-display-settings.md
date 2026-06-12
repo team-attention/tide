@@ -82,5 +82,5 @@ sessions:
 
 ## Location
 
-- `src/desktop/application/domains/product-shell/product-shell-state.ts`
+- `src/desktop/application/domains/product-shell/product-shell.ts`
 - `src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.ts`

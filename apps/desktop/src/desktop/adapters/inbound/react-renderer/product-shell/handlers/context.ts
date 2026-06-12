@@ -7,10 +7,10 @@ import type {
   ProductShellBackendCommand,
   ProductShellState,
   ProductShellViewModel,
-} from "../../../../../application/domains/product-shell/product-shell-state.ts";
-import type { AgentChatBackendEvent } from "../../../../../application/domains/agent-chat/agent-chat-shell-state.ts";
-import type { TideThemePreference } from "../../theme.ts";
-import type { MenuAnchorRect, TideProductShellProps } from "../types.ts";
+} from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { AgentChatBackendEvent } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import type { TideThemePreference } from "../../support/theme.ts";
+import type { MenuAnchorRect, TideProductShellProps } from "../support/types.ts";
 import type { WorktreeDeleteTarget } from "../dialogs/worktree-delete-dialog.ts";
 
 export interface ProductShellHandlerContext {

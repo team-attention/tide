@@ -81,7 +81,7 @@ export {
   readCodexProviderStateFromHome,
 };
 
-import { createBackendContractMessageAdapter } from "../../../adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts";
+import { createBackendContractMessageAdapter } from "../../../adapters/inbound/contract-message-adapter/contract-message-adapter.ts";
 import {
   toAgentSessionBlockDto,
   toProviderReadinessDto,
@@ -99,21 +99,21 @@ import {
   createAgentIntegrationAgentRuntimePort,
   createAgentIntegrationProviderReadinessPort,
   type AgentIntegrationRegistry,
-} from "../../../adapters/outbound/agent-runtime/agent-integration-agent-runtime-port.ts";
+} from "../../../adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts";
 
 import type { StructuredProviderEvent } from "../../../adapters/outbound/agent-runtime/structured/structured-runtime-events.ts";
 
 import {
   createAgentRuntimeRouterPort,
   createProviderReadinessRouterPort,
-} from "../../../adapters/outbound/agent-runtime/agent-runtime-router-port.ts";
+} from "../../../adapters/outbound/agent-runtime/runtime-ports/agent-runtime-router-port.ts";
 
 import {
   createEnvironmentOpenAiProviderAccountReader,
   createOpenAiApiAgentRuntimePort,
   createOpenAiProviderAccountReadinessPort,
   createOpenAiResponsesClient,
-} from "../../../adapters/outbound/agent-runtime/openai-api-agent-runtime-port.ts";
+} from "../../../adapters/outbound/agent-runtime/runtime-ports/openai-api-agent-runtime-port.ts";
 
 import { createFileAppStorage } from "../../../adapters/outbound/app-storage/file-app-storage.ts";
 
