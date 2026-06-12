@@ -100,7 +100,7 @@ test("thread_list_contracts_round_trip_thread_summaries", () => {
           },
           scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
           launchOptions: {
-            model: "Antigravity default",
+            model: "Gemini default",
             permission: "default",
           },
           createdAt: issuedAt,
@@ -121,7 +121,7 @@ test("thread_list_contracts_round_trip_thread_summaries", () => {
   );
   assert.deepEqual(
     JSON.parse(JSON.stringify(eventEnvelope)).payload.threads[0].launchOptions,
-    { model: "Antigravity default", permission: "default" },
+    { model: "Gemini default", permission: "default" },
   );
 });
 

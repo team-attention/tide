@@ -584,22 +584,22 @@ test("starting_thread_preserves_launch_options_on_thread_snapshot", async () => 
   });
 
   const result = await service.startThread({
-    initialMessage: "Run with Antigravity",
+    initialMessage: "Run with Gemini",
     agentBinding: {
-      agentId: "antigravity",
-      runtimeSource: { kind: "provider_cli", integrationId: "antigravity" },
+      agentId: "gemini",
+      runtimeSource: { kind: "provider_cli", integrationId: "gemini" },
     },
     scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
-    launchOptions: { model: "Antigravity default", permission: "default" },
+    launchOptions: { model: "Gemini default", permission: "default" },
   });
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.thread.launchOptions, {
-    model: "Antigravity default",
+    model: "Gemini default",
     permission: "default",
   });
   assert.deepEqual(fakes.runtime.starts[0]?.launchOptions, {
-    model: "Antigravity default",
+    model: "Gemini default",
     permission: "default",
   });
 });
@@ -1385,21 +1385,21 @@ test("recording_provider_session_ref_attaches_it_to_thread_agent_binding", async
     initialThreads: [
       threadSeed("thread-provider-session", {
         agentBinding: {
-          agentId: "antigravity",
-          runtimeSource: { kind: "provider_cli", integrationId: "antigravity" },
+          agentId: "gemini",
+          runtimeSource: { kind: "provider_cli", integrationId: "gemini" },
         },
-        launchOptions: { model: "Antigravity default", permission: "default" },
+        launchOptions: { model: "Gemini default", permission: "default" },
       }),
     ],
   });
 
   const result = await service.recordProviderSessionRef({
     threadId: "thread-provider-session",
-    agentId: "antigravity",
+    agentId: "gemini",
     providerSessionRef: {
-      kind: "antigravity_conversation",
+      kind: "gemini_session",
       value: "conversation-1",
-      transcriptPath: "/provider/brain/conversation-1/.system_generated/logs/transcript.jsonl",
+      transcriptPath: "/provider/chats/session-1.jsonl",
     },
   });
   const hydrated = await service.hydrateThread({
@@ -1408,17 +1408,17 @@ test("recording_provider_session_ref_attaches_it_to_thread_agent_binding", async
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.thread.agentBinding.providerSessionRef, {
-    kind: "antigravity_conversation",
+    kind: "gemini_session",
     value: "conversation-1",
-    transcriptPath: "/provider/brain/conversation-1/.system_generated/logs/transcript.jsonl",
+    transcriptPath: "/provider/chats/session-1.jsonl",
   });
   assert.deepEqual(hydrated.thread.agentBinding.providerSessionRef, {
-    kind: "antigravity_conversation",
+    kind: "gemini_session",
     value: "conversation-1",
-    transcriptPath: "/provider/brain/conversation-1/.system_generated/logs/transcript.jsonl",
+    transcriptPath: "/provider/chats/session-1.jsonl",
   });
   assert.deepEqual(hydrated.thread.launchOptions, {
-    model: "Antigravity default",
+    model: "Gemini default",
     permission: "default",
   });
   assert.deepEqual(fakes.runtime.events, []);
@@ -1436,9 +1436,9 @@ test("recording_provider_session_ref_rejects_mismatched_agent_binding", async ()
 
   const result = await service.recordProviderSessionRef({
     threadId: "thread-provider-session-lock",
-    agentId: "antigravity",
+    agentId: "gemini",
     providerSessionRef: {
-      kind: "antigravity_conversation",
+      kind: "gemini_session",
       value: "conversation-1",
     },
   });

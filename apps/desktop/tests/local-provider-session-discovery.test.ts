@@ -31,7 +31,6 @@ function fakeFs(overrides: Partial<DiscoveryFs> = {}): DiscoveryFs {
   return {
     listClaudeTranscripts: () => [],
     listCodexRollouts: () => [],
-    antigravityConversationForCwd: () => undefined,
     readText: () => undefined,
     ...overrides,
   };

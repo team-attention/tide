@@ -68,7 +68,7 @@ export function readGeminiProviderStateFromHome(
   _cwd: string,
 ): GeminiProviderState {
   // Gemini signs in via OAuth; the credential lives at ~/.gemini/oauth_creds.json
-  // (works when spawned, unlike antigravity's Keychain-bound auth).
+  // (works when spawned).
   const oauth = readJsonFile(join(homeDir, ".gemini", "oauth_creds.json"));
   const accounts = readJsonFile(join(homeDir, ".gemini", "google_accounts.json"));
   return {

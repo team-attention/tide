@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 
 // Belt-and-suspenders for the PTY-bridge parent-death watchdog: on a hard kill
 // (force quit / crash / power loss) the watchdog may not get to run, leaving a
-// Tide-spawned agent reparented to launchd (ppid 1) — antigravity in particular
+// Tide-spawned agent reparented to launchd (ppid 1) 
 // then spins CPU on its dead PTY. Every agent launch is tagged with TIDE_RUNTIME_ID
 // in its environment, so at backend startup any process that BOTH carries that tag
 // AND is orphaned (ppid 1) is a leftover from a dead session — never a live agent

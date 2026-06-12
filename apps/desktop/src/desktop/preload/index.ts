@@ -22,7 +22,7 @@ export interface ProviderCommandSuggestion {
   description: string;
   trigger: "/" | "$";
   source: "project" | "user" | "builtin";
-  agentId: "codex" | "claude" | "antigravity";
+  agentId: "codex" | "claude";
 }
 
 export interface TidePreloadSurface {

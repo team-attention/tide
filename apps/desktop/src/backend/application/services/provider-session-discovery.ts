@@ -77,26 +77,6 @@ export function claudeSessionTitle(text: string): string | undefined {
   return undefined;
 }
 
-// Antigravity readable transcript: USER_INPUT entries carry the prompt text.
-export function antigravitySessionTitle(text: string): string | undefined {
-  for (const line of text.split(/\r?\n/)) {
-    const record = parseJsonObject(line);
-    if (record === undefined) {
-      continue;
-    }
-    const kind = stringField(record, "type") ?? stringField(record, "kind");
-    if (kind === "USER_INPUT" || kind === "user_input") {
-      const body = cleanTitle(
-        stringField(record, "text") ?? stringField(record, "message") ?? joinTextContent(record.content),
-      );
-      if (body !== undefined && body.length > 0) {
-        return body;
-      }
-    }
-  }
-  return undefined;
-}
-
 // --- Discovery orchestrator (pure given injected fs) ---
 
 export function discoverLocalSessions(input: {

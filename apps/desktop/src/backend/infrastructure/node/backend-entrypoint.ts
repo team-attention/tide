@@ -10,13 +10,13 @@ import { resolveAugmentedPath } from "./resolve-shell-path.ts";
 import { runTideMcpStdioBridgeFromEnv } from "./tide-mcp-stdio-entrypoint.ts";
 
 // A Finder/Dock-launched packaged app only inherits the minimal launchd PATH, so
-// the Agent Runtime's `which codex|claude|agy` finds nothing and no provider ever
+// the Agent Runtime's `which codex|claude|gemini` finds nothing and no provider ever
 // spawns. Restore the user's real login-shell PATH before anything resolves a CLI.
 process.env.PATH = resolveAugmentedPath();
 
 // Reap any agent orphaned by a previous hard kill (force quit / crash / power loss)
 // before this session spawns anything — a force-quit can skip the PTY watchdog and
-// leave a CPU-spinning antigravity orphan from the last run.
+// leave a CPU-spinning orphan from the last run.
 reapOrphanedTideAgentProcesses();
 
 type ElectronParentPort = {

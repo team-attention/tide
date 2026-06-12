@@ -144,7 +144,7 @@ export interface AgentChatAgentBinding {
   };
 }
 
-export type AgentChatProviderCliAgentId = "codex" | "claude" | "antigravity" | "gemini" | "opencode";
+export type AgentChatProviderCliAgentId = "codex" | "claude" | "gemini" | "opencode";
 export type AgentChatAgentId = AgentChatProviderCliAgentId | "openai_api";
 
 export type AgentChatAgentRuntimeSource =
@@ -1413,8 +1413,6 @@ function formatAgentLabel(agentId: string): string {
       return "Codex CLI";
     case "claude":
       return "Claude Code";
-    case "antigravity":
-      return "Antigravity CLI";
     case "gemini":
       return "Gemini CLI";
     case "opencode":
@@ -1451,9 +1449,7 @@ function createActiveComposerSurface(
         // Tide API Agents / OpenAI API are hidden for now (provider-CLI only).
         // The openai_api binding + runtime still exist; they're just not offered here.
         // Provider-CLI agents are listed; ones whose CLI is not detected on the local
-        // system are shown DISABLED (greyed), never removed. Antigravity is hidden for
-        // now (its CLI can't authenticate when Tide spawns it, so it would only ever be
-        // a dead row) — its adapter stays wired; re-add the row when agy is usable.
+        // system are shown DISABLED (greyed), never removed.
         rows: [
           agentMenuRow("codex", "Codex CLI", binding.agentId),
           agentMenuRow("claude", "Claude Code", binding.agentId),
@@ -1558,7 +1554,7 @@ function createActiveComposerSurface(
 
 // Permission/approval modes, presented to match each provider's own app rather
 // than exposing raw CLI flags: Codex mirrors the Codex app's 3 approval modes,
-// Claude mirrors the Claude app's mode list, Antigravity uses the same friendly
+// Claude mirrors the Claude app's mode list, gemini/opencode use the same friendly
 // shape. `value` is what flows to the Agent Integration (which maps it to the
 // provider's real flags); `label`/`detail` are the human presentation.
 // Permission presentation is the desktop layer's own vocabulary (this domain is
@@ -1609,14 +1605,6 @@ const PERMISSION_OPTIONS: Record<string, PermissionConfig> = {
       { id: "claude-bypass", value: "bypassPermissions", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
     ],
     legacyValueMap: { dontAsk: "acceptEdits" },
-  },
-  antigravity: {
-    default: "default",
-    options: [
-      { id: "agy-ask", value: "default", label: "Ask for approval", detail: "Approve actions manually" },
-      { id: "agy-sandbox", value: "sandbox", label: "Sandbox", detail: "Run inside a sandbox" },
-      { id: "agy-bypass", value: "dangerously-skip-permissions", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
-    ],
   },
   gemini: {
     default: "default",
@@ -1681,13 +1669,13 @@ function isAgentComingSoon(agentId: string): boolean {
   return COMING_SOON_AGENTS.has(agentId);
 }
 
-// Provider-CLI agents offered in the composer menu (antigravity is hidden for now).
+// Provider-CLI agents offered in the composer menu.
 const OFFERED_PROVIDER_AGENTS = ["codex", "claude", "gemini", "opencode"] as const;
 
 // Pick the agent a new thread should default to. Honors the user's last choice only if
 // it is still offered AND detected locally — so a persisted hidden/uninstalled agent
-// (e.g. antigravity) never resurfaces as the default. Falls back to the first
-// detected offered agent, then codex.
+// never resurfaces as the default. Falls back to the first detected offered agent,
+// then codex.
 export function resolveStartAgentId(preferred: string | undefined): AgentChatAgentId {
   if (
     preferred !== undefined &&
@@ -1893,8 +1881,6 @@ function composerAgentIdForRow(
       return "codex";
     case "claude":
       return "claude";
-    case "antigravity":
-      return "antigravity";
     case "gemini":
       return "gemini";
     case "opencode":
@@ -1920,8 +1906,6 @@ function modelForRow(
       return "gpt-5.5";
     case "claude-default":
       return "Claude default";
-    case "antigravity-default":
-      return "Antigravity default";
     default:
       return undefined;
   }
@@ -1952,21 +1936,6 @@ function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
         { value: "claude-opus-4-7", label: "Opus 4.7", detail: "Legacy" },
         { value: "claude-opus-4-7[1m]", label: "Opus 4.7 (1M context)", detail: "Legacy" },
         { value: "claude-opus-4-6", label: "Opus 4.6", detail: "Legacy" },
-      ];
-    case "antigravity":
-      // Real models from the Antigravity CLI (`agy models`). Effort is baked into
-      // the model variant (Low/Medium/High/Thinking), so there is no separate
-      // effort control. Values are passed verbatim to `agy --model`.
-      return [
-        { value: "Antigravity default", label: "Default" },
-        { value: "Gemini 3.1 Pro (High)", label: "Gemini 3.1 Pro", detail: "High" },
-        { value: "Gemini 3.1 Pro (Low)", label: "Gemini 3.1 Pro", detail: "Low" },
-        { value: "Gemini 3.5 Flash (High)", label: "Gemini 3.5 Flash", detail: "High" },
-        { value: "Gemini 3.5 Flash (Medium)", label: "Gemini 3.5 Flash", detail: "Medium" },
-        { value: "Gemini 3.5 Flash (Low)", label: "Gemini 3.5 Flash", detail: "Low" },
-        { value: "Claude Sonnet 4.6 (Thinking)", label: "Claude Sonnet 4.6", detail: "Thinking" },
-        { value: "Claude Opus 4.6 (Thinking)", label: "Claude Opus 4.6", detail: "Thinking" },
-        { value: "GPT-OSS 120B (Medium)", label: "GPT-OSS 120B", detail: "Medium" },
       ];
     case "gemini":
       // "Gemini default" passes no --model (gemini's own default, gemini-3-flash);
@@ -2233,7 +2202,7 @@ function runtimeSourceForAgent(agentId: string): AgentChatAgentRuntimeSource {
   }
 
   const providerAgent =
-    agentId === "claude" || agentId === "antigravity" || agentId === "gemini"
+    agentId === "claude" || agentId === "gemini" || agentId === "opencode"
       ? agentId
       : "codex";
   return {
@@ -2246,8 +2215,6 @@ export function defaultModelValueForAgent(agentId: string): string {
   switch (agentId) {
     case "claude":
       return "Claude default";
-    case "antigravity":
-      return "Antigravity default";
     case "gemini":
       return "Gemini default";
     case "opencode":
@@ -2276,8 +2243,6 @@ function modelRowIdForAgent(agentId: string): string {
   switch (agentId) {
     case "claude":
       return "claude-default";
-    case "antigravity":
-      return "antigravity-default";
     default:
       return "gpt-55-high";
   }

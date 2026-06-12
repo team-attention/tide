@@ -61,7 +61,3 @@ test("returns undefined when there is no usage in the transcript", () => {
   assert.equal(parseProviderUsage("not json\n{}", "codex"), undefined);
   assert.equal(parseProviderUsage("", "claude"), undefined);
 });
-
-test("antigravity has no transcript usage channel yet", () => {
-  assert.equal(parseProviderUsage("{}", "antigravity"), undefined);
-});

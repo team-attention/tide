@@ -838,7 +838,7 @@ export function createLiveAgentSessionEventProjector(input: {
   // emits `agentRuntime.usageChanged` when it differs from the last emit. A no-op
   // when the transcript is missing or carries no usage yet.
   // Uniform turn settle. Every Agent Integration produces an AgentTurnOutcome from
-  // its OWN signals (claude/codex hook payload, codex rollout, antigravity
+  // its OWN signals (claude/codex hook payload, codex rollout
   // transcript); this shared path applies it identically — the provider-specific
   // "circus" lives in the adapters, not here. `finalMessage` becomes the agent
   // answer block; `notice` (rate limit / out of credits / empty / error) becomes a

@@ -3,7 +3,7 @@ import os from "node:os";
 
 // A packaged macOS/Linux app launched from Finder/Dock does NOT inherit the
 // user's login-shell PATH — it only gets the minimal launchd PATH
-// (/usr/bin:/bin:/usr/sbin:/sbin). Provider CLIs (codex, claude, agy) and their
+// (/usr/bin:/bin:/usr/sbin:/sbin). Provider CLIs (codex, claude, gemini) and their
 // helpers live in places like ~/.local/bin, /opt/homebrew/bin, or a provider's
 // own standalone bin, none of which are on that minimal PATH. `which <cli>` then
 // fails, the Agent Runtime never finds an executable, and no provider ever spawns.
@@ -55,7 +55,7 @@ export function resolveAugmentedPath(deps: ResolveAugmentedPathDeps = {}): strin
   return Array.from(new Set(merged)).join(":");
 }
 
-// The v1 "Tide Terminal" (Rust) app ships wrapper scripts for codex/claude/agy in
+// The v1 "Tide Terminal" (Rust) app ships wrapper scripts for codex/claude in
 // its bundle (…/crates/tide-app/resources/bin). When both products are installed
 // that dir is on the login-shell PATH, so v2 would resolve its agents to v1's
 // wrappers instead of the real CLIs — they are SEPARATE products and must never

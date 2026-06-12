@@ -62,7 +62,7 @@ import {
 } from "./workbench-split-tree.ts";
 export type { WorkbenchSplitNode, DropZone, SplitDirection };
 
-export type ProductShellAgentIdentity = "codex" | "claude" | "antigravity" | "gemini" | "opencode" | "openai_api";
+export type ProductShellAgentIdentity = "codex" | "claude" | "gemini" | "opencode" | "openai_api";
 
 export type ProductShellLeftUiMenu =
   | { kind: "thread"; threadId: string }
@@ -510,7 +510,7 @@ const initialThreads: ProductShellThread[] = [
   {
     threadId: "thread-visual",
     title: "Desktop shell visual pass",
-    agentId: "antigravity",
+    agentId: "gemini",
     time: "2h",
     scope: { kind: "project", projectId: "slice", cwd: "/Users/you/Workspace/slice" },
     workbenchPanes: [
@@ -3010,8 +3010,8 @@ function previewBlocksForThread(thread: ProductShellThread): AgentChatBlock[] {
 function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
   if (
     agentId === "claude" ||
-    agentId === "antigravity" ||
     agentId === "gemini" ||
+    agentId === "opencode" ||
     agentId === "openai_api"
   ) {
     return agentId;

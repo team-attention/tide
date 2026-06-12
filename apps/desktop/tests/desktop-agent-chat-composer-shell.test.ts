@@ -1039,14 +1039,14 @@ test("codex_reasoning_effort_row_sets_launch_option_and_updates_chip_label", () 
   assert.equal(view.composer.modelLabel, "GPT-5.5 · High");
 });
 
-test("selecting_antigravity_updates_visible_model_and_permission_defaults_away_from_codex_gpt", () => {
-  const selected = selectComposerAgent(createAgentChatShellState(), "antigravity").state;
+test("selecting_gemini_updates_visible_model_and_permission_defaults_away_from_codex_gpt", () => {
+  const selected = selectComposerAgent(createAgentChatShellState(), "gemini").state;
   const view = createAgentChatShellViewModel(selected);
 
-  assert.equal(selected.composer.startOptions.agentBinding.agentId, "antigravity");
+  assert.equal(selected.composer.startOptions.agentBinding.agentId, "gemini");
   assert.equal(selected.composer.startOptions.agentBinding.runtimeSource?.kind, "provider_cli");
   assert.equal(view.composer.modelLabel, "Default");
-  assert.equal(view.composer.permissionLabel, "Ask for approval");
+  assert.equal(view.composer.permissionLabel, "Ask permissions");
   assert.notEqual(view.composer.modelLabel, "GPT-5.5 High");
 });
 
@@ -1075,10 +1075,10 @@ test("follow_up_composer_model_label_uses_active_thread_launch_options", () => {
       thread: {
         ...thread,
         agentBinding: {
-          agentId: "antigravity",
-          runtimeSource: { kind: "provider_cli", integrationId: "antigravity" },
+          agentId: "gemini",
+          runtimeSource: { kind: "provider_cli", integrationId: "gemini" },
         },
-        launchOptions: { model: "Antigravity default", permission: "default" },
+        launchOptions: { model: "Gemini default", permission: "default" },
       },
       blocks: [],
       runtimeState: "idle",
@@ -1088,7 +1088,7 @@ test("follow_up_composer_model_label_uses_active_thread_launch_options", () => {
 
   assert.equal(view.composer.mode, "follow_up");
   assert.equal(view.composer.modelLabel, "Default");
-  assert.equal(view.composer.permissionLabel, "Ask for approval");
+  assert.equal(view.composer.permissionLabel, "Ask permissions");
 });
 
 test("follow_up_composer_model_label_falls_back_to_active_agent_default", () => {
@@ -1106,8 +1106,8 @@ test("follow_up_composer_model_label_falls_back_to_active_agent_default", () => 
       thread: {
         ...thread,
         agentBinding: {
-          agentId: "antigravity",
-          runtimeSource: { kind: "provider_cli", integrationId: "antigravity" },
+          agentId: "gemini",
+          runtimeSource: { kind: "provider_cli", integrationId: "gemini" },
         },
       },
       blocks: [],
@@ -1117,7 +1117,7 @@ test("follow_up_composer_model_label_falls_back_to_active_agent_default", () => 
   const view = createAgentChatShellViewModel(hydrated);
 
   assert.equal(view.composer.modelLabel, "Default");
-  assert.equal(view.composer.permissionLabel, "Ask for approval");
+  assert.equal(view.composer.permissionLabel, "Ask permissions");
 });
 
 test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
@@ -1130,9 +1130,9 @@ test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
       "permission_menu",
     ).state,
   );
-  const antigravityHtml = renderShell(
+  const geminiHtml = renderShell(
     setComposerActiveSurface(
-      selectComposerAgent(createAgentChatShellState(), "antigravity").state,
+      selectComposerAgent(createAgentChatShellState(), "gemini").state,
       "permission_menu",
     ).state,
   );
@@ -1152,10 +1152,10 @@ test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
   assert.match(claudeHtml, /Accept edits/);
   assert.match(claudeHtml, /Bypass permissions/);
   assert.doesNotMatch(claudeHtml, /Approve for me/);
-  // Antigravity uses the same friendly shape.
-  assert.match(antigravityHtml, /Sandbox/);
-  assert.match(antigravityHtml, /Bypass permissions/);
-  assert.doesNotMatch(antigravityHtml, /Accept edits/);
+  // Gemini uses the same friendly shape (auto edits + bypass, no codex/claude values).
+  assert.match(geminiHtml, /Auto edits/);
+  assert.match(geminiHtml, /Bypass permissions/);
+  assert.doesNotMatch(geminiHtml, /Accept edits/);
   assert.match(openAiHtml, /Tide tool policy/);
   assert.doesNotMatch(openAiHtml, /workspace-write/);
   assert.doesNotMatch(openAiHtml, /Bypass permissions/);

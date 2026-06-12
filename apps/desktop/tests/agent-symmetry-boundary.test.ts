@@ -64,7 +64,6 @@ test("isProviderCliAgentId accepts provider CLIs and rejects the Tide API agent 
     assert.equal(isProviderCliAgentId(id), true, `${id} should be a provider CLI`);
   }
   assert.equal(isProviderCliAgentId("openai_api"), false);
-  assert.equal(isProviderCliAgentId("antigravity"), false);
   assert.equal(isProviderCliAgentId("bogus"), false);
 });
 

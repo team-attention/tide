@@ -634,13 +634,13 @@ test("agent_icons_use_deterministic_identity_palette", () => {
       null,
       createElement(AgentIdentityIcon, { agentId: "codex" }),
       createElement(AgentIdentityIcon, { agentId: "claude" }),
-      createElement(AgentIdentityIcon, { agentId: "antigravity" }),
+      createElement(AgentIdentityIcon, { agentId: "gemini" }),
     ),
   );
 
   assert.match(html, /data-agent-icon="codex"/);
   assert.match(html, /data-agent-icon="claude"/);
-  assert.match(html, /data-agent-icon="antigravity"/);
+  assert.match(html, /data-agent-icon="gemini"/);
 });
 
 test("renderer_entry_mounts_product_shell_not_bare_agent_chat", () => {
@@ -1657,7 +1657,7 @@ test("product_shell_ignores_thread_scoped_events_for_inactive_threads", () => {
         block: {
           blockId: "block-other-thread",
           threadId: "thread-other",
-          agentId: "antigravity",
+          agentId: "gemini",
           kind: "agent_message",
           role: "agent",
           status: "complete",
@@ -2324,16 +2324,16 @@ test("product_shell_gemini_selection_updates_start_command_launch_options", () =
   });
 });
 
-test("product_shell_thread_started_preserves_antigravity_model_label", () => {
+test("product_shell_thread_started_preserves_gemini_model_label", () => {
   const withAgentMenu = setProductShellComposerActiveSurface(createProductShellState(), "agent_menu");
   const selected = selectProductShellChoiceSurfaceRow(
     withAgentMenu,
     "agent_menu",
-    "antigravity",
+    "gemini",
   );
   const withDraft = updateProductShellComposerDraft(
     selected.state,
-    "Start Antigravity and keep its model source",
+    "Start Gemini and keep its model source",
   );
   const submitted = submitProductShellComposerDraft(withDraft);
 
@@ -2348,12 +2348,12 @@ test("product_shell_thread_started_preserves_antigravity_model_label", () => {
     payload: {
       thread: {
         threadId: newThreadId as string,
-        title: "Start Antigravity and keep its model source",
+        title: "Start Gemini and keep its model source",
         agentBinding: {
-          agentId: "antigravity",
+          agentId: "gemini",
           runtimeSource: {
             kind: "provider_cli",
-            integrationId: "antigravity",
+            integrationId: "gemini",
           },
         },
         scope: {
@@ -2362,7 +2362,7 @@ test("product_shell_thread_started_preserves_antigravity_model_label", () => {
           cwd: "/Users/you/Workspace/tide",
         },
         launchOptions: {
-          model: "Antigravity default",
+          model: "Gemini default",
           permission: "default",
           worktree: "current folder",
           branch: "main",
@@ -2383,13 +2383,13 @@ test("product_shell_thread_started_preserves_antigravity_model_label", () => {
   const view = createProductShellViewModel(started);
 
   assert.equal(view.activeThreadId, newThreadId);
-  assert.equal(view.agentChat.thread?.agentLabel, "Antigravity CLI");
+  assert.equal(view.agentChat.thread?.agentLabel, "Gemini CLI");
   assert.equal(view.agentChat.composer.mode, "follow_up");
   assert.equal(view.agentChat.composer.modelLabel, "Default");
-  assert.equal(view.agentChat.composer.permissionLabel, "Ask for approval");
+  assert.equal(view.agentChat.composer.permissionLabel, "Ask permissions");
   assert.notEqual(view.agentChat.composer.modelLabel, "GPT-5.5 High");
   assert.deepEqual(view.agentChat.composer.contextItems.map((item) => item.value), [
-    "Antigravity CLI",
+    "Gemini CLI",
     "tide",
     "current folder",
     "main",
@@ -2401,9 +2401,9 @@ test("product_shell_start_command_uses_contract_runtime_source_shape", () => {
   const selected = selectProductShellChoiceSurfaceRow(
     withAgentMenu,
     "agent_menu",
-    "antigravity",
+    "gemini",
   );
-  const withDraft = updateProductShellComposerDraft(selected.state, "Run Antigravity");
+  const withDraft = updateProductShellComposerDraft(selected.state, "Run Gemini");
   const submitted = submitProductShellComposerDraft(withDraft);
 
   assert.equal(submitted.command?.kind, "thread.start");

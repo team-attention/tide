@@ -267,7 +267,7 @@ function loadPreferredStartComposer(): PreferredStartComposer | null {
     }
     const parsed = JSON.parse(raw) as Partial<PreferredStartComposer>;
     const agentId = parsed.agentId;
-    if (agentId !== "codex" && agentId !== "claude" && agentId !== "antigravity" && agentId !== "openai_api") {
+    if (agentId !== "codex" && agentId !== "claude" && agentId !== "openai_api") {
       return null;
     }
     return {
@@ -1093,7 +1093,6 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     if (
       startAgentId !== "codex" &&
       startAgentId !== "claude" &&
-      startAgentId !== "antigravity" &&
       startAgentId !== "openai_api"
     ) {
       return;
@@ -2468,10 +2467,9 @@ export function fitColumnsToWidth(input: {
 }
 
 // Two-letter monogram per provider (Codex/Claude both start with C, so we use
-// a distinct 2-char code for each). Sourced from the agent descriptor registry;
-// antigravity is legacy (not a launchable descriptor agent) but still rendered.
+// a distinct 2-char code for each). Sourced from the agent descriptor registry.
 export function agentMonogram(agentId: ProductShellAgentIdentity): string {
-  return agentDescriptor(agentId)?.monogram ?? (agentId === "antigravity" ? "Ag" : "Co");
+  return agentDescriptor(agentId)?.monogram ?? "Co";
 }
 
 export function AgentIdentityIcon(props: { agentId: ProductShellAgentIdentity | string }): ReactElement {
@@ -5824,7 +5822,7 @@ function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
   if (
     agentId === "claude" ||
     agentId === "gemini" ||
-    agentId === "antigravity" ||
+    agentId === "opencode" ||
     agentId === "openai_api"
   ) {
     return agentId;
@@ -5833,5 +5831,5 @@ function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
 }
 
 function agentLabel(agentId: ProductShellAgentIdentity): string {
-  return agentDescriptor(agentId)?.displayName ?? (agentId === "antigravity" ? "Antigravity CLI" : "Codex CLI");
+  return agentDescriptor(agentId)?.displayName ?? "Codex CLI";
 }

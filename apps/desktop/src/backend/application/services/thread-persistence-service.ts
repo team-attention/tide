@@ -39,7 +39,6 @@ export interface ProviderSessionRefRecord {
   kind:
     | "codex_rollout"
     | "claude_transcript"
-    | "antigravity_conversation"
     | "gemini_session"
     | "opencode_session"
     | "provider_native";

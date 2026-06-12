@@ -2,9 +2,8 @@
 //
 // Discovers the real provider slash-commands and skills for a cwd by reading the
 // providers' command/skill files (no provider spawn). Covers Claude (.claude/
-// commands/*.md), Codex (.codex/skills/*/SKILL.md, surfaced via `$`), and
-// Antigravity (.gemini/commands/*.toml). The core is pure: filesystem access is
-// injected so it can be unit-tested with a fake fs.
+// commands/*.md) and Codex (.codex/skills/*/SKILL.md, surfaced via `$`). The core
+// is pure: filesystem access is injected so it can be unit-tested with a fake fs.
 
 export type CommandTrigger = "/" | "$";
 
@@ -13,7 +12,7 @@ export interface ProviderCommandSuggestion {
   description: string;
   trigger: CommandTrigger;
   source: "project" | "user" | "builtin";
-  agentId: "codex" | "claude" | "antigravity";
+  agentId: "codex" | "claude";
 }
 
 // Built-in slash commands per provider (version-static, so listed without
@@ -41,7 +40,6 @@ const BUILTIN_COMMANDS: Record<string, { name: string; description: string }[]> 
     { name: "mcp", description: "Show MCP server status" },
     { name: "status", description: "Show session status" },
   ],
-  antigravity: [{ name: "model", description: "Switch the model" }],
 };
 
 export interface CommandFs {
@@ -65,14 +63,6 @@ export function parseCodexSkill(dirName: string, content: string): { name: strin
   return {
     name: frontmatterField(content, "name") ?? dirName,
     description: frontmatterField(content, "description") ?? "",
-  };
-}
-
-// Antigravity command .toml: `description = "…"`; name is the filename.
-export function parseAntigravityCommand(fileName: string, content: string): { name: string; description: string } {
-  return {
-    name: stripExtension(fileName),
-    description: tomlString(content, "description") ?? "",
   };
 }
 
@@ -116,13 +106,6 @@ export function discoverProviderCommands(input: {
         const parsed = parseCodexSkill(skillDir, input.fs.readText(join(dir, skillDir, "SKILL.md")) ?? "");
         push({ ...parsed, trigger: "$", source, agentId: "codex" });
       }
-    } else if (input.agentId === "antigravity") {
-      const dir = join(root, ".gemini", "commands");
-      for (const file of input.fs.listFiles(dir)) {
-        if (!file.endsWith(".toml")) continue;
-        const parsed = parseAntigravityCommand(file, input.fs.readText(join(dir, file)) ?? "");
-        push({ ...parsed, trigger: "/", source, agentId: "antigravity" });
-      }
     }
   }
 
@@ -158,14 +141,6 @@ function frontmatterField(content: string, key: string): string | undefined {
 }
 
 // Reads `key = "value"` from TOML.
-function tomlString(content: string, key: string): string | undefined {
-  const line = content.match(new RegExp(`^${key}\\s*=\\s*(.+)$`, "m"));
-  if (line === null) {
-    return undefined;
-  }
-  return unquote(line[1].trim());
-}
-
 function unquote(value: string): string {
   const trimmed = value.trim().replace(/\s*#.*$/, "");
   if (

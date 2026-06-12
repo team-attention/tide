@@ -80,11 +80,9 @@ test("infra_live_backend_has_zero_provider_branches", () => {
     'agentId === "codex"',
     'agentId === "claude"',
     'agentId === "gemini"',
-    'agentId === "antigravity"',
     "emitCodexHistory",
     "emitClaudeHistory",
     "emitGeminiHistory",
-    "emitAntigravityHistory",
     "findRecentGeminiSessionPath",
   ]) {
     assert.equal(

@@ -6,7 +6,7 @@ import type { ProviderTrustPort } from "../../../application/ports/outbound/prov
 
 // Writes each provider's own trust store so the CLI treats the cwd as trusted on
 // next launch. Mirrors the readers in live-backend.ts (claude .claude.json,
-// codex config.toml, antigravity settings.json).
+// codex config.toml).
 //
 // codexOverlayHome is Tide's overlaid CODEX_HOME (the one codex actually launches
 // against). Its config.toml is a bootstrap-time SNAPSHOT of the real config's trust,
@@ -36,9 +36,6 @@ export function createNodeProviderTrustPort(
           case "codex":
             trustCodex(home, cwd, codexOverlayHome);
             break;
-          case "antigravity":
-            trustAntigravity(home, cwd);
-            break;
           default:
             return;
         }
@@ -67,18 +64,6 @@ function trustClaude(home: string, cwd: string): void {
   writeJson(path, state);
 }
 
-function trustAntigravity(home: string, cwd: string): void {
-  const path = join(home, ".gemini", "antigravity-cli", "settings.json");
-  const settings = readJson(path) ?? {};
-  const trusted = Array.isArray(settings.trustedWorkspaces)
-    ? settings.trustedWorkspaces.filter((entry: unknown) => typeof entry === "string")
-    : [];
-  if (!trusted.includes(cwd)) {
-    trusted.push(cwd);
-  }
-  settings.trustedWorkspaces = trusted;
-  writeJson(path, settings);
-}
 
 function trustCodex(home: string, cwd: string, overlayHome?: string): void {
   // Real config: readiness reads it, and it persists across bootstraps.

@@ -83,7 +83,7 @@ export interface ProviderHistoryFrame {
   payload: Record<string, unknown>;
   body: string;
   // True when this frame is the terminal agent message of a turn, for providers
-  // whose turn boundary is a transcript record (antigravity).
+  // whose turn boundary is a transcript record.
   turnComplete?: boolean;
 }
 
@@ -207,7 +207,7 @@ export interface AgentTurnNotice {
 
 // The normalized outcome of a finished turn, produced uniformly by every Agent
 // Integration from its own signals (claude/codex hook payload, codex rollout,
-// antigravity transcript). The shared runtime applies it identically: ingest
+// gemini session). The shared runtime applies it identically: ingest
 // `finalMessage` as the agent answer (deduped by content) and/or `notice` as an
 // error block, then settle the turn.
 export interface AgentTurnOutcome {

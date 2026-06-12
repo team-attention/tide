@@ -7,9 +7,9 @@ import { joinTextContent, parseJsonObject } from "../shared/provider-record-json
 // gemini history frame reader (single content source), so this never returns a
 // finalMessage.
 //
-// Turn boundary rule (mirrors antigravity): a `gemini` record carrying visible
-// content and NO toolCalls is the final answer of a turn. A mid-turn model step
-// (toolCalls present) must not settle the turn early.
+// Turn boundary rule: a `gemini` record carrying visible content and NO toolCalls
+// is the final answer of a turn. A mid-turn model step (toolCalls present) must
+// not settle the turn early.
 
 function geminiUserRecordMatches(
   record: Record<string, unknown> | undefined,

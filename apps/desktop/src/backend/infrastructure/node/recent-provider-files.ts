@@ -9,44 +9,6 @@ import { providerBootstrapArtifactsForHome } from "./provider-bootstrap-artifact
 // returning the most recent paths. Used to discover live/adopted provider sessions.
 // Extracted from live-backend.ts.
 
-export function recentAntigravityTranscripts(homeDir: string, sinceMs: number): string[] {
-  const brainDir = join(homeDir, ".gemini", "antigravity-cli", "brain");
-  let entries;
-  try {
-    entries = readdirSync(brainDir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
-  const transcriptPaths: { path: string; mtimeMs: number }[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-
-    const transcriptPath = join(
-      brainDir,
-      entry.name,
-      ".system_generated",
-      "logs",
-      "transcript.jsonl",
-    );
-    try {
-      const stat = statSync(transcriptPath);
-      if (stat.mtimeMs >= sinceMs) {
-        transcriptPaths.push({ path: transcriptPath, mtimeMs: stat.mtimeMs });
-      }
-    } catch {
-      // Ignore conversations without readable transcript evidence.
-    }
-  }
-
-  return transcriptPaths
-    .sort((left, right) => left.mtimeMs - right.mtimeMs)
-    .slice(-8)
-    .map((entry) => entry.path);
-}
-
 export function recentCodexRollouts(homeDir: string, sinceMs: number): string[] {
   const realSessionsDir = join(homeDir, ".codex", "sessions");
   const overlaySessionsDir = join(

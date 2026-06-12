@@ -4,7 +4,6 @@ import test from "node:test";
 
 import {
   discoverProviderCommands,
-  parseAntigravityCommand,
   parseClaudeCommand,
   parseCodexSkill,
   type CommandFs,
@@ -23,14 +22,6 @@ test("codex_skill_md_parses_name_and_description", () => {
   assert.deepEqual(parseCodexSkill("battleship-ui-ux", md), {
     name: "battleship-ui-ux",
     description: "Board-first UI/UX guidance.",
-  });
-});
-
-test("antigravity_toml_parses_name_and_description", () => {
-  const toml = '# Managed by krow init\n\ndescription = "Run actionable engineering work."\n\nprompt = """x"""';
-  assert.deepEqual(parseAntigravityCommand("work.toml", toml), {
-    name: "work",
-    description: "Run actionable engineering work.",
   });
 });
 
@@ -74,7 +65,7 @@ test("discovery_tags_trigger_slash_for_commands_and_dollar_for_skills", () => {
 
 test("discovery_includes_builtin_commands_like_model", () => {
   const fs: CommandFs = { listFiles: () => [], listDirs: () => [], readText: () => undefined };
-  for (const agentId of ["claude", "codex", "antigravity"]) {
+  for (const agentId of ["claude", "codex"]) {
     const out = discoverProviderCommands({ cwd: "/p", homeDir: "/h", agentId, fs });
     assert.ok(out.some((c) => c.name === "model" && c.trigger === "/"), `${agentId} has /model`);
   }

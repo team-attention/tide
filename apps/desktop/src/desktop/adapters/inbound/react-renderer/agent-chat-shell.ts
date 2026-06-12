@@ -1588,7 +1588,7 @@ function editedPathsFromArgs(toolName: string, body: string): string[] {
     }
     if (paths.length > 0) return paths;
   }
-  // claude/antigravity edit tools carry a JSON args object with a path field.
+  // claude edit tools carry a JSON args object with a path field.
   const trimmed = body.trim();
   if (trimmed.startsWith("{")) {
     try {
@@ -2328,8 +2328,6 @@ function agentMonogramFor(agentId: string): string {
       return "Ge";
     case "opencode":
       return "Oc";
-    case "antigravity":
-      return "Ag";
     case "openai_api":
       return "AI";
     default:

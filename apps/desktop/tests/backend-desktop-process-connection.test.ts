@@ -342,10 +342,10 @@ test("thread_hydrate_contract_omits_undefined_provider_session_ref_fields", asyn
     initialThreads: [
       threadSeed("thread-provider-ref", {
         agentBinding: {
-          agentId: "antigravity",
-          runtimeSource: { kind: "provider_cli", integrationId: "antigravity" },
+          agentId: "gemini",
+          runtimeSource: { kind: "provider_cli", integrationId: "gemini" },
           providerSessionRef: {
-            kind: "antigravity_conversation",
+            kind: "gemini_session",
             value: "conversation-1",
             transcriptPath: undefined,
             logPath: undefined,
@@ -367,7 +367,7 @@ test("thread_hydrate_contract_omits_undefined_provider_session_ref_fields", asyn
   assertBackendEventsAreContractEnvelopes(events);
   const ref = events[1].payload.thread.agentBinding.providerSessionRef;
   assert.deepEqual(ref, {
-    kind: "antigravity_conversation",
+    kind: "gemini_session",
     value: "conversation-1",
   });
 });
