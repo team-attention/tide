@@ -2,6 +2,7 @@ mod chrome;
 mod cursor;
 mod grid;
 pub(crate) mod header;
+pub(crate) mod header_status;
 mod hover;
 mod ime;
 pub(crate) mod launcher;
