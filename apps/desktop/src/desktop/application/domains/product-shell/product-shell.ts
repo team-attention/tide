@@ -79,3 +79,5 @@ export * from "./state/workbench.ts";
 export * from "./state/file-tree.ts";
 export * from "./state/composer-bridge.ts";
 export * from "./state/events.ts";
+export * from "./state/store.ts";
+export * from "./state/create-selector.ts";

@@ -26,7 +26,7 @@ function createFileTreeSkeleton(): ReactElement {
 }
 
 export function createFileTreeColumn(
-  viewModel: ProductShellViewModel,
+  viewModel: Pick<ProductShellViewModel, "fileTree">,
   handlers: ProductShellHandlers,
 ): ReactElement {
   return createElement(

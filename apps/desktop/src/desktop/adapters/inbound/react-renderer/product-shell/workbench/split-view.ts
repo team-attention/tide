@@ -1,4 +1,4 @@
-import type { DropZone, ProductShellViewModel, SplitDirection, WorkbenchSplitNode } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { DropZone, ProductShellWorkbenchViewModel, SplitDirection, WorkbenchSplitNode } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
@@ -61,7 +61,7 @@ function dropPreviewRect(
 
 export function WorkbenchSplitView(props: {
   tree: WorkbenchSplitNode;
-  viewModel: ProductShellViewModel;
+  viewModel: ProductShellWorkbenchViewModel;
   handlers: ProductShellHandlers;
   paneIcon: (kind: string) => ReactElement;
 }): ReactElement {

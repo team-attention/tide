@@ -1,4 +1,4 @@
-import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellWorkbenchViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
@@ -10,7 +10,7 @@ import { WorkbenchLauncherPane, emptyWorkbenchLauncherPane } from "./launcher-pa
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createWorkbenchColumn(
-  viewModel: ProductShellViewModel,
+  viewModel: ProductShellWorkbenchViewModel,
   handlers: ProductShellHandlers,
 ): ReactElement {
   const tabs = viewModel.appChrome.workbenchTabStrip.visibleTabs;

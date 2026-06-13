@@ -543,6 +543,21 @@ export function applyProductShellThreadEvent(
       )
     : [shellThread, ...state.threads];
 
+  // The file tree belongs to the ACTIVE thread's view. An already-loaded tree for the
+  // SAME directory as the started/hydrated thread is not stale: the New Thread page
+  // and the thread it starts share a cwd, so sending must not throw the tree away and
+  // flash (or, if the agent start fails, stick on) a skeleton while a redundant reload
+  // — coupled to agent startup — runs. A tree for a different cwd is stale and cleared.
+  const isActiveThread = threadSummary.threadId === state.activeThreadId;
+  const startedCwd =
+    threadSummary.scope.kind === "project"
+      ? threadSummary.scope.cwd
+      : threadSummary.scope.scratchCwd;
+  const sameDirTree =
+    state.fileTree !== null &&
+    state.fileTree.root !== undefined &&
+    normalizeCwd(state.fileTree.root) === normalizeCwd(startedCwd);
+
   return {
     ...state,
     // Focus is owned by user actions (click / new-thread set activeThreadId
@@ -558,9 +573,18 @@ export function applyProductShellThreadEvent(
     // clears the composer itself). Clobbering it lost the composer on switch-back.
     agentChat: state.agentChat,
     workbenchOpen: shellThread.workbenchPanes.some((pane) => pane.visible),
-    fileTree:
-      payload.fileTree === undefined
-        ? null
-        : productShellFileTreeFromPayload(payload.fileTree),
+    fileTree: !isActiveThread
+      ? state.fileTree
+      : payload.fileTree !== undefined
+        ? productShellFileTreeFromPayload(payload.fileTree)
+        : sameDirTree
+          ? state.fileTree
+          : null,
   };
+}
+
+// File-tree roots and thread cwds are absolute paths from the same source; normalize a
+// trailing slash before comparing so "/repo" and "/repo/" still match.
+function normalizeCwd(cwd: string): string {
+  return cwd.replace(/\/+$/, "");
 }

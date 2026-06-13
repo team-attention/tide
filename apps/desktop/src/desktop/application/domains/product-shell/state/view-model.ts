@@ -10,11 +10,273 @@ import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-stat
 import { cloneProductShellFileTree, fileTreePathHasCollapsedAncestor } from "./file-tree.ts";
 import { agentBindingForShellAgent, cloneLaunchOptions } from "./start.ts";
 import { shellTimestamp } from "./create.ts";
+import { createSelectorFor } from "./create-selector.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
+
+const shellSelector = createSelectorFor<ProductShellState>();
+
+// Memoized per-area view-model selectors (spec: desktop-product-shell-render-isolation).
+// Each returns a reference-stable slice so a column subscribing to it re-renders only
+// when ITS inputs change — a chat token (state.agentChat) never invalidates the
+// workbench/file-tree slices, so the editor isn't reconfigured. createProductShellViewModel
+// composes these, so the whole-VM read stays cheap too (unchanged slices are reused).
+//
+// Each combiner reconstructs a minimal state object and runs the ORIGINAL logic, so the
+// output is byte-identical to the pre-decomposition view model (pinned by the static
+// render tests) — only the memoization boundary is new.
+
+export interface ProductShellThreadListViewModel {
+  pinnedThreads: ProductShellThreadView[];
+  pinnedProjects: ProductShellProjectGroupView[];
+  projectGroups: ProductShellProjectGroupView[];
+  scratchThreads: ProductShellThreadView[];
+  flatThreads: ProductShellThreadView[];
+}
+
+export const selectThreadListViewModel = shellSelector(
+  [
+    (state: ProductShellState) => state.threads,
+    (state: ProductShellState) => state.searchQuery,
+    (state: ProductShellState) => state.listSettings,
+    (state: ProductShellState) => state.registeredProjects,
+    (state: ProductShellState) => state.projects,
+    (state: ProductShellState) => state.collapsedProjectIds,
+    (state: ProductShellState) => state.pinnedProjectIds,
+    (state: ProductShellState) => state.renamingProjectId,
+    (state: ProductShellState) => state.creatingWorktreeForProjectId,
+    (state: ProductShellState) => state.leftRailMenu,
+    (state: ProductShellState) => state.activeThreadId,
+    (state: ProductShellState) => state.archiveConfirmThreadId,
+    (state: ProductShellState) => state.renamingThreadId,
+  ],
+  (
+    threads,
+    searchQuery,
+    listSettings,
+    registeredProjects,
+    projects,
+    collapsedProjectIds,
+    pinnedProjectIds,
+    renamingProjectId,
+    creatingWorktreeForProjectId,
+    leftRailMenu,
+    activeThreadId,
+    archiveConfirmThreadId,
+    renamingThreadId,
+  ): ProductShellThreadListViewModel => {
+    const view = {
+      threads,
+      searchQuery,
+      listSettings,
+      registeredProjects,
+      projects,
+      collapsedProjectIds,
+      pinnedProjectIds,
+      renamingProjectId,
+      creatingWorktreeForProjectId,
+      leftRailMenu,
+      activeThreadId,
+      archiveConfirmThreadId,
+      renamingThreadId,
+    } as ProductShellState;
+    return buildThreadListViewModel(view);
+  },
+);
+
+export const selectAgentChatViewModel = shellSelector(
+  [
+    (state: ProductShellState) => state.agentChat,
+    (state: ProductShellState) => state.registeredProjects,
+    (state: ProductShellState) => state.projects,
+    (state: ProductShellState) => state.gitBranches,
+    (state: ProductShellState) => state.gitWorktrees,
+    (state: ProductShellState) => state.providerCommands,
+  ],
+  (agentChat, registeredProjects, projects, gitBranches, gitWorktrees, providerCommands) =>
+    createAgentChatShellViewModel(
+      agentChatWithProjects({
+        agentChat,
+        registeredProjects,
+        projects,
+        gitBranches,
+        gitWorktrees,
+        providerCommands,
+      } as ProductShellState),
+    ),
+);
+
+export interface ProductShellWorkbenchViewModel {
+  appChrome: ProductShellViewModel["appChrome"];
+  editorDrafts: ProductShellViewModel["editorDrafts"];
+  editorPicker: ProductShellViewModel["editorPicker"];
+  workbenchLayoutMode: ProductShellViewModel["workbenchLayoutMode"];
+  workbenchLayoutTree: ProductShellViewModel["workbenchLayoutTree"];
+  workbenchFullscreen: ProductShellViewModel["workbenchFullscreen"];
+}
+
+export const selectWorkbenchViewModel = shellSelector(
+  [
+    (state: ProductShellState) => state.appChrome,
+    (state: ProductShellState) => state.activeThreadId,
+    (state: ProductShellState) => state.startPageFile,
+    (state: ProductShellState) => state.editorDrafts,
+    (state: ProductShellState) => state.workbenchLayoutTree,
+    (state: ProductShellState) => state.workbenchLayoutMode,
+    (state: ProductShellState) => state.workbenchFullscreen,
+    (state: ProductShellState) => state.fileTree,
+    (state: ProductShellState) => state.editorPickerFilter,
+  ],
+  (
+    appChrome,
+    activeThreadId,
+    startPageFile,
+    editorDrafts,
+    workbenchLayoutTree,
+    workbenchLayoutMode,
+    workbenchFullscreen,
+    fileTree,
+    editorPickerFilter,
+  ): ProductShellWorkbenchViewModel => {
+    const startFile = activeThreadId === null ? startPageFile : null;
+    const appChromeForView =
+      startFile === null
+        ? appChrome
+        : {
+            ...appChrome,
+            workbenchPanes: [startFileEditorPane(startFile)],
+            activeWorkbenchPaneId: START_FILE_PANE_ID,
+          };
+    return {
+      appChrome: createAppChromeViewModel(appChromeForView),
+      workbenchLayoutMode,
+      workbenchFullscreen,
+      // Layout tree reconciles against the REAL panes (not the start-file-adjusted
+      // view), matching the pre-decomposition behavior.
+      workbenchLayoutTree: reconcileTree(
+        workbenchLayoutTree,
+        appChrome.workbenchPanes.filter((pane) => pane.visible).map((pane) => pane.paneId),
+      ),
+      editorPicker: createEditorPickerView({ editorPickerFilter, fileTree } as ProductShellState),
+      editorDrafts:
+        startFile === null
+          ? editorDrafts
+          : { ...editorDrafts, [START_FILE_PANE_ID]: startFileEditorDraft(startFile) },
+    };
+  },
+);
+
+export const selectFileTreeViewModel = shellSelector(
+  [
+    (state: ProductShellState) => state.fileTree,
+    (state: ProductShellState) => state.expandedFolderPaths,
+    (state: ProductShellState) => state.activeThreadId,
+    (state: ProductShellState) => state.threads,
+  ],
+  (fileTree, expandedFolderPaths, activeThreadId, threads) =>
+    createFileTreeView({ fileTree, expandedFolderPaths, activeThreadId, threads } as ProductShellState),
+);
+
+// The Left Rail reads the thread list plus a few scalars. Composing the memoized
+// thread-list selector keeps the rail stable while only chat/workbench change.
+export type ProductShellLeftRailViewModel = ProductShellThreadListViewModel &
+  Pick<ProductShellViewModel, "listSettings" | "searchActive" | "searchQuery" | "threadsLoaded">;
+
+export const selectLeftRailViewModel = shellSelector(
+  [
+    selectThreadListViewModel,
+    (state: ProductShellState) => state.listSettings,
+    (state: ProductShellState) => state.searchActive,
+    (state: ProductShellState) => state.searchQuery,
+    (state: ProductShellState) => state.threadsLoaded,
+  ],
+  (threadList, listSettings, searchActive, searchQuery, threadsLoaded): ProductShellLeftRailViewModel => ({
+    ...threadList,
+    listSettings,
+    searchActive,
+    searchQuery,
+    threadsLoaded,
+  }),
+);
+
+// The Chat column reads the agent chat plus the thread switcher's flat/pinned/project
+// lists (and the rail-open flag for the toggle). A streaming token changes agentChat —
+// and so this slice — but never the workbench/file-tree slices.
+export type ProductShellChatColumnViewModel = Pick<
+  ProductShellViewModel,
+  "agentChat" | "flatThreads" | "pinnedThreads" | "projectGroups" | "leftRailOpen"
+>;
+
+export const selectChatColumnViewModel = shellSelector(
+  [
+    selectAgentChatViewModel,
+    selectThreadListViewModel,
+    (state: ProductShellState) => state.leftRailOpen,
+  ],
+  (agentChat, threadList, leftRailOpen): ProductShellChatColumnViewModel => ({
+    agentChat,
+    flatThreads: threadList.flatThreads,
+    pinnedThreads: threadList.pinnedThreads,
+    projectGroups: threadList.projectGroups,
+    leftRailOpen,
+  }),
+);
+
+const selectBackgroundBrowserPanes = shellSelector(
+  [
+    (state: ProductShellState) => state.threads,
+    (state: ProductShellState) => state.activeThreadId,
+    (state: ProductShellState) => state.workbenchOpen,
+    (state: ProductShellState) => state.appChrome.activeWorkbenchPaneId,
+  ],
+  (threads, activeThreadId, workbenchOpen, activeWorkbenchPaneId) =>
+    deriveBackgroundBrowserPanes({
+      threads,
+      activeThreadId,
+      workbenchOpen,
+      appChrome: { activeWorkbenchPaneId },
+    }),
+);
 
 export function createProductShellViewModel(
   state: ProductShellState,
 ): ProductShellViewModel {
+  // Composed from the memoized per-area selectors above: each slice keeps its reference
+  // while its own inputs are unchanged, so this whole-VM read is cheap AND a column
+  // subscribing to one selector re-renders independently of the others.
+  const threadList = selectThreadListViewModel(state);
+  const workbench = selectWorkbenchViewModel(state);
+  return {
+    activeThreadId: state.activeThreadId,
+    leftRailOpen: state.leftRailOpen,
+    threadsLoaded: state.threadsLoaded,
+    workbenchOpen: state.workbenchOpen,
+    workbenchFullscreen: workbench.workbenchFullscreen,
+    workbenchLayoutMode: workbench.workbenchLayoutMode,
+    workbenchLayoutTree: workbench.workbenchLayoutTree,
+    fileTreeOpen: state.fileTreeOpen,
+    searchQuery: state.searchQuery,
+    searchActive: state.searchActive,
+    pinnedThreads: threadList.pinnedThreads,
+    pinnedProjects: threadList.pinnedProjects,
+    projectGroups: threadList.projectGroups,
+    scratchThreads: threadList.scratchThreads,
+    listSettings: state.listSettings,
+    worktreeSettings: state.worktreeSettings,
+    settingsOpen: state.settingsOpen,
+    flatThreads: threadList.flatThreads,
+    agentChat: selectAgentChatViewModel(state),
+    appChrome: workbench.appChrome,
+    fileTree: selectFileTreeViewModel(state),
+    contentSearch: state.contentSearch,
+    editorPicker: workbench.editorPicker,
+    editorDrafts: workbench.editorDrafts,
+    backgroundBrowserPanes: selectBackgroundBrowserPanes(state),
+  };
+}
+
+// Lifted out of createProductShellViewModel so selectThreadListViewModel can run the
+// EXACT original Left-Rail thread-list logic (output pinned by the static render tests).
+function buildThreadListViewModel(state: ProductShellState): ProductShellThreadListViewModel {
   const query = state.searchQuery.trim().toLowerCase();
   const matchesSearch = (thread: ProductShellThread): boolean =>
     query.length === 0 || thread.title.toLowerCase().includes(query);
@@ -76,32 +338,7 @@ export function createProductShellViewModel(
   // Worktree Projects folded into a repo no longer appear as their own group.
   const topLevelProjects = projects.filter((project) => !worktreeRemap.has(project.projectId));
 
-  // Start (New Thread) page: the open file has no thread-bound Workbench pane, so
-  // synthesize one read/write editor pane from startPageFile and render it through
-  // the normal Workbench column (spec: start-page-file-viewer).
-  const startFile = state.activeThreadId === null ? state.startPageFile : null;
-  const appChromeForView =
-    startFile === null
-      ? state.appChrome
-      : {
-          ...state.appChrome,
-          workbenchPanes: [startFileEditorPane(startFile)],
-          activeWorkbenchPaneId: START_FILE_PANE_ID,
-        };
   return {
-    activeThreadId: state.activeThreadId,
-    leftRailOpen: state.leftRailOpen,
-    threadsLoaded: state.threadsLoaded,
-    workbenchOpen: state.workbenchOpen,
-    workbenchFullscreen: state.workbenchFullscreen,
-    workbenchLayoutMode: state.workbenchLayoutMode,
-    workbenchLayoutTree: reconcileTree(
-      state.workbenchLayoutTree,
-      state.appChrome.workbenchPanes.filter((pane) => pane.visible).map((pane) => pane.paneId),
-    ),
-    fileTreeOpen: state.fileTreeOpen,
-    searchQuery: state.searchQuery,
-    searchActive: state.searchActive,
     pinnedThreads: visibleThreads
       .filter((thread) => thread.pinned)
       .map((thread) => toThreadView(thread, state)),
@@ -118,23 +355,8 @@ export function createProductShellViewModel(
     scratchThreads: visibleThreads
       .filter((thread) => thread.scope.kind === "scratch")
       .map((thread) => toThreadView(thread, state)),
-    listSettings: state.listSettings,
-    worktreeSettings: state.worktreeSettings,
-    settingsOpen: state.settingsOpen,
     // "thread" group mode: one flat, already-sorted list of every visible thread.
     flatThreads: visibleThreads.map((thread) => toThreadView(thread, state)),
-    agentChat: createAgentChatShellViewModel(agentChatWithProjects(state)),
-    appChrome: createAppChromeViewModel(appChromeForView),
-    fileTree: createFileTreeView(state),
-    contentSearch: state.contentSearch,
-    editorPicker: createEditorPickerView(state),
-    editorDrafts:
-      startFile === null
-        ? state.editorDrafts
-        : { ...state.editorDrafts, [START_FILE_PANE_ID]: startFileEditorDraft(startFile) },
-    // Visible Browser Panes that need an offscreen live <webview> so a background
-    // agent can drive its own Browser Pane (observe / act) without a visible view.
-    backgroundBrowserPanes: deriveBackgroundBrowserPanes(state),
   };
 }
 

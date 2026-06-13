@@ -1,4 +1,4 @@
-import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellChatColumnViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
@@ -9,7 +9,7 @@ import { AgentChatShell } from "../../agent-chat/agent-chat.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createAgentChatColumn(
-  viewModel: ProductShellViewModel,
+  viewModel: ProductShellChatColumnViewModel,
   handlers: ProductShellHandlers,
 ): ReactElement {
   const title = viewModel.agentChat.thread?.title ?? "New Thread";

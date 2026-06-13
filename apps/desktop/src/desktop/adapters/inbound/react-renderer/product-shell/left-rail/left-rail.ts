@@ -1,4 +1,4 @@
-import type { ProductShellLeftRailMenu, ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellLeftRailMenu, ProductShellLeftRailViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import { createElement } from "react";
 import type { ReactElement } from "react";
@@ -13,7 +13,7 @@ import { createProjectSection } from "./project-section.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createLeftRail(
-  viewModel: ProductShellViewModel,
+  viewModel: ProductShellLeftRailViewModel,
   handlers: ProductShellHandlers,
   contextMenu: { menu: ProductShellLeftRailMenu | null; anchor: MenuAnchorRect | null },
 ): ReactElement {

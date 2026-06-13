@@ -69,6 +69,28 @@ async function dump(page, label) {
   const tokenCount = await page.locator(".workbench-editor-cm .cm-content [class*='tok-']").count();
   check("themed tok-* syntax tokens render", tokenCount > 20, `${tokenCount} tokens`);
 
+  // 1b. Render isolation (spec: desktop-product-shell-render-isolation): typing in the
+  // composer re-renders the shell on every keystroke. With per-slice subscriptions the
+  // workbench column bails, so the CodeMirror editor is NOT reconfigured and keeps its
+  // tok-* highlighting. Before the redesign this churn dropped highlighting mid-stream.
+  const composer = page.locator(".composer-shell__input").first();
+  if (await composer.count()) {
+    await composer.click();
+    await page.keyboard.type("render isolation probe — editor must stay highlighted", { delay: 15 });
+    await page.waitForTimeout(300);
+    const tokensWhileTyping = await page
+      .locator(".workbench-editor-cm .cm-content [class*='tok-']")
+      .count();
+    check(
+      "editor keeps tok-* highlighting while the composer re-renders the shell",
+      tokensWhileTyping > 20,
+      `${tokensWhileTyping} tokens while typing`,
+    );
+    await composer.fill("");
+  } else {
+    check("editor keeps tok-* highlighting while the composer re-renders the shell", false, "no composer input");
+  }
+
   // 2. Occurrence highlighting: put the caret on an identifier, expect marks.
   const identifier = page.locator(".workbench-editor-cm .cm-content .tok-variableName").first();
   if (await identifier.count()) {

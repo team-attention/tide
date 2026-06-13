@@ -13,14 +13,12 @@ import { WorktreeNameInput, makeWorktreeHash } from "./dialogs/worktree-name-inp
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
 import { QuickOpenPalette } from "./search/quick-open.ts";
 import type { QuickOpenFile } from "./search/quick-open.ts";
-import { createLeftRail } from "./left-rail/left-rail.ts";
-import { createAgentChatColumn } from "./chat-column/chat-column.ts";
-import { createWorkbenchColumn } from "./workbench/workbench.ts";
-import { createFileTreeColumn } from "./file-tree/file-tree.ts";
 import { createWindowChromeToggles } from "./chrome/chrome.ts";
 import { BackgroundBrowserHost } from "./workbench/browser-pane.ts";
 import { ContentSearchPanel } from "./search/content-search.ts";
 import { createElement, Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
+import { ProductShellStoreProvider, useShellStore, useStableHandlers } from "./store-context.ts";
+import { AgentChatColumnView, FileTreeColumnView, LeftRailColumnView, WorkbenchColumnView } from "./product-shell-columns.ts";
 
 import {
   Archive,
@@ -217,7 +215,8 @@ import {
 } from "../support/theme.ts";
 
 export function TideProductShell(props: TideProductShellProps): ReactElement {
-  const [shellState, setShellState] = useState(() => {
+  // External store: columns subscribe per-slice; root keeps whole-state read (spec: render-isolation).
+  const { store, shellState, setShellState } = useShellStore(() => {
     // Apply the remembered agent/model BEFORE the first Start Composer is built,
     // so a fresh launch already shows the user's last choice.
     setPreferredStartComposer(loadPreferredStartComposer());
@@ -623,10 +622,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             activated = true;
           }
         }
-        // When a thread becomes active (started/hydrated) with the FileTree shown,
-        // populate it. refresh_file_tree is idempotent, so one dispatch per batch
+        // When a thread becomes active (started/hydrated) with the FileTree shown but
+        // no tree loaded yet, populate it. A tree carried over from the New Thread page
+        // (same cwd) is kept by the reducer, so the `fileTree === null` check skips the
+        // redundant reload. refresh_file_tree is idempotent, so one dispatch per batch
         // is enough even if several activations coalesced.
-        if (activated && next.fileTreeOpen && next.activeThreadId) {
+        if (activated && next.fileTreeOpen && next.activeThreadId && next.fileTree === null) {
           dispatchBackendCommand({
             kind: "workbench.command",
             payload: {
@@ -691,9 +692,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       unsubscribe?.();
     };
   }, [props.onBackendEvent]);
-  // Deriving the view model sorts threads, clones the file tree, and builds project
-  // groups — too expensive to redo when only transient UI state (column widths during
-  // a resize drag, menu anchor, window width) changes. Memoize it on shellState.
+  // Composed from the memoized per-area selectors; memoize on shellState so a transient
+  // UI change (column-width drag, menu anchor) doesn't rebuild it for the chrome/overlays.
   const viewModel = useMemo(() => createProductShellViewModel(shellState), [shellState]);
   const applyBackendEvents = (events: AgentChatBackendEvent[] | undefined) => {
     if (events === undefined || events.length === 0) {
@@ -728,6 +728,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     ...createEditorHandlers(handlerContext),
     ...createChromeHandlers(handlerContext),
   };
+  const stableHandlers = useStableHandlers(handlers);
 
   // Auto-collapse columns that no longer fit the window at their min widths.
   const eff = fitColumnsToWidth({
@@ -822,7 +823,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     [shellState.fileTree],
   );
 
-  return createElement(
+  const shellTree = createElement(
     "div",
     {
       className: [
@@ -871,11 +872,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         } as CSSProperties,
       },
       leftPresence.mounted
-        ? createLeftRail(layoutVm, handlers, { menu: shellState.leftRailMenu, anchor: menuAnchor })
+        ? createElement(LeftRailColumnView, { handlers: stableHandlers, anchor: menuAnchor })
         : null,
-      createAgentChatColumn(layoutVm, handlers),
-      workbenchPresence.mounted ? createWorkbenchColumn(layoutVm, handlers) : null,
-      fileTreePresence.mounted ? createFileTreeColumn(layoutVm, handlers) : null,
+      createElement(AgentChatColumnView, { handlers: stableHandlers }),
+      workbenchPresence.mounted ? createElement(WorkbenchColumnView, { handlers: stableHandlers }) : null,
+      fileTreePresence.mounted ? createElement(FileTreeColumnView, { handlers: stableHandlers }) : null,
     ),
     // Workbench + FileTree toggles live in a single fixed cluster at the window's
     // top-right, so they never jump between column headers as panels open/close.
@@ -922,6 +923,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         })
       : null,
   );
+  return createElement(ProductShellStoreProvider, { value: store }, shellTree);
 }
 
 // Looks up a project's cwd by id across registered + thread-derived projects.
