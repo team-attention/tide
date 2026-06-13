@@ -68,23 +68,28 @@
   align-items: center;
   gap: 5px;
   height: 24px;
-  padding: 0 9px;
-  border: 0;
+  padding: 0 8px;
+  border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: var(--tide-muted);
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
 .workbench-layout-toggle__option:hover {
   color: var(--tide-text);
 }
 
+/* The active segment is the same raised chip as the active tab, so the whole
+   header reads as one family. */
 .workbench-layout-toggle__option[data-active="true"] {
-  background: var(--tide-selection);
-  color: var(--tide-action);
+  background: var(--tide-bg);
+  border-color: var(--tide-line);
+  color: var(--tide-text);
+  box-shadow: 0 1px 2px rgba(52, 48, 56, 0.06);
 }
 
 .workbench-tab {

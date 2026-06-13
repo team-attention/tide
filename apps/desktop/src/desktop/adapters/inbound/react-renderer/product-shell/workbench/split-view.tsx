@@ -166,6 +166,7 @@ export function WorkbenchSplitView(props: {
         key={pane.paneId}
         className={
           "workbench-split__pane" +
+          (pane.paneId === viewModel.appChrome.activeWorkbenchPane?.paneId ? " is-active" : "") +
           (drag !== null && drag.paneId === pane.paneId ? " is-dragging" : "") +
           (isDropTarget ? " is-drop-target" : "")
         }

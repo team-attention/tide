@@ -54,7 +54,9 @@ export function createWorkbenchColumn(
             native fullscreen) — otherwise the first tab sits under the lights. */}
         {viewModel.workbenchFullscreen ? createTrafficControls() : null}
         {splitActive ? (
-          <span className="workbench-tabs__empty workbench-tabs__empty--split">Split view</span>
+          // Split owns per-pane headers, so the top row carries no tab strip — just
+          // an empty spacer that keeps the controls right-aligned (no dead label).
+          <div className="workbench-tabs workbench-tabs--spacer" aria-hidden />
         ) : (
           <div className="workbench-tabs" role="tablist" aria-label="Workbench Tab Strip">
             {tabs.length === 0 ? (
