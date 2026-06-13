@@ -25,6 +25,42 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Split (not fullscreen): no top row — the split view fills the column and the
+   workbench controls float in the top-right corner. */
+.workbench-column[data-layout="split-bare"] {
+  grid-template-rows: minmax(0, 1fr);
+  position: relative;
+}
+
+.workbench-floating-controls {
+  position: absolute;
+  top: 8px;
+  /* Sit LEFT of the fixed window-chrome toggle cluster (it reserves ~84px at the
+     window's top-right) so the two never collide. */
+  right: 96px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--tide-line);
+  border-radius: 10px;
+  background: var(--tide-bg);
+  box-shadow: 0 4px 14px rgba(52, 48, 56, 0.16);
+  /* Calm at rest: the panes own the top edge. The controls fade in when you hover
+     the workbench (or focus them via keyboard), so they never obscure pane headers
+     while you're reading. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease;
+}
+
+.workbench-column[data-layout="split-bare"]:hover .workbench-floating-controls,
+.workbench-floating-controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .workbench-column__top-row,
 .file-tree-column__top-row {
   padding: 0 12px;
