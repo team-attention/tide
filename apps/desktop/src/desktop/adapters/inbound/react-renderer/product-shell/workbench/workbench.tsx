@@ -1,8 +1,8 @@
 import type { ProductShellWorkbenchViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
-import { Columns2, FileText, GitCompare, Globe, LayoutGrid, Maximize2, Minimize2, Plus, Square, Terminal, X } from "lucide-react";
-import { createColumnResizeHandle, createIconButton, createTrafficControls } from "../chrome/chrome.tsx";
+import { FileText, GitCompare, Globe, LayoutGrid, Terminal, X } from "lucide-react";
+import { createColumnResizeHandle, createTrafficControls } from "../chrome/chrome.tsx";
 import { createEditorPickerPane, createWorkbenchPaneContent } from "./pane-content.tsx";
 import { WorkbenchSplitView } from "./split-view.tsx";
 import { WorkbenchLauncherPane, emptyWorkbenchLauncherPane } from "./launcher-pane.tsx";
@@ -15,26 +15,17 @@ export function createWorkbenchColumn(
   const tabs = viewModel.appChrome.workbenchTabStrip.visibleTabs;
   const activeTab = tabs.find((tab) => tab.active) ?? tabs[0];
   const activePane = viewModel.appChrome.activeWorkbenchPane;
-  // Split mode shows every pane with its OWN header (title + close, the drag
-  // handle), which IS the header band. A separate global top row above it would be a
-  // second, near-empty header layer — so in Split we drop the global row entirely and
-  // dock the workbench controls into the top-right of the pane-header band (next to
-  // the file tree). Fullscreen is exempt (it reserves the macOS traffic-light zone).
+  // Split mode shows every pane with its OWN header (title + close, the drag handle),
+  // which IS the header band — so in Split we drop the workbench's global header row
+  // entirely (no tab strip). The workbench's chrome controls (layout toggle /
+  // fullscreen / new pane) live in the fixed top-right window cluster
+  // (createWindowChromeToggles), not in this column, so neither mode carries a controls
+  // row here. Stacked keeps the 52px tab-strip row.
   const splitActive =
     viewModel.editorPicker === null &&
     viewModel.workbenchLayoutMode === "split" &&
     viewModel.workbenchLayoutTree !== null &&
     viewModel.appChrome.visibleWorkbenchPanes.length > 1;
-  const dockControls = splitActive && !viewModel.workbenchFullscreen;
-  // The pane at the workbench's top-right corner (row splits → right child, column
-  // splits → top child). In Split, its header hosts the docked global controls.
-  const topRightPaneId = ((): string | null => {
-    let node = viewModel.workbenchLayoutTree;
-    while (node !== null && node.type !== "leaf") {
-      node = node.dir === "row" ? node.b : node.a;
-    }
-    return node !== null && node.type === "leaf" ? node.paneId : null;
-  })();
   const tabIconSize = 13;
   const workbenchTabIcon = (kind: string): ReactElement => {
     switch (kind) {
@@ -51,63 +42,19 @@ export function createWorkbenchColumn(
     }
   };
 
-  // The workbench controls (Stacked|Split toggle + fullscreen + New Pane). They live
-  // in the top row, which is the SAME 52px header in both Stacked and Split.
-  const workbenchControls = (
-    <>
-      {/* Icon-only segmented control: Stacked (one pane + tabs) vs Split (tiled
-          panes); the active segment is filled. Labels live in the tooltips. */}
-      <div className="workbench-layout-toggle" role="group" aria-label="Workbench layout">
-        <button
-          type="button"
-          className="workbench-layout-toggle__option"
-          data-active={viewModel.workbenchLayoutMode === "stacked"}
-          aria-pressed={viewModel.workbenchLayoutMode === "stacked"}
-          aria-label="Stacked layout"
-          title="Stacked — one pane with a tab strip"
-          onClick={() => handlers.onWorkbenchSetLayout("stacked")}
-        >
-          <Square size={14} strokeWidth={1.9} aria-hidden />
-        </button>
-        <button
-          type="button"
-          className="workbench-layout-toggle__option"
-          data-active={viewModel.workbenchLayoutMode === "split"}
-          aria-pressed={viewModel.workbenchLayoutMode === "split"}
-          aria-label="Split layout"
-          title="Split — tiled panes you can drag to arrange"
-          onClick={() => handlers.onWorkbenchSetLayout("split")}
-        >
-          <Columns2 size={14} strokeWidth={1.9} aria-hidden />
-        </button>
-      </div>
-      {createIconButton(
-        viewModel.workbenchFullscreen ? "Exit fullscreen" : "Fullscreen pane",
-        viewModel.workbenchFullscreen ? (
-          <Minimize2 size={15} strokeWidth={1.9} />
-        ) : (
-          <Maximize2 size={15} strokeWidth={1.9} />
-        ),
-        handlers.onWorkbenchFullscreenToggle,
-        "top-row-button",
-      )}
-      {createIconButton("New Pane", <Plus size={16} strokeWidth={1.9} />, handlers.onNewWorkbenchPane, "top-row-button")}
-    </>
-  );
-
   return (
     <aside
       className="workbench-column"
       aria-label="Workbench"
       data-column="workbench"
-      data-layout={dockControls ? "split" : "stacked"}
+      data-layout={splitActive ? "split" : "stacked"}
       data-fullscreen={viewModel.workbenchFullscreen ? "true" : "false"}
     >
       {createColumnResizeHandle("workbench", "left", handlers)}
-      {/* Split (dockControls): no global header row — the controls ride in the
-          top-right pane's header (passed into WorkbenchSplitView below), so the panes'
-          headers are the only header band. Stacked/fullscreen keep the global row. */}
-      {dockControls ? null : (
+      {/* Split: no header row at all — the panes own their headers, and the workbench
+          chrome controls live in the top-right window cluster. Stacked keeps the
+          52px tab strip. */}
+      {splitActive ? null : (
         <header className="workbench-column__top-row column-top-row" aria-label="Workbench Top Row">
           {/* When fullscreen, the workbench is the top-left window element, so its
               header must reserve the macOS traffic-light zone (collapses to 0 in
@@ -163,7 +110,6 @@ export function createWorkbenchColumn(
               ))
             )}
           </div>
-          <div className="column-top-row__trailing">{workbenchControls}</div>
         </header>
       )}
       {viewModel.editorPicker !== null ? (
@@ -176,8 +122,6 @@ export function createWorkbenchColumn(
           viewModel={viewModel}
           handlers={handlers}
           paneIcon={workbenchTabIcon}
-          controls={dockControls ? workbenchControls : null}
-          controlsPaneId={dockControls ? topRightPaneId : null}
         />
       ) : activeTab && activePane ? (
         <section

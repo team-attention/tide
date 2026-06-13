@@ -64,12 +64,8 @@ export function WorkbenchSplitView(props: {
   viewModel: ProductShellWorkbenchViewModel;
   handlers: ProductShellHandlers;
   paneIcon: (kind: string) => ReactElement;
-  // In Split there is no global header row; the global workbench controls ride in the
-  // header of the top-right pane (controlsPaneId), reserving their own width there.
-  controls?: ReactElement | null;
-  controlsPaneId?: string | null;
 }): ReactElement {
-  const { tree, viewModel, handlers, paneIcon, controls = null, controlsPaneId = null } = props;
+  const { tree, viewModel, handlers, paneIcon } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dropRef = useRef<SplitDropState | null>(null);
   const [drag, setDrag] = useState<SplitDragState | null>(null);
@@ -220,16 +216,6 @@ export function WorkbenchSplitView(props: {
           >
             <Maximize2 size={13} strokeWidth={1.9} aria-hidden />
           </button>
-          {/* The top-right pane's header carries the global workbench controls in Split
-              (no global header row). stopPropagation so using them never starts a drag. */}
-          {controls !== null && pane.paneId === controlsPaneId ? (
-            <div
-              className="workbench-split__pane-controls"
-              onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
-            >
-              {controls}
-            </div>
-          ) : null}
         </div>
         <div className="workbench-split__pane-body">
           {createWorkbenchPaneContent(pane, handlers, viewModel.editorDrafts[pane.paneId])}

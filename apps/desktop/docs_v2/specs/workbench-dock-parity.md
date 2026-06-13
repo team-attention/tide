@@ -15,16 +15,19 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
    beside the panes it opens.
 3. **Cmd/Ctrl+click → new Browser Pane** — modifier-click on a chat link opens a new
    Browser Pane; plain click keeps reuse-active.
-4. **Intuitive Stacked/Split** — replace the single ambiguous toggle icon with an
-   icon-only `Stacked | Split` segmented control (the two presentation glyphs, active
-   one filled; labels in tooltips), and add per-pane **maximize** (Split → Stacked
-   focused on that pane). Default presentation is Stacked. In **Stacked** the 52px top
-   row holds the tab strip + controls. In **Split** there is **no global top row** — the
-   per-pane headers ARE the header band (one band, not two stacked rows), and the global
-   controls ride in the **top-right pane's header** (next to the file tree), reserving
-   their own width there rather than floating over a pane or sitting in a second, empty
-   row. (The top-right pane = follow the split tree's right child on row splits, top
-   child on column splits.)
+4. **Intuitive Stacked/Split** — the workbench chrome controls live in the **fixed
+   top-right window cluster** (`createWindowChromeToggles`), alongside the Workbench /
+   FileTree panel toggles, as compact icon buttons in the 52px window band — *not* in a
+   column header row or a pane header. The cluster (shown when the Workbench is open) is:
+   a **single** `Stacked⇄Split` toggle (one slot — the icon shows the current mode and
+   clicking flips it), **fullscreen**, and **New Pane**. Per-pane **maximize** (Split →
+   Stacked focused on that pane) stays on each split pane's header. Consequences: the
+   header heights are uniform (one 52px window band everywhere); **Stacked** is just the
+   tab strip (the controls no longer crowd it, so tabs are roomy); **Split** is just the
+   tiled panes with their own headers (no global row — no two-row header). The rightmost
+   column's header reserves the (wider) cluster's footprint. Known edge: with the file
+   tree closed AND a very narrow rightmost split pane, the fixed cluster overlaps that
+   pane's chip (with the tree open the cluster sits over the file tree, so it doesn't).
    Stacked tabs are flat and label-like; the active tab carries a full-height surface
    highlight + a charcoal under-bar (ink, never a chip) so it reads as a tab — not as
    the segmented toggle in the same row — and its region is clearly delineated. The

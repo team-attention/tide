@@ -177,6 +177,14 @@
   padding-right: 84px;
 }
 
+/* When the Workbench is open the cluster also carries its layout/fullscreen/new-pane
+   controls, so it is wider — reserve more on the rightmost column's header. (Split has
+   no column-top-row; its top-right pane keeps its chip at the left, and the cluster
+   only overlays that pane's empty drag grip, so no extra reserve is needed there.) */
+.tide-product-shell__body[data-workbench-open="true"] > :last-child .column-top-row {
+  padding-right: 196px;
+}
+
 .column-resize-handle {
   position: absolute;
   top: 0;

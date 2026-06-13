@@ -678,6 +678,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         <div
           className="tide-product-shell__body"
           ref={bodyRef}
+          // The fixed top-right toggle cluster widens when the Workbench is open (it
+          // gains the layout/fullscreen/new-pane controls), so the last column's header
+          // reserves more right padding in that case (see product-shell.css).
+          data-workbench-open={layoutVm.workbenchOpen ? "true" : "false"}
           // Agent chat is the flexible middle track; the other columns use
           // minmax(min, dragWidth) so they honour the dragged width when there is
           // room but shrink toward their min when several columns are open at once
