@@ -173,13 +173,39 @@ export function WorkbenchSplitView(props: {
         data-pane-id={pane.paneId}
         data-pane-kind={pane.kind}
       >
+        {/* The header is the drag handle AND carries the SAME tab chip as Stacked, so
+            a pane looks identical whether it's a tab or a split header. Clicking the
+            chip focuses the pane; the empty grip area is the drag surface. */}
         <div className="workbench-split__pane-header" onPointerDown={beginPaneDrag(pane.paneId)}>
-          <span className="workbench-split__pane-icon" aria-hidden>
-            {paneIcon(pane.kind)}
-          </span>
-          <span className="workbench-split__pane-title">{pane.title ?? pane.kind}</span>
+          <div
+            className="workbench-tab workbench-split__pane-tab"
+            data-active={pane.paneId === viewModel.appChrome.activeWorkbenchPane?.paneId}
+            data-kind={pane.kind}
+          >
+            <button
+              className="workbench-tab__label"
+              type="button"
+              onClick={() => handlers.onFocusWorkbenchPane(pane.paneId)}
+            >
+              <span className="workbench-tab__icon" aria-hidden>
+                {paneIcon(pane.kind)}
+              </span>
+              <span className="workbench-tab__title">{pane.title ?? pane.kind}</span>
+            </button>
+            <button
+              className="workbench-tab__close"
+              type="button"
+              title="Close Pane"
+              aria-label="Close Pane"
+              onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
+              onClick={() => handlers.onCloseWorkbenchPane(pane.paneId)}
+            >
+              <X size={14} strokeWidth={2.2} aria-hidden />
+            </button>
+          </div>
+          <span className="workbench-split__pane-grip" aria-hidden />
           {/* Maximize: collapse Split → Stacked focused on this pane (v1 header
-              maximize). stopPropagation so the click doesn't begin a header drag. */}
+              maximize). Hover-revealed; stopPropagation so it doesn't begin a drag. */}
           <button
             type="button"
             className="workbench-split__pane-maximize"
@@ -188,17 +214,7 @@ export function WorkbenchSplitView(props: {
             onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
             onClick={() => handlers.onWorkbenchMaximizePane(pane.paneId)}
           >
-            <Maximize2 size={12} strokeWidth={2} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="workbench-split__pane-close"
-            title="Close Pane"
-            aria-label="Close Pane"
-            onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
-            onClick={() => handlers.onCloseWorkbenchPane(pane.paneId)}
-          >
-            <X size={13} strokeWidth={2.2} aria-hidden />
+            <Maximize2 size={13} strokeWidth={1.9} aria-hidden />
           </button>
         </div>
         <div className="workbench-split__pane-body">

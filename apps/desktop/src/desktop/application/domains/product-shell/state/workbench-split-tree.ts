@@ -86,7 +86,15 @@ export function reconcileTree(
   const present = new Set(paneIdsInTree(next));
   for (const paneId of visiblePaneIds) {
     if (!present.has(paneId)) {
-      next = next === null ? leaf(paneId) : { type: "split", dir: "row", ratio: 0.5, a: next, b: leaf(paneId) };
+      if (next === null) {
+        next = leaf(paneId);
+      } else {
+        // A new pane joins as an EVEN column: the existing subtree keeps N/(N+1) and
+        // the newcomer takes 1/(N+1), so every pane ends up equally sized — rather
+        // than the newcomer grabbing half the whole workbench.
+        const existing = paneIdsInTree(next).length;
+        next = { type: "split", dir: "row", ratio: existing / (existing + 1), a: next, b: leaf(paneId) };
+      }
     }
   }
   return next;

@@ -50,21 +50,18 @@
   opacity: 0.5;
 }
 
-/* The split pane header echoes the stacked tab's language (same icon, title size,
-   and 20px hover-revealed actions) so a pane reads the same whether it's a tab or a
-   split header — it's just shaped as a full-width drag bar here. */
+/* The split pane header is a slim drag strip that hosts the SAME tab chip used in
+   Stacked — so a pane looks identical whether it's a tab or a split header. The
+   empty grip fills the rest as the drag surface; maximize reveals on hover. */
 .workbench-split__pane-header {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 6px 0 11px;
+  gap: 2px;
+  height: 36px;
+  padding: 0 6px;
   border-bottom: 1px solid var(--tide-line);
   background: var(--tide-surface);
-  color: var(--tide-text);
-  font-size: 13.5px;
-  font-weight: 500;
   cursor: grab;
   user-select: none;
 }
@@ -73,49 +70,58 @@
   cursor: grabbing;
 }
 
-/* The focused pane's header reads as active (matches the active tab chip). */
+/* Focused pane: an accent bar across its top + a tinted active header, plus the
+   chip's own active state — so which pane has focus is unmistakable. Inactive pane
+   headers recede (muted) so the focused one clearly stands out. */
+.workbench-split__pane.is-active {
+  box-shadow: inset 0 2px 0 var(--tide-action);
+}
+
 .workbench-split__pane.is-active > .workbench-split__pane-header {
   background: var(--tide-bg);
 }
 
-.workbench-split__pane-icon {
-  display: inline-flex;
-  color: var(--tide-muted);
+.workbench-split__pane:not(.is-active) > .workbench-split__pane-header {
+  opacity: 0.62;
 }
 
-.workbench-split__pane-title {
+/* The chip reuses the Stacked tab styles; let it size to the pane width. */
+.workbench-split__pane-tab {
+  max-width: none;
+}
+
+.workbench-split__pane-tab .workbench-tab__title {
+  max-width: none;
+}
+
+/* Empty grip = the drag surface filling the strip between the chip and maximize. */
+.workbench-split__pane-grip {
   flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  align-self: stretch;
 }
 
-.workbench-split__pane-close,
 .workbench-split__pane-maximize {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--tide-muted);
   cursor: pointer;
-  /* Calm at rest: actions reveal when you're on the pane header, so the maximize
-     never sits as a permanent twin of the top-row fullscreen control. */
+  /* Calm at rest: reveal on header hover, so it's never a permanent twin of the
+     top-row fullscreen control. */
   opacity: 0;
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
-.workbench-split__pane-header:hover .workbench-split__pane-close,
 .workbench-split__pane-header:hover .workbench-split__pane-maximize {
   opacity: 1;
 }
 
-.workbench-split__pane-close:hover,
 .workbench-split__pane-maximize:hover {
   background: var(--tide-selection);
   color: var(--tide-text);
