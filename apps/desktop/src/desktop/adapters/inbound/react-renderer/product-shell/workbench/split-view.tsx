@@ -64,8 +64,11 @@ export function WorkbenchSplitView(props: {
   viewModel: ProductShellWorkbenchViewModel;
   handlers: ProductShellHandlers;
   paneIcon: (kind: string) => ReactElement;
+  // The top-right corner pane: its header reserves the fixed control cluster's footprint
+  // when the workbench is the rightmost column (CSS gates that on :last-child).
+  topRightPaneId?: string | null;
 }): ReactElement {
-  const { tree, viewModel, handlers, paneIcon } = props;
+  const { tree, viewModel, handlers, paneIcon, topRightPaneId = null } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dropRef = useRef<SplitDropState | null>(null);
   const [drag, setDrag] = useState<SplitDragState | null>(null);
@@ -176,7 +179,13 @@ export function WorkbenchSplitView(props: {
         {/* The header is the drag handle AND carries the SAME tab chip as Stacked, so
             a pane looks identical whether it's a tab or a split header. Clicking the
             chip focuses the pane; the empty grip area is the drag surface. */}
-        <div className="workbench-split__pane-header" onPointerDown={beginPaneDrag(pane.paneId)}>
+        <div
+          className={
+            "workbench-split__pane-header" +
+            (pane.paneId === topRightPaneId ? " workbench-split__pane-header--top-right" : "")
+          }
+          onPointerDown={beginPaneDrag(pane.paneId)}
+        >
           <div
             className="workbench-tab workbench-split__pane-tab"
             data-active={pane.paneId === viewModel.appChrome.activeWorkbenchPane?.paneId}

@@ -90,6 +90,16 @@
   max-width: none;
 }
 
+/* When the workbench is the rightmost column (file tree closed) the fixed top-right
+   control cluster floats over the TOP-RIGHT pane's header. Reserve the cluster's
+   footprint on that header so the chip stops before it — truncating cleanly when the
+   pane is narrow — instead of jumbling behind the icons. With the file tree open the
+   workbench isn't :last-child, so the cluster is over the file tree and no reserve
+   applies. */
+.tide-product-shell__body > .workbench-column:last-child .workbench-split__pane-header--top-right {
+  padding-right: 196px;
+}
+
 .workbench-split__pane-tab .workbench-tab__title {
   max-width: none;
 }

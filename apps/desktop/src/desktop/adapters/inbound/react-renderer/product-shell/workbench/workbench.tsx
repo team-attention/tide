@@ -26,6 +26,18 @@ export function createWorkbenchColumn(
     viewModel.workbenchLayoutMode === "split" &&
     viewModel.workbenchLayoutTree !== null &&
     viewModel.appChrome.visibleWorkbenchPanes.length > 1;
+  // The pane at the workbench's top-right corner (row splits → right child, column
+  // splits → top child). Only this pane's header reserves room for the fixed top-right
+  // control cluster, and only when the workbench is the rightmost column (file tree
+  // closed) — see split-view.css. With the tree open the cluster sits over the file
+  // tree, so no pane needs to reserve it.
+  const topRightPaneId = ((): string | null => {
+    let node = viewModel.workbenchLayoutTree;
+    while (node !== null && node.type !== "leaf") {
+      node = node.dir === "row" ? node.b : node.a;
+    }
+    return node !== null && node.type === "leaf" ? node.paneId : null;
+  })();
   const tabIconSize = 13;
   const workbenchTabIcon = (kind: string): ReactElement => {
     switch (kind) {
@@ -122,6 +134,7 @@ export function createWorkbenchColumn(
           viewModel={viewModel}
           handlers={handlers}
           paneIcon={workbenchTabIcon}
+          topRightPaneId={topRightPaneId}
         />
       ) : activeTab && activePane ? (
         <section

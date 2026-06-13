@@ -26,8 +26,11 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
    tab strip (the controls no longer crowd it, so tabs are roomy); **Split** is just the
    tiled panes with their own headers (no global row — no two-row header). The rightmost
    column's header reserves the (wider) cluster's footprint. Known edge: with the file
-   tree closed AND a very narrow rightmost split pane, the fixed cluster overlaps that
-   pane's chip (with the tree open the cluster sits over the file tree, so it doesn't).
+   tree closed, the cluster sits over the workbench's top-right, so the top-right split
+   pane's header reserves the cluster's footprint (its chip truncates before the icons —
+   no jumble; the editor breadcrumb still identifies the file). A *very* narrow such
+   pane yields its whole chip (including its close); opening the tree or widening it
+   restores it. With the tree open the cluster is over the file tree, so no reserve.
    Stacked tabs are flat and label-like; the active tab carries a full-height surface
    highlight + a charcoal under-bar (ink, never a chip) so it reads as a tab — not as
    the segmented toggle in the same row — and its region is clearly delineated. The
