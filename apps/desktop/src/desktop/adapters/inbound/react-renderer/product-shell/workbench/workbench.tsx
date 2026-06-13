@@ -133,6 +133,7 @@ export function createWorkbenchColumn(
                   <button
                     className="workbench-tab__label"
                     type="button"
+                    title={tab.title}
                     onClick={() => handlers.onFocusWorkbenchPane(tab.paneId)}
                   >
                     <span className="workbench-tab__icon" aria-hidden>
@@ -149,7 +150,7 @@ export function createWorkbenchColumn(
                     aria-label="Close Pane"
                     onClick={() => handlers.onCloseWorkbenchPane(tab.paneId)}
                   >
-                    <X size={14} strokeWidth={2.2} aria-hidden />
+                    <X size={15} strokeWidth={2.2} aria-hidden />
                   </button>
                 </div>
               ))

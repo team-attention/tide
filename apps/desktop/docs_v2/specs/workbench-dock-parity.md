@@ -22,6 +22,12 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
    **same 52px header in both modes** with the same trailing controls — Stacked fills
    the left with the tab strip, Split leaves it an empty spacer (the panes own their
    headers) — so the chrome never changes height or jumps when you toggle.
+   Stacked tabs are flat and label-like; the active tab carries a full-height surface
+   highlight + a charcoal under-bar (ink, never a chip) so it reads as a tab — not as
+   the segmented toggle in the same row — and its region is clearly delineated. The
+   active tab never shrinks (the current filename stays legible); inactive tabs give up
+   width first, collapsing toward icon-only with a filename tooltip. The close button is
+   collapsed-until-revealed so inactive tabs spend their width on the title.
 5. **Composer-screen Launcher + adoption** — the Workbench + Launcher are available
    on the New Thread / start page (no thread yet); panes opened there are *adopted*
    by the Thread that the first send creates.

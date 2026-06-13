@@ -516,11 +516,12 @@ if (root) {
     const wantsSplit = params.get("mode") === "split";
     const wantsStacked = params.get("mode") === "stacked";
     const wantsDiff = params.get("pane") === "diff";
-    // FileTree column is gated by fileTreeOpen; flip it on for the fixture.
+    // FileTree column is gated by fileTreeOpen; flip it on for the fixture
+    // (?tree=0 closes it so the tabs are roomy for design review).
     const state = wantsSplit
       ? splitFixtureState()
       : wantsStacked
-      ? stackedMultiFixtureState(true)
+      ? stackedMultiFixtureState(params.get("tree") !== "0")
       : wantsDiff
       ? diffFixtureState()
       : wantsBrowser

@@ -42,11 +42,11 @@
 }
 
 .workbench-tab {
-  /* Shrink to share the strip (browser-tab style) so EVERY open pane keeps a
-     visible tab — previously tabs were fixed-width and the non-active ones
-     overflowed off-screen behind the hidden scrollbar, so opening a 2nd file just
-     looked like the editor "replaced" the first. */
-  flex: 0 1 auto;
+  /* Every open pane keeps a VISIBLE tab (no off-screen overflow). Inactive tabs
+     shrink first (weight 3) so the active tab keeps a readable width (its
+     min-width, set on the active rule) even when the strip is tight — you can
+     always read the current file. */
+  flex: 0 3 auto;
   min-width: 0;
 }
 
@@ -87,8 +87,8 @@
   color: var(--tide-text);
 }
 
-/* The active segment is the same raised chip as the active tab, so the whole
-   header reads as one family. */
+/* The active segment is a raised chip — the toggle is a control, deliberately
+   distinct from the flat document tabs in the same row. */
 .workbench-layout-toggle__option[data-active="true"] {
   background: var(--tide-bg);
   border-color: var(--tide-line);
@@ -96,35 +96,48 @@
   box-shadow: 0 1px 2px rgba(52, 48, 56, 0.06);
 }
 
+/* Workbench tabs. Flat, label-like text; the ACTIVE tab gets a full-height surface
+   highlight + a charcoal under-bar on the header's bottom seam, so each tab's region
+   is clearly delineated, the current pane is unmistakable, and the strip reads as
+   tabs (not as the segmented layout toggle beside it). Tide's palette is monochrome,
+   so the active marker is ink + a surface fill, never a colour.
+   This base rule is the shared anatomy — the split-view pane chip reuses
+   .workbench-tab — so the underline/highlight lives on the strip-scoped rules below
+   (.workbench-tabs .workbench-tab) and leaves the split pane chip flat. */
 .workbench-tab {
-  max-width: 176px;
-  height: 30px;
+  max-width: 220px;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 0 4px 0 9px;
+  gap: 3px;
+  padding: 0 6px 0 9px;
   color: var(--tide-muted);
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, box-shadow 0.12s ease, color 0.12s ease;
 }
 
-/* Inactive tabs lift slightly on hover so the strip reads as real, clickable
-   tabs rather than loose text. */
+.workbench-tab[data-active="true"] {
+  /* The active tab never shrinks — the current file's name stays fully legible
+     (up to the base max-width) while inactive tabs give up their width first,
+     collapsing toward icon-only. */
+  flex-shrink: 0;
+  color: var(--tide-text);
+}
 
-.workbench-tab:not([data-active="true"]):hover {
+/* Stacked strip: full-height tabs so the active tab's highlight is a clean vertical
+   band and the under-bar sits on the header's bottom seam. */
+.workbench-tabs .workbench-tab {
+  height: 52px;
+  padding: 0 10px;
+  box-shadow: inset 0 -2px 0 transparent;
+}
+
+.workbench-tabs .workbench-tab:not([data-active="true"]):hover {
   background: var(--tide-surface);
   color: var(--tide-text);
 }
 
-/* The active tab is a solid, bordered chip with a soft shadow — clearly the
-   selected pane, distinct from the flat inactive tabs. */
-
-.workbench-tab[data-active="true"] {
-  background: var(--tide-bg);
-  border-color: var(--tide-line);
-  color: var(--tide-text);
-  box-shadow: 0 1px 2px rgba(52, 48, 56, 0.06);
+.workbench-tabs .workbench-tab[data-active="true"] {
+  background: var(--tide-surface);
+  box-shadow: inset 0 -2px 0 var(--tide-action);
 }
 
 .workbench-tab__label {
@@ -154,7 +167,7 @@
 
 .workbench-tab__title {
   min-width: 0;
-  max-width: 124px;
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -165,22 +178,25 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 0;
+  height: 22px;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   color: var(--tide-muted);
   cursor: pointer;
-  /* Revealed on tab hover / when active, so it doesn't clutter at rest but is
-     always one obvious click away. */
+  /* Collapsed to zero width at rest so inactive tabs spend their width on the title;
+     it expands to a clear, comfortable target when the tab is hovered or active. */
   opacity: 0;
-  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+  overflow: hidden;
+  transition: opacity 0.12s ease, width 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
 .workbench-tab:hover .workbench-tab__close,
 .workbench-tab[data-active="true"] .workbench-tab__close,
 .workbench-tab__close:focus-visible {
+  width: 22px;
   opacity: 1;
 }
 
