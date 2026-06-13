@@ -17,44 +17,62 @@ export function toggleProductShellFileTreeWithRefresh(
     return { state: nextState, command: null };
   }
   // Opening on the start (New Thread) page: show the composer-selected project's
-  // file tree (no thread yet).
+  // file tree at the root level (no thread yet).
   if (state.activeThreadId === null) {
-    const command = startPageFileTreeCommand(state);
+    const command = fileTreeLazyRefreshCommand(state, []);
     return {
       state: command === null ? nextState : { ...nextState, fileTree: null, expandedFolderPaths: [] },
       command,
     };
   }
-  // Opening for an active thread: refresh that thread's tree.
+  // Opening for an active thread: refresh that thread's tree at the currently
+  // expanded set (root level on a fresh open).
   return {
     state: nextState,
-    command: {
+    command: fileTreeLazyRefreshCommand(state, state.expandedFolderPaths),
+  };
+}
+
+// A lazy FileTree listing: Backend lists the root plus only the `expandedPaths`
+// subtrees (a collapsed folder is one entry, never walked). Routes to the active
+// thread's workbench, or — on the start (New Thread) page — to the composer's
+// project cwd. A scratch scope has no directory yet, so there is nothing to list.
+function fileTreeLazyRefreshCommand(
+  state: ProductShellState,
+  expandedPaths: string[],
+): ProductShellBackendCommand | null {
+  if (state.activeThreadId !== null) {
+    return {
       kind: "workbench.command",
       payload: {
         threadId: state.activeThreadId,
         command: "refresh_file_tree",
-        data: {
-          maxDepth: 12,
-          maxEntries: 4000,
-        },
+        data: { expandedPaths, maxEntries: 4000 },
       },
-    },
-  };
-}
-
-// On the start page the file tree follows the composer's selected scope. A project
-// scope has a real cwd to list; a scratch scope has no directory yet (empty tree).
-function startPageFileTreeCommand(
-  state: ProductShellState,
-): ProductShellBackendCommand | null {
+    };
+  }
   const scope = state.agentChat.composer.startOptions.scope;
   if (scope?.kind === "project" && scope.cwd.length > 0) {
     return {
       kind: "workspace.readFileTree",
-      payload: { cwd: scope.cwd, maxDepth: 12, maxEntries: 4000 },
+      payload: { cwd: scope.cwd, expandedPaths, maxEntries: 4000 },
     };
   }
   return null;
+}
+
+// True when the loaded entries already contain a direct child of `folderPath`, so
+// re-expanding it reveals from the cache with no Backend round-trip.
+function fileTreeChildrenLoaded(
+  state: ProductShellState,
+  folderPath: string,
+): boolean {
+  const prefix = `${folderPath}/`;
+  return (state.fileTree?.entries ?? []).some(
+    (entry) =>
+      entry.relativePath.startsWith(prefix) &&
+      !entry.relativePath.slice(prefix.length).includes("/"),
+  );
 }
 
 // When the start-page composer scope changes while the file tree is open, reload the
@@ -65,7 +83,9 @@ export function refreshStartPageFileTree(
   if (state.activeThreadId !== null || !state.fileTreeOpen) {
     return null;
   }
-  return startPageFileTreeCommand(state);
+  // Scope changed to a different project: re-list at the root level. The
+  // workspace.fileTreeLoaded reducer resets expansion when the root changes.
+  return fileTreeLazyRefreshCommand(state, []);
 }
 
 export function selectProductShellFileTreeEntry(
@@ -82,19 +102,35 @@ export function selectProductShellFileTreeEntry(
     return { state, command: null };
   }
 
-  // Folders toggle expansion; files open. The whole tree is already loaded, so
-  // expanding only reveals already-fetched children — no backend round-trip.
-  // This works on the START PAGE too (no thread yet) — bailing on a null
-  // activeThreadId froze the tree at its top level there.
+  // Folders toggle expansion. Collapsing, and re-expanding a folder whose children
+  // are already loaded, are client-side only (no Backend round-trip). Expanding a
+  // not-yet-loaded folder marks it loading (the UI shows a skeleton child row) and
+  // lazily fetches children via a refresh carrying the new expanded set. Works on
+  // the START PAGE too (the lazy refresh routes to the composer cwd when there is
+  // no thread).
   if (entry.kind === "folder") {
     const expanded = new Set(state.expandedFolderPaths);
     if (expanded.has(entry.relativePath)) {
       expanded.delete(entry.relativePath);
-    } else {
-      expanded.add(entry.relativePath);
+      return { state: { ...state, expandedFolderPaths: [...expanded] }, command: null };
     }
-    const nextState = { ...state, expandedFolderPaths: [...expanded] };
-    return { state: nextState, command: null };
+    expanded.add(entry.relativePath);
+    const nextExpanded = [...expanded];
+    if (fileTreeChildrenLoaded(state, entry.relativePath)) {
+      return { state: { ...state, expandedFolderPaths: nextExpanded }, command: null };
+    }
+    const command = fileTreeLazyRefreshCommand(state, nextExpanded);
+    return {
+      state: {
+        ...state,
+        expandedFolderPaths: nextExpanded,
+        fileTree:
+          command === null || state.fileTree === null
+            ? state.fileTree
+            : { ...state.fileTree, loadingFolderPath: entry.relativePath },
+      },
+      command,
+    };
   }
 
   // Start page: no thread yet, so there is no thread-bound workbench to open an

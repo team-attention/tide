@@ -2077,6 +2077,32 @@ test("file_tree_opens_as_one_independent_column_next_to_workbench", () => {
   assert.equal((html.match(/aria-label="FileTree"/g) ?? []).length, 1);
 });
 
+test("an_expanding_folder_renders_a_skeleton_child_row_while_children_load", () => {
+  // Spec: docs_v2/specs/workbench-filetree-view.md (D6 lazy expand skeleton).
+  const loaded = applyProductShellBackendEvent(
+    toggleProductShellFileTree(openProductShellThread(createProductShellState(), "thread-workbench")),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        panes: [],
+        fileTree: {
+          cwdLabel: "tide",
+          entries: [
+            { id: "d-src", name: "src", relativePath: "src", depth: 0, kind: "folder" },
+            { id: "f-readme", name: "README.md", relativePath: "README.md", depth: 0, kind: "file" },
+          ],
+        },
+      },
+    },
+  );
+  // Expanding the not-yet-loaded "src" marks it loading; a skeleton child row renders
+  // under it until the children arrive.
+  const expanding = selectProductShellFileTreeEntry(loaded, "d-src");
+  assert.equal(expanding.state.fileTree?.loadingFolderPath, "src");
+  assert.match(renderProductShell(expanding.state), /file-tree-row--loading/);
+});
+
 test("opening_file_tree_emits_refresh_workbench_command_for_active_thread", () => {
   // Spec: docs_v2/specs/workbench-filetree-view.md
   const state = openProductShellThread(createProductShellState(), "thread-workbench");
@@ -2084,11 +2110,12 @@ test("opening_file_tree_emits_refresh_workbench_command_for_active_thread", () =
 
   assert.equal(result.state.fileTreeOpen, true);
   assert.equal(result.command?.kind, "workbench.command");
+  // Lazy: opening the tree lists the root level only (empty expanded set).
   assert.deepEqual(result.command?.payload, {
     threadId: "thread-workbench",
     command: "refresh_file_tree",
     data: {
-      maxDepth: 12,
+      expandedPaths: [],
       maxEntries: 4000,
     },
   });

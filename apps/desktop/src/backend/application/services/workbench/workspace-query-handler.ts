@@ -12,6 +12,7 @@ import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port
 import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
   fileByteLimit,
+  fileTreeExpandedPaths,
   fileTreeMaxDepth,
   fileTreeMaxEntries,
 } from "../support/service-value-helpers.ts";
@@ -25,6 +26,8 @@ import { cloneFileTreeView } from "../thread/thread-runtime-clone.ts";
 
 export interface ReadWorkspaceFileTreeInput {
   cwd: string;
+  // Lazy listing: descend only into these expanded folders. Absent => full walk.
+  expandedPaths?: string[];
   maxDepth?: number;
   maxEntries?: number;
 }
@@ -143,11 +146,13 @@ export class WorkspaceQueryHandler {
   async readWorkspaceFileTree(
     input: ReadWorkspaceFileTreeInput,
   ): Promise<ServiceResult<ReadWorkspaceFileTreeResult>> {
-    // Same workspace file port + limits as the thread-bound refresh_file_tree.
+    // Same workspace file port + limits as the thread-bound refresh_file_tree:
+    // lazy when `expandedPaths` is present, depth-bounded full walk otherwise.
     const listed = await this.workspaceFilePort.listTree({
       root: input.cwd,
-      maxDepth: fileTreeMaxDepth(input.maxDepth),
       maxEntries: fileTreeMaxEntries(input.maxEntries),
+      expandedPaths: fileTreeExpandedPaths(input.expandedPaths),
+      maxDepth: fileTreeMaxDepth(input.maxDepth),
     });
     if (!listed.ok) {
       return failure(listed.error.code, listed.error.message);

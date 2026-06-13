@@ -97,8 +97,11 @@ export type WorkspaceFileSearchResult =
 export interface WorkspaceFilePort {
   listTree(input: {
     root: string;
-    maxDepth: number;
     maxEntries: number;
+    // Lazy mode: descend only into these expanded folder paths. Absent => the
+    // depth-bounded full walk (Quick Open).
+    expandedPaths?: string[];
+    maxDepth?: number;
   }): Promise<WorkspaceFileTreeResult>;
 
   readTextFile(input: {

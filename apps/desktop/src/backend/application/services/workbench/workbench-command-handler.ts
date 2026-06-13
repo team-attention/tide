@@ -13,6 +13,7 @@ import { arrayOfStrings } from "../support/record-helpers.ts";
 import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
   fileByteLimit,
+  fileTreeExpandedPaths,
   fileTreeMaxDepth,
   fileTreeMaxEntries,
   numberFromData,
@@ -595,13 +596,16 @@ export class WorkbenchCommandHandler {
             "Thread does not have an Execution Context root for FileTree View.",
           );
         }
-        // Full tree: load the whole source tree once (heavy dirs are skipped by
-        // the workspace file port). Folders are collapsed by default in the UI,
-        // so the DOM stays light even though every entry is loaded upfront.
+        // Lazy listing: with `expandedPaths` present, the port lists the root plus
+        // only the expanded subtrees — a collapsed folder (e.g. a pnpm store) is
+        // listed but never walked. Quick Open omits `expandedPaths` and passes
+        // `maxDepth` for the depth-bounded full walk. Heavy dirs are skipped either
+        // way by the workspace file port.
         const listed = await this.workspaceFilePort.listTree({
           root,
-          maxDepth: fileTreeMaxDepth(input.data?.maxDepth),
           maxEntries: fileTreeMaxEntries(input.data?.maxEntries),
+          expandedPaths: fileTreeExpandedPaths(input.data?.expandedPaths),
+          maxDepth: fileTreeMaxDepth(input.data?.maxDepth),
         });
         if (!listed.ok) {
           return failure(listed.error.code, listed.error.message);

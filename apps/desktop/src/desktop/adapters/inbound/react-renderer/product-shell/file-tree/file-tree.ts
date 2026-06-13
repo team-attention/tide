@@ -25,6 +25,24 @@ function createFileTreeSkeleton(): ReactElement {
   );
 }
 
+// A single shimmer row shown under a folder while its children are lazily fetched
+// (an expand round-trip is in flight), indented to sit where the children will land.
+function createFileTreeLoadingRow(depth: number): ReactElement {
+  return createElement(
+    "div",
+    {
+      key: "__file-tree-loading__",
+      className: "file-tree-row file-tree-row--loading",
+      "data-depth": depth,
+      style: { "--file-tree-depth": depth } as CSSProperties,
+      "aria-hidden": true,
+    },
+    createElement("span", { className: "file-tree-row__chevron-spacer", "aria-hidden": true }),
+    createElement("span", { className: "file-tree-skeleton__icon" }),
+    createElement("span", { className: "file-tree-skeleton__label", style: { width: "52%" } as CSSProperties }),
+  );
+}
+
 export function createFileTreeColumn(
   viewModel: Pick<ProductShellViewModel, "fileTree">,
   handlers: ProductShellHandlers,
@@ -59,8 +77,8 @@ export function createFileTreeColumn(
         { className: "file-tree-column__entries" },
         viewModel.fileTree.loading
           ? createFileTreeSkeleton()
-          : viewModel.fileTree.entries.map((entry) =>
-          createElement(
+          : viewModel.fileTree.entries.flatMap((entry) => {
+          const row = createElement(
             "button",
             {
               key: entry.id,
@@ -87,8 +105,13 @@ export function createFileTreeColumn(
               ? createElement(entry.expanded === false ? Folder : FolderOpen, { size: 14, strokeWidth: 1.8, "aria-hidden": true })
               : createElement(fileIconFor(entry.name), { size: 14, strokeWidth: 1.8, "aria-hidden": true }),
             createElement("span", null, entry.name),
-          ),
-        ),
+          );
+          // A lazily-expanding folder shows a skeleton child row until its children land.
+          return entry.kind === "folder" &&
+            entry.relativePath === viewModel.fileTree.loadingFolderPath
+            ? [row, createFileTreeLoadingRow(entry.depth + 1)]
+            : [row];
+        }),
       ),
     ),
   );

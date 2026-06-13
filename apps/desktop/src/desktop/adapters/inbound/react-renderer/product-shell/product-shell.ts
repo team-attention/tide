@@ -633,7 +633,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             payload: {
               threadId: next.activeThreadId,
               command: "refresh_file_tree",
-              data: { maxDepth: 1, maxEntries: 400 },
+              data: { expandedPaths: next.expandedFolderPaths, maxEntries: 4000 }, // lazy: root level only
             },
           });
         }

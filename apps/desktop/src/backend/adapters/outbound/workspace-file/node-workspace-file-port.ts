@@ -21,15 +21,35 @@ const MAX_TREE_ENTRIES = 4000;
 // they are neither listed nor descended into, so the tree stays source-focused.
 // This is the ONLY exclusion: gitignored and dot/hidden files ARE shown (the
 // tree no longer consults .gitignore), so config/env/scratch files are reachable.
+//
+// The set must cover every ecosystem's machine-generated heavy dir, not just JS:
+// the walk is depth-first under a bounded entry budget, so a single un-excluded
+// giant dir (e.g. a pnpm store with ~18k entries, or a Python .venv) would be
+// descended into first and exhaust the whole budget, starving every sibling and
+// root file that sorts after it — leaving the tree showing only the dirs visited
+// before the blowout. Keep this list current with new package/build/cache dirs.
 const IGNORED_DIRECTORIES = new Set([
+  ".cache",
   ".git",
+  ".gradle",
+  ".hg",
+  ".mypy_cache",
   ".next",
+  ".pnpm-store",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".svn",
+  ".turbo",
+  ".venv",
+  ".yarn",
+  "__pycache__",
   "build",
   "coverage",
   "dist",
   "node_modules",
   "out",
   "target",
+  "venv",
 ]);
 
 export function createNodeWorkspaceFilePort(): WorkspaceFilePort {
@@ -39,8 +59,13 @@ export function createNodeWorkspaceFilePort(): WorkspaceFilePort {
 class NodeWorkspaceFilePort implements WorkspaceFilePort {
   async listTree(input: {
     root: string;
-    maxDepth: number;
     maxEntries: number;
+    // Lazy mode: descend ONLY into folders whose relativePath is in this set — a
+    // collapsed folder is listed as one entry and never walked, so a huge dir the
+    // user has not expanded can't starve the listing. Present (even empty) selects
+    // lazy mode. Absent falls back to the depth-bounded full walk (Quick Open).
+    expandedPaths?: string[];
+    maxDepth?: number;
   }): Promise<WorkspaceFileTreeResult> {
     const root = path.resolve(input.root);
     let rootStat;
@@ -67,6 +92,8 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
     }
 
     const entries: WorkspaceFileTreeEntry[] = [];
+    const expandedSet =
+      input.expandedPaths === undefined ? null : new Set(input.expandedPaths);
     const maxDepth = boundedTreeDepth(input.maxDepth);
     const maxEntries = boundedTreeEntries(input.maxEntries);
     let truncated = false;
@@ -107,7 +134,13 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
           kind,
         });
 
-        if (kind === "folder" && depth < maxDepth) {
+        // Lazy mode descends only into expanded folders; full mode (Quick Open)
+        // descends by depth. A collapsed folder is listed but not walked.
+        const descend =
+          expandedSet === null
+            ? depth < maxDepth
+            : expandedSet.has(relativePath);
+        if (kind === "folder" && descend) {
           await visit(childPath, depth + 1);
           if (truncated) {
             return;
@@ -449,8 +482,8 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
   }
 }
 
-function boundedTreeDepth(value: number): number {
-  if (Number.isInteger(value) && value >= 0) {
+function boundedTreeDepth(value: number | undefined): number {
+  if (value !== undefined && Number.isInteger(value) && value >= 0) {
     return Math.min(value, MAX_TREE_DEPTH);
   }
   return 2;

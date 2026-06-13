@@ -113,6 +113,8 @@ export interface BackendCommandPayloadByKind {
   // start (New Thread) page to show the composer-selected project's files.
   "workspace.readFileTree": {
     cwd: string;
+    // Lazy listing: descend only into these expanded folders. Absent => full walk.
+    expandedPaths?: string[];
     maxDepth?: number;
     maxEntries?: number;
   };

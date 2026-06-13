@@ -198,7 +198,7 @@ export type ProductShellBackendCommand =
     }
   | {
       kind: "workspace.readFileTree";
-      payload: { cwd: string; maxDepth?: number; maxEntries?: number };
+      payload: { cwd: string; expandedPaths?: string[]; maxDepth?: number; maxEntries?: number };
     }
   | {
       kind: "workspace.searchContent";
@@ -256,7 +256,10 @@ export type ProductShellBackendCommand =
         command: "refresh_file_tree";
         data: {
           path?: string;
-          maxDepth: number;
+          // Lazy mode: descend only into these expanded folders. Quick Open omits
+          // it and passes maxDepth for the depth-bounded full walk.
+          expandedPaths?: string[];
+          maxDepth?: number;
           maxEntries: number;
         };
       };
@@ -438,6 +441,10 @@ export interface ProductShellFileTreeView {
   // True while the tree for the active thread is being (re)loaded — e.g. right after
   // a thread switch cleared it — so the UI can show a skeleton instead of "empty".
   loading?: boolean;
+  // The folder whose children are being lazily fetched (an expand round-trip is in
+  // flight); the UI shows a skeleton child row under it. Cleared when the next
+  // FileTree payload replaces this view.
+  loadingFolderPath?: string | null;
 }
 
 export interface ProductShellFileTreeEntryView {

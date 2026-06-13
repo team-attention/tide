@@ -29,7 +29,8 @@ export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<Produc
             payload: {
               threadId: result.state.activeThreadId,
               command: "refresh_file_tree",
-              data: { maxDepth: 1, maxEntries: 400 },
+              // Lazy: load the root level only; folders fetch their children on expand.
+              data: { expandedPaths: result.state.expandedFolderPaths, maxEntries: 4000 },
             },
           });
         }

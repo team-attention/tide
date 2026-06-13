@@ -149,10 +149,15 @@ export function applyProductShellBackendEvent(
         return nextState;
       }
       const payload = event.payload as { cwd?: string; fileTree?: unknown };
+      const nextTree = productShellFileTreeFromPayload(payload.fileTree);
+      // Keep the expanded set when re-listing the SAME directory (a lazy expand
+      // round-trip); reset it only when a different project's tree loads.
+      const sameRoot =
+        nextTree?.root !== undefined && nextTree.root === nextState.fileTree?.root;
       return {
         ...nextState,
-        fileTree: productShellFileTreeFromPayload(payload.fileTree),
-        expandedFolderPaths: [],
+        fileTree: nextTree,
+        expandedFolderPaths: sameRoot ? nextState.expandedFolderPaths : [],
         // A tree for a DIFFERENT directory closes the previous project's viewer;
         // re-listing the same directory (toggle) leaves it open.
         startPageFile:
