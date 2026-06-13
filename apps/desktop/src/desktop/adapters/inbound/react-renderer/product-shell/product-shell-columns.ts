@@ -8,10 +8,10 @@ import {
 } from "../../../../application/domains/product-shell/product-shell.ts";
 import { useProductShellSlice } from "./store-context.ts";
 import type { MenuAnchorRect, ProductShellHandlers } from "./support/types.ts";
-import { createLeftRail } from "./left-rail/left-rail.ts";
-import { createAgentChatColumn } from "./chat-column/chat-column.ts";
-import { createWorkbenchColumn } from "./workbench/workbench.ts";
-import { createFileTreeColumn } from "./file-tree/file-tree.ts";
+import { createLeftRail } from "./left-rail/left-rail.tsx";
+import { createAgentChatColumn } from "./chat-column/chat-column.tsx";
+import { createWorkbenchColumn } from "./workbench/workbench.tsx";
+import { createFileTreeColumn } from "./file-tree/file-tree.tsx";
 // Spec: desktop-product-shell-render-isolation.
 
 // Each column subscribes (via useProductShellSlice) to ONLY its area selector, so a

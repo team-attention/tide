@@ -285,7 +285,14 @@ infrastructure/node/
 
 ## Implementation Notes
 
-- React is `createElement`-style in `.ts` files — moved modules keep `.ts`.
+- React renderer components are JSX in `.tsx` files. Tests run them directly via
+  the `tsx` loader (`node --import tsx --test`), which transforms JSX/types — so
+  unlike the old `--experimental-strip-types` setup, JSX is allowed (that earlier
+  constraint is why this code was once hand-written `createElement` in `.ts`).
+  Relative imports keep explicit extensions (`.tsx` for converted files) under
+  NodeNext. The lone exception is the Electron `<webview>` custom element, which
+  has no `JSX.IntrinsicElements` typing and stays a `createElement("webview", …)`
+  call (see `browser-pane.tsx`).
 - Shared mutable state found during cutting (e.g. `terminalOutputSinks`,
   `markdownRenderer`, xterm constructor resolution) must land in exactly one
   leaf module and be imported elsewhere.

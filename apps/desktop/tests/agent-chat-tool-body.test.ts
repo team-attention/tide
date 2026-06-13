@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { editDiffLines, toolBodyText } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.ts";
+import { editDiffLines, toolBodyText } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.tsx";
 
 // A Bash/run tool's JSON args render as the raw command with real newlines, not
 // the escaped {"command":"…\n…"} blob.

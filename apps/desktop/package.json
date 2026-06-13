@@ -17,9 +17,9 @@
     "typecheck": "node scripts/v2-tooling-command.mjs tsc --noEmit",
     "pretest": "node scripts/assert-node-version.mjs",
     "test": "npm run test:v2",
-    "test:v2": "node --test --experimental-strip-types tests/*.test.ts",
-    "test:watch": "node --test --watch --experimental-strip-types tests/*.test.ts",
-    "test:architecture": "node --test --experimental-strip-types tests/shared-contracts.test.ts tests/backend-thread-agent-runtime-lifecycle.test.ts tests/desktop-agent-chat-composer-shell.test.ts",
+    "test:v2": "TSX_TSCONFIG_PATH=tsconfig.test.json node --import tsx --test tests/*.test.ts tests/*.test.tsx",
+    "test:watch": "TSX_TSCONFIG_PATH=tsconfig.test.json node --import tsx --test --watch tests/*.test.ts tests/*.test.tsx",
+    "test:architecture": "TSX_TSCONFIG_PATH=tsconfig.test.json node --import tsx --test tests/shared-contracts.test.ts tests/backend-thread-agent-runtime-lifecycle.test.ts tests/desktop-agent-chat-composer-shell.test.tsx",
     "test:smoke:providers": "node --experimental-strip-types scripts/v2-provider-smoke.mjs",
     "test:smoke:electron": "node --experimental-strip-types scripts/v2-electron-runtime-smoke.mjs",
     "e2e": "node --experimental-strip-types scripts/e2e-run.mjs",
@@ -66,6 +66,7 @@
     "electron-vite": "^5.0.0",
     "jsdom": "^29.1.1",
     "playwright": "^1.60.0",
+    "tsx": "^4.22.4",
     "vite": "^7.3.3"
   }
 }
