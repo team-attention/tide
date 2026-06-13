@@ -872,7 +872,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         } as CSSProperties,
       },
       leftPresence.mounted
-        ? createElement(LeftRailColumnView, { handlers: stableHandlers, anchor: menuAnchor })
+        ? createElement(LeftRailColumnView, { handlers: stableHandlers, anchor: menuAnchor, collapsedSections })
         : null,
       createElement(AgentChatColumnView, { handlers: stableHandlers }),
       workbenchPresence.mounted ? createElement(WorkbenchColumnView, { handlers: stableHandlers }) : null,
