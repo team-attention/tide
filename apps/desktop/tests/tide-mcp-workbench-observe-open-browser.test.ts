@@ -243,6 +243,19 @@ test("opening_browser_from_an_active_launcher_resolves_the_launcher_in_place", a
   }
 });
 
+test("opening_two_different_files_yields_two_editor_panes_for_split", async () => {
+  // Repro: selecting a different file must open a NEW pane/tab (so Split has 2+).
+  const fakes = createFakes({ files: { "a.md": "AAA", "b.md": "BBB" } });
+  const service = serviceWithActiveThread("thread-multi", "runtime-multi", fakes);
+  await service.handleWorkbenchCommand({ threadId: "thread-multi", command: "open_editor", data: { path: "a.md" } });
+  const second = await service.handleWorkbenchCommand({ threadId: "thread-multi", command: "open_editor", data: { path: "b.md" } });
+  assert.equal(second.ok, true);
+  if (second.ok) {
+    const editors = second.workbench.panes.filter((pane) => pane.kind === "editor" && pane.visible);
+    assert.equal(editors.length, 2);
+  }
+});
+
 test("multiple_browsers_come_from_opening_multiple_launchers", async () => {
   // Spec: workbench-dock-parity.md — several browsers = + → launcher → resolve, repeated
   // (NOT a persistent launcher spawning panes).

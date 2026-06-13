@@ -79,7 +79,12 @@
 }
 
 .workbench-tab {
-  flex: 0 0 auto;
+  /* Shrink to share the strip (browser-tab style) so EVERY open pane keeps a
+     visible tab — previously tabs were fixed-width and the non-active ones
+     overflowed off-screen behind the hidden scrollbar, so opening a 2nd file just
+     looked like the editor "replaced" the first. */
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .workbench-tabs__empty {
