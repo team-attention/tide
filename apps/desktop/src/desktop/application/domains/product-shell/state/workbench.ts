@@ -1,8 +1,9 @@
 import type { ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellEditorDraft, ProductShellState, ProductShellUpdateResult } from "./types.ts";
+import { START_FILE_PANE_ID } from "./types.ts";
 import { applyDrop, reconcileTree, setRatioAtPath } from "./workbench-split-tree.ts";
 import type { DropZone } from "./workbench-split-tree.ts";
 import { closeWorkbenchPane, focusWorkbenchPane, resizeWorkbenchTerminal, writeWorkbenchTerminalInput } from "../../app-chrome/app-chrome-state.ts";
-import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
+import type { AppChromeEditorNavigationTarget, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { shellTimestamp } from "./create.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
@@ -272,6 +273,14 @@ export function closeProductShellWorkbenchPane(
   state: ProductShellState,
   paneId: string,
 ): ProductShellUpdateResult {
+  // Start-page editor: no backend pane exists — drop the open file and collapse
+  // the (now empty) workbench.
+  if (paneId === START_FILE_PANE_ID && state.activeThreadId === null) {
+    return {
+      state: { ...state, startPageFile: null, workbenchOpen: false },
+      command: null,
+    };
+  }
   const result = closeWorkbenchPane(state.appChrome, paneId);
   return {
     state: {
@@ -315,6 +324,19 @@ export function editProductShellWorkbenchEditorPane(
   paneId: string,
   content: string,
 ): ProductShellState {
+  // Start-page editor: the open file lives in startPageFile (there is no
+  // thread-bound pane before a thread exists). Track edits there; the view-model
+  // re-derives the editor's buffer from it.
+  if (paneId === START_FILE_PANE_ID) {
+    const file = state.startPageFile;
+    if (state.activeThreadId !== null || file === null || file.truncated) {
+      return state;
+    }
+    return {
+      ...state,
+      startPageFile: { ...file, draft: content, dirty: content !== file.content },
+    };
+  }
   const pane = state.appChrome.workbenchPanes.find(
     (candidate) => candidate.paneId === paneId && candidate.kind === "editor",
   );
@@ -401,6 +423,75 @@ export function goToProductShellEditorDefinition(
         // A dirty draft rides along so the backend resolves against what's on
         // screen, not the stale on-disk file.
         data: draft?.dirty === true ? { ...position, content } : position,
+      },
+    },
+  };
+}
+
+// Apply a thread-independent go-to-definition result to the start-page editor.
+// Same-file targets scroll in place; a different-file target opens that file
+// first (workspace.readFile) and rides in via startPagePendingNavigation, which
+// the workspace.fileLoaded reducer applies once the content lands.
+export function applyStartPageEditorDefinition(
+  state: ProductShellState,
+  location: { relativePath: string; line: number; character: number; length?: number; label?: string },
+): ProductShellUpdateResult {
+  const file = state.startPageFile;
+  if (state.activeThreadId !== null || file === null) {
+    return { state, command: null };
+  }
+  const target: AppChromeEditorNavigationTarget = {
+    line: location.line,
+    character: location.character,
+    length: location.length,
+    label: location.label,
+    sourcePaneId: START_FILE_PANE_ID,
+  };
+  if (location.relativePath === file.relativePath) {
+    return {
+      state: { ...state, startPageFile: { ...file, navigationTarget: target } },
+      command: null,
+    };
+  }
+  return {
+    state: {
+      ...state,
+      startPagePendingNavigation: { relativePath: location.relativePath, target },
+    },
+    command: {
+      kind: "workspace.readFile",
+      payload: { cwd: file.cwd, path: location.relativePath },
+    },
+  };
+}
+
+// Apply a thread-independent find-references result to the start-page editor's
+// references panel.
+export function applyStartPageEditorReferences(
+  state: ProductShellState,
+  references: {
+    items: Array<{ relativePath: string; line: number; character: number; length?: number; label?: string }>;
+    truncated: boolean;
+  },
+): ProductShellState {
+  const file = state.startPageFile;
+  if (state.activeThreadId !== null || file === null) {
+    return state;
+  }
+  return {
+    ...state,
+    startPageFile: {
+      ...file,
+      references: {
+        query: file.relativePath,
+        truncated: references.truncated,
+        items: references.items.map((item) => ({
+          relativePath: item.relativePath,
+          line: item.line,
+          character: item.character,
+          length: item.length,
+          label: item.label,
+        })),
       },
     },
   };
@@ -569,6 +660,28 @@ export function saveProductShellWorkbenchEditorPane(
   state: ProductShellState,
   paneId: string,
 ): ProductShellUpdateResult {
+  // Start-page editor save: there is no thread to host save_editor_file, so write
+  // the file thread-independently under the composer cwd (spec:
+  // start-page-file-viewer). The fileSaved event re-bases the editor.
+  if (paneId === START_FILE_PANE_ID) {
+    const file = state.startPageFile;
+    if (
+      state.activeThreadId !== null ||
+      file === null ||
+      file.truncated ||
+      file.dirty !== true ||
+      file.draft === undefined
+    ) {
+      return { state, command: null };
+    }
+    return {
+      state,
+      command: {
+        kind: "workspace.writeFile",
+        payload: { cwd: file.cwd, path: file.relativePath, content: file.draft },
+      },
+    };
+  }
   const pane = state.appChrome.workbenchPanes.find(
     (candidate) => candidate.paneId === paneId && candidate.kind === "editor",
   );

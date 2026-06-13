@@ -6,7 +6,6 @@ import { threadScopeLabel } from "../left-rail/thread-section.ts";
 import { createIconButton, createTrafficControls } from "../chrome/chrome.ts";
 import { Folder, PanelLeftOpen, Pin } from "lucide-react";
 import { AgentChatShell } from "../../agent-chat/agent-chat.ts";
-import { StartFileViewer } from "./start-file-viewer.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createAgentChatColumn(
@@ -68,12 +67,6 @@ export function createAgentChatColumn(
       // fixed window-level cluster at the top-right.
       createElement("div", { className: "column-top-row__trailing" }),
     ),
-    viewModel.startPageFile === null
-      ? null
-      : createElement(StartFileViewer, {
-          file: viewModel.startPageFile,
-          onClose: handlers.onStartPageFileClose,
-        }),
     createElement(AgentChatShell, {
       viewModel: viewModel.agentChat,
       showThreadHeader: false,

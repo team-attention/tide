@@ -318,6 +318,29 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           ],
         );
       }
+      case "workspace.writeFile": {
+        const typedCommand = command as BackendCommandEnvelope<"workspace.writeFile">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.workspaceQueries().writeWorkspaceFile(typedCommand.payload),
+          (result) => [
+            {
+              contractVersion: CONTRACT_VERSION,
+              eventId: this.nextEventId(),
+              requestId: typedCommand.requestId,
+              kind: "workspace.fileSaved",
+              emittedAt: this.clock(),
+              payload: {
+                cwd: result.cwd,
+                relativePath: result.relativePath,
+                content: result.content,
+                truncated: result.truncated,
+              },
+            } satisfies BackendEventEnvelope<"workspace.fileSaved">,
+            this.commandCompletedEvent(typedCommand, { handled: true }),
+          ],
+        );
+      }
       case "workspace.codeIntel": {
         const typedCommand = command as BackendCommandEnvelope<"workspace.codeIntel">;
         return this.handleServiceResult(
@@ -344,6 +367,8 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
                 highlights: result.highlights,
                 signature: result.signature,
                 diagnostics: result.diagnostics,
+                definition: result.definition,
+                references: result.references,
               }) as unknown as BackendEventEnvelope<"workspace.codeIntelResult">["payload"],
             } satisfies BackendEventEnvelope<"workspace.codeIntelResult">,
             this.commandCompletedEvent(typedCommand, { handled: true }),

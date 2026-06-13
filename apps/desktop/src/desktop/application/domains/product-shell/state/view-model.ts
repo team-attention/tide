@@ -1,10 +1,12 @@
-import type { ProductShellBackgroundBrowserPane, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellProject, ProductShellProjectGroupView, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellViewModel } from "./types.ts";
+import type { ProductShellBackgroundBrowserPane, ProductShellEditorDraft, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellProject, ProductShellProjectGroupView, ProductShellStartPageFile, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellViewModel } from "./types.ts";
+import { START_FILE_PANE_ID } from "./types.ts";
 import { isExternalSessionThread } from "./thread-list.ts";
 import { worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 import { reconcileTree } from "./workbench-split-tree.ts";
 import { createAgentChatShellViewModel } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBlock, AgentChatShellState, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { createAppChromeViewModel } from "../../app-chrome/app-chrome-state.ts";
+import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { cloneProductShellFileTree, fileTreePathHasCollapsedAncestor } from "./file-tree.ts";
 import { agentBindingForShellAgent, cloneLaunchOptions } from "./start.ts";
 import { shellTimestamp } from "./create.ts";
@@ -73,6 +75,19 @@ export function createProductShellViewModel(
   });
   // Worktree Projects folded into a repo no longer appear as their own group.
   const topLevelProjects = projects.filter((project) => !worktreeRemap.has(project.projectId));
+
+  // Start (New Thread) page: the open file has no thread-bound Workbench pane, so
+  // synthesize one read/write editor pane from startPageFile and render it through
+  // the normal Workbench column (spec: start-page-file-viewer).
+  const startFile = state.activeThreadId === null ? state.startPageFile : null;
+  const appChromeForView =
+    startFile === null
+      ? state.appChrome
+      : {
+          ...state.appChrome,
+          workbenchPanes: [startFileEditorPane(startFile)],
+          activeWorkbenchPaneId: START_FILE_PANE_ID,
+        };
   return {
     activeThreadId: state.activeThreadId,
     leftRailOpen: state.leftRailOpen,
@@ -109,15 +124,51 @@ export function createProductShellViewModel(
     // "thread" group mode: one flat, already-sorted list of every visible thread.
     flatThreads: visibleThreads.map((thread) => toThreadView(thread, state)),
     agentChat: createAgentChatShellViewModel(agentChatWithProjects(state)),
-    appChrome: createAppChromeViewModel(state.appChrome),
+    appChrome: createAppChromeViewModel(appChromeForView),
     fileTree: createFileTreeView(state),
-    startPageFile: state.activeThreadId === null ? state.startPageFile : null,
     contentSearch: state.contentSearch,
     editorPicker: createEditorPickerView(state),
-    editorDrafts: state.editorDrafts,
+    editorDrafts:
+      startFile === null
+        ? state.editorDrafts
+        : { ...state.editorDrafts, [START_FILE_PANE_ID]: startFileEditorDraft(startFile) },
     // Visible Browser Panes that need an offscreen live <webview> so a background
     // agent can drive its own Browser Pane (observe / act) without a visible view.
     backgroundBrowserPanes: deriveBackgroundBrowserPanes(state),
+  };
+}
+
+// The start (New Thread) page's open file, as a Workbench editor pane. There is
+// no thread/backend pane before a thread exists, so this single pane is derived
+// from startPageFile each render; the editor's draft/save/close handlers
+// special-case START_FILE_PANE_ID. A truncated read stays read-only.
+function startFileEditorPane(file: ProductShellStartPageFile): AppChromeWorkbenchPaneRef {
+  const name = file.relativePath.slice(file.relativePath.lastIndexOf("/") + 1);
+  return {
+    paneId: START_FILE_PANE_ID,
+    kind: "editor",
+    title: name,
+    visible: true,
+    // Stable: the editor is value-controlled, so the revision only identifies the
+    // pane; it never drives a remount here.
+    revision: START_FILE_PANE_ID,
+    updatedAt: shellTimestamp,
+    relativePath: file.relativePath,
+    filePath: `${file.cwd.replace(/\/+$/, "")}/${file.relativePath}`,
+    bodyText: file.content,
+    truncated: file.truncated,
+    navigationTarget: file.navigationTarget,
+    references: file.references,
+  };
+}
+
+function startFileEditorDraft(file: ProductShellStartPageFile): ProductShellEditorDraft {
+  return {
+    paneId: START_FILE_PANE_ID,
+    baseRevision: START_FILE_PANE_ID,
+    content: file.draft ?? file.content,
+    dirty: file.dirty ?? false,
+    cursorOffset: 0,
   };
 }
 

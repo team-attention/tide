@@ -1,6 +1,7 @@
 // Auth-safe START-PAGE file tree verification (spec: start-page-file-viewer):
 // on the New Thread page (no thread opened), the composer-scoped tree must
-// expand folders, open files into the read-only viewer, and follow the scope.
+// expand folders, open files as a real EDITABLE Workbench editor pane on the
+// right (NOT a chat overlay), and follow the scope.
 const { _electron } = require("playwright");
 const { spawnSync } = require("node:child_process");
 const path = require("node:path");
@@ -65,23 +66,87 @@ function check(label, ok, detail = "") {
   check("folder expands on the start page", after > before, `${before} -> ${after}`);
   await page.screenshot({ path: "/tmp/pw-start-1-expanded.png" });
 
-  // Open a file — the read-only viewer must show its content.
+  // Open a file — it must open as a real Workbench EDITOR PANE on the right,
+  // NOT the old chat overlay. The overlay class must be gone entirely.
   const fileRow = page.locator('.file-tree-row[data-file-kind="file"]').first();
   const fileName = (await fileRow.innerText()).trim();
   await fileRow.click();
   await page.waitForTimeout(1500);
-  const viewer = page.locator(".start-file-viewer");
-  check("file opens into the start-page viewer", (await viewer.count()) > 0, fileName);
-  const viewerText = (await viewer.locator(".cm-content").innerText().catch(() => "")) ?? "";
-  check("viewer renders file content", viewerText.length > 10, `${viewerText.length} chars`);
-  const tokenCount = await viewer.locator("[class*='tok-']").count();
-  console.log("viewer syntax tokens:", tokenCount);
-  await page.screenshot({ path: "/tmp/pw-start-2-viewer.png" });
+  await page.screenshot({ path: "/tmp/pw-start-2-editor.png" });
 
-  // Esc closes the viewer.
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(300);
-  check("Escape closes the viewer", (await viewer.count()) === 0);
+  check("the old chat-overlay viewer is gone", (await page.locator(".start-file-viewer").count()) === 0);
+  const workbench = page.locator('[data-column="workbench"]');
+  check("the workbench column opens with the file", (await workbench.count()) > 0);
+  const tab = page.locator(".workbench-tab__title", { hasText: fileName });
+  check("a workbench editor tab shows the file name", (await tab.count()) > 0, fileName);
+  // Content renders via the code editor OR the markdown preview.
+  const editorText =
+    ((await workbench.locator(".cm-content").first().innerText().catch(() => "")) || "") ||
+    ((await workbench.locator(".workbench-md-preview").first().innerText().catch(() => "")) || "");
+  check("the editor renders file content", editorText.trim().length > 10, `${editorText.trim().length} chars`);
+  // Editable affordance: markdown shows an Edit toggle; code shows a contenteditable
+  // CodeMirror (NOT cm-readonly). Either proves the pane is editable, not a viewer.
+  const hasEditToggle = (await workbench.locator(".workbench-md-toggle__option", { hasText: "Edit" }).count()) > 0;
+  const editableCm = (await workbench.locator(".cm-content[contenteditable='true']").count()) > 0;
+  check("the pane is editable (not read-only)", hasEditToggle || editableCm, hasEditToggle ? "markdown Edit toggle" : "editable code editor");
+
+  // Code intelligence (autocomplete) works on the start page too: it is
+  // thread-independent (workspace.codeIntel, keyed by cwd). Open a real .ts file
+  // and type a member access — completions must surface with NO thread.
+  const testsFolder = page.locator('.file-tree-row[data-file-kind="folder"]', { hasText: "tests" }).first();
+  if (await testsFolder.count()) {
+    await testsFolder.click();
+    await page.waitForTimeout(800);
+  }
+  const tsRow = page.locator('.file-tree-row[data-file-kind="file"]').filter({ hasText: /\.ts$/ }).first();
+  if (await tsRow.count()) {
+    const tsName = (await tsRow.innerText()).trim();
+    await tsRow.click();
+    await page.waitForTimeout(1800);
+    const codeEditor = workbench.locator(".workbench-editor-cm .cm-content");
+    check("a .ts file opens in the start-page code editor", (await codeEditor.count()) > 0, tsName);
+
+    // Find References on a clean buffer: right-click an identifier → "Find
+    // References" → the references panel must populate (full path: editor →
+    // workspace.codeIntel → backend findReferences → applied to startPageFile).
+    const ident = page.locator(".workbench-editor-cm .cm-content .tok-variableName, .workbench-editor-cm .cm-content .tok-propertyName").first();
+    if (await ident.count()) {
+      await ident.click();
+      await ident.click({ button: "right" });
+      await page.waitForTimeout(300);
+      const refItem = page.locator(".workbench-editor-menu__item", { hasText: "Find References" }).first();
+      if (await refItem.count()) {
+        await refItem.click();
+        await page.waitForTimeout(3200);
+        const panel = workbench.locator(".workbench-editor-references");
+        const refCount = await panel.locator(".workbench-editor-references__item").count();
+        await page.screenshot({ path: "/tmp/pw-start-3-references.png" });
+        check("find-references populates the panel on the start-page editor (no thread)", (await panel.count()) > 0 && refCount > 0, `${refCount} refs`);
+      }
+    }
+
+    // Autocomplete (dirties the buffer): type a member access — completions
+    // must surface with NO thread.
+    await codeEditor.first().click();
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("const probe = JSON.", { delay: 40 });
+    await page.waitForTimeout(2800);
+    const options = await page.locator(".cm-tooltip-autocomplete li").count();
+    check("autocomplete surfaces on the start-page editor (no thread)", options > 0, `${options} options`);
+    await page.screenshot({ path: "/tmp/pw-start-4-autocomplete.png" });
+    await page.keyboard.press("Escape");
+  } else {
+    console.log("note: no .ts file in the start-page tree — skipping autocomplete check");
+  }
+
+  // Closing the editor tab collapses the workbench (no thread to fall back to).
+  const closeTab = workbench.locator(".workbench-tab__close").first();
+  if (await closeTab.count()) {
+    await closeTab.click();
+    await page.waitForTimeout(400);
+    check("closing the file collapses the workbench", (await page.locator('[data-column="workbench"]').count()) === 0);
+  }
 
   await app.close();
   console.log(failures === 0 ? "ALL PASS" : `${failures} FAILURES`);

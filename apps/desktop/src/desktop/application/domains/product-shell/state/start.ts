@@ -21,6 +21,8 @@ export function startNewProductShellScratchThread(state: ProductShellState): Pro
     agentChat: createStartAgentChatState({ kind: "scratch", scratchCwd: "Scratch" }),
     appChrome: createAppChromeState(),
     fileTree: null,
+    startPageFile: null,
+    startPagePendingNavigation: null,
     editorDrafts: {},
   };
 }
@@ -51,6 +53,8 @@ export function startNewProductShellThread(
     agentChat: createStartAgentChatState(scope),
     appChrome: createAppChromeState(),
     fileTree: null,
+    startPageFile: null,
+    startPagePendingNavigation: null,
     editorDrafts: {},
     editorPickerFilter: null,
   };

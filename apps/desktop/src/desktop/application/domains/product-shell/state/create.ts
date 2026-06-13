@@ -108,6 +108,7 @@ export function createProductShellState(
     appChrome: createAppChromeState(),
     fileTree: null,
     startPageFile: null,
+    startPagePendingNavigation: null,
     contentSearch: null,
     editorDrafts: {},
     nextLocalThreadNumber: 1,

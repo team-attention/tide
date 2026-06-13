@@ -219,6 +219,12 @@ export function submitProductShellComposerDraft(
       activeThreadId: startedThread.threadId,
       threads,
       projects: projectsFromThreads(threads),
+      // A start-page file preview belongs to the New Thread page, not the thread
+      // just started. Drop it (and its synthetic workbench) so the new thread
+      // opens clean rather than inheriting an empty launcher.
+      startPageFile: null,
+      startPagePendingNavigation: null,
+      workbenchOpen: false,
     };
   }
 

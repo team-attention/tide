@@ -4,6 +4,7 @@ import type {
   WorkspaceCodeDiagnostic,
   WorkspaceCodeHover,
   WorkspaceCodeIntelligencePort,
+  WorkspaceCodeLocation,
   WorkspaceCodeRange,
   WorkspaceCodeSignatureHelp,
 } from "../../ports/outbound/workspace-code-intelligence-port.ts";
@@ -16,11 +17,11 @@ import {
 } from "../support/service-value-helpers.ts";
 import { cloneFileTreeView } from "../thread/thread-runtime-clone.ts";
 
-// THREAD-INDEPENDENT workspace reads, keyed by an explicit cwd instead of a
-// thread root: the start (New Thread) page's file tree and file viewer, the
-// Cmd+Shift+F content search, and the editor's language-intelligence queries.
-// Extracted from WorkbenchCommandHandler (file-size ratchet), which keeps the
-// thread-bound visible Workbench commands.
+// THREAD-INDEPENDENT workspace reads/writes, keyed by an explicit cwd instead of
+// a thread root: the start (New Thread) page's file tree, file viewer/editor and
+// its save, the Cmd+Shift+F content search, and the editor's language-intelligence
+// queries. Extracted from WorkbenchCommandHandler (file-size ratchet), which keeps
+// the thread-bound visible Workbench commands.
 
 export interface ReadWorkspaceFileTreeInput {
   cwd: string;
@@ -40,6 +41,20 @@ export interface ReadWorkspaceFileInput {
 }
 
 export interface ReadWorkspaceFileResult {
+  cwd: string;
+  relativePath: string;
+  content: string;
+  truncated: boolean;
+}
+
+export interface WriteWorkspaceFileInput {
+  cwd: string;
+  path: string;
+  content: string;
+  byteLimit?: number;
+}
+
+export interface WriteWorkspaceFileResult {
   cwd: string;
   relativePath: string;
   content: string;
@@ -73,7 +88,17 @@ export type QueryWorkspaceCodeIntelKind =
   | "hover"
   | "highlights"
   | "signature"
-  | "diagnostics";
+  | "diagnostics"
+  | "definition"
+  | "references";
+
+export interface WorkspaceCodeLocationResult {
+  relativePath: string;
+  line: number;
+  character: number;
+  length?: number;
+  label?: string;
+}
 
 export interface QueryWorkspaceCodeIntelInput {
   cwd: string;
@@ -97,6 +122,8 @@ export interface QueryWorkspaceCodeIntelResult {
   highlights?: WorkspaceCodeRange[];
   signature?: WorkspaceCodeSignatureHelp | null;
   diagnostics?: WorkspaceCodeDiagnostic[];
+  definition?: WorkspaceCodeLocationResult | null;
+  references?: { items: WorkspaceCodeLocationResult[]; truncated: boolean };
 }
 
 export interface WorkspaceQueryHandlerDeps {
@@ -151,6 +178,37 @@ export class WorkspaceQueryHandler {
       relativePath: read.file.relativePath,
       content: read.file.content,
       truncated: read.file.truncated,
+    };
+  }
+
+  // The start page's editor saves a file before any thread exists. Same workspace
+  // file port + byte limit as the thread-bound save_editor_file, keyed by the
+  // composer's cwd instead of a thread root.
+  async writeWorkspaceFile(
+    input: WriteWorkspaceFileInput,
+  ): Promise<ServiceResult<WriteWorkspaceFileResult>> {
+    const byteLimit = fileByteLimit(input.byteLimit);
+    if (input.content.length > byteLimit) {
+      return failure(
+        "workspace_file_too_large",
+        "Editor content exceeds the bounded save size.",
+      );
+    }
+    const written = await this.workspaceFilePort.writeTextFile({
+      root: input.cwd,
+      path: input.path,
+      content: input.content,
+      byteLimit,
+    });
+    if (!written.ok) {
+      return failure(written.error.code, written.error.message);
+    }
+    return {
+      ok: true,
+      cwd: input.cwd,
+      relativePath: written.file.relativePath,
+      content: written.file.content,
+      truncated: written.file.truncated,
     };
   }
 
@@ -227,8 +285,40 @@ export class WorkspaceQueryHandler {
           ? { ok: true, kind: input.kind, available: true, diagnostics: result.diagnostics }
           : miss(result.error.message);
       }
+      case "definition": {
+        const result = await this.workspaceCodeIntelligencePort.findDefinition(query);
+        return result.ok
+          ? { ok: true, kind: input.kind, available: true, definition: toLocationResult(result.location) }
+          : miss(result.error.message);
+      }
+      case "references": {
+        const result = await this.workspaceCodeIntelligencePort.findReferences(query);
+        return result.ok
+          ? {
+              ok: true,
+              kind: input.kind,
+              available: true,
+              references: {
+                items: result.locations.map(toLocationResult),
+                truncated: result.truncated,
+              },
+            }
+          : miss(result.error.message);
+      }
       default:
         return failure("invalid_workbench_command", "Unknown code intelligence query kind.");
     }
   }
+}
+
+// The editor only needs the in-workspace location (relative path + position),
+// not the engine's absolute root/path.
+function toLocationResult(location: WorkspaceCodeLocation): WorkspaceCodeLocationResult {
+  return {
+    relativePath: location.relativePath,
+    line: location.line,
+    character: location.character,
+    length: location.length,
+    label: location.label,
+  };
 }

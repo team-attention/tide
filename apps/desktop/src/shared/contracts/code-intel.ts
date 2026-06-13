@@ -7,7 +7,23 @@ export type WorkspaceCodeIntelKindDto =
   | "hover"
   | "highlights"
   | "signature"
-  | "diagnostics";
+  | "diagnostics"
+  | "definition"
+  | "references";
+
+// A resolved source location (go-to-definition target / one reference site).
+export interface WorkspaceCodeLocationDto {
+  relativePath: string;
+  line: number;
+  character: number;
+  length?: number;
+  label?: string;
+}
+
+export interface WorkspaceCodeReferencesDto {
+  items: WorkspaceCodeLocationDto[];
+  truncated: boolean;
+}
 
 export interface WorkspaceCodeCompletionDto {
   label: string;

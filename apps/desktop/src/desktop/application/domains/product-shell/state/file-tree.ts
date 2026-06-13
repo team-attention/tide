@@ -57,13 +57,6 @@ function startPageFileTreeCommand(
   return null;
 }
 
-export function closeProductShellStartPageFile(state: ProductShellState): ProductShellState {
-  if (state.startPageFile === null) {
-    return state;
-  }
-  return { ...state, startPageFile: null };
-}
-
 // When the start-page composer scope changes while the file tree is open, reload the
 // tree for the new directory. Returns null when not on the start page / tree closed.
 export function refreshStartPageFileTree(
@@ -104,16 +97,18 @@ export function selectProductShellFileTreeEntry(
     return { state: nextState, command: null };
   }
 
-  // Start page: no thread/workbench to open an Editor Pane in — read the file
-  // thread-independently into the start-page viewer (spec:
-  // start-page-file-viewer).
+  // Start page: no thread yet, so there is no thread-bound workbench to open an
+  // Editor Pane in. Read the file thread-independently; the view-model renders it
+  // as a read/write editor pane in the Workbench column (spec:
+  // start-page-file-viewer). Open the workbench now so the column animates in
+  // immediately instead of after the read round-trip.
   if (state.activeThreadId === null) {
     const scope = state.agentChat.composer.startOptions.scope;
     if (scope?.kind !== "project" || scope.cwd.length === 0) {
       return { state, command: null };
     }
     return {
-      state,
+      state: { ...state, workbenchOpen: true },
       command: {
         kind: "workspace.readFile",
         payload: { cwd: scope.cwd, path: entry.relativePath },

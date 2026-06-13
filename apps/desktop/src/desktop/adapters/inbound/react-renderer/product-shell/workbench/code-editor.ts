@@ -13,6 +13,14 @@ import { CornerDownRight } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 // Language-intelligence extensions: spec workbench-editor-language-intelligence.
 
+// Document offset → 0-based {line, character}. The thread-less start-page editor
+// has no tracked cursor in shell state, so go-to-definition/references carry the
+// live position from the view itself.
+function offsetToPosition(view: EditorView, offset: number): { line: number; character: number } {
+  const line = view.state.doc.lineAt(offset);
+  return { line: line.number - 1, character: offset - line.from };
+}
+
 // Real code editor: CodeMirror 6 (MIT). Grammar-based highlighting, line
 // numbers, selection, editing. Read-only Panes still render highlighted via
 // CodeMirror with editing disabled.
@@ -217,7 +225,7 @@ export function WorkbenchCodeEditor(props: {
     event.preventDefault();
     view.dispatch({ selection: { anchor: pos } });
     props.handlers.onEditorCursorChange(props.paneId, pos);
-    props.handlers.onEditorGoToDefinition(props.paneId);
+    props.handlers.onEditorGoToDefinition(props.paneId, offsetToPosition(view, pos));
   };
 
   return createElement(
@@ -317,8 +325,20 @@ export function WorkbenchCodeEditor(props: {
             menuItem("Copy", copySelection, menuSelection === null),
             menuItem("Paste", pasteIntoEditor, props.readOnly),
             createElement("div", { className: "workbench-editor-menu__sep", role: "separator" }),
-            menuItem("Go to Definition", () => props.handlers.onEditorGoToDefinition(props.paneId)),
-            menuItem("Find References", () => props.handlers.onEditorGoToReferences(props.paneId)),
+            menuItem("Go to Definition", () => {
+              const view = editorRef.current?.view;
+              props.handlers.onEditorGoToDefinition(
+                props.paneId,
+                view ? offsetToPosition(view, view.state.selection.main.head) : undefined,
+              );
+            }),
+            menuItem("Find References", () => {
+              const view = editorRef.current?.view;
+              props.handlers.onEditorGoToReferences(
+                props.paneId,
+                view ? offsetToPosition(view, view.state.selection.main.head) : undefined,
+              );
+            }),
             props.readOnly
               ? null
               : menuItem("Save", () => props.handlers.onEditorSave(props.paneId), !props.dirty),

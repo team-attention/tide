@@ -5,7 +5,9 @@ import type {
   WorkspaceCodeDiagnosticDto,
   WorkspaceCodeHoverDto,
   WorkspaceCodeIntelKindDto,
+  WorkspaceCodeLocationDto,
   WorkspaceCodeRangeDto,
+  WorkspaceCodeReferencesDto,
   WorkspaceCodeSignatureHelpDto,
 } from "./code-intel.ts";
 import type { ContractErrorPayload } from "./errors.ts";
@@ -49,7 +51,8 @@ export type BackendEventKind =
   | "workspace.fileTreeLoaded"
   | "workspace.contentSearchResults"
   | "workspace.codeIntelResult"
-  | "workspace.fileLoaded";
+  | "workspace.fileLoaded"
+  | "workspace.fileSaved";
 
 export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "backend.connectionChanged",
@@ -79,6 +82,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "workspace.contentSearchResults",
   "workspace.codeIntelResult",
   "workspace.fileLoaded",
+  "workspace.fileSaved",
 ];
 
 export interface BackendEventPayloadByKind {
@@ -208,6 +212,15 @@ export interface BackendEventPayloadByKind {
     content: string;
     truncated: boolean;
   };
+  // A thread-independent file write completed for the start page's editor (same
+  // requestId as the workspace.writeFile command). Carries the now-on-disk
+  // content so the editor clears its dirty state.
+  "workspace.fileSaved": {
+    cwd: string;
+    relativePath: string;
+    content: string;
+    truncated: boolean;
+  };
   // Answer to a workspace.codeIntel query (same requestId). `ok:false` carries
   // a human-readable `message` (e.g. no language support for the file); the
   // editor then simply shows nothing. Spec: workbench-editor-language-intelligence.
@@ -220,6 +233,8 @@ export interface BackendEventPayloadByKind {
     highlights?: WorkspaceCodeRangeDto[];
     signature?: WorkspaceCodeSignatureHelpDto | null;
     diagnostics?: WorkspaceCodeDiagnosticDto[];
+    definition?: WorkspaceCodeLocationDto | null;
+    references?: WorkspaceCodeReferencesDto;
   };
 }
 

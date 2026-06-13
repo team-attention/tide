@@ -155,16 +155,17 @@ export interface ProductShellHandlers {
   onLeftRailTransientClear: () => void;
   onFocusWorkbenchPane: (paneId: string) => void;
   onCloseWorkbenchPane: (paneId: string) => void;
-  // Close the start page's read-only file viewer.
-  onStartPageFileClose: () => void;
   onFileTreeEntryOpen: (entryId: string) => void;
   onTerminalInput: (paneId: string, bytes: string) => void;
   onTerminalResize: (paneId: string, cols: number, rows: number) => void;
   onEditorDraftChange: (paneId: string, content: string) => void;
   onEditorCursorChange: (paneId: string, cursorOffset: number) => void;
   onEditorSave: (paneId: string) => void;
-  onEditorGoToDefinition: (paneId: string) => void;
-  onEditorGoToReferences: (paneId: string) => void;
+  // `position` (0-based line/character) is supplied by the editor for the
+  // thread-less start-page editor, whose cursor isn't tracked in shell state;
+  // thread panes ignore it and resolve from their tracked cursor.
+  onEditorGoToDefinition: (paneId: string, position?: { line: number; character: number }) => void;
+  onEditorGoToReferences: (paneId: string, position?: { line: number; character: number }) => void;
   // Editor language-intelligence query (workspace.codeIntel round-trip). The
   // result payload goes straight back to the calling CodeMirror extension —
   // it never enters shell state, so typing/hovering can't re-render the shell.

@@ -1,5 +1,5 @@
 import type { AgentChatBackendCommand, AgentChatBranchOption, AgentChatCommandOption, AgentChatShellState, AgentChatShellViewModel, AgentChatThreadScope, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
-import type { AppChromeBackendCommand, AppChromeState, AppChromeViewModel, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
+import type { AppChromeBackendCommand, AppChromeEditorNavigationTarget, AppChromeEditorReferenceList, AppChromeState, AppChromeViewModel, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import type { WorkbenchSplitNode } from "./workbench-split-tree.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
@@ -83,9 +83,28 @@ export interface ProductShellProject {
 export interface ProductShellStartPageFile {
   cwd: string;
   relativePath: string;
+  // The file as it is on disk (the editor's save base). Updated on load + save.
   content: string;
+  // Truncated reads are partial, so they stay read-only — saving would clobber
+  // the unread tail.
   truncated: boolean;
+  // The live (possibly unsaved) editor buffer; undefined = clean (showing
+  // `content`). `dirty` is true when `draft` diverges from `content`.
+  draft?: string;
+  dirty?: boolean;
+  // Go-to-definition result for the editor to scroll/select to (same-file jump,
+  // or carried in after a cross-file open).
+  navigationTarget?: AppChromeEditorNavigationTarget;
+  // Find-references result rendered as the editor's references panel.
+  references?: AppChromeEditorReferenceList;
 }
+
+// The synthetic Workbench editor pane id for the start (New Thread) page's open
+// file. There is no thread/backend pane to host an editor before a thread
+// exists, so the view-model derives a single read/write editor pane under this
+// id from `startPageFile`, and the editor draft/save/close handlers special-case
+// it (keyed on a null activeThreadId). See docs_v2/specs/start-page-file-viewer.md.
+export const START_FILE_PANE_ID = "start-file";
 
 export interface ProductShellState {
   activeThreadId: string | null;
@@ -145,10 +164,14 @@ export interface ProductShellState {
   agentChatByThreadId: Record<string, AgentChatShellState>;
   appChrome: AppChromeState;
   fileTree: ProductShellFileTreeView | null;
-  // The start (New Thread) page's open file viewer — a thread-independent read
-  // of one file under the composer-selected project (spec:
+  // The start (New Thread) page's open editor file — a thread-independent
+  // read/write of one file under the composer-selected project (spec:
   // start-page-file-viewer). Null when nothing is open.
   startPageFile: ProductShellStartPageFile | null;
+  // A cross-file go-to-definition target awaiting its file load: set when the
+  // definition is in a DIFFERENT file (we dispatch workspace.readFile first), and
+  // consumed by workspace.fileLoaded to scroll the newly-opened file to it.
+  startPagePendingNavigation: { relativePath: string; target: AppChromeEditorNavigationTarget } | null;
   // Latest project content-search (Cmd+Shift+F) results for the active thread.
   contentSearch: ProductShellContentSearch | null;
   editorDrafts: Record<string, ProductShellEditorDraft>;
@@ -169,6 +192,11 @@ export type ProductShellBackendCommand =
       payload: { cwd: string; path: string; byteLimit?: number };
     }
   | {
+      // Start-page editor save (thread-independent write under the composer cwd).
+      kind: "workspace.writeFile";
+      payload: { cwd: string; path: string; content: string; byteLimit?: number };
+    }
+  | {
       kind: "workspace.readFileTree";
       payload: { cwd: string; maxDepth?: number; maxEntries?: number };
     }
@@ -185,7 +213,7 @@ export type ProductShellBackendCommand =
       payload: {
         cwd: string;
         path: string;
-        kind: "completion" | "hover" | "highlights" | "signature" | "diagnostics";
+        kind: "completion" | "hover" | "highlights" | "signature" | "diagnostics" | "definition" | "references";
         content?: string;
         line?: number;
         character?: number;
@@ -345,7 +373,6 @@ export interface ProductShellEditorPickerView {
 }
 
 export interface ProductShellViewModel {
-  startPageFile: ProductShellStartPageFile | null;
   activeThreadId: string | null;
   leftRailOpen: boolean;
   // False on a cold boot until the first thread list arrives — drives the rail skeleton.

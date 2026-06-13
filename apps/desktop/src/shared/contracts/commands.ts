@@ -22,7 +22,8 @@ export type BackendCommandKind =
   | "workspace.readFileTree"
   | "workspace.searchContent"
   | "workspace.codeIntel"
-  | "workspace.readFile";
+  | "workspace.readFile"
+  | "workspace.writeFile";
 
 export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "thread.list",
@@ -43,6 +44,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "workspace.searchContent",
   "workspace.codeIntel",
   "workspace.readFile",
+  "workspace.writeFile",
 ];
 
 /**
@@ -128,6 +130,16 @@ export interface BackendCommandPayloadByKind {
   "workspace.readFile": {
     cwd: string;
     path: string;
+    byteLimit?: number;
+  };
+  // Write one text file under `cwd`, NOT tied to a thread — the start (New
+  // Thread) page's editor save (spec: start-page-file-viewer). The thread-bound
+  // editor uses workbench.command/save_editor_file instead. Answered by a
+  // workspace.fileSaved event.
+  "workspace.writeFile": {
+    cwd: string;
+    path: string;
+    content: string;
     byteLimit?: number;
   };
   // Editor language-intelligence query (completion/hover/highlights/signature/

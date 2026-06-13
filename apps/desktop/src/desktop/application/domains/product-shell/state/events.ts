@@ -162,8 +162,10 @@ export function applyProductShellBackendEvent(
       };
     }
     case "workspace.fileLoaded": {
-      // The start-page viewer's file content. Ignored once a thread is active
-      // (the workbench owns file display there).
+      // The start-page editor's file content. Ignored once a thread is active
+      // (the thread's own workbench owns file display there). Opens the Workbench
+      // column so the file shows as an editor pane on the right — the view-model
+      // synthesizes that pane from startPageFile.
       if (state.activeThreadId !== null) {
         return nextState;
       }
@@ -176,13 +178,53 @@ export function applyProductShellBackendEvent(
       if (typeof payload.cwd !== "string" || typeof payload.relativePath !== "string") {
         return nextState;
       }
+      // A cross-file go-to-definition opened this file; carry its target in so the
+      // editor scrolls to the definition once the content is here.
+      const pending = nextState.startPagePendingNavigation;
+      const navigationTarget =
+        pending !== null && pending.relativePath === payload.relativePath ? pending.target : undefined;
       return {
         ...nextState,
+        workbenchOpen: true,
+        startPagePendingNavigation:
+          navigationTarget !== undefined ? null : nextState.startPagePendingNavigation,
         startPageFile: {
           cwd: payload.cwd,
           relativePath: payload.relativePath,
           content: typeof payload.content === "string" ? payload.content : "",
           truncated: payload.truncated === true,
+          navigationTarget,
+        },
+      };
+    }
+    case "workspace.fileSaved": {
+      // The start-page editor's save landed on disk: re-base the editor to the
+      // saved content and drop the dirty draft. Ignored once a thread is active.
+      if (state.activeThreadId !== null) {
+        return nextState;
+      }
+      const payload = event.payload as {
+        cwd?: string;
+        relativePath?: string;
+        content?: string;
+        truncated?: boolean;
+      };
+      const file = nextState.startPageFile;
+      if (
+        file === null ||
+        file.cwd !== payload.cwd ||
+        file.relativePath !== payload.relativePath
+      ) {
+        return nextState;
+      }
+      return {
+        ...nextState,
+        startPageFile: {
+          ...file,
+          content: typeof payload.content === "string" ? payload.content : file.content,
+          truncated: payload.truncated === true,
+          draft: undefined,
+          dirty: false,
         },
       };
     }
