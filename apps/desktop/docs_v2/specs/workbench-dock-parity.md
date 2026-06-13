@@ -15,22 +15,23 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
    beside the panes it opens.
 3. **Cmd/Ctrl+click → new Browser Pane** — modifier-click on a chat link opens a new
    Browser Pane; plain click keeps reuse-active.
-4. **Intuitive Stacked/Split** — the workbench chrome controls live in the **fixed
-   top-right window cluster** (`createWindowChromeToggles`), alongside the Workbench /
-   FileTree panel toggles, as compact icon buttons in the 52px window band — *not* in a
-   column header row or a pane header. The cluster (shown when the Workbench is open) is:
-   a **single** `Stacked⇄Split` toggle (one slot — the icon shows the current mode and
-   clicking flips it), **fullscreen**, and **New Pane**. Per-pane **maximize** (Split →
-   Stacked focused on that pane) stays on each split pane's header. Consequences: the
-   header heights are uniform (one 52px window band everywhere); **Stacked** is just the
-   tab strip (the controls no longer crowd it, so tabs are roomy); **Split** is just the
-   tiled panes with their own headers (no global row — no two-row header). The rightmost
-   column's header reserves the (wider) cluster's footprint. Known edge: with the file
-   tree closed, the cluster sits over the workbench's top-right, so the top-right split
-   pane's header reserves the cluster's footprint (its chip truncates before the icons —
-   no jumble; the editor breadcrumb still identifies the file). A *very* narrow such
-   pane yields its whole chip (including its close); opening the tree or widening it
-   restores it. With the tree open the cluster is over the file tree, so no reserve.
+4. **Intuitive Stacked/Split — one unified tab bar.** The workbench has a single 52px
+   **tab bar in BOTH modes** (the same `workbench-tabs` header). **Stacked** shows the
+   active tab's pane below it; **Split** tiles ALL panes BELOW the bar. Because the bar —
+   a chrome row, not a pane — is what sits under the fixed top-right control cluster,
+   pane overlap is **structurally impossible** (the bar reserves the cluster's footprint
+   like any rightmost-column header; the tiles below are never touched). This is the
+   Arc/Vivaldi tiling model: the tab bar is the single pane label/nav/close surface; the
+   tiles are content. Consequences: header heights are uniform (one 52px bar); no empty
+   second row; tabs stay roomy; no overlap in any tree state.
+   The workbench chrome controls live in the **fixed top-right window cluster**
+   (`createWindowChromeToggles`) next to the Workbench/FileTree panel toggles: a
+   **single** `Stacked⇄Split` toggle (icon shows the current mode, click flips it),
+   **fullscreen**, **New Pane**.
+   **Split tiles** have no chip header — just a **slim drag strip** (`pane-strip`): drag
+   to rearrange (the binary split-tree drop-zones), click to focus, hover reveals
+   maximize (→ Stacked on that pane) + close; the focused tile gets a top accent bar.
+   Tiles are identified by the tab bar + their own editor breadcrumb.
    Stacked tabs are flat and label-like; the active tab carries a full-height surface
    highlight + a charcoal under-bar (ink, never a chip) so it reads as a tab — not as
    the segmented toggle in the same row — and its region is clearly delineated. The
