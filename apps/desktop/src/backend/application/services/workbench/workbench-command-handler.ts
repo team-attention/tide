@@ -33,7 +33,7 @@ import {
   workbenchLayoutModeFromValue,
 } from "./workbench-command-data.ts";
 import type { WorkbenchFileOperations } from "./workbench-file-operations.ts";
-import { openWorkbenchLauncher } from "./workbench-launcher.ts";
+import { activeLauncherPaneId, openWorkbenchLauncher, removeLauncherPane } from "./workbench-launcher.ts";
 import type { WorkbenchRuntime } from "./workbench-runtime.ts";
 import {
   closeWorkbenchPaneState,
@@ -117,15 +117,24 @@ export class WorkbenchCommandHandler {
         };
       }
       case "open_browser": {
-        // Don't consume the launcher: it stays as its own pane so the user can
-        // fan out (launcher → browser → editor → terminal) with all panes
-        // coexisting as tabs/splits.
-        const opened = openBrowserOutput(thread, input.data, this.idGenerator, this.clock);
+        // The Launcher is a PLACEHOLDER: picking Browser RESOLVES it in place — a
+        // new Browser Pane takes the Launcher's slot and the Launcher is removed
+        // (v1 dock-placeholder: resolve_launcher / replace_pane). Multiple browsers
+        // come from opening multiple launchers (+ → launcher → resolve), not from a
+        // persistent launcher. With no active launcher (agent open, chat link) the
+        // input disposition (reuse / new) applies as before.
+        const launcherToReplace = activeLauncherPaneId(thread);
+        const browserData =
+          launcherToReplace === undefined
+            ? input.data
+            : { ...input.data, disposition: "new_browser_pane" };
+        const opened = openBrowserOutput(thread, browserData, this.idGenerator, this.clock);
         const pane = workbenchPaneById(thread.workbench, opened.pane.paneId);
         if (pane !== undefined) {
           pane.visible = true;
           thread.workbench.activePaneId = pane.paneId;
         }
+        removeLauncherPane(thread, launcherToReplace);
         thread.workbench.focusOwner = "workbench";
         thread.updatedAt = this.clock();
         return {
@@ -227,6 +236,8 @@ export class WorkbenchCommandHandler {
         };
       }
       case "open_editor": {
+        // Resolve the Launcher placeholder in place (the Editor takes its slot).
+        const launcherToReplace = activeLauncherPaneId(thread);
         const opened = await this.workbenchFileOps.openFileOutput(thread, input.data);
         if (!opened.ok) {
           return failure(opened.error.code, opened.error.message);
@@ -236,6 +247,7 @@ export class WorkbenchCommandHandler {
           pane.visible = true;
           thread.workbench.activePaneId = pane.paneId;
         }
+        removeLauncherPane(thread, launcherToReplace);
         thread.workbench.focusOwner = "workbench";
         thread.updatedAt = this.clock();
         return {
@@ -262,6 +274,8 @@ export class WorkbenchCommandHandler {
         }
         const command = optionalString(input.data?.command) ?? this.defaultWorkbenchTerminalCommand;
         const args = arrayOfStrings(input.data?.args);
+        // Resolve the Launcher placeholder in place (the Terminal takes its slot).
+        const launcherToReplace = activeLauncherPaneId(thread);
         const pane = this.workbenchRuntime.openWorkbenchTerminal(thread, {
           command,
           args,
@@ -269,6 +283,7 @@ export class WorkbenchCommandHandler {
         });
         await this.workbenchRuntime.ensureWorkbenchTerminalRunning(thread, pane);
         thread.workbench.activePaneId = pane.paneId;
+        removeLauncherPane(thread, launcherToReplace);
         thread.workbench.focusOwner = "workbench";
         thread.updatedAt = this.clock();
         return {

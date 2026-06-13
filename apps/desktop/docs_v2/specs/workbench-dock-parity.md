@@ -7,10 +7,12 @@ Make the v2 Workbench behave like the v1 Tide Terminal "Terminal Context Surface
 Stacked/Split presentation, available on the composer (New Thread) screen, and
 manipulable by the agent. Six concrete changes, delivered as one combined pass:
 
-1. **Launcher-first** — the Launcher is the Workbench's anchor/first pane; opening
-   the Workbench (`+`/toggle) with nothing in it shows the Launcher.
-2. **Multiple Browser Panes** — the Launcher's *Browser* action opens a NEW Browser
-   Pane each time (today it reuses the active one), so several can coexist.
+1. **Launcher-first (placeholder)** — opening the Workbench (`+`/toggle) with nothing
+   in it shows the Launcher; the Launcher is a PLACEHOLDER that is RESOLVED in-slot
+   when you pick an action (replaced by the chosen pane), per v1 dock-placeholder.
+2. **Multiple Browser Panes** — open several Launchers (`+` → launcher → resolve to
+   Browser, repeated) to get several coexisting browsers; the Launcher never persists
+   beside the panes it opens.
 3. **Cmd/Ctrl+click → new Browser Pane** — modifier-click on a chat link opens a new
    Browser Pane; plain click keeps reuse-active.
 4. **Intuitive Stacked/Split** — replace the single ambiguous toggle icon with a
@@ -68,9 +70,15 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
   renderer replays each draft as an `open_*` Workbench command against the new
   Thread (FIFO after `thread.start`), then clears the draft and keeps the Workbench
   open. Adoption is best-effort and ordered; a failed replay is dropped, never fatal.
-- **Launcher is a first-class anchor pane.** The Launcher stays openable and is the
-  default content of an empty Workbench. Opening Browser/Editor/Terminal does not
-  consume it (today's behavior), so the fan-out (launcher → many panes) holds.
+- **Launcher is a PLACEHOLDER, resolved in-slot on open (v1 parity).** This corrects
+  the initial implementation (which kept the Launcher and spawned a new pane beside
+  it). Per v1 `apps/terminal/docs/specs/dock-placeholder.md` + `dock_service`
+  (`replace_pane` + `panes.remove`) and `pane_create_service::resolve_launcher`: the
+  Launcher occupies a slot, and picking an action REMOVES it and puts the chosen pane
+  in its place. Several browsers come from opening several Launchers (`+` → launcher →
+  resolve, repeated), NOT from a persistent Launcher. An empty Workbench shows the
+  Launcher; opening a pane while a Launcher is active resolves it; opening a pane with
+  no active Launcher (agent, chat-link) adds a new pane.
 
 ## Out Of Scope
 
@@ -123,9 +131,13 @@ Renderer handler signature:
 
 ## Flow
 
-**Launcher Browser (multiple):** Launcher *Browser* → `open_browser` command with
-`data:{ disposition:"new_browser_pane" }` → backend pushes a new Browser Pane →
-snapshot → renderer shows it (Stacked: becomes active tab; Split: reconciled in).
+**Launcher resolve (placeholder):** Launcher *Browser* → `open_browser` (no
+disposition) → backend sees the active pane is a Launcher → opens a new Browser Pane
+AND removes the Launcher (`activeLauncherPaneId` + `removeLauncherPane`), so the
+Browser takes the Launcher's slot. Same for *Editor*/*Terminal* (`open_editor` /
+`open_terminal` remove the active Launcher). Several browsers = repeat `+` → Launcher
+→ resolve. With no active Launcher (agent `tide_open_browser`, chat-link click) the
+input disposition (reuse / `new_browser_pane`) applies and no Launcher is removed.
 
 **Cmd/Ctrl+click link:** transcript click reads `event.metaKey || event.ctrlKey`;
 true → `onOpenBrowserPane(url,{newPane:true})` → `new_browser_pane`; false → reuse.
@@ -159,7 +171,7 @@ Workbench commands (one per draft pane) bound to the new `threadId`, clears
 | # | Area | Expectation |
 |---|------|-------------|
 | T1 | backend cmd | `set_layout_mode` sets `thread.workbench.layoutMode`; snapshot carries it; invalid mode → failure. |
-| T2 | backend cmd | Launcher `open_browser` with `new_browser_pane` adds a 2nd Browser Pane (count grows); reuse keeps one. |
+| T2 | backend cmd | Launcher resolve: `open_browser` while a Launcher is active removes it + adds the Browser (launcher count → 0); a 2nd Launcher → resolve → 2 browsers. |
 | T3 | backend MCP | `tide_focus_pane` reveals+activates; `tide_close_pane` hides; `tide_set_workbench_layout` sets mode; all emit `workbench_changed`; `tide_observe_workbench` reports `layoutMode`. |
 | T4 | contracts/arch | new tool names present in registry; layoutMode in snapshot DTO; tool list count updated. |
 | T5 | renderer state | `openProductShellBrowserAtUrl(...,{newPane:true})` emits `disposition:new_browser_pane`; default reuse. |

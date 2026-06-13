@@ -223,8 +223,11 @@ export function selectProductShellLauncherAction(
     };
   }
   if (actionId === "open_browser") {
-    // Launcher "Browser" always opens a NEW pane (so several browsers can
-    // coexist) — reuse is reserved for plain chat-link clicks.
+    // The Launcher is a PLACEHOLDER: the backend RESOLVES it into the new Browser
+    // Pane (replace-in-slot, v1 parity). No disposition here — the backend forces a
+    // fresh pane precisely when it's replacing an active launcher. Several browsers
+    // come from opening several launchers (+ → launcher → resolve), not a persistent
+    // launcher.
     return {
       state,
       command: {
@@ -232,7 +235,6 @@ export function selectProductShellLauncherAction(
         payload: {
           threadId: state.activeThreadId,
           command: "open_browser",
-          data: { disposition: "new_browser_pane" },
         },
       },
     };

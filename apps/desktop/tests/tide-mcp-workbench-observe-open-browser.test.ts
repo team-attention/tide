@@ -212,6 +212,63 @@ test("tide_focus_pane_and_tide_close_pane_let_the_agent_manipulate_panes", async
   );
 });
 
+// --- workbench-dock-parity: Launcher is a placeholder, resolved in-slot on open ---
+
+test("opening_browser_from_an_active_launcher_resolves_the_launcher_in_place", async () => {
+  // Spec: workbench-dock-parity.md — v1 dock-placeholder parity: picking an action on
+  // a Launcher replaces it (the Launcher is gone, the new pane takes its slot).
+  const service = serviceWithActiveThread("thread-resolve", "runtime-resolve");
+  const launched = await service.handleWorkbenchCommand({
+    threadId: "thread-resolve",
+    command: "open_launcher",
+  });
+  assert.equal(
+    launched.ok && launched.workbench.panes.filter((pane) => pane.kind === "launcher").length,
+    1,
+  );
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-resolve",
+    command: "open_browser",
+    data: { url: "https://x.test" },
+  });
+  assert.equal(opened.ok, true);
+  if (opened.ok) {
+    // Launcher resolved: gone, replaced by exactly one visible Browser Pane.
+    assert.equal(opened.workbench.panes.filter((pane) => pane.kind === "launcher").length, 0);
+    assert.equal(
+      opened.workbench.panes.filter((pane) => pane.kind === "browser" && pane.visible).length,
+      1,
+    );
+  }
+});
+
+test("multiple_browsers_come_from_opening_multiple_launchers", async () => {
+  // Spec: workbench-dock-parity.md — several browsers = + → launcher → resolve, repeated
+  // (NOT a persistent launcher spawning panes).
+  const service = serviceWithActiveThread("thread-two", "runtime-two");
+  await service.handleWorkbenchCommand({ threadId: "thread-two", command: "open_launcher" });
+  await service.handleWorkbenchCommand({
+    threadId: "thread-two",
+    command: "open_browser",
+    data: { url: "https://a.test" },
+  });
+  await service.handleWorkbenchCommand({ threadId: "thread-two", command: "open_launcher" });
+  const second = await service.handleWorkbenchCommand({
+    threadId: "thread-two",
+    command: "open_browser",
+    data: { url: "https://b.test" },
+  });
+  assert.equal(second.ok, true);
+  if (second.ok) {
+    assert.equal(
+      second.workbench.panes.filter((pane) => pane.kind === "browser" && pane.visible).length,
+      2,
+    );
+    assert.equal(second.workbench.panes.filter((pane) => pane.kind === "launcher").length, 0);
+  }
+});
+
 // --- UC-3: Agent opens Browser Pane ---
 
 test("opening_browser_creates_visible_browser_pane_in_thread_workbench", async () => {

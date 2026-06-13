@@ -2251,11 +2251,11 @@ test("product_shell_launcher_browser_action_emits_open_browser_command", () => {
   const result = selectProductShellLauncherAction(state, "open_browser");
 
   assert.equal(result.command?.kind, "workbench.command");
+  // The Launcher is a placeholder: the backend RESOLVES it into the Browser Pane
+  // (replace-in-slot), so no disposition is sent from here.
   assert.deepEqual(result.command?.payload, {
     threadId: "thread-sketch",
     command: "open_browser",
-    // Launcher Browser always opens a NEW pane so several browsers can coexist.
-    data: { disposition: "new_browser_pane" },
   });
 });
 
@@ -2289,20 +2289,26 @@ test("chat_link_open_browser_uses_new_pane_disposition_only_with_modifier", () =
   });
 });
 
-test("composer_launcher_browser_opens_a_draft_pane_shown_after_the_launcher", () => {
-  // Spec: docs_v2/specs/workbench-dock-parity.md (T7/T8) — composer-screen launcher.
+test("composer_launcher_is_a_placeholder_resolved_into_the_browser_on_open", () => {
+  // Spec: docs_v2/specs/workbench-dock-parity.md (T7/T8) — composer-screen launcher
+  // is a PLACEHOLDER: empty shows the Launcher; picking Browser RESOLVES it (the
+  // Launcher is replaced by the Browser Pane, not kept beside it). v1 parity.
   const state = createProductShellState({ includeFixtureData: false });
   assert.equal(state.activeThreadId, null);
+
+  // Empty composer Workbench shows the Launcher placeholder.
+  const empty = selectWorkbenchViewModel(state).appChrome.visibleWorkbenchPanes;
+  assert.equal(empty[0]?.kind, "launcher");
+
+  // Picking Browser adds a live draft pane (renderer-local, no backend command)...
   const opened = selectProductShellLauncherAction(state, "open_browser");
-  // No backend command pre-thread; the draft pane is renderer-local.
   assert.equal(opened.command, null);
   assert.equal(opened.state.draftWorkbenchPanes.length, 1);
   assert.equal(opened.state.draftWorkbenchPanes[0]?.kind, "browser");
-  assert.equal(opened.state.workbenchOpen, true);
-  // The view-model renders the Launcher FIRST, then the draft Browser Pane.
+  // ...and the Launcher placeholder is RESOLVED (gone): only the Browser shows.
   const panes = selectWorkbenchViewModel(opened.state).appChrome.visibleWorkbenchPanes;
-  assert.equal(panes[0]?.kind, "launcher");
-  assert.equal(panes.some((pane) => pane.kind === "browser"), true);
+  assert.equal(panes.length, 1);
+  assert.equal(panes[0]?.kind, "browser");
 });
 
 test("composer_draft_browsers_are_adopted_by_the_new_thread_on_send", () => {

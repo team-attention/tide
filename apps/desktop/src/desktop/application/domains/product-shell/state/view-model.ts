@@ -408,17 +408,23 @@ function composerWorkbenchAppChrome(
   startFile: ProductShellStartPageFile | null,
   draftActivePaneId: string | null,
 ): ProductShellState["appChrome"] {
+  // The Launcher is a PLACEHOLDER (v1 parity): show it only when it's the active
+  // intent (the user pressed + / just opened the Workbench) or the composer
+  // Workbench is otherwise empty. Picking an action adds the real pane and
+  // activates it, so the placeholder drops out — i.e. the Launcher is "resolved"
+  // into the chosen pane rather than persisting beside it.
+  const showLauncher =
+    draftActivePaneId === COMPOSER_LAUNCHER_PANE_ID ||
+    (draftPanes.length === 0 && startFile === null);
   const panes: AppChromeWorkbenchPaneRef[] = [
-    composerLauncherPane(),
+    ...(showLauncher ? [composerLauncherPane()] : []),
     ...draftPanes.map(draftBrowserPaneRef),
     ...(startFile === null ? [] : [startFileEditorPane(startFile)]),
   ];
   const activeWorkbenchPaneId =
     draftActivePaneId !== null && panes.some((pane) => pane.paneId === draftActivePaneId)
       ? draftActivePaneId
-      : startFile !== null
-        ? START_FILE_PANE_ID
-        : COMPOSER_LAUNCHER_PANE_ID;
+      : panes[0]?.paneId;
   return { ...appChrome, workbenchPanes: panes, activeWorkbenchPaneId };
 }
 
