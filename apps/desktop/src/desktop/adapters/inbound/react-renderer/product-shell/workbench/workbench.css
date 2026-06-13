@@ -25,6 +25,14 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Split: no global header row — the split view fills the column and the per-pane
+   headers ARE the header band (one band, not two). The workbench controls live in-flow
+   in the TOP-RIGHT pane's header (.workbench-split__pane-controls), so they reserve
+   their own space instead of overlapping that pane's title. */
+.workbench-column[data-layout="split"] {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .workbench-column__top-row,
 .file-tree-column__top-row {
   padding: 0 12px;

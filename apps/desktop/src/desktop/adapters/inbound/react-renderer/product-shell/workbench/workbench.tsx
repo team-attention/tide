@@ -16,14 +16,25 @@ export function createWorkbenchColumn(
   const activeTab = tabs.find((tab) => tab.active) ?? tabs[0];
   const activePane = viewModel.appChrome.activeWorkbenchPane;
   // Split mode shows every pane with its OWN header (title + close, the drag
-  // handle), so the global top tab strip would be a redundant second header
-  // layer. When split is active we drop the strip (the per-pane headers are the
-  // tabs) but keep the top row's global actions + traffic-light reserve.
+  // handle), which IS the header band. A separate global top row above it would be a
+  // second, near-empty header layer — so in Split we drop the global row entirely and
+  // dock the workbench controls into the top-right of the pane-header band (next to
+  // the file tree). Fullscreen is exempt (it reserves the macOS traffic-light zone).
   const splitActive =
     viewModel.editorPicker === null &&
     viewModel.workbenchLayoutMode === "split" &&
     viewModel.workbenchLayoutTree !== null &&
     viewModel.appChrome.visibleWorkbenchPanes.length > 1;
+  const dockControls = splitActive && !viewModel.workbenchFullscreen;
+  // The pane at the workbench's top-right corner (row splits → right child, column
+  // splits → top child). In Split, its header hosts the docked global controls.
+  const topRightPaneId = ((): string | null => {
+    let node = viewModel.workbenchLayoutTree;
+    while (node !== null && node.type !== "leaf") {
+      node = node.dir === "row" ? node.b : node.a;
+    }
+    return node !== null && node.type === "leaf" ? node.paneId : null;
+  })();
   const tabIconSize = 13;
   const workbenchTabIcon = (kind: string): ReactElement => {
     switch (kind) {
@@ -89,23 +100,19 @@ export function createWorkbenchColumn(
       className="workbench-column"
       aria-label="Workbench"
       data-column="workbench"
+      data-layout={dockControls ? "split" : "stacked"}
       data-fullscreen={viewModel.workbenchFullscreen ? "true" : "false"}
     >
       {createColumnResizeHandle("workbench", "left", handlers)}
-      {/* The top row is the SAME 52px header in both modes: Stacked fills it with the
-          tab strip, Split with a spacer (the panes own their headers) — but the row,
-          its height, and the trailing controls are identical, so the chrome doesn't
-          jump when you toggle. */}
-      <header className="workbench-column__top-row column-top-row" aria-label="Workbench Top Row">
-        {/* When fullscreen, the workbench is the top-left window element, so its
-            header must reserve the macOS traffic-light zone (collapses to 0 in
-            native fullscreen) — otherwise the first tab sits under the lights. */}
-        {viewModel.workbenchFullscreen ? createTrafficControls() : null}
-        {splitActive ? (
-          // Split owns per-pane headers, so the top row carries no tab strip — just
-          // an empty spacer that keeps the controls right-aligned (no dead label).
-          <div className="workbench-tabs workbench-tabs--spacer" aria-hidden />
-        ) : (
+      {/* Split (dockControls): no global header row — the controls ride in the
+          top-right pane's header (passed into WorkbenchSplitView below), so the panes'
+          headers are the only header band. Stacked/fullscreen keep the global row. */}
+      {dockControls ? null : (
+        <header className="workbench-column__top-row column-top-row" aria-label="Workbench Top Row">
+          {/* When fullscreen, the workbench is the top-left window element, so its
+              header must reserve the macOS traffic-light zone (collapses to 0 in
+              native fullscreen) — otherwise the first tab sits under the lights. */}
+          {viewModel.workbenchFullscreen ? createTrafficControls() : null}
           <div className="workbench-tabs" role="tablist" aria-label="Workbench Tab Strip">
             {tabs.length === 0 ? (
               <span className="workbench-tabs__empty">Workbench</span>
@@ -156,9 +163,9 @@ export function createWorkbenchColumn(
               ))
             )}
           </div>
-        )}
-        <div className="column-top-row__trailing">{workbenchControls}</div>
-      </header>
+          <div className="column-top-row__trailing">{workbenchControls}</div>
+        </header>
+      )}
       {viewModel.editorPicker !== null ? (
         <section className="workbench-column__pane" data-pane-kind="editor-picker">
           {createEditorPickerPane(viewModel.editorPicker, handlers)}
@@ -169,6 +176,8 @@ export function createWorkbenchColumn(
           viewModel={viewModel}
           handlers={handlers}
           paneIcon={workbenchTabIcon}
+          controls={dockControls ? workbenchControls : null}
+          controlsPaneId={dockControls ? topRightPaneId : null}
         />
       ) : activeTab && activePane ? (
         <section

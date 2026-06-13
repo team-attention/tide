@@ -127,6 +127,25 @@
   color: var(--tide-text);
 }
 
+/* The TOP-RIGHT pane's header also hosts the global workbench controls (Stacked|Split
+   toggle + fullscreen + New Pane), in-flow at the far right — so in Split the controls
+   live in that side's pane header (one header band, not a second row), next to the
+   file tree, reserving their own width instead of overlapping the pane title. */
+.workbench-split__pane-controls {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 6px;
+}
+
+/* When the workbench is the rightmost mounted column (file tree closed), clear the
+   fixed window-toggle cluster at the window's top-right; when the file tree is open it
+   owns that corner, so the controls tuck right up next to it. */
+.tide-product-shell__body > :last-child .workbench-split__pane-controls {
+  margin-right: 76px;
+}
+
 .workbench-split__pane-body {
   flex: 1 1 auto;
   min-height: 0;

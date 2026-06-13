@@ -168,10 +168,10 @@ function stackedMultiFixtureState(fileTreeOpen: boolean) {
   });
 }
 
-function splitFixtureState() {
+function splitFixtureState(fileTreeOpen: boolean) {
   // Layout toggle now returns an update result (state + optional backend command);
   // the harness only needs the state.
-  return toggleProductShellWorkbenchLayoutMode(stackedMultiFixtureState(false)).state;
+  return toggleProductShellWorkbenchLayoutMode(stackedMultiFixtureState(fileTreeOpen)).state;
 }
 
 // Queued-message fixture: a running turn with a follow-up queued behind it, so the
@@ -519,7 +519,7 @@ if (root) {
     // FileTree column is gated by fileTreeOpen; flip it on for the fixture
     // (?tree=0 closes it so the tabs are roomy for design review).
     const state = wantsSplit
-      ? splitFixtureState()
+      ? splitFixtureState(params.get("tree") !== "0")
       : wantsStacked
       ? stackedMultiFixtureState(params.get("tree") !== "0")
       : wantsDiff

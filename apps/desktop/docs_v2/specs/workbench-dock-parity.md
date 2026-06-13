@@ -18,10 +18,13 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
 4. **Intuitive Stacked/Split** — replace the single ambiguous toggle icon with an
    icon-only `Stacked | Split` segmented control (the two presentation glyphs, active
    one filled; labels in tooltips), and add per-pane **maximize** (Split → Stacked
-   focused on that pane). Default presentation is Stacked. The Workbench top row is the
-   **same 52px header in both modes** with the same trailing controls — Stacked fills
-   the left with the tab strip, Split leaves it an empty spacer (the panes own their
-   headers) — so the chrome never changes height or jumps when you toggle.
+   focused on that pane). Default presentation is Stacked. In **Stacked** the 52px top
+   row holds the tab strip + controls. In **Split** there is **no global top row** — the
+   per-pane headers ARE the header band (one band, not two stacked rows), and the global
+   controls ride in the **top-right pane's header** (next to the file tree), reserving
+   their own width there rather than floating over a pane or sitting in a second, empty
+   row. (The top-right pane = follow the split tree's right child on row splits, top
+   child on column splits.)
    Stacked tabs are flat and label-like; the active tab carries a full-height surface
    highlight + a charcoal under-bar (ink, never a chip) so it reads as a tab — not as
    the segmented toggle in the same row — and its region is clearly delineated. The
