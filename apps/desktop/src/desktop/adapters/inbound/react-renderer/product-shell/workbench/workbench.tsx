@@ -1,8 +1,8 @@
 import type { ProductShellWorkbenchViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
-import { FileText, GitCompare, Globe, LayoutGrid, Terminal, X } from "lucide-react";
-import { createColumnResizeHandle, createTrafficControls } from "../chrome/chrome.tsx";
+import { Columns2, FileText, GitCompare, Globe, LayoutGrid, Maximize2, Minimize2, Plus, Square, Terminal, X } from "lucide-react";
+import { createColumnResizeHandle, createIconButton, createTrafficControls } from "../chrome/chrome.tsx";
 import { createEditorPickerPane, createWorkbenchPaneContent } from "./pane-content.tsx";
 import { WorkbenchSplitView } from "./split-view.tsx";
 import { WorkbenchLauncherPane, emptyWorkbenchLauncherPane } from "./launcher-pane.tsx";
@@ -15,16 +15,48 @@ export function createWorkbenchColumn(
   const tabs = viewModel.appChrome.workbenchTabStrip.visibleTabs;
   const activeTab = tabs.find((tab) => tab.active) ?? tabs[0];
   const activePane = viewModel.appChrome.activeWorkbenchPane;
-  // The workbench has ONE 52px tab bar in BOTH modes (below). Stacked shows the active
-  // tab's pane; Split tiles ALL panes BELOW the bar. So the bar — a chrome row, not a
-  // pane — is what sits under the fixed top-right control cluster, which makes pane
-  // overlap structurally impossible. Clicking a tab focuses its pane (highlights its
-  // tile in Split); the tab strip is identical in both modes.
+  // Split shows every pane with its OWN header (title + close + drag handle) — that IS
+  // the header band, so there is NO global tab bar in Split (Stacked keeps the 52px tab
+  // strip). The workbench controls (single layout toggle / fullscreen / New Pane) live
+  // in the workbench's first header: the tab strip's trailing in Stacked, and the
+  // top-LEFT pane's header in Split (so they're never a separate row, and never float
+  // over a pane). See docs_v2/specs/workbench-dock-parity.md.
   const splitActive =
     viewModel.editorPicker === null &&
     viewModel.workbenchLayoutMode === "split" &&
     viewModel.workbenchLayoutTree !== null &&
     viewModel.appChrome.visibleWorkbenchPanes.length > 1;
+  // The top-LEFT ("first") pane — always the a-child down the split tree. In Split its
+  // header hosts the workbench controls at its right.
+  const firstPaneId = ((): string | null => {
+    let node = viewModel.workbenchLayoutTree;
+    while (node !== null && node.type !== "leaf") {
+      node = node.a;
+    }
+    return node !== null && node.type === "leaf" ? node.paneId : null;
+  })();
+  // Single layout toggle (icon = current mode, click flips) + fullscreen + New Pane.
+  const workbenchControls = (
+    <>
+      {createIconButton(
+        viewModel.workbenchLayoutMode === "split" ? "Switch to Stacked" : "Switch to Split",
+        viewModel.workbenchLayoutMode === "split" ? (
+          <Columns2 size={15} strokeWidth={1.9} />
+        ) : (
+          <Square size={15} strokeWidth={1.9} />
+        ),
+        () => handlers.onWorkbenchSetLayout(viewModel.workbenchLayoutMode === "split" ? "stacked" : "split"),
+        "top-row-button",
+      )}
+      {createIconButton(
+        viewModel.workbenchFullscreen ? "Exit fullscreen" : "Fullscreen pane",
+        viewModel.workbenchFullscreen ? <Minimize2 size={15} strokeWidth={1.9} /> : <Maximize2 size={15} strokeWidth={1.9} />,
+        handlers.onWorkbenchFullscreenToggle,
+        "top-row-button",
+      )}
+      {createIconButton("New Pane", <Plus size={16} strokeWidth={1.9} />, handlers.onNewWorkbenchPane, "top-row-button")}
+    </>
+  );
   const tabIconSize = 13;
   const workbenchTabIcon = (kind: string): ReactElement => {
     switch (kind) {
@@ -46,13 +78,15 @@ export function createWorkbenchColumn(
       className="workbench-column"
       aria-label="Workbench"
       data-column="workbench"
+      data-layout={splitActive ? "split" : "stacked"}
       data-fullscreen={viewModel.workbenchFullscreen ? "true" : "false"}
     >
       {createColumnResizeHandle("workbench", "left", handlers)}
-      {/* The 52px tab bar — the SAME header in both modes. Split tiles its panes below
-          this bar, so the bar (not a pane) is what sits under the fixed top-right
-          control cluster. */}
-      <header className="workbench-column__top-row column-top-row" aria-label="Workbench Top Row">
+      {/* Split: no header row at all — the panes own their headers, and the workbench
+          chrome controls live in the top-right window cluster. Stacked keeps the
+          52px tab strip. */}
+      {splitActive ? null : (
+        <header className="workbench-column__top-row column-top-row" aria-label="Workbench Top Row">
           {/* When fullscreen, the workbench is the top-left window element, so its
               header must reserve the macOS traffic-light zone (collapses to 0 in
               native fullscreen) — otherwise the first tab sits under the lights. */}
@@ -107,7 +141,9 @@ export function createWorkbenchColumn(
               ))
             )}
           </div>
+          <div className="column-top-row__trailing">{workbenchControls}</div>
         </header>
+      )}
       {viewModel.editorPicker !== null ? (
         <section className="workbench-column__pane" data-pane-kind="editor-picker">
           {createEditorPickerPane(viewModel.editorPicker, handlers)}
@@ -117,6 +153,9 @@ export function createWorkbenchColumn(
           tree={viewModel.workbenchLayoutTree}
           viewModel={viewModel}
           handlers={handlers}
+          paneIcon={workbenchTabIcon}
+          controls={workbenchControls}
+          controlsPaneId={firstPaneId}
         />
       ) : activeTab && activePane ? (
         <section

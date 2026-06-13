@@ -63,8 +63,14 @@ export function WorkbenchSplitView(props: {
   tree: WorkbenchSplitNode;
   viewModel: ProductShellWorkbenchViewModel;
   handlers: ProductShellHandlers;
+  paneIcon: (kind: string) => ReactElement;
+  // In Split the workbench controls (layout toggle / fullscreen / New Pane) ride in the
+  // top-LEFT ("first") pane's header (controlsPaneId), at its right — so they live in a
+  // pane header, not a separate row, and never float over a pane.
+  controls?: ReactElement | null;
+  controlsPaneId?: string | null;
 }): ReactElement {
-  const { tree, viewModel, handlers } = props;
+  const { tree, viewModel, handlers, paneIcon, controls = null, controlsPaneId = null } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dropRef = useRef<SplitDropState | null>(null);
   const [drag, setDrag] = useState<SplitDragState | null>(null);
@@ -172,43 +178,60 @@ export function WorkbenchSplitView(props: {
         data-pane-id={pane.paneId}
         data-pane-kind={pane.kind}
       >
-        {/* Slim drag strip — no chip header (the tab bar labels the pane). Drag the
-            strip to rearrange; a plain click focuses the tile; hover reveals maximize +
-            close at the right. The focused tile gets an accent (see split-view.css). */}
-        <div
-          className="workbench-split__pane-strip"
-          onPointerDown={beginPaneDrag(pane.paneId)}
-          onClick={() => handlers.onFocusWorkbenchPane(pane.paneId)}
-        >
+        {/* The header is the drag handle AND carries the SAME tab chip as Stacked, so
+            a pane looks identical whether it's a tab or a split header. Clicking the
+            chip focuses the pane; the empty grip area is the drag surface. */}
+        <div className="workbench-split__pane-header" onPointerDown={beginPaneDrag(pane.paneId)}>
+          <div
+            className="workbench-tab workbench-split__pane-tab"
+            data-active={pane.paneId === viewModel.appChrome.activeWorkbenchPane?.paneId}
+            data-kind={pane.kind}
+          >
+            <button
+              className="workbench-tab__label"
+              type="button"
+              onClick={() => handlers.onFocusWorkbenchPane(pane.paneId)}
+            >
+              <span className="workbench-tab__icon" aria-hidden>
+                {paneIcon(pane.kind)}
+              </span>
+              <span className="workbench-tab__title">{pane.title ?? pane.kind}</span>
+            </button>
+            <button
+              className="workbench-tab__close"
+              type="button"
+              title="Close Pane"
+              aria-label="Close Pane"
+              onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
+              onClick={() => handlers.onCloseWorkbenchPane(pane.paneId)}
+            >
+              <X size={14} strokeWidth={2.2} aria-hidden />
+            </button>
+          </div>
           <span className="workbench-split__pane-grip" aria-hidden />
           {/* Maximize: collapse Split → Stacked focused on this pane (v1 header
-              maximize). stopPropagation so it neither starts a drag nor re-focuses. */}
+              maximize). Hover-revealed; stopPropagation so it doesn't begin a drag. */}
           <button
             type="button"
-            className="workbench-split__pane-strip-btn"
+            className="workbench-split__pane-maximize"
             title="Maximize pane (Stacked)"
             aria-label="Maximize pane"
             onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
-            onClick={(e: { stopPropagation: () => void }) => {
-              e.stopPropagation();
-              handlers.onWorkbenchMaximizePane(pane.paneId);
-            }}
+            onClick={() => handlers.onWorkbenchMaximizePane(pane.paneId)}
           >
             <Maximize2 size={13} strokeWidth={1.9} aria-hidden />
           </button>
-          <button
-            type="button"
-            className="workbench-split__pane-strip-btn"
-            title="Close Pane"
-            aria-label="Close Pane"
-            onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
-            onClick={(e: { stopPropagation: () => void }) => {
-              e.stopPropagation();
-              handlers.onCloseWorkbenchPane(pane.paneId);
-            }}
-          >
-            <X size={14} strokeWidth={2.2} aria-hidden />
-          </button>
+          {/* The first (top-left) pane's header hosts the workbench controls at its
+              right (Split has no global header row). stopPropagation so using them never
+              starts a drag. */}
+          {controls !== null && pane.paneId === controlsPaneId ? (
+            <div
+              className="workbench-split__pane-controls"
+              onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
+            >
+              {controls}
+            </div>
+          ) : null}
         </div>
         <div className="workbench-split__pane-body">
           {createWorkbenchPaneContent(pane, handlers, viewModel.editorDrafts[pane.paneId])}

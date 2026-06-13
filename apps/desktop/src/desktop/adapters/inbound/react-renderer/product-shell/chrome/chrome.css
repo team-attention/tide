@@ -34,13 +34,3 @@
   background: var(--tide-selection);
   color: var(--tide-action);
 }
-
-/* Separates the Workbench chrome controls (layout/fullscreen/new-pane) from the
-   window panel toggles when the Workbench is open. */
-.tide-window-toggles__divider {
-  width: 1px;
-  height: 22px;
-  margin: 0 3px;
-  background: var(--tide-line);
-  pointer-events: none;
-}

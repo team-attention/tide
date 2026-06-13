@@ -50,16 +50,15 @@
   opacity: 0.5;
 }
 
-/* The split tile's header is a SLIM drag strip — no chip (the workbench tab bar labels
-   the pane). The grip fills it as the drag surface; maximize + close reveal on hover.
-   Dragging it rearranges the tile; a plain click focuses the tile. */
-.workbench-split__pane-strip {
+/* The split pane header is a slim drag strip that hosts the SAME tab chip used in
+   Stacked — so a pane looks identical whether it's a tab or a split header. The
+   empty grip fills the rest as the drag surface; maximize reveals on hover. */
+.workbench-split__pane-header {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 2px;
-  height: 24px;
+  height: 36px;
   padding: 0 6px;
   border-bottom: 1px solid var(--tide-line);
   background: var(--tide-surface);
@@ -67,53 +66,78 @@
   user-select: none;
 }
 
-.workbench-split__pane-strip:active {
+.workbench-split__pane-header:active {
   cursor: grabbing;
 }
 
-/* Focused tile: an accent bar across its top + a tinted strip, so which tile has focus
-   is unmistakable. Inactive tiles' strips recede so the focused one stands out. */
+/* Focused pane: an accent bar across its top + a tinted active header, plus the
+   chip's own active state — so which pane has focus is unmistakable. Inactive pane
+   headers recede (muted) so the focused one clearly stands out. */
 .workbench-split__pane.is-active {
   box-shadow: inset 0 2px 0 var(--tide-action);
 }
 
-.workbench-split__pane.is-active > .workbench-split__pane-strip {
+.workbench-split__pane.is-active > .workbench-split__pane-header {
   background: var(--tide-bg);
 }
 
-.workbench-split__pane:not(.is-active) > .workbench-split__pane-strip {
-  opacity: 0.6;
+.workbench-split__pane:not(.is-active) > .workbench-split__pane-header {
+  opacity: 0.62;
 }
 
-/* Empty grip = the drag surface filling the strip left of the hover actions. */
+/* The chip reuses the Stacked tab styles; let it size to the pane width. */
+.workbench-split__pane-tab {
+  max-width: none;
+}
+
+.workbench-split__pane-tab .workbench-tab__title {
+  max-width: none;
+}
+
+/* The first (top-left) pane's header hosts the workbench controls at its right
+   (Split has no global header row). They sit after the drag grip, always visible
+   (unlike the hover-only maximize), and reserve their own width so they never overlap
+   the chip. */
+.workbench-split__pane-controls {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 2px;
+}
+
+/* Empty grip = the drag surface filling the strip between the chip and maximize. */
 .workbench-split__pane-grip {
   flex: 1 1 auto;
   align-self: stretch;
 }
 
-.workbench-split__pane-strip-btn {
+.workbench-split__pane-maximize {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 0;
+  height: 22px;
+  padding: 0;
+  overflow: hidden;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--tide-muted);
   cursor: pointer;
-  /* Calm at rest: reveal on strip hover, so the strip stays a clean drag rail. */
+  /* Calm at rest: collapsed to zero width (so it never steals space from a narrow
+     pane's chip or the first pane's docked controls), expanding on header hover. */
   opacity: 0;
-  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+  transition: opacity 0.12s ease, width 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
-.workbench-split__pane-strip:hover .workbench-split__pane-strip-btn,
-.workbench-split__pane-strip-btn:focus-visible {
+.workbench-split__pane-header:hover .workbench-split__pane-maximize {
+  width: 22px;
   opacity: 1;
 }
 
-.workbench-split__pane-strip-btn:hover {
+.workbench-split__pane-maximize:hover {
   background: var(--tide-selection);
   color: var(--tide-text);
 }

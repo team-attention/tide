@@ -15,23 +15,21 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
    beside the panes it opens.
 3. **Cmd/Ctrl+click → new Browser Pane** — modifier-click on a chat link opens a new
    Browser Pane; plain click keeps reuse-active.
-4. **Intuitive Stacked/Split — one unified tab bar.** The workbench has a single 52px
-   **tab bar in BOTH modes** (the same `workbench-tabs` header). **Stacked** shows the
-   active tab's pane below it; **Split** tiles ALL panes BELOW the bar. Because the bar —
-   a chrome row, not a pane — is what sits under the fixed top-right control cluster,
-   pane overlap is **structurally impossible** (the bar reserves the cluster's footprint
-   like any rightmost-column header; the tiles below are never touched). This is the
-   Arc/Vivaldi tiling model: the tab bar is the single pane label/nav/close surface; the
-   tiles are content. Consequences: header heights are uniform (one 52px bar); no empty
-   second row; tabs stay roomy; no overlap in any tree state.
-   The workbench chrome controls live in the **fixed top-right window cluster**
-   (`createWindowChromeToggles`) next to the Workbench/FileTree panel toggles: a
-   **single** `Stacked⇄Split` toggle (icon shows the current mode, click flips it),
-   **fullscreen**, **New Pane**.
-   **Split tiles** have no chip header — just a **slim drag strip** (`pane-strip`): drag
-   to rearrange (the binary split-tree drop-zones), click to focus, hover reveals
-   maximize (→ Stacked on that pane) + close; the focused tile gets a top accent bar.
-   Tiles are identified by the tab bar + their own editor breadcrumb.
+4. **Intuitive Stacked/Split — mirrors the v1 Terminal dock** (`dock-global.md`): per
+   the original "work like dock in tide terminal", Stacked = a flat tab strip over all
+   panes + one active pane; Split = the tiled `SplitLayout`, **each pane with its own
+   header** (no global tab bar in Split — that would be a second header layer). The
+   workbench controls — a **single** `Stacked⇄Split` toggle (icon shows the current
+   mode, click flips it), **fullscreen**, **New Pane** — ride in the workbench's *first*
+   header: the tab strip's trailing in **Stacked**, and the **top-LEFT ("first") pane's
+   header** (at its right) in **Split** (`controlsPaneId` = the a-child down the tree).
+   So the controls are never a separate row and never float over a pane → no overlap in
+   any file-tree state. The fixed top-right window cluster keeps ONLY the Workbench /
+   FileTree panel toggles. Per-pane **maximize** (Split → Stacked on that pane) is on
+   every split pane's header, collapsed-until-hover. Tradeoff (v1 shares it): on a very
+   narrow first pane the chip shrinks toward icon-only to fit the controls (the editor
+   breadcrumb still names it); this is a v2 addition since v1 toggles split/stack via
+   keybinding + per-pane maximize (keyboard-first), with no on-screen toggle.
    Stacked tabs are flat and label-like; the active tab carries a full-height surface
    highlight + a charcoal under-bar (ink, never a chip) so it reads as a tab — not as
    the segmented toggle in the same row — and its region is clearly delineated. The

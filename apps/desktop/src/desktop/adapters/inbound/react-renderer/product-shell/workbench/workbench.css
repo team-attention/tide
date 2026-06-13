@@ -25,6 +25,13 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Split: no global header row — the per-pane headers ARE the header band, so the
+   column drops the 52px header track. The workbench controls ride in the first
+   (top-left) pane's header (.workbench-split__pane-controls). */
+.workbench-column[data-layout="split"] {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .workbench-column__top-row,
 .file-tree-column__top-row {
   padding: 0 12px;
@@ -74,11 +81,15 @@
 }
 
 .workbench-tab[data-active="true"] {
-  /* The active tab never shrinks — the current file's name stays fully legible
-     (up to the base max-width) while inactive tabs give up their width first,
-     collapsing toward icon-only. */
-  flex-shrink: 0;
   color: var(--tide-text);
+}
+
+/* In the Stacked strip the active tab never shrinks — its filename stays fully legible
+   while inactive tabs give up width first. (Scoped to .workbench-tabs so the split-view
+   pane chip, which reuses .workbench-tab, still shrinks to make room for the first
+   pane's docked controls.) */
+.workbench-tabs .workbench-tab[data-active="true"] {
+  flex-shrink: 0;
 }
 
 /* Stacked strip: full-height tabs so the active tab's highlight is a clean vertical
