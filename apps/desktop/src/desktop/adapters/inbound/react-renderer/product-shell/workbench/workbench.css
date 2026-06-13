@@ -33,23 +33,21 @@
 }
 
 .workbench-floating-controls {
+  /* Sit flush in the top-right chrome band (same 52px row + vertical centering as the
+     Stacked top row and the fixed window-chrome toggles), just LEFT of those toggles —
+     so in Split the controls read as "attached top-right next to the file tree", like
+     Stacked, not a pill floating over the panes. No box: the segmented toggle carries
+     its own surface, the icon buttons sit bare like the window toggles. */
   position: absolute;
-  top: 8px;
-  /* Sit LEFT of the fixed window-chrome toggle cluster (it reserves ~84px at the
-     window's top-right) so the two never collide. */
-  right: 96px;
+  top: 0;
+  right: 84px;
+  height: 52px;
   z-index: 20;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px;
-  border: 1px solid var(--tide-line);
-  border-radius: 10px;
-  background: var(--tide-bg);
-  box-shadow: 0 4px 14px rgba(52, 48, 56, 0.16);
-  /* Calm at rest: the panes own the top edge. The controls fade in when you hover
-     the workbench (or focus them via keyboard), so they never obscure pane headers
-     while you're reading. */
+  /* Calm at rest: the panes own the top edge; the controls fade in on workbench hover
+     (or keyboard focus), so they never sit over a pane header while you're reading. */
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.14s ease;
