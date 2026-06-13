@@ -37,8 +37,11 @@
      Stacked top row and the fixed window-chrome toggles), just LEFT of those toggles —
      so in Split the controls read as "attached top-right next to the file tree", like
      Stacked, not a pill floating over the panes. No box: the segmented toggle carries
-     its own surface, the icon buttons sit bare like the window toggles. */
-  position: absolute;
+     its own surface, the icon buttons sit bare like the window toggles.
+     position: fixed (not absolute) so they anchor to the WINDOW top-right next to the
+     file-tree toggle — not the workbench column's right edge, which sits mid-window
+     when the file tree is open (that put the controls over a pane header). */
+  position: fixed;
   top: 0;
   right: 84px;
   height: 52px;
