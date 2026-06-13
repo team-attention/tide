@@ -106,6 +106,23 @@ export interface ProductShellStartPageFile {
 // it (keyed on a null activeThreadId). See docs_v2/specs/start-page-file-viewer.md.
 export const START_FILE_PANE_ID = "start-file";
 
+// The synthetic Launcher pane shown FIRST on the composer (New Thread) page, before
+// any thread exists. Like START_FILE_PANE_ID it has no backend pane; the view-model
+// derives it. See docs_v2/specs/workbench-dock-parity.md.
+export const COMPOSER_LAUNCHER_PANE_ID = "composer-launcher";
+
+// A pane the user opened on the composer (New Thread) page, before any thread
+// exists. Rendered live in the renderer (a Browser Pane owns its own <webview>);
+// adopted by the Thread the first send creates (seeded via thread.start). Only
+// browsers are supported pre-thread (editor uses startPageFile; terminal/diff need
+// a thread).
+export interface ProductShellDraftPane {
+  paneId: string;
+  kind: "browser";
+  title: string;
+  url?: string;
+}
+
 export interface ProductShellState {
   activeThreadId: string | null;
   leftRailOpen: boolean;
@@ -115,7 +132,7 @@ export interface ProductShellState {
   workbenchFullscreen: boolean;
   // Tab-group mode (default: one visible pane + tab strip) vs split mode (panes
   // arranged in a draggable binary split-tree). Like the Tide Terminal workspace.
-  workbenchLayoutMode: "tabs" | "split";
+  workbenchLayoutMode: "stacked" | "split";
   // The split-mode layout tree (null until entering split). Reconciled against
   // the live visible panes on read.
   workbenchLayoutTree: WorkbenchSplitNode | null;
@@ -182,6 +199,11 @@ export interface ProductShellState {
   worktreeSettings: ProductShellWorktreeSettings;
   // Whether the Settings panel (modal) is open.
   settingsOpen: boolean;
+  // Composer (New Thread) page Workbench, used only while activeThreadId === null:
+  // panes opened from the Launcher before any thread exists. Adopted by the Thread
+  // the first send creates, then cleared. See docs_v2/specs/workbench-dock-parity.md.
+  draftWorkbenchPanes: ProductShellDraftPane[];
+  draftActiveWorkbenchPaneId: string | null;
 }
 
 export type ProductShellBackendCommand =
@@ -236,7 +258,17 @@ export type ProductShellBackendCommand =
         command: "open_browser";
         // Optional initial URL/title — set when opening the pane AT a link (a
         // chat link click). Absent for a blank "open browser" launcher action.
-        data?: { url?: string; title?: string };
+        // disposition "new_browser_pane" forces a fresh pane (Launcher Browser
+        // action, cmd/ctrl+click); default reuses the active Browser Pane.
+        data?: { url?: string; title?: string; disposition?: "new_browser_pane" | "reuse_active_browser" };
+      };
+    }
+  | {
+      kind: "workbench.command";
+      payload: {
+        threadId: string;
+        command: "set_layout_mode";
+        data: { mode: "stacked" | "split" };
       };
     }
   | {
@@ -382,7 +414,7 @@ export interface ProductShellViewModel {
   threadsLoaded: boolean;
   workbenchOpen: boolean;
   workbenchFullscreen: boolean;
-  workbenchLayoutMode: "tabs" | "split";
+  workbenchLayoutMode: "stacked" | "split";
   workbenchLayoutTree: WorkbenchSplitNode | null;
   fileTreeOpen: boolean;
   searchQuery: string;

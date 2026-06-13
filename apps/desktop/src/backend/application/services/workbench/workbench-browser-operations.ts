@@ -84,6 +84,37 @@ export function openBrowserOutput(
   };
 }
 
+// Seed adopted composer-screen panes into a freshly-created Thread's Workbench
+// (called from startThread, race-free — they ride along in the first snapshot).
+// Browser panes are pure/synchronous; editor panes read the file via the passed
+// openEditorFile (best-effort — a failed read is skipped so a bad path never fails
+// thread start). See docs_v2/specs/workbench-dock-parity.md.
+export async function seedInitialWorkbenchPanes(
+  thread: ThreadRecord,
+  panes: Array<{ kind: "browser" | "editor"; url?: string; path?: string; title?: string }> | undefined,
+  idGenerator: () => string,
+  clock: () => string,
+  openEditorFile: (thread: ThreadRecord, input: { path: string }) => Promise<unknown>,
+): Promise<void> {
+  if (panes === undefined || panes.length === 0) {
+    return;
+  }
+  for (const pane of panes) {
+    if (pane.kind === "browser") {
+      openBrowserOutput(
+        thread,
+        { url: pane.url, title: pane.title, disposition: "new_browser_pane" },
+        idGenerator,
+        clock,
+      );
+    } else if (pane.kind === "editor" && pane.path !== undefined) {
+      await openEditorFile(thread, { path: pane.path });
+    }
+  }
+  // The first send drives the turn; the agent — not the Workbench — owns focus.
+  thread.workbench.focusOwner = "composer";
+}
+
 export function observeBrowserOutput(
   thread: ThreadRecord,
   input: Record<string, unknown> | undefined,

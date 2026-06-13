@@ -162,7 +162,9 @@ function splitFixtureState() {
       ],
     },
   });
-  return toggleProductShellWorkbenchLayoutMode(multi);
+  // Layout toggle now returns an update result (state + optional backend command);
+  // the harness only needs the state.
+  return toggleProductShellWorkbenchLayoutMode(multi).state;
 }
 
 // Queued-message fixture: a running turn with a follow-up queued behind it, so the

@@ -572,6 +572,7 @@ export function backendEventsFromThreadRuntimeAsyncEvent(
           payload: {
             threadId: event.thread.threadId,
             panes: event.thread.workbench.panes.map(toWorkbenchPaneRefDto),
+            layoutMode: event.thread.workbench.layoutMode,
             ...(event.thread.workbench.activePaneId === undefined
               ? {}
               : { activePaneId: event.thread.workbench.activePaneId }),
@@ -647,6 +648,7 @@ export function backendEventsFromThreadRuntimeAsyncEvent(
             ),
             runtimeState: event.runtimeState,
             workbenchPanes: event.thread.workbench.panes.map(toWorkbenchPaneRefDto),
+            workbenchLayoutMode: event.thread.workbench.layoutMode,
           },
         },
       ];

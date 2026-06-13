@@ -2,7 +2,7 @@ import type { DropZone, ProductShellWorkbenchViewModel, SplitDirection, Workbenc
 import type { ProductShellHandlers } from "../support/types.ts";
 import { useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
-import { X } from "lucide-react";
+import { Maximize2, X } from "lucide-react";
 import { createWorkbenchPaneContent } from "./pane-content.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
@@ -177,6 +177,18 @@ export function WorkbenchSplitView(props: {
             {paneIcon(pane.kind)}
           </span>
           <span className="workbench-split__pane-title">{pane.title ?? pane.kind}</span>
+          {/* Maximize: collapse Split → Stacked focused on this pane (v1 header
+              maximize). stopPropagation so the click doesn't begin a header drag. */}
+          <button
+            type="button"
+            className="workbench-split__pane-maximize"
+            title="Maximize pane (Stacked)"
+            aria-label="Maximize pane"
+            onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
+            onClick={() => handlers.onWorkbenchMaximizePane(pane.paneId)}
+          >
+            <Maximize2 size={12} strokeWidth={2} aria-hidden />
+          </button>
           <button
             type="button"
             className="workbench-split__pane-close"

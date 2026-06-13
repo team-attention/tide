@@ -22,7 +22,7 @@ import type { JsonObject } from "./json.ts";
 import type { PromptStateDto } from "./prompt.ts";
 import type { ProviderReadinessDto } from "./provider-readiness.ts";
 import type { ThreadSummaryDto } from "./thread.ts";
-import type { WorkbenchFileTreeDto, WorkbenchPaneRefDto } from "./workbench.ts";
+import type { WorkbenchFileTreeDto, WorkbenchLayoutModeDto, WorkbenchPaneRefDto } from "./workbench.ts";
 
 export type BackendEventKind =
   | "backend.connectionChanged"
@@ -114,6 +114,9 @@ export interface BackendEventPayloadByKind {
     // that is waiting on a prompt shows no card — an invisible hang.
     prompt?: PromptStateDto | null;
     workbenchPanes?: WorkbenchPaneRefDto[];
+    // The Thread's Stacked/Split Workbench presentation (absent = older backend;
+    // renderer keeps its current mode).
+    workbenchLayoutMode?: WorkbenchLayoutModeDto;
     fileTree?: WorkbenchFileTreeDto;
   };
   "thread.started": {
@@ -183,6 +186,8 @@ export interface BackendEventPayloadByKind {
     threadId: ThreadId;
     panes: WorkbenchPaneRefDto[];
     activePaneId?: string;
+    // The Thread's Stacked/Split presentation after this change (absent = unchanged).
+    layoutMode?: WorkbenchLayoutModeDto;
     fileTree?: WorkbenchFileTreeDto;
   };
   "workbench.terminalOutput": {

@@ -183,6 +183,12 @@ export class TideMcpToolHandler {
         return this.workbenchExec.openTerminalOutput(thread, input.input);
       case "tide_run_terminal_command":
         return this.workbenchExec.runTerminalCommandOutput(thread, input.input);
+      case "tide_focus_pane":
+        return this.workbenchExec.focusPaneOutput(thread, input.input);
+      case "tide_close_pane":
+        return this.workbenchExec.closePaneOutput(thread, input.input);
+      case "tide_set_workbench_layout":
+        return this.workbenchExec.setWorkbenchLayoutOutput(thread, input.input);
     }
   }
 }
@@ -234,6 +240,9 @@ function isWorkbenchMutatingTideMcpTool(toolName: TideMcpToolName): boolean {
     case "tide_go_to_references":
     case "tide_open_terminal":
     case "tide_run_terminal_command":
+    case "tide_focus_pane":
+    case "tide_close_pane":
+    case "tide_set_workbench_layout":
       return true;
     case "tide_observe_thread":
     case "tide_observe_workbench":
@@ -403,6 +412,39 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
         byteLimit: { type: "number" },
       },
       required: ["command"],
+    },
+  },
+  {
+    name: "tide_focus_pane",
+    description: "Reveal and activate an existing Workbench Pane (browser/editor/terminal/diff) so the user sees it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        paneId: { type: "string" },
+      },
+      required: ["paneId"],
+    },
+  },
+  {
+    name: "tide_close_pane",
+    description: "Close a Workbench Pane in the owning Thread (stops the PTY for a Terminal Pane).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        paneId: { type: "string" },
+      },
+      required: ["paneId"],
+    },
+  },
+  {
+    name: "tide_set_workbench_layout",
+    description: "Switch the owning Thread Workbench between Stacked (one active pane) and Split (tiled panes) presentation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: ["stacked", "split"] },
+      },
+      required: ["mode"],
     },
   },
 ];

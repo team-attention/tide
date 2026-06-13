@@ -50,6 +50,43 @@
   font-size: 14px;
 }
 
+/* Stacked | Split segmented control (replaces the old single mystery-toggle). Both
+   options are always visible; the active one is filled. */
+
+.workbench-layout-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+}
+
+.workbench-layout-toggle__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.workbench-layout-toggle__option:hover {
+  color: var(--tide-text);
+}
+
+.workbench-layout-toggle__option[data-active="true"] {
+  background: var(--tide-selection);
+  color: var(--tide-action);
+}
+
 .workbench-tab {
   max-width: 176px;
   height: 30px;

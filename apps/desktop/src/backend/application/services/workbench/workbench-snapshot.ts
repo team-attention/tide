@@ -5,6 +5,7 @@ import type {
   EditorPaneState,
   LauncherPaneState,
   TerminalPaneState,
+  WorkbenchLayoutMode,
   WorkbenchPaneRef,
   WorkbenchPaneSnapshotRef,
   WorkbenchSnapshot,
@@ -24,6 +25,7 @@ export function snapshotWorkbench(workbench: WorkbenchState): WorkbenchSnapshot 
     panes: workbench.panes.map(workbenchSnapshotPaneRef),
     activePaneId: workbench.activePaneId,
     focusOwner: workbench.focusOwner,
+    layoutMode: workbench.layoutMode,
     availableTools: [...TIDE_MCP_WORKBENCH_TOOL_NAMES],
     fileTree:
       workbench.fileTree === undefined
@@ -202,4 +204,57 @@ export function firstVisiblePane(
   workbench: WorkbenchState,
 ): WorkbenchState["panes"][number] | undefined {
   return workbench.panes.find((pane) => pane.visible);
+}
+
+// Reveal + activate a pane. Mutates the workbench; returns the pane (or undefined
+// if absent). Shared by the focus_pane Workbench command and tide_focus_pane.
+export function focusWorkbenchPaneState(
+  workbench: WorkbenchState,
+  paneId: string | undefined,
+  clock: () => string,
+): WorkbenchState["panes"][number] | undefined {
+  const pane = workbenchPaneById(workbench, paneId);
+  if (pane === undefined) {
+    return undefined;
+  }
+  pane.visible = true;
+  pane.updatedAt = clock();
+  workbench.activePaneId = pane.paneId;
+  workbench.focusOwner = "workbench";
+  return pane;
+}
+
+// Hide a pane and reassign the active pane / focus owner. Mutates the workbench;
+// returns the pane (or undefined if absent). PTY teardown for a terminal pane is
+// the caller's responsibility (it owns the runtime). Shared by the close_pane
+// Workbench command and tide_close_pane.
+export function closeWorkbenchPaneState(
+  workbench: WorkbenchState,
+  paneId: string | undefined,
+  clock: () => string,
+): WorkbenchState["panes"][number] | undefined {
+  const pane = workbenchPaneById(workbench, paneId);
+  if (pane === undefined) {
+    return undefined;
+  }
+  pane.visible = false;
+  if (pane.kind === "terminal" && pane.status === "running") {
+    pane.status = "completed";
+  }
+  pane.updatedAt = clock();
+  if (workbench.activePaneId === pane.paneId) {
+    workbench.activePaneId = firstVisiblePane(workbench)?.paneId;
+  }
+  workbench.focusOwner =
+    workbench.activePaneId === undefined ? "composer" : workbench.focusOwner;
+  return pane;
+}
+
+// Set the Stacked/Split presentation. Shared by the set_layout_mode Workbench
+// command and tide_set_workbench_layout.
+export function setWorkbenchLayoutModeState(
+  workbench: WorkbenchState,
+  mode: WorkbenchLayoutMode,
+): void {
+  workbench.layoutMode = mode;
 }

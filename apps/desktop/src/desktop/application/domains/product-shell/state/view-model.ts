@@ -1,5 +1,5 @@
-import type { ProductShellBackgroundBrowserPane, ProductShellEditorDraft, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellProject, ProductShellProjectGroupView, ProductShellStartPageFile, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellViewModel } from "./types.ts";
-import { START_FILE_PANE_ID } from "./types.ts";
+import type { ProductShellBackgroundBrowserPane, ProductShellDraftPane, ProductShellEditorDraft, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellProject, ProductShellProjectGroupView, ProductShellStartPageFile, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellViewModel } from "./types.ts";
+import { COMPOSER_LAUNCHER_PANE_ID, START_FILE_PANE_ID } from "./types.ts";
 import { isExternalSessionThread } from "./thread-list.ts";
 import { worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 import { reconcileTree } from "./workbench-split-tree.ts";
@@ -125,6 +125,8 @@ export const selectWorkbenchViewModel = shellSelector(
     (state: ProductShellState) => state.workbenchFullscreen,
     (state: ProductShellState) => state.fileTree,
     (state: ProductShellState) => state.editorPickerFilter,
+    (state: ProductShellState) => state.draftWorkbenchPanes,
+    (state: ProductShellState) => state.draftActiveWorkbenchPaneId,
   ],
   (
     appChrome,
@@ -136,25 +138,28 @@ export const selectWorkbenchViewModel = shellSelector(
     workbenchFullscreen,
     fileTree,
     editorPickerFilter,
+    draftWorkbenchPanes,
+    draftActiveWorkbenchPaneId,
   ): ProductShellWorkbenchViewModel => {
     const startFile = activeThreadId === null ? startPageFile : null;
+    // Composer (New Thread) page: there are no backend panes yet, so the view-model
+    // derives the Workbench — a synthetic Launcher FIRST, then live draft Browser
+    // Panes, then the start-page editor (if a file is open). These are renderer-local
+    // and get adopted by the Thread the first send creates.
     const appChromeForView =
-      startFile === null
+      activeThreadId !== null
         ? appChrome
-        : {
-            ...appChrome,
-            workbenchPanes: [startFileEditorPane(startFile)],
-            activeWorkbenchPaneId: START_FILE_PANE_ID,
-          };
+        : composerWorkbenchAppChrome(appChrome, draftWorkbenchPanes, startFile, draftActiveWorkbenchPaneId);
     return {
       appChrome: createAppChromeViewModel(appChromeForView),
       workbenchLayoutMode,
       workbenchFullscreen,
-      // Layout tree reconciles against the REAL panes (not the start-file-adjusted
-      // view), matching the pre-decomposition behavior.
+      // Reconcile the split tree against the panes actually shown: the real panes
+      // when a thread is active, the composer-derived panes otherwise (so Split mode
+      // works on the New Thread page too).
       workbenchLayoutTree: reconcileTree(
         workbenchLayoutTree,
-        appChrome.workbenchPanes.filter((pane) => pane.visible).map((pane) => pane.paneId),
+        appChromeForView.workbenchPanes.filter((pane) => pane.visible).map((pane) => pane.paneId),
       ),
       editorPicker: createEditorPickerView({ editorPickerFilter, fileTree } as ProductShellState),
       editorDrafts:
@@ -391,6 +396,64 @@ function startFileEditorDraft(file: ProductShellStartPageFile): ProductShellEdit
     content: file.draft ?? file.content,
     dirty: file.dirty ?? false,
     cursorOffset: 0,
+  };
+}
+
+// Build the composer (New Thread) page Workbench view: a synthetic Launcher first,
+// then the live draft Browser Panes, then the start-page editor (if open). All
+// renderer-derived (no backend panes before a thread exists).
+function composerWorkbenchAppChrome(
+  appChrome: ProductShellState["appChrome"],
+  draftPanes: ProductShellDraftPane[],
+  startFile: ProductShellStartPageFile | null,
+  draftActivePaneId: string | null,
+): ProductShellState["appChrome"] {
+  const panes: AppChromeWorkbenchPaneRef[] = [
+    composerLauncherPane(),
+    ...draftPanes.map(draftBrowserPaneRef),
+    ...(startFile === null ? [] : [startFileEditorPane(startFile)]),
+  ];
+  const activeWorkbenchPaneId =
+    draftActivePaneId !== null && panes.some((pane) => pane.paneId === draftActivePaneId)
+      ? draftActivePaneId
+      : startFile !== null
+        ? START_FILE_PANE_ID
+        : COMPOSER_LAUNCHER_PANE_ID;
+  return { ...appChrome, workbenchPanes: panes, activeWorkbenchPaneId };
+}
+
+// The composer Launcher: Browser is available pre-thread (opens a live draft pane);
+// Editor/Terminal/Diff need a Thread's Execution Context, so they're disabled with a
+// hint until the first send creates the Thread.
+function composerLauncherPane(): AppChromeWorkbenchPaneRef {
+  return {
+    paneId: COMPOSER_LAUNCHER_PANE_ID,
+    kind: "launcher",
+    title: "Launcher",
+    visible: true,
+    revision: COMPOSER_LAUNCHER_PANE_ID,
+    updatedAt: shellTimestamp,
+    actions: [
+      { actionId: "open_browser", label: "Browser", description: "Open a Browser Pane", enabled: true },
+      { actionId: "open_editor", label: "Editor", description: "Open a file once the thread starts", enabled: false },
+      { actionId: "open_terminal", label: "Terminal", description: "Opens once the thread starts", enabled: false },
+      { actionId: "open_diff", label: "Diff", description: "Available after a file edit", enabled: false },
+    ],
+  };
+}
+
+function draftBrowserPaneRef(pane: ProductShellDraftPane): AppChromeWorkbenchPaneRef {
+  return {
+    paneId: pane.paneId,
+    kind: "browser",
+    title: pane.title,
+    visible: true,
+    // Stable revision: a draft Browser Pane is renderer-owned (its <webview> drives
+    // itself); the revision only identifies the pane, it never gates a snapshot here.
+    revision: "draft",
+    updatedAt: shellTimestamp,
+    url: pane.url,
+    loading: false,
   };
 }
 

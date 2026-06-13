@@ -18,7 +18,7 @@ export function createAgentSession(
   onEditQueued?: (index: number) => void,
   onResend?: (text: string) => void,
   onQuote?: (text: string) => void,
-  onOpenBrowserPane?: (url: string) => void,
+  onOpenBrowserPane?: (url: string, options?: { newPane?: boolean }) => void,
 ): ReactElement {
   // Show a live "working" indicator only until the agent produces its block:
   // a streaming block carries its own caret, and a complete block means the turn
@@ -35,7 +35,7 @@ export function createAgentSession(
       aria-label="Agent Session"
       data-session-state={blocks.length === 0 ? "empty" : "turns"}
       // Event-delegated clicks: Copy a code block, or open a file chip.
-      onClick={(event: { target: EventTarget | null; preventDefault: () => void }) => {
+      onClick={(event: { target: EventTarget | null; preventDefault: () => void; metaKey?: boolean; ctrlKey?: boolean }) => {
         const target = event.target instanceof Element ? event.target : null;
         if (target === null) {
           return;
@@ -104,7 +104,10 @@ export function createAgentSession(
           : null;
         if (browserUrl) {
           event.preventDefault();
-          onOpenBrowserPane?.(browserUrl);
+          // cmd/ctrl+click opens the link in a NEW Browser Pane (beside the page
+          // you're reading); a plain click reuses the active one.
+          const newPane = event.metaKey === true || event.ctrlKey === true;
+          onOpenBrowserPane?.(browserUrl, { newPane });
           return;
         }
         const path = onOpenFile ? target.closest("[data-open-file]")?.getAttribute("data-open-file") : null;

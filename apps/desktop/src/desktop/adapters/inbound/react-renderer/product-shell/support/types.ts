@@ -76,7 +76,10 @@ export interface ProductShellHandlers {
   onLeftRailToggle: () => void;
   onWorkbenchToggle: () => void;
   onWorkbenchFullscreenToggle: () => void;
-  onWorkbenchLayoutModeToggle: () => void;
+  // Explicit Stacked/Split selection (segmented control), and per-pane maximize
+  // (Split → Stacked focused on that pane — v1 header-maximize parity).
+  onWorkbenchSetLayout: (mode: "stacked" | "split") => void;
+  onWorkbenchMaximizePane: (paneId: string) => void;
   onWorkbenchPaneDrop: (draggedPaneId: string, targetPaneId: string, zone: DropZone) => void;
   onWorkbenchSplitRatio: (path: ("a" | "b")[], ratio: number) => void;
   onNewWorkbenchPane: () => void;
@@ -104,7 +107,7 @@ export interface ProductShellHandlers {
     rowId: string,
   ) => void;
   onOpenFile: (path: string) => void;
-  onOpenBrowserPane: (url: string) => void;
+  onOpenBrowserPane: (url: string, options?: { newPane?: boolean }) => void;
   onAddAttachment: (attachment: {
     name: string;
     mediaType: string;

@@ -104,7 +104,7 @@ import { WorkbenchRuntime } from "../workbench/workbench-runtime.ts";
 import {
   actBrowserOutput,
   observeBrowserOutput,
-  openBrowserOutput,
+  seedInitialWorkbenchPanes,
 } from "../workbench/workbench-browser-operations.ts";
 
 import { WorkbenchFileOperations } from "../workbench/workbench-file-operations.ts";
@@ -599,6 +599,9 @@ async startThread(
       workbench: defaultWorkbenchState(),
     };
     this.threads.set(threadId, thread);
+
+    // Adopt composer-screen panes (race-free; spec: workbench-dock-parity).
+    await seedInitialWorkbenchPanes(thread, input.initialWorkbenchPanes, this.idGenerator, this.clock, (target, fileInput) => this.workbenchFileOps.openFileOutput(target, fileInput));
 
     // A Scratch Thread runs in a real Tide-owned per-thread dir; materialize + trust
     // it before readiness/attachments so the agent proceeds without a trust prompt.

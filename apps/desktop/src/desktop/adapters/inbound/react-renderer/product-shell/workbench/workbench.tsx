@@ -1,7 +1,7 @@
 import type { ProductShellWorkbenchViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
-import { Columns2, FileText, GitCompare, Globe, LayoutGrid, Maximize2, Minimize2, Plus, Rows2, Terminal, X } from "lucide-react";
+import { Columns2, FileText, GitCompare, Globe, LayoutGrid, Maximize2, Minimize2, Plus, Square, Terminal, X } from "lucide-react";
 import { createColumnResizeHandle, createIconButton, createTrafficControls } from "../chrome/chrome.tsx";
 import { createEditorPickerPane, createWorkbenchPaneContent } from "./pane-content.tsx";
 import { WorkbenchSplitView } from "./split-view.tsx";
@@ -109,18 +109,33 @@ export function createWorkbenchColumn(
         {/* The + (New Pane) opens a Launcher tab to pick what to open; it always lives
             in the Workbench header. Open/close is handled by the fixed window toggles. */}
         <div className="column-top-row__trailing">
-          {/* Only meaningful with 2+ panes; the toggle still shows so the affordance
-              is discoverable. */}
-          {createIconButton(
-            viewModel.workbenchLayoutMode === "split" ? "Tab group" : "Split panes",
-            viewModel.workbenchLayoutMode === "split" ? (
-              <Rows2 size={15} strokeWidth={1.9} />
-            ) : (
-              <Columns2 size={15} strokeWidth={1.9} />
-            ),
-            handlers.onWorkbenchLayoutModeToggle,
-            "top-row-button",
-          )}
+          {/* A labelled segmented control with both presentations visible (Stacked =
+              one pane + tabs, Split = tiled panes) and the active one marked — replaces
+              the old single mystery-toggle so the choice is obvious. */}
+          <div className="workbench-layout-toggle" role="group" aria-label="Workbench layout">
+            <button
+              type="button"
+              className="workbench-layout-toggle__option"
+              data-active={viewModel.workbenchLayoutMode === "stacked"}
+              aria-pressed={viewModel.workbenchLayoutMode === "stacked"}
+              title="Stacked — one pane with a tab strip"
+              onClick={() => handlers.onWorkbenchSetLayout("stacked")}
+            >
+              <Square size={13} strokeWidth={1.9} aria-hidden />
+              <span>Stacked</span>
+            </button>
+            <button
+              type="button"
+              className="workbench-layout-toggle__option"
+              data-active={viewModel.workbenchLayoutMode === "split"}
+              aria-pressed={viewModel.workbenchLayoutMode === "split"}
+              title="Split — tiled panes you can drag to arrange"
+              onClick={() => handlers.onWorkbenchSetLayout("split")}
+            >
+              <Columns2 size={13} strokeWidth={1.9} aria-hidden />
+              <span>Split</span>
+            </button>
+          </div>
           {createIconButton(
             viewModel.workbenchFullscreen ? "Exit fullscreen" : "Fullscreen pane",
             viewModel.workbenchFullscreen ? (

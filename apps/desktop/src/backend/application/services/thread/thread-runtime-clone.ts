@@ -136,6 +136,7 @@ export function cloneWorkbenchState(workbench: WorkbenchState): WorkbenchState {
     panes: workbench.panes.map(cloneWorkbenchPaneState),
     activePaneId: workbench.activePaneId,
     focusOwner: workbench.focusOwner,
+    layoutMode: workbench.layoutMode,
     fileTree:
       workbench.fileTree === undefined
         ? undefined
@@ -159,6 +160,7 @@ export function defaultWorkbenchState(): WorkbenchState {
   return {
     panes: [],
     focusOwner: "composer",
+    layoutMode: "stacked",
   };
 }
 

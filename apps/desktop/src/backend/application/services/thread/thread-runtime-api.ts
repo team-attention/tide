@@ -67,6 +67,9 @@ export interface StartThreadInput {
   scope?: ThreadScope;
   launchOptions?: Record<string, unknown>;
   attachments?: ComposerAttachmentInput[];
+  // Panes the user opened on the composer (New Thread) screen, adopted by this
+  // Thread (seeded into its Workbench at start). See workbench-dock-parity.
+  initialWorkbenchPanes?: Array<{ kind: "browser" | "editor"; url?: string; path?: string; title?: string }>;
 }
 
 export interface StartThreadResult {

@@ -9,11 +9,18 @@ import {
   optionalRawString,
   optionalString,
 } from "../support/service-value-helpers.ts";
+import type { WorkbenchLayoutMode } from "../../domains/workbench/workbench.ts";
 
 // Parsers that coerce untyped Tide MCP / workbench command `data` payloads into
 // the typed shapes the service acts on. Pure: depend only on leaf value/record
 // helpers. Extracted from thread-runtime-service.ts to keep the service focused
 // on behavior.
+
+// Coerce a "stacked" | "split" layout-mode value (from set_layout_mode command
+// data or the tide_set_workbench_layout tool input). Unknown values => undefined.
+export function workbenchLayoutModeFromValue(value: unknown): WorkbenchLayoutMode | undefined {
+  return value === "stacked" || value === "split" ? value : undefined;
+}
 
 export interface ProviderSetupSurfaceActionInput {
   command: string;

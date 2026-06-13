@@ -9,6 +9,10 @@ export type WorkbenchPaneKind =
 
 export type WorkbenchFocusOwner = "composer" | "workbench";
 
+// Stacked = one active pane + flat tab strip; Split = the draggable binary
+// split-tree. Per-Thread, backend-authoritative. v1 Terminal Context Surface parity.
+export type WorkbenchLayoutMode = "stacked" | "split";
+
 export type TideMcpToolName =
   | "tide_observe_thread"
   | "tide_observe_workbench"
@@ -21,7 +25,10 @@ export type TideMcpToolName =
   | "tide_go_to_definition"
   | "tide_go_to_references"
   | "tide_open_terminal"
-  | "tide_run_terminal_command";
+  | "tide_run_terminal_command"
+  | "tide_focus_pane"
+  | "tide_close_pane"
+  | "tide_set_workbench_layout";
 
 export const TIDE_MCP_WORKBENCH_TOOL_NAMES: TideMcpToolName[] = [
   "tide_observe_thread",
@@ -36,6 +43,9 @@ export const TIDE_MCP_WORKBENCH_TOOL_NAMES: TideMcpToolName[] = [
   "tide_go_to_references",
   "tide_open_terminal",
   "tide_run_terminal_command",
+  "tide_focus_pane",
+  "tide_close_pane",
+  "tide_set_workbench_layout",
 ];
 
 export interface WorkbenchPaneRef {
@@ -253,6 +263,9 @@ export interface WorkbenchState {
   panes: WorkbenchPaneState[];
   activePaneId?: WorkbenchPaneId;
   focusOwner: WorkbenchFocusOwner;
+  // Stacked/Split presentation, default "stacked" (v1 parity). Mutated by the
+  // set_layout_mode Workbench command and the tide_set_workbench_layout MCP tool.
+  layoutMode: WorkbenchLayoutMode;
   fileTree?: WorkbenchFileTreeView;
 }
 
@@ -260,6 +273,7 @@ export interface WorkbenchSnapshot {
   panes: WorkbenchPaneSnapshotRef[];
   activePaneId?: WorkbenchPaneId;
   focusOwner: WorkbenchFocusOwner;
+  layoutMode: WorkbenchLayoutMode;
   availableTools: TideMcpToolName[];
   fileTree?: WorkbenchFileTreeView;
 }

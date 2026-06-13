@@ -38,6 +38,10 @@ import {
   selectProductShellChoiceSurfaceRow,
   selectProductShellLauncherAction,
   selectProductShellEditorPickerFile,
+  selectWorkbenchViewModel,
+  setProductShellWorkbenchLayout,
+  openProductShellBrowserAtUrl,
+  openProductShellDraftBrowser,
   setProductShellComposerActiveSurface,
   setProductShellComposerFolderScope,
   setProductShellRegisteredProjects,
@@ -2250,7 +2254,71 @@ test("product_shell_launcher_browser_action_emits_open_browser_command", () => {
   assert.deepEqual(result.command?.payload, {
     threadId: "thread-sketch",
     command: "open_browser",
+    // Launcher Browser always opens a NEW pane so several browsers can coexist.
+    data: { disposition: "new_browser_pane" },
   });
+});
+
+// --- workbench-dock-parity ---
+
+test("workbench_set_layout_split_emits_set_layout_mode_command", () => {
+  // Spec: docs_v2/specs/workbench-dock-parity.md (T6) — Stacked/Split is backend-owned.
+  const state = openProductShellThread(createProductShellState(), "thread-sketch");
+  const result = setProductShellWorkbenchLayout(state, "split");
+  assert.equal(result.state.workbenchLayoutMode, "split");
+  assert.deepEqual(result.command, {
+    kind: "workbench.command",
+    payload: { threadId: "thread-sketch", command: "set_layout_mode", data: { mode: "split" } },
+  });
+});
+
+test("chat_link_open_browser_uses_new_pane_disposition_only_with_modifier", () => {
+  // Spec: docs_v2/specs/workbench-dock-parity.md (T5) — cmd/ctrl+click → new pane.
+  const state = openProductShellThread(createProductShellState(), "thread-sketch");
+  const reuse = openProductShellBrowserAtUrl(state, "https://a.test");
+  assert.deepEqual(reuse.command?.payload, {
+    threadId: "thread-sketch",
+    command: "open_browser",
+    data: { url: "https://a.test" },
+  });
+  const newPane = openProductShellBrowserAtUrl(state, "https://a.test", { newPane: true });
+  assert.deepEqual(newPane.command?.payload, {
+    threadId: "thread-sketch",
+    command: "open_browser",
+    data: { url: "https://a.test", disposition: "new_browser_pane" },
+  });
+});
+
+test("composer_launcher_browser_opens_a_draft_pane_shown_after_the_launcher", () => {
+  // Spec: docs_v2/specs/workbench-dock-parity.md (T7/T8) — composer-screen launcher.
+  const state = createProductShellState({ includeFixtureData: false });
+  assert.equal(state.activeThreadId, null);
+  const opened = selectProductShellLauncherAction(state, "open_browser");
+  // No backend command pre-thread; the draft pane is renderer-local.
+  assert.equal(opened.command, null);
+  assert.equal(opened.state.draftWorkbenchPanes.length, 1);
+  assert.equal(opened.state.draftWorkbenchPanes[0]?.kind, "browser");
+  assert.equal(opened.state.workbenchOpen, true);
+  // The view-model renders the Launcher FIRST, then the draft Browser Pane.
+  const panes = selectWorkbenchViewModel(opened.state).appChrome.visibleWorkbenchPanes;
+  assert.equal(panes[0]?.kind, "launcher");
+  assert.equal(panes.some((pane) => pane.kind === "browser"), true);
+});
+
+test("composer_draft_browsers_are_adopted_by_the_new_thread_on_send", () => {
+  // Spec: docs_v2/specs/workbench-dock-parity.md (T7) — adoption on send.
+  let state = openProductShellDraftBrowser(createProductShellState(), "https://adopt.test");
+  state = updateProductShellComposerDraft(state, "start with this page open");
+  const result = submitProductShellComposerDraft(state);
+  assert.equal(result.command?.kind, "thread.start");
+  const seeded =
+    result.command?.kind === "thread.start" ? result.command.payload.initialWorkbenchPanes : undefined;
+  assert.equal(seeded?.length, 1);
+  assert.equal(seeded?.[0]?.kind, "browser");
+  assert.equal(seeded?.[0]?.url, "https://adopt.test");
+  // The drafts are handed off and the Workbench stays open for the adopted pane.
+  assert.equal(result.state.draftWorkbenchPanes.length, 0);
+  assert.equal(result.state.workbenchOpen, true);
 });
 
 test("product_shell_launcher_editor_action_opens_in_pane_file_picker", () => {

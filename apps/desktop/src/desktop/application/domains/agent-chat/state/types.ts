@@ -263,6 +263,9 @@ export type AgentChatBackendCommand =
         scope?: AgentChatThreadScope;
         launchOptions?: Record<string, unknown>;
         attachments?: AgentChatComposerMessageAttachment[];
+        // Panes the user opened on the composer (New Thread) screen, adopted by the
+        // Thread this send creates (seeded into its Workbench at start — race-free).
+        initialWorkbenchPanes?: Array<{ kind: "browser" | "editor"; url?: string; path?: string; title?: string }>;
       };
     }
   | {

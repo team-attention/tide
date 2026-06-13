@@ -211,7 +211,17 @@ export function submitProductShellComposerDraft(
   // now has a thread that wasn't the active one). Reflect it in the rail + focus
   // immediately so the thread opens instantly and re-clicks can't duplicate it.
   const startedThread = result.command?.kind === "thread.start" ? result.state.thread : null;
+  let command = result.command;
   if (startedThread !== null && state.activeThreadId !== startedThread.threadId) {
+    // Adopt the panes the user opened on the composer (New Thread) screen: hand the
+    // draft Browser Panes to the new Thread so it OWNS them (seeded via thread.start,
+    // race-free). The start-page editor still belongs to the New Thread page and is
+    // dropped (its unsaved draft must not be silently lost by a re-open).
+    const initialWorkbenchPanes = state.draftWorkbenchPanes.map((pane) => ({
+      kind: "browser" as const,
+      url: pane.url,
+      title: pane.title,
+    }));
     const shellThread = toProductShellThreadFromSummary(startedThread);
     const threads = [shellThread, ...state.threads];
     nextState = {
@@ -219,16 +229,19 @@ export function submitProductShellComposerDraft(
       activeThreadId: startedThread.threadId,
       threads,
       projects: projectsFromThreads(threads),
-      // A start-page file preview belongs to the New Thread page, not the thread
-      // just started. Drop it (and its synthetic workbench) so the new thread
-      // opens clean rather than inheriting an empty launcher.
       startPageFile: null,
       startPagePendingNavigation: null,
-      workbenchOpen: false,
+      // The drafts are handed off; keep the Workbench open only if we adopted panes.
+      draftWorkbenchPanes: [],
+      draftActiveWorkbenchPaneId: null,
+      workbenchOpen: initialWorkbenchPanes.length > 0,
     };
+    if (command !== null && command.kind === "thread.start" && initialWorkbenchPanes.length > 0) {
+      command = { ...command, payload: { ...command.payload, initialWorkbenchPanes } };
+    }
   }
 
-  return { state: nextState, command: result.command };
+  return { state: nextState, command };
 }
 
 export function interruptProductShellRuntime(

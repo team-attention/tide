@@ -291,6 +291,34 @@ test("starting_a_thread_with_incomplete_provider_readiness_preserves_pending_inp
   assert.deepEqual(fakes.runtime.events, []);
 });
 
+test("thread_start_seeds_adopted_composer_panes_into_the_workbench", async () => {
+  // Spec: docs_v2/specs/workbench-dock-parity.md — composer-screen panes are adopted
+  // by the new Thread (seeded at start, race-free; they ride along in thread.started).
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+
+  const result = await service.startThread({
+    initialMessage: "open the repo with this page",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "scratch", scratchCwd: "/tmp/tide-seed" },
+    initialWorkbenchPanes: [{ kind: "browser", url: "https://seeded.test", title: "Seeded" }],
+  });
+
+  assert.equal(result.ok, true);
+  const browser = result.ok
+    ? result.thread.workbench.panes.find((pane) => pane.kind === "browser")
+    : undefined;
+  assert.equal(browser?.visible, true);
+  assert.equal(
+    browser !== undefined && browser.kind === "browser" ? browser.url : undefined,
+    "https://seeded.test",
+  );
+});
+
 test("granting_trust_replays_the_held_first_message_via_launch_not_typed_input", async () => {
   // Regression: after trust, the held first message must be delivered as the launch
   // prompt (like a normal start) so the provider CLI reliably begins a turn — not

@@ -30,12 +30,15 @@ import {
   editorPaneSaveFromData,
   providerSetupSurfaceActionFromData,
   providerSetupSurfaceInputFromData,
+  workbenchLayoutModeFromValue,
 } from "./workbench-command-data.ts";
 import type { WorkbenchFileOperations } from "./workbench-file-operations.ts";
 import { openWorkbenchLauncher } from "./workbench-launcher.ts";
 import type { WorkbenchRuntime } from "./workbench-runtime.ts";
 import {
-  firstVisiblePane,
+  closeWorkbenchPaneState,
+  focusWorkbenchPaneState,
+  setWorkbenchLayoutModeState,
   snapshotWorkbench,
   workbenchPaneById,
 } from "./workbench-snapshot.ts";
@@ -361,17 +364,13 @@ export class WorkbenchCommandHandler {
         };
       }
       case "focus_pane": {
-        const pane = workbenchPaneById(thread.workbench, input.targetPaneId);
+        const pane = focusWorkbenchPaneState(thread.workbench, input.targetPaneId, this.clock);
         if (pane === undefined) {
           return failure(
             "workbench_target_not_found",
             "Workbench Pane target was not found.",
           );
         }
-        pane.visible = true;
-        pane.updatedAt = this.clock();
-        thread.workbench.activePaneId = pane.paneId;
-        thread.workbench.focusOwner = "workbench";
         thread.updatedAt = this.clock();
         return {
           ok: true,
@@ -388,19 +387,29 @@ export class WorkbenchCommandHandler {
             "Workbench Pane target was not found.",
           );
         }
+        // PTY teardown is the command handler's job (it owns the runtime); the
+        // visible-state close + active reassignment is the shared helper.
         if (pane.kind === "terminal") {
           await this.workbenchRuntime.stopTerminalPane(pane);
         }
-        pane.visible = false;
-        if (pane.kind === "terminal" && pane.status === "running") {
-          pane.status = "completed";
+        closeWorkbenchPaneState(thread.workbench, pane.paneId, this.clock);
+        thread.updatedAt = this.clock();
+        return {
+          ok: true,
+          handled: true,
+          thread: snapshotThread(thread),
+          workbench: snapshotWorkbench(thread.workbench),
+        };
+      }
+      case "set_layout_mode": {
+        const mode = workbenchLayoutModeFromValue(input.data?.mode);
+        if (mode === undefined) {
+          return failure(
+            "invalid_workbench_command",
+            "set_layout_mode requires mode 'stacked' or 'split'.",
+          );
         }
-        pane.updatedAt = this.clock();
-        if (thread.workbench.activePaneId === pane.paneId) {
-          thread.workbench.activePaneId = firstVisiblePane(thread.workbench)?.paneId;
-        }
-        thread.workbench.focusOwner =
-          thread.workbench.activePaneId === undefined ? "composer" : thread.workbench.focusOwner;
+        setWorkbenchLayoutModeState(thread.workbench, mode);
         thread.updatedAt = this.clock();
         return {
           ok: true,

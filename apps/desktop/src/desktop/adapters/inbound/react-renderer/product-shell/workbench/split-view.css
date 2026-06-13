@@ -83,7 +83,8 @@
   white-space: nowrap;
 }
 
-.workbench-split__pane-close {
+.workbench-split__pane-close,
+.workbench-split__pane-maximize {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -97,7 +98,8 @@
   cursor: pointer;
 }
 
-.workbench-split__pane-close:hover {
+.workbench-split__pane-close:hover,
+.workbench-split__pane-maximize:hover {
   background: var(--tide-selection);
   color: var(--tide-text);
 }

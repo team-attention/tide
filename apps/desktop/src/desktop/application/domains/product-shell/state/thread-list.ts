@@ -512,6 +512,7 @@ export function applyProductShellThreadEvent(
   const payload = event.payload as {
     thread?: AgentChatThreadSummary;
     workbenchPanes?: AppChromeWorkbenchPaneRef[];
+    workbenchLayoutMode?: "stacked" | "split";
     fileTree?: unknown;
   };
   const threadSummary = payload.thread;
@@ -573,6 +574,13 @@ export function applyProductShellThreadEvent(
     // clears the composer itself). Clobbering it lost the composer on switch-back.
     agentChat: state.agentChat,
     workbenchOpen: shellThread.workbenchPanes.some((pane) => pane.visible),
+    // Reflect the opened thread's Stacked/Split presentation (per-Thread, backend
+    // owned). Only for the active thread, so a background thread.started doesn't
+    // flip the composer's current mode.
+    workbenchLayoutMode:
+      isActiveThread && payload.workbenchLayoutMode !== undefined
+        ? payload.workbenchLayoutMode
+        : state.workbenchLayoutMode,
     fileTree: !isActiveThread
       ? state.fileTree
       : payload.fileTree !== undefined

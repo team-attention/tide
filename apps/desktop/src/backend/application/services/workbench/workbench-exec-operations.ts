@@ -1,6 +1,7 @@
 import type { ThreadRecord } from "../../domains/thread/thread.ts";
 import type {
   TerminalPaneState,
+  WorkbenchLayoutMode,
   WorkbenchPaneSnapshotRef,
 } from "../../domains/workbench/workbench.ts";
 import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
@@ -19,15 +20,26 @@ import {
 } from "../support/service-value-helpers.ts";
 import { threadRoot } from "../thread/thread-snapshot.ts";
 import type {
+  TideClosePaneOutput,
+  TideFocusPaneOutput,
   TideGoToDefinitionOutput,
   TideGoToReferencesOutput,
   TideOpenTerminalOutput,
   TideRunTerminalCommandOutput,
+  TideSetWorkbenchLayoutOutput,
 } from "../tide-mcp/tide-mcp-output.ts";
-import { editorPanePositionFromData } from "./workbench-command-data.ts";
+import { editorPanePositionFromData, workbenchLayoutModeFromValue } from "./workbench-command-data.ts";
 import type { WorkbenchFileOperations } from "./workbench-file-operations.ts";
 import type { WorkbenchRuntime } from "./workbench-runtime.ts";
-import { editorPaneRef, terminalPaneRef, workbenchPaneById } from "./workbench-snapshot.ts";
+import {
+  closeWorkbenchPaneState,
+  editorPaneRef,
+  focusWorkbenchPaneState,
+  setWorkbenchLayoutModeState,
+  snapshotWorkbench,
+  terminalPaneRef,
+  workbenchPaneById,
+} from "./workbench-snapshot.ts";
 
 // Code-navigation (go-to-definition / references) and terminal (run command /
 // open Terminal Pane) operations for the Workbench. Depends on the code
@@ -61,6 +73,87 @@ export class WorkbenchExecOperations {
     this.defaultWorkbenchTerminalCommand = deps.defaultWorkbenchTerminalCommand;
     this.clock = deps.clock;
     this.idGenerator = deps.idGenerator;
+  }
+
+  // tide_focus_pane: reveal + activate a pane the agent already opened, so the
+  // user is looking at the right pane when the agent narrates it.
+  focusPaneOutput(
+    thread: ThreadRecord,
+    input: Record<string, unknown> | undefined,
+  ): ServiceResult<{ value: TideFocusPaneOutput }> {
+    const paneId = optionalString(input?.paneId);
+    if (paneId === undefined) {
+      return failure("invalid_workbench_command", "tide_focus_pane requires paneId.");
+    }
+    const pane = focusWorkbenchPaneState(thread.workbench, paneId, this.clock);
+    if (pane === undefined) {
+      return failure("workbench_target_not_found", "Workbench Pane target was not found.");
+    }
+    thread.updatedAt = this.clock();
+    return {
+      ok: true,
+      value: {
+        kind: "focus_pane",
+        threadId: thread.threadId,
+        paneId: pane.paneId,
+        ...snapshotWorkbench(thread.workbench),
+      },
+    };
+  }
+
+  // tide_close_pane: hide a pane (and stop its PTY when it's a Terminal Pane).
+  async closePaneOutput(
+    thread: ThreadRecord,
+    input: Record<string, unknown> | undefined,
+  ): Promise<ServiceResult<{ value: TideClosePaneOutput }>> {
+    const paneId = optionalString(input?.paneId);
+    if (paneId === undefined) {
+      return failure("invalid_workbench_command", "tide_close_pane requires paneId.");
+    }
+    const target = workbenchPaneById(thread.workbench, paneId);
+    if (target === undefined) {
+      return failure("workbench_target_not_found", "Workbench Pane target was not found.");
+    }
+    if (target.kind === "terminal") {
+      await this.workbenchRuntime.stopTerminalPane(target);
+    }
+    closeWorkbenchPaneState(thread.workbench, paneId, this.clock);
+    thread.updatedAt = this.clock();
+    return {
+      ok: true,
+      value: {
+        kind: "close_pane",
+        threadId: thread.threadId,
+        paneId,
+        closed: true,
+        ...snapshotWorkbench(thread.workbench),
+      },
+    };
+  }
+
+  // tide_set_workbench_layout: switch the Workbench between Stacked and Split.
+  setWorkbenchLayoutOutput(
+    thread: ThreadRecord,
+    input: Record<string, unknown> | undefined,
+  ): ServiceResult<{ value: TideSetWorkbenchLayoutOutput }> {
+    const mode = workbenchLayoutModeFromValue(input?.mode);
+    if (mode === undefined) {
+      return failure(
+        "invalid_workbench_command",
+        "tide_set_workbench_layout requires mode 'stacked' or 'split'.",
+      );
+    }
+    setWorkbenchLayoutModeState(thread.workbench, mode);
+    thread.workbench.focusOwner = "workbench";
+    thread.updatedAt = this.clock();
+    return {
+      ok: true,
+      value: {
+        kind: "set_workbench_layout",
+        threadId: thread.threadId,
+        ...snapshotWorkbench(thread.workbench),
+      },
+    };
   }
 
   async goToDefinitionOutput(

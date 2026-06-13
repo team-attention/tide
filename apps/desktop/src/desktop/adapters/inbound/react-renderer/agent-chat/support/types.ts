@@ -22,8 +22,8 @@ export interface AgentChatShellProps {
   // Opens a file (from a Read tool's file chip) in the Workbench editor.
   onOpenFile?: (path: string) => void;
   // Opens an http(s) link (clicked in a chat message) in the in-app Browser
-  // Pane — never the top-level window.
-  onOpenBrowserPane?: (url: string) => void;
+  // Pane — never the top-level window. cmd/ctrl+click opens a NEW pane.
+  onOpenBrowserPane?: (url: string, options?: { newPane?: boolean }) => void;
   // A pasted image attachment: name, mediaType, and base64 of the image bytes.
   onAddAttachment?: (attachment: {
     name: string;

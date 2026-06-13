@@ -26,7 +26,10 @@ export type TideMcpToolOutput =
   | TideGoToDefinitionOutput
   | TideGoToReferencesOutput
   | TideOpenTerminalOutput
-  | TideRunTerminalCommandOutput;
+  | TideRunTerminalCommandOutput
+  | TideFocusPaneOutput
+  | TideClosePaneOutput
+  | TideSetWorkbenchLayoutOutput;
 
 export interface TideObserveThreadOutput {
   kind: "observe_thread";
@@ -139,6 +142,26 @@ export interface TideOpenTerminalOutput {
   args: string[];
   cwd: string;
   visibleSideEffect: "created" | "revealed";
+}
+
+// Pane/layout manipulation tools return the resulting Workbench snapshot (panes +
+// activePaneId + layoutMode) so the agent sees the effect in one call.
+export interface TideFocusPaneOutput extends WorkbenchSnapshot {
+  kind: "focus_pane";
+  threadId: ThreadId;
+  paneId: WorkbenchPaneId;
+}
+
+export interface TideClosePaneOutput extends WorkbenchSnapshot {
+  kind: "close_pane";
+  threadId: ThreadId;
+  paneId: WorkbenchPaneId;
+  closed: boolean;
+}
+
+export interface TideSetWorkbenchLayoutOutput extends WorkbenchSnapshot {
+  kind: "set_workbench_layout";
+  threadId: ThreadId;
 }
 
 export interface TideRunTerminalCommandOutput {

@@ -81,7 +81,7 @@ export function createProductShellState(
     leftRailOpen: true,
     workbenchOpen: false,
     workbenchFullscreen: false,
-    workbenchLayoutMode: "tabs",
+    workbenchLayoutMode: "stacked",
     workbenchLayoutTree: null,
     fileTreeOpen: false,
     leftRailMenu: null,
@@ -115,5 +115,7 @@ export function createProductShellState(
     listSettings: input.listSettings ?? { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS },
     worktreeSettings: input.worktreeSettings ?? { ...DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS },
     settingsOpen: false,
+    draftWorkbenchPanes: [],
+    draftActiveWorkbenchPaneId: null,
   };
 }

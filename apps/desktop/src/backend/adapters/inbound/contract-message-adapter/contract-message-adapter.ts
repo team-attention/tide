@@ -502,6 +502,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
               ? null
               : toPromptStateDto(result.thread.promptState),
           workbenchPanes: result.thread.workbench.panes.map(toWorkbenchPaneRefDto),
+          workbenchLayoutMode: result.thread.workbench.layoutMode,
           fileTree:
             result.thread.workbench.fileTree === undefined
               ? undefined
@@ -635,6 +636,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         threadId: thread.threadId,
         panes: thread.workbench.panes.map(toWorkbenchPaneRefDto),
         activePaneId: thread.workbench.activePaneId,
+        layoutMode: thread.workbench.layoutMode,
         fileTree:
           thread.workbench.fileTree === undefined
             ? undefined

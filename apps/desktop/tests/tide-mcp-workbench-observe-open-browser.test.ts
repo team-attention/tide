@@ -105,6 +105,9 @@ test("tide_mcp_tool_surface_lists_bounded_workbench_tools", () => {
       "tide_go_to_references",
       "tide_open_terminal",
       "tide_run_terminal_command",
+      "tide_focus_pane",
+      "tide_close_pane",
+      "tide_set_workbench_layout",
     ],
   );
 });
@@ -128,6 +131,85 @@ test("observing_workbench_returns_snapshot_without_mutating_panes", async () => 
   assert.equal(before.ok, true);
   assert.equal(after.ok, true);
   assert.deepEqual(before.ok && before.output, after.ok && after.output);
+});
+
+// --- workbench-dock-parity: layout mode + agent pane/layout control ---
+
+test("set_layout_mode_command_sets_layout_mode_reported_in_the_snapshot", async () => {
+  // Spec: docs_v2/specs/workbench-dock-parity.md (T1)
+  const service = serviceWithActiveThread("thread-layout", "runtime-layout");
+  const result = await service.handleWorkbenchCommand({
+    threadId: "thread-layout",
+    command: "set_layout_mode",
+    data: { mode: "split" },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.workbench.layoutMode, "split");
+});
+
+test("set_layout_mode_rejects_an_unknown_mode", async () => {
+  const service = serviceWithActiveThread("thread-layout-bad", "runtime-layout-bad");
+  const result = await service.handleWorkbenchCommand({
+    threadId: "thread-layout-bad",
+    command: "set_layout_mode",
+    data: { mode: "grid" },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("tide_set_workbench_layout_sets_mode_and_observe_reports_it", async () => {
+  // Spec: docs_v2/specs/workbench-dock-parity.md (T3) — agent observes + sets layout.
+  const service = serviceWithActiveThread("thread-ai-layout", "runtime-ai-layout");
+  const set = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-ai-layout", agentId: "codex" },
+    toolName: "tide_set_workbench_layout",
+    input: { mode: "split" },
+  });
+  assert.equal(set.ok && set.output.kind, "set_workbench_layout");
+  const observed = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-ai-layout", agentId: "codex" },
+    toolName: "tide_observe_workbench",
+  });
+  assert.equal(
+    observed.ok && observed.output.kind === "observe_workbench" && observed.output.layoutMode,
+    "split",
+  );
+});
+
+test("tide_focus_pane_and_tide_close_pane_let_the_agent_manipulate_panes", async () => {
+  // Spec: docs_v2/specs/workbench-dock-parity.md (T3)
+  const service = serviceWithActiveThread("thread-ai-panes", "runtime-ai-panes");
+  const opened = await openBrowser(service, "runtime-ai-panes", "https://focus.test");
+  const paneId = opened.output.pane.paneId;
+
+  const focused = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-ai-panes", agentId: "codex" },
+    toolName: "tide_focus_pane",
+    input: { paneId },
+  });
+  assert.equal(focused.ok && focused.output.kind, "focus_pane");
+  assert.equal(
+    focused.ok && focused.output.kind === "focus_pane" && focused.output.activePaneId,
+    paneId,
+  );
+
+  const closed = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-ai-panes", agentId: "codex" },
+    toolName: "tide_close_pane",
+    input: { paneId },
+  });
+  assert.equal(closed.ok && closed.output.kind, "close_pane");
+
+  const observed = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-ai-panes", agentId: "codex" },
+    toolName: "tide_observe_workbench",
+  });
+  assert.equal(
+    observed.ok &&
+      observed.output.kind === "observe_workbench" &&
+      observed.output.panes.some((pane) => pane.paneId === paneId && pane.visible),
+    false,
+  );
 });
 
 // --- UC-3: Agent opens Browser Pane ---

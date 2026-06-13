@@ -6,7 +6,7 @@ import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-stat
 import { applyProductShellThreadArchivedEvent, applyProductShellThreadEvent, applyProductShellThreadLaunchOptionsChangedEvent, applyProductShellThreadPinChangedEvent, applyProductShellThreadRenamedEvent, toProductShellThreadFromSummary } from "./thread-list.ts";
 import { setProductShellProviderCommands } from "./composer-bridge.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
-import { reconcileEditorDrafts } from "./workbench.ts";
+import { reconcileEditorDrafts } from "./workbench-editor.ts";
 import { projectsFromThreads } from "./view-model.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
@@ -92,6 +92,7 @@ export function applyProductShellBackendEvent(
       const payload = event.payload as {
         threadId?: string;
         panes?: AppChromeWorkbenchPaneRef[];
+        layoutMode?: "stacked" | "split";
         fileTree?: unknown;
       };
       // A workbench change only touches the view when it is FOR the active thread.
@@ -134,6 +135,9 @@ export function applyProductShellBackendEvent(
                   : thread,
               ),
         workbenchOpen: hasNewRealPane ? true : anyVisible ? nextState.workbenchOpen : false,
+        // Backend owns the Thread's Stacked/Split presentation; reflect it (e.g. an
+        // agent's tide_set_workbench_layout) when present.
+        workbenchLayoutMode: payload.layoutMode ?? nextState.workbenchLayoutMode,
         fileTree:
           payload.fileTree === undefined
             ? nextState.fileTree
