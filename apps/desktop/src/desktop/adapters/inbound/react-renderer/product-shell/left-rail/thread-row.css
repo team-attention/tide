@@ -184,12 +184,11 @@
 .thread-row__action {
   width: 22px;
   height: 22px;
-  border: 0;
   border-radius: 6px;
-  background: transparent;
-  color: var(--tide-muted);
-  cursor: pointer;
 }
+
+/* On the (selection-tinted) active/hover row, the menu button goes white so it
+   reads as a distinct affordance rather than blending into the row. */
 
 .thread-row__action:hover {
   background: var(--tide-bg);
