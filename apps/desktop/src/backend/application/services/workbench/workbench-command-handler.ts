@@ -6,14 +6,7 @@ import type {
   WorkbenchFileTreeView,
   WorkbenchSnapshot,
 } from "../../domains/workbench/workbench.ts";
-import type {
-  WorkspaceCodeCompletionItem,
-  WorkspaceCodeDiagnostic,
-  WorkspaceCodeHover,
-  WorkspaceCodeIntelligencePort,
-  WorkspaceCodeRange,
-  WorkspaceCodeSignatureHelp,
-} from "../../ports/outbound/workspace-code-intelligence-port.ts";
+import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
 import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
 import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port.ts";
 import { arrayOfStrings } from "../support/record-helpers.ts";
@@ -57,70 +50,6 @@ export interface WorkbenchCommandResult {
   handled: true;
   thread: ThreadSnapshot;
   workbench: WorkbenchSnapshot;
-}
-
-export interface ReadWorkspaceFileTreeInput {
-  cwd: string;
-  maxDepth?: number;
-  maxEntries?: number;
-}
-
-export interface ReadWorkspaceFileTreeResult {
-  cwd: string;
-  fileTree: WorkbenchFileTreeView;
-}
-
-export interface SearchWorkspaceContentInput {
-  cwd: string;
-  query: string;
-  maxResults?: number;
-  maxFiles?: number;
-}
-
-export interface WorkspaceContentSearchMatch {
-  relativePath: string;
-  line: number;
-  column: number;
-  lineText: string;
-}
-
-export interface SearchWorkspaceContentResult {
-  cwd: string;
-  query: string;
-  matches: WorkspaceContentSearchMatch[];
-  fileCount: number;
-  truncated: boolean;
-}
-
-export type QueryWorkspaceCodeIntelKind =
-  | "completion"
-  | "hover"
-  | "highlights"
-  | "signature"
-  | "diagnostics";
-
-export interface QueryWorkspaceCodeIntelInput {
-  cwd: string;
-  path: string;
-  kind: QueryWorkspaceCodeIntelKind;
-  content?: string;
-  line?: number;
-  character?: number;
-}
-
-// Engine misses (no language support for the file, no server on PATH) are a
-// NORMAL answer (`available: false` + message), not a ServiceResult failure —
-// the editor quietly shows nothing instead of surfacing contract errors per
-// query. (`available` avoids colliding with ServiceResult's own `ok`.)
-export interface QueryWorkspaceCodeIntelResult {
-  kind: QueryWorkspaceCodeIntelKind;
-  available: boolean;
-  message?: string;
-  completions?: WorkspaceCodeCompletionItem[];
-  hover?: WorkspaceCodeHover | null;
-  highlights?: WorkspaceCodeRange[];
-  signature?: WorkspaceCodeSignatureHelp | null;
-  diagnostics?: WorkspaceCodeDiagnostic[];
 }
 
 export interface WorkbenchCommandHandlerDeps {
@@ -695,102 +624,4 @@ export class WorkbenchCommandHandler {
     }
   }
 
-  async readWorkspaceFileTree(
-    input: ReadWorkspaceFileTreeInput,
-  ): Promise<ServiceResult<ReadWorkspaceFileTreeResult>> {
-    // Thread-independent file tree read (the start page shows the composer-selected
-    // project's files before any thread exists). Same workspace file port + limits
-    // as refresh_file_tree, just keyed by an explicit cwd instead of a thread root.
-    const listed = await this.workspaceFilePort.listTree({
-      root: input.cwd,
-      maxDepth: fileTreeMaxDepth(input.maxDepth),
-      maxEntries: fileTreeMaxEntries(input.maxEntries),
-    });
-    if (!listed.ok) {
-      return failure(listed.error.code, listed.error.message);
-    }
-    return {
-      ok: true,
-      cwd: input.cwd,
-      fileTree: cloneFileTreeView(listed.fileTree),
-    };
-  }
-
-  async queryWorkspaceCodeIntel(
-    input: QueryWorkspaceCodeIntelInput,
-  ): Promise<ServiceResult<QueryWorkspaceCodeIntelResult>> {
-    const query = {
-      root: input.cwd,
-      path: input.path,
-      line: input.line ?? 0,
-      character: input.character ?? 0,
-      content: input.content,
-    };
-    const miss = (message: string): ServiceResult<QueryWorkspaceCodeIntelResult> => ({
-      ok: true,
-      kind: input.kind,
-      available: false,
-      message,
-    });
-    switch (input.kind) {
-      case "completion": {
-        const result = await this.workspaceCodeIntelligencePort.getCompletions(query);
-        return result.ok
-          ? { ok: true, kind: input.kind, available: true, completions: result.completions }
-          : miss(result.error.message);
-      }
-      case "hover": {
-        const result = await this.workspaceCodeIntelligencePort.getHover(query);
-        return result.ok
-          ? { ok: true, kind: input.kind, available: true, hover: result.hover }
-          : miss(result.error.message);
-      }
-      case "highlights": {
-        const result = await this.workspaceCodeIntelligencePort.getDocumentHighlights(query);
-        return result.ok
-          ? { ok: true, kind: input.kind, available: true, highlights: result.highlights }
-          : miss(result.error.message);
-      }
-      case "signature": {
-        const result = await this.workspaceCodeIntelligencePort.getSignatureHelp(query);
-        return result.ok
-          ? { ok: true, kind: input.kind, available: true, signature: result.signature }
-          : miss(result.error.message);
-      }
-      case "diagnostics": {
-        const result = await this.workspaceCodeIntelligencePort.getDiagnostics({
-          root: query.root,
-          path: query.path,
-          content: query.content,
-        });
-        return result.ok
-          ? { ok: true, kind: input.kind, available: true, diagnostics: result.diagnostics }
-          : miss(result.error.message);
-      }
-      default:
-        return failure("invalid_workbench_command", "Unknown code intelligence query kind.");
-    }
-  }
-
-  async searchWorkspaceContent(
-    input: SearchWorkspaceContentInput,
-  ): Promise<ServiceResult<SearchWorkspaceContentResult>> {
-    const searched = await this.workspaceFilePort.searchContent({
-      root: input.cwd,
-      query: input.query,
-      maxResults: Math.min(Math.max(input.maxResults ?? 500, 1), 2000),
-      maxFiles: Math.min(Math.max(input.maxFiles ?? 2000, 1), 8000),
-    });
-    if (!searched.ok) {
-      return failure(searched.error.code, searched.error.message);
-    }
-    return {
-      ok: true,
-      cwd: input.cwd,
-      query: searched.search.query,
-      matches: searched.search.matches.map((match) => ({ ...match })),
-      fileCount: searched.search.fileCount,
-      truncated: searched.search.truncated,
-    };
-  }
 }

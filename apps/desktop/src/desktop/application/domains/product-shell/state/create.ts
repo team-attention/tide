@@ -107,6 +107,7 @@ export function createProductShellState(
     agentChatByThreadId: {},
     appChrome: createAppChromeState(),
     fileTree: null,
+    startPageFile: null,
     contentSearch: null,
     editorDrafts: {},
     nextLocalThreadNumber: 1,

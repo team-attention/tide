@@ -21,7 +21,8 @@ export type BackendCommandKind =
   | "workbench.command"
   | "workspace.readFileTree"
   | "workspace.searchContent"
-  | "workspace.codeIntel";
+  | "workspace.codeIntel"
+  | "workspace.readFile";
 
 export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "thread.list",
@@ -41,6 +42,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "workspace.readFileTree",
   "workspace.searchContent",
   "workspace.codeIntel",
+  "workspace.readFile",
 ];
 
 /**
@@ -119,6 +121,14 @@ export interface BackendCommandPayloadByKind {
     query: string;
     maxResults?: number;
     maxFiles?: number;
+  };
+  // Read one text file under `cwd`, NOT tied to a thread — the start (New
+  // Thread) page's file viewer (spec: start-page-file-viewer). Answered by a
+  // workspace.fileLoaded event.
+  "workspace.readFile": {
+    cwd: string;
+    path: string;
+    byteLimit?: number;
   };
   // Editor language-intelligence query (completion/hover/highlights/signature/
   // diagnostics) for one file under `cwd`. `content` carries the live (possibly

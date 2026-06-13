@@ -48,7 +48,8 @@ export type BackendEventKind =
   | "workbench.terminalOutput"
   | "workspace.fileTreeLoaded"
   | "workspace.contentSearchResults"
-  | "workspace.codeIntelResult";
+  | "workspace.codeIntelResult"
+  | "workspace.fileLoaded";
 
 export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "backend.connectionChanged",
@@ -77,6 +78,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "workspace.fileTreeLoaded",
   "workspace.contentSearchResults",
   "workspace.codeIntelResult",
+  "workspace.fileLoaded",
 ];
 
 export interface BackendEventPayloadByKind {
@@ -196,6 +198,14 @@ export interface BackendEventPayloadByKind {
     query: string;
     matches: WorkspaceContentSearchMatchDto[];
     fileCount: number;
+    truncated: boolean;
+  };
+  // A thread-independent file read for the start page's viewer (same requestId
+  // as the workspace.readFile command).
+  "workspace.fileLoaded": {
+    cwd: string;
+    relativePath: string;
+    content: string;
     truncated: boolean;
   };
   // Answer to a workspace.codeIntel query (same requestId). `ok:false` carries

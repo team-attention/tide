@@ -80,6 +80,13 @@ export interface ProductShellProject {
   cwd: string;
 }
 
+export interface ProductShellStartPageFile {
+  cwd: string;
+  relativePath: string;
+  content: string;
+  truncated: boolean;
+}
+
 export interface ProductShellState {
   activeThreadId: string | null;
   leftRailOpen: boolean;
@@ -138,6 +145,10 @@ export interface ProductShellState {
   agentChatByThreadId: Record<string, AgentChatShellState>;
   appChrome: AppChromeState;
   fileTree: ProductShellFileTreeView | null;
+  // The start (New Thread) page's open file viewer — a thread-independent read
+  // of one file under the composer-selected project (spec:
+  // start-page-file-viewer). Null when nothing is open.
+  startPageFile: ProductShellStartPageFile | null;
   // Latest project content-search (Cmd+Shift+F) results for the active thread.
   contentSearch: ProductShellContentSearch | null;
   editorDrafts: Record<string, ProductShellEditorDraft>;
@@ -153,6 +164,10 @@ export interface ProductShellState {
 export type ProductShellBackendCommand =
   | { kind: "thread.list"; payload: { includeArchived?: boolean } }
   | { kind: "thread.hydrate"; payload: { threadId: string } }
+  | {
+      kind: "workspace.readFile";
+      payload: { cwd: string; path: string; byteLimit?: number };
+    }
   | {
       kind: "workspace.readFileTree";
       payload: { cwd: string; maxDepth?: number; maxEntries?: number };
@@ -330,6 +345,7 @@ export interface ProductShellEditorPickerView {
 }
 
 export interface ProductShellViewModel {
+  startPageFile: ProductShellStartPageFile | null;
   activeThreadId: string | null;
   leftRailOpen: boolean;
   // False on a cold boot until the first thread list arrives — drives the rail skeleton.

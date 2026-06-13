@@ -57,6 +57,13 @@ function startPageFileTreeCommand(
   return null;
 }
 
+export function closeProductShellStartPageFile(state: ProductShellState): ProductShellState {
+  if (state.startPageFile === null) {
+    return state;
+  }
+  return { ...state, startPageFile: null };
+}
+
 // When the start-page composer scope changes while the file tree is open, reload the
 // tree for the new directory. Returns null when not on the start page / tree closed.
 export function refreshStartPageFileTree(
@@ -72,7 +79,7 @@ export function selectProductShellFileTreeEntry(
   state: ProductShellState,
   entryId: string,
 ): ProductShellUpdateResult {
-  if (state.activeThreadId === null || state.fileTree === null) {
+  if (state.fileTree === null) {
     return { state, command: null };
   }
   const entry = state.fileTree.entries.find(
@@ -84,6 +91,8 @@ export function selectProductShellFileTreeEntry(
 
   // Folders toggle expansion; files open. The whole tree is already loaded, so
   // expanding only reveals already-fetched children — no backend round-trip.
+  // This works on the START PAGE too (no thread yet) — bailing on a null
+  // activeThreadId froze the tree at its top level there.
   if (entry.kind === "folder") {
     const expanded = new Set(state.expandedFolderPaths);
     if (expanded.has(entry.relativePath)) {
@@ -93,6 +102,23 @@ export function selectProductShellFileTreeEntry(
     }
     const nextState = { ...state, expandedFolderPaths: [...expanded] };
     return { state: nextState, command: null };
+  }
+
+  // Start page: no thread/workbench to open an Editor Pane in — read the file
+  // thread-independently into the start-page viewer (spec:
+  // start-page-file-viewer).
+  if (state.activeThreadId === null) {
+    const scope = state.agentChat.composer.startOptions.scope;
+    if (scope?.kind !== "project" || scope.cwd.length === 0) {
+      return { state, command: null };
+    }
+    return {
+      state,
+      command: {
+        kind: "workspace.readFile",
+        payload: { cwd: scope.cwd, path: entry.relativePath },
+      },
+    };
   }
 
   return {

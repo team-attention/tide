@@ -342,24 +342,10 @@ import {
   WorkbenchCommandHandler,
   type WorkbenchCommandInput,
   type WorkbenchCommandResult,
-  type ReadWorkspaceFileTreeInput,
-  type ReadWorkspaceFileTreeResult,
-  type SearchWorkspaceContentInput,
-  type SearchWorkspaceContentResult,
-  type QueryWorkspaceCodeIntelInput,
-  type QueryWorkspaceCodeIntelResult,
 } from "../workbench/workbench-command-handler.ts";
+import { WorkspaceQueryHandler } from "../workbench/workspace-query-handler.ts";
 
-export type {
-  WorkbenchCommandInput,
-  WorkbenchCommandResult,
-  ReadWorkspaceFileTreeInput,
-  ReadWorkspaceFileTreeResult,
-  SearchWorkspaceContentInput,
-  SearchWorkspaceContentResult,
-  QueryWorkspaceCodeIntelInput,
-  QueryWorkspaceCodeIntelResult,
-};
+export type { WorkbenchCommandInput, WorkbenchCommandResult };
 
 export function createThreadRuntimeService(
   input: CreateThreadRuntimeServiceInput,
@@ -423,6 +409,7 @@ private readonly workbenchExec: WorkbenchExecOperations;
 private readonly tideMcp: TideMcpToolHandler;
 
 private readonly workbenchCmd: WorkbenchCommandHandler;
+  private readonly workspaceQuery: WorkspaceQueryHandler;
 
 constructor(input: CreateThreadRuntimeServiceInput) {
     this.agentRuntimePort = input.agentRuntimePort;
@@ -484,6 +471,10 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       workbenchFileOps: this.workbenchFileOps,
       workspaceFilePort: this.workspaceFilePort,
       workspaceCommandPort: this.workspaceCommandPort,
+      workspaceCodeIntelligencePort: this.workspaceCodeIntelligencePort,
+    });
+    this.workspaceQuery = new WorkspaceQueryHandler({
+      workspaceFilePort: this.workspaceFilePort,
       workspaceCodeIntelligencePort: this.workspaceCodeIntelligencePort,
     });
 
@@ -1253,22 +1244,10 @@ private async replayPendingInputAfterTrust(thread: ThreadRecord): Promise<void> 
     return this.workbenchCmd.handleWorkbenchCommand(input);
   }
 
-readWorkspaceFileTree(
-    input: ReadWorkspaceFileTreeInput,
-  ): Promise<ServiceResult<ReadWorkspaceFileTreeResult>> {
-    return this.workbenchCmd.readWorkspaceFileTree(input);
-  }
-
-searchWorkspaceContent(
-    input: SearchWorkspaceContentInput,
-  ): Promise<ServiceResult<SearchWorkspaceContentResult>> {
-    return this.workbenchCmd.searchWorkspaceContent(input);
-  }
-
-queryWorkspaceCodeIntel(
-    input: QueryWorkspaceCodeIntelInput,
-  ): Promise<ServiceResult<QueryWorkspaceCodeIntelResult>> {
-    return this.workbenchCmd.queryWorkspaceCodeIntel(input);
+// Thread-independent workspace queries (start-page tree/file viewer, content
+// search, editor code intel) are owned by WorkspaceQueryHandler.
+  workspaceQueries(): WorkspaceQueryHandler {
+    return this.workspaceQuery;
   }
 
 // Tide MCP tool surface is owned by TideMcpToolHandler (shares the store + ops).

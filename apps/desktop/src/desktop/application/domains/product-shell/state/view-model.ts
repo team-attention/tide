@@ -111,6 +111,7 @@ export function createProductShellViewModel(
     agentChat: createAgentChatShellViewModel(agentChatWithProjects(state)),
     appChrome: createAppChromeViewModel(state.appChrome),
     fileTree: createFileTreeView(state),
+    startPageFile: state.activeThreadId === null ? state.startPageFile : null,
     contentSearch: state.contentSearch,
     editorPicker: createEditorPickerView(state),
     editorDrafts: state.editorDrafts,

@@ -155,6 +155,8 @@ export interface ProductShellHandlers {
   onLeftRailTransientClear: () => void;
   onFocusWorkbenchPane: (paneId: string) => void;
   onCloseWorkbenchPane: (paneId: string) => void;
+  // Close the start page's read-only file viewer.
+  onStartPageFileClose: () => void;
   onFileTreeEntryOpen: (entryId: string) => void;
   onTerminalInput: (paneId: string, bytes: string) => void;
   onTerminalResize: (paneId: string, cols: number, rows: number) => void;

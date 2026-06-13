@@ -15,6 +15,7 @@ import {
   applyProductShellBackendEvent,
   applyProductShellPromptState,
   createProductShellState,
+  closeProductShellStartPageFile,
   createProductShellViewModel,
   quickOpenFilesFromState,
   closeProductShellWorkbenchPane,
@@ -467,6 +468,70 @@ test("an_existing_pane_update_does_not_reopen_a_workbench_the_user_closed", () =
 // Quick Open must search EVERY loaded file: folders are collapsed by default,
 // and the rendered FileTree view hides collapsed descendants — deriving the
 // search list from that view left Cmd+P blind to all nested files.
+// Spec: start-page-file-viewer — the START page tree must behave like a real
+// tree: folders expand (no thread required) and files open into the
+// thread-independent viewer via workspace.readFile.
+test("start_page_file_tree_expands_folders_and_opens_files_into_the_viewer", () => {
+  const scoped = setProductShellComposerFolderScope(createProductShellState(), "/repo/tide");
+  const state = applyProductShellBackendEvent(scoped, {
+    kind: "workspace.fileTreeLoaded",
+    payload: {
+      cwd: "/repo/tide",
+      fileTree: {
+        cwdLabel: "tide",
+        entries: [
+          { id: "d-src", name: "src", relativePath: "src", depth: 0, kind: "folder" },
+          { id: "f-app", name: "app.ts", relativePath: "src/app.ts", depth: 1, kind: "file" },
+        ],
+      },
+    },
+  });
+  assert.equal(state.activeThreadId, null);
+
+  // Folder toggle works WITHOUT a thread (this froze the start-page tree at
+  // its top level).
+  const expanded = selectProductShellFileTreeEntry(state, "d-src");
+  assert.equal(expanded.command, null);
+  assert.ok(expanded.state.expandedFolderPaths.includes("src"));
+
+  // A file click reads the file thread-independently for the viewer.
+  const opened = selectProductShellFileTreeEntry(expanded.state, "f-app");
+  assert.deepEqual(opened.command, {
+    kind: "workspace.readFile",
+    payload: { cwd: "/repo/tide", path: "src/app.ts" },
+  });
+
+  // The loaded content lands in the start-page viewer state…
+  const loaded = applyProductShellBackendEvent(opened.state, {
+    kind: "workspace.fileLoaded",
+    payload: { cwd: "/repo/tide", relativePath: "src/app.ts", content: "export {};", truncated: false },
+  });
+  assert.deepEqual(loaded.startPageFile, {
+    cwd: "/repo/tide",
+    relativePath: "src/app.ts",
+    content: "export {};",
+    truncated: false,
+  });
+  assert.deepEqual(createProductShellViewModel(loaded).startPageFile, loaded.startPageFile);
+
+  // …survives a SAME-directory tree reload (FileTree toggle)…
+  const sameTree = applyProductShellBackendEvent(loaded, {
+    kind: "workspace.fileTreeLoaded",
+    payload: { cwd: "/repo/tide", fileTree: { cwdLabel: "tide", entries: [] } },
+  });
+  assert.notEqual(sameTree.startPageFile, null);
+
+  // …closes when the composer scope chip switches to ANOTHER directory…
+  const otherTree = applyProductShellBackendEvent(sameTree, {
+    kind: "workspace.fileTreeLoaded",
+    payload: { cwd: "/repo/other", fileTree: { cwdLabel: "other", entries: [] } },
+  });
+  assert.equal(otherTree.startPageFile, null);
+
+  // …and closes explicitly.
+  assert.equal(closeProductShellStartPageFile(loaded).startPageFile, null);
+});
+
 test("quick_open_files_include_collapsed_folder_descendants", () => {
   const state = applyProductShellBackendEvent(
     openProductShellThread(createProductShellState(), "thread-workbench"),

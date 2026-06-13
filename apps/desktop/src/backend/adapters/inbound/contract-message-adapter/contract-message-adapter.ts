@@ -254,7 +254,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         const typedCommand = command as BackendCommandEnvelope<"workspace.readFileTree">;
         return this.handleServiceResult(
           typedCommand,
-          await this.service.readWorkspaceFileTree(typedCommand.payload),
+          await this.service.workspaceQueries().readWorkspaceFileTree(typedCommand.payload),
           (result) => [
             {
               contractVersion: CONTRACT_VERSION,
@@ -275,7 +275,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         const typedCommand = command as BackendCommandEnvelope<"workspace.searchContent">;
         return this.handleServiceResult(
           typedCommand,
-          await this.service.searchWorkspaceContent(typedCommand.payload),
+          await this.service.workspaceQueries().searchWorkspaceContent(typedCommand.payload),
           (result) => [
             {
               contractVersion: CONTRACT_VERSION,
@@ -295,11 +295,34 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           ],
         );
       }
+      case "workspace.readFile": {
+        const typedCommand = command as BackendCommandEnvelope<"workspace.readFile">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.workspaceQueries().readWorkspaceFile(typedCommand.payload),
+          (result) => [
+            {
+              contractVersion: CONTRACT_VERSION,
+              eventId: this.nextEventId(),
+              requestId: typedCommand.requestId,
+              kind: "workspace.fileLoaded",
+              emittedAt: this.clock(),
+              payload: {
+                cwd: result.cwd,
+                relativePath: result.relativePath,
+                content: result.content,
+                truncated: result.truncated,
+              },
+            } satisfies BackendEventEnvelope<"workspace.fileLoaded">,
+            this.commandCompletedEvent(typedCommand, { handled: true }),
+          ],
+        );
+      }
       case "workspace.codeIntel": {
         const typedCommand = command as BackendCommandEnvelope<"workspace.codeIntel">;
         return this.handleServiceResult(
           typedCommand,
-          await this.service.queryWorkspaceCodeIntel(typedCommand.payload),
+          await this.service.workspaceQueries().queryWorkspaceCodeIntel(typedCommand.payload),
           (result) => [
             {
               contractVersion: CONTRACT_VERSION,

@@ -153,6 +153,37 @@ export function applyProductShellBackendEvent(
         ...nextState,
         fileTree: productShellFileTreeFromPayload(payload.fileTree),
         expandedFolderPaths: [],
+        // A tree for a DIFFERENT directory closes the previous project's viewer;
+        // re-listing the same directory (toggle) leaves it open.
+        startPageFile:
+          nextState.startPageFile !== null && nextState.startPageFile.cwd === payload.cwd
+            ? nextState.startPageFile
+            : null,
+      };
+    }
+    case "workspace.fileLoaded": {
+      // The start-page viewer's file content. Ignored once a thread is active
+      // (the workbench owns file display there).
+      if (state.activeThreadId !== null) {
+        return nextState;
+      }
+      const payload = event.payload as {
+        cwd?: string;
+        relativePath?: string;
+        content?: string;
+        truncated?: boolean;
+      };
+      if (typeof payload.cwd !== "string" || typeof payload.relativePath !== "string") {
+        return nextState;
+      }
+      return {
+        ...nextState,
+        startPageFile: {
+          cwd: payload.cwd,
+          relativePath: payload.relativePath,
+          content: typeof payload.content === "string" ? payload.content : "",
+          truncated: payload.truncated === true,
+        },
       };
     }
     case "workspace.contentSearchResults": {
