@@ -194,7 +194,7 @@ test("electron_main_smoke_result_is_compact_enough_for_raw_pty_output", () => {
 });
 
 test("renderer_entry_mounts_the_react_app_into_the_root_element", () => {
-  const renderer = fs.readFileSync(path.join(repoRoot, "src/desktop/infrastructure/electron/renderer/renderer-entry.ts"), "utf8");
+  const renderer = fs.readFileSync(path.join(repoRoot, "src/desktop/infrastructure/electron/renderer/renderer-entry.tsx"), "utf8");
 
   assert.match(renderer, /createRoot/);
   assert.match(renderer, /document\.getElementById\("root"\)/);

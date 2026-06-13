@@ -1,5 +1,5 @@
 import { setProductShellSearchQuery, setProductShellSettingsOpen, setProductShellWorktreeSettings, toggleProductShellSearch } from "../../../../../application/domains/product-shell/product-shell.ts";
-import { persistWorktreeSettings } from "../settings/settings.ts";
+import { persistWorktreeSettings } from "../settings/settings.tsx";
 import { applyThemePreference, saveThemePreference } from "../../support/theme.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 

@@ -11,7 +11,7 @@ import type {
 import type { AgentChatBackendEvent } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 import type { MenuAnchorRect, TideProductShellProps } from "../support/types.ts";
-import type { WorktreeDeleteTarget } from "../dialogs/worktree-delete-dialog.ts";
+import type { WorktreeDeleteTarget } from "../dialogs/worktree-delete-dialog.tsx";
 
 export interface ProductShellHandlerContext {
   props: TideProductShellProps;

@@ -1,6 +1,6 @@
 import { archiveProductShellProjectChats, cancelProductShellProjectRename, cancelProductShellThreadRename, cancelProductShellWorktreeCreate, clearProductShellLeftRailTransientState, confirmProductShellThreadArchive, openProductShellLeftRailMenu, openProductShellThreadFromLeftRail, selectProductShellChoiceSurfaceRow, setProductShellListSettings, setProductShellRegisteredProjects, showProductShellThreadArchiveConfirm, startNewProductShellScratchThread, startNewProductShellThread, startProductShellProjectRename, startProductShellThreadRename, startProductShellWorktreeCreate, submitProductShellThreadRename, toggleProductShellLeftRail, toggleProductShellProject, toggleProductShellProjectPin, toggleProductShellThreadPin } from "../../../../../application/domains/product-shell/product-shell.ts";
-import { persistListSettings } from "../settings/settings.ts";
-import { projectCwdById } from "../product-shell.ts";
+import { persistListSettings } from "../settings/settings.tsx";
+import { projectCwdById } from "../product-shell.tsx";
 import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree/path.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 

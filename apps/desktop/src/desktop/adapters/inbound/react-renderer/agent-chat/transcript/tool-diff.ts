@@ -1,4 +1,4 @@
-import { pickStringField } from "./file-chip.ts";
+import { pickStringField } from "./file-chip.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 interface DiffLine {

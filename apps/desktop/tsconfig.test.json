@@ -1,0 +1,5 @@
+{
+  "//": "tsx-only config: same options as tsconfig.json but its include also covers tests/, so the tsx test loader applies jsx: react-jsx (automatic runtime) to test files. `npm run typecheck` still uses tsconfig.json (src-only); tests are behaviour-checked at runtime, not type-checked.",
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx"]
+}

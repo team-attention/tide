@@ -1,0 +1,118 @@
+import type { ReactElement } from "react";
+
+import type {
+  AppChromeStatusBarView,
+  AppChromeViewModel,
+  ChromeActionView,
+  WorkbenchTabView,
+} from "../../../../application/domains/app-chrome/app-chrome-state.ts";
+
+export interface AppChromeProps {
+  viewModel: AppChromeViewModel;
+  onFocusWorkbenchPane?: (paneId: string) => void;
+  onCloseWorkbenchPane?: (paneId: string) => void;
+}
+
+export function AppChrome(props: AppChromeProps): ReactElement {
+  const viewModel = props.viewModel;
+
+  return (
+    <aside className="app-chrome" aria-label="App Chrome">
+      {createStatusBar(viewModel.statusBar)}
+      {viewModel.workbenchTabStrip.visible
+        ? createWorkbenchTabStrip(viewModel.workbenchTabStrip.visibleTabs, props)
+        : null}
+      {viewModel.workbenchTabStrip.overflowTabs.length > 0
+        ? createWorkbenchOverflow(viewModel.workbenchTabStrip.overflowTabs)
+        : null}
+      {viewModel.errorMessage ? <p role="alert">{viewModel.errorMessage}</p> : null}
+    </aside>
+  );
+}
+
+function createStatusBar(statusBar: AppChromeStatusBarView): ReactElement {
+  return (
+    <section
+      className="status-bar"
+      aria-label="Status Bar"
+      data-backend-connection-state={statusBar.backendConnectionState}
+      data-runtime-state={statusBar.runtimeState}
+    >
+      <span>{`Backend: ${statusBar.backendConnectionState}`}</span>
+      <span>{`Runtime: ${statusBar.runtimeState}`}</span>
+      {statusBar.agentLabel ? <span>{`Agent: ${statusBar.agentLabel}`}</span> : null}
+      {statusBar.providerReadinessNeedsAttention ? (
+        <span data-attention="provider-readiness">Provider</span>
+      ) : null}
+      {statusBar.promptNeedsAttention ? <span data-attention="prompt">Prompt</span> : null}
+    </section>
+  );
+}
+
+function createWorkbenchTabStrip(
+  tabs: WorkbenchTabView[],
+  handlers: Pick<AppChromeProps, "onFocusWorkbenchPane" | "onCloseWorkbenchPane">,
+): ReactElement {
+  return (
+    <nav className="workbench-tab-strip" aria-label="Workbench Tab Strip">
+      {tabs.map((tab) => createWorkbenchTab(tab, handlers))}
+    </nav>
+  );
+}
+
+function createWorkbenchTab(
+  tab: WorkbenchTabView,
+  handlers: Pick<AppChromeProps, "onFocusWorkbenchPane" | "onCloseWorkbenchPane">,
+): ReactElement {
+  return (
+    <div
+      key={tab.paneId}
+      className="workbench-tab"
+      data-pane-id={tab.paneId}
+      data-pane-kind={tab.kind}
+      data-active={String(tab.active)}
+      data-loading={String(tab.loading)}
+    >
+      {createChromeButton(tab.focusAction, tab.title, () => handlers.onFocusWorkbenchPane?.(tab.paneId))}
+      {createChromeButton(tab.closeAction, undefined, () => handlers.onCloseWorkbenchPane?.(tab.paneId))}
+    </div>
+  );
+}
+
+function createWorkbenchOverflow(tabs: WorkbenchTabView[]): ReactElement {
+  return (
+    <section className="workbench-tab-overflow" aria-label="Workbench Tab Overflow">
+      {tabs.map((tab) => (
+        <button
+          key={`overflow:${tab.paneId}`}
+          type="button"
+          title={tab.focusAction.tooltip}
+          aria-label={tab.focusAction.accessibleLabel}
+          disabled={tab.focusAction.disabled}
+        >
+          {tab.title}
+        </button>
+      ))}
+    </section>
+  );
+}
+
+function createChromeButton(
+  action: ChromeActionView,
+  label?: string,
+  onClick?: () => void,
+): ReactElement {
+  return (
+    <button
+      type="button"
+      title={action.tooltip}
+      aria-label={action.accessibleLabel}
+      data-action-id={action.id}
+      data-action-state={action.state}
+      disabled={action.disabled}
+      onClick={onClick}
+    >
+      {label ?? action.icon}
+    </button>
+  );
+}
