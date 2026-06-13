@@ -83,6 +83,25 @@ function compilerOptionsFor(root: string): ts.CompilerOptions {
   return { ...parsed.options, noEmit: true };
 }
 
+// The project (one language service) is keyed by the tsconfig NEAREST THE FILE, not
+// the workbench scope root. A monorepo opened at the repo root keeps its tsconfig in a
+// sub-package (e.g. apps/desktop/tsconfig.json); compilerOptionsFor only searches
+// UPWARD, so from the repo root it never sees that config and fell back to options
+// without allowImportingTsExtensions — making every .ts-suffixed import squiggle
+// (TS5097). Searching upward from the file's own directory finds the right config. (A
+// few fileExists stats per query, negligible beside the service work that follows.)
+function projectRootFor(scopeRoot: string, filePath: string): string {
+  const configPath = ts.findConfigFile(path.dirname(filePath), ts.sys.fileExists, "tsconfig.json");
+  const configDir = configPath === undefined ? undefined : path.dirname(configPath);
+  // Adopt a config only at/below the scope root. One ABOVE it means the scope sits
+  // inside a package — keep the scope root (compilerOptionsFor searches up to it) and
+  // never widen the scanned/navigable tree beyond what the user opened.
+  return configDir !== undefined &&
+    (configDir === scopeRoot || configDir.startsWith(`${scopeRoot}${path.sep}`))
+    ? configDir
+    : scopeRoot;
+}
+
 interface ProjectState {
   root: string;
   compilerOptions: ts.CompilerOptions;
@@ -387,7 +406,9 @@ class TypeScriptCodeIntelligencePort implements WorkspaceCodeIntelligencePort {
     if (!SOURCE_EXTENSIONS.has(path.extname(resolved.path))) {
       return { ok: false, reason: "unsupported_extension" };
     }
-    const project = this.projectFor(resolved.root);
+    // Key the service by the file's nearest tsconfig (monorepo-safe), but keep the
+    // boundary + returned relativePaths anchored to the scope root the caller opened.
+    const project = this.projectFor(projectRootFor(resolved.root, resolved.path));
     this.applyOverlay(project, resolved.path, input.content);
     this.ensureFileKnown(project, resolved.path);
     const text = input.content ?? safeReadText(resolved.path);

@@ -3,7 +3,7 @@
 // tests on a real temp-dir fixture project — the persistence across queries is
 // itself part of what's under test.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test, { after } from "node:test";
@@ -245,6 +245,71 @@ test("a root tsconfig drives diagnostics (ts-extension imports stay clean)", asy
     }
   } finally {
     rmSync(configuredRoot, { recursive: true, force: true });
+  }
+});
+
+test("a SUB-PACKAGE tsconfig drives diagnostics when the scope is the monorepo root", async () => {
+  // Tide itself is a monorepo opened at the repo root, with each package's tsconfig in
+  // a sub-dir (apps/<pkg>/tsconfig.json). Compiler options must come from the config
+  // NEAREST THE FILE — an upward search from the scope root never sees the sub-package
+  // config, so .ts-suffixed imports squiggled TS5097 across the whole tree. Two
+  // packages with opposite settings prove the resolution is per-file, not the scope's.
+  const monorepo = mkdtempSync(path.join(os.tmpdir(), "tide-code-intel-mono-"));
+  const lenientDir = path.join(monorepo, "apps", "lenient");
+  const strictDir = path.join(monorepo, "apps", "strict");
+  mkdirSync(lenientDir, { recursive: true });
+  mkdirSync(strictDir, { recursive: true });
+  const baseOptions = {
+    module: "nodenext",
+    moduleResolution: "nodenext",
+    target: "es2022",
+    noEmit: true,
+  };
+  writeFileSync(
+    path.join(lenientDir, "tsconfig.json"),
+    JSON.stringify({ compilerOptions: { ...baseOptions, allowImportingTsExtensions: true } }),
+  );
+  writeFileSync(
+    path.join(strictDir, "tsconfig.json"),
+    JSON.stringify({ compilerOptions: baseOptions }),
+  );
+  for (const dir of [lenientDir, strictDir]) {
+    writeFileSync(path.join(dir, "dep.ts"), "export const dep = 1;\n");
+    writeFileSync(
+      path.join(dir, "main.ts"),
+      'import { dep } from "./dep.ts";\n\nexport const value = dep;\n',
+    );
+  }
+
+  const monorepoPort = createTypeScriptCodeIntelligencePort();
+  const flagsTsExtensionImport = (diagnostics: { message: string }[]): boolean =>
+    diagnostics.some((diagnostic) => diagnostic.message.includes("allowImportingTsExtensions"));
+  try {
+    // Both files are queried with the SAME scope = the monorepo root (no tsconfig there).
+    const lenient = await monorepoPort.getDiagnostics({
+      root: monorepo,
+      path: path.join(lenientDir, "main.ts"),
+    });
+    assert.equal(lenient.ok, true);
+    assert.equal(
+      lenient.ok && flagsTsExtensionImport(lenient.diagnostics),
+      false,
+      "the lenient package's tsconfig (allowImportingTsExtensions) must silence TS5097",
+    );
+
+    const strict = await monorepoPort.getDiagnostics({
+      root: monorepo,
+      path: path.join(strictDir, "main.ts"),
+    });
+    assert.equal(strict.ok, true);
+    assert.equal(
+      strict.ok && flagsTsExtensionImport(strict.diagnostics),
+      true,
+      "the strict package (no allowImportingTsExtensions) still flags the .ts import — proving per-file resolution",
+    );
+  } finally {
+    await monorepoPort.dispose?.();
+    rmSync(monorepo, { recursive: true, force: true });
   }
 });
 
