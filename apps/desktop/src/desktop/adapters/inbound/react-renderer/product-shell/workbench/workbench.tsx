@@ -24,11 +24,6 @@ export function createWorkbenchColumn(
     viewModel.workbenchLayoutMode === "split" &&
     viewModel.workbenchLayoutTree !== null &&
     viewModel.appChrome.visibleWorkbenchPanes.length > 1;
-  // In Split (not fullscreen) the top row would be an empty strip — the panes own
-  // their headers — so we drop it and float the workbench controls in the top-right
-  // corner instead. Fullscreen keeps the row (it reserves the macOS traffic-light
-  // zone). See docs_v2/specs/workbench-dock-parity.md.
-  const floatingControls = splitActive && !viewModel.workbenchFullscreen;
   const tabIconSize = 13;
   const workbenchTabIcon = (kind: string): ReactElement => {
     switch (kind) {
@@ -46,33 +41,33 @@ export function createWorkbenchColumn(
   };
 
   // The workbench controls (Stacked|Split toggle + fullscreen + New Pane). They live
-  // in the top row in Stacked, or float in the top-right corner in Split.
+  // in the top row, which is the SAME 52px header in both Stacked and Split.
   const workbenchControls = (
     <>
-      {/* A labelled segmented control with both presentations visible (Stacked =
-          one pane + tabs, Split = tiled panes) and the active one marked. */}
+      {/* Icon-only segmented control: Stacked (one pane + tabs) vs Split (tiled
+          panes); the active segment is filled. Labels live in the tooltips. */}
       <div className="workbench-layout-toggle" role="group" aria-label="Workbench layout">
         <button
           type="button"
           className="workbench-layout-toggle__option"
           data-active={viewModel.workbenchLayoutMode === "stacked"}
           aria-pressed={viewModel.workbenchLayoutMode === "stacked"}
+          aria-label="Stacked layout"
           title="Stacked — one pane with a tab strip"
           onClick={() => handlers.onWorkbenchSetLayout("stacked")}
         >
-          <Square size={13} strokeWidth={1.9} aria-hidden />
-          <span>Stacked</span>
+          <Square size={14} strokeWidth={1.9} aria-hidden />
         </button>
         <button
           type="button"
           className="workbench-layout-toggle__option"
           data-active={viewModel.workbenchLayoutMode === "split"}
           aria-pressed={viewModel.workbenchLayoutMode === "split"}
+          aria-label="Split layout"
           title="Split — tiled panes you can drag to arrange"
           onClick={() => handlers.onWorkbenchSetLayout("split")}
         >
-          <Columns2 size={13} strokeWidth={1.9} aria-hidden />
-          <span>Split</span>
+          <Columns2 size={14} strokeWidth={1.9} aria-hidden />
         </button>
       </div>
       {createIconButton(
@@ -94,15 +89,13 @@ export function createWorkbenchColumn(
       className="workbench-column"
       aria-label="Workbench"
       data-column="workbench"
-      data-layout={floatingControls ? "split-bare" : "default"}
       data-fullscreen={viewModel.workbenchFullscreen ? "true" : "false"}
     >
       {createColumnResizeHandle("workbench", "left", handlers)}
-      {floatingControls ? (
-        /* Split: no top row — the panes own their headers, so the controls float in
-           the top-right corner over the panes (no empty strip). */
-        <div className="workbench-floating-controls">{workbenchControls}</div>
-      ) : (
+      {/* The top row is the SAME 52px header in both modes: Stacked fills it with the
+          tab strip, Split with a spacer (the panes own their headers) — but the row,
+          its height, and the trailing controls are identical, so the chrome doesn't
+          jump when you toggle. */}
       <header className="workbench-column__top-row column-top-row" aria-label="Workbench Top Row">
         {/* When fullscreen, the workbench is the top-left window element, so its
             header must reserve the macOS traffic-light zone (collapses to 0 in
@@ -165,7 +158,6 @@ export function createWorkbenchColumn(
         )}
         <div className="column-top-row__trailing">{workbenchControls}</div>
       </header>
-      )}
       {viewModel.editorPicker !== null ? (
         <section className="workbench-column__pane" data-pane-kind="editor-picker">
           {createEditorPickerPane(viewModel.editorPicker, handlers)}

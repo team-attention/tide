@@ -15,9 +15,13 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
    beside the panes it opens.
 3. **Cmd/Ctrl+click → new Browser Pane** — modifier-click on a chat link opens a new
    Browser Pane; plain click keeps reuse-active.
-4. **Intuitive Stacked/Split** — replace the single ambiguous toggle icon with a
-   labelled `Stacked | Split` segmented control, and add per-pane **maximize**
-   (Split → Stacked focused on that pane). Default presentation is Stacked.
+4. **Intuitive Stacked/Split** — replace the single ambiguous toggle icon with an
+   icon-only `Stacked | Split` segmented control (the two presentation glyphs, active
+   one filled; labels in tooltips), and add per-pane **maximize** (Split → Stacked
+   focused on that pane). Default presentation is Stacked. The Workbench top row is the
+   **same 52px header in both modes** with the same trailing controls — Stacked fills
+   the left with the tab strip, Split leaves it an empty spacer (the panes own their
+   headers) — so the chrome never changes height or jumps when you toggle.
 5. **Composer-screen Launcher + adoption** — the Workbench + Launcher are available
    on the New Thread / start page (no thread yet); panes opened there are *adopted*
    by the Thread that the first send creates.
@@ -177,7 +181,7 @@ Workbench commands (one per draft pane) bound to the new `threadId`, clears
 | T5 | renderer state | `openProductShellBrowserAtUrl(...,{newPane:true})` emits `disposition:new_browser_pane`; default reuse. |
 | T6 | renderer state | `toggleProductShellWorkbenchLayoutMode` / set-layout emits `set_layout_mode`; maximize emits stacked + focus. |
 | T7 | renderer state | start page (activeThreadId null): launcher Browser adds a draft pane + opens workbench; submit yields ordered `open_*` commands for each draft + clears draft + keeps workbench open. |
-| T8 | renderer component | Stacked|Split segmented control renders both options with labels and active state; per-pane maximize button present in Split. |
+| T8 | renderer component | Stacked|Split segmented control renders both options as icons with active state; same 52px top-row header in both modes; per-pane maximize button present in Split. |
 | T9 | renderer component | transcript modifier-click calls `onOpenBrowserPane(url,{newPane:true})`. |
 
 ## Implementation Notes

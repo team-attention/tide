@@ -25,43 +25,6 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* Split (not fullscreen): no top row — the split view fills the column and the
-   workbench controls float in the top-right corner. */
-.workbench-column[data-layout="split-bare"] {
-  grid-template-rows: minmax(0, 1fr);
-  position: relative;
-}
-
-.workbench-floating-controls {
-  /* Sit flush in the top-right chrome band (same 52px row + vertical centering as the
-     Stacked top row and the fixed window-chrome toggles), just LEFT of those toggles —
-     so in Split the controls read as "attached top-right next to the file tree", like
-     Stacked, not a pill floating over the panes. No box: the segmented toggle carries
-     its own surface, the icon buttons sit bare like the window toggles.
-     position: fixed (not absolute) so they anchor to the WINDOW top-right next to the
-     file-tree toggle — not the workbench column's right edge, which sits mid-window
-     when the file tree is open (that put the controls over a pane header). */
-  position: fixed;
-  top: 0;
-  right: 84px;
-  height: 52px;
-  z-index: 20;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  /* Calm at rest: the panes own the top edge; the controls fade in on workbench hover
-     (or keyboard focus), so they never sit over a pane header while you're reading. */
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.14s ease;
-}
-
-.workbench-column[data-layout="split-bare"]:hover .workbench-floating-controls,
-.workbench-floating-controls:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-
 .workbench-column__top-row,
 .file-tree-column__top-row {
   padding: 0 12px;
@@ -108,15 +71,14 @@
 .workbench-layout-toggle__option {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  width: 28px;
   height: 24px;
-  padding: 0 8px;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: var(--tide-muted);
-  font-size: 12px;
-  font-weight: 500;
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }

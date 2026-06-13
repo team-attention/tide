@@ -136,7 +136,11 @@ function figmaFixtureState() {
 // Split-layout fixture: three visible workbench panes with split mode on, so the
 // draggable binary split-tree (tiling + dividers + pane-header drag handles) can
 // be screenshotted and drag-drop exercised. Not shipped.
-function splitFixtureState() {
+// A workbench with three editor panes. `?mode=stacked` renders it as-is (the tab
+// strip with three tabs — used to verify tabs share the strip and the header chrome);
+// `?mode=split` toggles the same state into the tiled split layout. The two share one
+// fixture so Stacked and Split are provably the same panes, only a layout apart.
+function stackedMultiFixtureState(fileTreeOpen: boolean) {
   const editorPane = (paneId: string, title: string, body: string) => ({
     paneId,
     kind: "editor" as const,
@@ -150,7 +154,7 @@ function splitFixtureState() {
     byteLength: 4096,
     truncated: false,
   });
-  const multi = applyProductShellBackendEvent({ ...figmaFixtureState(), fileTreeOpen: false }, {
+  return applyProductShellBackendEvent({ ...figmaFixtureState(), fileTreeOpen }, {
     kind: "workbench.changed",
     payload: {
       threadId: "thread-master-plan",
@@ -162,9 +166,12 @@ function splitFixtureState() {
       ],
     },
   });
+}
+
+function splitFixtureState() {
   // Layout toggle now returns an update result (state + optional backend command);
   // the harness only needs the state.
-  return toggleProductShellWorkbenchLayoutMode(multi).state;
+  return toggleProductShellWorkbenchLayoutMode(stackedMultiFixtureState(false)).state;
 }
 
 // Queued-message fixture: a running turn with a follow-up queued behind it, so the
@@ -507,10 +514,13 @@ if (root) {
     const wantsRichQueued = params.get("mode") === "rich-queued";
     const wantsPrompt = params.get("mode") === "prompt";
     const wantsSplit = params.get("mode") === "split";
+    const wantsStacked = params.get("mode") === "stacked";
     const wantsDiff = params.get("pane") === "diff";
     // FileTree column is gated by fileTreeOpen; flip it on for the fixture.
     const state = wantsSplit
       ? splitFixtureState()
+      : wantsStacked
+      ? stackedMultiFixtureState(true)
       : wantsDiff
       ? diffFixtureState()
       : wantsBrowser
