@@ -19,6 +19,8 @@ const MAX_TREE_DEPTH = 12;
 const MAX_TREE_ENTRIES = 4000;
 // Heavy vendor/build/VCS directories are hidden from the FileTree entirely —
 // they are neither listed nor descended into, so the tree stays source-focused.
+// This is the ONLY exclusion: gitignored and dot/hidden files ARE shown (the
+// tree no longer consults .gitignore), so config/env/scratch files are reachable.
 const IGNORED_DIRECTORIES = new Set([
   ".git",
   ".next",
@@ -67,7 +69,6 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
     const entries: WorkspaceFileTreeEntry[] = [];
     const maxDepth = boundedTreeDepth(input.maxDepth);
     const maxEntries = boundedTreeEntries(input.maxEntries);
-    const ignoredByGit = await loadGitignoreMatcher(root);
     let truncated = false;
 
     const visit = async (directory: string, depth: number): Promise<void> => {
@@ -92,9 +93,6 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
         }
         const childPath = path.join(directory, child.name);
         const relativePath = path.relative(root, childPath);
-        if (ignoredByGit(relativePath, child.name, isDir)) {
-          continue;
-        }
         if (entries.length >= maxEntries) {
           truncated = true;
           return;
@@ -154,7 +152,6 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
       return { ok: false, error: { code: "workspace_file_unreadable", message: "Thread root is not a directory." } };
     }
 
-    const ignoredByGit = await loadGitignoreMatcher(root);
     const needle = query.toLowerCase();
     const matches: WorkspaceFileSearchMatch[] = [];
     let fileCount = 0;
@@ -181,9 +178,6 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
         }
         const childPath = path.join(directory, child.name);
         const relativePath = path.relative(root, childPath);
-        if (ignoredByGit(relativePath, child.name, isDir)) {
-          continue;
-        }
         if (isDir) {
           await visit(childPath);
           continue;
@@ -467,94 +461,6 @@ function boundedTreeEntries(value: number): number {
     return Math.min(value, MAX_TREE_ENTRIES);
   }
   return 160;
-}
-
-type GitignoreMatcher = (relativePath: string, name: string, isDir: boolean) => boolean;
-
-interface GitignoreRule {
-  regex: RegExp;
-  dirOnly: boolean;
-  // Anchored/path rules match the full relativePath; basename rules match `name`.
-  matchPath: boolean;
-}
-
-// Reads the thread root `.gitignore` and returns a conservative matcher for the
-// common pattern subset (see spec D7). Negation and nested .gitignore are out of
-// scope; unknown patterns are skipped so a wanted file is never hidden by mistake.
-async function loadGitignoreMatcher(root: string): Promise<GitignoreMatcher> {
-  let text: string;
-  try {
-    text = await readFile(path.join(root, ".gitignore"), "utf8");
-  } catch {
-    return () => false;
-  }
-
-  const rules: GitignoreRule[] = [];
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (line.length === 0 || line.startsWith("#") || line.startsWith("!")) {
-      continue;
-    }
-    const dirOnly = line.endsWith("/");
-    let pattern = dirOnly ? line.slice(0, -1) : line;
-    const anchored = pattern.startsWith("/");
-    if (anchored) {
-      pattern = pattern.slice(1);
-    }
-    if (pattern.length === 0) {
-      continue;
-    }
-    const matchPath = anchored || pattern.includes("/");
-    const regex = gitignoreGlobToRegExp(pattern);
-    if (regex === null) {
-      continue;
-    }
-    rules.push({ regex, dirOnly, matchPath });
-  }
-
-  if (rules.length === 0) {
-    return () => false;
-  }
-
-  return (relativePath, name, isDir) => {
-    const normalized = relativePath.split(path.sep).join("/");
-    for (const rule of rules) {
-      if (rule.dirOnly && !isDir) {
-        continue;
-      }
-      const target = rule.matchPath ? normalized : name;
-      if (rule.regex.test(target)) {
-        return true;
-      }
-    }
-    return false;
-  };
-}
-
-// Converts a gitignore glob (supporting `*`, `**`, and literal text) into an
-// anchored RegExp. Returns null for unsupported syntax (`?`, char classes) so the
-// caller skips the rule rather than risk an incorrect match.
-function gitignoreGlobToRegExp(pattern: string): RegExp | null {
-  if (pattern.includes("?") || pattern.includes("[") || pattern.includes("]")) {
-    return null;
-  }
-  let out = "";
-  for (let i = 0; i < pattern.length; i += 1) {
-    const char = pattern[i];
-    if (char === "*") {
-      if (pattern[i + 1] === "*") {
-        out += ".*";
-        i += 1;
-      } else {
-        out += "[^/]*";
-      }
-    } else if (/[a-zA-Z0-9_\- /]/.test(char)) {
-      out += char;
-    } else {
-      out += `\\${char}`;
-    }
-  }
-  return new RegExp(`^${out}$`);
 }
 
 function occurrencesOf(value: string, needle: string): number {

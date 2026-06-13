@@ -28,17 +28,15 @@ async function listNames(root: string): Promise<string[]> {
   return result.fileTree.entries.map((entry) => entry.relativePath);
 }
 
-test("file_tree_listing_respects_root_gitignore_subset", async () => {
-  // D7: ignored entries are hidden; wanted source (src) stays visible.
+test("file_tree_listing_shows_gitignored_files_but_still_hides_heavy_dirs", async () => {
+  // Gitignored and dot/hidden files ARE shown (the tree no longer consults
+  // .gitignore); only the heavy vendor/build/VCS dirs stay hidden.
   const root = fixtureRoot(
     {
       ".gitignore": [
-        "# comment",
-        "",
         "node_modules/",
         ".env",
         "*.log",
-        "/build",
         ".secret-dir/",
       ].join("\n"),
       "src/app.ts": "export const x = 1;",
@@ -47,21 +45,23 @@ test("file_tree_listing_respects_root_gitignore_subset", async () => {
       "debug.log": "noise",
       "keep.txt": "ok",
     },
-    ["node_modules", "build", ".secret-dir"],
+    ["node_modules", ".secret-dir"],
   );
 
   const names = await listNames(root);
 
   assert.ok(names.includes("src"), "src folder is visible");
-  assert.ok(names.includes("src/app.ts"), "src descendant is visible");
   assert.ok(names.includes("README.md"), "non-ignored file is visible");
   assert.ok(names.includes("keep.txt"), "non-ignored file is visible");
 
-  assert.ok(!names.includes("node_modules"), "gitignored dir hidden");
-  assert.ok(!names.includes(".env"), "gitignored exact file hidden");
-  assert.ok(!names.includes("debug.log"), "gitignored glob file hidden");
-  assert.ok(!names.includes("build"), "anchored gitignored dir hidden");
-  assert.ok(!names.includes(".secret-dir"), "gitignored dir hidden");
+  // Gitignored / hidden entries now show.
+  assert.ok(names.includes(".gitignore"), "the .gitignore dotfile itself is visible");
+  assert.ok(names.includes(".env"), "gitignored exact file is now visible");
+  assert.ok(names.includes("debug.log"), "gitignored glob file is now visible");
+  assert.ok(names.includes(".secret-dir"), "gitignored dir is now visible");
+
+  // The fixed heavy-dir set is still the one exclusion.
+  assert.ok(!names.includes("node_modules"), "heavy dir still hidden");
 });
 
 test("file_tree_listing_without_gitignore_lists_everything_but_heavy_dirs", async () => {

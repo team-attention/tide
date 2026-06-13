@@ -6,7 +6,8 @@ import test from "node:test";
 
 import { createNodeWorkspaceFilePort } from "../src/backend/adapters/outbound/workspace-file/node-workspace-file-port.ts";
 
-// Spec: project content search (Cmd+Shift+F) — gitignore-filtered, case-insensitive.
+// Spec: project content search (Cmd+Shift+F) — case-insensitive; searches every
+// file except the heavy vendor/build/VCS dirs (gitignored files ARE searched).
 
 function fixtureRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "tide-search-"));
@@ -26,21 +27,21 @@ test("searchContent finds case-insensitive matches with line/column", async () =
   assert.equal(result.ok, true);
   if (!result.ok) return;
   const paths = result.search.matches.map((m) => m.relativePath).sort();
-  assert.deepEqual(paths, ["a.ts", "sub/b.ts"]);
+  assert.deepEqual(paths, ["a.ts", "ignored.txt", "sub/b.ts"]);
   const a = result.search.matches.find((m) => m.relativePath === "a.ts");
   assert.equal(a?.line, 0);
   assert.equal(a?.column, 6);
   assert.equal(a?.lineText, "const Needle = 1;");
 });
 
-test("searchContent skips .gitignore'd files and node_modules", async () => {
+test("searchContent includes gitignored files but still skips node_modules", async () => {
   const port = createNodeWorkspaceFilePort();
   const result = await port.searchContent({ root: fixtureRoot(), query: "needle", maxResults: 100, maxFiles: 100 });
   assert.equal(result.ok, true);
   if (!result.ok) return;
   const paths = result.search.matches.map((m) => m.relativePath);
-  assert.ok(!paths.includes("ignored.txt"));
-  assert.ok(!paths.some((p) => p.includes("node_modules")));
+  assert.ok(paths.includes("ignored.txt"), "gitignored file is now searched");
+  assert.ok(!paths.some((p) => p.includes("node_modules")), "heavy dir still skipped");
 });
 
 test("searchContent returns empty for a blank query", async () => {
