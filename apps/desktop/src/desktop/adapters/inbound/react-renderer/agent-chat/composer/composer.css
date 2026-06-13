@@ -1,0 +1,319 @@
+/* Styles for the adjacent composer component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+/* The agent identity icon, sized down to fit a composer chip. */
+
+.composer-shell__chip-icon .agent-identity-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  font-size: 8.5px;
+}
+
+.composer-shell__context .description-pair {
+  height: 28px;
+  min-height: 28px;
+}
+
+.composer-shell {
+  /* Fill the composer-stack / start surface (which carry the column width), so
+     the composer matches the content turns exactly. */
+  width: 100%;
+  margin: 0 auto;
+  display: grid;
+  /* Pin the column to the box width (minmax(0,1fr)); without this the implicit `auto`
+     column grows to the toolbar/chips max-content and the rows (and the send button)
+     spill past the composer's right edge into the workbench on a narrow column. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--tide-line);
+  border-radius: 14px;
+  background: var(--tide-bg);
+  box-shadow: var(--tide-shadow-composer);
+}
+
+.composer-shell__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.composer-shell__input {
+  width: 100%;
+  min-height: 44px;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.composer-shell[data-composer-mode="follow_up"] .composer-shell__input {
+  /* Canonical follow-up composer (Figma) rests at one line and grows with
+     content (Chromium field-sizing); engines without it keep the min-height. */
+  min-height: 22px;
+  max-height: 200px;
+  field-sizing: content;
+  font-size: 14px;
+}
+
+.composer-shell__input::placeholder {
+  color: color-mix(in srgb, var(--tide-muted) 58%, transparent);
+}
+
+.composer-shell__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Attached content references (code selection, terminal output, browser page,
+   quoted message): each is a card with a per-region comment input, sitting above
+   the general message input so the two are clearly distinct. */
+
+.composer-shell__chips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer-chip-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 8px 8px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+}
+
+.composer-chip-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-chip-card__icon { flex: 0 0 auto; color: var(--tide-muted); }
+
+.composer-chip-card__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tide-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.composer-chip-card__kind {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--tide-bg);
+  color: var(--tide-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.composer-chip-card__remove {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.composer-chip-card__remove:hover { background: var(--tide-selection); color: var(--tide-text); }
+
+.composer-chip-card__comment {
+  width: 100%;
+  min-height: 20px;
+  border: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  outline: none;
+  resize: none;
+  /* Grow with content (recent Chromium/Electron) so multi-line notes fit. */
+  field-sizing: content;
+}
+
+.composer-chip-card__comment::placeholder { color: var(--tide-muted); }
+
+.composer-shell__attachment {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--tide-line);
+  background: var(--tide-surface-2, rgba(127, 127, 127, 0.08));
+}
+
+.composer-shell__attachment-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.composer-shell__attachment-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.composer-shell__attachment-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+}
+
+.composer-shell__attachment-remove:hover {
+  background: rgba(0, 0, 0, 0.82);
+}
+
+.composer-shell__toolbar,
+.composer-shell__start-context {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-shell__start-context {
+  /* Keep the context chips on ONE row so the composer stays thin instead of growing
+     taller when the column is narrow. Chips shrink (label ellipsis) rather than wrap. */
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+}
+
+.composer-shell__context-chip,
+.composer-shell__choice-chip {
+  height: 28px;
+  max-width: 200px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  /* Subtle pill (Codex-style): light border, no heavy fill, soft hover. */
+  border: 1px solid var(--tide-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 12.5px;
+  line-height: 1;
+  /* Single-line labels: never wrap "Auto-review" at its hyphen or "GPT-5.5 · Medium"
+     at its space into two lines (which made the chip — and the composer — taller). */
+  white-space: nowrap;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.composer-shell__context-chip:hover {
+  background: var(--tide-selection);
+}
+
+.composer-shell__context-chip {
+  padding: 0 11px;
+  cursor: pointer;
+  /* Allow the chip to shrink so its label ellipsizes instead of forcing a wrap. */
+  min-width: 0;
+}
+
+/* Only the LABEL ellipsizes — the leading icon and trailing chevron stay visible. */
+
+.composer-shell__chip-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-shell__chip-icon {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+}
+
+/* Trailing chevron on the permission/model chips (Figma chevron-down). */
+
+.composer-shell__chip-chevron {
+  flex: 0 0 auto;
+  margin-left: 2px;
+  color: var(--tide-muted);
+  opacity: 0.8;
+}
+
+.composer-shell__choice-chip {
+  padding: 0 12px;
+  cursor: pointer;
+  /* The chip may shrink when the toolbar is tight (narrow composer); the chip-label
+     ellipsizes while the icon + chevron stay (no overflow:hidden on the chip itself, so
+     the chevron is never clipped). */
+  min-width: 0;
+}
+
+.composer-shell__choice-chip:hover,
+.composer-shell__icon-button:hover {
+  border-color: var(--tide-line);
+  background: var(--tide-selection);
+}
+
+.composer-shell__choice-chip--model {
+  min-width: 112px;
+}
+
+.composer-shell__toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.composer-shell__icon-button {
+  width: 30px;
+  height: 28px;
+  border: 1px solid var(--tide-line);
+  border-radius: 999px;
+}
+
+.composer-shell__icon-button--mic {
+  border-color: transparent;
+  background: transparent;
+}
+
+.composer-shell__send {
+  width: 32px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--tide-action);
+  color: var(--tide-bg);
+}

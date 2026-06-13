@@ -1,0 +1,165 @@
+/* Styles for the adjacent markdown component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body h1 {
+  margin: 24px 0 12px;
+  font-weight: 700;
+  font-size: 25px;
+  line-height: 30px;
+  color: var(--tide-text);
+}
+
+.markdown-body h2 {
+  margin: 22px 0 10px;
+  font-weight: 700;
+  font-size: 19px;
+  line-height: 26px;
+  color: var(--tide-text);
+}
+
+.markdown-body h3 {
+  margin: 18px 0 8px;
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--tide-text);
+}
+
+.markdown-body h4 {
+  margin: 16px 0 6px;
+  font-weight: 600;
+  font-size: 14.5px;
+  line-height: 22px;
+  color: var(--tide-text);
+}
+
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 14px 0 6px;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--tide-muted);
+  text-transform: none;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0 0 12px;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 24px;
+}
+
+.markdown-body li {
+  margin: 4px 0;
+}
+
+.markdown-body a {
+  color: var(--tide-action);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body code {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--tide-surface);
+  border: 1px solid var(--tide-line);
+  font: 13px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.markdown-body pre {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--tide-surface);
+  border: 1px solid var(--tide-line);
+  overflow: auto;
+}
+
+.markdown-body pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12.5px;
+}
+
+.markdown-body blockquote {
+  margin: 0 0 12px;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--tide-line-strong);
+  color: var(--tide-muted);
+}
+
+.markdown-body hr {
+  margin: 20px 0;
+  border: 0;
+  border-top: 1px solid var(--tide-line);
+}
+
+.markdown-body del {
+  color: var(--tide-muted);
+}
+
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+/* Highlighted fenced code (md-fence) reuses the shared tok-* token colors. */
+
+.markdown-body pre.md-fence {
+  background: var(--tide-surface);
+}
+
+/* A wide table scrolls horizontally inside its own block instead of clipping or
+   widening the reading column. Shared rule with the agent-chat surface. */
+
+.markdown-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 14px;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 6px 12px;
+  border: 1px solid var(--tide-line);
+  text-align: left;
+}
+
+.markdown-body thead th {
+  background: var(--tide-surface);
+  font-weight: 650;
+}
+
+/* GFM task lists: a read-only checkbox flush with its label, no list bullet. */
+
+.markdown-body .contains-task-list {
+  list-style: none;
+  padding-left: 4px;
+}
+
+.markdown-body .task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.markdown-body .task-list-item-checkbox {
+  margin: 5px 0 0;
+  flex: 0 0 auto;
+}

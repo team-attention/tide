@@ -1,0 +1,117 @@
+/* Styles for the adjacent agent-chat component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+.agent-chat-top-row {
+  /* Match the Workbench/FileTree headers so trailing actions align across
+     columns. */
+  padding: 0 12px;
+}
+
+.agent-chat-shell {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  /* minmax(0, 1fr) keeps the single column from growing past the stage when a
+     child (e.g. a long <pre> tool body) has a wide intrinsic size — otherwise
+     the auto-margin composer centers in an over-wide track and loses its right
+     padding. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  /* No horizontal padding: the scroll area spans the full column (scrollbar at
+     the column edge, Codex-style). Content + composer self-center at a shared
+     width so they line up. */
+  padding: 26px 0 20px;
+  overflow: hidden;
+}
+
+.agent-chat-shell--embedded {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.agent-chat-shell--start {
+  grid-template-rows: minmax(0, 1fr);
+  align-items: center;
+  justify-items: center;
+  padding-bottom: 9vh;
+}
+
+.agent-chat-shell__start-surface {
+  /* Same width basis as the content turns + composer-stack: keep a side gutter so
+     when the column narrows the composer shrinks WITH it instead of sticking to the
+     edges. */
+  width: min(760px, calc(100% - 32px));
+  display: grid;
+  /* Constrain the single column to the surface width (minmax(0,1fr)); without this the
+     implicit `auto` column grows to the heading's one-line max-content and overflows
+     the surface — spilling into the workbench — when the chat column is narrow. The h1
+     then wraps and stays centered via text-align; the composer centers via margin auto. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+}
+
+.agent-chat-shell__start-surface h1 {
+  margin: 0;
+  color: var(--tide-text);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.agent-chat-shell__thread {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-chat-shell__thread h1 {
+  max-width: 760px;
+  margin: 0;
+  color: var(--tide-text);
+  font-size: 28px;
+  font-weight: 650;
+  line-height: 1.12;
+}
+
+.agent-chat-shell__eyebrow {
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-weight: 520;
+}
+
+.agent-chat-shell__state,
+.composer-shell__context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+}
+
+.agent-chat-shell__composer-stack {
+  /* Same width basis as the content turns so the composer lines up exactly. */
+  width: min(760px, calc(100% - 32px));
+  display: grid;
+  gap: 16px;
+  margin: 0 auto;
+}
+
+.image-lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: zoom-out;
+}
+
+.image-lightbox__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.5);
+}

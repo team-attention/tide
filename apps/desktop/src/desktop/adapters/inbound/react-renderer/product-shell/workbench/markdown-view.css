@@ -1,0 +1,133 @@
+/* Styles for the adjacent markdown-view component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+/* ---- Markdown Editor Pane (Preview / Edit) ---- */
+
+.workbench-md {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workbench-md-toggle {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  display: inline-flex;
+  gap: 2px;
+  margin: 6px 16px 0 0;
+  padding: 2px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+}
+
+.workbench-md-toggle__option {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  font: 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.workbench-md-toggle__option[data-active="true"] {
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  box-shadow: 0 1px 2px rgb(52 48 56 / 8%);
+}
+
+/* "Pick block" toggle in the markdown toolbar + the block-pick hover/cursor. */
+
+.workbench-md-toggle__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0 10px;
+  border: 1px solid var(--tide-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  font: 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.workbench-md-toggle__pick:hover { background: var(--tide-selection); color: var(--tide-text); }
+
+.workbench-md-toggle__pick[data-active="true"] {
+  border-color: var(--tide-action, var(--tide-text));
+  background: var(--tide-action, var(--tide-text));
+  color: var(--tide-on-action);
+}
+
+.workbench-md-toggle__pick[data-active="true"] svg { color: var(--tide-on-action); }
+
+.workbench-md-toggle__pick--add {
+  border-color: var(--tide-action, var(--tide-text));
+  background: var(--tide-action, var(--tide-text));
+  color: var(--tide-on-action);
+}
+
+.workbench-md-toggle__pick--add svg { color: var(--tide-on-action); }
+
+/* While picking blocks, the preview doesn't select text — the drag picks blocks. */
+
+.workbench-md[data-md-picking="true"] .workbench-md-preview {
+  user-select: none;
+  cursor: crosshair;
+}
+
+.workbench-md[data-md-picking="true"] .workbench-md-preview * { cursor: crosshair !important; }
+
+.workbench-md-pick-hover {
+  outline: 2px dashed #3b82f6;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* A picked block stays clearly highlighted (solid border + fill) while picking. */
+
+.workbench-md-pick-selected {
+  outline: 2px solid #2563eb !important;
+  outline-offset: 2px;
+  border-radius: 3px;
+  background: rgba(37, 99, 235, 0.16) !important;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
+}
+
+/* Make text selections clearly visible (so the floating "Add to chat" reads as
+   acting on a highlighted region) in the markdown preview and the transcript. */
+
+.workbench-md-preview ::selection,
+.workbench-md-preview *::selection,
+.agent-session ::selection,
+.agent-session *::selection {
+  /* LITERAL color, not var(): Chromium drops `background: var(--x)` inside the
+     ::selection pseudo (custom props don't reliably resolve there), which left
+     the selection with no visible highlight. The dark override is a separate
+     literal rule below. */
+  background: rgba(57, 112, 240, 0.30);
+}
+
+[data-theme="dark"] .workbench-md-preview ::selection,
+[data-theme="dark"] .workbench-md-preview *::selection,
+[data-theme="dark"] .agent-session ::selection,
+[data-theme="dark"] .agent-session *::selection {
+  background: rgba(96, 150, 255, 0.36);
+}
+
+/* Obsidian-style reading view, conformed to the Figma editor typography. */
+
+.workbench-md-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 32px 40px;
+  color: var(--tide-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 22px;
+}

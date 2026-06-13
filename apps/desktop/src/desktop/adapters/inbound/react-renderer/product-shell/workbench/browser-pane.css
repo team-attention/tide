@@ -1,0 +1,167 @@
+/* Styles for the adjacent browser-pane component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+.workbench-browser-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--tide-line);
+  font: 12px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--tide-muted);
+}
+
+.workbench-browser-bar__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--tide-line);
+  border-radius: 999px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font: 12px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.workbench-browser-bar__input:focus {
+  outline: none;
+  border-color: var(--tide-action);
+}
+
+.workbench-browser-bar__status {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+}
+
+/* Back / Forward / Reload nav buttons (left of the address bar). */
+
+.workbench-browser-bar__nav {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.workbench-browser-bar__nav:hover:not(:disabled) {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+.workbench-browser-bar__nav:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.workbench-browser-bar__nav[data-loading="true"] svg {
+  animation: tide-spin 0.8s linear infinite;
+}
+
+@keyframes tide-spin {
+  to { transform: rotate(360deg); }
+}
+
+.workbench-browser-bar__to-chat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--tide-line);
+  border-radius: 999px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font: 500 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.workbench-browser-bar__to-chat svg { color: var(--tide-muted); }
+
+.workbench-browser-bar__to-chat:hover { background: var(--tide-selection); }
+
+.workbench-browser-bar__to-chat[data-active="true"] {
+  border-color: var(--tide-action, var(--tide-text));
+  background: var(--tide-action, var(--tide-text));
+  color: var(--tide-on-action);
+}
+
+.workbench-browser-bar__to-chat[data-active="true"] svg { color: var(--tide-on-action); }
+
+/* Square icon-only action buttons on the right of the toolbar (add page / open
+   external / pick element). */
+
+.workbench-browser-bar__icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-bg);
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.workbench-browser-bar__icon:hover {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+.workbench-browser-bar__icon[data-active="true"] {
+  border-color: var(--tide-action);
+  background: var(--tide-action);
+  color: var(--tide-on-action);
+}
+
+.workbench-browser-webview {
+  display: flex;
+  /* `<webview>` is a replaced element with a short intrinsic height; a 0 flex
+     basis + height:100% makes it actually fill the pane instead of collapsing. */
+  flex: 1 1 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--tide-bg);
+}
+
+.workbench-browser-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tide-muted);
+}
+
+/* Offscreen host for background threads' Browser Pane webviews. Positioned far off
+   the viewport (not display:none, which would suspend rendering) so the webContents
+   stay alive and scriptable for background agents, while never visible to the user. */
+
+.background-browser-host {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 1024px;
+  height: 768px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.background-browser-host__webview {
+  width: 1024px;
+  height: 768px;
+}

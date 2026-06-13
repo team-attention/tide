@@ -1,0 +1,140 @@
+/* Styles for the adjacent prompt-card component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+/* Unified agent prompt card (question / approval / permission / choice): one
+   pretty surface for every provider's "answer this" request. */
+
+.prompt-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 14px;
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 12px;
+  background: var(--tide-bg);
+  box-shadow: 0 10px 28px -14px rgba(36, 33, 38, 0.3);
+}
+
+.prompt-card__head { display: flex; flex-direction: column; gap: 6px; }
+
+.prompt-card__kind {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--tide-selection);
+  color: var(--tide-text);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.prompt-card__message {
+  margin: 0;
+  color: var(--tide-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.prompt-card__options { display: flex; flex-direction: column; gap: 6px; }
+
+.prompt-card__option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--tide-line);
+  border-radius: 9px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.prompt-card__option:hover { background: var(--tide-selection); }
+
+.prompt-card__option[data-selected="true"] {
+  border-color: var(--tide-action, var(--tide-text));
+  background: color-mix(in srgb, var(--tide-action, var(--tide-text)) 8%, var(--tide-surface));
+}
+
+.prompt-card__radio {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--tide-muted);
+  border-radius: 999px;
+}
+
+.prompt-card__option[data-selected="true"] .prompt-card__radio {
+  border-color: var(--tide-action, var(--tide-text));
+  border-width: 4.5px;
+}
+
+.prompt-card__option-label { flex: 1 1 auto; min-width: 0; font-weight: 500; }
+
+.prompt-card__option-value {
+  flex: 0 0 auto;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tide-muted);
+  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.prompt-card__other {
+  width: 100%;
+  margin-top: 2px;
+  padding: 9px 11px;
+  border: 1px solid var(--tide-line);
+  border-radius: 9px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+  resize: vertical;
+}
+
+.prompt-card__other:focus { border-color: var(--tide-action, var(--tide-muted)); }
+
+.prompt-card__actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.prompt-card__skip {
+  padding: 7px 14px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.prompt-card__skip:hover { background: var(--tide-selection); }
+
+.prompt-card__submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--tide-text);
+  color: var(--tide-bg);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.prompt-card__submit:disabled { opacity: 0.4; cursor: default; }
+
+.prompt-card__submit-kbd { opacity: 0.65; font-size: 11px; }

@@ -1,0 +1,179 @@
+/* Styles for the adjacent choice-surface component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+.choice-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  /* A compact dropdown menu, not a full-width table. */
+  width: max-content;
+  max-width: min(380px, 100%);
+  /* Fill the height the popover allows so the row list owns the scroll. */
+  max-height: 100%;
+  overflow: hidden;
+  padding: 6px;
+  border: 1px solid var(--tide-line);
+  border-radius: 12px;
+  background: var(--tide-bg);
+  box-shadow: var(--tide-shadow-popover);
+}
+
+.choice-surface__header {
+  flex: 0 0 auto;
+}
+
+.choice-surface__header {
+  min-height: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px 4px;
+}
+
+.choice-surface__header h2 {
+  margin: 0;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choice-surface__header span,
+.choice-surface__message {
+  color: var(--tide-muted);
+  font-size: 12px;
+}
+
+.choice-surface__header-icon {
+  text-align: center;
+}
+
+.choice-surface__message {
+  margin: 2px 0 8px 28px;
+  white-space: pre-wrap;
+}
+
+.choice-surface__rows {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  /* Own the scroll within the popover's available height; the 56vh fallback
+     applies when the surface is rendered inline (not in a fixed popover). */
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 56vh;
+  overflow-y: auto;
+}
+
+.choice-surface__row {
+  min-height: 34px;
+  display: grid;
+  /* icon | label (hugs) | detail (muted, fills) | meta badge (right) — no fixed
+     label column, so short labels sit next to their detail instead of spreading
+     across a wide table. */
+  grid-template-columns: 16px auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* A worktree row with a trailing trash affordance: the row fills, the trash sits
+   at the right and reveals on hover. See docs_v2/specs/worktree-branch-deletion.md. */
+
+.choice-surface__row-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.choice-surface__row-wrap .choice-surface__row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.choice-surface__row-action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.choice-surface__row-wrap:hover .choice-surface__row-action,
+.choice-surface__row-action:focus-visible {
+  opacity: 1;
+}
+
+.choice-surface__row-action:hover {
+  background: color-mix(in srgb, var(--tide-danger) 14%, transparent);
+  color: var(--tide-danger);
+}
+
+.choice-surface__row-detail {
+  font-size: 12px;
+}
+
+.choice-surface__row-meta {
+  justify-self: end;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--tide-selection);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.choice-surface__row[data-selected="true"],
+.choice-surface__row:not(.choice-surface__row--disabled):hover {
+  background: var(--tide-selection);
+}
+
+/* A not-yet-wired feature: greyed and non-interactive (no hover, no pointer). */
+
+.choice-surface__row--disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.choice-surface__row--disabled .choice-surface__row-detail {
+  font-style: italic;
+}
+
+.choice-surface__row--danger,
+.choice-surface__row--danger .choice-surface__row-icon,
+.choice-surface__row--danger .choice-surface__row-label {
+  color: var(--tide-danger);
+}
+
+.choice-surface__row-icon,
+.choice-surface__row-detail,
+.choice-surface__row-meta {
+  color: var(--tide-muted);
+}
+
+.choice-surface__row-label,
+.choice-surface__row-detail,
+.choice-surface__row-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,88 @@
+/* Styles for the adjacent context-menu component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+.left-rail-context-menu__label {
+  padding: 6px 12px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--tide-muted);
+  text-transform: uppercase;
+}
+
+/* Transparent full-viewport layer that catches the outside click closing an
+   open left-rail context menu. */
+
+.left-rail-context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.left-rail-context-menu {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--tide-line);
+  border-radius: 12px;
+  background: var(--tide-bg);
+  box-shadow: var(--tide-shadow-popover);
+}
+
+.left-rail-context-menu--thread {
+  padding: 5px;
+}
+
+.left-rail-context-menu--project {
+  padding: 5px;
+}
+
+.left-rail-context-menu__item {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.left-rail-context-menu__item:hover {
+  background: var(--tide-selection);
+}
+
+/* Not-yet-wired items read as pending, not interactive. */
+
+.left-rail-context-menu__item--disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.left-rail-context-menu__item--disabled:hover {
+  background: none;
+}
+
+.left-rail-context-menu__item--danger {
+  color: var(--tide-danger);
+}
+
+.left-rail-context-menu__icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+}
+
+.left-rail-context-menu__item--danger .left-rail-context-menu__icon {
+  color: var(--tide-danger);
+}

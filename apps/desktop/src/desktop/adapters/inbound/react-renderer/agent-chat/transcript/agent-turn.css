@@ -1,0 +1,65 @@
+/* Styles for the adjacent agent-turn component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+/* Per-answer hover actions (copy / retry): quiet, revealed only on hover or
+   keyboard focus so the transcript stays clean (like the Codex/Claude apps). */
+
+.agent-turn-actions {
+  /* Floated out of flow: a hover affordance in the gap below the turn, reserving
+     no layout height (so turns stay tight). A solid surface + border + shadow +
+     z-index makes it a clean floating toolbar instead of transparently
+     overlapping whatever sits below (e.g. the next turn's tool-call row). */
+  position: absolute;
+  top: 100%;
+  left: -4px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin-top: -7px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--tide-surface);
+  border: 1px solid var(--tide-line);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  z-index: 4;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  pointer-events: none;
+}
+
+.agent-turn-actions__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.agent-turn-actions__btn:hover {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+.agent-turn-actions__icon--check {
+  display: none;
+  color: #3a9c5e;
+}
+
+.agent-turn-actions__btn--done .agent-turn-actions__icon--copy {
+  display: none;
+}
+
+.agent-turn-actions__btn--done .agent-turn-actions__icon--check {
+  display: inline-flex;
+}
+
+.agent-turn-actions__btn--done {
+  color: #3a9c5e;
+}

@@ -1,0 +1,146 @@
+/* Styles for the adjacent pane-content component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+.workbench-pane-content,
+.workbench-terminal {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: block;
+  padding: 8px;
+}
+
+/* Editor manages its own layout/padding (breadcrumb + content), so it fills the
+   pane flush with no card padding. */
+
+.workbench-pane-content--editor {
+  padding: 0;
+}
+
+/* Launcher is a quiet pane (one tab type), not a marketing card list: a small
+   "Open a pane" eyebrow over a compact choice list, centered in the pane. */
+
+.workbench-pane-content--launcher {
+  display: flex;
+  flex-direction: column;
+  /* Top-aligned so a tall/narrow pane doesn't leave the list floating in a big
+     empty void. */
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 18px clamp(12px, 4%, 32px);
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+/* Browser pane is flat like the editor: a slim address bar, then the page
+   filling the pane (no file-info panel, no card). */
+
+.workbench-pane-content--browser {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Editor pane is a real code editor: a thin breadcrumb path bar, then the
+   CodeMirror surface filling the remaining height. No file-info panel. */
+
+.workbench-pane-content--editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* In-pane editor file picker (Workbench Launcher "Editor" mode). */
+
+.editor-picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  padding: 10px 8px 8px;
+  gap: 8px;
+}
+
+.editor-picker__search {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: 34px;
+  border: 1px solid var(--tide-line);
+  border-radius: 9px;
+  background: var(--tide-surface);
+  color: var(--tide-muted);
+}
+
+.editor-picker__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 13px;
+  outline: none;
+}
+
+.editor-picker__list {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.editor-picker__empty {
+  margin: 14px 6px;
+  color: var(--tide-muted);
+  font-size: 13px;
+}
+
+.editor-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 10px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.editor-picker__row:hover {
+  background: var(--tide-selection);
+}
+
+.editor-picker__row svg {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+}
+
+.editor-picker__name {
+  flex: 0 0 auto;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.editor-picker__path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--tide-muted);
+}

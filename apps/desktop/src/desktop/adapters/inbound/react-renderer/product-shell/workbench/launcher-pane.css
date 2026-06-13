@@ -1,0 +1,75 @@
+/* Styles for the adjacent launcher-pane component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+.workbench-launcher-hint {
+  margin: 0;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.workbench-launcher-actions {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.workbench-launcher-action {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.workbench-launcher-action:hover:not(:disabled) {
+  background: var(--tide-hover);
+}
+
+.workbench-launcher-action:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.workbench-launcher-action__icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tide-muted);
+}
+
+.workbench-launcher-action__copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.workbench-launcher-action__label,
+.workbench-launcher-action__description {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-launcher-action__label {
+  font-size: 13px;
+  font-weight: 580;
+}
+
+.workbench-launcher-action__description {
+  color: var(--tide-muted);
+  font-size: 12px;
+}

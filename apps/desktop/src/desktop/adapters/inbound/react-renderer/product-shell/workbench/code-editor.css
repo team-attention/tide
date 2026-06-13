@@ -1,0 +1,213 @@
+/* Styles for the adjacent code-editor component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+.workbench-editor-surface {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  background: var(--tide-bg);
+}
+
+.workbench-editor-cm,
+.workbench-editor-cm .cm-editor {
+  height: 100%;
+}
+
+.workbench-editor-cm .cm-editor {
+  font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+}
+
+.workbench-editor-cm .cm-scroller {
+  overflow: auto;
+}
+
+/* Right-click context menu (Go to Definition / Find References / Save). */
+
+.workbench-editor-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.workbench-editor-menu {
+  position: fixed;
+  min-width: 184px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--tide-bg);
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 8px;
+  box-shadow: 0 10px 30px -10px rgb(20 18 24 / 28%);
+}
+
+.workbench-editor-menu__item {
+  text-align: left;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-text);
+  font: 13px/1 -apple-system, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.workbench-editor-menu__item:hover:not(:disabled) {
+  background: var(--tide-selection);
+}
+
+.workbench-editor-menu__item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.workbench-editor-menu__sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--tide-line);
+}
+
+/* ---- Editor language intelligence (spec: workbench-editor-language-intelligence) ---- */
+
+/* All uses of the symbol under the cursor; write-occurrences slightly stronger.
+   Built on the theme ink so both light and dark stay subtle. */
+
+.workbench-editor-cm .cm-tide-occurrence {
+  background: rgba(var(--tide-ink-rgb), 0.09);
+  border-radius: 2px;
+}
+
+.workbench-editor-cm .cm-tide-occurrence--write {
+  background: rgba(var(--tide-ink-rgb), 0.17);
+}
+
+/* Cmd/Ctrl held over a word: the go-to-definition link affordance. */
+
+.workbench-editor-cm .cm-tide-cmdlink {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* CodeMirror's default tooltip chrome is unthemed white — restyle every editor
+   tooltip (hover, signature help, autocomplete) as an app panel. */
+
+.workbench-editor-cm .cm-tooltip {
+  background: var(--tide-surface);
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 6px;
+  color: var(--tide-text);
+  box-shadow: var(--tide-shadow-popover);
+  overflow: hidden;
+}
+
+.cm-tide-hover,
+.cm-tide-signature {
+  max-width: 480px;
+  padding: 7px 10px;
+  font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.cm-tide-hover {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* The active call parameter inside signature help. */
+
+.cm-tide-signature strong {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.workbench-editor-cm .cm-tooltip-autocomplete > ul {
+  font: 12px/1.7 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  max-height: 240px;
+}
+
+.workbench-editor-cm .cm-tooltip-autocomplete > ul > li {
+  padding: 2px 8px;
+  color: var(--tide-text);
+}
+
+.workbench-editor-cm .cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+.workbench-editor-cm .cm-completionIcon {
+  color: var(--tide-muted);
+}
+
+.workbench-editor-cm .cm-completionDetail {
+  margin-left: 8px;
+  color: var(--tide-muted);
+  font-style: normal;
+}
+
+/* Floating "Add to chat" button anchored to the current editor text selection. */
+
+.editor-selection-toolbar {
+  position: fixed;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 8px;
+  background: var(--tide-text);
+  color: var(--tide-bg);
+  font: 600 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  box-shadow: 0 6px 18px -6px rgba(36, 33, 38, 0.45);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.editor-selection-toolbar svg { color: var(--tide-bg); opacity: 0.85; }
+
+.editor-selection-toolbar:hover { opacity: 0.92; }
+
+.workbench-editor-cm .cm-gutters {
+  background: var(--tide-surface);
+  border-right: 1px solid var(--tide-line);
+  color: var(--tide-muted);
+}
+
+.workbench-editor-cm .cm-activeLine,
+.workbench-editor-cm .cm-activeLineGutter {
+  background: var(--tide-editor-active-line);
+}
+
+.workbench-editor-cm .cm-editor.cm-focused {
+  outline: none;
+}
+
+/* The authoritative selection styling lives in an EditorView.theme extension
+   (correct CodeMirror specificity, beats the baseTheme focused-selection rule);
+   these mirror it for the unfocused/native paths. !important so CodeMirror's
+   injected baseTheme can't win. */
+
+.workbench-editor-cm .cm-selectionBackground,
+.workbench-editor-cm .cm-focused .cm-selectionBackground,
+.workbench-editor-cm .cm-content ::selection {
+  background: var(--tide-editor-selection) !important;
+}
+
+/* The code-editor stack (editor + references peek) fills the pane below the
+   breadcrumb. */
+
+.workbench-editor-stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

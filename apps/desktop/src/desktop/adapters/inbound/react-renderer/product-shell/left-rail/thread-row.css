@@ -1,0 +1,227 @@
+/* Styles for the adjacent thread-row component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+/* Canonical thread row (1288): 13px/16, default #4e4c49, selected Medium
+   #343038, selection background when active. */
+
+.thread-row {
+  gap: 8px;
+  padding: 0 10px;
+  color: #4e4c49;
+  font-size: 13px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.thread-row--active {
+  background: var(--tide-selection);
+  color: var(--tide-action);
+}
+
+.thread-row--active .thread-row__title {
+  font-weight: 500;
+}
+
+.thread-row__main {
+  min-width: 0;
+  flex: 1 1 auto;
+  /* Fill the row's full height so the whole row (not just the text line) is a
+     click target. */
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thread-row__main .agent-identity-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  font-size: 8.5px;
+}
+
+.thread-row__rename-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 24px;
+  border: 1px solid var(--tide-line-strong);
+  border-radius: 6px;
+  padding: 0 6px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font: inherit;
+}
+
+.thread-row__rename-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--tide-action) 38%, var(--tide-line));
+}
+
+.thread-row__title {
+  flex: 1 1 auto;
+}
+
+/* A worktree Thread nested under its repo group shows the title with a small
+   branch badge so it stays identifiable. */
+
+.thread-row__title-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.thread-row__title-row .thread-row__title {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-row__branch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 42%;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tide-action) 12%, transparent);
+  color: var(--tide-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.thread-row__branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pinned thread rows stack the title over a muted project/dir subtitle so they
+   stay identifiable outside their project group. */
+
+.thread-row__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.thread-row__label .thread-row__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-row__scope {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--tide-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-row__time {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font-size: 12px;
+}
+
+.thread-row__attention,
+.project-row__attention {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--tide-action);
+}
+
+/* Live "agent is running" dot — shown for every thread (incl. background) so
+   activity is visible in the rail without focusing the thread. */
+
+.thread-row__running,
+.project-row__running {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--tide-success, #22c55e);
+  animation: tide-running-pulse 1.2s ease-in-out infinite;
+}
+
+.thread-row__actions {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--tide-muted);
+}
+
+.thread-row:hover .thread-row__time,
+.thread-row:hover .thread-row__attention,
+.thread-row:hover .thread-row__running,
+.thread-row--menu-open .thread-row__time,
+.thread-row--menu-open .thread-row__attention,
+.thread-row--menu-open .thread-row__running {
+  display: none;
+}
+
+.thread-row:hover .thread-row__actions,
+.thread-row--menu-open .thread-row__actions {
+  display: inline-flex;
+}
+
+.thread-row__action {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+}
+
+.thread-row__action:hover {
+  background: var(--tide-bg);
+  color: var(--tide-action);
+}
+
+.thread-row__confirm {
+  height: 24px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--tide-selection) 84%, var(--tide-action) 8%);
+  color: var(--tide-action);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.thread-row--pinned-project {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--tide-text);
+  text-align: left;
+}
+
+.thread-row--pinned-project .lucide {
+  color: var(--tide-muted);
+  flex-shrink: 0;
+}

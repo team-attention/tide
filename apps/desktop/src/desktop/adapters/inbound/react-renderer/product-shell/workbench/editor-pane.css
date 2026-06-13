@@ -1,0 +1,104 @@
+/* Styles for the adjacent editor-pane component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+/* Figma breadcrumb: Inter Medium 13px, muted, 32px gutter, no rule. */
+
+.workbench-editor-breadcrumb {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 32px 0;
+  font: 500 13px/16px Inter, ui-sans-serif, system-ui, sans-serif;
+  color: var(--tide-muted);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.workbench-editor-breadcrumb__crumb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Earlier path segments shrink first; the filename (last crumb) stays. */
+
+.workbench-editor-breadcrumb__crumb:not(:last-of-type) {
+  flex: 0 1 auto;
+}
+
+.workbench-editor-breadcrumb__sep {
+  flex: 0 0 auto;
+}
+
+.workbench-editor-breadcrumb__crumb:last-of-type {
+  color: var(--tide-muted);
+}
+
+.workbench-editor-breadcrumb__sep {
+  color: var(--tide-muted);
+  opacity: 0.7;
+}
+
+.workbench-editor-breadcrumb__dirty {
+  margin-left: 6px;
+  color: var(--tide-action);
+  font-size: 10px;
+}
+
+.workbench-editor-references {
+  flex: 0 0 auto;
+  max-height: 40%;
+  margin: 0;
+  border-top: 1px solid var(--tide-line);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.workbench-editor-references__heading {
+  padding: 8px 10px;
+  background: var(--tide-surface);
+  border-bottom: 1px solid var(--tide-line);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tide-text);
+}
+
+.workbench-editor-references__empty {
+  padding: 10px;
+  color: var(--tide-muted);
+  font-size: 12px;
+}
+
+.workbench-editor-references__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.workbench-editor-references__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--tide-line);
+}
+
+.workbench-editor-references__item:last-child {
+  border-bottom: none;
+}
+
+.workbench-editor-references__location {
+  font: 11px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--tide-muted);
+}
+
+.workbench-editor-references__label {
+  font: 12px/1.5 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--tide-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

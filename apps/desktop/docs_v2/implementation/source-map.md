@@ -25,15 +25,15 @@ infrastructure/   composition roots and platform plumbing (entrypoints, processe
 ```
 
 A UI change almost always touches `desktop/` twice — once in **markup**
-(`adapters/inbound/react-renderer/...`) and once in **CSS**
-(`adapters/inbound/react-renderer/styles/`, right next to the markup).
+(`adapters/inbound/react-renderer/...`) and once in **CSS** (the `.css` file
+SITTING NEXT TO that component module, e.g. `left-rail/thread-row.css`).
 Behavior changes touch the **state layer** (`application/domains/`). Anything
 the agent/provider actually *does* is `backend/`.
 
 ## Worked example: "the button on a thread row in the left thread list"
 
-1. Style → `src/desktop/adapters/inbound/react-renderer/styles/left-rail.css` (thread rows, sections,
-   rail menus live here; search `.thread-row`).
+1. Style → `src/desktop/adapters/inbound/react-renderer/product-shell/left-rail/thread-row.css`
+   (each component's rules live in the `.css` next to its module).
 2. Markup/handlers → `src/desktop/adapters/inbound/react-renderer/product-shell/left-rail/thread-row.ts`.
 3. What clicking it *does* → `src/desktop/application/domains/product-shell/state/thread-list.ts`.
 4. If the action goes to the backend → the command lands in
@@ -92,21 +92,18 @@ The workbench tab strip is `app-chrome/app-chrome.ts` (+ its
 
 ## Desktop: CSS (`src/desktop/adapters/inbound/react-renderer/`)
 
-Styles live next to the markup adapter. `styles/index.css` is an
-**ordered @import index** over `styles/` — import order preserves the cascade,
-so never reorder it casually.
+**Each component's styles live in a `.css` file next to its module**
+(spec: colocated-component-styles) — `workbench/code-editor.css` beside
+`workbench/code-editor.ts`, `left-rail/thread-row.css` beside
+`left-rail/thread-row.ts`, and so on. To find a rule, go to the component.
 
-| Area | File |
-|---|---|
-| Tokens, themes, syntax palette, scrollbars, shared atoms | `styles/base.css` |
-| Columns, top bar, window toggles, resize handles | `styles/app-chrome.css` |
-| Thread list / left rail (incl. thread rows) | `styles/left-rail.css` |
-| Transcript, markdown, tool log, reasoning | `styles/chat-transcript.css` |
-| Composer, chips, choice menus, steer queue | `styles/composer.css` |
-| Workbench chrome: tabs, split mode, fullscreen | `styles/workbench.css` |
-| Individual panes (browser/editor/md/diff/terminal/launcher) | `styles/panes.css` |
-| File tree | `styles/file-tree.css` |
-| Dialogs, Quick Open, content search, settings modal | `styles/dialogs.css` |
+Two shared homes remain: `styles/base.css` (tokens, themes, `tok-*` syntax
+palette, scrollbars, shared atoms) and `support/markdown.css` (markdown body
+shared by chat and the workbench preview). `styles/index.css` is the single
+**ordered @import index** over every colocated file — import order preserves
+the cascade, so never reorder it casually, and components never import CSS
+themselves (`node --test` imports component modules and has no CSS loader;
+enforced by `tests/colocated-styles.test.ts`).
 
 ## Desktop: view state (`src/desktop/application/domains/`)
 

@@ -1,0 +1,157 @@
+/* Styles for the adjacent worktree-dialogs component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+/* New-worktree inline name input (from the composer worktree/branch menu). */
+
+.worktree-create-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 16vh;
+  background: rgba(36, 33, 38, 0.28);
+}
+
+.worktree-create {
+  width: min(440px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--tide-bg);
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 12px;
+  box-shadow: 0 24px 60px -12px rgba(36, 33, 38, 0.35);
+}
+
+.worktree-create__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--tide-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.worktree-create__title svg { color: var(--tide-muted); }
+
+.worktree-create__input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font-size: 14px;
+  outline: none;
+}
+
+.worktree-create__input:focus { border-color: var(--tide-line-strong, var(--tide-muted)); }
+
+/* Base-branch picker row in the New worktree form. */
+
+.worktree-create__field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.worktree-create__field-label {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  color: var(--tide-muted);
+}
+
+.worktree-create__select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.worktree-create__select:focus { border-color: var(--tide-line-strong, var(--tide-muted)); }
+
+.worktree-create__preview {
+  color: var(--tide-muted);
+  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.worktree-create__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.worktree-create__cancel,
+.worktree-create__confirm {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.worktree-create__cancel {
+  border: 1px solid var(--tide-line);
+  background: transparent;
+  color: var(--tide-text);
+}
+
+.worktree-create__cancel:hover { background: var(--tide-selection); }
+
+.worktree-create__confirm {
+  border: 1px solid transparent;
+  background: var(--tide-text);
+  color: var(--tide-bg);
+}
+
+.worktree-create__confirm:disabled { opacity: 0.4; cursor: default; }
+
+/* Delete dialog: a wrapping sentence (not a path), an opt-out checkbox, and a
+   red unmerged-commits warning. See docs_v2/specs/worktree-branch-deletion.md. */
+
+.worktree-delete .worktree-create__preview {
+  direction: ltr;
+  white-space: normal;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.worktree-delete__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--tide-text);
+  cursor: pointer;
+}
+
+.worktree-delete__check input { cursor: pointer; }
+
+.worktree-delete__warn {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tide-danger, #d8453b) 12%, transparent);
+  color: var(--tide-danger, #d8453b);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.worktree-delete__confirm {
+  background: var(--tide-danger, #d8453b);
+  color: #fff;
+}

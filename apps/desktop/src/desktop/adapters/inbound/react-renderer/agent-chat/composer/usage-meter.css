@@ -1,0 +1,38 @@
+/* Styles for the adjacent usage-meter component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+/* Context/token usage chip above the composer: quiet, right-aligned, with an
+   optional thin context-window meter. */
+
+.agent-usage {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: -4px 2px -2px;
+  color: var(--tide-muted);
+  font-size: 11.5px;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+
+.agent-usage__bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--tide-line);
+  overflow: hidden;
+}
+
+.agent-usage__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--tide-muted);
+  transition: width 0.4s ease;
+}
+
+.agent-usage__text {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

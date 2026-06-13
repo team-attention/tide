@@ -1,14 +1,44 @@
-/* Tide product-shell styles — split by UI area (docs_v2/specs/navigable-source-structure.md).
-   This file is an ordered import index: the file order below preserves the original
-   cascade. Find styles by area: thread rows → left-rail.css, transcript → chat-transcript.css,
-   composer/menus → composer.css, workbench panes → panes.css, modals/palettes → dialogs.css. */
+/* Tide product-shell styles - ORDERED import index (spec:
+   colocated-component-styles). Each component's rules live in a .css NEXT
+   TO its module; this file pins the cascade order (and keeps CSS imports
+   out of component modules, which node --test cannot load). */
 
 @import "./base.css";
-@import "./app-chrome.css";
-@import "./left-rail.css";
-@import "./chat-transcript.css";
-@import "./composer.css";
-@import "./workbench.css";
-@import "./panes.css";
-@import "./file-tree.css";
-@import "./dialogs.css";
+@import "../product-shell/product-shell.css";
+@import "../product-shell/chrome/chrome.css";
+@import "../product-shell/left-rail/left-rail.css";
+@import "../product-shell/left-rail/section-header.css";
+@import "../product-shell/left-rail/context-menu.css";
+@import "../product-shell/left-rail/project-section.css";
+@import "../product-shell/left-rail/thread-row.css";
+@import "../product-shell/left-rail/skeletons.css";
+@import "../agent-chat/agent-chat.css";
+@import "../agent-chat/transcript/transcript.css";
+@import "../agent-chat/transcript/working-indicator.css";
+@import "../agent-chat/transcript/tool-log.css";
+@import "../agent-chat/transcript/reasoning.css";
+@import "../agent-chat/transcript/agent-turn.css";
+@import "../support/markdown.css";
+@import "../agent-chat/composer/composer.css";
+@import "../agent-chat/start-surface/start-surface.css";
+@import "../agent-chat/composer/usage-meter.css";
+@import "../agent-chat/composer/steer-queue.css";
+@import "../agent-chat/composer/context-chips.css";
+@import "../agent-chat/composer/choice-surface.css";
+@import "../agent-chat/prompt-card/prompt-card.css";
+@import "../product-shell/workbench/workbench.css";
+@import "../product-shell/workbench/split-view.css";
+@import "../product-shell/workbench/pane-content.css";
+@import "../product-shell/workbench/pane-chrome.css";
+@import "../product-shell/workbench/terminal-pane.css";
+@import "../product-shell/workbench/launcher-pane.css";
+@import "../product-shell/workbench/browser-pane.css";
+@import "../product-shell/workbench/diff-pane.css";
+@import "../product-shell/workbench/editor-pane.css";
+@import "../product-shell/workbench/code-editor.css";
+@import "../product-shell/workbench/markdown-view.css";
+@import "../product-shell/file-tree/file-tree.css";
+@import "../product-shell/settings/settings.css";
+@import "../product-shell/dialogs/worktree-dialogs.css";
+@import "../product-shell/search/quick-open.css";
+@import "../product-shell/search/content-search.css";
