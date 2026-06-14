@@ -30,10 +30,12 @@
   text-align: left;
   font: inherit;
   cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
 }
 
 .workbench-launcher-action:hover:not(:disabled) {
   background: var(--tide-hover);
+  border-color: var(--tide-line-strong);
 }
 
 .workbench-launcher-action:disabled {

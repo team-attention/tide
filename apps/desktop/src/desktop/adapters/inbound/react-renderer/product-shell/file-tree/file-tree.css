@@ -46,10 +46,21 @@
   line-height: 28px;
   text-align: left;
   overflow: hidden;
+  transition: background-color 0.12s ease;
+  /* Folder expand inserts child rows into this flat list; fade/slide each newly
+     mounted row in (also a quiet reveal when the whole tree first loads). Only
+     freshly mounted rows animate — persistent keyed rows don't replay. */
+  animation: tide-tree-row-in 0.16s ease;
 }
 
 button.file-tree-row {
   cursor: pointer;
+}
+
+/* File/folder rows had no hover feedback (every other list does); add a quiet
+   highlight so the row you're about to click reads as interactive. */
+button.file-tree-row:hover {
+  background: var(--tide-selection);
 }
 
 .file-tree-row__chevron {

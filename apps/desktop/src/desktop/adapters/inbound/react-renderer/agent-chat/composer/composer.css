@@ -41,14 +41,20 @@
 .composer-shell__input {
   width: 100%;
   min-height: 44px;
+  /* Grow with content (Chromium/Electron field-sizing) up to a cap, then scroll —
+     so starting with a long prompt doesn't cram text into a fixed 44px box. The
+     follow-up mode tightens these below; engines without field-sizing keep the
+     min-height floor. */
+  max-height: 240px;
+  field-sizing: content;
   resize: none;
   border: 0;
   outline: none;
   padding: 0;
   background: transparent;
   color: var(--tide-text);
-  font-size: 18px;
-  line-height: 1.35;
+  font-size: 16px;
+  line-height: 1.4;
 }
 
 .composer-shell[data-composer-mode="follow_up"] .composer-shell__input {

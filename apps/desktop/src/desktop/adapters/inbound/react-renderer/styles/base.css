@@ -118,6 +118,41 @@
   box-sizing: border-box;
 }
 
+/* ============================================================================
+   Shared entrance motion. Overlays/menus/dialogs used to pop in instantly;
+   these keyframes give them a quiet fade/scale/slide on mount (applied in the
+   colocated component CSS). All motion is neutralized for reduced-motion users
+   by the global guard at the bottom of this file.
+   ========================================================================== */
+@keyframes tide-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Anchored popovers + dropdown menus (context menu, choice surface, editor menu). */
+@keyframes tide-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Centered modal (Settings). */
+@keyframes tide-modal-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Top-anchored command palettes / dialogs (Quick Open, Content Search, worktree). */
+@keyframes tide-sheet-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Newly revealed file-tree rows (folder expand / tree load). */
+@keyframes tide-tree-row-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
 html,
 body,
 #root {
@@ -141,6 +176,19 @@ textarea {
 
 button {
   color: inherit;
+}
+
+/* Keyboard focus ring for clickable controls only (keyboard nav, never mouse).
+   Text fields are intentionally excluded: they already signal focus with a blinking
+   caret (and many carry their own focus style), so a hard outline box around a
+   borderless input — e.g. the composer — just looks tacky. The editor
+   (contenteditable) and <webview> don't match these selectors either. */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--tide-action);
+  outline-offset: 2px;
 }
 
 /* Thin overlay scrollbars with no track background (Codex-like): the bar floats
@@ -253,4 +301,19 @@ button {
 
 .workbench-tabs::-webkit-scrollbar {
   display: none;
+}
+
+/* Accessibility: honor the OS "reduce motion" setting globally — neutralize
+   entrance animations, looping pulses/shimmers, and transitions for users who
+   opt out. (The .collapsible height + chevron transitions are separately gated
+   behind prefers-reduced-motion: no-preference, so they're already off here.) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

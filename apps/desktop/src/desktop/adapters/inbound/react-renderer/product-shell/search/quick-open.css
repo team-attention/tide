@@ -11,6 +11,7 @@
   align-items: flex-start;
   padding-top: 12vh;
   background: rgba(36, 33, 38, 0.28);
+  animation: tide-overlay-in 0.12s ease;
 }
 
 .quick-open {
@@ -23,6 +24,7 @@
   border-radius: 12px;
   box-shadow: 0 24px 60px -12px rgba(36, 33, 38, 0.35);
   overflow: hidden;
+  animation: tide-sheet-in 0.16s ease;
 }
 
 .quick-open__field {
@@ -72,6 +74,7 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background-color 0.12s ease;
 }
 
 .quick-open__row[data-selected="true"] {

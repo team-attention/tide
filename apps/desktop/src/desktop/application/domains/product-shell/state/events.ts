@@ -1,4 +1,5 @@
-import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellState } from "./types.ts";
+import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellStartPageFile, ProductShellState } from "./types.ts";
+import { startFilePaneId } from "./types.ts";
 import { applyAgentChatBackendEvent, setAvailableProviderAgents, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
@@ -124,6 +125,7 @@ export function applyProductShellBackendEvent(
         (pane) => pane.visible && pane.kind !== "launcher" && !existingPaneIds.has(pane.paneId),
       );
       const anyVisible = panes.some((pane) => pane.visible);
+      const nextWorkbenchOpen = hasNewRealPane ? true : anyVisible ? nextState.workbenchOpen : false;
       return {
         ...nextState,
         threads:
@@ -134,7 +136,14 @@ export function applyProductShellBackendEvent(
                   ? { ...thread, workbenchPanes: panes }
                   : thread,
               ),
-        workbenchOpen: hasNewRealPane ? true : anyVisible ? nextState.workbenchOpen : false,
+        workbenchOpen: nextWorkbenchOpen,
+        // Keep the per-thread memory in sync with the effective open state (a new pane
+        // opens it; an update keeps the user's choice), so switching away and back
+        // restores exactly what's on screen now.
+        workbenchOpenByThreadId:
+          threadId === null
+            ? nextState.workbenchOpenByThreadId
+            : { ...nextState.workbenchOpenByThreadId, [threadId]: nextWorkbenchOpen },
         // Backend owns the Thread's Stacked/Split presentation; reflect it (e.g. an
         // agent's tide_set_workbench_layout) when present.
         workbenchLayoutMode: payload.layoutMode ?? nextState.workbenchLayoutMode,
@@ -162,12 +171,9 @@ export function applyProductShellBackendEvent(
         ...nextState,
         fileTree: nextTree,
         expandedFolderPaths: sameRoot ? nextState.expandedFolderPaths : [],
-        // A tree for a DIFFERENT directory closes the previous project's viewer;
-        // re-listing the same directory (toggle) leaves it open.
-        startPageFile:
-          nextState.startPageFile !== null && nextState.startPageFile.cwd === payload.cwd
-            ? nextState.startPageFile
-            : null,
+        // A tree for a DIFFERENT directory closes the previous project's open files;
+        // re-listing the same directory (toggle) leaves them open.
+        startPageFiles: nextState.startPageFiles.filter((file) => file.cwd === payload.cwd),
       };
     }
     case "workspace.fileLoaded": {
@@ -192,18 +198,29 @@ export function applyProductShellBackendEvent(
       const pending = nextState.startPagePendingNavigation;
       const navigationTarget =
         pending !== null && pending.relativePath === payload.relativePath ? pending.target : undefined;
+      // Open the file as its OWN editor tab: replace it if already open (fresh read),
+      // else append. The loaded file becomes the active tab.
+      const loadedFile: ProductShellStartPageFile = {
+        cwd: payload.cwd,
+        relativePath: payload.relativePath,
+        content: typeof payload.content === "string" ? payload.content : "",
+        truncated: payload.truncated === true,
+        navigationTarget,
+      };
+      const loadedIndex = nextState.startPageFiles.findIndex(
+        (file) => file.cwd === loadedFile.cwd && file.relativePath === loadedFile.relativePath,
+      );
+      const startPageFiles =
+        loadedIndex >= 0
+          ? nextState.startPageFiles.map((file, index) => (index === loadedIndex ? loadedFile : file))
+          : [...nextState.startPageFiles, loadedFile];
       return {
         ...nextState,
         workbenchOpen: true,
         startPagePendingNavigation:
           navigationTarget !== undefined ? null : nextState.startPagePendingNavigation,
-        startPageFile: {
-          cwd: payload.cwd,
-          relativePath: payload.relativePath,
-          content: typeof payload.content === "string" ? payload.content : "",
-          truncated: payload.truncated === true,
-          navigationTarget,
-        },
+        startPageFiles,
+        draftActiveWorkbenchPaneId: startFilePaneId(loadedFile.relativePath),
       };
     }
     case "workspace.fileSaved": {
@@ -218,23 +235,25 @@ export function applyProductShellBackendEvent(
         content?: string;
         truncated?: boolean;
       };
-      const file = nextState.startPageFile;
-      if (
-        file === null ||
-        file.cwd !== payload.cwd ||
-        file.relativePath !== payload.relativePath
-      ) {
+      const savedIndex = nextState.startPageFiles.findIndex(
+        (file) => file.cwd === payload.cwd && file.relativePath === payload.relativePath,
+      );
+      if (savedIndex < 0) {
         return nextState;
       }
       return {
         ...nextState,
-        startPageFile: {
-          ...file,
-          content: typeof payload.content === "string" ? payload.content : file.content,
-          truncated: payload.truncated === true,
-          draft: undefined,
-          dirty: false,
-        },
+        startPageFiles: nextState.startPageFiles.map((file, index) =>
+          index === savedIndex
+            ? {
+                ...file,
+                content: typeof payload.content === "string" ? payload.content : file.content,
+                truncated: payload.truncated === true,
+                draft: undefined,
+                dirty: false,
+              }
+            : file,
+        ),
       };
     }
     case "workspace.contentSearchResults": {

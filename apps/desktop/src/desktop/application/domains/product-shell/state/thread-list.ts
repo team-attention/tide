@@ -496,7 +496,11 @@ function hydrateProductShellThread(
         ? agentChat
         : { ...updateComposerDraft(agentChat, "").state, hydrating },
     appChrome,
-    workbenchOpen: thread.workbenchPanes.some((pane) => pane.visible),
+    // Respect the user's remembered open/closed choice for this thread; only derive
+    // from pane visibility on the first visit (no entry yet).
+    workbenchOpen:
+      state.workbenchOpenByThreadId[thread.threadId] ??
+      thread.workbenchPanes.some((pane) => pane.visible),
     leftRailMenu: null,
     archiveConfirmThreadId: null,
     fileTree: null,
@@ -573,7 +577,13 @@ export function applyProductShellThreadEvent(
     // update, not a reason to wipe an in-progress draft + attachments (a send already
     // clears the composer itself). Clobbering it lost the composer on switch-back.
     agentChat: state.agentChat,
-    workbenchOpen: shellThread.workbenchPanes.some((pane) => pane.visible),
+    // A DATA refresh must not re-open a workbench the user closed: for the active
+    // thread respect its remembered choice (else pane visibility); a background
+    // thread's refresh never touches the active view's open state.
+    workbenchOpen: isActiveThread
+      ? state.workbenchOpenByThreadId[threadSummary.threadId] ??
+        shellThread.workbenchPanes.some((pane) => pane.visible)
+      : state.workbenchOpen,
     // Reflect the opened thread's Stacked/Split presentation (per-Thread, backend
     // owned). Only for the active thread, so a background thread.started doesn't
     // flip the composer's current mode.

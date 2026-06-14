@@ -27,6 +27,8 @@
   border-radius: 12px;
   background: var(--tide-bg);
   box-shadow: var(--tide-shadow-popover);
+  transform-origin: top;
+  animation: tide-pop-in 0.13s ease;
 }
 
 .left-rail-context-menu--thread {
@@ -52,6 +54,7 @@
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .left-rail-context-menu__item:hover {

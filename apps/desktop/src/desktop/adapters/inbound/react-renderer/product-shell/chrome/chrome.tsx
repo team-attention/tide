@@ -16,6 +16,7 @@ export function createWindowChromeToggles(
   viewModel: ProductShellViewModel,
   handlers: ProductShellHandlers,
   showWorkbenchControls: boolean,
+  inlineControls: boolean,
 ): ReactElement {
   const toggle = (
     label: string,
@@ -41,19 +42,29 @@ export function createWindowChromeToggles(
     <div className="tide-window-toggles" aria-label="Window panels">
       {showWorkbenchControls ? (
         <>
-          {/* The workbench controls collapse into one trigger; hover (or keyboard focus)
-              reveals the layout toggle, fullscreen, and New Pane in a popover — so a
-              single ~28px button always fits the top-right and never crowds a column's
-              tabs, at any size. */}
+          {/* Inline by default (every control one click away); collapse into one "…"
+              hover-menu only when the rightmost column is too narrow to host them
+              (inlineControls=false) so a cramped column keeps its tabs. */}
           {viewModel.workbenchFullscreen ? (
             // In fullscreen the workbench covers the window, so surface Exit DIRECTLY
-            // (not inside the hover menu) — an obvious one-click way back out.
+            // — an obvious one-click way back out.
             toggle(
               "Exit fullscreen",
               <Minimize2 size={15} strokeWidth={1.9} />,
               true,
               handlers.onWorkbenchFullscreenToggle,
             )
+          ) : inlineControls ? (
+            <>
+              {toggle(
+                isSplit ? "Switch to Stacked" : "Switch to Split",
+                isSplit ? <Columns2 size={15} strokeWidth={1.9} /> : <Square size={15} strokeWidth={1.9} />,
+                false,
+                () => handlers.onWorkbenchSetLayout(isSplit ? "stacked" : "split"),
+              )}
+              {toggle("Fullscreen pane", <Maximize2 size={15} strokeWidth={1.9} />, false, handlers.onWorkbenchFullscreenToggle)}
+              {toggle("New Pane", <Plus size={16} strokeWidth={1.9} />, false, handlers.onNewWorkbenchPane)}
+            </>
           ) : (
             <WorkbenchControlsMenu isSplit={isSplit} handlers={handlers} />
           )}
@@ -148,9 +159,22 @@ export function createColumnResizeHandle(
       aria-orientation="vertical"
       aria-label="Resize column"
       data-resize-edge={edge}
-      onPointerDown={(event: { clientX: number; preventDefault: () => void }) =>
-        handlers.onResizeStart(edge, event)
-      }
+      onPointerDown={(event: {
+        clientX: number;
+        pointerId: number;
+        currentTarget: HTMLElement;
+        preventDefault: () => void;
+      }) => {
+        // Capture the pointer on the handle so the drag keeps receiving move/up even
+        // when the cursor crosses a <webview> pane (which would otherwise swallow the
+        // events, so the release never registers and the column "sticks" to the cursor).
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // Ignore: setPointerCapture can throw if the pointer is already gone.
+        }
+        handlers.onResizeStart(edge, event);
+      }}
     />
   );
 }

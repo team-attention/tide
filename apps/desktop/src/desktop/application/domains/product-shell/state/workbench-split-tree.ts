@@ -69,6 +69,19 @@ export function removePane(node: WorkbenchSplitNode | null, paneId: string): Wor
   return { ...node, a, b };
 }
 
+// Swap a leaf's paneId in place (same slot/size), used when a pane resolves into
+// another — e.g. a Launcher becoming the pane the user opened from it.
+function replaceLeafPaneId(
+  node: WorkbenchSplitNode,
+  oldId: string,
+  newId: string,
+): WorkbenchSplitNode {
+  if (node.type === "leaf") {
+    return node.paneId === oldId ? leaf(newId) : node;
+  }
+  return { ...node, a: replaceLeafPaneId(node.a, oldId, newId), b: replaceLeafPaneId(node.b, oldId, newId) };
+}
+
 // Reconcile the tree with the live visible-pane set: drop panes that closed,
 // append panes that opened (as a row split at the root), and rebuild from
 // scratch when there is no tree yet.
@@ -77,8 +90,19 @@ export function reconcileTree(
   visiblePaneIds: string[],
 ): WorkbenchSplitNode | null {
   const visible = new Set(visiblePaneIds);
+  const treeIds = paneIdsInTree(node);
+  const treeIdSet = new Set(treeIds);
+  // A pane resolved IN PLACE — e.g. a Launcher slot becoming the Browser the user
+  // picked from it: exactly one pane left and one arrived → swap the newcomer into
+  // the old pane's slot, instead of collapsing the slot and appending the newcomer
+  // on the far right of the split.
+  const removed = treeIds.filter((id) => !visible.has(id));
+  const added = visiblePaneIds.filter((id) => !treeIdSet.has(id));
+  if (node !== null && removed.length === 1 && added.length === 1) {
+    return replaceLeafPaneId(node, removed[0], added[0]);
+  }
   let next = node;
-  for (const paneId of paneIdsInTree(node)) {
+  for (const paneId of treeIds) {
     if (!visible.has(paneId)) {
       next = removePane(next, paneId);
     }

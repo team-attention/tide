@@ -21,7 +21,7 @@ export function startNewProductShellScratchThread(state: ProductShellState): Pro
     agentChat: createStartAgentChatState({ kind: "scratch", scratchCwd: "Scratch" }),
     appChrome: createAppChromeState(),
     fileTree: null,
-    startPageFile: null,
+    startPageFiles: [],
     startPagePendingNavigation: null,
     editorDrafts: {},
   };
@@ -32,9 +32,14 @@ export function startNewProductShellThread(
   projectId?: string,
 ): ProductShellState {
   // Starting from a Project Row pre-scopes the Start Composer to that Project's
-  // cwd, so the resulting Thread groups under the same Project Row (UC-6b).
+  // cwd, so the resulting Thread groups under the same Project Row (UC-6b). Search
+  // BOTH registered projects (added via the folder picker, may have no threads yet)
+  // and thread-derived projects — otherwise a freshly-added project isn't found and
+  // the composer falls back to the default scope instead of the chosen directory.
   const project = projectId
-    ? state.projects.find((candidate) => candidate.projectId === projectId)
+    ? [...state.registeredProjects, ...state.projects].find(
+        (candidate) => candidate.projectId === projectId,
+      )
     : undefined;
   const scope: AgentChatThreadScope = project
     ? { kind: "project", projectId: project.projectId, cwd: project.cwd }
@@ -53,7 +58,7 @@ export function startNewProductShellThread(
     agentChat: createStartAgentChatState(scope),
     appChrome: createAppChromeState(),
     fileTree: null,
-    startPageFile: null,
+    startPageFiles: [],
     startPagePendingNavigation: null,
     editorDrafts: {},
     editorPickerFilter: null,
@@ -65,7 +70,9 @@ export function startNewProductShellThread(
 // the Agent in a non-existent directory and trip provider directory-trust. Falls
 // back to Scratch only when there are no projects yet.
 function defaultStartScope(state: ProductShellState): AgentChatThreadScope {
-  const project = state.projects[0];
+  // Prefer a thread-derived project (recently used); else a registered one (added
+  // but not yet started in), so a brand-new project scopes a default New Thread too.
+  const project = state.projects[0] ?? state.registeredProjects[0];
   return project !== undefined
     ? { kind: "project", projectId: project.projectId, cwd: project.cwd }
     : { kind: "scratch", scratchCwd: "Scratch" };

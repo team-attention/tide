@@ -32,6 +32,15 @@ test("reconcileTree builds a tree from nothing", () => {
   assert.deepEqual(paneIdsInTree(reconcileTree(null, ["a", "b"])).sort(), ["a", "b"]);
 });
 
+test("reconcileTree swaps a resolved pane into the SAME slot, not the far right", () => {
+  // [launcher | foxsports]; the user picks Browser in the launcher → it's removed and a
+  // new browser pane arrives. The browser must take the launcher's LEFT slot (in place),
+  // not collapse it and append on the far right.
+  const tree = buildLinearTree(["launcher", "foxsports"]); // row: launcher | foxsports
+  const next = reconcileTree(tree, ["browser", "foxsports"]);
+  assert.deepEqual(paneIdsInTree(next), ["browser", "foxsports"]);
+});
+
 test("applyDrop on an edge zone splits beside the target in the right direction/order", () => {
   const tree = buildLinearTree(["a", "b"]); // row split a|b
   // Drop b to the TOP of a => a column split with b above a, b removed from old spot.

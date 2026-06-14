@@ -426,13 +426,22 @@ void app.whenReady().then(() => {
 
 app.on("web-contents-created", (_event, contents) => {
   // A page inside a Browser Pane <webview> that opens a popup (target=_blank,
-  // window.open) would otherwise spawn a blank top-level BrowserWindow. Deny the
-  // popup and navigate the originating webview in place instead, so links stay
-  // in the pane and never produce a stray empty window.
+  // window.open, Cmd/Ctrl+click) would otherwise spawn a blank top-level
+  // BrowserWindow. Always deny the popup; then either open a NEW Browser Pane or
+  // navigate in place, by the user's intent:
+  //   • Cmd/Ctrl+click & middle-click ("background-tab") and window.open
+  //     ("new-window") explicitly want a new tab → open a new Browser Pane (the
+  //     renderer owns pane state, so hand it the URL over IPC).
+  //   • A plain target=_blank ("foreground-tab"/other) keeps the old "navigate in
+  //     place" behavior, so ordinary links stay in the pane and never spawn a window.
   if (contents.getType() === "webview") {
-    contents.setWindowOpenHandler(({ url }) => {
+    contents.setWindowOpenHandler(({ url, disposition }) => {
       if (/^https?:\/\//i.test(url)) {
-        void contents.loadURL(url).catch(() => undefined);
+        if (disposition === "background-tab" || disposition === "new-window") {
+          BrowserWindow.getAllWindows()[0]?.webContents.send("tide:open-browser-pane", url);
+        } else {
+          void contents.loadURL(url).catch(() => undefined);
+        }
       }
       return { action: "deny" };
     });

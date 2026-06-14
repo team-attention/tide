@@ -99,11 +99,17 @@ test("openProductShellBrowserAtUrl opens the workbench + emits open_browser with
   );
 });
 
-test("openProductShellBrowserAtUrl is a no-op with no active thread or an empty url", () => {
-  assert.equal(
-    openProductShellBrowserAtUrl({ activeThreadId: null } as unknown as ProductShellState, "https://x").command,
-    null,
+test("openProductShellBrowserAtUrl opens a draft pane with no active thread; empty url is a no-op", () => {
+  // Composer (New Thread) page: no backend thread, so a link (e.g. Cmd/Ctrl+click in
+  // a draft Browser Pane) opens a renderer-owned draft pane — not a backend command.
+  const draft = openProductShellBrowserAtUrl(
+    { activeThreadId: null, draftWorkbenchPanes: [] } as unknown as ProductShellState,
+    "https://x",
   );
+  assert.equal(draft.command, null);
+  assert.equal(draft.state.draftWorkbenchPanes.length, 1);
+  assert.equal(draft.state.draftWorkbenchPanes[0]?.url, "https://x");
+  // An empty url is a genuine no-op even with an active thread.
   assert.equal(
     openProductShellBrowserAtUrl({ activeThreadId: "t1" } as unknown as ProductShellState, "").command,
     null,

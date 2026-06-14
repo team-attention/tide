@@ -1,5 +1,5 @@
 import type { ProductShellBackgroundBrowserPane, ProductShellDraftPane, ProductShellEditorDraft, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellProject, ProductShellProjectGroupView, ProductShellStartPageFile, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellViewModel } from "./types.ts";
-import { COMPOSER_LAUNCHER_PANE_ID, START_FILE_PANE_ID } from "./types.ts";
+import { COMPOSER_LAUNCHER_PANE_ID, startFilePaneId } from "./types.ts";
 import { isExternalSessionThread } from "./thread-list.ts";
 import { worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 import { reconcileTree } from "./workbench-split-tree.ts";
@@ -118,7 +118,7 @@ export const selectWorkbenchViewModel = shellSelector(
   [
     (state: ProductShellState) => state.appChrome,
     (state: ProductShellState) => state.activeThreadId,
-    (state: ProductShellState) => state.startPageFile,
+    (state: ProductShellState) => state.startPageFiles,
     (state: ProductShellState) => state.editorDrafts,
     (state: ProductShellState) => state.workbenchLayoutTree,
     (state: ProductShellState) => state.workbenchLayoutMode,
@@ -131,7 +131,7 @@ export const selectWorkbenchViewModel = shellSelector(
   (
     appChrome,
     activeThreadId,
-    startPageFile,
+    startPageFiles,
     editorDrafts,
     workbenchLayoutTree,
     workbenchLayoutMode,
@@ -141,7 +141,7 @@ export const selectWorkbenchViewModel = shellSelector(
     draftWorkbenchPanes,
     draftActiveWorkbenchPaneId,
   ): ProductShellWorkbenchViewModel => {
-    const startFile = activeThreadId === null ? startPageFile : null;
+    const startFiles = activeThreadId === null ? startPageFiles : [];
     // Composer (New Thread) page: there are no backend panes yet, so the view-model
     // derives the Workbench — a synthetic Launcher FIRST, then live draft Browser
     // Panes, then the start-page editor (if a file is open). These are renderer-local
@@ -149,7 +149,7 @@ export const selectWorkbenchViewModel = shellSelector(
     const appChromeForView =
       activeThreadId !== null
         ? appChrome
-        : composerWorkbenchAppChrome(appChrome, draftWorkbenchPanes, startFile, draftActiveWorkbenchPaneId);
+        : composerWorkbenchAppChrome(appChrome, draftWorkbenchPanes, startFiles, draftActiveWorkbenchPaneId);
     return {
       appChrome: createAppChromeViewModel(appChromeForView),
       workbenchLayoutMode,
@@ -163,9 +163,14 @@ export const selectWorkbenchViewModel = shellSelector(
       ),
       editorPicker: createEditorPickerView({ editorPickerFilter, fileTree } as ProductShellState),
       editorDrafts:
-        startFile === null
+        startFiles.length === 0
           ? editorDrafts
-          : { ...editorDrafts, [START_FILE_PANE_ID]: startFileEditorDraft(startFile) },
+          : {
+              ...editorDrafts,
+              ...Object.fromEntries(
+                startFiles.map((file) => [startFilePaneId(file.relativePath), startFileEditorDraft(file)]),
+              ),
+            },
     };
   },
 );
@@ -365,20 +370,21 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
   };
 }
 
-// The start (New Thread) page's open file, as a Workbench editor pane. There is
-// no thread/backend pane before a thread exists, so this single pane is derived
-// from startPageFile each render; the editor's draft/save/close handlers
-// special-case START_FILE_PANE_ID. A truncated read stays read-only.
+// A start (New Thread) page open file, as a Workbench editor pane. There is no
+// thread/backend pane before a thread exists, so each pane is derived from a
+// startPageFiles entry each render under a per-file id; the editor's draft/save/
+// close handlers special-case start-file panes. A truncated read stays read-only.
 function startFileEditorPane(file: ProductShellStartPageFile): AppChromeWorkbenchPaneRef {
   const name = file.relativePath.slice(file.relativePath.lastIndexOf("/") + 1);
+  const paneId = startFilePaneId(file.relativePath);
   return {
-    paneId: START_FILE_PANE_ID,
+    paneId,
     kind: "editor",
     title: name,
     visible: true,
     // Stable: the editor is value-controlled, so the revision only identifies the
     // pane; it never drives a remount here.
-    revision: START_FILE_PANE_ID,
+    revision: paneId,
     updatedAt: shellTimestamp,
     relativePath: file.relativePath,
     filePath: `${file.cwd.replace(/\/+$/, "")}/${file.relativePath}`,
@@ -390,9 +396,10 @@ function startFileEditorPane(file: ProductShellStartPageFile): AppChromeWorkbenc
 }
 
 function startFileEditorDraft(file: ProductShellStartPageFile): ProductShellEditorDraft {
+  const paneId = startFilePaneId(file.relativePath);
   return {
-    paneId: START_FILE_PANE_ID,
-    baseRevision: START_FILE_PANE_ID,
+    paneId,
+    baseRevision: paneId,
     content: file.draft ?? file.content,
     dirty: file.dirty ?? false,
     cursorOffset: 0,
@@ -405,7 +412,7 @@ function startFileEditorDraft(file: ProductShellStartPageFile): ProductShellEdit
 function composerWorkbenchAppChrome(
   appChrome: ProductShellState["appChrome"],
   draftPanes: ProductShellDraftPane[],
-  startFile: ProductShellStartPageFile | null,
+  startFiles: ProductShellStartPageFile[],
   draftActivePaneId: string | null,
 ): ProductShellState["appChrome"] {
   // The Launcher is a PLACEHOLDER (v1 parity): show it only when it's the active
@@ -415,11 +422,11 @@ function composerWorkbenchAppChrome(
   // into the chosen pane rather than persisting beside it.
   const showLauncher =
     draftActivePaneId === COMPOSER_LAUNCHER_PANE_ID ||
-    (draftPanes.length === 0 && startFile === null);
+    (draftPanes.length === 0 && startFiles.length === 0);
   const panes: AppChromeWorkbenchPaneRef[] = [
     ...(showLauncher ? [composerLauncherPane()] : []),
     ...draftPanes.map(draftBrowserPaneRef),
-    ...(startFile === null ? [] : [startFileEditorPane(startFile)]),
+    ...startFiles.map(startFileEditorPane),
   ];
   const activeWorkbenchPaneId =
     draftActivePaneId !== null && panes.some((pane) => pane.paneId === draftActivePaneId)

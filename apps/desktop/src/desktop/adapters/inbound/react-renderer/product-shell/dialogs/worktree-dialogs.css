@@ -11,6 +11,7 @@
   align-items: flex-start;
   padding-top: 16vh;
   background: rgba(36, 33, 38, 0.28);
+  animation: tide-overlay-in 0.12s ease;
 }
 
 .worktree-create {
@@ -23,6 +24,7 @@
   border: 1px solid var(--tide-line-strong, var(--tide-line));
   border-radius: 12px;
   box-shadow: 0 24px 60px -12px rgba(36, 33, 38, 0.35);
+  animation: tide-sheet-in 0.16s ease;
 }
 
 .worktree-create__title {
@@ -102,6 +104,7 @@
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
 }
 
 .worktree-create__cancel {

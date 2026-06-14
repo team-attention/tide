@@ -229,7 +229,7 @@ export function submitProductShellComposerDraft(
       activeThreadId: startedThread.threadId,
       threads,
       projects: projectsFromThreads(threads),
-      startPageFile: null,
+      startPageFiles: [],
       startPagePendingNavigation: null,
       // The drafts are handed off; keep the Workbench open only if we adopted panes.
       draftWorkbenchPanes: [],

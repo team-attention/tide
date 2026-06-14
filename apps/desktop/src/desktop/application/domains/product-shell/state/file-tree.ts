@@ -1,4 +1,5 @@
 import type { ProductShellBackendCommand, ProductShellFileTreeEntryView, ProductShellFileTreeView, ProductShellState, ProductShellUpdateResult } from "./types.ts";
+import { startFilePaneId } from "./types.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
 export function toggleProductShellFileTree(state: ProductShellState): ProductShellState {
@@ -142,6 +143,22 @@ export function selectProductShellFileTreeEntry(
     const scope = state.agentChat.composer.startOptions.scope;
     if (scope?.kind !== "project" || scope.cwd.length === 0) {
       return { state, command: null };
+    }
+    // Already open as a tab → just focus it (don't re-read, which would discard an
+    // unsaved draft). A new file reads in and opens its OWN tab (the fileLoaded
+    // reducer appends it), rather than replacing the current editor.
+    const alreadyOpen = state.startPageFiles.some(
+      (file) => file.cwd === scope.cwd && file.relativePath === entry.relativePath,
+    );
+    if (alreadyOpen) {
+      return {
+        state: {
+          ...state,
+          workbenchOpen: true,
+          draftActiveWorkbenchPaneId: startFilePaneId(entry.relativePath),
+        },
+        command: null,
+      };
     }
     return {
       state: { ...state, workbenchOpen: true },

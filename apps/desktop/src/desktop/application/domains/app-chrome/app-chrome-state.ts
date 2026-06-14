@@ -462,6 +462,30 @@ export function setChromeActionLoading(
   };
 }
 
+// A tab must never be nameless. A Browser at about:blank (or any pane before its
+// real title lands) reports an empty/placeholder title; fall back to a friendly,
+// kind-based label so the tab always reads as something.
+function workbenchPaneTitle(pane: AppChromeWorkbenchPaneRef): string {
+  const trimmed = pane.title?.trim() ?? "";
+  if (trimmed.length > 0 && trimmed !== "about:blank") {
+    return trimmed;
+  }
+  switch (pane.kind) {
+    case "browser":
+      return "New Tab";
+    case "terminal":
+      return "Terminal";
+    case "editor":
+      return "Editor";
+    case "diff":
+      return "Diff";
+    case "launcher":
+      return "Launcher";
+    default:
+      return "Untitled";
+  }
+}
+
 function toWorkbenchTabView(
   pane: AppChromeWorkbenchPaneRef,
   state: AppChromeState,
@@ -469,19 +493,20 @@ function toWorkbenchTabView(
   const focusActionId = `focus:${pane.paneId}`;
   const closeActionId = `close:${pane.paneId}`;
   const anyActionLoading = state.loadingActionId !== undefined;
+  const title = workbenchPaneTitle(pane);
 
   return {
     paneId: pane.paneId,
     kind: pane.kind,
-    title: pane.title,
+    title,
     active: state.activeWorkbenchPaneId === pane.paneId,
     loading: pane.loading === true,
     revision: pane.revision,
     focusAction: {
       id: focusActionId,
       icon: "o",
-      tooltip: `Focus ${pane.title}`,
-      accessibleLabel: `Focus ${pane.title}`,
+      tooltip: `Focus ${title}`,
+      accessibleLabel: `Focus ${title}`,
       state:
         state.loadingActionId === focusActionId
           ? "loading"
@@ -493,8 +518,8 @@ function toWorkbenchTabView(
     closeAction: {
       id: closeActionId,
       icon: "x",
-      tooltip: `Close ${pane.title}`,
-      accessibleLabel: `Close ${pane.title}`,
+      tooltip: `Close ${title}`,
+      accessibleLabel: `Close ${title}`,
       state: state.loadingActionId === closeActionId ? "loading" : "default",
       disabled: anyActionLoading,
     },

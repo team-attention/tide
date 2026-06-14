@@ -30,12 +30,15 @@ export function WorkbenchEditorPane(props: {
   const value = props.draft?.content ?? props.pane.bodyText ?? props.pane.bodyTextPreview ?? "";
   const language = inferEditorLanguage(props.pane.relativePath ?? props.pane.filePath);
   const isMarkdown = language === "markdown";
+  // The file-path breadcrumb. For markdown it rides INSIDE the view's header row
+  // (alongside Preview/Edit/Pick) so the controls sit in the path bar — one row,
+  // like the Browser Pane's address bar. For code it stays a standalone path bar.
+  const breadcrumb = createEditorBreadcrumb(props.pane, props.draft?.dirty === true);
   return (
     <div
       className="workbench-pane-content workbench-pane-content--editor"
       data-editor-readonly={readOnly ? "readonly" : "editable"}
     >
-      {createEditorBreadcrumb(props.pane, props.draft?.dirty === true)}
       {isMarkdown ? (
         <WorkbenchMarkdownView
           paneId={props.pane.paneId}
@@ -44,23 +47,27 @@ export function WorkbenchEditorPane(props: {
           dirty={props.draft?.dirty === true}
           revision={props.pane.revision}
           relativePath={props.pane.relativePath ?? props.pane.filePath}
+          breadcrumb={breadcrumb}
           handlers={props.handlers}
         />
       ) : (
-        <div className="workbench-editor-stack">
-          <WorkbenchCodeEditor
-            paneId={props.pane.paneId}
-            value={value}
-            readOnly={readOnly}
-            dirty={props.draft?.dirty === true}
-            language={language}
-            revision={props.pane.revision}
-            navigationTarget={props.pane.navigationTarget}
-            relativePath={props.pane.relativePath ?? props.pane.filePath}
-            handlers={props.handlers}
-          />
-          {createWorkbenchEditorReferences(props.pane.references)}
-        </div>
+        <>
+          {breadcrumb}
+          <div className="workbench-editor-stack">
+            <WorkbenchCodeEditor
+              paneId={props.pane.paneId}
+              value={value}
+              readOnly={readOnly}
+              dirty={props.draft?.dirty === true}
+              language={language}
+              revision={props.pane.revision}
+              navigationTarget={props.pane.navigationTarget}
+              relativePath={props.pane.relativePath ?? props.pane.filePath}
+              handlers={props.handlers}
+            />
+            {createWorkbenchEditorReferences(props.pane.references)}
+          </div>
+        </>
       )}
     </div>
   );

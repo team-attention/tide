@@ -10,6 +10,7 @@ import {
   addProductShellComposerAttachment,
   startNewProductShellScratchThread,
   submitProductShellComposerDraft,
+  toggleProductShellWorkbench,
   updateProductShellComposerDraft,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
@@ -278,6 +279,36 @@ test("the active thread opening a browser still opens its workbench", () => {
   });
 
   assert.equal(state.workbenchOpen, true);
+});
+
+// Regression: closing the workbench is remembered PER THREAD. Switching away and
+// back used to re-derive workbenchOpen from pane visibility, re-opening a workbench
+// the user had closed.
+test("a closed workbench stays closed after switching threads and back", () => {
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = applyProductShellBackendEvent(state, hydrated("thread-b", "codex", []));
+  state = clickThread(state, "thread-a");
+  // A visible pane opens the workbench on thread A.
+  state = applyProductShellBackendEvent(state, {
+    kind: "workbench.changed" as const,
+    payload: {
+      threadId: "thread-a",
+      panes: [{ paneId: "p1", kind: "browser", title: "Naver", visible: true, revision: "r1" }],
+    },
+  });
+  assert.equal(state.workbenchOpen, true);
+
+  // The user closes it.
+  state = toggleProductShellWorkbench(state);
+  assert.equal(state.workbenchOpen, false);
+
+  // Switch to B (no panes → closed) and back to A: A's pane is still there, but the
+  // user closed the column, so it stays closed.
+  state = clickThread(state, "thread-b");
+  assert.equal(state.workbenchOpen, false);
+  state = clickThread(state, "thread-a");
+  assert.equal(state.workbenchOpen, false);
 });
 
 test("composer draft+attachments survive switching to another thread and back", () => {

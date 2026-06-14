@@ -27,6 +27,13 @@
   background: var(--tide-surface);
 }
 
+/* In native fullscreen the traffic-light spacer is gone (product-shell.css), so
+   pull the rail toggle flush-left to ~12px — putting its icon on the same vertical
+   line as the New Thread / nav-row icons below it. */
+.tide-fullscreen .left-rail__top-row {
+  padding-left: 12px;
+}
+
 /* Drag-resize handles sit on column edges. */
 
 .left-rail,
@@ -115,6 +122,8 @@
   background: transparent;
   color: var(--tide-text);
   text-align: left;
+  /* Fade the hover highlight instead of snapping it (matches the composer chips). */
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .left-rail-nav-row {
@@ -128,6 +137,15 @@
 .thread-row:hover,
 .project-row:hover {
   background: var(--tide-selection);
+}
+
+/* The collapsible section body: rows keep their 2px rhythm while the .collapsible
+   wrapper (grid-rows) animates the open/close height. */
+
+.left-rail-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .left-rail-section__header {
@@ -156,6 +174,7 @@
      giving the hover highlight breathing room. */
   margin-left: -6px;
   padding: 0 6px;
+  transition: background-color 0.12s ease;
 }
 
 .left-rail-section__toggle:hover {

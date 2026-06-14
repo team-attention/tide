@@ -1,5 +1,5 @@
 import type { ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellDraftPane, ProductShellState, ProductShellUpdateResult } from "./types.ts";
-import { COMPOSER_LAUNCHER_PANE_ID, START_FILE_PANE_ID } from "./types.ts";
+import { COMPOSER_LAUNCHER_PANE_ID, isStartFilePaneId, startFilePaneId } from "./types.ts";
 import { applyDrop, reconcileTree, setRatioAtPath } from "./workbench-split-tree.ts";
 import type { DropZone } from "./workbench-split-tree.ts";
 import { closeWorkbenchPane, focusWorkbenchPane, resizeWorkbenchTerminal, writeWorkbenchTerminalInput } from "../../app-chrome/app-chrome-state.ts";
@@ -9,9 +9,16 @@ import { shellTimestamp } from "./create.ts";
 // reducers live in ./workbench-editor.ts. (spec: navigable-source-structure)
 
 export function toggleProductShellWorkbench(state: ProductShellState): ProductShellState {
+  const workbenchOpen = !state.workbenchOpen;
   return {
     ...state,
-    workbenchOpen: !state.workbenchOpen,
+    workbenchOpen,
+    // Remember this thread's open/closed choice so switching away and back doesn't
+    // re-derive it from pane visibility (which re-opened a workbench the user closed).
+    workbenchOpenByThreadId:
+      state.activeThreadId === null
+        ? state.workbenchOpenByThreadId
+        : { ...state.workbenchOpenByThreadId, [state.activeThreadId]: workbenchOpen },
     // Leaving/closing the workbench can't leave a dangling fullscreen.
     workbenchFullscreen: state.workbenchOpen ? false : state.workbenchFullscreen,
   };
@@ -268,8 +275,14 @@ export function openProductShellBrowserAtUrl(
   url: string,
   options?: { newPane?: boolean },
 ): ProductShellUpdateResult {
-  if (state.activeThreadId === null || url.length === 0) {
+  if (url.length === 0) {
     return { state, command: null };
+  }
+  // Composer (New Thread) page: there is no backend thread yet, so a link opens a
+  // renderer-owned DRAFT Browser Pane — a fresh one, since opening a link in a new
+  // pane (Cmd/Ctrl+click) always wants its own pane beside the current page.
+  if (state.activeThreadId === null) {
+    return { state: openProductShellDraftBrowser(state, url), command: null };
   }
   // Plain click reuses the active Browser Pane; cmd/ctrl+click forces a new one
   // (so a link can open beside the page you're already reading).
@@ -308,22 +321,26 @@ export function closeProductShellWorkbenchPane(
   state: ProductShellState,
   paneId: string,
 ): ProductShellUpdateResult {
-  // Composer (New Thread) page: no backend panes — close is renderer-local. Dropping
-  // the start-page editor clears startPageFile; closing a draft browser removes it.
-  // The Workbench stays open while any draft pane (or the editor) remains.
+  // Composer (New Thread) page: no backend panes — close is renderer-local. Closing
+  // a start-page editor tab removes just that file; closing a draft browser removes
+  // it. The Workbench stays open while any draft pane (or editor tab) remains.
   if (state.activeThreadId === null) {
-    const startPageFile = paneId === START_FILE_PANE_ID ? null : state.startPageFile;
+    const startPageFiles = isStartFilePaneId(paneId)
+      ? state.startPageFiles.filter((file) => startFilePaneId(file.relativePath) !== paneId)
+      : state.startPageFiles;
     const draftWorkbenchPanes = state.draftWorkbenchPanes.filter((pane) => pane.paneId !== paneId);
-    const anyDraftRemains = draftWorkbenchPanes.length > 0 || startPageFile !== null;
+    const anyDraftRemains = draftWorkbenchPanes.length > 0 || startPageFiles.length > 0;
+    const fallbackPaneId =
+      draftWorkbenchPanes[draftWorkbenchPanes.length - 1]?.paneId ??
+      (startPageFiles.length > 0
+        ? startFilePaneId(startPageFiles[startPageFiles.length - 1].relativePath)
+        : COMPOSER_LAUNCHER_PANE_ID);
     const draftActiveWorkbenchPaneId =
-      state.draftActiveWorkbenchPaneId === paneId
-        ? draftWorkbenchPanes[draftWorkbenchPanes.length - 1]?.paneId ??
-          (startPageFile !== null ? START_FILE_PANE_ID : COMPOSER_LAUNCHER_PANE_ID)
-        : state.draftActiveWorkbenchPaneId;
+      state.draftActiveWorkbenchPaneId === paneId ? fallbackPaneId : state.draftActiveWorkbenchPaneId;
     return {
       state: {
         ...state,
-        startPageFile,
+        startPageFiles,
         draftWorkbenchPanes,
         draftActiveWorkbenchPaneId,
         workbenchOpen: anyDraftRemains ? state.workbenchOpen : false,
@@ -388,7 +405,17 @@ export function updateProductShellBrowserSnapshot(
         ...state,
         draftWorkbenchPanes: state.draftWorkbenchPanes.map((candidate) =>
           candidate.paneId === paneId
-            ? { ...candidate, url: snapshot.url, title: snapshot.pageTitle ?? snapshot.url ?? candidate.title }
+            ? {
+                ...candidate,
+                url: snapshot.url,
+                // `??` alone keeps an empty-string pageTitle (about:blank reports
+                // "") — pick the first NON-empty of pageTitle/url so a titleless
+                // page shows its URL instead of going blank.
+                title:
+                  [snapshot.pageTitle, snapshot.url, candidate.title].find(
+                    (value) => typeof value === "string" && value.trim().length > 0,
+                  ) ?? candidate.title,
+              }
             : candidate,
         ),
       },

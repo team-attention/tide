@@ -22,7 +22,13 @@ export function createProjectSection(
         () => handlers.onToggleSection("Projects"),
         { label: "Add project", onClick: handlers.onAddProject },
       )}
-      {collapsed ? null : projectGroups.map((project) => createProjectGroup(project, handlers))}
+      {/* Kept mounted and height-animated (.collapsible grid-rows) so the section
+          expands AND collapses smoothly, like the individual project groups. */}
+      <div className="collapsible" data-expanded={!collapsed}>
+        <div className="collapsible__inner left-rail-section__body">
+          {projectGroups.map((project) => createProjectGroup(project, handlers))}
+        </div>
+      </div>
     </section>
   );
 }

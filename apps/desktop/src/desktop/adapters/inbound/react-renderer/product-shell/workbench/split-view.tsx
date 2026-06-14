@@ -135,12 +135,21 @@ export function WorkbenchSplitView(props: {
   // split's ratio from the cursor position within the parent node element.
   const dividerDrag = (dir: SplitDirection, path: ("a" | "b")[]) => (event: {
     currentTarget: HTMLElement;
+    pointerId: number;
     preventDefault: () => void;
   }): void => {
     event.preventDefault();
     const nodeEl = event.currentTarget.parentElement;
     if (nodeEl === null) {
       return;
+    }
+    // Capture the pointer on the divider so move/up keep firing even when the cursor
+    // crosses a <webview> pane — otherwise the webview swallows the events and the
+    // release never registers (the divider "sticks" to the cursor).
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // setPointerCapture can throw if the pointer is already gone; ignore.
     }
     const onMove = (e: PointerEvent): void => {
       const r = nodeEl.getBoundingClientRect();

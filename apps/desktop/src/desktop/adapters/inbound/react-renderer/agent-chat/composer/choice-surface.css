@@ -15,6 +15,8 @@
   border-radius: 12px;
   background: var(--tide-bg);
   box-shadow: var(--tide-shadow-popover);
+  transform-origin: top;
+  animation: tide-pop-in 0.13s ease;
 }
 
 .choice-surface__header {
@@ -87,6 +89,7 @@
   font-size: 14px;
   text-align: left;
   cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 /* A worktree row with a trailing trash affordance: the row fills, the trash sits
@@ -116,6 +119,7 @@
   color: var(--tide-muted);
   cursor: pointer;
   opacity: 0;
+  transition: background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
 }
 
 .choice-surface__row-wrap:hover .choice-surface__row-action,

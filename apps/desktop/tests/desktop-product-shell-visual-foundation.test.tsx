@@ -19,7 +19,7 @@ import {
   applyStartPageEditorReferences,
   createProductShellState,
   createProductShellViewModel,
-  START_FILE_PANE_ID,
+  startFilePaneId,
   quickOpenFilesFromState,
   closeProductShellWorkbenchPane,
   editProductShellWorkbenchEditorPane,
@@ -519,22 +519,41 @@ test("start_page_file_opens_as_an_editable_workbench_editor_pane", () => {
   });
   assert.equal(loaded.workbenchOpen, true);
   const loadedVm = createProductShellViewModel(loaded);
+  const appPaneId = startFilePaneId("src/app.ts");
   const pane = loadedVm.appChrome.activeWorkbenchPane;
-  assert.equal(pane?.paneId, START_FILE_PANE_ID);
+  assert.equal(pane?.paneId, appPaneId);
   assert.equal(pane?.kind, "editor");
   assert.equal(pane?.relativePath, "src/app.ts");
   assert.equal(pane?.bodyText, "export {};");
-  assert.equal(loadedVm.editorDrafts[START_FILE_PANE_ID]?.content, "export {};");
-  assert.equal(loadedVm.editorDrafts[START_FILE_PANE_ID]?.dirty, false);
+  assert.equal(loadedVm.editorDrafts[appPaneId]?.content, "export {};");
+  assert.equal(loadedVm.editorDrafts[appPaneId]?.dirty, false);
+
+  // Opening a SECOND, different file opens its OWN editor tab (does NOT replace the
+  // first) — two editor panes, the new one active.
+  const twoFiles = applyProductShellBackendEvent(loaded, {
+    kind: "workspace.fileLoaded",
+    payload: { cwd: "/repo/tide", relativePath: "src/two.ts", content: "export const two = 2;", truncated: false },
+  });
+  const twoVm = createProductShellViewModel(twoFiles);
+  const editorTabs = twoVm.appChrome.workbenchTabStrip.visibleTabs.filter((tab) => tab.kind === "editor");
+  assert.equal(editorTabs.length, 2);
+  assert.equal(twoVm.appChrome.activeWorkbenchPane?.paneId, startFilePaneId("src/two.ts"));
+
+  // Reopening the FIRST file from the tree just focuses its existing tab (no re-read,
+  // still two files).
+  const refocus = selectProductShellFileTreeEntry(twoFiles, "f-app");
+  assert.equal(refocus.command, null);
+  assert.equal(refocus.state.startPageFiles.length, 2);
+  assert.equal(refocus.state.draftActiveWorkbenchPaneId, appPaneId);
 
   // Editing the synthetic pane marks it dirty without any thread…
-  const edited = editProductShellWorkbenchEditorPane(loaded, START_FILE_PANE_ID, "export const x = 1;");
-  assert.equal(edited.startPageFile?.draft, "export const x = 1;");
-  assert.equal(edited.startPageFile?.dirty, true);
-  assert.equal(createProductShellViewModel(edited).editorDrafts[START_FILE_PANE_ID]?.dirty, true);
+  const edited = editProductShellWorkbenchEditorPane(loaded, appPaneId, "export const x = 1;");
+  assert.equal(edited.startPageFiles[0]?.draft, "export const x = 1;");
+  assert.equal(edited.startPageFiles[0]?.dirty, true);
+  assert.equal(createProductShellViewModel(edited).editorDrafts[appPaneId]?.dirty, true);
 
   // …and saving writes the buffer thread-independently under the composer cwd.
-  const saved = saveProductShellWorkbenchEditorPane(edited, START_FILE_PANE_ID);
+  const saved = saveProductShellWorkbenchEditorPane(edited, appPaneId);
   assert.deepEqual(saved.command, {
     kind: "workspace.writeFile",
     payload: { cwd: "/repo/tide", path: "src/app.ts", content: "export const x = 1;" },
@@ -545,27 +564,27 @@ test("start_page_file_opens_as_an_editable_workbench_editor_pane", () => {
     kind: "workspace.fileSaved",
     payload: { cwd: "/repo/tide", relativePath: "src/app.ts", content: "export const x = 1;", truncated: false },
   });
-  assert.equal(settled.startPageFile?.content, "export const x = 1;");
-  assert.equal(settled.startPageFile?.dirty, false);
-  assert.equal(settled.startPageFile?.draft, undefined);
+  assert.equal(settled.startPageFiles[0]?.content, "export const x = 1;");
+  assert.equal(settled.startPageFiles[0]?.dirty, false);
+  assert.equal(settled.startPageFiles[0]?.draft, undefined);
 
   // A SAME-directory tree reload (FileTree toggle) keeps the open file…
   const sameTree = applyProductShellBackendEvent(loaded, {
     kind: "workspace.fileTreeLoaded",
     payload: { cwd: "/repo/tide", fileTree: { cwdLabel: "tide", entries: [] } },
   });
-  assert.notEqual(sameTree.startPageFile, null);
+  assert.equal(sameTree.startPageFiles.length, 1);
 
   // …a composer scope chip switch to ANOTHER directory closes it…
   const otherTree = applyProductShellBackendEvent(sameTree, {
     kind: "workspace.fileTreeLoaded",
     payload: { cwd: "/repo/other", fileTree: { cwdLabel: "other", entries: [] } },
   });
-  assert.equal(otherTree.startPageFile, null);
+  assert.equal(otherTree.startPageFiles.length, 0);
 
   // …and closing the pane drops the file and collapses the empty workbench.
-  const closed = closeProductShellWorkbenchPane(loaded, START_FILE_PANE_ID);
-  assert.equal(closed.state.startPageFile, null);
+  const closed = closeProductShellWorkbenchPane(loaded, appPaneId);
+  assert.equal(closed.state.startPageFiles.length, 0);
   assert.equal(closed.state.workbenchOpen, false);
   assert.equal(closed.command, null);
 });
@@ -579,20 +598,23 @@ test("start_page_editor_go_to_definition_and_references_apply_thread_independent
     payload: { cwd: "/repo/tide", relativePath: "src/app.ts", content: "export const x = 1;\nconsole.log(x);", truncated: false },
   });
 
+  const appPaneId = startFilePaneId("src/app.ts");
+
   // Same-file definition scrolls in place: navigationTarget set, no backend round-trip.
-  const sameFile = applyStartPageEditorDefinition(loaded, { relativePath: "src/app.ts", line: 0, character: 13, length: 1, label: "x" });
+  const sameFile = applyStartPageEditorDefinition(loaded, appPaneId, { relativePath: "src/app.ts", line: 0, character: 13, length: 1, label: "x" });
   assert.equal(sameFile.command, null);
-  assert.deepEqual(sameFile.state.startPageFile?.navigationTarget, {
-    line: 0, character: 13, length: 1, label: "x", sourcePaneId: START_FILE_PANE_ID,
+  assert.deepEqual(sameFile.state.startPageFiles[0]?.navigationTarget, {
+    line: 0, character: 13, length: 1, label: "x", sourcePaneId: appPaneId,
   });
   // …and it surfaces on the synthetic editor pane the workbench renders.
   assert.deepEqual(
     createProductShellViewModel(sameFile.state).appChrome.activeWorkbenchPane?.navigationTarget,
-    sameFile.state.startPageFile?.navigationTarget,
+    sameFile.state.startPageFiles[0]?.navigationTarget,
   );
 
-  // Cross-file definition opens the other file, then applies the target on load.
-  const crossFile = applyStartPageEditorDefinition(loaded, { relativePath: "src/util.ts", line: 4, character: 2, label: "helper" });
+  // Cross-file definition opens the other file in its OWN tab, then applies the
+  // target on load (the first file stays open).
+  const crossFile = applyStartPageEditorDefinition(loaded, appPaneId, { relativePath: "src/util.ts", line: 4, character: 2, label: "helper" });
   assert.deepEqual(crossFile.command, {
     kind: "workspace.readFile",
     payload: { cwd: "/repo/tide", path: "src/util.ts" },
@@ -602,13 +624,14 @@ test("start_page_editor_go_to_definition_and_references_apply_thread_independent
     kind: "workspace.fileLoaded",
     payload: { cwd: "/repo/tide", relativePath: "src/util.ts", content: "export const helper = () => {};", truncated: false },
   });
-  assert.equal(crossLoaded.startPageFile?.relativePath, "src/util.ts");
-  assert.equal(crossLoaded.startPageFile?.navigationTarget?.line, 4);
-  assert.equal(crossLoaded.startPageFile?.navigationTarget?.label, "helper");
+  assert.equal(crossLoaded.startPageFiles.length, 2);
+  const utilFile = crossLoaded.startPageFiles.find((file) => file.relativePath === "src/util.ts");
+  assert.equal(utilFile?.navigationTarget?.line, 4);
+  assert.equal(utilFile?.navigationTarget?.label, "helper");
   assert.equal(crossLoaded.startPagePendingNavigation, null);
 
   // References populate the editor's references panel on the synthetic pane.
-  const withRefs = applyStartPageEditorReferences(loaded, {
+  const withRefs = applyStartPageEditorReferences(loaded, appPaneId, {
     items: [
       { relativePath: "src/app.ts", line: 1, character: 12 },
       { relativePath: "src/other.ts", line: 3, character: 0, label: "x" },

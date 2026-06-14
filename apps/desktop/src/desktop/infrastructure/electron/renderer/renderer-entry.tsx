@@ -76,6 +76,10 @@ declare global {
       sendBackendCommand(command: BackendCommandEnvelope): Promise<BackendEventEnvelope[]>;
       onBackendEvent(listener: (event: BackendEventEnvelope) => void): () => void;
       onCloseIntent(listener: () => void): () => void;
+      // A link inside a Browser Pane asked to open in a new tab/window (Cmd/Ctrl+click,
+      // middle-click, window.open) — Main denies the popup and hands the URL here so the
+      // renderer opens it as a new Browser Pane.
+      onOpenBrowserPane(listener: (url: string) => void): () => void;
       openDirectory(): Promise<string | null>;
       listProjects(): Promise<{ projectId: string; name: string; cwd: string }[]>;
       registerProject(cwd: string): Promise<{ projectId: string; name: string; cwd: string }[]>;

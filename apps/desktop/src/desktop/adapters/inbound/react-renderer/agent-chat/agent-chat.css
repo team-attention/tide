@@ -6,6 +6,15 @@
   padding: 0 12px;
 }
 
+/* When the left rail is CLOSED, the reopen toggle + traffic-light spacer live in
+   this row. This row's padding (12) + leading gap (11) is tighter than the rail's
+   (16 + 18), so the shared 54px spacer left the toggle touching the macOS traffic
+   lights. Widen the spacer here so the toggle lands at the SAME window x (~88px)
+   as the rail's Close button — clear of the lights, and no jump when toggling. */
+.agent-chat-top-row .traffic-controls {
+  width: 65px;
+}
+
 .agent-chat-shell {
   min-width: 0;
   min-height: 0;
@@ -106,6 +115,7 @@
   padding: 40px;
   background: rgba(0, 0, 0, 0.72);
   cursor: zoom-out;
+  animation: tide-overlay-in 0.14s ease;
 }
 
 .image-lightbox__img {
@@ -114,4 +124,5 @@
   object-fit: contain;
   border-radius: 8px;
   box-shadow: 0 16px 50px rgba(0, 0, 0, 0.5);
+  animation: tide-modal-in 0.18s ease;
 }

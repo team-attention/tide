@@ -1,4 +1,4 @@
-import { applyStartPageEditorDefinition, applyStartPageEditorReferences, editProductShellWorkbenchEditorPane, goToProductShellEditorDefinition, goToProductShellEditorReferences, moveProductShellEditorCursor, openProductShellFileInEditor, saveProductShellWorkbenchEditorPane, selectProductShellEditorPickerFile, selectProductShellFileTreeEntry, setProductShellEditorPickerFilter, START_FILE_PANE_ID, toggleProductShellFileTreeWithRefresh } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { applyStartPageEditorDefinition, applyStartPageEditorReferences, editProductShellWorkbenchEditorPane, goToProductShellEditorDefinition, goToProductShellEditorReferences, isStartFilePaneId, moveProductShellEditorCursor, openProductShellFileInEditor, saveProductShellWorkbenchEditorPane, selectProductShellEditorPickerFile, selectProductShellFileTreeEntry, setProductShellEditorPickerFilter, startFilePaneId, toggleProductShellFileTreeWithRefresh } from "../../../../../application/domains/product-shell/product-shell.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
 import { deriveEditorRoot } from "../workbench/code-intel-mappers.ts";
@@ -62,10 +62,11 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
   // from the editor (the start-page cursor isn't tracked in shell state).
   const runStartPageCodeNav = async (
     kind: "definition" | "references",
+    paneId: string,
     position?: { line: number; character: number },
   ): Promise<void> => {
-    const file = shellState.startPageFile;
-    if (file === null || position === undefined || props.onBackendCommand === undefined) {
+    const file = shellState.startPageFiles.find((open) => startFilePaneId(open.relativePath) === paneId);
+    if (file === undefined || position === undefined || props.onBackendCommand === undefined) {
       return;
     }
     const events = await props.onBackendCommand({
@@ -92,7 +93,7 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
         return;
       }
       setShellState((state) => {
-        const applied = applyStartPageEditorDefinition(state, location);
+        const applied = applyStartPageEditorDefinition(state, paneId, location);
         dispatchBackendCommand(applied.command);
         return applied.state;
       });
@@ -101,7 +102,7 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
       if (references === null) {
         return;
       }
-      setShellState((state) => applyStartPageEditorReferences(state, references));
+      setShellState((state) => applyStartPageEditorReferences(state, paneId, references));
     }
   };
 
@@ -131,8 +132,8 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
         return result.state;
       }),
     onEditorGoToDefinition: (paneId, position) => {
-      if (paneId === START_FILE_PANE_ID) {
-        void runStartPageCodeNav("definition", position);
+      if (isStartFilePaneId(paneId)) {
+        void runStartPageCodeNav("definition", paneId, position);
         return;
       }
       setShellState((state) => {
@@ -142,8 +143,8 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
       });
     },
     onEditorGoToReferences: (paneId, position) => {
-      if (paneId === START_FILE_PANE_ID) {
-        void runStartPageCodeNav("references", position);
+      if (isStartFilePaneId(paneId)) {
+        void runStartPageCodeNav("references", paneId, position);
         return;
       }
       setShellState((state) => {
@@ -166,9 +167,11 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
       // from their pane's filePath.
       let cwd: string;
       let filePath: string;
-      if (input.paneId === START_FILE_PANE_ID) {
-        const file = shellState.startPageFile;
-        if (file === null) {
+      if (isStartFilePaneId(input.paneId)) {
+        const file = shellState.startPageFiles.find(
+          (open) => startFilePaneId(open.relativePath) === input.paneId,
+        );
+        if (file === undefined) {
           return null;
         }
         cwd = file.cwd;

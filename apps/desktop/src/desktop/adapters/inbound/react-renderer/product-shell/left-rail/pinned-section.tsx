@@ -21,12 +21,13 @@ export function createPinnedSection(
   return (
     <section className="left-rail-section" aria-label="Pinned">
       {createSectionHeader("Pinned", total, collapsed, () => handlers.onToggleSection("Pinned"))}
-      {collapsed
-        ? null
-        : [
-            ...pinnedProjects.map((project) => createProjectGroup(project, handlers)),
-            ...pinnedThreads.map((thread) => createThreadRow(thread, handlers, true)),
-          ]}
+      {/* Height-animated (.collapsible) so collapsing the section is smooth. */}
+      <div className="collapsible" data-expanded={!collapsed}>
+        <div className="collapsible__inner left-rail-section__body">
+          {pinnedProjects.map((project) => createProjectGroup(project, handlers))}
+          {pinnedThreads.map((thread) => createThreadRow(thread, handlers, true))}
+        </div>
+      </div>
     </section>
   );
 }

@@ -33,6 +33,10 @@ export interface TidePreloadSurface {
   // Cmd+W "close intent" from the application menu — the renderer decides what to
   // close (a focused Workbench pane, else the active thread → start composer).
   onCloseIntent(listener: () => void): () => void;
+  // A Browser Pane link asked to open in a new tab/window (Cmd/Ctrl+click, middle-click,
+  // window.open). Main denies the popup and forwards the URL so the renderer opens it as
+  // a new Browser Pane instead of a stray window.
+  onOpenBrowserPane(listener: (url: string) => void): () => void;
   // Native folder picker + persisted project registry (Main-owned).
   openDirectory(): Promise<string | null>;
   listProjects(): Promise<ProjectRegistryEntry[]>;
@@ -86,6 +90,13 @@ export const tidePreloadSurface: TidePreloadSurface = {
     ipcRenderer.on("tide:close-intent", wrapped);
     return () => {
       ipcRenderer.removeListener("tide:close-intent", wrapped);
+    };
+  },
+  onOpenBrowserPane(listener) {
+    const wrapped = (_event: unknown, url: string) => listener(url);
+    ipcRenderer.on("tide:open-browser-pane", wrapped);
+    return () => {
+      ipcRenderer.removeListener("tide:open-browser-pane", wrapped);
     };
   },
   openDirectory() {

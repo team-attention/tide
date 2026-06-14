@@ -79,6 +79,19 @@ test("workbench_changed_event_with_browser_pane_renders_tab_strip", () => {
   assert.match(html, /aria-label="Workbench Tab Strip"/);
 });
 
+test("a browser pane with no page title falls back to a friendly tab name", () => {
+  // UC-3: an about:blank / pre-title Browser Pane must never render a nameless tab.
+  const view = createAppChromeViewModel(
+    stateWithWorkbenchPanes([
+      browserPane("pane-blank", ""),
+      browserPane("pane-aboutblank", "about:blank"),
+    ]),
+  );
+
+  assert.equal(view.workbenchTabStrip.visibleTabs[0]?.title, "New Tab");
+  assert.equal(view.workbenchTabStrip.visibleTabs[1]?.title, "New Tab");
+});
+
 test("closing_workbench_tab_emits_workbench_command_with_pane_id", () => {
   // UC-3: Workbench opens Browser Pane.
   const state = stateWithWorkbenchPanes([browserPane("pane-browser-1", "Local preview")]);

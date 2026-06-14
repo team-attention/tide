@@ -43,6 +43,8 @@
   border: 1px solid var(--tide-line-strong, var(--tide-line));
   border-radius: 8px;
   box-shadow: 0 10px 30px -10px rgb(20 18 24 / 28%);
+  transform-origin: top;
+  animation: tide-pop-in 0.13s ease;
 }
 
 .workbench-editor-menu__item {
@@ -55,6 +57,7 @@
   color: var(--tide-text);
   font: 13px/1 -apple-system, system-ui, sans-serif;
   cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .workbench-editor-menu__item:hover:not(:disabled) {

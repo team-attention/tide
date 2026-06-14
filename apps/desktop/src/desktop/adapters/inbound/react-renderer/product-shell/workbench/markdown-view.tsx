@@ -44,6 +44,10 @@ export function WorkbenchMarkdownView(props: {
   dirty: boolean;
   revision: string;
   relativePath?: string;
+  // The file-path breadcrumb, rendered INLINE in the markdown header row so the
+  // Preview/Edit/Pick controls sit in the path bar (one row) instead of a separate
+  // floating toolbar — mirroring the Browser Pane's address-bar row.
+  breadcrumb?: ReactElement;
   handlers: ProductShellHandlers;
 }): ReactElement {
   const [mode, setMode] = useState<"preview" | "edit">("preview");
@@ -260,53 +264,58 @@ export function WorkbenchMarkdownView(props: {
   );
   return (
     <div className="workbench-md" data-md-mode={mode} data-md-picking={pickBlock ? "true" : "false"}>
-      <div className="workbench-md-toggle" role="group" aria-label="Markdown view mode">
-        {toggle("preview", "Preview")}
-        {props.readOnly ? null : toggle("edit", "Edit")}
-        {mode === "preview" && pickBlock && pickedCount > 0 ? (
-          <button
-            type="button"
-            className="workbench-md-toggle__pick workbench-md-toggle__pick--add"
-            title="Add the selected blocks to chat"
-            onClick={() => {
-              const blocks = Array.from(
-                previewRef.current?.querySelectorAll(".workbench-md-pick-selected") ?? [],
-              ) as HTMLElement[];
-              const text = blocks
-                .map((el) => (el.innerText || el.textContent || "").trim())
-                .filter((t) => t.length > 0)
-                .join("\n\n");
-              if (text.length > 0) {
-                attach(text, `${baseName} · ${pickedCount} block${pickedCount === 1 ? "" : "s"}`);
-              }
-              clearPickedBlocks();
-              setPickBlock(false);
-            }}
-          >
-            <CornerDownRight size={12} strokeWidth={1.8} aria-hidden />
-            {`Add ${pickedCount} to chat`}
-          </button>
-        ) : null}
-        {mode === "preview" ? (
-          <button
-            type="button"
-            className="workbench-md-toggle__pick"
-            data-active={pickBlock ? "true" : "false"}
-            aria-pressed={pickBlock}
-            title={pickBlock ? "Cancel block pick" : "Pick blocks to add to chat"}
-            onClick={() =>
-              setPickBlock((prev) => {
-                if (prev) {
-                  clearPickedBlocks();
+      <div className="workbench-md-header">
+        {props.breadcrumb ?? null}
+        <div className="workbench-md-controls">
+          <div className="workbench-md-toggle" role="group" aria-label="Markdown view mode">
+            {toggle("preview", "Preview")}
+            {props.readOnly ? null : toggle("edit", "Edit")}
+          </div>
+          {mode === "preview" && pickBlock && pickedCount > 0 ? (
+            <button
+              type="button"
+              className="workbench-md-toggle__pick workbench-md-toggle__pick--add"
+              title="Add the selected blocks to chat"
+              onClick={() => {
+                const blocks = Array.from(
+                  previewRef.current?.querySelectorAll(".workbench-md-pick-selected") ?? [],
+                ) as HTMLElement[];
+                const text = blocks
+                  .map((el) => (el.innerText || el.textContent || "").trim())
+                  .filter((t) => t.length > 0)
+                  .join("\n\n");
+                if (text.length > 0) {
+                  attach(text, `${baseName} · ${pickedCount} block${pickedCount === 1 ? "" : "s"}`);
                 }
-                return !prev;
-              })
-            }
-          >
-            <Crosshair size={12} strokeWidth={1.8} aria-hidden />
-            {pickBlock ? "Cancel" : "Pick block"}
-          </button>
-        ) : null}
+                clearPickedBlocks();
+                setPickBlock(false);
+              }}
+            >
+              <CornerDownRight size={12} strokeWidth={1.8} aria-hidden />
+              {`Add ${pickedCount} to chat`}
+            </button>
+          ) : null}
+          {mode === "preview" ? (
+            <button
+              type="button"
+              className="workbench-md-toggle__pick"
+              data-active={pickBlock ? "true" : "false"}
+              aria-pressed={pickBlock}
+              title={pickBlock ? "Cancel block pick" : "Pick blocks to add to chat"}
+              onClick={() =>
+                setPickBlock((prev) => {
+                  if (prev) {
+                    clearPickedBlocks();
+                  }
+                  return !prev;
+                })
+              }
+            >
+              <Crosshair size={12} strokeWidth={1.8} aria-hidden />
+              {pickBlock ? "Cancel" : "Pick block"}
+            </button>
+          ) : null}
+        </div>
       </div>
       {mode === "preview" || props.readOnly ? (
         <>

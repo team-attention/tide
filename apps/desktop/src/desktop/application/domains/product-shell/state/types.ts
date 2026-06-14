@@ -99,12 +99,24 @@ export interface ProductShellStartPageFile {
   references?: AppChromeEditorReferenceList;
 }
 
-// The synthetic Workbench editor pane id for the start (New Thread) page's open
-// file. There is no thread/backend pane to host an editor before a thread
-// exists, so the view-model derives a single read/write editor pane under this
-// id from `startPageFile`, and the editor draft/save/close handlers special-case
-// it (keyed on a null activeThreadId). See docs_v2/specs/start-page-file-viewer.md.
+// The synthetic Workbench editor pane id base for the start (New Thread) page's
+// open files. There is no thread/backend pane to host an editor before a thread
+// exists, so the view-model derives one read/write editor pane PER open file from
+// `startPageFiles`, each under a per-path id (`start-file:<relativePath>`), and the
+// editor draft/save/close handlers special-case start-file panes (keyed on a null
+// activeThreadId). The bare base is kept for back-compat / prefix checks.
+// See docs_v2/specs/start-page-file-viewer.md.
 export const START_FILE_PANE_ID = "start-file";
+
+// A start-page editor pane id is per-file (so opening a second file is a new tab,
+// not a replace; reopening the same file focuses the existing tab).
+export function startFilePaneId(relativePath: string): string {
+  return `${START_FILE_PANE_ID}:${relativePath}`;
+}
+
+export function isStartFilePaneId(paneId: string): boolean {
+  return paneId === START_FILE_PANE_ID || paneId.startsWith(`${START_FILE_PANE_ID}:`);
+}
 
 // The synthetic Launcher pane shown FIRST on the composer (New Thread) page, before
 // any thread exists. Like START_FILE_PANE_ID it has no backend pane; the view-model
@@ -127,6 +139,11 @@ export interface ProductShellState {
   activeThreadId: string | null;
   leftRailOpen: boolean;
   workbenchOpen: boolean;
+  // The user's explicit open/closed choice for the Workbench column, per thread.
+  // Switching threads otherwise re-derives `workbenchOpen` from pane visibility, which
+  // re-opened a workbench the user had closed when they returned to the thread. No
+  // entry = derive from pane visibility (the first-visit default).
+  workbenchOpenByThreadId: Record<string, boolean>;
   // The active workbench pane is expanded to fill the window (focus mode). The
   // left rail / chat / filetree columns are hidden while on.
   workbenchFullscreen: boolean;
@@ -184,7 +201,8 @@ export interface ProductShellState {
   // The start (New Thread) page's open editor file — a thread-independent
   // read/write of one file under the composer-selected project (spec:
   // start-page-file-viewer). Null when nothing is open.
-  startPageFile: ProductShellStartPageFile | null;
+  // Open files on the start (New Thread) page, one editor tab each (no thread yet).
+  startPageFiles: ProductShellStartPageFile[];
   // A cross-file go-to-definition target awaiting its file load: set when the
   // definition is in a DIFFERENT file (we dispatch workspace.readFile first), and
   // consumed by workspace.fileLoaded to scroll the newly-opened file to it.

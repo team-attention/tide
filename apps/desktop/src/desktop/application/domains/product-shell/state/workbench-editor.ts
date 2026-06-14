@@ -1,6 +1,22 @@
-import type { ProductShellEditorDraft, ProductShellState, ProductShellUpdateResult } from "./types.ts";
-import { START_FILE_PANE_ID } from "./types.ts";
+import type { ProductShellEditorDraft, ProductShellStartPageFile, ProductShellState, ProductShellUpdateResult } from "./types.ts";
+import { isStartFilePaneId, startFilePaneId } from "./types.ts";
 import type { AppChromeEditorNavigationTarget, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
+
+// The open start-page file backing a given synthetic editor pane id (per-file).
+function startPageFileForPane(
+  state: ProductShellState,
+  paneId: string,
+): ProductShellStartPageFile | undefined {
+  return state.startPageFiles.find((file) => startFilePaneId(file.relativePath) === paneId);
+}
+
+function replaceStartPageFile(
+  state: ProductShellState,
+  target: ProductShellStartPageFile,
+  next: ProductShellStartPageFile,
+): ProductShellStartPageFile[] {
+  return state.startPageFiles.map((file) => (file === target ? next : file));
+}
 // Editor + start-page-editor reducers, split out of workbench.ts (spec:
 // workbench-dock-parity / navigable-source-structure). The Workbench shell, layout,
 // launcher, and browser reducers stay in workbench.ts; this file owns the in-pane
@@ -63,17 +79,21 @@ export function editProductShellWorkbenchEditorPane(
   paneId: string,
   content: string,
 ): ProductShellState {
-  // Start-page editor: the open file lives in startPageFile (there is no
-  // thread-bound pane before a thread exists). Track edits there; the view-model
-  // re-derives the editor's buffer from it.
-  if (paneId === START_FILE_PANE_ID) {
-    const file = state.startPageFile;
-    if (state.activeThreadId !== null || file === null || file.truncated) {
+  // Start-page editor: the open file lives in startPageFiles (there is no
+  // thread-bound pane before a thread exists). Track edits on the matching file;
+  // the view-model re-derives that tab's buffer from it.
+  if (isStartFilePaneId(paneId)) {
+    const file = startPageFileForPane(state, paneId);
+    if (state.activeThreadId !== null || file === undefined || file.truncated) {
       return state;
     }
     return {
       ...state,
-      startPageFile: { ...file, draft: content, dirty: content !== file.content },
+      startPageFiles: replaceStartPageFile(state, file, {
+        ...file,
+        draft: content,
+        dirty: content !== file.content,
+      }),
     };
   }
   const pane = state.appChrome.workbenchPanes.find(
@@ -173,22 +193,45 @@ export function goToProductShellEditorDefinition(
 // the workspace.fileLoaded reducer applies once the content lands.
 export function applyStartPageEditorDefinition(
   state: ProductShellState,
+  paneId: string,
   location: { relativePath: string; line: number; character: number; length?: number; label?: string },
 ): ProductShellUpdateResult {
-  const file = state.startPageFile;
-  if (state.activeThreadId !== null || file === null) {
+  const file = startPageFileForPane(state, paneId);
+  if (state.activeThreadId !== null || file === undefined) {
     return { state, command: null };
   }
+  // Same-file jump → scroll in place on this tab.
+  if (location.relativePath === file.relativePath) {
+    const target: AppChromeEditorNavigationTarget = {
+      line: location.line,
+      character: location.character,
+      length: location.length,
+      label: location.label,
+      sourcePaneId: paneId,
+    };
+    return {
+      state: { ...state, startPageFiles: replaceStartPageFile(state, file, { ...file, navigationTarget: target }) },
+      command: null,
+    };
+  }
+  // Cross-file → open the definition in ITS OWN tab (focus it if already open,
+  // else read it in; the target rides in via startPagePendingNavigation).
+  const targetPaneId = startFilePaneId(location.relativePath);
   const target: AppChromeEditorNavigationTarget = {
     line: location.line,
     character: location.character,
     length: location.length,
     label: location.label,
-    sourcePaneId: START_FILE_PANE_ID,
+    sourcePaneId: targetPaneId,
   };
-  if (location.relativePath === file.relativePath) {
+  const alreadyOpen = startPageFileForPane(state, targetPaneId);
+  if (alreadyOpen !== undefined) {
     return {
-      state: { ...state, startPageFile: { ...file, navigationTarget: target } },
+      state: {
+        ...state,
+        startPageFiles: replaceStartPageFile(state, alreadyOpen, { ...alreadyOpen, navigationTarget: target }),
+        draftActiveWorkbenchPaneId: targetPaneId,
+      },
       command: null,
     };
   }
@@ -208,18 +251,19 @@ export function applyStartPageEditorDefinition(
 // references panel.
 export function applyStartPageEditorReferences(
   state: ProductShellState,
+  paneId: string,
   references: {
     items: Array<{ relativePath: string; line: number; character: number; length?: number; label?: string }>;
     truncated: boolean;
   },
 ): ProductShellState {
-  const file = state.startPageFile;
-  if (state.activeThreadId !== null || file === null) {
+  const file = startPageFileForPane(state, paneId);
+  if (state.activeThreadId !== null || file === undefined) {
     return state;
   }
   return {
     ...state,
-    startPageFile: {
+    startPageFiles: replaceStartPageFile(state, file, {
       ...file,
       references: {
         query: file.relativePath,
@@ -232,7 +276,7 @@ export function applyStartPageEditorReferences(
           label: item.label,
         })),
       },
-    },
+    }),
   };
 }
 
@@ -278,11 +322,11 @@ export function saveProductShellWorkbenchEditorPane(
   // Start-page editor save: there is no thread to host save_editor_file, so write
   // the file thread-independently under the composer cwd (spec:
   // start-page-file-viewer). The fileSaved event re-bases the editor.
-  if (paneId === START_FILE_PANE_ID) {
-    const file = state.startPageFile;
+  if (isStartFilePaneId(paneId)) {
+    const file = startPageFileForPane(state, paneId);
     if (
       state.activeThreadId !== null ||
-      file === null ||
+      file === undefined ||
       file.truncated ||
       file.dirty !== true ||
       file.draft === undefined

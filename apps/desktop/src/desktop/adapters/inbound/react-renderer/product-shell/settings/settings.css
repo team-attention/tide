@@ -8,6 +8,7 @@
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.28);
+  animation: tide-overlay-in 0.12s ease;
 }
 
 .settings-modal {
@@ -19,6 +20,7 @@
   border-radius: 12px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
   padding: 18px 20px 22px;
+  animation: tide-modal-in 0.16s ease;
 }
 
 .settings-modal__header {
@@ -46,6 +48,7 @@
   background: transparent;
   color: var(--tide-muted);
   cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .settings-modal__close:hover {
@@ -91,7 +94,9 @@
 
 .settings-modal__input:focus,
 .settings-modal__textarea:focus {
-  border-color: color-mix(in srgb, var(--tide-accent, #6b7) 60%, var(--tide-line));
+  /* Was an undefined --tide-accent (greenish #6b7 fallback) — clashed with the
+     monochrome palette; use the neutral action ink so focus matches the app. */
+  border-color: color-mix(in srgb, var(--tide-action) 55%, var(--tide-line));
 }
 
 .settings-modal__hint {

@@ -11,6 +11,7 @@ import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx"
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
+import { useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
 import type { QuickOpenFile } from "./search/quick-open.tsx";
 import { createWindowChromeToggles } from "./chrome/chrome.tsx";
@@ -28,13 +29,13 @@ import {
   createProductShellViewModel,
   quickOpenFilesFromState,
   selectBackgroundCompletions,
-  selectProductShellChoiceSurfaceRow,
   archiveProductShellWorktreeChats,
   setProductShellComposerFolderScope,
   setProductShellComposerNewWorktreeIntent,
   setProductShellGitContext,
   setProductShellProviderCommands,
   setProductShellRegisteredProjects,
+  startNewProductShellThread,
   refreshStartPageFileTree,
   searchProductShellContentCommand,
   toggleProductShellWorkbenchFullscreen,
@@ -169,10 +170,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     setShellState((state) => {
       const withRegistry = setProductShellRegisteredProjects(state, entries);
       const project = entries.find((entry) => entry.cwd === cwd);
+      // Adding a project drops you into a fresh New Thread composer SCOPED to it (its
+      // directory selected), ready to start — not just a silent list entry.
       return project === undefined
         ? withRegistry
-        : selectProductShellChoiceSurfaceRow(withRegistry, "project_menu", `project:${project.projectId}`)
-            .state;
+        : startNewProductShellThread(withRegistry, project.projectId);
     });
   };
 
@@ -581,9 +583,6 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       ? viewModel
       : { ...viewModel, workbenchOpen: eff.workbenchOpen, fileTreeOpen: eff.fileTreeOpen };
 
-  // The workbench chrome controls collapse into a single top-right menu button (hover
-  // reveals layout toggle / fullscreen / New Pane), so a single ~28px button always
-  // fits and never crowds a column's tabs at any size — no min-window-width rule needed.
   const showWorkbenchControls = layoutVm.workbenchOpen;
 
   // Animate columns open/closed by keeping them mounted across an exit transition.
@@ -591,34 +590,28 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   const workbenchPresence = useColumnPresence(layoutVm.workbenchOpen);
   const fileTreePresence = useColumnPresence(layoutVm.fileTreeOpen);
 
-  // Cmd+P opens Quick Open. It loads the FULL file list first (the FileTree is
-  // lazy/shallow) so fuzzy search sees every file. Only inside an active thread.
+  // Workbench chrome controls (layout toggle / fullscreen / New Pane) render INLINE by
+  // default and only collapse into a single "…" hover-menu when the rightmost column
+  // they float over gets too narrow to host them — so a cramped column keeps its tabs,
+  // but on a normal layout every control is one click away. Keyed off the measured
+  // width of the last column (re-measured on resize / column open-close).
+  const rightColWidth = useRightmostColumnWidth(bodyRef, [
+    leftPresence.mounted,
+    workbenchPresence.mounted,
+    fileTreePresence.mounted,
+    layoutVm.workbenchOpen,
+    layoutVm.fileTreeOpen,
+  ]);
+  const inlineWorkbenchControls = showWorkbenchControls && rightColWidth >= 400;
+
+  // Cmd+P → Quick Open, Cmd+Shift+F → Content Search (active-thread only).
   const activeThreadId = shellState.activeThreadId;
-  useEffect(() => {
-    if (activeThreadId === null) {
-      return undefined;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "p") {
-        event.preventDefault();
-        dispatchBackendCommand({
-          kind: "workbench.command",
-          payload: {
-            threadId: activeThreadId,
-            command: "refresh_file_tree",
-            data: { maxDepth: 12, maxEntries: 5000 },
-          },
-        });
-        setQuickOpenVisible(true);
-      } else if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f") {
-        event.preventDefault();
-        setContentSearchVisible(true);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeThreadId]);
+  useGlobalSearchShortcuts({
+    activeThreadId,
+    dispatchBackendCommand,
+    setQuickOpenVisible,
+    setContentSearchVisible,
+  });
 
   // Cmd+W (routed from the app menu as a "close intent"): close the focused
   // Workbench pane if one is open, else close the active thread by returning to
@@ -647,6 +640,9 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A Browser Pane link opened with Cmd/Ctrl+click (or window.open) opens a new pane.
+  useOpenBrowserPaneFromMain(handlers.onOpenBrowserPane);
+
   // Escape exits workbench-pane fullscreen.
   useEffect(() => {
     if (!shellState.workbenchFullscreen) {
@@ -661,6 +657,22 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [shellState.workbenchFullscreen]);
+
+  // Escape closes the Settings modal (Quick Open / Content Search / worktree
+  // dialogs already close on Escape; the modal was the lone outlier).
+  useEffect(() => {
+    if (!shellState.settingsOpen) {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        handlers.onCloseSettings();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shellState.settingsOpen]);
 
   const quickOpenFiles = useMemo<QuickOpenFile[]>(
     () => quickOpenFilesFromState(shellState),
@@ -685,7 +697,9 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           ref={bodyRef}
           // When the workbench controls are docked in the top-right cluster it's wider,
           // so the rightmost column's header reserves more right padding (product-shell.css).
-          data-workbench-controls={showWorkbenchControls ? "true" : "false"}
+          data-workbench-controls={
+            inlineWorkbenchControls ? "inline" : showWorkbenchControls ? "menu" : "false"
+          }
           // Agent chat is the flexible middle track; the other columns use
           // minmax(min, dragWidth) so they honour the dragged width when there is
           // room but shrink toward their min when several columns are open at once
@@ -722,7 +736,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         </div>
         {/* Workbench + FileTree toggles live in a single fixed cluster at the window's
             top-right, so they never jump between column headers as panels open/close. */}
-        {createWindowChromeToggles(layoutVm, handlers, showWorkbenchControls)}
+        {createWindowChromeToggles(layoutVm, handlers, showWorkbenchControls, inlineWorkbenchControls)}
         {/* Offscreen host keeping background threads' Browser Panes alive for their agents. */}
         <BackgroundBrowserHost panes={layoutVm.backgroundBrowserPanes} handlers={handlers} />
         {viewModel.settingsOpen

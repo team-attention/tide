@@ -27,7 +27,12 @@ export function createThreadSection(
           ? { label: "New scratch thread", onClick: handlers.onNewScratchThread }
           : undefined,
       )}
-      {collapsed ? null : threads.map((thread) => createThreadRow(thread, handlers))}
+      {/* Height-animated (.collapsible) so collapsing the section is smooth. */}
+      <div className="collapsible" data-expanded={!collapsed}>
+        <div className="collapsible__inner left-rail-section__body">
+          {threads.map((thread) => createThreadRow(thread, handlers))}
+        </div>
+      </div>
     </section>
   );
 }
