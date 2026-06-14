@@ -138,9 +138,12 @@ test("product_shell_applies_thread_listed_event_to_left_ui", () => {
     view.projectGroups.map((project) => project.projectId),
     ["tide"],
   );
-  assert.equal(view.projectGroups[0]?.threads[0]?.threadId, "thread-real");
+  // A pinned thread is lifted OUT of its project group into the Pinned section
+  // (spec: left-rail-manual-ordering): the group is present but holds no rows, and the
+  // thread surfaces in pinnedThreads with its agent identity.
+  assert.deepEqual(view.projectGroups[0]?.threads ?? [], []);
   assert.equal(view.pinnedThreads[0]?.threadId, "thread-real");
-  assert.equal(view.projectGroups[0]?.threads[0]?.agentId, "claude");
+  assert.equal(view.pinnedThreads[0]?.agentId, "claude");
 });
 
 test("product_shell_requests_backend_thread_list_on_mount_without_fixture_threads", () => {

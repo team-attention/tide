@@ -1,4 +1,4 @@
-import type { ProductShellBackendEventSource, ProductShellLeftRailMenu, ProductShellProject, ProductShellState, ProductShellThread, ProductShellUpdateResult } from "./types.ts";
+import type { ProductShellBackendEventSource, ProductShellLeftRailMenu, ProductShellPinnedItemRef, ProductShellProject, ProductShellState, ProductShellThread, ProductShellUpdateResult } from "./types.ts";
 import { formatRelativeThreadTime, previewBlocksForThread, projectsFromThreads, toAgentChatThreadSummary } from "./view-model.ts";
 import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatBlock, AgentChatBranchOption, AgentChatShellState, AgentChatThreadSummary, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
@@ -205,6 +205,57 @@ export function toggleProductShellProjectPin(
     ? state.pinnedProjectIds.filter((id) => id !== projectId)
     : [...state.pinnedProjectIds, projectId];
   return { ...state, leftRailMenu: null, pinnedProjectIds: pinned };
+}
+
+// --- Left Rail manual ordering (spec: left-rail-manual-ordering) ---
+
+// Stable key for a pinned item — kind+id, since a thread id and a project id could
+// otherwise collide. Shared by the view-model rank and the DnD handlers.
+export function pinnedItemRefKey(ref: ProductShellPinnedItemRef): string {
+  return ref.kind === "thread" ? `t:${ref.threadId}` : `p:${ref.projectId}`;
+}
+
+// Parse a pinned-item key (`t:<id>` / `p:<id>`) back to a ref, or null if malformed.
+export function parsePinnedItemKey(key: string): ProductShellPinnedItemRef | null {
+  if (key.startsWith("t:")) {
+    return { kind: "thread", threadId: key.slice(2) };
+  }
+  if (key.startsWith("p:")) {
+    return { kind: "project", projectId: key.slice(2) };
+  }
+  return null;
+}
+
+// Pure reorder: move `draggedKey` to `targetKey`'s slot within the current visual order
+// of keys (drops dragged immediately before target). No-op if either key is missing or
+// they're equal. The DnD handlers feed it the live rail order and store the result.
+export function moveKeyInOrder(keys: string[], draggedKey: string, targetKey: string): string[] {
+  if (draggedKey === targetKey) {
+    return keys;
+  }
+  if (!keys.includes(draggedKey) || !keys.includes(targetKey)) {
+    return keys;
+  }
+  const next = keys.filter((key) => key !== draggedKey);
+  next.splice(next.indexOf(targetKey), 0, draggedKey);
+  return next;
+}
+
+// Pure setters for the persisted manual-order arrays. The handler computes the new
+// order from the live visual list (so these stay simple, and partial/empty stored
+// orders self-heal to the full order on the first reorder).
+export function setProductShellPinnedItemOrder(
+  state: ProductShellState,
+  order: ProductShellPinnedItemRef[],
+): ProductShellState {
+  return { ...state, pinnedItemOrder: order };
+}
+
+export function setProductShellProjectOrder(
+  state: ProductShellState,
+  order: string[],
+): ProductShellState {
+  return { ...state, projectOrder: order };
 }
 
 export function startProductShellThreadRename(

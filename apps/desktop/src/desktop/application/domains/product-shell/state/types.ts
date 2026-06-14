@@ -84,6 +84,13 @@ export interface ProductShellProject {
   cwd: string;
 }
 
+// A top-level pinned item: a standalone pinned Thread or a pinned Project. The Pinned
+// section is ONE manually-ordered, intermixed list of these (spec:
+// left-rail-manual-ordering); the order lives in ProductShellState.pinnedItemOrder.
+export type ProductShellPinnedItemRef =
+  | { kind: "thread"; threadId: string }
+  | { kind: "project"; projectId: string };
+
 export interface ProductShellStartPageFile {
   cwd: string;
   relativePath: string;
@@ -182,6 +189,12 @@ export interface ProductShellState {
   // Pinned projects (shown as shortcuts in the Pinned section) and the project
   // currently being inline-renamed.
   pinnedProjectIds: string[];
+  // Manual order of the Pinned section's top-level items (pinned threads + pinned
+  // projects, intermixed) and of the Projects section's folders — both independent of
+  // sortBy and persisted. Ids absent from an array fall to the end. Nested threads
+  // always follow sortBy. Spec: left-rail-manual-ordering.
+  pinnedItemOrder: ProductShellPinnedItemRef[];
+  projectOrder: string[];
   renamingProjectId: string | null;
   // The project for which the inline "new worktree" name input is open (null =
   // none). See docs_v2/specs/worktree-creation.md.
@@ -415,6 +428,12 @@ export interface ProductShellProjectGroupView {
 // section, so the shortcut can be expanded to reach its Threads.
 export type ProductShellPinnedProjectView = ProductShellProjectGroupView;
 
+// One entry in the intermixed, manually-ordered Pinned section (spec:
+// left-rail-manual-ordering) — a pinned Thread row or a pinned Project group.
+export type ProductShellPinnedItemView =
+  | { kind: "thread"; thread: ProductShellThreadView }
+  | { kind: "project"; project: ProductShellProjectGroupView };
+
 // A non-active thread's Browser Pane, carried with its owning threadId so its
 // offscreen <webview> can route snapshots/actions back to the right thread.
 export type ProductShellBackgroundBrowserPane = AppChromeWorkbenchPaneRef & {
@@ -446,6 +465,8 @@ export interface ProductShellViewModel {
   searchActive: boolean;
   pinnedThreads: ProductShellThreadView[];
   pinnedProjects: ProductShellPinnedProjectView[];
+  // The Pinned section as one manually-ordered, intermixed list (threads + projects).
+  pinnedItems: ProductShellPinnedItemView[];
   projectGroups: ProductShellProjectGroupView[];
   scratchThreads: ProductShellThreadView[];
   // The active list-display settings + a flat sorted thread list for "thread"
