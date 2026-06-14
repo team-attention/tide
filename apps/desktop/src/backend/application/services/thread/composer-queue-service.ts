@@ -133,12 +133,19 @@ async sendComposerInput(
       };
     }
 
-    // While a turn is genuinely in flight, queue the input Tide-side and flush it when
-    // the turn completes (recordTurnComplete). The user can interrupt to send sooner.
-    // (An idle thread takes the path below and sends immediately.)
-    // "Busy" includes waiting on a prompt card: writing composer text into the
-    // open TUI box would blind-answer it (adversarial review finding). The text
-    // queues and flushes when the turn completes.
+    // UNIFORM QUEUE: while a turn is genuinely in flight, EVERY provider's follow-up
+    // input queues Tide-side and flushes when the turn completes (recordTurnComplete).
+    // The user always sees their messages stack as the Composer's queued "steer" chips
+    // (대기 중 + interrupt/edit/delete) — identical on codex and claude/gemini/opencode
+    // — and can interrupt to run the queue sooner. (An idle thread takes the path below
+    // and sends immediately.) "Busy" also covers waiting on a prompt card: writing
+    // composer text into the open box would blind-answer it (adversarial review finding).
+    //
+    // We deliberately do NOT live-steer even though codex's protocol can inject input
+    // into the running turn (readiness.capabilities.supportsTurnSteer): the product
+    // decision is one predictable, visible stacking model for ALL agents. The capability
+    // is kept as accurate provider metadata — a future per-provider "steer now" opt-in
+    // would gate on it again — but no send path acts on it today.
     const busy =
       thread.activeRuntimeHandle !== undefined &&
       (thread.runtimeState === "running" ||
@@ -146,36 +153,6 @@ async sendComposerInput(
         thread.runtimeState === "waiting_for_approval" ||
         thread.runtimeState === "waiting_for_input");
     if (busy) {
-      // MID-TURN STEER: when the provider can inject input INTO the running turn
-      // (codex turn/steer) and the turn is genuinely in flight — `running`, never
-      // a `waiting_*` prompt card, which the user must answer first — deliver the
-      // input now instead of queuing it for the turn's end. The runtime client
-      // owns the start-vs-steer decision from its own turn state; the service only
-      // gates on the declared capability (no agentId branch). Other providers fall
-      // through to the queue below.
-      if (
-        thread.runtimeState === "running" &&
-        readiness.capabilities?.supportsTurnSteer === true &&
-        thread.activeRuntimeHandle !== undefined
-      ) {
-        const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
-        thread.runtimeStartedAt = this.clock();
-        thread.updatedAt = this.clock();
-        await this.agentRuntimePort.writeInput(thread.activeRuntimeHandle, {
-          kind: "composer_input",
-          value: message,
-          submittedAt: this.clock(),
-          attachments: attachmentsForRuntime,
-        });
-        return {
-          ok: true,
-          status: "sent",
-          thread: snapshotThread(thread),
-          runtimeState: thread.runtimeState,
-          providerReadiness: readiness,
-          submittedBlock,
-        };
-      }
       this.enqueuePendingInput(thread, {
         kind: "composer_input",
         value: message,

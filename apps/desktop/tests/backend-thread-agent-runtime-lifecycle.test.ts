@@ -853,11 +853,11 @@ test("input_sent_while_a_turn_is_running_is_queued_not_sent", async () => {
   assert.equal(fakes.runtime.writes.length, 1);
 });
 
-test("input_during_a_running_turn_is_steered_when_the_provider_supports_it", async () => {
-  // A steer-capable provider (codex turn/steer) injects follow-up input INTO the
-  // running turn instead of queuing it: status "sent", a user block appended, and
-  // the runtime receives the second writeInput while still running. The runtime
-  // client (not the service) turns that write into turn/steer from its turn state.
+test("input_during_a_running_turn_is_queued_even_for_a_steer_capable_provider", async () => {
+  // UNIFORM QUEUE: Tide queues EVERY provider's follow-up while a turn is live —
+  // even codex, whose protocol CAN inject input mid-turn (supportsTurnSteer) — so
+  // the queued "steer" chips stack the same on every agent. Nothing is steered into
+  // the running turn; the second input is held and reaches no runtime write.
   const { fakes, service } = busyThreadService();
   fakes.readiness.setResult({
     ready: true,
@@ -866,21 +866,21 @@ test("input_during_a_running_turn_is_steered_when_the_provider_supports_it", asy
     capabilities: { supportsTurnSteer: true },
   });
   await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
-  const steered = await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
+  const queued = await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
 
-  assert.equal(steered.ok, true);
-  assert.equal(steered.status, "sent");
-  assert.equal(steered.runtimeState, "running");
-  assert.ok(steered.submittedBlock !== undefined);
-  // Both inputs reached the live runtime; nothing was queued.
-  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput", "writeInput"]);
-  assert.equal(fakes.runtime.writes[1]?.input.value, "second");
+  assert.equal(queued.ok, true);
+  assert.equal(queued.status, "queued");
+  assert.equal(queued.runtimeState, "running");
+  // Only the first input reached the runtime; the second stacks as a queued follow-up.
+  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput"]);
+  assert.equal(fakes.runtime.writes.length, 1);
+  assert.deepEqual(queued.thread.queuedInputs, ["second"]);
 });
 
 test("input_during_a_prompt_card_is_queued_even_for_a_steer_capable_provider", async () => {
-  // Steer only applies to a genuinely running turn — never over an open prompt
-  // card (waiting_for_approval), which the user must answer first. The input
-  // queues and flushes on settle, exactly like a non-steering provider.
+  // An open prompt card (waiting_for_approval) must be answered first, so the input
+  // queues and flushes on settle — the same uniform queue every state takes, and a
+  // steer-capable provider (codex) is no exception.
   const { fakes, service } = busyThreadService();
   fakes.readiness.setResult({
     ready: true,
