@@ -352,9 +352,14 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
   // Worktree Projects folded into a repo no longer appear as their own group.
   const topLevelProjects = projects.filter((project) => !worktreeRemap.has(project.projectId));
 
+  // The first 9 pinned threads carry a 1-based `pinNumber` for the Ctrl+N badge
+  // (spec: multitask-navigation L2 / Decision 9 — only the first 9 get a shortcut).
   const pinnedThreads = visibleThreads
     .filter((thread) => thread.pinned)
-    .map((thread) => toThreadView(thread, state));
+    .map((thread, index) => {
+      const view = toThreadView(thread, state);
+      return index < 9 ? { ...view, pinNumber: index + 1 } : view;
+    });
   // Pinned projects render as full expandable groups (same component as the
   // Projects section), so their Threads are reachable from the Pinned shortcut.
   const pinnedProjects = topLevelProjects

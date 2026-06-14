@@ -383,6 +383,9 @@ export interface ProductShellThreadView extends ProductShellThread {
   archiveConfirming: boolean;
   renaming: boolean;
   contextMenuOpen: boolean;
+  // 1-based number for the Ctrl+N pin-jump badge, set on the first 9 pinned threads
+  // (spec: multitask-navigation L2). Shown only while Ctrl is held (CSS-gated).
+  pinNumber?: number;
   // Set when this Thread's scope cwd is a `<repo>.worktree/<branch>` worktree:
   // the branch (= worktree dir basename), shown as a badge so a worktree Thread
   // is identifiable when nested under its parent repo's group.

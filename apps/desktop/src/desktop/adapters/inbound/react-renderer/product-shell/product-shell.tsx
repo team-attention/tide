@@ -11,7 +11,8 @@ import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx"
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
-import { useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
+import { useEscapeShortcuts, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
+import { useMultitaskNavigation } from "./multitask/use-multitask-navigation.tsx";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
 import type { QuickOpenFile } from "./search/quick-open.tsx";
 import { createWindowChromeToggles } from "./chrome/chrome.tsx";
@@ -613,6 +614,16 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     setContentSearchVisible,
   });
 
+  // Ctrl-unified multitask navigation: Ctrl+1..9 pin jump, Ctrl+Tab live switcher
+  // (spec: multitask-navigation). `active` gates the row ^N badges; `hud` is the
+  // transient live-switcher overlay (null unless cycling).
+  const multitask = useMultitaskNavigation({
+    pinnedThreads: viewModel.pinnedThreads,
+    liveThreads: viewModel.liveThreads,
+    activeThreadId,
+    onSelectThread: handlers.onThreadSelect,
+  });
+
   // Cmd+W (routed from the app menu as a "close intent"): close the focused
   // Workbench pane if one is open, else close the active thread by returning to
   // the start composer. Never closes the window (Shift+Cmd+W does that). A ref
@@ -643,36 +654,14 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // A Browser Pane link opened with Cmd/Ctrl+click (or window.open) opens a new pane.
   useOpenBrowserPaneFromMain(handlers.onOpenBrowserPane);
 
-  // Escape exits workbench-pane fullscreen.
-  useEffect(() => {
-    if (!shellState.workbenchFullscreen) {
-      return undefined;
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setShellState((state) => toggleProductShellWorkbenchFullscreen(state));
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [shellState.workbenchFullscreen]);
-
-  // Escape closes the Settings modal (Quick Open / Content Search / worktree
-  // dialogs already close on Escape; the modal was the lone outlier).
-  useEffect(() => {
-    if (!shellState.settingsOpen) {
-      return undefined;
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        handlers.onCloseSettings();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [shellState.settingsOpen]);
+  // Escape exits Workbench fullscreen / closes the Settings modal (extracted to
+  // use-shell-effects to keep this file under the size cap).
+  useEscapeShortcuts({
+    workbenchFullscreen: shellState.workbenchFullscreen,
+    onExitFullscreen: () => setShellState((state) => toggleProductShellWorkbenchFullscreen(state)),
+    settingsOpen: shellState.settingsOpen,
+    onCloseSettings: handlers.onCloseSettings,
+  });
 
   const quickOpenFiles = useMemo<QuickOpenFile[]>(
     () => quickOpenFilesFromState(shellState),
@@ -691,6 +680,9 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         ]
           .filter(Boolean)
           .join(" ")}
+        // While Ctrl is held (multitask mode), rows reveal their ^N pin badges —
+        // CSS-gated on this attribute. Spec: multitask-navigation L2.
+        data-multitask={multitask.active ? "true" : undefined}
       >
         <div
           className="tide-product-shell__body"
@@ -778,6 +770,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             onClose={() => setWorktreeDelete(null)}
           />
         ) : null}
+        {/* Transient ⌘-Tab-style live switcher (Ctrl+Tab), null unless cycling. */}
+        {multitask.hud}
       </div>
     </ProductShellStoreProvider>
   );

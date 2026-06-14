@@ -80,3 +80,43 @@ export function useOpenBrowserPaneFromMain(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
+
+// Escape for the two surfaces that don't manage their own: Workbench fullscreen and
+// the Settings modal. (Quick Open / Content Search / worktree dialogs already close
+// themselves on Escape.) Each listener subscribes only while its surface is open.
+export function useEscapeShortcuts(params: {
+  workbenchFullscreen: boolean;
+  onExitFullscreen: () => void;
+  settingsOpen: boolean;
+  onCloseSettings: () => void;
+}): void {
+  const { workbenchFullscreen, onExitFullscreen, settingsOpen, onCloseSettings } = params;
+  useEffect(() => {
+    if (!workbenchFullscreen) {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onExitFullscreen();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workbenchFullscreen]);
+  useEffect(() => {
+    if (!settingsOpen) {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseSettings();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsOpen]);
+}

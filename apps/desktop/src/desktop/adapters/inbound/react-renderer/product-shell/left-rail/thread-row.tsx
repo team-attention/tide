@@ -101,6 +101,14 @@ export function createThreadRow(
           </button>
         ) : (
           [
+            // Ctrl+N pin badge — present in markup for the first 9 pinned threads, but
+            // CSS-hidden until Ctrl is held (root [data-multitask]), where it replaces
+            // the time/dots/actions in the right slot. Spec: multitask-navigation L2.
+            thread.pinNumber !== undefined ? (
+              <span key="pin-badge" className="thread-row__pin-badge" aria-hidden>
+                {`⌃${thread.pinNumber}`}
+              </span>
+            ) : null,
             thread.attention ? <span key="attention" className="thread-row__attention" /> : null,
             thread.running && !thread.attention ? (
               <span key="running" className="thread-row__running" aria-label="Agent is running" />
