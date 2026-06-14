@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { createIconButton, menuAnchorFromEvent } from "../chrome/chrome.tsx";
 import { AgentIdentityIcon } from "../support/agent-identity.tsx";
 import { threadScopeLabel } from "./thread-section.tsx";
-import { GitBranch, MoreHorizontal } from "lucide-react";
+import { Archive, GitBranch, MoreHorizontal, Pin, PinOff } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createThreadRow(
@@ -109,8 +109,28 @@ export function createThreadRow(
               {thread.time}
             </span>,
             <span key="actions" className="thread-row__actions">
-              {/* One ⋯ overflow opens the Thread context menu (Pin / Archive /
-                  Delete worktree), mirroring the project row's menu pattern. */}
+              {/* Direct hover quick-actions for the common actions (master-plan:120
+                  "hover actions include pin and archive"), so they cost ONE click and
+                  don't hide behind the ⋯ overflow. The destructive Delete worktree
+                  stays menu-only (⋯ / right-click). Spec: thread-row-quick-actions. */}
+              {createIconButton(
+                thread.pinned ? "Unpin" : "Pin",
+                thread.pinned ? (
+                  <PinOff size={15} strokeWidth={1.9} />
+                ) : (
+                  <Pin size={15} strokeWidth={1.9} />
+                ),
+                () => handlers.onThreadPinToggle(thread.threadId),
+                "thread-row__action",
+              )}
+              {createIconButton(
+                "Archive",
+                <Archive size={15} strokeWidth={1.9} />,
+                () => handlers.onThreadArchiveIntent(thread.threadId),
+                "thread-row__action",
+              )}
+              {/* The ⋯ overflow keeps the FULL menu (Pin / Archive / Delete worktree)
+                  for right-click parity + the destructive worktree action. */}
               {createIconButton(
                 "Thread menu",
                 <MoreHorizontal size={15} strokeWidth={1.9} />,
