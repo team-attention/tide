@@ -42,6 +42,7 @@ export type BackendEventKind =
   | "agentRuntime.stateChanged"
   | "agentRuntime.usageChanged"
   | "agentRuntime.commandsChanged"
+  | "agentRuntime.modelCatalogChanged"
   | "agentRuntime.noticePosted"
   | "providerReadiness.changed"
   | "prompt.changed"
@@ -72,6 +73,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "agentRuntime.stateChanged",
   "agentRuntime.usageChanged",
   "agentRuntime.commandsChanged",
+  "agentRuntime.modelCatalogChanged",
   "agentRuntime.noticePosted",
   "providerReadiness.changed",
   "prompt.changed",
@@ -160,6 +162,15 @@ export interface BackendEventPayloadByKind {
     threadId: ThreadId;
     agentId: ProviderCliAgentId;
     commands: Array<{ name: string; description: string; trigger: "/" | "$" }>;
+  };
+  // The agent self-reported its model catalog over the protocol (gemini ACP
+  // availableModels / opencode configOptions) — the live current model + the real
+  // available list, so the composer menu reflects reality not a static guess.
+  "agentRuntime.modelCatalogChanged": {
+    threadId: ThreadId;
+    agentId: ProviderCliAgentId;
+    models: ProviderModelDto[];
+    currentModel?: string;
   };
   // A non-blocking, out-of-band runtime notice (e.g. an "update available"
   // banner the provider CLI printed). Surfaced as a native OS notification.

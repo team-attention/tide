@@ -340,6 +340,21 @@ export function createLiveAgentSessionEventProjector(input: {
         });
         return;
       }
+      if (event.kind === "model_catalog") {
+        input.onEvent?.({
+          contractVersion: CONTRACT_VERSION,
+          eventId: nextEventId(),
+          kind: "agentRuntime.modelCatalogChanged",
+          emittedAt: new Date().toISOString(),
+          payload: {
+            threadId: eventInput.threadId,
+            agentId: eventInput.agentId,
+            models: event.models,
+            currentModel: event.currentModel,
+          },
+        });
+        return;
+      }
       if (event.kind === "runtime_notice") {
         input.onEvent?.({
           contractVersion: CONTRACT_VERSION,

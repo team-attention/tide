@@ -1,6 +1,6 @@
 import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellStartPageFile, ProductShellState } from "./types.ts";
 import { startFilePaneId } from "./types.ts";
-import { applyAgentChatBackendEvent, setAvailableProviderAgents, setOpencodeModelCatalog, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
+import { applyAgentChatBackendEvent, setAvailableProviderAgents, setOpencodeModelCatalog, setProviderModelCatalog, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
@@ -100,6 +100,27 @@ export function applyProductShellBackendEvent(
         return nextState;
       }
       return setProductShellProviderCommands(nextState, commandsPayload.commands);
+    }
+    case "agentRuntime.modelCatalogChanged": {
+      // The agent self-reported its model catalog over the protocol (gemini ACP /
+      // opencode configOptions) — cache it so the composer menu reflects the real
+      // list. Module-level cache (read by cliModelOptionsForAgent); no view change.
+      const catalogPayload = event.payload as {
+        agentId?: string;
+        models?: ReadonlyArray<{ value: string; label: string; vendor?: string; detail?: string }>;
+      };
+      if (catalogPayload.agentId !== undefined) {
+        setProviderModelCatalog(
+          catalogPayload.agentId,
+          catalogPayload.models?.map((model) => ({
+            value: model.value,
+            label: model.label,
+            vendor: model.vendor,
+            detail: model.detail,
+          })) ?? null,
+        );
+      }
+      return nextState;
     }
     case "workbench.changed": {
       const payload = event.payload as {

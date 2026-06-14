@@ -186,14 +186,24 @@ interface CliModelOption {
   vendor?: string;
 }
 
-// opencode's model list is per-user (depends on which vendors they've authed) and
-// cannot be hand-curated like the single-vendor agents. The backend enumerates it
-// (`opencode models`) and ships it on thread.listed; the desktop caches it here.
-// Module-level so it survives New-Thread state resets, mirroring availableProviderAgents.
-let opencodeModelCatalog: CliModelOption[] | null = null;
+// Provider-reported model catalogs, keyed by agent id. opencode ships its authed
+// list on thread.listed (`opencode models`); gemini/opencode also self-report over
+// ACP at session start (agentRuntime.modelCatalogChanged). When present, the catalog
+// drives the menu instead of the hand-curated static list. Module-level so it
+// survives New-Thread state resets, mirroring availableProviderAgents.
+const providerModelCatalogs = new Map<string, CliModelOption[]>();
 
+export function setProviderModelCatalog(agentId: string, models: CliModelOption[] | null): void {
+  if (models !== null && models.length > 0) {
+    providerModelCatalogs.set(agentId, models);
+  } else {
+    providerModelCatalogs.delete(agentId);
+  }
+}
+
+// opencode-specific alias kept for the thread.listed wiring.
 export function setOpencodeModelCatalog(models: CliModelOption[] | null): void {
-  opencodeModelCatalog = models !== null && models.length > 0 ? models : null;
+  setProviderModelCatalog("opencode", models);
 }
 
 // A maintained, provider-native model list per CLI agent (models change rarely).
@@ -216,11 +226,15 @@ export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
         { value: "claude-opus-4-7[1m]", label: "Opus 4.7 (1M context)", detail: "Legacy" },
         { value: "claude-opus-4-6", label: "Opus 4.6", detail: "Legacy" },
       ];
-    case "gemini":
-      // The real `--model` ids gemini reports over ACP (session/new availableModels,
-      // live-probed) — the prior list was DRIFTED (`gemini-3-pro` etc. without the
-      // `-preview` suffix gemini actually requires, and missing the 2.5 models).
-      // "Gemini default" passes no --model (gemini's own default).
+    case "gemini": {
+      // Once a session is live, gemini self-reports its models over ACP and the
+      // catalog overrides the static list (the live current model + exact set). At
+      // compose time (no session) the curated list is used — corrected to the real
+      // `-preview` ids gemini requires (the prior `gemini-3-pro` etc. were DRIFTED).
+      const catalog = providerModelCatalogs.get("gemini");
+      if (catalog !== undefined) {
+        return [{ value: "Gemini default", label: "Default", detail: "gemini picks" }, ...catalog];
+      }
       return [
         { value: "Gemini default", label: "Default", detail: "gemini-3-flash-preview" },
         { value: "gemini-3-pro-preview", label: "Gemini 3 Pro" },
@@ -229,6 +243,7 @@ export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
         { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", detail: "Legacy" },
         { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", detail: "Legacy" },
       ];
+    }
     case "opencode": {
       // opencode is a multi-vendor router: the real model list is whatever the
       // user has authed (`opencode auth login`), enumerated by the backend and
@@ -236,7 +251,8 @@ export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
       // own configured default (no explicit set). Falls back to default-only until
       // the catalog arrives (older backend / not yet enumerated).
       const fallback = { value: "opencode default", label: "Default", detail: "opencode config" };
-      return opencodeModelCatalog === null ? [fallback] : [fallback, ...opencodeModelCatalog];
+      const catalog = providerModelCatalogs.get("opencode");
+      return catalog === undefined ? [fallback] : [fallback, ...catalog];
     }
     default:
       return [];

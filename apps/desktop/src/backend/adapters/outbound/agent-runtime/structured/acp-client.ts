@@ -201,6 +201,10 @@ class AcpClient implements StructuredRuntimeClient {
       kind: "session_ref",
       ref: { agentId: this.agentId, kind: this.sessionRefKind, value: sessionId },
     });
+    // The agent self-reports its model catalog at session/new (gemini availableModels
+    // / opencode configOptions) — surface it so the menu is accurate + the current
+    // model is reflected, not a drifted static guess.
+    this.emitModelCatalog(result);
     // Approval mode is an ACP session mode (default/autoEdit/yolo/plan) — set
     // it when the launch options ask for a non-default mode. A mid-thread
     // change that arrived before the session was adopted applies now instead.
@@ -257,6 +261,16 @@ class AcpClient implements StructuredRuntimeClient {
         { sessionId, configId: option.configId, value: option.value },
         () => undefined,
       );
+    }
+  }
+
+  // Parse the agent's self-reported model catalog from the session/new result and
+  // emit it: gemini's ACP-standard `models.availableModels`/`currentModelId`, or
+  // opencode's `configOptions` model category (provider/model ids → vendor + model).
+  private emitModelCatalog(result: Record<string, unknown>): void {
+    const catalog = parseAcpModelCatalog(result);
+    if (catalog !== undefined) {
+      this.onEvent({ kind: "model_catalog", models: catalog.models, currentModel: catalog.currentModel });
     }
   }
 
@@ -642,6 +656,53 @@ function parseConfigOptions(value: unknown): Array<{ configId: string; value: st
     }
   }
   return options;
+}
+
+export interface AcpModelCatalog {
+  models: Array<{ value: string; label: string; vendor?: string }>;
+  currentModel?: string;
+}
+
+// Extract a model catalog from an ACP session/new result. gemini reports the
+// ACP-standard `models.availableModels`/`currentModelId`; opencode reports its
+// `configOptions` model category (provider/model ids split into vendor + model).
+export function parseAcpModelCatalog(result: Record<string, unknown>): AcpModelCatalog | undefined {
+  const geminiModels = isRecord(result.models) ? result.models : undefined;
+  if (geminiModels !== undefined && Array.isArray(geminiModels.availableModels)) {
+    const models = geminiModels.availableModels
+      .filter(isRecord)
+      .map((entry) => {
+        const value = stringField(entry, "modelId") ?? "";
+        return { value, label: stringField(entry, "name") ?? value };
+      })
+      .filter((model) => model.value.length > 0);
+    if (models.length > 0) {
+      return { models, currentModel: stringField(geminiModels, "currentModelId") };
+    }
+  }
+  if (Array.isArray(result.configOptions)) {
+    const modelOption = result.configOptions
+      .filter(isRecord)
+      .find((option) => stringField(option, "category") === "model" || stringField(option, "id") === "model");
+    if (modelOption !== undefined && Array.isArray(modelOption.options)) {
+      const models = modelOption.options
+        .filter(isRecord)
+        .map((entry) => {
+          const value = stringField(entry, "value") ?? "";
+          const slash = value.indexOf("/");
+          return {
+            value,
+            label: slash > 0 ? value.slice(slash + 1) : stringField(entry, "name") ?? value,
+            ...(slash > 0 ? { vendor: value.slice(0, slash) } : {}),
+          };
+        })
+        .filter((model) => model.value.length > 0);
+      if (models.length > 0) {
+        return { models, currentModel: stringField(modelOption, "currentValue") };
+      }
+    }
+  }
+  return undefined;
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | undefined {

@@ -6,6 +6,7 @@ import {
   opencodeConfigOptions,
 } from "../src/backend/adapters/outbound/agent-integrations/opencode/opencode-agent-integration.ts";
 import { parseOpencodeModels } from "../src/backend/infrastructure/node/provider/opencode-model-catalog.ts";
+import { parseAcpModelCatalog } from "../src/backend/adapters/outbound/agent-runtime/structured/acp-client.ts";
 import {
   cliModelOptionsForAgent,
   isAgentComingSoon,
@@ -103,6 +104,48 @@ test("opencode is no longer coming-soon and its permission modes are Build/Plan"
     ["build", "plan"],
   );
   assert.equal(permission.default, "build");
+});
+
+test("parseAcpModelCatalog reads gemini availableModels and opencode configOptions", () => {
+  // gemini: ACP-standard models.availableModels + currentModelId
+  assert.deepEqual(
+    parseAcpModelCatalog({
+      models: {
+        availableModels: [
+          { modelId: "gemini-3-pro-preview", name: "gemini-3-pro-preview" },
+          { modelId: "gemini-2.5-flash", name: "gemini-2.5-flash" },
+        ],
+        currentModelId: "gemini-3-pro-preview",
+      },
+    }),
+    {
+      models: [
+        { value: "gemini-3-pro-preview", label: "gemini-3-pro-preview" },
+        { value: "gemini-2.5-flash", label: "gemini-2.5-flash" },
+      ],
+      currentModel: "gemini-3-pro-preview",
+    },
+  );
+  // opencode: configOptions model category, provider/model split into vendor + model
+  assert.deepEqual(
+    parseAcpModelCatalog({
+      configOptions: [
+        {
+          id: "model",
+          category: "model",
+          currentValue: "openai/gpt-5.5",
+          options: [{ value: "openai/gpt-5.5", name: "OpenAI/GPT-5.5" }],
+        },
+        { id: "mode", category: "mode", currentValue: "build", options: [] },
+      ],
+    }),
+    {
+      models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+      currentModel: "openai/gpt-5.5",
+    },
+  );
+  // No models reported → undefined (the static list stands).
+  assert.equal(parseAcpModelCatalog({ sessionId: "x" }), undefined);
 });
 
 test("gemini model list uses the real -preview ids (drift regression)", () => {
