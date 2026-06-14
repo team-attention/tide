@@ -213,17 +213,21 @@ export function WorkbenchSplitView(props: {
           </div>
           <span className="workbench-split__pane-grip" aria-hidden />
           {/* Maximize: collapse Split → Stacked focused on this pane (v1 header
-              maximize). Hover-revealed; stopPropagation so it doesn't begin a drag. */}
-          <button
-            type="button"
-            className="workbench-split__pane-maximize"
-            title="Maximize pane (Stacked)"
-            aria-label="Maximize pane"
-            onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
-            onClick={() => handlers.onWorkbenchMaximizePane(pane.paneId)}
-          >
-            <Maximize2 size={13} strokeWidth={1.9} aria-hidden />
-          </button>
+              maximize). Hover-revealed; stopPropagation so it doesn't begin a drag.
+              Omitted on the controls-hosting (first) pane — its docked controls already
+              carry the fullscreen ⤢, so a second expand glyph would be redundant. */}
+          {pane.paneId !== controlsPaneId ? (
+            <button
+              type="button"
+              className="workbench-split__pane-maximize"
+              title="Maximize pane (Stacked)"
+              aria-label="Maximize pane"
+              onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
+              onClick={() => handlers.onWorkbenchMaximizePane(pane.paneId)}
+            >
+              <Maximize2 size={13} strokeWidth={1.9} aria-hidden />
+            </button>
+          ) : null}
           {/* The first (top-left) pane's header hosts the workbench controls at its
               right (Split has no global header row). stopPropagation so using them never
               starts a drag. */}
