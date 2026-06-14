@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import { renderUserAttachmentBody } from "../transcript/user-turn.tsx";
-import { CornerDownRight, Square, Trash2 } from "lucide-react";
+import { CircleStop, CornerDownRight, Pencil, Trash2 } from "lucide-react";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // Optimistic just-sent user row, shown until the backend's real user block arrives.
@@ -33,7 +33,7 @@ export function createQueuedInputRow(queuedInput: string, queued: boolean, index
             aria-label="Edit queued message"
             title="Edit queued message"
           >
-            수정
+            <Pencil size={12} strokeWidth={1.9} aria-hidden />
           </button>
         ) : null}
       </span>
@@ -73,7 +73,7 @@ export function createQueuedSteerStack(
               title="끊고 실행 (인터럽트)"
               onClick={() => onInterrupt?.()}
             >
-              <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden />
+              <CircleStop size={14} strokeWidth={1.9} aria-hidden />
             </button>
             {/* 수정: pull this message back into the Composer to edit. */}
             <button
@@ -83,7 +83,7 @@ export function createQueuedSteerStack(
               title="수정"
               onClick={() => onEditQueued?.(index)}
             >
-              수정
+              <Pencil size={13} strokeWidth={1.9} aria-hidden />
             </button>
             {/* 삭제: discard this queued message. */}
             <button

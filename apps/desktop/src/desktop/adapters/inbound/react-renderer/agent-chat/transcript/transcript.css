@@ -352,13 +352,15 @@
 
 .agent-session-turn__edit {
   margin-left: 8px;
-  padding: 1px 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  padding: 3px;
   border: 1px solid var(--tide-line);
-  border-radius: 999px;
+  border-radius: 7px;
   background: transparent;
   color: var(--tide-muted);
-  font-size: 11px;
-  font-weight: 500;
   cursor: pointer;
   transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }

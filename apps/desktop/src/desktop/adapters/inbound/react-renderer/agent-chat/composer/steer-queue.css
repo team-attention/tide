@@ -58,14 +58,15 @@
 
 .composer-steer__edit {
   flex-shrink: 0;
-  padding: 3px 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   border: none;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
   color: var(--tide-muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
