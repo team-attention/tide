@@ -68,6 +68,9 @@ test("opencode preflight reports not_installed and not_authenticated", async () 
   const signedOut = await opencodeIntegration({ authenticated: false }).preflight({ agentId: "opencode" });
   assert.equal(signedOut.ready, false);
   assert.equal(signedOut.blockers[0]?.kind, "not_authenticated");
+  // P3: the Setup Surface drives opencode's own `auth login` (vendor pick → OAuth/key)
+  // — Tide wraps the provider flow, it does not reimplement auth.
+  assert.deepEqual(signedOut.blockers[0]?.setup?.args, ["auth", "login"]);
 });
 
 test("opencode start plan carries the chosen config as ACP configOptions", async () => {

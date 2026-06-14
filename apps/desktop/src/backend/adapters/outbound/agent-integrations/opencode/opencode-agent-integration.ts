@@ -108,10 +108,14 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
             kind: "not_authenticated",
             scope: "provider",
             message:
-              "opencode has no provider credentials yet (run `opencode providers login`).",
+              "opencode has no vendor signed in yet — run `opencode auth login` to add one " +
+              "(OpenAI, Anthropic, Qwen, Kimi, …).",
+            // The Provider Setup Surface drives opencode's own `auth login` flow in a
+            // terminal (vendor pick → OAuth or API key); Tide does not reimplement it.
+            // This is also the "+ add vendor" path for a multi-vendor router.
             setup: {
               command: executablePath,
-              args: ["providers", "login"],
+              args: ["auth", "login"],
               cwd,
               expectedCompletion: "retry_preflight",
             },
