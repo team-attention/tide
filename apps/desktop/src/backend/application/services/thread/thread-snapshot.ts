@@ -73,6 +73,9 @@ export function snapshotThread(
     lifecycleState: thread.lifecycleState,
     runtimeState: thread.runtimeState,
     lastKnownState: thread.lastKnownState,
+    // Live = an in-process runtime exists for this thread (set on spawn, cleared on
+    // stop/exit), independent of running/waiting — the multitask switcher's live set.
+    live: thread.activeRuntimeHandle !== undefined,
     runtimeStartedAt: thread.runtimeStartedAt,
     pinned: thread.pinned ?? false,
     createdAt: thread.createdAt,

@@ -31,6 +31,9 @@ export interface ProductShellThreadListViewModel {
   projectGroups: ProductShellProjectGroupView[];
   scratchThreads: ProductShellThreadView[];
   flatThreads: ProductShellThreadView[];
+  // Live threads (in-process runtime alive) in Left Rail render order — cycled by
+  // the multitask switcher. Spec: multitask-navigation L3.
+  liveThreads: ProductShellThreadView[];
 }
 
 export const selectThreadListViewModel = shellSelector(
@@ -274,6 +277,7 @@ export function createProductShellViewModel(
     worktreeSettings: state.worktreeSettings,
     settingsOpen: state.settingsOpen,
     flatThreads: threadList.flatThreads,
+    liveThreads: threadList.liveThreads,
     agentChat: selectAgentChatViewModel(state),
     appChrome: workbench.appChrome,
     fileTree: selectFileTreeViewModel(state),
@@ -348,26 +352,46 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
   // Worktree Projects folded into a repo no longer appear as their own group.
   const topLevelProjects = projects.filter((project) => !worktreeRemap.has(project.projectId));
 
-  return {
-    pinnedThreads: visibleThreads
-      .filter((thread) => thread.pinned)
-      .map((thread) => toThreadView(thread, state)),
-    // Pinned projects render as full expandable groups (same component as the
-    // Projects section), so their Threads are reachable from the Pinned shortcut.
-    pinnedProjects: topLevelProjects
-      .filter((project) => state.pinnedProjectIds.includes(project.projectId))
-      .map(toGroup)
-      .filter((group) => !searching || group.threads.length > 0),
-    projectGroups: topLevelProjects
-      .map(toGroup)
-      // While searching, hide project groups with no matching threads.
-      .filter((group) => !searching || group.threads.length > 0),
-    scratchThreads: visibleThreads
-      .filter((thread) => thread.scope.kind === "scratch")
-      .map((thread) => toThreadView(thread, state)),
-    // "thread" group mode: one flat, already-sorted list of every visible thread.
-    flatThreads: visibleThreads.map((thread) => toThreadView(thread, state)),
-  };
+  const pinnedThreads = visibleThreads
+    .filter((thread) => thread.pinned)
+    .map((thread) => toThreadView(thread, state));
+  // Pinned projects render as full expandable groups (same component as the
+  // Projects section), so their Threads are reachable from the Pinned shortcut.
+  const pinnedProjects = topLevelProjects
+    .filter((project) => state.pinnedProjectIds.includes(project.projectId))
+    .map(toGroup)
+    .filter((group) => !searching || group.threads.length > 0);
+  const projectGroups = topLevelProjects
+    .map(toGroup)
+    // While searching, hide project groups with no matching threads.
+    .filter((group) => !searching || group.threads.length > 0);
+  const scratchThreads = visibleThreads
+    .filter((thread) => thread.scope.kind === "scratch")
+    .map((thread) => toThreadView(thread, state));
+  // "thread" group mode: one flat, already-sorted list of every visible thread.
+  const flatThreads = visibleThreads.map((thread) => toThreadView(thread, state));
+  // Live set in Left Rail render order (spec: multitask-navigation L3 / Decision 8):
+  // walk the rail's flattened top-to-bottom sequence and keep the live threads,
+  // deduped. "thread" mode is the flat list; "project" mode is the grouped order
+  // (pinned groups' threads, pinned threads, project groups' threads, scratch).
+  const liveOrder =
+    state.listSettings.groupBy === "thread"
+      ? flatThreads
+      : [
+          ...pinnedProjects.flatMap((group) => group.threads),
+          ...pinnedThreads,
+          ...projectGroups.flatMap((group) => group.threads),
+          ...scratchThreads,
+        ];
+  const liveSeen = new Set<string>();
+  const liveThreads = liveOrder.filter((thread) => {
+    if (thread.live !== true || liveSeen.has(thread.threadId)) {
+      return false;
+    }
+    liveSeen.add(thread.threadId);
+    return true;
+  });
+  return { pinnedThreads, pinnedProjects, projectGroups, scratchThreads, flatThreads, liveThreads };
 }
 
 // A start (New Thread) page open file, as a Workbench editor pane. There is no

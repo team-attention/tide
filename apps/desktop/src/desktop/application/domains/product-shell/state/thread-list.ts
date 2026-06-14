@@ -443,6 +443,7 @@ export function toProductShellThreadFromSummary(
       threadSummary.lastKnownState === "waiting_for_input" ||
       threadSummary.lastKnownState === "waiting_for_approval",
     running: threadSummary.lastKnownState === "running",
+    live: threadSummary.live,
     runtimeStartedAt: threadSummary.runtimeStartedAt,
     createdAt: threadSummary.createdAt,
     updatedAt: threadSummary.updatedAt,
@@ -537,6 +538,7 @@ export function applyProductShellThreadEvent(
       threadSummary.lastKnownState === "waiting_for_input" ||
       threadSummary.lastKnownState === "waiting_for_approval",
     running: threadSummary.lastKnownState === "running",
+    live: threadSummary.live,
     runtimeStartedAt: threadSummary.runtimeStartedAt,
   };
   const existingThread = state.threads.find(

@@ -23,6 +23,10 @@ export interface ProductShellThread {
   // True while this thread's agent runtime is actively running — shown as a live
   // rail indicator for every thread (incl. background ones), independent of focus.
   running?: boolean;
+  // True while a runtime for this thread is hydrated/alive in THIS process, whatever
+  // its state (running OR waiting OR idle-but-alive) — the set the multitask switcher
+  // (Ctrl+Tab) cycles. Distinct from `running` (mid-turn only). Absent ⇒ false.
+  live?: boolean;
   // When the current turn started (from the backend). Carried so the Working timer
   // shows real elapsed time even after switching threads, instead of resetting.
   runtimeStartedAt?: string;
@@ -448,6 +452,9 @@ export interface ProductShellViewModel {
   worktreeSettings: ProductShellWorktreeSettings;
   settingsOpen: boolean;
   flatThreads: ProductShellThreadView[];
+  // Threads with a live in-process runtime, in Left Rail render order — the set the
+  // multitask switcher (Ctrl+Tab) cycles. See specs/multitask-navigation.md.
+  liveThreads: ProductShellThreadView[];
   agentChat: AgentChatShellViewModel;
   appChrome: AppChromeViewModel;
   fileTree: ProductShellFileTreeView;
