@@ -177,11 +177,11 @@
   padding-right: 84px;
 }
 
-/* When the workbench controls are docked in the cluster it is wider, so reserve more on
-   the rightmost column's header (the file tree's "tide" label / the workbench tab strip)
-   so its content never slides under the cluster. */
+/* When the workbench is open the cluster also carries the collapsed controls menu (one
+   trigger), so reserve a bit more on the rightmost column's header (the file tree's
+   "tide" label / the workbench tab strip) so its content never slides under the cluster. */
 .tide-product-shell__body[data-workbench-controls="true"] > :last-child .column-top-row {
-  padding-right: 196px;
+  padding-right: 124px;
 }
 
 .column-resize-handle {

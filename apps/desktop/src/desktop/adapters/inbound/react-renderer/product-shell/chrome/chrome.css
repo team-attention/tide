@@ -44,3 +44,49 @@
   background: var(--tide-line);
   pointer-events: none;
 }
+
+/* Workbench controls collapse into one trigger; hover/focus reveals the layout toggle,
+   fullscreen, and New Pane in a popover — so a single button always fits the top-right
+   and never crowds a column's tabs. */
+.workbench-controls-menu {
+  position: relative;
+  display: inline-flex;
+  pointer-events: auto;
+}
+
+.workbench-controls-menu__popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--tide-bg);
+  border: 1px solid var(--tide-line);
+  border-radius: 9px;
+  box-shadow: 0 6px 18px rgba(52, 48, 56, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 30;
+}
+
+/* Invisible bridge across the 4px gap so moving the cursor from the trigger to the
+   popover doesn't drop the hover. */
+.workbench-controls-menu__popover::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 6px;
+}
+
+.workbench-controls-menu:hover .workbench-controls-menu__popover,
+.workbench-controls-menu:focus-within .workbench-controls-menu__popover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}

@@ -1,7 +1,7 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement, ReactNode } from "react";
-import { Columns2, FolderOpen, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, Plus, Square } from "lucide-react";
+import { Columns2, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, Square } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // Fixed top-right window controls. The right group is the window-level Workbench/FileTree
@@ -40,24 +40,40 @@ export function createWindowChromeToggles(
     <div className="tide-window-toggles" aria-label="Window panels">
       {showWorkbenchControls ? (
         <>
-          {/* Single layout toggle: the icon shows the current mode, clicking flips it. */}
-          {toggle(
-            isSplit ? "Switch to Stacked" : "Switch to Split",
-            isSplit ? <Columns2 size={15} strokeWidth={1.9} /> : <Square size={15} strokeWidth={1.9} />,
-            false,
-            () => handlers.onWorkbenchSetLayout(isSplit ? "stacked" : "split"),
-          )}
-          {toggle(
-            viewModel.workbenchFullscreen ? "Exit fullscreen" : "Fullscreen pane",
-            viewModel.workbenchFullscreen ? (
-              <Minimize2 size={15} strokeWidth={1.9} />
-            ) : (
-              <Maximize2 size={15} strokeWidth={1.9} />
-            ),
-            viewModel.workbenchFullscreen,
-            handlers.onWorkbenchFullscreenToggle,
-          )}
-          {toggle("New Pane", <Plus size={16} strokeWidth={1.9} />, false, handlers.onNewWorkbenchPane)}
+          {/* The workbench controls collapse into one trigger; hover (or keyboard focus)
+              reveals the layout toggle, fullscreen, and New Pane in a popover — so a
+              single ~28px button always fits the top-right and never crowds a column's
+              tabs, at any size. */}
+          <div className="workbench-controls-menu">
+            <button
+              className="top-row-button window-toggle"
+              type="button"
+              aria-haspopup="true"
+              aria-label="Workbench controls"
+              title="Workbench controls"
+            >
+              <MoreHorizontal size={15} strokeWidth={1.9} />
+            </button>
+            <div className="workbench-controls-menu__popover" role="group" aria-label="Workbench controls">
+              {toggle(
+                isSplit ? "Switch to Stacked" : "Switch to Split",
+                isSplit ? <Columns2 size={15} strokeWidth={1.9} /> : <Square size={15} strokeWidth={1.9} />,
+                false,
+                () => handlers.onWorkbenchSetLayout(isSplit ? "stacked" : "split"),
+              )}
+              {toggle(
+                viewModel.workbenchFullscreen ? "Exit fullscreen" : "Fullscreen pane",
+                viewModel.workbenchFullscreen ? (
+                  <Minimize2 size={15} strokeWidth={1.9} />
+                ) : (
+                  <Maximize2 size={15} strokeWidth={1.9} />
+                ),
+                viewModel.workbenchFullscreen,
+                handlers.onWorkbenchFullscreenToggle,
+              )}
+              {toggle("New Pane", <Plus size={16} strokeWidth={1.9} />, false, handlers.onNewWorkbenchPane)}
+            </div>
+          </div>
           <span className="tide-window-toggles__divider" aria-hidden />
         </>
       ) : null}

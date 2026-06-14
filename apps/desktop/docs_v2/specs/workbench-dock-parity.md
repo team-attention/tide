@@ -18,20 +18,19 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
 4. **Intuitive Stacked/Split — mirrors the v1 Terminal dock** (`dock-global.md`): per
    the original "work like dock in tide terminal", Stacked = a flat tab strip over all
    panes + one active pane; Split = the tiled `SplitLayout`, **each pane with its own
-   header** (no global tab bar in Split — that would be a second header layer). All
-   column headers (chat, tab strip, split pane headers, file tree) are a level **52px**
-   band.
-   The workbench controls — a **single** `Stacked⇄Split` toggle (icon shows the current
-   mode, click flips it), **fullscreen**, **New Pane** — live in the **fixed top-right
-   window cluster** (`createWindowChromeToggles`), docked next to the Workbench/FileTree
-   panel toggles. Same position in EVERY layout, reads as native chrome (not a floating
-   element), and never sits over a column's tabs. Per-pane **maximize** (Split → Stacked
-   on that pane) is on every split pane's header, collapsed-until-hover.
-   **Responsive size cap:** the docked controls show only when the Workbench is open AND
-   the window is wide enough (`showWorkbenchControls`, currently ≥ 1000px). Below the cap
-   the whole group is dropped so a narrow window keeps its tabs rather than letting the
-   controls / their reserved footprint crowd them. The rightmost column's header reserves
-   the cluster's (wider) footprint via `data-workbench-controls` on the body.
+   header** (no global tab bar in Split — that would be a second header layer).
+   The workbench controls — `Stacked⇄Split` toggle (icon shows the current mode, click
+   flips it), **fullscreen**, **New Pane** — collapse into a **single menu trigger** in
+   the **fixed top-right window cluster** (`createWindowChromeToggles`), next to the
+   Workbench/FileTree panel toggles; hover (or keyboard focus) reveals the three in a
+   popover. Rationale: a single ~28px button always fits the top-right at ANY size, so it
+   never crowds a column's tabs and needs no min-window-width rule (the earlier size cap
+   was removed — a wide window can still have a narrow rightmost column, which window
+   width couldn't detect). Same position in every layout; reads as native chrome, not a
+   floating element. Per-pane **maximize** (Split → Stacked on that pane) is on every
+   split pane's header, collapsed-until-hover. The rightmost column's header reserves the
+   cluster's footprint via `data-workbench-controls` on the body. All column headers
+   (chat, tab strip, split pane headers, file tree) are a level **52px** band.
    Stacked tabs are flat and label-like; the active tab carries a full-height surface
    highlight + a charcoal under-bar (ink, never a chip) so it reads as a tab — not as
    the segmented toggle in the same row — and its region is clearly delineated. The

@@ -581,11 +581,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       ? viewModel
       : { ...viewModel, workbenchOpen: eff.workbenchOpen, fileTreeOpen: eff.fileTreeOpen };
 
-  // The workbench chrome controls (layout toggle / fullscreen / New Pane) dock in the
-  // top-right cluster only when the Workbench is open AND the window is wide enough —
-  // below this cap the controls are dropped so a narrow window keeps its column tabs
-  // (rather than the controls/their footprint crowding them). See workbench-dock-parity.
-  const showWorkbenchControls = layoutVm.workbenchOpen && windowWidth >= 1000;
+  // The workbench chrome controls collapse into a single top-right menu button (hover
+  // reveals layout toggle / fullscreen / New Pane), so a single ~28px button always
+  // fits and never crowds a column's tabs at any size — no min-window-width rule needed.
+  const showWorkbenchControls = layoutVm.workbenchOpen;
 
   // Animate columns open/closed by keeping them mounted across an exit transition.
   const leftPresence = useColumnPresence(layoutVm.leftRailOpen);
