@@ -105,6 +105,17 @@ test("opencode is no longer coming-soon and its permission modes are Build/Plan"
   assert.equal(permission.default, "build");
 });
 
+test("gemini model list uses the real -preview ids (drift regression)", () => {
+  // The static gemini list once held `gemini-3-pro` / `gemini-3-flash` — ids gemini
+  // does not accept. Every concrete id must carry the `-preview` suffix gemini
+  // reports, and the 2.5 models must be present.
+  const values = cliModelOptionsForAgent("gemini").map((option) => option.value);
+  assert.ok(values.includes("gemini-3-pro-preview"));
+  assert.ok(values.includes("gemini-3-flash-preview"));
+  assert.ok(values.includes("gemini-2.5-pro"));
+  assert.ok(!values.includes("gemini-3-pro"), "the drifted bare id must be gone");
+});
+
 test("cliModelOptionsForAgent('opencode') reflects the backend-enumerated catalog", () => {
   setAvailableProviderAgents(["opencode"]);
   setOpencodeModelCatalog(null);

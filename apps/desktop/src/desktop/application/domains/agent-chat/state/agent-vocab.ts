@@ -217,12 +217,17 @@ export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
         { value: "claude-opus-4-6", label: "Opus 4.6", detail: "Legacy" },
       ];
     case "gemini":
-      // "Gemini default" passes no --model (gemini's own default, gemini-3-flash);
-      // explicit ids pass `gemini --model <id>`.
+      // The real `--model` ids gemini reports over ACP (session/new availableModels,
+      // live-probed) — the prior list was DRIFTED (`gemini-3-pro` etc. without the
+      // `-preview` suffix gemini actually requires, and missing the 2.5 models).
+      // "Gemini default" passes no --model (gemini's own default).
       return [
-        { value: "Gemini default", label: "Default", detail: "Gemini 3 Flash" },
-        { value: "gemini-3-pro", label: "Gemini 3 Pro" },
-        { value: "gemini-3-flash", label: "Gemini 3 Flash" },
+        { value: "Gemini default", label: "Default", detail: "gemini-3-flash-preview" },
+        { value: "gemini-3-pro-preview", label: "Gemini 3 Pro" },
+        { value: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
+        { value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
+        { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", detail: "Legacy" },
+        { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", detail: "Legacy" },
       ];
     case "opencode": {
       // opencode is a multi-vendor router: the real model list is whatever the
