@@ -95,40 +95,10 @@
   max-width: none;
 }
 
-/* Empty grip = the drag surface filling the strip between the chip and maximize. */
+/* Empty grip = the drag surface filling the rest of the strip after the chip. */
 .workbench-split__pane-grip {
   flex: 1 1 auto;
   align-self: stretch;
-}
-
-.workbench-split__pane-maximize {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 0;
-  height: 22px;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--tide-muted);
-  cursor: pointer;
-  /* Calm at rest: collapsed to zero width (so it never steals space from a narrow
-     pane's chip or the first pane's docked controls), expanding on header hover. */
-  opacity: 0;
-  transition: opacity 0.12s ease, width 0.12s ease, background 0.12s ease, color 0.12s ease;
-}
-
-.workbench-split__pane-header:hover .workbench-split__pane-maximize {
-  width: 22px;
-  opacity: 1;
-}
-
-.workbench-split__pane-maximize:hover {
-  background: var(--tide-selection);
-  color: var(--tide-text);
 }
 
 .workbench-split__pane-body {
