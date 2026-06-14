@@ -103,6 +103,7 @@ import { WorkbenchRuntime } from "../workbench/workbench-runtime.ts";
 
 import {
   actBrowserOutput,
+  clearAgentBrowserDriving,
   observeBrowserOutput,
   seedInitialWorkbenchPanes,
 } from "../workbench/workbench-browser-operations.ts";
@@ -553,6 +554,7 @@ async hydrateThread(
       thread.lifecycleState = "open";
       thread.promptState = undefined;
       thread.promptQueue = undefined;
+      clearAgentBrowserDriving(thread);
       thread.updatedAt = this.clock();
     }
 
@@ -1011,6 +1013,7 @@ async stopAgentRuntime(
     thread.runtimeState = "idle";
     thread.lifecycleState = "open";
     thread.lastKnownState = "idle";
+    clearAgentBrowserDriving(thread);
     thread.updatedAt = this.clock();
 
     return {
@@ -1203,6 +1206,7 @@ private async replayPendingInputAfterTrust(thread: ThreadRecord): Promise<void> 
     thread.runtimeState = "idle";
     thread.lifecycleState = "open";
     thread.lastKnownState = "idle";
+    clearAgentBrowserDriving(thread);
     thread.updatedAt = this.clock();
     return {
       ok: true,

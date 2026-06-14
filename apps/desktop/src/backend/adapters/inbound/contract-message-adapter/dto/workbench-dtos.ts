@@ -14,7 +14,11 @@ export function toWorkbenchPaneRefDto(
       revision: pane.revision,
       updatedAt: pane.updatedAt,
       loading: pane.loading,
+      agentDriving: pane.agentDriving,
     };
+    if (pane.agentCursor !== undefined) {
+      dto.agentCursor = { ...pane.agentCursor };
+    }
     if (pane.url !== undefined) {
       dto.url = pane.url;
     }

@@ -22,7 +22,10 @@ import {
 import { cloneFileTreeView } from "../thread/thread-runtime-clone.ts";
 import { snapshotThread, threadRoot } from "../thread/thread-snapshot.ts";
 import type { ThreadStore } from "../thread/thread-store.ts";
-import { openBrowserOutput } from "./workbench-browser-operations.ts";
+import {
+  openBrowserOutput,
+  releaseAgentBrowserControl,
+} from "./workbench-browser-operations.ts";
 import {
   browserPaneActionResultFromData,
   browserPaneSnapshotFromData,
@@ -171,6 +174,9 @@ export class WorkbenchCommandHandler {
           pane.url = snapshot.url;
         }
         pane.bodyTextPreview = snapshot.bodyTextPreview;
+        if (snapshot.screenshot !== undefined) {
+          pane.screenshot = snapshot.screenshot;
+        }
         pane.loading = snapshot.loading ?? false;
         pane.revision = this.idGenerator();
         pane.updatedAt = this.clock();
@@ -228,6 +234,25 @@ export class WorkbenchCommandHandler {
         pane.revision = this.idGenerator();
         pane.updatedAt = completedAt;
         thread.updatedAt = completedAt;
+        return {
+          ok: true,
+          handled: true,
+          thread: snapshotThread(thread),
+          workbench: snapshotWorkbench(thread.workbench),
+        };
+      }
+      case "release_agent_browser_control": {
+        // User takeover (D5): the Take control button releases agent driving on a
+        // foregrounded driven Browser Pane and cancels any queued agent input.
+        const released = releaseAgentBrowserControl(
+          thread,
+          input.targetPaneId,
+          this.idGenerator,
+          this.clock,
+        );
+        if (!released.ok) {
+          return failure(released.error.code, released.error.message);
+        }
         return {
           ok: true,
           handled: true,

@@ -290,30 +290,43 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   },
   {
     name: "tide_observe_browser",
-    description: "Observe bounded Browser Pane state after validating Thread ownership and revision.",
+    description:
+      "Observe bounded Browser Pane state after validating Thread ownership and revision. mode=screenshot|both returns a pixel screenshot of the rendered page as an image block (see it like a human); mode=text (default) returns DOM text only.",
     inputSchema: {
       type: "object",
       properties: {
         paneId: { type: "string" },
         revision: { type: "string" },
         detail: { type: "string", enum: ["compact", "full"] },
+        mode: { type: "string", enum: ["text", "screenshot", "both"] },
       },
       required: ["paneId"],
     },
   },
   {
     name: "tide_act_browser",
-    description: "Schedule a bounded click or text input action on a visible Tide Browser Pane.",
+    description:
+      "Operate a visible Tide Browser Pane like a human (hybrid). Coordinate computer-use actions move a visible cursor and drive the live page via real input events: move_to/click_at (x,y; click_at takes optional button and clickCount), scroll (x,y,deltaX,deltaY), key (keys like \"Enter\" or \"Cmd+A\"), and type (text into the focused element). Selector actions click/type_text (selector, text) are the reliability fallback. Coordinates are the Browser Pane's CSS pixels.",
     inputSchema: {
       type: "object",
       properties: {
         paneId: { type: "string" },
         revision: { type: "string" },
-        action: { type: "string", enum: ["click", "type_text"] },
-        selector: { type: "string" },
-        text: { type: "string" },
+        action: {
+          type: "string",
+          enum: ["click", "type_text", "move_to", "click_at", "scroll", "key", "type"],
+        },
+        selector: { type: "string", description: "Required for click / type_text." },
+        text: { type: "string", description: "Required for type_text and type." },
+        x: { type: "number", description: "Required for move_to / click_at / scroll." },
+        y: { type: "number", description: "Required for move_to / click_at / scroll." },
+        button: { type: "string", enum: ["left", "right", "middle"] },
+        clickCount: { type: "number", enum: [1, 2] },
+        deltaX: { type: "number", description: "Wheel delta for scroll." },
+        deltaY: { type: "number", description: "Wheel delta for scroll." },
+        keys: { type: "string", description: "Required for key (e.g. \"Enter\", \"Cmd+A\")." },
       },
-      required: ["paneId", "revision", "action", "selector"],
+      required: ["paneId", "revision", "action"],
     },
   },
   {

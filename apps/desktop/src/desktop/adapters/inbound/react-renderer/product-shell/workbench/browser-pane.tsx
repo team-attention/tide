@@ -1,5 +1,11 @@
-import type { ProductShellBrowserSnapshot, ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
+import {
+  executeBrowserWebViewAction,
+  readBrowserWebViewSnapshot,
+  type BrowserWebViewElement,
+} from "./browser-webview-actions.ts";
+import { BrowserAgentOverlay } from "./browser-agent-overlay.tsx";
 import { createElement, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import { ArrowLeft, ArrowRight, CornerDownRight, Crosshair, ExternalLink, FileText, RotateCw } from "lucide-react";
@@ -424,14 +430,23 @@ export function WorkbenchBrowserPane(props: {
       </form>
       {/* `<webview>` is an Electron custom element with no JSX.IntrinsicElements
           typing, so it stays a createElement call (the string-tag overload accepts
-          its partition/src attrs and the BrowserWebViewElement ref). */}
-      {createElement("webview", {
-        ref: webviewRef,
-        className: "workbench-browser-webview",
-        "data-browser-pane-webview": props.pane.paneId,
-        src: initialSrcRef.current,
-        partition: "persist:tide-workbench-browser",
-      })}
+          its partition/src attrs and the BrowserWebViewElement ref). The relative
+          stage lets the agent-driving overlay sit exactly over the page area. */}
+      <div className="workbench-browser-stage">
+        {createElement("webview", {
+          ref: webviewRef,
+          className: "workbench-browser-webview",
+          "data-browser-pane-webview": props.pane.paneId,
+          src: initialSrcRef.current,
+          partition: "persist:tide-workbench-browser",
+        })}
+        {props.pane.agentDriving === true ? (
+          <BrowserAgentOverlay
+            cursor={props.pane.agentCursor ?? null}
+            onTakeControl={() => props.handlers.onReleaseAgentBrowserControl(props.pane.paneId)}
+          />
+        ) : null}
+      </div>
       {browserSelToolbar === null ? null : (
         <button
           type="button"
@@ -566,17 +581,6 @@ function BackgroundBrowserWebView(props: {
   });
 }
 
-type BrowserWebViewElement = HTMLElement & {
-  executeJavaScript?: (code: string) => Promise<unknown>;
-  getURL?: () => string;
-  loadURL?: (url: string) => Promise<void>;
-  goBack?: () => void;
-  goForward?: () => void;
-  reload?: () => void;
-  canGoBack?: () => boolean;
-  canGoForward?: () => boolean;
-};
-
 // Turn a user-typed address into a navigable URL: keep explicit schemes, treat a
 // dotted token as a bare host (https://), and fall back to a web search.
 function normalizeBrowserUrl(input: string): string {
@@ -591,90 +595,4 @@ function normalizeBrowserUrl(input: string): string {
     return `https://${value}`;
   }
   return `https://www.google.com/search?q=${encodeURIComponent(value)}`;
-}
-
-type BrowserWebViewSnapshot = Omit<ProductShellBrowserSnapshot, "revision" | "loading">;
-
-type BrowserWebViewAction = NonNullable<
-  NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>["pendingAction"]
->;
-
-type BrowserWebViewActionExecution = { ok: boolean; message: string };
-
-async function readBrowserWebViewSnapshot(
-  webview: BrowserWebViewElement,
-): Promise<BrowserWebViewSnapshot> {
-  const script = `(() => ({
-    url: window.location.href,
-    pageTitle: document.title,
-    bodyTextPreview: (document.body?.innerText ?? "").slice(0, 65536)
-  }))()`;
-  const rawSnapshot = await webview.executeJavaScript?.(script).catch(() => undefined);
-  const snapshot =
-    rawSnapshot !== null && typeof rawSnapshot === "object"
-      ? (rawSnapshot as Record<string, unknown>)
-      : {};
-  return {
-    url: stringRecordField(snapshot, "url") ?? webview.getURL?.(),
-    pageTitle: stringRecordField(snapshot, "pageTitle"),
-    bodyTextPreview: stringRecordField(snapshot, "bodyTextPreview"),
-  };
-}
-
-async function executeBrowserWebViewAction(
-  webview: BrowserWebViewElement,
-  action: BrowserWebViewAction,
-): Promise<BrowserWebViewActionExecution> {
-  if (webview.executeJavaScript === undefined) {
-    return { ok: false, message: "Browser WebView does not expose script execution." };
-  }
-  const payload = JSON.stringify({
-    kind: action.kind,
-    selector: action.selector,
-    text: action.text ?? "",
-  });
-  const script = `((payload) => {
-    const target = document.querySelector(payload.selector);
-    if (!target) {
-      return { ok: false, message: "Selector not found: " + payload.selector };
-    }
-    target.scrollIntoView?.({ block: "center", inline: "center" });
-    if (payload.kind === "click") {
-      target.click();
-      return { ok: true, message: "Clicked " + payload.selector };
-    }
-    if (payload.kind === "type_text") {
-      target.focus?.();
-      if ("value" in target) {
-        target.value = payload.text;
-        target.dispatchEvent(new Event("input", { bubbles: true }));
-        target.dispatchEvent(new Event("change", { bubbles: true }));
-        return { ok: true, message: "Typed " + payload.selector };
-      }
-      target.textContent = payload.text;
-      target.dispatchEvent(new Event("input", { bubbles: true }));
-      return { ok: true, message: "Typed " + payload.selector };
-    }
-    return { ok: false, message: "Unsupported Browser action." };
-  })(${payload})`;
-  return browserActionExecutionFromUnknown(await webview.executeJavaScript(script));
-}
-
-function browserActionExecutionFromUnknown(value: unknown): BrowserWebViewActionExecution {
-  if (value !== null && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const ok = typeof record.ok === "boolean" ? record.ok : false;
-    const message =
-      typeof record.message === "string" ? record.message : "Browser action finished.";
-    return { ok, message };
-  }
-  return { ok: false, message: "Browser action returned an invalid result." };
-}
-
-function stringRecordField(
-  record: Record<string, unknown>,
-  field: string,
-): string | undefined {
-  const value = record[field];
-  return typeof value === "string" ? value : undefined;
 }

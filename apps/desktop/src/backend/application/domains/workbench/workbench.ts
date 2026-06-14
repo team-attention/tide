@@ -68,17 +68,46 @@ export interface BrowserPaneState {
   revision: string;
   updatedAt: string;
   bodyTextPreview?: string;
+  // Backend-authoritative computer-use driving state. agentDriving = the Agent is
+  // operating this Pane via a computer-use turn; agentCursor = last pointer position
+  // in screenshot-pixel space (for the on-screen cursor theater). Cleared on release
+  // (user takeover) and turn end. See docs_v2/specs/browser-pane-agent-computer-use.md.
+  agentDriving?: boolean;
+  agentCursor?: { x: number; y: number };
+  // Latest captured pixel-vision screenshot (filled by the renderer's capturePage).
+  // Attached to observe output only for mode=screenshot|both; kept out of general
+  // Workbench snapshots to avoid shipping the image on every state change.
+  screenshot?: BrowserPaneScreenshot;
   pendingAction?: BrowserPaneActionRequest;
   lastAction?: BrowserPaneActionResult;
 }
 
-export type BrowserPaneActionKind = "click" | "type_text";
+export type BrowserPaneActionKind =
+  | "click"
+  | "type_text"
+  | "move_to"
+  | "click_at"
+  | "scroll"
+  | "key"
+  | "type";
+
+export type BrowserPaneButton = "left" | "right" | "middle";
 
 export interface BrowserPaneActionRequest {
   actionId: string;
   kind: BrowserPaneActionKind;
-  selector: string;
+  // Selector path (reliability fallback): set for "click" / "type_text".
+  selector?: string;
   text?: string;
+  // Coordinate computer-use path (screenshot-pixel space). See
+  // docs_v2/specs/browser-pane-agent-computer-use.md.
+  x?: number;
+  y?: number;
+  button?: BrowserPaneButton;
+  clickCount?: number;
+  deltaX?: number;
+  deltaY?: number;
+  keys?: string;
   requestedAt: string;
 }
 
@@ -86,6 +115,18 @@ export interface BrowserPaneActionResult extends BrowserPaneActionRequest {
   status: "completed" | "failed";
   message: string;
   completedAt: string;
+}
+
+// Pixel vision: a captured raster image of the rendered <webview> page, surfaced to the
+// Agent as an MCP image content block via tide_observe_browser mode=screenshot|both.
+// data is base64; coordinates the agent picks are viewport CSS px (devicePixelRatio
+// reports the pixel-to-CSS ratio). See docs_v2/specs/browser-pane-agent-computer-use.md.
+export interface BrowserPaneScreenshot {
+  data: string;
+  mimeType: "image/png" | "image/jpeg";
+  width: number;
+  height: number;
+  devicePixelRatio: number;
 }
 
 export interface TerminalPaneState {
@@ -198,6 +239,9 @@ export interface BrowserPaneRef extends WorkbenchPaneRef {
   pageTitle?: string;
   loading: boolean;
   bodyTextPreview?: string;
+  agentDriving: boolean;
+  agentCursor?: { x: number; y: number };
+  screenshot?: BrowserPaneScreenshot;
   pendingAction?: BrowserPaneActionRequest;
   lastAction?: BrowserPaneActionResult;
   stale: boolean;

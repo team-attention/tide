@@ -30,17 +30,43 @@ export interface BrowserPaneRefDto extends BaseWorkbenchPaneRefDto {
   pageTitle?: string;
   bodyTextPreview?: string;
   loading: boolean;
+  // Backend-authoritative computer-use driving state (see
+  // docs_v2/specs/browser-pane-agent-computer-use.md). agentDriving = the Agent is
+  // operating this Pane via a computer-use turn; agentCursor = last pointer position
+  // in screenshot-pixel space for the on-screen cursor theater.
+  agentDriving: boolean;
+  agentCursor?: { x: number; y: number };
   pendingAction?: BrowserPaneActionDto;
   lastAction?: BrowserPaneActionResultDto;
 }
 
-export type BrowserPaneActionKindDto = "click" | "type_text";
+export type BrowserPaneActionKindDto =
+  | "click"
+  | "type_text"
+  | "move_to"
+  | "click_at"
+  | "scroll"
+  | "key"
+  | "type";
+
+export type BrowserPaneButtonDto = "left" | "right" | "middle";
 
 export interface BrowserPaneActionDto {
   actionId: string;
   kind: BrowserPaneActionKindDto;
-  selector: string;
+  // Selector path (reliability fallback): set for "click" / "type_text".
+  selector?: string;
   text?: string;
+  // Coordinate computer-use path (screenshot-pixel space): "move_to"/"click_at"/"scroll"
+  // carry x/y; "scroll" adds deltaX/deltaY; "click_at" adds button/clickCount; "key"
+  // carries keys; "type" carries text (typed into the focused element).
+  x?: number;
+  y?: number;
+  button?: BrowserPaneButtonDto;
+  clickCount?: number;
+  deltaX?: number;
+  deltaY?: number;
+  keys?: string;
   requestedAt: string;
 }
 

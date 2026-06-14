@@ -41,6 +41,8 @@ export interface AppChromeWorkbenchPaneRef {
   loading?: boolean;
   url?: string;
   pageTitle?: string;
+  agentDriving?: boolean;
+  agentCursor?: { x: number; y: number };
   pendingAction?: AppChromeBrowserPaneAction;
   lastAction?: AppChromeBrowserPaneActionResult;
   filePath?: string;
@@ -68,9 +70,16 @@ export interface AppChromeWorkbenchPaneRef {
 
 export interface AppChromeBrowserPaneAction {
   actionId: string;
-  kind: "click" | "type_text";
-  selector: string;
+  kind: "click" | "type_text" | "move_to" | "click_at" | "scroll" | "key" | "type";
+  selector?: string;
   text?: string;
+  x?: number;
+  y?: number;
+  button?: "left" | "right" | "middle";
+  clickCount?: number;
+  deltaX?: number;
+  deltaY?: number;
+  keys?: string;
   requestedAt: string;
 }
 
@@ -177,7 +186,7 @@ export type AppChromeBackendCommand = {
   payload:
     | {
         threadId: string;
-        command: "focus_pane" | "close_pane";
+        command: "focus_pane" | "close_pane" | "release_agent_browser_control";
         targetPaneId: string;
       }
     | {
@@ -388,6 +397,29 @@ export function closeWorkbenchPane(
       payload: {
         threadId: state.thread.threadId,
         command: "close_pane",
+        targetPaneId: paneId,
+      },
+    },
+  };
+}
+
+// User takeover (D5): tell the backend to release agent driving on a foregrounded
+// driven Browser Pane. The backend clears agentDriving/agentCursor/pendingAction and the
+// next snapshot removes the on-screen overlay + lock.
+export function releaseWorkbenchAgentBrowserControl(
+  state: AppChromeState,
+  paneId: string,
+): AppChromeUpdateResult {
+  if (!state.thread || !paneExists(state.workbenchPanes, paneId)) {
+    return { state, command: null };
+  }
+  return {
+    state,
+    command: {
+      kind: "workbench.command",
+      payload: {
+        threadId: state.thread.threadId,
+        command: "release_agent_browser_control",
         targetPaneId: paneId,
       },
     },

@@ -6,10 +6,14 @@ import {
 } from "../support/record-helpers.ts";
 import {
   boundedBrowserTextPreview,
+  numberFromData,
   optionalRawString,
   optionalString,
 } from "../support/service-value-helpers.ts";
-import type { WorkbenchLayoutMode } from "../../domains/workbench/workbench.ts";
+import type {
+  BrowserPaneScreenshot,
+  WorkbenchLayoutMode,
+} from "../../domains/workbench/workbench.ts";
 
 // Parsers that coerce untyped Tide MCP / workbench command `data` payloads into
 // the typed shapes the service acts on. Pure: depend only on leaf value/record
@@ -98,6 +102,7 @@ export function browserPaneSnapshotFromData(
       pageTitle?: string;
       bodyTextPreview?: string;
       loading?: boolean;
+      screenshot?: BrowserPaneScreenshot;
     }
   | undefined {
   const revision = optionalString(data?.revision);
@@ -114,6 +119,31 @@ export function browserPaneSnapshotFromData(
     pageTitle: optionalString(data?.pageTitle),
     bodyTextPreview,
     loading: typeof data?.loading === "boolean" ? data.loading : undefined,
+    screenshot: browserPaneScreenshotFromData(data?.screenshot),
+  };
+}
+
+// Parse a pixel-vision capture from update_browser_snapshot command data (renderer's
+// webview.capturePage). Requires base64 data + positive width/height; mimeType defaults
+// to image/png, devicePixelRatio to 1.
+function browserPaneScreenshotFromData(value: unknown): BrowserPaneScreenshot | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const data =
+    typeof record.data === "string" && record.data.length > 0 ? record.data : undefined;
+  const width = numberFromData(record, "width");
+  const height = numberFromData(record, "height");
+  if (data === undefined || width === undefined || height === undefined) {
+    return undefined;
+  }
+  return {
+    data,
+    mimeType: record.mimeType === "image/jpeg" ? "image/jpeg" : "image/png",
+    width,
+    height,
+    devicePixelRatio: numberFromData(record, "devicePixelRatio") ?? 1,
   };
 }
 

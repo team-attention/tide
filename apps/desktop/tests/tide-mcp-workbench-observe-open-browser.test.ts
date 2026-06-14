@@ -584,6 +584,52 @@ test("browser_action_result_command_records_completion_and_snapshot", async () =
   assert.equal(pane?.kind === "browser" ? pane.bodyTextPreview : undefined, "Found Tide");
 });
 
+test("browser_snapshot_command_caches_screenshot_returned_by_screenshot_mode_observe", async () => {
+  // Spec: docs_v2/specs/browser-pane-agent-computer-use.md (pixel vision)
+  const service = serviceWithActiveThread("thread-shot", "runtime-shot");
+  const opened = await openBrowser(service, "runtime-shot", "https://example.test/shot");
+
+  const updated = await service.handleWorkbenchCommand({
+    threadId: "thread-shot",
+    command: "update_browser_snapshot",
+    targetPaneId: opened.output.pane.paneId,
+    data: {
+      revision: opened.output.pane.revision,
+      loading: false,
+      screenshot: {
+        data: "QUJD",
+        mimeType: "image/png",
+        width: 1024,
+        height: 768,
+        devicePixelRatio: 1,
+      },
+    },
+  });
+  assert.equal(updated.ok, true);
+
+  const textObserve = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-shot", agentId: "codex" },
+    toolName: "tide_observe_browser",
+    input: { paneId: opened.output.pane.paneId },
+  });
+  // Default text mode never returns the screenshot.
+  assert.equal(
+    textObserve.ok && textObserve.output.pane.screenshot,
+    undefined,
+  );
+
+  const screenshotObserve = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-shot", agentId: "codex" },
+    toolName: "tide_observe_browser",
+    input: { paneId: opened.output.pane.paneId, mode: "screenshot" },
+  });
+  assert.equal(screenshotObserve.ok, true);
+  assert.equal(
+    screenshotObserve.ok && screenshotObserve.output.pane.screenshot?.data,
+    "QUJD",
+  );
+});
+
 // --- UC-5: Agent reads and opens File Workbench state ---
 
 test("reading_file_returns_bounded_content_without_mutating_workbench", async () => {

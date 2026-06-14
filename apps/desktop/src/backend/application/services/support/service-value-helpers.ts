@@ -103,10 +103,44 @@ export function expectedOccurrences(value: unknown): number {
   return 1;
 }
 
+const BROWSER_ACTION_KINDS = [
+  "click",
+  "type_text",
+  "move_to",
+  "click_at",
+  "scroll",
+  "key",
+  "type",
+] as const;
+
+export type BrowserActionKindInput = (typeof BROWSER_ACTION_KINDS)[number];
+
 export function browserActionKindFromInput(
   value: unknown,
-): "click" | "type_text" | undefined {
-  return value === "click" || value === "type_text" ? value : undefined;
+): BrowserActionKindInput | undefined {
+  return BROWSER_ACTION_KINDS.find((kind) => kind === value);
+}
+
+// Coordinates and scroll deltas may legitimately be 0 or negative, so this accepts any
+// finite number — unlike numberFromData, which requires a positive value.
+export function finiteNumberFromInput(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+export function browserButtonFromInput(value: unknown): "left" | "right" | "middle" {
+  return value === "right" || value === "middle" ? value : "left";
+}
+
+// Pixel-vision axis for tide_observe_browser. Default "text" (back-compat + token cost);
+// "screenshot"/"both" attach the cached Browser Pane Screenshot.
+export function browserObserveModeFromInput(
+  value: unknown,
+): "text" | "screenshot" | "both" {
+  return value === "screenshot" || value === "both" ? value : "text";
+}
+
+export function browserClickCountFromInput(value: unknown): 1 | 2 | undefined {
+  return value === 2 ? 2 : value === 1 ? 1 : undefined;
 }
 
 export function titleFromRelativePath(relativePath: string): string {

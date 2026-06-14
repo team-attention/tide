@@ -467,12 +467,23 @@ export interface ProductShellEditorDraft {
   cursorOffset?: number;
 }
 
+export interface ProductShellBrowserScreenshot {
+  data: string;
+  mimeType: "image/png" | "image/jpeg";
+  width: number;
+  height: number;
+  devicePixelRatio: number;
+}
+
 export interface ProductShellBrowserSnapshot {
   revision: string;
   url?: string;
   pageTitle?: string;
   bodyTextPreview?: string;
   loading: boolean;
+  // Pixel-vision capture (webview.capturePage), cached backend-side for
+  // tide_observe_browser mode=screenshot|both. Omitted from backend→renderer snapshots.
+  screenshot?: ProductShellBrowserScreenshot;
 }
 
 export interface ProductShellBrowserActionResult extends ProductShellBrowserSnapshot {

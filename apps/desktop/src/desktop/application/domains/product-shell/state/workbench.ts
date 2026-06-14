@@ -2,7 +2,7 @@ import type { ProductShellBrowserActionResult, ProductShellBrowserSnapshot, Prod
 import { COMPOSER_LAUNCHER_PANE_ID, isStartFilePaneId, startFilePaneId } from "./types.ts";
 import { applyDrop, reconcileTree, setRatioAtPath } from "./workbench-split-tree.ts";
 import type { DropZone } from "./workbench-split-tree.ts";
-import { closeWorkbenchPane, focusWorkbenchPane, resizeWorkbenchTerminal, writeWorkbenchTerminalInput } from "../../app-chrome/app-chrome-state.ts";
+import { closeWorkbenchPane, focusWorkbenchPane, releaseWorkbenchAgentBrowserControl, resizeWorkbenchTerminal, writeWorkbenchTerminalInput } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { shellTimestamp } from "./create.ts";
 // Workbench shell / layout / launcher / browser reducers. Editor + start-page-editor
@@ -349,6 +349,24 @@ export function closeProductShellWorkbenchPane(
     };
   }
   const result = closeWorkbenchPane(state.appChrome, paneId);
+  return {
+    state: {
+      ...state,
+      appChrome: result.state,
+    },
+    command: result.command,
+  };
+}
+
+export function releaseProductShellAgentBrowserControl(
+  state: ProductShellState,
+  paneId: string,
+): ProductShellUpdateResult {
+  // Composer (New Thread) page: draft browser panes have no backend agent driving.
+  if (state.activeThreadId === null) {
+    return { state, command: null };
+  }
+  const result = releaseWorkbenchAgentBrowserControl(state.appChrome, paneId);
   return {
     state: {
       ...state,

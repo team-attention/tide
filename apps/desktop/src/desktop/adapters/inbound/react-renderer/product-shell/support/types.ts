@@ -185,4 +185,6 @@ export interface ProductShellHandlers {
   // Background (non-active thread) Browser Pane updates, routed by the pane's threadId.
   onBackgroundBrowserSnapshot: (threadId: string, paneId: string, snapshot: ProductShellBrowserSnapshot) => void;
   onBackgroundBrowserActionResult: (threadId: string, paneId: string, result: ProductShellBrowserActionResult) => void;
+  // User takeover (D5): release agent driving on a foregrounded driven Browser Pane.
+  onReleaseAgentBrowserControl: (paneId: string) => void;
 }

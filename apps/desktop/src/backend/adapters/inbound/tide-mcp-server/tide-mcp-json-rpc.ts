@@ -246,11 +246,63 @@ function parseToolCallParams(
   };
 }
 
-function mcpToolSuccessResult(output: unknown): Record<string, unknown> {
+// When a tool output carries a Browser Pane Screenshot (pixel vision —
+// tide_observe_browser mode=screenshot|both), surface it as an MCP image content block in
+// addition to the text block, and strip the heavy base64 out of the text/structured
+// channels (its width/height/devicePixelRatio metadata stays). Otherwise text-only.
+export function mcpToolSuccessResult(output: unknown): Record<string, unknown> {
+  const screenshot = browserScreenshotFromOutput(output);
+  if (screenshot === undefined) {
+    return {
+      content: [{ type: "text", text: JSON.stringify(output) }],
+      structuredContent: output,
+    };
+  }
+  const stripped = outputWithoutScreenshotData(output);
   return {
-    content: [{ type: "text", text: JSON.stringify(output) }],
-    structuredContent: output,
+    content: [
+      { type: "text", text: JSON.stringify(stripped) },
+      { type: "image", data: screenshot.data, mimeType: screenshot.mimeType },
+    ],
+    structuredContent: stripped,
   };
+}
+
+function browserScreenshotFromOutput(
+  output: unknown,
+): { data: string; mimeType: string } | undefined {
+  const pane = recordField(output, "pane");
+  const screenshot = recordField(pane, "screenshot");
+  if (screenshot === undefined) {
+    return undefined;
+  }
+  const data = (screenshot as Record<string, unknown>).data;
+  if (typeof data !== "string") {
+    return undefined;
+  }
+  const mimeType = (screenshot as Record<string, unknown>).mimeType;
+  return { data, mimeType: typeof mimeType === "string" ? mimeType : "image/png" };
+}
+
+function outputWithoutScreenshotData(output: unknown): unknown {
+  const out = output as Record<string, unknown>;
+  const pane = out.pane as Record<string, unknown>;
+  const screenshot = pane.screenshot as Record<string, unknown>;
+  const { data: _omitted, ...screenshotRest } = screenshot;
+  return {
+    ...out,
+    pane: { ...pane, screenshot: { ...screenshotRest, dataInImageBlock: true } },
+  };
+}
+
+function recordField(value: unknown, key: string): Record<string, unknown> | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const field = (value as Record<string, unknown>)[key];
+  return field !== null && typeof field === "object" && !Array.isArray(field)
+    ? (field as Record<string, unknown>)
+    : undefined;
 }
 
 function mcpToolErrorResult(error: {

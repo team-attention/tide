@@ -55,6 +55,8 @@ export function browserPaneRef(pane: BrowserPaneState): BrowserPaneRef {
     pageTitle: pane.pageTitle,
     loading: pane.loading,
     bodyTextPreview: pane.bodyTextPreview,
+    agentDriving: pane.agentDriving ?? false,
+    agentCursor: pane.agentCursor === undefined ? undefined : { ...pane.agentCursor },
     pendingAction:
       pane.pendingAction === undefined ? undefined : { ...pane.pendingAction },
     lastAction: pane.lastAction === undefined ? undefined : { ...pane.lastAction },
