@@ -50,15 +50,16 @@
   opacity: 0.5;
 }
 
-/* The split pane header is a slim drag strip that hosts the SAME tab chip used in
-   Stacked — so a pane looks identical whether it's a tab or a split header. The
+/* The split pane header hosts the SAME tab chip used in Stacked + the drag surface.
+   It is 52px — the SAME height as the Stacked tab bar and every other column header —
+   so the top band is level across the whole window regardless of Stacked/Split. The
    empty grip fills the rest as the drag surface; maximize reveals on hover. */
 .workbench-split__pane-header {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 36px;
+  height: 52px;
   padding: 0 6px;
   border-bottom: 1px solid var(--tide-line);
   background: var(--tide-surface);
