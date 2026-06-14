@@ -5,6 +5,7 @@
 
 mod agent_coworking_context;
 mod agent_gateway;
+mod browser_agent_pixel_vision;
 mod browser_agent_runtime;
 mod browser_pane_automation;
 mod browser_pane_fallbacks;

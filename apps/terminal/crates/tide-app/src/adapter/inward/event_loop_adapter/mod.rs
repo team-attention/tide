@@ -413,6 +413,35 @@ impl App {
                     _ => false,
                 }
             }
+            "agent-screenshot" => {
+                // Pixel vision: a native WKWebView takeSnapshot capture, base64 PNG, routed
+                // back to fill the Browser Pane Screenshot cache for screenshot-mode observe.
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let data = parsed
+                    .get("data")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if data.is_empty() {
+                    return false;
+                }
+                let width = parsed.get("width").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                let height = parsed.get("height").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                let device_scale = parsed
+                    .get("device_scale")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(1.0);
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => {
+                        browser.set_agent_screenshot(data, width, height, device_scale);
+                        true
+                    }
+                    _ => false,
+                }
+            }
             "browser-selection" => {
                 let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
                     Some(id) => id,

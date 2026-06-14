@@ -638,9 +638,7 @@ fn mcp_tools_call(
             serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": id,
-                "result": {
-                    "content": [{ "type": "text", "text": serde_json::to_string_pretty(&result).unwrap_or_default() }]
-                }
+                "result": { "content": mcp_tool_call_content(&result) }
             })
         }
         Err(e) => {
@@ -649,6 +647,49 @@ fn mcp_tools_call(
             mcp_error_result(id, &e)
         }
     }
+}
+
+/// Build MCP `tools/call` content blocks from a Gateway result. When the result carries a
+/// Browser Pane Screenshot (`screenshot.data` base64, from `tide_browser_observe`
+/// vision=screenshot|both), emit an MCP image content block in addition to the text block,
+/// and strip the heavy base64 out of the text (its width/height/device_scale/generation
+/// metadata stays). Spec: docs/specs/browser-agent-pixel-vision.md.
+pub(crate) fn mcp_tool_call_content(result: &serde_json::Value) -> Vec<serde_json::Value> {
+    let mut text_value = result.clone();
+    let mut image_block: Option<serde_json::Value> = None;
+
+    if let Some(screenshot) = text_value.get_mut("screenshot").and_then(|s| s.as_object_mut()) {
+        if let Some(data) = screenshot
+            .get("data")
+            .and_then(|value| value.as_str())
+            .map(String::from)
+        {
+            let mime = screenshot
+                .get("mime_type")
+                .and_then(|value| value.as_str())
+                .unwrap_or("image/png")
+                .to_string();
+            screenshot.remove("data");
+            screenshot.insert(
+                "data_in_image_block".to_string(),
+                serde_json::Value::Bool(true),
+            );
+            image_block = Some(serde_json::json!({
+                "type": "image",
+                "data": data,
+                "mimeType": mime,
+            }));
+        }
+    }
+
+    let mut content = vec![serde_json::json!({
+        "type": "text",
+        "text": serde_json::to_string_pretty(&text_value).unwrap_or_default(),
+    })];
+    if let Some(image) = image_block {
+        content.push(image);
+    }
+    content
 }
 
 fn mcp_error_result(id: serde_json::Value, message: &str) -> serde_json::Value {

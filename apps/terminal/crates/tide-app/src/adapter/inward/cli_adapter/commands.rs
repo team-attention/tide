@@ -8,7 +8,8 @@ use serde_json::{json, Value};
 
 use crate::pane::browser::{
     BrowserAutomationCursor, BrowserPageElement, BrowserPageElementKind, BrowserPageMap,
-    BrowserPane, BrowserSelectionSnapshot, BrowserSnapshot, BROWSER_PAGE_MAP_INTERACTABLE_LIMIT,
+    BrowserPane, BrowserPaneScreenshot, BrowserSelectionSnapshot, BrowserSnapshot,
+    BROWSER_PAGE_MAP_INTERACTABLE_LIMIT,
     BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES, BROWSER_PAGE_MAP_REGION_LIMIT,
     BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES, BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES,
 };
@@ -349,6 +350,45 @@ fn browser_observe_detail(params: &Value) -> Result<BrowserObserveDetail, CliErr
         other => Err(CliError::InvalidParams(format!(
             "unsupported browser observe detail: {other}"
         ))),
+    }
+}
+
+/// Pixel-vision axis for `browser-observe`, orthogonal to `detail`/`mode` (which is a
+/// text-verbosity alias). `text` = no screenshot (default, back-compat + token cost);
+/// `screenshot` = image without the full BrowserSnapshot body; `both` = image + the
+/// detail-governed text. See `docs/specs/browser-agent-pixel-vision.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BrowserObserveVision {
+    Text,
+    Screenshot,
+    Both,
+}
+
+fn browser_observe_vision(params: &Value) -> Result<BrowserObserveVision, CliError> {
+    let Some(value) = params.get("vision").and_then(|value| value.as_str()) else {
+        return Ok(BrowserObserveVision::Text);
+    };
+    match value {
+        "text" => Ok(BrowserObserveVision::Text),
+        "screenshot" => Ok(BrowserObserveVision::Screenshot),
+        "both" => Ok(BrowserObserveVision::Both),
+        other => Err(CliError::InvalidParams(format!(
+            "unsupported browser observe vision: {other}"
+        ))),
+    }
+}
+
+fn browser_screenshot_json(screenshot: Option<&BrowserPaneScreenshot>) -> Value {
+    match screenshot {
+        Some(screenshot) => json!({
+            "data": screenshot.png_base64.clone(),
+            "mime_type": "image/png",
+            "width": screenshot.width,
+            "height": screenshot.height,
+            "device_scale": screenshot.device_scale,
+            "generation": screenshot.generation,
+        }),
+        None => Value::Null,
     }
 }
 
@@ -1671,6 +1711,7 @@ fn cli_browser_observe(
     params: Value,
 ) -> Result<Value, CliError> {
     let detail = browser_observe_detail(&params)?;
+    let vision = browser_observe_vision(&params)?;
     let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
     let _auth = ensure_browser_tool_authorized_if_caller(ctx, pane_id)?;
     ctx.compute_layout();
@@ -1698,7 +1739,14 @@ fn cli_browser_observe(
         })
         .unwrap_or_else(|| browser.title());
 
-    let (detail_label, snapshot, page_map) = match detail {
+    // Screenshot-only vision omits the full BrowserSnapshot body (BR-3): force the compact
+    // summary regardless of detail. text/both keep the detail-governed body.
+    let effective_detail = if matches!(vision, BrowserObserveVision::Screenshot) {
+        BrowserObserveDetail::Compact
+    } else {
+        detail
+    };
+    let (detail_label, snapshot, page_map) = match effective_detail {
         BrowserObserveDetail::Full => (
             "full",
             browser_snapshot_json(browser.page_snapshot.as_ref()),
@@ -1709,6 +1757,21 @@ fn cli_browser_observe(
             browser_snapshot_summary_json(browser.page_snapshot.as_ref()),
             browser_page_map_summary_json(browser.page_map.as_ref(), browser.generation),
         ),
+    };
+    // Pixel vision (BR-1): attach the cached Browser Pane Screenshot only for
+    // screenshot/both; text returns none.
+    let vision_label = match vision {
+        BrowserObserveVision::Text => "text",
+        BrowserObserveVision::Screenshot => "screenshot",
+        BrowserObserveVision::Both => "both",
+    };
+    let screenshot_json = if matches!(vision, BrowserObserveVision::Text) {
+        Value::Null
+    } else {
+        // Kick off a fresh native capture (async) for the next observe; return the current
+        // cached capture now (the first screenshot observe may be null until one lands).
+        browser.request_agent_screenshot_refresh();
+        browser_screenshot_json(browser.agent_screenshot())
     };
 
     let result = json!({
@@ -1724,6 +1787,8 @@ fn cli_browser_observe(
         "page_map": page_map,
         "selection": browser_selection_json(browser.page_selection.as_ref()),
         "automation_cursor": browser_automation_cursor_json(browser.automation_cursor()),
+        "vision": vision_label,
+        "screenshot": screenshot_json,
         "runtime": "tide_browser_pane",
         "external_runtime": Value::Null,
         "operation": browser_operation_json(control_decision.active),

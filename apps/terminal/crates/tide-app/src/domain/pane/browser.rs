@@ -283,6 +283,23 @@ pub struct BrowserAutomationCursor {
     pub visible: bool,
 }
 
+/// A captured raster image of a Browser Pane's rendered `WKWebView` page, surfaced to a
+/// Wrapped Agent as an MCP image content block (pixel vision). Generation-stamped so a
+/// stale capture is distinguishable from the current page. See
+/// `docs/specs/browser-agent-pixel-vision.md`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserPaneScreenshot {
+    /// PNG image bytes, base64-encoded for transport to the MCP image content block.
+    pub png_base64: String,
+    pub width: u32,
+    pub height: u32,
+    /// Device pixel ratio (backing scale, pixels per point). Reported so the agent never
+    /// faces device-vs-CSS ambiguity — coordinates / Browser Automation Cursor are points.
+    pub device_scale: f64,
+    /// Browser Pane Generation at capture time.
+    pub generation: u64,
+}
+
 /// Wrapper-managed visual control state for an actively driven Browser Pane.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentBrowserControlMode {
@@ -336,6 +353,9 @@ pub struct BrowserPane {
     pub page_selection: Option<BrowserSelectionSnapshot>,
     /// Visible Browser Automation Cursor state for agent-driven Browser Pane actions.
     automation_cursor: Option<BrowserAutomationCursor>,
+    /// Latest captured Browser Pane Screenshot (pixel vision) for agent observe. Filled by
+    /// the platform WKWebView capture; surfaced when observe `mode` includes screenshot.
+    agent_screenshot: Option<BrowserPaneScreenshot>,
     /// Wrapper-managed visual Browser Pane control state.
     agent_browser_control_mode: Option<AgentBrowserControlMode>,
     /// Browser Pane Generation last observed by an agent before structured action.
@@ -406,6 +426,7 @@ impl BrowserPane {
             snapshot_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
+            agent_screenshot: None,
             agent_browser_control_mode: None,
             agent_observed_generation: None,
             agent_reobserve_required: true,
@@ -450,6 +471,7 @@ impl BrowserPane {
             snapshot_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
+            agent_screenshot: None,
             agent_browser_control_mode: None,
             agent_observed_generation: None,
             agent_reobserve_required: true,
@@ -494,6 +516,7 @@ impl BrowserPane {
             snapshot_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
+            agent_screenshot: None,
             agent_browser_control_mode: None,
             agent_observed_generation: None,
             agent_reobserve_required: true,
@@ -537,6 +560,7 @@ impl BrowserPane {
             snapshot_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
+            agent_screenshot: None,
             agent_browser_control_mode: None,
             agent_observed_generation: None,
             agent_reobserve_required: true,
@@ -1080,6 +1104,29 @@ impl BrowserPane {
         self.agent_browser_control_mode.as_ref()
     }
 
+    /// Latest captured Browser Pane Screenshot (pixel vision), if any.
+    pub fn agent_screenshot(&self) -> Option<&BrowserPaneScreenshot> {
+        self.agent_screenshot.as_ref()
+    }
+
+    /// Cache a freshly captured Browser Pane Screenshot, stamped with the current
+    /// Browser Pane Generation so a stale capture is distinguishable from the live page.
+    pub fn set_agent_screenshot(
+        &mut self,
+        png_base64: String,
+        width: u32,
+        height: u32,
+        device_scale: f64,
+    ) {
+        self.agent_screenshot = Some(BrowserPaneScreenshot {
+            png_base64,
+            width,
+            height,
+            device_scale,
+            generation: self.generation,
+        });
+    }
+
     pub fn snapshot_history(&self) -> &[BrowserSnapshotHistoryEntry] {
         &self.snapshot_history
     }
@@ -1402,6 +1449,14 @@ impl BrowserPane {
         wv.evaluate_javascript(
             "if (window.__tideRequestPageSnapshot) { window.__tideRequestPageSnapshot(); }",
         );
+    }
+
+    /// Pixel vision: kick off a native WKWebView snapshot (async). The capture posts an
+    /// `agent-screenshot` bridge message that fills the Browser Pane Screenshot cache for
+    /// the NEXT screenshot-mode observe (same async-cache model as page_snapshot).
+    pub fn request_agent_screenshot_refresh(&self) {
+        let Some(ref wv) = self.webview else { return };
+        wv.take_snapshot();
     }
 
     /// Update the latest BrowserSnapshot and Browser Page Map from the WKWebView bridge.

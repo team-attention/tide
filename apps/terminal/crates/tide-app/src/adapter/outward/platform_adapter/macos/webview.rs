@@ -2142,6 +2142,89 @@ impl WebViewHandle {
         self.evaluate_javascript("window.getSelection().removeAllRanges()");
     }
 
+    /// Pixel vision: capture the rendered page via WKWebView
+    /// `takeSnapshotWithConfiguration:completionHandler:` and post the PNG (base64) back as
+    /// an `agent-screenshot` bridge message, which the event loop routes into the Browser
+    /// Pane Screenshot cache for screenshot-mode observe. Async — the completion handler
+    /// fires later on the main thread; only kicked off on the main thread (the Gateway
+    /// observe path runs there). Requires live device verification (no unit test drives a
+    /// real WKWebView snapshot). Spec: docs/specs/browser-agent-pixel-vision.md.
+    pub fn take_snapshot(&self) {
+        if MainThreadMarker::new().is_none() {
+            return;
+        }
+        let tide_window_id = self.tide_window_id;
+        let pane_id = self.pane_id;
+        let completion =
+            block2::RcBlock::new(move |image: *mut AnyObject, _error: *mut AnyObject| {
+                if image.is_null() {
+                    return;
+                }
+                let json = unsafe {
+                    let tiff: *mut AnyObject = msg_send![image, TIFFRepresentation];
+                    if tiff.is_null() {
+                        return;
+                    }
+                    let Some(rep_cls) = AnyClass::get("NSBitmapImageRep") else {
+                        return;
+                    };
+                    let rep: *mut AnyObject = msg_send![rep_cls, imageRepWithData: tiff];
+                    if rep.is_null() {
+                        return;
+                    }
+                    let Some(dict_cls) = AnyClass::get("NSDictionary") else {
+                        return;
+                    };
+                    let properties: *mut AnyObject = msg_send![dict_cls, dictionary];
+                    // NSBitmapImageFileTypePNG == 4
+                    let png: *mut AnyObject =
+                        msg_send![rep, representationUsingType: 4usize properties: properties];
+                    if png.is_null() {
+                        return;
+                    }
+                    let b64: *mut AnyObject = msg_send![png, base64EncodedStringWithOptions: 0usize];
+                    if b64.is_null() {
+                        return;
+                    }
+                    let utf8: *const std::ffi::c_char = msg_send![b64, UTF8String];
+                    if utf8.is_null() {
+                        return;
+                    }
+                    let data = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                    if data.is_empty() {
+                        return;
+                    }
+                    let pixels_wide: isize = msg_send![rep, pixelsWide];
+                    let pixels_high: isize = msg_send![rep, pixelsHigh];
+                    // device_scale = device pixels / logical points, so the agent can map a
+                    // screenshot pixel back to the viewport CSS coordinate its actions use.
+                    let size: NSSize = msg_send![image, size];
+                    let device_scale = if size.width > 0.0 {
+                        (pixels_wide as f64) / size.width
+                    } else {
+                        1.0
+                    };
+                    format!(
+                        r#"{{"kind":"agent-screenshot","pane_id":{},"data":"{}","width":{},"height":{},"device_scale":{}}}"#,
+                        pane_id,
+                        data,
+                        pixels_wide.max(0),
+                        pixels_high.max(0),
+                        device_scale,
+                    )
+                };
+                queue_bridge_message_for_window(tide_window_id, json);
+                wake_event_loop();
+            });
+        unsafe {
+            let _: () = msg_send![
+                &self.webview,
+                takeSnapshotWithConfiguration: std::ptr::null::<AnyObject>()
+                completionHandler: &*completion
+            ];
+        }
+    }
+
     /// Returns true if the webview is currently loading.
     pub fn is_loading(&self) -> bool {
         self.perform_bool_query(WebViewBoolQuery::IsLoading)

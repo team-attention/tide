@@ -211,3 +211,67 @@ fn browser_selection_bridge_message_clears_empty_selection() {
     };
     assert!(browser.page_selection.is_none());
 }
+
+// Spec: docs/specs/browser-agent-pixel-vision.md — a native WKWebView snapshot posts an
+// `agent-screenshot` bridge message that fills the Browser Pane Screenshot cache.
+#[test]
+fn agent_screenshot_bridge_message_fills_browser_pane_screenshot_cache() {
+    let mut app = App::new();
+    let (layout, browser_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            browser_id,
+            "https://example.com".into(),
+        )),
+    );
+
+    let msg = serde_json::json!({
+        "kind": "agent-screenshot",
+        "pane_id": browser_id,
+        "data": "iVBORw0KGgo=",
+        "width": 1024,
+        "height": 768,
+        "device_scale": 2.0
+    })
+    .to_string();
+
+    assert!(app.apply_webview_bridge_message(&msg));
+
+    let Some(PaneKind::Browser(browser)) = app.panes.get(&browser_id) else {
+        panic!("browser pane should exist");
+    };
+    let shot = browser.agent_screenshot().expect("screenshot cached");
+    assert_eq!(shot.png_base64, "iVBORw0KGgo=");
+    assert_eq!(shot.width, 1024);
+    assert_eq!(shot.height, 768);
+    assert_eq!(shot.device_scale, 2.0);
+}
+
+#[test]
+fn agent_screenshot_bridge_message_without_data_is_ignored() {
+    let mut app = App::new();
+    let (layout, browser_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            browser_id,
+            "https://example.com".into(),
+        )),
+    );
+
+    let msg = serde_json::json!({
+        "kind": "agent-screenshot",
+        "pane_id": browser_id,
+        "data": ""
+    })
+    .to_string();
+
+    assert!(!app.apply_webview_bridge_message(&msg));
+    let Some(PaneKind::Browser(browser)) = app.panes.get(&browser_id) else {
+        panic!("browser pane should exist");
+    };
+    assert!(browser.agent_screenshot().is_none());
+}
