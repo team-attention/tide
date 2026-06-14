@@ -21,11 +21,18 @@ markdownRenderer.use(taskListPlugin);
 markdownRenderer.renderer.rules.fence = (tokens, index) => {
   const token = tokens[index];
   const lang = (token.info.trim().split(/\s+/)[0] ?? "") || guessLanguage(token.content) || "";
-  const codeHtml = highlightToHtml(token.content, lang || undefined);
-  // Only emit a language class for safe identifiers (avoids attribute injection
-  // from an arbitrary fence info string).
-  const langAttr = /^[\w-]+$/.test(lang) ? ` class="language-${lang}"` : "";
-  return `<pre class="md-fence"><code${langAttr}>${codeHtml}</code></pre>`;
+  // Only emit a language identifier for safe identifiers (avoids attribute
+  // injection from an arbitrary fence info string).
+  const safeLang = /^[\w-]+$/.test(lang) ? lang : "";
+  const langClass = safeLang ? ` class="language-${safeLang}"` : "";
+  const langData = safeLang ? ` data-tide-lang="${safeLang}"` : "";
+  // Emit PLAIN escaped code synchronously (cheap) and mark the fence pending.
+  // Highlighting a fence is a full Lezer parse; doing every fence inline made
+  // opening a code-heavy markdown file stutter. WorkbenchMarkdownView upgrades a
+  // fence to highlighted spans after paint and only once it scrolls into view
+  // (the IntersectionObserver effect below). The code's textContent round-trips
+  // the original source, so the highlighter re-reads it straight from the DOM.
+  return `<pre class="md-fence" data-tide-fence${langData}><code${langClass}>${markdownRenderer.utils.escapeHtml(token.content)}</code></pre>`;
 };
 
 // Markdown Editor Pane: a pretty rendered Preview (Obsidian-style reading view)
@@ -192,6 +199,54 @@ export function WorkbenchMarkdownView(props: {
     ),
     [previewHtml],
   );
+  // Lazy fence highlighting: fences render as plain escaped code first (so a
+  // code-heavy file opens without paying every fence's Lezer parse up front),
+  // then each is upgraded to highlighted spans once it scrolls into view. Pairs
+  // with content-visibility on the preview blocks, so fences the reader never
+  // reaches stay plain and cost nothing. Re-runs when the rendered source
+  // changes (a fresh render re-emits plain, pending fences). Mutating innerHTML
+  // here is safe: React owns the preview div via dangerouslySetInnerHTML and
+  // only re-commits it when previewHtml changes — which also re-runs this effect.
+  useEffect(() => {
+    const root = previewRef.current;
+    if (mode !== "preview" || root === null) {
+      return undefined;
+    }
+    const pending = Array.from(
+      root.querySelectorAll<HTMLElement>("pre.md-fence[data-tide-fence]"),
+    );
+    if (pending.length === 0) {
+      return undefined;
+    }
+    const upgrade = (pre: HTMLElement): void => {
+      if (!pre.hasAttribute("data-tide-fence")) {
+        return;
+      }
+      const code = pre.querySelector("code");
+      pre.removeAttribute("data-tide-fence");
+      if (code !== null) {
+        code.innerHTML = highlightToHtml(code.textContent ?? "", pre.getAttribute("data-tide-lang") ?? undefined);
+      }
+    };
+    if (typeof IntersectionObserver !== "function") {
+      // No IntersectionObserver (e.g. a non-browser test DOM): highlight inline.
+      pending.forEach(upgrade);
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            upgrade(entry.target as HTMLElement);
+            observer.unobserve(entry.target);
+          }
+        }
+      },
+      { root, rootMargin: "300px 0px" },
+    );
+    pending.forEach((pre) => observer.observe(pre));
+    return () => observer.disconnect();
+  }, [previewHtml, mode]);
   const toggle = (target: "preview" | "edit", label: string) => (
     <button
       type="button"

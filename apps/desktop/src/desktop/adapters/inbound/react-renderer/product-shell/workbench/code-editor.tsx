@@ -1,6 +1,6 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
@@ -78,18 +78,6 @@ export function WorkbenchCodeEditor(props: {
     view.focus();
   }, [nav?.line, nav?.character, nav?.length, props.revision]);
 
-  // Cmd/Ctrl+S saves — like a real editor, instead of a Save button.
-  const saveKeymap = keymap.of([
-    {
-      key: "Mod-s",
-      preventDefault: true,
-      run: () => {
-        props.handlers.onEditorSave(props.paneId);
-        return true;
-      },
-    },
-  ]);
-
   // Language-intelligence extensions, built ONCE per mounted editor: the shell
   // re-renders on every keystroke and react-codemirror reconfigures on each new
   // extensions array, so these must keep their instances (module-level fields
@@ -102,6 +90,71 @@ export function WorkbenchCodeEditor(props: {
       handlers: propsRef.current.handlers,
     });
     return codeIntelligenceExtensions(getContext);
+  }, []);
+
+  // CodeMirror reconfigures — and re-parses the WHOLE document's grammar —
+  // whenever `extensions`, `basicSetup`, `onChange`, or `onUpdate` change
+  // identity (react-codemirror's reconfigure effect deps). The shell re-renders
+  // on every keystroke and cursor move, so without stabilizing these a
+  // text-heavy file re-parsed its grammar on each render and visibly stuttered.
+  // Stabilizing them does NOT change read/write: `value` syncs through
+  // CodeMirror's own value channel, and the callbacks read the LATEST props
+  // through propsRef, so draft/save/cursor/agent-edit behavior is unchanged.
+  const basicSetup = useMemo(
+    () => ({
+      lineNumbers: true,
+      foldGutter: false,
+      highlightActiveLine: !props.readOnly,
+      // Replaced by the explicit autocompletion({override}) extension below.
+      autocompletion: false,
+    }),
+    [props.readOnly],
+  );
+  // Reconfigure only when the language (grammar) actually changes — a different
+  // file type loading into the pane — not on every render. The Cmd/Ctrl+S keymap
+  // reads the live save handler through propsRef.
+  const editorExtensions = useMemo(
+    () => [
+      keymap.of([
+        {
+          key: "Mod-s",
+          preventDefault: true,
+          run: () => {
+            propsRef.current.handlers.onEditorSave(propsRef.current.paneId);
+            return true;
+          },
+        },
+      ]),
+      EditorView.lineWrapping,
+      ...codeIntelExtensions,
+      ...editorLanguageExtensions(props.language),
+    ],
+    [props.language, codeIntelExtensions],
+  );
+  const onEditorChange = useCallback((next: string) => {
+    propsRef.current.handlers.onEditorDraftChange(propsRef.current.paneId, next);
+  }, []);
+  const onEditorUpdate = useCallback((update: ViewUpdate) => {
+    if (!update.selectionSet) {
+      return;
+    }
+    const sel = update.state.selection.main;
+    propsRef.current.handlers.onEditorCursorChange(propsRef.current.paneId, sel.head);
+    const view = editorRef.current?.view;
+    if (!sel.empty && view !== undefined && typeof view.coordsAtPos === "function") {
+      const coords = view.coordsAtPos(sel.from);
+      if (coords) {
+        setSelToolbar({
+          x: coords.left,
+          y: coords.top,
+          text: update.state.sliceDoc(sel.from, sel.to),
+          fromLine: update.state.doc.lineAt(sel.from).number,
+          toLine: update.state.doc.lineAt(sel.to).number,
+        });
+        return;
+      }
+    }
+    setSelToolbar(null);
   }, []);
 
   // Right-click targets the symbol under the pointer (move the caret there so
@@ -242,42 +295,10 @@ export function WorkbenchCodeEditor(props: {
         value={props.value}
         editable={!props.readOnly}
         readOnly={props.readOnly}
-        basicSetup={{
-          lineNumbers: true,
-          foldGutter: false,
-          highlightActiveLine: !props.readOnly,
-          // Replaced by the explicit autocompletion({override}) extension above.
-          autocompletion: false,
-        }}
-        extensions={[
-          saveKeymap,
-          EditorView.lineWrapping,
-          ...codeIntelExtensions,
-          ...editorLanguageExtensions(props.language),
-        ]}
-        onChange={(next: string) => props.handlers.onEditorDraftChange(props.paneId, next)}
-        onUpdate={(update: ViewUpdate) => {
-          if (!update.selectionSet) {
-            return;
-          }
-          const sel = update.state.selection.main;
-          props.handlers.onEditorCursorChange(props.paneId, sel.head);
-          const view = editorRef.current?.view;
-          if (!sel.empty && view !== undefined && typeof view.coordsAtPos === "function") {
-            const coords = view.coordsAtPos(sel.from);
-            if (coords) {
-              setSelToolbar({
-                x: coords.left,
-                y: coords.top,
-                text: update.state.sliceDoc(sel.from, sel.to),
-                fromLine: update.state.doc.lineAt(sel.from).number,
-                toLine: update.state.doc.lineAt(sel.to).number,
-              });
-              return;
-            }
-          }
-          setSelToolbar(null);
-        }}
+        basicSetup={basicSetup}
+        extensions={editorExtensions}
+        onChange={onEditorChange}
+        onUpdate={onEditorUpdate}
       />
       {selToolbar === null ? null : (
         <button

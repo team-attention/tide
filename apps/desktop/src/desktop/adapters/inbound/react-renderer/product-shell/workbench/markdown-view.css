@@ -131,3 +131,16 @@
   font-size: 15px;
   line-height: 22px;
 }
+
+/* A long markdown file renders its WHOLE tree at once (dangerouslySetInnerHTML,
+   no virtualization), so opening a text-heavy doc paid full layout/paint up
+   front and visibly stuttered. content-visibility lets the browser skip layout
+   and paint for off-screen top-level blocks; the `auto` intrinsic size is
+   remembered once a block has been measured, so scrolling stays stable. This is
+   safe for "Pick block": the nodes still exist for querySelectorAll, and text
+   extraction falls back to textContent (which needs no layout) when a skipped
+   block's innerText is empty. */
+.workbench-md-preview > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 40px;
+}

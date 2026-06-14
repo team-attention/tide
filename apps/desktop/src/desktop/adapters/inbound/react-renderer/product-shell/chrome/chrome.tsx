@@ -1,5 +1,6 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
+import { useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { Columns2, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, Square } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
@@ -54,32 +55,7 @@ export function createWindowChromeToggles(
               handlers.onWorkbenchFullscreenToggle,
             )
           ) : (
-            <div className="workbench-controls-menu">
-              <button
-                className="top-row-button window-toggle"
-                type="button"
-                aria-haspopup="true"
-                aria-label="Workbench controls"
-                title="Workbench controls"
-              >
-                <MoreHorizontal size={15} strokeWidth={1.9} />
-              </button>
-              <div className="workbench-controls-menu__popover" role="group" aria-label="Workbench controls">
-                {toggle(
-                  isSplit ? "Switch to Stacked" : "Switch to Split",
-                  isSplit ? <Columns2 size={15} strokeWidth={1.9} /> : <Square size={15} strokeWidth={1.9} />,
-                  false,
-                  () => handlers.onWorkbenchSetLayout(isSplit ? "stacked" : "split"),
-                )}
-                {toggle(
-                  "Fullscreen pane",
-                  <Maximize2 size={15} strokeWidth={1.9} />,
-                  false,
-                  handlers.onWorkbenchFullscreenToggle,
-                )}
-                {toggle("New Pane", <Plus size={16} strokeWidth={1.9} />, false, handlers.onNewWorkbenchPane)}
-              </div>
-            </div>
+            <WorkbenchControlsMenu isSplit={isSplit} handlers={handlers} />
           )}
           <span className="tide-window-toggles__divider" aria-hidden />
         </>
@@ -100,6 +76,62 @@ export function createWindowChromeToggles(
         viewModel.fileTreeOpen,
         handlers.onFileTreeToggle,
       )}
+    </div>
+  );
+}
+
+// The top-right workbench controls: one trigger whose popover (CSS hover /
+// focus-within) reveals the layout toggle, fullscreen, and New Pane. Pressing an
+// action collapses the popover like a menu that closes on selection — `collapsed`
+// overrides the hover/focus reveal (see chrome.css), and is cleared when the
+// pointer leaves so a fresh hover re-opens it.
+function WorkbenchControlsMenu(props: {
+  isSplit: boolean;
+  handlers: ProductShellHandlers;
+}): ReactElement {
+  const { isSplit, handlers } = props;
+  const [collapsed, setCollapsed] = useState(false);
+  const action = (label: string, icon: ReactElement, onClick: () => void): ReactElement => (
+    <button
+      className="top-row-button window-toggle"
+      type="button"
+      aria-label={label}
+      aria-pressed={false}
+      title={label}
+      onClick={(event: { currentTarget: HTMLElement }) => {
+        onClick();
+        // Drop focus so :focus-within doesn't keep the popover open once collapsed.
+        event.currentTarget.blur();
+        setCollapsed(true);
+      }}
+    >
+      {icon}
+    </button>
+  );
+  return (
+    <div
+      className="workbench-controls-menu"
+      data-collapsed={collapsed ? "true" : undefined}
+      onMouseLeave={() => setCollapsed(false)}
+    >
+      <button
+        className="top-row-button window-toggle"
+        type="button"
+        aria-haspopup="true"
+        aria-label="Workbench controls"
+        title="Workbench controls"
+      >
+        <MoreHorizontal size={15} strokeWidth={1.9} />
+      </button>
+      <div className="workbench-controls-menu__popover" role="group" aria-label="Workbench controls">
+        {action(
+          isSplit ? "Switch to Stacked" : "Switch to Split",
+          isSplit ? <Columns2 size={15} strokeWidth={1.9} /> : <Square size={15} strokeWidth={1.9} />,
+          () => handlers.onWorkbenchSetLayout(isSplit ? "stacked" : "split"),
+        )}
+        {action("Fullscreen pane", <Maximize2 size={15} strokeWidth={1.9} />, handlers.onWorkbenchFullscreenToggle)}
+        {action("New Pane", <Plus size={16} strokeWidth={1.9} />, handlers.onNewWorkbenchPane)}
+      </div>
     </div>
   );
 }

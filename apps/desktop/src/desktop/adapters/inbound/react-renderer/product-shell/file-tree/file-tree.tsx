@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
@@ -47,6 +48,56 @@ function createFileTreeLoadingRow(depth: number): ReactElement {
   );
 }
 
+// One tree row, memoized on its PRIMITIVE props. The file-tree view-model rebuilds
+// every entry object whenever its slice recomputes (a folder expands, the active
+// file changes, even an unrelated thread streams — selectFileTreeViewModel also
+// depends on `threads`), and the list is not virtualized. Without this memo each
+// such change re-rendered EVERY row's two lucide SVG icons on the main thread, so
+// opening a file or expanding a folder in a real project visibly stuttered. With
+// it, only the rows whose primitives actually changed re-render (file open → the
+// 2 active rows; expand → just the new child rows; stream token → none). `onOpen`
+// is the stable handler forwarding object, so it never breaks the memo.
+const FileTreeRow = memo(function FileTreeRow(props: {
+  id: string;
+  name: string;
+  kind: "file" | "folder";
+  depth: number;
+  active: boolean;
+  expanded: boolean | undefined;
+  onOpen: (id: string) => void;
+}): ReactElement {
+  const { id, name, kind, depth, active, expanded, onOpen } = props;
+  const isFolder = kind === "folder";
+  const RowIcon = isFolder ? (expanded === false ? Folder : FolderOpen) : fileIconFor(name);
+  return (
+    <button
+      type="button"
+      className={`file-tree-row${active ? " file-tree-row--active" : ""}`}
+      data-depth={depth}
+      data-file-kind={kind}
+      data-expanded={isFolder ? String(expanded ?? true) : undefined}
+      aria-expanded={isFolder ? (expanded ?? true) : undefined}
+      style={{ "--file-tree-depth": depth } as CSSProperties}
+      onClick={() => onOpen(id)}
+    >
+      {/* Folders show a disclosure chevron + open/closed folder icon; both are
+          clickable to toggle. Files open in the editor. */}
+      {isFolder ? (
+        <ChevronRight
+          size={12}
+          strokeWidth={2}
+          className={`file-tree-row__chevron${expanded === false ? "" : " file-tree-row__chevron--expanded"}`}
+          aria-hidden
+        />
+      ) : (
+        <span className="file-tree-row__chevron-spacer" aria-hidden />
+      )}
+      <RowIcon size={14} strokeWidth={1.8} aria-hidden />
+      <span>{name}</span>
+    </button>
+  );
+});
+
 export function createFileTreeColumn(
   viewModel: Pick<ProductShellViewModel, "fileTree">,
   handlers: ProductShellHandlers,
@@ -71,39 +122,17 @@ export function createFileTreeColumn(
           {viewModel.fileTree.loading
             ? createFileTreeSkeleton()
             : viewModel.fileTree.entries.flatMap((entry) => {
-                const RowIcon =
-                  entry.kind === "folder"
-                    ? entry.expanded === false
-                      ? Folder
-                      : FolderOpen
-                    : fileIconFor(entry.name);
                 const row = (
-                  <button
+                  <FileTreeRow
                     key={entry.id}
-                    type="button"
-                    className={`file-tree-row${entry.active ? " file-tree-row--active" : ""}`}
-                    data-depth={entry.depth}
-                    data-file-kind={entry.kind}
-                    data-expanded={entry.kind === "folder" ? String(entry.expanded ?? true) : undefined}
-                    aria-expanded={entry.kind === "folder" ? (entry.expanded ?? true) : undefined}
-                    style={{ "--file-tree-depth": entry.depth } as CSSProperties}
-                    onClick={() => handlers.onFileTreeEntryOpen(entry.id)}
-                  >
-                    {/* Folders show a disclosure chevron + open/closed folder icon; both
-                        are clickable to toggle. Files open in the editor. */}
-                    {entry.kind === "folder" ? (
-                      <ChevronRight
-                        size={12}
-                        strokeWidth={2}
-                        className={`file-tree-row__chevron${entry.expanded === false ? "" : " file-tree-row__chevron--expanded"}`}
-                        aria-hidden
-                      />
-                    ) : (
-                      <span className="file-tree-row__chevron-spacer" aria-hidden />
-                    )}
-                    <RowIcon size={14} strokeWidth={1.8} aria-hidden />
-                    <span>{entry.name}</span>
-                  </button>
+                    id={entry.id}
+                    name={entry.name}
+                    kind={entry.kind}
+                    depth={entry.depth}
+                    active={entry.active === true}
+                    expanded={entry.kind === "folder" ? entry.expanded : undefined}
+                    onOpen={handlers.onFileTreeEntryOpen}
+                  />
                 );
                 // A lazily-expanding folder shows a skeleton child row until its children land.
                 return entry.kind === "folder" &&

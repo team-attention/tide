@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { highlightToHtml } from "../src/desktop/adapters/inbound/react-renderer/support/code-highlight.ts";
+
 import {
   applyProductShellBackendEvent,
   applyProductShellPromptState,
@@ -1394,8 +1396,12 @@ test("markdown_editor_pane_renders_task_list_checkboxes", () => {
   assert.doesNotMatch(html, /\[x\] done item/);
 });
 
-test("markdown_editor_pane_highlights_fenced_code", () => {
+test("markdown_editor_pane_renders_fenced_code_highlighted_on_view", () => {
   // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-4, D6)
+  // Fences render as plain, PENDING code up front so a code-heavy markdown file
+  // opens without paying every fence's highlight parse; WorkbenchMarkdownView
+  // then upgrades each fence to tok-* spans once it scrolls into view (an
+  // IntersectionObserver effect, which the static server render does not run).
   const body = "# Code\n\n```ts\nconst x = 1;\n```\n";
   const html = renderProductShell(
     editorPaneState({
@@ -1408,10 +1414,15 @@ test("markdown_editor_pane_highlights_fenced_code", () => {
       truncated: false,
     }),
   );
-  // Fenced code is highlighted (tok-* spans from the bundled highlighter),
-  // inside the md-fence code block.
+  // The fence is emitted pending (marked for deferred highlight), tagged with its
+  // language, carrying the plain code — inside the md-fence block.
   assert.match(html, /class="md-fence"/);
-  assert.match(html, /class="tok-/);
+  assert.match(html, /data-tide-fence/);
+  assert.match(html, /data-tide-lang="ts"/);
+  assert.match(html, /const x = 1;/);
+  // The deferred upgrade applies real tok-* highlight spans from the bundled
+  // highlighter (the function the IntersectionObserver effect runs per fence).
+  assert.match(highlightToHtml("const x = 1;", "ts"), /class="tok-/);
 });
 
 test("editing_workbench_editor_pane_marks_draft_dirty", () => {
