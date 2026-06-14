@@ -21,7 +21,9 @@
   align-items: center;
   gap: 8px;
   padding-right: 14px;
-  z-index: 20;
+  /* Above the fullscreen workbench (z-index 50) so the exit-fullscreen control is never
+     hidden behind a maximized pane — otherwise there's no way back out of fullscreen. */
+  z-index: 60;
   pointer-events: none;
 }
 

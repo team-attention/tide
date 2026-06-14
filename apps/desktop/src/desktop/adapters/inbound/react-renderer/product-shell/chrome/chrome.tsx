@@ -44,36 +44,43 @@ export function createWindowChromeToggles(
               reveals the layout toggle, fullscreen, and New Pane in a popover — so a
               single ~28px button always fits the top-right and never crowds a column's
               tabs, at any size. */}
-          <div className="workbench-controls-menu">
-            <button
-              className="top-row-button window-toggle"
-              type="button"
-              aria-haspopup="true"
-              aria-label="Workbench controls"
-              title="Workbench controls"
-            >
-              <MoreHorizontal size={15} strokeWidth={1.9} />
-            </button>
-            <div className="workbench-controls-menu__popover" role="group" aria-label="Workbench controls">
-              {toggle(
-                isSplit ? "Switch to Stacked" : "Switch to Split",
-                isSplit ? <Columns2 size={15} strokeWidth={1.9} /> : <Square size={15} strokeWidth={1.9} />,
-                false,
-                () => handlers.onWorkbenchSetLayout(isSplit ? "stacked" : "split"),
-              )}
-              {toggle(
-                viewModel.workbenchFullscreen ? "Exit fullscreen" : "Fullscreen pane",
-                viewModel.workbenchFullscreen ? (
-                  <Minimize2 size={15} strokeWidth={1.9} />
-                ) : (
-                  <Maximize2 size={15} strokeWidth={1.9} />
-                ),
-                viewModel.workbenchFullscreen,
-                handlers.onWorkbenchFullscreenToggle,
-              )}
-              {toggle("New Pane", <Plus size={16} strokeWidth={1.9} />, false, handlers.onNewWorkbenchPane)}
+          {viewModel.workbenchFullscreen ? (
+            // In fullscreen the workbench covers the window, so surface Exit DIRECTLY
+            // (not inside the hover menu) — an obvious one-click way back out.
+            toggle(
+              "Exit fullscreen",
+              <Minimize2 size={15} strokeWidth={1.9} />,
+              true,
+              handlers.onWorkbenchFullscreenToggle,
+            )
+          ) : (
+            <div className="workbench-controls-menu">
+              <button
+                className="top-row-button window-toggle"
+                type="button"
+                aria-haspopup="true"
+                aria-label="Workbench controls"
+                title="Workbench controls"
+              >
+                <MoreHorizontal size={15} strokeWidth={1.9} />
+              </button>
+              <div className="workbench-controls-menu__popover" role="group" aria-label="Workbench controls">
+                {toggle(
+                  isSplit ? "Switch to Stacked" : "Switch to Split",
+                  isSplit ? <Columns2 size={15} strokeWidth={1.9} /> : <Square size={15} strokeWidth={1.9} />,
+                  false,
+                  () => handlers.onWorkbenchSetLayout(isSplit ? "stacked" : "split"),
+                )}
+                {toggle(
+                  "Fullscreen pane",
+                  <Maximize2 size={15} strokeWidth={1.9} />,
+                  false,
+                  handlers.onWorkbenchFullscreenToggle,
+                )}
+                {toggle("New Pane", <Plus size={16} strokeWidth={1.9} />, false, handlers.onNewWorkbenchPane)}
+              </div>
             </div>
-          </div>
+          )}
           <span className="tide-window-toggles__divider" aria-hidden />
         </>
       ) : null}
