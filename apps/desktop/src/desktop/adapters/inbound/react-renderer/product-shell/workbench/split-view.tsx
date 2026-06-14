@@ -69,8 +69,11 @@ export function WorkbenchSplitView(props: {
   // pane header, not a separate row, and never float over a pane.
   controls?: ReactElement | null;
   controlsPaneId?: string | null;
+  // True when the controls' pane is full-width (column split): its header reaches the
+  // window's right edge, so the controls must clear the fixed window toggles.
+  controlsReserveRight?: boolean;
 }): ReactElement {
-  const { tree, viewModel, handlers, paneIcon, controls = null, controlsPaneId = null } = props;
+  const { tree, viewModel, handlers, paneIcon, controls = null, controlsPaneId = null, controlsReserveRight = false } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dropRef = useRef<SplitDropState | null>(null);
   const [drag, setDrag] = useState<SplitDragState | null>(null);
@@ -226,7 +229,10 @@ export function WorkbenchSplitView(props: {
               starts a drag. */}
           {controls !== null && pane.paneId === controlsPaneId ? (
             <div
-              className="workbench-split__pane-controls"
+              className={
+                "workbench-split__pane-controls" +
+                (controlsReserveRight ? " workbench-split__pane-controls--reserve" : "")
+              }
               onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
             >
               {controls}

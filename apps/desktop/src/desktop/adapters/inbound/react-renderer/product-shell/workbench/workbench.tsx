@@ -35,6 +35,20 @@ export function createWorkbenchColumn(
     }
     return node !== null && node.type === "leaf" ? node.paneId : null;
   })();
+  // The first pane reaches the workbench's RIGHT edge only when every split down to it
+  // is a column split (a full-width top pane). Then — when the workbench is the
+  // rightmost column — its docked controls must clear the fixed window toggles. In a
+  // row split the first pane is on the left, so no clearance is needed.
+  const firstPaneFullWidth = ((): boolean => {
+    let node = viewModel.workbenchLayoutTree;
+    while (node !== null && node.type !== "leaf") {
+      if (node.dir !== "col") {
+        return false;
+      }
+      node = node.a;
+    }
+    return node !== null && node.type === "leaf";
+  })();
   // Single layout toggle (icon = current mode, click flips) + fullscreen + New Pane.
   const workbenchControls = (
     <>
@@ -156,6 +170,7 @@ export function createWorkbenchColumn(
           paneIcon={workbenchTabIcon}
           controls={workbenchControls}
           controlsPaneId={firstPaneId}
+          controlsReserveRight={firstPaneFullWidth}
         />
       ) : activeTab && activePane ? (
         <section
