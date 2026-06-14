@@ -64,16 +64,8 @@ export function WorkbenchSplitView(props: {
   viewModel: ProductShellWorkbenchViewModel;
   handlers: ProductShellHandlers;
   paneIcon: (kind: string) => ReactElement;
-  // In Split the workbench controls (layout toggle / fullscreen / New Pane) ride in the
-  // top-LEFT ("first") pane's header (controlsPaneId), at its right — so they live in a
-  // pane header, not a separate row, and never float over a pane.
-  controls?: ReactElement | null;
-  controlsPaneId?: string | null;
-  // True when the controls' pane is full-width (column split): its header reaches the
-  // window's right edge, so the controls must clear the fixed window toggles.
-  controlsReserveRight?: boolean;
 }): ReactElement {
-  const { tree, viewModel, handlers, paneIcon, controls = null, controlsPaneId = null, controlsReserveRight = false } = props;
+  const { tree, viewModel, handlers, paneIcon } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dropRef = useRef<SplitDropState | null>(null);
   const [drag, setDrag] = useState<SplitDragState | null>(null);
@@ -213,35 +205,17 @@ export function WorkbenchSplitView(props: {
           </div>
           <span className="workbench-split__pane-grip" aria-hidden />
           {/* Maximize: collapse Split → Stacked focused on this pane (v1 header
-              maximize). Hover-revealed; stopPropagation so it doesn't begin a drag.
-              Omitted on the controls-hosting (first) pane — its docked controls already
-              carry the fullscreen ⤢, so a second expand glyph would be redundant. */}
-          {pane.paneId !== controlsPaneId ? (
-            <button
-              type="button"
-              className="workbench-split__pane-maximize"
-              title="Maximize pane (Stacked)"
-              aria-label="Maximize pane"
-              onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
-              onClick={() => handlers.onWorkbenchMaximizePane(pane.paneId)}
-            >
-              <Maximize2 size={13} strokeWidth={1.9} aria-hidden />
-            </button>
-          ) : null}
-          {/* The first (top-left) pane's header hosts the workbench controls at its
-              right (Split has no global header row). stopPropagation so using them never
-              starts a drag. */}
-          {controls !== null && pane.paneId === controlsPaneId ? (
-            <div
-              className={
-                "workbench-split__pane-controls" +
-                (controlsReserveRight ? " workbench-split__pane-controls--reserve" : "")
-              }
-              onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
-            >
-              {controls}
-            </div>
-          ) : null}
+              maximize). Hover-revealed; stopPropagation so it doesn't begin a drag. */}
+          <button
+            type="button"
+            className="workbench-split__pane-maximize"
+            title="Maximize pane (Stacked)"
+            aria-label="Maximize pane"
+            onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
+            onClick={() => handlers.onWorkbenchMaximizePane(pane.paneId)}
+          >
+            <Maximize2 size={13} strokeWidth={1.9} aria-hidden />
+          </button>
         </div>
         <div className="workbench-split__pane-body">
           {createWorkbenchPaneContent(pane, handlers, viewModel.editorDrafts[pane.paneId])}

@@ -581,6 +581,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       ? viewModel
       : { ...viewModel, workbenchOpen: eff.workbenchOpen, fileTreeOpen: eff.fileTreeOpen };
 
+  // The workbench chrome controls (layout toggle / fullscreen / New Pane) dock in the
+  // top-right cluster only when the Workbench is open AND the window is wide enough —
+  // below this cap the controls are dropped so a narrow window keeps its column tabs
+  // (rather than the controls/their footprint crowding them). See workbench-dock-parity.
+  const showWorkbenchControls = layoutVm.workbenchOpen && windowWidth >= 1000;
+
   // Animate columns open/closed by keeping them mounted across an exit transition.
   const leftPresence = useColumnPresence(layoutVm.leftRailOpen);
   const workbenchPresence = useColumnPresence(layoutVm.workbenchOpen);
@@ -678,6 +684,9 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         <div
           className="tide-product-shell__body"
           ref={bodyRef}
+          // When the workbench controls are docked in the top-right cluster it's wider,
+          // so the rightmost column's header reserves more right padding (product-shell.css).
+          data-workbench-controls={showWorkbenchControls ? "true" : "false"}
           // Agent chat is the flexible middle track; the other columns use
           // minmax(min, dragWidth) so they honour the dragged width when there is
           // room but shrink toward their min when several columns are open at once
@@ -714,7 +723,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         </div>
         {/* Workbench + FileTree toggles live in a single fixed cluster at the window's
             top-right, so they never jump between column headers as panels open/close. */}
-        {createWindowChromeToggles(layoutVm, handlers)}
+        {createWindowChromeToggles(layoutVm, handlers, showWorkbenchControls)}
         {/* Offscreen host keeping background threads' Browser Panes alive for their agents. */}
         <BackgroundBrowserHost panes={layoutVm.backgroundBrowserPanes} handlers={handlers} />
         {viewModel.settingsOpen

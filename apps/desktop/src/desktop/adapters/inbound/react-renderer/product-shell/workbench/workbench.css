@@ -26,8 +26,8 @@
 }
 
 /* Split: no global header row — the per-pane headers ARE the header band, so the
-   column drops the 52px header track. The workbench controls ride in the first
-   (top-left) pane's header (.workbench-split__pane-controls). */
+   column drops the 52px header track. (The workbench controls live in the top-right
+   window cluster, not in this column.) */
 .workbench-column[data-layout="split"] {
   grid-template-rows: minmax(0, 1fr);
 }

@@ -1,8 +1,8 @@
 import type { ProductShellWorkbenchViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
-import { Columns2, FileText, GitCompare, Globe, LayoutGrid, Maximize2, Minimize2, Plus, Square, Terminal, X } from "lucide-react";
-import { createColumnResizeHandle, createIconButton, createTrafficControls } from "../chrome/chrome.tsx";
+import { FileText, GitCompare, Globe, LayoutGrid, Terminal, X } from "lucide-react";
+import { createColumnResizeHandle, createTrafficControls } from "../chrome/chrome.tsx";
 import { createEditorPickerPane, createWorkbenchPaneContent } from "./pane-content.tsx";
 import { WorkbenchSplitView } from "./split-view.tsx";
 import { WorkbenchLauncherPane, emptyWorkbenchLauncherPane } from "./launcher-pane.tsx";
@@ -17,60 +17,15 @@ export function createWorkbenchColumn(
   const activePane = viewModel.appChrome.activeWorkbenchPane;
   // Split shows every pane with its OWN header (title + close + drag handle) — that IS
   // the header band, so there is NO global tab bar in Split (Stacked keeps the 52px tab
-  // strip). The workbench controls (single layout toggle / fullscreen / New Pane) live
-  // in the workbench's first header: the tab strip's trailing in Stacked, and the
-  // top-LEFT pane's header in Split (so they're never a separate row, and never float
-  // over a pane). See docs_v2/specs/workbench-dock-parity.md.
+  // strip). The workbench chrome controls (layout toggle / fullscreen / New Pane) live
+  // in the fixed top-right window cluster next to the panel toggles
+  // (createWindowChromeToggles) — consistent position in every layout, never over a
+  // pane. See docs_v2/specs/workbench-dock-parity.md.
   const splitActive =
     viewModel.editorPicker === null &&
     viewModel.workbenchLayoutMode === "split" &&
     viewModel.workbenchLayoutTree !== null &&
     viewModel.appChrome.visibleWorkbenchPanes.length > 1;
-  // The top-LEFT ("first") pane — always the a-child down the split tree. In Split its
-  // header hosts the workbench controls at its right.
-  const firstPaneId = ((): string | null => {
-    let node = viewModel.workbenchLayoutTree;
-    while (node !== null && node.type !== "leaf") {
-      node = node.a;
-    }
-    return node !== null && node.type === "leaf" ? node.paneId : null;
-  })();
-  // The first pane reaches the workbench's RIGHT edge only when every split down to it
-  // is a column split (a full-width top pane). Then — when the workbench is the
-  // rightmost column — its docked controls must clear the fixed window toggles. In a
-  // row split the first pane is on the left, so no clearance is needed.
-  const firstPaneFullWidth = ((): boolean => {
-    let node = viewModel.workbenchLayoutTree;
-    while (node !== null && node.type !== "leaf") {
-      if (node.dir !== "col") {
-        return false;
-      }
-      node = node.a;
-    }
-    return node !== null && node.type === "leaf";
-  })();
-  // Single layout toggle (icon = current mode, click flips) + fullscreen + New Pane.
-  const workbenchControls = (
-    <>
-      {createIconButton(
-        viewModel.workbenchLayoutMode === "split" ? "Switch to Stacked" : "Switch to Split",
-        viewModel.workbenchLayoutMode === "split" ? (
-          <Columns2 size={15} strokeWidth={1.9} />
-        ) : (
-          <Square size={15} strokeWidth={1.9} />
-        ),
-        () => handlers.onWorkbenchSetLayout(viewModel.workbenchLayoutMode === "split" ? "stacked" : "split"),
-        "top-row-button",
-      )}
-      {createIconButton(
-        viewModel.workbenchFullscreen ? "Exit fullscreen" : "Fullscreen pane",
-        viewModel.workbenchFullscreen ? <Minimize2 size={15} strokeWidth={1.9} /> : <Maximize2 size={15} strokeWidth={1.9} />,
-        handlers.onWorkbenchFullscreenToggle,
-        "top-row-button",
-      )}
-      {createIconButton("New Pane", <Plus size={16} strokeWidth={1.9} />, handlers.onNewWorkbenchPane, "top-row-button")}
-    </>
-  );
   const tabIconSize = 13;
   const workbenchTabIcon = (kind: string): ReactElement => {
     switch (kind) {
@@ -155,7 +110,6 @@ export function createWorkbenchColumn(
               ))
             )}
           </div>
-          <div className="column-top-row__trailing">{workbenchControls}</div>
         </header>
       )}
       {viewModel.editorPicker !== null ? (
@@ -168,9 +122,6 @@ export function createWorkbenchColumn(
           viewModel={viewModel}
           handlers={handlers}
           paneIcon={workbenchTabIcon}
-          controls={workbenchControls}
-          controlsPaneId={firstPaneId}
-          controlsReserveRight={firstPaneFullWidth}
         />
       ) : activeTab && activePane ? (
         <section

@@ -18,18 +18,20 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
 4. **Intuitive Stacked/Split — mirrors the v1 Terminal dock** (`dock-global.md`): per
    the original "work like dock in tide terminal", Stacked = a flat tab strip over all
    panes + one active pane; Split = the tiled `SplitLayout`, **each pane with its own
-   header** (no global tab bar in Split — that would be a second header layer). The
-   workbench controls — a **single** `Stacked⇄Split` toggle (icon shows the current
-   mode, click flips it), **fullscreen**, **New Pane** — ride in the workbench's *first*
-   header: the tab strip's trailing in **Stacked**, and the **top-LEFT ("first") pane's
-   header** (at its right) in **Split** (`controlsPaneId` = the a-child down the tree).
-   So the controls are never a separate row and never float over a pane → no overlap in
-   any file-tree state. The fixed top-right window cluster keeps ONLY the Workbench /
-   FileTree panel toggles. Per-pane **maximize** (Split → Stacked on that pane) is on
-   every split pane's header, collapsed-until-hover. Tradeoff (v1 shares it): on a very
-   narrow first pane the chip shrinks toward icon-only to fit the controls (the editor
-   breadcrumb still names it); this is a v2 addition since v1 toggles split/stack via
-   keybinding + per-pane maximize (keyboard-first), with no on-screen toggle.
+   header** (no global tab bar in Split — that would be a second header layer). All
+   column headers (chat, tab strip, split pane headers, file tree) are a level **52px**
+   band.
+   The workbench controls — a **single** `Stacked⇄Split` toggle (icon shows the current
+   mode, click flips it), **fullscreen**, **New Pane** — live in the **fixed top-right
+   window cluster** (`createWindowChromeToggles`), docked next to the Workbench/FileTree
+   panel toggles. Same position in EVERY layout, reads as native chrome (not a floating
+   element), and never sits over a column's tabs. Per-pane **maximize** (Split → Stacked
+   on that pane) is on every split pane's header, collapsed-until-hover.
+   **Responsive size cap:** the docked controls show only when the Workbench is open AND
+   the window is wide enough (`showWorkbenchControls`, currently ≥ 1000px). Below the cap
+   the whole group is dropped so a narrow window keeps its tabs rather than letting the
+   controls / their reserved footprint crowd them. The rightmost column's header reserves
+   the cluster's (wider) footprint via `data-workbench-controls` on the body.
    Stacked tabs are flat and label-like; the active tab carries a full-height surface
    highlight + a charcoal under-bar (ink, never a chip) so it reads as a tab — not as
    the segmented toggle in the same row — and its region is clearly delineated. The

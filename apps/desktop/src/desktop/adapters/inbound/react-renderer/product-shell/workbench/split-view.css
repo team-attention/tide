@@ -95,27 +95,6 @@
   max-width: none;
 }
 
-/* The first (top-left) pane's header hosts the workbench controls at its right
-   (Split has no global header row). They sit after the drag grip, always visible
-   (unlike the hover-only maximize), and reserve their own width so they never overlap
-   the chip. */
-.workbench-split__pane-controls {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 2px;
-}
-
-/* When the workbench is the rightmost column (file tree closed), the fixed window
-   toggles (▣ ⊟) sit at the window's top-right — over the first pane's header when it
-   reaches that edge (a full-width top pane in a column split). Reserve their footprint
-   so the docked controls line up cleanly to the LEFT of the window toggles, not under
-   them. With the file tree open the toggles are over the file tree, so no reserve. */
-.tide-product-shell__body > .workbench-column:last-child .workbench-split__pane-controls--reserve {
-  margin-right: 78px;
-}
-
 /* Empty grip = the drag surface filling the strip between the chip and maximize. */
 .workbench-split__pane-grip {
   flex: 1 1 auto;
