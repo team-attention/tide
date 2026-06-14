@@ -1,5 +1,5 @@
-import { archiveProductShellProjectChats, cancelProductShellProjectRename, cancelProductShellThreadRename, cancelProductShellWorktreeCreate, clearProductShellLeftRailTransientState, confirmProductShellThreadArchive, openProductShellLeftRailMenu, openProductShellThreadFromLeftRail, selectProductShellChoiceSurfaceRow, setProductShellListSettings, setProductShellRegisteredProjects, showProductShellThreadArchiveConfirm, startNewProductShellScratchThread, startNewProductShellThread, startProductShellProjectRename, startProductShellThreadRename, startProductShellWorktreeCreate, submitProductShellThreadRename, toggleProductShellLeftRail, toggleProductShellProject, toggleProductShellProjectPin, toggleProductShellThreadPin } from "../../../../../application/domains/product-shell/product-shell.ts";
-import { persistListSettings } from "../settings/settings.tsx";
+import { archiveProductShellProjectChats, cancelProductShellProjectRename, cancelProductShellThreadRename, cancelProductShellWorktreeCreate, clearProductShellLeftRailTransientState, confirmProductShellThreadArchive, openProductShellLeftRailMenu, openProductShellThreadFromLeftRail, selectProductShellChoiceSurfaceRow, setProductShellListSettings, setProductShellRegisteredProjects, showProductShellThreadArchiveConfirm, startNewProductShellScratchThread, startNewProductShellThread, startProductShellProjectRename, startProductShellThreadRename, startProductShellWorktreeCreate, submitProductShellThreadRename, toggleProductShellLeftRail, toggleProductShellProject, toggleProductShellProjectPin, toggleProductShellThreadPin, moveKeyInOrder, parsePinnedItemKey, selectThreadListViewModel, setProductShellPinnedItemOrder, setProductShellProjectOrder } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { persistListSettings, persistRailOrder } from "../settings/settings.tsx";
 import { projectCwdById } from "../product-shell.tsx";
 import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree/path.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
@@ -7,7 +7,7 @@ import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree/path.t
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
-export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onNewThread" | "onNewThreadInProject" | "onProjectToggle" | "onThreadSelect" | "onLeftRailToggle" | "onLeftRailMenuOpen" | "onToggleSection" | "onListSettingsChange" | "onProjectRevealInFinder" | "onProjectArchiveChats" | "onProjectRemove" | "onProjectDeleteWorktree" | "onProjectPinToggle" | "onProjectRenameStart" | "onProjectRenameCancel" | "onProjectRenameSubmit" | "onProjectCreateWorktree" | "onProjectCreateWorktreeSubmit" | "onProjectCreateWorktreeCancel" | "onPinnedProjectSelect" | "onAddProject" | "onNewScratchThread" | "onThreadArchiveIntent" | "onThreadArchiveConfirm" | "onThreadPinToggle" | "onThreadDeleteWorktree" | "onThreadRenameStart" | "onThreadRenameSubmit" | "onThreadRenameCancel" | "onLeftRailTransientClear" | "isSectionCollapsed" | "isProjectRemovable" | "isProjectWorktree" | "threadWorktreeBranch"> {
+export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onNewThread" | "onNewThreadInProject" | "onProjectToggle" | "onThreadSelect" | "onLeftRailToggle" | "onLeftRailMenuOpen" | "onToggleSection" | "onListSettingsChange" | "onProjectRevealInFinder" | "onProjectArchiveChats" | "onProjectRemove" | "onProjectDeleteWorktree" | "onProjectPinToggle" | "onProjectRenameStart" | "onProjectRenameCancel" | "onProjectRenameSubmit" | "onProjectCreateWorktree" | "onProjectCreateWorktreeSubmit" | "onProjectCreateWorktreeCancel" | "onPinnedProjectSelect" | "onAddProject" | "onNewScratchThread" | "onThreadArchiveIntent" | "onThreadArchiveConfirm" | "onThreadPinToggle" | "onThreadDeleteWorktree" | "onThreadRenameStart" | "onThreadRenameSubmit" | "onThreadRenameCancel" | "onLeftRailTransientClear" | "isSectionCollapsed" | "isProjectRemovable" | "isProjectWorktree" | "onReorderPinnedItem" | "onReorderProject" | "threadWorktreeBranch"> {
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onNewThread: () => setShellState((state) => startNewProductShellThread(state)),
@@ -47,6 +47,33 @@ export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<Produc
       setShellState((state) => {
         const next = setProductShellListSettings(state, patch);
         persistListSettings(next.listSettings);
+        return next;
+      }),
+    // Drag-reorder of the Pinned section's top-level items (spec:
+    // left-rail-manual-ordering). Compute the new order from the LIVE visual list so a
+    // partial/empty stored order self-heals, then persist.
+    onReorderPinnedItem: (draggedKey, targetKey) =>
+      setShellState((state) => {
+        const keys = selectThreadListViewModel(state).pinnedItems.map((item) =>
+          item.kind === "thread" ? `t:${item.thread.threadId}` : `p:${item.project.projectId}`,
+        );
+        const order = moveKeyInOrder(keys, draggedKey, targetKey).flatMap((key) => {
+          const ref = parsePinnedItemKey(key);
+          return ref === null ? [] : [ref];
+        });
+        const next = setProductShellPinnedItemOrder(state, order);
+        persistRailOrder({ pinnedItemOrder: next.pinnedItemOrder, projectOrder: next.projectOrder });
+        return next;
+      }),
+    // Drag-reorder of the Projects section's folders (nested threads keep sortBy).
+    onReorderProject: (draggedProjectId, targetProjectId) =>
+      setShellState((state) => {
+        const keys = selectThreadListViewModel(state).projectGroups.map((group) => group.projectId);
+        const next = setProductShellProjectOrder(
+          state,
+          moveKeyInOrder(keys, draggedProjectId, targetProjectId),
+        );
+        persistRailOrder({ pinnedItemOrder: next.pinnedItemOrder, projectOrder: next.projectOrder });
         return next;
       }),
     onProjectRevealInFinder: (projectId) => {

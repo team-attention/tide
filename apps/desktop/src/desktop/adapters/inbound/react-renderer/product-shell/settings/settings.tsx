@@ -1,5 +1,5 @@
 import { DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS } from "../../../../../application/domains/product-shell/product-shell.ts";
-import type { PreferredStartComposer, ProductShellListSettings, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { PreferredStartComposer, ProductShellListSettings, ProductShellPinnedItemRef, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ChangeEvent, ReactElement } from "react";
@@ -49,6 +49,45 @@ export function persistListSettings(settings: ProductShellListSettings): void {
       LIST_SETTINGS_STORAGE_KEY,
       JSON.stringify({ ...settings, schema: LIST_SETTINGS_SCHEMA }),
     );
+  } catch {
+    // Best-effort; ignore quota/serialization errors.
+  }
+}
+
+const RAIL_ORDER_STORAGE_KEY = "tide.railOrder";
+
+export interface ProductShellRailOrder {
+  pinnedItemOrder: ProductShellPinnedItemRef[];
+  projectOrder: string[];
+}
+
+// The Left Rail's manual order (pinned items + project folders) is a renderer-local
+// pref; persist it so a drag-reorder survives reloads. Spec: left-rail-manual-ordering.
+export function loadRailOrder(): ProductShellRailOrder {
+  if (typeof localStorage === "undefined") {
+    return { pinnedItemOrder: [], projectOrder: [] };
+  }
+  try {
+    const raw = localStorage.getItem(RAIL_ORDER_STORAGE_KEY);
+    if (raw === null) {
+      return { pinnedItemOrder: [], projectOrder: [] };
+    }
+    const parsed = JSON.parse(raw) as Partial<ProductShellRailOrder>;
+    return {
+      pinnedItemOrder: Array.isArray(parsed.pinnedItemOrder) ? parsed.pinnedItemOrder : [],
+      projectOrder: Array.isArray(parsed.projectOrder) ? parsed.projectOrder : [],
+    };
+  } catch {
+    return { pinnedItemOrder: [], projectOrder: [] };
+  }
+}
+
+export function persistRailOrder(order: ProductShellRailOrder): void {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+  try {
+    localStorage.setItem(RAIL_ORDER_STORAGE_KEY, JSON.stringify(order));
   } catch {
     // Best-effort; ignore quota/serialization errors.
   }

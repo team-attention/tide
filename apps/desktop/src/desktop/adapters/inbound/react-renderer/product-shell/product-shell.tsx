@@ -5,7 +5,7 @@ import { createWorkbenchHandlers } from "./handlers/workbench-handlers.ts";
 import { createEditorHandlers } from "./handlers/editor-handlers.ts";
 import { createChromeHandlers } from "./handlers/chrome-handlers.ts";
 import type { MenuAnchorRect, ProductShellHandlers, TideProductShellProps } from "./support/types.ts";
-import { createSettingsModal, loadListSettings, loadPreferredStartComposer, loadWorktreeSettings, persistPreferredStartComposer } from "./settings/settings.tsx";
+import { createSettingsModal, loadListSettings, loadPreferredStartComposer, loadRailOrder, loadWorktreeSettings, persistPreferredStartComposer } from "./settings/settings.tsx";
 import { WorktreeDeleteDialog } from "./dialogs/worktree-delete-dialog.tsx";
 import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx";
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
@@ -66,6 +66,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       props.initialState ??
       createProductShellState({
         includeFixtureData: false,
+        ...loadRailOrder(),
         listSettings: loadListSettings(),
         worktreeSettings: loadWorktreeSettings(),
       })

@@ -159,3 +159,11 @@
   width: 100%;
   height: 100%;
 }
+
+/* ---- Drag-reorder of top-level rail items (spec: left-rail-manual-ordering) ---- */
+
+/* A line under the hovered item marks where the dragged item will drop. */
+.rail-drag-item--over {
+  box-shadow: inset 0 -2px 0 0 var(--tide-action);
+  border-radius: 8px;
+}

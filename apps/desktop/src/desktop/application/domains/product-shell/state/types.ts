@@ -384,6 +384,9 @@ export interface CreateProductShellStateInput {
   // Seed the persisted settings (renderer loads from localStorage).
   listSettings?: ProductShellListSettings;
   worktreeSettings?: ProductShellWorktreeSettings;
+  // Seed the persisted Left Rail manual order (spec: left-rail-manual-ordering).
+  pinnedItemOrder?: ProductShellPinnedItemRef[];
+  projectOrder?: string[];
 }
 
 export interface ProductShellUpdateResult {

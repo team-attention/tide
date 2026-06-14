@@ -71,9 +71,12 @@ export function createLeftRail(
           createRailSkeleton()
         ) : viewModel.listSettings.groupBy === "thread" ? (
           <>
-            {/* Thread mode still surfaces pinned threads in a Pinned section (no
-                project groups); the flat list then excludes them to avoid dupes. */}
-            {createPinnedSection([], viewModel.pinnedThreads, handlers)}
+            {/* Thread mode surfaces pinned THREADS only (no project groups); the flat
+                list then excludes them to avoid dupes. */}
+            {createPinnedSection(
+              viewModel.pinnedItems.filter((item) => item.kind === "thread"),
+              handlers,
+            )}
             {createThreadSection(
               "Threads",
               viewModel.flatThreads.filter((thread) => !thread.pinned),
@@ -82,7 +85,7 @@ export function createLeftRail(
           </>
         ) : (
           <>
-            {createPinnedSection(viewModel.pinnedProjects, viewModel.pinnedThreads, handlers)}
+            {createPinnedSection(viewModel.pinnedItems, handlers)}
             {createProjectSection(viewModel.projectGroups, handlers)}
             {createThreadSection("Scratch", viewModel.scratchThreads, handlers)}
           </>
