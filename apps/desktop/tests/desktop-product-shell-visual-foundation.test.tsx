@@ -2741,7 +2741,9 @@ test("shell_columns_can_close_without_losing_top_row_alignment", () => {
   assert.equal(view.leftRailOpen, false);
   assert.equal(view.workbenchOpen, false);
   assert.equal(view.fileTreeOpen, true);
-  assert.doesNotMatch(html, /aria-label="Left Rail"/);
+  // Collapsed, the Left Rail leaves the grid (so the remaining columns' top rows stay
+  // aligned) and becomes the out-of-flow floating peek (spec: multitask-navigation L1).
+  assert.match(html, /rail-peek__hot-zone/);
   assert.match(html, /aria-label="Agent Chat Top Row"/);
   assert.match(html, /aria-label="FileTree Top Row"/);
 });

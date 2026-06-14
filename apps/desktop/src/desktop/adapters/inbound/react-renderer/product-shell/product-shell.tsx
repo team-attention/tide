@@ -13,6 +13,7 @@ import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
 import { useEscapeShortcuts, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
 import { useMultitaskNavigation } from "./multitask/use-multitask-navigation.tsx";
+import { RailPeek } from "./left-rail/rail-peek.tsx";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
 import type { QuickOpenFile } from "./search/quick-open.tsx";
 import { createWindowChromeToggles } from "./chrome/chrome.tsx";
@@ -770,6 +771,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             onClose={() => setWorktreeDelete(null)}
           />
         ) : null}
+        {/* Collapsed-rail floating peek: hover the left edge, or hold Ctrl. */}
+        {layoutVm.leftRailOpen ? null : (
+          <RailPeek handlers={stableHandlers} anchor={menuAnchor} collapsedSections={collapsedSections} forceOpen={multitask.active} />
+        )}
         {/* Transient ⌘-Tab-style live switcher (Ctrl+Tab), null unless cycling. */}
         {multitask.hud}
       </div>

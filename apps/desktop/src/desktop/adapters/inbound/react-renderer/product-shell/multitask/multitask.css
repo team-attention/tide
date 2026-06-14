@@ -112,3 +112,50 @@
   font-size: 11px;
   color: var(--tide-muted);
 }
+
+/* ---- L1 floating Left Rail peek (collapsed rail) ---- */
+
+.rail-peek {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 70;
+  /* Only the hot zone (and the open panel) are interactive; the rest passes through. */
+  pointer-events: none;
+}
+
+.rail-peek__hot-zone {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  pointer-events: auto;
+}
+
+.rail-peek__panel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 264px;
+  /* Floats OVER the content (no layout reflow); slides in from the left edge. */
+  transform: translateX(-100%);
+  transition: transform 0.16s ease;
+  pointer-events: none;
+  background: var(--tide-bg);
+  border-right: 1px solid var(--tide-line);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+}
+
+.rail-peek[data-open] .rail-peek__panel {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.rail-peek__panel .left-rail {
+  width: 100%;
+  height: 100%;
+}
