@@ -18,6 +18,7 @@ import type {
 } from "./connection.ts";
 import type { RequestId, ThreadId } from "./ids.ts";
 import type { ProviderCliAgentId } from "./agent.ts";
+import type { ProviderModelDto } from "./provider-model-catalog.ts";
 import type { JsonObject } from "./json.ts";
 import type { PromptStateDto } from "./prompt.ts";
 import type { ProviderReadinessDto } from "./provider-readiness.ts";
@@ -103,6 +104,10 @@ export interface BackendEventPayloadByKind {
     // The composer agent menu enables these and shows the rest disabled (never
     // removed). Absent = older backend; the UI then treats all as available.
     availableAgents?: ProviderCliAgentId[];
+    // opencode's authed model catalog (enumerated via `opencode models`). opencode
+    // is a multi-vendor router so its list is per-user, not hand-curated. Absent ⇒
+    // not yet enumerated; the composer falls back to "opencode default" only.
+    opencodeModels?: ProviderModelDto[];
   };
   "thread.hydrated": {
     thread: ThreadSummaryDto;

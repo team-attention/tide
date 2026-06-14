@@ -7,6 +7,7 @@ import type {
   AgentStartPlanInput,
   ProviderLaunchPlan,
   ProviderSignalSource,
+  SessionConfigUpdateInput,
   SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { ThreadScope } from "../../../../application/domains/thread/thread.ts";
@@ -132,25 +133,33 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
   async buildStartPlan(input: AgentStartPlanInput): Promise<ProviderLaunchPlan> {
     const executablePath = (await this.resolveExecutable("opencode")) ?? "opencode";
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
-    return this.opencodeLaunchPlan({ executablePath, cwd });
+    return this.opencodeLaunchPlan({ executablePath, cwd, launchOptions: input.launchOptions });
   }
 
   async buildResumePlan(input: AgentResumePlanInput): Promise<ProviderLaunchPlan> {
     const executablePath = (await this.resolveExecutable("opencode")) ?? "opencode";
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
-    return this.opencodeLaunchPlan({ executablePath, cwd, resumeRef: input.providerSessionRef.value });
+    return this.opencodeLaunchPlan({
+      executablePath,
+      cwd,
+      launchOptions: input.launchOptions,
+      resumeRef: input.providerSessionRef.value,
+    });
   }
 
-  // opencode's launch plan consumes no model/permission Launch Options, so a
-  // mid-thread change has nothing to deliver — and restarting would change
-  // nothing either. Explicit live no-op (not the restart default).
-  buildSessionConfigUpdate(): SessionConfigUpdatePlan {
-    return { kind: "live", protocolParams: {} };
+  // opencode model / effort / permission all apply LIVE over ACP via
+  // `session/set_config_option` (configId model | effort | mode) — verified live, no
+  // restart for any of them. Each changed key maps to a config option the ACP client
+  // delivers; the session reports refreshed configOptions in the response.
+  buildSessionConfigUpdate(input: SessionConfigUpdateInput): SessionConfigUpdatePlan {
+    const configOptions = opencodeConfigOptions(input.launchOptions, input.changedKeys);
+    return { kind: "live", protocolParams: { configOptions } };
   }
 
   private opencodeLaunchPlan(input: {
     executablePath: string;
     cwd: string;
+    launchOptions?: Record<string, unknown>;
     resumeRef?: string;
   }): ProviderLaunchPlan {
     // STRUCTURED TRANSPORT: ACP over stdio (`opencode acp`). The shared ACP
@@ -164,6 +173,9 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
       transport: "acp",
       protocolParams: {
         cwd: input.cwd,
+        // The chosen model / effort / mode, applied by the ACP client right after
+        // session/new (before the first prompt) via session/set_config_option.
+        configOptions: opencodeConfigOptions(input.launchOptions, ["model", "reasoning", "permission"]),
         ...(this.tideMcp !== undefined
           ? {
               mcpServers: [
@@ -187,4 +199,40 @@ function cwdFromScope(scope: ThreadScope | undefined, fallback: string): string 
     return fallback;
   }
   return scope.kind === "project" ? scope.cwd : scope.scratchCwd;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+// Map Tide Launch Options to opencode ACP `set_config_option` entries for the given
+// changed keys: model → configId "model" (the sentinel "opencode default" sets
+// nothing — honor opencode's own default), reasoning → "effort", permission → "mode"
+// (opencode exposes only build | plan; everything but "plan" is "build").
+export function opencodeConfigOptions(
+  launchOptions: Record<string, unknown> | undefined,
+  changedKeys: ReadonlyArray<string>,
+): Array<{ configId: string; value: string }> {
+  const options: Array<{ configId: string; value: string }> = [];
+  for (const key of changedKeys) {
+    if (key === "model") {
+      const model = stringValue(launchOptions?.model);
+      if (model !== undefined && model !== "opencode default") {
+        options.push({ configId: "model", value: model });
+      }
+      continue;
+    }
+    if (key === "reasoning") {
+      const effort = stringValue(launchOptions?.reasoning);
+      if (effort !== undefined) {
+        options.push({ configId: "effort", value: effort });
+      }
+      continue;
+    }
+    if (key === "permission") {
+      const permission = stringValue(launchOptions?.permission);
+      options.push({ configId: "mode", value: permission === "plan" ? "plan" : "build" });
+    }
+  }
+  return options;
 }

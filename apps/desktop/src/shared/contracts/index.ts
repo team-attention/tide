@@ -11,6 +11,7 @@ export * from "./events.ts";
 export * from "./ids.ts";
 export * from "./json.ts";
 export * from "./prompt.ts";
+export * from "./provider-model-catalog.ts";
 export * from "./provider-readiness.ts";
 export * from "./thread.ts";
 export * from "./workbench.ts";

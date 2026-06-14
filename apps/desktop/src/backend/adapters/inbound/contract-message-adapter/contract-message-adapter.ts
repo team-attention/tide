@@ -40,6 +40,7 @@ import {
   type LastKnownStateDto,
   type ProviderCliAgentId,
   type ProviderReadinessDto,
+  type ProviderModelDto,
   type PromptStateDto,
   type ThreadScopeDto,
   type ThreadSummaryDto,
@@ -57,6 +58,10 @@ export interface CreateBackendContractMessageAdapterInput {
   // composer menu can enable available agents and show the rest disabled. Evaluated
   // per call so newly-installed CLIs are picked up without a restart.
   detectAvailableAgents?: () => ProviderCliAgentId[];
+  // opencode's authed model catalog (`opencode models`), surfaced on thread.listed so
+  // the composer model menu can offer the user's real vendor/model list. Evaluated
+  // per call (cached in the enumerator) so a new `opencode auth login` is picked up.
+  enumerateOpencodeModels?: () => ProviderModelDto[];
 }
 
 export interface BackendContractMessageAdapter {
@@ -74,12 +79,14 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
   private readonly detectAvailableAgents?: () => ProviderCliAgentId[];
+  private readonly enumerateOpencodeModels?: () => ProviderModelDto[];
 
   constructor(input: CreateBackendContractMessageAdapterInput) {
     this.service = input.service;
     this.clock = input.clock ?? defaultClock;
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
     this.detectAvailableAgents = input.detectAvailableAgents;
+    this.enumerateOpencodeModels = input.enumerateOpencodeModels;
   }
 
   async handleMessage(message: unknown): Promise<BackendEventEnvelope[]> {
@@ -410,6 +417,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       payload: {
         threads: result.threads.map(toThreadSummaryDto),
         availableAgents: this.detectAvailableAgents?.(),
+        opencodeModels: this.enumerateOpencodeModels?.(),
       },
     };
   }

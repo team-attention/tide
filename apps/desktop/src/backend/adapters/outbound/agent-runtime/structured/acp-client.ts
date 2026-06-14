@@ -99,6 +99,9 @@ class AcpClient implements StructuredRuntimeClient {
   // A mid-thread mode change that arrived before session/new (or session/load)
   // resolved; applied right after the session is adopted.
   private pendingModeId?: string;
+  // opencode config-option changes (model/effort/mode) that arrived before the
+  // session was adopted; applied right after, mirroring pendingModeId.
+  private pendingConfigOptions?: Array<{ configId: string; value: string }>;
   private turnOpen = false;
   private recordIndex = 0;
   // streaming accumulation: one growing block per message/thought run
@@ -206,16 +209,33 @@ class AcpClient implements StructuredRuntimeClient {
     if (modeId !== undefined && modeId !== "default") {
       this.request("session/set_mode", { sessionId, modeId }, () => undefined);
     }
+    // opencode delivers model / effort / mode as `session/set_config_option` (its
+    // configOptions surface), NOT the ACP-standard modeId — applied before the first
+    // prompt so the chosen model/effort takes effect from turn one.
+    const initialConfigOptions =
+      this.pendingConfigOptions ?? parseConfigOptions(this.protocolParams.configOptions);
+    this.pendingConfigOptions = undefined;
+    this.sendConfigOptions(sessionId, initialConfigOptions);
     if (initialPrompt !== undefined && initialPrompt.length > 0) {
       this.queuedPrompts.push({ text: initialPrompt, attachments: initialAttachments });
     }
     this.flushQueuedPrompt();
   }
 
-  // Mid-thread Launch Options change: the only live-updatable ACP setting is
-  // the session mode (permission). session/set_mode is valid at any time —
-  // including back to "default". See mid-thread-launch-option-changes.md.
+  // Mid-thread Launch Options change. gemini delivers the session mode (permission)
+  // as the ACP-standard modeId via session/set_mode; opencode delivers model / effort
+  // / mode as session/set_config_option entries. Both are valid at any time. See
+  // mid-thread-launch-option-changes.md + opencode-model-vendor-selection.md.
   applyConfig(protocolParams: Record<string, unknown>): void {
+    const configOptions = parseConfigOptions(protocolParams.configOptions);
+    if (configOptions !== undefined) {
+      if (this.sessionId === undefined) {
+        this.pendingConfigOptions = configOptions;
+        return;
+      }
+      this.sendConfigOptions(this.sessionId, configOptions);
+      return;
+    }
     const modeId = stringField(protocolParams, "modeId");
     if (modeId === undefined) {
       return;
@@ -225,6 +245,19 @@ class AcpClient implements StructuredRuntimeClient {
       return;
     }
     this.request("session/set_mode", { sessionId: this.sessionId, modeId }, () => undefined);
+  }
+
+  private sendConfigOptions(
+    sessionId: string,
+    configOptions: Array<{ configId: string; value: string }> | undefined,
+  ): void {
+    for (const option of configOptions ?? []) {
+      this.request(
+        "session/set_config_option",
+        { sessionId, configId: option.configId, value: option.value },
+        () => undefined,
+      );
+    }
   }
 
   private flushQueuedPrompt(): void {
@@ -593,6 +626,22 @@ class AcpClient implements StructuredRuntimeClient {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// Parse opencode's `configOptions` launch/apply param (an array of {configId, value})
+// from an unknown protocolParams field. Returns undefined when absent so the gemini
+// modeId path is taken instead.
+function parseConfigOptions(value: unknown): Array<{ configId: string; value: string }> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const options: Array<{ configId: string; value: string }> = [];
+  for (const entry of value) {
+    if (isRecord(entry) && typeof entry.configId === "string" && typeof entry.value === "string") {
+      options.push({ configId: entry.configId, value: entry.value });
+    }
+  }
+  return options;
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | undefined {

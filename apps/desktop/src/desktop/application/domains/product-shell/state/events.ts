@@ -1,6 +1,6 @@
 import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellStartPageFile, ProductShellState } from "./types.ts";
 import { startFilePaneId } from "./types.ts";
-import { applyAgentChatBackendEvent, setAvailableProviderAgents, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
+import { applyAgentChatBackendEvent, setAvailableProviderAgents, setOpencodeModelCatalog, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
@@ -30,13 +30,25 @@ export function applyProductShellBackendEvent(
   };
 
   switch (event.kind) {
-    case "thread.listed":
+    case "thread.listed": {
       // Record which provider-CLI agents the backend detected locally so the composer
       // agent menu enables them and shows the rest disabled.
-      setAvailableProviderAgents(
-        (event.payload as { availableAgents?: readonly string[] }).availableAgents ?? null,
+      const listedPayload = event.payload as {
+        availableAgents?: readonly string[];
+        opencodeModels?: ReadonlyArray<{ value: string; label: string; vendor?: string; detail?: string }>;
+      };
+      setAvailableProviderAgents(listedPayload.availableAgents ?? null);
+      // opencode's authed model catalog (multi-vendor router) for the model menu.
+      setOpencodeModelCatalog(
+        listedPayload.opencodeModels?.map((model) => ({
+          value: model.value,
+          label: model.label,
+          vendor: model.vendor,
+          detail: model.detail,
+        })) ?? null,
       );
       return applyProductShellThreadListEvent(nextState, event);
+    }
     case "thread.started":
     case "thread.hydrated":
       return applyProductShellThreadEvent(nextState, event, source);

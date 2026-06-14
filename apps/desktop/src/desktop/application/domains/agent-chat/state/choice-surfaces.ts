@@ -288,15 +288,19 @@ function agentMenuRow(
 ): AgentChatChoiceSurfaceRowView {
   const selected = selectedAgentId === agentId;
   const comingSoon = isAgentComingSoon(agentId);
+  const available = isAgentAvailable(agentId);
+  // An undetected provider reads "Not installed" (it was wrongly "Agent
+  // Integration") so the disabled row says WHY it can't be picked.
+  const detail = comingSoon ? "Coming soon" : !available ? "Not installed" : "Agent Integration";
   return row(
     agentId,
     label,
-    comingSoon ? "Coming soon" : "Agent Integration",
+    detail,
     undefined,
     selected ? "check" : `identity:${agentId}`,
     selected,
     false,
-    comingSoon || !isAgentAvailable(agentId),
+    comingSoon || !available,
   );
 }
 
@@ -351,6 +355,22 @@ function modelForRow(
   }
 }
 
+// Pretty vendor label for an opencode `provider/model` vendor segment.
+function vendorLabel(vendor: string): string {
+  const map: Record<string, string> = {
+    openai: "OpenAI",
+    anthropic: "Anthropic",
+    google: "Google",
+    opencode: "OpenCode Zen",
+    moonshotai: "Moonshot",
+    alibaba: "Qwen / Alibaba",
+    "github-copilot": "GitHub Copilot",
+    openrouter: "OpenRouter",
+    deepseek: "DeepSeek",
+  };
+  return map[vendor] ?? vendor.replace(/(^|[-_/])([a-z])/g, (_m, sep, ch) => (sep ? " " : "") + ch.toUpperCase()).trim();
+}
+
 function cliModelMenuRows(
   agentId: string,
   agentLabel: string,
@@ -358,17 +378,28 @@ function cliModelMenuRows(
 ): AgentChatChoiceSurfaceRowView[] {
   void agentLabel;
   // No noisy fallback detail (matches the provider apps' clean model lists): a
-  // model shows its own detail (e.g. "Legacy") or nothing.
-  const rows = cliModelOptionsForAgent(agentId).map((option) =>
-    row(
-      `model:${option.value}`,
-      option.label,
-      option.detail,
-      undefined,
-      option.value === selectedModel ? "check" : "",
-      option.value === selectedModel,
-    ),
-  );
+  // model shows its own detail (e.g. "Legacy") or nothing. Multi-vendor agents
+  // (opencode) carry a `vendor` per model → emit a section header per vendor so
+  // the long cross-vendor list stays legible.
+  const options = cliModelOptionsForAgent(agentId);
+  const rows: AgentChatChoiceSurfaceRowView[] = [];
+  let lastVendor: string | undefined;
+  for (const option of options) {
+    if (option.vendor !== undefined && option.vendor !== lastVendor) {
+      lastVendor = option.vendor;
+      rows.push(row(`vendor:${option.vendor}`, vendorLabel(option.vendor), undefined, "source", "source"));
+    }
+    rows.push(
+      row(
+        `model:${option.value}`,
+        option.label,
+        option.detail,
+        undefined,
+        option.value === selectedModel ? "check" : "",
+        option.value === selectedModel,
+      ),
+    );
+  }
   return rows;
 }
 

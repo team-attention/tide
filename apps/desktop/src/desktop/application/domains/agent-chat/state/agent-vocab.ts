@@ -96,6 +96,19 @@ export const PERMISSION_OPTIONS: Record<string, PermissionConfig> = {
       { id: "gemini-yolo", value: "yolo", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
     ],
   },
+  // opencode's ACP session exposes exactly two modes (`session/new` configOptions
+  // category "mode": build | plan) — NOT the four gemini-style modes. Build runs
+  // tools per opencode's own permission config; Plan is read-only. The Agent
+  // Integration maps these to the ACP `modeId`.
+  opencode: {
+    default: "build",
+    options: [
+      { id: "opencode-build", value: "build", label: "Build", detail: "Runs tools per opencode config" },
+      { id: "opencode-plan", value: "plan", label: "Plan", detail: "Read-only, no edits" },
+    ],
+    // Threads created while opencode borrowed gemini's modes map onto build/plan.
+    legacyValueMap: { default: "build", auto_edit: "build", yolo: "build" },
+  },
   openai_api: {
     default: "Auto-review",
     options: [
@@ -134,8 +147,9 @@ export function isAgentAvailable(agentId: string): boolean {
 
 // Agents shown in the composer menu but not yet wired for real use — rendered
 // disabled with a "Coming soon" hint, never selectable or chosen as the start
-// default. opencode's CLI is detected, but its runtime start path isn't ready.
-const COMING_SOON_AGENTS: ReadonlySet<string> = new Set(["opencode"]);
+// default. (opencode is now fully wired: ACP runtime + model/vendor/effort
+// selection from its own catalog — see opencode-model-vendor-selection.md.)
+const COMING_SOON_AGENTS: ReadonlySet<string> = new Set([]);
 
 export function isAgentComingSoon(agentId: string): boolean {
   return COMING_SOON_AGENTS.has(agentId);
@@ -167,6 +181,19 @@ interface CliModelOption {
   value: string;
   label: string;
   detail?: string;
+  // Multi-vendor router models (opencode) carry their vendor for grouping in the
+  // model menu; single-vendor agents (claude/codex/gemini) leave it undefined.
+  vendor?: string;
+}
+
+// opencode's model list is per-user (depends on which vendors they've authed) and
+// cannot be hand-curated like the single-vendor agents. The backend enumerates it
+// (`opencode models`) and ships it on thread.listed; the desktop caches it here.
+// Module-level so it survives New-Thread state resets, mirroring availableProviderAgents.
+let opencodeModelCatalog: CliModelOption[] | null = null;
+
+export function setOpencodeModelCatalog(models: CliModelOption[] | null): void {
+  opencodeModelCatalog = models !== null && models.length > 0 ? models : null;
 }
 
 // A maintained, provider-native model list per CLI agent (models change rarely).
@@ -197,10 +224,15 @@ export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
         { value: "gemini-3-pro", label: "Gemini 3 Pro" },
         { value: "gemini-3-flash", label: "Gemini 3 Flash" },
       ];
-    case "opencode":
-      // opencode picks the model from its own provider config/credentials; Tide
-      // uses its default (no per-turn model override yet).
-      return [{ value: "opencode default", label: "Default", detail: "opencode config" }];
+    case "opencode": {
+      // opencode is a multi-vendor router: the real model list is whatever the
+      // user has authed (`opencode auth login`), enumerated by the backend and
+      // cached in opencodeModelCatalog. "opencode default" first = honor opencode's
+      // own configured default (no explicit set). Falls back to default-only until
+      // the catalog arrives (older backend / not yet enumerated).
+      const fallback = { value: "opencode default", label: "Default", detail: "opencode config" };
+      return opencodeModelCatalog === null ? [fallback] : [fallback, ...opencodeModelCatalog];
+    }
     default:
       return [];
   }

@@ -25,6 +25,7 @@ import {
   addComposerContextChip,
   removeComposerContextChip,
   setComposerContextChipComment,
+  setAvailableProviderAgents,
   type AgentChatShellState,
 } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
 import {
@@ -1329,11 +1330,13 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
   assert.doesNotMatch(html, /data-choice-surface/);
 });
 
-test("active provider-agent rows bind; the coming-soon row is an intentional no-op", () => {
+test("every provider-agent row binds; a not-installed row is an intentional no-op", () => {
   // Regression: every selectable agent row must actually bind its agent (the
   // opencode row was once rendered+enabled but composerAgentIdForRow lacked its
-  // case, so it was a SILENT no-op). The active agents must bind...
-  for (const agentId of ["codex", "claude", "gemini"] as const) {
+  // case, so it was a SILENT no-op). All four provider-CLI agents bind — opencode
+  // is no longer coming-soon.
+  setAvailableProviderAgents(null); // all detected
+  for (const agentId of ["codex", "claude", "gemini", "opencode"] as const) {
     const opened = setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state;
     const selected = selectAgentChatChoiceSurfaceRow(opened, "agent_menu", agentId).state;
     assert.equal(
@@ -1342,16 +1345,18 @@ test("active provider-agent rows bind; the coming-soon row is an intentional no-
       `selecting the ${agentId} row should bind the thread to ${agentId}`,
     );
   }
-  // ...and opencode is "Coming soon": its row is disabled, so selecting it must
-  // leave the bound agent unchanged (an intentional no-op, not a missing mapping).
+  // A NOT-INSTALLED agent's row is disabled, so selecting it must leave the bound
+  // agent unchanged (an intentional no-op, not a missing mapping).
+  setAvailableProviderAgents(["codex", "claude"]); // opencode undetected
   const base = setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state;
   const before = base.composer.startOptions.agentBinding.agentId;
   const afterOpencode = selectAgentChatChoiceSurfaceRow(base, "agent_menu", "opencode").state;
   assert.equal(
     afterOpencode.composer.startOptions.agentBinding.agentId,
     before,
-    "selecting the coming-soon opencode row must not change the bound agent",
+    "selecting a not-installed (disabled) row must not change the bound agent",
   );
+  setAvailableProviderAgents(null); // reset module state for other tests
 });
 
 test("project_menu_lists_real_injected_projects_not_a_hardcoded_set", () => {

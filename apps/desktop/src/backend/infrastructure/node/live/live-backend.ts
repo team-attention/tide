@@ -1,5 +1,5 @@
 import { discoverAdoptedThreadSeeds, rebuildAdoptedConversation } from "./live-provider-discovery.ts";
-import { executableForAgent, resolveExecutable } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
+import { resolveExecutable } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
 import { locateClaudeTranscriptFile } from "../../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
 import { tideClaudeContextPrompt } from "../../../adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
 import { createLiveAgentSessionEventProjector, nextEventId, persistThreadBlocks } from "./live-projector.ts";
@@ -130,6 +130,7 @@ import {
 import { createGeminiAgentIntegration } from "../../../adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts";
 
 import { createOpencodeAgentIntegration } from "../../../adapters/outbound/agent-integrations/opencode/opencode-agent-integration.ts";
+import { createProviderDetection } from "../provider/provider-detection.ts";
 
 import { codexRolloutTurnEnded as codexRolloutTurnEndedFromText } from "../../../adapters/outbound/agent-integrations/codex/codex-rollout-turn-detection.ts";
 
@@ -200,7 +201,6 @@ import {
 
 import {
   CONTRACT_VERSION,
-  PROVIDER_CLI_AGENT_IDS,
   type BackendEventEnvelope,
   type ThreadSummaryDto,
 } from "../../../../shared/contracts/index.ts";
@@ -401,19 +401,18 @@ export function createLiveBackendContractMessageAdapter(
     });
   }
 
+  // Installed-agent detection + opencode model catalog, surfaced on thread.listed.
+  const detection = createProviderDetection({
+    hasIntegration: (agentId) => integrations[agentId] !== undefined,
+    resolveExecutable,
+  });
+
   return createPersistentLiveBackendAdapter({
     flushPendingPersists: () => projector.flushPendingPersists(),
     adapter: createBackendContractMessageAdapter({
       service,
-      // Detect which provider-CLI agents are installed locally (executable resolves).
-      // The composer menu enables these and shows the rest disabled. Evaluated per
-      // thread.list so a CLI installed after launch is picked up.
-      detectAvailableAgents: () =>
-        PROVIDER_CLI_AGENT_IDS.filter(
-          (agentId) =>
-            integrations[agentId] !== undefined &&
-            resolveExecutable(executableForAgent(agentId)) !== undefined,
-        ),
+      detectAvailableAgents: detection.detectAvailableAgents,
+      enumerateOpencodeModels: detection.enumerateOpencodeModels,
     }),
     service,
     persistence,
