@@ -14,6 +14,7 @@ import {
   setAvailableProviderAgents,
   setOpencodeModelCatalog,
 } from "../src/desktop/application/domains/agent-chat/state/agent-vocab.ts";
+import { buildProvidersHubViewModel } from "../src/desktop/application/domains/agent-chat/state/providers-hub.ts";
 
 // Spec: docs_v2/specs/opencode-model-vendor-selection.md
 
@@ -157,6 +158,27 @@ test("gemini model list uses the real -preview ids (drift regression)", () => {
   assert.ok(values.includes("gemini-3-flash-preview"));
   assert.ok(values.includes("gemini-2.5-pro"));
   assert.ok(!values.includes("gemini-3-pro"), "the drifted bare id must be gone");
+});
+
+test("buildProvidersHubViewModel lists all four agents with status + catalog", () => {
+  setAvailableProviderAgents(["claude", "codex", "gemini"]); // opencode not installed
+  setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
+  const hub = buildProvidersHubViewModel();
+  assert.deepEqual(hub.map((agent) => agent.agentId), ["claude", "codex", "gemini", "opencode"]);
+
+  const opencode = hub.find((agent) => agent.agentId === "opencode");
+  assert.equal(opencode?.installed, false);
+  assert.equal(opencode?.status, "not_installed");
+  assert.equal(opencode?.multiVendor, true); // its catalog carries vendors
+  assert.deepEqual(opencode?.permissionModes.map((mode) => mode.value), ["build", "plan"]);
+
+  const claude = hub.find((agent) => agent.agentId === "claude");
+  assert.equal(claude?.installed, true);
+  assert.equal(claude?.multiVendor, false);
+  assert.ok((claude?.models.length ?? 0) > 1);
+
+  setAvailableProviderAgents(null);
+  setOpencodeModelCatalog(null);
 });
 
 test("cliModelOptionsForAgent('opencode') reflects the backend-enumerated catalog", () => {

@@ -4,6 +4,7 @@ import type { TideThemePreference } from "../../support/theme.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ChangeEvent, ReactElement } from "react";
 import { createIconButton } from "../chrome/chrome.tsx";
+import { buildProvidersHubViewModel } from "../../../../../application/domains/agent-chat/state/providers-hub.ts";
 import { X } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
@@ -217,6 +218,38 @@ export function createSettingsModal(
               Repo-relative paths, one per line, copied into each new worktree.
             </span>
           </label>
+        </section>
+        <section className="settings-modal__section">
+          <h3 className="settings-modal__section-title">Providers &amp; Models</h3>
+          <div className="settings-providers" role="list" aria-label="Providers and models">
+            {buildProvidersHubViewModel().map((agent) => {
+              const concreteModels = agent.models.filter((model) => !model.value.endsWith(" default"));
+              const vendors = new Set(
+                concreteModels.map((model) => model.vendor).filter((vendor): vendor is string => vendor !== undefined),
+              );
+              const summary = agent.installed
+                ? agent.multiVendor
+                  ? `${vendors.size} vendor${vendors.size === 1 ? "" : "s"} · ${concreteModels.length} models`
+                  : `${concreteModels.length} models`
+                : "Run its CLI to install";
+              return (
+                <div key={agent.agentId} className="settings-providers__row" role="listitem">
+                  <span className="settings-providers__name">{agent.label}</span>
+                  <span
+                    className="settings-providers__status"
+                    data-installed={agent.installed ? "true" : "false"}
+                  >
+                    {agent.installed ? "Installed" : "Not installed"}
+                  </span>
+                  <span className="settings-providers__summary">{summary}</span>
+                </div>
+              );
+            })}
+          </div>
+          <span className="settings-modal__hint">
+            Pick a vendor / model / effort per thread from the composer. opencode adds
+            vendors via <code>opencode auth login</code>.
+          </span>
         </section>
       </div>
     </div>
