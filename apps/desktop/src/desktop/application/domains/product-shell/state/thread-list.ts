@@ -1,5 +1,6 @@
-import type { ProductShellBackendEventSource, ProductShellLeftRailMenu, ProductShellPinnedItemRef, ProductShellProject, ProductShellState, ProductShellThread, ProductShellUpdateResult } from "./types.ts";
+import type { ProductShellBackendEventSource, ProductShellLeftRailMenu, ProductShellPinnedItemRef, ProductShellPinnedItemView, ProductShellProject, ProductShellProjectGroupView, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellUpdateResult } from "./types.ts";
 import { formatRelativeThreadTime, previewBlocksForThread, projectsFromThreads, toAgentChatThreadSummary } from "./view-model.ts";
+import type { ProductShellThreadListViewModel } from "./view-model.ts";
 import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatBlock, AgentChatBranchOption, AgentChatShellState, AgentChatThreadSummary, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
 import { agentBindingForShellAgent, cloneLaunchOptions, createStartAgentChatState, normalizeAgentId } from "./start.ts";
@@ -12,6 +13,73 @@ import { productShellFileTreeFromPayload } from "./file-tree.ts";
 // discovery as Threads whose id is prefixed `adopted-`.
 export function isExternalSessionThread(threadId: string): boolean {
   return threadId.startsWith("adopted-");
+}
+
+// Final Left-Rail assembly. Builds the rail render order (top-to-bottom flattened
+// sequence: "thread" mode = flat sorted list; "project" mode = pinned groups' threads,
+// pinned threads, project groups' threads, scratch), then derives BOTH the live set
+// (Decision 8) and the ⌥1..9 shortcut numbers from it. ⌥N numbers the first 9 threads
+// in that order, deduped, regardless of pin status (#2 — so ⌥N reaches the top of the
+// list, not just pinned). Extracted from view-model to stay under the file-size cap.
+// Spec: docs_v2/specs/multitask-navigation.md.
+export function finalizeThreadList(args: {
+  groupBy: string;
+  pinnedThreads: ProductShellThreadView[];
+  pinnedProjects: ProductShellProjectGroupView[];
+  pinnedItems: ProductShellPinnedItemView[];
+  projectGroups: ProductShellProjectGroupView[];
+  scratchThreads: ProductShellThreadView[];
+  flatThreads: ProductShellThreadView[];
+}): ProductShellThreadListViewModel {
+  const { groupBy, pinnedThreads, pinnedProjects, pinnedItems, projectGroups, scratchThreads, flatThreads } =
+    args;
+  const railOrder =
+    groupBy === "thread"
+      ? flatThreads
+      : [
+          ...pinnedProjects.flatMap((group) => group.threads),
+          ...pinnedThreads,
+          ...projectGroups.flatMap((group) => group.threads),
+          ...scratchThreads,
+        ];
+  // Live set: walk the rail order and keep the live threads, deduped (L3 / Decision 8).
+  const liveSeen = new Set<string>();
+  const liveThreads = railOrder.filter((thread) => {
+    if (thread.live !== true || liveSeen.has(thread.threadId)) {
+      return false;
+    }
+    liveSeen.add(thread.threadId);
+    return true;
+  });
+  // ⌥1..9 numbering: first 9 threads in rail order, deduped — numbered regardless of pin.
+  const SHORTCUT_COUNT = 9;
+  const numberedThreads: ProductShellThreadView[] = [];
+  const numberByThreadId = new Map<string, number>();
+  for (const thread of railOrder) {
+    if (numberByThreadId.has(thread.threadId) || numberByThreadId.size >= SHORTCUT_COUNT) {
+      continue;
+    }
+    const pinNumber = numberByThreadId.size + 1;
+    numberByThreadId.set(thread.threadId, pinNumber);
+    numberedThreads.push({ ...thread, pinNumber });
+  }
+  // Stamp the number onto every section's copy so the badge shows wherever it renders.
+  const withNumber = (thread: ProductShellThreadView): ProductShellThreadView => {
+    const pinNumber = numberByThreadId.get(thread.threadId);
+    return pinNumber === undefined ? thread : { ...thread, pinNumber };
+  };
+  return {
+    pinnedThreads: pinnedThreads.map(withNumber),
+    pinnedProjects,
+    pinnedItems: pinnedItems.map((item) =>
+      item.kind === "thread" ? { kind: "thread" as const, thread: withNumber(item.thread) } : item,
+    ),
+    projectGroups: projectGroups.map((group) => ({ ...group, threads: group.threads.map(withNumber) })),
+    scratchThreads: scratchThreads.map(withNumber),
+    flatThreads: flatThreads.map(withNumber),
+    liveThreads,
+    numberedThreads,
+  };
 }
 
 export function toggleProductShellLeftRail(state: ProductShellState): ProductShellState {

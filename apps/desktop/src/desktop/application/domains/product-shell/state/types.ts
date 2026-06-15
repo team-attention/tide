@@ -480,8 +480,10 @@ export interface ProductShellViewModel {
   settingsOpen: boolean;
   flatThreads: ProductShellThreadView[];
   // Threads with a live in-process runtime, in Left Rail render order — the set the
-  // multitask switcher (Ctrl+Tab) cycles. See specs/multitask-navigation.md.
+  // multitask switcher (⌥Tab) cycles. See specs/multitask-navigation.md.
   liveThreads: ProductShellThreadView[];
+  // The ⌥1..9 jump targets: first 9 threads in Left Rail render order (index N-1 = ⌥N).
+  numberedThreads: ProductShellThreadView[];
   agentChat: AgentChatShellViewModel;
   appChrome: AppChromeViewModel;
   fileTree: ProductShellFileTreeView;

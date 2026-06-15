@@ -101,9 +101,10 @@ export function createThreadRow(
           </button>
         ) : (
           [
-            // Option+N pin badge — present in markup for the first 9 pinned threads, but
-            // CSS-hidden until Option is held (root [data-multitask]), where it replaces
-            // the time/dots/actions in the right slot. Spec: multitask-navigation L2.
+            // Option+N badge — present in markup for the first 9 threads in Left Rail
+            // order (top-9, not just pinned), but CSS-hidden until Option is held (root
+            // [data-multitask]), where it replaces the time/dots/actions in the right
+            // slot. Spec: multitask-navigation L2 / #2.
             thread.pinNumber !== undefined ? (
               <span key="pin-badge" className="thread-row__pin-badge" aria-hidden>
                 {`⌥${thread.pinNumber}`}

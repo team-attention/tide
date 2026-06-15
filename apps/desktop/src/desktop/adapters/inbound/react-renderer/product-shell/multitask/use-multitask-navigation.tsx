@@ -20,28 +20,28 @@ const BADGE_HOLD_DELAY_MS = 320;
 
 // Option-unified multitask navigation (spec: multitask-navigation L2 + L3). While
 // Option is held this is "multitask mode": `active` drives the row ⌥N badges (after a
-// short hold), Option+1..9 jumps to a pinned thread, and Option+Tab / Option+Shift+Tab
+// short hold), Option+1..9 jumps to the N-th rail thread (top-9), and Option+Tab / Option+Shift+Tab
 // cycle the live set through a HUD that commits on Option release. Everything is
 // transient — nothing persists on release. (Option, not Control, per user pref; on
 // macOS Option mangles event.key for digits, so digits are matched on event.code.)
 export function useMultitaskNavigation(params: {
-  pinnedThreads: ProductShellThreadView[];
+  numberedThreads: ProductShellThreadView[];
   liveThreads: ProductShellThreadView[];
   activeThreadId: string | null;
   onSelectThread: (threadId: string) => void;
 }): { active: boolean; hud: ReactElement | null } {
-  const { pinnedThreads, liveThreads, activeThreadId, onSelectThread } = params;
+  const { numberedThreads, liveThreads, activeThreadId, onSelectThread } = params;
   const [altActive, setAltActive] = useState(false);
   const holdTimer = useRef<number | null>(null);
   const [switcher, setSwitcher] = useState<SwitcherState>({ open: false, index: 0 });
 
   // The keydown/keyup handlers subscribe once; read the latest inputs through a ref so
   // they never need to re-attach (and never close over stale lists).
-  const latest = useRef({ pinnedThreads, liveThreads, activeThreadId, onSelectThread, switcher });
+  const latest = useRef({ numberedThreads, liveThreads, activeThreadId, onSelectThread, switcher });
   // Refresh the ref in the commit phase (not during render) so an aborted/yielded
   // render can't leave it inconsistent. Review feedback.
   useEffect(() => {
-    latest.current = { pinnedThreads, liveThreads, activeThreadId, onSelectThread, switcher };
+    latest.current = { numberedThreads, liveThreads, activeThreadId, onSelectThread, switcher };
   });
 
   const clearHoldTimer = () => {
@@ -81,14 +81,15 @@ export function useMultitaskNavigation(params: {
         );
         return;
       }
-      // Option+1..9 → jump to the N-th pinned thread (stable manual order). Match the
-      // PHYSICAL key (event.code) — on macOS Option+1 reports event.key="¡", not "1".
+      // Option+1..9 → jump to the N-th thread in Left Rail order (top-9, not just
+      // pinned). Match the PHYSICAL key (event.code) — on macOS Option+1 reports
+      // event.key="¡", not "1".
       const digit = /^Digit([1-9])$/.exec(event.code);
       if (digit !== null) {
         // Swallow EVERY Option+digit (even out-of-range) so it can't fall through to a
         // browser/OS shortcut. Review feedback.
         event.preventDefault();
-        const target = resolvePinJump(current.pinnedThreads, Number(digit[1]));
+        const target = resolvePinJump(current.numberedThreads, Number(digit[1]));
         if (target !== null) {
           // A pin jump ends multitask mode immediately; drop any open switcher so the
           // Option release does not override the jump with the highlighted live thread.

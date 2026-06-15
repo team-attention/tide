@@ -616,11 +616,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     setContentSearchVisible,
   });
 
-  // Ctrl-unified multitask navigation: Ctrl+1..9 pin jump, Ctrl+Tab live switcher
-  // (spec: multitask-navigation). `active` gates the row ^N badges; `hud` is the
-  // transient live-switcher overlay (null unless cycling).
+  // Option-unified multitask navigation: ⌥1..9 jumps to the N-th thread in rail order
+  // (top-9, not just pinned), ⌥Tab cycles the live switcher (spec: multitask-navigation).
+  // `active` gates the row ⌥N badges; `hud` is the transient switcher overlay.
   const multitask = useMultitaskNavigation({
-    pinnedThreads: viewModel.pinnedThreads,
+    numberedThreads: viewModel.numberedThreads,
     liveThreads: viewModel.liveThreads,
     activeThreadId,
     onSelectThread: handlers.onThreadSelect,
