@@ -26,7 +26,7 @@ Both run Codex, Claude Code, Gemini, and Antigravity as first-class agents. Each
 
 A free, open-source [Codex App](apps/desktop/) alternative: a focused Agent Chat per Thread, a Composer anchored to that chat, and a Workbench (Browser / Diff / Editor / Terminal Panes) that appears only when the Thread needs it — local, open, and multi-agent.
 
-**Download:** _coming soon._ → Details: **[apps/desktop/README.md](apps/desktop/README.md)**
+**Download:** grab the latest `Tide` `.dmg` from [Releases](https://github.com/team-attention/tide/releases/latest) and drag it to Applications. → Details: **[apps/desktop/README.md](apps/desktop/README.md)**
 
 ---
 

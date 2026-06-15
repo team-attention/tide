@@ -32,7 +32,7 @@ Left UI | Agent Chat | Workbench
 
 ## Install
 
-Download the latest Tide `.dmg` from [Releases](https://github.com/team-attention/tide/releases) — **coming soon**.
+Download the latest Tide `.dmg` from [Releases](https://github.com/team-attention/tide/releases/latest), then drag it to Applications.
 
 > Building from source / contributing: see [`docs_v2/`](docs_v2/).
 
