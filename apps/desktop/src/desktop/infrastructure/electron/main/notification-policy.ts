@@ -36,6 +36,10 @@ export function isNotificationRequest(value: unknown): value is TideNotification
   return (
     typeof request.title === "string" &&
     typeof request.body === "string" &&
-    (request.threadId === null || typeof request.threadId === "string")
+    (request.threadId === null || typeof request.threadId === "string") &&
+    typeof request.isActiveThread === "boolean" &&
+    (request.kind === "agent_finished" ||
+      request.kind === "needs_attention" ||
+      request.kind === "agent_update")
   );
 }

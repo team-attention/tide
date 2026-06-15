@@ -11,19 +11,26 @@ import { isNotificationRequest, shouldEmitNotification } from "./notification-po
 // request names a thread, asks the renderer to activate it (a user action, so it is an
 // allowed source of focus change — web-native-thread-model).
 export function registerNotificationBridge(getWindow: () => BrowserWindow | undefined): void {
+  // Electron can garbage-collect a Notification once nothing in the JS heap references it,
+  // dropping the pending 'click' listener (so click-to-thread would silently fail). Hold a
+  // strong reference until the notification is clicked / closed / failed.
+  const active = new Set<Notification>();
   ipcMain.on("tide:notify", (_event, request: unknown) => {
     if (!isNotificationRequest(request)) {
       return;
     }
     const appFocused = getWindow()?.isFocused() ?? false;
-    if (!shouldEmitNotification({ appFocused, isActiveThread: request.isActiveThread === true })) {
+    if (!shouldEmitNotification({ appFocused, isActiveThread: request.isActiveThread })) {
       return;
     }
     if (!Notification.isSupported()) {
       return;
     }
     const notification = new Notification({ title: request.title, body: request.body });
+    active.add(notification);
+    const release = () => active.delete(notification);
     notification.on("click", () => {
+      release();
       app.focus({ steal: true });
       const window = getWindow();
       if (window !== undefined && !window.isDestroyed()) {
@@ -37,6 +44,8 @@ export function registerNotificationBridge(getWindow: () => BrowserWindow | unde
         }
       }
     });
+    notification.on("close", release);
+    notification.on("failed", release);
     notification.show();
   });
 }

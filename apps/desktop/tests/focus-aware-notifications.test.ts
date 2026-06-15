@@ -52,6 +52,20 @@ test("isNotificationRequest accepts well-formed requests and rejects malformed o
   assert.equal(isNotificationRequest("nope"), false);
   assert.equal(isNotificationRequest({ title: 1, body: "y", threadId: null }), false);
   assert.equal(isNotificationRequest({ title: "x", body: "y", threadId: 5 }), false);
+  // Missing / non-boolean isActiveThread → rejected.
+  assert.equal(
+    isNotificationRequest({ kind: "agent_finished", threadId: "t1", title: "x", body: "y" }),
+    false,
+  );
+  assert.equal(
+    isNotificationRequest({ kind: "agent_finished", threadId: "t1", title: "x", body: "y", isActiveThread: "no" }),
+    false,
+  );
+  // Unknown kind → rejected.
+  assert.equal(
+    isNotificationRequest({ kind: "bogus", threadId: "t1", title: "x", body: "y", isActiveThread: true }),
+    false,
+  );
 });
 
 test("selectCompletedThreads surfaces running→idle threads regardless of which is active", () => {
