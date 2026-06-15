@@ -32,24 +32,34 @@ export function WorkbenchLauncherPane(props: {
     <div className="workbench-pane-content workbench-pane-content--launcher">
       <p className="workbench-launcher-hint">Open a pane</p>
       <div className="workbench-launcher-actions" aria-label="Workbench Launcher Actions">
-        {actions.map((action) => (
-          <button
-            key={action.actionId}
-            className="workbench-launcher-action"
-            type="button"
-            disabled={!action.enabled}
-            data-launcher-action={action.actionId}
-            onClick={() => props.handlers.onLauncherAction(action.actionId)}
-          >
-            <span className="workbench-launcher-action__icon" aria-hidden>
-              {launcherActionIcon(action.actionId)}
-            </span>
-            <span className="workbench-launcher-action__copy">
-              <span className="workbench-launcher-action__label">{action.label}</span>
-              <span className="workbench-launcher-action__description">{action.description}</span>
-            </span>
-          </button>
-        ))}
+        {actions.map((action) => {
+          // The Diff action opens the read-only git Changes view (working-tree diff) — it
+          // stays available in a git repo, not only "after a file edit", so override the
+          // backend's disabled state and route it to the Changes view. Spec: git-changes-view.
+          const isDiff = action.actionId === "open_diff";
+          return (
+            <button
+              key={action.actionId}
+              className="workbench-launcher-action"
+              type="button"
+              disabled={isDiff ? false : !action.enabled}
+              data-launcher-action={action.actionId}
+              onClick={() =>
+                isDiff ? props.handlers.onOpenChanges() : props.handlers.onLauncherAction(action.actionId)
+              }
+            >
+              <span className="workbench-launcher-action__icon" aria-hidden>
+                {launcherActionIcon(action.actionId)}
+              </span>
+              <span className="workbench-launcher-action__copy">
+                <span className="workbench-launcher-action__label">{action.label}</span>
+                <span className="workbench-launcher-action__description">
+                  {isDiff ? "View working-tree changes (git)" : action.description}
+                </span>
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

@@ -124,6 +124,9 @@ export interface ProductShellHandlers {
   }) => void;
   onRemoveAttachment: (attachmentId: string) => void;
   onLauncherAction: (actionId: string) => void;
+  // Open the read-only git Changes view (working-tree diff). Wired to the launcher's
+  // Diff action + the top-bar branch badge. Spec: git-changes-view.
+  onOpenChanges: () => void;
   onEditorPickerFilter: (filter: string) => void;
   onEditorPickerSelect: (relativePath: string) => void;
   onLeftRailMenuOpen: (menu: ProductShellLeftRailMenu | null, rect?: MenuAnchorRect) => void;

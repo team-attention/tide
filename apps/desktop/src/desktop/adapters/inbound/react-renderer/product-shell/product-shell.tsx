@@ -558,6 +558,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     ...createWorkbenchHandlers(handlerContext),
     ...createEditorHandlers(handlerContext),
     ...createChromeHandlers(handlerContext),
+    onOpenChanges: () => git.setOpen(true),
   };
   const stableHandlers = useStableHandlers(handlers);
 
@@ -747,13 +748,16 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             }}
           />
         ) : null}
-        {/* Read-only git Changes overlay (opened from the top-bar branch badge). */}
-        {git.open && git.gitInfo !== null ? (
+        {/* Read-only git Changes overlay (opened from the branch badge or launcher Diff). */}
+        {git.open ? (
           <ChangesPanel
-            branch={git.gitInfo.branch}
-            files={git.gitInfo.files}
+            isGitRepo={git.gitInfo !== null}
+            branch={git.gitInfo?.branch ?? null}
+            files={git.gitInfo?.files ?? []}
             loadDiff={(relPath) =>
-              props.projectBridge?.gitFileDiff(git.gitInfo!.cwd, relPath) ?? Promise.resolve("")
+              git.gitInfo === undefined || git.gitInfo === null
+                ? Promise.resolve("")
+                : props.projectBridge?.gitFileDiff(git.gitInfo.cwd, relPath) ?? Promise.resolve("")
             }
             onRefresh={() => git.refresh()}
             onClose={() => git.setOpen(false)}

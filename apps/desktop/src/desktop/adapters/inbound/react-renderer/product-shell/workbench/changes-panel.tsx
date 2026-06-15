@@ -23,13 +23,14 @@ const STATUS_LABEL: Record<GitChangeStatus, string> = {
 };
 
 export function ChangesPanel(props: {
+  isGitRepo: boolean;
   branch: string | null;
   files: ChangedFile[];
   loadDiff: (relPath: string) => Promise<string>;
   onRefresh: () => void;
   onClose: () => void;
 }): ReactElement {
-  const { branch, files, loadDiff, onRefresh, onClose } = props;
+  const { isGitRepo, branch, files, loadDiff, onRefresh, onClose } = props;
   const totalAdd = files.reduce((sum, file) => sum + (file.additions ?? 0), 0);
   const totalDel = files.reduce((sum, file) => sum + (file.deletions ?? 0), 0);
   const [selected, setSelected] = useState<string | null>(files[0]?.path ?? null);
@@ -102,7 +103,7 @@ export function ChangesPanel(props: {
             <span>{branch ?? "detached"}</span>
           </span>
           {files.length === 0 ? (
-            <span className="changes-panel__count">No changes</span>
+            <span className="changes-panel__count">{isGitRepo ? "No changes" : "Not a git repo"}</span>
           ) : (
             <span className="changes-panel__stat">
               {totalAdd > 0 ? <span className="changes-panel__add">{`+${totalAdd}`}</span> : null}
@@ -133,7 +134,9 @@ export function ChangesPanel(props: {
         <div className="changes-panel__body">
           <ul className="changes-panel__files">
             {files.length === 0 ? (
-              <li className="changes-panel__clean">Working tree clean</li>
+              <li className="changes-panel__clean">
+                {isGitRepo ? "Working tree clean — no uncommitted changes." : "Not a git repository."}
+              </li>
             ) : (
               files.map((file) => (
                 <li key={file.path}>

@@ -9,6 +9,7 @@ import { ChangesPanel } from "../src/desktop/adapters/inbound/react-renderer/pro
 test("changes_panel_lists_changed_files_with_status_and_branch", () => {
   const markup = renderToStaticMarkup(
     <ChangesPanel
+      isGitRepo
       branch="feature-x"
       files={[
         { path: "src/app.ts", status: "modified", additions: 10, deletions: 3 },
@@ -35,6 +36,7 @@ test("changes_panel_lists_changed_files_with_status_and_branch", () => {
 test("changes_panel_shows_clean_empty_state", () => {
   const markup = renderToStaticMarkup(
     <ChangesPanel
+      isGitRepo
       branch="main"
       files={[]}
       loadDiff={() => Promise.resolve("")}
@@ -44,4 +46,18 @@ test("changes_panel_shows_clean_empty_state", () => {
   );
   assert.match(markup, /No changes/);
   assert.match(markup, /Working tree clean/);
+});
+
+test("changes_panel_shows_not_a_git_repo_state", () => {
+  const markup = renderToStaticMarkup(
+    <ChangesPanel
+      isGitRepo={false}
+      branch={null}
+      files={[]}
+      loadDiff={() => Promise.resolve("")}
+      onRefresh={() => {}}
+      onClose={() => {}}
+    />,
+  );
+  assert.match(markup, /Not a git repo/);
 });
