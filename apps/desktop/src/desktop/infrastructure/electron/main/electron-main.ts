@@ -555,7 +555,18 @@ app.on("web-contents-created", (_event, contents) => {
         if (disposition === "background-tab" || disposition === "new-window") {
           BrowserWindow.getAllWindows()[0]?.webContents.send("tide:open-browser-pane", url);
         } else {
-          void contents.loadURL(url).catch(() => undefined);
+          // Plain target=_blank ("foreground-tab"/other): navigate the pane in
+          // place. The loadURL MUST be deferred out of this callback — navigating
+          // the same contents synchronously from inside setWindowOpenHandler races
+          // the popup-deny teardown and the navigation is silently dropped, so a
+          // plain click did nothing (while Cmd/Ctrl+click took the IPC branch above
+          // and worked). setImmediate runs it after the handler returns and the
+          // popup is denied; guard against a contents torn down in between.
+          setImmediate(() => {
+            if (!contents.isDestroyed()) {
+              void contents.loadURL(url).catch(() => undefined);
+            }
+          });
         }
       }
       return { action: "deny" };
