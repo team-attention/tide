@@ -937,6 +937,62 @@ test("recording_turn_complete_with_no_queue_returns_the_runtime_to_idle", async 
   assert.equal(done.flushedInput, undefined);
 });
 
+const approvalCard = {
+  promptId: "p1",
+  threadId: "thread-busy",
+  agentId: "codex" as const,
+  kind: "approval" as const,
+  message: "Run command?",
+  choices: [{ choiceId: "allow", label: "Allow", providerValue: "structured:accept" }],
+  source: "provider_hook" as const,
+};
+
+test("a_bare_turn_end_does_not_drop_a_live_unanswered_prompt_card", async () => {
+  // A spurious turn-end (claude's history reader can infer one while a permission card
+  // is still open) must NOT settle a still-live, never-answered prompt to idle — that
+  // dropped the card, so a user who had switched away came back to an empty, idle-
+  // looking thread even though the session was alive and resumable. The card stays.
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "do it" });
+  await service.recordProviderPromptState({ threadId: "thread-busy", promptState: approvalCard });
+
+  const done = await service.recordTurnComplete({ threadId: "thread-busy" });
+
+  assert.equal(done.ok, true);
+  assert.equal(done.ok && done.runtimeState, "waiting_for_approval");
+  assert.equal(done.ok && done.thread.promptState?.promptId, "p1");
+});
+
+test("a_forced_turn_complete_settles_even_past_a_live_prompt_card", async () => {
+  // A genuine runtime exit passes force: true — the runtime is gone, so the card is
+  // truly dead (it can no longer receive the answer) and the thread settles to idle.
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "do it" });
+  await service.recordProviderPromptState({ threadId: "thread-busy", promptState: approvalCard });
+
+  const done = await service.recordTurnComplete({ threadId: "thread-busy", force: true });
+
+  assert.equal(done.ok, true);
+  assert.equal(done.ok && done.runtimeState, "idle");
+  assert.equal(done.ok && done.thread.promptState, undefined);
+});
+
+test("a_turn_end_after_the_prompt_is_answered_still_settles_the_runtime", async () => {
+  // Regression guard for the "Working forever after answering a stale card" fix:
+  // answering clears promptState first, so the following bare turn-end settles
+  // normally (the live-prompt guard only protects an UNanswered card).
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "do it" });
+  await service.recordProviderPromptState({ threadId: "thread-busy", promptState: approvalCard });
+  await service.answerPrompt({ threadId: "thread-busy", promptId: "p1", choiceId: "allow" });
+
+  const done = await service.recordTurnComplete({ threadId: "thread-busy" });
+
+  assert.equal(done.ok, true);
+  assert.equal(done.ok && done.runtimeState, "idle");
+  assert.equal(done.ok && done.thread.promptState, undefined);
+});
+
 test("stacked_followups_flush_in_fifo_order_one_per_turn_end", async () => {
   // Several follow-ups queued behind a live turn run in submission order, one per
   // turn-end; the runtime stays running until the queue drains, then goes idle.
@@ -3656,12 +3712,13 @@ test("stop_clears_the_pending_prompt_and_its_queue", async () => {
   assert.equal(stale.ok, false);
 });
 
-test("turn_end_during_a_pending_prompt_settles_and_drops_the_dead_cards", async () => {
-  // The provider's turn-end (interrupt while an approval is open, or a deny
-  // cancelling the rest of a batch) invalidates its own pending requests. The
-  // settle signal is ONE-SHOT — dropping it because the thread was
-  // waiting_for_approval left the thread "Working" forever once the stale card
-  // was answered (adversarial review finding).
+test("turn_end_after_answering_a_card_settles_and_drops_the_rest_of_the_batch", async () => {
+  // Once the user has ACTED on the card, a turn-end is legitimate: denying the visible
+  // card can cancel the rest of a batch, the agent ends its turn, and the now-dead
+  // cards drop. The settle is ONE-SHOT — ignoring it because the thread was
+  // waiting_for_approval left the thread "Working" forever once the stale card was
+  // answered (adversarial review finding). (A turn-end on a NEVER-answered card is
+  // spurious and keeps the card — see the bare-turn-end test above.)
   const fakes = createFakes();
   const service = createThreadRuntimeService({
     ...fakes.ports,
@@ -3680,14 +3737,17 @@ test("turn_end_during_a_pending_prompt_settles_and_drops_the_dead_cards", async 
       promptState: { promptId: id, threadId, agentId: "claude", kind: "approval", message: msg, source: "provider_hook" },
     });
   }
-  // Turn ends while the card (p1) is visible and p2 queued.
+  // The user denies the visible card (p1); p2 is promoted. The agent then abandons the
+  // batch and ends its turn — so the promoted, now-dead p2 must drop on the settle.
+  const denied = await service.answerPrompt({ threadId, promptId: "p1", value: "decline" });
+  assert.equal(denied.ok, true);
   const settled = await service.recordTurnComplete({ threadId });
   assert.equal(settled.ok, true);
   const after = await service.hydrateThread({ threadId });
   assert.equal(after.thread.runtimeState, "idle");
   assert.equal(after.thread.promptState, undefined);
   // The dead cards are gone; answering them is rejected, not typed into nothing.
-  const stale = await service.answerPrompt({ threadId, promptId: "p1", value: "x" });
+  const stale = await service.answerPrompt({ threadId, promptId: "p2", value: "x" });
   assert.equal(stale.ok, false);
 });
 

@@ -724,6 +724,10 @@ async answerPrompt(
       submittedAt: this.clock(),
     });
 
+    // This episode saw an answer: a following turn-end is now legitimate (the agent
+    // ended because of it) and may settle the dead cards. See recordTurnComplete.
+    thread.promptAnsweredPendingSettle = true;
+
     // Promote the next queued prompt (a batched multi-permission turn) so the
     // user answers them one at a time instead of the agent hanging on the ones
     // the single slot dropped. With none queued, the turn resumes running.
@@ -826,6 +830,9 @@ async recordProviderPromptState(
       : "waiting_for_input";
 
     thread.promptState = promptState;
+    // A fresh waiting episode starts clean: a prior episode's answer must not make a
+    // spurious turn-end on THIS new, unanswered card look legitimate.
+    thread.promptAnsweredPendingSettle = false;
     thread.runtimeState = nextRuntimeState;
     thread.lifecycleState = nextKnownState;
     thread.lastKnownState = nextKnownState;
@@ -1171,9 +1178,28 @@ private async replayPendingInputAfterTrust(thread: ThreadRecord): Promise<void> 
         runtimeState: thread.runtimeState,
       };
     }
+    // A bare turn-end (force unset) must NOT drop a prompt the user hasn't answered on
+    // a still-live runtime: an agent can't end a turn it's blocked waiting on, so the
+    // signal is spurious (claude's history reader can infer one mid-permission). Honoring
+    // it dropped the card → a switched-away thread came back empty/idle though still
+    // resumable. Once answered (promptAnsweredPendingSettle) the turn-end is legitimate
+    // (e.g. a deny cancels the batch) and drops the dead cards; force/exit always settles.
+    if (
+      input.force !== true &&
+      thread.promptAnsweredPendingSettle !== true &&
+      thread.activeRuntimeHandle !== undefined &&
+      thread.promptState !== undefined
+    ) {
+      return {
+        ok: true,
+        thread: snapshotThread(thread),
+        runtimeState: thread.runtimeState,
+      };
+    }
     // The ended turn's pending interactions are dead; drop card + queue.
     thread.promptState = undefined;
     thread.promptQueue = undefined;
+    thread.promptAnsweredPendingSettle = false;
 
     const queued = thread.pendingInput;
     if (queued !== undefined && queued.kind === "composer_input") {

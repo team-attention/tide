@@ -152,6 +152,14 @@ export interface ThreadRecord {
   // and the single prompt slot would drop all but the last, leaving the agent
   // waiting forever on the unanswered one. Each answer promotes the next.
   promptQueue?: PromptState[];
+  // True once the user has answered/denied a prompt in the CURRENT waiting episode.
+  // It tells a later turn-end that the settle is legitimate (the agent ended its turn
+  // BECAUSE of that answer — e.g. a deny cancelling the rest of a batch) so the dead
+  // cards are dropped. Without an answer, a turn-end arriving while a card is still
+  // open is spurious (the agent cannot end a turn it is blocked waiting on) and must
+  // NOT drop the card. Reset when a fresh prompt episode opens and when a turn settles.
+  // In-memory turn state only; never persisted.
+  promptAnsweredPendingSettle?: boolean;
   activeRuntimeHandle?: AgentRuntimeHandle;
   // A mid-thread Launch Options change could not be applied to the live session
   // (the provider protocol has no live update for it). Consumed at the next
