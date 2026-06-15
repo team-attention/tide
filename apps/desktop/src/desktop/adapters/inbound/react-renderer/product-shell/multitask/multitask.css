@@ -146,7 +146,9 @@
   pointer-events: none;
   background: var(--tide-bg);
   border-right: 1px solid var(--tide-line);
-  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.32);
+  /* A soft right-edge lift, not a heavy slab — the old 32px/0.32 black shadow read
+     as a harsh band over the content. Negative spread keeps it tight to the panel. */
+  box-shadow: 6px 0 18px -10px rgba(0, 0, 0, 0.22);
   overflow: hidden;
 }
 

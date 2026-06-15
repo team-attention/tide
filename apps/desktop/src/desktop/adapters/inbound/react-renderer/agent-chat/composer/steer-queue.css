@@ -88,14 +88,15 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--tide-muted);
+  /* The primary "send this now" affordance — accent ink (not a red stop). */
+  color: var(--tide-action);
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
 
 .composer-steer__interrupt:hover {
-  background: var(--tide-danger, #e5484d);
-  color: #fff;
+  background: var(--tide-action);
+  color: var(--tide-on-action);
 }
 
 /* The three per-row controls: 인터럽트 / 수정 / 삭제, grouped at the right. */

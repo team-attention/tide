@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import { renderUserAttachmentBody } from "../transcript/user-turn.tsx";
-import { CircleStop, CornerDownRight, Pencil, Trash2 } from "lucide-react";
+import { ArrowUp, CornerDownRight, Pencil, Trash2 } from "lucide-react";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // Optimistic just-sent user row, shown until the backend's real user block arrives.
@@ -65,15 +65,16 @@ export function createQueuedSteerStack(
           <span className="composer-steer__badge">대기 중</span>
           <span className="composer-steer__text">{queuedInput}</span>
           <span className="composer-steer__actions">
-            {/* 인터럽트: cut the live turn so the queue runs now. */}
+            {/* 지금 보내기: cut the live turn so this queued message runs now — framed as
+                a "send" (arrow-up), matching the composer's send button, not a red stop. */}
             <button
               type="button"
               className="composer-steer__interrupt"
-              aria-label="Interrupt the current turn and run the queue"
-              title="끊고 실행 (인터럽트)"
+              aria-label="Send now — interrupt the current turn and run this message"
+              title="지금 보내기 (현재 턴 끊고 실행)"
               onClick={() => onInterrupt?.()}
             >
-              <CircleStop size={14} strokeWidth={1.9} aria-hidden />
+              <ArrowUp size={15} strokeWidth={2.3} aria-hidden />
             </button>
             {/* 수정: pull this message back into the Composer to edit. */}
             <button
