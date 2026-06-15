@@ -18,6 +18,7 @@ import type {
 } from "./connection.ts";
 import type { RequestId, ThreadId } from "./ids.ts";
 import type { ProviderCliAgentId } from "./agent.ts";
+import type { ProviderModelDto } from "./provider-model-catalog.ts";
 import type { JsonObject } from "./json.ts";
 import type { PromptStateDto } from "./prompt.ts";
 import type { ProviderReadinessDto } from "./provider-readiness.ts";
@@ -41,6 +42,7 @@ export type BackendEventKind =
   | "agentRuntime.stateChanged"
   | "agentRuntime.usageChanged"
   | "agentRuntime.commandsChanged"
+  | "agentRuntime.modelCatalogChanged"
   | "agentRuntime.noticePosted"
   | "providerReadiness.changed"
   | "prompt.changed"
@@ -71,6 +73,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "agentRuntime.stateChanged",
   "agentRuntime.usageChanged",
   "agentRuntime.commandsChanged",
+  "agentRuntime.modelCatalogChanged",
   "agentRuntime.noticePosted",
   "providerReadiness.changed",
   "prompt.changed",
@@ -103,6 +106,10 @@ export interface BackendEventPayloadByKind {
     // The composer agent menu enables these and shows the rest disabled (never
     // removed). Absent = older backend; the UI then treats all as available.
     availableAgents?: ProviderCliAgentId[];
+    // opencode's authed model catalog (enumerated via `opencode models`). opencode
+    // is a multi-vendor router so its list is per-user, not hand-curated. Absent ⇒
+    // not yet enumerated; the composer falls back to "opencode default" only.
+    opencodeModels?: ProviderModelDto[];
   };
   "thread.hydrated": {
     thread: ThreadSummaryDto;
@@ -155,6 +162,15 @@ export interface BackendEventPayloadByKind {
     threadId: ThreadId;
     agentId: ProviderCliAgentId;
     commands: Array<{ name: string; description: string; trigger: "/" | "$" }>;
+  };
+  // The agent self-reported its model catalog over the protocol (gemini ACP
+  // availableModels / opencode configOptions) — the live current model + the real
+  // available list, so the composer menu reflects reality not a static guess.
+  "agentRuntime.modelCatalogChanged": {
+    threadId: ThreadId;
+    agentId: ProviderCliAgentId;
+    models: ProviderModelDto[];
+    currentModel?: string;
   };
   // A non-blocking, out-of-band runtime notice (e.g. an "update available"
   // banner the provider CLI printed). Surfaced as a native OS notification.

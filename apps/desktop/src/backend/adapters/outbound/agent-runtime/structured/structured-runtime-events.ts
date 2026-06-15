@@ -48,6 +48,15 @@ export type StructuredProviderEvent =
       kind: "commands";
       commands: Array<{ name: string; description: string; trigger: "/" | "$" }>;
     }
+  // The provider self-reported its model catalog over the protocol — the ACP
+  // `session/new.models` (gemini availableModels/currentModelId) or opencode's
+  // configOptions model category. Surfaces the live current model + the real
+  // available list so the composer menu is accurate, not a drifted static guess.
+  | {
+      kind: "model_catalog";
+      models: Array<{ value: string; label: string; vendor?: string }>;
+      currentModel?: string;
+    }
   // A non-blocking, out-of-band notice from the runtime process (currently an
   // "update available" banner the CLI printed to stderr). Surfaced as a native
   // OS notification, never a transcript block.

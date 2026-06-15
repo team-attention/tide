@@ -1,0 +1,61 @@
+import {
+  cliModelOptionsForAgent,
+  defaultModelValueForAgent,
+  formatAgentLabel,
+  isAgentAvailable,
+  permissionConfigForAgent,
+} from "./agent-vocab.ts";
+
+// The data layer for the Settings "Providers & Models" hub: one row per provider-CLI
+// agent with its install status, model catalog (the same catalog the composer menu
+// renders — dynamic for opencode/gemini, curated for claude/codex), permission modes,
+// and Tide-resolved default model. Pure + view-only so it is fully unit-testable; the
+// Settings section renders it. See cross-provider-model-catalog-and-hub.md (P4).
+
+export interface ProvidersHubModelView {
+  value: string;
+  label: string;
+  vendor?: string;
+  detail?: string;
+}
+
+export interface ProvidersHubAgentView {
+  agentId: string;
+  label: string;
+  // Installed locally (its CLI resolves). Drives the "Installed / Not installed"
+  // status chip; not-installed agents still list their (static) models.
+  installed: boolean;
+  status: "installed" | "not_installed";
+  models: ProvidersHubModelView[];
+  permissionModes: Array<{ value: string; label: string }>;
+  defaultModel: string;
+  // Multi-vendor (opencode) → the hub shows a vendor filter + an "Add provider" action.
+  multiVendor: boolean;
+}
+
+const HUB_AGENTS = ["claude", "codex", "gemini", "opencode"] as const;
+
+export function buildProvidersHubViewModel(): ProvidersHubAgentView[] {
+  return HUB_AGENTS.map((agentId) => {
+    const models = cliModelOptionsForAgent(agentId).map((option) => ({
+      value: option.value,
+      label: option.label,
+      vendor: option.vendor,
+      detail: option.detail,
+    }));
+    const installed = isAgentAvailable(agentId);
+    return {
+      agentId,
+      label: formatAgentLabel(agentId),
+      installed,
+      status: installed ? "installed" : "not_installed",
+      models,
+      permissionModes: permissionConfigForAgent(agentId).options.map((option) => ({
+        value: option.value,
+        label: option.label,
+      })),
+      defaultModel: defaultModelValueForAgent(agentId),
+      multiVendor: models.some((model) => model.vendor !== undefined),
+    };
+  });
+}

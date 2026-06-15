@@ -96,6 +96,19 @@ export const PERMISSION_OPTIONS: Record<string, PermissionConfig> = {
       { id: "gemini-yolo", value: "yolo", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
     ],
   },
+  // opencode's ACP session exposes exactly two modes (`session/new` configOptions
+  // category "mode": build | plan) — NOT the four gemini-style modes. Build runs
+  // tools per opencode's own permission config; Plan is read-only. The Agent
+  // Integration maps these to the ACP `modeId`.
+  opencode: {
+    default: "build",
+    options: [
+      { id: "opencode-build", value: "build", label: "Build", detail: "Runs tools per opencode config" },
+      { id: "opencode-plan", value: "plan", label: "Plan", detail: "Read-only, no edits" },
+    ],
+    // Threads created while opencode borrowed gemini's modes map onto build/plan.
+    legacyValueMap: { default: "build", auto_edit: "build", yolo: "build" },
+  },
   openai_api: {
     default: "Auto-review",
     options: [
@@ -134,8 +147,9 @@ export function isAgentAvailable(agentId: string): boolean {
 
 // Agents shown in the composer menu but not yet wired for real use — rendered
 // disabled with a "Coming soon" hint, never selectable or chosen as the start
-// default. opencode's CLI is detected, but its runtime start path isn't ready.
-const COMING_SOON_AGENTS: ReadonlySet<string> = new Set(["opencode"]);
+// default. (opencode is now fully wired: ACP runtime + model/vendor/effort
+// selection from its own catalog — see opencode-model-vendor-selection.md.)
+const COMING_SOON_AGENTS: ReadonlySet<string> = new Set([]);
 
 export function isAgentComingSoon(agentId: string): boolean {
   return COMING_SOON_AGENTS.has(agentId);
@@ -167,6 +181,29 @@ interface CliModelOption {
   value: string;
   label: string;
   detail?: string;
+  // Multi-vendor router models (opencode) carry their vendor for grouping in the
+  // model menu; single-vendor agents (claude/codex/gemini) leave it undefined.
+  vendor?: string;
+}
+
+// Provider-reported model catalogs, keyed by agent id. opencode ships its authed
+// list on thread.listed (`opencode models`); gemini/opencode also self-report over
+// ACP at session start (agentRuntime.modelCatalogChanged). When present, the catalog
+// drives the menu instead of the hand-curated static list. Module-level so it
+// survives New-Thread state resets, mirroring availableProviderAgents.
+const providerModelCatalogs = new Map<string, CliModelOption[]>();
+
+export function setProviderModelCatalog(agentId: string, models: CliModelOption[] | null): void {
+  if (models !== null && models.length > 0) {
+    providerModelCatalogs.set(agentId, models);
+  } else {
+    providerModelCatalogs.delete(agentId);
+  }
+}
+
+// opencode-specific alias kept for the thread.listed wiring.
+export function setOpencodeModelCatalog(models: CliModelOption[] | null): void {
+  setProviderModelCatalog("opencode", models);
 }
 
 // A maintained, provider-native model list per CLI agent (models change rarely).
@@ -189,18 +226,34 @@ export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
         { value: "claude-opus-4-7[1m]", label: "Opus 4.7 (1M context)", detail: "Legacy" },
         { value: "claude-opus-4-6", label: "Opus 4.6", detail: "Legacy" },
       ];
-    case "gemini":
-      // "Gemini default" passes no --model (gemini's own default, gemini-3-flash);
-      // explicit ids pass `gemini --model <id>`.
+    case "gemini": {
+      // Once a session is live, gemini self-reports its models over ACP and the
+      // catalog overrides the static list (the live current model + exact set). At
+      // compose time (no session) the curated list is used — corrected to the real
+      // `-preview` ids gemini requires (the prior `gemini-3-pro` etc. were DRIFTED).
+      const catalog = providerModelCatalogs.get("gemini");
+      if (catalog !== undefined) {
+        return [{ value: "Gemini default", label: "Default", detail: "gemini picks" }, ...catalog];
+      }
       return [
-        { value: "Gemini default", label: "Default", detail: "Gemini 3 Flash" },
-        { value: "gemini-3-pro", label: "Gemini 3 Pro" },
-        { value: "gemini-3-flash", label: "Gemini 3 Flash" },
+        { value: "Gemini default", label: "Default", detail: "gemini-3-flash-preview" },
+        { value: "gemini-3-pro-preview", label: "Gemini 3 Pro" },
+        { value: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
+        { value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
+        { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", detail: "Legacy" },
+        { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", detail: "Legacy" },
       ];
-    case "opencode":
-      // opencode picks the model from its own provider config/credentials; Tide
-      // uses its default (no per-turn model override yet).
-      return [{ value: "opencode default", label: "Default", detail: "opencode config" }];
+    }
+    case "opencode": {
+      // opencode is a multi-vendor router: the real model list is whatever the
+      // user has authed (`opencode auth login`), enumerated by the backend and
+      // cached in opencodeModelCatalog. "opencode default" first = honor opencode's
+      // own configured default (no explicit set). Falls back to default-only until
+      // the catalog arrives (older backend / not yet enumerated).
+      const fallback = { value: "opencode default", label: "Default", detail: "opencode config" };
+      const catalog = providerModelCatalogs.get("opencode");
+      return catalog === undefined ? [fallback] : [fallback, ...catalog];
+    }
     default:
       return [];
   }

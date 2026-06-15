@@ -99,6 +99,9 @@ class AcpClient implements StructuredRuntimeClient {
   // A mid-thread mode change that arrived before session/new (or session/load)
   // resolved; applied right after the session is adopted.
   private pendingModeId?: string;
+  // opencode config-option changes (model/effort/mode) that arrived before the
+  // session was adopted; applied right after, mirroring pendingModeId.
+  private pendingConfigOptions?: Array<{ configId: string; value: string }>;
   private turnOpen = false;
   private recordIndex = 0;
   // streaming accumulation: one growing block per message/thought run
@@ -198,6 +201,10 @@ class AcpClient implements StructuredRuntimeClient {
       kind: "session_ref",
       ref: { agentId: this.agentId, kind: this.sessionRefKind, value: sessionId },
     });
+    // The agent self-reports its model catalog at session/new (gemini availableModels
+    // / opencode configOptions) — surface it so the menu is accurate + the current
+    // model is reflected, not a drifted static guess.
+    this.emitModelCatalog(result);
     // Approval mode is an ACP session mode (default/autoEdit/yolo/plan) — set
     // it when the launch options ask for a non-default mode. A mid-thread
     // change that arrived before the session was adopted applies now instead.
@@ -206,16 +213,35 @@ class AcpClient implements StructuredRuntimeClient {
     if (modeId !== undefined && modeId !== "default") {
       this.request("session/set_mode", { sessionId, modeId }, () => undefined);
     }
+    // opencode delivers model / effort / mode as `session/set_config_option` (its
+    // configOptions surface), NOT the ACP-standard modeId — applied before the first
+    // prompt so the chosen model/effort takes effect from turn one.
+    const initialConfigOptions =
+      this.pendingConfigOptions ?? parseConfigOptions(this.protocolParams.configOptions);
+    this.pendingConfigOptions = undefined;
+    this.sendConfigOptions(sessionId, initialConfigOptions);
     if (initialPrompt !== undefined && initialPrompt.length > 0) {
       this.queuedPrompts.push({ text: initialPrompt, attachments: initialAttachments });
     }
     this.flushQueuedPrompt();
   }
 
-  // Mid-thread Launch Options change: the only live-updatable ACP setting is
-  // the session mode (permission). session/set_mode is valid at any time —
-  // including back to "default". See mid-thread-launch-option-changes.md.
+  // Mid-thread Launch Options change. gemini delivers the session mode (permission)
+  // as the ACP-standard modeId via session/set_mode; opencode delivers model / effort
+  // / mode as session/set_config_option entries. Both are valid at any time. See
+  // mid-thread-launch-option-changes.md + opencode-model-vendor-selection.md.
   applyConfig(protocolParams: Record<string, unknown>): void {
+    const configOptions = parseConfigOptions(protocolParams.configOptions);
+    if (configOptions !== undefined) {
+      if (this.sessionId === undefined) {
+        // MERGE by configId: each change carries only its changed keys, so a later
+        // pre-adoption change must not clobber an earlier one (e.g. model then effort).
+        this.pendingConfigOptions = mergeConfigOptions(this.pendingConfigOptions, configOptions);
+        return;
+      }
+      this.sendConfigOptions(this.sessionId, configOptions);
+      return;
+    }
     const modeId = stringField(protocolParams, "modeId");
     if (modeId === undefined) {
       return;
@@ -225,6 +251,39 @@ class AcpClient implements StructuredRuntimeClient {
       return;
     }
     this.request("session/set_mode", { sessionId: this.sessionId, modeId }, () => undefined);
+  }
+
+  // Apply config options SEQUENTIALLY (each after the previous response), not
+  // concurrently: opencode's effort option only exists once the model is set, so
+  // sending effort before the model change registers gets it rejected. The array is
+  // already ordered model → effort → mode (opencodeConfigOptions).
+  private sendConfigOptions(
+    sessionId: string,
+    configOptions: Array<{ configId: string; value: string }> | undefined,
+  ): void {
+    const options = configOptions ?? [];
+    const sendNext = (index: number): void => {
+      if (index >= options.length) {
+        return;
+      }
+      const option = options[index];
+      this.request(
+        "session/set_config_option",
+        { sessionId, configId: option.configId, value: option.value },
+        () => sendNext(index + 1),
+      );
+    };
+    sendNext(0);
+  }
+
+  // Parse the agent's self-reported model catalog from the session/new result and
+  // emit it: gemini's ACP-standard `models.availableModels`/`currentModelId`, or
+  // opencode's `configOptions` model category (provider/model ids → vendor + model).
+  private emitModelCatalog(result: Record<string, unknown>): void {
+    const catalog = parseAcpModelCatalog(result);
+    if (catalog !== undefined) {
+      this.onEvent({ kind: "model_catalog", models: catalog.models, currentModel: catalog.currentModel });
+    }
   }
 
   private flushQueuedPrompt(): void {
@@ -593,6 +652,85 @@ class AcpClient implements StructuredRuntimeClient {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// Parse opencode's `configOptions` launch/apply param (an array of {configId, value})
+// from an unknown protocolParams field. Returns undefined when absent so the gemini
+// modeId path is taken instead.
+function parseConfigOptions(value: unknown): Array<{ configId: string; value: string }> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const options: Array<{ configId: string; value: string }> = [];
+  for (const entry of value) {
+    if (isRecord(entry) && typeof entry.configId === "string" && typeof entry.value === "string") {
+      options.push({ configId: entry.configId, value: entry.value });
+    }
+  }
+  return options;
+}
+
+// Merge config-option changes by configId (incoming wins), preserving order: a later
+// pre-adoption change carries only its changed keys, so it must not drop earlier ones.
+export function mergeConfigOptions(
+  existing: Array<{ configId: string; value: string }> | undefined,
+  incoming: Array<{ configId: string; value: string }>,
+): Array<{ configId: string; value: string }> {
+  const merged = new Map<string, string>();
+  for (const option of existing ?? []) {
+    merged.set(option.configId, option.value);
+  }
+  for (const option of incoming) {
+    merged.set(option.configId, option.value);
+  }
+  return Array.from(merged, ([configId, value]) => ({ configId, value }));
+}
+
+export interface AcpModelCatalog {
+  models: Array<{ value: string; label: string; vendor?: string }>;
+  currentModel?: string;
+}
+
+// Extract a model catalog from an ACP session/new result. gemini reports the
+// ACP-standard `models.availableModels`/`currentModelId`; opencode reports its
+// `configOptions` model category (provider/model ids split into vendor + model).
+export function parseAcpModelCatalog(result: Record<string, unknown>): AcpModelCatalog | undefined {
+  const geminiModels = isRecord(result.models) ? result.models : undefined;
+  if (geminiModels !== undefined && Array.isArray(geminiModels.availableModels)) {
+    const models = geminiModels.availableModels
+      .filter(isRecord)
+      .map((entry) => {
+        const value = stringField(entry, "modelId") ?? "";
+        return { value, label: stringField(entry, "name") ?? value };
+      })
+      .filter((model) => model.value.length > 0);
+    if (models.length > 0) {
+      return { models, currentModel: stringField(geminiModels, "currentModelId") };
+    }
+  }
+  if (Array.isArray(result.configOptions)) {
+    const modelOption = result.configOptions
+      .filter(isRecord)
+      .find((option) => stringField(option, "category") === "model" || stringField(option, "id") === "model");
+    if (modelOption !== undefined && Array.isArray(modelOption.options)) {
+      const models = modelOption.options
+        .filter(isRecord)
+        .map((entry) => {
+          const value = stringField(entry, "value") ?? "";
+          const slash = value.indexOf("/");
+          return {
+            value,
+            label: slash > 0 ? value.slice(slash + 1) : stringField(entry, "name") ?? value,
+            ...(slash > 0 ? { vendor: value.slice(0, slash) } : {}),
+          };
+        })
+        .filter((model) => model.value.length > 0);
+      if (models.length > 0) {
+        return { models, currentModel: stringField(modelOption, "currentValue") };
+      }
+    }
+  }
+  return undefined;
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
