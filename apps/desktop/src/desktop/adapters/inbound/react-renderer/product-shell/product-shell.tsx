@@ -11,7 +11,7 @@ import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx"
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
-import { useCloseIntentFromMenu, useEscapeShortcuts, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
+import { useActivateThreadFromMain, useCloseIntentFromMenu, useEscapeShortcuts, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
 import { useMultitaskNavigation } from "./multitask/use-multitask-navigation.tsx";
 import { RailPeek } from "./left-rail/rail-peek.tsx";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
@@ -30,7 +30,7 @@ import {
   createProductShellState,
   createProductShellViewModel,
   quickOpenFilesFromState,
-  selectBackgroundCompletions,
+  selectCompletedThreads,
   archiveProductShellWorktreeChats,
   setProductShellComposerFolderScope,
   setProductShellComposerNewWorktreeIntent,
@@ -311,48 +311,48 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     };
   }, [props.projectBridge, activeProjectCwd, activeAgentId]);
 
-  // Fire a native OS notification when a thread newly needs attention (waiting
-  // for input/approval), so the user is pulled back even when Tide is in the
-  // background. Re-notifies if a thread returns to attention after resolving.
+  // Ask Main for a native OS notification when a thread newly needs attention (waiting
+  // for input/approval), so the user is pulled back even when Tide is in the background.
+  // Main applies the window-focus gate (suppress only the thread on screen) + delivery.
+  // Re-notifies if a thread returns to attention after resolving.
   const notifiedAttentionRef = useRef<Set<string>>(new Set());
   // Update-available notices already shown (dedupe across threads/runtimes).
   const notifiedUpdatesRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (typeof Notification === "undefined") {
-      return;
-    }
-    if (Notification.permission === "default") {
-      void Notification.requestPermission();
-    }
     const waiting = shellState.threads.filter((thread) => thread.attention === true);
     const current = new Set(waiting.map((thread) => thread.threadId));
     for (const thread of waiting) {
-      if (!notifiedAttentionRef.current.has(thread.threadId) && Notification.permission === "granted") {
-        new Notification("Tide — a thread needs your input", { body: thread.title });
+      if (!notifiedAttentionRef.current.has(thread.threadId)) {
+        window.tide?.notify?.({
+          kind: "needs_attention",
+          threadId: thread.threadId,
+          title: "Tide — a thread needs your input",
+          body: thread.title,
+          isActiveThread: thread.threadId === shellState.activeThreadId,
+        });
       }
     }
     notifiedAttentionRef.current = current;
-  }, [shellState.threads]);
+  }, [shellState.threads, shellState.activeThreadId]);
 
-  // Notify when a thread finishes a turn IN THE BACKGROUND (you were viewing
-  // another thread), so off-screen agent work doesn't need babysitting to know
-  // it's done. Uniform across agents — driven only by the per-thread running flag.
+  // Notify when a thread finishes a turn, so agent work doesn't need babysitting to know
+  // it's done. Uniform across agents — driven only by the per-thread running flag. Main
+  // applies the window-focus gate: a completion is suppressed only when the user is
+  // actually looking at that thread (app focused + active), so a finish while Tide is in
+  // the background always notifies (see specs/focus-aware-notifications.md).
   const prevRunningRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (typeof Notification === "undefined") {
-      return;
-    }
     const nowRunning = new Set(
       shellState.threads.filter((thread) => thread.running === true).map((thread) => thread.threadId),
     );
-    if (Notification.permission === "granted") {
-      for (const thread of selectBackgroundCompletions(
-        prevRunningRef.current,
-        shellState.threads,
-        shellState.activeThreadId,
-      )) {
-        new Notification("Tide — agent finished", { body: thread.title });
-      }
+    for (const thread of selectCompletedThreads(prevRunningRef.current, shellState.threads)) {
+      window.tide?.notify?.({
+        kind: "agent_finished",
+        threadId: thread.threadId,
+        title: "Tide — agent finished",
+        body: thread.title,
+        isActiveThread: thread.threadId === shellState.activeThreadId,
+      });
     }
     prevRunningRef.current = nowRunning;
   }, [shellState.threads, shellState.activeThreadId]);
@@ -496,14 +496,15 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       if (event.kind === "agentRuntime.noticePosted") {
         const payload = event.payload as { message?: unknown; agentId?: unknown };
         const message = typeof payload.message === "string" ? payload.message : "";
-        if (
-          message.length > 0 &&
-          !notifiedUpdatesRef.current.has(message) &&
-          typeof Notification !== "undefined" &&
-          Notification.permission === "granted"
-        ) {
+        if (message.length > 0 && !notifiedUpdatesRef.current.has(message)) {
           notifiedUpdatesRef.current.add(message);
-          new Notification(`Tide — ${String(payload.agentId ?? "agent")} update available`, { body: message });
+          window.tide?.notify?.({
+            kind: "agent_update",
+            threadId: null,
+            title: `Tide — ${String(payload.agentId ?? "agent")} update available`,
+            body: message,
+            isActiveThread: false,
+          });
         }
         return;
       }
@@ -623,6 +624,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
 
   // A Browser Pane link opened with Cmd/Ctrl+click (or window.open) opens a new pane.
   useOpenBrowserPaneFromMain(handlers.onOpenBrowserPane);
+  // A clicked native notification activates its thread (same path as a left-rail click).
+  useActivateThreadFromMain(handlers.onThreadSelect);
   // Cmd+B / Cmd+E / Cmd+J (View menu) toggle Left Rail / File Tree / Workbench.
   usePanelToggleFromMenu(handlers);
 

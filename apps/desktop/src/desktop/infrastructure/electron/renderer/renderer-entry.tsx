@@ -85,6 +85,16 @@ declare global {
       onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
       // View-menu panel toggles (Cmd+B / Cmd+E / Cmd+J), routed from the app menu.
       onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
+      // Request a native OS notification (delivered + focus-gated by Main).
+      notify(request: {
+        kind: "agent_finished" | "needs_attention" | "agent_update";
+        threadId: string | null;
+        title: string;
+        body: string;
+        isActiveThread: boolean;
+      }): void;
+      // Main asks the renderer to activate a thread (a clicked notification).
+      onActivateThread(listener: (threadId: string) => void): () => void;
       openDirectory(): Promise<string | null>;
       listProjects(): Promise<{ projectId: string; name: string; cwd: string }[]>;
       registerProject(cwd: string): Promise<{ projectId: string; name: string; cwd: string }[]>;
