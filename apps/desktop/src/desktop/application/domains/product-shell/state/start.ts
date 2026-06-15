@@ -65,12 +65,24 @@ export function startNewProductShellThread(
   };
 }
 
+// If a state transition just dropped the active Thread (activeThreadId went
+// non-null → null because it was archived/deleted), reset the chat to a fresh Start
+// Composer so the removed Thread's transcript doesn't linger on screen — the chat
+// column renders state.agentChat directly, so detaching via activeThreadId alone
+// isn't enough. No-op when focus was already null or is unchanged (e.g. a background
+// Thread was archived), so it never steals focus from the Thread you're viewing.
+export function refocusStartComposerIfActiveDropped(
+  previous: ProductShellState,
+  next: ProductShellState,
+): ProductShellState {
+  const activeDropped = previous.activeThreadId !== null && next.activeThreadId === null;
+  return activeDropped ? startNewProductShellThread(next) : next;
+}
+
 // Deleting a worktree archives every Thread that lived in it. If the Thread on
 // screen was one of them it's gone now — navigate to the Start Composer instead of
-// leaving its dead transcript visible. (The chat column renders state.agentChat
-// directly; archiveProductShellWorktreeChats only detaches the active thread via
-// activeThreadId, so without this the deleted Thread would stay on screen.) When the
-// viewed Thread lived elsewhere, focus is left untouched.
+// leaving its dead transcript visible. When the viewed Thread lived elsewhere, focus
+// is left untouched.
 export function deleteWorktreeAndRefocus(
   state: ProductShellState,
   cwd: string,
@@ -79,12 +91,8 @@ export function deleteWorktreeAndRefocus(
   commands: { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }[];
 } {
   const archived = archiveProductShellWorktreeChats(state, cwd);
-  // archiveProductShellWorktreeChats nulls activeThreadId exactly when the active
-  // Thread was among the archived ones.
-  const viewedThreadDeleted =
-    state.activeThreadId !== null && archived.state.activeThreadId === null;
   return {
-    state: viewedThreadDeleted ? startNewProductShellThread(archived.state) : archived.state,
+    state: refocusStartComposerIfActiveDropped(state, archived.state),
     commands: archived.commands,
   };
 }
