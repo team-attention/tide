@@ -2,7 +2,7 @@
 // file under the size cap (file-size-ratchet): the responsive rightmost-column
 // measurement and the global search keyboard shortcuts.
 
-import { useEffect, useLayoutEffect, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { ProductShellBackendCommand } from "../../../../../application/domains/product-shell/product-shell.ts";
 
 // Measures the rightmost mounted column — the one the fixed top-right chrome cluster
@@ -79,4 +79,48 @@ export function useOpenBrowserPaneFromMain(
     return off;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+}
+
+// Escape for the two surfaces that don't manage their own: Workbench fullscreen and
+// the Settings modal. (Quick Open / Content Search / worktree dialogs already close
+// themselves on Escape.) Each listener subscribes only while its surface is open.
+export function useEscapeShortcuts(params: {
+  workbenchFullscreen: boolean;
+  onExitFullscreen: () => void;
+  settingsOpen: boolean;
+  onCloseSettings: () => void;
+}): void {
+  const { workbenchFullscreen, onExitFullscreen, settingsOpen, onCloseSettings } = params;
+  // Hold the latest callbacks in a ref (refreshed in the commit phase) so the listeners
+  // re-bind only when their open flag flips, with no stale-closure risk. Review feedback.
+  const latest = useRef({ onExitFullscreen, onCloseSettings });
+  useEffect(() => {
+    latest.current = { onExitFullscreen, onCloseSettings };
+  });
+  useEffect(() => {
+    if (!workbenchFullscreen) {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        latest.current.onExitFullscreen();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [workbenchFullscreen]);
+  useEffect(() => {
+    if (!settingsOpen) {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        latest.current.onCloseSettings();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [settingsOpen]);
 }

@@ -6,6 +6,7 @@ import { createSectionHeader } from "./section-header.tsx";
 import { ChevronRight, Folder, FolderOpen, MessageSquarePlus, MoreHorizontal } from "lucide-react";
 import { createIconButton, menuAnchorFromEvent } from "../chrome/chrome.tsx";
 import { createThreadRow } from "./thread-row.tsx";
+import { createRailDragItem } from "./rail-drag.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createProjectSection(
@@ -26,7 +27,15 @@ export function createProjectSection(
           expands AND collapses smoothly, like the individual project groups. */}
       <div className="collapsible" data-expanded={!collapsed}>
         <div className="collapsible__inner left-rail-section__body">
-          {projectGroups.map((project) => createProjectGroup(project, handlers))}
+          {/* Project folders are drag-reorderable (spec: left-rail-manual-ordering);
+              their nested threads still follow sortBy. */}
+          {projectGroups.map((project) =>
+            createRailDragItem(
+              project.projectId,
+              handlers.onReorderProject,
+              createProjectGroup(project, handlers),
+            ),
+          )}
         </div>
       </div>
     </section>

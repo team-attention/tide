@@ -130,6 +130,10 @@ export interface ProductShellHandlers {
   isProjectRemovable: (projectId: string) => boolean;
   isProjectWorktree: (projectId: string) => boolean;
   onProjectPinToggle: (projectId: string) => void;
+  // Drag-reorder of top-level rail items (spec: left-rail-manual-ordering). Keys are
+  // `t:<threadId>` / `p:<projectId>` for the Pinned section; project ids for Projects.
+  onReorderPinnedItem: (draggedKey: string, targetKey: string) => void;
+  onReorderProject: (draggedProjectId: string, targetProjectId: string) => void;
   onProjectRenameStart: (projectId: string) => void;
   onProjectRenameSubmit: (projectId: string, name: string) => void;
   onProjectRenameCancel: () => void;

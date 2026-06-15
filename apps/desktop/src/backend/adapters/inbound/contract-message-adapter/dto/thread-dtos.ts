@@ -16,6 +16,7 @@ export function toThreadSummaryDto(thread: ThreadSnapshot): ThreadSummaryDto {
     pinned: thread.pinned ?? false,
     archived: thread.lifecycleState === "archived",
     lastKnownState: thread.lastKnownState as LastKnownStateDto,
+    live: thread.live,
     queuedInputs: thread.queuedInputs,
   };
   if (launchOptions !== undefined) {

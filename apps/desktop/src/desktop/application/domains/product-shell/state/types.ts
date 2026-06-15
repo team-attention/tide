@@ -23,6 +23,10 @@ export interface ProductShellThread {
   // True while this thread's agent runtime is actively running — shown as a live
   // rail indicator for every thread (incl. background ones), independent of focus.
   running?: boolean;
+  // True while a runtime for this thread is hydrated/alive in THIS process, whatever
+  // its state (running OR waiting OR idle-but-alive) — the set the multitask switcher
+  // (Ctrl+Tab) cycles. Distinct from `running` (mid-turn only). Absent ⇒ false.
+  live?: boolean;
   // When the current turn started (from the backend). Carried so the Working timer
   // shows real elapsed time even after switching threads, instead of resetting.
   runtimeStartedAt?: string;
@@ -79,6 +83,13 @@ export interface ProductShellProject {
   name: string;
   cwd: string;
 }
+
+// A top-level pinned item: a standalone pinned Thread or a pinned Project. The Pinned
+// section is ONE manually-ordered, intermixed list of these (spec:
+// left-rail-manual-ordering); the order lives in ProductShellState.pinnedItemOrder.
+export type ProductShellPinnedItemRef =
+  | { kind: "thread"; threadId: string }
+  | { kind: "project"; projectId: string };
 
 export interface ProductShellStartPageFile {
   cwd: string;
@@ -178,6 +189,12 @@ export interface ProductShellState {
   // Pinned projects (shown as shortcuts in the Pinned section) and the project
   // currently being inline-renamed.
   pinnedProjectIds: string[];
+  // Manual order of the Pinned section's top-level items (pinned threads + pinned
+  // projects, intermixed) and of the Projects section's folders — both independent of
+  // sortBy and persisted. Ids absent from an array fall to the end. Nested threads
+  // always follow sortBy. Spec: left-rail-manual-ordering.
+  pinnedItemOrder: ProductShellPinnedItemRef[];
+  projectOrder: string[];
   renamingProjectId: string | null;
   // The project for which the inline "new worktree" name input is open (null =
   // none). See docs_v2/specs/worktree-creation.md.
@@ -367,6 +384,9 @@ export interface CreateProductShellStateInput {
   // Seed the persisted settings (renderer loads from localStorage).
   listSettings?: ProductShellListSettings;
   worktreeSettings?: ProductShellWorktreeSettings;
+  // Seed the persisted Left Rail manual order (spec: left-rail-manual-ordering).
+  pinnedItemOrder?: ProductShellPinnedItemRef[];
+  projectOrder?: string[];
 }
 
 export interface ProductShellUpdateResult {
@@ -379,6 +399,9 @@ export interface ProductShellThreadView extends ProductShellThread {
   archiveConfirming: boolean;
   renaming: boolean;
   contextMenuOpen: boolean;
+  // 1-based number for the Ctrl+N pin-jump badge, set on the first 9 pinned threads
+  // (spec: multitask-navigation L2). Shown only while Ctrl is held (CSS-gated).
+  pinNumber?: number;
   // Set when this Thread's scope cwd is a `<repo>.worktree/<branch>` worktree:
   // the branch (= worktree dir basename), shown as a badge so a worktree Thread
   // is identifiable when nested under its parent repo's group.
@@ -407,6 +430,12 @@ export interface ProductShellProjectGroupView {
 // Pinned projects render as full expandable groups, identical to the Projects
 // section, so the shortcut can be expanded to reach its Threads.
 export type ProductShellPinnedProjectView = ProductShellProjectGroupView;
+
+// One entry in the intermixed, manually-ordered Pinned section (spec:
+// left-rail-manual-ordering) — a pinned Thread row or a pinned Project group.
+export type ProductShellPinnedItemView =
+  | { kind: "thread"; thread: ProductShellThreadView }
+  | { kind: "project"; project: ProductShellProjectGroupView };
 
 // A non-active thread's Browser Pane, carried with its owning threadId so its
 // offscreen <webview> can route snapshots/actions back to the right thread.
@@ -439,6 +468,8 @@ export interface ProductShellViewModel {
   searchActive: boolean;
   pinnedThreads: ProductShellThreadView[];
   pinnedProjects: ProductShellPinnedProjectView[];
+  // The Pinned section as one manually-ordered, intermixed list (threads + projects).
+  pinnedItems: ProductShellPinnedItemView[];
   projectGroups: ProductShellProjectGroupView[];
   scratchThreads: ProductShellThreadView[];
   // The active list-display settings + a flat sorted thread list for "thread"
@@ -448,6 +479,9 @@ export interface ProductShellViewModel {
   worktreeSettings: ProductShellWorktreeSettings;
   settingsOpen: boolean;
   flatThreads: ProductShellThreadView[];
+  // Threads with a live in-process runtime, in Left Rail render order — the set the
+  // multitask switcher (Ctrl+Tab) cycles. See specs/multitask-navigation.md.
+  liveThreads: ProductShellThreadView[];
   agentChat: AgentChatShellViewModel;
   appChrome: AppChromeViewModel;
   fileTree: ProductShellFileTreeView;

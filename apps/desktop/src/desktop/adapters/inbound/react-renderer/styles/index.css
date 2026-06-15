@@ -12,6 +12,7 @@
 @import "../product-shell/left-rail/project-section.css";
 @import "../product-shell/left-rail/thread-row.css";
 @import "../product-shell/left-rail/skeletons.css";
+@import "../product-shell/multitask/multitask.css";
 @import "../agent-chat/agent-chat.css";
 @import "../agent-chat/transcript/transcript.css";
 @import "../agent-chat/transcript/working-indicator.css";

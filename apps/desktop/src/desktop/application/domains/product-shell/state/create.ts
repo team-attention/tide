@@ -98,6 +98,8 @@ export function createProductShellState(
     gitWorktrees: [],
     providerCommands: [],
     pinnedProjectIds: [],
+    pinnedItemOrder: input.pinnedItemOrder ?? [],
+    projectOrder: input.projectOrder ?? [],
     renamingProjectId: null,
     creatingWorktreeForProjectId: null,
     threads: includeFixtureData ? initialThreads : [],

@@ -138,9 +138,12 @@ test("product_shell_applies_thread_listed_event_to_left_ui", () => {
     view.projectGroups.map((project) => project.projectId),
     ["tide"],
   );
-  assert.equal(view.projectGroups[0]?.threads[0]?.threadId, "thread-real");
+  // A pinned thread is lifted OUT of its project group into the Pinned section
+  // (spec: left-rail-manual-ordering): the group is present but holds no rows, and the
+  // thread surfaces in pinnedThreads with its agent identity.
+  assert.deepEqual(view.projectGroups[0]?.threads ?? [], []);
   assert.equal(view.pinnedThreads[0]?.threadId, "thread-real");
-  assert.equal(view.projectGroups[0]?.threads[0]?.agentId, "claude");
+  assert.equal(view.pinnedThreads[0]?.agentId, "claude");
 });
 
 test("product_shell_requests_backend_thread_list_on_mount_without_fixture_threads", () => {
@@ -2741,7 +2744,9 @@ test("shell_columns_can_close_without_losing_top_row_alignment", () => {
   assert.equal(view.leftRailOpen, false);
   assert.equal(view.workbenchOpen, false);
   assert.equal(view.fileTreeOpen, true);
-  assert.doesNotMatch(html, /aria-label="Left Rail"/);
+  // Collapsed, the Left Rail leaves the grid (so the remaining columns' top rows stay
+  // aligned) and becomes the out-of-flow floating peek (spec: multitask-navigation L1).
+  assert.match(html, /rail-peek__hot-zone/);
   assert.match(html, /aria-label="Agent Chat Top Row"/);
   assert.match(html, /aria-label="FileTree Top Row"/);
 });

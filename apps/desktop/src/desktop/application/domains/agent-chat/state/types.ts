@@ -183,6 +183,10 @@ export interface AgentChatThreadSummary {
   pinned: boolean;
   archived: boolean;
   lastKnownState: string;
+  // True while a runtime for this thread is hydrated/alive in the backend process
+  // now (regardless of running/waiting) — the multitask switcher's live set. Absent
+  // on older payloads ⇒ false.
+  live?: boolean;
   // When the current turn started running (from the backend). The Working
   // indicator shows elapsed since this, so reopening a running thread keeps the
   // real time instead of resetting to 0.

@@ -1,6 +1,6 @@
-import type { ProductShellBackgroundBrowserPane, ProductShellDraftPane, ProductShellEditorDraft, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellProject, ProductShellProjectGroupView, ProductShellStartPageFile, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellViewModel } from "./types.ts";
+import type { ProductShellBackgroundBrowserPane, ProductShellDraftPane, ProductShellEditorDraft, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellPinnedItemView, ProductShellProject, ProductShellProjectGroupView, ProductShellStartPageFile, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellViewModel } from "./types.ts";
 import { COMPOSER_LAUNCHER_PANE_ID, startFilePaneId } from "./types.ts";
-import { isExternalSessionThread } from "./thread-list.ts";
+import { isExternalSessionThread, pinnedItemRefKey } from "./thread-list.ts";
 import { worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 import { reconcileTree } from "./workbench-split-tree.ts";
 import { createAgentChatShellViewModel } from "../../agent-chat/agent-chat.ts";
@@ -28,9 +28,14 @@ const shellSelector = createSelectorFor<ProductShellState>();
 export interface ProductShellThreadListViewModel {
   pinnedThreads: ProductShellThreadView[];
   pinnedProjects: ProductShellProjectGroupView[];
+  // The Pinned section as one manually-ordered, intermixed list (threads + projects).
+  pinnedItems: ProductShellPinnedItemView[];
   projectGroups: ProductShellProjectGroupView[];
   scratchThreads: ProductShellThreadView[];
   flatThreads: ProductShellThreadView[];
+  // Live threads (in-process runtime alive) in Left Rail render order — cycled by
+  // the multitask switcher. Spec: multitask-navigation L3.
+  liveThreads: ProductShellThreadView[];
 }
 
 export const selectThreadListViewModel = shellSelector(
@@ -42,6 +47,8 @@ export const selectThreadListViewModel = shellSelector(
     (state: ProductShellState) => state.projects,
     (state: ProductShellState) => state.collapsedProjectIds,
     (state: ProductShellState) => state.pinnedProjectIds,
+    (state: ProductShellState) => state.pinnedItemOrder,
+    (state: ProductShellState) => state.projectOrder,
     (state: ProductShellState) => state.renamingProjectId,
     (state: ProductShellState) => state.creatingWorktreeForProjectId,
     (state: ProductShellState) => state.leftRailMenu,
@@ -57,6 +64,8 @@ export const selectThreadListViewModel = shellSelector(
     projects,
     collapsedProjectIds,
     pinnedProjectIds,
+    pinnedItemOrder,
+    projectOrder,
     renamingProjectId,
     creatingWorktreeForProjectId,
     leftRailMenu,
@@ -72,6 +81,8 @@ export const selectThreadListViewModel = shellSelector(
       projects,
       collapsedProjectIds,
       pinnedProjectIds,
+      pinnedItemOrder,
+      projectOrder,
       renamingProjectId,
       creatingWorktreeForProjectId,
       leftRailMenu,
@@ -268,12 +279,14 @@ export function createProductShellViewModel(
     searchActive: state.searchActive,
     pinnedThreads: threadList.pinnedThreads,
     pinnedProjects: threadList.pinnedProjects,
+    pinnedItems: threadList.pinnedItems,
     projectGroups: threadList.projectGroups,
     scratchThreads: threadList.scratchThreads,
     listSettings: state.listSettings,
     worktreeSettings: state.worktreeSettings,
     settingsOpen: state.settingsOpen,
     flatThreads: threadList.flatThreads,
+    liveThreads: threadList.liveThreads,
     agentChat: selectAgentChatViewModel(state),
     appChrome: workbench.appChrome,
     fileTree: selectFileTreeViewModel(state),
@@ -282,6 +295,12 @@ export function createProductShellViewModel(
     editorDrafts: workbench.editorDrafts,
     backgroundBrowserPanes: selectBackgroundBrowserPanes(state),
   };
+}
+
+// Stable key so a pinned item view compares by kind+id against the persisted order
+// (pinnedItemRefKey, from thread-list). Spec: left-rail-manual-ordering.
+function pinnedItemViewKey(item: ProductShellPinnedItemView): string {
+  return item.kind === "thread" ? `t:${item.thread.threadId}` : `p:${item.project.projectId}`;
 }
 
 // Lifted out of createProductShellViewModel so selectThreadListViewModel can run the
@@ -336,7 +355,9 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
     renaming: state.renamingProjectId === project.projectId,
     creatingWorktree: state.creatingWorktreeForProjectId === project.projectId,
     threads: visibleThreads
-      .filter((thread) => inGroup(thread, project))
+      // Pinned threads are lifted to the Pinned section (spec: left-rail-manual-ordering),
+      // so they no longer nest under their project group.
+      .filter((thread) => inGroup(thread, project) && thread.pinned !== true)
       .map((thread) => toThreadView(thread, state)),
     attention: state.threads.some(
       (thread) => inGroup(thread, project) && thread.attention === true,
@@ -348,26 +369,82 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
   // Worktree Projects folded into a repo no longer appear as their own group.
   const topLevelProjects = projects.filter((project) => !worktreeRemap.has(project.projectId));
 
-  return {
-    pinnedThreads: visibleThreads
-      .filter((thread) => thread.pinned)
-      .map((thread) => toThreadView(thread, state)),
-    // Pinned projects render as full expandable groups (same component as the
-    // Projects section), so their Threads are reachable from the Pinned shortcut.
-    pinnedProjects: topLevelProjects
+  // Pinned section: ONE manually-ordered, intermixed list of pinned threads + pinned
+  // projects (spec: left-rail-manual-ordering), independent of sortBy. Pins are lifted
+  // OUT of their project groups (toGroup excludes pinned threads above). Base order
+  // when unranked = projects then threads (the pre-manual default); V8's stable sort
+  // keeps unranked items in that order so newly-pinned items append predictably.
+  const pinnedBase: ProductShellPinnedItemView[] = [
+    ...topLevelProjects
       .filter((project) => state.pinnedProjectIds.includes(project.projectId))
       .map(toGroup)
-      .filter((group) => !searching || group.threads.length > 0),
-    projectGroups: topLevelProjects
-      .map(toGroup)
-      // While searching, hide project groups with no matching threads.
-      .filter((group) => !searching || group.threads.length > 0),
-    scratchThreads: visibleThreads
-      .filter((thread) => thread.scope.kind === "scratch")
-      .map((thread) => toThreadView(thread, state)),
-    // "thread" group mode: one flat, already-sorted list of every visible thread.
-    flatThreads: visibleThreads.map((thread) => toThreadView(thread, state)),
-  };
+      .filter((group) => !searching || group.threads.length > 0)
+      .map((project) => ({ kind: "project" as const, project })),
+    ...visibleThreads
+      .filter((thread) => thread.pinned)
+      .map((thread) => ({ kind: "thread" as const, thread: toThreadView(thread, state) })),
+  ];
+  const pinnedRank = new Map(
+    state.pinnedItemOrder.map((ref, index) => [pinnedItemRefKey(ref), index] as const),
+  );
+  const rankOfPinned = (item: ProductShellPinnedItemView): number =>
+    pinnedRank.get(pinnedItemViewKey(item)) ?? Number.MAX_SAFE_INTEGER;
+  // Number the first 9 pinned THREADS (in final order) for the Ctrl+N badge
+  // (multitask-navigation L2 / Decision 9).
+  let pinnedThreadCount = 0;
+  const pinnedItems: ProductShellPinnedItemView[] = [...pinnedBase]
+    .sort((a, b) => rankOfPinned(a) - rankOfPinned(b))
+    .map((item) => {
+      if (item.kind === "project") {
+        return item;
+      }
+      pinnedThreadCount += 1;
+      return pinnedThreadCount <= 9
+        ? { kind: "thread" as const, thread: { ...item.thread, pinNumber: pinnedThreadCount } }
+        : item;
+    });
+  const pinnedThreads = pinnedItems.flatMap((item) => (item.kind === "thread" ? [item.thread] : []));
+  const pinnedProjects = pinnedItems.flatMap((item) => (item.kind === "project" ? [item.project] : []));
+  // Projects section: top-level folders in manual order (independent of sortBy; nested
+  // threads still follow sortBy). Spec: left-rail-manual-ordering.
+  const projectRank = new Map(state.projectOrder.map((id, index) => [id, index] as const));
+  const projectGroups = topLevelProjects
+    .map(toGroup)
+    // While searching, hide project groups with no matching threads.
+    .filter((group) => !searching || group.threads.length > 0)
+    .sort(
+      (a, b) =>
+        (projectRank.get(a.projectId) ?? Number.MAX_SAFE_INTEGER) -
+        (projectRank.get(b.projectId) ?? Number.MAX_SAFE_INTEGER),
+    );
+  const scratchThreads = visibleThreads
+    // Pinned scratch threads are lifted to the Pinned section too (review feedback).
+    .filter((thread) => thread.scope.kind === "scratch" && thread.pinned !== true)
+    .map((thread) => toThreadView(thread, state));
+  // "thread" group mode: one flat, already-sorted list of every visible thread.
+  const flatThreads = visibleThreads.map((thread) => toThreadView(thread, state));
+  // Live set in Left Rail render order (spec: multitask-navigation L3 / Decision 8):
+  // walk the rail's flattened top-to-bottom sequence and keep the live threads,
+  // deduped. "thread" mode is the flat list; "project" mode is the grouped order
+  // (pinned groups' threads, pinned threads, project groups' threads, scratch).
+  const liveOrder =
+    state.listSettings.groupBy === "thread"
+      ? flatThreads
+      : [
+          ...pinnedProjects.flatMap((group) => group.threads),
+          ...pinnedThreads,
+          ...projectGroups.flatMap((group) => group.threads),
+          ...scratchThreads,
+        ];
+  const liveSeen = new Set<string>();
+  const liveThreads = liveOrder.filter((thread) => {
+    if (thread.live !== true || liveSeen.has(thread.threadId)) {
+      return false;
+    }
+    liveSeen.add(thread.threadId);
+    return true;
+  });
+  return { pinnedThreads, pinnedProjects, pinnedItems, projectGroups, scratchThreads, flatThreads, liveThreads };
 }
 
 // A start (New Thread) page open file, as a Workbench editor pane. There is no

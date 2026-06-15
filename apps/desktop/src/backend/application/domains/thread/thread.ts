@@ -177,6 +177,10 @@ export interface ThreadSnapshot {
   pinned?: boolean;
   createdAt: string;
   updatedAt: string;
+  // True while an Agent Runtime for this thread is hydrated/alive in THIS process
+  // (an activeRuntimeHandle exists), regardless of runtime state — the live set the
+  // multitask switcher cycles. Cold/history-only threads are false.
+  live: boolean;
   cachedBlocks: AgentSessionBlockReference[];
   pendingInput?: PendingInput;
   // The Composer follow-up queue as plain texts, head-first (pendingInput then the
