@@ -40,7 +40,7 @@ export const AgentChatColumnView = memo(function AgentChatColumnView(props: {
   // like LeftRail's `collapsedSections` — it's threaded as a prop. The caller memoizes the
   // object so it's stable across unrelated (chat-token) renders and this memo bails.
   gitBadge:
-    | { branch: string | null; additions: number; deletions: number; fileCount: number }
+    | { branch: string | null; additions: number; deletions: number; fileCount: number; cwd: string }
     | null;
 }): ReactElement {
   const viewModel = useProductShellSlice(selectChatColumnViewModel);

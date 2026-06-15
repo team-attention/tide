@@ -1,4 +1,4 @@
-import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellDraftChanges, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
 import type { ProductShellHandlers } from "../support/types.ts";
@@ -13,12 +13,15 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         dispatchBackendCommand(result.command);
         return result.state;
       }),
-    // Open the read-only git Changes pane (a first-class singleton backend pane). The
-    // backend creates/reveals it + makes it active; we just ensure the Workbench is open.
-    onOpenChanges: () =>
+    // Open the read-only git Changes pane. Inside a thread it's a first-class singleton
+    // backend pane (the backend creates/reveals it + makes it active). On the composer
+    // (New Thread) page there's no thread to own a backend pane, so open a renderer-local
+    // draft Changes pane from the badge's cwd — same pattern as the composer draft Browser.
+    // Spec: git-changes-view (Composer pre-thread Changes).
+    onOpenChanges: (cwd) =>
       setShellState((state) => {
         if (state.activeThreadId === null) {
-          return state;
+          return cwd === undefined ? state : openProductShellDraftChanges(state, cwd);
         }
         dispatchBackendCommand({
           kind: "workbench.command",

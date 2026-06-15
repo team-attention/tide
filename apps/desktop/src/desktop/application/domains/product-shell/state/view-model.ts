@@ -485,7 +485,7 @@ function composerWorkbenchAppChrome(
     (draftPanes.length === 0 && startFiles.length === 0);
   const panes: AppChromeWorkbenchPaneRef[] = [
     ...(showLauncher ? [composerLauncherPane()] : []),
-    ...draftPanes.map(draftBrowserPaneRef),
+    ...draftPanes.map(draftPaneRef),
     ...startFiles.map(startFileEditorPane),
   ];
   const activeWorkbenchPaneId =
@@ -515,7 +515,20 @@ function composerLauncherPane(): AppChromeWorkbenchPaneRef {
   };
 }
 
-function draftBrowserPaneRef(pane: ProductShellDraftPane): AppChromeWorkbenchPaneRef {
+function draftPaneRef(pane: ProductShellDraftPane): AppChromeWorkbenchPaneRef {
+  // The composer git Changes draft: a renderer-local Changes pane rendered purely from its
+  // cwd (ChangesPanel self-fetches). Spec: git-changes-view (Composer pre-thread Changes).
+  if (pane.kind === "changes") {
+    return {
+      paneId: pane.paneId,
+      kind: "changes",
+      title: pane.title,
+      visible: true,
+      revision: "draft",
+      updatedAt: shellTimestamp,
+      cwd: pane.cwd,
+    };
+  }
   return {
     paneId: pane.paneId,
     kind: "browser",

@@ -47,3 +47,58 @@ While working in a thread whose cwd is a git repo/worktree, the user can:
 - Live: in a dirty repo thread, the badge shows the branch + change count; clicking opens
   the Changes overlay; selecting a file shows its diff; editing files + Refresh updates it;
   a clean repo shows the branch with no count and "Working tree clean".
+
+## Composer (pre-thread) Changes — draft pane
+
+> Slice (added 0.1.55+): the badge opens the Changes view on the **New Thread / composer
+> page** too (`activeThreadId === null`), not only inside a thread.
+
+### Gap
+
+The badge already renders on the composer page whenever the selected scope's cwd is a git
+repo (it shows `⎇ branch +adds −dels`), but clicking it was a **silent no-op**:
+`onOpenChanges` early-returned when `activeThreadId === null`, because the backend Changes
+pane is a per-thread Workbench singleton and `open_diff` needs a `threadId`. So the badge
+looked actionable but did nothing pre-thread.
+
+### Decision
+
+Open Changes pre-thread the **same way the composer Browser does** — a renderer-local
+**draft pane** (no backend, no thread). The data layer is already thread-independent
+(`onGitChanges(cwd)` / `onGitFileDiff(cwd, path)` take a cwd) and `pane-content` already
+renders a `kind:"changes"` pane purely from `pane.cwd`, so a draft pane with
+`kind:"changes"` + the composer's `activeProjectCwd` renders the identical `ChangesPanel`.
+**No backend change.**
+
+### Domain / Contracts
+
+- `ProductShellDraftPane.kind`: `"browser"` → `"browser" | "changes"`; add `cwd?: string`.
+- `useGitState`'s `gitBadge` gains `cwd: string` (it already fetches per cwd).
+- `ProductShellHandlers.onOpenChanges`: `() => void` → `(cwd?: string) => void`.
+
+### Flow
+
+1. Badge click → `onOpenChanges(gitBadge.cwd)`.
+2. `onOpenChanges`: `activeThreadId !== null` → unchanged backend `open_diff`. Else, with a
+   cwd → `openProductShellDraftChanges(state, cwd)`.
+3. `openProductShellDraftChanges`: **singleton** — reveal/activate the existing draft
+   `changes` pane, or create one (`kind:"changes"`, `cwd`); set `workbenchOpen: true`.
+4. `composerWorkbenchAppChrome` maps a draft pane by kind: a `changes` draft →
+   `{ kind:"changes", cwd }` ref → `ChangesPanel`.
+
+### Invariants
+
+- At most one draft `changes` pane (singleton), mirroring the backend pane.
+- A draft `changes` pane is **not adopted on send**: `composer-bridge` seeds only
+  `kind:"browser"` drafts into `thread.start`. A started thread owns its own backend
+  Changes pane (re-openable via the badge); the draft is dropped, never mis-adopted as an
+  empty Browser Pane.
+- Inside a thread the path is unchanged (backend `open_diff` singleton).
+
+### Tests (`tests/git-changes-view.test.tsx`)
+
+- composer + `onOpenChanges(cwd)` → one draft `changes` pane, `workbenchOpen`, active.
+- idempotent: two calls → still one draft `changes` pane.
+- view-model: a draft `changes` pane → `AppChromeWorkbenchPaneRef` `kind:"changes"` + cwd.
+- in-thread `onOpenChanges()` still dispatches backend `open_diff` (no regression).
+- adoption: a draft `changes` pane is excluded from `initialWorkbenchPanes` on send.

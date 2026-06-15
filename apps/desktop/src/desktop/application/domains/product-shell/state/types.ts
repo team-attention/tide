@@ -137,13 +137,16 @@ export const COMPOSER_LAUNCHER_PANE_ID = "composer-launcher";
 // A pane the user opened on the composer (New Thread) page, before any thread
 // exists. Rendered live in the renderer (a Browser Pane owns its own <webview>);
 // adopted by the Thread the first send creates (seeded via thread.start). Only
-// browsers are supported pre-thread (editor uses startPageFile; terminal/diff need
-// a thread).
+// browsers and the read-only git Changes view are supported pre-thread (editor uses
+// startPageFile; terminal / diff-of-an-edit need a thread).
 export interface ProductShellDraftPane {
   paneId: string;
-  kind: "browser";
+  kind: "browser" | "changes";
   title: string;
+  // Browser draft: the (optional) seeded URL.
   url?: string;
+  // git Changes draft: the repo cwd whose working-tree diff ChangesPanel self-fetches.
+  cwd?: string;
 }
 
 export interface ProductShellState {

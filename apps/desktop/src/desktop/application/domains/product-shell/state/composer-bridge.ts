@@ -217,11 +217,16 @@ export function submitProductShellComposerDraft(
     // draft Browser Panes to the new Thread so it OWNS them (seeded via thread.start,
     // race-free). The start-page editor still belongs to the New Thread page and is
     // dropped (its unsaved draft must not be silently lost by a re-open).
-    const initialWorkbenchPanes = state.draftWorkbenchPanes.map((pane) => ({
-      kind: "browser" as const,
-      url: pane.url,
-      title: pane.title,
-    }));
+    // Only Browser drafts are adopted by the new Thread. A composer git Changes draft is
+    // renderer-only (no URL); the started thread owns its own backend Changes pane via the
+    // badge, so the draft is dropped rather than mis-adopted as an empty Browser Pane.
+    const initialWorkbenchPanes = state.draftWorkbenchPanes
+      .filter((pane) => pane.kind === "browser")
+      .map((pane) => ({
+        kind: "browser" as const,
+        url: pane.url,
+        title: pane.title,
+      }));
     const shellThread = toProductShellThreadFromSummary(startedThread);
     const threads = [shellThread, ...state.threads];
     nextState = {

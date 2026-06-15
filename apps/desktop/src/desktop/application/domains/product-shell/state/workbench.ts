@@ -184,6 +184,32 @@ export function openProductShellDraftBrowser(
   };
 }
 
+// Open the read-only git Changes pane on the composer (New Thread) page (no thread yet).
+// Renderer-local + SINGLETON, mirroring the backend Changes pane: reveal the existing
+// draft Changes pane or create one. ChangesPanel self-fetches its file list + diffs from
+// `cwd`. Spec: git-changes-view (Composer pre-thread Changes).
+export function openProductShellDraftChanges(
+  state: ProductShellState,
+  cwd: string,
+): ProductShellState {
+  const existing = state.draftWorkbenchPanes.find((pane) => pane.kind === "changes");
+  if (existing !== undefined) {
+    return { ...state, workbenchOpen: true, draftActiveWorkbenchPaneId: existing.paneId };
+  }
+  const pane: ProductShellDraftPane = {
+    paneId: draftPaneId(),
+    kind: "changes",
+    title: "Changes",
+    cwd,
+  };
+  return {
+    ...state,
+    workbenchOpen: true,
+    draftWorkbenchPanes: [...state.draftWorkbenchPanes, pane],
+    draftActiveWorkbenchPaneId: pane.paneId,
+  };
+}
+
 function draftPaneId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return `draft-${crypto.randomUUID()}`;

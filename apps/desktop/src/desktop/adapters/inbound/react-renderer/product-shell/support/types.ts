@@ -132,8 +132,10 @@ export interface ProductShellHandlers {
   onRemoveAttachment: (attachmentId: string) => void;
   onLauncherAction: (actionId: string) => void;
   // Open the read-only git Changes view (working-tree diff). Wired to the launcher's
-  // Diff action + the top-bar branch badge. Spec: git-changes-view.
-  onOpenChanges: () => void;
+  // Diff action + the top-bar branch badge. Inside a thread it opens the backend singleton
+  // pane; on the composer (no thread) `cwd` opens a renderer-local draft Changes pane.
+  // Spec: git-changes-view.
+  onOpenChanges: (cwd?: string) => void;
   // The Changes pane self-fetches its data from its cwd (Main-process git).
   onGitChanges: (cwd: string) => Promise<GitChangesViewResult>;
   onGitFileDiff: (cwd: string, relPath: string) => Promise<string>;

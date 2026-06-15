@@ -13,7 +13,7 @@ export function createAgentChatColumn(
   // Current branch + uncommitted +/- line totals for the active repo/worktree; opens the
   // read-only Changes view. Null when the cwd isn't a git repo. Spec: git-changes-view.
   gitBadge:
-    | { branch: string | null; additions: number; deletions: number; fileCount: number }
+    | { branch: string | null; additions: number; deletions: number; fileCount: number; cwd: string }
     | null = null,
 ): ReactElement {
   const title = viewModel.agentChat.thread?.title ?? "New Thread";
@@ -61,7 +61,7 @@ export function createAgentChatColumn(
               className="column-top-row__git"
               title={`${gitBadge.branch ?? "detached HEAD"} · ${gitBadge.fileCount} file${gitBadge.fileCount === 1 ? "" : "s"} changed (+${gitBadge.additions} −${gitBadge.deletions}) — view changes`}
               aria-label="View working tree changes"
-              onClick={() => handlers.onOpenChanges()}
+              onClick={() => handlers.onOpenChanges(gitBadge.cwd)}
             >
               <GitBranch size={12} strokeWidth={1.9} aria-hidden />
               <span className="column-top-row__git-branch">{gitBadge.branch ?? "detached"}</span>

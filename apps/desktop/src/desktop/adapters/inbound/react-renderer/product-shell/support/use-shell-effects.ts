@@ -200,7 +200,7 @@ export function useGitState(
 ): {
   // Memoized badge (branch + summed +/- + file count) for the chat header; stable across
   // chat-token renders so the memoized chat column doesn't re-render on every token.
-  gitBadge: { branch: string | null; additions: number; deletions: number; fileCount: number } | null;
+  gitBadge: { branch: string | null; additions: number; deletions: number; fileCount: number; cwd: string } | null;
 } {
   const [gitInfo, setGitInfo] = useState<GitChangesView | null>(null);
   useEffect(() => {
@@ -238,6 +238,7 @@ export function useGitState(
             additions: gitInfo.files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
             deletions: gitInfo.files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
             fileCount: gitInfo.files.length,
+            cwd: gitInfo.cwd,
           },
     [gitInfo],
   );
