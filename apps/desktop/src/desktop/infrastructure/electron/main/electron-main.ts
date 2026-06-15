@@ -267,12 +267,16 @@ ipcMain.handle("tide:git-file-diff", async (_event, cwd: unknown, relPath: unkno
   if (typeof cwd !== "string" || typeof relPath !== "string" || cwd.length === 0 || relPath.length === 0) {
     return "";
   }
-  const tracked = await runGit(cwd, ["diff", "--no-color", "HEAD", "--", relPath]);
+  // `git status --porcelain` paths are relative to the repo top level, but a diff
+  // pathspec is resolved relative to the run dir — so run diffs from the top level, or
+  // a thread whose cwd is a SUBDIRECTORY of the repo gets an empty (wrong-path) diff.
+  const root = (await runGit(cwd, ["rev-parse", "--show-toplevel"])).trim() || cwd;
+  const tracked = await runGit(root, ["diff", "--no-color", "HEAD", "--", relPath]);
   if (tracked.trim().length > 0) {
     return tracked;
   }
   // --no-index exits 1 when files differ (not an error), so read stdout via execGitArgs.
-  const untracked = await execGitArgs(["-C", cwd, "diff", "--no-color", "--no-index", "--", "/dev/null", relPath]);
+  const untracked = await execGitArgs(["-C", root, "diff", "--no-color", "--no-index", "--", "/dev/null", relPath]);
   return untracked.stdout;
 });
 
