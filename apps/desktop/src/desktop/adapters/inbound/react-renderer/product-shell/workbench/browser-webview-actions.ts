@@ -50,6 +50,43 @@ export type BrowserWebViewAction = NonNullable<
 
 export type BrowserWebViewActionExecution = { ok: boolean; message: string };
 
+// Electron <webview> guest methods only work once the guest is attached AND has
+// emitted dom-ready. Before that, executeJavaScript throws *synchronously* and
+// capturePage() never resolves. These two guards keep a not-ready (or non-painting)
+// webview from stalling the snapshot pipeline — which otherwise leaves the pane
+// "pending"/agent-driving forever because onBrowserActionResult never fires.
+const CAPTURE_TIMEOUT_MS = 2000;
+
+function raceTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  // Renderer-resolved setTimeout returns a DOM `number` here (not NodeJS.Timeout);
+  // the global setTimeout/clearTimeout still work in the node test runtime too.
+  let timer: number | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  // Clear the loser's timer so a fast capture never leaves a dangling 2s timeout
+  // (which would keep the process/tests alive and leak a handle).
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  });
+}
+
+async function safeExecuteJavaScript(
+  webview: BrowserWebViewElement,
+  script: string,
+): Promise<unknown> {
+  try {
+    // `.catch()` is not enough: executeJavaScript throws synchronously (not a
+    // rejected promise) before dom-ready, so a chained rejection handler never
+    // attaches. Catch the sync throw and the async rejection both.
+    return await webview.executeJavaScript?.(script);
+  } catch {
+    return undefined;
+  }
+}
+
 export async function readBrowserWebViewSnapshot(
   webview: BrowserWebViewElement,
 ): Promise<BrowserWebViewSnapshot> {
@@ -58,7 +95,7 @@ export async function readBrowserWebViewSnapshot(
     pageTitle: document.title,
     bodyTextPreview: (document.body?.innerText ?? "").slice(0, 65536)
   }))()`;
-  const rawSnapshot = await webview.executeJavaScript?.(script).catch(() => undefined);
+  const rawSnapshot = await safeExecuteJavaScript(webview, script);
   const snapshot =
     rawSnapshot !== null && typeof rawSnapshot === "object"
       ? (rawSnapshot as Record<string, unknown>)
@@ -84,7 +121,11 @@ export async function captureBrowserWebViewScreenshot(
     return undefined;
   }
   try {
-    const image = await webview.capturePage();
+    // Ceiling the capture: capturePage() never resolves while the guest isn't
+    // painting (just-created / offscreen / pre-dom-ready). Without this race a
+    // single hung capture stalls the snapshot → the action result is never
+    // reported and the pane stays "pending". Degrade to "no screenshot" instead.
+    const image = await raceTimeout(webview.capturePage(), CAPTURE_TIMEOUT_MS);
     const dataUrl = image?.toDataURL?.();
     if (typeof dataUrl !== "string" || dataUrl.length === 0) {
       return undefined;
