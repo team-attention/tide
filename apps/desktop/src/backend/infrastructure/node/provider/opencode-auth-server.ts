@@ -76,6 +76,14 @@ export function createOpencodeAuthServer(input: CreateOpencodeAuthServerInput): 
         baseUrlPromise = undefined;
         reject(new Error("opencode serve exited before announcing a URL."));
       });
+      // A spawn failure (ENOENT / permission) emits "error"; with no listener Node
+      // throws an unhandled exception that would crash the backend.
+      proc.on("error", (error) => {
+        clearTimeout(timer);
+        child = undefined;
+        baseUrlPromise = undefined;
+        reject(error);
+      });
     });
 
   const baseUrl = (): Promise<string> => {

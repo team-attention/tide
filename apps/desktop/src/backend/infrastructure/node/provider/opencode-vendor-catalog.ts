@@ -92,16 +92,20 @@ export function buildOpencodeVendors(entries: OpencodeAuthEntry[]): OpencodeVend
     }
     return { id: curated.id, label: curated.label, connected: false, popular: true };
   });
+  // Append connected-but-uncurated vendors, de-duped by id — a vendor can carry
+  // several credentials (e.g. OAuth + an API key), which must not become duplicate
+  // tiles (and duplicate React keys).
+  const seen = new Set(vendors.map((vendor) => vendor.id));
   entries.forEach((entry, i) => {
-    if (!matched.has(i)) {
-      vendors.push({
-        id: vendorIdFromName(entry.name),
-        label: entry.name,
-        connected: true,
-        method: entry.method,
-        popular: false,
-      });
+    if (matched.has(i)) {
+      return;
     }
+    const id = vendorIdFromName(entry.name);
+    if (seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    vendors.push({ id, label: entry.name, connected: true, method: entry.method, popular: false });
   });
   return vendors;
 }

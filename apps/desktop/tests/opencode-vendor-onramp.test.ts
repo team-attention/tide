@@ -88,6 +88,20 @@ test("buildOpencodeVendors with no logins → curated tiles, none connected", ()
   assert.ok(vendors.some((vendor) => vendor.id === "openai" && vendor.popular));
 });
 
+test("buildOpencodeVendors de-dupes a vendor with multiple credentials (no duplicate ids)", () => {
+  // A vendor can carry several credentials (e.g. OAuth + an API key) — they must not
+  // become duplicate tiles / duplicate React keys.
+  const vendors = buildOpencodeVendors([
+    { name: "OpenAI", method: "oauth" },
+    { name: "OpenAI", method: "api" },
+    { name: "Some Router", method: "api" },
+    { name: "Some Router", method: "oauth" },
+  ]);
+  assert.equal(vendors.filter((vendor) => vendor.id === "openai").length, 1);
+  assert.equal(vendors.filter((vendor) => vendor.id === "some-router").length, 1);
+  assert.equal(new Set(vendors.map((vendor) => vendor.id)).size, vendors.length);
+});
+
 // ---- desktop: "is opencode usable" gate ----
 
 test("isOpencodeUsable is false with no vendors and only the default model", () => {

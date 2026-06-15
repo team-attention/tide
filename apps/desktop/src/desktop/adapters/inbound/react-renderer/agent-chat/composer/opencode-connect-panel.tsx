@@ -115,11 +115,11 @@ export function OpencodeConnectPanel(props: {
       </header>
 
       <div className="oc-connect__ghead">{data?.manageMode ? "Add a vendor" : "Vendors"}</div>
-      <div className="oc-grid" role="list">
+      <div className="oc-grid">
         {data?.manageMode ? null : (
           // OpenCode Zen sits in the grid at the same level as the vendors — a "Free"
           // (ready) tile, not a hero card. Clicking it uses a free model.
-          <button type="button" className="oc-tile" role="listitem" data-free="true" onClick={() => select("use-free-model")}>
+          <button type="button" className="oc-tile" data-free="true" onClick={() => select("use-free-model")}>
             <span className="oc-tile__m" aria-hidden>Z</span>
             <span className="oc-tile__b">
               <span className="oc-tile__n">OpenCode Zen</span>
@@ -134,7 +134,6 @@ export function OpencodeConnectPanel(props: {
             key={vendor.id}
             type="button"
             className="oc-tile"
-            role="listitem"
             data-connected={vendor.connected ? "true" : "false"}
             disabled={vendor.connected}
             onClick={vendor.connected ? undefined : () => setSheetVendorId(vendor.id)}
