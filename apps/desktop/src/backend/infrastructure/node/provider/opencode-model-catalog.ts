@@ -52,7 +52,9 @@ export function createOpencodeModelCatalog(
     try {
       const stdout = execFileSync(executablePath, ["models"], {
         encoding: "utf8",
-        timeout: 3_000,
+        // `opencode models` is a fast local cache lookup; keep the synchronous call
+        // short so a hung/slow CLI can't block the backend for long.
+        timeout: 1_000,
         // opencode prints the list to stdout; ignore stderr noise.
         stdio: ["ignore", "pipe", "ignore"],
       });

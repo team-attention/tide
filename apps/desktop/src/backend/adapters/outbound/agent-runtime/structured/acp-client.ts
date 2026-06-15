@@ -234,7 +234,9 @@ class AcpClient implements StructuredRuntimeClient {
     const configOptions = parseConfigOptions(protocolParams.configOptions);
     if (configOptions !== undefined) {
       if (this.sessionId === undefined) {
-        this.pendingConfigOptions = configOptions;
+        // MERGE by configId: each change carries only its changed keys, so a later
+        // pre-adoption change must not clobber an earlier one (e.g. model then effort).
+        this.pendingConfigOptions = mergeConfigOptions(this.pendingConfigOptions, configOptions);
         return;
       }
       this.sendConfigOptions(this.sessionId, configOptions);
@@ -251,17 +253,27 @@ class AcpClient implements StructuredRuntimeClient {
     this.request("session/set_mode", { sessionId: this.sessionId, modeId }, () => undefined);
   }
 
+  // Apply config options SEQUENTIALLY (each after the previous response), not
+  // concurrently: opencode's effort option only exists once the model is set, so
+  // sending effort before the model change registers gets it rejected. The array is
+  // already ordered model → effort → mode (opencodeConfigOptions).
   private sendConfigOptions(
     sessionId: string,
     configOptions: Array<{ configId: string; value: string }> | undefined,
   ): void {
-    for (const option of configOptions ?? []) {
+    const options = configOptions ?? [];
+    const sendNext = (index: number): void => {
+      if (index >= options.length) {
+        return;
+      }
+      const option = options[index];
       this.request(
         "session/set_config_option",
         { sessionId, configId: option.configId, value: option.value },
-        () => undefined,
+        () => sendNext(index + 1),
       );
-    }
+    };
+    sendNext(0);
   }
 
   // Parse the agent's self-reported model catalog from the session/new result and
@@ -656,6 +668,22 @@ function parseConfigOptions(value: unknown): Array<{ configId: string; value: st
     }
   }
   return options;
+}
+
+// Merge config-option changes by configId (incoming wins), preserving order: a later
+// pre-adoption change carries only its changed keys, so it must not drop earlier ones.
+export function mergeConfigOptions(
+  existing: Array<{ configId: string; value: string }> | undefined,
+  incoming: Array<{ configId: string; value: string }>,
+): Array<{ configId: string; value: string }> {
+  const merged = new Map<string, string>();
+  for (const option of existing ?? []) {
+    merged.set(option.configId, option.value);
+  }
+  for (const option of incoming) {
+    merged.set(option.configId, option.value);
+  }
+  return Array.from(merged, ([configId, value]) => ({ configId, value }));
 }
 
 export interface AcpModelCatalog {

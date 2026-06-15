@@ -6,7 +6,7 @@ import {
   opencodeConfigOptions,
 } from "../src/backend/adapters/outbound/agent-integrations/opencode/opencode-agent-integration.ts";
 import { parseOpencodeModels } from "../src/backend/infrastructure/node/provider/opencode-model-catalog.ts";
-import { parseAcpModelCatalog } from "../src/backend/adapters/outbound/agent-runtime/structured/acp-client.ts";
+import { mergeConfigOptions, parseAcpModelCatalog } from "../src/backend/adapters/outbound/agent-runtime/structured/acp-client.ts";
 import {
   cliModelOptionsForAgent,
   isAgentComingSoon,
@@ -85,6 +85,25 @@ test("opencode start plan carries the chosen config as ACP configOptions", async
   assert.deepEqual(configOptions, [
     { configId: "model", value: "openai/gpt-5.5" },
     { configId: "effort", value: "high" },
+    { configId: "mode", value: "plan" },
+  ]);
+});
+
+test("mergeConfigOptions keeps earlier pre-adoption changes (no clobber)", () => {
+  // A model change then an effort change before adoption must keep BOTH.
+  assert.deepEqual(
+    mergeConfigOptions([{ configId: "model", value: "openai/gpt-5.5" }], [{ configId: "effort", value: "high" }]),
+    [
+      { configId: "model", value: "openai/gpt-5.5" },
+      { configId: "effort", value: "high" },
+    ],
+  );
+  // A repeated key takes the latest value.
+  assert.deepEqual(
+    mergeConfigOptions([{ configId: "model", value: "a" }], [{ configId: "model", value: "b" }]),
+    [{ configId: "model", value: "b" }],
+  );
+  assert.deepEqual(mergeConfigOptions(undefined, [{ configId: "mode", value: "plan" }]), [
     { configId: "mode", value: "plan" },
   ]);
 });
