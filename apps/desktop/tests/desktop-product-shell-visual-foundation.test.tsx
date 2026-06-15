@@ -1951,9 +1951,11 @@ test("agent_session_shows_working_indicator_while_runtime_is_running", () => {
   // Running + last block is the user's turn (no agent reply yet) -> indicator shows.
   assert.match(renderProductShell(running), /agent-session-working/);
 
-  // Once a complete agent reply arrives, the indicator clears even if the runtime
-  // state is still "running" (no lingering loading after the answer).
-  const answered = applyProductShellBackendEvent(running, {
+  // A *complete* agent reply mid-turn does NOT end the turn — the agent routinely
+  // pauses after a sentence before its next tool call. While the runtime is still
+  // "running" the indicator must stay up; clearing it here (the old heuristic) made
+  // an active multi-step turn read as idle for most of its life.
+  const midTurnReply = applyProductShellBackendEvent(running, {
     kind: "agentSessionBlock.upserted",
     payload: {
       block: {
@@ -1963,14 +1965,46 @@ test("agent_session_shows_working_indicator_while_runtime_is_running", () => {
         kind: "agent_message",
         role: "agent",
         status: "complete",
-        body: "Done.",
+        body: "Let me check that.",
         updatedAt: "2026-05-29T00:00:01.000Z",
       },
     },
   });
-  assert.doesNotMatch(renderProductShell(answered), /agent-session-working/);
+  assert.match(renderProductShell(midTurnReply), /agent-session-working/);
 
-  // When idle, no working indicator.
+  // While the answer is actively streaming, the block carries its own blinking
+  // caret, so the separate indicator hides to avoid a redundant double-indicator.
+  const streamingReply = applyProductShellBackendEvent(running, {
+    kind: "agentSessionBlock.upserted",
+    payload: {
+      block: {
+        blockId: "block-agent-reply",
+        threadId: "thread-workbench",
+        agentId: "codex",
+        kind: "agent_message",
+        role: "agent",
+        status: "streaming",
+        body: "Strea",
+        updatedAt: "2026-05-29T00:00:01.000Z",
+      },
+    },
+  });
+  assert.doesNotMatch(renderProductShell(streamingReply), /agent-session-working/);
+
+  // The turn *ending* is what clears the indicator: the runtime flips to idle (no
+  // lingering loading after the answer), governed by state — not by guessing the
+  // turn is over because one block completed.
+  const settled = applyProductShellBackendEvent(midTurnReply, {
+    kind: "agentRuntime.stateChanged",
+    payload: {
+      threadId: "thread-workbench",
+      state: "idle",
+      changedAt: "2026-05-29T00:00:02.000Z",
+    },
+  });
+  assert.doesNotMatch(renderProductShell(settled), /agent-session-working/);
+
+  // When idle from the start, no working indicator.
   assert.doesNotMatch(renderProductShell(opened), /agent-session-working/);
 });
 

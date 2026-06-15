@@ -792,6 +792,41 @@ test("agent_session_block_upserts_render_one_visible_block_per_block_id", () => 
   assert.match(renderShell(withUpdatedBlock), /hello/);
 });
 
+test("the_working_indicator_stays_up_mid_turn_after_a_completed_agent_block", () => {
+  // A multi-step turn emits agent text, completes that block, then keeps going
+  // (a tool call, more text). The runtime is still "running", so "Working…" must
+  // stay visible — it previously vanished the instant any agent block completed,
+  // so an active multi-step turn read as idle for most of its life.
+  const running = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "running" }),
+  );
+  const afterAgentText = applyBackendEventToAgentChatShell(
+    running,
+    backendEvent("agentSessionBlock.upserted", { block: block("b1", "complete", "Let me read that file.") }),
+  );
+
+  const html = renderShell(afterAgentText);
+
+  assert.ok(html.includes("agent-session-turn--working"));
+  assert.match(html, /Working…/);
+});
+
+test("the_working_indicator_is_hidden_while_the_agent_answer_streams", () => {
+  // While the answer streams, the block shows its own blinking caret, so the
+  // separate indicator stays hidden to avoid a redundant double-indicator.
+  const running = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "running" }),
+  );
+  const streaming = applyBackendEventToAgentChatShell(
+    running,
+    backendEvent("agentSessionBlock.upserted", { block: block("b1", "streaming", "Here is the ans") }),
+  );
+
+  assert.ok(!renderShell(streaming).includes("agent-session-turn--working"));
+});
+
 test("an attached image renders as a thumbnail, not the raw '[Attached image: path]'", () => {
   // The agent gets the image PATH in the message (to read the file); the user's
   // transcript should show a preview and drop the path plumbing.

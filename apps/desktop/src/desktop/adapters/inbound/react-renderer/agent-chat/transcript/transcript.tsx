@@ -20,13 +20,19 @@ export function createAgentSession(
   onQuote?: (text: string) => void,
   onOpenBrowserPane?: (url: string, options?: { newPane?: boolean }) => void,
 ): ReactElement {
-  // Show a live "working" indicator only until the agent produces its block:
-  // a streaming block carries its own caret, and a complete block means the turn
-  // is done — so the indicator never lingers after the answer (even if the
-  // backend runtime state is slow to flip).
+  // Show the live "Working…" indicator whenever the runtime is genuinely active,
+  // and hide it ONLY while the agent's answer is actively streaming — that block
+  // already carries its own blinking caret, so a second indicator is redundant.
+  // A *complete* agent block mid-turn does NOT mean the turn ended: the agent
+  // routinely pauses between steps (after a sentence, before its next tool call),
+  // and on a multi-step turn a completed agent block is the last block for most of
+  // the turn's life. Suppressing on any agent block (the old `!lastIsAgent`) made
+  // an active turn read as idle — no Working indicator while it kept working, and
+  // a follow-up sent then looked un-queued. Trust chatState for "is it running";
+  // use the block only to dodge the redundant double-caret.
   const lastBlock = blocks[blocks.length - 1];
-  const lastIsAgent = lastBlock?.role === "agent";
-  const working = chatState === "running" && !lastIsAgent;
+  const lastIsStreamingAgent = lastBlock?.role === "agent" && lastBlock?.status === "streaming";
+  const working = chatState === "running" && !lastIsStreamingAgent;
 
   return (
     <section
