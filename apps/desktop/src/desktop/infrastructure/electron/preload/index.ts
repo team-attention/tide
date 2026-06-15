@@ -32,6 +32,17 @@ export interface ProviderCommandSuggestion {
   agentId: "codex" | "claude";
 }
 
+// A native-notification request from the renderer (delivered by Main). Mirrors
+// TideNotificationRequest in main/notifications.ts (kept process-local per the existing
+// preload convention). See specs/focus-aware-notifications.md.
+export interface TideNotificationRequest {
+  kind: "agent_finished" | "needs_attention" | "agent_update";
+  threadId: string | null;
+  title: string;
+  body: string;
+  isActiveThread: boolean;
+}
+
 export interface TidePreloadSurface {
   contractVersion: 1;
   transport: "message_port";
@@ -47,6 +58,12 @@ export interface TidePreloadSurface {
   // View-menu panel toggles (Cmd+B left rail / Cmd+E file tree / Cmd+J workbench),
   // routed from the application menu so they fire regardless of focus (webview/terminal).
   onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
+  // Request a native OS notification (delivered from Main). Fire-and-forget: Main applies
+  // the window-focus gate and decides whether to show it.
+  notify(request: TideNotificationRequest): void;
+  // Main asks the renderer to activate a thread (a clicked notification routes through
+  // the same user-action path as a left-rail click).
+  onActivateThread(listener: (threadId: string) => void): () => void;
   // Native folder picker + persisted project registry (Main-owned).
   openDirectory(): Promise<string | null>;
   listProjects(): Promise<ProjectRegistryEntry[]>;
@@ -117,6 +134,16 @@ export const tidePreloadSurface: TidePreloadSurface = {
     ipcRenderer.on("tide:toggle-panel", wrapped);
     return () => {
       ipcRenderer.removeListener("tide:toggle-panel", wrapped);
+    };
+  },
+  notify(request) {
+    ipcRenderer.send("tide:notify", request);
+  },
+  onActivateThread(listener) {
+    const wrapped = (_event: unknown, threadId: string) => listener(threadId);
+    ipcRenderer.on("tide:activate-thread", wrapped);
+    return () => {
+      ipcRenderer.removeListener("tide:activate-thread", wrapped);
     };
   },
   openDirectory() {

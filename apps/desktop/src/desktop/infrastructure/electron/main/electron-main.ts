@@ -4,6 +4,7 @@ import { backendProcess, ensureBackendProcess, nextEventId, postBackendCommand }
 import { maybeOfferMoveToApplications } from "./move-to-applications.ts";
 import { installApplicationMenu } from "./app-menu.ts";
 import { appRendererUrl, createMainWindow } from "./main-window.ts";
+import { registerNotificationBridge } from "./notifications.ts";
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from "electron";
 
 import { basename, dirname, join } from "node:path";
@@ -459,6 +460,11 @@ ipcMain.handle("tide:backend-command", async (_event, command: BackendCommandEnv
 
   return postBackendCommand(validatedCommand.value);
 });
+
+// Native OS notifications (focus-aware): the renderer requests one per agent-finished /
+// needs-input / update event, main delivers it through the window-focus gate and routes
+// a click to thread activation. See specs/focus-aware-notifications.md.
+registerNotificationBridge(() => BrowserWindow.getAllWindows()[0]);
 
 // Keep a stray error from hard-aborting the main process (SIGTRAP/brk). Log it
 // instead so the app survives and the cause is diagnosable.

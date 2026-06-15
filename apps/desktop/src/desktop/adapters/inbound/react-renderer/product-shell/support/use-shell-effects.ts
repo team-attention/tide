@@ -83,6 +83,21 @@ export function useOpenBrowserPaneFromMain(
   }, []);
 }
 
+// Main asks the renderer to activate a thread (a clicked native notification). Route it
+// through onThreadSelect — the same user-action path as a left-rail click. Subscribe once
+// and read the latest handler via a ref so the IPC listener never re-binds or goes stale.
+export function useActivateThreadFromMain(onThreadSelect: (threadId: string) => void): void {
+  const latest = useRef(onThreadSelect);
+  useEffect(() => {
+    latest.current = onThreadSelect;
+  });
+  useEffect(() => {
+    const off = window.tide?.onActivateThread?.((threadId: string) => latest.current(threadId));
+    return off;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
 // View-menu panel toggles (Cmd+B left rail / Cmd+E file tree / Cmd+J workbench): Main
 // sends the panel id from the application menu; route it to the matching toggle handler.
 // Subscribe once and read the latest handlers via a ref (refreshed each commit) so the
