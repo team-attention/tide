@@ -170,6 +170,7 @@ export class WorkbenchCommandHandler {
           );
         }
 
+        const previousUrl = pane.url;
         pane.pageTitle = snapshot.pageTitle;
         if (snapshot.url !== undefined) {
           pane.url = snapshot.url;
@@ -179,7 +180,17 @@ export class WorkbenchCommandHandler {
           pane.screenshot = snapshot.screenshot;
         }
         pane.loading = snapshot.loading ?? false;
-        pane.revision = this.idGenerator();
+        // D1 (spec: browser-pane-action-revision-race): re-mint the revision ONLY on a
+        // real navigation (the resolved URL changed). did-finish-load/did-stop-loading
+        // fire repeatedly on a live page, each emitting a SAME-URL snapshot; bumping the
+        // token on those churned an agent's observed revision out from under its next
+        // act (workbench_stale_reference) even though the page never moved. A same-page
+        // content refresh still updates title/body/screenshot/loading but KEEPS the
+        // revision, so an observe→act with no navigation between survives the CAS; a
+        // genuine navigation still re-mints, preserving the staleness guard.
+        if (snapshot.url !== undefined && snapshot.url !== previousUrl) {
+          pane.revision = this.idGenerator();
+        }
         pane.updatedAt = this.clock();
         thread.updatedAt = this.clock();
         return {

@@ -201,7 +201,14 @@ export function actBrowserOutput(
     );
   }
   if (revision !== pane.revision) {
-    return failure("workbench_stale_reference", "Browser Pane revision is stale.");
+    // D3 (spec: browser-pane-action-revision-race): hand the caller the CURRENT
+    // revision so it can retry once against it (e.g. when its own prior action, not a
+    // navigation, advanced the token). The agent decides — if it expects the page to
+    // have moved it should re-observe instead.
+    return failure(
+      "workbench_stale_reference",
+      `Browser Pane revision is stale. The pane is now at revision "${pane.revision}"; if it has not navigated since you observed it, retry this action with that revision.`,
+    );
   }
   if (pane.pendingAction !== undefined) {
     return failure(
