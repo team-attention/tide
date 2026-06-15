@@ -96,6 +96,7 @@ export function createAgentChatColumn(
         onQuote={handlers.onQuote}
         onComposerSurfaceChange={handlers.onComposerSurfaceChange}
         onChoiceSurfaceRowSelect={handlers.onChoiceSurfaceRowSelect}
+        onOpencodeConnectApiKey={handlers.onOpencodeConnectApiKey}
         onOpenFile={handlers.onOpenFile}
         onOpenBrowserPane={handlers.onOpenBrowserPane}
         onAddAttachment={handlers.onAddAttachment}

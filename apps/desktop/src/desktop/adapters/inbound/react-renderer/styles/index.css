@@ -26,6 +26,7 @@
 @import "../agent-chat/composer/steer-queue.css";
 @import "../agent-chat/composer/context-chips.css";
 @import "../agent-chat/composer/choice-surface.css";
+@import "../agent-chat/composer/opencode-connect-panel.css";
 @import "../agent-chat/prompt-card/prompt-card.css";
 @import "../product-shell/workbench/workbench.css";
 @import "../product-shell/workbench/split-view.css";

@@ -411,8 +411,8 @@ export function createLiveBackendContractMessageAdapter(
     flushPendingPersists: () => projector.flushPendingPersists(),
     adapter: createBackendContractMessageAdapter({
       service,
-      detectAvailableAgents: detection.detectAvailableAgents,
-      enumerateOpencodeModels: detection.enumerateOpencodeModels,
+      // detection's methods === the adapter's thread.listed detection inputs.
+      ...detection,
     }),
     service,
     persistence,

@@ -122,6 +122,9 @@ export interface ProductShellHandlers {
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
   ) => void;
+  // Set an opencode vendor's API key (the on-ramp panel's in-app key field) the
+  // "정석" way — backend PUTs it to opencode's own server.
+  onOpencodeConnectApiKey: (vendorId: string, key: string) => void;
   onOpenFile: (path: string) => void;
   onOpenBrowserPane: (url: string, options?: { newPane?: boolean }) => void;
   onAddAttachment: (attachment: {

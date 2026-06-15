@@ -38,6 +38,8 @@ import {
   type ContractErrorCode,
   type JsonObject,
   type LastKnownStateDto,
+  type OpencodeEnvironmentDto,
+  type OpencodeVendorDto,
   type ProviderCliAgentId,
   type ProviderReadinessDto,
   type ProviderModelDto,
@@ -62,6 +64,11 @@ export interface CreateBackendContractMessageAdapterInput {
   // the composer model menu can offer the user's real vendor/model list. Evaluated
   // per call (cached in the enumerator) so a new `opencode auth login` is picked up.
   enumerateOpencodeModels?: () => ProviderModelDto[];
+  // opencode vendor tiles + connected-state (`opencode auth list`) and environment
+  // (version + executable path), surfaced on thread.listed for the vendor on-ramp.
+  enumerateOpencodeVendors?: () => OpencodeVendorDto[];
+  opencodeEnvironment?: () => OpencodeEnvironmentDto;
+  connectOpencodeApiKey?: (vendorId: string, key: string) => Promise<void>;
 }
 
 export interface BackendContractMessageAdapter {
@@ -80,6 +87,9 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
   private readonly idGenerator: () => string;
   private readonly detectAvailableAgents?: () => ProviderCliAgentId[];
   private readonly enumerateOpencodeModels?: () => ProviderModelDto[];
+  private readonly enumerateOpencodeVendors?: () => OpencodeVendorDto[];
+  private readonly opencodeEnvironment?: () => OpencodeEnvironmentDto;
+  private readonly connectOpencodeApiKey?: (vendorId: string, key: string) => Promise<void>;
 
   constructor(input: CreateBackendContractMessageAdapterInput) {
     this.service = input.service;
@@ -87,6 +97,9 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
     this.detectAvailableAgents = input.detectAvailableAgents;
     this.enumerateOpencodeModels = input.enumerateOpencodeModels;
+    this.enumerateOpencodeVendors = input.enumerateOpencodeVendors;
+    this.opencodeEnvironment = input.opencodeEnvironment;
+    this.connectOpencodeApiKey = input.connectOpencodeApiKey;
   }
 
   async handleMessage(message: unknown): Promise<BackendEventEnvelope[]> {
@@ -237,6 +250,19 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           await this.service.trustWorkspace(typedCommand.payload),
           (result) => this.trustWorkspaceEvents(typedCommand, result),
         );
+      }
+      case "provider.opencodeConnectApiKey": {
+        const typed = command as BackendCommandEnvelope<"provider.opencodeConnectApiKey">;
+        try {
+          // No-op when no auth server is wired (tests); production always provides it.
+          await this.connectOpencodeApiKey?.(typed.payload.vendorId, typed.payload.key);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "opencode could not save the API key.";
+          return [this.contractErrorEvent({ requestId: typed.requestId, code: "provider_runtime_failed", message, retryable: true })];
+        }
+        // Re-list so the now-connected vendor + its models surface (catalogs invalidated).
+        return this.handleServiceResult(typed, await this.service.listThreads({}), (result) =>
+          [this.threadListedEvent(typed, result), this.commandCompletedEvent(typed)]);
       }
       case "agentRuntime.resume": {
         const typedCommand = command as BackendCommandEnvelope<"agentRuntime.resume">;
@@ -418,6 +444,8 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         threads: result.threads.map(toThreadSummaryDto),
         availableAgents: this.detectAvailableAgents?.(),
         opencodeModels: this.enumerateOpencodeModels?.(),
+        opencodeVendors: this.enumerateOpencodeVendors?.(),
+        opencodeEnvironment: this.opencodeEnvironment?.(),
       },
     };
   }

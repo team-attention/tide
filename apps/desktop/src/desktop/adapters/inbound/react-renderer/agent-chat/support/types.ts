@@ -18,6 +18,9 @@ export interface AgentChatShellProps {
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
   ) => void;
+  // The on-ramp panel's in-app API-key field → set the vendor's key (정석: backend
+  // → opencode server).
+  onOpencodeConnectApiKey?: (vendorId: string, key: string) => void;
   onAnswerPromptText?: (value: string) => void;
   // Opens a file (from a Read tool's file chip) in the Workbench editor.
   onOpenFile?: (path: string) => void;
@@ -57,6 +60,9 @@ export interface ComposerHandlers {
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
   ) => void;
+  // The on-ramp panel's in-app API-key field → set the vendor's key (정석: backend
+  // → opencode server).
+  onOpencodeConnectApiKey?: (vendorId: string, key: string) => void;
   onAnswerPromptText?: (value: string) => void;
   onAddAttachment?: (attachment: {
     name: string;

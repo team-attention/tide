@@ -18,6 +18,7 @@ import type {
 } from "./connection.ts";
 import type { RequestId, ThreadId } from "./ids.ts";
 import type { ProviderCliAgentId } from "./agent.ts";
+import type { OpencodeEnvironmentDto, OpencodeVendorDto } from "./opencode-vendor.ts";
 import type { ProviderModelDto } from "./provider-model-catalog.ts";
 import type { JsonObject } from "./json.ts";
 import type { PromptStateDto } from "./prompt.ts";
@@ -110,6 +111,14 @@ export interface BackendEventPayloadByKind {
     // is a multi-vendor router so its list is per-user, not hand-curated. Absent ⇒
     // not yet enumerated; the composer falls back to "opencode default" only.
     opencodeModels?: ProviderModelDto[];
+    // opencode's vendor tiles (curated popular set + any connected-but-uncurated
+    // vendor), with connected-state read from `opencode auth list`. Drives the
+    // "Connect a model" on-ramp grid. Absent ⇒ older backend (panel shows nothing
+    // connected). See opencode-vendor-onramp.md.
+    opencodeVendors?: OpencodeVendorDto[];
+    // opencode version + tested-with + resolved executable path (for launching the
+    // Provider Setup Surface `auth login -p <id>`). Absent ⇒ opencode not resolved.
+    opencodeEnvironment?: OpencodeEnvironmentDto;
   };
   "thread.hydrated": {
     thread: ThreadSummaryDto;

@@ -2,6 +2,7 @@ import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurf
 import { activeComposerTrigger, providerSetupCommandPayload, selectComposerAgent, setComposerActiveSurface } from "./composer.ts";
 import { CODEX_MODELS, PERMISSION_OPTIONS, REASONING_LEVELS, cliModelOptionsForAgent, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, isAgentAvailable, isAgentComingSoon, normalizePermissionValue, permissionConfigForAgent, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { launchOptionsForState, updateComposerLaunchOptions, updateComposerScope } from "./launch-options.ts";
+import { buildOpencodeConnectSurface, getOpencodeEnvironment, isOpencodeUsable } from "./opencode-onramp.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
 export function selectAgentChatChoiceSurfaceRow(
@@ -94,12 +95,66 @@ export function selectAgentChatChoiceSurfaceRow(
       return selectComposerAgent(state, agentId);
     }
     case "model_menu": {
+      // "Add a vendor…" (opencode) switches to the on-ramp panel.
+      if (rowId === "add-vendor") {
+        return setComposerActiveSurface(state, "opencode_connect");
+      }
       const reasoning = reasoningForRow(rowId);
       if (reasoning !== undefined) {
         return updateComposerLaunchOptions(state, { reasoning });
       }
       const model = modelForRow(rowId, runtimeSourceForBinding(state.composer.startOptions.agentBinding).kind);
       return model ? updateComposerLaunchOptions(state, { model }) : { state, command: null };
+    }
+    case "opencode_connect": {
+      if (rowId === "back-to-models") {
+        return setComposerActiveSurface(state, "model_menu");
+      }
+      if (rowId === "use-free-model") {
+        // Use opencode's own default (a Zen free model — no sign-in) and close.
+        const updated = updateComposerLaunchOptions(state, { model: "opencode default" });
+        return {
+          state: { ...updated.state, composer: { ...updated.state.composer, activeSurface: null } },
+          command: updated.command,
+        };
+      }
+      // connect-vendor:<id> / all-providers → drive opencode's OWN `auth login` in the
+      // Provider Setup Surface (the same verbatim-command path the readiness blocker
+      // uses). opencode shows the right method (browser/key) per vendor; Tide stores
+      // no credentials. Needs a thread to host the surface (active or current).
+      const vendorId = rowId.startsWith("connect-vendor:")
+        ? rowId.slice("connect-vendor:".length)
+        : undefined;
+      if (vendorId === undefined && rowId !== "all-providers") {
+        return { state, command: null };
+      }
+      const environment = getOpencodeEnvironment();
+      const threadId = state.thread?.threadId ?? activeThreadId;
+      const scope = state.thread?.scope ?? state.composer.startOptions.scope;
+      const cwd =
+        scope === undefined ? undefined : scope.kind === "project" ? scope.cwd : scope.scratchCwd;
+      if (environment?.executablePath === undefined || threadId === undefined || cwd === undefined) {
+        return { state, command: null };
+      }
+      return {
+        state: setComposerActiveSurface(state, null).state,
+        command: {
+          kind: "workbench.command",
+          payload: {
+            threadId,
+            command: "open_provider_setup_surface",
+            data: {
+              blockerKind: "not_authenticated",
+              setup: {
+                command: environment.executablePath,
+                args: vendorId !== undefined ? ["auth", "login", "-p", vendorId] : ["auth", "login"],
+                cwd,
+                expectedCompletion: "retry_preflight",
+              },
+            },
+          },
+        },
+      };
     }
     case "permission_menu": {
       const permission = permissionForRow(rowId);
@@ -196,8 +251,19 @@ export function createActiveComposerSurface(
                       ["low", "medium", "high", "xhigh", "max"],
                     ),
                   ]
-                : cliModelMenuRows(binding.agentId, agentLabel, selectedModel),
+                : binding.agentId === "opencode"
+                  ? [
+                      ...cliModelMenuRows("opencode", agentLabel, selectedModel),
+                      // Even when opencode is usable, let the user sign in to another
+                      // vendor — opens the on-ramp panel in "manage" mode.
+                      row("add-vendor", "Add a vendor…", "sign in to another provider", undefined, "plus"),
+                    ]
+                  : cliModelMenuRows(binding.agentId, agentLabel, selectedModel),
       };
+    case "opencode_connect":
+      // The rich "Connect a model" panel (Zen card + vendor grid). manageMode = opencode
+      // is already usable (opened via "Add a vendor…"), so it offers "back to models".
+      return buildOpencodeConnectSurface(isOpencodeUsable());
     case "permission_menu":
       return {
         surfaceKind,
