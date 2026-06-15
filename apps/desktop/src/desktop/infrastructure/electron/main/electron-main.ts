@@ -559,7 +559,15 @@ app.on("web-contents-created", (_event, contents) => {
     contents.setWindowOpenHandler(({ url, disposition }) => {
       if (/^https?:\/\//i.test(url)) {
         const newPane = disposition === "background-tab" || disposition === "new-window";
-        BrowserWindow.getAllWindows()[0]?.webContents.send("tide:open-browser-pane", url, newPane);
+        // Target the window that actually HOSTS this <webview> (via the guest's
+        // hostWebContents), not getAllWindows()[0] — the first window isn't guaranteed
+        // to be the host once a DevTools/dialog window exists. Fall back to the first
+        // window if the host can't be resolved, so link routing never silently breaks.
+        const host = contents.hostWebContents;
+        const targetWindow =
+          (host !== null ? BrowserWindow.fromWebContents(host) : null) ??
+          BrowserWindow.getAllWindows()[0];
+        targetWindow?.webContents.send("tide:open-browser-pane", url, newPane);
       }
       return { action: "deny" };
     });

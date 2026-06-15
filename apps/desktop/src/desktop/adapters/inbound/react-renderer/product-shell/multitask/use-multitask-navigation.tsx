@@ -123,22 +123,37 @@ export function useMultitaskNavigation(params: {
       }
     };
 
-    // Losing focus (Cmd+Tab away, devtools) can swallow the Option keyup — reset so
-    // the badges/HUD never get stuck on.
-    const onBlur = () => {
+    // A swallowed Option keyup must never leave the badges/HUD stuck on. It can be lost
+    // two ways: the window loses OS focus (Cmd+Tab, devtools), or — since a digit jump
+    // no longer tears multitask mode down — focus moves INTO a <webview> or terminal
+    // (both eat keyboard events) in the jumped-to thread, so the keyup never reaches the
+    // window and a pending hold timer would later fire onto a dead session. Reset on both.
+    const resetMultitask = () => {
       clearHoldTimer();
       setAltActive(false);
       setSwitcher({ open: false, index: 0 });
+    };
+    const onBlur = () => resetMultitask();
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target !== null &&
+        (target.tagName === "WEBVIEW" || target.closest(".workbench-terminal") !== null)
+      ) {
+        resetMultitask();
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("focusin", onFocusIn);
     return () => {
       clearHoldTimer();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focusin", onFocusIn);
     };
   }, []);
 
