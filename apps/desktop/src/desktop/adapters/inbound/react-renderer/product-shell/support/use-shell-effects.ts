@@ -2,7 +2,7 @@
 // file under the size cap (file-size-ratchet): the responsive rightmost-column
 // measurement and the global search keyboard shortcuts.
 
-import { useEffect, useLayoutEffect, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { ProductShellBackendCommand } from "../../../../../application/domains/product-shell/product-shell.ts";
 
 // Measures the rightmost mounted column — the one the fixed top-right chrome cluster
@@ -91,6 +91,12 @@ export function useEscapeShortcuts(params: {
   onCloseSettings: () => void;
 }): void {
   const { workbenchFullscreen, onExitFullscreen, settingsOpen, onCloseSettings } = params;
+  // Hold the latest callbacks in a ref (refreshed in the commit phase) so the listeners
+  // re-bind only when their open flag flips, with no stale-closure risk. Review feedback.
+  const latest = useRef({ onExitFullscreen, onCloseSettings });
+  useEffect(() => {
+    latest.current = { onExitFullscreen, onCloseSettings };
+  });
   useEffect(() => {
     if (!workbenchFullscreen) {
       return undefined;
@@ -98,12 +104,11 @@ export function useEscapeShortcuts(params: {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onExitFullscreen();
+        latest.current.onExitFullscreen();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workbenchFullscreen]);
   useEffect(() => {
     if (!settingsOpen) {
@@ -112,11 +117,10 @@ export function useEscapeShortcuts(params: {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onCloseSettings();
+        latest.current.onCloseSettings();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsOpen]);
 }

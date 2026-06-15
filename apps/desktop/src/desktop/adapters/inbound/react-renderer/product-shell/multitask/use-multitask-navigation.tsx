@@ -30,7 +30,11 @@ export function useMultitaskNavigation(params: {
   // The keydown/keyup handlers subscribe once; read the latest inputs through a ref so
   // they never need to re-attach (and never close over stale lists).
   const latest = useRef({ pinnedThreads, liveThreads, activeThreadId, onSelectThread, switcher });
-  latest.current = { pinnedThreads, liveThreads, activeThreadId, onSelectThread, switcher };
+  // Refresh the ref in the commit phase (not during render) so an aborted/yielded
+  // render can't leave it inconsistent. Review feedback.
+  useEffect(() => {
+    latest.current = { pinnedThreads, liveThreads, activeThreadId, onSelectThread, switcher };
+  });
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -58,9 +62,11 @@ export function useMultitaskNavigation(params: {
       }
       // Ctrl+1..9 → jump to the N-th pinned thread (stable manual order).
       if (/^[1-9]$/.test(event.key)) {
+        // Swallow EVERY Ctrl+digit (even out-of-range, e.g. Ctrl+9 with <9 pins) so it
+        // can't fall through to a browser/OS shortcut. Review feedback.
+        event.preventDefault();
         const target = resolvePinJump(current.pinnedThreads, Number(event.key));
         if (target !== null) {
-          event.preventDefault();
           // A pin jump ends multitask mode immediately; drop any open switcher so the
           // Ctrl release does not override the jump with the highlighted live thread.
           setSwitcher({ open: false, index: 0 });

@@ -418,7 +418,8 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
         (projectRank.get(b.projectId) ?? Number.MAX_SAFE_INTEGER),
     );
   const scratchThreads = visibleThreads
-    .filter((thread) => thread.scope.kind === "scratch")
+    // Pinned scratch threads are lifted to the Pinned section too (review feedback).
+    .filter((thread) => thread.scope.kind === "scratch" && thread.pinned !== true)
     .map((thread) => toThreadView(thread, state));
   // "thread" group mode: one flat, already-sorted list of every visible thread.
   const flatThreads = visibleThreads.map((thread) => toThreadView(thread, state));

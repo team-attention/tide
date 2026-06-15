@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { LeftRailColumnView } from "../product-shell-columns.ts";
 import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
@@ -18,6 +18,16 @@ export function RailPeek(props: {
   const [hovering, setHovering] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const open = hovering || props.forceOpen;
+
+  // Clear a pending close if we unmount mid-countdown (no state update on an unmounted
+  // component). Review feedback.
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current !== null) {
+        clearTimeout(closeTimer.current);
+      }
+    };
+  }, []);
 
   const cancelClose = (): void => {
     if (closeTimer.current !== null) {

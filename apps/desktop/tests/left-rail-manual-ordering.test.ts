@@ -46,6 +46,28 @@ test("a pinned thread is lifted out of its project group into the Pinned section
   assert.deepEqual(vm.pinnedThreads.map((thread) => thread.threadId), ["t1"]);
 });
 
+test("a pinned scratch thread is lifted out of the Scratch list into Pinned", () => {
+  // Review feedback: "exactly one place in the rail" must hold for scratch too.
+  const scratch = (threadId: string, pinned: boolean) => ({
+    threadId,
+    title: `S ${threadId}`,
+    agentBinding: { agentId: "claude", runtimeSource: { kind: "provider_cli", integrationId: "claude" } },
+    scope: { kind: "scratch", scratchCwd: "Scratch" },
+    createdAt: "2026-06-11T00:00:00.000Z",
+    updatedAt: "2026-06-11T00:01:00.000Z",
+    pinned,
+    archived: false,
+    lastKnownState: "idle",
+  });
+  const state = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: { threads: [scratch("s1", true), scratch("s2", false)] },
+  });
+  const vm = selectThreadListViewModel(state);
+  assert.deepEqual(vm.scratchThreads.map((thread) => thread.threadId), ["s2"]);
+  assert.ok(vm.pinnedThreads.some((thread) => thread.threadId === "s1"));
+});
+
 test("nested project threads still follow sortBy (recent first), not manual order", () => {
   const state = seed([
     summary("older", "p1", false, "2026-06-11T00:01:00.000Z"),
