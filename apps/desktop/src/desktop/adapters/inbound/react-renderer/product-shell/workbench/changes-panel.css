@@ -1,0 +1,239 @@
+/* Read-only git Changes view (spec: git-changes-view). Imported by styles/index.css.
+   The header git chip opens this overlay; the diff itself reuses .workbench-diff. */
+
+/* --- Git chip in the chat-column header, beside the scope chip: branch + uncommitted
+   count, opens the Changes view. Quiet (muted, borderless) so it sits with the scope
+   breadcrumb rather than reading as a control. --- */
+.column-top-row__git {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  max-width: 190px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.column-top-row__git:hover {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+.column-top-row__git-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 130px;
+}
+
+.column-top-row__git-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--tide-action);
+  color: var(--tide-on-action, #fff);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* Header chip +/- (additions green, deletions red). */
+.column-top-row__git-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.column-top-row__git-add,
+.changes-panel__add {
+  color: #3a9a4e;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.column-top-row__git-del,
+.changes-panel__del {
+  color: var(--tide-danger, #d8453b);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Changes overlay: header total stat + per-file +/- column. */
+.changes-panel__stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.changes-panel__file-stat {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+}
+
+/* --- Changes pane: docked in the Workbench column (not an overlay), fills the slot. --- */
+.changes-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--tide-bg);
+  overflow: hidden;
+}
+
+.changes-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--tide-line);
+}
+
+.changes-panel__branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tide-text);
+}
+
+.changes-panel__count {
+  font-size: 12px;
+  color: var(--tide-muted);
+}
+
+.changes-panel__spacer {
+  flex: 1 1 auto;
+}
+
+.changes-panel__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.changes-panel__action:hover {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+.changes-panel__body {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.changes-panel__files {
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  overflow-y: auto;
+  border-right: 1px solid var(--tide-line);
+}
+
+.changes-panel__clean {
+  padding: 16px 12px;
+  font-size: 12.5px;
+  color: var(--tide-muted);
+}
+
+.changes-panel__file {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.changes-panel__file:hover,
+.changes-panel__file--active {
+  background: var(--tide-selection);
+}
+
+.changes-panel__status {
+  flex-shrink: 0;
+  width: 14px;
+  font-weight: 700;
+  font-size: 11px;
+  text-align: center;
+}
+
+.changes-panel__status--modified {
+  color: #d8951a;
+}
+
+.changes-panel__status--added,
+.changes-panel__status--untracked {
+  color: #3a9a4e;
+}
+
+.changes-panel__status--deleted {
+  color: var(--tide-danger, #d8453b);
+}
+
+.changes-panel__status--renamed {
+  color: var(--tide-action);
+}
+
+.changes-panel__file-name {
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changes-panel__file-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tide-muted);
+  font-size: 11px;
+}
+
+.changes-panel__diff {
+  overflow: auto;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.changes-panel__diff-empty {
+  padding: 24px;
+  font-size: 12.5px;
+  color: var(--tide-muted);
+}

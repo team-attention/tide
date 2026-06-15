@@ -3,6 +3,7 @@ import type {
   ThreadSnapshot,
 } from "../../domains/thread/thread.ts";
 import type {
+  ChangesPaneState,
   WorkbenchFileTreeView,
   WorkbenchSnapshot,
 } from "../../domains/workbench/workbench.ts";
@@ -307,6 +308,47 @@ export class WorkbenchCommandHandler {
           cwd: resolvedCwd.cwd.cwd,
         });
         await this.workbenchRuntime.ensureWorkbenchTerminalRunning(thread, pane);
+        thread.workbench.activePaneId = pane.paneId;
+        removeLauncherPane(thread, launcherToReplace);
+        thread.workbench.focusOwner = "workbench";
+        thread.updatedAt = this.clock();
+        return {
+          ok: true,
+          handled: true,
+          thread: snapshotThread(thread),
+          workbench: snapshotWorkbench(thread.workbench),
+        };
+      }
+      case "open_diff": {
+        // The read-only git Changes pane — a first-class SINGLETON pane (one per
+        // workbench). Reveal the existing one or create it; the renderer fetches the
+        // file list + diffs (Main-process git) from the pane's cwd. Spec: git-changes-view.
+        const root = threadRoot(thread);
+        if (root === undefined) {
+          return failure(
+            "workspace_command_unavailable",
+            "Thread does not have an Execution Context root for the Changes pane.",
+          );
+        }
+        const launcherToReplace = activeLauncherPaneId(thread);
+        let pane = thread.workbench.panes.find(
+          (candidate): candidate is ChangesPaneState => candidate.kind === "changes",
+        );
+        if (pane === undefined) {
+          pane = {
+            paneId: this.idGenerator(),
+            kind: "changes",
+            title: "Changes",
+            visible: true,
+            revision: this.idGenerator(),
+            updatedAt: this.clock(),
+            cwd: root,
+          };
+          thread.workbench.panes.push(pane);
+        }
+        pane.visible = true;
+        pane.cwd = root;
+        pane.updatedAt = this.clock();
         thread.workbench.activePaneId = pane.paneId;
         removeLauncherPane(thread, launcherToReplace);
         thread.workbench.focusOwner = "workbench";

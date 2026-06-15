@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { createIconButton, menuAnchorFromEvent } from "../chrome/chrome.tsx";
 import { AgentIdentityIcon } from "../support/agent-identity.tsx";
 import { threadScopeLabel } from "./thread-section.tsx";
-import { Archive, GitBranch, MoreHorizontal, Pin, PinOff } from "lucide-react";
+import { Archive, GitBranch, Pin, PinOff, Trash2 } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createThreadRow(
@@ -101,12 +101,13 @@ export function createThreadRow(
           </button>
         ) : (
           [
-            // Ctrl+N pin badge — present in markup for the first 9 pinned threads, but
-            // CSS-hidden until Ctrl is held (root [data-multitask]), where it replaces
-            // the time/dots/actions in the right slot. Spec: multitask-navigation L2.
+            // Option+N badge — present in markup for the first 9 threads in Left Rail
+            // order (top-9, not just pinned), but CSS-hidden until Option is held (root
+            // [data-multitask]), where it replaces the time/dots/actions in the right
+            // slot. Spec: multitask-navigation L2 / #2.
             thread.pinNumber !== undefined ? (
               <span key="pin-badge" className="thread-row__pin-badge" aria-hidden>
-                {`⌃${thread.pinNumber}`}
+                {`⌥${thread.pinNumber}`}
               </span>
             ) : null,
             thread.attention ? <span key="attention" className="thread-row__attention" /> : null,
@@ -117,10 +118,10 @@ export function createThreadRow(
               {thread.time}
             </span>,
             <span key="actions" className="thread-row__actions">
-              {/* Direct hover quick-actions for the common actions (master-plan:120
-                  "hover actions include pin and archive"), so they cost ONE click and
-                  don't hide behind the ⋯ overflow. The destructive Delete worktree
-                  stays menu-only (⋯ / right-click). Spec: thread-row-quick-actions. */}
+              {/* Up to three direct hover quick-actions: Pin / Archive (every row) and,
+                  for worktree threads, Delete worktree. Three buttons fit, so the ⋯
+                  overflow is gone — the full menu stays on right-click for parity.
+                  Spec: thread-row-quick-actions. */}
               {createIconButton(
                 thread.pinned ? "Unpin" : "Pin",
                 thread.pinned ? (
@@ -137,18 +138,16 @@ export function createThreadRow(
                 () => handlers.onThreadArchiveIntent(thread.threadId),
                 "thread-row__action",
               )}
-              {/* The ⋯ overflow keeps the FULL menu (Pin / Archive / Delete worktree)
-                  for right-click parity + the destructive worktree action. */}
-              {createIconButton(
-                "Thread menu",
-                <MoreHorizontal size={15} strokeWidth={1.9} />,
-                (event) =>
-                  handlers.onLeftRailMenuOpen(
-                    { kind: "thread", threadId: thread.threadId },
-                    menuAnchorFromEvent(event),
-                  ),
-                "thread-row__action",
-              )}
+              {/* Worktree threads only: Delete worktree opens the confirm dialog (removes
+                  the dir + branch, with safety checks). Destructive → danger style. */}
+              {thread.worktreeBranch !== undefined
+                ? createIconButton(
+                    "Delete worktree",
+                    <Trash2 size={15} strokeWidth={1.9} />,
+                    () => handlers.onThreadDeleteWorktree(thread.threadId),
+                    "thread-row__action thread-row__action--danger",
+                  )
+                : null}
             </span>,
           ]
         )}

@@ -1,5 +1,5 @@
 import { execGitArgs, readProjectRegistry, repoRootForWorktree, runGit, writeProjectRegistry } from "./project-registry.ts";
-import type { GitContext } from "./project-registry.ts";
+import type { GitChangeFile, GitChanges, GitContext } from "./project-registry.ts";
 import { backendProcess, ensureBackendProcess, nextEventId, postBackendCommand } from "./backend-bridge.ts";
 import { maybeOfferMoveToApplications } from "./move-to-applications.ts";
 import { installApplicationMenu } from "./app-menu.ts";
@@ -225,6 +225,121 @@ ipcMain.handle("tide:git-context", async (_event, cwd: unknown): Promise<GitCont
   return { isGitRepo: true, currentBranch, branches, worktrees };
 });
 
+// Read-only uncommitted changes (working tree vs HEAD) for the Changes view.
+ipcMain.handle("tide:git-changes", async (_event, cwd: unknown): Promise<GitChanges> => {
+  const empty: GitChanges = { isGitRepo: false, files: [] };
+  if (typeof cwd !== "string" || cwd.length === 0) {
+    return empty;
+  }
+  const inside = (await runGit(cwd, ["rev-parse", "--is-inside-work-tree"])).trim();
+  if (inside !== "true") {
+    return empty;
+  }
+  // Run everything from the repo top level so paths (and the numstat keys below) are
+  // consistently repo-root-relative regardless of the thread's cwd.
+  const root = (await runGit(cwd, ["rev-parse", "--show-toplevel"])).trim() || cwd;
+  // Porcelain v1, renames split into delete+add so the path column is a single path.
+  const out = await runGit(root, ["-c", "core.quotepath=false", "status", "--porcelain=v1", "--no-renames"]);
+  const files: GitChangeFile[] = [];
+  for (const line of out.split("\n")) {
+    if (line.length < 4) {
+      continue;
+    }
+    const x = line[0];
+    const y = line[1];
+    let path = line.slice(3);
+    if (path.startsWith('"') && path.endsWith('"')) {
+      path = path.slice(1, -1);
+    }
+    const status: GitChangeFile["status"] =
+      x === "?"
+        ? "untracked"
+        : x === "D" || y === "D"
+          ? "deleted"
+          : x === "A" || y === "A"
+            ? "added"
+            : "modified";
+    files.push({ path, status });
+  }
+  // Per-file added/removed line counts (vs HEAD). Tracked changes come from one numstat;
+  // untracked/new files aren't in it, so count their lines via --no-index. "-" = binary.
+  const numstat = await runGit(root, ["-c", "core.quotepath=false", "diff", "--numstat", "--no-renames", "HEAD"]);
+  const tracked = new Map<string, { additions?: number; deletions?: number }>();
+  for (const line of numstat.split("\n")) {
+    const match = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line);
+    if (match !== null) {
+      tracked.set(match[3], {
+        additions: match[1] === "-" ? undefined : Number(match[1]),
+        deletions: match[2] === "-" ? undefined : Number(match[2]),
+      });
+    }
+  }
+  for (const file of files) {
+    if (file.status === "untracked") {
+      // A single file failing to diff (concurrent delete, permissions) must not fail the
+      // whole status read — count what we can, skip the rest.
+      try {
+        const ns = await execGitArgs([
+          "-c",
+          "core.quotepath=false",
+          "-C",
+          root,
+          "diff",
+          "--numstat",
+          "--no-index",
+          "--",
+          "/dev/null",
+          file.path,
+        ]);
+        const match = /^(\d+|-)\t(\d+|-)/.exec(ns.stdout.split("\n").find((l) => l.includes("\t")) ?? "");
+        if (match !== null && match[1] !== "-") {
+          file.additions = Number(match[1]);
+          file.deletions = 0;
+        }
+      } catch {
+        // Leave additions/deletions undefined for this file.
+      }
+    } else {
+      const stat = tracked.get(file.path);
+      if (stat !== undefined) {
+        file.additions = stat.additions;
+        file.deletions = stat.deletions;
+      }
+    }
+  }
+  return { isGitRepo: true, files };
+});
+
+// The unified diff of a single changed file (working tree vs HEAD). Untracked/new
+// files have no HEAD entry, so fall back to --no-index (whole file as added).
+ipcMain.handle("tide:git-file-diff", async (_event, cwd: unknown, relPath: unknown): Promise<string> => {
+  if (typeof cwd !== "string" || typeof relPath !== "string" || cwd.length === 0 || relPath.length === 0) {
+    return "";
+  }
+  // `git status --porcelain` paths are relative to the repo top level, but a diff
+  // pathspec is resolved relative to the run dir — so run diffs from the top level, or
+  // a thread whose cwd is a SUBDIRECTORY of the repo gets an empty (wrong-path) diff.
+  const root = (await runGit(cwd, ["rev-parse", "--show-toplevel"])).trim() || cwd;
+  const tracked = await runGit(root, ["-c", "core.quotepath=false", "diff", "--no-color", "HEAD", "--", relPath]);
+  if (tracked.trim().length > 0) {
+    return tracked;
+  }
+  // --no-index exits 1 when files differ (not an error), so read stdout via execGitArgs.
+  const untracked = await execGitArgs([
+    "-c",
+    "core.quotepath=false",
+    "-C",
+    root,
+    "diff",
+    "--no-color",
+    "--no-index",
+    "--",
+    "/dev/null",
+    relPath,
+  ]);
+  return untracked.stdout;
+});
+
 // Read-only facts for the worktree delete dialog (branch + whether it's merged).
 // See docs_v2/specs/worktree-branch-deletion.md.
 ipcMain.handle("tide:worktree-info", async (_event, cwd: unknown) => {
@@ -440,7 +555,18 @@ app.on("web-contents-created", (_event, contents) => {
         if (disposition === "background-tab" || disposition === "new-window") {
           BrowserWindow.getAllWindows()[0]?.webContents.send("tide:open-browser-pane", url);
         } else {
-          void contents.loadURL(url).catch(() => undefined);
+          // Plain target=_blank ("foreground-tab"/other): navigate the pane in
+          // place. The loadURL MUST be deferred out of this callback — navigating
+          // the same contents synchronously from inside setWindowOpenHandler races
+          // the popup-deny teardown and the navigation is silently dropped, so a
+          // plain click did nothing (while Cmd/Ctrl+click took the IPC branch above
+          // and worked). setImmediate runs it after the handler returns and the
+          // popup is denied; guard against a contents torn down in between.
+          setImmediate(() => {
+            if (!contents.isDestroyed()) {
+              void contents.loadURL(url).catch(() => undefined);
+            }
+          });
         }
       }
       return { action: "deny" };

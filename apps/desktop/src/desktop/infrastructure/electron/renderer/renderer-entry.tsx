@@ -51,6 +51,8 @@ export function createInitialRendererElement() {
               deleteWorktree: (cwd: string, options: { deleteBranch: boolean; force: boolean }) =>
                 window.tide!.deleteWorktree(cwd, options),
               gitContext: (cwd: string) => window.tide!.gitContext(cwd),
+              gitChanges: (cwd: string) => window.tide!.gitChanges(cwd),
+              gitFileDiff: (cwd: string, relPath: string) => window.tide!.gitFileDiff(cwd, relPath),
               listCommands: (cwd: string, agentId: string) => window.tide!.listCommands(cwd, agentId),
             }
       }
@@ -80,6 +82,8 @@ declare global {
       // middle-click, window.open) — Main denies the popup and hands the URL here so the
       // renderer opens it as a new Browser Pane.
       onOpenBrowserPane(listener: (url: string) => void): () => void;
+      // View-menu panel toggles (Cmd+B / Cmd+E / Cmd+J), routed from the app menu.
+      onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
       openDirectory(): Promise<string | null>;
       listProjects(): Promise<{ projectId: string; name: string; cwd: string }[]>;
       registerProject(cwd: string): Promise<{ projectId: string; name: string; cwd: string }[]>;
@@ -97,6 +101,16 @@ declare global {
         branches: { name: string; kind: "local" | "remote"; current: boolean }[];
         worktrees: { path: string; branch: string | null; current: boolean }[];
       }>;
+      gitChanges(cwd: string): Promise<{
+        isGitRepo: boolean;
+        files: {
+          path: string;
+          status: "modified" | "added" | "deleted" | "renamed" | "untracked";
+          additions?: number;
+          deletions?: number;
+        }[];
+      }>;
+      gitFileDiff(cwd: string, relPath: string): Promise<string>;
       listCommands(cwd: string, agentId: string): Promise<{
         name: string;
         description: string;

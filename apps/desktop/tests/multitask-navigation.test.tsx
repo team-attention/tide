@@ -14,7 +14,7 @@ import type { ProductShellThreadView } from "../src/desktop/application/domains/
 
 const pins = [{ threadId: "p1" }, { threadId: "p2" }, { threadId: "p3" }];
 
-test("resolvePinJump maps Ctrl+N to the N-th pinned thread, else null", () => {
+test("resolvePinJump maps ⌥N to the N-th rail-order thread, else null", () => {
   assert.equal(resolvePinJump(pins, 1), "p1");
   assert.equal(resolvePinJump(pins, 3), "p3");
   assert.equal(resolvePinJump(pins, 4), null); // beyond the list

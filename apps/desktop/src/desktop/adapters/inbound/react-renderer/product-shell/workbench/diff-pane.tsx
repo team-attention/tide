@@ -91,7 +91,8 @@ function parseDiffRows(diffText: string): { rows: DiffRow[]; adds: number; dels:
 // Renders the bounded unified diff GitHub/VS Code-style: a stat header, then
 // rows with old/new line-number gutters, a change marker, and syntax-highlighted
 // code. Added/removed lines read distinctly; hunk headers act as separators.
-function createDiffView(diffText: string): ReactElement {
+// Exported so the Changes view reuses the exact same diff rendering.
+export function createDiffView(diffText: string): ReactElement {
   const { rows, adds, dels } = parseDiffRows(diffText);
   const lang = guessLanguage(
     rows

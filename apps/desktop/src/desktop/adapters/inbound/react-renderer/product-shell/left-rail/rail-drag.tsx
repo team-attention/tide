@@ -18,9 +18,24 @@ export function createRailDragItem(
       className="rail-drag-item"
       draggable
       data-rail-key={itemKey}
-      onDragStart={(event: { dataTransfer: DataTransfer }) => {
+      onDragStart={(event: { dataTransfer: DataTransfer; currentTarget: HTMLElement }) => {
         event.dataTransfer.setData(RAIL_DRAG_MIME, itemKey);
         event.dataTransfer.effectAllowed = "move";
+        // Drag image: a compact labeled chip instead of the browser's bulky translucent
+        // snapshot of the whole (often nested) row/group. Falls back to the native image
+        // if there's no label or the platform ignores setDragImage.
+        const label =
+          event.currentTarget.querySelector(".project-row__title, .thread-row__title")?.textContent?.trim() ?? "";
+        if (label !== "") {
+          const ghost = document.createElement("div");
+          ghost.className = "rail-drag-ghost";
+          ghost.textContent = label;
+          document.body.appendChild(ghost);
+          event.dataTransfer.setDragImage(ghost, 12, 14);
+          // The browser snapshots the chip synchronously once this handler returns; drop
+          // it on the next frame.
+          requestAnimationFrame(() => ghost.remove());
+        }
       }}
       onDragOver={(event: { preventDefault: () => void; dataTransfer: DataTransfer; currentTarget: HTMLElement }) => {
         event.preventDefault();

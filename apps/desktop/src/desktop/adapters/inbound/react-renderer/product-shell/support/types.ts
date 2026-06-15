@@ -18,6 +18,20 @@ export interface GitContextResult {
   worktrees: { path: string; branch: string | null; current: boolean }[];
 }
 
+export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "untracked";
+
+export interface GitChangesResult {
+  isGitRepo: boolean;
+  files: { path: string; status: GitChangeStatus; additions?: number; deletions?: number }[];
+}
+
+// Branch + uncommitted files for the Changes pane (self-fetched from the pane's cwd).
+export interface GitChangesViewResult {
+  isGitRepo: boolean;
+  branch: string | null;
+  files: { path: string; status: GitChangeStatus; additions?: number; deletions?: number }[];
+}
+
 export interface ProjectRegistryBridge {
   openDirectory(): Promise<string | null>;
   listProjects(): Promise<ProjectRegistryEntry[]>;
@@ -47,6 +61,8 @@ export interface ProjectRegistryBridge {
     branchDeleted: boolean;
   }>;
   gitContext(cwd: string): Promise<GitContextResult>;
+  gitChanges(cwd: string): Promise<GitChangesResult>;
+  gitFileDiff(cwd: string, relPath: string): Promise<string>;
   listCommands(cwd: string, agentId: string): Promise<AgentChatCommandOption[]>;
 }
 
@@ -115,6 +131,12 @@ export interface ProductShellHandlers {
   }) => void;
   onRemoveAttachment: (attachmentId: string) => void;
   onLauncherAction: (actionId: string) => void;
+  // Open the read-only git Changes view (working-tree diff). Wired to the launcher's
+  // Diff action + the top-bar branch badge. Spec: git-changes-view.
+  onOpenChanges: () => void;
+  // The Changes pane self-fetches its data from its cwd (Main-process git).
+  onGitChanges: (cwd: string) => Promise<GitChangesViewResult>;
+  onGitFileDiff: (cwd: string, relPath: string) => Promise<string>;
   onEditorPickerFilter: (filter: string) => void;
   onEditorPickerSelect: (relativePath: string) => void;
   onLeftRailMenuOpen: (menu: ProductShellLeftRailMenu | null, rect?: MenuAnchorRect) => void;

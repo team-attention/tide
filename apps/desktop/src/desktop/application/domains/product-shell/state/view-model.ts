@@ -1,6 +1,6 @@
 import type { ProductShellBackgroundBrowserPane, ProductShellDraftPane, ProductShellEditorDraft, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellPinnedItemView, ProductShellProject, ProductShellProjectGroupView, ProductShellStartPageFile, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellViewModel } from "./types.ts";
 import { COMPOSER_LAUNCHER_PANE_ID, startFilePaneId } from "./types.ts";
-import { isExternalSessionThread, pinnedItemRefKey } from "./thread-list.ts";
+import { finalizeThreadList, isExternalSessionThread, pinnedItemRefKey } from "./thread-list.ts";
 import { worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 import { reconcileTree } from "./workbench-split-tree.ts";
 import { createAgentChatShellViewModel } from "../../agent-chat/agent-chat.ts";
@@ -36,6 +36,9 @@ export interface ProductShellThreadListViewModel {
   // Live threads (in-process runtime alive) in Left Rail render order — cycled by
   // the multitask switcher. Spec: multitask-navigation L3.
   liveThreads: ProductShellThreadView[];
+  // The ⌥1..9 jump targets: the first 9 threads in Left Rail render order (deduped,
+  // pin status irrelevant), each carrying its pinNumber. index N-1 = ⌥N. Spec #2.
+  numberedThreads: ProductShellThreadView[];
 }
 
 export const selectThreadListViewModel = shellSelector(
@@ -287,6 +290,7 @@ export function createProductShellViewModel(
     settingsOpen: state.settingsOpen,
     flatThreads: threadList.flatThreads,
     liveThreads: threadList.liveThreads,
+    numberedThreads: threadList.numberedThreads,
     agentChat: selectAgentChatViewModel(state),
     appChrome: workbench.appChrome,
     fileTree: selectFileTreeViewModel(state),
@@ -389,20 +393,11 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
   );
   const rankOfPinned = (item: ProductShellPinnedItemView): number =>
     pinnedRank.get(pinnedItemViewKey(item)) ?? Number.MAX_SAFE_INTEGER;
-  // Number the first 9 pinned THREADS (in final order) for the Ctrl+N badge
-  // (multitask-navigation L2 / Decision 9).
-  let pinnedThreadCount = 0;
-  const pinnedItems: ProductShellPinnedItemView[] = [...pinnedBase]
-    .sort((a, b) => rankOfPinned(a) - rankOfPinned(b))
-    .map((item) => {
-      if (item.kind === "project") {
-        return item;
-      }
-      pinnedThreadCount += 1;
-      return pinnedThreadCount <= 9
-        ? { kind: "thread" as const, thread: { ...item.thread, pinNumber: pinnedThreadCount } }
-        : item;
-    });
+  // The Pinned section in manual order. ⌥N shortcut numbers are NOT assigned here —
+  // they are computed below across the FULL rail order (#2: top-9, not just pinned).
+  const pinnedItems: ProductShellPinnedItemView[] = [...pinnedBase].sort(
+    (a, b) => rankOfPinned(a) - rankOfPinned(b),
+  );
   const pinnedThreads = pinnedItems.flatMap((item) => (item.kind === "thread" ? [item.thread] : []));
   const pinnedProjects = pinnedItems.flatMap((item) => (item.kind === "project" ? [item.project] : []));
   // Projects section: top-level folders in manual order (independent of sortBy; nested
@@ -423,28 +418,16 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
     .map((thread) => toThreadView(thread, state));
   // "thread" group mode: one flat, already-sorted list of every visible thread.
   const flatThreads = visibleThreads.map((thread) => toThreadView(thread, state));
-  // Live set in Left Rail render order (spec: multitask-navigation L3 / Decision 8):
-  // walk the rail's flattened top-to-bottom sequence and keep the live threads,
-  // deduped. "thread" mode is the flat list; "project" mode is the grouped order
-  // (pinned groups' threads, pinned threads, project groups' threads, scratch).
-  const liveOrder =
-    state.listSettings.groupBy === "thread"
-      ? flatThreads
-      : [
-          ...pinnedProjects.flatMap((group) => group.threads),
-          ...pinnedThreads,
-          ...projectGroups.flatMap((group) => group.threads),
-          ...scratchThreads,
-        ];
-  const liveSeen = new Set<string>();
-  const liveThreads = liveOrder.filter((thread) => {
-    if (thread.live !== true || liveSeen.has(thread.threadId)) {
-      return false;
-    }
-    liveSeen.add(thread.threadId);
-    return true;
+  // Rail render order, live set, and ⌥1..9 shortcut numbering — see finalizeThreadList.
+  return finalizeThreadList({
+    groupBy: state.listSettings.groupBy,
+    pinnedThreads,
+    pinnedProjects,
+    pinnedItems,
+    projectGroups,
+    scratchThreads,
+    flatThreads,
   });
-  return { pinnedThreads, pinnedProjects, pinnedItems, projectGroups, scratchThreads, flatThreads, liveThreads };
 }
 
 // A start (New Thread) page open file, as a Workbench editor pane. There is no

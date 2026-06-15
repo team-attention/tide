@@ -35,6 +35,8 @@ export function createWorkbenchColumn(
         return <Terminal size={tabIconSize} strokeWidth={1.85} />;
       case "diff":
         return <GitCompare size={tabIconSize} strokeWidth={1.85} />;
+      case "changes":
+        return <GitCompare size={tabIconSize} strokeWidth={1.85} />;
       case "launcher":
         return <LayoutGrid size={tabIconSize} strokeWidth={1.85} />;
       default:

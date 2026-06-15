@@ -143,6 +143,9 @@ export function workbenchSnapshotPaneRef(
   if (pane.kind === "launcher") {
     return launcherPaneRef(pane);
   }
+  if (pane.kind === "changes") {
+    return { ...workbenchPaneRef(pane), kind: "changes", cwd: pane.cwd };
+  }
   return terminalPaneRef(pane);
 }
 
@@ -169,8 +172,8 @@ export function launcherPaneActions(): LauncherPaneState["actions"] {
     {
       actionId: "open_diff",
       label: "Diff",
-      description: "Available after a file edit or review target",
-      enabled: false,
+      description: "View working-tree changes (git)",
+      enabled: true,
     },
   ];
 }

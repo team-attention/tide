@@ -4,7 +4,7 @@ import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, focusPr
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
-export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onBrowserSnapshot" | "onBrowserActionResult" | "onBackgroundBrowserSnapshot" | "onBackgroundBrowserActionResult" | "onOpenBrowserPane"> {
+export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onBrowserSnapshot" | "onBrowserActionResult" | "onBackgroundBrowserSnapshot" | "onBackgroundBrowserActionResult" | "onOpenBrowserPane" | "onOpenChanges" | "onGitChanges" | "onGitFileDiff"> {
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onWorkbenchToggle: () =>
@@ -13,6 +13,28 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         dispatchBackendCommand(result.command);
         return result.state;
       }),
+    // Open the read-only git Changes pane (a first-class singleton backend pane). The
+    // backend creates/reveals it + makes it active; we just ensure the Workbench is open.
+    onOpenChanges: () =>
+      setShellState((state) => {
+        if (state.activeThreadId === null) {
+          return state;
+        }
+        dispatchBackendCommand({
+          kind: "workbench.command",
+          payload: { threadId: state.activeThreadId, command: "open_diff" },
+        });
+        return state.workbenchOpen ? state : { ...state, workbenchOpen: true };
+      }),
+    onGitChanges: async (cwd) => {
+      const bridge = props.projectBridge;
+      if (bridge === undefined) {
+        return { isGitRepo: false, branch: null, files: [] };
+      }
+      const [context, changes] = await Promise.all([bridge.gitContext(cwd), bridge.gitChanges(cwd)]);
+      return { isGitRepo: context.isGitRepo, branch: context.currentBranch, files: changes.files };
+    },
+    onGitFileDiff: (cwd, relPath) => props.projectBridge?.gitFileDiff(cwd, relPath) ?? Promise.resolve(""),
     onWorkbenchFullscreenToggle: () =>
       setShellState((state) => toggleProductShellWorkbenchFullscreen(state)),
     onWorkbenchSetLayout: (mode) =>

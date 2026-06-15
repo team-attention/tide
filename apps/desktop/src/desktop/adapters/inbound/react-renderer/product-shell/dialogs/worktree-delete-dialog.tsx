@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ChangeEvent, ReactElement } from "react";
-import { Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // The worktree being deleted (branch + git/merge facts from worktreeInfo, plus
@@ -21,9 +21,13 @@ export function WorktreeDeleteDialog(props: {
   target: WorktreeDeleteTarget;
   onConfirm: (keepBranch: boolean) => void;
   onClose: () => void;
+  // While the delete runs (git worktree remove + branch delete can take a moment), the
+  // dialog stays open showing progress instead of vanishing with nothing happening.
+  deleting?: boolean;
 }): ReactElement {
   const [keepBranch, setKeepBranch] = useState(false);
   const { branch, branchMerged, threadCount, anyRunning } = props.target;
+  const deleting = props.deleting === true;
   const willDeleteBranch = !keepBranch;
   const unmerged = willDeleteBranch && !branchMerged;
   const body = anyRunning
@@ -37,7 +41,7 @@ export function WorktreeDeleteDialog(props: {
       role="dialog"
       aria-label="Delete worktree"
       onMouseDown={(event: { target: EventTarget | null; currentTarget: EventTarget | null }) => {
-        if (event.target === event.currentTarget) {
+        if (event.target === event.currentTarget && !deleting) {
           props.onClose();
         }
       }}
@@ -53,6 +57,7 @@ export function WorktreeDeleteDialog(props: {
             <input
               type="checkbox"
               checked={keepBranch}
+              disabled={deleting}
               onChange={(event: ChangeEvent<HTMLInputElement>) => setKeepBranch(event.currentTarget.checked)}
             />
             <span>{`Keep branch ${branch}`}</span>
@@ -64,16 +69,30 @@ export function WorktreeDeleteDialog(props: {
           </div>
         ) : null}
         <div className="worktree-create__actions">
-          <button type="button" className="worktree-create__cancel" onClick={() => props.onClose()}>
+          <button
+            type="button"
+            className="worktree-create__cancel"
+            disabled={deleting}
+            onClick={() => props.onClose()}
+          >
             Cancel
           </button>
           <button
             type="button"
             className="worktree-create__confirm worktree-delete__confirm"
-            disabled={anyRunning}
+            disabled={anyRunning || deleting}
             onClick={() => props.onConfirm(keepBranch)}
           >
-            {willDeleteBranch ? "Delete worktree + branch" : "Delete worktree"}
+            {deleting ? (
+              <>
+                <Loader2 size={14} strokeWidth={2} className="worktree-delete__spinner" aria-hidden />
+                Deleting…
+              </>
+            ) : willDeleteBranch ? (
+              "Delete worktree + branch"
+            ) : (
+              "Delete worktree"
+            )}
           </button>
         </div>
       </div>

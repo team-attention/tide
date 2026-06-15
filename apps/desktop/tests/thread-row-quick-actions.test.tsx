@@ -10,7 +10,7 @@ import {
   createProductShellState,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
-function threadSummary(threadId: string, pinned: boolean) {
+function threadSummary(threadId: string, pinned: boolean, cwd = "/Users/you/repo") {
   return {
     threadId,
     title: `Thread ${threadId}`,
@@ -18,7 +18,7 @@ function threadSummary(threadId: string, pinned: boolean) {
       agentId: "claude",
       runtimeSource: { kind: "provider_cli", integrationId: "claude" },
     },
-    scope: { kind: "project", projectId: "p1", cwd: "/Users/you/repo" },
+    scope: { kind: "project", projectId: "p1", cwd },
     createdAt: "2026-06-11T00:00:00.000Z",
     updatedAt: "2026-06-11T00:01:00.000Z",
     pinned,
@@ -28,11 +28,11 @@ function threadSummary(threadId: string, pinned: boolean) {
 }
 
 // Render the whole shell with a single thread — NO context menu open — so we can
-// assert the row's DIRECT (hover) quick-actions, not the overflow menu.
-function renderRow(pinned: boolean): string {
+// assert the row's DIRECT (hover) quick-actions, not the right-click menu.
+function renderRow(pinned: boolean, cwd = "/Users/you/repo"): string {
   const seeded = applyProductShellBackendEvent(
     createProductShellState({ includeFixtureData: false }),
-    { kind: "thread.listed", payload: { threads: [threadSummary("t1", pinned)] } },
+    { kind: "thread.listed", payload: { threads: [threadSummary("t1", pinned, cwd)] } },
   );
   return renderToStaticMarkup(<TideProductShell initialState={seeded} />);
 }
@@ -43,8 +43,9 @@ test("thread_row_exposes_direct_pin_and_archive_without_opening_menu", () => {
   const markup = renderRow(false);
   assert.match(markup, /aria-label="Pin"/);
   assert.match(markup, /aria-label="Archive"/);
-  // The ⋯ overflow still exists for the full menu / right-click parity.
-  assert.match(markup, /aria-label="Thread menu"/);
+  // The ⋯ overflow button is gone — three direct buttons fit, so the full menu is
+  // reachable on right-click only (no visible ⋯ on the row).
+  assert.doesNotMatch(markup, /aria-label="Thread menu"/);
 });
 
 test("pinned_thread_row_shows_unpin_quick_action", () => {
@@ -54,9 +55,13 @@ test("pinned_thread_row_shows_unpin_quick_action", () => {
   assert.doesNotMatch(markup, /aria-label="Pin"/);
 });
 
-test("delete_worktree_is_never_a_direct_quick_action", () => {
-  // Destructive Delete worktree stays menu-only (no direct quick-action button),
-  // and a non-worktree thread has no worktree delete anywhere with the menu closed.
-  const markup = renderRow(false);
-  assert.doesNotMatch(markup, /Delete worktree/);
+test("delete_worktree_is_a_direct_action_for_worktree_threads_only", () => {
+  // A plain (non-worktree) thread shows only Pin + Archive — nothing to delete.
+  assert.doesNotMatch(renderRow(false), /aria-label="Delete worktree"/);
+  // A worktree thread (cwd under <repo>.worktree/<branch>) gets the third direct
+  // button: Delete worktree, which opens the confirm dialog (deletes dir + branch).
+  assert.match(
+    renderRow(false, "/Users/you/repo.worktree/feature-x"),
+    /aria-label="Delete worktree"/,
+  );
 });

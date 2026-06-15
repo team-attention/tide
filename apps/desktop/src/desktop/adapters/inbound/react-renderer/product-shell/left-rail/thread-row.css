@@ -195,6 +195,12 @@
   color: var(--tide-action);
 }
 
+/* Delete worktree is destructive — turn red on hover so it never reads like Pin/Archive. */
+.thread-row__action--danger:hover {
+  background: var(--tide-danger, #e5484d);
+  color: #fff;
+}
+
 .thread-row__confirm {
   height: 24px;
   flex: 0 0 auto;

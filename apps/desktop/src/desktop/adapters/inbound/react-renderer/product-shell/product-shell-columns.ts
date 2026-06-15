@@ -36,9 +36,15 @@ export const LeftRailColumnView = memo(function LeftRailColumnView(props: {
 
 export const AgentChatColumnView = memo(function AgentChatColumnView(props: {
   handlers: ProductShellHandlers;
+  // Git badge (branch + uncommitted count) lives in component state, not the store, so —
+  // like LeftRail's `collapsedSections` — it's threaded as a prop. The caller memoizes the
+  // object so it's stable across unrelated (chat-token) renders and this memo bails.
+  gitBadge:
+    | { branch: string | null; additions: number; deletions: number; fileCount: number }
+    | null;
 }): ReactElement {
   const viewModel = useProductShellSlice(selectChatColumnViewModel);
-  return createAgentChatColumn(viewModel, props.handlers);
+  return createAgentChatColumn(viewModel, props.handlers, props.gitBadge);
 });
 
 export const WorkbenchColumnView = memo(function WorkbenchColumnView(props: {

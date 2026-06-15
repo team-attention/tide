@@ -29,7 +29,7 @@ export function createLiveSwitcherHud(
             </div>
           ))}
         </div>
-        <div className="multitask-hud__hint">Ctrl+Tab to cycle · release to switch</div>
+        <div className="multitask-hud__hint">⌥Tab to cycle · release to switch</div>
       </div>
     </div>
   );

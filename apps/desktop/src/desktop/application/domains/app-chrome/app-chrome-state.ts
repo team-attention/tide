@@ -21,7 +21,8 @@ export type AppChromeWorkbenchPaneKind =
   | "diff"
   | "editor"
   | "terminal"
-  | "launcher";
+  | "launcher"
+  | "changes";
 
 export interface AppChromeThreadSummary {
   threadId: string;

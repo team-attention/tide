@@ -11,7 +11,7 @@ import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx"
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
-import { useEscapeShortcuts, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
+import { useCloseIntentFromMenu, useEscapeShortcuts, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
 import { useMultitaskNavigation } from "./multitask/use-multitask-navigation.tsx";
 import { RailPeek } from "./left-rail/rail-peek.tsx";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
@@ -34,7 +34,6 @@ import {
   archiveProductShellWorktreeChats,
   setProductShellComposerFolderScope,
   setProductShellComposerNewWorktreeIntent,
-  setProductShellGitContext,
   setProductShellProviderCommands,
   setProductShellRegisteredProjects,
   startNewProductShellThread,
@@ -123,6 +122,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Worktree delete confirmation (opened from a Thread row menu or the composer
   // worktree menu). See docs_v2/specs/worktree-branch-deletion.md.
   const [worktreeDelete, setWorktreeDelete] = useState<WorktreeDeleteTarget | null>(null);
+  const [worktreeDeleting, setWorktreeDeleting] = useState(false);
   // Track the window width so the layout can auto-collapse columns that no
   // longer fit (responsive narrow-screen handling).
   const [windowWidth, setWindowWidth] = useState(
@@ -249,13 +249,16 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   const confirmWorktreeDelete = (keepBranch: boolean) => {
     const target = worktreeDelete;
     const bridge = props.projectBridge;
-    setWorktreeDelete(null);
     if (target === null || bridge === undefined) {
       return;
     }
+    // Keep the dialog open with a "Deleting…" spinner while the (slow) git worktree +
+    // branch removal runs — it used to close instantly and update only on completion,
+    // leaving a confusing gap where nothing seemed to happen.
+    setWorktreeDeleting(true);
     bridge
       .deleteWorktree(target.cwd, worktreeDeleteRequest({ keepBranch, branchMerged: target.branchMerged }))
-      .then((result) =>
+      .then((result) => {
         setShellState((state) => {
           // Update the registry from Main's authoritative entries, then archive the
           // Threads that lived in the deleted worktree and drop it from the Composer's
@@ -266,39 +269,22 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             dispatchBackendCommand(command);
           }
           return archived.state;
-        }),
-      )
-      .catch(() => {});
+        });
+        setWorktreeDeleting(false);
+        setWorktreeDelete(null);
+      })
+      .catch(() => {
+        // Leave the dialog open (re-enabled) so the user can retry or cancel.
+        setWorktreeDeleting(false);
+      });
   };
 
-  // Fetch real git branches/worktrees whenever the active Project cwd changes,
-  // so the Worktree/Branch menus reflect the actual repo (cleared for Scratch).
+  // The active Project cwd (a thread's, or the start composer's) drives git state.
   const activeScope = shellState.agentChat.thread?.scope ?? shellState.agentChat.composer.startOptions.scope;
   const activeProjectCwd = activeScope?.kind === "project" ? activeScope.cwd : null;
-  useEffect(() => {
-    const bridge = props.projectBridge;
-    if (bridge === undefined || activeProjectCwd === null) {
-      setShellState((state) => setProductShellGitContext(state, { branches: [], worktrees: [] }));
-      return;
-    }
-    let cancelled = false;
-    bridge
-      .gitContext(activeProjectCwd)
-      .then((context) => {
-        if (!cancelled) {
-          setShellState((state) =>
-            setProductShellGitContext(state, {
-              branches: context.branches,
-              worktrees: context.worktrees,
-            }),
-          );
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [props.projectBridge, activeProjectCwd]);
+  // Git for the active repo/worktree: branches+worktrees (composer pickers, → shell state)
+  // and uncommitted changes (top-bar badge + Changes view), fetched together. See useGitState.
+  const git = useGitState(props.projectBridge, activeProjectCwd, setShellState);
 
   // Fetch real provider commands/skills whenever the active cwd or agent changes,
   // so the composer's / (and $) menu reflects this directory's actual commands.
@@ -616,45 +602,29 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     setContentSearchVisible,
   });
 
-  // Ctrl-unified multitask navigation: Ctrl+1..9 pin jump, Ctrl+Tab live switcher
-  // (spec: multitask-navigation). `active` gates the row ^N badges; `hud` is the
-  // transient live-switcher overlay (null unless cycling).
+  // Option-unified multitask navigation: ⌥1..9 jumps to the N-th thread in rail order
+  // (top-9, not just pinned), ⌥Tab cycles the live switcher (spec: multitask-navigation).
+  // `active` gates the row ⌥N badges; `hud` is the transient switcher overlay.
   const multitask = useMultitaskNavigation({
-    pinnedThreads: viewModel.pinnedThreads,
+    numberedThreads: viewModel.numberedThreads,
     liveThreads: viewModel.liveThreads,
     activeThreadId,
     onSelectThread: handlers.onThreadSelect,
   });
 
-  // Cmd+W (routed from the app menu as a "close intent"): close the focused
-  // Workbench pane if one is open, else close the active thread by returning to
-  // the start composer. Never closes the window (Shift+Cmd+W does that). A ref
-  // keeps the latest state/handlers without re-subscribing the IPC each render.
-  const closeIntentRef = useRef<{ paneId: string | undefined; workbenchOpen: boolean; hasThread: boolean }>({
-    paneId: undefined,
-    workbenchOpen: false,
-    hasThread: false,
-  });
-  closeIntentRef.current = {
-    paneId: shellState.appChrome.activeWorkbenchPaneId ?? undefined,
+  // Cmd+W "close intent" (app menu) — close the focused Workbench pane, else the thread.
+  useCloseIntentFromMenu({
+    activeWorkbenchPaneId: shellState.appChrome.activeWorkbenchPaneId,
     workbenchOpen: shellState.workbenchOpen,
     hasThread: shellState.activeThreadId !== null,
-  };
-  useEffect(() => {
-    const off = window.tide?.onCloseIntent?.(() => {
-      const { paneId, workbenchOpen, hasThread } = closeIntentRef.current;
-      if (workbenchOpen && paneId !== undefined) {
-        handlers.onCloseWorkbenchPane(paneId);
-      } else if (hasThread) {
-        handlers.onNewThread();
-      }
-    });
-    return off;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    onCloseWorkbenchPane: handlers.onCloseWorkbenchPane,
+    onNewThread: handlers.onNewThread,
+  });
 
   // A Browser Pane link opened with Cmd/Ctrl+click (or window.open) opens a new pane.
   useOpenBrowserPaneFromMain(handlers.onOpenBrowserPane);
+  // Cmd+B / Cmd+E / Cmd+J (View menu) toggle Left Rail / File Tree / Workbench.
+  usePanelToggleFromMenu(handlers);
 
   // Escape exits Workbench fullscreen / closes the Settings modal (extracted to
   // use-shell-effects to keep this file under the size cap).
@@ -724,8 +694,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           {leftPresence.mounted ? (
             <LeftRailColumnView handlers={stableHandlers} anchor={menuAnchor} collapsedSections={collapsedSections} />
           ) : null}
-          <AgentChatColumnView handlers={stableHandlers} />
-          {workbenchPresence.mounted ? <WorkbenchColumnView handlers={stableHandlers} /> : null}
+          <AgentChatColumnView handlers={stableHandlers} gitBadge={git.gitBadge} />
+          {workbenchPresence.mounted ? (
+            <WorkbenchColumnView handlers={stableHandlers} />
+          ) : null}
           {fileTreePresence.mounted ? <FileTreeColumnView handlers={stableHandlers} /> : null}
         </div>
         {/* Workbench + FileTree toggles live in a single fixed cluster at the window's
@@ -768,10 +740,16 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         {worktreeDelete !== null ? (
           <WorktreeDeleteDialog
             target={worktreeDelete}
+            deleting={worktreeDeleting}
             onConfirm={confirmWorktreeDelete}
-            onClose={() => setWorktreeDelete(null)}
+            onClose={() => {
+              setWorktreeDelete(null);
+              setWorktreeDeleting(false);
+            }}
           />
         ) : null}
+        {/* The git Changes view is a docked Workbench pane (see WorkbenchColumnView),
+            not an overlay. */}
         {/* Collapsed-rail floating peek: hover the left edge, or hold Ctrl. */}
         {layoutVm.leftRailOpen ? null : (
           <RailPeek handlers={stableHandlers} anchor={menuAnchor} collapsedSections={collapsedSections} forceOpen={multitask.active} />

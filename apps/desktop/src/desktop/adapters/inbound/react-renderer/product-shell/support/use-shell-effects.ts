@@ -2,8 +2,10 @@
 // file under the size cap (file-size-ratchet): the responsive rightmost-column
 // measurement and the global search keyboard shortcuts.
 
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import type { ProductShellBackendCommand } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { setProductShellGitContext } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellBackendCommand, ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { GitChangesResult, ProjectRegistryBridge } from "./types.ts";
 
 // Measures the rightmost mounted column — the one the fixed top-right chrome cluster
 // floats over — so the chrome can decide inline vs collapsed controls. A grid-track
@@ -81,6 +83,62 @@ export function useOpenBrowserPaneFromMain(
   }, []);
 }
 
+// View-menu panel toggles (Cmd+B left rail / Cmd+E file tree / Cmd+J workbench): Main
+// sends the panel id from the application menu; route it to the matching toggle handler.
+// Subscribe once and read the latest handlers via a ref (refreshed each commit) so the
+// IPC listener never re-binds and never holds a stale handler.
+export function usePanelToggleFromMenu(handlers: {
+  onLeftRailToggle: () => void;
+  onFileTreeToggle: () => void;
+  onWorkbenchToggle: () => void;
+}): void {
+  const latest = useRef(handlers);
+  useEffect(() => {
+    latest.current = handlers;
+  });
+  useEffect(() => {
+    const off = window.tide?.onTogglePanel?.((panel) => {
+      const current = latest.current;
+      if (panel === "leftRail") {
+        current.onLeftRailToggle();
+      } else if (panel === "fileTree") {
+        current.onFileTreeToggle();
+      } else if (panel === "workbench") {
+        current.onWorkbenchToggle();
+      }
+    });
+    return off;
+  }, []);
+}
+
+// Cmd+W "close intent" from the application menu: close the focused Workbench pane if
+// one is open, else (a thread is active) return to the start composer. Never closes the
+// window (Shift+Cmd+W does that). Subscribes once; reads the latest state/handlers via a
+// commit-phase ref so the IPC listener never re-binds.
+export function useCloseIntentFromMenu(params: {
+  activeWorkbenchPaneId: string | undefined;
+  workbenchOpen: boolean;
+  hasThread: boolean;
+  onCloseWorkbenchPane: (paneId: string) => void;
+  onNewThread: () => void;
+}): void {
+  const latest = useRef(params);
+  useEffect(() => {
+    latest.current = params;
+  });
+  useEffect(() => {
+    const off = window.tide?.onCloseIntent?.(() => {
+      const current = latest.current;
+      if (current.workbenchOpen && current.activeWorkbenchPaneId !== undefined) {
+        current.onCloseWorkbenchPane(current.activeWorkbenchPaneId);
+      } else if (current.hasThread) {
+        current.onNewThread();
+      }
+    });
+    return off;
+  }, []);
+}
+
 // Escape for the two surfaces that don't manage their own: Workbench fullscreen and
 // the Settings modal. (Quick Open / Content Search / worktree dialogs already close
 // themselves on Escape.) Each listener subscribes only while its surface is open.
@@ -123,4 +181,65 @@ export function useEscapeShortcuts(params: {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [settingsOpen]);
+}
+
+export interface GitChangesView {
+  cwd: string;
+  branch: string | null;
+  files: GitChangesResult["files"];
+}
+
+// Git state for the top-bar branch BADGE only (the Changes view itself is a first-class
+// backend Workbench pane now — see the "open_diff" command + ChangesPanel). One fetch on
+// cwd change feeds the composer's branch+worktree pickers (gitContext → shell state) and
+// the badge (branch + uncommitted +/- → gitInfo).
+export function useGitState(
+  projectBridge: ProjectRegistryBridge | undefined,
+  activeProjectCwd: string | null,
+  setShellState: Dispatch<SetStateAction<ProductShellState>>,
+): {
+  // Memoized badge (branch + summed +/- + file count) for the chat header; stable across
+  // chat-token renders so the memoized chat column doesn't re-render on every token.
+  gitBadge: { branch: string | null; additions: number; deletions: number; fileCount: number } | null;
+} {
+  const [gitInfo, setGitInfo] = useState<GitChangesView | null>(null);
+  useEffect(() => {
+    if (projectBridge === undefined || activeProjectCwd === null) {
+      setShellState((state) => setProductShellGitContext(state, { branches: [], worktrees: [] }));
+      setGitInfo(null);
+      return undefined;
+    }
+    // Clear the badge immediately so the previous repo's branch/count doesn't linger
+    // while the new cwd's git state is fetched.
+    setGitInfo(null);
+    const cwd = activeProjectCwd;
+    let cancelled = false;
+    Promise.all([projectBridge.gitContext(cwd), projectBridge.gitChanges(cwd)])
+      .then(([context, changes]) => {
+        if (cancelled) {
+          return;
+        }
+        setShellState((state) =>
+          setProductShellGitContext(state, { branches: context.branches, worktrees: context.worktrees }),
+        );
+        setGitInfo(context.isGitRepo ? { cwd, branch: context.currentBranch, files: changes.files } : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [projectBridge, activeProjectCwd]);
+  const gitBadge = useMemo(
+    () =>
+      gitInfo === null
+        ? null
+        : {
+            branch: gitInfo.branch,
+            additions: gitInfo.files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
+            deletions: gitInfo.files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
+            fileCount: gitInfo.files.length,
+          },
+    [gitInfo],
+  );
+  return { gitBadge };
 }

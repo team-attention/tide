@@ -8,6 +8,7 @@ import { WorkbenchEditorPane } from "./editor-pane.tsx";
 import { WorkbenchDiffPane } from "./diff-pane.tsx";
 import { WorkbenchTerminalPane } from "./terminal-pane.tsx";
 import { WorkbenchLauncherPane } from "./launcher-pane.tsx";
+import { ChangesPanel } from "./changes-panel.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // In-pane editor file picker: the Launcher pad becomes a searchable file list. The
@@ -82,6 +83,17 @@ export function createWorkbenchPaneContent(
       return <WorkbenchTerminalPane pane={pane} handlers={handlers} />;
     case "launcher":
       return <WorkbenchLauncherPane pane={pane} handlers={handlers} />;
+    case "changes":
+      // Key by cwd so switching threads/projects fully resets the panel (selected file +
+      // loaded diff) instead of showing stale state.
+      return (
+        <ChangesPanel
+          key={pane.cwd ?? ""}
+          cwd={pane.cwd ?? ""}
+          onGitChanges={handlers.onGitChanges}
+          onGitFileDiff={handlers.onGitFileDiff}
+        />
+      );
     default:
       return (
         <div className="workbench-pane-content workbench-pane-content--generic">

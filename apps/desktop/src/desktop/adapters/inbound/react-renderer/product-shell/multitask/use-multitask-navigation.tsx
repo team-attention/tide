@@ -13,42 +13,66 @@ interface SwitcherState {
   index: number;
 }
 
-// Ctrl-unified multitask navigation (spec: multitask-navigation L2 + L3). While Ctrl
-// is held this is "multitask mode": `active` drives the row ^N badges, Ctrl+1..9 jumps
-// to a pinned thread, and Ctrl+Tab / Ctrl+Shift+Tab cycle the live set through a HUD
-// that commits on Ctrl release. Everything is transient — nothing persists on release.
+// Time the Option key must be HELD before the passive ^N badges appear, so a quick
+// Option+digit / Option+Tab tap (an explicit action) never flashes the badges. The
+// actions themselves fire immediately on keydown; only the badge overlay waits.
+const BADGE_HOLD_DELAY_MS = 320;
+
+// Option-unified multitask navigation (spec: multitask-navigation L2 + L3). While
+// Option is held this is "multitask mode": `active` drives the row ⌥N badges (after a
+// short hold), Option+1..9 jumps to the N-th rail thread (top-9), and Option+Tab / Option+Shift+Tab
+// cycle the live set through a HUD that commits on Option release. Everything is
+// transient — nothing persists on release. (Option, not Control, per user pref; on
+// macOS Option mangles event.key for digits, so digits are matched on event.code.)
 export function useMultitaskNavigation(params: {
-  pinnedThreads: ProductShellThreadView[];
+  numberedThreads: ProductShellThreadView[];
   liveThreads: ProductShellThreadView[];
   activeThreadId: string | null;
   onSelectThread: (threadId: string) => void;
 }): { active: boolean; hud: ReactElement | null } {
-  const { pinnedThreads, liveThreads, activeThreadId, onSelectThread } = params;
-  const [ctrlHeld, setCtrlHeld] = useState(false);
+  const { numberedThreads, liveThreads, activeThreadId, onSelectThread } = params;
+  const [altActive, setAltActive] = useState(false);
+  const holdTimer = useRef<number | null>(null);
   const [switcher, setSwitcher] = useState<SwitcherState>({ open: false, index: 0 });
 
   // The keydown/keyup handlers subscribe once; read the latest inputs through a ref so
   // they never need to re-attach (and never close over stale lists).
-  const latest = useRef({ pinnedThreads, liveThreads, activeThreadId, onSelectThread, switcher });
+  const latest = useRef({ numberedThreads, liveThreads, activeThreadId, onSelectThread, switcher });
   // Refresh the ref in the commit phase (not during render) so an aborted/yielded
   // render can't leave it inconsistent. Review feedback.
   useEffect(() => {
-    latest.current = { pinnedThreads, liveThreads, activeThreadId, onSelectThread, switcher };
+    latest.current = { numberedThreads, liveThreads, activeThreadId, onSelectThread, switcher };
   });
+
+  const clearHoldTimer = () => {
+    if (holdTimer.current !== null) {
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Control") {
-        setCtrlHeld(true);
+      if (event.key === "Alt") {
+        // Show the passive ⌥N badges only after a deliberate hold (not on a quick tap).
+        if (holdTimer.current === null) {
+          holdTimer.current = window.setTimeout(() => {
+            setAltActive(true);
+            holdTimer.current = null;
+          }, BADGE_HOLD_DELAY_MS);
+        }
         return;
       }
-      if (!event.ctrlKey) {
+      if (!event.altKey) {
         return;
       }
       const current = latest.current;
-      // Ctrl+Tab / Ctrl+Shift+Tab → cycle the live set through the HUD.
-      if (event.key === "Tab") {
+      // Option+Tab / Option+Shift+Tab → cycle the live set through the HUD.
+      if (event.code === "Tab") {
         event.preventDefault();
+        // Cancel the pending badge hold-delay so the rail ⌥N badges don't flash on while
+        // the switcher HUD is active.
+        clearHoldTimer();
         if (current.liveThreads.length === 0) {
           return;
         }
@@ -60,15 +84,21 @@ export function useMultitaskNavigation(params: {
         );
         return;
       }
-      // Ctrl+1..9 → jump to the N-th pinned thread (stable manual order).
-      if (/^[1-9]$/.test(event.key)) {
-        // Swallow EVERY Ctrl+digit (even out-of-range, e.g. Ctrl+9 with <9 pins) so it
-        // can't fall through to a browser/OS shortcut. Review feedback.
+      // Option+1..9 → jump to the N-th thread in Left Rail order (top-9, not just
+      // pinned). Match the PHYSICAL key (event.code) — on macOS Option+1 reports
+      // event.key="¡", not "1".
+      const digit = /^Digit([1-9])$/.exec(event.code);
+      if (digit !== null) {
+        // Swallow EVERY Option+digit (even out-of-range) so it can't fall through to a
+        // browser/OS shortcut. Review feedback.
         event.preventDefault();
-        const target = resolvePinJump(current.pinnedThreads, Number(event.key));
+        const target = resolvePinJump(current.numberedThreads, Number(digit[1]));
         if (target !== null) {
-          // A pin jump ends multitask mode immediately; drop any open switcher so the
-          // Ctrl release does not override the jump with the highlighted live thread.
+          // A jump ends multitask mode immediately: cancel the pending badge hold-delay,
+          // hide the badges, and drop any open switcher so the Option release doesn't
+          // override the jump with the highlighted live thread.
+          clearHoldTimer();
+          setAltActive(false);
           setSwitcher({ open: false, index: 0 });
           current.onSelectThread(target);
         }
@@ -76,10 +106,11 @@ export function useMultitaskNavigation(params: {
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key !== "Control") {
+      if (event.key !== "Alt") {
         return;
       }
-      setCtrlHeld(false);
+      clearHoldTimer();
+      setAltActive(false);
       const current = latest.current;
       if (current.switcher.open) {
         const target = current.liveThreads[current.switcher.index];
@@ -90,10 +121,11 @@ export function useMultitaskNavigation(params: {
       }
     };
 
-    // Losing focus (Cmd+Tab away, devtools) can swallow the Control keyup — reset so
+    // Losing focus (Cmd+Tab away, devtools) can swallow the Option keyup — reset so
     // the badges/HUD never get stuck on.
     const onBlur = () => {
-      setCtrlHeld(false);
+      clearHoldTimer();
+      setAltActive(false);
       setSwitcher({ open: false, index: 0 });
     };
 
@@ -101,6 +133,7 @@ export function useMultitaskNavigation(params: {
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
     return () => {
+      clearHoldTimer();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
@@ -108,5 +141,5 @@ export function useMultitaskNavigation(params: {
   }, []);
 
   const hud = switcher.open ? createLiveSwitcherHud(liveThreads, switcher.index) : null;
-  return { active: ctrlHeld, hud };
+  return { active: altActive, hud };
 }
