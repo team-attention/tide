@@ -73,30 +73,8 @@ export function ChangesPanel(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
-  // Escape closes the overlay.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div
-      className="changes-panel-backdrop"
-      role="dialog"
-      aria-label="Working tree changes"
-      onMouseDown={(event: { target: EventTarget | null; currentTarget: EventTarget | null }) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <div className="changes-panel">
+    <div className="changes-pane" role="group" aria-label="Working tree changes">
         <header className="changes-panel__header">
           <span className="changes-panel__branch" title={branch ?? undefined}>
             <GitBranch size={13} strokeWidth={1.9} aria-hidden />
@@ -183,7 +161,6 @@ export function ChangesPanel(props: {
             )}
           </div>
         </div>
-      </div>
     </div>
   );
 }

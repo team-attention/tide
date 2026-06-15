@@ -6,11 +6,16 @@ import { createColumnResizeHandle, createTrafficControls } from "../chrome/chrom
 import { createEditorPickerPane, createWorkbenchPaneContent } from "./pane-content.tsx";
 import { WorkbenchSplitView } from "./split-view.tsx";
 import { WorkbenchLauncherPane, emptyWorkbenchLauncherPane } from "./launcher-pane.tsx";
+import { ChangesPanel } from "./changes-panel.tsx";
+import type { ChangesPaneData } from "../support/use-shell-effects.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createWorkbenchColumn(
   viewModel: ProductShellWorkbenchViewModel,
   handlers: ProductShellHandlers,
+  // Docked git Changes pane: when open it takes over the Workbench body (like the editor
+  // picker), with its own header + close. Spec: git-changes-view.
+  changes: ChangesPaneData,
 ): ReactElement {
   const tabs = viewModel.appChrome.workbenchTabStrip.visibleTabs;
   const activeTab = tabs.find((tab) => tab.active) ?? tabs[0];
@@ -112,7 +117,18 @@ export function createWorkbenchColumn(
           </div>
         </header>
       )}
-      {viewModel.editorPicker !== null ? (
+      {changes.open ? (
+        <section className="workbench-column__pane" data-pane-kind="changes">
+          <ChangesPanel
+            isGitRepo={changes.isGitRepo}
+            branch={changes.branch}
+            files={changes.files}
+            loadDiff={changes.loadDiff}
+            onRefresh={changes.onRefresh}
+            onClose={changes.onClose}
+          />
+        </section>
+      ) : viewModel.editorPicker !== null ? (
         <section className="workbench-column__pane" data-pane-kind="editor-picker">
           {createEditorPickerPane(viewModel.editorPicker, handlers)}
         </section>

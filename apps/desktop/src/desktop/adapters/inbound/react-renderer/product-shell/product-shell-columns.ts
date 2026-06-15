@@ -8,6 +8,7 @@ import {
 } from "../../../../application/domains/product-shell/product-shell.ts";
 import { useProductShellSlice } from "./store-context.ts";
 import type { MenuAnchorRect, ProductShellHandlers } from "./support/types.ts";
+import type { ChangesPaneData } from "./support/use-shell-effects.ts";
 import { createLeftRail } from "./left-rail/left-rail.tsx";
 import { createAgentChatColumn } from "./chat-column/chat-column.tsx";
 import { createWorkbenchColumn } from "./workbench/workbench.tsx";
@@ -49,9 +50,12 @@ export const AgentChatColumnView = memo(function AgentChatColumnView(props: {
 
 export const WorkbenchColumnView = memo(function WorkbenchColumnView(props: {
   handlers: ProductShellHandlers;
+  // Docked git Changes pane data (component state, threaded as a prop like the chat
+  // column's gitBadge); memoized by the caller so this memo bails on chat-token renders.
+  changes: ChangesPaneData;
 }): ReactElement {
   const viewModel = useProductShellSlice(selectWorkbenchViewModel);
-  return createWorkbenchColumn(viewModel, props.handlers);
+  return createWorkbenchColumn(viewModel, props.handlers, props.changes);
 });
 
 export const FileTreeColumnView = memo(function FileTreeColumnView(props: {

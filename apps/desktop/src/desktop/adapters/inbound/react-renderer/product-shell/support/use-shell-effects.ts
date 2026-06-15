@@ -189,6 +189,18 @@ export interface GitChangesView {
   files: GitChangesResult["files"];
 }
 
+// Everything the docked Changes pane needs. Memoized so the workbench column (a memo
+// boundary) only re-renders when git state / open-ness changes, not on chat tokens.
+export interface ChangesPaneData {
+  open: boolean;
+  isGitRepo: boolean;
+  branch: string | null;
+  files: GitChangesResult["files"];
+  loadDiff: (relPath: string) => Promise<string>;
+  onRefresh: () => void;
+  onClose: () => void;
+}
+
 // Consolidated git state for the active repo/worktree. One fetch on cwd change / manual
 // refresh feeds BOTH the composer's branch+worktree pickers (gitContext → shell state)
 // and the top-bar badge + read-only Changes view (uncommitted files → gitInfo).
@@ -198,12 +210,12 @@ export function useGitState(
   setShellState: Dispatch<SetStateAction<ProductShellState>>,
 ): {
   gitInfo: GitChangesView | null;
-  open: boolean;
   setOpen: (open: boolean) => void;
-  refresh: () => void;
   // Memoized badge (branch + summed +/- + file count) for the chat header; stable across
   // chat-token renders so the memoized chat column doesn't re-render on every token.
   gitBadge: { branch: string | null; additions: number; deletions: number; fileCount: number; onOpen: () => void } | null;
+  // Memoized data for the docked Changes pane in the Workbench column.
+  changes: ChangesPaneData;
 } {
   const [gitInfo, setGitInfo] = useState<GitChangesView | null>(null);
   const [open, setOpen] = useState(false);
@@ -245,5 +257,20 @@ export function useGitState(
           },
     [gitInfo],
   );
-  return { gitInfo, open, setOpen, refresh: () => setNonce((value) => value + 1), gitBadge };
+  const changes = useMemo<ChangesPaneData>(
+    () => ({
+      open,
+      isGitRepo: gitInfo !== null,
+      branch: gitInfo?.branch ?? null,
+      files: gitInfo?.files ?? [],
+      loadDiff: (relPath: string) =>
+        gitInfo === null || projectBridge === undefined
+          ? Promise.resolve("")
+          : projectBridge.gitFileDiff(gitInfo.cwd, relPath),
+      onRefresh: () => setNonce((value) => value + 1),
+      onClose: () => setOpen(false),
+    }),
+    [open, gitInfo, projectBridge],
+  );
+  return { gitInfo, setOpen, gitBadge, changes };
 }

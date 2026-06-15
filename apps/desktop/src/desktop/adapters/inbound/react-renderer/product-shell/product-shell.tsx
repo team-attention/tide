@@ -8,7 +8,6 @@ import type { MenuAnchorRect, ProductShellHandlers, TideProductShellProps } from
 import { createSettingsModal, loadListSettings, loadPreferredStartComposer, loadRailOrder, loadWorktreeSettings, persistPreferredStartComposer } from "./settings/settings.tsx";
 import { WorktreeDeleteDialog } from "./dialogs/worktree-delete-dialog.tsx";
 import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx";
-import { ChangesPanel } from "./workbench/changes-panel.tsx";
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
@@ -558,7 +557,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     ...createWorkbenchHandlers(handlerContext),
     ...createEditorHandlers(handlerContext),
     ...createChromeHandlers(handlerContext),
-    onOpenChanges: () => git.setOpen(true),
+    onOpenChanges: () => {
+      // The Changes pane lives in the Workbench column, so make sure it's open.
+      setShellState((state) => (state.workbenchOpen ? state : { ...state, workbenchOpen: true }));
+      git.setOpen(true);
+    },
   };
   const stableHandlers = useStableHandlers(handlers);
 
@@ -697,7 +700,9 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             <LeftRailColumnView handlers={stableHandlers} anchor={menuAnchor} collapsedSections={collapsedSections} />
           ) : null}
           <AgentChatColumnView handlers={stableHandlers} gitBadge={git.gitBadge} />
-          {workbenchPresence.mounted ? <WorkbenchColumnView handlers={stableHandlers} /> : null}
+          {workbenchPresence.mounted ? (
+            <WorkbenchColumnView handlers={stableHandlers} changes={git.changes} />
+          ) : null}
           {fileTreePresence.mounted ? <FileTreeColumnView handlers={stableHandlers} /> : null}
         </div>
         {/* Workbench + FileTree toggles live in a single fixed cluster at the window's
@@ -748,21 +753,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             }}
           />
         ) : null}
-        {/* Read-only git Changes overlay (opened from the branch badge or launcher Diff). */}
-        {git.open ? (
-          <ChangesPanel
-            isGitRepo={git.gitInfo !== null}
-            branch={git.gitInfo?.branch ?? null}
-            files={git.gitInfo?.files ?? []}
-            loadDiff={(relPath) =>
-              git.gitInfo === undefined || git.gitInfo === null
-                ? Promise.resolve("")
-                : props.projectBridge?.gitFileDiff(git.gitInfo.cwd, relPath) ?? Promise.resolve("")
-            }
-            onRefresh={() => git.refresh()}
-            onClose={() => git.setOpen(false)}
-          />
-        ) : null}
+        {/* The git Changes view is a docked Workbench pane (see WorkbenchColumnView),
+            not an overlay. */}
         {/* Collapsed-rail floating peek: hover the left edge, or hold Ctrl. */}
         {layoutVm.leftRailOpen ? null : (
           <RailPeek handlers={stableHandlers} anchor={menuAnchor} collapsedSections={collapsedSections} forceOpen={multitask.active} />
