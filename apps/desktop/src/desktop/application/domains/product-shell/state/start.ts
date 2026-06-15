@@ -1,5 +1,4 @@
 import type { ProductShellAgentIdentity, ProductShellState } from "./types.ts";
-import { archiveProductShellWorktreeChats, preserveActiveAgentChat } from "./thread-list.ts";
 import { createAppChromeState } from "../../app-chrome/app-chrome-state.ts";
 import { createAgentChatShellState, defaultModelValueForAgent, defaultPermissionForAgent, resolveStartAgentId } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatAgentBinding, AgentChatShellState, AgentChatThreadScope } from "../../agent-chat/agent-chat.ts";
@@ -79,22 +78,18 @@ export function refocusStartComposerIfActiveDropped(
   return activeDropped ? startNewProductShellThread(next) : next;
 }
 
-// Deleting a worktree archives every Thread that lived in it. If the Thread on
-// screen was one of them it's gone now — navigate to the Start Composer instead of
-// leaving its dead transcript visible. When the viewed Thread lived elsewhere, focus
-// is left untouched.
-export function deleteWorktreeAndRefocus(
+// Stash the currently active thread's agent-chat state into the per-thread map so it
+// is preserved when we switch away (and can be restored intact on return). Lives here
+// (not in thread-list) so start.ts has no back-import into thread-list — keeping the
+// start ↔ thread-list dependency one-directional (thread-list → start).
+export function preserveActiveAgentChat(
   state: ProductShellState,
-  cwd: string,
-): {
-  state: ProductShellState;
-  commands: { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }[];
-} {
-  const archived = archiveProductShellWorktreeChats(state, cwd);
-  return {
-    state: refocusStartComposerIfActiveDropped(state, archived.state),
-    commands: archived.commands,
-  };
+  nextThreadId: string,
+): Record<string, AgentChatShellState> {
+  if (state.activeThreadId === null || state.activeThreadId === nextThreadId) {
+    return state.agentChatByThreadId;
+  }
+  return { ...state.agentChatByThreadId, [state.activeThreadId]: state.agentChat };
 }
 
 // A new Thread with no chosen Project scopes to the user's first REAL project (a

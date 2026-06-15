@@ -3,7 +3,7 @@ import { formatRelativeThreadTime, previewBlocksForThread, projectsFromThreads, 
 import type { ProductShellThreadListViewModel } from "./view-model.ts";
 import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatBlock, AgentChatBranchOption, AgentChatShellState, AgentChatThreadSummary, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
-import { agentBindingForShellAgent, cloneLaunchOptions, createStartAgentChatState, normalizeAgentId, refocusStartComposerIfActiveDropped } from "./start.ts";
+import { agentBindingForShellAgent, cloneLaunchOptions, createStartAgentChatState, normalizeAgentId, preserveActiveAgentChat, refocusStartComposerIfActiveDropped } from "./start.ts";
 import { applyAppChromeBackendEvent, createAppChromeState } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
@@ -465,16 +465,22 @@ export function applyProductShellThreadArchivedEvent(
   return refocusStartComposerIfActiveDropped(state, next);
 }
 
-// Stash the currently active thread's agent-chat state into the per-thread map so it
-// is preserved when we switch away (and can be restored intact on return).
-export function preserveActiveAgentChat(
+// Deleting a worktree archives every Thread that lived in it. If the Thread on screen
+// was one of them it's gone now — navigate to the Start Composer instead of leaving its
+// dead transcript visible. When the viewed Thread lived elsewhere, focus is untouched.
+// Lives here (with archiveProductShellWorktreeChats) so start.ts needs no back-import.
+export function deleteWorktreeAndRefocus(
   state: ProductShellState,
-  nextThreadId: string,
-): Record<string, AgentChatShellState> {
-  if (state.activeThreadId === null || state.activeThreadId === nextThreadId) {
-    return state.agentChatByThreadId;
-  }
-  return { ...state.agentChatByThreadId, [state.activeThreadId]: state.agentChat };
+  cwd: string,
+): {
+  state: ProductShellState;
+  commands: { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }[];
+} {
+  const archived = archiveProductShellWorktreeChats(state, cwd);
+  return {
+    state: refocusStartComposerIfActiveDropped(state, archived.state),
+    commands: archived.commands,
+  };
 }
 
 export function openProductShellThread(
