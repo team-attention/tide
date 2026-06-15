@@ -1,48 +1,50 @@
 /* Read-only git Changes view (spec: git-changes-view). Imported by styles/index.css.
-   The top-bar git badge opens this overlay; the diff itself reuses .workbench-diff. */
+   The header git chip opens this overlay; the diff itself reuses .workbench-diff. */
 
-/* --- Top-bar git badge: current branch + dirty count, opens the Changes view. --- */
-.git-badge {
+/* --- Git chip in the chat-column header, beside the scope chip: branch + uncommitted
+   count, opens the Changes view. Quiet (muted, borderless) so it sits with the scope
+   breadcrumb rather than reading as a control. --- */
+.column-top-row__git {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 26px;
-  padding: 0 9px;
-  border: 1px solid var(--tide-line);
-  border-radius: 8px;
-  background: var(--tide-surface);
-  color: var(--tide-text);
+  height: 22px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
-  max-width: 220px;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  max-width: 190px;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
-.git-badge:hover {
+.column-top-row__git:hover {
   background: var(--tide-selection);
+  color: var(--tide-text);
 }
 
-.git-badge__branch {
+.column-top-row__git-branch {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 140px;
+  max-width: 130px;
 }
 
-.git-badge__count {
+.column-top-row__git-count {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  color: var(--tide-action);
-  font-weight: 600;
-}
-
-.git-badge__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
   background: var(--tide-action);
+  color: var(--tide-on-action, #fff);
+  font-size: 10px;
+  font-weight: 600;
 }
 
 /* --- Changes overlay --- */

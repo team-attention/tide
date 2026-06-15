@@ -3,13 +3,16 @@ import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
 import { threadScopeLabel } from "../left-rail/thread-section.tsx";
 import { createIconButton, createTrafficControls } from "../chrome/chrome.tsx";
-import { Folder, PanelLeftOpen, Pin } from "lucide-react";
+import { Folder, GitBranch, PanelLeftOpen, Pin } from "lucide-react";
 import { AgentChatShell } from "../../agent-chat/agent-chat.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createAgentChatColumn(
   viewModel: ProductShellChatColumnViewModel,
   handlers: ProductShellHandlers,
+  // Current branch + uncommitted-file count for the active repo/worktree; opens the
+  // read-only Changes view. Null when the cwd isn't a git repo. Spec: git-changes-view.
+  gitBadge: { branch: string | null; count: number; onOpen: () => void } | null = null,
 ): ReactElement {
   const title = viewModel.agentChat.thread?.title ?? "New Thread";
   // Which project/directory this thread lives in — so a pinned thread (pulled
@@ -49,6 +52,21 @@ export function createAgentChatColumn(
               <Folder size={12} strokeWidth={1.9} aria-hidden />
               <span>{scopeLabel}</span>
             </span>
+          )}
+          {gitBadge === null ? null : (
+            <button
+              type="button"
+              className="column-top-row__git"
+              title={`${gitBadge.branch ?? "detached HEAD"} · ${gitBadge.count} uncommitted change${gitBadge.count === 1 ? "" : "s"} — view changes`}
+              aria-label="View working tree changes"
+              onClick={gitBadge.onOpen}
+            >
+              <GitBranch size={12} strokeWidth={1.9} aria-hidden />
+              <span className="column-top-row__git-branch">{gitBadge.branch ?? "detached"}</span>
+              {gitBadge.count > 0 ? (
+                <span className="column-top-row__git-count">{gitBadge.count}</span>
+              ) : null}
+            </button>
           )}
         </div>
         {/* Trailing kept as a spacer; the Workbench/FileTree toggles now live in the
