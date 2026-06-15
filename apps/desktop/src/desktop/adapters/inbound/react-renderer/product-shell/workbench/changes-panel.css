@@ -144,9 +144,30 @@
 
 .changes-panel__body {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  /* Fallback; the component sets the live `<list>px 6px 1fr` inline so the list is
+     drag-resizable. */
+  grid-template-columns: 240px 6px 1fr;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* Collapsed file list: the diff takes the full pane width (GitHub "hide file tree"). */
+.changes-panel__body--list-collapsed {
+  grid-template-columns: 1fr;
+}
+
+/* Drag divider between the file list and the diff (resizable file list). A thin grid
+   column that brightens into a visible rule on hover/drag. */
+.changes-panel__resize {
+  align-self: stretch;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.changes-panel__resize:hover,
+.changes-panel__resize:active {
+  background: color-mix(in srgb, var(--tide-action) 45%, transparent);
 }
 
 .changes-panel__files {
@@ -227,9 +248,33 @@
 }
 
 .changes-panel__diff {
-  overflow: auto;
+  display: flex;
   min-width: 0;
-  padding: 8px 10px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px;
+}
+
+/* In the Changes pane the reused diff fills the pane (no 420px cap, no card chrome — the
+   pane is the frame) and scrolls long lines horizontally instead of wrapping them to
+   near-vertical. Scoped here so the standalone WorkbenchDiffPane keeps its bounded card. */
+.changes-panel__diff .workbench-diff {
+  max-height: none;
+  height: 100%;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+}
+
+.changes-panel__diff .workbench-diff-row {
+  width: max-content;
+  min-width: 100%;
+}
+
+.changes-panel__diff .workbench-diff-row__text {
+  flex: 0 0 auto;
+  white-space: pre;
+  word-break: normal;
 }
 
 .changes-panel__diff-empty {

@@ -68,6 +68,17 @@ test("changes_pane_shows_not_a_git_repo_state", async () => {
   assert.match(html, /Not a git repo/);
 });
 
+test("changes_pane_renders_a_resizable_collapsible_file_list", async () => {
+  const html = await renderPane({
+    isGitRepo: true,
+    branch: "main",
+    files: [{ path: "src/a.ts", status: "modified", additions: 1, deletions: 0 }],
+  });
+  // GitHub-style file tree controls: a collapse toggle + a resize divider.
+  assert.match(html, /Hide file list/);
+  assert.match(html, /Resize file list/);
+});
+
 // --- Composer (pre-thread) draft Changes pane. Spec: git-changes-view (Composer
 // pre-thread Changes). The badge opens the Changes view on the New Thread page too,
 // where there is no thread to own a backend pane. ---

@@ -102,3 +102,35 @@ renders a `kind:"changes"` pane purely from `pane.cwd`, so a draft pane with
 - view-model: a draft `changes` pane → `AppChromeWorkbenchPaneRef` `kind:"changes"` + cwd.
 - in-thread `onOpenChanges()` still dispatches backend `open_diff` (no regression).
 - adoption: a draft `changes` pane is excluded from `initialWorkbenchPanes` on send.
+
+## Changes panel layout — resizable + collapsible file list
+
+> Slice (added 0.1.55+): the file list ate a fixed 260px and the diff was capped/cramped
+> (long lines wrapped to near-vertical) with no way to widen it. Mirror GitHub's
+> Files-changed file tree: resizable + collapsible.
+
+### Gap
+
+- `.changes-panel__body` was `grid-template-columns: 260px 1fr` — file list fixed width,
+  not resizable, not collapsible.
+- The reused `.workbench-diff` is `max-height: 420px`, so inside the full-height Changes
+  pane the diff was capped and couldn't fill the pane.
+- `.workbench-diff-row__text` wraps (`pre-wrap` + `break-word`); in a narrow column long
+  lines (URLs, prose) wrapped to ~one char per line — unreadable.
+
+### Decision (GitHub Files-changed parity)
+
+- **Resizable file list**: a drag handle between the list and the diff sets the list width
+  (component state, clamped 140–520px).
+- **Collapsible file list**: a header toggle hides the list so the diff uses the full pane
+  width ("view the diff in full"); toggles back.
+- **Full-height diff**: in the Changes pane the reused diff fills the pane height
+  (`max-height` lifted, chrome border/radius dropped — the pane is the frame).
+- **Long lines scroll, not wrap**: in the Changes pane, diff rows keep their line and the
+  diff scrolls horizontally (GitHub behavior), so URLs/prose stay readable.
+- Scoped to `.changes-panel__diff` so the standalone `WorkbenchDiffPane` is untouched.
+
+### Tests
+
+- The Changes panel renders a file-list collapse toggle when there are files.
+- (resize drag + horizontal scroll are CSS/pointer behavior — live-verified.)
