@@ -1,5 +1,5 @@
 import type { ProductShellAgentIdentity, ProductShellState } from "./types.ts";
-import { preserveActiveAgentChat } from "./thread-list.ts";
+import { archiveProductShellWorktreeChats, preserveActiveAgentChat } from "./thread-list.ts";
 import { createAppChromeState } from "../../app-chrome/app-chrome-state.ts";
 import { createAgentChatShellState, defaultModelValueForAgent, defaultPermissionForAgent, resolveStartAgentId } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatAgentBinding, AgentChatShellState, AgentChatThreadScope } from "../../agent-chat/agent-chat.ts";
@@ -62,6 +62,30 @@ export function startNewProductShellThread(
     startPagePendingNavigation: null,
     editorDrafts: {},
     editorPickerFilter: null,
+  };
+}
+
+// Deleting a worktree archives every Thread that lived in it. If the Thread on
+// screen was one of them it's gone now — navigate to the Start Composer instead of
+// leaving its dead transcript visible. (The chat column renders state.agentChat
+// directly; archiveProductShellWorktreeChats only detaches the active thread via
+// activeThreadId, so without this the deleted Thread would stay on screen.) When the
+// viewed Thread lived elsewhere, focus is left untouched.
+export function deleteWorktreeAndRefocus(
+  state: ProductShellState,
+  cwd: string,
+): {
+  state: ProductShellState;
+  commands: { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }[];
+} {
+  const archived = archiveProductShellWorktreeChats(state, cwd);
+  // archiveProductShellWorktreeChats nulls activeThreadId exactly when the active
+  // Thread was among the archived ones.
+  const viewedThreadDeleted =
+    state.activeThreadId !== null && archived.state.activeThreadId === null;
+  return {
+    state: viewedThreadDeleted ? startNewProductShellThread(archived.state) : archived.state,
+    commands: archived.commands,
   };
 }
 

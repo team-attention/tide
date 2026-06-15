@@ -13,7 +13,9 @@ import {
   applyProductShellBackendEvent,
   archiveProductShellWorktreeChats,
   createProductShellState,
+  deleteWorktreeAndRefocus,
   openProductShellLeftRailMenu,
+  openProductShellThread,
   setProductShellGitContext,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
@@ -156,4 +158,45 @@ test("deleting_a_worktree_archives_its_threads_and_drops_it_from_lists", () => {
     result.state.gitWorktrees.map((worktree) => worktree.path),
     ["/Users/you/repo"],
   );
+});
+
+test("deleting_the_worktree_youre_viewing_navigates_to_the_start_composer", () => {
+  // Standing inside a worktree Thread and deleting its worktree must drop you on the
+  // Start Composer — not leave the now-dead Thread's transcript on screen. (The chat
+  // column renders state.agentChat directly, so nulling activeThreadId alone isn't
+  // enough; the chat must be reset to a fresh Start Composer.)
+  const cwd = "/Users/you/repo.worktree/fix-login";
+  const state = seedThreads([
+    { threadId: "wt1", cwd },
+    { threadId: "other", cwd: "/Users/you/repo" },
+  ]);
+  const viewing = openProductShellThread(state, "wt1");
+  assert.equal(viewing.activeThreadId, "wt1");
+  assert.equal(viewing.agentChat.thread?.threadId, "wt1");
+
+  const result = deleteWorktreeAndRefocus(viewing, cwd);
+
+  assert.equal(result.state.activeThreadId, null);
+  assert.equal(result.state.agentChat.thread, null);
+  // The archive command still fires for the deleted worktree's Thread.
+  assert.deepEqual(
+    result.commands.map((command) => command.payload.threadId),
+    ["wt1"],
+  );
+});
+
+test("deleting_a_worktree_while_viewing_an_unrelated_thread_keeps_focus", () => {
+  // Deleting a worktree from a rail row while a DIFFERENT Thread is on screen must
+  // not steal focus — only the viewed-Thread-was-deleted case navigates home.
+  const cwd = "/Users/you/repo.worktree/fix-login";
+  const state = seedThreads([
+    { threadId: "wt1", cwd },
+    { threadId: "other", cwd: "/Users/you/repo" },
+  ]);
+  const viewing = openProductShellThread(state, "other");
+
+  const result = deleteWorktreeAndRefocus(viewing, cwd);
+
+  assert.equal(result.state.activeThreadId, "other");
+  assert.equal(result.state.agentChat.thread?.threadId, "other");
 });
