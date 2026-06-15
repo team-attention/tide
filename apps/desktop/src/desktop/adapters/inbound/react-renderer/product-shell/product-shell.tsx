@@ -123,6 +123,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Worktree delete confirmation (opened from a Thread row menu or the composer
   // worktree menu). See docs_v2/specs/worktree-branch-deletion.md.
   const [worktreeDelete, setWorktreeDelete] = useState<WorktreeDeleteTarget | null>(null);
+  const [worktreeDeleting, setWorktreeDeleting] = useState(false);
   // Track the window width so the layout can auto-collapse columns that no
   // longer fit (responsive narrow-screen handling).
   const [windowWidth, setWindowWidth] = useState(
@@ -249,13 +250,16 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   const confirmWorktreeDelete = (keepBranch: boolean) => {
     const target = worktreeDelete;
     const bridge = props.projectBridge;
-    setWorktreeDelete(null);
     if (target === null || bridge === undefined) {
       return;
     }
+    // Keep the dialog open with a "Deleting…" spinner while the (slow) git worktree +
+    // branch removal runs — it used to close instantly and update only on completion,
+    // leaving a confusing gap where nothing seemed to happen.
+    setWorktreeDeleting(true);
     bridge
       .deleteWorktree(target.cwd, worktreeDeleteRequest({ keepBranch, branchMerged: target.branchMerged }))
-      .then((result) =>
+      .then((result) => {
         setShellState((state) => {
           // Update the registry from Main's authoritative entries, then archive the
           // Threads that lived in the deleted worktree and drop it from the Composer's
@@ -266,9 +270,14 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             dispatchBackendCommand(command);
           }
           return archived.state;
-        }),
-      )
-      .catch(() => {});
+        });
+        setWorktreeDeleting(false);
+        setWorktreeDelete(null);
+      })
+      .catch(() => {
+        // Leave the dialog open (re-enabled) so the user can retry or cancel.
+        setWorktreeDeleting(false);
+      });
   };
 
   // Fetch real git branches/worktrees whenever the active Project cwd changes,
@@ -752,8 +761,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         {worktreeDelete !== null ? (
           <WorktreeDeleteDialog
             target={worktreeDelete}
+            deleting={worktreeDeleting}
             onConfirm={confirmWorktreeDelete}
-            onClose={() => setWorktreeDelete(null)}
+            onClose={() => {
+              setWorktreeDelete(null);
+              setWorktreeDeleting(false);
+            }}
           />
         ) : null}
         {/* Collapsed-rail floating peek: hover the left edge, or hold Ctrl. */}

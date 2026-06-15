@@ -96,10 +96,13 @@ test("worktree_delete_blocked_while_a_thread_runs", () => {
   assert.doesNotMatch(markup, /Keep branch/);
 });
 
-test("thread_row_exposes_context_menu_trigger", () => {
-  // The ⋯ overflow on each thread row is the reachable opener for the menu.
+test("worktree_thread_row_exposes_direct_delete_worktree_button", () => {
+  // The ⋯ overflow is gone — a worktree thread row carries Delete worktree as a
+  // direct hover button (opens the same confirm dialog). The full menu stays on
+  // right-click; the no-longer-present ⋯ trigger button must not appear.
   const markup = renderThreadContextMenu("/Users/you/repo.worktree/fix-login");
-  assert.match(markup, /aria-label="Thread menu"/);
+  assert.match(markup, /aria-label="Delete worktree"/);
+  assert.doesNotMatch(markup, /aria-label="Thread menu"/);
 });
 
 test("worktree_thread_menu_offers_archive_and_delete_worktree", () => {
