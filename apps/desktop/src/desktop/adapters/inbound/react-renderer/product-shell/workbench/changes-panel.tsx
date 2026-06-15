@@ -10,6 +10,8 @@ import type { GitChangeStatus } from "../support/types.ts";
 interface ChangedFile {
   path: string;
   status: GitChangeStatus;
+  additions?: number;
+  deletions?: number;
 }
 
 const STATUS_LABEL: Record<GitChangeStatus, string> = {
@@ -28,6 +30,8 @@ export function ChangesPanel(props: {
   onClose: () => void;
 }): ReactElement {
   const { branch, files, loadDiff, onRefresh, onClose } = props;
+  const totalAdd = files.reduce((sum, file) => sum + (file.additions ?? 0), 0);
+  const totalDel = files.reduce((sum, file) => sum + (file.deletions ?? 0), 0);
   const [selected, setSelected] = useState<string | null>(files[0]?.path ?? null);
   const [diff, setDiff] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -97,9 +101,15 @@ export function ChangesPanel(props: {
             <GitBranch size={13} strokeWidth={1.9} aria-hidden />
             <span>{branch ?? "detached"}</span>
           </span>
-          <span className="changes-panel__count">
-            {files.length === 0 ? "No changes" : `${files.length} file${files.length === 1 ? "" : "s"} changed`}
-          </span>
+          {files.length === 0 ? (
+            <span className="changes-panel__count">No changes</span>
+          ) : (
+            <span className="changes-panel__stat">
+              {totalAdd > 0 ? <span className="changes-panel__add">{`+${totalAdd}`}</span> : null}
+              {totalDel > 0 ? <span className="changes-panel__del">{`−${totalDel}`}</span> : null}
+              <span className="changes-panel__count">{`${files.length} file${files.length === 1 ? "" : "s"}`}</span>
+            </span>
+          )}
           <span className="changes-panel__spacer" />
           <button
             type="button"
@@ -142,6 +152,16 @@ export function ChangesPanel(props: {
                     <span className="changes-panel__file-name">{fileName(file.path)}</span>
                     {fileDir(file.path) ? (
                       <span className="changes-panel__file-dir">{fileDir(file.path)}</span>
+                    ) : null}
+                    {(file.additions ?? 0) > 0 || (file.deletions ?? 0) > 0 ? (
+                      <span className="changes-panel__file-stat">
+                        {(file.additions ?? 0) > 0 ? (
+                          <span className="changes-panel__add">{`+${file.additions}`}</span>
+                        ) : null}
+                        {(file.deletions ?? 0) > 0 ? (
+                          <span className="changes-panel__del">{`−${file.deletions}`}</span>
+                        ) : null}
+                      </span>
                     ) : null}
                   </button>
                 </li>

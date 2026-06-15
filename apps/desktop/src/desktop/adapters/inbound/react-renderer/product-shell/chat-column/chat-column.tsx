@@ -10,9 +10,11 @@ import { AgentChatShell } from "../../agent-chat/agent-chat.tsx";
 export function createAgentChatColumn(
   viewModel: ProductShellChatColumnViewModel,
   handlers: ProductShellHandlers,
-  // Current branch + uncommitted-file count for the active repo/worktree; opens the
+  // Current branch + uncommitted +/- line totals for the active repo/worktree; opens the
   // read-only Changes view. Null when the cwd isn't a git repo. Spec: git-changes-view.
-  gitBadge: { branch: string | null; count: number; onOpen: () => void } | null = null,
+  gitBadge:
+    | { branch: string | null; additions: number; deletions: number; fileCount: number; onOpen: () => void }
+    | null = null,
 ): ReactElement {
   const title = viewModel.agentChat.thread?.title ?? "New Thread";
   // Which project/directory this thread lives in — so a pinned thread (pulled
@@ -57,14 +59,23 @@ export function createAgentChatColumn(
             <button
               type="button"
               className="column-top-row__git"
-              title={`${gitBadge.branch ?? "detached HEAD"} · ${gitBadge.count} uncommitted change${gitBadge.count === 1 ? "" : "s"} — view changes`}
+              title={`${gitBadge.branch ?? "detached HEAD"} · ${gitBadge.fileCount} file${gitBadge.fileCount === 1 ? "" : "s"} changed (+${gitBadge.additions} −${gitBadge.deletions}) — view changes`}
               aria-label="View working tree changes"
               onClick={gitBadge.onOpen}
             >
               <GitBranch size={12} strokeWidth={1.9} aria-hidden />
               <span className="column-top-row__git-branch">{gitBadge.branch ?? "detached"}</span>
-              {gitBadge.count > 0 ? (
-                <span className="column-top-row__git-count">{gitBadge.count}</span>
+              {gitBadge.additions > 0 || gitBadge.deletions > 0 ? (
+                <span className="column-top-row__git-stat">
+                  {gitBadge.additions > 0 ? (
+                    <span className="column-top-row__git-add">{`+${gitBadge.additions}`}</span>
+                  ) : null}
+                  {gitBadge.deletions > 0 ? (
+                    <span className="column-top-row__git-del">{`−${gitBadge.deletions}`}</span>
+                  ) : null}
+                </span>
+              ) : gitBadge.fileCount > 0 ? (
+                <span className="column-top-row__git-count">{gitBadge.fileCount}</span>
               ) : null}
             </button>
           )}

@@ -22,7 +22,7 @@ export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "un
 
 export interface GitChangesResult {
   isGitRepo: boolean;
-  files: { path: string; status: GitChangeStatus }[];
+  files: { path: string; status: GitChangeStatus; additions?: number; deletions?: number }[];
 }
 
 export interface ProjectRegistryBridge {

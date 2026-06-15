@@ -2,7 +2,7 @@
 // file under the size cap (file-size-ratchet): the responsive rightmost-column
 // measurement and the global search keyboard shortcuts.
 
-import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { setProductShellGitContext } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellBackendCommand, ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { GitChangesResult, ProjectRegistryBridge } from "./types.ts";
@@ -196,7 +196,15 @@ export function useGitState(
   projectBridge: ProjectRegistryBridge | undefined,
   activeProjectCwd: string | null,
   setShellState: Dispatch<SetStateAction<ProductShellState>>,
-): { gitInfo: GitChangesView | null; open: boolean; setOpen: (open: boolean) => void; refresh: () => void } {
+): {
+  gitInfo: GitChangesView | null;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  refresh: () => void;
+  // Memoized badge (branch + summed +/- + file count) for the chat header; stable across
+  // chat-token renders so the memoized chat column doesn't re-render on every token.
+  gitBadge: { branch: string | null; additions: number; deletions: number; fileCount: number; onOpen: () => void } | null;
+} {
   const [gitInfo, setGitInfo] = useState<GitChangesView | null>(null);
   const [open, setOpen] = useState(false);
   const [nonce, setNonce] = useState(0);
@@ -224,5 +232,18 @@ export function useGitState(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectBridge, activeProjectCwd, nonce]);
-  return { gitInfo, open, setOpen, refresh: () => setNonce((value) => value + 1) };
+  const gitBadge = useMemo(
+    () =>
+      gitInfo === null
+        ? null
+        : {
+            branch: gitInfo.branch,
+            additions: gitInfo.files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
+            deletions: gitInfo.files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
+            fileCount: gitInfo.files.length,
+            onOpen: () => setOpen(true),
+          },
+    [gitInfo],
+  );
+  return { gitInfo, open, setOpen, refresh: () => setNonce((value) => value + 1), gitBadge };
 }

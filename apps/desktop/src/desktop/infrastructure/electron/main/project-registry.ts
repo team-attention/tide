@@ -53,6 +53,9 @@ export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "un
 export interface GitChangeFile {
   path: string; // repo-relative
   status: GitChangeStatus;
+  // Added/removed line counts (vs HEAD). Undefined for binary files.
+  additions?: number;
+  deletions?: number;
 }
 
 export interface GitChanges {

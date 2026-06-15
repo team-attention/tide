@@ -47,6 +47,44 @@
   font-weight: 600;
 }
 
+/* Header chip +/- (additions green, deletions red). */
+.column-top-row__git-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.column-top-row__git-add,
+.changes-panel__add {
+  color: #3a9a4e;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.column-top-row__git-del,
+.changes-panel__del {
+  color: var(--tide-danger, #d8453b);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Changes overlay: header total stat + per-file +/- column. */
+.changes-panel__stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.changes-panel__file-stat {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+}
+
 /* --- Changes overlay --- */
 .changes-panel-backdrop {
   position: fixed;

@@ -103,7 +103,12 @@ declare global {
       }>;
       gitChanges(cwd: string): Promise<{
         isGitRepo: boolean;
-        files: { path: string; status: "modified" | "added" | "deleted" | "renamed" | "untracked" }[];
+        files: {
+          path: string;
+          status: "modified" | "added" | "deleted" | "renamed" | "untracked";
+          additions?: number;
+          deletions?: number;
+        }[];
       }>;
       gitFileDiff(cwd: string, relPath: string): Promise<string>;
       listCommands(cwd: string, agentId: string): Promise<{

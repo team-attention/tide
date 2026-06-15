@@ -286,15 +286,6 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Git for the active repo/worktree: branches+worktrees (composer pickers, → shell state)
   // and uncommitted changes (top-bar badge + Changes view), fetched together. See useGitState.
   const git = useGitState(props.projectBridge, activeProjectCwd, setShellState);
-  // Stable badge object (branch + count + open) so the memoized chat column only
-  // re-renders on a git change, not on every chat-token render.
-  const gitBadge = useMemo(
-    () =>
-      git.gitInfo === null
-        ? null
-        : { branch: git.gitInfo.branch, count: git.gitInfo.files.length, onOpen: () => git.setOpen(true) },
-    [git.gitInfo, git.setOpen],
-  );
 
   // Fetch real provider commands/skills whenever the active cwd or agent changes,
   // so the composer's / (and $) menu reflects this directory's actual commands.
@@ -704,7 +695,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           {leftPresence.mounted ? (
             <LeftRailColumnView handlers={stableHandlers} anchor={menuAnchor} collapsedSections={collapsedSections} />
           ) : null}
-          <AgentChatColumnView handlers={stableHandlers} gitBadge={gitBadge} />
+          <AgentChatColumnView handlers={stableHandlers} gitBadge={git.gitBadge} />
           {workbenchPresence.mounted ? <WorkbenchColumnView handlers={stableHandlers} /> : null}
           {fileTreePresence.mounted ? <FileTreeColumnView handlers={stableHandlers} /> : null}
         </div>

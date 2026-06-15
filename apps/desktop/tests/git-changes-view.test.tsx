@@ -11,9 +11,9 @@ test("changes_panel_lists_changed_files_with_status_and_branch", () => {
     <ChangesPanel
       branch="feature-x"
       files={[
-        { path: "src/app.ts", status: "modified" },
-        { path: "new.txt", status: "untracked" },
-        { path: "old.ts", status: "deleted" },
+        { path: "src/app.ts", status: "modified", additions: 10, deletions: 3 },
+        { path: "new.txt", status: "untracked", additions: 5, deletions: 0 },
+        { path: "old.ts", status: "deleted", additions: 0, deletions: 8 },
       ]}
       loadDiff={() => Promise.resolve("")}
       onRefresh={() => {}}
@@ -21,7 +21,10 @@ test("changes_panel_lists_changed_files_with_status_and_branch", () => {
     />,
   );
   assert.match(markup, /feature-x/);
-  assert.match(markup, /3 files changed/);
+  assert.match(markup, /3 files/);
+  // Header total shown as +/- (additions 10+5, deletions 3+8), not a bare file count.
+  assert.match(markup, /\+15/);
+  assert.match(markup, /−11/);
   assert.match(markup, /app\.ts/);
   assert.match(markup, /new\.txt/);
   // Status drives the colored letter badge per file.

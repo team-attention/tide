@@ -235,8 +235,11 @@ ipcMain.handle("tide:git-changes", async (_event, cwd: unknown): Promise<GitChan
   if (inside !== "true") {
     return empty;
   }
+  // Run everything from the repo top level so paths (and the numstat keys below) are
+  // consistently repo-root-relative regardless of the thread's cwd.
+  const root = (await runGit(cwd, ["rev-parse", "--show-toplevel"])).trim() || cwd;
   // Porcelain v1, renames split into delete+add so the path column is a single path.
-  const out = await runGit(cwd, ["status", "--porcelain=v1", "--no-renames"]);
+  const out = await runGit(root, ["status", "--porcelain=v1", "--no-renames"]);
   const files: GitChangeFile[] = [];
   for (const line of out.split("\n")) {
     if (line.length < 4) {
@@ -257,6 +260,35 @@ ipcMain.handle("tide:git-changes", async (_event, cwd: unknown): Promise<GitChan
             ? "added"
             : "modified";
     files.push({ path, status });
+  }
+  // Per-file added/removed line counts (vs HEAD). Tracked changes come from one numstat;
+  // untracked/new files aren't in it, so count their lines via --no-index. "-" = binary.
+  const numstat = await runGit(root, ["diff", "--numstat", "HEAD"]);
+  const tracked = new Map<string, { additions?: number; deletions?: number }>();
+  for (const line of numstat.split("\n")) {
+    const match = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line);
+    if (match !== null) {
+      tracked.set(match[3], {
+        additions: match[1] === "-" ? undefined : Number(match[1]),
+        deletions: match[2] === "-" ? undefined : Number(match[2]),
+      });
+    }
+  }
+  for (const file of files) {
+    if (file.status === "untracked") {
+      const ns = await execGitArgs(["-C", root, "diff", "--numstat", "--no-index", "--", "/dev/null", file.path]);
+      const match = /^(\d+|-)\t(\d+|-)/.exec(ns.stdout.split("\n").find((l) => l.includes("\t")) ?? "");
+      if (match !== null && match[1] !== "-") {
+        file.additions = Number(match[1]);
+        file.deletions = 0;
+      }
+    } else {
+      const stat = tracked.get(file.path);
+      if (stat !== undefined) {
+        file.additions = stat.additions;
+        file.deletions = stat.deletions;
+      }
+    }
   }
   return { isGitRepo: true, files };
 });
