@@ -16,6 +16,9 @@ const CACHE_TTL_MS = 60_000;
 
 interface OpencodeModelCatalog {
   get: () => ProviderModelDto[];
+  // Drop the cached result so the next get() re-runs `opencode models` (e.g. right
+  // after a new vendor sign-in).
+  invalidate: () => void;
 }
 
 export function parseOpencodeModels(stdout: string): ProviderModelDto[] {
@@ -73,6 +76,9 @@ export function createOpencodeModelCatalog(
         refresh();
       }
       return cache;
+    },
+    invalidate: () => {
+      fetchedAt = 0;
     },
   };
 }

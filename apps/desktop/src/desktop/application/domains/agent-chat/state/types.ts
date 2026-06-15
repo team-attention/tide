@@ -169,7 +169,11 @@ export type AgentChatComposerSurfaceKind =
   | "worktree_menu"
   | "branch_menu"
   | "composer_options"
-  | "command_suggestions";
+  | "command_suggestions"
+  // The opencode "Connect a model" on-ramp (Zen card + vendor grid). Opened from
+  // the Model chip when opencode is selected but not yet usable, or via "Add a
+  // vendor…" in the opencode model menu. See opencode-vendor-onramp.md.
+  | "opencode_connect";
 
 export interface AgentChatThreadSummary {
   threadId: string;
@@ -316,6 +320,11 @@ export type AgentChatBackendCommand =
           setup: AgentChatProviderSetupSurfaceAction;
         };
       };
+    }
+  | {
+      // Set an opencode vendor's API key the "정석" way (backend → opencode server).
+      kind: "provider.opencodeConnectApiKey";
+      payload: { vendorId: string; key: string };
     };
 
 export interface AgentChatShellUpdateResult {
@@ -371,6 +380,9 @@ export interface AgentChatComposerView {
   submitLabel: string;
   permissionLabel: string;
   modelLabel: string;
+  // Which surface the Model chip opens: normally "model_menu", but "opencode_connect"
+  // when opencode is selected and not yet usable (no connected vendor / no model).
+  modelChipSurface: AgentChatComposerSurfaceKind;
   activeSurface: AgentChatChoiceSurfaceView | null;
   contextControlsEditable: boolean;
   contextItems: AgentChatContextItem[];
@@ -406,6 +418,33 @@ export interface AgentChatChoiceSurfaceView {
   title: string;
   sourceLabel: string;
   rows: AgentChatChoiceSurfaceRowView[];
+  // Structured data for the rich "opencode_connect" panel (Zen card + vendor grid).
+  // Present only for that surface; the generic row list still gates the actions.
+  opencodeConnect?: AgentChatOpencodeConnectView;
+}
+
+// One vendor tile in the opencode on-ramp grid (view shape).
+export interface AgentChatOpencodeConnectVendorView {
+  // rowId the panel dispatches on click ("connect-vendor:<id>").
+  rowId: string;
+  id: string;
+  label: string;
+  monogram: string;
+  connected: boolean;
+  popular: boolean;
+}
+
+// The opencode "Connect a model" panel data: Zen free-model count, how many vendors
+// are already signed in (inherited from the opencode CLI), the curated vendor grid,
+// and the opencode version.
+export interface AgentChatOpencodeConnectView {
+  version?: string;
+  zenFreeCount: number;
+  connectedCount: number;
+  vendors: AgentChatOpencodeConnectVendorView[];
+  // True when opencode is already usable (≥1 vendor / model) — the panel is being
+  // shown to ADD a vendor, so it offers a "back to models" affordance.
+  manageMode: boolean;
 }
 
 export interface AgentChatChoiceSurfaceRowView {

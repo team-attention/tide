@@ -176,7 +176,7 @@ export function createComposer(
             title="Model"
             aria-label="Model"
             onClick={(event: { currentTarget: HTMLElement }) =>
-              handlers.onOpenSurface?.("model_menu", chipAnchorFromEvent(event))
+              handlers.onOpenSurface?.(viewModel.composer.modelChipSurface, chipAnchorFromEvent(event))
             }
           >
             {/* Figma: label + chevron-down (no leading icon). */}

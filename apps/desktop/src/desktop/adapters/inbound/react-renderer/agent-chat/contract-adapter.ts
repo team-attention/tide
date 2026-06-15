@@ -33,6 +33,9 @@ export type AgentChatBackendCommandDraft = {
 } | {
   kind: "workbench.command";
   payload: BackendCommandPayloadByKind["workbench.command"];
+} | {
+  kind: "provider.opencodeConnectApiKey";
+  payload: BackendCommandPayloadByKind["provider.opencodeConnectApiKey"];
 };
 
 export function applyBackendEventToAgentChatShell(
@@ -105,6 +108,11 @@ export function toBackendCommandDraft(
             setup: setupPayload,
           },
         },
+      };
+    case "provider.opencodeConnectApiKey":
+      return {
+        kind: "provider.opencodeConnectApiKey",
+        payload: command.payload,
       };
   }
 }

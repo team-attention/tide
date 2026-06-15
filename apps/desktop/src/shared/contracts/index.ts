@@ -10,6 +10,7 @@ export * from "./errors.ts";
 export * from "./events.ts";
 export * from "./ids.ts";
 export * from "./json.ts";
+export * from "./opencode-vendor.ts";
 export * from "./prompt.ts";
 export * from "./provider-model-catalog.ts";
 export * from "./provider-readiness.ts";

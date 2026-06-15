@@ -1,6 +1,6 @@
 import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellStartPageFile, ProductShellState } from "./types.ts";
 import { startFilePaneId } from "./types.ts";
-import { applyAgentChatBackendEvent, setAvailableProviderAgents, setOpencodeModelCatalog, setProviderModelCatalog, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
+import { applyAgentChatBackendEvent, setAvailableProviderAgents, setOpencodeEnvironment, setOpencodeModelCatalog, setOpencodeVendors, setProviderModelCatalog, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
@@ -36,6 +36,8 @@ export function applyProductShellBackendEvent(
       const listedPayload = event.payload as {
         availableAgents?: readonly string[];
         opencodeModels?: ReadonlyArray<{ value: string; label: string; vendor?: string; detail?: string }>;
+        opencodeVendors?: ReadonlyArray<{ id: string; label: string; connected: boolean; method?: string; popular?: boolean }>;
+        opencodeEnvironment?: { version?: string; testedWith?: string; executablePath?: string };
       };
       setAvailableProviderAgents(listedPayload.availableAgents ?? null);
       // opencode's authed model catalog (multi-vendor router) for the model menu.
@@ -47,6 +49,17 @@ export function applyProductShellBackendEvent(
           detail: model.detail,
         })) ?? null,
       );
+      // opencode's vendor tiles + connected-state and environment for the on-ramp.
+      setOpencodeVendors(
+        listedPayload.opencodeVendors?.map((vendor) => ({
+          id: vendor.id,
+          label: vendor.label,
+          connected: vendor.connected,
+          method: vendor.method,
+          popular: vendor.popular,
+        })) ?? null,
+      );
+      setOpencodeEnvironment(listedPayload.opencodeEnvironment ?? null);
       return applyProductShellThreadListEvent(nextState, event);
     }
     case "thread.started":

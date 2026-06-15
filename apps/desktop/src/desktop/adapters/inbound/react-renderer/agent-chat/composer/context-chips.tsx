@@ -2,6 +2,7 @@ import type { AgentChatChoiceSurfaceView, AgentChatComposerSurfaceKind, AgentCha
 import type { AnchorRect, ComposerHandlers } from "../support/types.ts";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { agentMonogramFor, createChoiceSurface } from "./choice-surface.tsx";
+import { OpencodeConnectPanel } from "./opencode-connect-panel.tsx";
 import { CornerDownRight, FileText, Folder, FolderGit2, GitBranch, Globe, Terminal } from "lucide-react";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
@@ -11,6 +12,7 @@ export function createChipPopover(input: {
   surface: AgentChatChoiceSurfaceView;
   anchor: AnchorRect;
   onRowSelect?: (surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"], rowId: string) => void;
+  onOpencodeConnectApiKey?: (vendorId: string, key: string) => void;
   onClose: () => void;
 }): ReactElement {
   const gap = 6;
@@ -42,11 +44,19 @@ export function createChipPopover(input: {
         style={style as unknown as CSSProperties}
         onMouseDown={(event: { stopPropagation: () => void }) => event.stopPropagation()}
       >
-        {createChoiceSurface({
-          key: `popover:${input.surface.surfaceKind}`,
-          surface: input.surface,
-          onRowSelect: input.onRowSelect,
-        })}
+        {input.surface.surfaceKind === "opencode_connect" ? (
+          <OpencodeConnectPanel
+            surface={input.surface}
+            onRowSelect={input.onRowSelect}
+            onConnectApiKey={input.onOpencodeConnectApiKey}
+          />
+        ) : (
+          createChoiceSurface({
+            key: `popover:${input.surface.surfaceKind}`,
+            surface: input.surface,
+            onRowSelect: input.onRowSelect,
+          })
+        )}
       </div>
     </div>
   );

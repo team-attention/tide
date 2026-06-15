@@ -6,10 +6,14 @@ import { makeWorktreeHash } from "../dialogs/worktree-name-input.tsx";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
-export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onSubmit" | "onInterrupt" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onAddAttachment" | "onRemoveAttachment"> {
+export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onSubmit" | "onInterrupt" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onOpencodeConnectApiKey" | "onAddAttachment" | "onRemoveAttachment"> {
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onDraftChange: (draft) => setShellState((state) => updateProductShellComposerDraft(state, draft)),
+    // The on-ramp panel's in-app API-key field → set the vendor key the 정석 way
+    // (backend PUTs it to opencode's own server, then re-lists so the panel updates).
+    onOpencodeConnectApiKey: (vendorId, key) =>
+      dispatchBackendCommand({ kind: "provider.opencodeConnectApiKey", payload: { vendorId, key } }),
     onAddContentToChat: (chip) =>
       setShellState((state) =>
         addProductShellComposerContextChip(state, {

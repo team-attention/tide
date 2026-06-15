@@ -5,6 +5,7 @@ import {
   isAgentAvailable,
   permissionConfigForAgent,
 } from "./agent-vocab.ts";
+import { getOpencodeEnvironment, getOpencodeVendors } from "./opencode-onramp.ts";
 
 // The data layer for the Settings "Providers & Models" hub: one row per provider-CLI
 // agent with its install status, model catalog (the same catalog the composer menu
@@ -31,6 +32,11 @@ export interface ProvidersHubAgentView {
   defaultModel: string;
   // Multi-vendor (opencode) → the hub shows a vendor filter + an "Add provider" action.
   multiVendor: boolean;
+  // opencode only: vendor sign-in summary (from `opencode auth list`) and version, for
+  // the on-ramp status. Absent for single-vendor agents.
+  connectedVendors?: number;
+  totalVendors?: number;
+  version?: string;
 }
 
 const HUB_AGENTS = ["claude", "codex", "gemini", "opencode"] as const;
@@ -44,6 +50,7 @@ export function buildProvidersHubViewModel(): ProvidersHubAgentView[] {
       detail: option.detail,
     }));
     const installed = isAgentAvailable(agentId);
+    const vendors = agentId === "opencode" ? getOpencodeVendors() : [];
     return {
       agentId,
       label: formatAgentLabel(agentId),
@@ -56,6 +63,13 @@ export function buildProvidersHubViewModel(): ProvidersHubAgentView[] {
       })),
       defaultModel: defaultModelValueForAgent(agentId),
       multiVendor: models.some((model) => model.vendor !== undefined),
+      ...(agentId === "opencode"
+        ? {
+            connectedVendors: vendors.filter((vendor) => vendor.connected).length,
+            totalVendors: vendors.length,
+            version: getOpencodeEnvironment()?.version,
+          }
+        : {}),
     };
   });
 }

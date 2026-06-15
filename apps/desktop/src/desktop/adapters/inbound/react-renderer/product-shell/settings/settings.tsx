@@ -266,11 +266,15 @@ export function createSettingsModal(
               const vendors = new Set(
                 concreteModels.map((model) => model.vendor).filter((vendor): vendor is string => vendor !== undefined),
               );
-              const summary = agent.installed
-                ? agent.multiVendor
-                  ? `${vendors.size} vendor${vendors.size === 1 ? "" : "s"} · ${concreteModels.length} models`
-                  : `${concreteModels.length} models`
-                : "Run its CLI to install";
+              const summary = !agent.installed
+                ? "Run its CLI to install"
+                : agent.connectedVendors !== undefined
+                  ? `${agent.connectedVendors} vendor${agent.connectedVendors === 1 ? "" : "s"} signed in · ${concreteModels.length} models${
+                      agent.version ? ` · v${agent.version}` : ""
+                    }`
+                  : agent.multiVendor
+                    ? `${vendors.size} vendor${vendors.size === 1 ? "" : "s"} · ${concreteModels.length} models`
+                    : `${concreteModels.length} models`;
               return (
                 <div key={agent.agentId} className="settings-providers__row" role="listitem">
                   <span className="settings-providers__name">{agent.label}</span>
@@ -286,8 +290,9 @@ export function createSettingsModal(
             })}
           </div>
           <span className="settings-modal__hint">
-            Pick a vendor / model / effort per thread from the composer. opencode adds
-            vendors via <code>opencode auth login</code>.
+            Pick a vendor / model / effort per thread from the composer. New to opencode?
+            The composer&apos;s <b>Connect a model</b> panel signs you in — it runs opencode&apos;s
+            own <code>opencode auth login</code>, so terminal sign-ins carry over automatically.
           </span>
         </section>
       </div>

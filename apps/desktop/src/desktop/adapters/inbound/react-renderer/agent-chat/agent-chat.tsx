@@ -177,6 +177,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       props.onChoiceSurfaceRowSelect?.(surfaceKind, rowId);
     },
     onAnswerPromptText: props.onAnswerPromptText,
+    onOpencodeConnectApiKey: props.onOpencodeConnectApiKey,
     onAddAttachment: props.onAddAttachment,
     onRemoveAttachment: props.onRemoveAttachment,
     onRemoveContextChip: props.onRemoveContextChip,
@@ -205,6 +206,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
         anchor: popoverAnchor,
         // Use the intercepting handler so "Files and images" opens the picker.
         onRowSelect: handlers.onChoiceSurfaceRowSelect,
+        onOpencodeConnectApiKey: handlers.onOpencodeConnectApiKey,
         onClose: closeSurface,
       })
     : null;
