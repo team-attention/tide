@@ -94,11 +94,13 @@ export function useMultitaskNavigation(params: {
         event.preventDefault();
         const target = resolvePinJump(current.numberedThreads, Number(digit[1]));
         if (target !== null) {
-          // A jump ends multitask mode immediately: cancel the pending badge hold-delay,
-          // hide the badges, and drop any open switcher so the Option release doesn't
-          // override the jump with the highlighted live thread.
-          clearHoldTimer();
-          setAltActive(false);
+          // A digit jump is an action WITHIN multitask mode, not an exit from it: while
+          // Option stays physically held the ⌥N badges must remain so the user can chain
+          // jumps (Option+1, Option+2, …). So leave the badge state alone — keep the hold
+          // timer running (badges still appear iff Option is held past the threshold; a
+          // genuine quick tap releases before then and keyup clears it) and don't force
+          // `altActive` off. Only drop any open switcher, so the Option release doesn't
+          // override this jump with the HUD's highlighted live thread.
           setSwitcher({ open: false, index: 0 });
           current.onSelectThread(target);
         }
