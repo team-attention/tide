@@ -1686,6 +1686,39 @@ test("mcp_tool_calls_accept_tide_api_agent_runtime_session", async () => {
   assert.deepEqual(fakes.runtime.events, []);
 });
 
+test("workbench_command_open_diff_creates_singleton_changes_pane", async () => {
+  // Spec: docs_v2/specs/git-changes-view.md — open_diff creates a first-class git
+  // Changes pane (cwd = the thread root) and makes it active; opening it again reveals
+  // the same singleton pane rather than stacking duplicates.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+  });
+  const started = await service.startThread({
+    initialMessage: "hi",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
+  });
+  assert.equal(started.ok, true);
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: started.thread.threadId,
+    command: "open_diff",
+  });
+  const changesPanes = opened.thread.workbench.panes.filter((pane) => pane.kind === "changes");
+  assert.equal(changesPanes.length, 1);
+  assert.equal(changesPanes[0]?.cwd, "/repo");
+  assert.equal(opened.thread.workbench.activePaneId, changesPanes[0]?.paneId);
+
+  const again = await service.handleWorkbenchCommand({
+    threadId: started.thread.threadId,
+    command: "open_diff",
+  });
+  assert.equal(again.thread.workbench.panes.filter((pane) => pane.kind === "changes").length, 1);
+});
+
 test("workbench_command_open_provider_setup_surface_creates_terminal_pane", async () => {
   // Spec: docs_v2/specs/provider-setup-surface-workbench-command.md
   const fakes = createFakes({

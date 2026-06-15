@@ -211,7 +211,7 @@ export function selectProductShellLauncherAction(
   // launcher pane), so `launcher`/`action` are undefined — but its action buttons
   // are the standard set. Allow the known launcher commands to fire even without a
   // real launcher pane (else clicking them on an empty workbench silently no-ops).
-  const KNOWN_LAUNCHER_COMMANDS = ["open_terminal", "open_browser", "open_editor"];
+  const KNOWN_LAUNCHER_COMMANDS = ["open_terminal", "open_browser", "open_editor", "open_diff"];
   const enabledOnRealLauncher = action !== undefined && action.enabled;
   const knownOnSyntheticLauncher = launcher === undefined && KNOWN_LAUNCHER_COMMANDS.includes(actionId);
   if (!enabledOnRealLauncher && !knownOnSyntheticLauncher) {
@@ -225,6 +225,19 @@ export function selectProductShellLauncherAction(
         payload: {
           threadId: state.activeThreadId,
           command: "open_terminal",
+        },
+      },
+    };
+  }
+  if (actionId === "open_diff") {
+    // The git Changes pane: the backend creates/reveals the singleton "changes" pane.
+    return {
+      state,
+      command: {
+        kind: "workbench.command",
+        payload: {
+          threadId: state.activeThreadId,
+          command: "open_diff",
         },
       },
     };

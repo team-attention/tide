@@ -82,20 +82,6 @@ test("the REAL workbench column does not re-commit on a chat-only change but doe
   // Handlers are only wired to event props (not called during render); a no-op proxy
   // renders the column without a real shell behind it.
   const handlers = new Proxy({}, { get: () => () => undefined }) as unknown as ProductShellHandlers;
-  // Stable docked-Changes-pane prop (closed); identity must not change so the memo can
-  // still bail on chat-only changes.
-  const changes = {
-    open: false,
-    active: false,
-    isGitRepo: false,
-    branch: null,
-    files: [],
-    loadDiff: () => Promise.resolve(""),
-    onRefresh: () => undefined,
-    onClose: () => undefined,
-    onActivate: () => undefined,
-    onDeactivate: () => undefined,
-  };
 
   let commits = 0;
   const container = dom.window.document.createElement("div");
@@ -105,7 +91,7 @@ test("the REAL workbench column does not re-commit on a chat-only change but doe
     root.render(
       <ProductShellStoreProvider value={store}>
         <Profiler id="workbench" onRender={() => { commits += 1; }}>
-          <WorkbenchColumnView handlers={handlers} changes={changes} />
+          <WorkbenchColumnView handlers={handlers} />
         </Profiler>
       </ProductShellStoreProvider>,
     );

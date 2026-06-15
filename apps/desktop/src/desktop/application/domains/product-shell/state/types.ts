@@ -283,7 +283,7 @@ export type ProductShellBackendCommand =
       kind: "workbench.command";
       payload: {
         threadId: string;
-        command: "open_launcher" | "open_terminal";
+        command: "open_launcher" | "open_terminal" | "open_diff";
       };
     }
   | {

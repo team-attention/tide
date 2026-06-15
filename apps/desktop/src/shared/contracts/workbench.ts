@@ -17,7 +17,7 @@ export interface WorkbenchSeedPaneDto {
 
 export interface BaseWorkbenchPaneRefDto {
   paneId: WorkbenchPaneId;
-  kind: "browser" | "diff" | "editor" | "terminal" | "launcher";
+  kind: "browser" | "diff" | "editor" | "terminal" | "launcher" | "changes";
   title: string;
   visible: boolean;
   revision: string;
@@ -77,7 +77,7 @@ export interface BrowserPaneActionResultDto extends BrowserPaneActionDto {
 }
 
 export interface NonBrowserWorkbenchPaneRefDto extends BaseWorkbenchPaneRefDto {
-  kind: "diff" | "editor" | "terminal";
+  kind: "diff" | "editor" | "terminal" | "changes";
   filePath?: string;
   relativePath?: string;
   bodyText?: string;

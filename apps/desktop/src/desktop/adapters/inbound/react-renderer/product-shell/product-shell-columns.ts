@@ -8,7 +8,6 @@ import {
 } from "../../../../application/domains/product-shell/product-shell.ts";
 import { useProductShellSlice } from "./store-context.ts";
 import type { MenuAnchorRect, ProductShellHandlers } from "./support/types.ts";
-import type { ChangesPaneData } from "./support/use-shell-effects.ts";
 import { createLeftRail } from "./left-rail/left-rail.tsx";
 import { createAgentChatColumn } from "./chat-column/chat-column.tsx";
 import { createWorkbenchColumn } from "./workbench/workbench.tsx";
@@ -41,7 +40,7 @@ export const AgentChatColumnView = memo(function AgentChatColumnView(props: {
   // like LeftRail's `collapsedSections` — it's threaded as a prop. The caller memoizes the
   // object so it's stable across unrelated (chat-token) renders and this memo bails.
   gitBadge:
-    | { branch: string | null; additions: number; deletions: number; fileCount: number; onOpen: () => void }
+    | { branch: string | null; additions: number; deletions: number; fileCount: number }
     | null;
 }): ReactElement {
   const viewModel = useProductShellSlice(selectChatColumnViewModel);
@@ -50,12 +49,9 @@ export const AgentChatColumnView = memo(function AgentChatColumnView(props: {
 
 export const WorkbenchColumnView = memo(function WorkbenchColumnView(props: {
   handlers: ProductShellHandlers;
-  // Docked git Changes pane data (component state, threaded as a prop like the chat
-  // column's gitBadge); memoized by the caller so this memo bails on chat-token renders.
-  changes: ChangesPaneData;
 }): ReactElement {
   const viewModel = useProductShellSlice(selectWorkbenchViewModel);
-  return createWorkbenchColumn(viewModel, props.handlers, props.changes);
+  return createWorkbenchColumn(viewModel, props.handlers);
 });
 
 export const FileTreeColumnView = memo(function FileTreeColumnView(props: {

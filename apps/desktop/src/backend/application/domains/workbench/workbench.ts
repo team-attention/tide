@@ -5,7 +5,8 @@ export type WorkbenchPaneKind =
   | "diff"
   | "editor"
   | "terminal"
-  | "launcher";
+  | "launcher"
+  | "changes";
 
 export type WorkbenchFocusOwner = "composer" | "workbench";
 
@@ -226,12 +227,26 @@ export interface LauncherPaneState {
   actions: LauncherPaneAction[];
 }
 
+// Read-only git "Changes" pane (working tree vs HEAD). A first-class, SINGLETON pane —
+// only one per workbench. It carries just the repo cwd; the renderer fetches the file
+// list + per-file diffs (Main-process git) on demand. Spec: git-changes-view.
+export interface ChangesPaneState {
+  paneId: WorkbenchPaneId;
+  kind: "changes";
+  title: string;
+  visible: boolean;
+  revision: string;
+  updatedAt: string;
+  cwd: string;
+}
+
 export type WorkbenchPaneState =
   | BrowserPaneState
   | TerminalPaneState
   | EditorPaneState
   | DiffPaneState
-  | LauncherPaneState;
+  | LauncherPaneState
+  | ChangesPaneState;
 
 export interface BrowserPaneRef extends WorkbenchPaneRef {
   kind: "browser";
@@ -249,7 +264,7 @@ export interface BrowserPaneRef extends WorkbenchPaneRef {
 }
 
 export interface NonBrowserWorkbenchPaneRef extends WorkbenchPaneRef {
-  kind: "diff" | "editor" | "terminal";
+  kind: "diff" | "editor" | "terminal" | "changes";
   filePath?: string;
   relativePath?: string;
   bodyText?: string;

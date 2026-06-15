@@ -557,7 +557,6 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     ...createWorkbenchHandlers(handlerContext),
     ...createEditorHandlers(handlerContext),
     ...createChromeHandlers(handlerContext),
-    onOpenChanges: () => git.openPane(),
   };
   const stableHandlers = useStableHandlers(handlers);
 
@@ -697,7 +696,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           ) : null}
           <AgentChatColumnView handlers={stableHandlers} gitBadge={git.gitBadge} />
           {workbenchPresence.mounted ? (
-            <WorkbenchColumnView handlers={stableHandlers} changes={git.changes} />
+            <WorkbenchColumnView handlers={stableHandlers} />
           ) : null}
           {fileTreePresence.mounted ? <FileTreeColumnView handlers={stableHandlers} /> : null}
         </div>

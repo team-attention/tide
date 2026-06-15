@@ -25,6 +25,13 @@ export interface GitChangesResult {
   files: { path: string; status: GitChangeStatus; additions?: number; deletions?: number }[];
 }
 
+// Branch + uncommitted files for the Changes pane (self-fetched from the pane's cwd).
+export interface GitChangesViewResult {
+  isGitRepo: boolean;
+  branch: string | null;
+  files: { path: string; status: GitChangeStatus; additions?: number; deletions?: number }[];
+}
+
 export interface ProjectRegistryBridge {
   openDirectory(): Promise<string | null>;
   listProjects(): Promise<ProjectRegistryEntry[]>;
@@ -127,6 +134,9 @@ export interface ProductShellHandlers {
   // Open the read-only git Changes view (working-tree diff). Wired to the launcher's
   // Diff action + the top-bar branch badge. Spec: git-changes-view.
   onOpenChanges: () => void;
+  // The Changes pane self-fetches its data from its cwd (Main-process git).
+  onGitChanges: (cwd: string) => Promise<GitChangesViewResult>;
+  onGitFileDiff: (cwd: string, relPath: string) => Promise<string>;
   onEditorPickerFilter: (filter: string) => void;
   onEditorPickerSelect: (relativePath: string) => void;
   onLeftRailMenuOpen: (menu: ProductShellLeftRailMenu | null, rect?: MenuAnchorRect) => void;

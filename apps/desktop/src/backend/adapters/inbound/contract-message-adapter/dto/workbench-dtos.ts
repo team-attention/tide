@@ -131,6 +131,9 @@ export function toWorkbenchPaneRefDto(
       dto.completedAt = pane.completedAt;
     }
   }
+  if (pane.kind === "changes" && pane.cwd !== undefined) {
+    dto.cwd = pane.cwd;
+  }
   return dto;
 }
 
