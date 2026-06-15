@@ -542,32 +542,32 @@ void app.whenReady().then(() => {
 app.on("web-contents-created", (_event, contents) => {
   // A page inside a Browser Pane <webview> that opens a popup (target=_blank,
   // window.open, Cmd/Ctrl+click) would otherwise spawn a blank top-level
-  // BrowserWindow. Always deny the popup; then either open a NEW Browser Pane or
-  // navigate in place, by the user's intent:
-  //   • Cmd/Ctrl+click & middle-click ("background-tab") and window.open
-  //     ("new-window") explicitly want a new tab → open a new Browser Pane (the
-  //     renderer owns pane state, so hand it the URL over IPC).
-  //   • A plain target=_blank ("foreground-tab"/other) keeps the old "navigate in
-  //     place" behavior, so ordinary links stay in the pane and never spawn a window.
+  // BrowserWindow. Always deny the popup and forward the URL to the renderer over
+  // IPC, which drives the SAME backend open_browser path the agent and the address
+  // bar use — reliable, and it keeps backend pane state authoritative. The
+  // disposition picks reuse vs. new pane by the user's intent:
+  //   • Cmd/Ctrl+click & middle-click ("background-tab") and window.open / shift-click
+  //     ("new-window") explicitly want a new tab → open a NEW Browser Pane.
+  //   • A plain target=_blank ("foreground-tab"/other) → navigate the ACTIVE Browser
+  //     Pane IN PLACE, the same as a normal link click.
+  // We used to navigate the guest webContents directly with loadURL for the in-place
+  // case, but that silently dropped the navigation for some popup links (e.g. Google
+  // results with `newwindow=1`), so a plain click appeared to do nothing while
+  // Cmd/Ctrl+click — which already took the IPC branch — worked. Routing both through
+  // the backend fixes the plain click.
   if (contents.getType() === "webview") {
     contents.setWindowOpenHandler(({ url, disposition }) => {
       if (/^https?:\/\//i.test(url)) {
-        if (disposition === "background-tab" || disposition === "new-window") {
-          BrowserWindow.getAllWindows()[0]?.webContents.send("tide:open-browser-pane", url);
-        } else {
-          // Plain target=_blank ("foreground-tab"/other): navigate the pane in
-          // place. The loadURL MUST be deferred out of this callback — navigating
-          // the same contents synchronously from inside setWindowOpenHandler races
-          // the popup-deny teardown and the navigation is silently dropped, so a
-          // plain click did nothing (while Cmd/Ctrl+click took the IPC branch above
-          // and worked). setImmediate runs it after the handler returns and the
-          // popup is denied; guard against a contents torn down in between.
-          setImmediate(() => {
-            if (!contents.isDestroyed()) {
-              void contents.loadURL(url).catch(() => undefined);
-            }
-          });
-        }
+        const newPane = disposition === "background-tab" || disposition === "new-window";
+        // Target the window that actually HOSTS this <webview> (via the guest's
+        // hostWebContents), not getAllWindows()[0] — the first window isn't guaranteed
+        // to be the host once a DevTools/dialog window exists. Fall back to the first
+        // window if the host can't be resolved, so link routing never silently breaks.
+        const host = contents.hostWebContents;
+        const targetWindow =
+          (host !== null ? BrowserWindow.fromWebContents(host) : null) ??
+          BrowserWindow.getAllWindows()[0];
+        targetWindow?.webContents.send("tide:open-browser-pane", url, newPane);
       }
       return { action: "deny" };
     });

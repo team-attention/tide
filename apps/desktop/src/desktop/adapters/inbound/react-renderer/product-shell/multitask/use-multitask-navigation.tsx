@@ -94,11 +94,13 @@ export function useMultitaskNavigation(params: {
         event.preventDefault();
         const target = resolvePinJump(current.numberedThreads, Number(digit[1]));
         if (target !== null) {
-          // A jump ends multitask mode immediately: cancel the pending badge hold-delay,
-          // hide the badges, and drop any open switcher so the Option release doesn't
-          // override the jump with the highlighted live thread.
-          clearHoldTimer();
-          setAltActive(false);
+          // A digit jump is an action WITHIN multitask mode, not an exit from it: while
+          // Option stays physically held the ⌥N badges must remain so the user can chain
+          // jumps (Option+1, Option+2, …). So leave the badge state alone — keep the hold
+          // timer running (badges still appear iff Option is held past the threshold; a
+          // genuine quick tap releases before then and keyup clears it) and don't force
+          // `altActive` off. Only drop any open switcher, so the Option release doesn't
+          // override this jump with the HUD's highlighted live thread.
           setSwitcher({ open: false, index: 0 });
           current.onSelectThread(target);
         }
@@ -121,22 +123,37 @@ export function useMultitaskNavigation(params: {
       }
     };
 
-    // Losing focus (Cmd+Tab away, devtools) can swallow the Option keyup — reset so
-    // the badges/HUD never get stuck on.
-    const onBlur = () => {
+    // A swallowed Option keyup must never leave the badges/HUD stuck on. It can be lost
+    // two ways: the window loses OS focus (Cmd+Tab, devtools), or — since a digit jump
+    // no longer tears multitask mode down — focus moves INTO a <webview> or terminal
+    // (both eat keyboard events) in the jumped-to thread, so the keyup never reaches the
+    // window and a pending hold timer would later fire onto a dead session. Reset on both.
+    const resetMultitask = () => {
       clearHoldTimer();
       setAltActive(false);
       setSwitcher({ open: false, index: 0 });
+    };
+    const onBlur = () => resetMultitask();
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target !== null &&
+        (target.tagName === "WEBVIEW" || target.closest(".workbench-terminal") !== null)
+      ) {
+        resetMultitask();
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("focusin", onFocusIn);
     return () => {
       clearHoldTimer();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focusin", onFocusIn);
     };
   }, []);
 

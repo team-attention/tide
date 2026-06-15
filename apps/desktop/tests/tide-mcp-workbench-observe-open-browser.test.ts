@@ -533,6 +533,90 @@ test("browser_action_with_stale_revision_returns_structured_error", async () => 
   assert.equal(!result.ok && result.error.code, "workbench_stale_reference");
 });
 
+test("same_url_browser_snapshot_keeps_revision_so_a_held_act_still_wins", async () => {
+  // Spec: docs_v2/specs/browser-pane-action-revision-race.md (D1). A same-URL content
+  // refresh (the did-finish-load/did-stop-loading churn on a live page) must NOT advance
+  // the revision, or an agent's observe→act loses the CAS though the page never moved.
+  const service = serviceWithActiveThread("thread-rev-d1", "runtime-rev-d1");
+  const opened = await openBrowser(service, "runtime-rev-d1", "https://example.test/live");
+  const held = opened.output.pane.revision;
+
+  // Same URL, fresh title/body (a settle snapshot) → the revision must be preserved.
+  const refreshed = await service.handleWorkbenchCommand({
+    threadId: "thread-rev-d1",
+    command: "update_browser_snapshot",
+    targetPaneId: opened.output.pane.paneId,
+    data: {
+      revision: held,
+      url: "https://example.test/live",
+      pageTitle: "Settled",
+      bodyTextPreview: "Settled body",
+      loading: false,
+    },
+  });
+  assert.equal(refreshed.ok, true);
+
+  const observed = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-rev-d1", agentId: "codex" },
+    toolName: "tide_observe_browser",
+    input: { paneId: opened.output.pane.paneId },
+  });
+  // Content advanced, but the revision the agent is holding is unchanged.
+  assert.equal(observed.ok && observed.output.pane.pageTitle, "Settled");
+  assert.equal(observed.ok && observed.output.pane.revision, held);
+
+  // So an act carrying the originally-observed revision still wins (no nav between).
+  const acted = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-rev-d1", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: { paneId: opened.output.pane.paneId, revision: held, action: "click_at", x: 10, y: 20 },
+  });
+  assert.equal(acted.ok, true);
+});
+
+test("navigation_advances_revision_and_the_stale_error_carries_the_current_one", async () => {
+  // Spec: docs_v2/specs/browser-pane-action-revision-race.md (D1 guard preserved + D3).
+  // A genuine navigation still re-mints the revision (a stale coordinate act is rejected),
+  // and the rejection hands back the CURRENT revision so the caller can retry against it.
+  const service = serviceWithActiveThread("thread-rev-d3", "runtime-rev-d3");
+  const opened = await openBrowser(service, "runtime-rev-d3", "https://example.test/before");
+  const held = opened.output.pane.revision;
+
+  // Real navigation: the resolved URL changed → the revision must advance.
+  const navigated = await service.handleWorkbenchCommand({
+    threadId: "thread-rev-d3",
+    command: "update_browser_snapshot",
+    targetPaneId: opened.output.pane.paneId,
+    data: {
+      revision: held,
+      url: "https://example.test/after",
+      pageTitle: "After",
+      bodyTextPreview: "After body",
+      loading: false,
+    },
+  });
+  assert.equal(navigated.ok, true);
+
+  const observed = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-rev-d3", agentId: "codex" },
+    toolName: "tide_observe_browser",
+    input: { paneId: opened.output.pane.paneId },
+  });
+  const current = observed.ok ? observed.output.pane.revision : undefined;
+  assert.notEqual(current, held);
+
+  // An act on the now-stale held revision is rejected, and the message carries the
+  // current revision so the caller can retry against it (D3).
+  const acted = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-rev-d3", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: { paneId: opened.output.pane.paneId, revision: held, action: "click_at", x: 1, y: 2 },
+  });
+  assert.equal(acted.ok, false);
+  assert.equal(!acted.ok && acted.error.code, "workbench_stale_reference");
+  assert.ok(current !== undefined && !acted.ok && acted.error.message.includes(current));
+});
+
 test("browser_action_result_command_records_completion_and_snapshot", async () => {
   // Spec: docs_v2/specs/tide-mcp-browser-action-tool.md
   const service = serviceWithActiveThread("thread-browser-result", "runtime-browser-result");

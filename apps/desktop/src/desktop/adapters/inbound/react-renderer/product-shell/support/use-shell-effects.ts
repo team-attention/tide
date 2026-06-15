@@ -70,14 +70,18 @@ export function useGlobalSearchShortcuts(params: {
   }, [activeThreadId]);
 }
 
-// A Browser Pane link opened with Cmd/Ctrl+click (or window.open): Main denies the
-// popup and forwards the URL here; open it as a new Browser Pane. The handler reads
-// the latest state via setShellState, so subscribing once is safe.
+// A Browser Pane link asked to open elsewhere: Main denies the stray popup window and
+// forwards the URL here. `newPane` (Cmd/Ctrl/middle-click, window.open) opens a new
+// Browser Pane; otherwise a plain target=_blank click navigates the active Browser
+// Pane in place. The handler reads the latest state via setShellState, so subscribing
+// once is safe.
 export function useOpenBrowserPaneFromMain(
   onOpenBrowserPane: (url: string, options?: { newPane?: boolean }) => void,
 ): void {
   useEffect(() => {
-    const off = window.tide?.onOpenBrowserPane?.((url: string) => onOpenBrowserPane(url, { newPane: true }));
+    const off = window.tide?.onOpenBrowserPane?.((url: string, newPane: boolean) =>
+      onOpenBrowserPane(url, { newPane }),
+    );
     return off;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

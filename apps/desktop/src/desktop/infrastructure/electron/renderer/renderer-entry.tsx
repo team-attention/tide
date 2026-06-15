@@ -78,10 +78,11 @@ declare global {
       sendBackendCommand(command: BackendCommandEnvelope): Promise<BackendEventEnvelope[]>;
       onBackendEvent(listener: (event: BackendEventEnvelope) => void): () => void;
       onCloseIntent(listener: () => void): () => void;
-      // A link inside a Browser Pane asked to open in a new tab/window (Cmd/Ctrl+click,
-      // middle-click, window.open) — Main denies the popup and hands the URL here so the
-      // renderer opens it as a new Browser Pane.
-      onOpenBrowserPane(listener: (url: string) => void): () => void;
+      // A link inside a Browser Pane asked to open elsewhere — Main denies the stray
+      // popup window and hands the URL here. `newPane` true (Cmd/Ctrl/middle-click,
+      // window.open) opens a new Browser Pane; false (a plain target=_blank click)
+      // navigates the active Browser Pane in place.
+      onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
       // View-menu panel toggles (Cmd+B / Cmd+E / Cmd+J), routed from the app menu.
       onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
       openDirectory(): Promise<string | null>;
