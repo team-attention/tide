@@ -80,6 +80,8 @@ declare global {
       // middle-click, window.open) — Main denies the popup and hands the URL here so the
       // renderer opens it as a new Browser Pane.
       onOpenBrowserPane(listener: (url: string) => void): () => void;
+      // View-menu panel toggles (Cmd+B / Cmd+E / Cmd+J), routed from the app menu.
+      onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
       openDirectory(): Promise<string | null>;
       listProjects(): Promise<{ projectId: string; name: string; cwd: string }[]>;
       registerProject(cwd: string): Promise<{ projectId: string; name: string; cwd: string }[]>;

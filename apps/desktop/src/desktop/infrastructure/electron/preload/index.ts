@@ -37,6 +37,9 @@ export interface TidePreloadSurface {
   // window.open). Main denies the popup and forwards the URL so the renderer opens it as
   // a new Browser Pane instead of a stray window.
   onOpenBrowserPane(listener: (url: string) => void): () => void;
+  // View-menu panel toggles (Cmd+B left rail / Cmd+E file tree / Cmd+J workbench),
+  // routed from the application menu so they fire regardless of focus (webview/terminal).
+  onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
   // Native folder picker + persisted project registry (Main-owned).
   openDirectory(): Promise<string | null>;
   listProjects(): Promise<ProjectRegistryEntry[]>;
@@ -97,6 +100,13 @@ export const tidePreloadSurface: TidePreloadSurface = {
     ipcRenderer.on("tide:open-browser-pane", wrapped);
     return () => {
       ipcRenderer.removeListener("tide:open-browser-pane", wrapped);
+    };
+  },
+  onTogglePanel(listener) {
+    const wrapped = (_event: unknown, panel: "leftRail" | "fileTree" | "workbench") => listener(panel);
+    ipcRenderer.on("tide:toggle-panel", wrapped);
+    return () => {
+      ipcRenderer.removeListener("tide:toggle-panel", wrapped);
     };
   },
   openDirectory() {

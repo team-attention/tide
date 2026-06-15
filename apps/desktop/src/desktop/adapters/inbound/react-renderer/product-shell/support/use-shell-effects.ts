@@ -81,6 +81,62 @@ export function useOpenBrowserPaneFromMain(
   }, []);
 }
 
+// View-menu panel toggles (Cmd+B left rail / Cmd+E file tree / Cmd+J workbench): Main
+// sends the panel id from the application menu; route it to the matching toggle handler.
+// Subscribe once and read the latest handlers via a ref (refreshed each commit) so the
+// IPC listener never re-binds and never holds a stale handler.
+export function usePanelToggleFromMenu(handlers: {
+  onLeftRailToggle: () => void;
+  onFileTreeToggle: () => void;
+  onWorkbenchToggle: () => void;
+}): void {
+  const latest = useRef(handlers);
+  useEffect(() => {
+    latest.current = handlers;
+  });
+  useEffect(() => {
+    const off = window.tide?.onTogglePanel?.((panel) => {
+      const current = latest.current;
+      if (panel === "leftRail") {
+        current.onLeftRailToggle();
+      } else if (panel === "fileTree") {
+        current.onFileTreeToggle();
+      } else if (panel === "workbench") {
+        current.onWorkbenchToggle();
+      }
+    });
+    return off;
+  }, []);
+}
+
+// Cmd+W "close intent" from the application menu: close the focused Workbench pane if
+// one is open, else (a thread is active) return to the start composer. Never closes the
+// window (Shift+Cmd+W does that). Subscribes once; reads the latest state/handlers via a
+// commit-phase ref so the IPC listener never re-binds.
+export function useCloseIntentFromMenu(params: {
+  activeWorkbenchPaneId: string | undefined;
+  workbenchOpen: boolean;
+  hasThread: boolean;
+  onCloseWorkbenchPane: (paneId: string) => void;
+  onNewThread: () => void;
+}): void {
+  const latest = useRef(params);
+  useEffect(() => {
+    latest.current = params;
+  });
+  useEffect(() => {
+    const off = window.tide?.onCloseIntent?.(() => {
+      const current = latest.current;
+      if (current.workbenchOpen && current.activeWorkbenchPaneId !== undefined) {
+        current.onCloseWorkbenchPane(current.activeWorkbenchPaneId);
+      } else if (current.hasThread) {
+        current.onNewThread();
+      }
+    });
+    return off;
+  }, []);
+}
+
 // Escape for the two surfaces that don't manage their own: Workbench fullscreen and
 // the Settings modal. (Quick Open / Content Search / worktree dialogs already close
 // themselves on Escape.) Each listener subscribes only while its surface is open.

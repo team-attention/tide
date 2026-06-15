@@ -11,7 +11,7 @@ import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx"
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
-import { useEscapeShortcuts, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
+import { useCloseIntentFromMenu, useEscapeShortcuts, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
 import { useMultitaskNavigation } from "./multitask/use-multitask-navigation.tsx";
 import { RailPeek } from "./left-rail/rail-peek.tsx";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
@@ -626,35 +626,19 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     onSelectThread: handlers.onThreadSelect,
   });
 
-  // Cmd+W (routed from the app menu as a "close intent"): close the focused
-  // Workbench pane if one is open, else close the active thread by returning to
-  // the start composer. Never closes the window (Shift+Cmd+W does that). A ref
-  // keeps the latest state/handlers without re-subscribing the IPC each render.
-  const closeIntentRef = useRef<{ paneId: string | undefined; workbenchOpen: boolean; hasThread: boolean }>({
-    paneId: undefined,
-    workbenchOpen: false,
-    hasThread: false,
-  });
-  closeIntentRef.current = {
-    paneId: shellState.appChrome.activeWorkbenchPaneId ?? undefined,
+  // Cmd+W "close intent" (app menu) — close the focused Workbench pane, else the thread.
+  useCloseIntentFromMenu({
+    activeWorkbenchPaneId: shellState.appChrome.activeWorkbenchPaneId,
     workbenchOpen: shellState.workbenchOpen,
     hasThread: shellState.activeThreadId !== null,
-  };
-  useEffect(() => {
-    const off = window.tide?.onCloseIntent?.(() => {
-      const { paneId, workbenchOpen, hasThread } = closeIntentRef.current;
-      if (workbenchOpen && paneId !== undefined) {
-        handlers.onCloseWorkbenchPane(paneId);
-      } else if (hasThread) {
-        handlers.onNewThread();
-      }
-    });
-    return off;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    onCloseWorkbenchPane: handlers.onCloseWorkbenchPane,
+    onNewThread: handlers.onNewThread,
+  });
 
   // A Browser Pane link opened with Cmd/Ctrl+click (or window.open) opens a new pane.
   useOpenBrowserPaneFromMain(handlers.onOpenBrowserPane);
+  // Cmd+B / Cmd+E / Cmd+J (View menu) toggle Left Rail / File Tree / Workbench.
+  usePanelToggleFromMenu(handlers);
 
   // Escape exits Workbench fullscreen / closes the Settings modal (extracted to
   // use-shell-effects to keep this file under the size cap).
