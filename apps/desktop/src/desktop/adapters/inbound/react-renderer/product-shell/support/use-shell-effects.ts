@@ -209,6 +209,9 @@ export function useGitState(
       setGitInfo(null);
       return undefined;
     }
+    // Clear the badge immediately so the previous repo's branch/count doesn't linger
+    // while the new cwd's git state is fetched.
+    setGitInfo(null);
     const cwd = activeProjectCwd;
     let cancelled = false;
     Promise.all([projectBridge.gitContext(cwd), projectBridge.gitChanges(cwd)])

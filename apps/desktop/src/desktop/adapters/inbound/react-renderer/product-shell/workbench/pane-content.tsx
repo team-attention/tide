@@ -84,8 +84,11 @@ export function createWorkbenchPaneContent(
     case "launcher":
       return <WorkbenchLauncherPane pane={pane} handlers={handlers} />;
     case "changes":
+      // Key by cwd so switching threads/projects fully resets the panel (selected file +
+      // loaded diff) instead of showing stale state.
       return (
         <ChangesPanel
+          key={pane.cwd ?? ""}
           cwd={pane.cwd ?? ""}
           onGitChanges={handlers.onGitChanges}
           onGitFileDiff={handlers.onGitFileDiff}

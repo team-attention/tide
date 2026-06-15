@@ -70,6 +70,9 @@ export function useMultitaskNavigation(params: {
       // Option+Tab / Option+Shift+Tab → cycle the live set through the HUD.
       if (event.code === "Tab") {
         event.preventDefault();
+        // Cancel the pending badge hold-delay so the rail ⌥N badges don't flash on while
+        // the switcher HUD is active.
+        clearHoldTimer();
         if (current.liveThreads.length === 0) {
           return;
         }
@@ -91,8 +94,11 @@ export function useMultitaskNavigation(params: {
         event.preventDefault();
         const target = resolvePinJump(current.numberedThreads, Number(digit[1]));
         if (target !== null) {
-          // A pin jump ends multitask mode immediately; drop any open switcher so the
-          // Option release does not override the jump with the highlighted live thread.
+          // A jump ends multitask mode immediately: cancel the pending badge hold-delay,
+          // hide the badges, and drop any open switcher so the Option release doesn't
+          // override the jump with the highlighted live thread.
+          clearHoldTimer();
+          setAltActive(false);
           setSwitcher({ open: false, index: 0 });
           current.onSelectThread(target);
         }

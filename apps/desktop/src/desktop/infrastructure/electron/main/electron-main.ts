@@ -239,7 +239,7 @@ ipcMain.handle("tide:git-changes", async (_event, cwd: unknown): Promise<GitChan
   // consistently repo-root-relative regardless of the thread's cwd.
   const root = (await runGit(cwd, ["rev-parse", "--show-toplevel"])).trim() || cwd;
   // Porcelain v1, renames split into delete+add so the path column is a single path.
-  const out = await runGit(root, ["status", "--porcelain=v1", "--no-renames"]);
+  const out = await runGit(root, ["-c", "core.quotepath=false", "status", "--porcelain=v1", "--no-renames"]);
   const files: GitChangeFile[] = [];
   for (const line of out.split("\n")) {
     if (line.length < 4) {
@@ -263,7 +263,7 @@ ipcMain.handle("tide:git-changes", async (_event, cwd: unknown): Promise<GitChan
   }
   // Per-file added/removed line counts (vs HEAD). Tracked changes come from one numstat;
   // untracked/new files aren't in it, so count their lines via --no-index. "-" = binary.
-  const numstat = await runGit(root, ["diff", "--numstat", "HEAD"]);
+  const numstat = await runGit(root, ["-c", "core.quotepath=false", "diff", "--numstat", "--no-renames", "HEAD"]);
   const tracked = new Map<string, { additions?: number; deletions?: number }>();
   for (const line of numstat.split("\n")) {
     const match = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line);
@@ -276,11 +276,28 @@ ipcMain.handle("tide:git-changes", async (_event, cwd: unknown): Promise<GitChan
   }
   for (const file of files) {
     if (file.status === "untracked") {
-      const ns = await execGitArgs(["-C", root, "diff", "--numstat", "--no-index", "--", "/dev/null", file.path]);
-      const match = /^(\d+|-)\t(\d+|-)/.exec(ns.stdout.split("\n").find((l) => l.includes("\t")) ?? "");
-      if (match !== null && match[1] !== "-") {
-        file.additions = Number(match[1]);
-        file.deletions = 0;
+      // A single file failing to diff (concurrent delete, permissions) must not fail the
+      // whole status read — count what we can, skip the rest.
+      try {
+        const ns = await execGitArgs([
+          "-c",
+          "core.quotepath=false",
+          "-C",
+          root,
+          "diff",
+          "--numstat",
+          "--no-index",
+          "--",
+          "/dev/null",
+          file.path,
+        ]);
+        const match = /^(\d+|-)\t(\d+|-)/.exec(ns.stdout.split("\n").find((l) => l.includes("\t")) ?? "");
+        if (match !== null && match[1] !== "-") {
+          file.additions = Number(match[1]);
+          file.deletions = 0;
+        }
+      } catch {
+        // Leave additions/deletions undefined for this file.
       }
     } else {
       const stat = tracked.get(file.path);
@@ -303,12 +320,23 @@ ipcMain.handle("tide:git-file-diff", async (_event, cwd: unknown, relPath: unkno
   // pathspec is resolved relative to the run dir — so run diffs from the top level, or
   // a thread whose cwd is a SUBDIRECTORY of the repo gets an empty (wrong-path) diff.
   const root = (await runGit(cwd, ["rev-parse", "--show-toplevel"])).trim() || cwd;
-  const tracked = await runGit(root, ["diff", "--no-color", "HEAD", "--", relPath]);
+  const tracked = await runGit(root, ["-c", "core.quotepath=false", "diff", "--no-color", "HEAD", "--", relPath]);
   if (tracked.trim().length > 0) {
     return tracked;
   }
   // --no-index exits 1 when files differ (not an error), so read stdout via execGitArgs.
-  const untracked = await execGitArgs(["-C", root, "diff", "--no-color", "--no-index", "--", "/dev/null", relPath]);
+  const untracked = await execGitArgs([
+    "-c",
+    "core.quotepath=false",
+    "-C",
+    root,
+    "diff",
+    "--no-color",
+    "--no-index",
+    "--",
+    "/dev/null",
+    relPath,
+  ]);
   return untracked.stdout;
 });
 
