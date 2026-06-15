@@ -18,6 +18,13 @@ export interface GitContextResult {
   worktrees: { path: string; branch: string | null; current: boolean }[];
 }
 
+export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "untracked";
+
+export interface GitChangesResult {
+  isGitRepo: boolean;
+  files: { path: string; status: GitChangeStatus }[];
+}
+
 export interface ProjectRegistryBridge {
   openDirectory(): Promise<string | null>;
   listProjects(): Promise<ProjectRegistryEntry[]>;
@@ -47,6 +54,8 @@ export interface ProjectRegistryBridge {
     branchDeleted: boolean;
   }>;
   gitContext(cwd: string): Promise<GitContextResult>;
+  gitChanges(cwd: string): Promise<GitChangesResult>;
+  gitFileDiff(cwd: string, relPath: string): Promise<string>;
   listCommands(cwd: string, agentId: string): Promise<AgentChatCommandOption[]>;
 }
 

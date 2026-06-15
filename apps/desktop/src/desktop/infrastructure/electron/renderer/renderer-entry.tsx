@@ -51,6 +51,8 @@ export function createInitialRendererElement() {
               deleteWorktree: (cwd: string, options: { deleteBranch: boolean; force: boolean }) =>
                 window.tide!.deleteWorktree(cwd, options),
               gitContext: (cwd: string) => window.tide!.gitContext(cwd),
+              gitChanges: (cwd: string) => window.tide!.gitChanges(cwd),
+              gitFileDiff: (cwd: string, relPath: string) => window.tide!.gitFileDiff(cwd, relPath),
               listCommands: (cwd: string, agentId: string) => window.tide!.listCommands(cwd, agentId),
             }
       }
@@ -99,6 +101,11 @@ declare global {
         branches: { name: string; kind: "local" | "remote"; current: boolean }[];
         worktrees: { path: string; branch: string | null; current: boolean }[];
       }>;
+      gitChanges(cwd: string): Promise<{
+        isGitRepo: boolean;
+        files: { path: string; status: "modified" | "added" | "deleted" | "renamed" | "untracked" }[];
+      }>;
+      gitFileDiff(cwd: string, relPath: string): Promise<string>;
       listCommands(cwd: string, agentId: string): Promise<{
         name: string;
         description: string;

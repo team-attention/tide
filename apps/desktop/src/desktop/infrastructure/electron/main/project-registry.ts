@@ -47,6 +47,19 @@ export interface GitContext {
   worktrees: { path: string; branch: string | null; current: boolean }[];
 }
 
+// Uncommitted working-tree changes (vs HEAD), for the read-only Changes view.
+export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "untracked";
+
+export interface GitChangeFile {
+  path: string; // repo-relative
+  status: GitChangeStatus;
+}
+
+export interface GitChanges {
+  isGitRepo: boolean;
+  files: GitChangeFile[];
+}
+
 export function runGit(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve) => {
     execFile("git", ["-C", cwd, ...args], { maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {

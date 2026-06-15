@@ -8,10 +8,11 @@ import type { MenuAnchorRect, ProductShellHandlers, TideProductShellProps } from
 import { createSettingsModal, loadListSettings, loadPreferredStartComposer, loadRailOrder, loadWorktreeSettings, persistPreferredStartComposer } from "./settings/settings.tsx";
 import { WorktreeDeleteDialog } from "./dialogs/worktree-delete-dialog.tsx";
 import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx";
+import { ChangesPanel } from "./workbench/changes-panel.tsx";
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
-import { useCloseIntentFromMenu, useEscapeShortcuts, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
+import { useCloseIntentFromMenu, useEscapeShortcuts, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
 import { useMultitaskNavigation } from "./multitask/use-multitask-navigation.tsx";
 import { RailPeek } from "./left-rail/rail-peek.tsx";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
@@ -34,7 +35,6 @@ import {
   archiveProductShellWorktreeChats,
   setProductShellComposerFolderScope,
   setProductShellComposerNewWorktreeIntent,
-  setProductShellGitContext,
   setProductShellProviderCommands,
   setProductShellRegisteredProjects,
   startNewProductShellThread,
@@ -280,34 +280,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       });
   };
 
-  // Fetch real git branches/worktrees whenever the active Project cwd changes,
-  // so the Worktree/Branch menus reflect the actual repo (cleared for Scratch).
+  // The active Project cwd (a thread's, or the start composer's) drives git state.
   const activeScope = shellState.agentChat.thread?.scope ?? shellState.agentChat.composer.startOptions.scope;
   const activeProjectCwd = activeScope?.kind === "project" ? activeScope.cwd : null;
-  useEffect(() => {
-    const bridge = props.projectBridge;
-    if (bridge === undefined || activeProjectCwd === null) {
-      setShellState((state) => setProductShellGitContext(state, { branches: [], worktrees: [] }));
-      return;
-    }
-    let cancelled = false;
-    bridge
-      .gitContext(activeProjectCwd)
-      .then((context) => {
-        if (!cancelled) {
-          setShellState((state) =>
-            setProductShellGitContext(state, {
-              branches: context.branches,
-              worktrees: context.worktrees,
-            }),
-          );
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [props.projectBridge, activeProjectCwd]);
+  // Git for the active repo/worktree: branches+worktrees (composer pickers, → shell state)
+  // and uncommitted changes (top-bar badge + Changes view), fetched together. See useGitState.
+  const git = useGitState(props.projectBridge, activeProjectCwd, setShellState);
 
   // Fetch real provider commands/skills whenever the active cwd or agent changes,
   // so the composer's / (and $) menu reflects this directory's actual commands.
@@ -723,7 +701,15 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         </div>
         {/* Workbench + FileTree toggles live in a single fixed cluster at the window's
             top-right, so they never jump between column headers as panels open/close. */}
-        {createWindowChromeToggles(layoutVm, handlers, showWorkbenchControls, inlineWorkbenchControls)}
+        {createWindowChromeToggles(
+          layoutVm,
+          handlers,
+          showWorkbenchControls,
+          inlineWorkbenchControls,
+          git.gitInfo === null
+            ? null
+            : { branch: git.gitInfo.branch, count: git.gitInfo.files.length, onOpen: () => git.setOpen(true) },
+        )}
         {/* Offscreen host keeping background threads' Browser Panes alive for their agents. */}
         <BackgroundBrowserHost panes={layoutVm.backgroundBrowserPanes} handlers={handlers} />
         {viewModel.settingsOpen
@@ -767,6 +753,18 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
               setWorktreeDelete(null);
               setWorktreeDeleting(false);
             }}
+          />
+        ) : null}
+        {/* Read-only git Changes overlay (opened from the top-bar branch badge). */}
+        {git.open && git.gitInfo !== null ? (
+          <ChangesPanel
+            branch={git.gitInfo.branch}
+            files={git.gitInfo.files}
+            loadDiff={(relPath) =>
+              props.projectBridge?.gitFileDiff(git.gitInfo!.cwd, relPath) ?? Promise.resolve("")
+            }
+            onRefresh={() => git.refresh()}
+            onClose={() => git.setOpen(false)}
           />
         ) : null}
         {/* Collapsed-rail floating peek: hover the left edge, or hold Ctrl. */}

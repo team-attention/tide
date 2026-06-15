@@ -35,6 +35,7 @@
 @import "../product-shell/workbench/launcher-pane.css";
 @import "../product-shell/workbench/browser-pane.css";
 @import "../product-shell/workbench/diff-pane.css";
+@import "../product-shell/workbench/changes-panel.css";
 @import "../product-shell/workbench/editor-pane.css";
 @import "../product-shell/workbench/code-editor.css";
 @import "../product-shell/workbench/markdown-view.css";

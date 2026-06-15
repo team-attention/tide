@@ -2,7 +2,7 @@ import type { ProductShellViewModel } from "../../../../../application/domains/p
 import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import { useState } from "react";
 import type { ReactElement, ReactNode } from "react";
-import { Columns2, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, Square } from "lucide-react";
+import { Columns2, FolderOpen, GitBranch, Maximize2, Minimize2, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, Square } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // Fixed top-right window controls. The right group is the window-level Workbench/FileTree
@@ -17,6 +17,9 @@ export function createWindowChromeToggles(
   handlers: ProductShellHandlers,
   showWorkbenchControls: boolean,
   inlineControls: boolean,
+  // The git badge (current branch + uncommitted-file count) opens the read-only Changes
+  // view. Null when the active thread's cwd isn't a git repo. Spec: git-changes-view.
+  gitBadge: { branch: string | null; count: number; onOpen: () => void } | null = null,
 ): ReactElement {
   const toggle = (
     label: string,
@@ -40,6 +43,27 @@ export function createWindowChromeToggles(
   const isSplit = viewModel.workbenchLayoutMode === "split";
   return (
     <div className="tide-window-toggles" aria-label="Window panels">
+      {gitBadge === null ? null : (
+        <>
+          <button
+            type="button"
+            className="git-badge"
+            title={`${gitBadge.branch ?? "detached HEAD"} · ${gitBadge.count} uncommitted change${gitBadge.count === 1 ? "" : "s"} — view`}
+            aria-label="View working tree changes"
+            onClick={gitBadge.onOpen}
+          >
+            <GitBranch size={13} strokeWidth={1.9} aria-hidden />
+            <span className="git-badge__branch">{gitBadge.branch ?? "detached"}</span>
+            {gitBadge.count > 0 ? (
+              <span className="git-badge__count">
+                <span className="git-badge__dot" aria-hidden />
+                {gitBadge.count}
+              </span>
+            ) : null}
+          </button>
+          <span className="tide-window-toggles__divider" aria-hidden />
+        </>
+      )}
       {showWorkbenchControls ? (
         <>
           {/* Inline by default (every control one click away); collapse into one "…"

@@ -2,8 +2,10 @@
 // file under the size cap (file-size-ratchet): the responsive rightmost-column
 // measurement and the global search keyboard shortcuts.
 
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import type { ProductShellBackendCommand } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { setProductShellGitContext } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellBackendCommand, ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { GitChangesResult, ProjectRegistryBridge } from "./types.ts";
 
 // Measures the rightmost mounted column — the one the fixed top-right chrome cluster
 // floats over — so the chrome can decide inline vs collapsed controls. A grid-track
@@ -179,4 +181,48 @@ export function useEscapeShortcuts(params: {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [settingsOpen]);
+}
+
+export interface GitChangesView {
+  cwd: string;
+  branch: string | null;
+  files: GitChangesResult["files"];
+}
+
+// Consolidated git state for the active repo/worktree. One fetch on cwd change / manual
+// refresh feeds BOTH the composer's branch+worktree pickers (gitContext → shell state)
+// and the top-bar badge + read-only Changes view (uncommitted files → gitInfo).
+export function useGitState(
+  projectBridge: ProjectRegistryBridge | undefined,
+  activeProjectCwd: string | null,
+  setShellState: Dispatch<SetStateAction<ProductShellState>>,
+): { gitInfo: GitChangesView | null; open: boolean; setOpen: (open: boolean) => void; refresh: () => void } {
+  const [gitInfo, setGitInfo] = useState<GitChangesView | null>(null);
+  const [open, setOpen] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    if (projectBridge === undefined || activeProjectCwd === null) {
+      setShellState((state) => setProductShellGitContext(state, { branches: [], worktrees: [] }));
+      setGitInfo(null);
+      return undefined;
+    }
+    const cwd = activeProjectCwd;
+    let cancelled = false;
+    Promise.all([projectBridge.gitContext(cwd), projectBridge.gitChanges(cwd)])
+      .then(([context, changes]) => {
+        if (cancelled) {
+          return;
+        }
+        setShellState((state) =>
+          setProductShellGitContext(state, { branches: context.branches, worktrees: context.worktrees }),
+        );
+        setGitInfo(context.isGitRepo ? { cwd, branch: context.currentBranch, files: changes.files } : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectBridge, activeProjectCwd, nonce]);
+  return { gitInfo, open, setOpen, refresh: () => setNonce((value) => value + 1) };
 }

@@ -1,5 +1,5 @@
 import { execGitArgs, readProjectRegistry, repoRootForWorktree, runGit, writeProjectRegistry } from "./project-registry.ts";
-import type { GitContext } from "./project-registry.ts";
+import type { GitChangeFile, GitChanges, GitContext } from "./project-registry.ts";
 import { backendProcess, ensureBackendProcess, nextEventId, postBackendCommand } from "./backend-bridge.ts";
 import { maybeOfferMoveToApplications } from "./move-to-applications.ts";
 import { installApplicationMenu } from "./app-menu.ts";
@@ -223,6 +223,57 @@ ipcMain.handle("tide:git-context", async (_event, cwd: unknown): Promise<GitCont
   }
   if (pending) worktrees.push({ ...pending, current: pending.path === cwd });
   return { isGitRepo: true, currentBranch, branches, worktrees };
+});
+
+// Read-only uncommitted changes (working tree vs HEAD) for the Changes view.
+ipcMain.handle("tide:git-changes", async (_event, cwd: unknown): Promise<GitChanges> => {
+  const empty: GitChanges = { isGitRepo: false, files: [] };
+  if (typeof cwd !== "string" || cwd.length === 0) {
+    return empty;
+  }
+  const inside = (await runGit(cwd, ["rev-parse", "--is-inside-work-tree"])).trim();
+  if (inside !== "true") {
+    return empty;
+  }
+  // Porcelain v1, renames split into delete+add so the path column is a single path.
+  const out = await runGit(cwd, ["status", "--porcelain=v1", "--no-renames"]);
+  const files: GitChangeFile[] = [];
+  for (const line of out.split("\n")) {
+    if (line.length < 4) {
+      continue;
+    }
+    const x = line[0];
+    const y = line[1];
+    let path = line.slice(3);
+    if (path.startsWith('"') && path.endsWith('"')) {
+      path = path.slice(1, -1);
+    }
+    const status: GitChangeFile["status"] =
+      x === "?"
+        ? "untracked"
+        : x === "D" || y === "D"
+          ? "deleted"
+          : x === "A" || y === "A"
+            ? "added"
+            : "modified";
+    files.push({ path, status });
+  }
+  return { isGitRepo: true, files };
+});
+
+// The unified diff of a single changed file (working tree vs HEAD). Untracked/new
+// files have no HEAD entry, so fall back to --no-index (whole file as added).
+ipcMain.handle("tide:git-file-diff", async (_event, cwd: unknown, relPath: unknown): Promise<string> => {
+  if (typeof cwd !== "string" || typeof relPath !== "string" || cwd.length === 0 || relPath.length === 0) {
+    return "";
+  }
+  const tracked = await runGit(cwd, ["diff", "--no-color", "HEAD", "--", relPath]);
+  if (tracked.trim().length > 0) {
+    return tracked;
+  }
+  // --no-index exits 1 when files differ (not an error), so read stdout via execGitArgs.
+  const untracked = await execGitArgs(["-C", cwd, "diff", "--no-color", "--no-index", "--", "/dev/null", relPath]);
+  return untracked.stdout;
 });
 
 // Read-only facts for the worktree delete dialog (branch + whether it's merged).

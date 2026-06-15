@@ -17,6 +17,13 @@ export interface GitContext {
   worktrees: { path: string; branch: string | null; current: boolean }[];
 }
 
+export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "untracked";
+
+export interface GitChanges {
+  isGitRepo: boolean;
+  files: { path: string; status: GitChangeStatus }[];
+}
+
 export interface ProviderCommandSuggestion {
   name: string;
   description: string;
@@ -70,6 +77,9 @@ export interface TidePreloadSurface {
     branchDeleted: boolean;
   }>;
   gitContext(cwd: string): Promise<GitContext>;
+  // Read-only uncommitted changes + a single file's diff, for the Changes view.
+  gitChanges(cwd: string): Promise<GitChanges>;
+  gitFileDiff(cwd: string, relPath: string): Promise<string>;
   listCommands(cwd: string, agentId: string): Promise<ProviderCommandSuggestion[]>;
 }
 
@@ -159,6 +169,12 @@ export const tidePreloadSurface: TidePreloadSurface = {
   },
   gitContext(cwd) {
     return ipcRenderer.invoke("tide:git-context", cwd) as Promise<GitContext>;
+  },
+  gitChanges(cwd) {
+    return ipcRenderer.invoke("tide:git-changes", cwd) as Promise<GitChanges>;
+  },
+  gitFileDiff(cwd, relPath) {
+    return ipcRenderer.invoke("tide:git-file-diff", cwd, relPath) as Promise<string>;
   },
   listCommands(cwd, agentId) {
     return ipcRenderer.invoke("tide:list-commands", cwd, agentId) as Promise<ProviderCommandSuggestion[]>;
