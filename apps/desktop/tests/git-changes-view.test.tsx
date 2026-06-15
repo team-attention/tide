@@ -18,7 +18,6 @@ test("changes_panel_lists_changed_files_with_status_and_branch", () => {
       ]}
       loadDiff={() => Promise.resolve("")}
       onRefresh={() => {}}
-      onClose={() => {}}
     />,
   );
   assert.match(markup, /feature-x/);
@@ -41,7 +40,6 @@ test("changes_panel_shows_clean_empty_state", () => {
       files={[]}
       loadDiff={() => Promise.resolve("")}
       onRefresh={() => {}}
-      onClose={() => {}}
     />,
   );
   assert.match(markup, /No changes/);
@@ -56,7 +54,6 @@ test("changes_panel_shows_not_a_git_repo_state", () => {
       files={[]}
       loadDiff={() => Promise.resolve("")}
       onRefresh={() => {}}
-      onClose={() => {}}
     />,
   );
   assert.match(markup, /Not a git repo/);

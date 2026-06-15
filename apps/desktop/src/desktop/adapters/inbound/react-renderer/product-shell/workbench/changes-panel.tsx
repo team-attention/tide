@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
-import { GitBranch, RefreshCw, X } from "lucide-react";
+import { GitBranch, RefreshCw } from "lucide-react";
 import { createDiffView } from "./diff-pane.tsx";
 import type { GitChangeStatus } from "../support/types.ts";
 // Read-only "Changes" view (spec: git-changes-view): the active repo/worktree's
@@ -28,9 +28,8 @@ export function ChangesPanel(props: {
   files: ChangedFile[];
   loadDiff: (relPath: string) => Promise<string>;
   onRefresh: () => void;
-  onClose: () => void;
 }): ReactElement {
-  const { isGitRepo, branch, files, loadDiff, onRefresh, onClose } = props;
+  const { isGitRepo, branch, files, loadDiff, onRefresh } = props;
   const totalAdd = files.reduce((sum, file) => sum + (file.additions ?? 0), 0);
   const totalDel = files.reduce((sum, file) => sum + (file.deletions ?? 0), 0);
   const [selected, setSelected] = useState<string | null>(files[0]?.path ?? null);
@@ -98,15 +97,6 @@ export function ChangesPanel(props: {
             onClick={() => onRefresh()}
           >
             <RefreshCw size={14} strokeWidth={1.9} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="changes-panel__action"
-            title="Close"
-            aria-label="Close changes"
-            onClick={() => onClose()}
-          >
-            <X size={15} strokeWidth={1.9} aria-hidden />
           </button>
         </header>
         <div className="changes-panel__body">

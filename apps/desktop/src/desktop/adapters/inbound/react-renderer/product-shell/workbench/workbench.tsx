@@ -20,6 +20,10 @@ export function createWorkbenchColumn(
   const tabs = viewModel.appChrome.workbenchTabStrip.visibleTabs;
   const activeTab = tabs.find((tab) => tab.active) ?? tabs[0];
   const activePane = viewModel.appChrome.activeWorkbenchPane;
+  // The Changes tab is a renderer-local tab alongside the backend panes: `changesShown`
+  // means it's the focused tab (its body is shown). Keep the stacked tab strip while it's
+  // open (so the tab is reachable) rather than dropping into split.
+  const changesShown = changes.open && changes.active;
   // Split shows every pane with its OWN header (title + close + drag handle) — that IS
   // the header band, so there is NO global tab bar in Split (Stacked keeps the 52px tab
   // strip). The workbench chrome controls (layout toggle / fullscreen / New Pane) live
@@ -28,6 +32,7 @@ export function createWorkbenchColumn(
   // pane. See docs_v2/specs/workbench-dock-parity.md.
   const splitActive =
     viewModel.editorPicker === null &&
+    !changes.open &&
     viewModel.workbenchLayoutMode === "split" &&
     viewModel.workbenchLayoutTree !== null &&
     viewModel.appChrome.visibleWorkbenchPanes.length > 1;
@@ -66,58 +71,96 @@ export function createWorkbenchColumn(
               native fullscreen) — otherwise the first tab sits under the lights. */}
           {viewModel.workbenchFullscreen ? createTrafficControls() : null}
           <div className="workbench-tabs" role="tablist" aria-label="Workbench Tab Strip">
-            {tabs.length === 0 ? (
+            {tabs.length === 0 && !changes.open ? (
               <span className="workbench-tabs__empty">Workbench</span>
             ) : (
-              tabs.map((tab) => (
-                <div
-                  key={tab.paneId}
-                  className="workbench-tab"
-                  data-active={tab.active}
-                  data-kind={tab.kind}
-                  role="tab"
-                  aria-selected={tab.active}
-                  // Keep the active tab (with its close button) fully in view when
-                  // the strip overflows.
-                  ref={
-                    tab.active
-                      ? (el: HTMLElement | null) => {
-                          if (typeof el?.scrollIntoView === "function") {
-                            el.scrollIntoView({ inline: "nearest", block: "nearest" });
+              <>
+                {tabs.map((tab) => (
+                  <div
+                    key={tab.paneId}
+                    className="workbench-tab"
+                    data-active={!changesShown && tab.active}
+                    data-kind={tab.kind}
+                    role="tab"
+                    aria-selected={!changesShown && tab.active}
+                    // Keep the active tab (with its close button) fully in view when
+                    // the strip overflows.
+                    ref={
+                      !changesShown && tab.active
+                        ? (el: HTMLElement | null) => {
+                            if (typeof el?.scrollIntoView === "function") {
+                              el.scrollIntoView({ inline: "nearest", block: "nearest" });
+                            }
                           }
-                        }
-                      : undefined
-                  }
-                >
-                  <button
-                    className="workbench-tab__label"
-                    type="button"
-                    title={tab.title}
-                    onClick={() => handlers.onFocusWorkbenchPane(tab.paneId)}
+                        : undefined
+                    }
                   >
-                    <span className="workbench-tab__icon" aria-hidden>
-                      {workbenchTabIcon(tab.kind)}
-                    </span>
-                    <span className="workbench-tab__title">{tab.title}</span>
-                  </button>
-                  {/* Every tab carries a close button (revealed on hover; always shown
-                      on the active tab) so closing a pane is always one obvious click. */}
-                  <button
-                    className="workbench-tab__close"
-                    type="button"
-                    title="Close Pane"
-                    aria-label="Close Pane"
-                    onClick={() => handlers.onCloseWorkbenchPane(tab.paneId)}
+                    <button
+                      className="workbench-tab__label"
+                      type="button"
+                      title={tab.title}
+                      // Switching to a backend tab deactivates the (renderer-local) Changes tab.
+                      onClick={() => {
+                        handlers.onFocusWorkbenchPane(tab.paneId);
+                        changes.onDeactivate();
+                      }}
+                    >
+                      <span className="workbench-tab__icon" aria-hidden>
+                        {workbenchTabIcon(tab.kind)}
+                      </span>
+                      <span className="workbench-tab__title">{tab.title}</span>
+                    </button>
+                    {/* Every tab carries a close button (revealed on hover; always shown
+                        on the active tab) so closing a pane is always one obvious click. */}
+                    <button
+                      className="workbench-tab__close"
+                      type="button"
+                      title="Close Pane"
+                      aria-label="Close Pane"
+                      onClick={() => handlers.onCloseWorkbenchPane(tab.paneId)}
+                    >
+                      <X size={15} strokeWidth={2.2} aria-hidden />
+                    </button>
+                  </div>
+                ))}
+                {/* The git Changes tab — a real tab in the strip, alongside the backend
+                    panes (switchable / closeable). Spec: git-changes-view. */}
+                {changes.open ? (
+                  <div
+                    className="workbench-tab"
+                    data-active={changesShown}
+                    data-kind="changes"
+                    role="tab"
+                    aria-selected={changesShown}
                   >
-                    <X size={15} strokeWidth={2.2} aria-hidden />
-                  </button>
-                </div>
-              ))
+                    <button
+                      className="workbench-tab__label"
+                      type="button"
+                      title="Changes"
+                      onClick={() => changes.onActivate()}
+                    >
+                      <span className="workbench-tab__icon" aria-hidden>
+                        <GitCompare size={tabIconSize} strokeWidth={1.85} />
+                      </span>
+                      <span className="workbench-tab__title">Changes</span>
+                    </button>
+                    <button
+                      className="workbench-tab__close"
+                      type="button"
+                      title="Close Changes"
+                      aria-label="Close Changes"
+                      onClick={() => changes.onClose()}
+                    >
+                      <X size={15} strokeWidth={2.2} aria-hidden />
+                    </button>
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
         </header>
       )}
-      {changes.open ? (
+      {changesShown ? (
         <section className="workbench-column__pane" data-pane-kind="changes">
           <ChangesPanel
             isGitRepo={changes.isGitRepo}
@@ -125,7 +168,6 @@ export function createWorkbenchColumn(
             files={changes.files}
             loadDiff={changes.loadDiff}
             onRefresh={changes.onRefresh}
-            onClose={changes.onClose}
           />
         </section>
       ) : viewModel.editorPicker !== null ? (

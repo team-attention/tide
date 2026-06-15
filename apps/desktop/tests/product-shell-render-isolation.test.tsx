@@ -86,12 +86,15 @@ test("the REAL workbench column does not re-commit on a chat-only change but doe
   // still bail on chat-only changes.
   const changes = {
     open: false,
+    active: false,
     isGitRepo: false,
     branch: null,
     files: [],
     loadDiff: () => Promise.resolve(""),
     onRefresh: () => undefined,
     onClose: () => undefined,
+    onActivate: () => undefined,
+    onDeactivate: () => undefined,
   };
 
   let commits = 0;

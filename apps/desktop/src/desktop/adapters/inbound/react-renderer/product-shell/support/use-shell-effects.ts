@@ -192,13 +192,18 @@ export interface GitChangesView {
 // Everything the docked Changes pane needs. Memoized so the workbench column (a memo
 // boundary) only re-renders when git state / open-ness changes, not on chat tokens.
 export interface ChangesPaneData {
+  // `open` = the Changes tab exists in the strip; `active` = it's the focused tab (its
+  // body is shown). Both renderer-local — it's a real tab alongside the backend panes.
   open: boolean;
+  active: boolean;
   isGitRepo: boolean;
   branch: string | null;
   files: GitChangesResult["files"];
   loadDiff: (relPath: string) => Promise<string>;
   onRefresh: () => void;
   onClose: () => void;
+  onActivate: () => void;
+  onDeactivate: () => void;
 }
 
 // Consolidated git state for the active repo/worktree. One fetch on cwd change / manual
@@ -210,16 +215,23 @@ export function useGitState(
   setShellState: Dispatch<SetStateAction<ProductShellState>>,
 ): {
   gitInfo: GitChangesView | null;
-  setOpen: (open: boolean) => void;
+  // Open (+ focus) the Changes tab, opening the Workbench first if it was closed.
+  openPane: () => void;
   // Memoized badge (branch + summed +/- + file count) for the chat header; stable across
   // chat-token renders so the memoized chat column doesn't re-render on every token.
   gitBadge: { branch: string | null; additions: number; deletions: number; fileCount: number; onOpen: () => void } | null;
-  // Memoized data for the docked Changes pane in the Workbench column.
+  // Memoized data for the Changes tab in the Workbench column.
   changes: ChangesPaneData;
 } {
   const [gitInfo, setGitInfo] = useState<GitChangesView | null>(null);
   const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(false);
   const [nonce, setNonce] = useState(0);
+  const openPane = () => {
+    setShellState((state) => (state.workbenchOpen ? state : { ...state, workbenchOpen: true }));
+    setOpen(true);
+    setActive(true);
+  };
   useEffect(() => {
     if (projectBridge === undefined || activeProjectCwd === null) {
       setShellState((state) => setProductShellGitContext(state, { branches: [], worktrees: [] }));
@@ -253,13 +265,15 @@ export function useGitState(
             additions: gitInfo.files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
             deletions: gitInfo.files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
             fileCount: gitInfo.files.length,
-            onOpen: () => setOpen(true),
+            onOpen: openPane,
           },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [gitInfo],
   );
   const changes = useMemo<ChangesPaneData>(
     () => ({
       open,
+      active,
       isGitRepo: gitInfo !== null,
       branch: gitInfo?.branch ?? null,
       files: gitInfo?.files ?? [],
@@ -268,9 +282,14 @@ export function useGitState(
           ? Promise.resolve("")
           : projectBridge.gitFileDiff(gitInfo.cwd, relPath),
       onRefresh: () => setNonce((value) => value + 1),
-      onClose: () => setOpen(false),
+      onClose: () => {
+        setOpen(false);
+        setActive(false);
+      },
+      onActivate: () => setActive(true),
+      onDeactivate: () => setActive(false),
     }),
-    [open, gitInfo, projectBridge],
+    [open, active, gitInfo, projectBridge],
   );
-  return { gitInfo, setOpen, gitBadge, changes };
+  return { gitInfo, openPane, gitBadge, changes };
 }

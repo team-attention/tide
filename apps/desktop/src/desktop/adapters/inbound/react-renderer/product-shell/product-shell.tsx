@@ -557,11 +557,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     ...createWorkbenchHandlers(handlerContext),
     ...createEditorHandlers(handlerContext),
     ...createChromeHandlers(handlerContext),
-    onOpenChanges: () => {
-      // The Changes pane lives in the Workbench column, so make sure it's open.
-      setShellState((state) => (state.workbenchOpen ? state : { ...state, workbenchOpen: true }));
-      git.setOpen(true);
-    },
+    onOpenChanges: () => git.openPane(),
   };
   const stableHandlers = useStableHandlers(handlers);
 
