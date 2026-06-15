@@ -101,6 +101,10 @@
   /* Same width basis as the content turns so the composer lines up exactly. */
   width: min(760px, calc(100% - 32px));
   display: grid;
+  /* Pin the single column to the box width; without minmax(0,1fr) the implicit `auto`
+     column grows to a child's max-content (e.g. the prompt card's options/actions row)
+     and spills past the column edge into the workbench. Same fix as .composer-shell. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   margin: 0 auto;
 }
