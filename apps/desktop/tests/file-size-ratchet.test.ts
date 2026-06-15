@@ -23,11 +23,11 @@ const MAX_LINES = 800;
 // Pinned ceilings for the known god-files (the Phase 3 decomposition backlog).
 // Each may shrink or hold, never grow. Lower these as collaborators are extracted.
 const PINNED_MAX: Record<string, number> = {
-  // +4 over the prior 1482 pin: the computer-use turn-end driving-clear lives in
-  // workbench-browser-operations.ts (clearAgentBrowserDriving); only the import + a
-  // 1-line call at each of the 3 runtime settle-to-idle sites remain here (irreducible
-  // integration). The full thread-runtime-service split is still the real fix.
-  "backend/application/services/thread/thread-runtime-service.ts": 1486,
+  // +26 over the prior 1486 pin: the spurious-turn-end guard that stops a live,
+  // unanswered prompt from being dropped on switch-back (promptAnsweredPendingSettle,
+  // threaded through recordTurnComplete / answerPrompt / recordProviderPromptState).
+  // The full thread-runtime-service split is still the real fix.
+  "backend/application/services/thread/thread-runtime-service.ts": 1512,
 };
 
 function listSourceFiles(dir: string): string[] {

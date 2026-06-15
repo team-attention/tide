@@ -187,6 +187,10 @@ export function createLiveAgentSessionEventProjector(input: {
       threadId: args.threadId,
       service,
       onEvent: input.onEvent,
+      // A turn-end that produced real content (answer / notice) is a genuine end and
+      // settles unconditionally; a bare/empty turn-end does not force, so it can't
+      // settle away a live, still-unanswered prompt (spurious turn-end while waiting).
+      force: args.outcome.finalMessage !== undefined || args.outcome.notice !== undefined,
     });
     // Turn settled — the conversation's durable state matters now; flush eagerly.
     await flushPersist(args.threadId);
@@ -406,11 +410,14 @@ export function createLiveAgentSessionEventProjector(input: {
       }
       if (event.kind === "runtime_exited") {
         // A crash mid-turn must not strand the thread "Working": settle it.
-        // (recordTurnComplete is a no-op when the thread is already idle.)
+        // (recordTurnComplete is a no-op when the thread is already idle.) The runtime
+        // is genuinely gone, so force the settle even past an open prompt — that card
+        // is now truly dead (its runtime can no longer receive the answer).
         await emitTurnComplete({
           threadId: eventInput.threadId,
           service,
           onEvent: input.onEvent,
+          force: true,
         });
         await flushPersist(eventInput.threadId);
       }
@@ -561,8 +568,12 @@ async function emitTurnComplete(input: {
   threadId: string;
   service: ThreadRuntimeService;
   onEvent?: (event: BackendEventEnvelope) => void;
+  // Settle even if the thread is still blocked on an unanswered prompt. Set for a
+  // genuine runtime exit and for a turn-end that carried real content; left unset for
+  // a bare turn-end so a spurious one can't drop a live, never-answered card.
+  force?: boolean;
 }): Promise<void> {
-  const result = await input.service.recordTurnComplete({ threadId: input.threadId });
+  const result = await input.service.recordTurnComplete({ threadId: input.threadId, force: input.force });
   if (!result.ok) {
     return;
   }

@@ -1,5 +1,4 @@
 import type { ProductShellAgentIdentity, ProductShellState } from "./types.ts";
-import { preserveActiveAgentChat } from "./thread-list.ts";
 import { createAppChromeState } from "../../app-chrome/app-chrome-state.ts";
 import { createAgentChatShellState, defaultModelValueForAgent, defaultPermissionForAgent, resolveStartAgentId } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatAgentBinding, AgentChatShellState, AgentChatThreadScope } from "../../agent-chat/agent-chat.ts";
@@ -63,6 +62,34 @@ export function startNewProductShellThread(
     editorDrafts: {},
     editorPickerFilter: null,
   };
+}
+
+// If a state transition just dropped the active Thread (activeThreadId went
+// non-null → null because it was archived/deleted), reset the chat to a fresh Start
+// Composer so the removed Thread's transcript doesn't linger on screen — the chat
+// column renders state.agentChat directly, so detaching via activeThreadId alone
+// isn't enough. No-op when focus was already null or is unchanged (e.g. a background
+// Thread was archived), so it never steals focus from the Thread you're viewing.
+export function refocusStartComposerIfActiveDropped(
+  previous: ProductShellState,
+  next: ProductShellState,
+): ProductShellState {
+  const activeDropped = previous.activeThreadId !== null && next.activeThreadId === null;
+  return activeDropped ? startNewProductShellThread(next) : next;
+}
+
+// Stash the currently active thread's agent-chat state into the per-thread map so it
+// is preserved when we switch away (and can be restored intact on return). Lives here
+// (not in thread-list) so start.ts has no back-import into thread-list — keeping the
+// start ↔ thread-list dependency one-directional (thread-list → start).
+export function preserveActiveAgentChat(
+  state: ProductShellState,
+  nextThreadId: string,
+): Record<string, AgentChatShellState> {
+  if (state.activeThreadId === null || state.activeThreadId === nextThreadId) {
+    return state.agentChatByThreadId;
+  }
+  return { ...state.agentChatByThreadId, [state.activeThreadId]: state.agentChat };
 }
 
 // A new Thread with no chosen Project scopes to the user's first REAL project (a

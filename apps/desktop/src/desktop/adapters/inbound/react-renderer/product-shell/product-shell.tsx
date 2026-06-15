@@ -31,7 +31,7 @@ import {
   createProductShellViewModel,
   quickOpenFilesFromState,
   selectCompletedThreads,
-  archiveProductShellWorktreeChats,
+  deleteWorktreeAndRefocus,
   setProductShellComposerFolderScope,
   setProductShellComposerNewWorktreeIntent,
   setProductShellProviderCommands,
@@ -264,7 +264,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           // Threads that lived in the deleted worktree and drop it from the Composer's
           // worktree list — both reflect the deletion instantly (no manual refresh).
           const withRegistry = setProductShellRegisteredProjects(state, result.entries);
-          const archived = archiveProductShellWorktreeChats(withRegistry, target.cwd);
+          // Archive the Threads that lived in the deleted worktree; if the one on
+          // screen was among them, navigate to the Start Composer (its transcript is
+          // now dead). See deleteWorktreeAndRefocus.
+          const archived = deleteWorktreeAndRefocus(withRegistry, target.cwd);
           for (const command of archived.commands) {
             dispatchBackendCommand(command);
           }

@@ -1224,9 +1224,15 @@ test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", 
   const optionsHtml = renderShell(
     setComposerActiveSurface(createAgentChatShellState(), "composer_options").state,
   );
-  // Typing / shows the real provider commands injected for the cwd+agent.
+  // Typing / in a STARTED thread shows the real provider commands injected for the
+  // cwd+agent. (The slash/skill menu is gated to started threads — the Start
+  // Composer suppresses it, asserted in the next test.)
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
   const slashHtml = renderShell({
-    ...updateComposerDraft(createAgentChatShellState(), "/").state,
+    ...updateComposerDraft(hydrated, "/").state,
     availableCommands: [
       { name: "check", description: "Check repo evidence", trigger: "/" as const },
       { name: "work", description: "Run actionable work", trigger: "/" as const },
@@ -1249,6 +1255,33 @@ test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", 
   assert.match(slashHtml, /\/work/);
 });
 
+test("slash_command_menu_is_suppressed_in_the_start_composer", () => {
+  // The slash/skill menu lists commands you send to a running agent session, so it
+  // must NOT open in the Start Composer (no thread yet) — typing "/goal" there is
+  // just text. It opens only once a Thread has started.
+  const commands = [{ name: "goal", description: "Define the work", trigger: "/" as const }];
+
+  const startComposer = {
+    ...updateComposerDraft(createAgentChatShellState(), "/goal").state,
+    availableCommands: commands,
+  };
+  assert.equal(startComposer.composer.activeSurface, null);
+  // The draft text "/goal" lives in the textarea; assert no choice surface rendered.
+  assert.doesNotMatch(renderShell(startComposer), /data-choice-surface/);
+
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const started = {
+    ...updateComposerDraft(hydrated, "/goal").state,
+    availableCommands: commands,
+  };
+  assert.equal(started.composer.activeSurface, "command_suggestions");
+  assert.match(renderShell(started), /data-choice-surface="command_suggestions"/);
+  assert.match(renderShell(started), /\/goal/);
+});
+
 test("slash_menu_triggers_on_the_token_under_the_cursor_mid_message", () => {
   // The provider apps keep the command menu open while you type a trigger token
   // ANYWHERE in the message, not only as the first character. Tide used to open
@@ -1257,10 +1290,15 @@ test("slash_menu_triggers_on_the_token_under_the_cursor_mid_message", () => {
     { name: "check", description: "Check repo evidence", trigger: "/" as const },
     { name: "work", description: "Run actionable work", trigger: "/" as const },
   ];
+  // A started thread — the slash menu is gated to started composers.
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
 
   // Mid-message "/" with a query opens the menu and filters to the match.
   const midTyped = {
-    ...updateComposerDraft(createAgentChatShellState(), "explain /che").state,
+    ...updateComposerDraft(hydrated, "explain /che").state,
     availableCommands: commands,
   };
   assert.equal(midTyped.composer.activeSurface, "command_suggestions");
@@ -1273,14 +1311,18 @@ test("slash_menu_triggers_on_the_token_under_the_cursor_mid_message", () => {
 
   // A "/" inside a word/path (no leading boundary) does NOT open the menu.
   assert.equal(
-    updateComposerDraft(createAgentChatShellState(), "look at src/app.ts").state.composer.activeSurface,
+    updateComposerDraft(hydrated, "look at src/app.ts").state.composer.activeSurface,
     null,
   );
 });
 
 test("picking_a_command_mid_message_splices_in_place_and_keeps_the_prefix", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
   const opened = {
-    ...updateComposerDraft(createAgentChatShellState(), "explain /ch").state,
+    ...updateComposerDraft(hydrated, "explain /ch").state,
     availableCommands: [{ name: "check", description: "Check repo evidence", trigger: "/" as const }],
   };
   const picked = selectAgentChatChoiceSurfaceRow(opened, "command_suggestions", "command:/check").state;

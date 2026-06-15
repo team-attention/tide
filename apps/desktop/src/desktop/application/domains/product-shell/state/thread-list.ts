@@ -3,7 +3,7 @@ import { formatRelativeThreadTime, previewBlocksForThread, projectsFromThreads, 
 import type { ProductShellThreadListViewModel } from "./view-model.ts";
 import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatBlock, AgentChatBranchOption, AgentChatShellState, AgentChatThreadSummary, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
-import { agentBindingForShellAgent, cloneLaunchOptions, createStartAgentChatState, normalizeAgentId } from "./start.ts";
+import { agentBindingForShellAgent, cloneLaunchOptions, createStartAgentChatState, normalizeAgentId, preserveActiveAgentChat, refocusStartComposerIfActiveDropped } from "./start.ts";
 import { applyAppChromeBackendEvent, createAppChromeState } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
@@ -130,16 +130,19 @@ export function archiveProductShellProjectChats(
     thread.scope.kind === "project" && thread.scope.projectId === projectId;
   const archived = state.threads.filter(inProject);
   const remaining = state.threads.filter((thread) => !inProject(thread));
+  const next: ProductShellState = {
+    ...state,
+    threads: remaining,
+    projects: projectsFromThreads(remaining),
+    leftRailMenu: null,
+    activeThreadId: archived.some((thread) => thread.threadId === state.activeThreadId)
+      ? null
+      : state.activeThreadId,
+  };
   return {
-    state: {
-      ...state,
-      threads: remaining,
-      projects: projectsFromThreads(remaining),
-      leftRailMenu: null,
-      activeThreadId: archived.some((thread) => thread.threadId === state.activeThreadId)
-        ? null
-        : state.activeThreadId,
-    },
+    // Archiving a Project's chats can drop the Thread you're viewing → land on the
+    // Start Composer, not its dead transcript. See refocusStartComposerIfActiveDropped.
+    state: refocusStartComposerIfActiveDropped(state, next),
     commands: archived.map((thread) => ({
       kind: "thread.archive" as const,
       payload: { threadId: thread.threadId, archived: true },
@@ -239,15 +242,18 @@ export function confirmProductShellThreadArchive(
   // Optimistically drop the archived Thread from the visible list; the backend
   // thread.archived event confirms and persists it.
   const threads = state.threads.filter((thread) => thread.threadId !== threadId);
+  const next: ProductShellState = {
+    ...state,
+    threads,
+    projects: projectsFromThreads(threads),
+    activeThreadId: state.activeThreadId === threadId ? null : state.activeThreadId,
+    leftRailMenu: null,
+    archiveConfirmThreadId: null,
+  };
   return {
-    state: {
-      ...state,
-      threads,
-      projects: projectsFromThreads(threads),
-      activeThreadId: state.activeThreadId === threadId ? null : state.activeThreadId,
-      leftRailMenu: null,
-      archiveConfirmThreadId: null,
-    },
+    // Archiving the Thread you're viewing lands you on the Start Composer instead of
+    // its now-dead transcript. See refocusStartComposerIfActiveDropped.
+    state: refocusStartComposerIfActiveDropped(state, next),
     command: { kind: "thread.archive", payload: { threadId, archived: true } },
   };
 }
@@ -443,7 +449,7 @@ export function applyProductShellThreadArchivedEvent(
   const threads = summary.archived
     ? state.threads.filter((thread) => thread.threadId !== summary.threadId)
     : state.threads;
-  return {
+  const next: ProductShellState = {
     ...state,
     threads,
     projects: projectsFromThreads(threads),
@@ -453,18 +459,28 @@ export function applyProductShellThreadArchivedEvent(
         : state.activeThreadId,
     archiveConfirmThreadId: null,
   };
+  // If the Thread on screen was archived (e.g. externally, or as the backend
+  // confirmation of an optimistic archive), navigate to the Start Composer. Idempotent
+  // when the optimistic path already did so (activeThreadId is already null → no-op).
+  return refocusStartComposerIfActiveDropped(state, next);
 }
 
-// Stash the currently active thread's agent-chat state into the per-thread map so it
-// is preserved when we switch away (and can be restored intact on return).
-export function preserveActiveAgentChat(
+// Deleting a worktree archives every Thread that lived in it. If the Thread on screen
+// was one of them it's gone now — navigate to the Start Composer instead of leaving its
+// dead transcript visible. When the viewed Thread lived elsewhere, focus is untouched.
+// Lives here (with archiveProductShellWorktreeChats) so start.ts needs no back-import.
+export function deleteWorktreeAndRefocus(
   state: ProductShellState,
-  nextThreadId: string,
-): Record<string, AgentChatShellState> {
-  if (state.activeThreadId === null || state.activeThreadId === nextThreadId) {
-    return state.agentChatByThreadId;
-  }
-  return { ...state.agentChatByThreadId, [state.activeThreadId]: state.agentChat };
+  cwd: string,
+): {
+  state: ProductShellState;
+  commands: { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }[];
+} {
+  const archived = archiveProductShellWorktreeChats(state, cwd);
+  return {
+    state: refocusStartComposerIfActiveDropped(state, archived.state),
+    commands: archived.commands,
+  };
 }
 
 export function openProductShellThread(

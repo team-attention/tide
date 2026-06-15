@@ -235,6 +235,68 @@ test("switching_threads_preserves_each_threads_agent_chat_state", () => {
   );
 });
 
+test("switching_back_to_a_prompt_waiting_thread_keeps_the_select_box_then_follows_the_backend_hydrate", () => {
+  // The renderer side of the "go away, come back, the select box is gone" report:
+  // proves the renderer is NOT the cause. The pending prompt survives switch-away/
+  // back (optimistic restore) AND a hydrate that re-asserts it; it only clears when
+  // the BACKEND's authoritative hydrate drops it (runtime reconciled to idle).
+  const summary = (threadId: string, title: string, lastKnownState = "idle") => ({
+    threadId,
+    title,
+    agentBinding: { agentId: "codex", runtimeSource: { kind: "provider_cli", integrationId: "codex" } },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    createdAt: "2026-05-29T00:00:00.000Z",
+    updatedAt: "2026-05-29T00:01:00.000Z",
+    pinned: false,
+    archived: false,
+    lastKnownState,
+  });
+  const prompt = {
+    promptId: "perm-1",
+    threadId: "thread-a",
+    agentId: "codex",
+    kind: "approval" as const,
+    message: "Allow command?",
+    source: "provider_signal" as const,
+    choices: [{ choiceId: "allow", label: "Allow", providerValue: "allow" }],
+  };
+
+  const base = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: { threads: [summary("thread-a", "A"), summary("thread-b", "B")] },
+  });
+  const openA = openProductShellThreadFromLeftRail(base, "thread-a", { backendTransportAvailable: true }).state;
+  const aWaiting = applyProductShellBackendEvent(openA, {
+    kind: "prompt.changed",
+    payload: { threadId: "thread-a", prompt },
+  });
+  assert.equal(aWaiting.agentChat.promptState?.promptId, "perm-1");
+  assert.match(renderProductShell(aWaiting), /Allow command\?/);
+
+  const onB = openProductShellThreadFromLeftRail(aWaiting, "thread-b", { backendTransportAvailable: true }).state;
+  const backToA = openProductShellThreadFromLeftRail(onB, "thread-a", { backendTransportAvailable: true }).state;
+  // (1) Optimistic restore must keep the prompt.
+  assert.equal(backToA.agentChat.promptState?.promptId, "perm-1", "OPTIMISTIC restore lost the prompt");
+
+  // (2) Backend hydrate for a still-live runtime RETURNS the prompt -> must survive.
+  const hydratedWithPrompt = applyProductShellBackendEvent(backToA, {
+    kind: "thread.hydrated",
+    payload: { thread: summary("thread-a", "A", "waiting_for_approval"), blocks: [], runtimeState: "waiting_for_approval", prompt },
+  });
+  assert.equal(hydratedWithPrompt.agentChat.promptState?.promptId, "perm-1", "HYDRATE-with-prompt lost the prompt");
+
+  // (3) Backend hydrate that DROPS the prompt (runtime reconciled to idle / dead) is
+  // authoritative — the renderer faithfully clears it. So when users DO see the box
+  // vanish, the backend returned prompt=null here; the cause is upstream, not in the
+  // renderer's switch/restore.
+  const hydratedNull = applyProductShellBackendEvent(backToA, {
+    kind: "thread.hydrated",
+    payload: { thread: summary("thread-a", "A", "idle"), blocks: [], runtimeState: "idle", prompt: null },
+  });
+  assert.equal(hydratedNull.agentChat.promptState, null);
+  assert.equal(hydratedNull.agentChat.runtimeState, "idle");
+});
+
 test("confirming_thread_archive_emits_command_and_drops_it_from_the_list", () => {
   // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
   const state = threadListState();

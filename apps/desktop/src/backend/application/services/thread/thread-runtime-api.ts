@@ -203,6 +203,14 @@ export interface StopAgentRuntimeResult {
 
 export interface RecordTurnCompleteInput {
   threadId: ThreadId;
+  /**
+   * Settle even when the thread is still blocked on an unanswered prompt. A normal
+   * turn-end signal leaves this unset, so it can never drop a live, never-answered
+   * permission/question card (a spurious turn-end while waiting must not strand the
+   * user with an empty, idle-looking thread). A genuine runtime exit/crash — and a
+   * turn-end that carried real content — pass `force: true`.
+   */
+  force?: boolean;
 }
 
 export interface RecordTurnCompleteResult {

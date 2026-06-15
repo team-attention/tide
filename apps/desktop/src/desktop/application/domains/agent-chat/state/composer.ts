@@ -13,8 +13,11 @@ export function updateComposerDraft(
       composer: {
         ...state.composer,
         draft,
+        // The slash/skill command menu lists commands you send to a RUNNING agent
+        // session, so it's only meaningful once a Thread has started. In the Start
+        // Composer (no thread yet) typing "/" just types text — no menu.
         activeSurface:
-          composerSurfaceForDraft(draft) ??
+          (state.thread !== null ? composerSurfaceForDraft(draft) : null) ??
           (state.composer.activeSurface === "command_suggestions"
             ? null
             : state.composer.activeSurface),
