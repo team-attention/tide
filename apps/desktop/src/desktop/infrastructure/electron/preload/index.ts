@@ -40,10 +40,11 @@ export interface TidePreloadSurface {
   // Cmd+W "close intent" from the application menu — the renderer decides what to
   // close (a focused Workbench pane, else the active thread → start composer).
   onCloseIntent(listener: () => void): () => void;
-  // A Browser Pane link asked to open in a new tab/window (Cmd/Ctrl+click, middle-click,
-  // window.open). Main denies the popup and forwards the URL so the renderer opens it as
-  // a new Browser Pane instead of a stray window.
-  onOpenBrowserPane(listener: (url: string) => void): () => void;
+  // A Browser Pane link asked to open elsewhere. Main denies the stray popup window and
+  // forwards the URL so the renderer drives the backend open_browser path: `newPane`
+  // true (Cmd/Ctrl/middle-click, window.open) opens a new Browser Pane; false (a plain
+  // target=_blank click) navigates the active Browser Pane in place.
+  onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
   // View-menu panel toggles (Cmd+B left rail / Cmd+E file tree / Cmd+J workbench),
   // routed from the application menu so they fire regardless of focus (webview/terminal).
   onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
@@ -106,7 +107,7 @@ export const tidePreloadSurface: TidePreloadSurface = {
     };
   },
   onOpenBrowserPane(listener) {
-    const wrapped = (_event: unknown, url: string) => listener(url);
+    const wrapped = (_event: unknown, url: string, newPane: boolean) => listener(url, newPane);
     ipcRenderer.on("tide:open-browser-pane", wrapped);
     return () => {
       ipcRenderer.removeListener("tide:open-browser-pane", wrapped);
