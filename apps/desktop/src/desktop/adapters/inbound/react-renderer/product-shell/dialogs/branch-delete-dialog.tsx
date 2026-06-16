@@ -48,7 +48,7 @@ export function BranchDeleteDialog(props: {
             {`Branch "${branch}" has unmerged commits — deleting it discards them.`}
           </div>
         ) : null}
-        {props.error != null && props.error.length > 0 ? (
+        {props.error ? (
           <div className="worktree-delete__warn">{props.error}</div>
         ) : null}
         <div className="worktree-create__actions">
