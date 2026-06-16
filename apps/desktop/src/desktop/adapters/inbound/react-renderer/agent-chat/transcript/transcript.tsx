@@ -141,7 +141,8 @@ export function createAgentSession(
             // nothing) shows a placeholder instead of a blank void. But once a message
             // is submitted it shows as the optimistic/queued "You" row below — there IS
             // content, so the "No messages here" placeholder must not render alongside it.
-            chatState === "ready" && queuedInputs.length === 0
+            // (Same condition that keeps the session centered — one source of truth.)
+            showsEmptyPlaceholder
             ? createAgentSessionEmptyPlaceholder()
             : null
         : groupSessionItems(blocks).map(renderSessionItem)}
