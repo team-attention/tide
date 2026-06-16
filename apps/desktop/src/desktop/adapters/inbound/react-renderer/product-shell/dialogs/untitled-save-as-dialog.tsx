@@ -13,7 +13,8 @@ export function UntitledSaveAsDialog(props: {
   onClose: () => void;
 }): ReactElement {
   const [path, setPath] = useState("");
-  const scopeLabel = props.scopeCwd.replace(/\/+$/, "").split("/").pop() ?? props.scopeCwd;
+  // `||` (not `??`): a root cwd ("/") trims to "" then pops "", which `??` would keep.
+  const scopeLabel = props.scopeCwd.replace(/\/+$/, "").split("/").pop() || props.scopeCwd;
   const submit = () => {
     if (path.trim().length > 0) {
       props.onSave(path);

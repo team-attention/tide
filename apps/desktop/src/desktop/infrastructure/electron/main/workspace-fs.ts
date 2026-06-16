@@ -40,12 +40,17 @@ export function resolveInsideRoot(
     ? path.resolve(relInput)
     : path.resolve(root, relInput);
 
-  if (candidate !== root && !candidate.startsWith(`${root}${path.sep}`)) {
+  // Outside the root if reaching it means climbing out (`..`) or it sits on another
+  // Windows drive (an absolute relative path). `path.relative` is robust where a
+  // `startsWith(root + sep)` prefix check is wrong — a drive root (`C:\`) or `/`,
+  // and sibling dirs sharing the prefix (`/root` vs `/root-x`).
+  const relativePath = path.relative(root, candidate);
+  if (relativePath === ".." || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
     return { ok: false, code: "path_outside_root", message: "Path is outside the workspace root." };
   }
   return {
     ok: true,
-    resolved: { root, abs: candidate, relativePath: path.relative(root, candidate) },
+    resolved: { root, abs: candidate, relativePath },
   };
 }
 

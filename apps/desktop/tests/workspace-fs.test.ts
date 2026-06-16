@@ -22,19 +22,21 @@ function tempRoot(): string {
 test("resolveInsideRoot accepts in-root paths and rejects escapes", () => {
   const root = tempRoot();
   assert.equal(resolveInsideRoot(root, "src/app.ts").ok, true);
+  assert.equal(resolveInsideRoot(root, ".").ok, true, "the root itself resolves (relativePath '')");
 
   const escape = resolveInsideRoot(root, "../outside.txt");
   assert.equal(escape.ok, false);
   assert.equal(escape.ok === false && escape.code, "path_outside_root");
 
-  const absElsewhere = resolveInsideRoot(root, "/etc/hosts");
-  assert.equal(absElsewhere.ok, false);
+  assert.equal(resolveInsideRoot(root, "/etc/hosts").ok, false, "an absolute path elsewhere is outside");
 
-  // A sibling dir sharing the prefix (`/root-x`) must NOT count as inside `/root`.
-  const sibling = resolveInsideRoot(root, `${path.basename(root)}-x/file`);
-  // Relative to root, this resolves to a sibling => outside.
-  assert.equal(resolveInsideRoot(`${root}`, `..${path.sep}${path.basename(root)}-x`).ok, false);
-  void sibling;
+  // A sibling dir sharing the prefix (`/ws/root` vs `/ws/root-x`) must NOT count as
+  // inside — the bug the old `startsWith(root + sep)` prefix check could miss.
+  assert.equal(resolveInsideRoot("/ws/root", "/ws/root-x/file").ok, false, "sibling prefix is outside");
+
+  // A filesystem root (`/`, and on Windows a drive root like `C:\`) must still admit
+  // its children — the prefix check got `${root}${sep}` = `//` wrong here.
+  assert.equal(resolveInsideRoot("/", "etc/hosts").ok, true, "the root admits children");
 });
 
 test("isInvalidMove rejects moving into self or descendant", () => {

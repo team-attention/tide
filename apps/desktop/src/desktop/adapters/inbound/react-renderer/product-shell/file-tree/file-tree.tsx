@@ -120,7 +120,17 @@ const FileTreeRow = memo(function FileTreeRow(props: {
             }
           : undefined
       }
-      onDragLeave={isFolder ? () => setDragOverPath(null) : undefined}
+      onDragLeave={
+        isFolder
+          ? () => {
+              // Only clear OUR highlight: dragging A→B fires A's dragleave after B's
+              // dragover, so an unguarded clear would wipe B's just-set highlight.
+              if (isDragOver) {
+                setDragOverPath(null);
+              }
+            }
+          : undefined
+      }
       onDrop={
         isFolder
           ? (event: DragEvent) => {
