@@ -31,8 +31,16 @@ function applyZoomToAllWebviews(): void {
 }
 
 // Apply the current factor now and again on dom-ready: a fresh guest reports zoom 1
-// until attached, and setZoomFactor is a no-op before then.
+// until attached, and setZoomFactor is a no-op before then. Guarded by a WeakSet so a
+// webview that's re-observed (e.g. a pane moved between the active/background hosts)
+// doesn't accumulate duplicate dom-ready listeners.
+const trackedWebviews = new WeakSet<Element>();
+
 function trackWebview(element: Element): void {
+  if (trackedWebviews.has(element)) {
+    return;
+  }
+  trackedWebviews.add(element);
   applyZoomToWebview(element);
   element.addEventListener("dom-ready", () => applyZoomToWebview(element));
 }

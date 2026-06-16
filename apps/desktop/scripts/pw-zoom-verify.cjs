@@ -144,6 +144,7 @@ const launch = (dataRoot) => _electron.launch({
 
   fs.rmSync(htmlPath, { force: true });
   await app.close();
-  console.log(`DONE failures=${failures} dataRoot=${dataRoot}`);
+  try { fs.rmSync(dataRoot, { recursive: true, force: true }); } catch {}
+  console.log(`DONE failures=${failures}`);
   process.exit(failures === 0 ? 0 : 1);
 })().catch((e) => { try { fs.rmSync(htmlPath, { force: true }); } catch {} console.error("PW ERROR", e); process.exit(1); });

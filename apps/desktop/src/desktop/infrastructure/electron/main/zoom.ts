@@ -16,15 +16,8 @@ export function steppedZoomFactor(current: number, direction: 1 | -1): number {
   if (direction === 1) {
     return ZOOM_FACTORS.find((factor) => factor > current + EPSILON) ?? ZOOM_FACTORS[ZOOM_FACTORS.length - 1];
   }
-  let previous = ZOOM_FACTORS[0];
-  for (const factor of ZOOM_FACTORS) {
-    if (factor < current - EPSILON) {
-      previous = factor;
-    } else {
-      break;
-    }
-  }
-  return previous;
+  // Search in reverse for the first (= largest) stop strictly below current.
+  return [...ZOOM_FACTORS].reverse().find((factor) => factor < current - EPSILON) ?? ZOOM_FACTORS[0];
 }
 
 // Set the HOST window's zoom factor and tell its renderer the new value. We zoom the
