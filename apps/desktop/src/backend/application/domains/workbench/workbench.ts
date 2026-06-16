@@ -86,6 +86,11 @@ export interface BrowserPaneState {
   screenshot?: BrowserPaneScreenshot;
   pendingAction?: BrowserPaneActionRequest;
   lastAction?: BrowserPaneActionResult;
+  // The pane's revision immediately BEFORE its most recent settled act-completion re-mint,
+  // kept so tide_act_browser can auto-retry one step of staleness from the agent's OWN prior
+  // action (D5, spec browser-pane-live-pull-vision.md). Cleared on navigation so that a
+  // post-navigation stale act is never auto-retried.
+  priorRevision?: string;
 }
 
 export type BrowserPaneActionKind =

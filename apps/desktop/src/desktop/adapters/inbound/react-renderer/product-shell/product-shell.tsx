@@ -359,10 +359,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     // threads out of the viewed surface. Terminal output and update-notices stay
     // immediate — they early-return without touching shell state.
     const pending: AgentChatBackendEvent[] = [];
-    let frame: number | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const flushPending = (): void => {
-      frame = null;
+      timer = null;
       if (pending.length === 0) {
         return;
       }
@@ -396,13 +396,17 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     };
 
     const scheduleFlush = (): void => {
-      if (frame !== null) {
+      if (timer !== null) {
         return;
       }
-      frame =
-        typeof requestAnimationFrame === "function"
-          ? requestAnimationFrame(flushPending)
-          : (setTimeout(flushPending, 16) as unknown as number);
+      // Coalesce a burst of streamed chunks into ONE state update per ~frame (perf E3): the
+      // first event arms a short timer; everything arriving in the window folds into one flush.
+      // A timer — deliberately NOT requestAnimationFrame — is the scheduler, because Chromium
+      // services rAF only while the page paints: an occluded window (e.g. Tide on another macOS
+      // Space) pauses rAF, stranding backend events so a background agent finishing never flips
+      // the running flag and never notifies until you return. Timers still run off screen (kept
+      // un-throttled via backgroundThrottling in main-window.ts), so the notification fires.
+      timer = setTimeout(flushPending, 16);
     };
 
     const unsubscribe = props.onBackendEvent?.((event) => {
@@ -437,12 +441,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     });
 
     return () => {
-      if (frame !== null) {
-        if (typeof cancelAnimationFrame === "function") {
-          cancelAnimationFrame(frame);
-        } else {
-          clearTimeout(frame);
-        }
+      if (timer !== null) {
+        clearTimeout(timer);
       }
       unsubscribe?.();
     };

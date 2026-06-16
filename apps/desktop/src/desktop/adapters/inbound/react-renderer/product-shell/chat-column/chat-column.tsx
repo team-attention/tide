@@ -104,6 +104,7 @@ export function createAgentChatColumn(
         onRemoveContextChip={handlers.onRemoveContextChip}
         onSetContextChipComment={handlers.onSetContextChipComment}
         onAnswerPromptText={handlers.onAnswerPromptText}
+        onAnswerPromptSteps={handlers.onAnswerPromptSteps}
       />
     </section>
   );

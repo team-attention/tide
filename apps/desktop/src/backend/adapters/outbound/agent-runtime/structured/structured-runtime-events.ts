@@ -7,7 +7,7 @@
 // Every shape here is evidence-based: captured live from the real CLIs
 // (transcripts under /tmp/tide-proto-evidence/, summarized in
 // docs_v2/specs/structured-agent-runtime.md). Do not extend from memory.
-import type { ComposerAttachmentRef, PromptState } from "../../../../application/domains/thread/thread.ts";
+import type { ComposerAttachmentRef, PromptState, PromptStepAnswer } from "../../../../application/domains/thread/thread.ts";
 import type { DiscoveredProviderSessionRef } from "../../../../application/ports/outbound/agent-integration-port.ts";
 
 export type StructuredProviderEvent =
@@ -91,7 +91,16 @@ export interface StructuredRuntimeClient {
 
 export type StructuredRuntimeWrite =
   | { kind: "composer_input"; value: string; attachments?: ComposerAttachmentRef[] }
-  | { kind: "prompt_answer"; promptId?: string; choiceId?: string; value: string };
+  | {
+      kind: "prompt_answer";
+      promptId?: string;
+      choiceId?: string;
+      value: string;
+      // A multi-step prompt (wizard) submits one answer per step here. When present the
+      // client builds the full provider answer set from it; `value`/`choiceId` are the
+      // single-prompt path. See multi-step-prompt-navigation.md.
+      stepAnswers?: PromptStepAnswer[];
+    };
 
 export interface StructuredClientCallbacks {
   onEvent: (event: StructuredProviderEvent) => void;

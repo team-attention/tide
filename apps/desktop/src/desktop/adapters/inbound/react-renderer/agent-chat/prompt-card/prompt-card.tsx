@@ -1,4 +1,4 @@
-import type { AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import type { AgentChatPromptStep, AgentChatPromptStepAnswer, AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { useEffect, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
@@ -7,7 +7,33 @@ import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } f
 // permission request: the message, selectable options (with their provider
 // values), an "Other" free-text reply, and Skip / Submit. Replaces the generic
 // menu-style rendering so every provider's prompt looks the same.
+//
+// A batched multi-question prompt (claude AskUserQuestion, `prompt.steps.length > 1`)
+// renders instead as a navigable WIZARD: the user moves Back/Next across the steps,
+// reviews and revises any prior answer, and submits them all together — nothing commits
+// until the final submit. Single prompts (every permission/approval, a 1-question
+// AskUserQuestion) keep the original single-card path unchanged. See
+// docs_v2/specs/multi-step-prompt-navigation.md.
 export function PromptCard(props: {
+  prompt: NonNullable<AgentChatShellViewModel["prompt"]>;
+  onSelectChoice: (choiceId: string) => void;
+  onAnswerText: (value: string) => void;
+  onAnswerSteps: (stepAnswers: AgentChatPromptStepAnswer[]) => void;
+}): ReactElement {
+  const steps = props.prompt.steps;
+  if (steps !== undefined && steps.length > 1) {
+    return <WizardPromptCard steps={steps} onAnswerSteps={props.onAnswerSteps} />;
+  }
+  return (
+    <SinglePromptCard
+      prompt={props.prompt}
+      onSelectChoice={props.onSelectChoice}
+      onAnswerText={props.onAnswerText}
+    />
+  );
+}
+
+function SinglePromptCard(props: {
   prompt: NonNullable<AgentChatShellViewModel["prompt"]>;
   onSelectChoice: (choiceId: string) => void;
   onAnswerText: (value: string) => void;
@@ -113,6 +139,255 @@ export function PromptCard(props: {
       : props.prompt.kind === "choice"
       ? "Choose an option"
       : "Question";
+  return (
+    <div className="prompt-card" role="group" aria-label="Agent prompt">
+      <div className="prompt-card__head">
+        <span className="prompt-card__kind">{multiSelect ? "Select all that apply" : kindLabel}</span>
+        <p className="prompt-card__message">{props.prompt.message}</p>
+      </div>
+      <div className="prompt-card__options">
+        {renderOptions({
+          choices,
+          multiSelect,
+          selectedId,
+          selectedIds,
+          otherActive,
+          otherText,
+          hasChoices,
+          onPickChoice: (choiceId) => {
+            setOtherActive(false);
+            setSelectedId(choiceId);
+          },
+          onToggleMulti: toggleMulti,
+          onPickOther: () => {
+            setOtherActive(true);
+            setSelectedId(null);
+          },
+          onOtherText: setOtherText,
+          onOtherEnter: submit,
+        })}
+      </div>
+      <div className="prompt-card__actions">
+        <button type="button" className="prompt-card__skip" onClick={() => props.onAnswerText("")}>
+          Skip
+        </button>
+        <button type="button" className="prompt-card__submit" disabled={!canSubmit} onClick={submit}>
+          Submit
+          <span className="prompt-card__submit-kbd">⌘↵</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Per-step answer state for the wizard: a single pick, a multi-select set, or an
+// "Other…" free-text reply.
+interface StepAnswerState {
+  selectedId: string | null;
+  selectedIds: Set<string>;
+  otherActive: boolean;
+  otherText: string;
+}
+
+function initStepAnswer(step: AgentChatPromptStep): StepAnswerState {
+  const hasChoices = (step.choices?.length ?? 0) > 0;
+  const multiSelect = step.multiSelect === true && hasChoices;
+  return {
+    // Pre-select the default option so a single-select step always has a valid answer
+    // (mirrors the single card's default-first); free navigation only reviews/changes it.
+    selectedId: multiSelect ? null : step.defaultChoiceId ?? null,
+    selectedIds: new Set(),
+    otherActive: !hasChoices && !multiSelect,
+    otherText: "",
+  };
+}
+
+// Resolve one step's provider-native answer value — identical encoding to the single
+// card: a chosen option's providerValue, joined labels for multiSelect (free text), the
+// trimmed "Other…" text, or "" when nothing is chosen (a skipped step).
+function resolveStepValue(step: AgentChatPromptStep, answer: StepAnswerState): string {
+  const choices = step.choices ?? [];
+  const multiSelect = step.multiSelect === true && choices.length > 0;
+  if (multiSelect) {
+    return choices
+      .filter((choice) => answer.selectedIds.has(choice.choiceId))
+      .map((choice) => choice.label)
+      .join(", ");
+  }
+  if (answer.otherActive) {
+    return answer.otherText.trim();
+  }
+  if (answer.selectedId !== null) {
+    return choices.find((choice) => choice.choiceId === answer.selectedId)?.providerValue ?? "";
+  }
+  return "";
+}
+
+function stepIsAnswered(step: AgentChatPromptStep, answer: StepAnswerState): boolean {
+  return resolveStepValue(step, answer).length > 0;
+}
+
+function WizardPromptCard(props: {
+  steps: AgentChatPromptStep[];
+  onAnswerSteps: (stepAnswers: AgentChatPromptStepAnswer[]) => void;
+}): ReactElement {
+  const steps = props.steps;
+  const [stepIndex, setStepIndex] = useState(0);
+  const [answers, setAnswers] = useState<StepAnswerState[]>(() => steps.map(initStepAnswer));
+  const step = steps[stepIndex];
+  const answer = answers[stepIndex];
+  const isLast = stepIndex === steps.length - 1;
+  const choices = step.choices ?? [];
+  const hasChoices = choices.length > 0;
+  const multiSelect = step.multiSelect === true && hasChoices;
+
+  const setCurrent = (updater: (prev: StepAnswerState) => StepAnswerState) => {
+    setAnswers((prev) => prev.map((entry, index) => (index === stepIndex ? updater(entry) : entry)));
+  };
+  const submit = () => {
+    props.onAnswerSteps(
+      steps.map((eachStep, index) => ({
+        stepId: eachStep.stepId,
+        value: resolveStepValue(eachStep, answers[index]),
+      })),
+    );
+  };
+  const goNext = () => {
+    if (isLast) {
+      submit();
+    } else {
+      setStepIndex((index) => Math.min(index + 1, steps.length - 1));
+    }
+  };
+  const goBack = () => setStepIndex((index) => Math.max(index - 1, 0));
+
+  // Keyboard: ⌘/Ctrl+Enter advances (Next, or Submit on the last step) from anywhere;
+  // ↑/↓ move options within the current step (single-select). Back is via button/dot.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        goNext();
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const inEditable =
+        target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
+      if (!multiSelect && (event.key === "ArrowDown" || event.key === "ArrowUp") && !inEditable) {
+        const ids = [...choices.map((choice) => choice.choiceId), ...(hasChoices ? ["__other"] : [])];
+        if (ids.length === 0) {
+          return;
+        }
+        event.preventDefault();
+        const current = answer.otherActive
+          ? ids.indexOf("__other")
+          : answer.selectedId !== null
+          ? ids.indexOf(answer.selectedId)
+          : -1;
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        const nextIndex =
+          current < 0 ? (delta > 0 ? 0 : ids.length - 1) : (current + delta + ids.length) % ids.length;
+        const nextId = ids[nextIndex];
+        if (nextId === "__other") {
+          setCurrent((prev) => ({ ...prev, otherActive: true, selectedId: null }));
+        } else {
+          setCurrent((prev) => ({ ...prev, otherActive: false, selectedId: nextId }));
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // All reactive values the keydown closure reads (goNext/submit/setCurrent close over
+    // stepIndex, answers, steps, props.onAnswerSteps; isLast/choices/hasChoices/multiSelect
+    // are read directly) — so the listener never holds a stale callback.
+  }, [stepIndex, answers, choices, hasChoices, multiSelect, isLast, steps, props]);
+
+  return (
+    <div className="prompt-card prompt-card--wizard" role="group" aria-label="Agent prompt">
+      <div className="prompt-card__head">
+        <div className="prompt-card__wizard-head">
+          <span className="prompt-card__kind">
+            {multiSelect ? "Select all that apply" : "Question"}
+            <span className="prompt-card__step-count"> · {stepIndex + 1} of {steps.length}</span>
+          </span>
+          <div className="prompt-card__steps" role="tablist" aria-label="Steps">
+            {steps.map((eachStep, index) => (
+              <button
+                key={eachStep.stepId}
+                type="button"
+                className="prompt-card__step-dot"
+                data-active={index === stepIndex ? "true" : "false"}
+                data-answered={stepIsAnswered(eachStep, answers[index]) ? "true" : "false"}
+                aria-label={`Step ${index + 1}${index === stepIndex ? " (current)" : ""}`}
+                aria-current={index === stepIndex ? "step" : undefined}
+                onClick={() => setStepIndex(index)}
+              />
+            ))}
+          </div>
+        </div>
+        <p className="prompt-card__message">{step.message}</p>
+      </div>
+      <div className="prompt-card__options">
+        {renderOptions({
+          choices,
+          multiSelect,
+          selectedId: answer.selectedId,
+          selectedIds: answer.selectedIds,
+          otherActive: answer.otherActive,
+          otherText: answer.otherText,
+          hasChoices,
+          onPickChoice: (choiceId) =>
+            setCurrent((prev) => ({ ...prev, otherActive: false, selectedId: choiceId })),
+          onToggleMulti: (choiceId) =>
+            setCurrent((prev) => {
+              const next = new Set(prev.selectedIds);
+              if (next.has(choiceId)) {
+                next.delete(choiceId);
+              } else {
+                next.add(choiceId);
+              }
+              return { ...prev, selectedIds: next };
+            }),
+          onPickOther: () =>
+            setCurrent((prev) => ({ ...prev, otherActive: true, selectedId: null })),
+          onOtherText: (value) => setCurrent((prev) => ({ ...prev, otherText: value })),
+          onOtherEnter: goNext,
+        })}
+      </div>
+      <div className="prompt-card__actions">
+        <button
+          type="button"
+          className="prompt-card__skip"
+          disabled={stepIndex === 0}
+          onClick={goBack}
+        >
+          Back
+        </button>
+        <button type="button" className="prompt-card__submit" onClick={goNext}>
+          {isLast ? "Submit" : "Next"}
+          <span className="prompt-card__submit-kbd">⌘↵</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Shared option list (single pick / multi-select toggles / "Other…" free text) used by
+// both the single card and each wizard step, so they look and behave identically.
+function renderOptions(input: {
+  choices: { choiceId: string; label: string; providerValue: string }[];
+  multiSelect: boolean;
+  selectedId: string | null;
+  selectedIds: Set<string>;
+  otherActive: boolean;
+  otherText: string;
+  hasChoices: boolean;
+  onPickChoice: (choiceId: string) => void;
+  onToggleMulti: (choiceId: string) => void;
+  onPickOther: () => void;
+  onOtherText: (value: string) => void;
+  onOtherEnter: () => void;
+}): ReactElement {
   const option = (
     key: string,
     label: string,
@@ -125,8 +400,8 @@ export function PromptCard(props: {
       type="button"
       className="prompt-card__option"
       data-selected={selected ? "true" : "false"}
-      data-multi={multiSelect ? "true" : undefined}
-      aria-pressed={multiSelect ? selected : undefined}
+      data-multi={input.multiSelect ? "true" : undefined}
+      aria-pressed={input.multiSelect ? selected : undefined}
       onClick={onClick}
     >
       <span className="prompt-card__radio" aria-hidden />
@@ -135,60 +410,41 @@ export function PromptCard(props: {
     </button>
   );
   return (
-    <div className="prompt-card" role="group" aria-label="Agent prompt">
-      <div className="prompt-card__head">
-        <span className="prompt-card__kind">{multiSelect ? "Select all that apply" : kindLabel}</span>
-        <p className="prompt-card__message">{props.prompt.message}</p>
-      </div>
-      <div className="prompt-card__options">
-        {choices.map((choice) =>
-          option(
-            choice.choiceId,
-            choice.label,
-            choice.providerValue && choice.providerValue !== choice.label ? choice.providerValue : undefined,
-            multiSelect ? selectedIds.has(choice.choiceId) : !otherActive && selectedId === choice.choiceId,
-            multiSelect
-              ? () => toggleMulti(choice.choiceId)
-              : () => {
-                  setOtherActive(false);
-                  setSelectedId(choice.choiceId);
-                },
-          ),
-        )}
-        {hasChoices && !multiSelect
-          ? option("__other", "Other…", undefined, otherActive, () => {
-              setOtherActive(true);
-              setSelectedId(null);
-            })
-          : null}
-        {otherActive ? (
-          <textarea
-            className="prompt-card__other"
-            placeholder={hasChoices ? "Type a custom reply…" : "Type your reply…"}
-            value={otherText}
-            rows={hasChoices ? 2 : 3}
-            autoFocus
-            spellCheck={false}
-            aria-label="Custom reply"
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setOtherText(event.currentTarget.value)}
-            onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                submit();
-              }
-            }}
-          />
-        ) : null}
-      </div>
-      <div className="prompt-card__actions">
-        <button type="button" className="prompt-card__skip" onClick={() => props.onAnswerText("")}>
-          Skip
-        </button>
-        <button type="button" className="prompt-card__submit" disabled={!canSubmit} onClick={submit}>
-          Submit
-          <span className="prompt-card__submit-kbd">⌘↵</span>
-        </button>
-      </div>
-    </div>
+    <>
+      {input.choices.map((choice) =>
+        option(
+          choice.choiceId,
+          choice.label,
+          choice.providerValue && choice.providerValue !== choice.label ? choice.providerValue : undefined,
+          input.multiSelect
+            ? input.selectedIds.has(choice.choiceId)
+            : !input.otherActive && input.selectedId === choice.choiceId,
+          input.multiSelect
+            ? () => input.onToggleMulti(choice.choiceId)
+            : () => input.onPickChoice(choice.choiceId),
+        ),
+      )}
+      {input.hasChoices && !input.multiSelect
+        ? option("__other", "Other…", undefined, input.otherActive, input.onPickOther)
+        : null}
+      {input.otherActive ? (
+        <textarea
+          className="prompt-card__other"
+          placeholder={input.hasChoices ? "Type a custom reply…" : "Type your reply…"}
+          value={input.otherText}
+          rows={input.hasChoices ? 2 : 3}
+          autoFocus
+          spellCheck={false}
+          aria-label="Custom reply"
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => input.onOtherText(event.currentTarget.value)}
+          onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              input.onOtherEnter();
+            }
+          }}
+        />
+      ) : null}
+    </>
   );
 }

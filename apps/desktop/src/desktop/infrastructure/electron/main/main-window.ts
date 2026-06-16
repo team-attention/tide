@@ -44,6 +44,14 @@ export function createMainWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      // Don't throttle the renderer's timers when the window is occluded/hidden (e.g. Tide
+      // sits on another macOS Space). Chromium clamps a hidden page's timers (to ~1/min after
+      // a few minutes — "intensive wake-up throttling"), which would delay the coalescing
+      // flush that folds backend events into thread state and drives completion /
+      // needs-attention notifications — so a long-running background agent could finish and
+      // go unannounced for up to a minute. Background notification is a core promise of the
+      // app, so keep the off-screen renderer responsive.
+      backgroundThrottling: false,
     },
   });
 

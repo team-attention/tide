@@ -17,12 +17,9 @@
   gap: 14px;
 }
 
-/* A real conversation is top-anchored so it can scroll to the latest message;
-   centering is only for the (short) empty state. */
-
-.agent-session--has-turns {
-  justify-content: flex-start;
-}
+/* Any visible content — turns, the loading skeleton, an optimistic just-sent
+   row, or the working indicator — top-anchors so it can scroll to the latest
+   message; centering is reserved for the short empty state. */
 
 .agent-session--has-turns {
   justify-content: flex-start;

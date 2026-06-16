@@ -263,6 +263,58 @@ test("directory_trust_blocker_offers_a_trust_this_folder_action", () => {
   );
 });
 
+test("optimistic_first_message_top_anchors_while_provider_is_not_ready", () => {
+  // Spec: docs_v2/specs/transcript-top-anchor-first-message.md
+  // A first message sent into a thread whose provider is still being set up
+  // (e.g. workspace trust required) has no backend block yet — it shows as an
+  // optimistic queued row. It must top-anchor like a conversation, not float in
+  // the vertical center of the transcript.
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const sent = submitComposer(
+    updateComposerDraft(hydrated, "Why is there no branch delete option").state,
+  );
+  assert.deepEqual(sent.state.queuedInputs, ["Why is there no branch delete option"]);
+
+  const blocked: AgentChatShellState = {
+    ...sent.state,
+    providerReadiness: {
+      agentId: "codex",
+      ready: false,
+      blockers: [
+        {
+          kind: "directory_trust_required",
+          scope: "execution_context",
+          message: "Claude Code workspace trust is required.",
+        },
+      ],
+    },
+  };
+
+  const html = renderShell(blocked);
+
+  // The optimistic message renders in the transcript (no backend block yet)...
+  assert.match(html, /Why is there no branch delete option/);
+  // ...and the session is top-anchored, not vertically centered.
+  assert.match(html, /agent-session--has-turns/);
+});
+
+test("a_ready_thread_with_no_messages_keeps_the_centered_empty_state", () => {
+  // Spec: docs_v2/specs/transcript-top-anchor-first-message.md
+  // The genuine empty state stays centered — top-anchoring is only for content.
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+
+  const html = renderShell(hydrated);
+
+  assert.match(html, /No messages here/);
+  assert.doesNotMatch(html, /agent-session--has-turns/);
+});
+
 test("new_thread_start_screen_renders_start_composer_without_fake_cues", () => {
   const state = createAgentChatShellState({
     startOptions: {

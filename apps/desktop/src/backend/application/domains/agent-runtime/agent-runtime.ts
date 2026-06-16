@@ -1,4 +1,4 @@
-import type { AgentBinding, AgentId, ComposerAttachmentRef, ThreadId, ThreadScope } from "../thread/thread.ts";
+import type { AgentBinding, AgentId, ComposerAttachmentRef, PromptStepAnswer, ThreadId, ThreadScope } from "../thread/thread.ts";
 
 export type AgentRuntimeState =
   | "not_started"
@@ -23,6 +23,8 @@ export interface TerminalInput {
   submittedAt: string;
   promptId?: string;
   choiceId?: string;
+  // Multi-step prompt (wizard) answers, one per step. Forwarded to the structured write.
+  stepAnswers?: PromptStepAnswer[];
   attachments?: ComposerAttachmentRef[];
 }
 

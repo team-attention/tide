@@ -1,4 +1,4 @@
-import type { AgentChatAgentId, AgentChatComposerAttachment, AgentChatComposerMessageAttachment, AgentChatComposerSurfaceKind, AgentChatContextChip, AgentChatProviderSetupSurfaceAction, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadSummary } from "./types.ts";
+import type { AgentChatAgentId, AgentChatComposerAttachment, AgentChatComposerMessageAttachment, AgentChatComposerSurfaceKind, AgentChatContextChip, AgentChatPromptStepAnswer, AgentChatProviderSetupSurfaceAction, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadSummary } from "./types.ts";
 import { defaultModelValueForAgent, defaultPermissionForAgent, runtimeSourceForAgent } from "./agent-vocab.ts";
 import { cloneStringRecord, launchOptionsForState } from "./launch-options.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
@@ -185,6 +185,28 @@ export function answerPromptText(
         threadId: state.promptState.threadId,
         promptId: state.promptState.promptId,
         value,
+      },
+    },
+  };
+}
+
+// Answers a multi-step prompt (wizard): one answer per step, submitted together at the
+// end. Clears the prompt; keeps the composer draft (the answers are the card's own fields).
+export function answerPromptSteps(
+  state: AgentChatShellState,
+  stepAnswers: AgentChatPromptStepAnswer[],
+): AgentChatShellUpdateResult {
+  if (state.promptState === null) {
+    return { state, command: null };
+  }
+  return {
+    state: { ...state, promptState: null },
+    command: {
+      kind: "prompt.answer",
+      payload: {
+        threadId: state.promptState.threadId,
+        promptId: state.promptState.promptId,
+        stepAnswers,
       },
     },
   };
