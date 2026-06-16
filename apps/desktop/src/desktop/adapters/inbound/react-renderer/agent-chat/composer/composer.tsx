@@ -218,7 +218,7 @@ export function createComposer(
 }
 
 // Inline chip badge confirming a mid-thread launch-option change. "applied" = took
-// effect live: a brief green "적용됨" flash that self-dismisses after ~2.4s (so it
+// effect live: a brief green "Applied" flash that self-dismisses after ~2.4s (so it
 // never lingers or holds chip width), re-armed whenever `at` changes. "pending" = a
 // transparent restart applies it on the next send: a persistent muted badge that the
 // reducer clears at the next turn start. See
@@ -250,13 +250,13 @@ function ChipFeedbackBadge({ feedback }: { feedback: LaunchOptionFeedback | unde
     return (
       <span className="composer-shell__chip-feedback composer-shell__chip-feedback--applied" role="status">
         <Check size={11} strokeWidth={2.8} aria-hidden />
-        적용됨
+        Applied
       </span>
     );
   }
   return (
     <span className="composer-shell__chip-feedback composer-shell__chip-feedback--pending" role="status">
-      다음 메시지부터
+      Next message
     </span>
   );
 }

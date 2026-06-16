@@ -296,7 +296,7 @@ export function editProductShellQueuedInput(
   };
 }
 
-// Discard a queued message at `index` outright (the 삭제 / delete control). Unlike
+// Discard a queued message at `index` outright (the Delete control). Unlike
 // edit, it does NOT pull the text back into the composer.
 export function removeProductShellQueuedInput(
   state: ProductShellState,

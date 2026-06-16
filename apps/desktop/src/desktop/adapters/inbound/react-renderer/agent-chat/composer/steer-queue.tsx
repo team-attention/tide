@@ -4,7 +4,7 @@ import { ArrowUp, CornerDownRight, Pencil, Trash2 } from "lucide-react";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // Optimistic just-sent user row, shown until the backend's real user block arrives.
-// The "대기 중" (waiting) badge only appears when the agent is genuinely busy and the
+// The "Queued" badge only appears when the agent is genuinely busy and the
 // message is actually queued behind the live turn — never on an idle send, which goes
 // straight through.
 export function createQueuedInputRow(queuedInput: string, queued: boolean, index = 0): ReactElement {
@@ -22,7 +22,7 @@ export function createQueuedInputRow(queuedInput: string, queued: boolean, index
     >
       <span className="agent-session-turn__label">
         You
-        {queued ? <span className="agent-session-turn__queued-badge">대기 중</span> : null}
+        {queued ? <span className="agent-session-turn__queued-badge">Queued</span> : null}
         {/* Edit the queued message before it runs (only while genuinely queued).
             Handled by the Agent Session's delegated onClick via [data-edit-queued]. */}
         {queued ? (
@@ -48,8 +48,8 @@ export function createQueuedInputRow(queuedInput: string, queued: boolean, index
 
 // The pending "steer" messages docked to the top of the Composer while a turn is
 // live: a FIFO stack of queued follow-ups. Each row carries three controls —
-// 인터럽트 (cut the live turn so the queue runs now), 수정 (pull it back into the
-// Composer to edit), and 삭제 (discard it). The stack is height-capped and scrolls
+// Send now (cut the live turn so the queue runs now), Edit (pull it back into the
+// Composer to edit), and Delete (discard it). The stack is height-capped and scrolls
 // (CSS), so a long queue never pushes the Composer off-screen.
 export function createQueuedSteerStack(
   queuedInputs: string[],
@@ -62,36 +62,36 @@ export function createQueuedSteerStack(
       {queuedInputs.map((queuedInput, index) => (
         <div key={`steer-${index}`} className="composer-steer" data-queued>
           <CornerDownRight size={13} strokeWidth={1.9} className="composer-steer__icon" aria-hidden />
-          <span className="composer-steer__badge">대기 중</span>
+          <span className="composer-steer__badge">Queued</span>
           <span className="composer-steer__text">{queuedInput}</span>
           <span className="composer-steer__actions">
-            {/* 지금 보내기: cut the live turn so this queued message runs now — framed as
+            {/* Send now: cut the live turn so this queued message runs now — framed as
                 a "send" (arrow-up), matching the composer's send button, not a red stop. */}
             <button
               type="button"
               className="composer-steer__interrupt"
               aria-label="Send now — interrupt the current turn and run this message"
-              title="지금 보내기 (현재 턴 끊고 실행)"
+              title="Send now (interrupt current turn)"
               onClick={() => onInterrupt?.()}
             >
               <ArrowUp size={15} strokeWidth={2.3} aria-hidden />
             </button>
-            {/* 수정: pull this message back into the Composer to edit. */}
+            {/* Edit: pull this message back into the Composer to edit. */}
             <button
               type="button"
               className="composer-steer__edit"
               aria-label="Edit queued message"
-              title="수정"
+              title="Edit"
               onClick={() => onEditQueued?.(index)}
             >
               <Pencil size={13} strokeWidth={1.9} aria-hidden />
             </button>
-            {/* 삭제: discard this queued message. */}
+            {/* Delete: discard this queued message. */}
             <button
               type="button"
               className="composer-steer__delete"
               aria-label="Delete queued message"
-              title="삭제"
+              title="Delete"
               onClick={() => onRemoveQueued?.(index)}
             >
               <Trash2 size={13} strokeWidth={1.9} aria-hidden />

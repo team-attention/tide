@@ -21,7 +21,7 @@ export interface ProviderDetection {
   // its environment (version + executable path), for the vendor on-ramp.
   enumerateOpencodeVendors: () => OpencodeVendorDto[];
   opencodeEnvironment: () => OpencodeEnvironmentDto;
-  // Set an opencode vendor's API key via opencode's own server (the "정석" path), then
+  // Set an opencode vendor's API key via opencode's own server (the canonical path), then
   // drop the cached vendor/model catalogs so the next thread.listed reflects it.
   connectOpencodeApiKey: (vendorId: string, key: string) => Promise<void>;
 }

@@ -175,7 +175,7 @@ function splitFixtureState(fileTreeOpen: boolean) {
 }
 
 // Queued-message fixture: a running turn with a follow-up queued behind it, so the
-// "대기 중" queued row and its edit affordance render for visual verification.
+// "Queued" row and its edit affordance render for visual verification.
 // Spec: docs_v2/specs/composer-message-edit.md.
 function queuedFixtureState() {
   const base = { ...figmaFixtureState(), fileTreeOpen: true };
@@ -347,7 +347,7 @@ function richTranscriptFixtureState() {
 }
 
 // Rich transcript with a live turn + a message queued behind it, so the docked
-// Composer "steer" chip (대기 중 + 수정) can be eyeballed.
+// Composer "steer" chip (Queued + Edit) can be eyeballed.
 // A thread paused on an agent prompt, so the unified PromptCard can be eyeballed.
 function promptFixtureState() {
   const base = richTranscriptFixtureState();
