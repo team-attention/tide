@@ -241,29 +241,45 @@ export function WorkbenchBrowserPane(props: {
       loading: true,
     });
   };
+  // Latest revision via ref so the snapshot effect below does NOT depend on it: re-running
+  // that effect on every backend revision bump would re-fire the already-loaded capture and
+  // waste a capturePage per action/navigation.
+  const snapshotRevisionRef = useRef(props.pane.revision);
+  useEffect(() => {
+    snapshotRevisionRef.current = props.pane.revision;
+  }, [props.pane.revision]);
   useEffect(() => {
     const webview = webviewRef.current;
     if (webview === null) {
       return;
     }
     const paneId = props.pane.paneId;
-    const revision = props.pane.revision;
     const emitSnapshot = () => {
       void readBrowserWebViewSnapshot(webview).then((snapshot) => {
         props.handlers.onBrowserSnapshot(paneId, {
-          revision,
+          revision: snapshotRevisionRef.current,
           loading: false,
           ...snapshot,
         });
       });
     };
+    webview.addEventListener("dom-ready", emitSnapshot);
     webview.addEventListener("did-finish-load", emitSnapshot);
     webview.addEventListener("did-stop-loading", emitSnapshot);
+    // Attach-race guard (spec browser-pane-live-pull-vision.md): a fast/static page can fire
+    // its load events BEFORE this effect attaches the listeners above, so the snapshot would
+    // never be captured (the blank-observe bug). If the guest is already loaded, capture once
+    // now; the listeners cover later loads/navigations. Deps are paneId-only so a backend
+    // revision bump does not re-run this and trigger a redundant capture.
+    if (webview.isLoading?.() === false) {
+      emitSnapshot();
+    }
     return () => {
+      webview.removeEventListener("dom-ready", emitSnapshot);
       webview.removeEventListener("did-finish-load", emitSnapshot);
       webview.removeEventListener("did-stop-loading", emitSnapshot);
     };
-  }, [props.handlers, props.pane.paneId, props.pane.revision, props.pane.url]);
+  }, [props.handlers, props.pane.paneId]);
   useEffect(() => {
     const webview = webviewRef.current;
     const action = props.pane.pendingAction;
@@ -513,6 +529,13 @@ function BackgroundBrowserWebView(props: {
   const { threadId, paneId, revision, url, pendingAction } = props.pane;
   const handlers = props.handlers;
 
+  // Latest revision via ref so the snapshot effect below does NOT depend on it: re-running
+  // that effect on every backend revision bump would re-fire the already-loaded capture and
+  // waste a capturePage per action/navigation on an offscreen page.
+  const snapshotRevisionRef = useRef(revision);
+  useEffect(() => {
+    snapshotRevisionRef.current = revision;
+  }, [revision]);
   // Report a snapshot when the offscreen page settles, routed to the pane's thread.
   useEffect(() => {
     const webview = webviewRef.current;
@@ -522,19 +545,29 @@ function BackgroundBrowserWebView(props: {
     const emitSnapshot = () => {
       void readBrowserWebViewSnapshot(webview).then((snapshot) => {
         handlers.onBackgroundBrowserSnapshot(threadId, paneId, {
-          revision,
+          revision: snapshotRevisionRef.current,
           loading: false,
           ...snapshot,
         });
       });
     };
+    webview.addEventListener("dom-ready", emitSnapshot);
     webview.addEventListener("did-finish-load", emitSnapshot);
     webview.addEventListener("did-stop-loading", emitSnapshot);
+    // Attach-race guard (spec browser-pane-live-pull-vision.md): a fast/static page can fire
+    // its load events BEFORE this effect attaches the listeners above, so the snapshot would
+    // never be captured (the blank-observe bug). If the guest is already loaded, capture once
+    // now; the listeners cover later loads. Deps are paneId-only so a backend revision bump
+    // does not re-run this and trigger a redundant capture.
+    if (webview.isLoading?.() === false) {
+      emitSnapshot();
+    }
     return () => {
+      webview.removeEventListener("dom-ready", emitSnapshot);
       webview.removeEventListener("did-finish-load", emitSnapshot);
       webview.removeEventListener("did-stop-loading", emitSnapshot);
     };
-  }, [handlers, threadId, paneId, revision, url]);
+  }, [handlers, threadId, paneId]);
 
   // Execute a scheduled background action (click/type) against the offscreen webview.
   useEffect(() => {

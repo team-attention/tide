@@ -291,7 +291,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   {
     name: "tide_observe_browser",
     description:
-      "Observe bounded Browser Pane state after validating Thread ownership and revision. mode=screenshot|both returns a pixel screenshot of the rendered page as an image block (see it like a human); mode=text (default) returns DOM text only.",
+      "Observe bounded Browser Pane state after validating Thread ownership and revision. mode=both (default) returns BOTH a pixel screenshot of the rendered page as an image block (see it like a human) AND the DOM text; mode=text returns DOM text only (cheaper); mode=screenshot drops the text.",
     inputSchema: {
       type: "object",
       properties: {
