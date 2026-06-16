@@ -34,10 +34,20 @@ export function createAgentSession(
   const lastIsStreamingAgent = lastBlock?.role === "agent" && lastBlock?.status === "streaming";
   const working = chatState === "running" && !lastIsStreamingAgent;
 
+  // The transcript centers ONLY the short "No messages here" empty state. The
+  // moment it shows anything else — real turns, the loading skeleton, an
+  // optimistic just-sent row (e.g. a first message held while the provider is
+  // still being set up, with no backend block yet), or the working indicator —
+  // it top-anchors, so content grows from the top and a lone first message
+  // never floats in the vertical middle. (blocks.length > 0 alone missed the
+  // optimistic-row case, leaving the first message centered.)
+  const showsEmptyPlaceholder =
+    blocks.length === 0 && chatState === "ready" && queuedInputs.length === 0;
+
   return (
     <section
       ref={sessionRef}
-      className={`agent-session${blocks.length > 0 ? " agent-session--has-turns" : ""}`}
+      className={`agent-session${showsEmptyPlaceholder ? "" : " agent-session--has-turns"}`}
       aria-label="Agent Session"
       data-session-state={blocks.length === 0 ? "empty" : "turns"}
       // Event-delegated clicks: Copy a code block, or open a file chip.
