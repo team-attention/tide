@@ -698,8 +698,24 @@ export function applyProductShellThreadEvent(
     state.fileTree.root !== undefined &&
     normalizeCwd(state.fileTree.root) === normalizeCwd(startedCwd);
 
+  // A thread.started/hydrated that lands for a NON-active thread which has preserved
+  // chat state (we opened it earlier this session) must still clear that entry's
+  // `hydrating` and seed its blocks — otherwise a hydrate that arrives after the user
+  // switched away (or a switch-away/back race) strands the preserved entry in the
+  // loading skeleton, and re-opening the thread shows it forever. The active surface is
+  // handled by applyAgentChatBackendEvent upstream; this hardens the background map.
+  const preservedAgentChat = state.agentChatByThreadId[threadSummary.threadId];
+  const agentChatByThreadId =
+    !isActiveThread && preservedAgentChat !== undefined && preservedAgentChat.hydrating
+      ? {
+          ...state.agentChatByThreadId,
+          [threadSummary.threadId]: applyAgentChatBackendEvent(preservedAgentChat, event),
+        }
+      : state.agentChatByThreadId;
+
   return {
     ...state,
+    agentChatByThreadId,
     // Focus is owned by user actions (click / new-thread set activeThreadId
     // locally). A thread.started/hydrated event is a DATA update only and never
     // moves focus — otherwise a late answer for another thread drags the view away.

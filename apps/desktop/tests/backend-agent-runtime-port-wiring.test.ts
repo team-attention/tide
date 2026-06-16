@@ -439,6 +439,23 @@ test("live_agent_session_projection_emits_prompt_changed_for_prompt_state", () =
   assert.match(source, /kind:\s*"prompt\.changed"/);
 });
 
+test("a_turn_end_does_not_force_settle_a_live_prompt_card_only_a_runtime_exit_does", () => {
+  // Regression (spec: waiting-state-recovery): a turn-end must NOT pass force based on
+  // having produced a final message / notice. The AskUserQuestion pattern emits BOTH a
+  // final message (the agent's text) AND a question card in the same turn; forcing on
+  // finalMessage dropped that just-raised card (root of "card never showed / thread
+  // stuck waiting"). Only runtime_exited force-settles (the card is then truly dead).
+  const source = fs.readFileSync(
+    path.join(repoRoot, "src/backend/infrastructure/node/live/live-projector.ts"),
+    "utf8",
+  );
+  // The buggy heuristic must be gone.
+  assert.doesNotMatch(source, /force:\s*args\.outcome\.finalMessage/);
+  assert.doesNotMatch(source, /finalMessage\s*!==\s*undefined\s*\|\|\s*args\.outcome\.notice/);
+  // A genuine runtime exit STILL forces the settle past a (now dead) card.
+  assert.match(source, /runtime_exited[\s\S]*?force:\s*true/);
+});
+
 test("provider_bootstrap_artifacts_create_only_the_mcp_surface", () => {
   // Structured runtimes need ONLY the Tide MCP bridge bootstrapped — no hooks,
   // no signal spool, no codex config overlay (codex runs against its real

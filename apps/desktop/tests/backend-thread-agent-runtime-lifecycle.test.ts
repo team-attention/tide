@@ -1652,6 +1652,50 @@ test("stopping_with_a_queued_follow_up_consumes_it_into_the_next_turn", async ()
   );
 });
 
+test("stopping_a_thread_parked_on_a_prompt_clears_it_and_flushes_the_stranded_queue", async () => {
+  // Regression (spec: waiting-state-recovery): a Thread waiting on a prompt with a
+  // queued follow-up was stranded — recordTurnComplete holds the queue while a prompt
+  // is live (dfc424ee early-return). Stop is the universal escape: it clears the prompt
+  // so the interrupt turn-end FLUSHES the queue instead of short-circuiting. The lock
+  // and its escape have no agentId branching → this covers all four providers.
+  const { fakes, service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  await service.recordProviderPromptState({
+    threadId: "thread-busy",
+    promptState: {
+      promptId: "p1",
+      threadId: "thread-busy",
+      agentId: "codex",
+      kind: "approval",
+      message: "Run command?",
+      choices: [
+        { choiceId: "allow", label: "Allow", providerValue: "structured:accept" },
+        { choiceId: "deny", label: "Deny", providerValue: "structured:decline" },
+      ],
+      defaultChoiceId: "allow",
+      source: "provider_hook",
+    },
+  });
+  const queued = await service.sendComposerInput({ threadId: "thread-busy", input: "after stop" });
+  assert.equal(queued.status, "queued");
+
+  // Pre-fix: no way to reach here from the UI (interrupt was a no-op in waiting) AND
+  // recordTurnComplete would not drain while the prompt was held → permanent lock.
+  const stopped = await service.stopAgentRuntime({ threadId: "thread-busy" });
+  assert.equal(stopped.ok, true);
+  // The prompt is gone (escape) and the queued message is retained to run next.
+  assert.equal(stopped.thread.promptState, undefined, "stop clears the parked prompt");
+  assert.equal(stopped.runtimeState, "running");
+
+  const completed = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(
+    completed.ok && completed.flushedInput,
+    "after stop",
+    "the previously stranded queue now flushes",
+  );
+  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput", "interrupt", "writeInput"]);
+});
+
 test("raw_agent_frames_receive_monotonic_thread_local_sequences", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({

@@ -18,6 +18,7 @@ import {
   setComposerNewWorktreeIntent,
   resolveComposerNewWorktreeIntent,
   submitComposer,
+  interruptComposer,
   editQueuedInput,
   updateComposerDraft,
   addComposerAttachment,
@@ -517,6 +518,64 @@ test("running_with_only_a_context_chip_shows_send_not_stop", () => {
     renderShell(running).includes("composer-shell__send--stop"),
     "nothing to send ⇒ Stop button",
   );
+});
+
+test("interrupt_works_in_waiting_states_so_a_parked_thread_is_always_escapable", () => {
+  // Regression (spec: waiting-state-recovery): a Thread parked on waiting_for_input /
+  // waiting_for_approval (ANY provider) could not be interrupted — interruptComposer
+  // only fired for running/starting — so a prompt the UI didn't surface left the queue
+  // stuck with no escape. Stop must now route to agentRuntime.stop from waiting states.
+  for (const runtimeState of ["waiting_for_input", "waiting_for_approval"] as const) {
+    const base = applyBackendEventToAgentChatShell(
+      createAgentChatShellState(),
+      backendEvent("thread.hydrated", { thread, blocks: [], runtimeState }),
+    );
+    const result = interruptComposer(base);
+    assert.equal(result.command?.kind, "agentRuntime.stop", `${runtimeState} ⇒ stop`);
+    assert.equal(
+      (result.command?.payload as { threadId?: string } | undefined)?.threadId,
+      "thread-shell",
+    );
+    assert.equal(result.state.runtimeState, "idle", `${runtimeState} with no queue settles idle`);
+  }
+});
+
+test("interrupt_in_a_waiting_state_drops_the_prompt_card_optimistically", () => {
+  const withPrompt = applyBackendEventToAgentChatShell(
+    applyBackendEventToAgentChatShell(
+      createAgentChatShellState(),
+      backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "waiting_for_approval" }),
+    ),
+    backendEvent("prompt.changed", { threadId: "thread-shell", prompt }),
+  );
+  assert.ok(withPrompt.promptState, "precondition: a card is shown");
+  const result = interruptComposer(withPrompt);
+  assert.equal(result.command?.kind, "agentRuntime.stop");
+  assert.equal(result.state.promptState, null, "interrupt clears the card so the composer is usable");
+});
+
+test("interrupt_is_a_noop_when_idle_or_threadless", () => {
+  const idle = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  assert.equal(interruptComposer(idle).command, null, "idle ⇒ no interrupt");
+  assert.equal(interruptComposer(createAgentChatShellState()).command, null, "no thread ⇒ no interrupt");
+});
+
+test("a_waiting_thread_with_nothing_to_send_shows_the_Stop_escape_button", () => {
+  // The bottom run-state button is the escape when a waiting Thread's card isn't
+  // surfaced — it must be Stop, not Send, in waiting states with an empty composer.
+  for (const runtimeState of ["waiting_for_input", "waiting_for_approval"] as const) {
+    const base = applyBackendEventToAgentChatShell(
+      createAgentChatShellState(),
+      backendEvent("thread.hydrated", { thread, blocks: [], runtimeState }),
+    );
+    assert.ok(
+      renderShell(base).includes("composer-shell__send--stop"),
+      `${runtimeState} with nothing to send ⇒ Stop button`,
+    );
+  }
 });
 
 test("a_multiSelect_prompt_renders_toggle_checkboxes_and_a_select_all_hint", () => {
