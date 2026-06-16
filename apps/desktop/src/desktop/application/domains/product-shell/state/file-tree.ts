@@ -197,7 +197,9 @@ export function newProductShellFile(
   state: ProductShellState,
   relativePath: string,
 ): ProductShellUpdateResult {
-  const path = relativePath.trim().replace(/^\.?\/+/, "");
+  // Normalize Windows backslashes to forward slashes first, then strip any leading
+  // "./" or "/" so the path is relative (and consistent with the app's forward-slash paths).
+  const path = relativePath.trim().replace(/\\/g, "/").replace(/^\.?\/+/, "");
   if (path.length === 0) {
     return { state, command: null };
   }

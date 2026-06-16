@@ -5,9 +5,17 @@ import { WorkbenchCodeEditor } from "./code-editor.tsx";
 // Extracted alongside markdown-view.tsx (spec: workbench-html-preview.md).
 
 // Build a file:// URL from an absolute path, encoding each segment so spaces / # / ?
-// in the path don't break the URL. (Leading "" segment keeps the root slash.)
-function fileUrlFromPath(path: string): string {
-  return `file://${path.split("/").map((segment) => encodeURIComponent(segment)).join("/")}`;
+// don't break the URL. Normalizes Windows backslashes and forces a leading slash so a
+// drive letter (C:) becomes the path, not a hostname (file:///C:/…) — and that
+// drive-letter segment's colon is left unencoded. Exported for unit testing.
+export function fileUrlFromPath(filePath: string): string {
+  const forward = filePath.replace(/\\/g, "/");
+  const rooted = forward.startsWith("/") ? forward : `/${forward}`;
+  const encoded = rooted
+    .split("/")
+    .map((segment) => (/^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)))
+    .join("/");
+  return `file://${encoded}`;
 }
 
 // HTML Editor Pane: a rendered Preview (the page in a <webview>, like a browser) by

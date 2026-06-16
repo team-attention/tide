@@ -118,6 +118,18 @@ test("new_file_normalizes_a_leading_dot_slash_and_no-ops_on_empty", () => {
   assert.equal(empty.command, null, "blank path is a no-op");
 });
 
+test("new_file_normalizes_windows_backslashes", () => {
+  // Gemini review: a Windows-style path must normalize \\ → / and strip the leading .\\.
+  const result = newProductShellFile(stateWithTree([], []), ".\\win\\path.ts");
+  assert.equal(
+    result.command?.kind === "workbench.command" &&
+      result.command.payload.command === "open_editor" &&
+      result.command.payload.data.path,
+    "win/path.ts",
+    "backslashes normalized and the leading .\\ stripped",
+  );
+});
+
 test("new_file_on_start_page_is_a_no-op_without_a_concrete_project_cwd", () => {
   const start = startPageState();
   const noCwd: ProductShellState = {

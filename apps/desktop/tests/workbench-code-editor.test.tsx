@@ -191,6 +191,15 @@ test("html_editor_pane_renders_a_browser_preview_by_default_and_toggles_to_code"
   }
 });
 
+test("fileUrlFromPath builds a file:// url, encoding spaces and normalizing Windows paths", async () => {
+  // Gemini review: Windows backslash + drive-letter paths must become file:///C:/…
+  const { fileUrlFromPath } = await import(
+    "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/html-view.tsx"
+  );
+  assert.equal(fileUrlFromPath("/Users/a b/page.html"), "file:///Users/a%20b/page.html");
+  assert.equal(fileUrlFromPath("C:\\dir\\sub\\page.html"), "file:///C:/dir/sub/page.html");
+});
+
 test("workbench_editor_pane_opens_lsp_actions_on_right_click_not_buttons", async () => {
   // Spec: docs_v2/specs/workbench-editor-code-navigation.md
   // A real code editor exposes Go to Definition / Find References on the
