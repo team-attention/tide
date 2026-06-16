@@ -166,7 +166,12 @@ export function createStartAgentChatState(scope?: AgentChatThreadScope): AgentCh
 export function preferredStartComposerFromState(
   state: ProductShellState,
 ): PreferredStartComposer | null {
-  if (state.activeThreadId !== null) {
+  // "On the start Composer" = the chat has no thread (composer.mode === "start"). NOT
+  // activeThreadId === null: the Composer's Draft Thread makes activeThreadId non-null
+  // while the user is still composing, but agentChat.thread stays null until Send. Gating
+  // on agentChat.thread keeps the agent/model preference persisting through a draft.
+  // See docs_v2/specs/composer-draft-thread.md.
+  if (state.agentChat.thread !== null) {
     return null;
   }
   const startOptions = state.agentChat.composer.startOptions;

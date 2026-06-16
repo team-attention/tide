@@ -1,4 +1,4 @@
-import type { AgentChatBackendCommand, AgentChatBranchOption, AgentChatCommandOption, AgentChatShellState, AgentChatShellViewModel, AgentChatThreadScope, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatAgentBinding, AgentChatBackendCommand, AgentChatBranchOption, AgentChatCommandOption, AgentChatShellState, AgentChatShellViewModel, AgentChatThreadScope, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
 import type { AppChromeBackendCommand, AppChromeEditorNavigationTarget, AppChromeEditorReferenceList, AppChromeState, AppChromeViewModel, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import type { WorkbenchSplitNode } from "./workbench-split-tree.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
@@ -293,6 +293,15 @@ export interface ProductShellState {
   // the first send creates, then cleared. See docs_v2/specs/workbench-dock-parity.md.
   draftWorkbenchPanes: ProductShellDraftPane[];
   draftActiveWorkbenchPaneId: string | null;
+  // The Composer's backend Draft Thread: a real (unstarted, no-agent) thread that hosts the
+  // visible Terminal/Editor/Diff/Browser panes pre-send (their PTYs/files/webviews need a
+  // backend thread). Created lazily on the first Launcher action, at which point it becomes
+  // the ACTIVE thread (activeThreadId === draftThreadId) so the whole app operates on it
+  // through the normal active-thread path; the chat stays the start Composer because
+  // agentChat.thread is untouched. Discarded on chip change / leaving the Composer, and
+  // started in place on Send. null when the Composer has no backend draft yet. See
+  // docs_v2/specs/composer-draft-thread.md.
+  draftThreadId: string | null;
   // VSCode-style untitled files (blank, named on save), one editor tab each. Shown
   // in the context (thread/start) they were created in. Spec:
   // workbench-filetree-file-operations.
@@ -350,6 +359,19 @@ export type ProductShellBackendCommand =
   | { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }
   | { kind: "thread.setPinned"; payload: { threadId: string; pinned: boolean } }
   | { kind: "thread.rename"; payload: { threadId: string; title: string } }
+  // Composer Draft Thread (spec: composer-draft-thread). createDraft registers a backend
+  // thread (no agent) so the Composer's Terminal/Editor/Diff have a thread to live in;
+  // discardDraft tears it down on chip change / leaving the Composer.
+  | {
+      kind: "thread.createDraft";
+      payload: {
+        threadId: string;
+        agentBinding: AgentChatAgentBinding;
+        scope?: AgentChatThreadScope;
+        launchOptions?: Record<string, unknown>;
+      };
+    }
+  | { kind: "thread.discardDraft"; payload: { threadId: string } }
   | {
       kind: "workbench.command";
       payload: {

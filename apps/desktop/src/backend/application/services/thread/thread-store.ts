@@ -22,6 +22,12 @@ export class ThreadStore {
     this.threads.set(threadId, record);
   }
 
+  // Remove a Thread from memory. Used to discard a Draft Thread (never started, not
+  // persisted) — see docs_v2/specs/composer-draft-thread.md.
+  delete(threadId: ThreadId): boolean {
+    return this.threads.delete(threadId);
+  }
+
   values(): IterableIterator<ThreadRecord> {
     return this.threads.values();
   }

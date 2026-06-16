@@ -1,4 +1,4 @@
-import { archiveProductShellProjectChats, cancelProductShellProjectRename, cancelProductShellThreadRename, cancelProductShellWorktreeCreate, clearProductShellLeftRailTransientState, confirmProductShellThreadArchive, openProductShellLeftRailMenu, openProductShellThreadFromLeftRail, selectProductShellChoiceSurfaceRow, setProductShellListSettings, setProductShellRegisteredProjects, showProductShellThreadArchiveConfirm, startNewProductShellScratchThread, startNewProductShellThread, startProductShellProjectRename, startProductShellThreadRename, startProductShellWorktreeCreate, submitProductShellThreadRename, toggleProductShellLeftRail, toggleProductShellProject, toggleProductShellProjectPin, toggleProductShellThreadPin, moveKeyInOrder, parsePinnedItemKey, selectThreadListViewModel, setProductShellPinnedItemOrder, setProductShellProjectOrder } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { archiveProductShellProjectChats, cancelProductShellProjectRename, cancelProductShellThreadRename, cancelProductShellWorktreeCreate, clearProductShellLeftRailTransientState, confirmProductShellThreadArchive, discardProductShellDraftThread, openProductShellLeftRailMenu, openProductShellThreadFromLeftRail, selectProductShellChoiceSurfaceRow, setProductShellListSettings, setProductShellRegisteredProjects, showProductShellThreadArchiveConfirm, startNewProductShellScratchThread, startNewProductShellThread, startProductShellProjectRename, startProductShellThreadRename, startProductShellWorktreeCreate, submitProductShellThreadRename, toggleProductShellLeftRail, toggleProductShellProject, toggleProductShellProjectPin, toggleProductShellThreadPin, moveKeyInOrder, parsePinnedItemKey, selectThreadListViewModel, setProductShellPinnedItemOrder, setProductShellProjectOrder } from "../../../../../application/domains/product-shell/product-shell.ts";
 import { persistListSettings, persistRailOrder } from "../settings/settings.tsx";
 import { projectCwdById } from "../product-shell.tsx";
 import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree/path.ts";
@@ -10,14 +10,29 @@ import type { ProductShellHandlerContext } from "./context.ts";
 export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onNewThread" | "onNewThreadInProject" | "onProjectToggle" | "onThreadSelect" | "onLeftRailToggle" | "onLeftRailMenuOpen" | "onToggleSection" | "onListSettingsChange" | "onProjectRevealInFinder" | "onProjectArchiveChats" | "onProjectRemove" | "onProjectDeleteWorktree" | "onProjectPinToggle" | "onProjectRenameStart" | "onProjectRenameCancel" | "onProjectRenameSubmit" | "onProjectCreateWorktree" | "onProjectCreateWorktreeSubmit" | "onProjectCreateWorktreeCancel" | "onPinnedProjectSelect" | "onAddProject" | "onNewScratchThread" | "onThreadArchiveIntent" | "onThreadArchiveConfirm" | "onThreadPinToggle" | "onThreadDeleteWorktree" | "onThreadRenameStart" | "onThreadRenameSubmit" | "onThreadRenameCancel" | "onLeftRailTransientClear" | "isSectionCollapsed" | "isProjectRemovable" | "isProjectWorktree" | "onReorderPinnedItem" | "onReorderProject" | "threadWorktreeBranch"> {
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
-    onNewThread: () => setShellState((state) => startNewProductShellThread(state)),
+    onNewThread: () =>
+      setShellState((state) => {
+        const discard = discardProductShellDraftThread(state);
+        if (discard.command !== null) dispatchBackendCommand(discard.command);
+        return startNewProductShellThread(discard.state);
+      }),
     onNewThreadInProject: (projectId) =>
-      setShellState((state) => startNewProductShellThread(state, projectId)),
+      setShellState((state) => {
+        // Switching the Composer to another project replaces its Draft Thread (its panes,
+        // bound to the old cwd, close). See composer-draft-thread.md.
+        const discard = discardProductShellDraftThread(state);
+        if (discard.command !== null) dispatchBackendCommand(discard.command);
+        return startNewProductShellThread(discard.state, projectId);
+      }),
     onProjectToggle: (projectId) =>
       setShellState((state) => toggleProductShellProject(state, projectId)),
     onThreadSelect: (threadId) =>
       setShellState((state) => {
-        const result = openProductShellThreadFromLeftRail(state, threadId, {
+        // Leaving the Composer for a thread discards its never-sent Draft Thread (kills any
+        // pre-send Terminal PTYs). See composer-draft-thread.md.
+        const discard = discardProductShellDraftThread(state);
+        if (discard.command !== null) dispatchBackendCommand(discard.command);
+        const result = openProductShellThreadFromLeftRail(discard.state, threadId, {
           backendTransportAvailable: props.onBackendCommand !== undefined,
         });
         dispatchBackendCommand(result.command);
@@ -173,7 +188,11 @@ export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<Produc
       }),
     onAddProject: () => openFolderAsProject(),
     onNewScratchThread: () =>
-      setShellState((state) => startNewProductShellScratchThread(state)),
+      setShellState((state) => {
+        const discard = discardProductShellDraftThread(state);
+        if (discard.command !== null) dispatchBackendCommand(discard.command);
+        return startNewProductShellScratchThread(discard.state);
+      }),
     onThreadArchiveIntent: (threadId) =>
       setShellState((state) => showProductShellThreadArchiveConfirm(state, threadId)),
     onThreadArchiveConfirm: (threadId) =>

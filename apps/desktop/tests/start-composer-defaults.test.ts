@@ -90,11 +90,39 @@ test("preferredStartComposerFromState captures a gemini pick", () => {
 });
 
 test("preferredStartComposerFromState ignores a focused thread (nothing to remember)", () => {
+  // A real focused thread has agentChat.thread set (the chat shows its transcript). That
+  // is the "not composing" signal — NOT activeThreadId, which the Composer's Draft Thread
+  // also sets while the user is still composing. See docs_v2/specs/composer-draft-thread.md.
+  const base = startComposerStateWith("opencode", { model: "openai/gpt-5.5" });
   const state: ProductShellState = {
-    ...startComposerStateWith("opencode", { model: "openai/gpt-5.5" }),
+    ...base,
     activeThreadId: "t-1",
+    agentChat: {
+      ...base.agentChat,
+      thread: {
+        threadId: "t-1",
+        title: "Focused",
+        agentBinding: base.agentChat.composer.startOptions.agentBinding,
+        scope: base.agentChat.composer.startOptions.scope,
+        launchOptions: base.agentChat.composer.startOptions.launchOptions,
+        createdAt: "2026-06-16T00:00:00.000Z",
+        updatedAt: "2026-06-16T00:00:00.000Z",
+        pinned: false,
+        archived: false,
+        lastKnownState: "running",
+      },
+    },
   };
   assert.equal(preferredStartComposerFromState(state), null);
+  setPreferredStartComposer(null);
+});
+
+test("preferredStartComposerFromState still remembers while a Draft Thread is active", () => {
+  // Composing with a backend Draft Thread: activeThreadId is the draft, but the chat has no
+  // thread yet (still the start Composer) — so the agent/model preference must persist.
+  const base = startComposerStateWith("opencode", { model: "openai/gpt-5.5" });
+  const state: ProductShellState = { ...base, activeThreadId: "draft-1", draftThreadId: "draft-1" };
+  assert.equal(preferredStartComposerFromState(state)?.agentId, "opencode");
   setPreferredStartComposer(null);
 });
 

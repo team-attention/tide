@@ -169,6 +169,27 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           ],
         );
       }
+      case "thread.createDraft": {
+        const typedCommand = command as BackendCommandEnvelope<"thread.createDraft">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.createDraftThread(typedCommand.payload),
+          // Emit the draft's (empty) Workbench so the Composer renders it; subsequent
+          // workbench.command on the draft streams updated workbench.changed events.
+          (result) => [
+            this.workbenchChangedEvent(typedCommand, result.thread),
+            this.commandCompletedEvent(typedCommand),
+          ],
+        );
+      }
+      case "thread.discardDraft": {
+        const typedCommand = command as BackendCommandEnvelope<"thread.discardDraft">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.discardDraftThread(typedCommand.payload),
+          () => [this.commandCompletedEvent(typedCommand)],
+        );
+      }
       case "thread.start": {
         const typedCommand = command as BackendCommandEnvelope<"thread.start">;
         return this.handleServiceResult(
@@ -607,6 +628,14 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           runtimeState: result.runtimeState,
         },
       },
+      // If the started thread already has visible Workbench panes — a Draft Thread started
+      // in place carries its Terminal/Editor/Diff, or a fresh start adopted Browser drafts
+      // — push the Workbench now so it renders immediately instead of waiting for the
+      // pane's next event. Omitted for an empty Workbench (no behavior change there).
+      // See docs_v2/specs/composer-draft-thread.md.
+      ...(result.thread.workbench.panes.some((pane) => pane.visible)
+        ? [this.workbenchChangedEvent(command, result.thread)]
+        : []),
       this.commandCompletedEvent(command),
     ];
   }

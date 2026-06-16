@@ -1,4 +1,4 @@
-import type { ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellDraftPane, ProductShellState, ProductShellUpdateResult } from "./types.ts";
+import type { ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellDraftPane, ProductShellState, ProductShellUpdateResult } from "./types.ts";
 import { COMPOSER_LAUNCHER_PANE_ID, isStartFilePaneId, isUntitledPaneId, startFilePaneId } from "./types.ts";
 import { removeProductShellUntitledFile } from "./untitled-files.ts";
 import { applyDrop, reconcileTree, setRatioAtPath } from "./workbench-split-tree.ts";
@@ -223,8 +223,11 @@ export function selectProductShellLauncherAction(
   actionId: string,
 ): ProductShellUpdateResult {
   if (state.activeThreadId === null) {
-    // Composer (New Thread) page launcher: Browser opens a live draft pane (adopted
-    // on send). Editor/Terminal/Diff need a Thread and are disabled pre-thread.
+    // Composer (New Thread) page launcher: Browser opens a live renderer-owned draft pane
+    // (adopted on send). Terminal/Editor/Diff need a backend thread to host their
+    // PTY/files, so they route to the Composer's Draft Thread — handled by the handler
+    // (selectComposerDraftLauncherAction), which can emit the create + open commands
+    // together. See docs_v2/specs/composer-draft-thread.md.
     if (actionId === "open_browser") {
       return { state: openProductShellDraftBrowser(state), command: null };
     }
@@ -304,6 +307,82 @@ export function selectProductShellLauncherAction(
     };
   }
   return { state, command: null };
+}
+
+function generateDraftThreadId(): string {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID().replace(/-/g, "")
+    : `draft-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+}
+
+// Lazily create the Composer's Draft Thread and make it the ACTIVE thread, so the whole
+// app (Workbench / FileTree / Editor / Terminal / Browser) operates on it through the
+// normal active-thread path — no Composer-only plumbing, no per-pane special-casing. The
+// chat stays the start Composer because agentChat.thread is untouched (null), and the chat
+// renders on composer.mode (= agentChat.thread ? follow_up : start), not activeThreadId.
+// Returns the next state + the thread.createDraft command to dispatch (null when a draft
+// is already active). See docs_v2/specs/composer-draft-thread.md.
+export function ensureComposerDraftThreadActive(
+  state: ProductShellState,
+): { state: ProductShellState; command: ProductShellBackendCommand | null } {
+  if (state.draftThreadId !== null) {
+    return { state, command: null };
+  }
+  const draftThreadId = generateDraftThreadId();
+  const startOptions = state.agentChat.composer.startOptions;
+  return {
+    state: {
+      ...state,
+      draftThreadId,
+      activeThreadId: draftThreadId,
+      // Make appChrome reflect the Draft Thread so the workbench interaction handlers
+      // (terminal input/resize, editor save, browser snapshot) — which operate on
+      // appChrome.thread — target the draft. The backend's workbench.changed then fills
+      // appChrome.workbenchPanes (preserving this thread stub). agentChat.thread stays
+      // untouched, so the chat remains the start Composer.
+      appChrome: {
+        ...state.appChrome,
+        thread: {
+          threadId: draftThreadId,
+          title: "New Thread",
+          agentBinding: { agentId: startOptions.agentBinding.agentId },
+        },
+      },
+    },
+    command: {
+      kind: "thread.createDraft",
+      payload: {
+        threadId: draftThreadId,
+        agentBinding: startOptions.agentBinding,
+        scope: startOptions.scope,
+        launchOptions: startOptions.launchOptions,
+      },
+    },
+  };
+}
+
+// Discard the Composer's Draft Thread (chip change / leaving the Composer): tell the
+// backend to tear it down (kills its terminal PTYs) and drop the renderer's draft binding,
+// returning the active-thread pointer to the Composer (null). No-op when there is no draft.
+export function discardProductShellDraftThread(
+  state: ProductShellState,
+): { state: ProductShellState; command: ProductShellBackendCommand | null } {
+  if (state.draftThreadId === null) {
+    return { state, command: null };
+  }
+  const wasActive = state.activeThreadId === state.draftThreadId;
+  return {
+    state: {
+      ...state,
+      draftThreadId: null,
+      activeThreadId: wasActive ? null : state.activeThreadId,
+      // Clear the Draft Thread stub + its panes from appChrome (back to the Composer).
+      appChrome: wasActive
+        ? { ...state.appChrome, thread: null, workbenchPanes: [], activeWorkbenchPaneId: undefined }
+        : state.appChrome,
+    },
+    command: { kind: "thread.discardDraft", payload: { threadId: state.draftThreadId } },
+  };
 }
 
 // Opens an http(s) link (clicked in a chat message) in the Workbench Browser

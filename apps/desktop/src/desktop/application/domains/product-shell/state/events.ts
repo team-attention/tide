@@ -140,6 +140,7 @@ export function applyProductShellBackendEvent(
       const payload = event.payload as {
         threadId?: string;
         panes?: AppChromeWorkbenchPaneRef[];
+        activePaneId?: string;
         layoutMode?: "stacked" | "split";
         fileTree?: unknown;
       };
@@ -162,12 +163,15 @@ export function applyProductShellBackendEvent(
       // NOT re-open the workbench, or the user could never close it while a terminal
       // is running. Otherwise preserve the user's open/closed intent, and close only
       // when nothing is visible at all.
-      const existingPaneIds = new Set(
-        (threadId === null
+      // Previous panes for this thread, to detect a genuinely NEW pane. Background threads
+      // use their per-thread memory; the active thread (incl. the Composer's Draft Thread,
+      // which isn't in the rail list) uses its live appChrome panes BEFORE this event.
+      const previousPanes =
+        threadId === null
           ? []
-          : nextState.threads.find((thread) => thread.threadId === threadId)?.workbenchPanes ?? []
-        ).map((pane) => pane.paneId),
-      );
+          : nextState.threads.find((thread) => thread.threadId === threadId)?.workbenchPanes ??
+            (threadId === state.activeThreadId ? state.appChrome.workbenchPanes : []);
+      const existingPaneIds = new Set(previousPanes.map((pane) => pane.paneId));
       const hasNewRealPane = panes.some(
         (pane) => pane.visible && pane.kind !== "launcher" && !existingPaneIds.has(pane.paneId),
       );
