@@ -168,8 +168,12 @@ export interface BackendEventPayloadByKind {
   // The agent's available slash-commands (trigger "/") and skills (trigger "$"),
   // captured from the provider protocol at session start. Per agent.
   "agentRuntime.commandsChanged": {
-    threadId: ThreadId;
+    // Present for a live thread's session; omitted for a Start-Composer command
+    // probe (no thread yet) — see provider.discoverCommands. `cwd` scopes a probe
+    // reply so a stale in-flight result can be ignored after the scope changes.
+    threadId?: ThreadId;
     agentId: ProviderCliAgentId;
+    cwd?: string;
     commands: Array<{ name: string; description: string; trigger: "/" | "$" }>;
   };
   // The agent self-reported its model catalog over the protocol (gemini ACP

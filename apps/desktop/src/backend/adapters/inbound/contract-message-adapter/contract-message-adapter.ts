@@ -69,6 +69,11 @@ export interface CreateBackendContractMessageAdapterInput {
   enumerateOpencodeVendors?: () => OpencodeVendorDto[];
   opencodeEnvironment?: () => OpencodeEnvironmentDto;
   connectOpencodeApiKey?: (vendorId: string, key: string) => Promise<void>;
+  // Probe an agent's REAL command set for the composer menu (live-provider-command-mirroring.md).
+  discoverProviderCommands?: (
+    agentId: string,
+    cwd: string,
+  ) => Promise<Array<{ name: string; description: string; trigger: "/" | "$" }>>;
 }
 
 export interface BackendContractMessageAdapter {
@@ -90,6 +95,10 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
   private readonly enumerateOpencodeVendors?: () => OpencodeVendorDto[];
   private readonly opencodeEnvironment?: () => OpencodeEnvironmentDto;
   private readonly connectOpencodeApiKey?: (vendorId: string, key: string) => Promise<void>;
+  private readonly discoverProviderCommands?: (
+    agentId: string,
+    cwd: string,
+  ) => Promise<Array<{ name: string; description: string; trigger: "/" | "$" }>>;
 
   constructor(input: CreateBackendContractMessageAdapterInput) {
     this.service = input.service;
@@ -100,6 +109,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     this.enumerateOpencodeVendors = input.enumerateOpencodeVendors;
     this.opencodeEnvironment = input.opencodeEnvironment;
     this.connectOpencodeApiKey = input.connectOpencodeApiKey;
+    this.discoverProviderCommands = input.discoverProviderCommands;
   }
 
   async handleMessage(message: unknown): Promise<BackendEventEnvelope[]> {
@@ -263,6 +273,22 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         // Re-list so the now-connected vendor + its models surface (catalogs invalidated).
         return this.handleServiceResult(typed, await this.service.listThreads({}), (result) =>
           [this.threadListedEvent(typed, result), this.commandCompletedEvent(typed)]);
+      }
+      case "provider.discoverCommands": {
+        // The runtime probe resolves [] on any error/timeout (never rejects).
+        const typed = command as BackendCommandEnvelope<"provider.discoverCommands">;
+        const commands = (await this.discoverProviderCommands?.(typed.payload.agentId, typed.payload.cwd)) ?? [];
+        return [
+          {
+            contractVersion: CONTRACT_VERSION,
+            eventId: this.nextEventId(),
+            requestId: typed.requestId,
+            kind: "agentRuntime.commandsChanged",
+            emittedAt: this.clock(),
+            payload: { agentId: typed.payload.agentId as ProviderCliAgentId, cwd: typed.payload.cwd, commands },
+          } satisfies BackendEventEnvelope<"agentRuntime.commandsChanged">,
+          this.commandCompletedEvent(typed, { handled: commands.length > 0 }),
+        ];
       }
       case "agentRuntime.resume": {
         const typedCommand = command as BackendCommandEnvelope<"agentRuntime.resume">;

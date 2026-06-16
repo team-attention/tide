@@ -7,7 +7,10 @@ import type {
   TerminalInput,
 } from "../../../../application/domains/agent-runtime/agent-runtime.ts";
 import type { ComposerAttachmentRef } from "../../../../application/domains/thread/thread.ts";
-import type { AgentRuntimePort } from "../../../../application/ports/outbound/agent-runtime-port.ts";
+import type {
+  AgentRuntimePort,
+  DiscoveredCommand,
+} from "../../../../application/ports/outbound/agent-runtime-port.ts";
 import type {
   AgentIntegrationPort,
   ProviderLaunchPlan,
@@ -30,6 +33,10 @@ import type {
 } from "../structured/structured-runtime-events.ts";
 
 export type AgentIntegrationRegistry = Record<ProviderCliAgentId, AgentIntegrationPort>;
+
+// How long the handshake-only command probe waits for the agent's `commands`
+// event before giving up (the caller then keeps its file-discovery fallback).
+const COMMAND_PROBE_TIMEOUT_MS = 8000;
 
 // A live structured-transport runtime: the provider's machine protocol over
 // plain stdio (claude stream-json / codex app-server / gemini ACP). There is no
@@ -115,6 +122,11 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   private readonly idGenerator: () => string;
   private readonly onProviderEvent?: CreateAgentIntegrationRuntimePortInput["onProviderEvent"];
   private readonly runtimes = new Map<string, StructuredRuntimeState>();
+  // Probed real command sets per (agentId:cwd) — see discoverCommands.
+  private readonly commandCache = new Map<string, DiscoveredCommand[]>();
+  // In-flight probes per (agentId:cwd) so concurrent discoverCommands calls share
+  // one handshake instead of spawning redundant CLI processes.
+  private readonly inFlightProbes = new Map<string, Promise<DiscoveredCommand[]>>();
 
   constructor(input: CreateAgentIntegrationRuntimePortInput) {
     this.integrations = input.integrations;
@@ -255,6 +267,102 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     this.runtimes.delete(handle.runtimeId);
   }
 
+  // Spawn a handshake-only runtime, capture the first `commands` event (the
+  // agent's own slash-commands/skills, reported during init/handshake), then
+  // stop — no full turn. Cached per (agentId, cwd). claude only emits its init
+  // after a first stdin write, so the probe gives it a throwaway initialPrompt
+  // and stops the instant commands arrive (before the turn produces output);
+  // acp/codex report at handshake with no prompt. See
+  // docs_v2/specs/live-provider-command-mirroring.md.
+  async discoverCommands(
+    agentId: ProviderCliAgentId,
+    cwd: string,
+  ): Promise<DiscoveredCommand[]> {
+    const cacheKey = `${agentId}:${cwd}`;
+    const cached = this.commandCache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+    // Concurrent calls for the same (agent, cwd) share one probe — don't spawn
+    // redundant CLI processes while the first handshake is still in flight.
+    const inFlight = this.inFlightProbes.get(cacheKey);
+    if (inFlight !== undefined) {
+      return inFlight;
+    }
+
+    const probe = (async (): Promise<DiscoveredCommand[]> => {
+      const integration = this.integrations[agentId];
+      if (integration === undefined) {
+        return [];
+      }
+      const runtimeId = this.idGenerator();
+      const needsPrompt = agentId === "claude";
+      let plan: ProviderLaunchPlan;
+      try {
+        plan = await integration.buildStartPlan({
+          agentId,
+          agentBinding: { agentId },
+          scope: { kind: "project", projectId: cwd, cwd },
+          launchOptions: {},
+          initialPrompt: needsPrompt ? "tide command probe" : undefined,
+          runtimeId,
+        });
+      } catch {
+        return [];
+      }
+
+      const commands = await new Promise<DiscoveredCommand[]>((resolve) => {
+        let settled = false;
+        let client: StructuredRuntimeClient | undefined;
+        const finish = (result: DiscoveredCommand[]): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
+          void Promise.resolve(client?.stop()).catch(() => undefined);
+          resolve(result);
+        };
+        const timer = setTimeout(() => finish([]), COMMAND_PROBE_TIMEOUT_MS);
+        const onEvent = (event: StructuredProviderEvent): void => {
+          if (event.kind === "commands") {
+            finish(event.commands);
+          }
+        };
+        try {
+          client = this.createTransportClient({
+            plan: { ...plan, env: { ...plan.env, TIDE_RUNTIME_ID: runtimeId, TIDE_AGENT_ID: agentId } },
+            threadId: `probe-${runtimeId}`,
+            runtimeId,
+            agentId,
+            initialPrompt: needsPrompt ? "tide command probe" : undefined,
+            onEvent,
+          });
+          // If the client emitted `commands` synchronously during construction,
+          // finish() already ran with `client` still undefined — stop it now so the
+          // process isn't leaked.
+          if (settled) {
+            void Promise.resolve(client.stop()).catch(() => undefined);
+          }
+        } catch {
+          finish([]);
+        }
+      });
+
+      if (commands.length > 0) {
+        this.commandCache.set(cacheKey, commands);
+      }
+      return commands;
+    })();
+
+    this.inFlightProbes.set(cacheKey, probe);
+    try {
+      return await probe;
+    } finally {
+      this.inFlightProbes.delete(cacheKey);
+    }
+  }
+
   private spawnRuntime(
     threadId: string,
     agentId: ProviderCliAgentId,
@@ -285,45 +393,16 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     const emit = (event: StructuredProviderEvent): void => {
       void this.onProviderEvent?.({ threadId, agentId, runtimeId, event });
     };
-    let client: StructuredRuntimeClient;
-    switch (plan.transport) {
-      case "claude_stream_json":
-        client = createClaudeStreamJsonClient({
-          plan: runtimePlan,
-          threadId,
-          runtimeId,
-          initialPrompt,
-          initialAttachments,
-          onEvent: emit,
-        });
-        break;
-      case "codex_app_server":
-        client = createCodexAppServerClient({
-          plan: runtimePlan,
-          threadId,
-          runtimeId,
-          initialPrompt,
-          initialAttachments,
-          resumeThreadId: resumeRef,
-          onEvent: emit,
-        });
-        break;
-      case "acp":
-        client = createAcpClient({
-          plan: runtimePlan,
-          threadId,
-          runtimeId,
-          agentId,
-          sessionRefKind: sessionRefKindForAgent(agentId),
-          initialPrompt,
-          initialAttachments,
-          resumeSessionId: resumeRef,
-          onEvent: emit,
-        });
-        break;
-      default:
-        throw new Error(`Unsupported runtime transport: ${String(plan.transport)}`);
-    }
+    const client = this.createTransportClient({
+      plan: runtimePlan,
+      threadId,
+      runtimeId,
+      agentId,
+      initialPrompt,
+      initialAttachments,
+      resumeRef,
+      onEvent: emit,
+    });
     this.runtimes.set(runtimeId, { client, threadId, agentId });
     traceAgentRuntime(`spawned ${agentId} runtime=${runtimeId} transport=${String(plan.transport)}`);
     // A launch-assigned session ref (claude/gemini minted --session-id) binds the
@@ -333,6 +412,56 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       emit({ kind: "session_ref", ref: { ...runtimePlan.providerSessionRef } });
     }
     return { runtimeId, threadId, agentId };
+  }
+
+  // Build the structured client for a launch plan's transport. Shared by the
+  // live runtime (spawnRuntime) and the handshake-only command probe
+  // (discoverCommands), which differ only in the onEvent sink + lifecycle.
+  private createTransportClient(input: {
+    plan: ProviderLaunchPlan;
+    threadId: string;
+    runtimeId: string;
+    agentId: ProviderCliAgentId;
+    initialPrompt?: string;
+    initialAttachments?: ComposerAttachmentRef[];
+    resumeRef?: string;
+    onEvent: (event: StructuredProviderEvent) => void;
+  }): StructuredRuntimeClient {
+    switch (input.plan.transport) {
+      case "claude_stream_json":
+        return createClaudeStreamJsonClient({
+          plan: input.plan,
+          threadId: input.threadId,
+          runtimeId: input.runtimeId,
+          initialPrompt: input.initialPrompt,
+          initialAttachments: input.initialAttachments,
+          onEvent: input.onEvent,
+        });
+      case "codex_app_server":
+        return createCodexAppServerClient({
+          plan: input.plan,
+          threadId: input.threadId,
+          runtimeId: input.runtimeId,
+          initialPrompt: input.initialPrompt,
+          initialAttachments: input.initialAttachments,
+          resumeThreadId: input.resumeRef,
+          onEvent: input.onEvent,
+        });
+      case "acp":
+        return createAcpClient({
+          plan: input.plan,
+          threadId: input.threadId,
+          runtimeId: input.runtimeId,
+          agentId: input.agentId,
+          sessionRefKind: sessionRefKindForAgent(input.agentId),
+          initialPrompt: input.initialPrompt,
+          initialAttachments: input.initialAttachments,
+          resumeSessionId: input.resumeRef,
+          onEvent: input.onEvent,
+        });
+      default:
+        throw new Error(`Unsupported runtime transport: ${String(input.plan.transport)}`);
+    }
   }
 }
 

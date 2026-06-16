@@ -413,6 +413,7 @@ export function createLiveBackendContractMessageAdapter(
       service,
       // detection's methods === the adapter's thread.listed detection inputs.
       ...detection,
+      discoverProviderCommands: (agentId, cwd) => providerCliRuntimePort.discoverCommands?.(agentId as ProviderCliAgentId, cwd) ?? Promise.resolve([]),
     }),
     service,
     persistence,

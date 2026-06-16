@@ -45,6 +45,10 @@ export interface AgentChatCommandOption {
   name: string;
   description: string;
   trigger: "/" | "$";
+  // Optional provenance, for display/debugging only (NOT used to filter the menu —
+  // the menu mirrors the agent's full set). "builtin" = the provider CLI's own
+  // command; "project"/"user" = a discovered command/skill file.
+  source?: "project" | "user" | "builtin";
 }
 
 export interface AgentChatShellState {

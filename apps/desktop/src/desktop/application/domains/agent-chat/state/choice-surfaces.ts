@@ -315,11 +315,25 @@ export function createActiveComposerSurface(
       const active = activeComposerTrigger(state.composer.draft);
       const trigger = active?.trigger ?? "/";
       const query = (active?.query ?? "").trim().toLowerCase();
-      const commands = (state.availableCommands ?? []).filter(
-        (command) =>
-          command.trigger === trigger &&
-          (query.length === 0 || command.name.toLowerCase().includes(query)),
-      );
+      // The menu mirrors the agent's FULL real command set (the same list the
+      // provider CLI itself exposes), on the Start Composer and in a thread alike —
+      // no Tide-curated subset. Dedupe by name (some agents, e.g. gemini, report a
+      // command once per subcommand). See live-provider-command-mirroring.md.
+      const seenCommandNames = new Set<string>();
+      const commands = (state.availableCommands ?? []).filter((command) => {
+        if (command.trigger !== trigger) {
+          return false;
+        }
+        if (query.length > 0 && !command.name.toLowerCase().includes(query)) {
+          return false;
+        }
+        const key = command.name.toLowerCase();
+        if (seenCommandNames.has(key)) {
+          return false;
+        }
+        seenCommandNames.add(key);
+        return true;
+      });
       return {
         surfaceKind,
         title: trigger === "$" ? "Skills" : "Commands",

@@ -379,6 +379,13 @@ export type ProductShellBackendCommand =
         data: ProductShellBrowserActionResult;
       };
     }
+  | {
+      // Probe an agent's REAL command set for the composer menu (handshake-only).
+      // The backend replies with agentRuntime.commandsChanged. See
+      // docs_v2/specs/live-provider-command-mirroring.md.
+      kind: "provider.discoverCommands";
+      payload: { agentId: string; cwd: string };
+    }
   | AgentChatBackendCommand
   | AppChromeBackendCommand;
 

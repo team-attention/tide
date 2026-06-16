@@ -41,7 +41,7 @@ import {
   searchProductShellContentCommand,
   toggleProductShellWorkbenchFullscreen,
   setPreferredStartComposer,
-  type PreferredStartComposer,
+  preferredStartComposerFromState,
   type ProductShellBackendCommand,
   type ProductShellState,
 } from "../../../../application/domains/product-shell/product-shell.ts";
@@ -79,30 +79,22 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Remember the Start Composer's agent/model choice: whenever it changes while no
   // thread is active, persist it so the NEXT New Thread (this launch or the next)
   // defaults to it.
-  const startBinding = shellState.activeThreadId === null
-    ? shellState.agentChat.composer.startOptions
-    : undefined;
-  const startAgentId = startBinding?.agentBinding.agentId;
-  const startModel = startBinding?.launchOptions?.model;
-  const startPermission = startBinding?.launchOptions?.permission;
-  const startReasoning = startBinding?.launchOptions?.reasoning;
+  // The preference to remember is null while a thread is focused or the agent isn't a
+  // known one. preferredStartComposerFromState holds that DECISION (the spot the
+  // opencode/gemini drop bug lived) so it's unit-tested directly; the serialized key
+  // keeps the effect from re-persisting on every render. Persists for every real
+  // agent — opencode/gemini included — just like codex/claude.
+  const startPreference = preferredStartComposerFromState(shellState);
+  const startPreferenceKey = startPreference === null ? null : JSON.stringify(startPreference);
   useEffect(() => {
-    if (
-      startAgentId !== "codex" &&
-      startAgentId !== "claude" &&
-      startAgentId !== "openai_api"
-    ) {
+    if (startPreference === null) {
       return;
     }
-    const defaults: PreferredStartComposer = {
-      agentId: startAgentId,
-      model: typeof startModel === "string" ? startModel : undefined,
-      permission: typeof startPermission === "string" ? startPermission : undefined,
-      reasoning: typeof startReasoning === "string" ? startReasoning : undefined,
-    };
-    setPreferredStartComposer(defaults);
-    persistPreferredStartComposer(defaults);
-  }, [startAgentId, startModel, startPermission, startReasoning]);
+    setPreferredStartComposer(startPreference);
+    persistPreferredStartComposer(startPreference);
+    // startPreference is fully determined by startPreferenceKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startPreferenceKey]);
   // Resizable column widths (agent chat is the flexible middle track). Drag
   // handles on column edges update these via pointer capture.
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -554,6 +546,20 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     }
     dispatchBackendCommand({ kind: "thread.list", payload: {} });
   }, []);
+  // Mirror the agent's REAL full command set in the composer menu: probe a
+  // handshake-only runtime for (agent, cwd); the resulting agentRuntime.commandsChanged
+  // replaces the instant file list (tide:list-commands). Re-runs when the active cwd or
+  // agent changes. See docs_v2/specs/live-provider-command-mirroring.md.
+  useEffect(() => {
+    if (props.initialState !== undefined || activeProjectCwd === null) {
+      return;
+    }
+    dispatchBackendCommand({
+      kind: "provider.discoverCommands",
+      payload: { agentId: activeAgentId, cwd: activeProjectCwd },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectCwd, activeAgentId]);
   const handlerContext: ProductShellHandlerContext = { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize };
   const handlers: ProductShellHandlers = {
     ...createRailHandlers(handlerContext),

@@ -415,6 +415,10 @@ const commandDiscoveryFs: CommandFs = {
   },
 };
 
+// Instant, offline first paint for the composer command menu: the cwd's command
+// + skill FILES (no provider spawn). The agent's REAL full command set replaces
+// this when the backend's handshake probe returns (provider.discoverCommands →
+// agentRuntime.commandsChanged). See docs_v2/specs/live-provider-command-mirroring.md.
 ipcMain.handle("tide:list-commands", (_event, cwd: unknown, agentId: unknown) => {
   if (typeof cwd !== "string" || cwd.length === 0 || typeof agentId !== "string") {
     return [];

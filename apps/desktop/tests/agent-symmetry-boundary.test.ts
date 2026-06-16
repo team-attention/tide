@@ -106,9 +106,10 @@ test("the runtime port derives agent membership and session-ref kind from the re
     /agentId === "codex"[\s\S]*agentId === "claude"[\s\S]*agentId === "opencode"/,
     "runtime port must not hardcode the provider-CLI id list — derive it from the registry",
   );
-  // No inline sessionRefKind ternary; it comes from sessionRefKindForAgent.
+  // No inline sessionRefKind ternary; it comes from sessionRefKindForAgent
+  // (now in the shared createTransportClient helper, so the arg is input.agentId).
   assert.doesNotMatch(source, /sessionRefKind:\s*agentId === "opencode"/);
-  assert.match(source, /sessionRefKindForAgent\(agentId\)/);
+  assert.match(source, /sessionRefKindForAgent\((input\.)?agentId\)/);
 });
 
 test("infra detectAvailableAgents iterates the registry, not a hardcoded array", () => {

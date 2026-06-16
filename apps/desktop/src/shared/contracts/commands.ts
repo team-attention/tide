@@ -20,6 +20,7 @@ export type BackendCommandKind =
   | "agentRuntime.stop"
   | "provider.trustWorkspace"
   | "provider.opencodeConnectApiKey"
+  | "provider.discoverCommands"
   | "workbench.command"
   | "workspace.readFileTree"
   | "workspace.searchContent"
@@ -42,6 +43,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "agentRuntime.stop",
   "provider.trustWorkspace",
   "provider.opencodeConnectApiKey",
+  "provider.discoverCommands",
   "workbench.command",
   "workspace.readFileTree",
   "workspace.searchContent",
@@ -113,6 +115,11 @@ export interface BackendCommandPayloadByKind {
   // identical to `opencode auth login` but non-interactive. Refreshes the catalog so
   // the vendor's models appear. See opencode-vendor-onramp.md.
   "provider.opencodeConnectApiKey": { vendorId: string; key: string };
+  // Discover an agent's REAL command set (the list the provider CLI itself
+  // exposes) for the composer's / and $ menu, by probing a handshake-only
+  // runtime. The backend replies with an agentRuntime.commandsChanged event.
+  // See docs_v2/specs/live-provider-command-mirroring.md.
+  "provider.discoverCommands": { agentId: string; cwd: string };
   "workbench.command": {
     threadId: ThreadId;
     command: string;

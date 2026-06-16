@@ -1255,31 +1255,62 @@ test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", 
   assert.match(slashHtml, /\/work/);
 });
 
-test("slash_command_menu_is_suppressed_in_the_start_composer", () => {
-  // The slash/skill menu lists commands you send to a running agent session, so it
-  // must NOT open in the Start Composer (no thread yet) — typing "/goal" there is
-  // just text. It opens only once a Thread has started.
-  const commands = [{ name: "goal", description: "Define the work", trigger: "/" as const }];
+test("slash_command_menu_mirrors_the_full_command_set_in_the_start_composer", () => {
+  // The slash menu opens in the Start Composer too AND lists the agent's FULL real
+  // command set — the same list the provider CLI itself exposes, no Tide-curated
+  // subset. A "built-in"-tagged command is NOT hidden here. See
+  // live-provider-command-mirroring.md.
+  const commands = [
+    { name: "work", description: "Run engineering work", trigger: "/" as const, source: "project" as const },
+    { name: "goal", description: "", trigger: "/" as const, source: "builtin" as const },
+  ];
 
   const startComposer = {
-    ...updateComposerDraft(createAgentChatShellState(), "/goal").state,
+    ...updateComposerDraft(createAgentChatShellState(), "/").state,
     availableCommands: commands,
   };
-  assert.equal(startComposer.composer.activeSurface, null);
-  // The draft text "/goal" lives in the textarea; assert no choice surface rendered.
-  assert.doesNotMatch(renderShell(startComposer), /data-choice-surface/);
+  // The menu surface is active even with no thread (the thread-gate is gone)...
+  assert.equal(startComposer.thread, null);
+  assert.equal(startComposer.composer.activeSurface, "command_suggestions");
+  const startHtml = renderShell(startComposer);
+  assert.match(startHtml, /data-choice-surface="command_suggestions"/);
+  // ...and the full set shows — both the project command AND the agent-reported one.
+  assert.match(startHtml, /\/work/);
+  assert.match(startHtml, /\/goal/);
 
+  // A started thread lists the same full set.
   const hydrated = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),
     backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
   );
   const started = {
-    ...updateComposerDraft(hydrated, "/goal").state,
+    ...updateComposerDraft(hydrated, "/").state,
     availableCommands: commands,
   };
   assert.equal(started.composer.activeSurface, "command_suggestions");
-  assert.match(renderShell(started), /data-choice-surface="command_suggestions"/);
-  assert.match(renderShell(started), /\/goal/);
+  const startedHtml = renderShell(started);
+  assert.match(startedHtml, /\/work/);
+  assert.match(startedHtml, /\/goal/);
+});
+
+test("slash_command_menu_dedupes_repeated_command_names", () => {
+  // Some agents (e.g. gemini) report a command once per subcommand, yielding the
+  // same name many times. The menu shows each name once. See
+  // live-provider-command-mirroring.md.
+  const commands = [
+    { name: "memory", description: "memory add", trigger: "/" as const },
+    { name: "memory", description: "memory show", trigger: "/" as const },
+    { name: "memory", description: "memory refresh", trigger: "/" as const },
+    { name: "help", description: "", trigger: "/" as const },
+  ];
+  const state = {
+    ...updateComposerDraft(createAgentChatShellState(), "/").state,
+    availableCommands: commands,
+  };
+  const rows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
+  const memoryRows = rows.filter((r) => r.label === "/memory");
+  assert.equal(memoryRows.length, 1, `/memory should appear once, got ${memoryRows.length}`);
+  assert.ok(rows.some((r) => r.label === "/help"));
 });
 
 test("slash_menu_triggers_on_the_token_under_the_cursor_mid_message", () => {
