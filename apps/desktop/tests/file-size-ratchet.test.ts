@@ -26,8 +26,10 @@ const PINNED_MAX: Record<string, number> = {
   // +26 over the prior 1486 pin: the spurious-turn-end guard that stops a live,
   // unanswered prompt from being dropped on switch-back (promptAnsweredPendingSettle,
   // threaded through recordTurnComplete / answerPrompt / recordProviderPromptState).
-  // The full thread-runtime-service split is still the real fix.
-  "backend/application/services/thread/thread-runtime-service.ts": 1512,
+  // +1 (1513): answerPrompt forwards the multi-step wizard's stepAnswers to the runtime
+  // write (multi-step-prompt-navigation.md). The full thread-runtime-service split is
+  // still the real fix.
+  "backend/application/services/thread/thread-runtime-service.ts": 1513,
   // The inbound command switch (already at the 800 cap) gained the
   // provider.discoverCommands handler for live command mirroring, then the
   // thread.launchOptionsChanged event builder gained the applied + changedKeys

@@ -8,7 +8,7 @@ import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port
 import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
 import type { ComposerAttachmentInput, ComposerAttachmentStorePort } from "../../ports/outbound/composer-attachment-store-port.ts";
 import type { ProviderTrustPort } from "../../ports/outbound/provider-trust-port.ts";
-import type { AgentBinding, AgentId, AgentSessionBlockReference, PromptState, ProviderSessionRef, ThreadId, ThreadScope, ThreadSeed, ThreadSnapshot } from "../../domains/thread/thread.ts";
+import type { AgentBinding, AgentId, AgentSessionBlockReference, PromptState, PromptStepAnswer, ProviderSessionRef, ThreadId, ThreadScope, ThreadSeed, ThreadSnapshot } from "../../domains/thread/thread.ts";
 import type { ThreadRuntimeAsyncEvent } from "./thread-runtime-events.ts";
 import type { AgentRuntimeState } from "../../domains/agent-runtime/agent-runtime.ts";
 import type { ProviderReadinessResult } from "../../domains/provider-readiness/provider-readiness.ts";
@@ -144,6 +144,9 @@ export interface AnswerPromptInput {
   promptId: string;
   value?: string;
   choiceId?: string;
+  // Set for a multi-step prompt (wizard): one answer per step, forwarded to the runtime
+  // write. The single `value`/`choiceId` path is used when this is absent.
+  stepAnswers?: PromptStepAnswer[];
 }
 
 export interface AnswerPromptResult {

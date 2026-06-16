@@ -33,10 +33,9 @@ import type {
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
-
-export const STRUCTURED_ALLOW_TOKEN = "structured:allow";
-export const STRUCTURED_DENY_TOKEN = "structured:deny";
-export const STRUCTURED_OPTION_PREFIX = "structured:option:";
+import { STRUCTURED_ALLOW_TOKEN, STRUCTURED_DENY_TOKEN, isRecord, stringField } from "./claude-stream-json-shared.ts";
+import type { AskUserQuestionContext, PendingPermission } from "./claude-ask-user-question.ts";
+import { answerAskUserQuestion, surfaceAskUserQuestion, surfaceAskUserQuestionWizard } from "./claude-ask-user-question.ts";
 
 export interface CreateClaudeStreamJsonClientInput extends StructuredClientCallbacks {
   plan: ProviderLaunchPlan;
@@ -85,21 +84,6 @@ export function createClaudeStreamJsonClient(
   input: CreateClaudeStreamJsonClientInput,
 ): StructuredRuntimeClient {
   return new ClaudeStreamJsonClient(input);
-}
-
-interface PendingPermission {
-  requestId: string;
-  toolInput: unknown;
-  // For AskUserQuestion: sequential multi-question state. claude can ask several
-  // questions in ONE call and requires EVERY one answered, so we surface them one
-  // at a time, accumulate answers keyed by question text, and only allow the tool
-  // once all are collected. (Answering just the first left the rest unanswered →
-  // "The user did not answer the questions".)
-  askUserQuestion?: {
-    questions: unknown[];
-    answers: Record<string, string>;
-    index: number;
-  };
 }
 
 class ClaudeStreamJsonClient implements StructuredRuntimeClient {
@@ -222,45 +206,12 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       });
       return;
     }
-    const optionLabel = input.value.startsWith(STRUCTURED_OPTION_PREFIX)
-      ? input.value.slice(STRUCTURED_OPTION_PREFIX.length)
-      : undefined;
-    // AskUserQuestion: record this question's answer (keyed by its text), then
-    // surface the NEXT question, or — once every question is answered — allow the
-    // tool with the full answers map. claude requires ALL questions answered.
+    // AskUserQuestion: record this question's answer (keyed by its text), then surface
+    // the NEXT question, or — once every question is answered (a wizard submit delivers
+    // them all at once) — allow the tool with the full answers map. Owned by the
+    // claude-ask-user-question module.
     if (pending.askUserQuestion !== undefined) {
-      const { questions, answers, index } = pending.askUserQuestion;
-      const currentQuestion = isRecord(questions[index])
-        ? stringField(questions[index] as Record<string, unknown>, "question")
-        : undefined;
-      // A listed option arrives as structured:option:<label>; any OTHER
-      // non-empty value is the user's typed "Other…" free-text reply, which
-      // claude accepts verbatim as the answer. An empty value is Skip (leave
-      // this question unanswered). Dropping the free-text path here lost the
-      // user's typed answers entirely ("The user did not answer the questions").
-      const answerText =
-        optionLabel ??
-        (input.value.length > 0 && input.value !== STRUCTURED_ALLOW_TOKEN
-          ? input.value
-          : undefined);
-      const nextAnswers =
-        answerText !== undefined && currentQuestion !== undefined
-          ? { ...answers, [currentQuestion]: answerText }
-          : answers;
-      const nextIndex = index + 1;
-      if (
-        nextIndex < questions.length &&
-        this.surfaceAskUserQuestion(
-          pending.requestId,
-          isRecord(pending.toolInput) ? pending.toolInput : {},
-          questions,
-          nextAnswers,
-          nextIndex,
-        )
-      ) {
-        return; // more questions to ask before allowing the tool
-      }
-      this.sendAskUserQuestionAllow(pending.requestId, pending.toolInput, nextAnswers);
+      answerAskUserQuestion(this.askUserQuestionContext(), pending, input);
       return;
     }
     // Generic permission allow: no answer payload.
@@ -274,86 +225,16 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     });
   }
 
-  // Surface AskUserQuestion's question at `index` as a choice prompt; returns
-  // false if it has no answerable options (caller then falls back to a generic
-  // allow/deny permission for the whole tool).
-  private surfaceAskUserQuestion(
-    requestId: string,
-    toolInput: Record<string, unknown>,
-    questions: unknown[],
-    answers: Record<string, string>,
-    index: number,
-  ): boolean {
-    const question = isRecord(questions[index]) ? questions[index] : undefined;
-    const questionText = question !== undefined ? stringField(question, "question") : undefined;
-    const options = question !== undefined && Array.isArray(question.options) ? question.options : [];
-    const optionChoices: PromptChoice[] = options
-      .map((option) =>
-        isRecord(option) && typeof option.label === "string"
-          ? {
-              choiceId: `opt-${option.label}`,
-              label: option.label,
-              providerValue: `${STRUCTURED_OPTION_PREFIX}${option.label}`,
-            }
-          : undefined,
-      )
-      .filter((choice): choice is PromptChoice => choice !== undefined);
-    if (questionText === undefined || optionChoices.length === 0) {
-      return false;
-    }
-    const promptId = `claude-auq-${requestId}-${index}`;
-    this.pendingPermissions.set(promptId, {
-      requestId,
-      toolInput,
-      askUserQuestion: { questions, answers, index },
-    });
-    const total = questions.length;
-    // A multiSelect question lets the user pick several options; the card submits them
-    // joined as the free-text answer (claude records the joined labels). See the answer
-    // path below (no STRUCTURED_OPTION_PREFIX ⇒ accepted verbatim).
-    const multiSelect = question?.multiSelect === true;
-    const promptState = {
-      promptId,
+  // The slice of this client the AskUserQuestion handlers (claude-ask-user-question.ts)
+  // operate through — passed in so that module never imports the client (no cycle).
+  private askUserQuestionContext(): AskUserQuestionContext {
+    return {
       threadId: this.threadId,
       agentId: this.agentId,
-      kind: "choice" as const,
-      // Number multi-question prompts so the user knows more are coming.
-      message: total > 1 ? `(${index + 1}/${total}) ${questionText}` : questionText,
-      choices: optionChoices,
-      defaultChoiceId: optionChoices[0]?.choiceId,
-      ...(multiSelect ? { multiSelect: true } : {}),
-      source: "provider_hook" as const,
+      pendingPermissions: this.pendingPermissions,
+      onEvent: this.onEvent,
+      writeLine: (value) => this.writeLine(value),
     };
-    // Defer the emit: a follow-up question (Q2…) is surfaced WHILE the previous
-    // one is being answered, so emitting synchronously would queue it behind the
-    // about-to-be-cleared prior prompt — and the queue path re-emits the stale
-    // prior prompt, clobbering this one in the UI. setImmediate lets the answer
-    // flow settle (prompt cleared) so this surfaces cleanly as the visible card.
-    // Gated on the pending entry: a control_cancel_request landing inside this
-    // window already withdrew the interaction — emitting then would show a
-    // ghost card nothing can answer.
-    setImmediate(() => {
-      if (this.pendingPermissions.has(promptId)) {
-        this.onEvent({ kind: "prompt", promptState });
-      }
-    });
-    return true;
-  }
-
-  private sendAskUserQuestionAllow(
-    requestId: string,
-    toolInput: unknown,
-    answers: Record<string, string>,
-  ): void {
-    const updatedInput = isRecord(toolInput) ? { ...toolInput, answers } : toolInput;
-    this.writeLine({
-      type: "control_response",
-      response: {
-        subtype: "success",
-        request_id: requestId,
-        response: { behavior: "allow", updatedInput },
-      },
-    });
   }
 
   // Mid-thread Launch Options change, applied to the LIVE session via the
@@ -670,11 +551,16 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     const promptId = `claude-perm-${requestId}`;
 
     // AskUserQuestion's can_use_tool carries the FULL set of questions, each with
-    // options. claude requires EVERY question answered, so surface them one at a
-    // time (Q1 → on answer → Q2 → …) and inject all answers via updatedInput.
+    // options. claude requires EVERY question answered. A multi-question set surfaces
+    // as ONE navigable wizard (all steps at once, answered together); a single question
+    // (or a degenerate set the wizard can't build) falls back to one card at a time.
     if (toolName === "AskUserQuestion") {
       const questions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
-      if (questions.length > 0 && this.surfaceAskUserQuestion(requestId, toolInput, questions, {}, 0)) {
+      const ctx = this.askUserQuestionContext();
+      if (questions.length > 1 && surfaceAskUserQuestionWizard(ctx, requestId, toolInput, questions)) {
+        return;
+      }
+      if (questions.length > 0 && surfaceAskUserQuestion(ctx, requestId, toolInput, questions, {}, 0)) {
         return;
       }
     }
@@ -708,15 +594,6 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     };
     this.onEvent({ kind: "prompt", promptState });
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stringField(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function bounded(text: string): string {

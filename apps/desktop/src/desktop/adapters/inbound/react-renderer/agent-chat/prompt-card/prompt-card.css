@@ -163,3 +163,49 @@
 .prompt-card__submit:disabled { opacity: 0.4; cursor: default; }
 
 .prompt-card__submit-kbd { opacity: 0.65; font-size: 11px; }
+
+/* Multi-step prompt wizard (claude AskUserQuestion's batched questions): a Back/Next
+   navigable card with a step indicator, so any prior answer can be reviewed/revised
+   before the single final submit. See multi-step-prompt-navigation.md. */
+.prompt-card__wizard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prompt-card__step-count {
+  margin-left: 4px;
+  opacity: 0.7;
+  font-weight: 500;
+}
+
+.prompt-card__steps { display: flex; align-items: center; gap: 6px; }
+
+.prompt-card__step-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 1.5px solid var(--tide-muted);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+
+.prompt-card__step-dot:hover { transform: scale(1.25); }
+
+/* Answered (a non-empty value) reads as a filled dot; the current step gets a ring. */
+.prompt-card__step-dot[data-answered="true"] {
+  border-color: var(--tide-action, var(--tide-text));
+  background: var(--tide-action, var(--tide-text));
+}
+
+.prompt-card__step-dot[data-active="true"] {
+  border-color: var(--tide-action, var(--tide-text));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tide-action, var(--tide-text)) 22%, transparent);
+}
+
+.prompt-card__skip:disabled { opacity: 0.4; cursor: default; }
+.prompt-card__skip:disabled:hover { background: transparent; }

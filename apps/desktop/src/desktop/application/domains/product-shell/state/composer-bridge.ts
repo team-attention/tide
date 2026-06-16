@@ -1,6 +1,6 @@
 import type { ProductShellState, ProductShellUpdateResult } from "./types.ts";
-import { addComposerAttachment, addComposerContextChip, answerPromptText, applyAgentChatBackendEvent, editQueuedInput, interruptComposer, removeComposerAttachment, removeComposerContextChip, resolveComposerNewWorktreeIntent, selectAgentChatChoiceSurfaceRow, setComposerActiveSurface, setComposerContextChipComment, setComposerFolderScope, setComposerNewWorktreeIntent, submitComposer, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
-import type { AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerAttachment, AgentChatComposerSurfaceKind, AgentChatContextChip, AgentChatPromptState } from "../../agent-chat/agent-chat.ts";
+import { addComposerAttachment, addComposerContextChip, answerPromptSteps, answerPromptText, applyAgentChatBackendEvent, editQueuedInput, interruptComposer, removeComposerAttachment, removeComposerContextChip, resolveComposerNewWorktreeIntent, selectAgentChatChoiceSurfaceRow, setComposerActiveSurface, setComposerContextChipComment, setComposerFolderScope, setComposerNewWorktreeIntent, submitComposer, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerAttachment, AgentChatComposerSurfaceKind, AgentChatContextChip, AgentChatPromptState, AgentChatPromptStepAnswer } from "../../agent-chat/agent-chat.ts";
 import { agentChatWithProjects, projectsFromThreads } from "./view-model.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import { toProductShellThreadFromSummary } from "./thread-list.ts";
@@ -101,6 +101,14 @@ export function answerProductShellPromptText(
   value: string,
 ): ProductShellUpdateResult {
   const result = answerPromptText(agentChatWithProjects(state), value);
+  return { state: { ...state, agentChat: result.state }, command: result.command };
+}
+
+export function answerProductShellPromptSteps(
+  state: ProductShellState,
+  stepAnswers: AgentChatPromptStepAnswer[],
+): ProductShellUpdateResult {
+  const result = answerPromptSteps(agentChatWithProjects(state), stepAnswers);
   return { state: { ...state, agentChat: result.state }, command: result.command };
 }
 
