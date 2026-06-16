@@ -303,6 +303,7 @@ export function createComposerStack(
           prompt={viewModel.prompt}
           onSelectChoice={(choiceId: string) => handlers.onChoiceSurfaceRowSelect?.("prompt_state", choiceId)}
           onAnswerText={(value: string) => handlers.onAnswerPromptText?.(value)}
+          onAnswerSteps={(stepAnswers) => handlers.onAnswerPromptSteps?.(stepAnswers)}
         />
       ) : null}
       {viewModel.usage ? createUsageMeter(viewModel.usage) : null}

@@ -215,6 +215,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
         promptId: input.promptId,
         choiceId: input.choiceId,
         value: input.value,
+        stepAnswers: input.stepAnswers,
       });
     }
     // Raw terminal bytes have no meaning on a structured transport.

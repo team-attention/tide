@@ -213,6 +213,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       props.onChoiceSurfaceRowSelect?.(surfaceKind, rowId);
     },
     onAnswerPromptText: props.onAnswerPromptText,
+    onAnswerPromptSteps: props.onAnswerPromptSteps,
     onOpencodeConnectApiKey: props.onOpencodeConnectApiKey,
     onAddAttachment: props.onAddAttachment,
     onRemoveAttachment: props.onRemoveAttachment,

@@ -1,4 +1,4 @@
-import type { AgentChatChoiceSurfaceView, AgentChatComposerSurfaceKind, AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import type { AgentChatChoiceSurfaceView, AgentChatComposerSurfaceKind, AgentChatPromptStepAnswer, AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 export interface AgentChatShellProps {
@@ -22,6 +22,7 @@ export interface AgentChatShellProps {
   // → opencode server).
   onOpencodeConnectApiKey?: (vendorId: string, key: string) => void;
   onAnswerPromptText?: (value: string) => void;
+  onAnswerPromptSteps?: (stepAnswers: AgentChatPromptStepAnswer[]) => void;
   // Opens a file (from a Read tool's file chip) in the Workbench editor.
   onOpenFile?: (path: string) => void;
   // Opens an http(s) link (clicked in a chat message) in the in-app Browser
@@ -64,6 +65,7 @@ export interface ComposerHandlers {
   // → opencode server).
   onOpencodeConnectApiKey?: (vendorId: string, key: string) => void;
   onAnswerPromptText?: (value: string) => void;
+  onAnswerPromptSteps?: (stepAnswers: AgentChatPromptStepAnswer[]) => void;
   onAddAttachment?: (attachment: {
     name: string;
     mediaType: string;
