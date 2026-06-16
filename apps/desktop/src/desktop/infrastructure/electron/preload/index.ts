@@ -107,6 +107,12 @@ export interface TidePreloadSurface {
     branch: string | null;
     branchDeleted: boolean;
   }>;
+  branchInfo(cwd: string, branch: string): Promise<{ exists: boolean; merged: boolean }>;
+  deleteBranch(
+    cwd: string,
+    branch: string,
+    options: { force: boolean },
+  ): Promise<{ deleted: boolean; branch: string | null }>;
   gitContext(cwd: string): Promise<GitContext>;
   // Read-only uncommitted changes + a single file's diff, for the Changes view.
   gitChanges(cwd: string): Promise<GitChanges>;
@@ -218,6 +224,18 @@ export const tidePreloadSurface: TidePreloadSurface = {
       worktreeRemoved: boolean;
       branch: string | null;
       branchDeleted: boolean;
+    }>;
+  },
+  branchInfo(cwd, branch) {
+    return ipcRenderer.invoke("tide:branch-info", cwd, branch) as Promise<{
+      exists: boolean;
+      merged: boolean;
+    }>;
+  },
+  deleteBranch(cwd, branch, options) {
+    return ipcRenderer.invoke("tide:delete-branch", cwd, branch, options) as Promise<{
+      deleted: boolean;
+      branch: string | null;
     }>;
   },
   gitContext(cwd) {

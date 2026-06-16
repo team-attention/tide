@@ -7,7 +7,7 @@ import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
 export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onAnswerPromptSteps" | "onSubmit" | "onInterrupt" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onOpencodeConnectApiKey" | "onAddAttachment" | "onRemoveAttachment"> {
-  const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
+  const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, startColumnResize } = ctx;
   return {
     onDraftChange: (draft) => setShellState((state) => updateProductShellComposerDraft(state, draft)),
     // The on-ramp panel's in-app API-key field → set the vendor key the canonical way
@@ -159,6 +159,24 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
         const cwd = rowId.slice("delete-worktree:".length);
         setShellState((state) => setProductShellComposerActiveSurface(state, null));
         openWorktreeDeleteByCwd(cwd);
+        return;
+      }
+      // The trailing trash on a branch row opens the branch-delete dialog (the
+      // branch name is in the rowId; the repo cwd comes from the active scope).
+      // See docs_v2/specs/branch-deletion-from-picker.md.
+      if (surfaceKind === "branch_menu" && rowId.startsWith("delete-branch:")) {
+        const branch = rowId.slice("delete-branch:".length);
+        const scope = shellState.agentChat.composer.startOptions.scope;
+        const cwd =
+          scope === undefined
+            ? undefined
+            : scope.kind === "project"
+            ? scope.cwd
+            : scope.scratchCwd;
+        setShellState((state) => setProductShellComposerActiveSurface(state, null));
+        if (cwd !== undefined) {
+          openBranchDeleteByName(cwd, branch);
+        }
         return;
       }
       // "New worktree" / "Create new branch" open an inline name input; creation

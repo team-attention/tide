@@ -56,6 +56,9 @@ export function createInitialRendererElement() {
               worktreeInfo: (cwd: string) => window.tide!.worktreeInfo(cwd),
               deleteWorktree: (cwd: string, options: { deleteBranch: boolean; force: boolean }) =>
                 window.tide!.deleteWorktree(cwd, options),
+              branchInfo: (cwd: string, branch: string) => window.tide!.branchInfo(cwd, branch),
+              deleteBranch: (cwd: string, branch: string, options: { force: boolean }) =>
+                window.tide!.deleteBranch(cwd, branch, options),
               gitContext: (cwd: string) => window.tide!.gitContext(cwd),
               gitChanges: (cwd: string) => window.tide!.gitChanges(cwd),
               gitFileDiff: (cwd: string, relPath: string) => window.tide!.gitFileDiff(cwd, relPath),
@@ -119,6 +122,8 @@ declare global {
       removeWorktree(cwd: string): Promise<{ entries: { projectId: string; name: string; cwd: string }[] }>;
       worktreeInfo(cwd: string): Promise<{ repoRoot: string | null; branch: string | null; branchMerged: boolean; isWorktree: boolean }>;
       deleteWorktree(cwd: string, options: { deleteBranch: boolean; force: boolean }): Promise<{ entries: { projectId: string; name: string; cwd: string }[]; worktreeRemoved: boolean; branch: string | null; branchDeleted: boolean }>;
+      branchInfo(cwd: string, branch: string): Promise<{ exists: boolean; merged: boolean }>;
+      deleteBranch(cwd: string, branch: string, options: { force: boolean }): Promise<{ deleted: boolean; branch: string | null }>;
       gitContext(cwd: string): Promise<{
         isGitRepo: boolean;
         currentBranch: string | null;

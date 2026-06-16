@@ -10,6 +10,7 @@ import {
   branchDeleteArgs,
   branchMergedArgs,
   worktreeDeleteRequest,
+  branchDeleteRequest,
   worktreeRepoRootForCwd,
 } from "../src/shared/worktree/path.ts";
 import {
@@ -117,6 +118,14 @@ test("worktree_delete_request_forces_only_for_unmerged_branch", () => {
     deleteBranch: false,
     force: false,
   });
+});
+
+// --- Standalone branch deletion: docs_v2/specs/branch-deletion-from-picker.md ---
+
+test("branch_delete_request_forces_only_for_unmerged_branch", () => {
+  // Merged branch deletes safely with `-d`; unmerged needs the acknowledged `-D`.
+  assert.deepEqual(branchDeleteRequest({ branchMerged: true }), { force: false });
+  assert.deepEqual(branchDeleteRequest({ branchMerged: false }), { force: true });
 });
 
 // --- UC-3: Inline worktree name input (Desktop) ---

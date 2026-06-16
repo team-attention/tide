@@ -1691,6 +1691,40 @@ test("branch_menu_lists_real_git_branches_not_placeholders", () => {
   assert.doesNotMatch(html, /release\/2026-05/);
 });
 
+test("composer_branch_menu_offers_delete_on_safe_local_branches_only", () => {
+  // Spec: docs_v2/specs/branch-deletion-from-picker.md — a trailing delete action
+  // (routed via `delete-branch:`) appears ONLY on local branches that aren't the
+  // current branch and aren't checked out in any worktree.
+  const base = createAgentChatShellState({
+    startOptions: {
+      agentBinding: { agentId: "claude" },
+      scope: { kind: "project", projectId: "repo", cwd: "/repo" },
+      launchOptions: { branch: "main" },
+    },
+  });
+  const state: AgentChatShellState = {
+    ...setComposerActiveSurface(base, "branch_menu").state,
+    availableBranches: [
+      { name: "main", kind: "local", current: true },
+      { name: "feature/x", kind: "local", current: false },
+      { name: "wt-branch", kind: "local", current: false },
+      { name: "origin/main", kind: "remote", current: false },
+    ],
+    availableWorktrees: [
+      { path: "/repo", branch: "main", current: true },
+      { path: "/repo.worktree/wt-branch", branch: "wt-branch", current: false },
+    ],
+  };
+  const surface = createAgentChatShellViewModel(state).composer.activeSurface;
+  const rowFor = (name: string) => surface?.rows.find((entry) => entry.rowId === `branch:${name}`);
+  // Deletable: a plain local branch with no worktree, not the current one.
+  assert.equal(rowFor("feature/x")?.action?.rowId, "delete-branch:feature/x");
+  // Not deletable: current branch, remote ref, worktree-backed branch.
+  assert.equal(rowFor("main")?.action, undefined);
+  assert.equal(rowFor("origin/main")?.action, undefined);
+  assert.equal(rowFor("wt-branch")?.action, undefined);
+});
+
 test("branch_menu_falls_back_to_current_value_when_no_git_data", () => {
   // Spec: docs_v2/specs/git-backed-worktree-branch-menus.md UC-3
   const html = renderShell(setComposerActiveSurface(createAgentChatShellState(), "branch_menu").state);

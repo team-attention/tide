@@ -60,6 +60,15 @@ export interface ProjectRegistryBridge {
     branch: string | null;
     branchDeleted: boolean;
   }>;
+  // Standalone local-branch delete (no worktree). branchInfo drives the confirm
+  // dialog's unmerged warning; deleteBranch runs `git branch -d|-D`. See
+  // docs_v2/specs/branch-deletion-from-picker.md.
+  branchInfo(cwd: string, branch: string): Promise<{ exists: boolean; merged: boolean }>;
+  deleteBranch(
+    cwd: string,
+    branch: string,
+    options: { force: boolean },
+  ): Promise<{ deleted: boolean; branch: string | null }>;
   gitContext(cwd: string): Promise<GitContextResult>;
   gitChanges(cwd: string): Promise<GitChangesResult>;
   gitFileDiff(cwd: string, relPath: string): Promise<string>;

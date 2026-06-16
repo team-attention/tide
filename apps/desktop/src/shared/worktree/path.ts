@@ -89,3 +89,13 @@ export function worktreeDeleteRequest(input: {
   const deleteBranch = !input.keepBranch;
   return { deleteBranch, force: deleteBranch && !input.branchMerged };
 }
+
+// Maps the standalone branch-delete dialog's facts to deleteBranch options. There
+// is no "keep" choice (the branch IS the thing being deleted); force (`-D`) is
+// requested ONLY for an unmerged branch, after the user acknowledged the warning.
+// See docs_v2/specs/branch-deletion-from-picker.md.
+export function branchDeleteRequest(input: {
+  branchMerged: boolean;
+}): { force: boolean } {
+  return { force: !input.branchMerged };
+}
