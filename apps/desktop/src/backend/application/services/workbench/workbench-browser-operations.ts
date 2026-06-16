@@ -76,6 +76,9 @@ export function openBrowserOutput(
     reusablePane.url = requestedUrl;
   }
   reusablePane.revision = idGenerator();
+  // Re-use / re-navigation invalidates the D5 act auto-retry window: clear priorRevision so
+  // a stale action from the previous page is never auto-retried against the new one.
+  delete reusablePane.priorRevision;
   reusablePane.updatedAt = capturedAt;
   thread.workbench.activePaneId = reusablePane.paneId;
   thread.workbench.focusOwner = "composer";
