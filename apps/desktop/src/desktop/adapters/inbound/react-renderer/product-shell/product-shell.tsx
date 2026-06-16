@@ -433,7 +433,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     // threads out of the viewed surface. Terminal output and update-notices stay
     // immediate — they early-return without touching shell state.
     const pending: AgentChatBackendEvent[] = [];
-    let timer: number | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const flushPending = (): void => {
       timer = null;
@@ -480,7 +480,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       // Space) pauses rAF, stranding backend events so a background agent finishing never flips
       // the running flag and never notifies until you return. Timers still run off screen (kept
       // un-throttled via backgroundThrottling in main-window.ts), so the notification fires.
-      timer = setTimeout(flushPending, 16) as unknown as number;
+      timer = setTimeout(flushPending, 16);
     };
 
     const unsubscribe = props.onBackendEvent?.((event) => {
