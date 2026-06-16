@@ -42,6 +42,7 @@ import {
   toggleProductShellWorkbenchFullscreen,
   setPreferredStartComposer,
   preferredStartComposerFromState,
+  type PreferredStartComposer,
   type ProductShellBackendCommand,
   type ProductShellState,
 } from "../../../../application/domains/product-shell/product-shell.ts";
@@ -87,13 +88,14 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   const startPreference = preferredStartComposerFromState(shellState);
   const startPreferenceKey = startPreference === null ? null : JSON.stringify(startPreference);
   useEffect(() => {
-    if (startPreference === null) {
+    if (startPreferenceKey === null) {
       return;
     }
-    setPreferredStartComposer(startPreference);
-    persistPreferredStartComposer(startPreference);
-    // startPreference is fully determined by startPreferenceKey.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Parse the serialized key (rather than closing over the object) so the dep
+    // array is exactly [startPreferenceKey] with no exhaustive-deps suppression.
+    const preference = JSON.parse(startPreferenceKey) as PreferredStartComposer;
+    setPreferredStartComposer(preference);
+    persistPreferredStartComposer(preference);
   }, [startPreferenceKey]);
   // Resizable column widths (agent chat is the flexible middle track). Drag
   // handles on column edges update these via pointer capture.

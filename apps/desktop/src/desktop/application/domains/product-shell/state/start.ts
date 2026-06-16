@@ -190,15 +190,9 @@ export function isProductShellAgentIdentity(
 }
 
 export function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
-  if (
-    agentId === "claude" ||
-    agentId === "gemini" ||
-    agentId === "opencode" ||
-    agentId === "openai_api"
-  ) {
-    return agentId;
-  }
-  return "codex";
+  // Reuse the predicate as the single source of truth for valid agents; anything
+  // else (legacy/unknown id) coerces to codex.
+  return isProductShellAgentIdentity(agentId) ? agentId : "codex";
 }
 
 export function agentBindingForShellAgent(agentId: ProductShellAgentIdentity): AgentChatAgentBinding {
