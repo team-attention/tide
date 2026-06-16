@@ -1,4 +1,4 @@
-import type { ProductShellBackendCommand, ProductShellFileTreeEntryView, ProductShellFileTreeView, ProductShellState, ProductShellUpdateResult } from "./types.ts";
+import type { ProductShellBackendCommand, ProductShellFileTreeEntryView, ProductShellFileTreeMenu, ProductShellFileTreeView, ProductShellState, ProductShellTreeEdit, ProductShellUpdateResult } from "./types.ts";
 import { startFilePaneId } from "./types.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
@@ -74,6 +74,18 @@ function fileTreeChildrenLoaded(
       entry.relativePath.startsWith(prefix) &&
       !entry.relativePath.slice(prefix.length).includes("/"),
   );
+}
+
+// Reload the current tree (same expanded set) after a filesystem mutation, so the
+// new/renamed/moved/deleted entry is reflected. Null when the tree is closed or has
+// no directory to list.
+export function refreshProductShellFileTreeCommand(
+  state: ProductShellState,
+): ProductShellBackendCommand | null {
+  if (!state.fileTreeOpen) {
+    return null;
+  }
+  return fileTreeLazyRefreshCommand(state, state.expandedFolderPaths);
 }
 
 // When the start-page composer scope changes while the file tree is open, reload the
@@ -324,5 +336,166 @@ export function cloneProductShellFileTree(
   return {
     ...fileTree,
     entries: fileTree.entries.map((entry) => ({ ...entry })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// FileTree mutations: inline new-folder / rename edits, the right-click context
+// menu, and reconciling open editor tabs when a path is deleted/renamed/moved.
+// The actual filesystem change is a Main-process IPC call from the handler
+// (window.tide.fs*); these reducers own only the renderer state around it.
+// Spec: workbench-filetree-file-operations.
+// ---------------------------------------------------------------------------
+
+// Normalize a typed path fragment: forward slashes, no leading "./" or "/".
+export function normalizeRelativeInput(value: string): string {
+  return value.trim().replace(/\\/g, "/").replace(/^\.?\/+/, "").replace(/\/+$/, "");
+}
+
+function joinRelativePath(parent: string, name: string): string {
+  return parent === "" ? name : `${parent}/${name}`;
+}
+
+export function relativeParentPath(relativePath: string): string {
+  const index = relativePath.lastIndexOf("/");
+  return index === -1 ? "" : relativePath.slice(0, index);
+}
+
+export function relativeBaseName(relativePath: string): string {
+  const index = relativePath.lastIndexOf("/");
+  return index === -1 ? relativePath : relativePath.slice(index + 1);
+}
+
+// Begin an inline tree edit. New-folder expands the parent folder so the input row
+// shows under it; rename prefills the current name.
+export function beginProductShellTreeEdit(
+  state: ProductShellState,
+  edit: { kind: ProductShellTreeEdit["kind"]; parentPath: string; targetPath?: string },
+): ProductShellState {
+  const draft = edit.kind === "rename" && edit.targetPath !== undefined ? relativeBaseName(edit.targetPath) : "";
+  const expanded =
+    edit.kind === "new-folder" && edit.parentPath.length > 0 && !state.expandedFolderPaths.includes(edit.parentPath)
+      ? [...state.expandedFolderPaths, edit.parentPath]
+      : state.expandedFolderPaths;
+  return {
+    ...state,
+    fileTreeMenu: null,
+    fileTreeNotice: null,
+    fileTreeEdit: { kind: edit.kind, parentPath: edit.parentPath, targetPath: edit.targetPath, draft },
+    expandedFolderPaths: expanded,
+  };
+}
+
+export function setProductShellTreeEditDraft(state: ProductShellState, draft: string): ProductShellState {
+  if (state.fileTreeEdit === null) {
+    return state;
+  }
+  return { ...state, fileTreeEdit: { ...state.fileTreeEdit, draft } };
+}
+
+export function cancelProductShellTreeEdit(state: ProductShellState): ProductShellState {
+  if (state.fileTreeEdit === null) {
+    return state;
+  }
+  return { ...state, fileTreeEdit: null };
+}
+
+// Resolve an inline edit to concrete relative paths the Main IPC needs. `toPath` is
+// the new folder / renamed destination; `fromPath` is the rename source. Null when
+// the typed name is empty (a no-op confirm).
+export function resolveProductShellTreeEdit(
+  edit: ProductShellTreeEdit,
+): { kind: ProductShellTreeEdit["kind"]; fromPath?: string; toPath: string } | null {
+  const name = normalizeRelativeInput(edit.draft);
+  if (name.length === 0) {
+    return null;
+  }
+  if (edit.kind === "rename") {
+    if (edit.targetPath === undefined) {
+      return null;
+    }
+    // A rename keeps the entry under its existing parent; a typed "a/b" is still
+    // joined under the parent (move-by-rename is allowed).
+    return { kind: "rename", fromPath: edit.targetPath, toPath: joinRelativePath(edit.parentPath, name) };
+  }
+  return { kind: "new-folder", toPath: joinRelativePath(edit.parentPath, name) };
+}
+
+export function openProductShellFileTreeMenu(
+  state: ProductShellState,
+  menu: ProductShellFileTreeMenu,
+): ProductShellState {
+  return { ...state, fileTreeMenu: menu };
+}
+
+export function closeProductShellFileTreeMenu(state: ProductShellState): ProductShellState {
+  if (state.fileTreeMenu === null) {
+    return state;
+  }
+  return { ...state, fileTreeMenu: null };
+}
+
+// Open / close the delete confirmation for one entry (closes the context menu).
+export function openProductShellFileTreeDelete(
+  state: ProductShellState,
+  target: ProductShellFileTreeMenu,
+): ProductShellState {
+  return { ...state, fileTreeMenu: null, fileTreeDeleteTarget: target };
+}
+
+export function closeProductShellFileTreeDelete(state: ProductShellState): ProductShellState {
+  if (state.fileTreeDeleteTarget === null) {
+    return state;
+  }
+  return { ...state, fileTreeDeleteTarget: null };
+}
+
+// A transient FileTree error (e.g. a name collision), surfaced in the tree header.
+export function setProductShellFileTreeNotice(state: ProductShellState, notice: string): ProductShellState {
+  return { ...state, fileTreeNotice: notice };
+}
+
+export function clearProductShellFileTreeNotice(state: ProductShellState): ProductShellState {
+  if (state.fileTreeNotice === null) {
+    return state;
+  }
+  return { ...state, fileTreeNotice: null };
+}
+
+function pathMatchesChange(candidate: string, changed: string): boolean {
+  return candidate === changed || candidate.startsWith(`${changed}/`);
+}
+
+// After a path is deleted/renamed/moved, drop start-page editor tabs that pointed at
+// it (or a descendant) and report the thread editor pane ids the handler should close
+// (thread panes are backend-owned, closed via a command). Keeps a stale tab from
+// saving over a now-moved/-gone path.
+export function reconcileProductShellAfterPathChange(
+  state: ProductShellState,
+  changedPaths: string[],
+): { state: ProductShellState; threadEditorPaneIdsToClose: string[] } {
+  const affected = (candidate: string | undefined): boolean =>
+    candidate !== undefined && changedPaths.some((changed) => pathMatchesChange(candidate, changed));
+
+  const startPageFiles = state.startPageFiles.filter((file) => !affected(file.relativePath));
+  const droppedStartPaneIds = state.startPageFiles
+    .filter((file) => affected(file.relativePath))
+    .map((file) => startFilePaneId(file.relativePath));
+  const editorDrafts = { ...state.editorDrafts };
+  for (const paneId of droppedStartPaneIds) {
+    delete editorDrafts[paneId];
+  }
+  const draftActiveWorkbenchPaneId =
+    state.draftActiveWorkbenchPaneId !== null && droppedStartPaneIds.includes(state.draftActiveWorkbenchPaneId)
+      ? null
+      : state.draftActiveWorkbenchPaneId;
+
+  const threadEditorPaneIdsToClose = state.appChrome.workbenchPanes
+    .filter((pane) => pane.kind === "editor" && affected(pane.relativePath))
+    .map((pane) => pane.paneId);
+
+  return {
+    state: { ...state, startPageFiles, editorDrafts, draftActiveWorkbenchPaneId },
+    threadEditorPaneIdsToClose,
   };
 }

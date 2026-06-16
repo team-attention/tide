@@ -23,6 +23,12 @@ export function startNewProductShellScratchThread(state: ProductShellState): Pro
     startPageFiles: [],
     startPagePendingNavigation: null,
     editorDrafts: {},
+    untitledFiles: [],
+    untitledSaveAsPaneId: null,
+    fileTreeEdit: null,
+    fileTreeMenu: null,
+    fileTreeDeleteTarget: null,
+    fileTreeNotice: null,
   };
 }
 
@@ -61,6 +67,12 @@ export function startNewProductShellThread(
     startPagePendingNavigation: null,
     editorDrafts: {},
     editorPickerFilter: null,
+    untitledFiles: [],
+    untitledSaveAsPaneId: null,
+    fileTreeEdit: null,
+    fileTreeMenu: null,
+    fileTreeDeleteTarget: null,
+    fileTreeNotice: null,
   };
 }
 

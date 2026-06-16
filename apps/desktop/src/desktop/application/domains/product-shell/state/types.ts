@@ -129,6 +129,57 @@ export function isStartFilePaneId(paneId: string): boolean {
   return paneId === START_FILE_PANE_ID || paneId.startsWith(`${START_FILE_PANE_ID}:`);
 }
 
+// A VSCode-style untitled (blank, not-yet-on-disk) file — opened immediately by
+// "New File", named only on save (Save As). Renderer-owned like a start-page file,
+// but available inside a thread too (bound by `threadId`); it never enters the
+// backend Workbench snapshot, so it is never clobbered. `scopeCwd` is the absolute
+// root it will be written under. Spec: workbench-filetree-file-operations.
+export interface ProductShellUntitledFile {
+  // Synthetic, stable pane/sequence id: `untitled:<n>`.
+  id: string;
+  title: string;
+  // The live buffer (starts ""). `dirty` is true once anything is typed.
+  draft: string;
+  dirty: boolean;
+  // The context the untitled belongs to: a thread id, or null for the start page.
+  threadId: string | null;
+  // Absolute workspace root the file is saved under on Save As.
+  scopeCwd: string;
+}
+
+export const UNTITLED_PANE_ID = "untitled";
+
+export function untitledPaneId(sequence: number): string {
+  return `${UNTITLED_PANE_ID}:${sequence}`;
+}
+
+export function isUntitledPaneId(paneId: string): boolean {
+  return paneId === UNTITLED_PANE_ID || paneId.startsWith(`${UNTITLED_PANE_ID}:`);
+}
+
+// An in-progress inline FileTree edit: typing the name for a new folder under
+// `parentPath`, or renaming the entry at `targetPath`. (New File is untitled, so it
+// has no inline tree input.) Spec: workbench-filetree-file-operations.
+export interface ProductShellTreeEdit {
+  kind: "new-folder" | "rename";
+  // For new-folder: the folder the new child goes under ("" = root). For rename: the
+  // parent of the entry being renamed.
+  parentPath: string;
+  // For rename: the current relativePath of the entry being renamed.
+  targetPath?: string;
+  draft: string;
+}
+
+// The FileTree right-click context menu: anchored to a point, targeting one entry
+// (or the root background when `targetPath` is null/`relativePath` is "").
+export interface ProductShellFileTreeMenu {
+  x: number;
+  y: number;
+  // The targeted entry; a root-background click targets relativePath "".
+  relativePath: string;
+  kind: "file" | "folder" | "root";
+}
+
 // The synthetic Launcher pane shown FIRST on the composer (New Thread) page, before
 // any thread exists. Like START_FILE_PANE_ID it has no backend pane; the view-model
 // derives it. See docs_v2/specs/workbench-dock-parity.md.
@@ -242,6 +293,22 @@ export interface ProductShellState {
   // the first send creates, then cleared. See docs_v2/specs/workbench-dock-parity.md.
   draftWorkbenchPanes: ProductShellDraftPane[];
   draftActiveWorkbenchPaneId: string | null;
+  // VSCode-style untitled files (blank, named on save), one editor tab each. Shown
+  // in the context (thread/start) they were created in. Spec:
+  // workbench-filetree-file-operations.
+  untitledFiles: ProductShellUntitledFile[];
+  // Monotonic sequence for naming Untitled-1, Untitled-2, … (never reused in a session).
+  untitledSequence: number;
+  // The untitled pane currently prompting for a save name (Save As bar open), or null.
+  untitledSaveAsPaneId: string | null;
+  // In-progress inline FileTree edit (new folder / rename), or null.
+  fileTreeEdit: ProductShellTreeEdit | null;
+  // Open FileTree right-click context menu, or null.
+  fileTreeMenu: ProductShellFileTreeMenu | null;
+  // The entry awaiting delete confirmation (confirm dialog open), or null.
+  fileTreeDeleteTarget: ProductShellFileTreeMenu | null;
+  // A transient FileTree error message (e.g. a name collision), or null.
+  fileTreeNotice: string | null;
 }
 
 export type ProductShellBackendCommand =

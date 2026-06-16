@@ -3,11 +3,13 @@ import { createRailHandlers } from "./handlers/rail-handlers.ts";
 import { createComposerHandlers } from "./handlers/composer-handlers.ts";
 import { createWorkbenchHandlers } from "./handlers/workbench-handlers.ts";
 import { createEditorHandlers } from "./handlers/editor-handlers.ts";
+import { createFileOperationHandlers } from "./handlers/file-operation-handlers.ts";
 import { createChromeHandlers } from "./handlers/chrome-handlers.ts";
 import type { MenuAnchorRect, ProductShellHandlers, TideProductShellProps } from "./support/types.ts";
 import { createSettingsModal, loadListSettings, loadPreferredStartComposer, loadRailOrder, loadWorktreeSettings, persistPreferredStartComposer } from "./settings/settings.tsx";
 import { WorktreeDeleteDialog } from "./dialogs/worktree-delete-dialog.tsx";
 import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx";
+import { createProductShellFileDialogs } from "./product-shell-file-dialogs.tsx";
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
@@ -567,6 +569,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     ...createComposerHandlers(handlerContext),
     ...createWorkbenchHandlers(handlerContext),
     ...createEditorHandlers(handlerContext),
+    ...createFileOperationHandlers(handlerContext),
     ...createChromeHandlers(handlerContext),
   };
   const stableHandlers = useStableHandlers(handlers);
@@ -766,6 +769,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             }}
           />
         ) : null}
+        {createProductShellFileDialogs(shellState, handlers)}
         {/* The git Changes view is a docked Workbench pane (see WorkbenchColumnView),
             not an overlay. */}
         {/* Collapsed-rail floating peek: hover the left edge, or hold Ctrl. */}

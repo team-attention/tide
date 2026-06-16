@@ -26,6 +26,12 @@ import { applyThemePreference, loadThemePreference, watchSystemTheme } from "../
 applyThemePreference(loadThemePreference());
 watchSystemTheme(loadThemePreference);
 
+// Result of a structural FileTree mutation (mirrors WorkspaceFsResult in
+// main/workspace-fs.ts; kept process-local per the preload convention).
+type WorkspaceFsBridgeResult =
+  | { ok: true; relativePath: string }
+  | { ok: false; code: string; message: string };
+
 export function createInitialRendererElement() {
   return (
     <TideProductShell
@@ -54,6 +60,13 @@ export function createInitialRendererElement() {
               gitChanges: (cwd: string) => window.tide!.gitChanges(cwd),
               gitFileDiff: (cwd: string, relPath: string) => window.tide!.gitFileDiff(cwd, relPath),
               listCommands: (cwd: string, agentId: string) => window.tide!.listCommands(cwd, agentId),
+              fsCreateFile: (root: string, relativePath: string, content: string) =>
+                window.tide!.fsCreateFile(root, relativePath, content),
+              fsCreateFolder: (root: string, relativePath: string) =>
+                window.tide!.fsCreateFolder(root, relativePath),
+              fsMove: (root: string, fromRel: string, toRel: string) =>
+                window.tide!.fsMove(root, fromRel, toRel),
+              fsTrash: (root: string, relativePath: string) => window.tide!.fsTrash(root, relativePath),
             }
       }
     />
@@ -129,6 +142,12 @@ declare global {
         source: "project" | "user" | "builtin";
         agentId: "codex" | "claude";
       }[]>;
+      // Structural FileTree mutations (Main-owned). `root` is the absolute workspace
+      // root; paths are workspace-relative. Trash is the recoverable OS Trash.
+      fsCreateFile(root: string, relativePath: string, content: string): Promise<WorkspaceFsBridgeResult>;
+      fsCreateFolder(root: string, relativePath: string): Promise<WorkspaceFsBridgeResult>;
+      fsMove(root: string, fromRel: string, toRel: string): Promise<WorkspaceFsBridgeResult>;
+      fsTrash(root: string, relativePath: string): Promise<WorkspaceFsBridgeResult>;
     };
   }
 }

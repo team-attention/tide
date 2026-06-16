@@ -239,6 +239,9 @@ export function submitProductShellComposerDraft(
       // The drafts are handed off; keep the Workbench open only if we adopted panes.
       draftWorkbenchPanes: [],
       draftActiveWorkbenchPaneId: null,
+      // Start-page untitled buffers don't carry into the started thread.
+      untitledFiles: [],
+      untitledSaveAsPaneId: null,
       workbenchOpen: initialWorkbenchPanes.length > 0,
     };
     if (command !== null && command.kind === "thread.start" && initialWorkbenchPanes.length > 0) {

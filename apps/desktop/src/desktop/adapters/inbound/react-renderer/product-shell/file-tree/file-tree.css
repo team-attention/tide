@@ -87,6 +87,94 @@ button.file-tree-row:hover {
   background: var(--tide-selection);
 }
 
+/* FileTree header toolbar (New File / New Folder / Refresh) — compact icon buttons
+   in the column's top-row trailing area. Spec: workbench-filetree-file-operations. */
+.file-tree-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.file-tree-toolbar__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.file-tree-toolbar__button:hover {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+/* Transient error (e.g. a name collision) surfaced under the header. */
+.file-tree-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(var(--tide-danger-rgb, 220, 70, 70), 0.12);
+  color: var(--tide-danger, #d6455a);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.file-tree-notice__dismiss {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.file-tree-notice__dismiss:hover {
+  opacity: 1;
+}
+
+/* Inline name input shown in place of a row (rename) or as a new child row (new
+   folder). Sits at the same indent as a real row. */
+.file-tree-row--editing {
+  cursor: default;
+  animation: none;
+}
+
+.file-tree-inline-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--tide-accent, var(--tide-line));
+  border-radius: 6px;
+  background: var(--tide-surface, var(--tide-bg));
+  color: var(--tide-text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+/* Drag-and-drop move: the folder row currently under the dragged item. */
+.file-tree-row[data-drag-over="true"] {
+  background: var(--tide-selection);
+  box-shadow: inset 0 0 0 1px var(--tide-accent, var(--tide-line));
+}
+
 /* File tree loading shimmer (shown right after a thread switch while the new tree
    loads, instead of a blank/empty tree). */
 
