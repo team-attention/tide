@@ -83,7 +83,20 @@ export interface AgentChatShellState {
   // Last-known context/token usage for this thread's runtime (from the provider
   // transcript). Drives the quiet usage chip in the thread header.
   usage: AgentChatUsage | null;
+  // Transient feedback for a mid-thread launch-option change, keyed by option key
+  // (model | permission | reasoning). Renderer-only (never from a backend thread
+  // summary, which would clobber it); thread-scoped; reset on thread switch.
+  // "applied" = took effect live now (brief chip flash); "pending" = applies on the
+  // next message (persistent chip badge until the next turn starts).
+  // See docs_v2/specs/mid-thread-launch-option-feedback.md.
+  launchOptionFeedback: Record<string, LaunchOptionFeedback>;
   errorMessage?: string;
+}
+
+export interface LaunchOptionFeedback {
+  state: "applied" | "pending";
+  // Monotonic token (event clock) so a repeat change re-triggers the flash.
+  at: number;
 }
 
 export interface AgentChatUsage {
@@ -386,6 +399,10 @@ export interface AgentChatComposerView {
   submitLabel: string;
   permissionLabel: string;
   modelLabel: string;
+  // Transient chip feedback after a mid-thread change (undefined = none). The Model
+  // chip absorbs reasoning feedback too (the model label includes the effort).
+  permissionFeedback?: LaunchOptionFeedback;
+  modelFeedback?: LaunchOptionFeedback;
   // Which surface the Model chip opens: normally "model_menu", but "opencode_connect"
   // when opencode is selected and not yet usable (no connected vendor / no model).
   modelChipSurface: AgentChatComposerSurfaceKind;

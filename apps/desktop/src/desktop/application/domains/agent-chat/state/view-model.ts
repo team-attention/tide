@@ -1,4 +1,4 @@
-import type { AgentChatBlock, AgentChatBlockView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageView } from "./types.ts";
+import type { AgentChatBlock, AgentChatBlockView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageView, LaunchOptionFeedback } from "./types.ts";
 import { codexModelLabel, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, modelLabelForAgent, permissionLabelForValue, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { createActiveComposerSurface } from "./choice-surfaces.ts";
 import { isOpencodeUsable } from "./opencode-onramp.ts";
@@ -32,6 +32,13 @@ export function createAgentChatShellViewModel(
       submitLabel: state.promptState ? "Answer" : "Send",
       permissionLabel: permissionLabelForState(state),
       modelLabel: modelLabelForState(state),
+      permissionFeedback: state.launchOptionFeedback.permission,
+      // The Model chip shows model + reasoning, so it absorbs either change's
+      // feedback (the more recent one wins when both are pending).
+      modelFeedback: mostRecentFeedback(
+        state.launchOptionFeedback.model,
+        state.launchOptionFeedback.reasoning,
+      ),
       modelChipSurface: modelChipSurfaceForState(state),
       activeSurface: createActiveComposerSurface(state),
       contextControlsEditable: state.thread === null,
@@ -124,6 +131,16 @@ function permissionLabelForState(state: AgentChatShellState): string {
     launchOptionsForState(state)?.permission ?? defaultPermissionForAgent(binding.agentId),
   );
   return permissionLabelForValue(binding.agentId, value);
+}
+
+// The most recent of several chip-feedback entries (largest `at`), or undefined
+// when none is set. Used to fold model + reasoning feedback onto the Model chip.
+function mostRecentFeedback(
+  ...feedback: Array<LaunchOptionFeedback | undefined>
+): LaunchOptionFeedback | undefined {
+  return feedback
+    .filter((entry): entry is LaunchOptionFeedback => entry !== undefined)
+    .sort((a, b) => b.at - a.at)[0];
 }
 
 function deriveChatState(state: AgentChatShellState): AgentChatState {

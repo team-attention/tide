@@ -688,6 +688,75 @@ test("launch_options_changed_event_updates_only_the_open_thread", () => {
   assert.equal(other.thread?.launchOptions?.model, undefined);
 });
 
+// Spec: docs_v2/specs/mid-thread-launch-option-feedback.md
+test("launch_options_changed_sets_chip_feedback_from_the_applied_signal", () => {
+  const open = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+
+  // live → an "applied" flash on the changed chip; the Model chip surfaces it.
+  const live = applyBackendEventToAgentChatShell(
+    open,
+    backendEvent("thread.launchOptionsChanged", {
+      thread: { ...thread, launchOptions: { model: "gpt-5.2" } },
+      applied: "live",
+      changedKeys: ["model"],
+    }),
+  );
+  assert.equal(live.launchOptionFeedback.model?.state, "applied");
+  assert.equal(createAgentChatShellViewModel(live).composer.modelFeedback?.state, "applied");
+
+  // next_turn → a persistent "pending" badge on the changed chip (permission).
+  const pending = applyBackendEventToAgentChatShell(
+    open,
+    backendEvent("thread.launchOptionsChanged", {
+      thread: { ...thread, launchOptions: { permission: "bypassPermissions" } },
+      applied: "next_turn",
+      changedKeys: ["permission"],
+    }),
+  );
+  assert.equal(pending.launchOptionFeedback.permission?.state, "pending");
+  assert.equal(
+    createAgentChatShellViewModel(pending).composer.permissionFeedback?.state,
+    "pending",
+  );
+
+  // No changed keys (a no-op confirmation) → no feedback at all.
+  const noop = applyBackendEventToAgentChatShell(
+    open,
+    backendEvent("thread.launchOptionsChanged", { thread, applied: "none", changedKeys: [] }),
+  );
+  assert.deepEqual(noop.launchOptionFeedback, {});
+});
+
+test("a_new_turn_clears_pending_launch_option_chip_feedback", () => {
+  const pending = applyBackendEventToAgentChatShell(
+    applyBackendEventToAgentChatShell(
+      createAgentChatShellState(),
+      backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+    ),
+    backendEvent("thread.launchOptionsChanged", {
+      thread: { ...thread, launchOptions: { model: "gpt-5.2" } },
+      applied: "next_turn",
+      changedKeys: ["model"],
+    }),
+  );
+  assert.equal(pending.launchOptionFeedback.model?.state, "pending");
+
+  // idle → running: the deferred change has now been applied at the new turn's
+  // start, so the chip badge clears.
+  const running = applyBackendEventToAgentChatShell(
+    pending,
+    backendEvent("agentRuntime.stateChanged", {
+      threadId: "thread-shell",
+      state: "running",
+      changedAt: "2026-06-16T00:00:01.000Z",
+    }),
+  );
+  assert.deepEqual(running.launchOptionFeedback, {});
+});
+
 test("hydrating_thread_with_workbench_panes_marks_workbench_open", () => {
   const state = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),

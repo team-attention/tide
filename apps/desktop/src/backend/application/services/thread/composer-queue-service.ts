@@ -243,8 +243,11 @@ writePendingInputs(thread: ThreadRecord, queue: PendingInput[]): void {
     if (thread === undefined) {
       return failure("thread_not_found", "Thread was not found.");
     }
-    const applied = await this.mergeAndApplyLaunchOptions(thread, input.launchOptions);
-    return { ok: true, thread: snapshotThread(thread), applied };
+    const { applied, changedKeys } = await this.mergeAndApplyLaunchOptions(
+      thread,
+      input.launchOptions,
+    );
+    return { ok: true, thread: snapshotThread(thread), applied, changedKeys };
   }
 
 // Merge new Launch Options into the thread record and route the change to the
@@ -253,22 +256,24 @@ writePendingInputs(thread: ThreadRecord, queue: PendingInput[]): void {
   private async mergeAndApplyLaunchOptions(
     thread: ThreadRecord,
     launchOptions: Record<string, unknown> | undefined,
-  ): Promise<"live" | "next_turn" | "none"> {
+  ): Promise<{ applied: "live" | "next_turn" | "none"; changedKeys: string[] }> {
     if (launchOptions === undefined) {
-      return "none";
+      return { applied: "none", changedKeys: [] };
     }
     const previous = thread.launchOptions ?? {};
     const changedKeys = RUNTIME_LAUNCH_OPTION_KEYS.filter(
       (key) => key in launchOptions && launchOptions[key] !== previous[key],
     );
     if (changedKeys.length === 0) {
-      return "none";
+      return { applied: "none", changedKeys };
     }
     thread.launchOptions = { ...previous, ...launchOptions };
     thread.updatedAt = this.clock();
     if (thread.activeRuntimeHandle === undefined) {
-      // No live session — the next spawn/resume reads thread.launchOptions.
-      return "none";
+      // No live session — the next spawn/resume reads thread.launchOptions. The
+      // change is real (changedKeys non-empty), so the renderer reads this as
+      // "pending" (applies at the next message), not "no change".
+      return { applied: "none", changedKeys };
     }
     const result = await this.agentRuntimePort.applySessionConfig(
       thread.activeRuntimeHandle,
@@ -277,10 +282,13 @@ writePendingInputs(thread: ThreadRecord, queue: PendingInput[]): void {
     if (result === "applied") {
       // NOTE: an earlier restart-required change stays pending — the restart
       // re-applies every current option at spawn, so nothing is lost.
-      return thread.pendingRuntimeRestart === true ? "next_turn" : "live";
+      return {
+        applied: thread.pendingRuntimeRestart === true ? "next_turn" : "live",
+        changedKeys,
+      };
     }
     thread.pendingRuntimeRestart = true;
-    return "next_turn";
+    return { applied: "next_turn", changedKeys };
   }
 
 // Consume a pending restart-required options change at a turn boundary: stop

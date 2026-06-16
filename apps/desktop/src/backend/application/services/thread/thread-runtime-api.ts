@@ -101,6 +101,10 @@ export interface UpdateThreadLaunchOptionsResult {
   // restart is pending and happens transparently at the next send; "none" =
   // nothing changed or no live runtime exists (spawn-time options apply).
   applied: "live" | "next_turn" | "none";
+  // The Launch Option keys (⊆ model/permission/reasoning) that actually differed
+  // from the thread's previous options. Empty when the change was a no-op. Lets
+  // the renderer attach chip feedback to the right chip(s).
+  changedKeys: string[];
 }
 
 export interface TrustWorkspaceInput {

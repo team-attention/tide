@@ -300,6 +300,53 @@
   min-width: 112px;
 }
 
+/* Inline feedback after a mid-thread launch-option change (see
+   docs_v2/specs/mid-thread-launch-option-feedback.md). "applied" = a brief green
+   confirmation that self-dismisses; "pending" = a persistent muted tag that the
+   change applies on the next message. flex 0 0 auto so the label ellipsizes first. */
+.composer-shell__chip-feedback {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10.5px;
+  line-height: 1;
+  white-space: nowrap;
+  /* The chip button owns the click — the badge never intercepts it. */
+  pointer-events: none;
+}
+
+.composer-shell__chip-feedback--applied {
+  color: var(--tide-diff-add);
+  font-weight: 600;
+  animation: composer-chip-feedback-in 0.16s ease both;
+}
+
+.composer-shell__chip-feedback--pending {
+  color: var(--tide-muted);
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--tide-selection);
+}
+
+@keyframes composer-chip-feedback-in {
+  from {
+    opacity: 0;
+    transform: translateY(1px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-shell__chip-feedback--applied {
+    animation: none;
+  }
+}
+
 .composer-shell__toolbar-spacer {
   flex: 1 1 auto;
 }

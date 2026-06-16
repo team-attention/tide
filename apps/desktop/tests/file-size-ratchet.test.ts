@@ -29,11 +29,14 @@ const PINNED_MAX: Record<string, number> = {
   // The full thread-runtime-service split is still the real fix.
   "backend/application/services/thread/thread-runtime-service.ts": 1512,
   // The inbound command switch (already at the 800 cap) gained the
-  // provider.discoverCommands handler for live command mirroring. Splitting this
-  // giant switch into per-domain handler modules is the real fix (Phase-3 backlog);
-  // until then this holds the ceiling so it can only shrink. See
-  // docs_v2/specs/live-provider-command-mirroring.md.
-  "backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts": 826,
+  // provider.discoverCommands handler for live command mirroring, then the
+  // thread.launchOptionsChanged event builder gained the applied + changedKeys
+  // signal for mid-thread chip feedback. Splitting this giant switch into
+  // per-domain handler modules is the real fix (Phase-3 backlog); until then this
+  // holds the ceiling so it can only shrink. See
+  // docs_v2/specs/live-provider-command-mirroring.md and
+  // docs_v2/specs/mid-thread-launch-option-feedback.md.
+  "backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts": 828,
 };
 
 function listSourceFiles(dir: string): string[] {

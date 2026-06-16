@@ -152,6 +152,14 @@ export interface BackendEventPayloadByKind {
   // Persisted like rename/pin so the change survives restart.
   "thread.launchOptionsChanged": {
     thread: ThreadSummaryDto;
+    // How the change took effect, so the renderer can show the chip feedback:
+    // "live" = the running session was reconfigured now; "next_turn" = a
+    // transparent restart applies it at the next message; "none" = no live
+    // change. Optional for backward compatibility (older backend ⇒ no feedback).
+    applied?: "live" | "next_turn" | "none";
+    // The Launch Option keys that actually differed (⊆ model/permission/reasoning).
+    // Empty/absent ⇒ nothing changed ⇒ the renderer shows no feedback.
+    changedKeys?: string[];
   };
   "agentRuntime.stateChanged": {
     threadId: ThreadId;
