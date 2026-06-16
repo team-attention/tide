@@ -47,6 +47,16 @@ export function createMainWindow(): BrowserWindow {
     },
   });
 
+  // Zoom (Cmd +/-/0) is a per-session control, NOT a persisted preference — always open
+  // at 100%. Chromium persists per-origin zoom in the session store, so a relaunch would
+  // otherwise restore the last zoom; reset it on each load (on dom-ready, before paint,
+  // so there's no flash of the prior zoom). Spec: host-zoom-shortcuts.
+  mainWindow.webContents.on("dom-ready", () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.setZoomFactor(1);
+    }
+  });
+
   // Tell the renderer when native fullscreen hides the macOS traffic lights, so
   // the Left Rail top row can reclaim the space they normally reserve.
   const sendFullscreen = (isFullscreen: boolean) => {
