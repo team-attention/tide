@@ -1,7 +1,7 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 
-// The "정석" (server API) path for opencode vendor auth — exactly what palot and the
+// The canonical (server-API) path for opencode vendor auth — exactly what palot and the
 // other opencode GUI clients use, instead of the interactive `auth login` TUI (which
 // hangs for some providers when driven non-interactively). We run opencode's own
 // headless HTTP server (`opencode serve`) on a localhost-only port and call:

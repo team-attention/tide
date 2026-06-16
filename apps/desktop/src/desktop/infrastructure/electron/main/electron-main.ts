@@ -35,6 +35,14 @@ import {
 import { classifyTopLevelNavigation } from "./window-navigation-policy.ts";
 
 import {
+  createFileInWorkspace,
+  createFolderInWorkspace,
+  moveInWorkspace,
+  trashInWorkspace,
+  type WorkspaceFsResult,
+} from "./workspace-fs.ts";
+
+import {
   CONTRACT_VERSION,
   createContractErrorEvent,
   createContractErrorPayload,
@@ -190,6 +198,49 @@ ipcMain.handle("tide:open-external", async (_event, url: unknown) => {
     await shell.openExternal(url);
   }
 });
+
+// Structural FileTree mutations (new file/folder, rename/move, trash). Run here in
+// Main — taking an absolute workspace `root` + relative path(s) from the renderer,
+// like the git/worktree/reveal handlers — so trash can use shell.trashItem (the
+// backend utility process has no Electron shell). Path safety lives in workspace-fs.
+// Spec: docs_v2/specs/workbench-filetree-file-operations.md.
+const invalidFsArgs: WorkspaceFsResult = {
+  ok: false,
+  code: "io_error",
+  message: "Invalid file operation arguments.",
+};
+
+ipcMain.handle(
+  "tide:fs-create-file",
+  async (_event, root: unknown, relativePath: unknown, content: unknown): Promise<WorkspaceFsResult> =>
+    typeof root === "string" && typeof relativePath === "string"
+      ? createFileInWorkspace(root, relativePath, typeof content === "string" ? content : "")
+      : invalidFsArgs,
+);
+
+ipcMain.handle(
+  "tide:fs-create-folder",
+  async (_event, root: unknown, relativePath: unknown): Promise<WorkspaceFsResult> =>
+    typeof root === "string" && typeof relativePath === "string"
+      ? createFolderInWorkspace(root, relativePath)
+      : invalidFsArgs,
+);
+
+ipcMain.handle(
+  "tide:fs-move",
+  async (_event, root: unknown, fromRel: unknown, toRel: unknown): Promise<WorkspaceFsResult> =>
+    typeof root === "string" && typeof fromRel === "string" && typeof toRel === "string"
+      ? moveInWorkspace(root, fromRel, toRel)
+      : invalidFsArgs,
+);
+
+ipcMain.handle(
+  "tide:fs-trash",
+  async (_event, root: unknown, relativePath: unknown): Promise<WorkspaceFsResult> =>
+    typeof root === "string" && typeof relativePath === "string"
+      ? trashInWorkspace(root, relativePath, (abs) => shell.trashItem(abs))
+      : invalidFsArgs,
+);
 
 ipcMain.handle("tide:git-context", async (_event, cwd: unknown): Promise<GitContext> => {
   const empty: GitContext = { isGitRepo: false, currentBranch: null, branches: [], worktrees: [] };

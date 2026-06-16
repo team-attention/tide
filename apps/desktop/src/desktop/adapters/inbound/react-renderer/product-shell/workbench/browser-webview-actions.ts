@@ -35,6 +35,7 @@ export type BrowserWebViewElement = HTMLElement & {
   reload?: () => void;
   canGoBack?: () => boolean;
   canGoForward?: () => boolean;
+  isLoading?: () => boolean;
   sendInputEvent?: (event: BrowserWebViewInputEvent) => void;
   capturePage?: () => Promise<{
     toDataURL?: () => string;

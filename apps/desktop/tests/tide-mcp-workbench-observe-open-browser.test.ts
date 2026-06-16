@@ -574,6 +574,60 @@ test("same_url_browser_snapshot_keeps_revision_so_a_held_act_still_wins", async 
   assert.equal(acted.ok, true);
 });
 
+test("act_does_not_remint_revision_and_a_settled_acts_prior_revision_is_auto_retried_once", async () => {
+  // Spec: docs_v2/specs/browser-pane-live-pull-vision.md (D5). Queuing an act must NOT
+  // advance the revision (it is a no-op for the page), and after an act settles a follow-up
+  // act still carrying that just-settled revision is auto-retried once instead of failing the
+  // CAS — the failure that forced weak models into a close/reopen thrash.
+  const service = serviceWithActiveThread("thread-rev-d5", "runtime-rev-d5");
+  const opened = await openBrowser(service, "runtime-rev-d5", "https://example.test/d5");
+  const paneId = opened.output.pane.paneId;
+  const revA = opened.output.pane.revision;
+
+  // Act with revA → succeeds. The act itself does NOT re-mint the revision (Part 1): the
+  // returned pane still reports revA.
+  const acted = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-rev-d5", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: { paneId, revision: revA, action: "click_at", x: 10, y: 20 },
+  });
+  assert.equal(acted.ok, true);
+  assert.equal(
+    acted.ok && acted.output.kind === "act_browser" && acted.output.pane.revision,
+    revA,
+  );
+  const actionId =
+    acted.ok && acted.output.kind === "act_browser" ? acted.output.action.actionId : "";
+
+  // Settle the action. Completion re-mints the revision (to a new token) and records
+  // priorRevision = revA. (This also proves Part 1: the result still carries revA, so it
+  // only matches because the act did not re-mint.)
+  const completed = await service.handleWorkbenchCommand({
+    threadId: "thread-rev-d5",
+    command: "update_browser_action_result",
+    targetPaneId: paneId,
+    data: { revision: revA, actionId, status: "completed", message: "clicked", loading: false },
+  });
+  assert.equal(completed.ok, true);
+
+  // A genuinely stale (arbitrary) revision is still rejected (the CAS holds).
+  const stale = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-rev-d5", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: { paneId, revision: "totally-stale", action: "click_at", x: 1, y: 2 },
+  });
+  assert.equal(stale.ok, false);
+
+  // But a follow-up act STILL carrying revA (the just-settled, now-prior revision) is
+  // auto-retried against the current revision instead of erroring (Part 2).
+  const retried = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-rev-d5", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: { paneId, revision: revA, action: "click_at", x: 30, y: 40 },
+  });
+  assert.equal(retried.ok, true);
+});
+
 test("navigation_advances_revision_and_the_stale_error_carries_the_current_one", async () => {
   // Spec: docs_v2/specs/browser-pane-action-revision-race.md (D1 guard preserved + D3).
   // A genuine navigation still re-mints the revision (a stale coordinate act is rejected),
@@ -694,9 +748,9 @@ test("browser_snapshot_command_caches_screenshot_returned_by_screenshot_mode_obs
   const textObserve = await service.handleTideMcpToolCall({
     session: { runtimeId: "runtime-shot", agentId: "codex" },
     toolName: "tide_observe_browser",
-    input: { paneId: opened.output.pane.paneId },
+    input: { paneId: opened.output.pane.paneId, mode: "text" },
   });
-  // Default text mode never returns the screenshot.
+  // mode=text never returns the screenshot (the cheap escape from the vision-first default).
   assert.equal(
     textObserve.ok && textObserve.output.pane.screenshot,
     undefined,

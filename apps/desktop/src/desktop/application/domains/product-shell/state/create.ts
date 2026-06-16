@@ -120,5 +120,12 @@ export function createProductShellState(
     settingsOpen: false,
     draftWorkbenchPanes: [],
     draftActiveWorkbenchPaneId: null,
+    untitledFiles: [],
+    untitledSequence: 0,
+    untitledSaveAsPaneId: null,
+    fileTreeEdit: null,
+    fileTreeMenu: null,
+    fileTreeDeleteTarget: null,
+    fileTreeNotice: null,
   };
 }

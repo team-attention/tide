@@ -1,5 +1,6 @@
 import type { ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellDraftPane, ProductShellState, ProductShellUpdateResult } from "./types.ts";
-import { COMPOSER_LAUNCHER_PANE_ID, isStartFilePaneId, startFilePaneId } from "./types.ts";
+import { COMPOSER_LAUNCHER_PANE_ID, isStartFilePaneId, isUntitledPaneId, startFilePaneId } from "./types.ts";
+import { removeProductShellUntitledFile } from "./untitled-files.ts";
 import { applyDrop, reconcileTree, setRatioAtPath } from "./workbench-split-tree.ts";
 import type { DropZone } from "./workbench-split-tree.ts";
 import { closeWorkbenchPane, focusWorkbenchPane, releaseWorkbenchAgentBrowserControl, resizeWorkbenchTerminal, writeWorkbenchTerminalInput } from "../../app-chrome/app-chrome-state.ts";
@@ -341,6 +342,12 @@ export function focusProductShellWorkbenchPane(
   state: ProductShellState,
   paneId: string,
 ): ProductShellUpdateResult {
+  // Untitled (renderer-owned) panes are focused renderer-locally in BOTH contexts —
+  // they are not in the backend Workbench snapshot. The view-model honors this
+  // override when the pane id is an untitled one.
+  if (isUntitledPaneId(paneId)) {
+    return { state: { ...state, draftActiveWorkbenchPaneId: paneId }, command: null };
+  }
   // Composer (New Thread) page: focus is renderer-local (draft browsers + the
   // synthetic launcher/editor); there is no backend thread to focus.
   if (state.activeThreadId === null) {
@@ -351,6 +358,8 @@ export function focusProductShellWorkbenchPane(
     state: {
       ...state,
       appChrome: result.state,
+      // Focusing a real backend pane drops any untitled active override.
+      draftActiveWorkbenchPaneId: null,
     },
     command: result.command,
   };
@@ -360,6 +369,10 @@ export function closeProductShellWorkbenchPane(
   state: ProductShellState,
   paneId: string,
 ): ProductShellUpdateResult {
+  // Untitled (renderer-owned) panes close renderer-locally in BOTH contexts.
+  if (isUntitledPaneId(paneId)) {
+    return { state: removeProductShellUntitledFile(state, paneId), command: null };
+  }
   // Composer (New Thread) page: no backend panes — close is renderer-local. Closing
   // a start-page editor tab removes just that file; closing a draft browser removes
   // it. The Workbench stays open while any draft pane (or editor tab) remains.

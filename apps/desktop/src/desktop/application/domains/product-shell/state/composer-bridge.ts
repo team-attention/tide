@@ -247,6 +247,9 @@ export function submitProductShellComposerDraft(
       // The drafts are handed off; keep the Workbench open only if we adopted panes.
       draftWorkbenchPanes: [],
       draftActiveWorkbenchPaneId: null,
+      // Start-page untitled buffers don't carry into the started thread.
+      untitledFiles: [],
+      untitledSaveAsPaneId: null,
       workbenchOpen: initialWorkbenchPanes.length > 0,
     };
     if (command !== null && command.kind === "thread.start" && initialWorkbenchPanes.length > 0) {
@@ -304,7 +307,7 @@ export function editProductShellQueuedInput(
   };
 }
 
-// Discard a queued message at `index` outright (the 삭제 / delete control). Unlike
+// Discard a queued message at `index` outright (the Delete control). Unlike
 // edit, it does NOT pull the text back into the composer.
 export function removeProductShellQueuedInput(
   state: ProductShellState,

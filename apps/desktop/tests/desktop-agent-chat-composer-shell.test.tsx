@@ -263,6 +263,58 @@ test("directory_trust_blocker_offers_a_trust_this_folder_action", () => {
   );
 });
 
+test("optimistic_first_message_top_anchors_while_provider_is_not_ready", () => {
+  // Spec: docs_v2/specs/transcript-top-anchor-first-message.md
+  // A first message sent into a thread whose provider is still being set up
+  // (e.g. workspace trust required) has no backend block yet — it shows as an
+  // optimistic queued row. It must top-anchor like a conversation, not float in
+  // the vertical center of the transcript.
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const sent = submitComposer(
+    updateComposerDraft(hydrated, "Why is there no branch delete option").state,
+  );
+  assert.deepEqual(sent.state.queuedInputs, ["Why is there no branch delete option"]);
+
+  const blocked: AgentChatShellState = {
+    ...sent.state,
+    providerReadiness: {
+      agentId: "codex",
+      ready: false,
+      blockers: [
+        {
+          kind: "directory_trust_required",
+          scope: "execution_context",
+          message: "Claude Code workspace trust is required.",
+        },
+      ],
+    },
+  };
+
+  const html = renderShell(blocked);
+
+  // The optimistic message renders in the transcript (no backend block yet)...
+  assert.match(html, /Why is there no branch delete option/);
+  // ...and the session is top-anchored, not vertically centered.
+  assert.match(html, /agent-session--has-turns/);
+});
+
+test("a_ready_thread_with_no_messages_keeps_the_centered_empty_state", () => {
+  // Spec: docs_v2/specs/transcript-top-anchor-first-message.md
+  // The genuine empty state stays centered — top-anchoring is only for content.
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+
+  const html = renderShell(hydrated);
+
+  assert.match(html, /No messages here/);
+  assert.doesNotMatch(html, /agent-session--has-turns/);
+});
+
 test("new_thread_start_screen_renders_start_composer_without_fake_cues", () => {
   const state = createAgentChatShellState({
     startOptions: {
@@ -384,9 +436,9 @@ test("queued_messages_stay_docked_in_the_steer_stack_while_a_prompt_is_open", ()
     backendEvent("prompt.changed", { threadId: "thread-shell", prompt }),
   );
 
-  // Still docked as a "대기 중" steer chip even though a prompt is open.
+  // Still docked as a "Queued" steer chip even though a prompt is open.
   const html = renderShell(withPrompt);
-  assert.match(html, /대기 중/);
+  assert.match(html, /Queued/);
   assert.match(html, /queued one/);
 });
 
@@ -435,9 +487,9 @@ test("the_queued_row_renders_an_edit_affordance_while_a_turn_runs", () => {
   const markup = renderShell(queued);
 
   // A message queued behind a live turn docks to the Composer as a "steer" chip
-  // (Codex-style): the "대기 중" badge plus an edit affordance to fix it before it
+  // (Codex-style): the "Queued" badge plus an edit affordance to fix it before it
   // runs.
-  assert.ok(markup.includes("대기 중"));
+  assert.ok(markup.includes("Queued"));
   assert.ok(markup.includes("composer-steer"));
   assert.ok(markup.includes("Edit queued message"));
 });

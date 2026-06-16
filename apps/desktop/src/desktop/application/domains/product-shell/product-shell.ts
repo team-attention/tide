@@ -78,6 +78,7 @@ export * from "./state/thread-list.ts";
 export * from "./state/workbench.ts";
 export * from "./state/workbench-editor.ts";
 export * from "./state/file-tree.ts";
+export * from "./state/untitled-files.ts";
 export * from "./state/composer-bridge.ts";
 export * from "./state/events.ts";
 export * from "./state/store.ts";

@@ -24,6 +24,13 @@ export interface GitChanges {
   files: { path: string; status: GitChangeStatus; additions?: number; deletions?: number }[];
 }
 
+// Result of a structural FileTree mutation (new file/folder, rename/move, trash),
+// performed by Main. Mirrors WorkspaceFsResult in main/workspace-fs.ts (kept
+// process-local per the preload convention). Spec: workbench-filetree-file-operations.
+export type WorkspaceFsResult =
+  | { ok: true; relativePath: string }
+  | { ok: false; code: string; message: string };
+
 export interface ProviderCommandSuggestion {
   name: string;
   description: string;
@@ -73,6 +80,12 @@ export interface TidePreloadSurface {
   renameProject(cwd: string, name: string): Promise<ProjectRegistryEntry[]>;
   revealInFinder(cwd: string): Promise<void>;
   openExternal(url: string): Promise<void>;
+  // Structural FileTree mutations (Main-owned). `root` is the absolute workspace
+  // root; paths are workspace-relative. Trash is the recoverable OS Trash.
+  fsCreateFile(root: string, relativePath: string, content: string): Promise<WorkspaceFsResult>;
+  fsCreateFolder(root: string, relativePath: string): Promise<WorkspaceFsResult>;
+  fsMove(root: string, fromRel: string, toRel: string): Promise<WorkspaceFsResult>;
+  fsTrash(root: string, relativePath: string): Promise<WorkspaceFsResult>;
   createWorktree(
     cwd: string,
     name: string,
@@ -167,6 +180,18 @@ export const tidePreloadSurface: TidePreloadSurface = {
   },
   openExternal(url) {
     return ipcRenderer.invoke("tide:open-external", url) as Promise<void>;
+  },
+  fsCreateFile(root, relativePath, content) {
+    return ipcRenderer.invoke("tide:fs-create-file", root, relativePath, content) as Promise<WorkspaceFsResult>;
+  },
+  fsCreateFolder(root, relativePath) {
+    return ipcRenderer.invoke("tide:fs-create-folder", root, relativePath) as Promise<WorkspaceFsResult>;
+  },
+  fsMove(root, fromRel, toRel) {
+    return ipcRenderer.invoke("tide:fs-move", root, fromRel, toRel) as Promise<WorkspaceFsResult>;
+  },
+  fsTrash(root, relativePath) {
+    return ipcRenderer.invoke("tide:fs-trash", root, relativePath) as Promise<WorkspaceFsResult>;
   },
   createWorktree(cwd, name, options) {
     return ipcRenderer.invoke("tide:create-worktree", cwd, name, options) as Promise<{

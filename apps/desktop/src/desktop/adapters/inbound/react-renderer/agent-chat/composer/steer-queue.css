@@ -99,7 +99,7 @@
   color: var(--tide-on-action);
 }
 
-/* The three per-row controls: 인터럽트 / 수정 / 삭제, grouped at the right. */
+/* The three per-row controls: Send now / Edit / Delete, grouped at the right. */
 
 .composer-steer__actions {
   flex-shrink: 0;

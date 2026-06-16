@@ -131,12 +131,13 @@ export function browserButtonFromInput(value: unknown): "left" | "right" | "midd
   return value === "right" || value === "middle" ? value : "left";
 }
 
-// Pixel-vision axis for tide_observe_browser. Default "text" (back-compat + token cost);
-// "screenshot"/"both" attach the cached Browser Pane Screenshot.
+// Pixel-vision axis for tide_observe_browser. Default "both" (vision-first, spec
+// browser-pane-live-pull-vision.md D4): the agent sees pixels + DOM text on every observe,
+// like a human. Explicit "text" is the cheap/large-DOM escape; "screenshot" drops the text.
 export function browserObserveModeFromInput(
   value: unknown,
 ): "text" | "screenshot" | "both" {
-  return value === "screenshot" || value === "both" ? value : "text";
+  return value === "text" || value === "screenshot" ? value : "both";
 }
 
 export function browserClickCountFromInput(value: unknown): 1 | 2 | undefined {

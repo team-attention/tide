@@ -1,5 +1,5 @@
 import type { AgentChatBackendEvent, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerSurfaceKind, AgentChatPromptStepAnswer } from "../../../../../application/domains/agent-chat/agent-chat.ts";
-import type { DropZone, ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { DropZone, ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellFileTreeMenu, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
@@ -64,7 +64,19 @@ export interface ProjectRegistryBridge {
   gitChanges(cwd: string): Promise<GitChangesResult>;
   gitFileDiff(cwd: string, relPath: string): Promise<string>;
   listCommands(cwd: string, agentId: string): Promise<AgentChatCommandOption[]>;
+  // Structural FileTree mutations (Main-owned). `root` is the absolute workspace
+  // root; paths are workspace-relative. Trash is the recoverable OS Trash.
+  fsCreateFile(root: string, relativePath: string, content: string): Promise<WorkspaceFsResult>;
+  fsCreateFolder(root: string, relativePath: string): Promise<WorkspaceFsResult>;
+  fsMove(root: string, fromRel: string, toRel: string): Promise<WorkspaceFsResult>;
+  fsTrash(root: string, relativePath: string): Promise<WorkspaceFsResult>;
 }
+
+// Result of a structural FileTree mutation, returned by Main (mirrors
+// WorkspaceFsResult in main/workspace-fs.ts). Spec: workbench-filetree-file-operations.
+export type WorkspaceFsResult =
+  | { ok: true; relativePath: string }
+  | { ok: false; code: string; message: string };
 
 export interface TideProductShellProps {
   initialState?: ProductShellState;
@@ -125,7 +137,7 @@ export interface ProductShellHandlers {
     rowId: string,
   ) => void;
   // Set an opencode vendor's API key (the on-ramp panel's in-app key field) the
-  // "정석" way — backend PUTs it to opencode's own server.
+  // canonical way — backend PUTs it to opencode's own server.
   onOpencodeConnectApiKey: (vendorId: string, key: string) => void;
   onOpenFile: (path: string) => void;
   onOpenBrowserPane: (url: string, options?: { newPane?: boolean }) => void;
@@ -195,6 +207,31 @@ export interface ProductShellHandlers {
   // New File: create a blank file at the given relative path under the current folder
   // and open it for editing (spec: workbench-new-file.md).
   onCreateFile: (relativePath: string) => void;
+  // --- FileTree file operations + untitled (spec: workbench-filetree-file-operations) ---
+  // New File: open a blank untitled buffer (VSCode-style; named on save). From the
+  // FileTree toolbar/menu and the Workbench launcher.
+  onNewUntitledFile: () => void;
+  // Save As for an untitled pane: write the typed path, then open the real file.
+  onUntitledSaveAs: (paneId: string, relativePath: string) => void;
+  onUntitledSaveAsCancel: () => void;
+  // Inline tree edits (new folder under `parentPath`, or rename the entry at the path).
+  onFileTreeNewFolder: (parentPath: string) => void;
+  onFileTreeRenameStart: (relativePath: string) => void;
+  onTreeEditDraftChange: (draft: string) => void;
+  onTreeEditConfirm: () => void;
+  onTreeEditCancel: () => void;
+  // Delete: open the confirm dialog, then trash on confirm.
+  onFileTreeDeleteIntent: (target: ProductShellFileTreeMenu) => void;
+  onFileTreeDeleteConfirm: () => void;
+  onFileTreeDeleteCancel: () => void;
+  // Right-click context menu open/close.
+  onFileTreeMenuOpen: (menu: ProductShellFileTreeMenu) => void;
+  onFileTreeMenuClose: () => void;
+  // Drag-and-drop move: move `fromRel` so it lands at `toRel`.
+  onFileTreeMove: (fromRel: string, toRel: string) => void;
+  // Toolbar refresh + transient-notice dismiss.
+  onFileTreeRefresh: () => void;
+  onFileTreeNoticeClear: () => void;
   onTerminalInput: (paneId: string, bytes: string) => void;
   onTerminalResize: (paneId: string, cols: number, rows: number) => void;
   onEditorDraftChange: (paneId: string, content: string) => void;

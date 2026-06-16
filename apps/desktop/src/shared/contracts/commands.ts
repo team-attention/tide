@@ -114,7 +114,7 @@ export interface BackendCommandPayloadByKind {
   };
   "agentRuntime.stop": { threadId: ThreadId };
   "provider.trustWorkspace": { threadId: ThreadId };
-  // Set an opencode vendor's API-key credential the "정석" way: the backend PUTs
+  // Set an opencode vendor's API-key credential the canonical way: the backend PUTs
   // { type:"api", key } to opencode's own server (`opencode serve` → /auth/{id}),
   // identical to `opencode auth login` but non-interactive. Refreshes the catalog so
   // the vendor's models appear. See opencode-vendor-onramp.md.
