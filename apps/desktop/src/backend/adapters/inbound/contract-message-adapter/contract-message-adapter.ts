@@ -520,6 +520,8 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       emittedAt: this.clock(),
       payload: {
         thread: toThreadSummaryDto(result.thread),
+        applied: result.applied,
+        changedKeys: result.changedKeys,
       },
     };
   }

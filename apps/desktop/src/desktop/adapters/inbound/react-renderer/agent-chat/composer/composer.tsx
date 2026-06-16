@@ -1,8 +1,10 @@
 import type { AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import type { LaunchOptionFeedback } from "../../../../../application/domains/agent-chat/state/types.ts";
 import type { ComposerHandlers } from "../support/types.ts";
 import type { ChangeEvent, FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
+import { useEffect, useState } from "react";
 import { handleComposerPaste } from "./attachments.ts";
-import { ArrowUp, ChevronDown, Plus, ShieldCheck, Square, X } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Plus, ShieldCheck, Square, X } from "lucide-react";
 import { chipAnchorFromEvent, contextChipIcon, createContextChip } from "./context-chips.tsx";
 import { createProviderReadiness } from "../readiness/readiness.ts";
 import { PromptCard } from "../prompt-card/prompt-card.tsx";
@@ -184,6 +186,7 @@ export function createComposer(
             {/* Figma: shield-check icon + label + chevron-down. */}
             <ShieldCheck size={14} strokeWidth={1.9} className="composer-shell__chip-icon" aria-hidden />
             <span className="composer-shell__chip-label">{viewModel.composer.permissionLabel}</span>
+            <ChipFeedbackBadge feedback={viewModel.composer.permissionFeedback} />
             <ChevronDown size={13} strokeWidth={1.9} className="composer-shell__chip-chevron" aria-hidden />
           </button>
           <span className="composer-shell__toolbar-spacer" />
@@ -198,6 +201,7 @@ export function createComposer(
           >
             {/* Figma: label + chevron-down (no leading icon). */}
             <span className="composer-shell__chip-label">{viewModel.composer.modelLabel}</span>
+            <ChipFeedbackBadge feedback={viewModel.composer.modelFeedback} />
             <ChevronDown size={13} strokeWidth={1.9} className="composer-shell__chip-chevron" aria-hidden />
           </button>
           {/* While the agent runs with NOTHING to send, the button is Stop (interrupt).
@@ -210,6 +214,50 @@ export function createComposer(
         </div>
       </div>
     </form>
+  );
+}
+
+// Inline chip badge confirming a mid-thread launch-option change. "applied" = took
+// effect live: a brief green "적용됨" flash that self-dismisses after ~2.4s (so it
+// never lingers or holds chip width), re-armed whenever `at` changes. "pending" = a
+// transparent restart applies it on the next send: a persistent muted badge that the
+// reducer clears at the next turn start. See
+// docs_v2/specs/mid-thread-launch-option-feedback.md.
+// Unmount reclaims the chip width once the flash has faded out; MUST match the
+// composer-chip-feedback-flash animation duration in composer.css.
+const APPLIED_FLASH_MS = 2400;
+
+function ChipFeedbackBadge({ feedback }: { feedback: LaunchOptionFeedback | undefined }): ReactElement | null {
+  const [flashDone, setFlashDone] = useState(false);
+  const state = feedback?.state;
+  const at = feedback?.at;
+  useEffect(() => {
+    setFlashDone(false);
+    if (state !== "applied") {
+      return;
+    }
+    const timer = setTimeout(() => setFlashDone(true), APPLIED_FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [state, at]);
+
+  if (feedback === undefined) {
+    return null;
+  }
+  if (feedback.state === "applied") {
+    if (flashDone) {
+      return null;
+    }
+    return (
+      <span className="composer-shell__chip-feedback composer-shell__chip-feedback--applied" role="status">
+        <Check size={11} strokeWidth={2.8} aria-hidden />
+        적용됨
+      </span>
+    );
+  }
+  return (
+    <span className="composer-shell__chip-feedback composer-shell__chip-feedback--pending" role="status">
+      다음 메시지부터
+    </span>
   );
 }
 

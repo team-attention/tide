@@ -32,6 +32,7 @@ export function createAgentChatShellState(input?: {
     workbenchOpen: false,
     queuedInputs: [],
     usage: null,
+    launchOptionFeedback: {},
   };
 }
 

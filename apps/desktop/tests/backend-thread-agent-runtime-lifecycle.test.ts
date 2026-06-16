@@ -722,6 +722,7 @@ test("update_thread_launch_options_applies_live_and_persists", async () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.applied, "live");
+  assert.deepEqual(result.changedKeys, ["model"]);
   assert.equal(result.thread.launchOptions?.model, "gpt-5.4");
   assert.deepEqual(fakes.runtime.sessionConfigUpdates[0]?.changedKeys, ["model"]);
 });
@@ -736,6 +737,9 @@ test("update_thread_launch_options_without_live_runtime_only_changes_spawn_optio
 
   assert.equal(result.ok, true);
   assert.equal(result.applied, "none");
+  // No live runtime, but the option DID change → changedKeys is non-empty so the
+  // renderer reads it as "pending" (applies at the next message), not "no change".
+  assert.deepEqual(result.changedKeys, ["model"]);
   assert.equal(fakes.runtime.sessionConfigUpdates.length, 0);
   // The next send resumes the provider session WITH the changed options.
   await service.sendComposerInput({ threadId: "thread-busy", input: "go" });
@@ -757,6 +761,8 @@ test("update_thread_launch_options_with_unchanged_values_is_a_no_op", async () =
 
   assert.equal(repeat.ok, true);
   assert.equal(repeat.applied, "none");
+  // Nothing actually differed → no changed keys → the renderer shows no feedback.
+  assert.deepEqual(repeat.changedKeys, []);
   assert.equal(fakes.runtime.sessionConfigUpdates.length, 1);
 });
 
@@ -772,6 +778,7 @@ test("restart_required_change_restarts_the_runtime_at_the_next_send", async () =
   });
   assert.equal(result.ok, true);
   assert.equal(result.applied, "next_turn");
+  assert.deepEqual(result.changedKeys, ["reasoning"]);
 
   await service.sendComposerInput({ threadId: "thread-busy", input: "next" });
   // The idle process is stopped and a fresh provider-native resume carries the

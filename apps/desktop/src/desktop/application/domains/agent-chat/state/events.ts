@@ -1,4 +1,4 @@
-import type { AgentChatBackendEvent, AgentChatBlock, AgentChatPromptState, AgentChatProviderReadiness, AgentChatShellState, AgentChatThreadSummary, AgentRuntimeStateName } from "./types.ts";
+import type { AgentChatBackendEvent, AgentChatBlock, AgentChatPromptState, AgentChatProviderReadiness, AgentChatShellState, AgentChatThreadSummary, AgentRuntimeStateName, LaunchOptionFeedback } from "./types.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
 export function applyAgentChatBackendEvent(
@@ -36,6 +36,9 @@ export function applyAgentChatBackendEvent(
         // Usage is per-thread; a fresh hydrate clears the previous thread's chip
         // until a usageChanged for this thread arrives.
         usage: null,
+        // Launch-option chip feedback is per-thread and transient — a fresh hydrate
+        // (thread switch) must not carry the previous thread's badges.
+        launchOptionFeedback: {},
         workbenchOpen:
           payload.workbenchPanes === undefined
             ? state.workbenchOpen
@@ -74,13 +77,18 @@ export function applyAgentChatBackendEvent(
         thread: payload.thread,
         runtimeState: payload.runtimeState,
         queuedInputs: [],
+        launchOptionFeedback: {},
       };
     }
     case "thread.launchOptionsChanged": {
       // Backend confirmation of a mid-thread model/permission/effort change
       // (this surface patched optimistically; another window or a send-time
       // merge may not have). Only for the thread on screen.
-      const payload = event.payload as { thread?: AgentChatThreadSummary };
+      const payload = event.payload as {
+        thread?: AgentChatThreadSummary;
+        applied?: "live" | "next_turn" | "none";
+        changedKeys?: string[];
+      };
       const summary = payload.thread;
       if (
         summary === undefined ||
@@ -89,9 +97,28 @@ export function applyAgentChatBackendEvent(
       ) {
         return state;
       }
+      // Chip feedback: "live" → applied (brief flash); a real change that is not
+      // live ("next_turn", or "none" with changed keys = no live runtime yet) →
+      // pending (applies on the next message). No changed keys ⇒ leave feedback
+      // untouched. See docs_v2/specs/mid-thread-launch-option-feedback.md.
+      const changedKeys = payload.changedKeys ?? [];
+      const feedbackState: LaunchOptionFeedback["state"] =
+        payload.applied === "live" ? "applied" : "pending";
+      // A deterministic, monotonically increasing token (NOT Date.now() — the
+      // reducer stays pure) so a repeat change to the same chip re-arms its flash.
+      const at =
+        Math.max(0, ...Object.values(state.launchOptionFeedback).map((f) => f.at)) + 1;
+      const feedback =
+        changedKeys.length === 0
+          ? state.launchOptionFeedback
+          : changedKeys.reduce<Record<string, LaunchOptionFeedback>>(
+              (acc, key) => ({ ...acc, [key]: { state: feedbackState, at } }),
+              { ...state.launchOptionFeedback },
+            );
       return {
         ...state,
         thread: { ...state.thread, launchOptions: summary.launchOptions },
+        launchOptionFeedback: feedback,
       };
     }
     case "agentRuntime.stateChanged": {
@@ -108,8 +135,9 @@ export function applyAgentChatBackendEvent(
       // session start across every later turn.
       const wasActive = state.runtimeState === "running" || state.runtimeState === "starting";
       const isActive = payload.state === "running" || payload.state === "starting";
+      const turnStarting = !wasActive && isActive;
       const nextThread =
-        !wasActive && isActive && state.thread !== null && payload.changedAt !== undefined
+        turnStarting && state.thread !== null && payload.changedAt !== undefined
           ? { ...state.thread, runtimeStartedAt: payload.changedAt }
           : state.thread;
       return {
@@ -119,6 +147,10 @@ export function applyAgentChatBackendEvent(
         // The backend is authoritative for the follow-up queue: reflect it on every
         // transition (a flush shrinks it). Absent → keep the optimistic list.
         queuedInputs: payload.queuedInputs ?? state.queuedInputs,
+        // A new turn started — any "applies on the next message" (pending) chip
+        // change has now been applied (the restart respawns at turn start), and an
+        // "applied" flash has long faded. Clear the chip feedback on this edge only.
+        launchOptionFeedback: turnStarting ? {} : state.launchOptionFeedback,
       };
     }
     case "providerReadiness.changed": {
