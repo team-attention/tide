@@ -116,11 +116,14 @@ export class DraftThreadService {
     if (thread.lifecycleState !== "draft") {
       return failure("thread_not_draft", "Only a Draft Thread can be discarded.");
     }
-    for (const pane of thread.workbench.panes) {
-      if (pane.kind === "terminal") {
-        await this.stopTerminalPane(pane);
-      }
-    }
+    // Stop every terminal PTY in parallel, swallowing individual failures, so one
+    // rejecting stop can't abort the loop and leak the draft (in memory) + the remaining
+    // PTYs (Gemini review). Removal from the store is then guaranteed.
+    await Promise.all(
+      thread.workbench.panes
+        .filter((pane): pane is TerminalPaneState => pane.kind === "terminal")
+        .map((pane) => this.stopTerminalPane(pane).catch(() => {})),
+    );
     this.store.delete(input.threadId);
     return { ok: true, discarded: true };
   }
