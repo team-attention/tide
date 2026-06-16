@@ -192,6 +192,16 @@
   padding-right: 210px;
 }
 
+/* Split mode has no .column-top-row — each pane owns its 52px header — so the cluster
+   floats directly over the TOP-RIGHT pane's header. In split with the workbench rightmost
+   the whole cluster collapses to ONE "…" (data-workbench-controls="dots"), so the corner
+   pane reserves just that single button's footprint — leaving room for the chip + its
+   close even on a ~140px pane. (Filetree-open split keeps the wider "menu" cluster over
+   the filetree's own header, handled by the column rules above.) */
+.tide-product-shell__body[data-workbench-controls="dots"] > :last-child .workbench-split__pane[data-corner="top-right"] > .workbench-split__pane-header {
+  padding-right: 48px;
+}
+
 .column-resize-handle {
   position: absolute;
   top: 0;

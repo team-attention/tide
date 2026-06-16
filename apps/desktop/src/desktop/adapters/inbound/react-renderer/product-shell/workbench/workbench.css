@@ -110,6 +110,14 @@
   box-shadow: inset 0 -2px 0 var(--tide-action);
 }
 
+/* The label fills the full 52px tab height so the tab's vertical padding is part of
+   the focus target — clicking anywhere up/down the tab focuses the pane, not just the
+   icon+text strip. (Scoped to the Stacked strip; the split chip uses whole-header
+   focus instead.) The icon+text stay centred via the label's own align-items. */
+.workbench-tabs .workbench-tab__label {
+  align-self: stretch;
+}
+
 .workbench-tab__label {
   min-width: 0;
   display: inline-flex;
