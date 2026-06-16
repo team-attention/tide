@@ -147,6 +147,39 @@ test("AskUserQuestion: typed Other free-text answer reaches the answers map (mul
   }
 });
 
+test("AskUserQuestion: a multiSelect question carries multiSelect and records the joined labels", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = createClaudeStreamJsonClient({
+    plan: fakeProviderPlan(
+      [
+        {
+          question: "Pick several?",
+          header: "Pick",
+          multiSelect: true,
+          options: [{ label: "A" }, { label: "B" }, { label: "C" }],
+        },
+      ],
+      receivedFile,
+    ),
+    threadId: "thread-1",
+    runtimeId: "rt-1",
+    onEvent,
+  });
+  try {
+    const prompt = await waitFor(() => events[0], "multiSelect prompt");
+    assert.equal(prompt.multiSelect, true);
+    // The card joins the selected option labels and answers via the free-text path
+    // (no STRUCTURED_OPTION_PREFIX), which claude records verbatim as the answer.
+    await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: "A, C" });
+    const response = await waitFor(() => receivedControlResponse(receivedFile), "control_response");
+    assert.deepEqual(answersFrom(response), { "Pick several?": "A, C" });
+  } finally {
+    await client.stop();
+  }
+});
+
 test("AskUserQuestion: single-question Other free-text answer is delivered", async () => {
   const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
   const receivedFile = join(dir, "received.jsonl");

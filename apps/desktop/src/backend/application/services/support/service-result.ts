@@ -17,6 +17,7 @@ export type ServiceErrorCode =
   | "invalid_thread_title"
   | "workbench_target_not_found"
   | "workbench_stale_reference"
+  | "workbench_user_controlled"
   | "unsupported_tide_mcp_tool"
   | "directory_trust_unavailable"
   | WorkspaceCodeIntelligenceErrorCode

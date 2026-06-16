@@ -442,6 +442,60 @@ test("the_queued_row_renders_an_edit_affordance_while_a_turn_runs", () => {
   assert.ok(markup.includes("Edit queued message"));
 });
 
+test("running_with_only_a_context_chip_shows_send_not_stop", () => {
+  // Issue 1 (spec: composer-prompt-browser-fixes): a chips/attachments-only follow-up
+  // is sendable, so while a turn runs the button must be Send (queue it), NOT Stop —
+  // the user shouldn't have to also type text in the main input.
+  const running = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "running" }),
+  );
+  const withChip = addComposerContextChip(running, {
+    id: "chip-1",
+    kind: "code",
+    label: "snippet.ts",
+    text: "const x = 1;",
+  }).state;
+  assert.ok(
+    !renderShell(withChip).includes("composer-shell__send--stop"),
+    "a chip to send ⇒ Send button, not Stop",
+  );
+  // With truly nothing to send, the same running state shows Stop (interrupt).
+  assert.ok(
+    renderShell(running).includes("composer-shell__send--stop"),
+    "nothing to send ⇒ Stop button",
+  );
+});
+
+test("a_multiSelect_prompt_renders_toggle_checkboxes_and_a_select_all_hint", () => {
+  // Issue 6: a multiSelect question toggles several options before submitting.
+  const withPrompt = applyBackendEventToAgentChatShell(
+    applyBackendEventToAgentChatShell(
+      createAgentChatShellState(),
+      backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "waiting_for_input" }),
+    ),
+    backendEvent("prompt.changed", {
+      threadId: "thread-shell",
+      prompt: {
+        promptId: "auq-1",
+        threadId: "thread-shell",
+        agentId: "claude",
+        kind: "choice",
+        message: "Pick several",
+        multiSelect: true,
+        source: "provider_hook",
+        choices: [
+          { choiceId: "a", label: "Alpha", providerValue: "structured:option:Alpha" },
+          { choiceId: "b", label: "Beta", providerValue: "structured:option:Beta" },
+        ],
+      },
+    }),
+  );
+  const markup = renderShell(withPrompt);
+  assert.ok(markup.includes('data-multi="true"'), "options render as multi-select toggles");
+  assert.ok(markup.includes("Select all that apply"), "the card shows the multi-select hint");
+});
+
 test("an_editor_code_selection_added_to_chat_is_folded_into_the_sent_message", () => {
   // Content→chat: selecting code in the editor and clicking "Add to chat" stages
   // a context chip; on send it is prepended to the message as a labeled,

@@ -1,4 +1,4 @@
-import { open, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type {
@@ -259,10 +259,28 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
     root: string;
     path: string;
     byteLimit: number;
+    create?: boolean;
   }): Promise<WorkspaceFileReadResult> {
     const resolved = resolveInsideRoot(input.root, input.path);
     if (!resolved.ok) {
       return resolved;
+    }
+
+    // New File: create an empty file (and any missing parent dirs) if asked and it is
+    // absent. `wx` makes this atomic create-if-missing — an existing file is left
+    // untouched (EEXIST is the expected "already there" case, swallowed).
+    if (input.create === true) {
+      try {
+        await mkdir(path.dirname(resolved.path), { recursive: true });
+        await writeFile(resolved.path, "", { flag: "wx" });
+      } catch (error) {
+        if (!isErrnoException(error, "EEXIST")) {
+          return {
+            ok: false,
+            error: { code: "workspace_file_unreadable", message: "Could not create the file." },
+          };
+        }
+      }
     }
 
     let fileStat;
@@ -480,6 +498,14 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
       },
     };
   }
+}
+
+function isErrnoException(error: unknown, code: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as NodeJS.ErrnoException).code === code
+  );
 }
 
 function boundedTreeDepth(value: number | undefined): number {

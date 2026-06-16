@@ -205,3 +205,27 @@ test("clearAgentBrowserDriving is a no-op when nothing is driving", () => {
   const thread = browserThread();
   assert.equal(clearAgentBrowserDriving(thread), false);
 });
+
+// --- UC: User takeover yields the pane + softly refuses re-driving (spec: composer-prompt-browser-fixes) ---
+
+test("after user takeover the pane is userControlled and the agent's act is softly refused", () => {
+  const thread = browserThread({ agentDriving: true, agentCursor: { x: 1, y: 2 } });
+  assert.equal(releaseAgentBrowserControl(thread, "p1", idGen, clock).ok, true);
+  assert.equal(browserPaneOf(thread).userControlled, true);
+  // A drive attempt is refused with the clear user-control code (it takes priority over the
+  // bumped revision), so the agent yields + continues rather than re-driving or erroring cryptically.
+  const act = actBrowserOutput(
+    thread,
+    { paneId: "p1", revision: "rev-1", action: "click_at", x: 10, y: 20 },
+    idGen,
+    clock,
+  );
+  assert.equal(act.ok, false);
+  assert.equal(!act.ok && act.error.code, "workbench_user_controlled");
+});
+
+test("clearAgentBrowserDriving (turn end) clears the userControlled gate so a new turn may drive", () => {
+  const thread = browserThread({ userControlled: true });
+  assert.equal(clearAgentBrowserDriving(thread), true);
+  assert.equal(browserPaneOf(thread).userControlled, undefined);
+});

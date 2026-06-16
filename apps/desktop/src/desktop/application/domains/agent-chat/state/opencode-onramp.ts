@@ -14,6 +14,9 @@ export interface OpencodeOnrampVendor {
   connected: boolean;
   method?: string;
   popular?: boolean;
+  // Meaningful only when `connected`: false ⇒ a credential exists but opencode serves
+  // no models for it (e.g. expired auth) ⇒ "Reconnect". Absent ⇒ treated as usable.
+  usable?: boolean;
 }
 
 export interface OpencodeOnrampEnvironment {
@@ -42,11 +45,12 @@ export function getOpencodeEnvironment(): OpencodeOnrampEnvironment | null {
   return opencodeEnvironment;
 }
 
-// opencode is usable once at least one vendor is signed in OR its model catalog has a
+// opencode is usable once at least one vendor is signed in AND not flagged unusable
+// (a connected-but-expired credential serves no models), OR its model catalog has a
 // concrete model (beyond the "opencode default" sentinel). When NOT usable, the Model
 // chip opens the on-ramp instead of an empty model menu.
 export function isOpencodeUsable(): boolean {
-  if (opencodeVendors.some((vendor) => vendor.connected)) {
+  if (opencodeVendors.some((vendor) => vendor.connected && vendor.usable !== false)) {
     return true;
   }
   return cliModelOptionsForAgent("opencode").some((model) => model.value !== "opencode default");
@@ -79,6 +83,8 @@ function vendorRowView(vendor: OpencodeOnrampVendor): AgentChatOpencodeConnectVe
     monogram: opencodeVendorMonogram(vendor),
     connected: vendor.connected,
     popular: vendor.popular ?? false,
+    // Connected but serving no models (e.g. expired auth) ⇒ the panel offers Reconnect.
+    needsReconnect: vendor.connected && vendor.usable === false,
   };
 }
 

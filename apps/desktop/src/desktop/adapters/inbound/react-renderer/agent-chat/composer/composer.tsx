@@ -2,13 +2,24 @@ import type { AgentChatShellViewModel } from "../../../../../application/domains
 import type { ComposerHandlers } from "../support/types.ts";
 import type { ChangeEvent, FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import { handleComposerPaste } from "./attachments.ts";
-import { ArrowUp, ChevronDown, Mic, Plus, ShieldCheck, Square, X } from "lucide-react";
+import { ArrowUp, ChevronDown, Plus, ShieldCheck, Square, X } from "lucide-react";
 import { chipAnchorFromEvent, contextChipIcon, createContextChip } from "./context-chips.tsx";
 import { createProviderReadiness } from "../readiness/readiness.ts";
 import { PromptCard } from "../prompt-card/prompt-card.tsx";
 import { createUsageMeter } from "./usage-meter.tsx";
 import { createQueuedSteerStack } from "./steer-queue.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
+
+// The composer has something sendable when there is text, a pasted image, OR a
+// context chip/block — any of these alone is a valid send (submitComposer accepts
+// them), so the run-state button must offer Send, not Stop (spec).
+function composerHasContent(viewModel: AgentChatShellViewModel): boolean {
+  return (
+    viewModel.composer.draft.trim().length > 0 ||
+    viewModel.composer.attachments.length > 0 ||
+    viewModel.composer.contextChips.length > 0
+  );
+}
 
 export function createComposer(
   viewModel: AgentChatShellViewModel,
@@ -54,6 +65,12 @@ export function createComposer(
               event.keyCode !== 229
             ) {
               event.preventDefault();
+              // While a prompt card is up it owns the keyboard (its ⌘↵ / arrows / Other
+              // field). Plain Enter in the composer must be a clean no-op — firing a
+              // no-op submit just flickers the screen (spec: composer-prompt-browser-fixes).
+              if (viewModel.prompt != null) {
+                return;
+              }
               handlers.onSubmit?.();
             }
           }}
@@ -183,18 +200,11 @@ export function createComposer(
             <span className="composer-shell__chip-label">{viewModel.composer.modelLabel}</span>
             <ChevronDown size={13} strokeWidth={1.9} className="composer-shell__chip-chevron" aria-hidden />
           </button>
-          <button
-            type="button"
-            className="composer-shell__icon-button composer-shell__icon-button--mic"
-            title="Voice input"
-            aria-label="Voice input"
-          >
-            <Mic size={15} strokeWidth={2} aria-hidden />
-          </button>
-          {/* While the agent runs with an EMPTY composer, the button is Stop (interrupt).
-              Start typing a follow-up and it becomes Send so you can queue it. Interrupt
+          {/* While the agent runs with NOTHING to send, the button is Stop (interrupt).
+              Add any content — typed text, a pasted image, or a context chip/block — and
+              it becomes Send so you can queue it (no need to also type text). Interrupt
               while a draft/queue exists lives on the queued rows instead (createQueuedSteerStack). */}
-          {viewModel.chatState === "running" && viewModel.composer.draft.trim().length === 0
+          {viewModel.chatState === "running" && !composerHasContent(viewModel)
             ? createComposerStopButton(handlers.onInterrupt)
             : createComposerSendButton(viewModel.composer.submitLabel)}
         </div>

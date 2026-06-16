@@ -866,13 +866,14 @@ test("agent_chat_empty_state_reads_like_a_product_start_surface", () => {
   assert.doesNotMatch(html, /No Agent Session Blocks yet/);
 });
 
-test("composer_uses_icon_chrome_for_options_model_voice_and_send", () => {
+test("composer_uses_icon_chrome_for_options_model_and_send", () => {
   const html = renderProductShell();
 
   assert.match(html, /aria-label="Composer options"/);
   assert.match(html, /aria-label="Permission"/);
   assert.match(html, /aria-label="Model"/);
-  assert.match(html, /aria-label="Voice input"/);
+  // The voice/mic button was removed — it has no implementation and added composer noise.
+  assert.doesNotMatch(html, /aria-label="Voice input"/);
   assert.match(html, /aria-label="Send"/);
   assert.match(html, /Do anything/);
 });

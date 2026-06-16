@@ -200,6 +200,15 @@ export function actBrowserOutput(
       "Browser Pane target was not found for this Thread.",
     );
   }
+  if (pane.userControlled === true) {
+    // The user took manual control of this pane. Don't drive it (and don't re-grab) —
+    // yield and continue: observe the current state and proceed or ask the user.
+    return failure(
+      "workbench_user_controlled",
+      "The user has taken manual control of this browser pane, so it is no longer agent-driven. " +
+        "Do not drive it; re-observe to see the current page, then continue your response or ask the user how to proceed.",
+    );
+  }
   if (revision !== pane.revision) {
     // D3 (spec: browser-pane-action-revision-race): hand the caller the CURRENT
     // revision so it can retry once against it (e.g. when its own prior action, not a
@@ -367,6 +376,9 @@ export function releaseAgentBrowserControl(
   pane.agentDriving = false;
   delete pane.agentCursor;
   delete pane.pendingAction;
+  // Mark the pane user-controlled so the agent's next drive attempt is softly refused
+  // (it yields + continues) rather than re-grabbing or erroring on the bumped revision.
+  pane.userControlled = true;
   pane.revision = idGenerator();
   pane.updatedAt = releasedAt;
   thread.updatedAt = releasedAt;
@@ -380,9 +392,14 @@ export function releaseAgentBrowserControl(
 export function clearAgentBrowserDriving(thread: ThreadRecord): boolean {
   let changed = false;
   for (const pane of thread.workbench.panes) {
-    if (pane.kind === "browser" && (pane.agentDriving === true || pane.agentCursor !== undefined)) {
+    if (
+      pane.kind === "browser" &&
+      (pane.agentDriving === true || pane.agentCursor !== undefined || pane.userControlled === true)
+    ) {
       pane.agentDriving = false;
       delete pane.agentCursor;
+      // Fresh turn ⇒ the agent may drive again; clear the user-control gate.
+      delete pane.userControlled;
       changed = true;
     }
   }

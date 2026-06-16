@@ -1,4 +1,4 @@
-import { applyStartPageEditorDefinition, applyStartPageEditorReferences, editProductShellWorkbenchEditorPane, goToProductShellEditorDefinition, goToProductShellEditorReferences, isStartFilePaneId, moveProductShellEditorCursor, openProductShellFileInEditor, saveProductShellWorkbenchEditorPane, selectProductShellEditorPickerFile, selectProductShellFileTreeEntry, setProductShellEditorPickerFilter, startFilePaneId, toggleProductShellFileTreeWithRefresh } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { applyStartPageEditorDefinition, applyStartPageEditorReferences, editProductShellWorkbenchEditorPane, goToProductShellEditorDefinition, goToProductShellEditorReferences, isStartFilePaneId, moveProductShellEditorCursor, newProductShellFile, openProductShellFileInEditor, saveProductShellWorkbenchEditorPane, selectProductShellEditorPickerFile, selectProductShellFileTreeEntry, setProductShellEditorPickerFilter, startFilePaneId, toggleProductShellFileTreeWithRefresh } from "../../../../../application/domains/product-shell/product-shell.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
 import { deriveEditorRoot } from "../workbench/code-intel-mappers.ts";
@@ -52,7 +52,7 @@ function coerceReferences(value: unknown): { items: CodeLocation[]; truncated: b
   };
 }
 
-export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onOpenFile" | "onEditorPickerFilter" | "onEditorPickerSelect" | "onEditorDraftChange" | "onEditorCursorChange" | "onEditorSave" | "onEditorGoToDefinition" | "onEditorGoToReferences" | "onEditorCodeIntel" | "onFileTreeEntryOpen" | "onFileTreeToggle"> {
+export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onOpenFile" | "onEditorPickerFilter" | "onEditorPickerSelect" | "onEditorDraftChange" | "onEditorCursorChange" | "onEditorSave" | "onEditorGoToDefinition" | "onEditorGoToReferences" | "onEditorCodeIntel" | "onFileTreeEntryOpen" | "onCreateFile" | "onFileTreeToggle"> {
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
 
   // Go-to-definition / find-references for the THREAD-LESS start-page editor.
@@ -209,6 +209,12 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
     onFileTreeEntryOpen: (entryId) =>
       setShellState((state) => {
         const result = selectProductShellFileTreeEntry(state, entryId);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onCreateFile: (relativePath) =>
+      setShellState((state) => {
+        const result = newProductShellFile(state, relativePath);
         dispatchBackendCommand(result.command);
         return result.state;
       }),

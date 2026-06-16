@@ -108,6 +108,9 @@ export interface WorkspaceFilePort {
     root: string;
     path: string;
     byteLimit: number;
+    // New File: when true and the file is missing, create an empty file (and parent
+    // dirs) before reading. Never clobbers an existing file (spec: workbench-new-file.md).
+    create?: boolean;
   }): Promise<WorkspaceFileReadResult>;
 
   // Project-wide content search (gitignore-filtered). Returns matching lines

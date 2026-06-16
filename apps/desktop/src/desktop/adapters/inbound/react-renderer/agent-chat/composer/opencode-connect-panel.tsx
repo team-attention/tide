@@ -129,23 +129,32 @@ export function OpencodeConnectPanel(props: {
             </span>
           </button>
         )}
-        {vendors.map((vendor) => (
-          <button
-            key={vendor.id}
-            type="button"
-            className="oc-tile"
-            data-connected={vendor.connected ? "true" : "false"}
-            disabled={vendor.connected}
-            onClick={vendor.connected ? undefined : () => setSheetVendorId(vendor.id)}
-          >
-            <span className="oc-tile__m" aria-hidden>{vendor.monogram}</span>
-            <span className="oc-tile__b">
-              <span className="oc-tile__n">{vendor.label}</span>
-              <span className="oc-tile__s">{vendor.connected ? "Connected" : "Connect"}</span>
-            </span>
-            {vendor.connected ? <Check className="oc-tile__chk" size={14} strokeWidth={2.4} aria-hidden /> : null}
-          </button>
-        ))}
+        {vendors.map((vendor) => {
+          // A connected vendor whose auth no longer serves models (e.g. expired token)
+          // is clickable again to re-run the sign-in — "Reconnect" instead of a
+          // misleading green "Connected" (spec: opencode-vendor-reconnect.md).
+          const settled = vendor.connected && !vendor.needsReconnect;
+          return (
+            <button
+              key={vendor.id}
+              type="button"
+              className="oc-tile"
+              data-connected={settled ? "true" : "false"}
+              data-reconnect={vendor.needsReconnect ? "true" : undefined}
+              disabled={settled}
+              onClick={settled ? undefined : () => setSheetVendorId(vendor.id)}
+            >
+              <span className="oc-tile__m" aria-hidden>{vendor.monogram}</span>
+              <span className="oc-tile__b">
+                <span className="oc-tile__n">{vendor.label}</span>
+                <span className="oc-tile__s">
+                  {vendor.needsReconnect ? "Reconnect" : vendor.connected ? "Connected" : "Connect"}
+                </span>
+              </span>
+              {settled ? <Check className="oc-tile__chk" size={14} strokeWidth={2.4} aria-hidden /> : null}
+            </button>
+          );
+        })}
         <button type="button" className="oc-tile oc-tile--add" onClick={() => select("all-providers")}>
           <span className="oc-tile__m" aria-hidden>+</span>
           <span className="oc-tile__b">

@@ -41,6 +41,8 @@ export interface ReadWorkspaceFileInput {
   cwd: string;
   path: string;
   byteLimit?: number;
+  // New File: create an empty file first if missing (spec: workbench-new-file.md).
+  create?: boolean;
 }
 
 export interface ReadWorkspaceFileResult {
@@ -173,6 +175,7 @@ export class WorkspaceQueryHandler {
       root: input.cwd,
       path: input.path,
       byteLimit: fileByteLimit(input.byteLimit),
+      create: input.create,
     });
     if (!read.ok) {
       return failure(read.error.code, read.error.message);

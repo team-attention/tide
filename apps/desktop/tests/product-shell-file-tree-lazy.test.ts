@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   createProductShellState,
+  newProductShellFile,
   selectProductShellFileTreeEntry,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import type {
@@ -63,4 +64,87 @@ test("collapsing_folder_does_not_emit_a_command", () => {
 
   assert.equal(result.command, null, "collapse is client-side only");
   assert.ok(!result.state.expandedFolderPaths.includes("src"), "folder is collapsed");
+});
+
+// ---- New File (spec: workbench-new-file.md) ----
+
+function startPageState(): ProductShellState {
+  const base = createProductShellState({ includeFixtureData: false });
+  return {
+    ...base,
+    activeThreadId: null,
+    agentChat: {
+      ...base.agentChat,
+      composer: {
+        ...base.agentChat.composer,
+        startOptions: {
+          ...base.agentChat.composer.startOptions,
+          scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+        },
+      },
+    },
+  };
+}
+
+test("new_file_on_start_page_reads_with_create_under_the_composer_cwd", () => {
+  const result = newProductShellFile(startPageState(), "scratch/new.txt");
+  assert.equal(result.command?.kind, "workspace.readFile");
+  if (result.command?.kind === "workspace.readFile") {
+    assert.deepEqual(result.command.payload, { cwd: "/repo/tide", path: "scratch/new.txt", create: true });
+  }
+  assert.equal(result.state.workbenchOpen, true, "the workbench column opens");
+});
+
+test("new_file_in_a_thread_opens_an_editor_with_create_true", () => {
+  const state = stateWithTree([SRC, README], []); // activeThreadId: "t1"
+  const result = newProductShellFile(state, "lib/util.ts");
+  assert.equal(result.command?.kind, "workbench.command");
+  if (result.command?.kind === "workbench.command" && result.command.payload.command === "open_editor") {
+    assert.equal(result.command.payload.threadId, "t1");
+    assert.deepEqual(result.command.payload.data, { path: "lib/util.ts", create: true });
+  }
+});
+
+test("new_file_normalizes_a_leading_dot_slash_and_no-ops_on_empty", () => {
+  const thread = newProductShellFile(stateWithTree([], []), "./deep/x.ts");
+  assert.equal(
+    thread.command?.kind === "workbench.command" &&
+      thread.command.payload.command === "open_editor" &&
+      thread.command.payload.data.path,
+    "deep/x.ts",
+    "a leading ./ is stripped",
+  );
+  const empty = newProductShellFile(stateWithTree([], []), "   ");
+  assert.equal(empty.command, null, "blank path is a no-op");
+});
+
+test("new_file_normalizes_windows_backslashes", () => {
+  // Gemini review: a Windows-style path must normalize \\ → / and strip the leading .\\.
+  const result = newProductShellFile(stateWithTree([], []), ".\\win\\path.ts");
+  assert.equal(
+    result.command?.kind === "workbench.command" &&
+      result.command.payload.command === "open_editor" &&
+      result.command.payload.data.path,
+    "win/path.ts",
+    "backslashes normalized and the leading .\\ stripped",
+  );
+});
+
+test("new_file_on_start_page_is_a_no-op_without_a_concrete_project_cwd", () => {
+  const start = startPageState();
+  const noCwd: ProductShellState = {
+    ...start,
+    agentChat: {
+      ...start.agentChat,
+      composer: {
+        ...start.agentChat.composer,
+        startOptions: {
+          ...start.agentChat.composer.startOptions,
+          scope: { kind: "project", projectId: "tide", cwd: "" },
+        },
+      },
+    },
+  };
+  const result = newProductShellFile(noCwd, "x.txt");
+  assert.equal(result.command, null, "no concrete cwd → nothing to create");
 });

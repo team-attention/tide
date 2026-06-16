@@ -6,6 +6,7 @@ import { createNewThreadStartSurface } from "./start-surface/start-surface.tsx";
 import { createThreadHeader } from "./thread-header/thread-header.tsx";
 import { createComposerStack } from "./composer/composer.tsx";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -88,37 +89,72 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   // bottom — if they scroll up to read history, don't yank them back down.
   const threadId = viewModel.thread?.threadId;
   const stickToBottomRef = useRef(true);
+  // The bug: a fast (even collapsed) reasoning stream re-pinned the transcript to the
+  // bottom on every token, so the user couldn't scroll up. Fix: a USER wheel-up detaches
+  // immediately (race-free — the auto-scroll never fires a wheel event, so it can't be
+  // confused with streaming), and we only re-attach when the user returns to the bottom.
+  // `programmaticScrollRef` keeps the auto-scroll's own scroll from re-arming stickiness;
+  // `lastScrollTop` also detaches a scrollbar drag-up (no wheel event).
+  const programmaticScrollRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
+  const scrollToBottom = useCallback(() => {
+    const el = sessionRef.current;
+    if (el === null) {
+      return;
+    }
+    const target = el.scrollHeight - el.clientHeight;
+    if (Math.abs(el.scrollTop - target) > 1) {
+      programmaticScrollRef.current = true;
+      el.scrollTop = target;
+    }
+    lastScrollTopRef.current = el.scrollTop;
+  }, []);
   // On entering a thread, jump to the most recent message and re-arm stickiness.
   useEffect(() => {
-    const el = sessionRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
     stickToBottomRef.current = true;
-  }, [threadId]);
-  // Track whether the user is pinned to the bottom (within a small threshold).
+    scrollToBottom();
+  }, [threadId, scrollToBottom]);
   useEffect(() => {
     const el = sessionRef.current;
     if (el === null) {
       return undefined;
     }
-    const onScroll = () => {
-      stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    // Wheel/trackpad UP = the user wants to read history → stop following the stream.
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        stickToBottomRef.current = false;
+      }
     };
+    const onScroll = () => {
+      if (programmaticScrollRef.current) {
+        programmaticScrollRef.current = false;
+        lastScrollTopRef.current = el.scrollTop;
+        return;
+      }
+      if (el.scrollTop < lastScrollTopRef.current - 1) {
+        stickToBottomRef.current = false; // user dragged the scrollbar up
+      } else if (el.scrollHeight - el.scrollTop - el.clientHeight < 24) {
+        stickToBottomRef.current = true; // user returned to the bottom
+      }
+      lastScrollTopRef.current = el.scrollTop;
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
     el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("scroll", onScroll);
+    };
+    // Re-bind when the thread (hence the .agent-session element) changes — the session
+    // only mounts once a thread exists, so a []-deps effect would miss it on the
+    // start → first-thread transition and never attach the listeners.
+  }, [threadId]);
   // As new content lands (streaming chunks, a new turn, the working indicator),
-  // follow it to the bottom when stuck.
+  // follow it to the bottom only while still stuck.
   useEffect(() => {
-    if (!stickToBottomRef.current) {
-      return;
+    if (stickToBottomRef.current) {
+      scrollToBottom();
     }
-    const el = sessionRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [viewModel.blocks, viewModel.runtimeState]);
+  }, [viewModel.blocks, viewModel.runtimeState, scrollToBottom]);
   // Escape dismisses the active chip/command popover and the image lightbox — the
   // expected keyboard companion to the outside-click backdrop. Only listens while
   // something is open, so it never swallows Escape from the rest of the app.

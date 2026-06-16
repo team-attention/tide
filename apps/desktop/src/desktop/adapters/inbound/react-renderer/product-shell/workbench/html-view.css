@@ -1,0 +1,73 @@
+/* Styles for the adjacent html-view component module (spec: workbench-html-preview.md). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
+
+/* ---- HTML Editor Pane (Preview / Code) — mirrors the markdown view ---- */
+
+.workbench-html {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* One header row: file-path breadcrumb on the left, Preview/Code toggle on the right —
+   like the Browser Pane's address-bar row. */
+.workbench-html-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--tide-line);
+}
+
+.workbench-html-header .workbench-editor-breadcrumb {
+  flex: 1 1 auto;
+  padding: 0;
+}
+
+.workbench-html-toggle {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+}
+
+.workbench-html-toggle__option {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  font: 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.workbench-html-toggle__option[data-active="true"] {
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  box-shadow: 0 1px 2px rgb(52 48 56 / 8%);
+}
+
+/* The rendered preview fills the pane below the header. */
+.workbench-html-stage {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+}
+
+.workbench-html-webview {
+  display: flex;
+  /* `<webview>` is a replaced element with a short intrinsic height; a 0 flex basis +
+     height:100% makes it fill the pane instead of collapsing. */
+  flex: 1 1 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--tide-bg);
+}

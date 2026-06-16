@@ -75,3 +75,23 @@
   color: var(--tide-muted);
   font-size: 12px;
 }
+
+/* New File: the launcher action swaps to an inline path input (spec: workbench-new-file.md). */
+.workbench-launcher-new-file-input {
+  margin-top: 6px;
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: 1px solid var(--tide-line-strong);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.workbench-launcher-new-file-input:focus {
+  border-color: color-mix(in srgb, var(--tide-accent, var(--tide-line-strong)) 60%, var(--tide-line));
+}

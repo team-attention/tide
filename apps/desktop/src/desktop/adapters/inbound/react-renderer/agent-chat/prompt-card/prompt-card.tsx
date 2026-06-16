@@ -14,13 +14,42 @@ export function PromptCard(props: {
 }): ReactElement {
   const choices = props.prompt.choices ?? [];
   const hasChoices = choices.length > 0;
+  // A multi-select question (e.g. claude AskUserQuestion multiSelect): the user toggles
+  // several options and submits them together, instead of one pick finalizing.
+  const multiSelect = props.prompt.multiSelect === true && hasChoices;
   const [selectedId, setSelectedId] = useState<string | null>(
     props.prompt.defaultChoiceId ?? null,
   );
-  const [otherActive, setOtherActive] = useState(!hasChoices);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [otherActive, setOtherActive] = useState(!hasChoices && !multiSelect);
   const [otherText, setOtherText] = useState("");
-  const canSubmit = otherActive ? otherText.trim().length > 0 : selectedId !== null;
+  const toggleMulti = (choiceId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(choiceId)) {
+        next.delete(choiceId);
+      } else {
+        next.add(choiceId);
+      }
+      return next;
+    });
+  };
+  const canSubmit = multiSelect
+    ? selectedIds.size > 0
+    : otherActive
+    ? otherText.trim().length > 0
+    : selectedId !== null;
   const submit = () => {
+    if (multiSelect) {
+      if (selectedIds.size === 0) {
+        return;
+      }
+      // claude records the joined option labels as this question's answer (free-text
+      // path — no STRUCTURED_OPTION_PREFIX). Preserve the listed order.
+      const labels = choices.filter((choice) => selectedIds.has(choice.choiceId)).map((choice) => choice.label);
+      props.onAnswerText(labels.join(", "));
+      return;
+    }
     if (otherActive) {
       if (otherText.trim().length > 0) {
         props.onAnswerText(otherText.trim());
@@ -44,11 +73,12 @@ export function PromptCard(props: {
         return;
       }
       // Arrows move options only when focus is NOT in a text field, so they don't
-      // hijack the composer's or the Other field's cursor.
+      // hijack the composer's or the Other field's cursor. (Multi-select toggles by
+      // click instead, so single-option arrow navigation does not apply.)
       const target = event.target as HTMLElement | null;
       const inEditable =
         target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
-      if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !inEditable) {
+      if (!multiSelect && (event.key === "ArrowDown" || event.key === "ArrowUp") && !inEditable) {
         const ids = [...choices.map((choice) => choice.choiceId), ...(hasChoices ? ["__other"] : [])];
         if (ids.length === 0) {
           return;
@@ -74,7 +104,7 @@ export function PromptCard(props: {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [choices, hasChoices, otherActive, selectedId, otherText, props]);
+  }, [choices, hasChoices, multiSelect, otherActive, selectedId, selectedIds, otherText, props]);
   const kindLabel =
     props.prompt.kind === "approval"
       ? "Approval needed"
@@ -95,6 +125,8 @@ export function PromptCard(props: {
       type="button"
       className="prompt-card__option"
       data-selected={selected ? "true" : "false"}
+      data-multi={multiSelect ? "true" : undefined}
+      aria-pressed={multiSelect ? selected : undefined}
       onClick={onClick}
     >
       <span className="prompt-card__radio" aria-hidden />
@@ -105,7 +137,7 @@ export function PromptCard(props: {
   return (
     <div className="prompt-card" role="group" aria-label="Agent prompt">
       <div className="prompt-card__head">
-        <span className="prompt-card__kind">{kindLabel}</span>
+        <span className="prompt-card__kind">{multiSelect ? "Select all that apply" : kindLabel}</span>
         <p className="prompt-card__message">{props.prompt.message}</p>
       </div>
       <div className="prompt-card__options">
@@ -114,14 +146,16 @@ export function PromptCard(props: {
             choice.choiceId,
             choice.label,
             choice.providerValue && choice.providerValue !== choice.label ? choice.providerValue : undefined,
-            !otherActive && selectedId === choice.choiceId,
-            () => {
-              setOtherActive(false);
-              setSelectedId(choice.choiceId);
-            },
+            multiSelect ? selectedIds.has(choice.choiceId) : !otherActive && selectedId === choice.choiceId,
+            multiSelect
+              ? () => toggleMulti(choice.choiceId)
+              : () => {
+                  setOtherActive(false);
+                  setSelectedId(choice.choiceId);
+                },
           ),
         )}
-        {hasChoices
+        {hasChoices && !multiSelect
           ? option("__other", "Other…", undefined, otherActive, () => {
               setOtherActive(true);
               setSelectedId(null);

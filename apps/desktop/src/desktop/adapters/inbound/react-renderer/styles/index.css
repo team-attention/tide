@@ -40,6 +40,7 @@
 @import "../product-shell/workbench/editor-pane.css";
 @import "../product-shell/workbench/code-editor.css";
 @import "../product-shell/workbench/markdown-view.css";
+@import "../product-shell/workbench/html-view.css";
 @import "../product-shell/file-tree/file-tree.css";
 @import "../product-shell/settings/settings.css";
 @import "../product-shell/dialogs/worktree-dialogs.css";

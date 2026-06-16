@@ -36,7 +36,7 @@ export function applyProductShellBackendEvent(
       const listedPayload = event.payload as {
         availableAgents?: readonly string[];
         opencodeModels?: ReadonlyArray<{ value: string; label: string; vendor?: string; detail?: string }>;
-        opencodeVendors?: ReadonlyArray<{ id: string; label: string; connected: boolean; method?: string; popular?: boolean }>;
+        opencodeVendors?: ReadonlyArray<{ id: string; label: string; connected: boolean; method?: string; popular?: boolean; usable?: boolean }>;
         opencodeEnvironment?: { version?: string; testedWith?: string; executablePath?: string };
       };
       setAvailableProviderAgents(listedPayload.availableAgents ?? null);
@@ -57,6 +57,7 @@ export function applyProductShellBackendEvent(
           connected: vendor.connected,
           method: vendor.method,
           popular: vendor.popular,
+          usable: vendor.usable,
         })) ?? null,
       );
       setOpencodeEnvironment(listedPayload.opencodeEnvironment ?? null);

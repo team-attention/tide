@@ -15,6 +15,7 @@ export function contractCodeFromServiceError(error: ServiceError): ContractError
     case "invalid_thread_title":
     case "workbench_target_not_found":
     case "workbench_stale_reference":
+    case "workbench_user_controlled":
     case "unsupported_tide_mcp_tool":
     case "directory_trust_unavailable":
     case "workspace_file_unavailable":

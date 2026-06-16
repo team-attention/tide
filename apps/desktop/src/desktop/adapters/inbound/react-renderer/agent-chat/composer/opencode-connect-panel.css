@@ -6,6 +6,9 @@
 
 .oc-connect {
   --oc-ok: var(--tide-diff-add);
+  /* Amber attention accent for a connected-but-unusable vendor ("Reconnect") — not
+     green (usable) and not red (danger). Theme-stable literal. */
+  --oc-warn: #c98a14;
   display: flex;
   flex-direction: column;
   width: 384px;
@@ -138,6 +141,21 @@
 
 .oc-tile[data-connected="true"] .oc-tile__s {
   color: var(--oc-ok);
+  font-weight: 600;
+}
+
+/* Connected but unusable (e.g. expired auth): clickable "Reconnect" in amber, not the
+   green "Connected" state. */
+.oc-tile[data-reconnect="true"] {
+  border-color: color-mix(in srgb, var(--oc-warn) 38%, var(--tide-line));
+}
+
+.oc-tile[data-reconnect="true"] .oc-tile__m {
+  background: color-mix(in srgb, var(--oc-warn) 16%, var(--tide-selection));
+}
+
+.oc-tile[data-reconnect="true"] .oc-tile__s {
+  color: var(--oc-warn);
   font-weight: 600;
 }
 

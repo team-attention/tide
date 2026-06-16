@@ -188,6 +188,57 @@ export function selectProductShellFileTreeEntry(
 }
 
 // An entry is visible only when every ancestor folder on its path is expanded.
+// New File: create a blank file at `relativePath` under the current folder and open it
+// for editing (spec: workbench-new-file.md). Mirrors selectProductShellFileTreeEntry's
+// open paths but carries `create: true` so the backend touches the file if missing
+// (an existing file is opened, never clobbered). Works on the start page (composer
+// cwd, thread-independent) and inside a thread (open_editor resolves the thread cwd).
+export function newProductShellFile(
+  state: ProductShellState,
+  relativePath: string,
+): ProductShellUpdateResult {
+  // Normalize Windows backslashes to forward slashes first, then strip any leading
+  // "./" or "/" so the path is relative (and consistent with the app's forward-slash paths).
+  const path = relativePath.trim().replace(/\\/g, "/").replace(/^\.?\/+/, "");
+  if (path.length === 0) {
+    return { state, command: null };
+  }
+
+  if (state.activeThreadId === null) {
+    const scope = state.agentChat.composer.startOptions.scope;
+    if (scope?.kind !== "project" || scope.cwd.length === 0) {
+      return { state, command: null };
+    }
+    // Already open as a tab → just focus it (don't re-create/read, which would discard
+    // an unsaved draft).
+    const alreadyOpen = state.startPageFiles.some(
+      (file) => file.cwd === scope.cwd && file.relativePath === path,
+    );
+    if (alreadyOpen) {
+      return {
+        state: { ...state, workbenchOpen: true, draftActiveWorkbenchPaneId: startFilePaneId(path) },
+        command: null,
+      };
+    }
+    return {
+      state: { ...state, workbenchOpen: true },
+      command: { kind: "workspace.readFile", payload: { cwd: scope.cwd, path, create: true } },
+    };
+  }
+
+  return {
+    state: { ...state, workbenchOpen: true },
+    command: {
+      kind: "workbench.command",
+      payload: {
+        threadId: state.activeThreadId,
+        command: "open_editor",
+        data: { path, create: true },
+      },
+    },
+  };
+}
+
 export function fileTreePathHasCollapsedAncestor(
   relativePath: string,
   expanded: ReadonlySet<string>,
