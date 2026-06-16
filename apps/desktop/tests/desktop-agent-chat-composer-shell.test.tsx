@@ -263,6 +263,58 @@ test("directory_trust_blocker_offers_a_trust_this_folder_action", () => {
   );
 });
 
+test("optimistic_first_message_top_anchors_while_provider_is_not_ready", () => {
+  // Spec: docs_v2/specs/transcript-top-anchor-first-message.md
+  // A first message sent into a thread whose provider is still being set up
+  // (e.g. workspace trust required) has no backend block yet — it shows as an
+  // optimistic queued row. It must top-anchor like a conversation, not float in
+  // the vertical center of the transcript.
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const sent = submitComposer(
+    updateComposerDraft(hydrated, "Why is there no branch delete option").state,
+  );
+  assert.deepEqual(sent.state.queuedInputs, ["Why is there no branch delete option"]);
+
+  const blocked: AgentChatShellState = {
+    ...sent.state,
+    providerReadiness: {
+      agentId: "codex",
+      ready: false,
+      blockers: [
+        {
+          kind: "directory_trust_required",
+          scope: "execution_context",
+          message: "Claude Code workspace trust is required.",
+        },
+      ],
+    },
+  };
+
+  const html = renderShell(blocked);
+
+  // The optimistic message renders in the transcript (no backend block yet)...
+  assert.match(html, /Why is there no branch delete option/);
+  // ...and the session is top-anchored, not vertically centered.
+  assert.match(html, /agent-session--has-turns/);
+});
+
+test("a_ready_thread_with_no_messages_keeps_the_centered_empty_state", () => {
+  // Spec: docs_v2/specs/transcript-top-anchor-first-message.md
+  // The genuine empty state stays centered — top-anchoring is only for content.
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+
+  const html = renderShell(hydrated);
+
+  assert.match(html, /No messages here/);
+  assert.doesNotMatch(html, /agent-session--has-turns/);
+});
+
 test("new_thread_start_screen_renders_start_composer_without_fake_cues", () => {
   const state = createAgentChatShellState({
     startOptions: {
@@ -1637,6 +1689,40 @@ test("branch_menu_lists_real_git_branches_not_placeholders", () => {
   // The old fabricated placeholders are gone.
   assert.doesNotMatch(html, /feature\/sidebar/);
   assert.doesNotMatch(html, /release\/2026-05/);
+});
+
+test("composer_branch_menu_offers_delete_on_safe_local_branches_only", () => {
+  // Spec: docs_v2/specs/branch-deletion-from-picker.md — a trailing delete action
+  // (routed via `delete-branch:`) appears ONLY on local branches that aren't the
+  // current branch and aren't checked out in any worktree.
+  const base = createAgentChatShellState({
+    startOptions: {
+      agentBinding: { agentId: "claude" },
+      scope: { kind: "project", projectId: "repo", cwd: "/repo" },
+      launchOptions: { branch: "main" },
+    },
+  });
+  const state: AgentChatShellState = {
+    ...setComposerActiveSurface(base, "branch_menu").state,
+    availableBranches: [
+      { name: "main", kind: "local", current: true },
+      { name: "feature/x", kind: "local", current: false },
+      { name: "wt-branch", kind: "local", current: false },
+      { name: "origin/main", kind: "remote", current: false },
+    ],
+    availableWorktrees: [
+      { path: "/repo", branch: "main", current: true },
+      { path: "/repo.worktree/wt-branch", branch: "wt-branch", current: false },
+    ],
+  };
+  const surface = createAgentChatShellViewModel(state).composer.activeSurface;
+  const rowFor = (name: string) => surface?.rows.find((entry) => entry.rowId === `branch:${name}`);
+  // Deletable: a plain local branch with no worktree, not the current one.
+  assert.equal(rowFor("feature/x")?.action?.rowId, "delete-branch:feature/x");
+  // Not deletable: current branch, remote ref, worktree-backed branch.
+  assert.equal(rowFor("main")?.action, undefined);
+  assert.equal(rowFor("origin/main")?.action, undefined);
+  assert.equal(rowFor("wt-branch")?.action, undefined);
 });
 
 test("branch_menu_falls_back_to_current_value_when_no_git_data", () => {

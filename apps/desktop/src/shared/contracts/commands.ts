@@ -1,6 +1,7 @@
 import type { AgentBindingDto } from "./agent.ts";
 import type { WorkspaceCodeIntelKindDto } from "./code-intel.ts";
 import type { ThreadId, WorkbenchPaneId } from "./ids.ts";
+import type { PromptStepAnswerDto } from "./prompt.ts";
 import type { JsonObject } from "./json.ts";
 import type { ThreadScopeDto } from "./thread.ts";
 import type { WorkbenchSeedPaneDto } from "./workbench.ts";
@@ -125,6 +126,9 @@ export interface BackendCommandPayloadByKind {
     threadId: ThreadId;
     choiceId?: string;
     value?: string;
+    // A multi-step prompt (wizard) submits one answer per step here, replacing the
+    // single `value`/`choiceId`. Absent for ordinary single prompts.
+    stepAnswers?: PromptStepAnswerDto[];
   };
   "agentRuntime.stop": { threadId: ThreadId };
   "provider.trustWorkspace": { threadId: ThreadId };

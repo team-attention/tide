@@ -190,6 +190,10 @@ export class WorkbenchCommandHandler {
         // genuine navigation still re-mints, preserving the staleness guard.
         if (snapshot.url !== undefined && snapshot.url !== previousUrl) {
           pane.revision = this.idGenerator();
+          // A navigation invalidates the act auto-retry window (D5): the agent's prior
+          // revision was for a different page, so it must re-observe — never auto-retry a
+          // stale act across a navigation.
+          delete pane.priorRevision;
         }
         pane.updatedAt = this.clock();
         thread.updatedAt = this.clock();
@@ -243,6 +247,10 @@ export class WorkbenchCommandHandler {
           pane.bodyTextPreview = result.bodyTextPreview;
         }
         pane.loading = result.loading ?? false;
+        // D5 (spec: browser-pane-live-pull-vision.md): remember the pre-completion revision
+        // so the agent's NEXT act, if it still carries this just-settled token, is auto-retried
+        // once instead of failing the CAS (the close/reopen thrash).
+        pane.priorRevision = pane.revision;
         pane.revision = this.idGenerator();
         pane.updatedAt = completedAt;
         thread.updatedAt = completedAt;

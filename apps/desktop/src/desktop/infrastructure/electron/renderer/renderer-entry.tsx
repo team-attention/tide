@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 
 import { TideProductShell } from "../../../adapters/inbound/react-renderer/product-shell/product-shell.tsx";
+import { GlobalZoomIndicator } from "../../../adapters/inbound/react-renderer/product-shell/support/global-zoom.tsx";
 import type {
   AgentChatBackendEvent,
 } from "../../../application/domains/agent-chat/agent-chat.ts";
@@ -34,6 +35,7 @@ type WorkspaceFsBridgeResult =
 
 export function createInitialRendererElement() {
   return (
+    <>
     <TideProductShell
       onBackendCommand={dispatchBackendCommand}
       onBackendEvent={subscribeBackendEvents}
@@ -56,6 +58,9 @@ export function createInitialRendererElement() {
               worktreeInfo: (cwd: string) => window.tide!.worktreeInfo(cwd),
               deleteWorktree: (cwd: string, options: { deleteBranch: boolean; force: boolean }) =>
                 window.tide!.deleteWorktree(cwd, options),
+              branchInfo: (cwd: string, branch: string) => window.tide!.branchInfo(cwd, branch),
+              deleteBranch: (cwd: string, branch: string, options: { force: boolean }) =>
+                window.tide!.deleteBranch(cwd, branch, options),
               gitContext: (cwd: string) => window.tide!.gitContext(cwd),
               gitChanges: (cwd: string) => window.tide!.gitChanges(cwd),
               gitFileDiff: (cwd: string, relPath: string) => window.tide!.gitFileDiff(cwd, relPath),
@@ -70,6 +75,8 @@ export function createInitialRendererElement() {
             }
       }
     />
+    <GlobalZoomIndicator />
+    </>
   );
 }
 
@@ -98,6 +105,11 @@ declare global {
       onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
       // View-menu panel toggles (Cmd+B / Cmd+E / Cmd+J), routed from the app menu.
       onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
+      // Global zoom (Cmd +/-/0): Main broadcasts the factor so the renderer mirrors it
+      // onto <webview> guests and shows the indicator; resetZoom → 100%; getZoom seeds it.
+      onZoomChanged(listener: (factor: number) => void): () => void;
+      resetZoom(): void;
+      getZoom(): Promise<number>;
       // Request a native OS notification (delivered + focus-gated by Main).
       notify(request: {
         kind: "agent_finished" | "needs_attention" | "agent_update";
@@ -119,6 +131,8 @@ declare global {
       removeWorktree(cwd: string): Promise<{ entries: { projectId: string; name: string; cwd: string }[] }>;
       worktreeInfo(cwd: string): Promise<{ repoRoot: string | null; branch: string | null; branchMerged: boolean; isWorktree: boolean }>;
       deleteWorktree(cwd: string, options: { deleteBranch: boolean; force: boolean }): Promise<{ entries: { projectId: string; name: string; cwd: string }[]; worktreeRemoved: boolean; branch: string | null; branchDeleted: boolean }>;
+      branchInfo(cwd: string, branch: string): Promise<{ exists: boolean; merged: boolean }>;
+      deleteBranch(cwd: string, branch: string, options: { force: boolean }): Promise<{ deleted: boolean; branch: string | null }>;
       gitContext(cwd: string): Promise<{
         isGitRepo: boolean;
         currentBranch: string | null;

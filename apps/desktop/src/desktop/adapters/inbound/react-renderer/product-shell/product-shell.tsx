@@ -8,7 +8,8 @@ import { createChromeHandlers } from "./handlers/chrome-handlers.ts";
 import type { MenuAnchorRect, ProductShellHandlers, TideProductShellProps } from "./support/types.ts";
 import { createSettingsModal, loadListSettings, loadPreferredStartComposer, loadRailOrder, loadWorktreeSettings, persistPreferredStartComposer } from "./settings/settings.tsx";
 import { WorktreeDeleteDialog } from "./dialogs/worktree-delete-dialog.tsx";
-import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx";
+import { BranchDeleteDialog } from "./dialogs/branch-delete-dialog.tsx";
+import { useDeleteDialogs } from "./support/use-delete-dialogs.ts";
 import { createProductShellFileDialogs } from "./product-shell-file-dialogs.tsx";
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
@@ -25,15 +26,12 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactEle
 import { ProductShellStoreProvider, useShellStore, useStableHandlers } from "./store-context.ts";
 import { AgentChatColumnView, FileTreeColumnView, LeftRailColumnView, WorkbenchColumnView } from "./product-shell-columns.ts";
 
-import { worktreeDeleteRequest } from "../../../../../shared/worktree/path.ts";
-
 import {
   applyProductShellBackendEvent,
   createProductShellState,
   createProductShellViewModel,
   quickOpenFilesFromState,
   selectCompletedThreads,
-  deleteWorktreeAndRefocus,
   discardProductShellDraftThread,
   setProductShellComposerFolderScope,
   setProductShellComposerNewWorktreeIntent,
@@ -115,10 +113,6 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   const [contentSearchVisible, setContentSearchVisible] = useState(false);
   // Inline "new worktree" name input opened from the composer worktree/branch menu.
   const [worktreeCreate, setWorktreeCreate] = useState<{ baseCwd: string } | null>(null);
-  // Worktree delete confirmation (opened from a Thread row menu or the composer
-  // worktree menu). See docs_v2/specs/worktree-branch-deletion.md.
-  const [worktreeDelete, setWorktreeDelete] = useState<WorktreeDeleteTarget | null>(null);
-  const [worktreeDeleting, setWorktreeDeleting] = useState(false);
   // Track the window width so the layout can auto-collapse columns that no
   // longer fit (responsive narrow-screen handling).
   const [windowWidth, setWindowWidth] = useState(
@@ -207,74 +201,6 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         baseBranch: baseBranch.length > 0 ? baseBranch : undefined,
       }),
     );
-  };
-
-  // Open the worktree delete dialog for a worktree cwd: reads the branch + merged
-  // status (Main IPC) and the threads-here/running facts (state). Shared by the
-  // Thread-row menu and the Composer worktree-menu trash affordance.
-  const openWorktreeDeleteByCwd = (cwd: string) => {
-    const bridge = props.projectBridge;
-    if (bridge === undefined) {
-      return;
-    }
-    const here = shellState.threads.filter(
-      (entry) => entry.scope.kind === "project" && entry.scope.cwd === cwd,
-    );
-    const fallbackBranch = cwd.split("/").filter((seg) => seg.length > 0).pop() ?? cwd;
-    bridge
-      .worktreeInfo(cwd)
-      .then((info) => {
-        // Only worktrees are deletable (never the main repo / a non-worktree cwd).
-        if (!info.isWorktree) {
-          return;
-        }
-        setWorktreeDelete({
-          cwd,
-          branch: info.branch ?? fallbackBranch,
-          branchMerged: info.branchMerged,
-          threadCount: here.length,
-          anyRunning: here.some((entry) => entry.running === true),
-        });
-      })
-      .catch(() => {});
-  };
-
-  // Delete the open worktree target: remove the dir and (unless "Keep branch")
-  // its branch, forcing only when the user accepted the unmerged warning.
-  const confirmWorktreeDelete = (keepBranch: boolean) => {
-    const target = worktreeDelete;
-    const bridge = props.projectBridge;
-    if (target === null || bridge === undefined) {
-      return;
-    }
-    // Keep the dialog open with a "Deleting…" spinner while the (slow) git worktree +
-    // branch removal runs — it used to close instantly and update only on completion,
-    // leaving a confusing gap where nothing seemed to happen.
-    setWorktreeDeleting(true);
-    bridge
-      .deleteWorktree(target.cwd, worktreeDeleteRequest({ keepBranch, branchMerged: target.branchMerged }))
-      .then((result) => {
-        setShellState((state) => {
-          // Update the registry from Main's authoritative entries, then archive the
-          // Threads that lived in the deleted worktree and drop it from the Composer's
-          // worktree list — both reflect the deletion instantly (no manual refresh).
-          const withRegistry = setProductShellRegisteredProjects(state, result.entries);
-          // Archive the Threads that lived in the deleted worktree; if the one on
-          // screen was among them, navigate to the Start Composer (its transcript is
-          // now dead). See deleteWorktreeAndRefocus.
-          const archived = deleteWorktreeAndRefocus(withRegistry, target.cwd);
-          for (const command of archived.commands) {
-            dispatchBackendCommand(command);
-          }
-          return archived.state;
-        });
-        setWorktreeDeleting(false);
-        setWorktreeDelete(null);
-      })
-      .catch(() => {
-        // Leave the dialog open (re-enabled) so the user can retry or cancel.
-        setWorktreeDeleting(false);
-      });
   };
 
   // The active Project cwd (a thread's, or the start composer's) drives git state.
@@ -433,10 +359,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     // threads out of the viewed surface. Terminal output and update-notices stay
     // immediate — they early-return without touching shell state.
     const pending: AgentChatBackendEvent[] = [];
-    let frame: number | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const flushPending = (): void => {
-      frame = null;
+      timer = null;
       if (pending.length === 0) {
         return;
       }
@@ -470,13 +396,17 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     };
 
     const scheduleFlush = (): void => {
-      if (frame !== null) {
+      if (timer !== null) {
         return;
       }
-      frame =
-        typeof requestAnimationFrame === "function"
-          ? requestAnimationFrame(flushPending)
-          : (setTimeout(flushPending, 16) as unknown as number);
+      // Coalesce a burst of streamed chunks into ONE state update per ~frame (perf E3): the
+      // first event arms a short timer; everything arriving in the window folds into one flush.
+      // A timer — deliberately NOT requestAnimationFrame — is the scheduler, because Chromium
+      // services rAF only while the page paints: an occluded window (e.g. Tide on another macOS
+      // Space) pauses rAF, stranding backend events so a background agent finishing never flips
+      // the running flag and never notifies until you return. Timers still run off screen (kept
+      // un-throttled via backgroundThrottling in main-window.ts), so the notification fires.
+      timer = setTimeout(flushPending, 16);
     };
 
     const unsubscribe = props.onBackendEvent?.((event) => {
@@ -511,12 +441,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     });
 
     return () => {
-      if (frame !== null) {
-        if (typeof cancelAnimationFrame === "function") {
-          cancelAnimationFrame(frame);
-        } else {
-          clearTimeout(frame);
-        }
+      if (timer !== null) {
+        clearTimeout(timer);
       }
       unsubscribe?.();
     };
@@ -563,7 +489,31 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectCwd, activeAgentId]);
-  const handlerContext: ProductShellHandlerContext = { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize };
+  // Worktree + branch delete dialogs (state + git orchestration) live in a hook so
+  // the shell stays a thin composition root. Placed after dispatchBackendCommand
+  // (which it needs) and before the handlers that consume it. See useDeleteDialogs.
+  const {
+    worktreeDelete,
+    setWorktreeDelete,
+    worktreeDeleting,
+    setWorktreeDeleting,
+    openWorktreeDeleteByCwd,
+    confirmWorktreeDelete,
+    branchDelete,
+    setBranchDelete,
+    branchDeleting,
+    setBranchDeleting,
+    branchDeleteError,
+    setBranchDeleteError,
+    openBranchDeleteByName,
+    confirmBranchDelete,
+  } = useDeleteDialogs({
+    projectBridge: props.projectBridge,
+    threads: shellState.threads,
+    setShellState,
+    dispatchBackendCommand,
+  });
+  const handlerContext: ProductShellHandlerContext = { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, branchDelete, setBranchDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, confirmBranchDelete, startColumnResize };
   const handlers: ProductShellHandlers = {
     ...createRailHandlers(handlerContext),
     ...createComposerHandlers(handlerContext),
@@ -654,7 +604,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Escape: exit Workbench fullscreen / close Settings / interrupt a running turn
   // (the interrupt yields to any open transient UI). Spec: esc-interrupts-run.md.
   useProductShellEscape(shellState, setShellState, viewModel, handlers,
-    quickOpenVisible || contentSearchVisible || worktreeCreate !== null || worktreeDelete !== null);
+    quickOpenVisible || contentSearchVisible || worktreeCreate !== null || worktreeDelete !== null || branchDelete !== null);
 
   const quickOpenFiles = useMemo<QuickOpenFile[]>(
     () => quickOpenFilesFromState(shellState),
@@ -766,6 +716,19 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             onClose={() => {
               setWorktreeDelete(null);
               setWorktreeDeleting(false);
+            }}
+          />
+        ) : null}
+        {branchDelete !== null ? (
+          <BranchDeleteDialog
+            target={branchDelete}
+            deleting={branchDeleting}
+            error={branchDeleteError}
+            onConfirm={confirmBranchDelete}
+            onClose={() => {
+              setBranchDelete(null);
+              setBranchDeleting(false);
+              setBranchDeleteError(null);
             }}
           />
         ) : null}

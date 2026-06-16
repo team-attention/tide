@@ -104,7 +104,10 @@ function promptCollector(): { events: PromptState[]; onEvent: (event: Structured
   };
 }
 
-test("AskUserQuestion: typed Other free-text answer reaches the answers map (multi-question)", async () => {
+// Spec: docs_v2/specs/multi-step-prompt-navigation.md — a multi-question AskUserQuestion
+// surfaces as ONE navigable wizard prompt (all questions ride as `steps`), not one card
+// at a time. The user moves back/forth freely and submits every answer together.
+test("AskUserQuestion: multi-question surfaces as ONE wizard prompt carrying every step", async () => {
   const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
   const receivedFile = join(dir, "received.jsonl");
   const { events, onEvent } = promptCollector();
@@ -121,27 +124,64 @@ test("AskUserQuestion: typed Other free-text answer reaches the answers map (mul
     onEvent,
   });
   try {
-    const first = await waitFor(() => events[0], "first question prompt");
-    assert.match(first.message, /\(1\/2\) Pick one\?/);
+    const prompt = await waitFor(() => events[0], "wizard prompt");
+    // ONE prompt for the whole batch — not the old one-at-a-time surfacing.
+    assert.equal(prompt.steps?.length, 2);
+    // Raw question text: the wizard chrome shows the i/N position, so no "(i/N)" prefix.
+    assert.equal(prompt.steps?.[0]?.message, "Pick one?");
+    assert.equal(prompt.steps?.[1]?.message, "Describe it?");
+    assert.ok(!/\(\d+\/\d+\)/.test(prompt.steps?.[0]?.message ?? ""));
+    // Top-level fields mirror step 0 (single-view fallback for non-wizard consumers).
+    assert.equal(prompt.message, "Pick one?");
+    assert.equal(prompt.steps?.[0]?.stepId, "q-0");
+    assert.equal(prompt.steps?.[1]?.stepId, "q-1");
+  } finally {
+    await client.stop();
+  }
+});
+
+test("AskUserQuestion wizard: stepAnswers (option + Other free-text) reach the answers map in one allow", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = createClaudeStreamJsonClient({
+    plan: fakeProviderPlan(
+      [
+        { question: "Pick one?", header: "Pick", options: [{ label: "A" }, { label: "B" }] },
+        { question: "Describe it?", header: "Desc", options: [{ label: "C" }] },
+      ],
+      receivedFile,
+    ),
+    threadId: "thread-1",
+    runtimeId: "rt-1",
+    onEvent,
+  });
+  try {
+    const prompt = await waitFor(() => events[0], "wizard prompt");
+    const steps = prompt.steps ?? [];
     await client.write({
       kind: "prompt_answer",
-      promptId: first.promptId,
-      value: first.choices?.[0]?.providerValue ?? "",
+      promptId: prompt.promptId,
+      value: "",
+      stepAnswers: [
+        // A picked option arrives as the option's provider value …
+        { stepId: steps[0]?.stepId ?? "", value: steps[0]?.choices?.[0]?.providerValue ?? "" },
+        // … and an "Other…" reply as verbatim free text.
+        { stepId: steps[1]?.stepId ?? "", value: "맞아, 커스텀으로 갈게" },
+      ],
     });
-
-    const second = await waitFor(() => events[1], "second question prompt");
-    assert.match(second.message, /\(2\/2\) Describe it\?/);
-    await client.write({
-      kind: "prompt_answer",
-      promptId: second.promptId,
-      value: "맞아, 커스텀으로 갈게",
-    });
-
     const response = await waitFor(() => receivedControlResponse(receivedFile), "control_response");
     assert.deepEqual(answersFrom(response), {
       "Pick one?": "A",
       "Describe it?": "맞아, 커스텀으로 갈게",
     });
+    // Exactly ONE allow for the whole tool call (no per-question round trips).
+    const allows = readFileSync(receivedFile, "utf8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((line) => line.type === "control_response");
+    assert.equal(allows.length, 1);
   } finally {
     await client.stop();
   }
@@ -247,7 +287,7 @@ test("applyConfig writes set_permission_mode and set_model control requests", as
   }
 });
 
-test("AskUserQuestion: Skip (empty answer) leaves the question unanswered, options still recorded", async () => {
+test("AskUserQuestion wizard: a step with an empty answer is left unanswered (skipped)", async () => {
   const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
   const receivedFile = join(dir, "received.jsonl");
   const { events, onEvent } = promptCollector();
@@ -264,13 +304,16 @@ test("AskUserQuestion: Skip (empty answer) leaves the question unanswered, optio
     onEvent,
   });
   try {
-    const first = await waitFor(() => events[0], "first question prompt");
-    await client.write({ kind: "prompt_answer", promptId: first.promptId, value: "" });
-    const second = await waitFor(() => events[1], "second question prompt");
+    const prompt = await waitFor(() => events[0], "wizard prompt");
+    const steps = prompt.steps ?? [];
     await client.write({
       kind: "prompt_answer",
-      promptId: second.promptId,
-      value: second.choices?.[0]?.providerValue ?? "",
+      promptId: prompt.promptId,
+      value: "",
+      stepAnswers: [
+        { stepId: steps[0]?.stepId ?? "", value: "" }, // skipped
+        { stepId: steps[1]?.stepId ?? "", value: steps[1]?.choices?.[0]?.providerValue ?? "" },
+      ],
     });
     const response = await waitFor(() => receivedControlResponse(receivedFile), "control_response");
     assert.deepEqual(answersFrom(response), { "Answered one?": "B" });

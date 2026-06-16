@@ -82,6 +82,23 @@ export interface PromptChoice {
   providerValue: string;
 }
 
+// One question of a batched multi-step prompt (claude AskUserQuestion). `message` is the
+// raw question — the wizard chrome shows the i/N position, so no "(i/N)" prefix here.
+export interface PromptStep {
+  stepId: string;
+  message: string;
+  choices?: PromptChoice[];
+  defaultChoiceId?: string;
+  multiSelect?: boolean;
+}
+
+// One resolved answer in a multi-step submit; `value` is the provider-native answer
+// (a chosen option's providerValue, free text, or "" to skip).
+export interface PromptStepAnswer {
+  stepId: string;
+  value: string;
+}
+
 export interface PromptState {
   promptId: string;
   threadId: ThreadId;
@@ -93,6 +110,10 @@ export interface PromptState {
   // Multi-select question (e.g. claude AskUserQuestion multiSelect): the card toggles
   // several options and submits them joined as the free-text answer.
   multiSelect?: boolean;
+  // A batched, multi-step prompt (claude AskUserQuestion's 1-4 questions). When present
+  // with length > 1 the card is a navigable wizard; single prompts omit it.
+  // `message`/`choices`/`multiSelect` mirror `steps[0]` as a single-view fallback.
+  steps?: PromptStep[];
   source: "pty" | "provider_signal" | "provider_hook";
 }
 

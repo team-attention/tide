@@ -1,4 +1,4 @@
-import type { AgentChatBackendEvent, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerSurfaceKind } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import type { AgentChatBackendEvent, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerSurfaceKind, AgentChatPromptStepAnswer } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import type { DropZone, ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellFileTreeMenu, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
@@ -60,6 +60,15 @@ export interface ProjectRegistryBridge {
     branch: string | null;
     branchDeleted: boolean;
   }>;
+  // Standalone local-branch delete (no worktree). branchInfo drives the confirm
+  // dialog's unmerged warning; deleteBranch runs `git branch -d|-D`. See
+  // docs_v2/specs/branch-deletion-from-picker.md.
+  branchInfo(cwd: string, branch: string): Promise<{ exists: boolean; merged: boolean }>;
+  deleteBranch(
+    cwd: string,
+    branch: string,
+    options: { force: boolean },
+  ): Promise<{ deleted: boolean; branch: string | null }>;
   gitContext(cwd: string): Promise<GitContextResult>;
   gitChanges(cwd: string): Promise<GitChangesResult>;
   gitFileDiff(cwd: string, relPath: string): Promise<string>;
@@ -123,6 +132,8 @@ export interface ProductShellHandlers {
   onRemoveContextChip: (id: string) => void;
   onSetContextChipComment: (id: string, comment: string) => void;
   onAnswerPromptText: (value: string) => void;
+  // Submit a multi-step prompt (wizard): one answer per step, all at once.
+  onAnswerPromptSteps: (stepAnswers: AgentChatPromptStepAnswer[]) => void;
   onSubmit: () => void;
   onInterrupt: () => void;
   onEditQueued: (index: number) => void;

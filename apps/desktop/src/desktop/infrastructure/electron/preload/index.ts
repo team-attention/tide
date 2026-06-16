@@ -66,6 +66,14 @@ export interface TidePreloadSurface {
   // View-menu panel toggles (Cmd+B left rail / Cmd+E file tree / Cmd+J workbench),
   // routed from the application menu so they fire regardless of focus (webview/terminal).
   onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
+  // Global zoom (Cmd +/-/0). Main sets the host window's zoom and broadcasts the factor
+  // (1 = 100%) so the renderer mirrors it onto Browser Pane <webview> guests (which
+  // don't inherit host zoom) and shows a zoom indicator. resetZoom returns to 100%;
+  // getZoom reads the current host factor to seed the indicator on mount. Zoom is NOT
+  // persisted — the window opens at 100% each launch (main resets it on load).
+  onZoomChanged(listener: (factor: number) => void): () => void;
+  resetZoom(): void;
+  getZoom(): Promise<number>;
   // Request a native OS notification (delivered from Main). Fire-and-forget: Main applies
   // the window-focus gate and decides whether to show it.
   notify(request: TideNotificationRequest): void;
@@ -107,6 +115,12 @@ export interface TidePreloadSurface {
     branch: string | null;
     branchDeleted: boolean;
   }>;
+  branchInfo(cwd: string, branch: string): Promise<{ exists: boolean; merged: boolean }>;
+  deleteBranch(
+    cwd: string,
+    branch: string,
+    options: { force: boolean },
+  ): Promise<{ deleted: boolean; branch: string | null }>;
   gitContext(cwd: string): Promise<GitContext>;
   // Read-only uncommitted changes + a single file's diff, for the Changes view.
   gitChanges(cwd: string): Promise<GitChanges>;
@@ -149,6 +163,19 @@ export const tidePreloadSurface: TidePreloadSurface = {
     return () => {
       ipcRenderer.removeListener("tide:toggle-panel", wrapped);
     };
+  },
+  onZoomChanged(listener) {
+    const wrapped = (_event: unknown, factor: number) => listener(factor);
+    ipcRenderer.on("tide:zoom-changed", wrapped);
+    return () => {
+      ipcRenderer.removeListener("tide:zoom-changed", wrapped);
+    };
+  },
+  resetZoom() {
+    ipcRenderer.send("tide:reset-zoom");
+  },
+  getZoom() {
+    return ipcRenderer.invoke("tide:get-zoom") as Promise<number>;
   },
   notify(request) {
     ipcRenderer.send("tide:notify", request);
@@ -218,6 +245,18 @@ export const tidePreloadSurface: TidePreloadSurface = {
       worktreeRemoved: boolean;
       branch: string | null;
       branchDeleted: boolean;
+    }>;
+  },
+  branchInfo(cwd, branch) {
+    return ipcRenderer.invoke("tide:branch-info", cwd, branch) as Promise<{
+      exists: boolean;
+      merged: boolean;
+    }>;
+  },
+  deleteBranch(cwd, branch, options) {
+    return ipcRenderer.invoke("tide:delete-branch", cwd, branch, options) as Promise<{
+      deleted: boolean;
+      branch: string | null;
     }>;
   },
   gitContext(cwd) {

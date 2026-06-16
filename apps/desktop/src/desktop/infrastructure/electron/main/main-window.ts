@@ -44,7 +44,25 @@ export function createMainWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      // Don't throttle the renderer's timers when the window is occluded/hidden (e.g. Tide
+      // sits on another macOS Space). Chromium clamps a hidden page's timers (to ~1/min after
+      // a few minutes — "intensive wake-up throttling"), which would delay the coalescing
+      // flush that folds backend events into thread state and drives completion /
+      // needs-attention notifications — so a long-running background agent could finish and
+      // go unannounced for up to a minute. Background notification is a core promise of the
+      // app, so keep the off-screen renderer responsive.
+      backgroundThrottling: false,
     },
+  });
+
+  // Zoom (Cmd +/-/0) is a per-session control, NOT a persisted preference — always open
+  // at 100%. Chromium persists per-origin zoom in the session store, so a relaunch would
+  // otherwise restore the last zoom; reset it on each load (on dom-ready, before paint,
+  // so there's no flash of the prior zoom). Spec: host-zoom-shortcuts.
+  mainWindow.webContents.on("dom-ready", () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.setZoomFactor(1);
+    }
   });
 
   // Tell the renderer when native fullscreen hides the macOS traffic lights, so

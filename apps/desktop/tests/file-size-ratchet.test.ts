@@ -23,12 +23,11 @@ const MAX_LINES = 800;
 // Pinned ceilings for the known god-files (the Phase 3 decomposition backlog).
 // Each may shrink or hold, never grow. Lower these as collaborators are extracted.
 const PINNED_MAX: Record<string, number> = {
-  // +22 over the prior 1512 pin: Draft Thread lifecycle (spec: composer-draft-thread) —
-  // createDraftThread/discardDraftThread delegates + the prepareStartInPlace branch in
-  // startThread. The bodies were extracted to DraftThreadService (incl. newThreadRecord),
-  // so this is only the facade/wiring surface; the full thread-runtime-service split is
-  // still the real fix.
-  "backend/application/services/thread/thread-runtime-service.ts": 1537,
+  // Prior base 1512 + multi-step wizard stepAnswers (main) + Draft Thread lifecycle
+  // (composer-draft-thread): createDraftThread/discardDraftThread delegates + the
+  // prepareStartInPlace branch in startThread (bodies extracted to DraftThreadService,
+  // incl. newThreadRecord). The full thread-runtime-service split is still the real fix.
+  "backend/application/services/thread/thread-runtime-service.ts": 1538,
   // The inbound command switch (already at the 800 cap) gained the
   // provider.discoverCommands handler for live command mirroring, then the
   // thread.launchOptionsChanged event builder gained the applied + changedKeys

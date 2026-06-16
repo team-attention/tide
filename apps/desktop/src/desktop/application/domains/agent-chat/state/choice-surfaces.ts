@@ -613,6 +613,14 @@ function worktreeMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRow
 function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowView[] {
   const selected = String(launchOptionsForState(state)?.branch ?? "main");
   const branches = state.availableBranches ?? [];
+  // A branch checked out in a worktree can't be deleted with `git branch -d` (git
+  // refuses a branch checked out anywhere), so those get no trash — same for the
+  // current branch and remote rows. See branchDeletableFromPicker.
+  const worktreeBranches = new Set(
+    (state.availableWorktrees ?? [])
+      .map((entry) => entry.branch)
+      .filter((name): name is string => name !== null),
+  );
   const rows: AgentChatChoiceSurfaceRowView[] = [];
   if (branches.length === 0) {
     rows.push(row(`branch:${selected}`, selected, "current", undefined, "check", true));
@@ -620,21 +628,36 @@ function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowVi
     const ordered = [...branches].sort((a, b) => Number(a.kind === "remote") - Number(b.kind === "remote"));
     for (const branch of ordered) {
       const isSelected = branch.name === selected;
-      rows.push(
-        row(
-          `branch:${branch.name}`,
-          branch.name,
-          branch.current ? "current" : branch.kind,
-          undefined,
-          isSelected ? "check" : "branch",
-          isSelected,
-        ),
+      const entry = row(
+        `branch:${branch.name}`,
+        branch.name,
+        branch.current ? "current" : branch.kind,
+        undefined,
+        isSelected ? "check" : "branch",
+        isSelected,
       );
+      // Safe-to-delete only: a trailing trash opens the branch-delete dialog (the
+      // Desktop adapter special-cases the `delete-branch:` rowId). See
+      // docs_v2/specs/branch-deletion-from-picker.md.
+      if (branchDeletableFromPicker(branch, worktreeBranches)) {
+        entry.action = { rowId: `delete-branch:${branch.name}`, label: `Delete branch ${branch.name}`, icon: "trash" };
+      }
+      rows.push(entry);
     }
   }
   // Creating a branch from the Composer isn't wired yet — show it disabled.
   rows.push(row("create-branch", "Create new branch", "new worktree + branch", undefined, "plus"));
   return rows;
+}
+
+// A branch is safe to delete from the picker only when git would actually let us:
+// it's local (not a remote ref), not the checked-out branch, and not checked out
+// in any worktree. See docs_v2/specs/branch-deletion-from-picker.md.
+export function branchDeletableFromPicker(
+  branch: { name: string; kind: "local" | "remote"; current: boolean },
+  worktreeBranches: ReadonlySet<string>,
+): boolean {
+  return branch.kind === "local" && !branch.current && !worktreeBranches.has(branch.name);
 }
 
 export function basenameOf(path: string): string {

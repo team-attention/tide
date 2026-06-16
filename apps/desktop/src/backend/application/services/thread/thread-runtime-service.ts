@@ -746,6 +746,7 @@ async answerPrompt(
       value: promptAnswerValue(thread.promptState, input),
       choiceId: input.choiceId,
       promptId: input.promptId,
+      stepAnswers: input.stepAnswers,
       submittedAt: this.clock(),
     });
 

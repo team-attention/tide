@@ -3,6 +3,7 @@ import type { GitChangeFile, GitChanges, GitContext } from "./project-registry.t
 import { backendProcess, ensureBackendProcess, nextEventId, postBackendCommand } from "./backend-bridge.ts";
 import { maybeOfferMoveToApplications } from "./move-to-applications.ts";
 import { installApplicationMenu } from "./app-menu.ts";
+import { applyHostZoom } from "./zoom.ts";
 import { appRendererUrl, createMainWindow } from "./main-window.ts";
 import { registerNotificationBridge } from "./notifications.ts";
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from "electron";
@@ -198,6 +199,14 @@ ipcMain.handle("tide:open-external", async (_event, url: unknown) => {
     await shell.openExternal(url);
   }
 });
+
+// Global zoom (Cmd +/-/0). The +/- accelerators live on the application menu (so they
+// fire over a focused webview); these two handle the renderer-side affordances: the
+// zoom indicator's click resets to 100%, and a freshly (re)loaded renderer reads the
+// current factor back since host webContents zoom persists across a reload but React
+// state doesn't. `event.sender` is the host renderer that sent the message.
+ipcMain.on("tide:reset-zoom", (event) => applyHostZoom(event.sender, 1));
+ipcMain.handle("tide:get-zoom", (event) => event.sender.getZoomFactor());
 
 // Structural FileTree mutations (new file/folder, rename/move, trash). Run here in
 // Main — taking an absolute workspace `root` + relative path(s) from the renderer,
@@ -438,6 +447,33 @@ ipcMain.handle("tide:delete-worktree", async (_event, cwd: unknown, options: unk
     await writeProjectRegistry(entries);
   }
   return { entries, worktreeRemoved: removed.ok, branch, branchDeleted };
+});
+
+// Read-only facts for the standalone branch-delete dialog (does the branch exist,
+// is it merged into the cwd's HEAD). See docs_v2/specs/branch-deletion-from-picker.md.
+ipcMain.handle("tide:branch-info", async (_event, cwd: unknown, branch: unknown) => {
+  const info = { exists: false, merged: false };
+  if (typeof cwd !== "string" || cwd.length === 0 || typeof branch !== "string" || branch.length === 0) {
+    return info;
+  }
+  info.exists = (await runGit(cwd, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).trim().length > 0;
+  if (info.exists) {
+    info.merged = (await execGitArgs(branchMergedArgs(cwd, branch))).ok;
+  }
+  return info;
+});
+
+// Delete a local branch (`git branch -d`, or `-D` when the caller acknowledged
+// unmerged loss). The renderer only ever offers this for safe branches — local,
+// not checked out in the repo or any worktree — so `-d` succeeds without force in
+// the common case. See docs_v2/specs/branch-deletion-from-picker.md.
+ipcMain.handle("tide:delete-branch", async (_event, cwd: unknown, branch: unknown, options: unknown) => {
+  if (typeof cwd !== "string" || cwd.length === 0 || typeof branch !== "string" || branch.length === 0) {
+    return { deleted: false, branch: null as string | null };
+  }
+  const force = (((options ?? {}) as { force?: unknown }).force) === true;
+  const deleted = (await execGitArgs(branchDeleteArgs(cwd, branch, force))).ok;
+  return { deleted, branch };
 });
 
 // Real provider slash-commands/skills for a cwd, read from the providers' files

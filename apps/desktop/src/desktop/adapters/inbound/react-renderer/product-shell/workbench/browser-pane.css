@@ -147,18 +147,26 @@
   color: var(--tide-muted);
 }
 
-/* Offscreen host for background threads' Browser Pane webviews. Positioned far off
-   the viewport (not display:none, which would suspend rendering) so the webContents
-   stay alive and scriptable for background agents, while never visible to the user. */
+/* Background host for non-active threads' Browser Pane webviews. Kept IN the viewport
+   but visually hidden via opacity:0 (+ pointer-events:none + high z-index so nothing
+   opaque ever paints over it). This is load-bearing: a webview that is off-screen
+   (left:-10000px), display:none, visibility:hidden, or covered by an OPAQUE element
+   STOPS compositing, so capturePage() returns blank/errors — measured 2026-06-16 (spec
+   browser-pane-live-pull-vision.md, Spike B/C: opacity:0 ✅; left:-10000px / covered /
+   visibility:hidden ❌; minimize/hide/occlude still ✅). opacity:0 keeps the guest
+   compositing (and JS running) so a background agent can capture + drive it, while the
+   user sees nothing (transparent + click-through). */
 
 .background-browser-host {
   position: fixed;
-  left: -10000px;
+  left: 0;
   top: 0;
   width: 1024px;
   height: 768px;
+  opacity: 0;
   pointer-events: none;
   overflow: hidden;
+  z-index: 5000;
 }
 
 .background-browser-host__webview {

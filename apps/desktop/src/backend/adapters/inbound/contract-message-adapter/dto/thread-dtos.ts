@@ -126,5 +126,9 @@ export function toPromptStateDto(prompt: NonNullable<ThreadSnapshot["promptState
   return {
     ...prompt,
     choices: prompt.choices?.map((choice) => ({ ...choice })),
+    steps: prompt.steps?.map((step) => ({
+      ...step,
+      choices: step.choices?.map((choice) => ({ ...choice })),
+    })),
   };
 }

@@ -235,6 +235,9 @@ export interface AgentChatPromptState {
   defaultChoiceId?: string;
   // Multi-select question: the card toggles several options and submits them together.
   multiSelect?: boolean;
+  // A batched, multi-step prompt (claude AskUserQuestion). When present with length > 1 the
+  // card is a navigable wizard; single prompts omit it. See multi-step-prompt-navigation.md.
+  steps?: AgentChatPromptStep[];
   source: "pty" | "provider_signal" | "provider_hook";
 }
 
@@ -242,6 +245,21 @@ export interface AgentChatPromptChoice {
   choiceId: string;
   label: string;
   providerValue: string;
+}
+
+export interface AgentChatPromptStep {
+  stepId: string;
+  message: string;
+  choices?: AgentChatPromptChoice[];
+  defaultChoiceId?: string;
+  multiSelect?: boolean;
+}
+
+// One resolved answer in a multi-step submit; `value` is the provider-native answer
+// (a chosen option's providerValue, free text, or "" to skip).
+export interface AgentChatPromptStepAnswer {
+  stepId: string;
+  value: string;
 }
 
 export interface AgentChatProviderReadiness {
@@ -327,6 +345,8 @@ export type AgentChatBackendCommand =
         promptId: string;
         choiceId?: string;
         value?: string;
+        // A multi-step prompt (wizard) submits one answer per step here.
+        stepAnswers?: AgentChatPromptStepAnswer[];
       };
     }
   | {
