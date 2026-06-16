@@ -124,6 +124,9 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   private readonly runtimes = new Map<string, StructuredRuntimeState>();
   // Probed real command sets per (agentId:cwd) — see discoverCommands.
   private readonly commandCache = new Map<string, DiscoveredCommand[]>();
+  // In-flight probes per (agentId:cwd) so concurrent discoverCommands calls share
+  // one handshake instead of spawning redundant CLI processes.
+  private readonly inFlightProbes = new Map<string, Promise<DiscoveredCommand[]>>();
 
   constructor(input: CreateAgentIntegrationRuntimePortInput) {
     this.integrations = input.integrations;
@@ -280,62 +283,84 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     if (cached !== undefined) {
       return cached;
     }
-    const integration = this.integrations[agentId];
-    if (integration === undefined) {
-      return [];
-    }
-    const runtimeId = this.idGenerator();
-    const needsPrompt = agentId === "claude";
-    let plan: ProviderLaunchPlan;
-    try {
-      plan = await integration.buildStartPlan({
-        agentId,
-        agentBinding: { agentId },
-        scope: { kind: "project", projectId: cwd, cwd },
-        launchOptions: {},
-        initialPrompt: needsPrompt ? "tide command probe" : undefined,
-        runtimeId,
-      });
-    } catch {
-      return [];
+    // Concurrent calls for the same (agent, cwd) share one probe — don't spawn
+    // redundant CLI processes while the first handshake is still in flight.
+    const inFlight = this.inFlightProbes.get(cacheKey);
+    if (inFlight !== undefined) {
+      return inFlight;
     }
 
-    const commands = await new Promise<DiscoveredCommand[]>((resolve) => {
-      let settled = false;
-      let client: StructuredRuntimeClient | undefined;
-      const finish = (result: DiscoveredCommand[]): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        void Promise.resolve(client?.stop()).catch(() => undefined);
-        resolve(result);
-      };
-      const timer = setTimeout(() => finish([]), COMMAND_PROBE_TIMEOUT_MS);
-      const onEvent = (event: StructuredProviderEvent): void => {
-        if (event.kind === "commands") {
-          finish(event.commands);
-        }
-      };
+    const probe = (async (): Promise<DiscoveredCommand[]> => {
+      const integration = this.integrations[agentId];
+      if (integration === undefined) {
+        return [];
+      }
+      const runtimeId = this.idGenerator();
+      const needsPrompt = agentId === "claude";
+      let plan: ProviderLaunchPlan;
       try {
-        client = this.createTransportClient({
-          plan: { ...plan, env: { ...plan.env, TIDE_RUNTIME_ID: runtimeId, TIDE_AGENT_ID: agentId } },
-          threadId: `probe-${runtimeId}`,
-          runtimeId,
+        plan = await integration.buildStartPlan({
           agentId,
+          agentBinding: { agentId },
+          scope: { kind: "project", projectId: cwd, cwd },
+          launchOptions: {},
           initialPrompt: needsPrompt ? "tide command probe" : undefined,
-          onEvent,
+          runtimeId,
         });
       } catch {
-        finish([]);
+        return [];
       }
-    });
 
-    if (commands.length > 0) {
-      this.commandCache.set(cacheKey, commands);
+      const commands = await new Promise<DiscoveredCommand[]>((resolve) => {
+        let settled = false;
+        let client: StructuredRuntimeClient | undefined;
+        const finish = (result: DiscoveredCommand[]): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
+          void Promise.resolve(client?.stop()).catch(() => undefined);
+          resolve(result);
+        };
+        const timer = setTimeout(() => finish([]), COMMAND_PROBE_TIMEOUT_MS);
+        const onEvent = (event: StructuredProviderEvent): void => {
+          if (event.kind === "commands") {
+            finish(event.commands);
+          }
+        };
+        try {
+          client = this.createTransportClient({
+            plan: { ...plan, env: { ...plan.env, TIDE_RUNTIME_ID: runtimeId, TIDE_AGENT_ID: agentId } },
+            threadId: `probe-${runtimeId}`,
+            runtimeId,
+            agentId,
+            initialPrompt: needsPrompt ? "tide command probe" : undefined,
+            onEvent,
+          });
+          // If the client emitted `commands` synchronously during construction,
+          // finish() already ran with `client` still undefined — stop it now so the
+          // process isn't leaked.
+          if (settled) {
+            void Promise.resolve(client.stop()).catch(() => undefined);
+          }
+        } catch {
+          finish([]);
+        }
+      });
+
+      if (commands.length > 0) {
+        this.commandCache.set(cacheKey, commands);
+      }
+      return commands;
+    })();
+
+    this.inFlightProbes.set(cacheKey, probe);
+    try {
+      return await probe;
+    } finally {
+      this.inFlightProbes.delete(cacheKey);
     }
-    return commands;
   }
 
   private spawnRuntime(
