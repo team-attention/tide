@@ -19,8 +19,10 @@ export function createWorkbenchColumn(
   // the header band, so there is NO global tab bar in Split (Stacked keeps the 52px tab
   // strip). The workbench chrome controls (layout toggle / fullscreen / New Pane) live
   // in the fixed top-right window cluster next to the panel toggles
-  // (createWindowChromeToggles) — consistent position in every layout, never over a
-  // pane. See docs_v2/specs/workbench-dock-parity.md.
+  // (createWindowChromeToggles) — consistent position in every layout. In Split that
+  // cluster floats over the top-right pane's header, so it collapses to the "…" menu
+  // and that pane reserves room for it (corner-pane padding, product-shell.css). See
+  // docs_v2/specs/workbench-dock-parity.md.
   const splitActive =
     viewModel.editorPicker === null &&
     viewModel.workbenchLayoutMode === "split" &&

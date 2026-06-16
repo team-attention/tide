@@ -56,6 +56,16 @@
   pointer-events: auto;
 }
 
+/* Divider between the chrome trio and the panel toggles when both share one collapsed
+   "…" popover (narrow split). */
+.workbench-controls-menu__sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  background: var(--tide-line);
+  flex: 0 0 auto;
+}
+
 .workbench-controls-menu__popover {
   position: absolute;
   top: calc(100% + 4px);

@@ -6,17 +6,20 @@ import { Columns2, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelRightC
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // Fixed top-right window controls. The right group is the window-level Workbench/FileTree
-// open-close toggles (stable position regardless of which panels are open). When the
-// Workbench is open AND there's room (showWorkbenchControls — the size cap), the left
+// open-close toggles (stable position regardless of which panels are open) — always
+// visible, since they carry panel open/closed state. When the Workbench is open the left
 // group adds the workbench's own chrome: a single Stacked⇄Split toggle, fullscreen, and
-// New Pane — docked next to the panel toggles, in EVERY layout, so they read as native
-// chrome (not a floating element) and never cover a column's tabs. Below the size cap the
-// group is dropped so narrow windows keep their tabs. See workbench-dock-parity.md.
+// New Pane — docked next to the panel toggles so they read as native chrome. That trio
+// renders inline only when there's room (inlineControls); it collapses into one "…"
+// hover-menu when the column/pane it floats over is too narrow (Stacked) or in Split (it
+// floats over the narrow top-right pane), so a cramped header keeps its tabs. See
+// workbench-dock-parity.md.
 export function createWindowChromeToggles(
   viewModel: ProductShellViewModel,
   handlers: ProductShellHandlers,
   showWorkbenchControls: boolean,
   inlineControls: boolean,
+  collapseAll: boolean,
 ): ReactElement {
   const toggle = (
     label: string,
@@ -38,6 +41,16 @@ export function createWindowChromeToggles(
     </button>
   );
   const isSplit = viewModel.workbenchLayoutMode === "split";
+  // Narrow split (collapseAll): the cluster floats over a ~140px pane, too tight for
+  // separate buttons, so EVERYTHING — the chrome trio AND the panel toggles — folds into
+  // one "…". The corner pane then only reserves ~one button's width (product-shell.css).
+  if (collapseAll) {
+    return (
+      <div className="tide-window-toggles" aria-label="Window panels">
+        <WorkbenchControlsMenu isSplit={isSplit} handlers={handlers} viewModel={viewModel} includePanels />
+      </div>
+    );
+  }
   return (
     <div className="tide-window-toggles" aria-label="Window panels">
       {showWorkbenchControls ? (
@@ -99,8 +112,10 @@ export function createWindowChromeToggles(
 function WorkbenchControlsMenu(props: {
   isSplit: boolean;
   handlers: ProductShellHandlers;
+  viewModel?: ProductShellViewModel;
+  includePanels?: boolean;
 }): ReactElement {
-  const { isSplit, handlers } = props;
+  const { isSplit, handlers, viewModel, includePanels } = props;
   const [collapsed, setCollapsed] = useState(false);
   const action = (label: string, icon: ReactElement, onClick: () => void): ReactElement => (
     <button
@@ -142,6 +157,27 @@ function WorkbenchControlsMenu(props: {
         )}
         {action("Fullscreen pane", <Maximize2 size={15} strokeWidth={1.9} />, handlers.onWorkbenchFullscreenToggle)}
         {action("New Pane", <Plus size={16} strokeWidth={1.9} />, handlers.onNewWorkbenchPane)}
+        {includePanels && viewModel !== undefined ? (
+          <>
+            {/* In the fully-collapsed (narrow split) cluster the panel toggles live here
+                too, so closing the Workbench / toggling the FileTree stays reachable. */}
+            <span className="workbench-controls-menu__sep" aria-hidden />
+            {action(
+              viewModel.workbenchOpen ? "Close Workbench" : "Open Workbench",
+              viewModel.workbenchOpen ? (
+                <PanelRightClose size={15} strokeWidth={1.9} />
+              ) : (
+                <PanelRightOpen size={15} strokeWidth={1.9} />
+              ),
+              handlers.onWorkbenchToggle,
+            )}
+            {action(
+              viewModel.fileTreeOpen ? "Close FileTree" : "Open FileTree",
+              <FolderOpen size={15} strokeWidth={1.9} />,
+              handlers.onFileTreeToggle,
+            )}
+          </>
+        ) : null}
       </div>
     </div>
   );

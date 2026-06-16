@@ -18,6 +18,17 @@ type SplitDropState = {
   rect: { left: number; top: number; width: number; height: number };
 };
 
+// The leaf occupying the top-right CORNER of the split (a row node's right child, a
+// col node's top child). Its header is the one the fixed top-right window cluster
+// floats over, so it's the pane that must reserve room for the cluster. See chrome.tsx
+// + the corner-pane padding rule in product-shell.css.
+function topRightLeafPaneId(node: WorkbenchSplitNode): string {
+  if (node.type === "leaf") {
+    return node.paneId;
+  }
+  return topRightLeafPaneId(node.dir === "row" ? node.b : node.a);
+}
+
 // Nearest-edge drop zone from the cursor's relative position in a pane (center
 // band => swap).
 function computeDropZone(relX: number, relY: number): DropZone {
@@ -66,6 +77,7 @@ export function WorkbenchSplitView(props: {
   paneIcon: (kind: string) => ReactElement;
 }): ReactElement {
   const { tree, viewModel, handlers, paneIcon } = props;
+  const cornerPaneId = topRightLeafPaneId(tree);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dropRef = useRef<SplitDropState | null>(null);
   const [drag, setDrag] = useState<SplitDragState | null>(null);
@@ -123,6 +135,12 @@ export function WorkbenchSplitView(props: {
       const landed = dropRef.current;
       if (active && landed !== null) {
         handlers.onWorkbenchPaneDrop(paneId, landed.paneId, landed.zone);
+      } else if (!active) {
+        // A click (no drag) anywhere on the header focuses the pane — the WHOLE header
+        // bar is the focus target, not just the chip label. The close button stops
+        // propagation on pointerdown, so beginPaneDrag never starts there and this
+        // never fires for a close.
+        handlers.onFocusWorkbenchPane(paneId);
       }
       setDrag(null);
       commitDrop(null);
@@ -181,6 +199,7 @@ export function WorkbenchSplitView(props: {
         }
         data-pane-id={pane.paneId}
         data-pane-kind={pane.kind}
+        data-corner={pane.paneId === cornerPaneId ? "top-right" : undefined}
       >
         {/* The header is the drag handle AND carries the SAME tab chip as Stacked, so
             a pane looks identical whether it's a tab or a split header. Clicking the
@@ -194,6 +213,10 @@ export function WorkbenchSplitView(props: {
             <button
               className="workbench-tab__label"
               type="button"
+              // Focus via this button's own click — stop pointerdown so it doesn't reach
+              // the header's beginPaneDrag (no drag from the chip, no double-focus with the
+              // grip's onUp focus). The empty grip stays the drag surface.
+              onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
               onClick={() => handlers.onFocusWorkbenchPane(pane.paneId)}
             >
               <span className="workbench-tab__icon" aria-hidden>

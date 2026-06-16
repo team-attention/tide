@@ -603,7 +603,16 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     layoutVm.workbenchOpen,
     layoutVm.fileTreeOpen,
   ]);
-  const inlineWorkbenchControls = showWorkbenchControls && rightColWidth >= 400;
+  // Split: the cluster floats over the narrow top-right PANE so it collapses. When the
+  // workbench is also the rightmost column (filetree closed) that pane can be ~140px — too
+  // tight even for "…" + 2 toggles — so collapse the WHOLE cluster into one "…" there.
+  const splitActive =
+    layoutVm.workbenchLayoutMode === "split" &&
+    layoutVm.workbenchLayoutTree !== null &&
+    layoutVm.editorPicker === null &&
+    layoutVm.appChrome.visibleWorkbenchPanes.length > 1;
+  const inlineWorkbenchControls = showWorkbenchControls && !splitActive && rightColWidth >= 400;
+  const collapseChromeToDots = showWorkbenchControls && splitActive && !layoutVm.fileTreeOpen;
 
   // Cmd+P → Quick Open, Cmd+Shift+F → Content Search (active-thread only).
   const activeThreadId = shellState.activeThreadId;
@@ -676,7 +685,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           // When the workbench controls are docked in the top-right cluster it's wider,
           // so the rightmost column's header reserves more right padding (product-shell.css).
           data-workbench-controls={
-            inlineWorkbenchControls ? "inline" : showWorkbenchControls ? "menu" : "false"
+            collapseChromeToDots ? "dots" : inlineWorkbenchControls ? "inline" : showWorkbenchControls ? "menu" : "false"
           }
           // Agent chat is the flexible middle track; the other columns use
           // minmax(min, dragWidth) so they honour the dragged width when there is
@@ -716,7 +725,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         </div>
         {/* Workbench + FileTree toggles live in a single fixed cluster at the window's
             top-right, so they never jump between column headers as panels open/close. */}
-        {createWindowChromeToggles(layoutVm, handlers, showWorkbenchControls, inlineWorkbenchControls)}
+        {createWindowChromeToggles(layoutVm, handlers, showWorkbenchControls, inlineWorkbenchControls, collapseChromeToDots)}
         {/* Offscreen host keeping background threads' Browser Panes alive for their agents. */}
         <BackgroundBrowserHost panes={layoutVm.backgroundBrowserPanes} handlers={handlers} />
         {viewModel.settingsOpen
