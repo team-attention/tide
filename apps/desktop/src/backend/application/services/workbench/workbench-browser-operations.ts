@@ -209,20 +209,28 @@ export function actBrowserOutput(
         "Do not drive it; re-observe to see the current page, then continue your response or ask the user how to proceed.",
     );
   }
-  if (revision !== pane.revision) {
-    // D3 (spec: browser-pane-action-revision-race): hand the caller the CURRENT
-    // revision so it can retry once against it (e.g. when its own prior action, not a
-    // navigation, advanced the token). The agent decides — if it expects the page to
-    // have moved it should re-observe instead.
-    return failure(
-      "workbench_stale_reference",
-      `Browser Pane revision is stale. The pane is now at revision "${pane.revision}"; if it has not navigated since you observed it, retry this action with that revision.`,
-    );
-  }
   if (pane.pendingAction !== undefined) {
+    // A real conflict: an action is already in flight. The agent must let it settle and
+    // re-observe (which returns the result + a fresh revision) before driving again.
     return failure(
       "invalid_workbench_command",
       "Browser Pane already has a pending action.",
+    );
+  }
+  if (
+    revision !== pane.revision &&
+    !(revision === pane.priorRevision && pane.loading !== true)
+  ) {
+    // D5 (spec: browser-pane-live-pull-vision.md) + D3: a stale revision is rejected EXCEPT
+    // the one safe case — the caller's token is the pane's immediately-prior revision from a
+    // settled act-completion (`priorRevision`, which is cleared on navigation), i.e. the
+    // agent's OWN already-settled action advanced the token. There we auto-retry against the
+    // current revision instead of failing — that failure is what forced weak models into a
+    // close/reopen thrash. A genuinely stale token (older, or advanced by a navigation) still
+    // errors, handing back the current revision so the agent re-observes the new page.
+    return failure(
+      "workbench_stale_reference",
+      `Browser Pane revision is stale. The pane is now at revision "${pane.revision}"; if it has not navigated since you observed it, retry this action with that revision.`,
     );
   }
 
@@ -234,7 +242,10 @@ export function actBrowserOutput(
       pane.agentCursor = agentCursor;
     }
   }
-  pane.revision = idGenerator();
+  // No re-mint on the act itself (D5 "no re-mint on no-op act"): queuing an action does not
+  // change the page, so the agent's observed revision stays valid for its next act. The
+  // revision advances only when the page actually changes — on action completion
+  // (update_browser_action_result) or navigation.
   pane.updatedAt = action.requestedAt;
   thread.updatedAt = action.requestedAt;
 

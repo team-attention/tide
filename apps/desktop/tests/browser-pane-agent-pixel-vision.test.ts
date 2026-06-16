@@ -46,9 +46,18 @@ function browserThread(overrides: Partial<BrowserPaneState> = {}): ThreadRecord 
 
 test("observe mode=text returns no screenshot even when one is cached", () => {
   const thread = browserThread({ screenshot: SCREENSHOT });
-  const result = observeBrowserOutput(thread, { paneId: "p1" });
+  const result = observeBrowserOutput(thread, { paneId: "p1", mode: "text" });
   assert.equal(result.ok, true);
   assert.equal(result.ok && result.value.pane.screenshot, undefined);
+  assert.equal(result.ok && result.value.pane.bodyTextPreview, "page body text");
+});
+
+test("observe defaults to mode=both: returns BOTH the cached screenshot and the text body", () => {
+  // spec browser-pane-live-pull-vision.md D4: vision-first default when no mode is given.
+  const thread = browserThread({ screenshot: SCREENSHOT });
+  const result = observeBrowserOutput(thread, { paneId: "p1" });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.ok ? result.value.pane.screenshot : undefined, SCREENSHOT);
   assert.equal(result.ok && result.value.pane.bodyTextPreview, "page body text");
 });
 

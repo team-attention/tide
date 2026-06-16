@@ -257,9 +257,18 @@ export function WorkbenchBrowserPane(props: {
         });
       });
     };
+    webview.addEventListener("dom-ready", emitSnapshot);
     webview.addEventListener("did-finish-load", emitSnapshot);
     webview.addEventListener("did-stop-loading", emitSnapshot);
+    // Attach-race guard (spec browser-pane-live-pull-vision.md): a fast/static page can
+    // fire its load events BEFORE this effect attaches the listeners above, so the snapshot
+    // would never be captured (the blank-observe bug). If the guest is already loaded,
+    // capture once now; while it is still loading, the listeners cover it.
+    if (webview.isLoading?.() === false) {
+      emitSnapshot();
+    }
     return () => {
+      webview.removeEventListener("dom-ready", emitSnapshot);
       webview.removeEventListener("did-finish-load", emitSnapshot);
       webview.removeEventListener("did-stop-loading", emitSnapshot);
     };
@@ -528,9 +537,18 @@ function BackgroundBrowserWebView(props: {
         });
       });
     };
+    webview.addEventListener("dom-ready", emitSnapshot);
     webview.addEventListener("did-finish-load", emitSnapshot);
     webview.addEventListener("did-stop-loading", emitSnapshot);
+    // Attach-race guard (spec browser-pane-live-pull-vision.md): a fast/static page can
+    // fire its load events BEFORE this effect attaches the listeners above, so the snapshot
+    // would never be captured (the blank-observe bug). If the guest is already loaded,
+    // capture once now; while it is still loading, the listeners cover it.
+    if (webview.isLoading?.() === false) {
+      emitSnapshot();
+    }
     return () => {
+      webview.removeEventListener("dom-ready", emitSnapshot);
       webview.removeEventListener("did-finish-load", emitSnapshot);
       webview.removeEventListener("did-stop-loading", emitSnapshot);
     };
