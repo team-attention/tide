@@ -440,6 +440,33 @@ ipcMain.handle("tide:delete-worktree", async (_event, cwd: unknown, options: unk
   return { entries, worktreeRemoved: removed.ok, branch, branchDeleted };
 });
 
+// Read-only facts for the standalone branch-delete dialog (does the branch exist,
+// is it merged into the cwd's HEAD). See docs_v2/specs/branch-deletion-from-picker.md.
+ipcMain.handle("tide:branch-info", async (_event, cwd: unknown, branch: unknown) => {
+  const info = { exists: false, merged: false };
+  if (typeof cwd !== "string" || cwd.length === 0 || typeof branch !== "string" || branch.length === 0) {
+    return info;
+  }
+  info.exists = (await runGit(cwd, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).trim().length > 0;
+  if (info.exists) {
+    info.merged = (await execGitArgs(branchMergedArgs(cwd, branch))).ok;
+  }
+  return info;
+});
+
+// Delete a local branch (`git branch -d`, or `-D` when the caller acknowledged
+// unmerged loss). The renderer only ever offers this for safe branches — local,
+// not checked out in the repo or any worktree — so `-d` succeeds without force in
+// the common case. See docs_v2/specs/branch-deletion-from-picker.md.
+ipcMain.handle("tide:delete-branch", async (_event, cwd: unknown, branch: unknown, options: unknown) => {
+  if (typeof cwd !== "string" || cwd.length === 0 || typeof branch !== "string" || branch.length === 0) {
+    return { deleted: false, branch: null as string | null };
+  }
+  const force = (((options ?? {}) as { force?: unknown }).force) === true;
+  const deleted = (await execGitArgs(branchDeleteArgs(cwd, branch, force))).ok;
+  return { deleted, branch };
+});
+
 // Real provider slash-commands/skills for a cwd, read from the providers' files
 // (no provider spawn). See docs_v2/specs/provider-command-discovery.md.
 const commandDiscoveryFs: CommandFs = {

@@ -12,6 +12,7 @@ import type { AgentChatBackendEvent } from "../../../../../application/domains/a
 import type { TideThemePreference } from "../../support/theme.ts";
 import type { MenuAnchorRect, TideProductShellProps } from "../support/types.ts";
 import type { WorktreeDeleteTarget } from "../dialogs/worktree-delete-dialog.tsx";
+import type { BranchDeleteTarget } from "../dialogs/branch-delete-dialog.tsx";
 
 export interface ProductShellHandlerContext {
   props: TideProductShellProps;
@@ -37,6 +38,8 @@ export interface ProductShellHandlerContext {
   setWorktreeCreate: Dispatch<SetStateAction<{ baseCwd: string } | null>>;
   worktreeDelete: WorktreeDeleteTarget | null;
   setWorktreeDelete: Dispatch<SetStateAction<WorktreeDeleteTarget | null>>;
+  branchDelete: BranchDeleteTarget | null;
+  setBranchDelete: Dispatch<SetStateAction<BranchDeleteTarget | null>>;
   windowWidth: number;
   bodyRef: { current: HTMLDivElement | null };
   lastSubmitAtRef: { current: number };
@@ -45,6 +48,8 @@ export interface ProductShellHandlerContext {
   submitWorktreeCreate: (name: string, baseBranch: string) => void;
   openWorktreeDeleteByCwd: (cwd: string) => void;
   confirmWorktreeDelete: (keepBranch: boolean) => void;
+  openBranchDeleteByName: (cwd: string, branch: string) => void;
+  confirmBranchDelete: () => void;
   startColumnResize: (
     edge: "left" | "workbench" | "fileTree",
     event: { clientX: number; preventDefault: () => void },
