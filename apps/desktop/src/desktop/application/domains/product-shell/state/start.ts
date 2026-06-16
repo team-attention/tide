@@ -144,6 +144,51 @@ export function createStartAgentChatState(scope?: AgentChatThreadScope): AgentCh
   });
 }
 
+// Capture the Start Composer preference to remember from the current shell state —
+// the inverse of createStartAgentChatState (which restores it). Returns null when
+// there's nothing to capture: a thread is focused (not the Start Composer), or the
+// agent isn't a known one — so a focused thread's agent or a garbage value is never
+// persisted. Pure on purpose: this is the persistence DECISION (where the
+// opencode/gemini drop bug lived), unit-tested without mounting the React effect
+// that calls it.
+export function preferredStartComposerFromState(
+  state: ProductShellState,
+): PreferredStartComposer | null {
+  if (state.activeThreadId !== null) {
+    return null;
+  }
+  const startOptions = state.agentChat.composer.startOptions;
+  const agentId = startOptions.agentBinding.agentId;
+  if (!isProductShellAgentIdentity(agentId)) {
+    return null;
+  }
+  const launch = startOptions.launchOptions ?? {};
+  return {
+    agentId,
+    model: typeof launch.model === "string" ? launch.model : undefined,
+    permission: typeof launch.permission === "string" ? launch.permission : undefined,
+    reasoning: typeof launch.reasoning === "string" ? launch.reasoning : undefined,
+  };
+}
+
+// The five real agent identities the Start Composer can launch. Single source of
+// truth for "is this a known agent" guards (preference persistence) so they can't
+// drift into a stale subset — the bug that silently dropped opencode/gemini from
+// the remembered Start Composer default.
+const PRODUCT_SHELL_AGENT_IDENTITIES: ReadonlySet<string> = new Set<ProductShellAgentIdentity>([
+  "codex",
+  "claude",
+  "gemini",
+  "opencode",
+  "openai_api",
+]);
+
+export function isProductShellAgentIdentity(
+  value: string | undefined,
+): value is ProductShellAgentIdentity {
+  return value !== undefined && PRODUCT_SHELL_AGENT_IDENTITIES.has(value);
+}
+
 export function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
   if (
     agentId === "claude" ||

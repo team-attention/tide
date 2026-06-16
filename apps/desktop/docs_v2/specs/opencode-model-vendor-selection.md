@@ -211,6 +211,11 @@ makes the effort chip appear in the same round-trip.
 - The effort chip is present iff the current model reports an effort dimension.
 - Absent `agentModelCatalogs` (older backend) ⇒ single "opencode default" row, never empty.
 - opencode permission options are exactly Build/Plan.
+- The Start Composer remembers the last-picked agent + model/effort/permission across New
+  Threads and app restarts for EVERY offered agent (opencode and gemini included), exactly
+  like codex/claude. The localStorage preference is gated by `isProductShellAgentIdentity`
+  (the five real agents), never a hardcoded codex/claude/openai_api allowlist that silently
+  drops opencode/gemini.
 
 ## Tests
 
@@ -233,6 +238,10 @@ makes the effort chip appear in the same round-trip.
   `set_config_option` per change, deferring until adopted; ignores opencode path for gemini
   (gemini still uses modes/set_mode).
 - descriptor boundary: opencode permission options === Build/Plan.
+- start-composer preference: `persistPreferredStartComposer` + `loadPreferredStartComposer`
+  round-trip a `{agentId:"opencode", model:"openai/gpt-5.5", …}` (and gemini); an unknown
+  agentId loads as null; `isProductShellAgentIdentity` is true for all five agents, false
+  for undefined/unknown.
 - live verification (user-approved real turn): `opencode acp`, `session/new`,
   `set_config_option(model=openai/gpt-5.5)`, `set_config_option(effort=high)`, one
   `session/prompt`; assert turn completes and the answer comes from the selected model/effort.

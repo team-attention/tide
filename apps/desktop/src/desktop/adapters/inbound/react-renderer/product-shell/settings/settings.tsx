@@ -1,4 +1,4 @@
-import { DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS, isProductShellAgentIdentity } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { PreferredStartComposer, ProductShellListSettings, ProductShellPinnedItemRef, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
@@ -111,7 +111,7 @@ export function loadPreferredStartComposer(): PreferredStartComposer | null {
     }
     const parsed = JSON.parse(raw) as Partial<PreferredStartComposer>;
     const agentId = parsed.agentId;
-    if (agentId !== "codex" && agentId !== "claude" && agentId !== "openai_api") {
+    if (!isProductShellAgentIdentity(agentId)) {
       return null;
     }
     return {
