@@ -384,9 +384,9 @@ test("queued_messages_stay_docked_in_the_steer_stack_while_a_prompt_is_open", ()
     backendEvent("prompt.changed", { threadId: "thread-shell", prompt }),
   );
 
-  // Still docked as a "대기 중" steer chip even though a prompt is open.
+  // Still docked as a "Queued" steer chip even though a prompt is open.
   const html = renderShell(withPrompt);
-  assert.match(html, /대기 중/);
+  assert.match(html, /Queued/);
   assert.match(html, /queued one/);
 });
 
@@ -435,9 +435,9 @@ test("the_queued_row_renders_an_edit_affordance_while_a_turn_runs", () => {
   const markup = renderShell(queued);
 
   // A message queued behind a live turn docks to the Composer as a "steer" chip
-  // (Codex-style): the "대기 중" badge plus an edit affordance to fix it before it
+  // (Codex-style): the "Queued" badge plus an edit affordance to fix it before it
   // runs.
-  assert.ok(markup.includes("대기 중"));
+  assert.ok(markup.includes("Queued"));
   assert.ok(markup.includes("composer-steer"));
   assert.ok(markup.includes("Edit queued message"));
 });

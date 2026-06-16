@@ -2104,24 +2104,24 @@ test("submitting_during_a_running_turn_shows_a_queued_row_then_clears_on_flush",
   const drafted = updateProductShellComposerDraft(running, "follow up while busy");
   const submitted = submitProductShellComposerDraft(drafted);
 
-  // Queued behind the live turn: composer.sendInput + the "대기 중" badge (the agent
+  // Queued behind the live turn: composer.sendInput + the "Queued" badge (the agent
   // is genuinely running).
   assert.equal(submitted.command?.kind, "composer.sendInput");
   assert.deepEqual(createProductShellViewModel(submitted.state).agentChat.queuedInputs, [
     "follow up while busy",
   ]);
   const queuedHtml = renderProductShell(submitted.state);
-  assert.match(queuedHtml, /대기 중/);
+  assert.match(queuedHtml, /Queued/);
   assert.match(queuedHtml, /follow up while busy/);
 
   // An idle send (no live turn) shows the same optimistic row WITHOUT the badge — the
-  // message just goes in; "대기 중" only means "waiting behind a running turn".
+  // message just goes in; "Queued" only means "waiting behind a running turn".
   const idle = openProductShellThread(createProductShellState(), "thread-workbench");
   const idleSubmitted = submitProductShellComposerDraft(
     updateProductShellComposerDraft(idle, "send while idle"),
   );
   const idleHtml = renderProductShell(idleSubmitted.state);
-  assert.doesNotMatch(idleHtml, /대기 중/);
+  assert.doesNotMatch(idleHtml, /Queued/);
   assert.match(idleHtml, /send while idle/);
 
   // The backend is authoritative: when it flushes the queued input, the turn's
