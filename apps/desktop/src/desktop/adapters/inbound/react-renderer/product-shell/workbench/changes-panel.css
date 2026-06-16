@@ -145,15 +145,19 @@
 .changes-panel__body {
   display: grid;
   /* Fallback; the component sets the live `<list>px 6px 1fr` inline so the list is
-     drag-resizable. */
+     drag-resizable. Collapse animates this track set (list + handle → 0). */
   grid-template-columns: 240px 6px 1fr;
   flex: 1 1 auto;
   min-height: 0;
+  transition: grid-template-columns 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Collapsed file list: the diff takes the full pane width (GitHub "hide file tree"). */
-.changes-panel__body--list-collapsed {
-  grid-template-columns: 1fr;
+/* Collapsed file list: the diff takes the full pane width (GitHub "hide file tree"). The
+   list/handle tracks animate to 0 (inline grid) while their contents fade out, so the
+   diff slides open instead of snapping. */
+.changes-panel__body--list-collapsed .changes-panel__files,
+.changes-panel__body--list-collapsed .changes-panel__resize {
+  opacity: 0;
 }
 
 /* Drag divider between the file list and the diff (resizable file list). A thin grid
@@ -162,7 +166,7 @@
   align-self: stretch;
   cursor: col-resize;
   background: transparent;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, opacity 140ms ease;
 }
 
 .changes-panel__resize:hover,
@@ -174,8 +178,10 @@
   margin: 0;
   padding: 6px;
   list-style: none;
+  overflow-x: hidden; /* clip cleanly as the track animates to 0 width on collapse */
   overflow-y: auto;
   border-right: 1px solid var(--tide-line);
+  transition: opacity 140ms ease;
 }
 
 .changes-panel__clean {
@@ -266,8 +272,23 @@
   border-radius: 0;
 }
 
-.changes-panel__diff .workbench-diff-row {
+/* Long lines scroll horizontally (text rule below). The body grows to the longest line
+   so every row shares ONE width; each changed row's background then spans the full scroll
+   width as a uniform band, instead of ending at its own (shorter) content width — which
+   read as ragged/broken coloring once the diff was scrolled right (the reported bug).
+   The sticky stat sticks to the left too, so it keeps covering the viewport while
+   scrolling horizontally rather than leaving a gap on its right. */
+.changes-panel__diff .workbench-diff__stat {
+  left: 0;
+}
+
+.changes-panel__diff .workbench-diff__body {
   width: max-content;
+  min-width: 100%;
+}
+
+.changes-panel__diff .workbench-diff-row {
+  width: 100%;
   min-width: 100%;
 }
 

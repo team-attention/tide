@@ -37,6 +37,10 @@ export function ChangesPanel(props: {
   // takes the full pane width. Renderer-local view state (not persisted).
   const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH);
   const [listCollapsed, setListCollapsed] = useState(false);
+  // Active resize drag: pointer x + list width captured at pointerdown, null when idle.
+  // Drives the live width and gates the collapse transition (the animation must not fight
+  // a live drag, or the divider rubber-bands over the 220ms ease).
+  const [dragStart, setDragStart] = useState<{ x: number; width: number } | null>(null);
   const { isGitRepo, branch, files } = data;
   const totalAdd = files.reduce((sum, file) => sum + (file.additions ?? 0), 0);
   const totalDel = files.reduce((sum, file) => sum + (file.deletions ?? 0), 0);
@@ -94,22 +98,26 @@ export function ChangesPanel(props: {
   }, [selected, cwd]);
 
   // Drag the divider to resize the file list (clamped so it can't crowd out the diff or
-  // shrink past legibility). Listens on window so the drag survives the pointer leaving
-  // the thin handle.
+  // shrink past legibility). Pointer capture — rather than window listeners — keeps the
+  // handle receiving move/up events even when the pointer leaves its thin width, and lets
+  // React tear these element handlers down on unmount, so a drag interrupted by the pane
+  // closing can't leak a window listener. pointercancel ends the drag like pointerup.
   function startResize(event: ReactPointerEvent): void {
     event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = listWidth;
-    const onMove = (move: PointerEvent): void => {
-      const next = startWidth + (move.clientX - startX);
-      setListWidth(Math.max(MIN_LIST_WIDTH, Math.min(MAX_LIST_WIDTH, next)));
-    };
-    const onUp = (): void => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragStart({ x: event.clientX, width: listWidth });
+  }
+
+  function moveResize(event: ReactPointerEvent): void {
+    if (dragStart === null) {
+      return;
+    }
+    const next = dragStart.width + (event.clientX - dragStart.x);
+    setListWidth(Math.max(MIN_LIST_WIDTH, Math.min(MAX_LIST_WIDTH, next)));
+  }
+
+  function endResize(): void {
+    setDragStart(null);
   }
 
   return (
@@ -157,62 +165,68 @@ export function ChangesPanel(props: {
       </header>
       <div
         className={`changes-panel__body${listCollapsed ? " changes-panel__body--list-collapsed" : ""}`}
-        style={
-          listCollapsed
-            ? undefined
-            : { gridTemplateColumns: `${listWidth}px ${RESIZE_HANDLE_WIDTH}px 1fr` }
-        }
+        style={{
+          // Always three tracks so the collapse interpolates (3↔1 track counts can't).
+          // Collapsed shrinks the list + handle to 0; the diff (1fr) grows to fill.
+          gridTemplateColumns: listCollapsed
+            ? "0px 0px 1fr"
+            : `${listWidth}px ${RESIZE_HANDLE_WIDTH}px 1fr`,
+          transition: dragStart ? "none" : undefined,
+        }}
       >
-        {listCollapsed ? null : (
-          <>
-            <ul className="changes-panel__files">
-              {files.length === 0 ? (
-                <li className="changes-panel__clean">
-                  {isGitRepo ? "Working tree clean — no uncommitted changes." : "Not a git repository."}
-                </li>
-              ) : (
-                files.map((file) => (
-                  <li key={file.path}>
-                    <button
-                      type="button"
-                      className={`changes-panel__file${file.path === selected ? " changes-panel__file--active" : ""}`}
-                      onClick={() => setSelected(file.path)}
-                      title={file.path}
-                    >
-                      <span
-                        className={`changes-panel__status changes-panel__status--${file.status}`}
-                        aria-hidden
-                      >
-                        {STATUS_LABEL[file.status]}
-                      </span>
-                      <span className="changes-panel__file-name">{fileName(file.path)}</span>
-                      {fileDir(file.path) ? (
-                        <span className="changes-panel__file-dir">{fileDir(file.path)}</span>
+        {/* The list + handle stay mounted (so they can animate); when collapsed they clip
+            to a 0-width track, fade out, and drop out of the focus/AT tree via inert. */}
+        <ul className="changes-panel__files" aria-hidden={listCollapsed || undefined} inert={listCollapsed}>
+          {files.length === 0 ? (
+            <li className="changes-panel__clean">
+              {isGitRepo ? "Working tree clean — no uncommitted changes." : "Not a git repository."}
+            </li>
+          ) : (
+            files.map((file) => (
+              <li key={file.path}>
+                <button
+                  type="button"
+                  className={`changes-panel__file${file.path === selected ? " changes-panel__file--active" : ""}`}
+                  onClick={() => setSelected(file.path)}
+                  title={file.path}
+                >
+                  <span
+                    className={`changes-panel__status changes-panel__status--${file.status}`}
+                    aria-hidden
+                  >
+                    {STATUS_LABEL[file.status]}
+                  </span>
+                  <span className="changes-panel__file-name">{fileName(file.path)}</span>
+                  {fileDir(file.path) ? (
+                    <span className="changes-panel__file-dir">{fileDir(file.path)}</span>
+                  ) : null}
+                  {(file.additions ?? 0) > 0 || (file.deletions ?? 0) > 0 ? (
+                    <span className="changes-panel__file-stat">
+                      {(file.additions ?? 0) > 0 ? (
+                        <span className="changes-panel__add">{`+${file.additions}`}</span>
                       ) : null}
-                      {(file.additions ?? 0) > 0 || (file.deletions ?? 0) > 0 ? (
-                        <span className="changes-panel__file-stat">
-                          {(file.additions ?? 0) > 0 ? (
-                            <span className="changes-panel__add">{`+${file.additions}`}</span>
-                          ) : null}
-                          {(file.deletions ?? 0) > 0 ? (
-                            <span className="changes-panel__del">{`−${file.deletions}`}</span>
-                          ) : null}
-                        </span>
+                      {(file.deletions ?? 0) > 0 ? (
+                        <span className="changes-panel__del">{`−${file.deletions}`}</span>
                       ) : null}
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
-            <div
-              className="changes-panel__resize"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize file list"
-              onPointerDown={startResize}
-            />
-          </>
-        )}
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+        <div
+          className="changes-panel__resize"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize file list"
+          aria-hidden={listCollapsed || undefined}
+          inert={listCollapsed}
+          onPointerDown={startResize}
+          onPointerMove={moveResize}
+          onPointerUp={endResize}
+          onPointerCancel={endResize}
+        />
         <div className="changes-panel__diff">
           {selected === null ? (
             <div className="changes-panel__diff-empty">Select a file to view its diff.</div>
