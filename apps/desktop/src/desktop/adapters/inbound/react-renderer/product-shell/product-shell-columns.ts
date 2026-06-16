@@ -58,5 +58,10 @@ export const FileTreeColumnView = memo(function FileTreeColumnView(props: {
   handlers: ProductShellHandlers;
 }): ReactElement {
   const fileTree = useProductShellSlice(selectFileTreeViewModel);
-  return createFileTreeColumn({ fileTree }, props.handlers);
+  // Transient FileTree state (inline edit / context menu / error notice) is read as
+  // its own slices so the tree re-renders when they change.
+  const fileTreeEdit = useProductShellSlice((state) => state.fileTreeEdit);
+  const fileTreeMenu = useProductShellSlice((state) => state.fileTreeMenu);
+  const fileTreeNotice = useProductShellSlice((state) => state.fileTreeNotice);
+  return createFileTreeColumn({ fileTree, fileTreeEdit, fileTreeMenu, fileTreeNotice }, props.handlers);
 });

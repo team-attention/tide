@@ -1,5 +1,6 @@
 import type { ProductShellEditorDraft, ProductShellStartPageFile, ProductShellState, ProductShellUpdateResult } from "./types.ts";
-import { isStartFilePaneId, startFilePaneId } from "./types.ts";
+import { isStartFilePaneId, isUntitledPaneId, startFilePaneId } from "./types.ts";
+import { editProductShellUntitledFile, requestProductShellUntitledSaveAs } from "./untitled-files.ts";
 import type { AppChromeEditorNavigationTarget, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 
 // The open start-page file backing a given synthetic editor pane id (per-file).
@@ -79,6 +80,11 @@ export function editProductShellWorkbenchEditorPane(
   paneId: string,
   content: string,
 ): ProductShellState {
+  // Untitled (blank, not-yet-saved) file: the buffer lives in untitledFiles, shown
+  // in both thread and start contexts.
+  if (isUntitledPaneId(paneId)) {
+    return editProductShellUntitledFile(state, paneId, content);
+  }
   // Start-page editor: the open file lives in startPageFiles (there is no
   // thread-bound pane before a thread exists). Track edits on the matching file;
   // the view-model re-derives that tab's buffer from it.
@@ -319,6 +325,11 @@ export function saveProductShellWorkbenchEditorPane(
   state: ProductShellState,
   paneId: string,
 ): ProductShellUpdateResult {
+  // Untitled (blank) file: Cmd+S opens the Save As name bar instead of writing — the
+  // file has no name/path on disk yet. The handler resolves the typed name.
+  if (isUntitledPaneId(paneId)) {
+    return { state: requestProductShellUntitledSaveAs(state, paneId), command: null };
+  }
   // Start-page editor save: there is no thread to host save_editor_file, so write
   // the file thread-independently under the composer cwd (spec:
   // start-page-file-viewer). The fileSaved event re-bases the editor.

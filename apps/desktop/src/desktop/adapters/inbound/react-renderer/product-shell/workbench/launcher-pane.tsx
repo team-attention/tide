@@ -1,7 +1,6 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
-import { useState } from "react";
 import { ExternalLink, FilePlus, FileText, FolderOpen, GitBranchPlus, Square, Terminal } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
@@ -29,23 +28,10 @@ export function WorkbenchLauncherPane(props: {
   handlers: ProductShellHandlers;
 }): ReactElement {
   const actions = props.pane.actions ?? [];
-  // New File is a renderer-handled launcher action (create + open a blank file under
-  // the current folder), so it appears on every launcher — the empty Workbench default
-  // and a backend launcher alike (spec: workbench-new-file.md). It toggles an inline
-  // path input; Enter hands the path to onCreateFile, which opens it in an Editor Pane.
-  const [newFileActive, setNewFileActive] = useState(false);
-  const [newFileDraft, setNewFileDraft] = useState("");
-  const closeNewFile = () => {
-    setNewFileActive(false);
-    setNewFileDraft("");
-  };
-  const submitNewFile = () => {
-    const path = newFileDraft.trim();
-    if (path.length > 0) {
-      props.handlers.onCreateFile(path);
-    }
-    closeNewFile();
-  };
+  // New File is a renderer-handled launcher action, so it appears on every launcher —
+  // the empty Workbench default and a backend launcher alike. It opens a blank untitled
+  // editor (named on save, VSCode-style), the same as the FileTree's New File (spec:
+  // workbench-filetree-file-operations).
   return (
     <div className="workbench-pane-content workbench-pane-content--launcher">
       <p className="workbench-launcher-hint">Open a pane</p>
@@ -72,38 +58,17 @@ export function WorkbenchLauncherPane(props: {
           className="workbench-launcher-action"
           type="button"
           data-launcher-action="new_file"
-          onClick={() => setNewFileActive(true)}
+          onClick={() => props.handlers.onNewUntitledFile()}
         >
           <span className="workbench-launcher-action__icon" aria-hidden>
             <FilePlus size={15} strokeWidth={1.9} />
           </span>
           <span className="workbench-launcher-action__copy">
             <span className="workbench-launcher-action__label">New file</span>
-            <span className="workbench-launcher-action__description">Create a new file in the current folder</span>
+            <span className="workbench-launcher-action__description">Open a blank file (name it when you save)</span>
           </span>
         </button>
       </div>
-      {newFileActive ? (
-        <input
-          className="workbench-launcher-new-file-input"
-          autoFocus
-          spellCheck={false}
-          placeholder="new-file.txt — Enter to create"
-          aria-label="New file path"
-          value={newFileDraft}
-          onChange={(event) => setNewFileDraft(event.currentTarget.value)}
-          onBlur={closeNewFile}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              submitNewFile();
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              closeNewFile();
-            }
-          }}
-        />
-      ) : null}
     </div>
   );
 }
