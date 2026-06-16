@@ -104,7 +104,10 @@ export function applyAgentChatBackendEvent(
       const changedKeys = payload.changedKeys ?? [];
       const feedbackState: LaunchOptionFeedback["state"] =
         payload.applied === "live" ? "applied" : "pending";
-      const at = Date.now();
+      // A deterministic, monotonically increasing token (NOT Date.now() — the
+      // reducer stays pure) so a repeat change to the same chip re-arms its flash.
+      const at =
+        Math.max(0, ...Object.values(state.launchOptionFeedback).map((f) => f.at)) + 1;
       const feedback =
         changedKeys.length === 0
           ? state.launchOptionFeedback

@@ -223,6 +223,8 @@ export function createComposer(
 // transparent restart applies it on the next send: a persistent muted badge that the
 // reducer clears at the next turn start. See
 // docs_v2/specs/mid-thread-launch-option-feedback.md.
+// Unmount reclaims the chip width once the flash has faded out; MUST match the
+// composer-chip-feedback-flash animation duration in composer.css.
 const APPLIED_FLASH_MS = 2400;
 
 function ChipFeedbackBadge({ feedback }: { feedback: LaunchOptionFeedback | undefined }): ReactElement | null {

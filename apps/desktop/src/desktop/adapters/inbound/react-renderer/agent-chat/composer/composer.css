@@ -319,7 +319,11 @@
 .composer-shell__chip-feedback--applied {
   color: var(--tide-diff-add);
   font-weight: 600;
-  animation: composer-chip-feedback-in 0.16s ease both;
+  /* Full-lifetime flash: fade in, hold, then fade out at the end — so the badge
+     leaves smoothly instead of being yanked when the component unmounts. The
+     duration MUST match APPLIED_FLASH_MS in composer.tsx (the unmount that reclaims
+     the chip width fires right as this finishes). */
+  animation: composer-chip-feedback-flash 2400ms ease both;
 }
 
 .composer-shell__chip-feedback--pending {
@@ -330,13 +334,21 @@
   background: var(--tide-selection);
 }
 
-@keyframes composer-chip-feedback-in {
-  from {
+@keyframes composer-chip-feedback-flash {
+  0% {
     opacity: 0;
     transform: translateY(1px);
   }
-  to {
+  7% {
     opacity: 1;
+    transform: translateY(0);
+  }
+  90% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
     transform: translateY(0);
   }
 }
