@@ -308,6 +308,10 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       askUserQuestion: { questions, answers, index },
     });
     const total = questions.length;
+    // A multiSelect question lets the user pick several options; the card submits them
+    // joined as the free-text answer (claude records the joined labels). See the answer
+    // path below (no STRUCTURED_OPTION_PREFIX ⇒ accepted verbatim).
+    const multiSelect = question?.multiSelect === true;
     const promptState = {
       promptId,
       threadId: this.threadId,
@@ -317,6 +321,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       message: total > 1 ? `(${index + 1}/${total}) ${questionText}` : questionText,
       choices: optionChoices,
       defaultChoiceId: optionChoices[0]?.choiceId,
+      ...(multiSelect ? { multiSelect: true } : {}),
       source: "provider_hook" as const,
     };
     // Defer the emit: a follow-up question (Q2…) is surfaced WHILE the previous

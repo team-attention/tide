@@ -3,9 +3,9 @@
 // measurement and the global search keyboard shortcuts.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { setProductShellGitContext } from "../../../../../application/domains/product-shell/product-shell.ts";
-import type { ProductShellBackendCommand, ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
-import type { GitChangesResult, ProjectRegistryBridge } from "./types.ts";
+import { setProductShellGitContext, toggleProductShellWorkbenchFullscreen } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { ProductShellBackendCommand, ProductShellState, ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { GitChangesResult, ProductShellHandlers, ProjectRegistryBridge } from "./types.ts";
 
 // Measures the rightmost mounted column — the one the fixed top-right chrome cluster
 // floats over — so the chrome can decide inline vs collapsed controls. A grid-track
@@ -158,21 +158,27 @@ export function useCloseIntentFromMenu(params: {
   }, []);
 }
 
-// Escape for the two surfaces that don't manage their own: Workbench fullscreen and
-// the Settings modal. (Quick Open / Content Search / worktree dialogs already close
-// themselves on Escape.) Each listener subscribes only while its surface is open.
+// Escape for the surfaces that don't manage their own: Workbench fullscreen, the
+// Settings modal, and — as a last resort — interrupting a running agent turn (spec:
+// esc-interrupts-run.md). (Quick Open / Content Search / worktree dialogs / composer
+// popovers already close themselves on Escape.) Each listener subscribes only while
+// its condition holds. The interrupt listener is gated by `interruptSuppressed` so it
+// YIELDS to any open transient UI (which owns Escape), never stealing it.
 export function useEscapeShortcuts(params: {
   workbenchFullscreen: boolean;
   onExitFullscreen: () => void;
   settingsOpen: boolean;
   onCloseSettings: () => void;
+  agentRunning: boolean;
+  interruptSuppressed: boolean;
+  onInterrupt: () => void;
 }): void {
-  const { workbenchFullscreen, onExitFullscreen, settingsOpen, onCloseSettings } = params;
+  const { workbenchFullscreen, onExitFullscreen, settingsOpen, onCloseSettings, agentRunning, interruptSuppressed, onInterrupt } = params;
   // Hold the latest callbacks in a ref (refreshed in the commit phase) so the listeners
   // re-bind only when their open flag flips, with no stale-closure risk. Review feedback.
-  const latest = useRef({ onExitFullscreen, onCloseSettings });
+  const latest = useRef({ onExitFullscreen, onCloseSettings, onInterrupt });
   useEffect(() => {
-    latest.current = { onExitFullscreen, onCloseSettings };
+    latest.current = { onExitFullscreen, onCloseSettings, onInterrupt };
   });
   useEffect(() => {
     if (!workbenchFullscreen) {
@@ -200,6 +206,48 @@ export function useEscapeShortcuts(params: {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [settingsOpen]);
+  useEffect(() => {
+    // Only while a turn is actually running and no transient UI is open — so Escape
+    // first closes any popover/dialog/modal, and only otherwise stops the agent.
+    if (!agentRunning || interruptSuppressed) {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.isComposing) {
+        event.preventDefault();
+        latest.current.onInterrupt();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [agentRunning, interruptSuppressed]);
+}
+
+// Product Shell wiring for useEscapeShortcuts: exit Workbench fullscreen / close the
+// Settings modal / interrupt a running turn — the interrupt yields to any open transient
+// UI (`otherOverlaysOpen` = Quick Open / Content Search / worktree dialogs, plus
+// fullscreen / Settings / the composer surface read from state here). Extracted from
+// product-shell.tsx for the size cap. Spec: esc-interrupts-run.md.
+export function useProductShellEscape(
+  shellState: ProductShellState,
+  setShellState: Dispatch<SetStateAction<ProductShellState>>,
+  viewModel: ProductShellViewModel,
+  handlers: Pick<ProductShellHandlers, "onCloseSettings" | "onInterrupt">,
+  otherOverlaysOpen: boolean,
+): void {
+  useEscapeShortcuts({
+    workbenchFullscreen: shellState.workbenchFullscreen,
+    onExitFullscreen: () => setShellState((state) => toggleProductShellWorkbenchFullscreen(state)),
+    settingsOpen: shellState.settingsOpen,
+    onCloseSettings: handlers.onCloseSettings,
+    agentRunning: viewModel.agentChat.chatState === "running",
+    interruptSuppressed:
+      otherOverlaysOpen ||
+      shellState.settingsOpen ||
+      shellState.workbenchFullscreen ||
+      viewModel.agentChat.composer.activeSurface !== null,
+    onInterrupt: handlers.onInterrupt,
+  });
 }
 
 export interface GitChangesView {

@@ -233,6 +233,9 @@ export class WorkbenchFileOperations {
       root,
       path: filePath,
       byteLimit: fileByteLimit(input?.byteLimit),
+      // New File in a thread: open_editor carries `create:true` to touch a missing file
+      // before opening it (spec: workbench-new-file.md).
+      create: input?.create === true,
     });
     if (!read.ok) {
       return failure(read.error.code, read.error.message);

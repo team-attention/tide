@@ -176,7 +176,9 @@ export function answerPromptText(
     return { state, command: null };
   }
   return {
-    state: { ...state, promptState: null, composer: { ...state.composer, draft: "" } },
+    // Keep the composer draft: the answer (`value`) is the prompt card's own field, not
+    // the composer — clearing it would wipe an in-progress follow-up (spec).
+    state: { ...state, promptState: null },
     command: {
       kind: "prompt.answer",
       payload: {

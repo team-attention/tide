@@ -220,6 +220,8 @@ export interface AgentChatPromptState {
   message: string;
   choices?: AgentChatPromptChoice[];
   defaultChoiceId?: string;
+  // Multi-select question: the card toggles several options and submits them together.
+  multiSelect?: boolean;
   source: "pty" | "provider_signal" | "provider_hook";
 }
 
@@ -436,6 +438,9 @@ export interface AgentChatOpencodeConnectVendorView {
   monogram: string;
   connected: boolean;
   popular: boolean;
+  // Connected but opencode serves no models for it (e.g. expired auth) ⇒ the tile is
+  // clickable and labeled "Reconnect" (spec: opencode-vendor-reconnect.md).
+  needsReconnect: boolean;
 }
 
 // The opencode "Connect a model" panel data: Zen free-model count, how many vendors

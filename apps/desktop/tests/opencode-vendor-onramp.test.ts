@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildOpencodeVendors,
   parseOpencodeAuthList,
+  reconcileVendorUsability,
 } from "../src/backend/infrastructure/node/provider/opencode-vendor-catalog.ts";
 import { createOpencodeAuthServer } from "../src/backend/infrastructure/node/provider/opencode-auth-server.ts";
 import {
@@ -102,7 +103,53 @@ test("buildOpencodeVendors de-dupes a vendor with multiple credentials (no dupli
   assert.equal(new Set(vendors.map((vendor) => vendor.id)).size, vendors.length);
 });
 
+// ---- backend: reconcile connected vendors against the model catalog ----
+
+test("reconcileVendorUsability flags a connected vendor with no models as usable:false", () => {
+  // openai has models in the catalog; anthropic is connected (auth list) but absent
+  // from `opencode models` (e.g. expired OAuth) → not usable.
+  const vendors = buildOpencodeVendors([
+    { name: "OpenAI", method: "oauth" },
+    { name: "Anthropic", method: "oauth" },
+  ]);
+  const reconciled = reconcileVendorUsability(vendors, [
+    { vendor: "openai" },
+    { vendor: "opencode" },
+  ]);
+  assert.equal(reconciled.find((vendor) => vendor.id === "openai")?.usable, true);
+  assert.equal(reconciled.find((vendor) => vendor.id === "anthropic")?.usable, false);
+  // A non-connected curated tile is left untouched (no usable flag forced on).
+  assert.equal(reconciled.find((vendor) => vendor.id === "google")?.usable, undefined);
+});
+
+test("reconcileVendorUsability leaves vendors untouched when the catalog is empty (no signal)", () => {
+  const vendors = buildOpencodeVendors([{ name: "Anthropic", method: "oauth" }]);
+  const reconciled = reconcileVendorUsability(vendors, []);
+  assert.equal(reconciled.find((vendor) => vendor.id === "anthropic")?.usable, undefined);
+});
+
 // ---- desktop: "is opencode usable" gate ----
+
+test("isOpencodeUsable is false when the only connected vendor is unusable (expired) and no concrete model", () => {
+  resetOnrampState();
+  setOpencodeVendors([{ id: "anthropic", label: "Anthropic", connected: true, popular: true, usable: false }]);
+  assert.equal(isOpencodeUsable(), false);
+  resetOnrampState();
+});
+
+test("buildOpencodeConnectSurface marks an unusable connected vendor needsReconnect", () => {
+  resetOnrampState();
+  setOpencodeVendors([
+    { id: "openai", label: "OpenAI", connected: true, popular: true, usable: true },
+    { id: "anthropic", label: "Anthropic", connected: true, popular: true, usable: false },
+  ]);
+  const surface = buildOpencodeConnectSurface(true);
+  const anthropic = surface.opencodeConnect?.vendors.find((vendor) => vendor.id === "anthropic");
+  const openai = surface.opencodeConnect?.vendors.find((vendor) => vendor.id === "openai");
+  assert.equal(anthropic?.needsReconnect, true);
+  assert.equal(openai?.needsReconnect, false);
+  resetOnrampState();
+});
 
 test("isOpencodeUsable is false with no vendors and only the default model", () => {
   resetOnrampState();

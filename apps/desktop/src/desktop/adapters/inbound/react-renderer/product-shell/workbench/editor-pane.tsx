@@ -2,6 +2,7 @@ import type { ProductShellViewModel } from "../../../../../application/domains/p
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
 import { WorkbenchMarkdownView } from "./markdown-view.tsx";
+import { WorkbenchHtmlView } from "./html-view.tsx";
 import { WorkbenchCodeEditor } from "./code-editor.tsx";
 import { javascript } from "@codemirror/lang-javascript";
 import { json as jsonLanguage } from "@codemirror/lang-json";
@@ -30,8 +31,9 @@ export function WorkbenchEditorPane(props: {
   const value = props.draft?.content ?? props.pane.bodyText ?? props.pane.bodyTextPreview ?? "";
   const language = inferEditorLanguage(props.pane.relativePath ?? props.pane.filePath);
   const isMarkdown = language === "markdown";
-  // The file-path breadcrumb. For markdown it rides INSIDE the view's header row
-  // (alongside Preview/Edit/Pick) so the controls sit in the path bar — one row,
+  const isHtml = language === "html";
+  // The file-path breadcrumb. For markdown/html it rides INSIDE the view's header row
+  // (alongside the Preview/Code toggle) so the controls sit in the path bar — one row,
   // like the Browser Pane's address bar. For code it stays a standalone path bar.
   const breadcrumb = createEditorBreadcrumb(props.pane, props.draft?.dirty === true);
   return (
@@ -46,6 +48,18 @@ export function WorkbenchEditorPane(props: {
           readOnly={readOnly}
           dirty={props.draft?.dirty === true}
           revision={props.pane.revision}
+          relativePath={props.pane.relativePath ?? props.pane.filePath}
+          breadcrumb={breadcrumb}
+          handlers={props.handlers}
+        />
+      ) : isHtml ? (
+        <WorkbenchHtmlView
+          paneId={props.pane.paneId}
+          value={value}
+          readOnly={readOnly}
+          dirty={props.draft?.dirty === true}
+          revision={props.pane.revision}
+          filePath={props.pane.filePath}
           relativePath={props.pane.relativePath ?? props.pane.filePath}
           breadcrumb={breadcrumb}
           handlers={props.handlers}

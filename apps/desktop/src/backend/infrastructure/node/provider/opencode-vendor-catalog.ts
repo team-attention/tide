@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 
-import type { OpencodeEnvironmentDto, OpencodeVendorDto } from "../../../../shared/contracts/index.ts";
+import type { OpencodeEnvironmentDto, OpencodeVendorDto, ProviderModelDto } from "../../../../shared/contracts/index.ts";
 
 // The opencode vendor on-ramp's backend source (spec: opencode-vendor-onramp.md).
 // Reads opencode's OWN machine-global auth (`opencode auth list`,
@@ -108,6 +108,30 @@ export function buildOpencodeVendors(entries: OpencodeAuthEntry[]): OpencodeVend
     vendors.push({ id, label: entry.name, connected: true, method: entry.method, popular: false });
   });
   return vendors;
+}
+
+// Reconcile each CONNECTED vendor's `usable` flag against what opencode can actually
+// serve. `opencode auth list` reports a credential's existence; `opencode models`
+// reports which providers it can run. A credential that yields no enumerable models
+// (e.g. an expired OAuth token) is connected-but-unusable ⇒ the on-ramp shows
+// "Reconnect" instead of a misleading "Connected" (spec: opencode-vendor-reconnect.md).
+// If the catalog is empty (e.g. `opencode models` failed/timed out) we cannot judge,
+// so connected vendors are left untouched — never a spurious "Reconnect".
+export function reconcileVendorUsability(
+  vendors: OpencodeVendorDto[],
+  models: ReadonlyArray<Pick<ProviderModelDto, "vendor">>,
+): OpencodeVendorDto[] {
+  const vendorIdsWithModels = new Set(
+    models
+      .map((model) => model.vendor)
+      .filter((vendor): vendor is string => typeof vendor === "string" && vendor.length > 0),
+  );
+  if (vendorIdsWithModels.size === 0) {
+    return vendors;
+  }
+  return vendors.map((vendor) =>
+    vendor.connected ? { ...vendor, usable: vendorIdsWithModels.has(vendor.id) } : vendor,
+  );
 }
 
 const CACHE_TTL_MS = 60_000;

@@ -11,7 +11,7 @@ import type { WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx"
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
-import { useActivateThreadFromMain, useCloseIntentFromMenu, useEscapeShortcuts, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
+import { useActivateThreadFromMain, useCloseIntentFromMenu, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useProductShellEscape, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
 import { useMultitaskNavigation } from "./multitask/use-multitask-navigation.tsx";
 import { RailPeek } from "./left-rail/rail-peek.tsx";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
@@ -39,7 +39,6 @@ import {
   startNewProductShellThread,
   refreshStartPageFileTree,
   searchProductShellContentCommand,
-  toggleProductShellWorkbenchFullscreen,
   setPreferredStartComposer,
   preferredStartComposerFromState,
   type PreferredStartComposer,
@@ -649,14 +648,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Cmd+B / Cmd+E / Cmd+J (View menu) toggle Left Rail / File Tree / Workbench.
   usePanelToggleFromMenu(handlers);
 
-  // Escape exits Workbench fullscreen / closes the Settings modal (extracted to
-  // use-shell-effects to keep this file under the size cap).
-  useEscapeShortcuts({
-    workbenchFullscreen: shellState.workbenchFullscreen,
-    onExitFullscreen: () => setShellState((state) => toggleProductShellWorkbenchFullscreen(state)),
-    settingsOpen: shellState.settingsOpen,
-    onCloseSettings: handlers.onCloseSettings,
-  });
+  // Escape: exit Workbench fullscreen / close Settings / interrupt a running turn
+  // (the interrupt yields to any open transient UI). Spec: esc-interrupts-run.md.
+  useProductShellEscape(shellState, setShellState, viewModel, handlers,
+    quickOpenVisible || contentSearchVisible || worktreeCreate !== null || worktreeDelete !== null);
 
   const quickOpenFiles = useMemo<QuickOpenFile[]>(
     () => quickOpenFilesFromState(shellState),

@@ -166,3 +166,38 @@ test("file_tree_listing_without_gitignore_lists_everything_but_heavy_dirs", asyn
   assert.ok(!names.includes("node_modules"), "heavy dir hidden even without gitignore");
   assert.ok(!names.includes(".git"), "vcs dir hidden even without gitignore");
 });
+
+// ---- New File: readTextFile create flag (spec: workbench-new-file.md) ----
+
+test("readTextFile create:true makes a missing file (and parent dirs) and reads it empty", async () => {
+  const root = fixtureRoot({});
+  const port = createNodeWorkspaceFilePort();
+  const result = await port.readTextFile({ root, path: "notes/new.txt", byteLimit: 4096, create: true });
+  assert.ok(result.ok, "create:true should succeed for a missing file");
+  if (result.ok) {
+    assert.equal(result.file.content, "");
+    assert.equal(result.file.relativePath, "notes/new.txt");
+  }
+  assert.equal(fs.readFileSync(path.join(root, "notes/new.txt"), "utf8"), "", "the file now exists on disk");
+});
+
+test("readTextFile create:true never clobbers an existing file", async () => {
+  const root = fixtureRoot({ "keep.md": "DO NOT LOSE" });
+  const port = createNodeWorkspaceFilePort();
+  const result = await port.readTextFile({ root, path: "keep.md", byteLimit: 4096, create: true });
+  assert.ok(result.ok);
+  if (result.ok) {
+    assert.equal(result.file.content, "DO NOT LOSE", "existing content preserved");
+  }
+  assert.equal(fs.readFileSync(path.join(root, "keep.md"), "utf8"), "DO NOT LOSE");
+});
+
+test("readTextFile without create still reports a missing file as not found", async () => {
+  const root = fixtureRoot({});
+  const port = createNodeWorkspaceFilePort();
+  const result = await port.readTextFile({ root, path: "ghost.txt", byteLimit: 4096 });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "workspace_file_not_found");
+  }
+});

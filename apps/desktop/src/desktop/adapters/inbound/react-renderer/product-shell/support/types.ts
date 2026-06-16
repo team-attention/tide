@@ -190,6 +190,9 @@ export interface ProductShellHandlers {
   onFocusWorkbenchPane: (paneId: string) => void;
   onCloseWorkbenchPane: (paneId: string) => void;
   onFileTreeEntryOpen: (entryId: string) => void;
+  // New File: create a blank file at the given relative path under the current folder
+  // and open it for editing (spec: workbench-new-file.md).
+  onCreateFile: (relativePath: string) => void;
   onTerminalInput: (paneId: string, bytes: string) => void;
   onTerminalResize: (paneId: string, cols: number, rows: number) => void;
   onEditorDraftChange: (paneId: string, content: string) => void;

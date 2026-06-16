@@ -75,6 +75,11 @@ export interface BrowserPaneState {
   // (user takeover) and turn end. See docs_v2/specs/browser-pane-agent-computer-use.md.
   agentDriving?: boolean;
   agentCursor?: { x: number; y: number };
+  // Set when the USER took manual control of this Pane (the "Take control" button). While
+  // set, the agent's tide_act_browser is softly refused so it yields + continues its turn
+  // instead of re-driving or hitting a cryptic stale-reference; observe still works. Cleared
+  // at turn end (spec: composer-prompt-browser-fixes / browser-pane-agent-computer-use).
+  userControlled?: boolean;
   // Latest captured pixel-vision screenshot (filled by the renderer's capturePage).
   // Attached to observe output only for mode=screenshot|both; kept out of general
   // Workbench snapshots to avoid shipping the image on every state change.

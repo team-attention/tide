@@ -311,11 +311,6 @@
   border-radius: 999px;
 }
 
-.composer-shell__icon-button--mic {
-  border-color: transparent;
-  background: transparent;
-}
-
 .composer-shell__send {
   width: 32px;
   height: 30px;

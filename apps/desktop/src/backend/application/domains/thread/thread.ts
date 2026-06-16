@@ -85,6 +85,9 @@ export interface PromptState {
   message: string;
   choices?: PromptChoice[];
   defaultChoiceId?: string;
+  // Multi-select question (e.g. claude AskUserQuestion multiSelect): the card toggles
+  // several options and submits them joined as the free-text answer.
+  multiSelect?: boolean;
   source: "pty" | "provider_signal" | "provider_hook";
 }
 

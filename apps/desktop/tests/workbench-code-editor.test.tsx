@@ -160,6 +160,37 @@ test("markdown_editor_pane_toggle_shows_source_editor", async () => {
   }
 });
 
+test("html_editor_pane_renders_a_browser_preview_by_default_and_toggles_to_code", async () => {
+  // Spec: docs_v2/specs/workbench-html-preview.md
+  const root = await mountShell(editorState("<!doctype html><h1>Hi</h1>", "page.html"));
+  try {
+    // Default: a rendered <webview> preview, no CodeMirror source surface.
+    assert.ok(dom.window.document.querySelector(".workbench-html-webview"), "webview preview renders by default");
+    assert.equal(dom.window.document.querySelector(".workbench-editor-cm .cm-editor"), null);
+
+    const codeButton = Array.from(
+      dom.window.document.querySelectorAll(".workbench-html-toggle__option"),
+    ).find((button) => (button.textContent ?? "").trim() === "Code");
+    assert.ok(codeButton, "Code toggle present");
+
+    await act(async () => {
+      codeButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    // Code mode shows the real source editor; the preview webview is gone.
+    assert.ok(
+      dom.window.document.querySelector(".workbench-editor-cm .cm-editor"),
+      "source editor appears after toggling to Code",
+    );
+    assert.equal(dom.window.document.querySelector(".workbench-html-webview"), null);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
 test("workbench_editor_pane_opens_lsp_actions_on_right_click_not_buttons", async () => {
   // Spec: docs_v2/specs/workbench-editor-code-navigation.md
   // A real code editor exposes Go to Definition / Find References on the

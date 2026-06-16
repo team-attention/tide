@@ -19,6 +19,12 @@ export interface OpencodeVendorDto {
   // A curated popular tile (shown even when not connected) vs. a vendor surfaced only
   // because it is connected.
   popular?: boolean;
+  // Meaningful only when `connected`: true when opencode actually enumerates ≥1 model
+  // for this vendor (`opencode models`), false when a credential exists but yields no
+  // usable models (e.g. an expired OAuth token) ⇒ the UI shows "Reconnect". Absent ⇒
+  // unknown / treated as usable (e.g. the model catalog was unavailable to judge).
+  // See docs_v2/specs/opencode-vendor-reconnect.md.
+  usable?: boolean;
 }
 
 // opencode runtime environment, surfaced where the on-ramp / hub names opencode.

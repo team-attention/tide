@@ -150,6 +150,10 @@ export interface BackendCommandPayloadByKind {
     cwd: string;
     path: string;
     byteLimit?: number;
+    // New File: when true and the file is missing, create an empty file (and parent
+    // dirs) first, then read it — an existing file is never clobbered (spec:
+    // workbench-new-file.md).
+    create?: boolean;
   };
   // Write one text file under `cwd`, NOT tied to a thread — the start (New
   // Thread) page's editor save (spec: start-page-file-viewer). The thread-bound

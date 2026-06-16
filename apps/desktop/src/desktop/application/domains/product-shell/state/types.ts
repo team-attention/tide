@@ -249,7 +249,8 @@ export type ProductShellBackendCommand =
   | { kind: "thread.hydrate"; payload: { threadId: string } }
   | {
       kind: "workspace.readFile";
-      payload: { cwd: string; path: string; byteLimit?: number };
+      // `create`: New File — touch a missing file before reading (spec: workbench-new-file.md).
+      payload: { cwd: string; path: string; byteLimit?: number; create?: boolean };
     }
   | {
       // Start-page editor save (thread-independent write under the composer cwd).
@@ -316,6 +317,8 @@ export type ProductShellBackendCommand =
         command: "open_editor";
         data: {
           path: string;
+          // New File: touch a missing file before opening (spec: workbench-new-file.md).
+          create?: boolean;
         };
       };
     }

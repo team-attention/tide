@@ -17,10 +17,8 @@ export function selectAgentChatChoiceSurfaceRow(
       state: {
         ...state,
         promptState: null,
-        composer: {
-          ...state.composer,
-          draft: "",
-        },
+        // Keep the composer draft: the answer is the chosen option, not what the user
+        // was typing — clearing it would lose an in-progress follow-up (spec).
       },
       command: {
         kind: "prompt.answer",

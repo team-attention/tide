@@ -7,7 +7,7 @@ import type {
   ProviderModelDto,
 } from "../../../../shared/contracts/index.ts";
 import { createOpencodeModelCatalog } from "./opencode-model-catalog.ts";
-import { createOpencodeVendorCatalog } from "./opencode-vendor-catalog.ts";
+import { createOpencodeVendorCatalog, reconcileVendorUsability } from "./opencode-vendor-catalog.ts";
 import { createOpencodeAuthServer } from "./opencode-auth-server.ts";
 
 // The local-system provider detection surfaced on thread.listed: which provider-CLI
@@ -43,7 +43,9 @@ export function createProviderDetection(input: {
           input.resolveExecutable(executableForAgent(agentId)) !== undefined,
       ),
     enumerateOpencodeModels: () => opencodeCatalog.get(),
-    enumerateOpencodeVendors: () => opencodeVendorCatalog.get(),
+    // Mark connected-but-unusable vendors (e.g. expired auth) by cross-referencing the
+    // model catalog, so the on-ramp can offer "Reconnect" (spec: opencode-vendor-reconnect.md).
+    enumerateOpencodeVendors: () => reconcileVendorUsability(opencodeVendorCatalog.get(), opencodeCatalog.get()),
     opencodeEnvironment: () => opencodeVendorCatalog.environment(),
     connectOpencodeApiKey: async (vendorId, key) => {
       await opencodeAuthServer.setApiKey(vendorId, key);
