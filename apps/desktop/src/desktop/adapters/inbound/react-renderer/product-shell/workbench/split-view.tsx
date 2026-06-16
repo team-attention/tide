@@ -213,6 +213,10 @@ export function WorkbenchSplitView(props: {
             <button
               className="workbench-tab__label"
               type="button"
+              // Focus via this button's own click — stop pointerdown so it doesn't reach
+              // the header's beginPaneDrag (no drag from the chip, no double-focus with the
+              // grip's onUp focus). The empty grip stays the drag surface.
+              onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
               onClick={() => handlers.onFocusWorkbenchPane(pane.paneId)}
             >
               <span className="workbench-tab__icon" aria-hidden>

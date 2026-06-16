@@ -612,7 +612,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     layoutVm.editorPicker === null &&
     layoutVm.appChrome.visibleWorkbenchPanes.length > 1;
   const inlineWorkbenchControls = showWorkbenchControls && !splitActive && rightColWidth >= 400;
-  const collapseChromeToDots = splitActive && !layoutVm.fileTreeOpen;
+  const collapseChromeToDots = showWorkbenchControls && splitActive && !layoutVm.fileTreeOpen;
 
   // Cmd+P → Quick Open, Cmd+Shift+F → Content Search (active-thread only).
   const activeThreadId = shellState.activeThreadId;
