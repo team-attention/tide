@@ -1782,6 +1782,155 @@ test("workbench_command_open_diff_creates_singleton_changes_pane", async () => {
   assert.equal(again.thread.workbench.panes.filter((pane) => pane.kind === "changes").length, 1);
 });
 
+test("createDraftThread_registers_a_draft_with_a_workbench_and_does_not_start_an_agent", async () => {
+  // Spec: docs_v2/specs/composer-draft-thread.md
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("draft"),
+  });
+
+  const created = await service.createDraftThread({
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
+  });
+
+  assert.equal(created.ok, true);
+  assert.equal(created.ok && created.thread.lifecycleState, "draft");
+  assert.equal(created.ok && created.thread.runtimeState, "not_started");
+  // No agent runtime is spawned for a Draft Thread.
+  assert.deepEqual(fakes.runtime.events, []);
+  // A Draft is not listed in the rail until it starts.
+  const listed = await service.listThreads({});
+  assert.deepEqual(listed.ok ? listed.threads.map((t) => t.threadId) : ["?"], []);
+});
+
+test("open_terminal_on_a_draft_thread_starts_a_visible_pty_without_an_agent", async () => {
+  // Spec: composer-draft-thread — the visible Terminal Pane works pre-send, against the
+  // Draft Thread's own Workbench, with no agent runtime.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("draft"),
+  });
+  const created = await service.createDraftThread({
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
+  });
+  assert.equal(created.ok, true);
+  const draftId = created.ok ? created.thread.threadId : "";
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: draftId,
+    command: "open_terminal",
+  });
+
+  assert.equal(opened.ok, true);
+  // The PTY spawned against the DRAFT thread + its cwd — via workbenchTerminalPort, the
+  // visible-terminal path, never the agent runtime.
+  assert.equal(fakes.workbenchTerminal.starts.length, 1);
+  assert.equal(fakes.workbenchTerminal.starts[0]?.threadId, draftId);
+  assert.equal(fakes.workbenchTerminal.starts[0]?.cwd, "/repo");
+  const terminalPanes = opened.ok ? opened.thread.workbench.panes.filter((p) => p.kind === "terminal") : [];
+  assert.equal(terminalPanes.length, 1);
+  assert.equal(terminalPanes[0]?.status, "running");
+  assert.deepEqual(fakes.runtime.events, []);
+});
+
+test("sending_starts_an_existing_draft_in_place_keeping_its_workbench", async () => {
+  // Spec: composer-draft-thread — Send starts the SAME thread (no new thread), the agent
+  // spawns exactly once, the pre-send panes survive, and it now appears in the rail.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("draft"),
+  });
+  const created = await service.createDraftThread({
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
+  });
+  const draftId = created.ok ? created.thread.threadId : "";
+  await service.handleWorkbenchCommand({ threadId: draftId, command: "open_terminal" });
+
+  const started = await service.startThread({
+    threadId: draftId,
+    initialMessage: "go",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
+  });
+
+  assert.equal(started.ok, true);
+  assert.equal(started.ok && started.status, "started");
+  // Same thread id — started in place, not recreated.
+  assert.equal(started.ok && started.thread.threadId, draftId);
+  assert.equal(started.ok && started.thread.lifecycleState, "running");
+  // Exactly one agent spawn; no duplicate PTYs.
+  assert.equal(fakes.runtime.starts.length, 1);
+  assert.deepEqual(fakes.runtime.events, ["start", "writeInput"]);
+  assert.equal(fakes.workbenchTerminal.starts.length, 1);
+  // The terminal opened pre-send rides into the started thread's workbench.
+  const terminalPanes = started.ok ? started.thread.workbench.panes.filter((p) => p.kind === "terminal") : [];
+  assert.equal(terminalPanes.length, 1);
+  // Now listed in the rail.
+  const listed = await service.listThreads({});
+  assert.equal(listed.ok && listed.threads.some((t) => t.threadId === draftId), true);
+});
+
+test("discardDraftThread_kills_terminal_ptys_and_removes_the_thread", async () => {
+  // Spec: composer-draft-thread — leaving the composer / switching project discards the
+  // draft: its visible-terminal PTYs are stopped (no orphans) and it is removed.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("draft"),
+  });
+  const created = await service.createDraftThread({
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
+  });
+  const draftId = created.ok ? created.thread.threadId : "";
+  await service.handleWorkbenchCommand({ threadId: draftId, command: "open_terminal" });
+
+  const discarded = await service.discardDraftThread({ threadId: draftId });
+
+  assert.equal(discarded.ok, true);
+  assert.equal(discarded.ok && discarded.discarded, true);
+  // The PTY was stopped.
+  assert.equal(fakes.workbenchTerminal.handles[0]?.stops.length, 1);
+  // The thread is gone.
+  const hydrated = await service.hydrateThread({ threadId: draftId });
+  assert.equal(hydrated.ok, false);
+  // Discarding again is a no-op.
+  const again = await service.discardDraftThread({ threadId: draftId });
+  assert.equal(again.ok && again.discarded, false);
+});
+
+test("discardDraftThread_refuses_to_discard_a_started_thread", async () => {
+  // Spec: composer-draft-thread — discard is draft-only; a real thread is never removed.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("real"),
+  });
+  const started = await service.startThread({
+    initialMessage: "hi",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
+  });
+  assert.equal(started.ok, true);
+
+  const result = await service.discardDraftThread({
+    threadId: started.ok ? started.thread.threadId : "",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "thread_not_draft");
+});
+
 test("workbench_command_open_provider_setup_surface_creates_terminal_pane", async () => {
   // Spec: docs_v2/specs/provider-setup-surface-workbench-command.md
   const fakes = createFakes({

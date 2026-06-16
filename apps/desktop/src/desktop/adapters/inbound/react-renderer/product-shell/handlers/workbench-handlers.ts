@@ -1,4 +1,4 @@
-import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellDraftChanges, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureComposerDraftThreadActive, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellDraftChanges, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
 import type { ProductShellHandlers } from "../support/types.ts";
@@ -68,6 +68,18 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
       }),
     onLauncherAction: (actionId) =>
       setShellState((state) => {
+        // Composer (New Thread): make the Draft Thread the active thread first (lazily),
+        // then run the NORMAL launcher path against it — it now sees a thread, so
+        // Terminal/Editor/Diff/Browser all open as real backend panes and their typing/
+        // saving/snapshots route through the active thread like any started thread. The
+        // create-draft command is dispatched before the open. See composer-draft-thread.md.
+        if (state.activeThreadId === null) {
+          const ensured = ensureComposerDraftThreadActive(state);
+          if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+          const result = selectProductShellLauncherAction(ensured.state, actionId);
+          dispatchBackendCommand(result.command);
+          return result.state;
+        }
         const result = selectProductShellLauncherAction(state, actionId);
         dispatchBackendCommand(result.command);
         return result.state;

@@ -1,4 +1,12 @@
-import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptText, editProductShellQueuedInput, interruptProductShellRuntime, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, interruptProductShellRuntime, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { AgentChatThreadScope } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+
+// The Execution Context cwd a Composer scope points at — used to detect a project/worktree
+// switch (which must discard the Composer's Draft Thread, whose panes belong to the old cwd).
+function composerScopeCwd(scope: AgentChatThreadScope | undefined): string | undefined {
+  if (scope === undefined) return undefined;
+  return scope.kind === "project" ? scope.cwd : scope.scratchCwd;
+}
 import { resolveWorktreeName } from "../../../../../../shared/worktree/name.ts";
 import { makeWorktreeHash } from "../dialogs/worktree-name-input.tsx";
 // Extracted from product-shell.ts (entry-module rule follow-up).
@@ -176,10 +184,19 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
       }
       setShellState((state) => {
         const result = selectProductShellChoiceSurfaceRow(state, surfaceKind, rowId);
+        // A project/worktree switch changes the Execution Context cwd → discard the
+        // Composer's Draft Thread so its panes (Terminal etc., bound to the old cwd) close,
+        // like every other pane. A branch switch keeps the cwd → no discard. (composer-draft-thread)
+        let next = result.state;
+        if (composerScopeCwd(state.agentChat.composer.startOptions.scope) !== composerScopeCwd(next.agentChat.composer.startOptions.scope)) {
+          const discarded = discardProductShellDraftThread(next);
+          if (discarded.command !== null) dispatchBackendCommand(discarded.command);
+          next = discarded.state;
+        }
         dispatchBackendCommand(result.command);
         // Changing the start-page scope chip reloads the file tree for that directory.
-        dispatchBackendCommand(refreshStartPageFileTree(result.state));
-        return result.state;
+        dispatchBackendCommand(refreshStartPageFileTree(next));
+        return next;
       });
     },
     onAddAttachment: (attachment) =>

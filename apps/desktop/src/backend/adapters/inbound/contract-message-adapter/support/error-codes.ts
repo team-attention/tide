@@ -9,6 +9,7 @@ export function contractCodeFromServiceError(error: ServiceError): ContractError
     case "agent_runtime_unavailable":
       return error.code;
     case "agent_binding_locked":
+    case "thread_not_draft":
     case "prompt_not_found":
     case "no_pending_input":
     case "invalid_workbench_command":

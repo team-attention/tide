@@ -34,6 +34,7 @@ import {
   quickOpenFilesFromState,
   selectCompletedThreads,
   deleteWorktreeAndRefocus,
+  discardProductShellDraftThread,
   setProductShellComposerFolderScope,
   setProductShellComposerNewWorktreeIntent,
   setProductShellProviderCommands,
@@ -181,16 +182,15 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Projects list only once a Thread is actually started in it.
   const openFolderForScope = async () => {
     const bridge = props.projectBridge;
-    if (bridge === undefined) {
-      return;
-    }
+    if (bridge === undefined) { return; }
     const cwd = await bridge.openDirectory();
-    if (cwd === null) {
-      return;
-    }
+    if (cwd === null) { return; }
     setShellState((state) => {
-      const next = setProductShellComposerFolderScope(state, cwd);
-      // Reflect the newly picked folder in the start-page file tree if it's open.
+      // New folder = new cwd → discard the Composer's Draft Thread (its panes belong to the
+      // old cwd; spec: composer-draft-thread) before re-scoping + reloading the start tree.
+      const discarded = discardProductShellDraftThread(state);
+      if (discarded.command !== null) dispatchBackendCommand(discarded.command);
+      const next = setProductShellComposerFolderScope(discarded.state, cwd);
       dispatchBackendCommand(refreshStartPageFileTree(next));
       return next;
     });

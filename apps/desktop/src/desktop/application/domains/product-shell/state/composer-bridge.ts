@@ -205,14 +205,34 @@ export function submitProductShellComposerDraft(
     return { state, command: result.command };
   }
 
-  let nextState: ProductShellState = { ...state, agentChat: result.state };
-
-  // Optimistic new thread: submit just opened a brand-new thread (the agent chat
-  // now has a thread that wasn't the active one). Reflect it in the rail + focus
-  // immediately so the thread opens instantly and re-clicks can't duplicate it.
-  const startedThread = result.command?.kind === "thread.start" ? result.state.thread : null;
+  let agentChatState = result.state;
   let command = result.command;
-  if (startedThread !== null && state.activeThreadId !== startedThread.threadId) {
+  // Start the Composer's Draft Thread IN PLACE: reuse its id so the live Workbench it
+  // already owns (a Terminal PTY / Editor / Diff / Browser opened pre-send) carries into the
+  // started Thread instead of spawning a fresh one. The optimistic thread is rebound to the
+  // draft id too, so the rail + focus point at the same thread. See composer-draft-thread.md.
+  const draftThreadId = state.draftThreadId;
+  const startedFromDraft = draftThreadId !== null && command !== null && command.kind === "thread.start";
+  if (draftThreadId !== null && command !== null && command.kind === "thread.start") {
+    command = { ...command, payload: { ...command.payload, threadId: draftThreadId } };
+    if (agentChatState.thread !== null && agentChatState.thread !== undefined) {
+      agentChatState = { ...agentChatState, thread: { ...agentChatState.thread, threadId: draftThreadId } };
+    }
+  }
+
+  let nextState: ProductShellState = {
+    ...state,
+    agentChat: agentChatState,
+    // The draft (if any) is now being started in place — drop the renderer's draft binding.
+    draftThreadId: null,
+  };
+
+  // Optimistic new thread: submit just opened a brand-new thread (the agent chat now has a
+  // thread that wasn't the active one). Reflect it in the rail + focus immediately so the
+  // thread opens instantly and re-clicks can't duplicate it. Also runs when starting a Draft
+  // Thread in place (activeThreadId already equals it), to add it to the rail + clear drafts.
+  const startedThread = command?.kind === "thread.start" ? agentChatState.thread : null;
+  if (startedThread !== null && (startedFromDraft || state.activeThreadId !== startedThread.threadId)) {
     // Adopt the panes the user opened on the composer (New Thread) screen: hand the
     // draft Browser Panes to the new Thread so it OWNS them (seeded via thread.start,
     // race-free). The start-page editor still belongs to the New Thread page and is
@@ -236,13 +256,14 @@ export function submitProductShellComposerDraft(
       projects: projectsFromThreads(threads),
       startPageFiles: [],
       startPagePendingNavigation: null,
-      // The drafts are handed off; keep the Workbench open only if we adopted panes.
+      // The drafts are handed off; keep the Workbench open if we adopted Browser panes OR
+      // a Draft Thread was started in place (it carries its Terminal/Editor/Diff panes).
       draftWorkbenchPanes: [],
       draftActiveWorkbenchPaneId: null,
       // Start-page untitled buffers don't carry into the started thread.
       untitledFiles: [],
       untitledSaveAsPaneId: null,
-      workbenchOpen: initialWorkbenchPanes.length > 0,
+      workbenchOpen: initialWorkbenchPanes.length > 0 || state.draftThreadId !== null,
     };
     if (command !== null && command.kind === "thread.start" && initialWorkbenchPanes.length > 0) {
       command = { ...command, payload: { ...command.payload, initialWorkbenchPanes } };

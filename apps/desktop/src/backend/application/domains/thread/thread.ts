@@ -47,6 +47,11 @@ export type ThreadScope =
   | { kind: "scratch"; scratchCwd: string };
 
 export type ThreadLifecycleState =
+  // A Draft Thread: full Execution Context (scope/agentBinding/launchOptions) and a
+  // live Workbench, but the agent runtime has not started. The Composer (New Thread)
+  // screen IS the active Draft Thread; Send starts it in place. Drafts are never
+  // persisted or listed in the rail. See docs_v2/specs/composer-draft-thread.md.
+  | "draft"
   | "creating"
   | "hydrating"
   | "open"

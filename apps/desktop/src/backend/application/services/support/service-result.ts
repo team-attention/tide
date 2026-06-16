@@ -8,6 +8,7 @@ import type { WorkspaceFileErrorCode } from "../../ports/outbound/workspace-file
 
 export type ServiceErrorCode =
   | "thread_not_found"
+  | "thread_not_draft"
   | "agent_binding_locked"
   | "provider_not_ready"
   | "prompt_not_found"

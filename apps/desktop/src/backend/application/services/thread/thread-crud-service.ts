@@ -87,6 +87,9 @@ export class ThreadCrudService {
     input: ListThreadsInput,
   ): Promise<ServiceResult<ListThreadsResult>> {
     const threads = [...this.store.values()]
+      // Draft Threads (composer, never sent) are not listed in the rail until they
+      // start. See docs_v2/specs/composer-draft-thread.md.
+      .filter((thread) => thread.lifecycleState !== "draft")
       .filter(
         (thread) =>
           input.includeArchived === true || thread.lifecycleState !== "archived",

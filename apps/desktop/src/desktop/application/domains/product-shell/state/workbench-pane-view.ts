@@ -100,9 +100,11 @@ export function appendUntitledPanes(
   return { ...appChrome, workbenchPanes: panes, activeWorkbenchPaneId };
 }
 
-// Build the composer (New Thread) page Workbench view: a synthetic Launcher first,
-// then the live draft Browser Panes, then the start-page editor (if open), then any
-// untitled tabs. All renderer-derived (no backend panes before a thread exists).
+// Build the composer (New Thread) page Workbench view when no Draft Thread is active yet
+// (no backend pane opened): a synthetic Launcher first, then the live draft Browser Panes,
+// then the start-page editor and any untitled tabs. Once the user opens a backend pane the
+// Composer's Draft Thread becomes the active thread and the view-model renders it through
+// the normal active-thread path instead. See docs_v2/specs/composer-draft-thread.md.
 export function composerWorkbenchAppChrome(
   appChrome: ProductShellState["appChrome"],
   draftPanes: ProductShellDraftPane[],
@@ -131,9 +133,10 @@ export function composerWorkbenchAppChrome(
   return { ...appChrome, workbenchPanes: panes, activeWorkbenchPaneId };
 }
 
-// The composer Launcher: Browser is available pre-thread (opens a live draft pane);
-// Editor/Terminal/Diff need a Thread's Execution Context, so they're disabled with a
-// hint until the first send creates the Thread.
+// The composer Launcher: every pane works pre-send. Browser opens a renderer-owned draft
+// pane; Editor/Terminal/Diff open against the Composer's backend Draft Thread (created on
+// first use), so a real Terminal PTY / Editor / git Changes view is live before send and
+// carries into the Thread on send. See docs_v2/specs/composer-draft-thread.md.
 function composerLauncherPane(): AppChromeWorkbenchPaneRef {
   return {
     paneId: COMPOSER_LAUNCHER_PANE_ID,
@@ -144,9 +147,9 @@ function composerLauncherPane(): AppChromeWorkbenchPaneRef {
     updatedAt: shellTimestamp,
     actions: [
       { actionId: "open_browser", label: "Browser", description: "Open a Browser Pane", enabled: true },
-      { actionId: "open_editor", label: "Editor", description: "Open a file once the thread starts", enabled: false },
-      { actionId: "open_terminal", label: "Terminal", description: "Opens once the thread starts", enabled: false },
-      { actionId: "open_diff", label: "Diff", description: "Available after a file edit", enabled: false },
+      { actionId: "open_editor", label: "Editor", description: "Pick a file from the FileTree to edit", enabled: true },
+      { actionId: "open_terminal", label: "Terminal", description: "Open a visible Terminal Pane", enabled: true },
+      { actionId: "open_diff", label: "Diff", description: "View working-tree changes (git)", enabled: true },
     ],
   };
 }

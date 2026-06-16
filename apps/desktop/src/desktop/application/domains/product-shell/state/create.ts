@@ -120,6 +120,7 @@ export function createProductShellState(
     settingsOpen: false,
     draftWorkbenchPanes: [],
     draftActiveWorkbenchPaneId: null,
+    draftThreadId: null,
     untitledFiles: [],
     untitledSequence: 0,
     untitledSaveAsPaneId: null,

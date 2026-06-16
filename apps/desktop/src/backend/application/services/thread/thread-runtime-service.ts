@@ -1,4 +1,4 @@
-import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateThreadRuntimeServiceInput, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult } from "./thread-runtime-api.ts";
+import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult } from "./thread-runtime-api.ts";
 import { ComposerQueueService } from "./composer-queue-service.ts";
 import type {
   AgentSessionBlock,
@@ -284,6 +284,7 @@ import {
   type RestoreThreadsInput,
   type RestoreThreadsResult,
 } from "./thread-crud-service.ts";
+import { DraftThreadService, newThreadRecord } from "./thread-draft-service.ts";
 
 export type {
   ListThreadsInput,
@@ -401,6 +402,8 @@ threads = new ThreadStore();
 
 private readonly threadCrud: ThreadCrudService;
 
+  private readonly draftThreads: DraftThreadService;
+
 private readonly workbenchRuntime: WorkbenchRuntime;
 
 private readonly workbenchFileOps: WorkbenchFileOperations;
@@ -440,6 +443,14 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       emitAsyncEvent: (event) => this.emitAsyncEvent(event),
       onProviderSetupReady: (thread, pane) =>
         this.replayPendingInputIfProviderReady(thread, pane),
+    });
+    // Draft Thread lifecycle (spec: composer-draft-thread). Discard kills visible-terminal
+    // PTYs via the WorkbenchRuntime, injected so the collaborator stays port-light.
+    this.draftThreads = new DraftThreadService({
+      store: this.threads,
+      clock: this.clock,
+      idGenerator: this.idGenerator,
+      stopTerminalPane: (pane) => this.workbenchRuntime.stopTerminalPane(pane),
     });
     this.workbenchFileOps = new WorkbenchFileOperations({
       workspaceFilePort: this.workspaceFilePort,
@@ -579,30 +590,44 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
     };
   }
 
-async startThread(
+// Draft Thread lifecycle (create / discard / start-in-place) is owned by
+  // DraftThreadService; the facade delegates. See docs_v2/specs/composer-draft-thread.md.
+  createDraftThread(
+    input: CreateDraftThreadInput,
+  ): Promise<ServiceResult<CreateDraftThreadResult>> {
+    return this.draftThreads.createDraftThread(input);
+  }
+
+  discardDraftThread(
+    input: DiscardDraftThreadInput,
+  ): Promise<ServiceResult<DiscardDraftThreadResult>> {
+    return this.draftThreads.discardDraftThread(input);
+  }
+
+  async startThread(
     input: StartThreadInput,
   ): Promise<ServiceResult<StartThreadResult>> {
     const capturedAt = this.clock();
     const threadId = input.threadId ?? this.idGenerator();
-    const thread: ThreadRecord = {
-      threadId,
-      title: titleFromMessage(input.initialMessage),
-      agentBinding: cloneAgentBinding(input.agentBinding),
-      scope: cloneScope(input.scope),
-      launchOptions: cloneLaunchOptions(input.launchOptions),
-      lifecycleState: "creating",
-      runtimeState: "not_started",
-      lastKnownState: "idle",
-      createdAt: capturedAt,
-      updatedAt: capturedAt,
-      cachedBlocks: [],
-      rawFrameSequence: 0,
-      mcpToolCallCount: 0,
-      workbench: defaultWorkbenchState(),
-    };
-    this.threads.set(threadId, thread);
-
-    // Adopt composer-screen panes (race-free; spec: workbench-dock-parity).
+    // Starting an existing Draft Thread reuses its record + Workbench (the panes opened
+    // pre-send) and refreshes its context from the Send. A fresh start builds the record
+    // and adopts any composer-screen panes (legacy path). Both share the spawn tail below.
+    let thread = this.draftThreads.prepareStartInPlace(threadId, input, capturedAt);
+    if (thread === undefined) {
+      thread = newThreadRecord({
+        threadId,
+        title: titleFromMessage(input.initialMessage),
+        agentBinding: input.agentBinding,
+        scope: input.scope,
+        launchOptions: input.launchOptions,
+        lifecycleState: "creating",
+        capturedAt,
+      });
+      this.threads.set(threadId, thread);
+    }
+    // Adopt composer-screen panes (renderer draft Browser Panes; race-free; spec:
+    // workbench-dock-parity). For a Draft Thread this ADDS them alongside the Terminal/
+    // Editor/Diff panes it already owns — both ride into the started Thread.
     await seedInitialWorkbenchPanes(thread, input.initialWorkbenchPanes, this.idGenerator, this.clock, (target, fileInput) => this.workbenchFileOps.openFileOutput(target, fileInput));
 
     // A Scratch Thread runs in a real Tide-owned per-thread dir; materialize + trust
@@ -655,7 +680,7 @@ async startThread(
       thread.agentBinding.runtimeSource?.kind === "provider_cli";
     const attachmentsForRuntime = messageAttachments.length > 0 ? messageAttachments : undefined;
     const handle = await this.agentRuntimePort.start({
-      threadId,
+      threadId: thread.threadId,
       agentBinding: cloneAgentBinding(thread.agentBinding),
       scope: cloneScope(thread.scope),
       launchOptions: thread.launchOptions,

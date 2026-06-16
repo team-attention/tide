@@ -80,6 +80,32 @@ export interface StartThreadResult {
   submittedBlock?: AgentSessionBlockReference;
 }
 
+// Create a Draft Thread: a registered ThreadRecord with full context and a live
+// Workbench, but no agent runtime. Workbench commands (open_terminal/editor/diff/
+// browser) run against it via the normal per-thread path; Send later calls
+// startThread with this threadId to start it in place. See composer-draft-thread.md.
+export interface CreateDraftThreadInput {
+  threadId?: ThreadId;
+  agentBinding: AgentBinding;
+  scope?: ThreadScope;
+  launchOptions?: Record<string, unknown>;
+}
+
+export interface CreateDraftThreadResult {
+  thread: ThreadSnapshot;
+}
+
+// Discard a Draft Thread that was never sent: tear down its Workbench (kill any
+// visible-terminal PTYs) and remove it from memory. A no-op `discarded:false` when
+// the thread is gone; refuses to discard a started thread.
+export interface DiscardDraftThreadInput {
+  threadId: ThreadId;
+}
+
+export interface DiscardDraftThreadResult {
+  discarded: boolean;
+}
+
 export interface SendComposerInput {
   threadId: ThreadId;
   input: string;
@@ -250,6 +276,12 @@ export interface ThreadRuntimeService {
   // hot path that is wasted CPU (perf E4). peekThread shares block references and
   // never reconciles stale runtime state. Synchronous: no I/O.
   peekThread(threadId: string): ServiceResult<HydrateThreadResult>;
+  createDraftThread(
+    input: CreateDraftThreadInput,
+  ): Promise<ServiceResult<CreateDraftThreadResult>>;
+  discardDraftThread(
+    input: DiscardDraftThreadInput,
+  ): Promise<ServiceResult<DiscardDraftThreadResult>>;
   startThread(input: StartThreadInput): Promise<ServiceResult<StartThreadResult>>;
   sendComposerInput(
     input: SendComposerInput,

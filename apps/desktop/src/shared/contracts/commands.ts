@@ -8,6 +8,8 @@ import type { WorkbenchSeedPaneDto } from "./workbench.ts";
 export type BackendCommandKind =
   | "thread.list"
   | "thread.hydrate"
+  | "thread.createDraft"
+  | "thread.discardDraft"
   | "thread.start"
   | "thread.archive"
   | "thread.setPinned"
@@ -31,6 +33,8 @@ export type BackendCommandKind =
 export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "thread.list",
   "thread.hydrate",
+  "thread.createDraft",
+  "thread.discardDraft",
   "thread.start",
   "thread.archive",
   "thread.setPinned",
@@ -67,6 +71,20 @@ export interface ComposerAttachment {
 export interface BackendCommandPayloadByKind {
   "thread.list": { includeArchived?: boolean };
   "thread.hydrate": { threadId: ThreadId };
+  // Create a Draft Thread for the Composer (New Thread): a real backend thread with full
+  // context + a live Workbench but NO agent runtime, so Browser/Editor/Terminal/Diff work
+  // pre-send via workbench.command. threadId is client-generated so the renderer binds its
+  // Composer to it immediately. Send later calls thread.start with the same id (starts it
+  // in place). See docs_v2/specs/composer-draft-thread.md.
+  "thread.createDraft": {
+    threadId: ThreadId;
+    agentBinding: AgentBindingDto;
+    scope?: ThreadScopeDto;
+    launchOptions?: JsonObject;
+  };
+  // Discard a never-sent Draft Thread (chip change / leaving the Composer): tears down its
+  // Workbench (kills visible-terminal PTYs) and removes it.
+  "thread.discardDraft": { threadId: ThreadId };
   "thread.start": {
     // Client-generated id so the new thread can be shown optimistically and the
     // backend binds to the same thread (startThread honors input.threadId).

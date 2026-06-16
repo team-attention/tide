@@ -23,11 +23,12 @@ const MAX_LINES = 800;
 // Pinned ceilings for the known god-files (the Phase 3 decomposition backlog).
 // Each may shrink or hold, never grow. Lower these as collaborators are extracted.
 const PINNED_MAX: Record<string, number> = {
-  // +26 over the prior 1486 pin: the spurious-turn-end guard that stops a live,
-  // unanswered prompt from being dropped on switch-back (promptAnsweredPendingSettle,
-  // threaded through recordTurnComplete / answerPrompt / recordProviderPromptState).
-  // The full thread-runtime-service split is still the real fix.
-  "backend/application/services/thread/thread-runtime-service.ts": 1512,
+  // +22 over the prior 1512 pin: Draft Thread lifecycle (spec: composer-draft-thread) —
+  // createDraftThread/discardDraftThread delegates + the prepareStartInPlace branch in
+  // startThread. The bodies were extracted to DraftThreadService (incl. newThreadRecord),
+  // so this is only the facade/wiring surface; the full thread-runtime-service split is
+  // still the real fix.
+  "backend/application/services/thread/thread-runtime-service.ts": 1537,
   // The inbound command switch (already at the 800 cap) gained the
   // provider.discoverCommands handler for live command mirroring, then the
   // thread.launchOptionsChanged event builder gained the applied + changedKeys
@@ -36,7 +37,11 @@ const PINNED_MAX: Record<string, number> = {
   // holds the ceiling so it can only shrink. See
   // docs_v2/specs/live-provider-command-mirroring.md and
   // docs_v2/specs/mid-thread-launch-option-feedback.md.
-  "backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts": 828,
+  // +28: thread.createDraft / thread.discardDraft dispatch cases + the start-time
+  // workbench.changed push for a Draft Thread started in place (composer-draft-thread) —
+  // the minimal command surface for the Composer's Draft Thread; the per-domain handler
+  // split remains the real fix.
+  "backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts": 857,
 };
 
 function listSourceFiles(dir: string): string[] {
