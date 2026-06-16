@@ -1,5 +1,6 @@
 import { BrowserWindow, Menu } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
+import { applyHostZoom, steppedZoomFactor } from "./zoom.ts";
 // Extracted from electron-main.ts (spec: navigable-source-structure).
 
 // View-menu panel toggles route through a menu accelerator (not a renderer keydown)
@@ -8,6 +9,32 @@ import type { MenuItemConstructorOptions } from "electron";
 // actual open/close via its existing toggle handlers. Spec: panel-toggle-shortcuts.
 function sendTogglePanel(panel: "leftRail" | "fileTree" | "workbench"): void {
   BrowserWindow.getFocusedWindow()?.webContents.send("tide:toggle-panel", panel);
+}
+
+// Zoom the HOST window's webContents directly instead of using the built-in
+// "zoomIn"/"zoomOut"/"resetZoom" roles. Those roles act on the *focused*
+// webContents — when a Browser Pane <webview> has focus that's the guest page,
+// so Cmd +/- zoomed only the embedded page and left the Tide UI untouched. We zoom the
+// React host instead so the whole app scales regardless of webview focus. We prefer the
+// `browserWindow` Electron hands the click callback (the window the menu acted on) over
+// a global getFocusedWindow() lookup — it's the correct target and stays defined even if
+// nothing holds OS focus for a moment. applyHostZoom also broadcasts the factor so the
+// renderer mirrors it onto <webview> guests (which don't inherit host zoom), so UI +
+// embedded pages scale together. Spec: host-zoom-shortcuts.
+function hostWebContents(menuWindow: BrowserWindow | undefined): Electron.WebContents | undefined {
+  return (menuWindow ?? BrowserWindow.getFocusedWindow() ?? undefined)?.webContents;
+}
+
+function stepHostZoom(direction: 1 | -1, menuWindow: BrowserWindow | undefined): void {
+  const host = hostWebContents(menuWindow);
+  if (host === undefined) return;
+  applyHostZoom(host, steppedZoomFactor(host.getZoomFactor(), direction));
+}
+
+function resetHostZoom(menuWindow: BrowserWindow | undefined): void {
+  const host = hostWebContents(menuWindow);
+  if (host === undefined) return;
+  applyHostZoom(host, 1);
 }
 
 // Own the application menu so Cmd+W does NOT close the whole window (Electron's
@@ -31,9 +58,13 @@ export function installApplicationMenu(): void {
         { role: "forceReload" },
         { role: "toggleDevTools" },
         { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
+        { label: "Actual Size", accelerator: "CmdOrCtrl+0", click: (_item, win) => resetHostZoom(win as BrowserWindow | undefined) },
+        { label: "Zoom In", accelerator: "CmdOrCtrl+Plus", click: (_item, win) => stepHostZoom(1, win as BrowserWindow | undefined) },
+        // macOS reports "=" (not "+") for Cmd+= without Shift; bind it too so zoom-in
+        // works without holding Shift. Hidden so the menu shows a single Zoom In entry
+        // (acceleratorWorksWhenHidden defaults to true, so the shortcut still fires).
+        { label: "Zoom In", accelerator: "CmdOrCtrl+=", click: (_item, win) => stepHostZoom(1, win as BrowserWindow | undefined), visible: false },
+        { label: "Zoom Out", accelerator: "CmdOrCtrl+-", click: (_item, win) => stepHostZoom(-1, win as BrowserWindow | undefined) },
         { type: "separator" },
         { role: "togglefullscreen" },
       ],

@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 
 import { TideProductShell } from "../../../adapters/inbound/react-renderer/product-shell/product-shell.tsx";
+import { GlobalZoomIndicator } from "../../../adapters/inbound/react-renderer/product-shell/support/global-zoom.tsx";
 import type {
   AgentChatBackendEvent,
 } from "../../../application/domains/agent-chat/agent-chat.ts";
@@ -34,6 +35,7 @@ type WorkspaceFsBridgeResult =
 
 export function createInitialRendererElement() {
   return (
+    <>
     <TideProductShell
       onBackendCommand={dispatchBackendCommand}
       onBackendEvent={subscribeBackendEvents}
@@ -73,6 +75,8 @@ export function createInitialRendererElement() {
             }
       }
     />
+    <GlobalZoomIndicator />
+    </>
   );
 }
 
@@ -101,6 +105,11 @@ declare global {
       onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
       // View-menu panel toggles (Cmd+B / Cmd+E / Cmd+J), routed from the app menu.
       onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
+      // Global zoom (Cmd +/-/0): Main broadcasts the factor so the renderer mirrors it
+      // onto <webview> guests and shows the indicator; resetZoom → 100%; getZoom seeds it.
+      onZoomChanged(listener: (factor: number) => void): () => void;
+      resetZoom(): void;
+      getZoom(): Promise<number>;
       // Request a native OS notification (delivered + focus-gated by Main).
       notify(request: {
         kind: "agent_finished" | "needs_attention" | "agent_update";
