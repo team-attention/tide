@@ -10,7 +10,7 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onDraftChange: (draft) => setShellState((state) => updateProductShellComposerDraft(state, draft)),
-    // The on-ramp panel's in-app API-key field → set the vendor key the 정석 way
+    // The on-ramp panel's in-app API-key field → set the vendor key the canonical way
     // (backend PUTs it to opencode's own server, then re-lists so the panel updates).
     onOpencodeConnectApiKey: (vendorId, key) =>
       dispatchBackendCommand({ kind: "provider.opencodeConnectApiKey", payload: { vendorId, key } }),

@@ -341,7 +341,7 @@ export type AgentChatBackendCommand =
       };
     }
   | {
-      // Set an opencode vendor's API key the "정석" way (backend → opencode server).
+      // Set an opencode vendor's API key the canonical way (backend → opencode server).
       kind: "provider.opencodeConnectApiKey";
       payload: { vendorId: string; key: string };
     };

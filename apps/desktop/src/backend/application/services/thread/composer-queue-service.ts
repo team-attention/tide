@@ -136,7 +136,7 @@ async sendComposerInput(
     // UNIFORM QUEUE: while a turn is genuinely in flight, EVERY provider's follow-up
     // input queues Tide-side and flushes when the turn completes (recordTurnComplete).
     // The user always sees their messages stack as the Composer's queued "steer" chips
-    // (대기 중 + interrupt/edit/delete) — identical on codex and claude/gemini/opencode
+    // (Queued + interrupt/edit/delete) — identical on codex and claude/gemini/opencode
     // — and can interrupt to run the queue sooner. (An idle thread takes the path below
     // and sends immediately.) "Busy" also covers waiting on a prompt card: writing
     // composer text into the open box would blind-answer it (adversarial review finding).
