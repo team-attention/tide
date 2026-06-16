@@ -94,7 +94,10 @@ export interface SpawnAgentReaperGuardianInput {
     command: string,
     args: string[],
     options: { detached: boolean; stdio: "ignore"; env: NodeJS.ProcessEnv },
-  ) => { unref: () => void };
+  ) => {
+    unref: () => void;
+    on?: (event: "error", listener: (error: Error) => void) => void;
+  };
 }
 
 // Returns true if a guardian was launched. The backend calls this once at startup.
@@ -109,19 +112,29 @@ export function spawnAgentReaperGuardian(input: SpawnAgentReaperGuardianInput): 
   const spawnGuardian =
     input.spawnGuardian ?? ((cmd, args, options) => spawn(cmd, args, options));
 
-  const child = spawnGuardian(command, [input.entrypointPath, "guardian"], {
-    detached: true,
-    stdio: "ignore",
-    env: {
-      ...env,
-      // Run the Electron binary as a plain Node runtime (matches the MCP bridge).
-      ELECTRON_RUN_AS_NODE: "1",
-      TIDE_GUARDIAN_TARGET_PID: String(input.targetPid),
-    },
-  });
-  // Detach from the parent's lifecycle so the guardian survives a hard-killed backend.
-  child.unref();
-  return true;
+  try {
+    const child = spawnGuardian(command, [input.entrypointPath, "guardian"], {
+      detached: true,
+      stdio: "ignore",
+      env: {
+        ...env,
+        // Run the Electron binary as a plain Node runtime (matches the MCP bridge).
+        ELECTRON_RUN_AS_NODE: "1",
+        TIDE_GUARDIAN_TARGET_PID: String(input.targetPid),
+      },
+    });
+    // A failed launch (missing binary, bad path) emits 'error' asynchronously; with no
+    // listener Node rethrows it as an uncaught exception and takes the backend down. The
+    // guardian is best-effort, so swallow it — the next-launch startup reaper backstops.
+    child.on?.("error", () => {});
+    // Detach from the parent's lifecycle so the guardian survives a hard-killed backend.
+    child.unref();
+    return true;
+  } catch {
+    // A synchronous spawn failure (system limits, permissions) must never crash the
+    // backend over a non-essential watchdog.
+    return false;
+  }
 }
 
 function defaultIsTargetAlive(pid: number): boolean {

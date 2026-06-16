@@ -25,7 +25,12 @@ process.env.PATH = resolveAugmentedPath();
 // closing the gap before the next launch's startup sweep. It MUST short-circuit here —
 // never falling through to (and never re-spawning) the backend wiring.
 if (process.argv.includes("guardian")) {
-  await runAgentReaperGuardianFromEnv();
+  try {
+    await runAgentReaperGuardianFromEnv();
+  } catch {
+    // A watchdog must exit cleanly even on an unexpected error — never leave an
+    // unhandled rejection or a lingering process behind.
+  }
   process.exit(0);
 }
 

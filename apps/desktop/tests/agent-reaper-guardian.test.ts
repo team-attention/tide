@@ -91,6 +91,38 @@ test("spawns a detached guardian that re-runs the entrypoint in guardian mode", 
   assert.equal(unrefs, 1, "detaches from the parent lifecycle");
 });
 
+test("a synchronous spawn failure returns false instead of crashing the backend", () => {
+  const launched = spawnAgentReaperGuardian({
+    entrypointPath: "/app/backend-entrypoint.js",
+    targetPid: 7777,
+    platform: "darwin",
+    spawnGuardian: () => {
+      // e.g. EAGAIN / EMFILE / permission — spawn can throw synchronously.
+      throw new Error("EAGAIN: resource temporarily unavailable");
+    },
+  });
+
+  assert.equal(launched, false);
+});
+
+test("registers a no-op 'error' listener so a failed async launch can't crash the backend", () => {
+  const events: string[] = [];
+  const launched = spawnAgentReaperGuardian({
+    entrypointPath: "/app/backend-entrypoint.js",
+    targetPid: 7777,
+    platform: "darwin",
+    spawnGuardian: () => ({
+      unref: () => {},
+      on: (event) => {
+        events.push(event);
+      },
+    }),
+  });
+
+  assert.equal(launched, true);
+  assert.deepEqual(events, ["error"], "an 'error' handler is attached before unref");
+});
+
 test("is a no-op on Windows (ppid==1 reaping is POSIX-only)", () => {
   let spawned = 0;
   const launched = spawnAgentReaperGuardian({
