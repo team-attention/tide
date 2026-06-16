@@ -204,11 +204,16 @@ export function createComposer(
             <ChipFeedbackBadge feedback={viewModel.composer.modelFeedback} />
             <ChevronDown size={13} strokeWidth={1.9} className="composer-shell__chip-chevron" aria-hidden />
           </button>
-          {/* While the agent runs with NOTHING to send, the button is Stop (interrupt).
-              Add any content — typed text, a pasted image, or a context chip/block — and
-              it becomes Send so you can queue it (no need to also type text). Interrupt
-              while a draft/queue exists lives on the queued rows instead (createQueuedSteerStack). */}
-          {viewModel.chatState === "running" && !composerHasContent(viewModel)
+          {/* While the runtime is LIVE with NOTHING to send, the button is Stop (interrupt) —
+              "live" includes waiting on a prompt, so a Thread parked on an approval/question
+              the UI didn't surface is always escapable (Stop clears it backend-side). Add any
+              content — typed text, a pasted image, or a context chip/block — and it becomes
+              Send so you can queue it. Interrupt while a draft/queue exists lives on the queued
+              rows instead (createQueuedSteerStack). */}
+          {(viewModel.chatState === "running" ||
+            viewModel.chatState === "waiting_for_approval" ||
+            viewModel.chatState === "waiting_for_input") &&
+          !composerHasContent(viewModel)
             ? createComposerStopButton(handlers.onInterrupt)
             : createComposerSendButton(viewModel.composer.submitLabel)}
         </div>

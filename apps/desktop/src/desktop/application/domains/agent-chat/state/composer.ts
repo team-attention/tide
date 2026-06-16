@@ -221,17 +221,30 @@ export function interruptComposer(
   if (state.thread === null) {
     return { state, command: null };
   }
-  const busy = state.runtimeState === "running" || state.runtimeState === "starting";
+  // Interrupt is the universal escape: it must work in EVERY non-idle runtime state,
+  // including waiting_for_input/waiting_for_approval. A Thread parked on a prompt the
+  // UI isn't surfacing (a missed prompt.changed) would otherwise be unrecoverable —
+  // the queue never drains (recordTurnComplete holds it while a prompt is live) and
+  // there was no Stop. Stop routes to the backend stopAgentRuntime, which clears the
+  // prompt and drains a queued follow-up / settles to idle. Same for all providers.
+  const busy =
+    state.runtimeState === "running" ||
+    state.runtimeState === "starting" ||
+    state.runtimeState === "waiting_for_input" ||
+    state.runtimeState === "waiting_for_approval";
   if (!busy) {
     return { state, command: null };
   }
+  // Interrupting kills the in-flight prompt (the backend clears it too) — drop the card
+  // optimistically so the composer is usable immediately, not blocked on prompt.answer.
+  const interrupted = state.promptState === null ? state : { ...state, promptState: null };
   // With a queued follow-up, Stop CONSUMES it: the current turn ends and the queued
   // message runs next. Keep the optimistic row + stay running (the backend confirms
   // with the new turn). With no queue it's a plain interrupt: settle to idle instantly
   // so the Working indicator/timer stops and the next message is a fresh turn.
   if (state.queuedInputs.length > 0) {
     return {
-      state,
+      state: interrupted,
       command: {
         kind: "agentRuntime.stop",
         payload: { threadId: state.thread.threadId },
@@ -239,7 +252,7 @@ export function interruptComposer(
     };
   }
   return {
-    state: { ...state, runtimeState: "idle" },
+    state: { ...interrupted, runtimeState: "idle" },
     command: {
       kind: "agentRuntime.stop",
       payload: { threadId: state.thread.threadId },

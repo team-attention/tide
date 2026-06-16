@@ -297,6 +297,57 @@ test("switching_back_to_a_prompt_waiting_thread_keeps_the_select_box_then_follow
   assert.equal(hydratedNull.agentChat.runtimeState, "idle");
 });
 
+test("a_late_thread_hydrated_for_a_non_active_thread_clears_its_skeleton_so_switch_back_renders", () => {
+  // flow C (spec: waiting-state-recovery): a thread.hydrated that lands AFTER the user
+  // switched away must clear the background entry's `hydrating`. Otherwise re-opening the
+  // thread restores a preserved state stuck in the loading skeleton forever — the
+  // "새로고침했더니 내용 안 보임 (점 붙은 스레드만)" report. The skeleton is renderer-only;
+  // the backend serves the blocks fine.
+  const summary = (threadId: string, title: string, lastKnownState = "idle") => ({
+    threadId,
+    title,
+    agentBinding: { agentId: "claude", runtimeSource: { kind: "provider_cli", integrationId: "claude" } },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    createdAt: "2026-06-16T00:00:00.000Z",
+    updatedAt: "2026-06-16T00:01:00.000Z",
+    pinned: true,
+    archived: false,
+    lastKnownState,
+  });
+  const block = (id: string) => ({
+    blockId: id, threadId: "thread-a", agentId: "claude", kind: "agent_message",
+    role: "agent", status: "complete", body: "restored content", createdAt: "x", updatedAt: "x",
+    sourceFrameIds: [],
+  });
+
+  const base = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: { threads: [summary("thread-a", "A", "waiting_for_approval"), summary("thread-b", "B")] },
+  });
+  // Open A → optimistic skeleton (hydrating, no blocks yet).
+  const onA = openProductShellThreadFromLeftRail(base, "thread-a", { backendTransportAvailable: true }).state;
+  assert.equal(createProductShellViewModel(onA).agentChat.chatState, "hydrating", "A starts as skeleton");
+  // Switch to B BEFORE A's hydrate returns (preserves A's hydrating state in the bg map).
+  const onB = openProductShellThreadFromLeftRail(onA, "thread-b", { backendTransportAvailable: true }).state;
+  // A's hydrate arrives LATE, while B is active → must still clear A's preserved skeleton.
+  const afterLateHydrate = applyProductShellBackendEvent(onB, {
+    kind: "thread.hydrated",
+    payload: {
+      thread: summary("thread-a", "A", "waiting_for_approval"),
+      blocks: [block("b1")],
+      runtimeState: "waiting_for_approval",
+      prompt: null,
+    },
+  });
+  // Switching back to A must render its content, not a permanent skeleton.
+  const backToA = openProductShellThreadFromLeftRail(afterLateHydrate, "thread-a", { backendTransportAvailable: true }).state;
+  assert.notEqual(
+    createProductShellViewModel(backToA).agentChat.chatState,
+    "hydrating",
+    "switch-back must not re-show the skeleton",
+  );
+});
+
 test("confirming_thread_archive_emits_command_and_drops_it_from_the_list", () => {
   // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
   const state = threadListState();

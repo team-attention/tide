@@ -187,10 +187,15 @@ export function createLiveAgentSessionEventProjector(input: {
       threadId: args.threadId,
       service,
       onEvent: input.onEvent,
-      // A turn-end that produced real content (answer / notice) is a genuine end and
-      // settles unconditionally; a bare/empty turn-end does not force, so it can't
-      // settle away a live, still-unanswered prompt (spurious turn-end while waiting).
-      force: args.outcome.finalMessage !== undefined || args.outcome.notice !== undefined,
+      // A turn-end NEVER force-settles past a live, unanswered prompt — not even one that
+      // carried a final message. The AskUserQuestion pattern produces BOTH a final
+      // message (the agent's explanatory text) AND a question card in the same turn; the
+      // old `finalMessage !== undefined` force dropped that just-raised card (root of the
+      // "card never showed / thread stuck waiting" report). When there is NO live prompt,
+      // recordTurnComplete settles regardless of force, so force adds nothing there; when
+      // there IS one, the card must survive so the user can answer it (or Stop). Only a
+      // genuine runtime_exited forces (handled below) — that card is truly dead. A card
+      // the user already answered is settled via promptAnsweredPendingSettle, not force.
     });
     // Turn settled — the conversation's durable state matters now; flush eagerly.
     await flushPersist(args.threadId);
@@ -568,9 +573,10 @@ async function emitTurnComplete(input: {
   threadId: string;
   service: ThreadRuntimeService;
   onEvent?: (event: BackendEventEnvelope) => void;
-  // Settle even if the thread is still blocked on an unanswered prompt. Set for a
-  // genuine runtime exit and for a turn-end that carried real content; left unset for
-  // a bare turn-end so a spurious one can't drop a live, never-answered card.
+  // Settle even if the thread is still blocked on an unanswered prompt. Set ONLY for a
+  // genuine runtime exit (the card is then truly dead). A turn-end NEVER forces — a
+  // spurious/empty turn-end (or the AskUserQuestion text+question shape) must not drop a
+  // live, never-answered card. An answered card settles via promptAnsweredPendingSettle.
   force?: boolean;
 }): Promise<void> {
   const result = await input.service.recordTurnComplete({ threadId: input.threadId, force: input.force });
