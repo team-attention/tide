@@ -704,9 +704,14 @@ export function applyProductShellThreadEvent(
   // switched away (or a switch-away/back race) strands the preserved entry in the
   // loading skeleton, and re-opening the thread shows it forever. The active surface is
   // handled by applyAgentChatBackendEvent upstream; this hardens the background map.
+  // Only a hydrate/start event seeds blocks + clears `hydrating`. Guard against this
+  // helper ever being reached by another thread event (rename / launch-options) for
+  // which applying the agent-chat reducer to a background entry would be a no-op at best
+  // and a surprise mutation at worst (Gemini review).
+  const isHydrateEvent = event.kind === "thread.hydrated" || event.kind === "thread.started";
   const preservedAgentChat = state.agentChatByThreadId[threadSummary.threadId];
   const agentChatByThreadId =
-    !isActiveThread && preservedAgentChat !== undefined && preservedAgentChat.hydrating
+    isHydrateEvent && !isActiveThread && preservedAgentChat !== undefined && preservedAgentChat.hydrating
       ? {
           ...state.agentChatByThreadId,
           [threadSummary.threadId]: applyAgentChatBackendEvent(preservedAgentChat, event),
