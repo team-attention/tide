@@ -297,8 +297,10 @@ function WizardPromptCard(props: {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stepIndex, answers, choices, hasChoices, multiSelect, isLast]);
+    // All reactive values the keydown closure reads (goNext/submit/setCurrent close over
+    // stepIndex, answers, steps, props.onAnswerSteps; isLast/choices/hasChoices/multiSelect
+    // are read directly) — so the listener never holds a stale callback.
+  }, [stepIndex, answers, choices, hasChoices, multiSelect, isLast, steps, props]);
 
   return (
     <div className="prompt-card prompt-card--wizard" role="group" aria-label="Agent prompt">
