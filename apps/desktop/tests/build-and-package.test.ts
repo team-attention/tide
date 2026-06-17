@@ -52,7 +52,7 @@ test("electron_builder_declares_the_auto_update_feed", () => {
     fs.readFileSync(path.join(repoRoot, "electron-builder.json"), "utf8"),
   ) as {
     publish?: { provider?: string; owner?: string; repo?: string };
-    mac?: { target?: string[]; notarize?: { teamId?: string } };
+    mac?: { target?: string[]; notarize?: boolean };
   };
 
   // electron-updater needs the zip target + a generated latest-mac.yml; the dmg
@@ -65,8 +65,10 @@ test("electron_builder_declares_the_auto_update_feed", () => {
   assert.equal(config.publish?.owner, "eatnug");
   assert.equal(config.publish?.repo, "tide-desktop-releases");
   // Notarization moves into electron-builder so the zip's app (not just the dmg) is
-  // notarized — an auto-updated app must pass Gatekeeper.
-  assert.equal(config.mac?.notarize?.teamId, "D86BXTY5VR");
+  // notarized — an auto-updated app must pass Gatekeeper. electron-builder 26.x wants a
+  // boolean here; the Apple team id is supplied via APPLE_TEAM_ID in the release workflow
+  // (asserted in desktop_release_workflow_publishes_to_the_dedicated_repo).
+  assert.equal(config.mac?.notarize, true);
 });
 
 test("electron_updater_is_a_runtime_dependency", () => {
@@ -90,6 +92,8 @@ test("desktop_release_workflow_publishes_to_the_dedicated_repo", () => {
   // (the default GITHUB_TOKEN can't write to another account/repo).
   assert.match(workflow, /--publish always/);
   assert.match(workflow, /DESKTOP_RELEASES_TOKEN/);
+  // notarize: true in electron-builder.json relies on the Apple team id coming from env.
+  assert.match(workflow, /APPLE_TEAM_ID:\s*"D86BXTY5VR"/);
 });
 
 test("provider_smoke_script_is_opt_in", () => {
