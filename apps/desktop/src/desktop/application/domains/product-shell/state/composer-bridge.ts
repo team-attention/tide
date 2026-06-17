@@ -203,12 +203,11 @@ export function removeProductShellComposerAttachment(
 export function submitProductShellComposerDraft(
   state: ProductShellState,
 ): ProductShellUpdateResult {
-  const input = state.agentChat.composer.draft.trim();
-  // A message with no text but with pasted images is still a valid send.
-  if (input.length === 0 && state.agentChat.composer.attachments.length === 0) {
-    return { state, command: null };
-  }
-
+  // What counts as sendable — typed text, a pasted image, OR an attached content
+  // chip (a "block") — is decided once, in submitComposer: any one alone is a valid
+  // input. It returns the SAME state reference for a truly-empty composer, which the
+  // `result.state === state.agentChat` no-op branch below handles. (Re-checking only
+  // draft+attachments here used to silently drop a block-only send.)
   const result = submitComposer(state.agentChat);
   if (result.state === state.agentChat) {
     return { state, command: result.command };

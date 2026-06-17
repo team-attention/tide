@@ -34,6 +34,7 @@ import {
   toBackendCommandDraft,
 } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/contract-adapter.ts";
 import { AgentChatShell } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.tsx";
+import { renderUserBody } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/transcript/user-turn.tsx";
 import {
   CONTRACT_VERSION,
   type AgentSessionBlockDto,
@@ -664,6 +665,45 @@ test("a_message_with_only_an_added_chip_and_no_draft_is_still_a_valid_send", () 
   const input = command?.kind === "composer.sendInput" ? String(command.payload.input) : "";
   assert.ok(input.includes("**↳ npm test**"));
   assert.ok(input.includes("npm test → 564 passing"));
+});
+
+test("a_quoted_message_chip_drops_the_redundant_label_header", () => {
+  // Spec: composer-block-only-send-and-focus. A quoted MESSAGE renders its text as a
+  // blockquote, so the "↳ <label>" header (a truncation of that same text) would just
+  // repeat the quote — it is dropped. File/code chips keep their header (tested above).
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const withQuote = addComposerContextChip(hydrated, {
+    id: "chip-1",
+    kind: "message",
+    label: "Focus goes to the main composer inp…",
+    text: "> Focus goes to the main composer input, not the chip comment field.",
+  }).state;
+  const drafted = updateComposerDraft(withQuote, "the chip comment is more natural").state;
+
+  const result = submitComposer(drafted);
+  const command = result.command ? toBackendCommandDraft(result.command) : null;
+  const input = command?.kind === "composer.sendInput" ? String(command.payload.input) : "";
+
+  assert.ok(!input.includes("**↳ "), "no redundant ↳ label header for a quoted message");
+  assert.ok(input.includes("> Focus goes to the main composer input"), "the quote itself is kept");
+  assert.ok(input.trimEnd().endsWith("the chip comment is more natural"));
+});
+
+test("renderUserBody_renders_a_blockquote_led_message_as_a_structured_attachment", () => {
+  // Spec: composer-block-only-send-and-focus. With the header dropped, a quoted message
+  // leads with a blockquote; it must still render as the structured (markdown) attachment
+  // body so the quote reads as a quote — not a flat paragraph showing a literal "> ".
+  const quoted = renderToStaticMarkup(renderUserBody("> quoted line\n\nmy reply"));
+  assert.match(quoted, /agent-session-turn__body--attachments/);
+  assert.match(quoted, /<blockquote>/);
+
+  // A plain message (no header, no quote) stays a flat paragraph.
+  const plain = renderToStaticMarkup(renderUserBody("just a normal message"));
+  assert.doesNotMatch(plain, /agent-session-turn__body--attachments/);
+  assert.match(plain, /just a normal message/);
 });
 
 test("removing_a_staged_chip_drops_it_from_the_next_message", () => {

@@ -32,7 +32,11 @@ export function renderUserBody(body: string): ReactElement {
   }
   const text = body.replace(ATTACHED_IMAGE_RE, "").trim();
   if (images.length === 0) {
-    return text.includes("**↳ ") ? (
+    // Render as a structured attachment body when it carries a "↳ label" header
+    // (file/code/terminal/browser chips) OR a leading blockquote (a quoted message,
+    // whose header is dropped as redundant — see formatContextChipForMessage).
+    const isAttachment = text.includes("**↳ ") || /(^|\n)>\s/.test(text);
+    return isAttachment ? (
       renderUserAttachmentBody(body)
     ) : (
       <p className="agent-session-turn__body">{body}</p>

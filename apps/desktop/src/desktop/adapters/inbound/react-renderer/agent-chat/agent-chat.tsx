@@ -32,6 +32,24 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const sessionRef = useRef<HTMLElement | null>(null);
+  // "Add to chat" (a workbench/transcript selection → a context chip) should drop the
+  // cursor straight into the NEWLY ADDED chip's comment field, so the user can note what
+  // they want about that selection without an extra click. A chip is always appended, so
+  // the new one is last; focus it by its id. Only fire on an INCREASE — chips grow only
+  // through an explicit add, so this never steals focus on load, thread-switch, or while
+  // editing an existing chip's comment.
+  const chips = viewModel.composer.contextChips;
+  const chipCount = chips.length;
+  const lastChipId = chipCount > 0 ? chips[chipCount - 1].id : null;
+  const prevChipCountRef = useRef(chipCount);
+  useEffect(() => {
+    if (chipCount > prevChipCountRef.current && lastChipId !== null) {
+      document
+        .querySelector<HTMLTextAreaElement>(`textarea[data-chip-comment-id="${lastChipId}"]`)
+        ?.focus();
+    }
+    prevChipCountRef.current = chipCount;
+  }, [chipCount, lastChipId]);
   // Floating "Add to chat" for a drag-selection inside the transcript — quoting
   // any part of the conversation into the composer as a message chip.
   const [transcriptSel, setTranscriptSel] = useState<{ x: number; y: number; text: string } | null>(null);
