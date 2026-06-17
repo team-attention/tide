@@ -2760,6 +2760,44 @@ test("prompt_choice_surface_renders_above_composer_with_canonical_spacing", () =
   assert.match(html, /Deny/);
 });
 
+// Spec: docs_v2/specs/prompt-card-height-overflow.md
+test("prompt_card_with_a_tall_body_caps_height_and_keeps_actions_reachable", () => {
+  // A long approval body (e.g. `gh pr create … --body "<long>"`) must not grow the docked
+  // card past the viewport and clip the Skip/Submit controls with no way to scroll.
+  const longBody = Array.from({ length: 80 }, (_, i) => `pr body line ${i}`).join("\n");
+  const state = applyProductShellPromptState(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      promptId: "prompt-approval-tall",
+      threadId: "thread-workbench",
+      agentId: "claude",
+      kind: "approval",
+      message: `gh pr create --base main --head bugs --body "${longBody}"`,
+      source: "provider_signal",
+      choices: [
+        { choiceId: "allow", label: "Allow", providerValue: "allow" },
+        { choiceId: "deny", label: "Deny", providerValue: "deny" },
+      ],
+    },
+  );
+  const html = renderProductShell(state);
+  const css = readProductShellCss();
+
+  // The live prompt card renders the FULL body plus the answer controls — the controls
+  // must be present in the DOM (never conditionally dropped when the body is long).
+  assert.match(html, /aria-label="Agent prompt"/);
+  assert.match(html, /pr body line 79/);
+  assert.match(html, /Submit/);
+  assert.match(html, /Allow/);
+
+  // The card is height-capped; its long regions scroll internally while the actions stay
+  // pinned (flex: 0 0 auto), so Skip/Submit are reachable however tall the body grows.
+  assert.match(css, /\.prompt-card\s*{[^}]*max-height:/s);
+  assert.match(css, /\.prompt-card__message\s*{[^}]*overflow-y:\s*auto/s);
+  assert.match(css, /\.prompt-card__options\s*{[^}]*overflow-y:\s*auto/s);
+  assert.match(css, /\.prompt-card__actions\s*{[^}]*flex:\s*0 0 auto/s);
+});
+
 test("product_shell_prompt_choice_row_emits_prompt_answer_command", () => {
   const state = applyProductShellPromptState(
     openProductShellThread(createProductShellState(), "thread-workbench"),

@@ -13,9 +13,15 @@
   border-radius: 12px;
   background: var(--tide-bg);
   box-shadow: 0 10px 28px -14px rgba(36, 33, 38, 0.3);
+  /* The card docks above the composer (not in the scrollable transcript), so a tall
+     body — a long approval command, many options — would grow it past the viewport and
+     the grid's overflow:hidden would clip the Skip/Submit actions with no way to scroll.
+     Cap the height and let the message/options scroll INSIDE the card while the actions
+     stay pinned, leaving room for the composer below. See prompt-card-height-overflow.md. */
+  max-height: min(52vh, 560px);
 }
 
-.prompt-card__head { display: flex; flex-direction: column; gap: 6px; }
+.prompt-card__head { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 0; }
 
 .prompt-card__kind {
   align-self: flex-start;
@@ -36,9 +42,28 @@
   font-weight: 600;
   line-height: 1.45;
   white-space: pre-wrap;
+  /* Take the card's leftover height and scroll a long body internally (kind badge stays
+     pinned above, actions below). overflow-wrap wraps an unbroken long token (URL, flag)
+     instead of forcing horizontal overflow; overscroll-behavior keeps the wheel from
+     chaining to the transcript behind the dock. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
 }
 
-.prompt-card__options { display: flex; flex-direction: column; gap: 6px; }
+.prompt-card__options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* A choice/permission prompt with many options scrolls instead of pushing the actions
+     off the bottom of the card. */
+  min-height: 0;
+  max-height: 30vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 
 .prompt-card__option {
   display: flex;
@@ -131,7 +156,9 @@
 
 .prompt-card__other:focus { border-color: var(--tide-action, var(--tide-muted)); }
 
-.prompt-card__actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* Pinned below the scrollable message/options: Skip/Submit (Allow/Deny) must never shrink
+   or scroll out of reach, however tall the body is. */
+.prompt-card__actions { display: flex; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
 
 .prompt-card__skip {
   padding: 7px 14px;
