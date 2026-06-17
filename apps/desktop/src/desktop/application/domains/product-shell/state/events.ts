@@ -202,7 +202,9 @@ export function applyProductShellBackendEvent(
       // event, fired the moment the user clicks Editor to open the picker — must NOT read as
       // "nothing visible" and snap the workbench shut from under the picker. Treat an open
       // picker like a visible pane: preserve the user's open state rather than closing.
-      const pickerOpen = nextState.editorPickerFilter !== null;
+      // A string (incl. "") means the picker is open; null/undefined means closed. Use a
+      // typeof check rather than `!== null` so a missing value never reads as "open".
+      const pickerOpen = typeof nextState.editorPickerFilter === "string";
       const nextWorkbenchOpen = hasNewRealPane
         ? true
         : anyVisible || pickerOpen

@@ -12,6 +12,16 @@ const fs = require("node:fs");
 
 const repo = path.resolve(__dirname, "..");
 
+// Clean up the seeded data dir on exit so repeated runs don't litter the temp folder.
+let dataRoot;
+process.on("exit", () => {
+  if (dataRoot) {
+    try {
+      fs.rmSync(dataRoot, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
 async function clickWorkbenchToggle(page) {
   const t = page.locator('[aria-label="Open Workbench"], [aria-label="Close Workbench"]').first();
   await t.waitFor({ state: "visible", timeout: 8000 });
@@ -19,7 +29,7 @@ async function clickWorkbenchToggle(page) {
 }
 
 (async () => {
-  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tide-pw-bpv-"));
+  dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tide-pw-bpv-"));
   const app = await _electron.launch({
     args: [path.join(repo, "out/main/electron-main.js")],
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
