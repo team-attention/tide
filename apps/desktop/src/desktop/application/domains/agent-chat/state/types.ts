@@ -225,12 +225,29 @@ export interface AgentChatThreadContext {
   branch?: string;
 }
 
+export type AgentChatPromptChoiceKind =
+  | "allow_once"
+  | "allow_always"
+  | "reject_once"
+  | "reject_always";
+
+// What an approval/permission prompt is asking the user to approve (command/diff + paths).
+export interface AgentChatPromptDetail {
+  format: "text" | "diff";
+  body: string;
+  locations?: string[];
+}
+
 export interface AgentChatPromptState {
   promptId: string;
   threadId: string;
   agentId: string;
   kind: "question" | "approval" | "permission" | "choice" | "command_picker";
   message: string;
+  // Short chip label for a question (claude AskUserQuestion header).
+  header?: string;
+  // Approval/permission detail: the command/diff being approved.
+  detail?: AgentChatPromptDetail;
   choices?: AgentChatPromptChoice[];
   defaultChoiceId?: string;
   // Multi-select question: the card toggles several options and submits them together.
@@ -245,11 +262,18 @@ export interface AgentChatPromptChoice {
   choiceId: string;
   label: string;
   providerValue: string;
+  // Per-option explanation + preview (claude AskUserQuestion option.description/preview).
+  description?: string;
+  preview?: string;
+  // Approval semantic (ACP options[].kind); undefined for claude/codex.
+  kind?: AgentChatPromptChoiceKind;
 }
 
 export interface AgentChatPromptStep {
   stepId: string;
   message: string;
+  // Short chip label for this question (claude AskUserQuestion header).
+  header?: string;
   choices?: AgentChatPromptChoice[];
   defaultChoiceId?: string;
   multiSelect?: boolean;
@@ -260,6 +284,8 @@ export interface AgentChatPromptStep {
 export interface AgentChatPromptStepAnswer {
   stepId: string;
   value: string;
+  // Free-text note the user attached to this question (claude AskUserQuestion annotations).
+  notes?: string;
 }
 
 export interface AgentChatProviderReadiness {

@@ -11,12 +11,19 @@ import { STRUCTURED_ALLOW_TOKEN, STRUCTURED_OPTION_PREFIX, isRecord, stringField
 // A pending claude permission/tool request awaiting a control_response. AskUserQuestion
 // requests carry the sequential multi-question state (claude requires EVERY question
 // answered before the tool runs); a plain permission leaves `askUserQuestion` unset.
+// Per-question annotations claude reads back from the AskUserQuestion tool: the user's
+// free-text `notes` and an echo of the chosen option's authored `preview`. Keyed by question
+// text, exactly like `answers`. Sent in `updatedInput.annotations` when non-empty.
+export type AskUserQuestionAnnotations = Record<string, { notes?: string; preview?: string }>;
+
 export interface PendingPermission {
   requestId: string;
   toolInput: unknown;
   askUserQuestion?: {
     questions: unknown[];
     answers: Record<string, string>;
+    // Accumulated alongside `answers` for the sequential (one-at-a-time) answer path.
+    annotations: AskUserQuestionAnnotations;
     index: number;
   };
 }
@@ -43,9 +50,11 @@ export function surfaceAskUserQuestion(
   questions: unknown[],
   answers: Record<string, string>,
   index: number,
+  annotations: AskUserQuestionAnnotations,
 ): boolean {
   const question = isRecord(questions[index]) ? questions[index] : undefined;
   const questionText = question !== undefined ? stringField(question, "question") : undefined;
+  const header = question !== undefined ? stringField(question, "header") : undefined;
   const options = question !== undefined && Array.isArray(question.options) ? question.options : [];
   const optionChoices = buildOptionChoices(options);
   if (questionText === undefined || optionChoices.length === 0) {
@@ -55,7 +64,7 @@ export function surfaceAskUserQuestion(
   ctx.pendingPermissions.set(promptId, {
     requestId,
     toolInput,
-    askUserQuestion: { questions, answers, index },
+    askUserQuestion: { questions, answers, annotations, index },
   });
   const total = questions.length;
   // A multiSelect question lets the user pick several options; the card submits them
@@ -69,6 +78,7 @@ export function surfaceAskUserQuestion(
     kind: "choice",
     // Number multi-question prompts so the user knows more are coming.
     message: total > 1 ? `(${index + 1}/${total}) ${questionText}` : questionText,
+    ...(header !== undefined ? { header } : {}),
     choices: optionChoices,
     defaultChoiceId: optionChoices[0]?.choiceId,
     ...(multiSelect ? { multiSelect: true } : {}),
@@ -114,7 +124,7 @@ export function surfaceAskUserQuestionWizard(
   ctx.pendingPermissions.set(promptId, {
     requestId,
     toolInput,
-    askUserQuestion: { questions, answers: {}, index: 0 },
+    askUserQuestion: { questions, answers: {}, annotations: {}, index: 0 },
   });
   const head = steps[0];
   const promptState: PromptState = {
@@ -125,6 +135,7 @@ export function surfaceAskUserQuestionWizard(
     // Single-view fallback mirrors step 0 (the wizard chrome shows the i/N position, so
     // no "(i/N)" prefix on the raw question).
     message: head.message,
+    ...(head.header !== undefined ? { header: head.header } : {}),
     choices: head.choices,
     defaultChoiceId: head.defaultChoiceId,
     ...(head.multiSelect === true ? { multiSelect: true } : {}),
@@ -145,24 +156,21 @@ export function surfaceAskUserQuestionWizard(
 export function answerAskUserQuestion(
   ctx: AskUserQuestionContext,
   pending: PendingPermission,
-  input: { value: string; stepAnswers?: PromptStepAnswer[] },
+  input: { value: string; stepAnswers?: PromptStepAnswer[]; notes?: string },
 ): void {
   const askUserQuestion = pending.askUserQuestion;
   if (askUserQuestion === undefined) {
     return;
   }
   if (input.stepAnswers !== undefined) {
-    sendAskUserQuestionAllow(
-      ctx,
-      pending.requestId,
-      pending.toolInput,
-      answersFromStepAnswers(askUserQuestion.questions, input.stepAnswers),
-    );
+    const { answers, annotations } = answersFromStepAnswers(askUserQuestion.questions, input.stepAnswers);
+    sendAskUserQuestionAllow(ctx, pending.requestId, pending.toolInput, answers, annotations);
     return;
   }
-  const { questions, answers, index } = askUserQuestion;
-  const currentQuestion = isRecord(questions[index])
-    ? stringField(questions[index] as Record<string, unknown>, "question")
+  const { questions, answers, annotations, index } = askUserQuestion;
+  const currentQuestionRecord = questions[index];
+  const currentQuestion = isRecord(currentQuestionRecord)
+    ? stringField(currentQuestionRecord, "question")
     : undefined;
   // A listed option arrives as structured:option:<label>; any OTHER non-empty value is
   // the user's typed "Other…" free-text reply, which claude accepts verbatim. An empty
@@ -173,6 +181,13 @@ export function answerAskUserQuestion(
     answerText !== undefined && currentQuestion !== undefined
       ? { ...answers, [currentQuestion]: answerText }
       : answers;
+  // Attach the user's note + the chosen option's preview echo to this question.
+  const annotation =
+    currentQuestion !== undefined ? buildAnnotation(currentQuestionRecord, input.value, input.notes) : undefined;
+  const nextAnnotations =
+    annotation !== undefined && currentQuestion !== undefined
+      ? { ...annotations, [currentQuestion]: annotation }
+      : annotations;
   const nextIndex = index + 1;
   if (
     nextIndex < questions.length &&
@@ -183,11 +198,12 @@ export function answerAskUserQuestion(
       questions,
       nextAnswers,
       nextIndex,
+      nextAnnotations,
     )
   ) {
     return; // more questions to ask before allowing the tool
   }
-  sendAskUserQuestionAllow(ctx, pending.requestId, pending.toolInput, nextAnswers);
+  sendAskUserQuestionAllow(ctx, pending.requestId, pending.toolInput, nextAnswers, nextAnnotations);
 }
 
 function sendAskUserQuestionAllow(
@@ -195,8 +211,12 @@ function sendAskUserQuestionAllow(
   requestId: string,
   toolInput: unknown,
   answers: Record<string, string>,
+  annotations: AskUserQuestionAnnotations,
 ): void {
-  const updatedInput = isRecord(toolInput) ? { ...toolInput, answers } : toolInput;
+  const hasAnnotations = Object.keys(annotations).length > 0;
+  const updatedInput = isRecord(toolInput)
+    ? { ...toolInput, answers, ...(hasAnnotations ? { annotations } : {}) }
+    : toolInput;
   ctx.writeLine({
     type: "control_response",
     response: {
@@ -209,15 +229,22 @@ function sendAskUserQuestionAllow(
 
 function buildOptionChoices(options: unknown[]): PromptChoice[] {
   return options
-    .map((option) =>
-      isRecord(option) && typeof option.label === "string"
-        ? {
-            choiceId: `opt-${option.label}`,
-            label: option.label,
-            providerValue: `${STRUCTURED_OPTION_PREFIX}${option.label}`,
-          }
-        : undefined,
-    )
+    .map((option) => {
+      if (!isRecord(option) || typeof option.label !== "string") {
+        return undefined;
+      }
+      // AskUserQuestion options carry `description` (per-option explanation) and an
+      // optional `preview` (mockup/code) — surface both so the card can show them.
+      const description = stringField(option, "description");
+      const preview = stringField(option, "preview");
+      return {
+        choiceId: `opt-${option.label}`,
+        label: option.label,
+        providerValue: `${STRUCTURED_OPTION_PREFIX}${option.label}`,
+        ...(description !== undefined ? { description } : {}),
+        ...(preview !== undefined ? { preview } : {}),
+      };
+    })
     .filter((choice): choice is PromptChoice => choice !== undefined);
 }
 
@@ -227,6 +254,7 @@ function buildOptionChoices(options: unknown[]): PromptChoice[] {
 function buildAskUserQuestionStep(question: unknown, index: number): PromptStep | undefined {
   const record = isRecord(question) ? question : undefined;
   const questionText = record !== undefined ? stringField(record, "question") : undefined;
+  const header = record !== undefined ? stringField(record, "header") : undefined;
   const options = record !== undefined && Array.isArray(record.options) ? record.options : [];
   const choices = buildOptionChoices(options);
   if (questionText === undefined || choices.length === 0) {
@@ -235,6 +263,7 @@ function buildAskUserQuestionStep(question: unknown, index: number): PromptStep 
   return {
     stepId: `q-${index}`,
     message: questionText,
+    ...(header !== undefined ? { header } : {}),
     choices,
     defaultChoiceId: choices[0]?.choiceId,
     ...(record?.multiSelect === true ? { multiSelect: true } : {}),
@@ -246,8 +275,9 @@ function buildAskUserQuestionStep(question: unknown, index: number): PromptStep 
 function answersFromStepAnswers(
   questions: unknown[],
   stepAnswers: PromptStepAnswer[],
-): Record<string, string> {
+): { answers: Record<string, string>; annotations: AskUserQuestionAnnotations } {
   const answers: Record<string, string> = {};
+  const annotations: AskUserQuestionAnnotations = {};
   for (const stepAnswer of stepAnswers) {
     const index = parseStepIndex(stepAnswer.stepId);
     if (index === undefined) {
@@ -262,8 +292,48 @@ function answersFromStepAnswers(
     if (answerText !== undefined) {
       answers[questionText] = answerText;
     }
+    const annotation = buildAnnotation(question, stepAnswer.value, stepAnswer.notes);
+    if (annotation !== undefined) {
+      annotations[questionText] = annotation;
+    }
   }
-  return answers;
+  return { answers, annotations };
+}
+
+// Build the claude annotation for one answered question: the user's free-text note plus an
+// echo of the chosen option's authored preview. Returns undefined when there's nothing to
+// attach (no note, and the chosen option had no preview / the answer was free text).
+function buildAnnotation(
+  question: unknown,
+  value: string,
+  notes: string | undefined,
+): { notes?: string; preview?: string } | undefined {
+  const trimmed = notes?.trim();
+  const note = trimmed !== undefined && trimmed.length > 0 ? trimmed : undefined;
+  const preview = chosenOptionPreview(question, value);
+  if (note === undefined && preview === undefined) {
+    return undefined;
+  }
+  return {
+    ...(note !== undefined ? { notes: note } : {}),
+    ...(preview !== undefined ? { preview } : {}),
+  };
+}
+
+// The authored preview of the option the user chose (value = structured:option:<label>),
+// echoed back into annotations. A free-text ("Other…") answer matches no option ⇒ no preview.
+function chosenOptionPreview(question: unknown, value: string): string | undefined {
+  if (!value.startsWith(STRUCTURED_OPTION_PREFIX)) {
+    return undefined;
+  }
+  const label = value.slice(STRUCTURED_OPTION_PREFIX.length);
+  const options = isRecord(question) && Array.isArray(question.options) ? question.options : [];
+  for (const option of options) {
+    if (isRecord(option) && option.label === label) {
+      return stringField(option, "preview");
+    }
+  }
+  return undefined;
 }
 
 // Interpret one prompt-answer value: a listed option strips STRUCTURED_OPTION_PREFIX; any

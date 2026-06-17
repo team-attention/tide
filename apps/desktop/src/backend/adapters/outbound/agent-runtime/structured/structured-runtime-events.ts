@@ -96,6 +96,8 @@ export type StructuredRuntimeWrite =
       promptId?: string;
       choiceId?: string;
       value: string;
+      // Free-text note on a single-question AskUserQuestion answer (→ claude annotations).
+      notes?: string;
       // A multi-step prompt (wizard) submits one answer per step here. When present the
       // client builds the full provider answer set from it; `value`/`choiceId` are the
       // single-prompt path. See multi-step-prompt-navigation.md.

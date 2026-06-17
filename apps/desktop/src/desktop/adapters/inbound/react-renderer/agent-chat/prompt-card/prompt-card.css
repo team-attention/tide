@@ -126,17 +126,19 @@
   transform: rotate(45deg);
 }
 
-.prompt-card__option-label { flex: 1 1 auto; min-width: 0; font-weight: 500; }
+.prompt-card__option-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 
+.prompt-card__option-label { font-weight: 500; }
+
+/* Secondary line under an option label: the option's `description` (wraps freely) or a
+   meaningful provider value. Internal "structured:" routing tokens are filtered out before
+   this renders, so it only ever shows human-readable text. */
 .prompt-card__option-value {
-  flex: 0 0 auto;
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--tide-muted);
-  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .prompt-card__other {
@@ -236,3 +238,105 @@
 
 .prompt-card__skip:disabled { opacity: 0.4; cursor: default; }
 .prompt-card__skip:disabled:hover { background: transparent; }
+
+/* Header chip: a short topic tag for a question (claude AskUserQuestion header), e.g.
+   "Auth method". Sits next to the kind label. */
+.prompt-card__header-chip {
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tide-action, var(--tide-text)) 14%, transparent);
+  color: var(--tide-text);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Approval-option semantic (ACP options[].kind): tint reject options so allow vs reject
+   reads at a glance. allow_* keep the default action tint via [data-selected]. */
+.prompt-card__option[data-kind="reject_once"],
+.prompt-card__option[data-kind="reject_always"] {
+  --tide-action: var(--tide-danger, #d2453f);
+}
+
+/* Focused option's preview (claude AskUserQuestion option.preview): a mockup/code block
+   shown below the option list. */
+.prompt-card__option-preview {
+  margin: 2px 0 0;
+  padding: 9px 11px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--tide-line);
+  border-radius: 9px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Approval detail: the command / diff being approved (claude permission tool input, codex
+   command/fileChange, ACP toolCall content) plus the affected file paths. */
+.prompt-card__detail { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+
+.prompt-card__detail-body {
+  margin: 0;
+  padding: 9px 11px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--tide-line);
+  border-radius: 9px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prompt-card__detail-line { display: block; }
+
+.prompt-card__detail-line[data-line="add"] {
+  background: color-mix(in srgb, var(--tide-success, #2e8b57) 16%, transparent);
+  color: var(--tide-success, #2e8b57);
+}
+
+.prompt-card__detail-line[data-line="del"] {
+  background: color-mix(in srgb, var(--tide-danger, #d2453f) 16%, transparent);
+  color: var(--tide-danger, #d2453f);
+}
+
+.prompt-card__detail-locations { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.prompt-card__detail-location {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--tide-selection);
+  color: var(--tide-muted);
+  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+/* AskUserQuestion note: free-text the user attaches to their answer (claude annotations),
+   below the options. Dashed border distinguishes it from the solid "Other…" reply box;
+   coexists with a selection (it is additive, never required). */
+.prompt-card__note {
+  width: 100%;
+  margin-top: 2px;
+  padding: 8px 11px;
+  border: 1px dashed var(--tide-line);
+  border-radius: 9px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  outline: none;
+  resize: vertical;
+}
+
+.prompt-card__note:focus { border-style: solid; border-color: var(--tide-action, var(--tide-muted)); }

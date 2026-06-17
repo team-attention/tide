@@ -126,6 +126,9 @@ export interface BackendCommandPayloadByKind {
     threadId: ThreadId;
     choiceId?: string;
     value?: string;
+    // Free-text note attached to a single-question AskUserQuestion answer (→ claude
+    // annotations). Wizard notes ride inside each PromptStepAnswerDto instead.
+    notes?: string;
     // A multi-step prompt (wizard) submits one answer per step here, replacing the
     // single `value`/`choiceId`. Absent for ordinary single prompts.
     stepAnswers?: PromptStepAnswerDto[];

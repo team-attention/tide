@@ -170,6 +170,8 @@ export interface AnswerPromptInput {
   promptId: string;
   value?: string;
   choiceId?: string;
+  // Free-text note on a single-question AskUserQuestion answer (→ claude annotations).
+  notes?: string;
   // Set for a multi-step prompt (wizard): one answer per step, forwarded to the runtime
   // write. The single `value`/`choiceId` path is used when this is absent.
   stepAnswers?: PromptStepAnswer[];

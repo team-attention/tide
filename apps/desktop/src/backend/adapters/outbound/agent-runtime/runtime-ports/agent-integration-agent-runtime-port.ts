@@ -215,6 +215,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
         promptId: input.promptId,
         choiceId: input.choiceId,
         value: input.value,
+        notes: input.notes,
         stepAnswers: input.stepAnswers,
       });
     }

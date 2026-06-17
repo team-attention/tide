@@ -171,6 +171,7 @@ export function selectComposerAgent(
 export function answerPromptText(
   state: AgentChatShellState,
   value: string,
+  notes?: string,
 ): AgentChatShellUpdateResult {
   if (state.promptState === null) {
     return { state, command: null };
@@ -185,6 +186,8 @@ export function answerPromptText(
         threadId: state.promptState.threadId,
         promptId: state.promptState.promptId,
         value,
+        // AskUserQuestion note (free text the user attached to their answer); omitted otherwise.
+        ...(notes !== undefined && notes.length > 0 ? { notes } : {}),
       },
     },
   };

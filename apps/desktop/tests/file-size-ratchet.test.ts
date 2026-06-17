@@ -27,8 +27,10 @@ const PINNED_MAX: Record<string, number> = {
   // (composer-draft-thread): createDraftThread/discardDraftThread delegates + the
   // prepareStartInPlace branch in startThread (bodies extracted to DraftThreadService,
   // incl. newThreadRecord) + withdrawProviderPrompt (provider-retracted prompt recovery,
-  // spec waiting-state-recovery). The full thread-runtime-service split is still the real fix.
-  "backend/application/services/thread/thread-runtime-service.ts": 1611,
+  // spec waiting-state-recovery). +1: forward the AskUserQuestion answer `notes` to the
+  // runtime write (prompt-full-fidelity-fields Slice 2). The full thread-runtime-service
+  // split is still the real fix.
+  "backend/application/services/thread/thread-runtime-service.ts": 1612,
   // The inbound command switch (already at the 800 cap) gained the
   // provider.discoverCommands handler for live command mirroring, then the
   // thread.launchOptionsChanged event builder gained the applied + changedKeys

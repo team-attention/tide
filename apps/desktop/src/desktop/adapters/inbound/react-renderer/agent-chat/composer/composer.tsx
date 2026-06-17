@@ -307,7 +307,7 @@ export function createComposerStack(
           key={viewModel.prompt.promptId}
           prompt={viewModel.prompt}
           onSelectChoice={(choiceId: string) => handlers.onChoiceSurfaceRowSelect?.("prompt_state", choiceId)}
-          onAnswerText={(value: string) => handlers.onAnswerPromptText?.(value)}
+          onAnswerText={(value: string, notes?: string) => handlers.onAnswerPromptText?.(value, notes)}
           onAnswerSteps={(stepAnswers) => handlers.onAnswerPromptSteps?.(stepAnswers)}
         />
       ) : null}
