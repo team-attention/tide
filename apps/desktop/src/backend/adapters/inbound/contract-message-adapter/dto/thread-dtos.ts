@@ -119,6 +119,10 @@ export function toProviderReadinessDto(
     agentId: readiness.agentId,
     ready: readiness.ready,
     blockers: readiness.blockers.map((blocker) => ({ ...blocker })),
+    // Non-blocking "newer CLI published" advisory rides alongside, never gating `ready`.
+    ...(readiness.update
+      ? { update: { ...readiness.update, setup: { ...readiness.update.setup } } }
+      : {}),
   };
 }
 

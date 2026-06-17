@@ -46,6 +46,17 @@ export interface ProviderReadinessResult {
   // Present for Provider CLI agents (derived from the integration's declared
   // capabilities). Absent for Tide API agents.
   capabilities?: ProviderRuntimeCapabilitySummary;
+  // A non-blocking "a newer CLI is published" advisory. Independent of `ready`:
+  // an outdated-but-working CLI still starts Threads. Spec: version-management.md.
+  update?: ProviderUpdateAdvisory;
+}
+
+export interface ProviderUpdateAdvisory {
+  currentVersion: string;
+  latestVersion: string;
+  // Updates the CLI in place (npm install -g <pkg>@latest, retry_preflight) —
+  // the same Setup Surface handoff used to install a missing CLI.
+  setup: ProviderSetupSurfaceAction;
 }
 
 export interface ProviderReadinessCheckInput {

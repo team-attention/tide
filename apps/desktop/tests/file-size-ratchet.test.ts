@@ -61,7 +61,10 @@ const PINNED_MAX: Record<string, number> = {
   // so the agent menu's availableAgents is never gated by opencode's slower subprocesses. The real
   // fix is the long-pending live-backend split; until then this holds so it can only shrink.
   // Spec: provider-cli-setup-handoff.md.
-  "backend/infrastructure/node/live/live-backend.ts": 819,
+  // +8: constructs + injects the agent-CLI update checker (createLiveAgentUpdateChecker) — all
+  // detection logic + scheduling live in the collaborator; only the wiring is here.
+  // Spec: version-management.md (Lane 2).
+  "backend/infrastructure/node/live/live-backend.ts": 827,
 };
 
 function listSourceFiles(dir: string): string[] {

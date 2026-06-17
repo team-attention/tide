@@ -28,6 +28,15 @@ export function createAgentChatShellViewModel(
         ? formatAgentLabel(state.providerReadiness.agentId)
         : undefined,
     providerReadinessActionPending: state.providerReadinessActionPending,
+    // The update advisory shows regardless of `ready` (an outdated CLI still works),
+    // so it is derived straight from the readiness state, not gated on blockers.
+    providerUpdateAdvisory: state.providerReadiness?.update
+      ? {
+          agentLabel: formatAgentLabel(state.providerReadiness.agentId),
+          currentVersion: state.providerReadiness.update.currentVersion,
+          latestVersion: state.providerReadiness.update.latestVersion,
+        }
+      : undefined,
     prompt: state.promptState,
     blocks: state.blocks.map(toBlockView),
     composer: {

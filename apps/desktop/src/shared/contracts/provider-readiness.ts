@@ -4,6 +4,20 @@ export interface ProviderReadinessDto {
   agentId: AgentId;
   ready: boolean;
   blockers: ProviderReadinessBlockerDto[];
+  // A non-blocking "a newer CLI is published" advisory. Present only when the
+  // installed version is known to be older than the latest npm version. It never
+  // affects `ready`: an outdated-but-working CLI still starts Threads. Spec:
+  // version-management.md (Lane 2).
+  update?: ProviderUpdateAdvisoryDto;
+}
+
+export interface ProviderUpdateAdvisoryDto {
+  currentVersion: string;
+  latestVersion: string;
+  // The Setup Surface action that updates the CLI in place (npm install -g
+  // <pkg>@latest, re-running preflight on exit) — the same terminal handoff used
+  // to install a missing CLI.
+  setup: ProviderSetupSurfaceActionDto;
 }
 
 export interface ProviderReadinessBlockerDto {

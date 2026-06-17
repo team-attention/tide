@@ -8,15 +8,25 @@
     "out/**",
     "package.json"
   ],
+  "publish": {
+    "provider": "github",
+    "owner": "eatnug",
+    "repo": "tide-desktop-releases",
+    "releaseType": "release"
+  },
   "mac": {
     "target": [
-      "dmg"
+      "dmg",
+      "zip"
     ],
     "icon": "build/icon.icns",
     "category": "public.app-category.developer-tools",
     "hardenedRuntime": true,
     "entitlements": "build/entitlements.mac.plist",
-    "entitlementsInherit": "build/entitlements.mac.inherit.plist"
+    "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+    "notarize": {
+      "teamId": "D86BXTY5VR"
+    }
   },
   "dmg": {
     "title": "${productName}",

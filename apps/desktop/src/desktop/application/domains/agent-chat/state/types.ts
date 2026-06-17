@@ -292,6 +292,14 @@ export interface AgentChatProviderReadiness {
   agentId: string;
   ready: boolean;
   blockers: AgentChatProviderReadinessBlocker[];
+  // Non-blocking "a newer CLI is published" advisory; present independent of `ready`.
+  update?: AgentChatProviderUpdateAdvisory;
+}
+
+export interface AgentChatProviderUpdateAdvisory {
+  currentVersion: string;
+  latestVersion: string;
+  setup: AgentChatProviderSetupSurfaceAction;
 }
 
 export interface AgentChatProviderReadinessBlocker {
@@ -407,6 +415,13 @@ export interface AgentChatShellViewModel {
   providerReadinessAgentLabel?: string;
   // True while a Provider Readiness action (e.g. trust grant) is in flight.
   providerReadinessActionPending: boolean;
+  // Non-blocking agent-CLI update advisory (present even when ready), so the
+  // composer can show an "Update <Agent>" nudge. Spec: version-management.md.
+  providerUpdateAdvisory?: {
+    agentLabel: string;
+    currentVersion: string;
+    latestVersion: string;
+  };
   prompt: AgentChatPromptState | null;
   blocks: AgentChatBlockView[];
   composer: AgentChatComposerView;

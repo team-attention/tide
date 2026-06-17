@@ -33,6 +33,30 @@ export function selectAgentChatChoiceSurfaceRow(
   }
 
   if (surfaceKind === "provider_readiness") {
+    // The non-blocking update nudge: run the in-place CLI update through the same
+    // Provider Setup Surface terminal handoff used for install (npm install -g
+    // <pkg>@latest, retry_preflight). Spec: version-management.md (Lane 2).
+    if (rowId === "update_available:setup") {
+      const setup = state.providerReadiness?.update?.setup;
+      const threadId = state.thread?.threadId ?? activeThreadId;
+      if (setup === undefined || threadId === undefined) {
+        return { state, command: null };
+      }
+      return {
+        state,
+        command: {
+          kind: "workbench.command",
+          payload: {
+            threadId,
+            command: "open_provider_setup_surface",
+            data: {
+              blockerKind: "update_available",
+              setup: providerSetupCommandPayload(setup),
+            },
+          },
+        },
+      };
+    }
     // The directory-trust blocker offers a direct "Trust this folder" action that
     // writes the provider's trust config (no terminal). See workspace-trust-grant.
     if (rowId === "directory_trust_required:trust") {

@@ -50,6 +50,17 @@ export interface TideNotificationRequest {
   isActiveThread: boolean;
 }
 
+// App self-update status pushed from Main (mirrors AppUpdateStatus in
+// main/auto-update-status.ts, kept process-local per the preload convention).
+// See specs/version-management.md.
+export type AppUpdateStatus =
+  | { phase: "idle" }
+  | { phase: "checking" }
+  | { phase: "downloading"; version: string; percent: number }
+  | { phase: "ready"; version: string; notes?: string }
+  | { phase: "upToDate"; currentVersion: string }
+  | { phase: "error"; message: string };
+
 export interface TidePreloadSurface {
   contractVersion: 1;
   transport: "message_port";
@@ -80,6 +91,13 @@ export interface TidePreloadSurface {
   // Main asks the renderer to activate a thread (a clicked notification routes through
   // the same user-action path as a left-rail click).
   onActivateThread(listener: (threadId: string) => void): () => void;
+  // App self-update (packaged builds only; otherwise inert). Main pushes status as it
+  // checks/downloads; applyAppUpdate triggers quitAndInstall on the user's click;
+  // checkForAppUpdate forces a re-check; getAppVersion reads the running version.
+  onAppUpdateChanged(listener: (status: AppUpdateStatus) => void): () => void;
+  applyAppUpdate(): void;
+  checkForAppUpdate(): void;
+  getAppVersion(): Promise<string>;
   // Native folder picker + persisted project registry (Main-owned).
   openDirectory(): Promise<string | null>;
   listProjects(): Promise<ProjectRegistryEntry[]>;
@@ -186,6 +204,22 @@ export const tidePreloadSurface: TidePreloadSurface = {
     return () => {
       ipcRenderer.removeListener("tide:activate-thread", wrapped);
     };
+  },
+  onAppUpdateChanged(listener) {
+    const wrapped = (_event: unknown, status: AppUpdateStatus) => listener(status);
+    ipcRenderer.on("tide:app-update-changed", wrapped);
+    return () => {
+      ipcRenderer.removeListener("tide:app-update-changed", wrapped);
+    };
+  },
+  applyAppUpdate() {
+    void ipcRenderer.invoke("tide:app-update-apply");
+  },
+  checkForAppUpdate() {
+    void ipcRenderer.invoke("tide:app-update-check");
+  },
+  getAppVersion() {
+    return ipcRenderer.invoke("tide:app-version") as Promise<string>;
   },
   openDirectory() {
     return ipcRenderer.invoke("tide:open-directory") as Promise<string | null>;
