@@ -101,7 +101,9 @@ export function providerVersionForExecutable(executablePath: string): string | u
     encoding: "utf8",
     timeout: 5000,
   });
-  if (result.error !== undefined) {
+  // Reject a CLI that failed to spawn OR ran but exited non-zero (status null when
+  // killed/timed out): a crash's stderr could otherwise carry a version-like string.
+  if (result.error !== undefined || result.status !== 0) {
     return undefined;
   }
   return parseVersionToken(`${result.stdout ?? ""}\n${result.stderr ?? ""}`);

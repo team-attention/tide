@@ -106,6 +106,15 @@ test("semverLess: uncomparable input yields false (no phantom advisory)", () => 
   assert.equal(semverLess("unknown", "unknown"), false);
 });
 
+test("semverLess: empty or whitespace core segments are rejected, not coerced to 0", () => {
+  // Number("")/Number(" ") are 0, so without digit validation "1..3" would parse as
+  // 1.0.3 — these must be uncomparable (no false advisory).
+  assert.equal(semverLess("1..3", "1.2.3"), false);
+  assert.equal(semverLess("1.2.3", "1..3"), false);
+  assert.equal(semverLess("1. .3", "1.2.3"), false);
+  assert.equal(semverLess("1. .3", "1. .3"), false);
+});
+
 test("readiness port: a ready agent still carries a non-blocking update advisory", async () => {
   const port = createAgentIntegrationProviderReadinessPort({
     integrations: registryWith("claude", fakeIntegration({ agentId: "claude", ready: true, blockers: [] })),

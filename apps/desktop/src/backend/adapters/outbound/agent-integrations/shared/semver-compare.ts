@@ -25,10 +25,13 @@ function parseVersion(raw: string): ParsedVersion | undefined {
   const corePart = dashIndex === -1 ? withoutBuild : withoutBuild.slice(0, dashIndex);
   const prePart = dashIndex === -1 ? undefined : withoutBuild.slice(dashIndex + 1);
 
-  const core = corePart.split(".").map((segment) => Number(segment));
-  if (core.length === 0 || core.some((n) => !Number.isInteger(n) || n < 0)) {
+  const segments = corePart.split(".");
+  // Reject empty / non-numeric segments before Number(): Number("") and Number(" ")
+  // are 0, which would let "1..3" or "1. .3" masquerade as a valid version.
+  if (segments.some((segment) => !/^\d+$/.test(segment))) {
     return undefined;
   }
+  const core = segments.map((segment) => Number(segment));
   const prerelease =
     prePart === undefined || prePart.length === 0 ? undefined : prePart.split(".");
   return { core, prerelease };
