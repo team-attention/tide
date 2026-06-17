@@ -31,8 +31,10 @@ const PINNED_MAX: Record<string, number> = {
   // write (prompt-full-fidelity-fields Slice 2). +44: checkReadiness (on-demand Provider Readiness
   // for the Composer slot-select handoff) + the no-pending-input readiness re-emit in
   // replayPendingInputIfProviderReady (install/sign-in card refresh). Spec: provider-cli-setup-handoff.md.
+  // +8: checkReadiness replaces the WHOLE agentBinding (runtimeSource + cleared session), not just
+  // agentId, so a switched agent can't inherit a stale source/session (Gemini review on PR #136).
   // The full thread-runtime-service split is still the real fix.
-  "backend/application/services/thread/thread-runtime-service.ts": 1657,
+  "backend/application/services/thread/thread-runtime-service.ts": 1666,
   // The inbound command switch (already at the 800 cap) gained the
   // provider.discoverCommands handler for live command mirroring, then the
   // thread.launchOptionsChanged event builder gained the applied + changedKeys

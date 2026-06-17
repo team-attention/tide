@@ -576,7 +576,14 @@ test("checkReadiness runs preflight for the chosen agent, rebinds the thread, an
     },
     initialThreads: [
       threadSeed("draft-1", {
-        agentBinding: { agentId: "claude" },
+        // Seed a STALE binding (a previously-selected claude, with its runtimeSource + session):
+        // checkReadiness must replace it wholesale, not leave codex pointing at claude's source or
+        // try to resume claude's session (Gemini review).
+        agentBinding: {
+          agentId: "claude",
+          runtimeSource: { kind: "provider_cli", integrationId: "claude" },
+          providerSessionRef: { kind: "claude_transcript", value: "stale-claude" },
+        },
         scope: { kind: "project", projectId: "p1", cwd: "/repo" },
       }),
     ],
@@ -587,9 +594,18 @@ test("checkReadiness runs preflight for the chosen agent, rebinds the thread, an
   const result = await service.checkReadiness({ threadId: "draft-1", agentId: "codex" });
 
   assert.equal(result.ok, true);
+  if (!result.ok) return;
   assert.equal(fakes.readiness.checks.at(-1)?.agentId, "codex");
-  assert.equal(result.ok && result.providerReadiness.agentId, "codex");
-  assert.equal(result.ok && result.thread.agentBinding.agentId, "codex");
+  assert.equal(result.providerReadiness.agentId, "codex");
+  // The WHOLE binding is replaced — agentId AND runtimeSource — and the stale session cleared, so
+  // codex never inherits claude's runtimeSource/providerSessionRef (Gemini review).
+  const binding = result.thread.agentBinding;
+  assert.equal(binding.agentId, "codex");
+  assert.equal(
+    binding.runtimeSource?.kind === "provider_cli" ? binding.runtimeSource.integrationId : undefined,
+    "codex",
+  );
+  assert.equal(binding.providerSessionRef, undefined);
   assert.ok(asyncEvents.some((event) => event.kind === "provider_readiness_changed"));
 });
 

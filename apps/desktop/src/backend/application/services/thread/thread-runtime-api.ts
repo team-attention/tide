@@ -8,7 +8,7 @@ import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port
 import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
 import type { ComposerAttachmentInput, ComposerAttachmentStorePort } from "../../ports/outbound/composer-attachment-store-port.ts";
 import type { ProviderTrustPort } from "../../ports/outbound/provider-trust-port.ts";
-import type { AgentBinding, AgentId, AgentSessionBlockReference, PromptState, PromptStepAnswer, ProviderSessionRef, ThreadId, ThreadScope, ThreadSeed, ThreadSnapshot } from "../../domains/thread/thread.ts";
+import type { AgentBinding, AgentId, AgentSessionBlockReference, ProviderCliAgentId, PromptState, PromptStepAnswer, ProviderSessionRef, ThreadId, ThreadScope, ThreadSeed, ThreadSnapshot } from "../../domains/thread/thread.ts";
 import type { ThreadRuntimeAsyncEvent } from "./thread-runtime-events.ts";
 import type { AgentRuntimeState } from "../../domains/agent-runtime/agent-runtime.ts";
 import type { ProviderReadinessResult } from "../../domains/provider-readiness/provider-readiness.ts";
@@ -146,7 +146,10 @@ export interface TrustWorkspaceResult {
 
 export interface CheckReadinessInput {
   threadId: ThreadId;
-  agentId: AgentId;
+  // Provider-CLI only — the install/sign-in handoff is for the CLI agents (codex/claude/gemini/
+  // opencode); a Tide API agent has no CLI to install. Narrowing here lets checkReadiness rebuild
+  // the full provider_cli runtimeSource without a cast.
+  agentId: ProviderCliAgentId;
 }
 export interface CheckReadinessResult {
   thread: ThreadSnapshot;

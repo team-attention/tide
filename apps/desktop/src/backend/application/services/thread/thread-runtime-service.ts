@@ -1213,8 +1213,17 @@ async trustWorkspace(
       return failure("thread_not_found", "Thread was not found.");
     }
     // Reflect the selected agent on the (Draft) Thread so a Setup Surface completion
-    // (retry_preflight) re-checks the chosen provider and Send starts on it.
-    thread.agentBinding = { ...thread.agentBinding, agentId: input.agentId };
+    // (retry_preflight) re-checks the chosen provider and Send starts on it. Replace the binding
+    // WHOLE — not just agentId — so a stale runtimeSource / providerSessionRef from a previously
+    // selected agent can't mismatch the chosen one (Gemini review): a mismatched runtimeSource
+    // would mis-route the launch, and a stale session ref would try to resume the wrong agent.
+    // checkReadiness is provider-CLI only, so the source is always provider_cli; a fresh selection
+    // carries no session to resume.
+    thread.agentBinding = {
+      agentId: input.agentId,
+      runtimeSource: { kind: "provider_cli", integrationId: input.agentId },
+      providerSessionRef: undefined,
+    };
     const readiness = await this.providerReadinessPort.check({
       agentId: input.agentId,
       scope: thread.scope,
