@@ -1,9 +1,11 @@
 import type {
+  AgentSessionBlockReference,
   ThreadId,
   ThreadSeed,
   ThreadSnapshot,
 } from "../../domains/thread/thread.ts";
 import { failure, type ServiceResult } from "../support/service-result.ts";
+import { cloneBlocks } from "./thread-runtime-clone.ts";
 import { normalizeThreadSeed, snapshotThread } from "./thread-snapshot.ts";
 import type { ThreadStore } from "./thread-store.ts";
 
@@ -81,6 +83,27 @@ export class ThreadCrudService {
       restoredCount += 1;
     }
     return { ok: true, restoredCount };
+  }
+
+  // Lazy block hydration. Live-backend restore seeds metadata only (so the rail
+  // renders without parsing every thread's transcript on boot), leaving cachedBlocks
+  // empty until a thread is first opened — this fills them then. Only when the thread
+  // exists, its cachedBlocks are still empty, AND no live runtime owns it: a running
+  // thread grows its own transcript and must never be clobbered. Returns whether it
+  // seeded. See docs_v2/specs/thread-list-metadata-first-restore.md.
+  seedCachedBlocksIfEmpty(
+    threadId: ThreadId,
+    blocks: AgentSessionBlockReference[],
+  ): boolean {
+    const thread = this.store.get(threadId);
+    if (thread === undefined) {
+      return false;
+    }
+    if (thread.cachedBlocks.length > 0 || thread.activeRuntimeHandle !== undefined) {
+      return false;
+    }
+    thread.cachedBlocks = cloneBlocks(blocks);
+    return true;
   }
 
   async listThreads(

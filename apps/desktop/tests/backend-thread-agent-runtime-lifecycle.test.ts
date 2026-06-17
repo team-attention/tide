@@ -28,6 +28,7 @@ import {
   type ProviderTrustPort,
 } from "../src/backend/application/services/thread/thread-runtime-service.ts";
 import type { AgentSessionBlock } from "../src/backend/application/domains/agent-session/agent-session-block.ts";
+import type { AgentSessionBlockReference } from "../src/backend/application/domains/thread/thread.ts";
 import type {
   WorkspaceCodeDefinitionResult,
   WorkspaceCodeIntelligencePort,
@@ -71,6 +72,40 @@ test("hydrating_an_existing_thread_does_not_start_or_resume_an_agent_runtime", a
   assert.equal(result.thread.threadId, "thread-hydrate");
   assert.equal(result.runtimeState, "not_started");
   assert.deepEqual(fakes.runtime.events, []);
+});
+
+test("seed_cached_blocks_fills_an_empty_thread_but_never_clobbers_loaded_blocks", async () => {
+  // Spec: docs_v2/specs/thread-list-metadata-first-restore.md — lazy block hydration
+  // fills a metadata-only restored thread once (on first open), and must never
+  // overwrite a thread that already carries its conversation.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-seed")],
+  });
+  const block = (body: string): AgentSessionBlockReference => ({
+    blockId: `block-${body}`,
+    kind: "agent_message",
+    role: "agent",
+    status: "complete",
+    body,
+    updatedAt: now,
+  });
+
+  // Empty thread → seeded.
+  assert.equal(service.seedCachedBlocksIfEmpty("thread-seed", [block("first")]), true);
+  const hydrated = await service.hydrateThread({ threadId: "thread-seed" });
+  assert.deepEqual(hydrated.ok && hydrated.blocks.map((entry) => entry.body), ["first"]);
+
+  // Already populated → a second seed is a no-op (must not replace "first").
+  assert.equal(service.seedCachedBlocksIfEmpty("thread-seed", [block("second")]), false);
+  const rehydrated = await service.hydrateThread({ threadId: "thread-seed" });
+  assert.deepEqual(rehydrated.ok && rehydrated.blocks.map((entry) => entry.body), ["first"]);
+
+  // Unknown thread → false, no throw.
+  assert.equal(service.seedCachedBlocksIfEmpty("missing-thread", [block("x")]), false);
 });
 
 test("archiving_a_thread_excludes_it_from_the_default_list_but_keeps_it_retrievable", async () => {

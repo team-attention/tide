@@ -1,16 +1,22 @@
-import { discoverAdoptedThreadSeeds, rebuildAdoptedConversation } from "./live-provider-discovery.ts";
 import { resolveExecutable } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
 import { createLiveAgentUpdateChecker } from "../provider/agent-update-checker.ts";
 import { locateClaudeTranscriptFile } from "../../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
 import { tideClaudeContextPrompt } from "../../../adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
-import { createLiveAgentSessionEventProjector, nextEventId, persistThreadBlocks } from "./live-projector.ts";
+import { createLiveAgentSessionEventProjector, nextEventId } from "./live-projector.ts";
+import {
+  createPersistentLiveBackendAdapter,
+  persistThreadEvents,
+} from "./live-backend-restore.ts";
+export {
+  threadSeedFromStorageRecord,
+  threadStorageRecordFromThreadSummary,
+} from "./live-backend-restore.ts";
 import { spawnSync } from "node:child_process";
 
 import { createHash } from "node:crypto";
 
 import {
   closeSync,
-  existsSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -29,7 +35,6 @@ import { fileURLToPath } from "node:url";
 
 import {
   readBoundedHead,
-  readBoundedTail,
   readJsonFile,
   readTextFile,
 } from "./live-backend-fs.ts";
@@ -50,7 +55,6 @@ import {
 import {
   rebuildClaudeConversation,
   rebuildCodexConversation,
-  rebuildConversationFromProviderHistory,
 } from "../provider/provider-conversation-rebuilders.ts";
 
 import { recentCodexRollouts } from "../provider/recent-provider-files.ts";
@@ -161,10 +165,7 @@ import {
   providerBootstrapArtifactsForHome,
 } from "../provider/provider-bootstrap-artifacts.ts";
 
-import type {
-  AgentSessionBlock,
-  AgentSessionBlockUpdate,
-} from "../../../application/domains/agent-session/agent-session-block.ts";
+import type { AgentSessionBlockUpdate } from "../../../application/domains/agent-session/agent-session-block.ts";
 
 import type { AgentId, ProviderCliAgentId, PromptState } from "../../../application/domains/thread/thread.ts";
 
@@ -178,24 +179,16 @@ import { createFixtureAgentSessionReader } from "../../../application/services/t
 import {
   adoptedThreadSeedsFromSessions,
   discoverLocalSessions,
-  isInternalSessionTitle,
   type DiscoveryFs,
 } from "../../../application/services/provider/provider-session-discovery.ts";
 
-import {
-  createThreadPersistenceService,
-  THREAD_STORAGE_VERSION,
-  type ProviderSessionRefRecord,
-  type ThreadPersistenceService,
-  type ThreadStorageRecord,
-} from "../../../application/services/thread/thread-persistence-service.ts";
+import { createThreadPersistenceService } from "../../../application/services/thread/thread-persistence-service.ts";
 
 import {
   createThreadRuntimeService,
   type PtyTranscriptPort,
   type RawAgentFrame,
   type TideMcpToolName,
-  type ThreadSeed,
   type ThreadRuntimeAsyncEvent,
   type ThreadRuntimeService,
 } from "../../../application/services/thread/thread-runtime-service.ts";
@@ -203,7 +196,6 @@ import {
 import {
   CONTRACT_VERSION,
   type BackendEventEnvelope,
-  type ThreadSummaryDto,
 } from "../../../../shared/contracts/index.ts";
 
 export interface CreateLiveBackendContractMessageAdapterInput {
@@ -446,142 +438,10 @@ export function createLiveBackendContractMessageAdapter(
     persistence,
     homeDir,
     appDataRoot,
+    emitBackendEvents,
   });
 }
 
-function createPersistentLiveBackendAdapter(input: {
-  adapter: ReturnType<typeof createBackendContractMessageAdapter>;
-  service: ThreadRuntimeService;
-  persistence: ThreadPersistenceService;
-  homeDir: string;
-  appDataRoot: string;
-  flushPendingPersists: () => Promise<void>;
-}) {
-  let restorePromise: Promise<void> | null = null;
-
-  const restorePersistedThreads = async (): Promise<void> => {
-    const listed = await input.persistence.listThreadMetadata();
-    if (!listed.ok) {
-      process.emitWarning(listed.error.message, {
-        type: "TidePersistenceRestoreWarning",
-      });
-      return;
-    }
-
-    // Restore each thread WITH its persisted Agent Session blocks so reopening a
-    // thread after a restart shows the prior conversation (not an empty pane).
-    const seeds = await Promise.all(
-      listed.value.map(async (record) => {
-        const seed = threadSeedFromStorageRecord(record);
-        // Prefer the coding agent's own persisted session (codex rollout / claude
-        // transcript) as the source of truth — this restores the FULL conversation
-        // for any thread, including ones started before Tide cached blocks.
-        const fromProvider = rebuildConversationFromProviderHistory(record);
-        if (fromProvider.length > 0) {
-          seed.cachedBlocks = fromProvider;
-        } else {
-          const hydrated = await input.persistence.hydrateThread(record.threadId, {});
-          if (hydrated.ok && hydrated.value.blocks.length > 0) {
-            seed.cachedBlocks = hydrated.value.blocks;
-          }
-        }
-        // A thread whose worktree/project directory was deleted is "tangled": its
-        // files and new runs can't work. Surface a clear notice at the top so
-        // opening it explains the state instead of silently failing.
-        const threadCwd =
-          record.scope.kind === "project" ? record.scope.cwd : undefined;
-        if (threadCwd !== undefined && !existsSync(threadCwd)) {
-          seed.cachedBlocks = [
-            worktreeMissingBlock(record.threadId, record.agentBinding.agentId, threadCwd),
-            ...(seed.cachedBlocks ?? []),
-          ];
-        }
-        return seed;
-      }),
-    );
-    // Adopt provider sessions that exist in local history (started outside Tide)
-    // for known project cwds, so the thread list reflects real local sessions.
-    const adopted = discoverAdoptedThreadSeeds({
-      homeDir: input.homeDir,
-      appDataRoot: input.appDataRoot,
-      persistedRecords: listed.value,
-    });
-    for (const seed of adopted) {
-      const blocks = rebuildAdoptedConversation(seed);
-      if (blocks.length > 0) {
-        seed.cachedBlocks = blocks;
-      }
-    }
-
-    // Drop auto-review / internal sub-sessions (e.g. approval-assessment passes)
-    // from BOTH persisted and adopted seeds — they are not real conversations.
-    const threads = [...seeds, ...adopted].filter(
-      (seed) => !isInternalSessionTitle(seed.title),
-    );
-    const restored = await input.service.restoreThreads({ threads });
-    if (!restored.ok) {
-      process.emitWarning(restored.error.message, {
-        type: "TidePersistenceRestoreWarning",
-      });
-    }
-  };
-
-  return {
-    async handleMessage(message: unknown): Promise<BackendEventEnvelope[]> {
-      restorePromise ??= restorePersistedThreads();
-      await restorePromise;
-      const events = await input.adapter.handleMessage(message);
-      await persistThreadEvents(input.persistence, input.service, events);
-      return events;
-    },
-    // Flush coalesced conversation-cache writes (wired to backend shutdown).
-    flushPendingPersists: input.flushPendingPersists,
-  };
-}
-
-async function persistThreadEvents(
-  persistence: ThreadPersistenceService,
-  service: ThreadRuntimeService,
-  events: BackendEventEnvelope[],
-): Promise<void> {
-  const blockThreadIds = new Set<string>();
-  for (const event of events) {
-    if (event.kind === "agentSessionBlock.upserted") {
-      const blockThreadId = (event.payload as { block?: { threadId?: unknown } }).block?.threadId;
-      if (typeof blockThreadId === "string") {
-        blockThreadIds.add(blockThreadId);
-      }
-    }
-    if (
-      event.kind !== "thread.started" &&
-      event.kind !== "thread.hydrated" &&
-      event.kind !== "thread.archived" &&
-      event.kind !== "thread.pinChanged" &&
-      event.kind !== "thread.renamed" &&
-      event.kind !== "thread.launchOptionsChanged"
-    ) {
-      continue;
-    }
-    const payload = event.payload as { thread?: ThreadSummaryDto };
-    if (payload.thread === undefined) {
-      continue;
-    }
-    // Preserve the persisted cache pointer + ref paths: this summary-derived record
-    // doesn't model them, and a wholesale save would orphan the thread's
-    // agent-session-cache (making a reopened thread look empty after restart).
-    const saved = await persistence.saveThreadMetadataPreservingCache(
-      threadStorageRecordFromThreadSummary(payload.thread),
-    );
-    if (!saved.ok) {
-      process.emitWarning(saved.error.message, {
-        type: "TidePersistenceSaveWarning",
-      });
-    }
-  }
-  for (const threadId of blockThreadIds) {
-    await persistThreadBlocks({ persistence, service, threadId });
-  }
-}
 
 export function backendEventsFromThreadRuntimeAsyncEvent(
   event: ThreadRuntimeAsyncEvent,
@@ -682,132 +542,11 @@ export function backendEventsFromThreadRuntimeAsyncEvent(
   }
 }
 
-export function threadSeedFromStorageRecord(record: ThreadStorageRecord): ThreadSeed {
-  const providerSessionRef = record.providerSessionRef;
-  const lastKnownState =
-    record.archived || record.lastKnownState === "archived"
-      ? "archived"
-      : record.lastKnownState === "running"
-        ? "idle"
-        : record.lastKnownState;
-
-  return {
-    threadId: record.threadId,
-    title: record.title,
-    agentBinding: {
-      ...record.agentBinding,
-      providerSessionRef:
-        providerSessionRef === undefined
-          ? record.agentBinding.providerSessionRef
-          : {
-              kind: providerSessionRef.kind,
-              value: providerSessionRef.value,
-              transcriptPath: providerSessionRef.transcriptPath,
-              logPath: providerSessionRef.logPath,
-            },
-    },
-    scope: { ...record.scope },
-    launchOptions: cloneLaunchOptions(record.launchOptions),
-    lifecycleState: record.archived ? "archived" : "open",
-    runtimeState: "not_started",
-    lastKnownState,
-    // Carry the persisted pin through restore. Without this the restored thread is
-    // unpinned in memory, and the next metadata event (e.g. opening it →
-    // thread.hydrated) writes pinned=false back to disk, erasing the pin.
-    pinned: record.pinned,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-  };
-}
-
-// Rebuild the FULL conversation (all user + agent turns) from the coding agent's
-// own persisted session file (codex rollout / claude transcript). This restores
-// any thread on restart — including ones created before Tide cached blocks —
-// since the agent's session is the durable source of truth.
-
-
-
-
-
-// A synthetic top-of-thread notice for a thread whose worktree/project directory
-// no longer exists on disk (e.g. the worktree was deleted) — the "tangled" state.
-function worktreeMissingBlock(
-  threadId: string,
-  agentId: AgentSessionBlock["agentId"],
-  cwd: string,
-): AgentSessionBlock {
-  const now = new Date().toISOString();
-  return {
-    blockId: `worktree-missing:${threadId}`,
-    threadId,
-    agentId,
-    kind: "error",
-    role: "system",
-    sourceFrameIds: [],
-    status: "failed",
-    title: "Worktree unavailable",
-    body: `⚠ This thread's working directory is gone:\n\`${cwd}\`\n\nIts worktree was likely removed, so files and new runs can't be shown here. Re-create the worktree at that path, or start a new thread.`,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-// Extracts plain text from a provider message `content` (string or content-part array).
-
-export function threadStorageRecordFromThreadSummary(
-  thread: ThreadSummaryDto,
-): ThreadStorageRecord {
-  const providerSessionRef = thread.agentBinding.providerSessionRef;
-  const cwd = thread.scope.kind === "project" ? thread.scope.cwd : thread.scope.scratchCwd;
-
-  return {
-    storageVersion: THREAD_STORAGE_VERSION,
-    threadId: thread.threadId,
-    title: thread.title,
-    pinned: thread.pinned,
-    archived: thread.archived,
-    createdAt: thread.createdAt,
-    updatedAt: thread.updatedAt,
-    agentBinding: {
-      agentId: thread.agentBinding.agentId,
-      runtimeSource: thread.agentBinding.runtimeSource,
-      providerSessionRef:
-        providerSessionRef === undefined
-          ? undefined
-          : {
-              kind: providerSessionRef.kind,
-              value: providerSessionRef.value,
-              transcriptPath: providerSessionRef.transcriptPath,
-              logPath: providerSessionRef.logPath,
-            },
-    },
-    scope: { ...thread.scope },
-    launchOptions: cloneLaunchOptions(thread.launchOptions),
-    executionContext: { cwd },
-    providerSessionRef:
-      providerSessionRef === undefined
-        ? undefined
-        : {
-            agentId: thread.agentBinding.agentId,
-            kind: providerSessionRef.kind,
-            value: providerSessionRef.value,
-            transcriptPath: providerSessionRef.transcriptPath,
-            logPath: providerSessionRef.logPath,
-            observedAt: thread.updatedAt,
-          },
-    lastKnownState: thread.archived ? "archived" : thread.lastKnownState,
-  };
-}
 
 function liveClock(): string {
   return new Date().toISOString();
 }
 
-function cloneLaunchOptions(
-  launchOptions: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined {
-  return launchOptions === undefined ? undefined : { ...launchOptions };
-}
 
 function createMemoryPtyTranscriptPort(): PtyTranscriptPort {
   const frames: RawAgentFrame[] = [];

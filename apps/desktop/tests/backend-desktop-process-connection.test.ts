@@ -719,14 +719,19 @@ test("electron_main_passes_app_data_root_to_backend_process", () => {
 });
 
 test("live_backend_wires_file_storage_restore_and_thread_event_persistence", () => {
-  // Spec: docs_v2/specs/live-backend-persistence-bootstrap.md
+  // Spec: docs_v2/specs/live-backend-persistence-bootstrap.md +
+  // docs_v2/specs/thread-list-metadata-first-restore.md (restore extracted to a collaborator).
   const source = readRepoFile("src/backend/infrastructure/node/live/live-backend.ts");
-
   assert.match(source, /createFileAppStorage/);
   assert.match(source, /createThreadPersistenceService/);
-  assert.match(source, /restoreThreads/);
-  assert.match(source, /listThreadMetadata/);
+  assert.match(source, /createPersistentLiveBackendAdapter/);
   assert.match(source, /persistThreadEvents/);
+
+  // The restore + thread-event persistence work lives in the extracted collaborator.
+  const restore = readRepoFile("src/backend/infrastructure/node/live/live-backend-restore.ts");
+  assert.match(restore, /restoreThreads/);
+  assert.match(restore, /listThreadMetadata/);
+  assert.match(restore, /persistThreadEvents/);
 });
 
 test("live_backend_projects_provider_setup_async_events_to_backend_events", async () => {
@@ -953,6 +958,78 @@ test("live_backend_restores_persisted_threads_before_thread_list", async () => {
     model: "GPT-5.5 High",
     permission: "workspace-write",
   });
+});
+
+test("live_backend_rebuilds_thread_blocks_lazily_on_open_not_at_boot", async () => {
+  // Spec: docs_v2/specs/thread-list-metadata-first-restore.md — restore seeds metadata
+  // only (so the rail renders without parsing every thread's transcript on boot); a
+  // thread's conversation is rebuilt from the provider's own session the first time it
+  // is opened (thread.hydrate), inside the existing hydrate loading window.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tide-lazy-blocks-"));
+  const storage = createFileAppStorage({ appDataRoot: root });
+  const persistence = createThreadPersistenceService({
+    storage,
+    clock: fixedClock,
+    readerVersion: "reader-v1",
+  });
+  // A codex thread whose conversation lives ONLY in the provider's rollout file —
+  // nothing is cached in Tide's own store, so restore cannot (and must not) carry it.
+  const rolloutPath = path.join(root, "rollout-lazy.jsonl");
+  fs.writeFileSync(
+    rolloutPath,
+    [
+      JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "Tighten the rail." } }),
+      JSON.stringify({ type: "event_msg", payload: { type: "agent_message", message: "Done." } }),
+    ].join("\n"),
+  );
+  await persistence.saveThreadMetadata(threadStorageRecordFromThreadSummary({
+    threadId: "thread-lazy",
+    title: "Lazy Blocks",
+    agentBinding: {
+      agentId: "codex",
+      runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+    },
+    // cwd = root (which exists) so the tangled-worktree banner does not prepend.
+    scope: { kind: "project", projectId: "tide", cwd: root },
+    createdAt: now,
+    updatedAt: later,
+    pinned: false,
+    archived: false,
+    lastKnownState: "idle",
+  }));
+  await persistence.attachProviderSessionRef("thread-lazy", {
+    agentId: "codex",
+    kind: "codex_rollout",
+    value: "session-lazy",
+    transcriptPath: rolloutPath,
+    observedAt: later,
+  });
+
+  const adapter = createLiveBackendContractMessageAdapter({
+    appDataRoot: root,
+    env: {
+      HOME: root,
+      TIDE_SOCKET: path.join(root, "mcp.sock"),
+      TIDE_MCP_ENTRYPOINT: path.join(root, "backend-entrypoint.js"),
+    },
+    startMcpSocket: false,
+  });
+
+  // The rail list arrives metadata-first: the thread is present, and thread.listed
+  // never carries blocks (so no transcript parse gated the rail).
+  const listed = await adapter.handleMessage(commandEnvelope("thread.list", {}));
+  const listedEvent = listed.find((event) => event.kind === "thread.listed");
+  assert.equal(listedEvent?.payload.threads[0]?.threadId, "thread-lazy");
+
+  // Opening the thread rebuilds its conversation from the rollout, lazily.
+  const hydrated = await adapter.handleMessage(
+    commandEnvelope("thread.hydrate", { threadId: "thread-lazy" }),
+  );
+  const hydratedEvent = hydrated.find((event) => event.kind === "thread.hydrated");
+  assert.deepEqual(
+    hydratedEvent?.payload.blocks?.map((block) => block.body),
+    ["Tighten the rail.", "Done."],
+  );
 });
 
 test("electron_main_and_preload_expose_backend_event_push_channel", () => {

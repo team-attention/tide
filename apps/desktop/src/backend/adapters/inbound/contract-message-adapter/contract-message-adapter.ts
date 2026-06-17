@@ -78,6 +78,10 @@ export interface CreateBackendContractMessageAdapterInput {
 
 export interface BackendContractMessageAdapter {
   handleMessage(message: unknown): Promise<BackendEventEnvelope[]>;
+  // Build a pushed thread.listed (no requestId) reflecting the current store. Used to
+  // surface adopted (external) sessions that are discovered off the boot critical path,
+  // after the first list has already rendered the rail. See live-backend restore.
+  pushThreadListedEvents(): Promise<BackendEventEnvelope[]>;
 }
 
 export function createBackendContractMessageAdapter(
@@ -511,6 +515,27 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         availableAgents: this.detectAvailableAgents?.(),
       },
     };
+  }
+
+  async pushThreadListedEvents(): Promise<BackendEventEnvelope[]> {
+    const result = await this.service.listThreads({});
+    if (!result.ok) {
+      return [];
+    }
+    // No requestId: this is a push (not a reply to a renderer command), so it flows
+    // through the backend-event broadcast channel and refreshes the rail in place.
+    return [
+      {
+        contractVersion: CONTRACT_VERSION,
+        eventId: this.nextEventId(),
+        kind: "thread.listed",
+        emittedAt: this.clock(),
+        payload: {
+          threads: result.threads.map(toThreadSummaryDto),
+          availableAgents: this.detectAvailableAgents?.(),
+        },
+      } satisfies BackendEventEnvelope<"thread.listed">,
+    ];
   }
 
   // opencode's catalog (vendors/models/version), delivered separately from thread.listed so the
