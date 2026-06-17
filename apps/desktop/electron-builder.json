@@ -24,9 +24,7 @@
     "hardenedRuntime": true,
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.inherit.plist",
-    "notarize": {
-      "teamId": "D86BXTY5VR"
-    }
+    "notarize": true
   },
   "dmg": {
     "title": "${productName}",
