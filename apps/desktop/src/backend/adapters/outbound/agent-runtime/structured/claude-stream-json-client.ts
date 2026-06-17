@@ -37,6 +37,12 @@ import { STRUCTURED_ALLOW_TOKEN, STRUCTURED_DENY_TOKEN, isRecord, stringField } 
 import type { AskUserQuestionContext, PendingPermission } from "./claude-ask-user-question.ts";
 import { answerAskUserQuestion, surfaceAskUserQuestion, surfaceAskUserQuestionWizard } from "./claude-ask-user-question.ts";
 
+// How long applyConfig waits for claude's control_response ack before treating a
+// mid-thread change as failed (→ transparent restart). claude acks in single-digit
+// ms; this only fires if the process is wedged/dead. See
+// docs_v2/specs/claude-bypass-live-capability.md.
+const CONFIG_ACK_TIMEOUT_MS = 2500;
+
 export interface CreateClaudeStreamJsonClientInput extends StructuredClientCallbacks {
   plan: ProviderLaunchPlan;
   threadId: string;
@@ -110,6 +116,8 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   private flushScheduled = false;
   // promptId -> the protocol request awaiting a control_response.
   private readonly pendingPermissions = new Map<string, PendingPermission>();
+  // cfg-* request_id -> resolver for a mid-thread applyConfig control_response ack.
+  private readonly pendingConfigAcks = new Map<string, (ok: boolean) => void>();
 
   constructor(input: CreateClaudeStreamJsonClientInput) {
     this.onEvent = input.onEvent;
@@ -239,26 +247,74 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
 
   // Mid-thread Launch Options change, applied to the LIVE session via the
   // stream-json control protocol (the same set_model / set_permission_mode
-  // requests the official Agent SDK sends; both subtypes verified present in
-  // claude 2.1.173). Fire-and-forget like interrupt(): the success/error
-  // control_response is visible under TIDE_DEBUG_STRUCTURED.
-  applyConfig(protocolParams: Record<string, unknown>): void {
+  // requests the official Agent SDK sends). Unlike interrupt(), this AWAITS each
+  // control_response: claude can REFUSE a live change — e.g. switching to
+  // bypassPermissions when the session was not launched bypass-capable (the
+  // `--allow-dangerously-skip-permissions` flag) — and the caller must learn that
+  // so it falls back to a transparent restart instead of reporting a phantom
+  // "applied". Resolves true only if EVERY change is acked success; a refusal or a
+  // missing ack (timeout) resolves false. See claude-bypass-live-capability.md.
+  async applyConfig(protocolParams: Record<string, unknown>): Promise<boolean> {
+    const acks: Promise<boolean>[] = [];
     const model = protocolParams.model;
     if (typeof model === "string" && model.length > 0) {
-      this.writeLine({
-        type: "control_request",
-        request_id: `cfg-${randomUUID()}`,
-        request: { subtype: "set_model", model },
-      });
+      acks.push(this.sendConfigRequest({ subtype: "set_model", model }));
     }
     const permissionMode = protocolParams.permissionMode;
     if (typeof permissionMode === "string" && permissionMode.length > 0) {
-      this.writeLine({
-        type: "control_request",
-        request_id: `cfg-${randomUUID()}`,
-        request: { subtype: "set_permission_mode", mode: permissionMode },
-      });
+      acks.push(this.sendConfigRequest({ subtype: "set_permission_mode", mode: permissionMode }));
     }
+    if (acks.length === 0) {
+      return true;
+    }
+    const results = await Promise.all(acks);
+    return results.every((ok) => ok);
+  }
+
+  // Write one config control_request and resolve when claude's matching
+  // control_response arrives (success => true, error => false). A wedged/dead
+  // process never replies, so a timeout resolves false (→ restart fallback) rather
+  // than hanging the setLaunchOptions command. The error's reason is surfaced under
+  // TIDE_DEBUG_STRUCTURED by ingest().
+  private sendConfigRequest(request: Record<string, unknown>): Promise<boolean> {
+    const requestId = `cfg-${randomUUID()}`;
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.pendingConfigAcks.delete(requestId)) {
+          resolve(false);
+        }
+      }, CONFIG_ACK_TIMEOUT_MS);
+      timer.unref?.();
+      this.pendingConfigAcks.set(requestId, (ok) => {
+        clearTimeout(timer);
+        resolve(ok);
+      });
+      try {
+        this.writeLine({ type: "control_request", request_id: requestId, request });
+      } catch {
+        // Dead/closed stdin (EPIPE / destroyed stream): clean up the timer + pending
+        // ack and degrade to a restart rather than leaving them dangling.
+        clearTimeout(timer);
+        this.pendingConfigAcks.delete(requestId);
+        resolve(false);
+      }
+    });
+  }
+
+  // A control_response for one of our cfg-* config requests resolves its ack.
+  // Unmatched ids (e.g. the interrupt control request's own response) are ignored.
+  private resolveConfigAck(message: Record<string, unknown>): void {
+    const response = isRecord(message.response) ? message.response : message;
+    const requestId = stringField(response, "request_id");
+    if (requestId === undefined) {
+      return;
+    }
+    const ack = this.pendingConfigAcks.get(requestId);
+    if (ack === undefined) {
+      return;
+    }
+    this.pendingConfigAcks.delete(requestId);
+    ack(stringField(response, "subtype") === "success");
   }
 
   async interrupt(): Promise<void> {
@@ -273,6 +329,12 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
 
   async stop(): Promise<void> {
     this.exited = true;
+    // Settle any in-flight applyConfig acks (the process is going away) so a
+    // pending setLaunchOptions resolves to a restart rather than waiting the timeout.
+    for (const resolve of this.pendingConfigAcks.values()) {
+      resolve(false);
+    }
+    this.pendingConfigAcks.clear();
     try {
       this.child.stdin.end();
     } catch {
@@ -364,6 +426,11 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     }
     if (type === "control_request") {
       this.handleControlRequest(message);
+      return;
+    }
+    if (type === "control_response") {
+      // claude's ack to one of OUR control requests (set_model / set_permission_mode).
+      this.resolveConfigAck(message);
       return;
     }
     if (type === "control_cancel_request") {

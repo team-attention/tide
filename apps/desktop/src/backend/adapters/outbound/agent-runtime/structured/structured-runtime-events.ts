@@ -78,7 +78,10 @@ export interface StructuredRuntimeClient {
   // Integration's buildSessionConfigUpdate (claude control_request fields /
   // codex turn/start overrides / ACP modeId). Clients without this method
   // cannot be live-reconfigured (the runtime port reports restart_required).
-  applyConfig?(protocolParams: Record<string, unknown>): void;
+  // Resolves true when the change was accepted live, false when the provider
+  // REFUSED it (or never acked) so the caller can fall back to a restart — e.g.
+  // claude refuses a live switch to bypassPermissions unless launched capable.
+  applyConfig?(protocolParams: Record<string, unknown>): Promise<boolean>;
   // Abort the in-flight turn via the provider's protocol interrupt, leaving the
   // process ALIVE and resumable (claude control_request:interrupt / codex
   // turn/interrupt / gemini session/cancel). The provider emits its turn-end so
