@@ -43,9 +43,11 @@ an input.**
   the main composer textarea. The added block is what the user is reacting to, so the cursor
   lands right on its note field. A chip is always appended last, so it is identified and
   focused by its id (`data-chip-comment-id`).
-- Trigger focus on any INCREASE of `composer.contextChips.length`. Chips only grow through
-  an explicit user "Add to chat", so this never steals focus on load/thread-switch (no code
-  path repopulates chips).
+- Trigger focus on an INCREASE of `composer.contextChips.length` WITHIN THE SAME THREAD.
+  The shell is reused across thread switches (not remounted), so the count ref is
+  re-baselined whenever `threadId` changes — opening a thread whose composer already holds
+  a chip must not read as an "add". Within a thread, chips grow only through an explicit
+  "Add to chat", so this never steals focus on load or while editing a comment.
 - A quoted-message user turn is right-aligned like every other user turn (drop the
   `:has(--attachments) → flex-start` special-case); the bubble is allowed to grow wider
   (`fit-content`, `max-width: min(680px, 100%)`) so the quote isn't cramped on the right.

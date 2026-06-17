@@ -94,3 +94,43 @@ test("adding_a_context_chip_focuses_that_chips_comment_field", async () => {
 
   await act(async () => root.unmount());
 });
+
+test("switching_to_a_thread_whose_composer_holds_a_chip_does_not_steal_focus", async () => {
+  // Spec invariant: thread switching never steals focus. AgentChatShell is REUSED across
+  // threads, so the chip-count ref persists; opening a thread whose composer already holds
+  // a chip (count 0 → 1 across the switch) must NOT read as an "add". The threadId gate
+  // re-baselines the count when the thread changes.
+  const { createRoot } = await import("react-dom/client");
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  const threadA = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const otherThread: ThreadSummaryDto = { ...thread, threadId: "thread-other", title: "Other" };
+  const threadBWithChip = addComposerContextChip(
+    applyBackendEventToAgentChatShell(
+      createAgentChatShellState(),
+      backendEvent("thread.hydrated", { thread: otherThread, blocks: [], runtimeState: "idle" }),
+    ),
+    { id: "chip-b", kind: "code", label: "other.ts", text: "const y = 2;" },
+  ).state;
+
+  // Mount thread A (no chips), then SWITCH to thread B (which already carries a chip).
+  await act(async () => {
+    root.render(<AgentChatShell viewModel={createAgentChatShellViewModel(threadA)} />);
+  });
+  await act(async () => {
+    root.render(<AgentChatShell viewModel={createAgentChatShellViewModel(threadBWithChip)} />);
+  });
+
+  assert.equal(
+    document.activeElement?.getAttribute("data-chip-comment-id"),
+    null,
+    "switching threads must not focus the new thread's chip comment field",
+  );
+
+  await act(async () => root.unmount());
+});
