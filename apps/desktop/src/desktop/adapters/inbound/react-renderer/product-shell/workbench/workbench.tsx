@@ -1,7 +1,7 @@
 import type { ProductShellWorkbenchViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { WorkbenchTabView } from "../../../../../application/domains/app-chrome/app-chrome-state.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
-import type { ReactElement, WheelEvent } from "react";
+import type { ReactElement } from "react";
 import { useEffect, useRef } from "react";
 import { FileText, GitCompare, Globe, LayoutGrid, Terminal, X } from "lucide-react";
 import { createColumnResizeHandle, createTrafficControls } from "../chrome/chrome.tsx";
@@ -111,6 +111,7 @@ function WorkbenchStackedTabs(props: {
   tabIcon: (kind: string) => ReactElement;
 }): ReactElement {
   const { tabs, handlers, tabIcon } = props;
+  const stripRef = useRef<HTMLDivElement | null>(null);
   const activeTabRef = useRef<HTMLDivElement | null>(null);
   const activePaneId = tabs.find((tab) => tab.active)?.paneId ?? null;
 
@@ -122,26 +123,37 @@ function WorkbenchStackedTabs(props: {
     }
   }, [activePaneId]);
 
-  const onWheel = (event: WheelEvent<HTMLDivElement>): void => {
-    const strip = event.currentTarget;
-    if (strip.scrollWidth <= strip.clientWidth) {
+  // Translate a vertical mouse wheel into horizontal scroll so a plain mouse reaches
+  // off-screen tabs. This MUST be a native, NON-passive listener: React's synthetic
+  // onWheel is passive, so preventDefault() there is a no-op — and without it the
+  // vertical delta still bubbles to the window (unwanted page scroll / macOS overscroll
+  // bounce). We consume the wheel ONLY when the strip actually overflows and the gesture
+  // is vertical-dominant (a real horizontal gesture already pans natively).
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (strip === null) {
       return;
     }
-    // Only a vertical-dominant wheel needs translating; a real horizontal gesture
-    // already scrolls natively. Setting scrollLeft alone scrolls the strip, so no
-    // preventDefault is needed (React's wheel listener is passive).
-    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
-      return;
-    }
-    strip.scrollLeft += event.deltaY;
-  };
+    const onWheel = (event: WheelEvent): void => {
+      if (strip.scrollWidth <= strip.clientWidth) {
+        return;
+      }
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+        return;
+      }
+      event.preventDefault();
+      strip.scrollLeft += event.deltaY;
+    };
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, []);
 
   return (
     <div
       className="workbench-tabs"
       role="tablist"
       aria-label="Workbench Tab Strip"
-      onWheel={onWheel}
+      ref={stripRef}
     >
       {tabs.length === 0 ? (
         <span className="workbench-tabs__empty">Workbench</span>
