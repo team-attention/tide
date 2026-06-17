@@ -14,6 +14,7 @@ import {
   type ThreadStorageRecord,
 } from "../src/backend/application/services/thread/thread-persistence-service.ts";
 import { createFileAppStorage } from "../src/backend/adapters/outbound/app-storage/file-app-storage.ts";
+import type { AppStoragePort } from "../src/backend/application/ports/outbound/app-storage-port.ts";
 
 const now = "2026-05-27T00:00:00.000Z";
 const later = "2026-05-27T00:00:01.000Z";
@@ -308,6 +309,43 @@ test("listing_thread_metadata_reads_thread_json_records", async () => {
   assert.equal(listed.ok && listed.value[0]?.scope.kind, "scratch");
   assert.equal(listed.ok && listed.value[1]?.scope.kind, "project");
   assert.equal(listed.ok && listed.value[1]?.scope.kind === "project" && listed.value[1].scope.cwd, "/repo/tide");
+});
+
+test("listing_thread_metadata_skips_a_record_whose_read_throws", async () => {
+  // A corrupt/unreadable thread.json must NOT fail the whole concurrent list (which
+  // would block the Left Rail on boot) — the rejected read is skipped, the rest load.
+  const storage: AppStoragePort = {
+    listDirectories: async () => ["good-thread", "bad-thread"],
+    readJson: async (relativePath: string) => {
+      if (relativePath.includes("bad-thread")) {
+        throw new Error("simulated unreadable thread.json");
+      }
+      if (relativePath.includes("good-thread")) {
+        return threadRecord("good-thread");
+      }
+      return undefined;
+    },
+    writeJsonAtomic: async () => {},
+    readJsonl: async () => [],
+    writeJsonlAtomic: async () => {},
+    writeTextAtomic: async () => {},
+    appendText: async () => {},
+    exists: async () => false,
+    remove: async () => {},
+  };
+  const service = createThreadPersistenceService({
+    storage,
+    clock: () => now,
+    readerVersion: "reader-v1",
+  });
+
+  const listed = await service.listThreadMetadata();
+
+  assert.equal(listed.ok, true);
+  assert.deepEqual(
+    listed.ok && listed.value.map((record) => record.threadId),
+    ["good-thread"],
+  );
 });
 
 async function createService() {

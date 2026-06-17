@@ -299,6 +299,10 @@ export interface AppendRawAgentFrameInput {
 
 export interface ThreadRuntimeService {
   restoreThreads(input: RestoreThreadsInput): Promise<ServiceResult<RestoreThreadsResult>>;
+  // Fill a metadata-only restored thread's conversation the first time it is opened
+  // (live-backend restore is metadata-first; blocks are rebuilt lazily on hydrate).
+  // No-op when the thread already has blocks or a live runtime owns it. Synchronous.
+  seedCachedBlocksIfEmpty(threadId: ThreadId, blocks: AgentSessionBlockReference[]): boolean;
   listThreads(input: ListThreadsInput): Promise<ServiceResult<ListThreadsResult>>;
   archiveThread(input: ArchiveThreadInput): Promise<ServiceResult<ArchiveThreadResult>>;
   setThreadPinned(input: SetThreadPinnedInput): Promise<ServiceResult<SetThreadPinnedResult>>;

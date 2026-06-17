@@ -520,6 +520,15 @@ constructor(input: CreateThreadRuntimeServiceInput) {
     return this.threadCrud.restoreThreads(input);
   }
 
+  // Lazy block hydration for a metadata-only restored thread (live-backend seeds the
+  // conversation the first time the thread is opened). See ThreadCrudService.
+  seedCachedBlocksIfEmpty(
+    threadId: ThreadId,
+    blocks: AgentSessionBlockReference[],
+  ): boolean {
+    return this.threadCrud.seedCachedBlocksIfEmpty(threadId, blocks);
+  }
+
 listThreads(input: ListThreadsInput): Promise<ServiceResult<ListThreadsResult>> {
     return this.threadCrud.listThreads(input);
   }

@@ -205,17 +205,33 @@ class FileBackedThreadPersistenceService implements ThreadPersistenceService {
 
   async listThreadMetadata(): Promise<PersistenceResult<ThreadStorageRecord[]>> {
     const threadIds = await this.storage.listDirectories("threads");
+    // Read every thread.json concurrently. A cold boot with hundreds of threads
+    // would otherwise serialize hundreds of file reads behind one another, and this
+    // list gates the Left Rail skeleton — see live-backend restore (metadata-first).
+    // A single corrupt/unreadable record must not fail the whole list (which would
+    // block the rail): map a thrown read error to a skippable thread_not_found result.
+    const loaded = await Promise.all(
+      threadIds.map((threadId) =>
+        this.loadThreadMetadata(threadId).catch(
+          (error): PersistenceResult<ThreadStorageRecord> => ({
+            ok: false,
+            error: {
+              code: "thread_not_found",
+              message: error instanceof Error ? error.message : String(error),
+            },
+          }),
+        ),
+      ),
+    );
     const records: ThreadStorageRecord[] = [];
-
-    for (const threadId of threadIds) {
-      const loaded = await this.loadThreadMetadata(threadId);
-      if (!loaded.ok) {
-        if (loaded.error.code === "thread_not_found") {
+    for (const result of loaded) {
+      if (!result.ok) {
+        if (result.error.code === "thread_not_found") {
           continue;
         }
-        return loaded;
+        return result;
       }
-      records.push(loaded.value);
+      records.push(result.value);
     }
 
     records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));

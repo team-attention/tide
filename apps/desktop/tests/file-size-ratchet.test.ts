@@ -37,7 +37,9 @@ const PINNED_MAX: Record<string, number> = {
   // +7: wiring the shared BrowserCaptureCoordinator into the MCP + workbench-command handlers
   // for the observe-time screenshot pull + the injectable pull timeout
   // (browser-pane-screenshot-on-load-decoupling).
-  "backend/application/services/thread/thread-runtime-service.ts": 1673,
+  // +9: seedCachedBlocksIfEmpty — the facade delegate + ThreadCrudService method that lazily
+  // fills a metadata-only restored thread's blocks on first open (thread-list-metadata-first-restore).
+  "backend/application/services/thread/thread-runtime-service.ts": 1682,
   // The inbound command switch (already at the 800 cap) gained the
   // provider.discoverCommands handler for live command mirroring, then the
   // thread.launchOptionsChanged event builder gained the applied + changedKeys
@@ -55,16 +57,12 @@ const PINNED_MAX: Record<string, number> = {
   // +18: providerCatalogChangedEvent builder + connect re-push — opencode's catalog is delivered
   // OUT OF BAND from thread.listed so the agent menu is never blocked behind opencode's
   // subprocesses (same spec); the giant switch split remains the real fix.
-  "backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts": 893,
-  // live-backend is the composition root and sat right at the 800 cap. Decoupling opencode's
-  // catalog from thread.listed added a small startup push (setImmediate → providerCatalog.changed)
-  // so the agent menu's availableAgents is never gated by opencode's slower subprocesses. The real
-  // fix is the long-pending live-backend split; until then this holds so it can only shrink.
-  // Spec: provider-cli-setup-handoff.md.
-  // +8: constructs + injects the agent-CLI update checker (createLiveAgentUpdateChecker) — all
-  // detection logic + scheduling live in the collaborator; only the wiring is here.
-  // Spec: version-management.md (Lane 2).
-  "backend/infrastructure/node/live/live-backend.ts": 827,
+  // +25: pushThreadListedEvents builder — a no-requestId thread.listed refresh pushed when the
+  // background adopted-session discovery finds external sessions (thread-list-metadata-first-restore).
+  "backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts": 918,
+  // live-backend (the composition root) dropped under the 800 cap once its persistence +
+  // metadata-first restore collaborator was extracted to live-backend-restore.ts
+  // (thread-list-metadata-first-restore), so it no longer needs a pinned ceiling.
 };
 
 function listSourceFiles(dir: string): string[] {
