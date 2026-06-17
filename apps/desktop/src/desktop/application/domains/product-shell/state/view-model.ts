@@ -178,7 +178,11 @@ export const selectWorkbenchViewModel = shellSelector(
             draftActiveWorkbenchPaneId,
           );
     return {
-      appChrome: createAppChromeViewModel(appChromeForView),
+      // The Workbench's Stacked tab strip (workbench.tsx) scrolls horizontally, so it
+      // shows EVERY open pane as a tab — it has no overflow menu. Uncap the view model
+      // here (the 6-tab cap + overflow split belongs to the legacy AppChrome surface)
+      // so panes past the 6th aren't silently dropped from the strip.
+      appChrome: createAppChromeViewModel(appChromeForView, { maxVisibleTabs: Number.POSITIVE_INFINITY }),
       workbenchLayoutMode,
       workbenchFullscreen,
       // Reconcile the split tree against the panes actually shown: the real panes

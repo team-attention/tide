@@ -1,6 +1,8 @@
 import type { ProductShellWorkbenchViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { WorkbenchTabView } from "../../../../../application/domains/app-chrome/app-chrome-state.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
+import { useEffect, useRef } from "react";
 import { FileText, GitCompare, Globe, LayoutGrid, Terminal, X } from "lucide-react";
 import { createColumnResizeHandle, createTrafficControls } from "../chrome/chrome.tsx";
 import { createEditorPickerPane, createWorkbenchPaneContent } from "./pane-content.tsx";
@@ -64,56 +66,7 @@ export function createWorkbenchColumn(
               header must reserve the macOS traffic-light zone (collapses to 0 in
               native fullscreen) — otherwise the first tab sits under the lights. */}
           {viewModel.workbenchFullscreen ? createTrafficControls() : null}
-          <div className="workbench-tabs" role="tablist" aria-label="Workbench Tab Strip">
-            {tabs.length === 0 ? (
-              <span className="workbench-tabs__empty">Workbench</span>
-            ) : (
-              tabs.map((tab) => (
-                <div
-                  key={tab.paneId}
-                  className="workbench-tab"
-                  data-active={tab.active}
-                  data-kind={tab.kind}
-                  role="tab"
-                  aria-selected={tab.active}
-                  // Keep the active tab (with its close button) fully in view when
-                  // the strip overflows.
-                  ref={
-                    tab.active
-                      ? (el: HTMLElement | null) => {
-                          if (typeof el?.scrollIntoView === "function") {
-                            el.scrollIntoView({ inline: "nearest", block: "nearest" });
-                          }
-                        }
-                      : undefined
-                  }
-                >
-                  <button
-                    className="workbench-tab__label"
-                    type="button"
-                    title={tab.title}
-                    onClick={() => handlers.onFocusWorkbenchPane(tab.paneId)}
-                  >
-                    <span className="workbench-tab__icon" aria-hidden>
-                      {workbenchTabIcon(tab.kind)}
-                    </span>
-                    <span className="workbench-tab__title">{tab.title}</span>
-                  </button>
-                  {/* Every tab carries a close button (revealed on hover; always shown
-                      on the active tab) so closing a pane is always one obvious click. */}
-                  <button
-                    className="workbench-tab__close"
-                    type="button"
-                    title="Close Pane"
-                    aria-label="Close Pane"
-                    onClick={() => handlers.onCloseWorkbenchPane(tab.paneId)}
-                  >
-                    <X size={15} strokeWidth={2.2} aria-hidden />
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
+          <WorkbenchStackedTabs tabs={tabs} handlers={handlers} tabIcon={workbenchTabIcon} />
         </header>
       )}
       {viewModel.editorPicker !== null ? (
@@ -143,5 +96,104 @@ export function createWorkbenchColumn(
         </section>
       )}
     </aside>
+  );
+}
+
+// The Stacked tab strip: one tab per open pane, scrollable horizontally so every pane
+// stays reachable AND readable however many are open (Split shows per-pane headers
+// instead). The strip is overflow-x:auto: a vertical mouse wheel is translated to
+// horizontal scroll (trackpads already pan sideways), and the active tab is followed
+// into view whenever it changes — but NOT on every render, so streaming output from
+// another pane can't yank the strip back while you scroll through it.
+function WorkbenchStackedTabs(props: {
+  tabs: WorkbenchTabView[];
+  handlers: ProductShellHandlers;
+  tabIcon: (kind: string) => ReactElement;
+}): ReactElement {
+  const { tabs, handlers, tabIcon } = props;
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const activeTabRef = useRef<HTMLDivElement | null>(null);
+  const activePaneId = tabs.find((tab) => tab.active)?.paneId ?? null;
+
+  useEffect(() => {
+    const tab = activeTabRef.current;
+    // jsdom (unit tests) doesn't implement scrollIntoView — guard before calling.
+    if (typeof tab?.scrollIntoView === "function") {
+      tab.scrollIntoView({ inline: "nearest", block: "nearest" });
+    }
+  }, [activePaneId]);
+
+  // Translate a vertical mouse wheel into horizontal scroll so a plain mouse reaches
+  // off-screen tabs. This MUST be a native, NON-passive listener: React's synthetic
+  // onWheel is passive, so preventDefault() there is a no-op — and without it the
+  // vertical delta still bubbles to the window (unwanted page scroll / macOS overscroll
+  // bounce). We consume the wheel ONLY when the strip actually overflows and the gesture
+  // is vertical-dominant (a real horizontal gesture already pans natively).
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (strip === null) {
+      return;
+    }
+    const onWheel = (event: WheelEvent): void => {
+      if (strip.scrollWidth <= strip.clientWidth) {
+        return;
+      }
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+        return;
+      }
+      event.preventDefault();
+      strip.scrollLeft += event.deltaY;
+    };
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, []);
+
+  return (
+    <div
+      className="workbench-tabs"
+      role="tablist"
+      aria-label="Workbench Tab Strip"
+      ref={stripRef}
+    >
+      {tabs.length === 0 ? (
+        <span className="workbench-tabs__empty">Workbench</span>
+      ) : (
+        tabs.map((tab) => (
+          <div
+            key={tab.paneId}
+            className="workbench-tab"
+            data-pane-id={tab.paneId}
+            data-active={tab.active}
+            data-kind={tab.kind}
+            role="tab"
+            aria-selected={tab.active}
+            ref={tab.active ? activeTabRef : undefined}
+          >
+            <button
+              className="workbench-tab__label"
+              type="button"
+              title={tab.title}
+              onClick={() => handlers.onFocusWorkbenchPane(tab.paneId)}
+            >
+              <span className="workbench-tab__icon" aria-hidden>
+                {tabIcon(tab.kind)}
+              </span>
+              <span className="workbench-tab__title">{tab.title}</span>
+            </button>
+            {/* Every tab carries a close button (revealed on hover; always shown on the
+                active tab) so closing a pane is always one obvious click. */}
+            <button
+              className="workbench-tab__close"
+              type="button"
+              title="Close Pane"
+              aria-label="Close Pane"
+              onClick={() => handlers.onCloseWorkbenchPane(tab.paneId)}
+            >
+              <X size={15} strokeWidth={2.2} aria-hidden />
+            </button>
+          </div>
+        ))
+      )}
+    </div>
   );
 }
