@@ -402,6 +402,9 @@ export interface AgentChatShellViewModel {
   runtimeState: AgentRuntimeStateName;
   thread: AgentChatThreadView | null;
   providerReadinessBlockers: AgentChatProviderReadinessBlocker[];
+  // Display label of the agent the readiness card is for (e.g. "Codex"), so its setup rows can
+  // read "Install Codex" / "Sign in to Codex" instead of a generic prompt. Absent when ready.
+  providerReadinessAgentLabel?: string;
   // True while a Provider Readiness action (e.g. trust grant) is in flight.
   providerReadinessActionPending: boolean;
   prompt: AgentChatPromptState | null;

@@ -13,13 +13,14 @@ import type {
   SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { ThreadScope } from "../../../../application/domains/thread/thread.ts";
+import { npmInstallSetupAction } from "../shared/provider-cli-commands.ts";
 
 export interface GeminiProviderState {
   authenticated: boolean;
 }
 
 export type GeminiExecutableResolver = (
-  command: "gemini",
+  command: "gemini" | "npm",
 ) => Promise<string | undefined> | string | undefined;
 
 export type GeminiProviderStateReader = (input: {
@@ -100,6 +101,7 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
     const executablePath = await this.resolveExecutable("gemini");
     if (executablePath === undefined) {
+      const npmPath = (await this.resolveExecutable("npm")) ?? "npm";
       return {
         agentId: "gemini",
         ready: false,
@@ -108,6 +110,7 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
             kind: "not_installed",
             scope: "provider",
             message: "Gemini CLI executable was not found.",
+            setup: npmInstallSetupAction({ npmPath, agentId: "gemini", cwd }),
           },
         ],
         capabilities: geminiCapabilities,

@@ -52,27 +52,33 @@ export function applyProductShellBackendEvent(
 
   switch (event.kind) {
     case "thread.listed": {
-      // Record which provider-CLI agents the backend detected locally so the composer
-      // agent menu enables them and shows the rest disabled.
-      const listedPayload = event.payload as {
-        availableAgents?: readonly string[];
+      // Record which provider-CLI agents the backend detected locally so the composer agent menu
+      // enables them and labels the rest "Not installed". This is fast (which-based) and arrives
+      // immediately — opencode's slower catalog comes separately via providerCatalog.changed, so
+      // the agent menu is never blocked behind it. See provider-cli-setup-handoff.md.
+      const listedPayload = event.payload as { availableAgents?: readonly string[] };
+      setAvailableProviderAgents(listedPayload.availableAgents ?? null);
+      return applyProductShellThreadListEvent(nextState, event);
+    }
+    case "providerCatalog.changed": {
+      // opencode's catalog, delivered out of band from thread.listed: the model menu (multi-vendor
+      // router), the "Connect a model" on-ramp grid + connected-state, and version. Module-level
+      // setters; returning a fresh nextState triggers the re-render that reads them.
+      const catalog = event.payload as {
         opencodeModels?: ReadonlyArray<{ value: string; label: string; vendor?: string; detail?: string }>;
         opencodeVendors?: ReadonlyArray<{ id: string; label: string; connected: boolean; method?: string; popular?: boolean; usable?: boolean }>;
         opencodeEnvironment?: { version?: string; testedWith?: string; executablePath?: string };
       };
-      setAvailableProviderAgents(listedPayload.availableAgents ?? null);
-      // opencode's authed model catalog (multi-vendor router) for the model menu.
       setOpencodeModelCatalog(
-        listedPayload.opencodeModels?.map((model) => ({
+        catalog.opencodeModels?.map((model) => ({
           value: model.value,
           label: model.label,
           vendor: model.vendor,
           detail: model.detail,
         })) ?? null,
       );
-      // opencode's vendor tiles + connected-state and environment for the on-ramp.
       setOpencodeVendors(
-        listedPayload.opencodeVendors?.map((vendor) => ({
+        catalog.opencodeVendors?.map((vendor) => ({
           id: vendor.id,
           label: vendor.label,
           connected: vendor.connected,
@@ -81,8 +87,8 @@ export function applyProductShellBackendEvent(
           usable: vendor.usable,
         })) ?? null,
       );
-      setOpencodeEnvironment(listedPayload.opencodeEnvironment ?? null);
-      return applyProductShellThreadListEvent(nextState, event);
+      setOpencodeEnvironment(catalog.opencodeEnvironment ?? null);
+      return nextState;
     }
     case "thread.started":
     case "thread.hydrated":

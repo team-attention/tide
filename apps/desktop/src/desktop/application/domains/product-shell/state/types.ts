@@ -478,6 +478,13 @@ export type ProductShellBackendCommand =
       kind: "provider.discoverCommands";
       payload: { agentId: string; cwd: string };
     }
+  | {
+      // Run Provider Readiness for an agent on demand (Composer slot select) so its
+      // install / sign-in card surfaces immediately. Backend replies providerReadiness.changed.
+      // See docs_v2/specs/provider-cli-setup-handoff.md.
+      kind: "provider.checkReadiness";
+      payload: { threadId: string; agentId: string };
+    }
   | AgentChatBackendCommand
   | AppChromeBackendCommand;
 

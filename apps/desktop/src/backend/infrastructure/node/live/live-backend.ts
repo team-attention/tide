@@ -406,6 +406,25 @@ export function createLiveBackendContractMessageAdapter(
     hasIntegration: (agentId) => integrations[agentId] !== undefined,
     resolveExecutable,
   });
+  // Deliver opencode's catalog OUT OF BAND so the agent menu (availableAgents on thread.listed)
+  // is never blocked behind opencode's slower subprocesses: enumerate once OFF the startup
+  // critical path and push providerCatalog.changed when ready. (The adapter re-pushes it after a
+  // vendor connect.) See provider-cli-setup-handoff.md.
+  setImmediate(() => {
+    emitBackendEvents([
+      {
+        contractVersion: CONTRACT_VERSION,
+        eventId: nextEventId(),
+        kind: "providerCatalog.changed",
+        emittedAt: new Date().toISOString(),
+        payload: {
+          opencodeModels: detection.enumerateOpencodeModels(),
+          opencodeVendors: detection.enumerateOpencodeVendors(),
+          opencodeEnvironment: detection.opencodeEnvironment(),
+        },
+      },
+    ]);
+  });
 
   return createPersistentLiveBackendAdapter({
     flushPendingPersists: () => projector.flushPendingPersists(),

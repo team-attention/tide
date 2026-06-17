@@ -1,4 +1,4 @@
-import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult } from "./thread-runtime-api.ts";
+import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
 import { ComposerQueueService } from "./composer-queue-service.ts";
 import type {
   AgentSessionBlock,
@@ -1202,6 +1202,37 @@ async trustWorkspace(
     };
   }
 
+  // Run Provider Readiness for the chosen agent on demand (Composer slot select), so the
+  // install/sign-in card surfaces immediately without sending. Mirrors trustWorkspace minus
+  // the trust grant. Spec: provider-cli-setup-handoff.md.
+  async checkReadiness(
+    input: CheckReadinessInput,
+  ): Promise<ServiceResult<CheckReadinessResult>> {
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+    // Reflect the selected agent on the (Draft) Thread so a Setup Surface completion
+    // (retry_preflight) re-checks the chosen provider and Send starts on it.
+    thread.agentBinding = { ...thread.agentBinding, agentId: input.agentId };
+    const readiness = await this.providerReadinessPort.check({
+      agentId: input.agentId,
+      scope: thread.scope,
+      launchOptions: thread.launchOptions,
+    });
+    thread.updatedAt = this.clock();
+    this.emitAsyncEvent({
+      kind: "provider_readiness_changed",
+      threadId: thread.threadId,
+      readiness,
+    });
+    return {
+      ok: true,
+      thread: snapshotThread(thread),
+      providerReadiness: readiness,
+    };
+  }
+
 private async replayPendingInputAfterTrust(thread: ThreadRecord): Promise<void> {
     const pendingInput = thread.pendingInput;
     if (pendingInput === undefined) {
@@ -1400,6 +1431,20 @@ private async replayPendingInputIfProviderReady(
   ): Promise<void> {
     const pendingInput = thread.pendingInput;
     if (pendingInput === undefined) {
+      // Proactive onboarding (Composer slot select, no input yet): a Setup Surface just
+      // completed, so re-check and surface the next gate — or clear the card — even with
+      // nothing to replay. Without this the readiness card stays stale after install.
+      const readiness = await this.providerReadinessPort.check({
+        agentId: thread.agentBinding.agentId,
+        scope: thread.scope,
+        launchOptions: thread.launchOptions,
+      });
+      thread.updatedAt = this.clock();
+      this.emitAsyncEvent({
+        kind: "provider_readiness_changed",
+        threadId: thread.threadId,
+        readiness,
+      });
       return;
     }
 

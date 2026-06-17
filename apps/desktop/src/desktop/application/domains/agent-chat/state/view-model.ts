@@ -23,6 +23,10 @@ export function createAgentChatShellViewModel(
       state.providerReadiness && !state.providerReadiness.ready
         ? state.providerReadiness.blockers
         : [],
+    providerReadinessAgentLabel:
+      state.providerReadiness && !state.providerReadiness.ready
+        ? formatAgentLabel(state.providerReadiness.agentId)
+        : undefined,
     providerReadinessActionPending: state.providerReadinessActionPending,
     prompt: state.promptState,
     blocks: state.blocks.map(toBlockView),

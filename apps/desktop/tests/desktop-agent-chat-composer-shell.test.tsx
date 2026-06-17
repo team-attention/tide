@@ -1687,16 +1687,23 @@ test("every provider-agent row binds; a not-installed row is an intentional no-o
       `selecting the ${agentId} row should bind the thread to ${agentId}`,
     );
   }
-  // A NOT-INSTALLED agent's row is disabled, so selecting it must leave the bound
-  // agent unchanged (an intentional no-op, not a missing mapping).
+  // A NOT-INSTALLED agent is now SELECTABLE: picking it binds the agent so the handler can
+  // ensure a Draft Thread + run provider.checkReadiness to surface its install / sign-in card.
+  // (Only coming-soon rows stay disabled.) Spec: provider-cli-setup-handoff.md.
   setAvailableProviderAgents(["codex", "claude"]); // opencode undetected
   const base = setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state;
-  const before = base.composer.startOptions.agentBinding.agentId;
   const afterOpencode = selectAgentChatChoiceSurfaceRow(base, "agent_menu", "opencode").state;
   assert.equal(
     afterOpencode.composer.startOptions.agentBinding.agentId,
-    before,
-    "selecting a not-installed (disabled) row must not change the bound agent",
+    "opencode",
+    "selecting a not-installed agent should bind it so the install handoff can run",
+  );
+  // …and its row renders selectable (not greyed): only coming-soon rows are disabled.
+  const undetectedRows = createAgentChatShellViewModel(base).composer.activeSurface?.rows ?? [];
+  assert.equal(
+    undetectedRows.find((entry) => entry.rowId === "opencode")?.disabled,
+    false,
+    "a not-installed agent row must be selectable so its install handoff can start",
   );
   setAvailableProviderAgents(null); // reset module state for other tests
 });
@@ -1837,8 +1844,9 @@ test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {
       },
     }),
   );
-  // The rendered surface wires onRowSelect (no longer a dead row).
-  assert.match(renderShell(blocked), /Set up in the provider terminal/);
+  // The rendered surface wires onRowSelect (no longer a dead row). The setup row now reads an
+  // actionable, agent-named label (directory-trust → the terminal fallback). Spec: provider-cli-setup-handoff.
+  assert.match(renderShell(blocked), /Set up Codex CLI in a terminal/);
 
   const result = selectAgentChatChoiceSurfaceRow(
     blocked,
@@ -1848,6 +1856,36 @@ test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {
   );
   assert.equal(result.command?.kind, "workbench.command");
   assert.equal(result.command?.payload.command, "open_provider_setup_surface");
+});
+
+test("provider readiness setup rows read actionable, agent-named labels", () => {
+  // Spec: provider-cli-setup-handoff.md — the setup row says exactly what clicking does
+  // (Install / Sign in to <Agent>) instead of a generic prompt.
+  const renderWith = (kind: string, message: string): string =>
+    renderShell(
+      applyBackendEventToAgentChatShell(
+        applyBackendEventToAgentChatShell(
+          createAgentChatShellState(),
+          backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+        ),
+        backendEvent("providerReadiness.changed", {
+          readiness: {
+            agentId: "codex",
+            ready: false,
+            blockers: [
+              {
+                kind,
+                scope: "provider",
+                message,
+                setup: { command: "npm", args: ["install", "-g", "@openai/codex"], cwd: "/repo", expectedCompletion: "retry_preflight" },
+              },
+            ],
+          },
+        }),
+      ),
+    );
+  assert.match(renderWith("not_installed", "Codex CLI executable was not found."), /Install Codex/);
+  assert.match(renderWith("not_authenticated", "Codex sign-in is required."), /Sign in to Codex/);
 });
 
 test("opening_a_thread_shows_a_loading_skeleton_that_clears_even_with_zero_blocks", () => {

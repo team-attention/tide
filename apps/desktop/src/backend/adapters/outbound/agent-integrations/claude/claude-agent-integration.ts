@@ -17,6 +17,7 @@ import type {
 import type {
   ThreadScope,
 } from "../../../../application/domains/thread/thread.ts";
+import { npmInstallSetupAction } from "../shared/provider-cli-commands.ts";
 
 export interface ClaudeProviderState {
   authenticated: boolean;
@@ -26,7 +27,7 @@ export interface ClaudeProviderState {
 }
 
 export type ClaudeExecutableResolver = (
-  command: "claude",
+  command: "claude" | "npm",
 ) => Promise<string | undefined> | string | undefined;
 
 export type ClaudeProviderStateReader = (input: {
@@ -115,6 +116,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
     const executablePath = await this.resolveExecutable("claude");
     if (executablePath === undefined) {
+      const npmPath = (await this.resolveExecutable("npm")) ?? "npm";
       return {
         agentId: "claude",
         ready: false,
@@ -123,6 +125,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
             kind: "not_installed",
             scope: "provider",
             message: "Claude Code executable was not found.",
+            setup: npmInstallSetupAction({ npmPath, agentId: "claude", cwd }),
           },
         ],
         capabilities: claudeCapabilities,

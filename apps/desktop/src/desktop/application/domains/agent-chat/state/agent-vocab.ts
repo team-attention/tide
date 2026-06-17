@@ -145,6 +145,14 @@ export function isAgentAvailable(agentId: string): boolean {
   return availableProviderAgents === null || availableProviderAgents.includes(agentId);
 }
 
+// Whether local-system agent detection has arrived yet (thread.listed). Until it has,
+// availableProviderAgents is null and isAgentAvailable optimistically returns true (for the
+// start-default pick, which only matters at send-time). The agent menu uses THIS to show a
+// neutral "Checking…" during that brief window instead of a misleading "installed" label.
+export function isAgentAvailabilityKnown(): boolean {
+  return availableProviderAgents !== null;
+}
+
 // Agents shown in the composer menu but not yet wired for real use — rendered
 // disabled with a "Coming soon" hint, never selectable or chosen as the start
 // default. (opencode is now fully wired: ACP runtime + model/vendor/effort

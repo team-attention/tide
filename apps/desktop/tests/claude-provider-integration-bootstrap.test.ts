@@ -35,6 +35,11 @@ test("claude_preflight_reports_not_installed_when_claude_executable_is_missing",
 
   assert.equal(result.ready, false);
   assert.equal(result.blockers[0]?.kind, "not_installed");
+  // The install handoff: npm i -g the CLI's package, re-running preflight on exit
+  // (npm unresolved in this test ⇒ "npm" fallback). Spec: provider-cli-setup-handoff.md
+  assert.equal(result.blockers[0]?.setup?.command, "npm");
+  assert.deepEqual(result.blockers[0]?.setup?.args, ["install", "-g", "@anthropic-ai/claude-code"]);
+  assert.equal(result.blockers[0]?.setup?.expectedCompletion, "retry_preflight");
   assert.equal(result.launchPlan, undefined);
 });
 

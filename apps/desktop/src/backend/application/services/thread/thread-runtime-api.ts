@@ -144,6 +144,15 @@ export interface TrustWorkspaceResult {
   providerReadiness: ProviderReadinessResult;
 }
 
+export interface CheckReadinessInput {
+  threadId: ThreadId;
+  agentId: AgentId;
+}
+export interface CheckReadinessResult {
+  thread: ThreadSnapshot;
+  providerReadiness: ProviderReadinessResult;
+}
+
 export interface SendComposerInputResult {
   status: "sent" | "queued" | "provider_not_ready";
   thread: ThreadSnapshot;
@@ -332,6 +341,9 @@ export interface ThreadRuntimeService {
   trustWorkspace(
     input: TrustWorkspaceInput,
   ): Promise<ServiceResult<TrustWorkspaceResult>>;
+  checkReadiness(
+    input: CheckReadinessInput,
+  ): Promise<ServiceResult<CheckReadinessResult>>;
   recordTurnComplete(
     input: RecordTurnCompleteInput,
   ): Promise<ServiceResult<RecordTurnCompleteResult>>;
