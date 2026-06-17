@@ -21,10 +21,28 @@
   max-height: min(52vh, 560px);
 }
 
-.prompt-card__head { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 0; }
+/* The head holds the pinned kind badge + the scrollable body (message + approval detail).
+   `overflow: hidden` clips it to its flex allotment so a tall body can NEVER spill down over
+   the options below it — the body's own `overflow-y: auto` is what makes the content reachable. */
+.prompt-card__head { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+
+/* The single scroll region for everything being asked/approved: the question/command message
+   and the approval detail (diff/command) scroll together as ONE area, with the kind badge
+   pinned above and the options/actions pinned below. Replaces the old per-element scrolls on
+   `__message` and `__detail-body` that competed and let the detail overlap the options. */
+.prompt-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 
 .prompt-card__kind {
   align-self: flex-start;
+  flex: 0 0 auto;
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--tide-selection);
@@ -42,14 +60,11 @@
   font-weight: 600;
   line-height: 1.45;
   white-space: pre-wrap;
-  /* Take the card's leftover height and scroll a long body internally (kind badge stays
-     pinned above, actions below). overflow-wrap wraps an unbroken long token (URL, flag)
-     instead of forcing horizontal overflow; overscroll-behavior keeps the wheel from
-     chaining to the transcript behind the dock. */
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  /* The wrapping `.prompt-card__body` is the scroll region now, so the message just flows and
+     wraps at its natural height. overflow-wrap breaks an unbroken long token (URL, flag value)
+     instead of forcing horizontal overflow; flex:0 0 auto keeps it from being shrunk inside
+     the body column (the body scrolls instead). */
+  flex: 0 0 auto;
   overflow-wrap: anywhere;
 }
 
@@ -57,8 +72,10 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  /* A choice/permission prompt with many options scrolls instead of pushing the actions
-     off the bottom of the card. */
+  /* Pinned (flex:0 0 auto) so the option list is NEVER shrunk to fit a tall body above it —
+     Allow/Deny (or a few choices) always show in full. A genuinely long option list still
+     scrolls on its own via max-height:30vh; the body above yields the space instead. */
+  flex: 0 0 auto;
   min-height: 0;
   max-height: 30vh;
   overflow-y: auto;
@@ -154,6 +171,11 @@
   line-height: 1.5;
   outline: none;
   resize: vertical;
+  /* This reply box + the note below + the option preview live INSIDE the scrollable
+     `.prompt-card__options` flex column. An empty textarea's min-content height is ~0, so a
+     tall option list flex-shrinks them to crushed, overlapping slivers (the "짜부" report).
+     Pin them so they keep their full height and the option list scrolls instead. */
+  flex: 0 0 auto;
 }
 
 .prompt-card__other:focus { border-color: var(--tide-action, var(--tide-muted)); }
@@ -201,6 +223,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  /* Pinned above the scrollable body, like the single card's kind badge. */
+  flex: 0 0 auto;
 }
 
 .prompt-card__step-count {
@@ -267,6 +291,9 @@
   padding: 9px 11px;
   max-height: 220px;
   overflow: auto;
+  /* Same scrollable-options flex column as the reply/note boxes — don't let it get
+     flex-shrunk; it scrolls its own body (max-height + overflow). See `.prompt-card__other`. */
+  flex: 0 0 auto;
   border: 1px solid var(--tide-line);
   border-radius: 9px;
   background: var(--tide-surface);
@@ -280,13 +307,14 @@
 
 /* Approval detail: the command / diff being approved (claude permission tool input, codex
    command/fileChange, ACP toolCall content) plus the affected file paths. */
-.prompt-card__detail { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.prompt-card__detail { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; flex: 0 0 auto; }
 
 .prompt-card__detail-body {
   margin: 0;
   padding: 9px 11px;
-  max-height: 260px;
-  overflow: auto;
+  /* No own max-height/scroll: the detail flows inside the single `.prompt-card__body` scroll
+     region (one scrollbar for message + detail), so it can't create a nested/competing scroll.
+     Long lines wrap (overflow-wrap below) rather than scrolling horizontally. */
   border: 1px solid var(--tide-line);
   border-radius: 9px;
   background: var(--tide-surface);
@@ -337,6 +365,8 @@
   line-height: 1.5;
   outline: none;
   resize: vertical;
+  /* Don't let the option list flex-shrink the note to a crushed sliver — see `.prompt-card__other`. */
+  flex: 0 0 auto;
 }
 
 .prompt-card__note:focus { border-style: solid; border-color: var(--tide-action, var(--tide-muted)); }
