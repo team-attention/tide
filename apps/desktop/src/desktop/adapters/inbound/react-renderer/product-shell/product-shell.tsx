@@ -367,23 +367,23 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     const pendingBlocks: AgentChatBackendEvent[] = [];
     let blockTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const foldBlocks = (state: ProductShellState): ProductShellState => {
-      if (pendingBlocks.length === 0) {
-        return state;
-      }
-      const batch = pendingBlocks.splice(0);
-      return batch.reduce(
-        (next, event) => applyProductShellBackendEvent(next, event, "broadcast"),
-        state,
-      );
-    };
+    // Draining `pendingBlocks` is a SIDE EFFECT and must happen OUTSIDE the setShellState
+    // updater: React invokes updaters twice in Strict Mode / concurrent rendering, and a
+    // splice inside would leave the second invocation with an empty batch → lost blocks
+    // (Gemini review). So we splice here, capture the batch, and the updater stays pure.
+    const foldEvents = (
+      state: ProductShellState,
+      batch: AgentChatBackendEvent[],
+    ): ProductShellState =>
+      batch.reduce((next, event) => applyProductShellBackendEvent(next, event, "broadcast"), state);
 
     const flushBlocks = (): void => {
       blockTimer = null;
-      if (pendingBlocks.length === 0) {
+      const batch = pendingBlocks.splice(0);
+      if (batch.length === 0) {
         return;
       }
-      setShellState(foldBlocks);
+      setShellState((state) => foldEvents(state, batch));
     };
 
     const applyImmediate = (event: AgentChatBackendEvent): void => {
@@ -391,9 +391,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         clearTimeout(blockTimer);
         blockTimer = null;
       }
+      // Drain buffered streamed blocks NOW (outside the updater) so the transition lands
+      // after them and a double-invoked updater can't lose them.
+      const batch = pendingBlocks.splice(0);
       setShellState((state) => {
-        // Drain any buffered streamed blocks FIRST so this transition lands after them.
-        let next = applyProductShellBackendEvent(foldBlocks(state), event, "broadcast");
+        let next = applyProductShellBackendEvent(foldEvents(state, batch), event, "broadcast");
         // When a thread becomes active (started/hydrated) with the FileTree shown but no
         // tree loaded yet, populate it (a same-cwd tree carried from the New Thread page is
         // kept by the reducer; the null check skips a redundant reload).

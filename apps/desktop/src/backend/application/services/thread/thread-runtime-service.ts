@@ -906,8 +906,8 @@ async recordProviderPromptState(
     }
 
     // It IS the visible card → promote the next queued prompt, or resume running.
-    const next = (thread.promptQueue ?? []).shift();
-    if ((thread.promptQueue ?? []).length === 0) {
+    const next = thread.promptQueue?.shift();
+    if (thread.promptQueue?.length === 0) {
       thread.promptQueue = undefined;
     }
     if (next !== undefined) {

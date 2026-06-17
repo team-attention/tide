@@ -65,7 +65,7 @@ const ASK = "Use the AskUserQuestion tool right now to ask me to pick one of Red
     }
     results.push({ idx: i, tid: (tid || "").slice(0, 10), cardUp, state, working });
     log({ visited: i, tid: (tid || "").slice(0, 10), cardUp, state, working });
-    await page.screenshot({ path: `/tmp/pw-conc-${i}.png` });
+    await page.screenshot({ path: path.join(dataRoot, `pw-conc-${i}.png`) });
   }
 
   const stuck = results.filter((r) => !r.cardUp && (r.working || r.state === "running"));
