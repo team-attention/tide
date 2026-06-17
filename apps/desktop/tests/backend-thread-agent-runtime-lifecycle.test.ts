@@ -1696,6 +1696,48 @@ test("stopping_a_thread_parked_on_a_prompt_clears_it_and_flushes_the_stranded_qu
   assert.deepEqual(fakes.runtime.events, ["resume", "writeInput", "interrupt", "writeInput"]);
 });
 
+test("withdrawing_the_visible_prompt_clears_it_and_resumes_running", async () => {
+  // The provider retracted its own question (claude control_cancel) with nothing queued —
+  // the card clears NOW and the live turn resumes running (no timer, no wait-for-turn-end).
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "go" });
+  await service.recordProviderPromptState({ threadId: "thread-busy", promptState: { ...approvalCard, promptId: "p1" } });
+
+  const result = await service.withdrawProviderPrompt({ threadId: "thread-busy", promptId: "p1" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.promptState, null);
+  assert.equal(result.ok && result.runtimeState, "running");
+  assert.equal(result.ok && result.thread.promptState, undefined);
+});
+
+test("withdrawing_the_visible_prompt_promotes_the_next_queued_one", async () => {
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "go" });
+  await service.recordProviderPromptState({ threadId: "thread-busy", promptState: { ...approvalCard, promptId: "p1" } });
+  // A second prompt arrives behind the visible one → queued.
+  await service.recordProviderPromptState({ threadId: "thread-busy", promptState: { ...approvalCard, promptId: "p2", message: "Second?" } });
+
+  const result = await service.withdrawProviderPrompt({ threadId: "thread-busy", promptId: "p1" });
+
+  assert.equal(result.ok && result.promptState?.promptId, "p2", "the queued prompt is promoted into the visible slot");
+  assert.equal(result.ok && result.runtimeState, "waiting_for_approval");
+});
+
+test("withdrawing_a_queued_prompt_leaves_the_visible_one_intact", async () => {
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "go" });
+  await service.recordProviderPromptState({ threadId: "thread-busy", promptState: { ...approvalCard, promptId: "p1" } });
+  await service.recordProviderPromptState({ threadId: "thread-busy", promptState: { ...approvalCard, promptId: "p2", message: "Second?" } });
+
+  const result = await service.withdrawProviderPrompt({ threadId: "thread-busy", promptId: "p2" });
+
+  assert.equal(result.ok && result.thread.promptState?.promptId, "p1", "the visible card is untouched");
+  // Answering the visible one now must NOT promote the withdrawn p2 (it was removed).
+  const answered = await service.answerPrompt({ threadId: "thread-busy", promptId: "p1", choiceId: "allow" });
+  assert.equal(answered.ok && answered.thread.promptState, undefined, "no stale queued prompt remained");
+});
+
 test("raw_agent_frames_receive_monotonic_thread_local_sequences", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({

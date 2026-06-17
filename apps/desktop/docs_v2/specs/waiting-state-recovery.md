@@ -1,5 +1,29 @@
 # Spec: Waiting-State Recovery (no permanent lock / no permanent skeleton)
 
+## Structural follow-up — remove timing-based prompt/state delivery (A/B/C)
+
+The first cut (above) still left the prompt/state path leaning on timers, and that was the
+real, intermittent root: an AskUserQuestion card raced into "never surfaced" (chat stuck
+"Working"), and under CONCURRENT threads a sibling's card never appeared. Three structural
+changes remove the timing dependence entirely (verified live: AUQ surfacing 3/3, restart+
+resume 2/2, 3 concurrent threads stuck-on-Working 0 — was 1):
+
+- **C — backend, no `setImmediate`.** `surfaceAskUserQuestion` emitted the prompt on a
+  `setImmediate`; a stream event landing in that window dropped the FIRST/only question.
+  Now it emits SYNCHRONOUSLY. A provider RETRACTION (control_cancel, incl. question+cancel
+  in one chunk) is handled by a real `withdrawProviderPrompt` service capability — clear
+  the exact prompt, promote the next queued one, or resume running — not by a deferral.
+- **B — renderer, no correctness timer.** Push events were coalesced behind a
+  `setTimeout(16)` flush, so a `prompt.changed`/`stateChanged` could sit in the buffer
+  ("backend waiting, chat still Working"). Now control/state/lifecycle events apply
+  IMMEDIATELY; ONLY `agentSessionBlock.upserted` (per-token text) is still coalesced — a
+  pure render throttle that carries no state — and an immediate event drains that buffer
+  first to preserve order.
+- **A — authoritative per-thread state.** Per-thread events for a NON-active thread are now
+  folded into `agentChatByThreadId[threadId]` as they arrive (not active-surface-only with
+  hydrate-on-switch recovery, which raced under concurrency). Switching is a projection of
+  already-current state; a background thread's card is waiting for you when you arrive.
+
 ## Scope
 
 A Thread that enters `waiting_for_approval` / `waiting_for_input` (any provider:

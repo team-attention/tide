@@ -1,4 +1,4 @@
-import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult } from "./thread-runtime-api.ts";
+import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult } from "./thread-runtime-api.ts";
 import { ComposerQueueService } from "./composer-queue-service.ts";
 import type {
   AgentSessionBlock,
@@ -869,6 +869,79 @@ async recordProviderPromptState(
       thread: snapshotThread(thread),
       runtimeState: thread.runtimeState,
       promptState,
+    };
+  }
+
+  // The provider WITHDREW one of its own pending interactions (claude control_cancel for
+  // a prompt it raised then retracted — e.g. it changed its mind, or a question+cancel
+  // arrived in the same stream chunk). Deterministically clear that exact prompt: if it is
+  // the visible card, promote the next queued prompt into its place (or resume running with
+  // none left); if it is only queued behind the visible one, drop it from the queue. This
+  // replaces the old "emit nothing, wait for the next turn-end to settle" handling, which
+  // left a ghost card when no turn-end followed. Keyed by promptId so a stale withdrawal
+  // for an already-cleared prompt is a no-op.
+  async withdrawProviderPrompt(
+    input: WithdrawProviderPromptInput,
+  ): Promise<ServiceResult<WithdrawProviderPromptResult>> {
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+
+    // Not the visible card: it may be sitting in the queue → remove it there. If it is
+    // neither visible nor queued, the withdrawal is stale (already answered/cleared).
+    if (thread.promptState?.promptId !== input.promptId) {
+      const queue = thread.promptQueue ?? [];
+      const filtered = queue.filter((prompt) => prompt.promptId !== input.promptId);
+      if (filtered.length !== queue.length) {
+        thread.promptQueue = filtered.length > 0 ? filtered : undefined;
+        thread.updatedAt = this.clock();
+      }
+      return {
+        ok: true,
+        thread: snapshotThread(thread),
+        runtimeState: thread.runtimeState,
+        promptState: thread.promptState ?? null,
+      };
+    }
+
+    // It IS the visible card → promote the next queued prompt, or resume running.
+    const next = thread.promptQueue?.shift();
+    if (thread.promptQueue?.length === 0) {
+      thread.promptQueue = undefined;
+    }
+    if (next !== undefined) {
+      const nextKnown: LastKnownState =
+        runtimeStateForPromptKind(next.kind) === "waiting_for_approval"
+          ? "waiting_for_approval"
+          : "waiting_for_input";
+      thread.promptState = next;
+      thread.promptAnsweredPendingSettle = false;
+      thread.runtimeState = runtimeStateForPromptKind(next.kind);
+      thread.lifecycleState = nextKnown;
+      thread.lastKnownState = nextKnown;
+      thread.updatedAt = this.clock();
+      return {
+        ok: true,
+        thread: snapshotThread(thread),
+        runtimeState: thread.runtimeState,
+        promptState: next,
+      };
+    }
+
+    // Nothing queued: the provider retracted its question and keeps working — resume the
+    // running turn (the runtime is still live; no answer was sent).
+    thread.promptState = undefined;
+    thread.promptAnsweredPendingSettle = false;
+    thread.runtimeState = "running";
+    thread.lifecycleState = "running";
+    thread.lastKnownState = "running";
+    thread.updatedAt = this.clock();
+    return {
+      ok: true,
+      thread: snapshotThread(thread),
+      runtimeState: thread.runtimeState,
+      promptState: null,
     };
   }
 

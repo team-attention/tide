@@ -348,6 +348,53 @@ test("a_late_thread_hydrated_for_a_non_active_thread_clears_its_skeleton_so_swit
   );
 });
 
+test("a_background_threads_prompt_folds_into_its_stored_state_no_hydrate_needed_on_switch", () => {
+  // The concurrency guarantee (spec: waiting-state-recovery): a sibling thread that raises
+  // an AskUserQuestion WHILE you are viewing another thread must have its card waiting for
+  // you when you switch to it — folded into its authoritative per-thread state as the event
+  // arrives, NOT reconstructed by a hydrate race at switch time (which dropped it under
+  // concurrency: the chat stayed "Working"). Here NO thread.hydrated is applied after the
+  // background prompt — switching back alone must surface the card.
+  const summary = (threadId: string, title: string, lastKnownState = "idle") => ({
+    threadId,
+    title,
+    agentBinding: { agentId: "claude", runtimeSource: { kind: "provider_cli", integrationId: "claude" } },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    createdAt: "2026-06-16T00:00:00.000Z",
+    updatedAt: "2026-06-16T00:01:00.000Z",
+    pinned: true,
+    archived: false,
+    lastKnownState,
+  });
+  const prompt = {
+    promptId: "auq-1", threadId: "thread-a", agentId: "claude", kind: "choice" as const,
+    message: "Which is your favorite?", source: "provider_hook" as const,
+    choices: [{ choiceId: "red", label: "Red", providerValue: "structured:option:Red" }],
+  };
+  const base = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: { threads: [summary("thread-a", "A", "running"), summary("thread-b", "B", "running")] },
+  });
+  // Open A then B so BOTH have stored chat state (A preserved into the map on the switch).
+  const onA = openProductShellThreadFromLeftRail(base, "thread-a", { backendTransportAvailable: true }).state;
+  const onB = openProductShellThreadFromLeftRail(onA, "thread-b", { backendTransportAvailable: true }).state;
+  // A is BACKGROUND now. Its AskUserQuestion arrives — must fold into A's stored entry.
+  const aPromptWhileOnB = applyProductShellBackendEvent(onB, {
+    kind: "prompt.changed",
+    payload: { threadId: "thread-a", prompt },
+  });
+  assert.equal(
+    aPromptWhileOnB.agentChatByThreadId["thread-a"]?.promptState?.promptId,
+    "auq-1",
+    "a background thread's prompt must fold into its stored state",
+  );
+  // The thread we are LOOKING at (B) must be untouched by A's prompt.
+  assert.equal(aPromptWhileOnB.agentChat.promptState, null, "the active thread's surface is not cross-contaminated");
+  // Switch back to A — NO hydrate applied — the card is already there.
+  const backToA = openProductShellThreadFromLeftRail(aPromptWhileOnB, "thread-a", { backendTransportAvailable: true }).state;
+  assert.equal(backToA.agentChat.promptState?.promptId, "auq-1", "switch-back surfaces the card without a hydrate");
+});
+
 test("confirming_thread_archive_emits_command_and_drops_it_from_the_list", () => {
   // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
   const state = threadListState();

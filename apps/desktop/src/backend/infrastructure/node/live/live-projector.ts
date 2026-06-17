@@ -380,9 +380,16 @@ export function createLiveAgentSessionEventProjector(input: {
         return;
       }
       if (event.kind === "prompt_withdrawn") {
-        // The provider cancelled its own pending interaction. The next
-        // turn_completed (which always follows) clears card+queue in
-        // recordTurnComplete; nothing to do eagerly.
+        // The provider RETRACTED a pending interaction (e.g. a question + its cancel in
+        // one chunk). Clear that exact prompt NOW — deterministically, not by waiting for
+        // a turn-end that may never come (which left a ghost card). The service promotes
+        // the next queued prompt or resumes running; we surface the resulting state.
+        await emitPromptWithdrawal({
+          threadId: eventInput.threadId,
+          promptId: event.promptId,
+          service,
+          onEvent: input.onEvent,
+        });
         return;
       }
       if (event.kind === "turn_completed") {
@@ -640,6 +647,43 @@ async function emitPromptState(input: {
   // Announce the waiting state too: prompt.changed alone leaves a BACKGROUND
   // thread's rail row without its attention dot/notification (adversarial
   // review finding) — the rail listens to agentRuntime.stateChanged.
+  input.onEvent?.({
+    contractVersion: CONTRACT_VERSION,
+    eventId: nextEventId(),
+    kind: "agentRuntime.stateChanged",
+    emittedAt: new Date().toISOString(),
+    payload: {
+      threadId: result.thread.threadId,
+      state: result.runtimeState,
+      changedAt: result.thread.updatedAt,
+      queuedInputs: result.thread.queuedInputs,
+    },
+  });
+}
+
+async function emitPromptWithdrawal(input: {
+  threadId: string;
+  promptId: string;
+  service: ThreadRuntimeService;
+  onEvent?: (event: BackendEventEnvelope) => void;
+}): Promise<void> {
+  const result = await input.service.withdrawProviderPrompt({
+    threadId: input.threadId,
+    promptId: input.promptId,
+  });
+  if (!result.ok) {
+    return;
+  }
+  // Surface the prompt now visible after the withdrawal (a promoted queued card, or null
+  // when the turn resumed) and the matching runtime state — same pair emitPromptState
+  // sends, so the active chat AND the rail dot both reconcile deterministically.
+  input.onEvent?.({
+    contractVersion: CONTRACT_VERSION,
+    eventId: nextEventId(),
+    kind: "prompt.changed",
+    emittedAt: new Date().toISOString(),
+    payload: { threadId: result.thread.threadId, prompt: result.promptState },
+  });
   input.onEvent?.({
     contractVersion: CONTRACT_VERSION,
     eventId: nextEventId(),

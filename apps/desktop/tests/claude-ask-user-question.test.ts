@@ -322,13 +322,17 @@ test("AskUserQuestion wizard: a step with an empty answer is left unanswered (sk
   }
 });
 
-test("AskUserQuestion: a cancel landing in the deferred-emit window leaves no ghost prompt", async () => {
+test("AskUserQuestion: a cancel right after the question pairs it with a withdrawal (no ghost)", async () => {
   const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
   const receivedFile = join(dir, "received.jsonl");
   const events: StructuredProviderEvent[] = [];
-  // The fake emits the question and IMMEDIATELY withdraws it — both lines land
-  // in one stdin chunk, so the cancel processes before the deferred prompt
-  // emit fires. The gate must swallow the emit (no card nothing can answer).
+  // The fake emits the question and IMMEDIATELY withdraws it — both lines land in one
+  // stdin chunk. The prompt now surfaces SYNCHRONOUSLY (no setImmediate — deferring on a
+  // timer raced the first/only question into never appearing, the "stuck waiting, no card"
+  // bug). So the client emits the prompt AND a matching prompt_withdrawn; downstream the
+  // withdrawal clears the card deterministically (withdrawProviderPrompt). The invariant:
+  // any surfaced prompt that was cancelled is PAIRED with a prompt_withdrawn for the same
+  // id — never a prompt left dangling with no withdrawal.
   const request = JSON.stringify({
     type: "control_request",
     request_id: "req-1",
@@ -358,9 +362,14 @@ test("AskUserQuestion: a cancel landing in the deferred-emit window leaves no gh
     onEvent: (event) => events.push(event),
   });
   try {
-    // Give the deferred emit window time to elapse.
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    assert.equal(events.some((event) => event.kind === "prompt"), false);
+    // Wait for both the prompt and its withdrawal to flow through.
+    await waitFor(() => events.find((event) => event.kind === "prompt_withdrawn"), "prompt_withdrawn");
+    const promptIds = events.filter((e) => e.kind === "prompt").map((e) => (e as { promptState: PromptState }).promptState.promptId);
+    const withdrawnIds = new Set(events.filter((e) => e.kind === "prompt_withdrawn").map((e) => (e as { promptId: string }).promptId));
+    // Every surfaced prompt is paired with a withdrawal for the same id (net no ghost).
+    for (const id of promptIds) {
+      assert.equal(withdrawnIds.has(id), true, `prompt ${id} was surfaced without a matching withdrawal`);
+    }
   } finally {
     await client.stop();
   }

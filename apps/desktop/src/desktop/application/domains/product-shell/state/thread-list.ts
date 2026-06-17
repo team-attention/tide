@@ -698,29 +698,12 @@ export function applyProductShellThreadEvent(
     state.fileTree.root !== undefined &&
     normalizeCwd(state.fileTree.root) === normalizeCwd(startedCwd);
 
-  // A thread.started/hydrated that lands for a NON-active thread which has preserved
-  // chat state (we opened it earlier this session) must still clear that entry's
-  // `hydrating` and seed its blocks — otherwise a hydrate that arrives after the user
-  // switched away (or a switch-away/back race) strands the preserved entry in the
-  // loading skeleton, and re-opening the thread shows it forever. The active surface is
-  // handled by applyAgentChatBackendEvent upstream; this hardens the background map.
-  // Only a hydrate/start event seeds blocks + clears `hydrating`. Guard against this
-  // helper ever being reached by another thread event (rename / launch-options) for
-  // which applying the agent-chat reducer to a background entry would be a no-op at best
-  // and a surprise mutation at worst (Gemini review).
-  const isHydrateEvent = event.kind === "thread.hydrated" || event.kind === "thread.started";
-  const preservedAgentChat = state.agentChatByThreadId[threadSummary.threadId];
-  const agentChatByThreadId =
-    isHydrateEvent && !isActiveThread && preservedAgentChat !== undefined && preservedAgentChat.hydrating
-      ? {
-          ...state.agentChatByThreadId,
-          [threadSummary.threadId]: applyAgentChatBackendEvent(preservedAgentChat, event),
-        }
-      : state.agentChatByThreadId;
-
+  // Background per-thread chat state (incl. a NON-active thread's hydrate/started seeding
+  // its blocks + clearing `hydrating`) is folded into agentChatByThreadId upstream in
+  // applyProductShellBackendEvent (authoritative per-thread state), so this rail/data
+  // reducer no longer special-cases it.
   return {
     ...state,
-    agentChatByThreadId,
     // Focus is owned by user actions (click / new-thread set activeThreadId
     // locally). A thread.started/hydrated event is a DATA update only and never
     // moves focus — otherwise a late answer for another thread drags the view away.
