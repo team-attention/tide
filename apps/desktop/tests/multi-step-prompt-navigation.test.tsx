@@ -70,6 +70,24 @@ function singlePrompt(): AgentChatPromptState {
   };
 }
 
+// A single (non-wizard) AskUserQuestion: kind "choice" with no steps → the plain card,
+// which (unlike approval/permission) offers the per-answer note field.
+function singleAuqPrompt(): AgentChatPromptState {
+  return {
+    promptId: "p3",
+    threadId: "t1",
+    agentId: "claude",
+    kind: "choice",
+    message: "Pick one?",
+    choices: [
+      { choiceId: "opt-A", label: "A", providerValue: "structured:option:A" },
+      { choiceId: "opt-B", label: "B", providerValue: "structured:option:B" },
+    ],
+    defaultChoiceId: "opt-A",
+    source: "provider_hook",
+  };
+}
+
 function query<T extends Element>(container: Element, selector: string): T {
   const found = container.querySelector(selector);
   assert.ok(found !== null, `expected to find ${selector}`);
@@ -102,6 +120,44 @@ async function mountWizard(onAnswerSteps: (steps: AgentChatPromptStepAnswer[]) =
   });
   return { container, root };
 }
+
+async function mountPrompt(prompt: AgentChatPromptState) {
+  const { createRoot } = await import("react-dom/client");
+  const container = dom.window.document.createElement("div");
+  dom.window.document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
+      <PromptCard
+        prompt={prompt}
+        onSelectChoice={() => {}}
+        onAnswerText={() => {}}
+        onAnswerSteps={() => {}}
+      />,
+    );
+  });
+  return { container, root };
+}
+
+test("AUQ single card: 'Other…' shows the custom-reply field instead of the note (one input, not two)", async () => {
+  const { container, root } = await mountPrompt(singleAuqPrompt());
+  try {
+    // Default: a listed option is selected → the note field is offered, no custom-reply box yet.
+    assert.ok(container.querySelector(".prompt-card__note") !== null, "note field shown for a selection");
+    assert.ok(container.querySelector(".prompt-card__other") === null, "no custom-reply box before Other");
+
+    // Pick "Other…": the custom-reply box appears and the note field is hidden — exactly one input,
+    // not the two boxes (custom reply + note) stacked on top of each other.
+    await act(async () => clickOptionByLabel(container, "Other…"));
+    assert.ok(container.querySelector(".prompt-card__other") !== null, "custom-reply box shown for Other");
+    assert.ok(
+      container.querySelector(".prompt-card__note") === null,
+      "note field hidden while Other is active (no second input box)",
+    );
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
 
 test("wizard: Next/Back navigate, defaults submit one answer per step", async () => {
   const captured: AgentChatPromptStepAnswer[][] = [];
