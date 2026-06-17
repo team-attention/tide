@@ -50,23 +50,33 @@ export function createPersistentLiveBackendAdapter(input: {
   // discovered off the critical path (phase 2). Boot latency therefore no longer
   // scales with thread count or local provider history.
   const restoreThreadMetadata = async (): Promise<void> => {
-    const listed = await input.persistence.listThreadMetadata();
-    if (!listed.ok) {
-      process.emitWarning(listed.error.message, {
-        type: "TidePersistenceRestoreWarning",
-      });
-      return;
-    }
-    // Drop auto-review / internal sub-sessions — they are not real conversations.
-    persistedRecords = listed.value;
-    const seeds = listed.value
-      .map((record) => threadSeedFromStorageRecord(record))
-      .filter((seed) => !isInternalSessionTitle(seed.title));
-    const restored = await input.service.restoreThreads({ threads: seeds });
-    if (!restored.ok) {
-      process.emitWarning(restored.error.message, {
-        type: "TidePersistenceRestoreWarning",
-      });
+    // Guard the whole restore: this resolves the memoized restorePromise that EVERY
+    // command awaits, so a thrown error must never reject it (that would fail the
+    // first AND all subsequent commands, blocking the rail forever).
+    try {
+      const listed = await input.persistence.listThreadMetadata();
+      if (!listed.ok) {
+        process.emitWarning(listed.error.message, {
+          type: "TidePersistenceRestoreWarning",
+        });
+        return;
+      }
+      // Drop auto-review / internal sub-sessions — they are not real conversations.
+      persistedRecords = listed.value;
+      const seeds = listed.value
+        .map((record) => threadSeedFromStorageRecord(record))
+        .filter((seed) => !isInternalSessionTitle(seed.title));
+      const restored = await input.service.restoreThreads({ threads: seeds });
+      if (!restored.ok) {
+        process.emitWarning(restored.error.message, {
+          type: "TidePersistenceRestoreWarning",
+        });
+      }
+    } catch (error) {
+      process.emitWarning(
+        error instanceof Error ? error.message : "Thread metadata restore failed.",
+        { type: "TidePersistenceRestoreWarning" },
+      );
     }
   };
 
@@ -142,7 +152,12 @@ export function createPersistentLiveBackendAdapter(input: {
     }
     let load = lazyBlockLoads.get(threadId);
     if (load === undefined) {
-      load = loadThreadBlocks(threadId);
+      // Drop a FAILED load from the cache so the next open can retry — a cached
+      // rejected promise would otherwise make every subsequent open fail instantly.
+      load = loadThreadBlocks(threadId).catch((error) => {
+        lazyBlockLoads.delete(threadId);
+        throw error;
+      });
       lazyBlockLoads.set(threadId, load);
     }
     return load;
@@ -193,42 +208,51 @@ export async function persistThreadEvents(
   service: ThreadRuntimeService,
   events: BackendEventEnvelope[],
 ): Promise<void> {
-  const blockThreadIds = new Set<string>();
-  for (const event of events) {
-    if (event.kind === "agentSessionBlock.upserted") {
-      const blockThreadId = (event.payload as { block?: { threadId?: unknown } }).block?.threadId;
-      if (typeof blockThreadId === "string") {
-        blockThreadIds.add(blockThreadId);
+  // Guard the whole body: one call site fires this as `void persistThreadEvents(...)`,
+  // so an unhandled rejection from a disk/service error could crash the backend.
+  try {
+    const blockThreadIds = new Set<string>();
+    for (const event of events) {
+      if (event.kind === "agentSessionBlock.upserted") {
+        const blockThreadId = (event.payload as { block?: { threadId?: unknown } }).block?.threadId;
+        if (typeof blockThreadId === "string") {
+          blockThreadIds.add(blockThreadId);
+        }
+      }
+      if (
+        event.kind !== "thread.started" &&
+        event.kind !== "thread.hydrated" &&
+        event.kind !== "thread.archived" &&
+        event.kind !== "thread.pinChanged" &&
+        event.kind !== "thread.renamed" &&
+        event.kind !== "thread.launchOptionsChanged"
+      ) {
+        continue;
+      }
+      const payload = event.payload as { thread?: ThreadSummaryDto };
+      if (payload.thread === undefined) {
+        continue;
+      }
+      // Preserve the persisted cache pointer + ref paths: this summary-derived record
+      // doesn't model them, and a wholesale save would orphan the thread's
+      // agent-session-cache (making a reopened thread look empty after restart).
+      const saved = await persistence.saveThreadMetadataPreservingCache(
+        threadStorageRecordFromThreadSummary(payload.thread),
+      );
+      if (!saved.ok) {
+        process.emitWarning(saved.error.message, {
+          type: "TidePersistenceSaveWarning",
+        });
       }
     }
-    if (
-      event.kind !== "thread.started" &&
-      event.kind !== "thread.hydrated" &&
-      event.kind !== "thread.archived" &&
-      event.kind !== "thread.pinChanged" &&
-      event.kind !== "thread.renamed" &&
-      event.kind !== "thread.launchOptionsChanged"
-    ) {
-      continue;
+    for (const threadId of blockThreadIds) {
+      await persistThreadBlocks({ persistence, service, threadId });
     }
-    const payload = event.payload as { thread?: ThreadSummaryDto };
-    if (payload.thread === undefined) {
-      continue;
-    }
-    // Preserve the persisted cache pointer + ref paths: this summary-derived record
-    // doesn't model them, and a wholesale save would orphan the thread's
-    // agent-session-cache (making a reopened thread look empty after restart).
-    const saved = await persistence.saveThreadMetadataPreservingCache(
-      threadStorageRecordFromThreadSummary(payload.thread),
+  } catch (error) {
+    process.emitWarning(
+      error instanceof Error ? error.message : "Failed to persist thread events.",
+      { type: "TidePersistenceSaveWarning" },
     );
-    if (!saved.ok) {
-      process.emitWarning(saved.error.message, {
-        type: "TidePersistenceSaveWarning",
-      });
-    }
-  }
-  for (const threadId of blockThreadIds) {
-    await persistThreadBlocks({ persistence, service, threadId });
   }
 }
 
