@@ -42,8 +42,10 @@ export class BrowserCaptureCoordinator {
         this.pending.delete(captureId);
         resolve(undefined);
       }, timeoutMs);
-      // Don't let a pending capture timer keep the backend process alive on its own.
-      (timer as { unref?: () => void }).unref?.();
+      // NOTE: deliberately NOT unref'd. An unref'd timer doesn't keep the event loop alive, so an
+      // awaiting observe could be left with an unresolved promise if the loop drains first ("Promise
+      // resolution is still pending but the event loop has already resolved" — flaky test cancels).
+      // The timer is short-lived (cleared on the renderer's reply; <= the pull timeout otherwise).
       this.pending.set(captureId, { resolve, timer });
     });
   }
