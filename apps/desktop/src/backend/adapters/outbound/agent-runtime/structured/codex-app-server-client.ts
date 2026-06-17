@@ -712,7 +712,3 @@ function numberField(record: Record<string, unknown>, key: string): number | und
 function bounded(text: string): string {
   return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
 }
-
-// (Removed buildCodexFileChangeDetail: it probed diff/changes fields that do NOT exist on
-// FileChangeRequestApprovalParams — codex carries the edits in a separate item, not the
-// approval params. See the fileChange handler above.)
