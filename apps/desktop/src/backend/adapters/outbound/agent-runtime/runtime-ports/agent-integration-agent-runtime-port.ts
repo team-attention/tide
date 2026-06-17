@@ -244,11 +244,14 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     if (runtime.client.applyConfig === undefined) {
       return "restart_required";
     }
-    runtime.client.applyConfig(plan.protocolParams);
+    const acked = await runtime.client.applyConfig(plan.protocolParams);
     traceAgentRuntime(
-      `applySessionConfig ${runtime.agentId} runtime=${handle.runtimeId} keys=${input.changedKeys.join(",")}`,
+      `applySessionConfig ${runtime.agentId} runtime=${handle.runtimeId} keys=${input.changedKeys.join(",")} acked=${acked}`,
     );
-    return "applied";
+    // A provider REFUSAL (e.g. claude live-switch to bypassPermissions on a session
+    // that lacks the capability) degrades to a transparent restart — the resume
+    // re-applies every current option via launch argv. Never a phantom "applied".
+    return acked ? "applied" : "restart_required";
   }
 
   async interrupt(handle: AgentRuntimeHandle): Promise<void> {

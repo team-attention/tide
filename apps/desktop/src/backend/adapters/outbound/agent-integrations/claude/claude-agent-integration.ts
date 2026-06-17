@@ -285,6 +285,20 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       "--include-partial-messages",
       "--permission-prompt-tool",
       "stdio",
+      // Grant the bypass-permissions CAPABILITY (not the mode) up front so the
+      // user's mid-thread switch to "Bypass permissions" applies LIVE via the
+      // set_permission_mode control request — exactly like the official app's
+      // ⇧⌘M. This is the CLI projection of the SDK's `allowDangerouslySkipPermissions`
+      // option, and is DECOUPLED from --dangerously-skip-permissions (which would
+      // FORCE the start mode to bypassPermissions). The session still starts in
+      // whatever --permission-mode says and stays there until the user explicitly
+      // picks Bypass (no auto-escalation); org policy (disableBypassPermissionsMode)
+      // still wins. Evidence (claude 2.1.179, stdin probe): without this flag a live
+      // `set_permission_mode bypassPermissions` is refused with "the session was not
+      // launched with --dangerously-skip-permissions"; with it, the live switch
+      // succeeds while the start mode is preserved. See
+      // docs_v2/specs/claude-bypass-live-capability.md.
+      "--allow-dangerously-skip-permissions",
       "--mcp-config",
       this.mcpConfigPath,
       "--settings",

@@ -297,8 +297,11 @@ class CodexAppServerClient implements StructuredRuntimeClient {
 
   // Mid-thread Launch Options change. The integration maps to TurnStartParams
   // override keys (model/effort); they ride every subsequent turn/start.
-  applyConfig(protocolParams: Record<string, unknown>): void {
+  async applyConfig(protocolParams: Record<string, unknown>): Promise<boolean> {
+    // codex turn/start overrides are applied at the next turn (no live ack to wait
+    // on); treat as accepted. Routing unchanged by the claude bypass fix.
     this.turnOverrides = { ...this.turnOverrides, ...protocolParams };
+    return true;
   }
 
   async interrupt(): Promise<void> {

@@ -230,7 +230,15 @@ class AcpClient implements StructuredRuntimeClient {
   // as the ACP-standard modeId via session/set_mode; opencode delivers model / effort
   // / mode as session/set_config_option entries. Both are valid at any time. See
   // mid-thread-launch-option-changes.md + opencode-model-vendor-selection.md.
-  applyConfig(protocolParams: Record<string, unknown>): void {
+  async applyConfig(protocolParams: Record<string, unknown>): Promise<boolean> {
+    // ACP set_mode / set_config_option have no Tide-side failure signal today, so
+    // treat delivery as applied (the live-vs-restart routing for these providers is
+    // unchanged by the claude bypass fix). See claude-bypass-live-capability.md.
+    this.applyConfigInternal(protocolParams);
+    return true;
+  }
+
+  private applyConfigInternal(protocolParams: Record<string, unknown>): void {
     const configOptions = parseConfigOptions(protocolParams.configOptions);
     if (configOptions !== undefined) {
       if (this.sessionId === undefined) {

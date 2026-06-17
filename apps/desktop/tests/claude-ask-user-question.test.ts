@@ -55,6 +55,43 @@ function fakeProviderPlan(questions: unknown[], receivedFile: string): ProviderL
   };
 }
 
+// A fake claude process that ANSWERS our applyConfig control requests: it acks each
+// cfg-* control_request with a control_response — success, except a switch to
+// bypassPermissions, which it REFUSES (claude's real behaviour on a session not
+// launched bypass-capable). Drives the applyConfig ack path.
+function fakeAckPlan(): ProviderLaunchPlan {
+  const script = [
+    'let buf = "";',
+    'process.stdin.setEncoding("utf8");',
+    'process.stdin.on("data", (chunk) => {',
+    "  buf += chunk;",
+    "  let i;",
+    '  while ((i = buf.indexOf("\\n")) >= 0) {',
+    "    const line = buf.slice(0, i);",
+    "    buf = buf.slice(i + 1);",
+    "    if (!line.trim()) continue;",
+    "    let msg; try { msg = JSON.parse(line); } catch (e) { continue; }",
+    '    if (msg.type === "control_request" && typeof msg.request_id === "string" && msg.request_id.indexOf("cfg-") === 0) {',
+    "      const r = msg.request || {};",
+    '      const reject = r.subtype === "set_permission_mode" && r.mode === "bypassPermissions";',
+    "      const response = reject",
+    '        ? { subtype: "error", request_id: msg.request_id, error: "not launched with --dangerously-skip-permissions" }',
+    '        : { subtype: "success", request_id: msg.request_id, response: { mode: r.mode } };',
+    '      console.log(JSON.stringify({ type: "control_response", response: response }));',
+    "    }",
+    "  }",
+    "});",
+  ].join("\n");
+  return {
+    command: process.execPath,
+    args: ["-e", script],
+    env: {},
+    cwd: tmpdir(),
+    transport: "claude_stream_json",
+    expectedSignalSources: [],
+  };
+}
+
 async function waitFor<T>(probe: () => T | undefined, label: string): Promise<T> {
   const deadline = Date.now() + 15_000;
   for (;;) {
@@ -281,6 +318,33 @@ test("applyConfig writes set_permission_mode and set_model control requests", as
         { subtype: "set_model", model: "claude-sonnet-4-6", mode: undefined },
         { subtype: "set_permission_mode", model: undefined, mode: "acceptEdits" },
       ],
+    );
+  } finally {
+    await client.stop();
+  }
+});
+
+// Spec: docs_v2/specs/claude-bypass-live-capability.md — applyConfig AWAITS the
+// control_response so a provider refusal (live switch to bypassPermissions on a
+// non-capable session) resolves false, which the runtime port turns into a
+// transparent restart instead of a phantom "applied".
+test("applyConfig resolves true when acked, false when claude refuses the change", async () => {
+  const { onEvent } = promptCollector();
+  const client = createClaudeStreamJsonClient({
+    plan: fakeAckPlan(),
+    threadId: "thread-1",
+    runtimeId: "rt-1",
+    onEvent,
+  });
+  try {
+    // A non-bypass mode is acked success → applied.
+    assert.equal(await client.applyConfig?.({ permissionMode: "acceptEdits" }), true);
+    // bypassPermissions is REFUSED on a non-capable session → false (→ restart).
+    assert.equal(await client.applyConfig?.({ permissionMode: "bypassPermissions" }), false);
+    // A combined change is false if ANY part is refused.
+    assert.equal(
+      await client.applyConfig?.({ model: "claude-sonnet-4-6", permissionMode: "bypassPermissions" }),
+      false,
     );
   } finally {
     await client.stop();

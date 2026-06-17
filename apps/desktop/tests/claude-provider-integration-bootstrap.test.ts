@@ -83,6 +83,11 @@ test("claude_ready_preflight_returns_structured_stream_json_plan", async () => {
   // REQUIRED for can_use_tool permission requests (hidden flag; the official
   // Agent SDK passes exactly this).
   assert.ok(joined.includes("--permission-prompt-tool stdio"));
+  // Grants the bypass-permissions CAPABILITY at launch (decoupled from the start
+  // mode) so a mid-thread switch to Bypass applies live via set_permission_mode —
+  // claude refuses a cold live switch into bypass otherwise. Spec:
+  // docs_v2/specs/claude-bypass-live-capability.md
+  assert.ok(joined.includes("--allow-dangerously-skip-permissions"));
   assert.ok(joined.includes(`--mcp-config /tmp/tide-claude-mcp.json`));
   assert.ok(joined.includes(`--settings /tmp/tide-claude-settings.json`));
   // No TUI: no startup delays, no submit-key, no PTY env.
