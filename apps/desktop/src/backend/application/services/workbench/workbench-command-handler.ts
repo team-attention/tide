@@ -29,6 +29,7 @@ import {
 } from "./workbench-browser-operations.ts";
 import {
   browserPaneActionResultFromData,
+  browserPaneCaptureResultFromData,
   browserPaneSnapshotFromData,
   editorPanePositionFromData,
   editorPaneSaveFromData,
@@ -36,6 +37,7 @@ import {
   providerSetupSurfaceInputFromData,
   workbenchLayoutModeFromValue,
 } from "./workbench-command-data.ts";
+import { BrowserCaptureCoordinator } from "./browser-capture-coordinator.ts";
 import type { WorkbenchFileOperations } from "./workbench-file-operations.ts";
 import { activeLauncherPaneId, openWorkbenchLauncher, removeLauncherPane } from "./workbench-launcher.ts";
 import type { WorkbenchRuntime } from "./workbench-runtime.ts";
@@ -70,6 +72,7 @@ export interface WorkbenchCommandHandlerDeps {
   workspaceFilePort: WorkspaceFilePort;
   workspaceCommandPort: WorkspaceCommandPort;
   workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
+  browserCapture: BrowserCaptureCoordinator;
 }
 
 // Dispatches visible Workbench commands (open/close panes, terminal input/resize,
@@ -86,6 +89,7 @@ export class WorkbenchCommandHandler {
   private readonly workspaceFilePort: WorkspaceFilePort;
   private readonly workspaceCommandPort: WorkspaceCommandPort;
   private readonly workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
+  private readonly browserCapture: BrowserCaptureCoordinator;
 
   constructor(deps: WorkbenchCommandHandlerDeps) {
     this.threads = deps.threads;
@@ -97,6 +101,7 @@ export class WorkbenchCommandHandler {
     this.workspaceFilePort = deps.workspaceFilePort;
     this.workspaceCommandPort = deps.workspaceCommandPort;
     this.workspaceCodeIntelligencePort = deps.workspaceCodeIntelligencePort;
+    this.browserCapture = deps.browserCapture;
   }
 
   async handleWorkbenchCommand(
@@ -195,6 +200,41 @@ export class WorkbenchCommandHandler {
           // stale act across a navigation.
           delete pane.priorRevision;
         }
+        pane.updatedAt = this.clock();
+        thread.updatedAt = this.clock();
+        return {
+          ok: true,
+          handled: true,
+          thread: snapshotThread(thread),
+          workbench: snapshotWorkbench(thread.workbench),
+        };
+      }
+      case "update_browser_capture_result": {
+        // The renderer's reply to an observe-time pixel-capture pull (pendingCapture). Resolve
+        // the awaiting observe call and refresh the fallback cache. A capture never changes the
+        // page, so the revision is NOT re-minted. A late/duplicate report (captureId no longer
+        // pending) is ignored. Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
+        const pane = workbenchPaneById(thread.workbench, input.targetPaneId);
+        if (pane === undefined || pane.kind !== "browser") {
+          return failure(
+            "workbench_target_not_found",
+            "Browser Pane target was not found.",
+          );
+        }
+        const result = browserPaneCaptureResultFromData(input.data);
+        if (result === undefined) {
+          return failure(
+            "invalid_workbench_command",
+            "Browser Pane capture result requires a capture id.",
+          );
+        }
+        if (pane.pendingCapture?.captureId === result.captureId) {
+          delete pane.pendingCapture;
+        }
+        if (result.screenshot !== undefined) {
+          pane.screenshot = result.screenshot;
+        }
+        this.browserCapture.resolve(result.captureId, result.screenshot);
         pane.updatedAt = this.clock();
         thread.updatedAt = this.clock();
         return {

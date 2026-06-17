@@ -44,6 +44,10 @@ export interface AppChromeWorkbenchPaneRef {
   pageTitle?: string;
   agentDriving?: boolean;
   agentCursor?: { x: number; y: number };
+  // An in-flight observe-time pixel-capture request: the Browser Pane host captures this pane
+  // (capturePage) for this captureId and reports back. Spec:
+  // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
+  pendingCapture?: { captureId: string; requestedAt: string };
   pendingAction?: AppChromeBrowserPaneAction;
   lastAction?: AppChromeBrowserPaneActionResult;
   filePath?: string;

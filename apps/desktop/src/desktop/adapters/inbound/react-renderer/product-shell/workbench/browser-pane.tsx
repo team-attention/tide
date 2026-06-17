@@ -1,6 +1,7 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import {
+  captureBrowserWebViewScreenshot,
   executeBrowserWebViewAction,
   isWebViewSettled,
   readBrowserWebViewSnapshot,
@@ -255,6 +256,10 @@ export function WorkbenchBrowserPane(props: {
       return;
     }
     const paneId = props.pane.paneId;
+    // Text-only on every load event (NO capturePage): the recurring did-stop-loading/
+    // did-finish-load storm across every mounted pane is what pegged the host renderer. Pixels
+    // are pulled on demand at observe time (pendingCapture). Spec:
+    // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
     const emitSnapshot = () => {
       void readBrowserWebViewSnapshot(webview).then((snapshot) => {
         props.handlers.onBrowserSnapshot(paneId, {
@@ -268,10 +273,9 @@ export function WorkbenchBrowserPane(props: {
     webview.addEventListener("did-finish-load", emitSnapshot);
     webview.addEventListener("did-stop-loading", emitSnapshot);
     // Attach-race guard (spec browser-pane-live-pull-vision.md): a fast/static page can fire
-    // its load events BEFORE this effect attaches the listeners above, so the snapshot would
-    // never be captured (the blank-observe bug). If the guest is already loaded, capture once
-    // now; the listeners cover later loads/navigations. Deps are paneId-only so a backend
-    // revision bump does not re-run this and trigger a redundant capture.
+    // its load events BEFORE this effect attaches the listeners above, so the URL/title would
+    // never be reported. If the guest is already loaded, emit once now; the listeners cover
+    // later loads. Deps are paneId-only so a backend revision bump does not re-run this.
     if (isWebViewSettled(webview)) {
       emitSnapshot();
     }
@@ -281,6 +285,31 @@ export function WorkbenchBrowserPane(props: {
       webview.removeEventListener("did-stop-loading", emitSnapshot);
     };
   }, [props.handlers, props.pane.paneId]);
+  // Observe-time pixel-capture pull: the backend marks this pane with a pendingCapture when the
+  // agent calls tide_observe_browser(vision). Capture the live <webview> NOW (capturePage) and
+  // report it back — this is the ONLY place a screenshot is encoded, so a mounted pane never
+  // PNG-encodes on the recurring page-load storm. Spec:
+  // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
+  // Only the CURRENT pendingCapture needs de-duping (captureIds are unique + monotonic), so one
+  // last-id string is O(1) vs. a Set that would grow over the pane's lifetime (Gemini review).
+  const lastCapturedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const webview = webviewRef.current;
+    const capture = props.pane.pendingCapture;
+    if (
+      webview === null ||
+      capture === undefined ||
+      lastCapturedIdRef.current === capture.captureId
+    ) {
+      return;
+    }
+    lastCapturedIdRef.current = capture.captureId;
+    const paneId = props.pane.paneId;
+    const captureId = capture.captureId;
+    void captureBrowserWebViewScreenshot(webview).then((screenshot) => {
+      props.handlers.onBrowserCaptureResult(paneId, { captureId, screenshot });
+    });
+  }, [props.handlers, props.pane.paneId, props.pane.pendingCapture?.captureId]);
   useEffect(() => {
     const webview = webviewRef.current;
     const action = props.pane.pendingAction;
@@ -297,6 +326,9 @@ export function WorkbenchBrowserPane(props: {
     const revision = props.pane.revision;
     void executeBrowserWebViewAction(webview, action)
       .then(async (actionResult) => {
+        // Text-only: the post-action pixels (if the agent wants them) are pulled on its next
+        // tide_observe_browser via pendingCapture, not captured here. Spec:
+        // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
         const snapshot = await readBrowserWebViewSnapshot(webview);
         props.handlers.onBrowserActionResult(paneId, {
           revision,
@@ -527,7 +559,7 @@ function BackgroundBrowserWebView(props: {
 }): ReactElement {
   const webviewRef = useRef<BrowserWebViewElement | null>(null);
   const executedActionIdsRef = useRef<Set<string>>(new Set());
-  const { threadId, paneId, revision, url, pendingAction } = props.pane;
+  const { threadId, paneId, revision, url, pendingAction, pendingCapture } = props.pane;
   const handlers = props.handlers;
 
   // Latest revision via ref so the snapshot effect below does NOT depend on it: re-running
@@ -537,7 +569,11 @@ function BackgroundBrowserWebView(props: {
   useEffect(() => {
     snapshotRevisionRef.current = revision;
   }, [revision]);
-  // Report a snapshot when the offscreen page settles, routed to the pane's thread.
+  // Report a text-only snapshot when the offscreen page settles, routed to the pane's thread.
+  // NO capturePage here — an offscreen background page firing did-stop-loading repeatedly used to
+  // re-encode a PNG each time, multiplying host-renderer CPU by every background pane ever opened.
+  // Pixels are pulled on demand at observe time (pendingCapture). Spec:
+  // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
   useEffect(() => {
     const webview = webviewRef.current;
     if (webview === null) {
@@ -556,10 +592,9 @@ function BackgroundBrowserWebView(props: {
     webview.addEventListener("did-finish-load", emitSnapshot);
     webview.addEventListener("did-stop-loading", emitSnapshot);
     // Attach-race guard (spec browser-pane-live-pull-vision.md): a fast/static page can fire
-    // its load events BEFORE this effect attaches the listeners above, so the snapshot would
-    // never be captured (the blank-observe bug). If the guest is already loaded, capture once
-    // now; the listeners cover later loads. Deps are paneId-only so a backend revision bump
-    // does not re-run this and trigger a redundant capture.
+    // its load events BEFORE this effect attaches the listeners above, so the URL/title would
+    // never be reported. If the guest is already loaded, emit once now; the listeners cover
+    // later loads. Deps are paneId-only so a backend revision bump does not re-run this.
     if (isWebViewSettled(webview)) {
       emitSnapshot();
     }
@@ -569,6 +604,28 @@ function BackgroundBrowserWebView(props: {
       webview.removeEventListener("did-stop-loading", emitSnapshot);
     };
   }, [handlers, threadId, paneId]);
+
+  // Observe-time pixel-capture pull for a background thread's pane: an agent driving its browser
+  // while you watch another thread still gets FRESH pixels on tide_observe_browser. capturePage
+  // only when the backend asks (pendingCapture) — never on the page-load storm. Spec:
+  // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
+  // One last-id string (not a growing Set) — same O(1) de-dup as the active pane (Gemini review).
+  const lastCapturedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (
+      webview === null ||
+      pendingCapture === undefined ||
+      lastCapturedIdRef.current === pendingCapture.captureId
+    ) {
+      return;
+    }
+    lastCapturedIdRef.current = pendingCapture.captureId;
+    const captureId = pendingCapture.captureId;
+    void captureBrowserWebViewScreenshot(webview).then((screenshot) => {
+      handlers.onBackgroundBrowserCaptureResult(threadId, paneId, { captureId, screenshot });
+    });
+  }, [handlers, threadId, paneId, pendingCapture?.captureId]);
 
   // Execute a scheduled background action (click/type) against the offscreen webview.
   useEffect(() => {
@@ -584,6 +641,7 @@ function BackgroundBrowserWebView(props: {
     executedActionIdsRef.current.add(pendingAction.actionId);
     void executeBrowserWebViewAction(webview, pendingAction)
       .then(async (actionResult) => {
+        // Text-only: post-action pixels are pulled on the agent's next observe (pendingCapture).
         const snapshot = await readBrowserWebViewSnapshot(webview);
         handlers.onBackgroundBrowserActionResult(threadId, paneId, {
           revision,

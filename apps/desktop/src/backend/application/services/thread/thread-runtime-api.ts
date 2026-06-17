@@ -42,6 +42,10 @@ export interface CreateThreadRuntimeServiceInput {
   idGenerator?: () => string;
   initialThreads?: ThreadSeed[];
   onAsyncEvent?: (event: ThreadRuntimeAsyncEvent) => Promise<void> | void;
+  // Ceiling for the observe-time Browser Pane capture pull (renderer round-trip). Defaults to
+  // 3 s; a backend-only test (no renderer to reply) sets a tiny value so observe degrades at once
+  // instead of waiting out the real timeout on every vision observe.
+  browserCapturePullTimeoutMs?: number;
 }
 
 export interface HydrateThreadInput {

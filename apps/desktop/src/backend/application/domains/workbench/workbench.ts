@@ -84,6 +84,13 @@ export interface BrowserPaneState {
   // Attached to observe output only for mode=screenshot|both; kept out of general
   // Workbench snapshots to avoid shipping the image on every state change.
   screenshot?: BrowserPaneScreenshot;
+  // An in-flight, observe-driven pixel-capture request. Set when tide_observe_browser
+  // (mode=screenshot|both) needs FRESH pixels: the renderer host watches this on the pane,
+  // calls capturePage() for this captureId, and reports back via update_browser_capture_result.
+  // Screenshots are pulled on demand at observe time — NOT eagerly on every page-load event —
+  // so a mounted (incl. background) pane never PNG-encodes on the recurring load-event storm.
+  // Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
+  pendingCapture?: { captureId: string; requestedAt: string };
   pendingAction?: BrowserPaneActionRequest;
   lastAction?: BrowserPaneActionResult;
   // The pane's revision immediately BEFORE its most recent settled act-completion re-mint,
@@ -267,6 +274,7 @@ export interface BrowserPaneRef extends WorkbenchPaneRef {
   agentDriving: boolean;
   agentCursor?: { x: number; y: number };
   screenshot?: BrowserPaneScreenshot;
+  pendingCapture?: { captureId: string; requestedAt: string };
   pendingAction?: BrowserPaneActionRequest;
   lastAction?: BrowserPaneActionResult;
   stale: boolean;

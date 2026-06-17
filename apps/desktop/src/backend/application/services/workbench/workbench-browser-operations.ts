@@ -1,6 +1,7 @@
 import type { ThreadRecord } from "../../domains/thread/thread.ts";
 import type {
   BrowserPaneActionRequest,
+  BrowserPaneScreenshot,
   BrowserPaneState,
 } from "../../domains/workbench/workbench.ts";
 import { failure, type ServiceResult } from "../support/service-result.ts";
@@ -122,10 +123,20 @@ export async function seedInitialWorkbenchPanes(
   thread.workbench.focusOwner = "composer";
 }
 
-export function observeBrowserOutput(
+// Pull a FRESH pixel capture from the renderer for this observe (mode=screenshot|both):
+// returns the captured screenshot, or undefined when capture is unavailable (timed out / pane
+// not painting) so observe degrades to the cached image. Provided by the MCP handler, which
+// owns the pendingCapture round-trip; omitted by callers (e.g. tests) that want the cache-only
+// behaviour. Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
+export type BrowserScreenshotPuller = (
+  pane: BrowserPaneState,
+) => Promise<BrowserPaneScreenshot | undefined>;
+
+export async function observeBrowserOutput(
   thread: ThreadRecord,
   input: Record<string, unknown> | undefined,
-): ServiceResult<{ value: TideObserveBrowserOutput }> {
+  pullScreenshot?: BrowserScreenshotPuller,
+): Promise<ServiceResult<{ value: TideObserveBrowserOutput }>> {
   const paneId = optionalString(input?.paneId);
   if (paneId === undefined) {
     return failure("workbench_target_not_found", "Browser Pane target was not found.");
@@ -147,9 +158,23 @@ export function observeBrowserOutput(
     return failure("workbench_stale_reference", "Browser Pane revision is stale.");
   }
 
-  // Pixel vision: attach the cached screenshot only for mode=screenshot|both (default
-  // text → no image, back-compat + token cost). screenshot-only drops the DOM-text body.
   const mode = browserObserveModeFromInput(input?.mode);
+  // Pixel vision is pulled ON DEMAND at observe time, not eagerly on every page-load: ask the
+  // renderer to capture the live <webview> now and cache the result. Fall back to the last
+  // cached screenshot when the pull yields nothing. text mode never captures.
+  if (mode !== "text" && pullScreenshot !== undefined) {
+    try {
+      const fresh = await pullScreenshot(pane);
+      if (fresh !== undefined) {
+        pane.screenshot = fresh;
+      }
+    } catch {
+      // An unexpected puller failure (IPC / coordinator) degrades to the cached screenshot or
+      // DOM text below — never fail the whole observe tool call (Gemini review).
+    }
+  }
+  // Attach the screenshot only for mode=screenshot|both (default text → no image, back-compat +
+  // token cost). screenshot-only drops the DOM-text body.
   const ref = browserPaneRef(pane);
   if (mode !== "text" && pane.screenshot !== undefined) {
     ref.screenshot = { ...pane.screenshot };

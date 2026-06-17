@@ -472,6 +472,18 @@ export type ProductShellBackendCommand =
       };
     }
   | {
+      // The renderer host's reply to an observe-time pixel-capture pull (pendingCapture):
+      // the captureId being answered + the captured screenshot (omitted if capture failed).
+      // Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
+      kind: "workbench.command";
+      payload: {
+        threadId: string;
+        command: "update_browser_capture_result";
+        targetPaneId: string;
+        data: { captureId: string; screenshot?: ProductShellBrowserScreenshot };
+      };
+    }
+  | {
       // Probe an agent's REAL command set for the composer menu (handshake-only).
       // The backend replies with agentRuntime.commandsChanged. See
       // docs_v2/specs/live-provider-command-mirroring.md.

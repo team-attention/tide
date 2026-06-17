@@ -44,43 +44,82 @@ function browserThread(overrides: Partial<BrowserPaneState> = {}): ThreadRecord 
   } as unknown as ThreadRecord;
 }
 
-test("observe mode=text returns no screenshot even when one is cached", () => {
+test("observe mode=text returns no screenshot even when one is cached", async () => {
   const thread = browserThread({ screenshot: SCREENSHOT });
-  const result = observeBrowserOutput(thread, { paneId: "p1", mode: "text" });
+  const result = await observeBrowserOutput(thread, { paneId: "p1", mode: "text" });
   assert.equal(result.ok, true);
   assert.equal(result.ok && result.value.pane.screenshot, undefined);
   assert.equal(result.ok && result.value.pane.bodyTextPreview, "page body text");
 });
 
-test("observe defaults to mode=both: returns BOTH the cached screenshot and the text body", () => {
+test("observe defaults to mode=both: returns BOTH the cached screenshot and the text body", async () => {
   // spec browser-pane-live-pull-vision.md D4: vision-first default when no mode is given.
   const thread = browserThread({ screenshot: SCREENSHOT });
-  const result = observeBrowserOutput(thread, { paneId: "p1" });
+  const result = await observeBrowserOutput(thread, { paneId: "p1" });
   assert.equal(result.ok, true);
   assert.deepEqual(result.ok ? result.value.pane.screenshot : undefined, SCREENSHOT);
   assert.equal(result.ok && result.value.pane.bodyTextPreview, "page body text");
 });
 
-test("observe mode=screenshot attaches the cached image and drops the text body", () => {
+test("observe mode=screenshot attaches the cached image and drops the text body", async () => {
   const thread = browserThread({ screenshot: SCREENSHOT });
-  const result = observeBrowserOutput(thread, { paneId: "p1", mode: "screenshot" });
+  const result = await observeBrowserOutput(thread, { paneId: "p1", mode: "screenshot" });
   assert.equal(result.ok, true);
   assert.deepEqual(result.ok ? result.value.pane.screenshot : undefined, SCREENSHOT);
   assert.equal(result.ok && result.value.pane.bodyTextPreview, undefined);
 });
 
-test("observe mode=both returns the text body AND the screenshot", () => {
+test("observe mode=both returns the text body AND the screenshot", async () => {
   const thread = browserThread({ screenshot: SCREENSHOT });
-  const result = observeBrowserOutput(thread, { paneId: "p1", mode: "both" });
+  const result = await observeBrowserOutput(thread, { paneId: "p1", mode: "both" });
   assert.equal(result.ok, true);
   assert.equal(result.ok && result.value.pane.bodyTextPreview, "page body text");
   assert.deepEqual(result.ok ? result.value.pane.screenshot : undefined, SCREENSHOT);
 });
 
-test("observe mode=screenshot with no cached capture returns no screenshot (degrade)", () => {
+test("observe mode=screenshot with no cached capture returns no screenshot (degrade)", async () => {
   const thread = browserThread();
-  const result = observeBrowserOutput(thread, { paneId: "p1", mode: "screenshot" });
+  const result = await observeBrowserOutput(thread, { paneId: "p1", mode: "screenshot" });
   assert.equal(result.ok, true);
+  assert.equal(result.ok && result.value.pane.screenshot, undefined);
+});
+
+// --- On-demand pull: the screenshot is captured FRESH at observe time, not from the cache ---
+// Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
+
+const FRESH_SHOT: BrowserPaneScreenshot = {
+  data: "ZnJlc2g=",
+  mimeType: "image/png",
+  width: 1280,
+  height: 800,
+  devicePixelRatio: 2,
+};
+
+test("observe pulls a FRESH capture and returns it over the stale cache", async () => {
+  const thread = browserThread({ screenshot: SCREENSHOT });
+  let pulledPaneId: string | undefined;
+  const result = await observeBrowserOutput(thread, { paneId: "p1", mode: "both" }, async (pane) => {
+    pulledPaneId = pane.paneId;
+    return FRESH_SHOT;
+  });
+  assert.equal(pulledPaneId, "p1", "the puller is invoked for the observed pane");
+  assert.deepEqual(result.ok ? result.value.pane.screenshot : undefined, FRESH_SHOT);
+});
+
+test("observe falls back to the cached screenshot when the pull yields nothing (timeout)", async () => {
+  const thread = browserThread({ screenshot: SCREENSHOT });
+  const result = await observeBrowserOutput(thread, { paneId: "p1", mode: "both" }, async () => undefined);
+  assert.deepEqual(result.ok ? result.value.pane.screenshot : undefined, SCREENSHOT);
+});
+
+test("observe mode=text never pulls a capture", async () => {
+  const thread = browserThread({ screenshot: SCREENSHOT });
+  let pulled = false;
+  const result = await observeBrowserOutput(thread, { paneId: "p1", mode: "text" }, async () => {
+    pulled = true;
+    return FRESH_SHOT;
+  });
+  assert.equal(pulled, false, "text mode must not trigger a pixel capture");
   assert.equal(result.ok && result.value.pane.screenshot, undefined);
 });
 
