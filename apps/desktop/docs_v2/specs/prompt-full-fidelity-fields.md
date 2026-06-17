@@ -227,14 +227,15 @@ Contract/arch: DTO ↔ domain new fields stay structurally compatible (existing 
   `claude-ask-user-question.test.ts`. Also fixed a pre-existing leak where the internal
   `structured:` answer-routing token was shown as an option's secondary text.
 - **Slice 2 — up-path notes** (notes textarea on AUQ card → `prompt.answer.notes` /
-  `PromptStepAnswerDto.notes` → claude `annotations`). **NOT STARTED.** Wizard path threads
-  cleanly via `stepAnswers` (add `notes?` to `PromptStepAnswer`); the single-question card's
-  pick path routes through the **shared** choice-surface mechanism
-  (`onChoiceSurfaceRowSelect` → `selectAgentChatChoiceSurfaceRow`), so single-card notes
-  needs either rerouting AUQ single answers through `onAnswerText(value, notes)` or threading
-  notes through that shared path — design before coding. **Gated on the live probe below**:
-  if claude ignores `updatedInput.annotations`, the design changes (append the note into the
-  question's `answers` text), so confirm the round-trip on a real AUQ turn FIRST.
+  `PromptStepAnswerDto.notes` → claude `annotations`). **DONE + live-verified.** Wizard path
+  threads via `stepAnswers` (`PromptStepAnswer.notes`); single-card answers (pick included)
+  route through `onAnswerText(value, notes)` — AUQ picks are rerouted from the shared
+  choice-surface path to the value path so a note rides along, leaving approval picks on the
+  `onSelectChoice` choiceId path. **The live gate PASSED**: on a real AUQ turn the note was
+  packed into `updatedInput.annotations` and claude acted on it (it echoed a token embedded in
+  the note), so claude **does** honor `updatedInput.annotations` — no `answers`-text fallback
+  needed. Tests: notes→annotations + preview-echo + no-note⇒no-annotations + wizard per-step
+  notes in `claude-ask-user-question.test.ts`.
 - **Slice 1 deviation:** ACP detail is built by a dedicated `buildAcpPermissionDetail`
   (extracted to `acp-permission.ts`), NOT by reusing `acpToolOutput` as first planned —
   `acpToolOutput` is text-only (for tool RESULTS) and drops `diff` content items, so it
@@ -244,9 +245,15 @@ Contract/arch: DTO ↔ domain new fields stay structurally compatible (existing 
 - `PromptCard` already centralizes option rendering in `renderOptions`; add
   `description`/`preview` there and `detail`/`header` in the card head — single render path
   shared by single card + wizard step.
-- Residual risk / live-verify: that claude reads `annotations` from `updatedInput` (the
-  return shape). Probe a real `AskUserQuestion` turn before claiming the notes round-trip
-  works; if claude ignores `updatedInput.annotations`, fall back to appending the note to the
-  question's `answers` text. codex fileChange diff field name needs confirming against a live
-  `item/fileChange/requestApproval` payload (codex fileChange render is still "later" at
-  `codex-app-server-client.ts:639`).
+- Live-verify outcomes (Playwright against real providers, `scripts/pw-*-verify.cjs`):
+  - **claude reads `updatedInput.annotations`** — confirmed: a note instructing claude to echo
+    a token produced that token in claude's follow-up, so the notes round-trip is real (the
+    `answers`-text fallback was NOT needed). `pw-notes-roundtrip-verify.cjs`.
+  - claude AUQ header/description + Write approval detail — confirmed (`pw-full-fidelity-*`).
+  - gemini ACP detail + native option kinds — confirmed via a real WriteFile permission
+    (`pw-provider-card-verify.cjs`).
+  - **codex fileChange diff shape stays UNVERIFIED live**: codex auto-approves safe ops in the
+    test config, so `item/fileChange/requestApproval` never surfaced a card. `buildCodexFileChangeDetail`
+    is therefore defensive (probes `unifiedDiff`/`diff`/`patch` and `changes[]`, falls back to
+    headline-only) and unit-tested; the shared card render path is proven live via claude + gemini.
+    Confirm the codex payload shape when a real codex approval can be triggered.
