@@ -94,6 +94,12 @@ test("desktop_release_workflow_publishes_to_the_dedicated_repo", () => {
   assert.match(workflow, /DESKTOP_RELEASES_TOKEN/);
   // notarize: true in electron-builder.json relies on the Apple team id coming from env.
   assert.match(workflow, /APPLE_TEAM_ID:\s*"D86BXTY5VR"/);
+  // The dmg ALSO lands on THIS monorepo's own release (canonical human download). This
+  // is a SEPARATE gh step (default github.token, reusing the tide-v* trigger tag) — NOT
+  // an electron-builder publish target, so it never collides with the v1 Rust app's `v*`
+  // releases here. The version-management work dropped this; assert it stays.
+  assert.match(workflow, /gh release create/);
+  assert.match(workflow, /GH_TOKEN: \$\{\{ github\.token \}\}/);
 });
 
 test("provider_smoke_script_is_opt_in", () => {

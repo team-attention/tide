@@ -84,3 +84,20 @@ jobs:
         # The `tide-v*` tag on THIS repo is just the build trigger / code source of
         # truth. See specs/version-management.md.
         run: node scripts/v2-tooling-command.mjs electron-builder --mac --publish always
+
+      # The dedicated repo above is the electron-updater feed. We ALSO publish the dmg to
+      # THIS monorepo's own release — the human-facing download, and the historical
+      # behavior that the version-management work dropped. electron-builder already signed
+      # + notarized this dmg, so we only attach it. Kept as a SEPARATE step (not an
+      # electron-builder publish target) because electron-builder would tag the release
+      # `v${version}`, colliding with the v1 Rust app's `v*` releases here; gh reuses the
+      # existing `tide-v*` trigger tag instead.
+      - name: Also publish the dmg to this repo's release (canonical download)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#tide-v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/package-mac/Tide-${VERSION}-arm64.dmg" \
+            --title "Tide v${VERSION}" \
+            --generate-notes
