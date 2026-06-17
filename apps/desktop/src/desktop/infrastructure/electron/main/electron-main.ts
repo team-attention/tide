@@ -6,7 +6,7 @@ import { installApplicationMenu } from "./app-menu.ts";
 import { applyHostZoom } from "./zoom.ts";
 import { appRendererUrl, createMainWindow } from "./main-window.ts";
 import { registerNotificationBridge } from "./notifications.ts";
-import { registerAutoUpdate } from "./auto-update.ts";
+import { registerAutoUpdate, logUpdateEvent } from "./auto-update.ts";
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from "electron";
 
 import { basename, dirname, join } from "node:path";
@@ -603,7 +603,11 @@ app.commandLine.appendSwitch("password-store", "basic");
 // instances at once (each with its own temp data root); the lock is keyed by
 // Electron userData, not the data root, so without this they would collide.
 if (process.env.TIDE_APP_DATA_ROOT === undefined) {
-  if (!app.requestSingleInstanceLock()) {
+  const gotSingleInstanceLock = app.requestSingleInstanceLock();
+  // Breadcrumb for the post-update relaunch: a Squirrel-relaunched instance that loses
+  // this race logs `lock = false` right before quitting. See auto-update.ts.
+  logUpdateEvent(`startup: single-instance lock = ${gotSingleInstanceLock}`);
+  if (!gotSingleInstanceLock) {
     app.quit();
   } else {
     app.on("second-instance", () => {
@@ -633,6 +637,14 @@ void app.whenReady().then(() => {
   } catch {
     // Icon optional — never block startup.
   }
+  // Warm the backend in parallel with the window/renderer load. It used to be forked
+  // lazily on the renderer's FIRST command (thread.list), so its utilityProcess
+  // cold-start + handshake ran serially AFTER the renderer mounted — the Left Rail
+  // skeleton sat there for that whole spawn. Forking here overlaps it with the bundle
+  // load so the backend is (near) ready when thread.list arrives. ensureBackendProcess
+  // is idempotent, so the lazy call stays a safety net. See
+  // docs_v2/specs/thread-list-metadata-first-restore.md.
+  void ensureBackendProcess().catch(() => undefined);
   createMainWindow();
 
   app.on("activate", () => {

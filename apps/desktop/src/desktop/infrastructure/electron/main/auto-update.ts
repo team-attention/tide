@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import electronUpdater from "electron-updater";
+import { appendFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   mapAutoUpdaterEvent,
   shouldRunAutoUpdater,
@@ -19,6 +21,21 @@ const { autoUpdater } = electronUpdater;
 const FIRST_CHECK_DELAY_MS = 10_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+// Append-only breadcrumb for the self-update RELAUNCH — a packaged-only path no unit
+// test can exercise. The OLD instance logs at apply time; EVERY instance logs the
+// single-instance-lock result at startup. Both write to the same userData file, so after
+// an update we can tell whether the relaunched instance even started and whether it got
+// the lock (lock=false ⇒ the race below; no new startup line ⇒ Squirrel never relaunched).
+// Best-effort: diagnostics must never throw or block the app.
+export function logUpdateEvent(message: string): void {
+  try {
+    const line = `${new Date().toISOString()} [v${app.getVersion()}] ${message}\n`;
+    appendFileSync(join(app.getPath("userData"), "tide-update.log"), line);
+  } catch {
+    // never break startup/quit for a log line
+  }
+}
+
 // Wire app self-update. `getWindow` is called at delivery time so a torn-down
 // window is never captured (same pattern as registerNotificationBridge). The
 // IPC handlers are always registered so the renderer code is uniform; when the
@@ -30,6 +47,13 @@ export function registerAutoUpdate(getWindow: () => BrowserWindow | undefined): 
   ipcMain.handle("tide:app-version", () => app.getVersion());
   ipcMain.handle("tide:app-update-apply", () => {
     if (active) {
+      // Release the single-instance lock BEFORE quitting. Squirrel relaunches the new
+      // build the instant the old process exits; if the lock is still held, the
+      // relaunched instance fails requestSingleInstanceLock() (electron-main.ts) and
+      // quits at once — the "Update & Restart closed the app but it never came back"
+      // bug. Releasing here frees the lock so the relaunch can acquire it.
+      logUpdateEvent("apply: release single-instance lock, quitAndInstall(false, true)");
+      app.releaseSingleInstanceLock();
       // isSilent=false keeps the standard installer UX; isForceRunAfter=true
       // relaunches Tide into the new version after install.
       autoUpdater.quitAndInstall(false, true);
