@@ -59,6 +59,7 @@ import {
   toggleProductShellWorkbench,
   toggleProductShellWorkbenchWithLauncher,
   updateProductShellBrowserActionResult,
+  updateProductShellBrowserCaptureResult,
   updateProductShellBrowserSnapshot,
   updateProductShellComposerDraft,
   writeProductShellTerminalInput,
@@ -1426,6 +1427,56 @@ test("product_shell_browser_action_result_emits_workbench_command", () => {
         bodyTextPreview: "Next page body",
         loading: false,
       },
+    },
+  });
+});
+
+test("product_shell_browser_capture_result_emits_workbench_command", () => {
+  // Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md — the renderer's reply to
+  // an observe-time pixel-capture pull routes the captured screenshot to the pane's thread.
+  const state = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        activePaneId: "pane-browser",
+        panes: [
+          {
+            paneId: "pane-browser",
+            kind: "browser",
+            title: "Browser preview",
+            visible: true,
+            revision: "pane-browser:rev",
+            updatedAt: "2026-05-28T00:00:00.000Z",
+            loading: false,
+            url: "https://example.test/docs",
+            pendingCapture: { captureId: "cap-1", requestedAt: "2026-05-28T00:00:01.000Z" },
+          },
+        ],
+      },
+    },
+  );
+
+  const screenshot = {
+    data: "QUJD",
+    mimeType: "image/png" as const,
+    width: 800,
+    height: 600,
+    devicePixelRatio: 2,
+  };
+  const result = updateProductShellBrowserCaptureResult(state, "pane-browser", {
+    captureId: "cap-1",
+    screenshot,
+  });
+
+  assert.deepEqual(result.command, {
+    kind: "workbench.command",
+    payload: {
+      threadId: "thread-workbench",
+      command: "update_browser_capture_result",
+      targetPaneId: "pane-browser",
+      data: { captureId: "cap-1", screenshot },
     },
   });
 });

@@ -1,4 +1,11 @@
-import type { ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserSnapshot, ProductShellDraftPane, ProductShellState, ProductShellUpdateResult } from "./types.ts";
+import type { ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserScreenshot, ProductShellBrowserSnapshot, ProductShellDraftPane, ProductShellState, ProductShellUpdateResult } from "./types.ts";
+
+// The renderer host's reply to an observe-time pixel-capture pull (pendingCapture). The
+// screenshot is omitted when the guest could not be captured (observe then degrades server-side).
+export interface ProductShellBrowserCaptureResult {
+  captureId: string;
+  screenshot?: ProductShellBrowserScreenshot;
+}
 import { COMPOSER_LAUNCHER_PANE_ID, isStartFilePaneId, isUntitledPaneId, startFilePaneId } from "./types.ts";
 import { removeProductShellUntitledFile } from "./untitled-files.ts";
 import { applyDrop, reconcileTree, setRatioAtPath } from "./workbench-split-tree.ts";
@@ -696,6 +703,63 @@ export function updateProductShellBackgroundBrowserActionResult(
       payload: {
         threadId,
         command: "update_browser_action_result",
+        targetPaneId: paneId,
+        data: result,
+      },
+    },
+  };
+}
+
+// Observe-time pixel-capture replies (pendingCapture round-trip). The renderer captures the
+// live <webview> on demand and routes the result to the pane's thread; the backend correlates
+// by captureId, so we send whenever the pane still exists (unique captureId — no stale match
+// needed). Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
+export function updateProductShellBrowserCaptureResult(
+  state: ProductShellState,
+  paneId: string,
+  result: ProductShellBrowserCaptureResult,
+): ProductShellUpdateResult {
+  const pane = state.appChrome.workbenchPanes.find(
+    (candidate) => candidate.paneId === paneId && candidate.kind === "browser",
+  );
+  if (state.activeThreadId === null || pane === undefined) {
+    return { state, command: null };
+  }
+  return {
+    state,
+    command: {
+      kind: "workbench.command",
+      payload: {
+        threadId: state.activeThreadId,
+        command: "update_browser_capture_result",
+        targetPaneId: paneId,
+        data: result,
+      },
+    },
+  };
+}
+
+export function updateProductShellBackgroundBrowserCaptureResult(
+  state: ProductShellState,
+  threadId: string,
+  paneId: string,
+  result: ProductShellBrowserCaptureResult,
+): ProductShellUpdateResult {
+  const pane = state.threads
+    .find((thread) => thread.threadId === threadId)
+    ?.workbenchPanes.find(
+      (candidate) => candidate.paneId === paneId && candidate.kind === "browser",
+    );
+  if (pane === undefined) {
+    return { state, command: null };
+  }
+  return {
+    state,
+    command: {
+      kind: "workbench.command",
+      payload: {
+        threadId,
+        command: "update_browser_capture_result",
         targetPaneId: paneId,
         data: result,
       },

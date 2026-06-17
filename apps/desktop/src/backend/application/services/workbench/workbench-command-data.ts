@@ -123,6 +123,19 @@ export function browserPaneSnapshotFromData(
   };
 }
 
+// Parse the renderer's reply to an observe-time capture pull (update_browser_capture_result):
+// the captureId being answered plus an optional screenshot (absent when the guest could not be
+// captured — observe then degrades to the cached image / DOM text).
+export function browserPaneCaptureResultFromData(
+  data: Record<string, unknown> | undefined,
+): { captureId: string; screenshot?: BrowserPaneScreenshot } | undefined {
+  const captureId = optionalString(data?.captureId);
+  if (captureId === undefined) {
+    return undefined;
+  }
+  return { captureId, screenshot: browserPaneScreenshotFromData(data?.screenshot) };
+}
+
 // Parse a pixel-vision capture from update_browser_snapshot command data (renderer's
 // webview.capturePage). Requires base64 data + positive width/height; mimeType defaults
 // to image/png, devicePixelRatio to 1.

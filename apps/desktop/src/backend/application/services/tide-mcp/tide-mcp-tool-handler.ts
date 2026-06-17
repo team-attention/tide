@@ -1,5 +1,7 @@
 import type { AgentId, ThreadId, ThreadRecord, ThreadSnapshot } from "../../domains/thread/thread.ts";
 import type {
+  BrowserPaneScreenshot,
+  BrowserPaneState,
   TideMcpToolDefinition,
   TideMcpToolName,
 } from "../../domains/workbench/workbench.ts";
@@ -8,6 +10,7 @@ import { failure, type ServiceResult } from "../support/service-result.ts";
 import { snapshotThread } from "../thread/thread-snapshot.ts";
 import type { ThreadRuntimeAsyncEvent } from "../thread/thread-runtime-events.ts";
 import type { ThreadStore } from "../thread/thread-store.ts";
+import { BrowserCaptureCoordinator } from "../workbench/browser-capture-coordinator.ts";
 import {
   actBrowserOutput,
   observeBrowserOutput,
@@ -27,6 +30,11 @@ import type {
 // surfaces a workbench change. Thin — all pane operations live in the
 // browser/file/exec collaborators. Extracted from thread-runtime-service.ts.
 // See docs_v2/specs/thread-runtime-service-decomposition.md.
+
+// Ceiling for the observe-time capture round-trip (renderer capturePage + IPC both ways).
+// Longer than the renderer's own 2s capturePage race so a slow-but-arriving capture still wins;
+// past it, observe degrades to the cached screenshot / DOM text instead of hanging the agent.
+const BROWSER_CAPTURE_PULL_TIMEOUT_MS = 3000;
 
 export interface TideMcpSessionRef {
   runtimeId: string;
@@ -55,6 +63,7 @@ export interface TideMcpToolHandlerDeps {
   emitAsyncEvent: (event: ThreadRuntimeAsyncEvent) => void;
   workbenchFileOps: WorkbenchFileOperations;
   workbenchExec: WorkbenchExecOperations;
+  browserCapture: BrowserCaptureCoordinator;
 }
 
 export class TideMcpToolHandler {
@@ -64,6 +73,7 @@ export class TideMcpToolHandler {
   private readonly emitAsyncEvent: (event: ThreadRuntimeAsyncEvent) => void;
   private readonly workbenchFileOps: WorkbenchFileOperations;
   private readonly workbenchExec: WorkbenchExecOperations;
+  private readonly browserCapture: BrowserCaptureCoordinator;
 
   constructor(deps: TideMcpToolHandlerDeps) {
     this.store = deps.store;
@@ -72,6 +82,7 @@ export class TideMcpToolHandler {
     this.emitAsyncEvent = deps.emitAsyncEvent;
     this.workbenchFileOps = deps.workbenchFileOps;
     this.workbenchExec = deps.workbenchExec;
+    this.browserCapture = deps.browserCapture;
   }
 
   listTools(): TideMcpToolDefinition[] {
@@ -122,6 +133,31 @@ export class TideMcpToolHandler {
     };
   }
 
+  // Observe-time pixel-capture pull: mark the pane's pendingCapture, push it to the renderer
+  // host (which captures the live <webview> for this captureId and replies via
+  // update_browser_capture_result), and await the reply. Returns the fresh screenshot, or
+  // undefined on timeout (pane closed / not painting) so observe falls back to the cache.
+  // Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
+  private async pullBrowserScreenshot(
+    thread: ThreadRecord,
+    pane: BrowserPaneState,
+  ): Promise<BrowserPaneScreenshot | undefined> {
+    const captureId = this.idGenerator();
+    pane.pendingCapture = { captureId, requestedAt: this.clock() };
+    this.emitAsyncEvent({ kind: "workbench_changed", thread: snapshotThread(thread) });
+    const screenshot = await this.browserCapture.request(
+      captureId,
+      BROWSER_CAPTURE_PULL_TIMEOUT_MS,
+    );
+    // On the happy path the result command already cleared pendingCapture; clear it here for the
+    // timeout path (and re-broadcast so the renderer host stops offering to capture this id).
+    if (pane.pendingCapture?.captureId === captureId) {
+      delete pane.pendingCapture;
+      this.emitAsyncEvent({ kind: "workbench_changed", thread: snapshotThread(thread) });
+    }
+    return screenshot;
+  }
+
   private resolveMcpThread(
     session: TideMcpSessionRef,
   ): ServiceResult<{ thread: ThreadRecord }> {
@@ -166,7 +202,9 @@ export class TideMcpToolHandler {
           value: openBrowserOutput(thread, input.input, this.idGenerator, this.clock),
         };
       case "tide_observe_browser":
-        return observeBrowserOutput(thread, input.input);
+        return observeBrowserOutput(thread, input.input, (pane) =>
+          this.pullBrowserScreenshot(thread, pane),
+        );
       case "tide_act_browser":
         return actBrowserOutput(thread, input.input, this.idGenerator, this.clock);
       case "tide_read_file":

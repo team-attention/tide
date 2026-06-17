@@ -8,6 +8,7 @@ import {
   captureBrowserWebViewScreenshot,
   executeBrowserWebViewAction,
   isWebViewSettled,
+  readBrowserWebViewSnapshot,
   type BrowserWebViewAction,
   type BrowserWebViewElement,
   type BrowserWebViewInputEvent,
@@ -141,6 +142,47 @@ test("captureBrowserWebViewScreenshot returns base64 PNG + size from capturePage
 test("captureBrowserWebViewScreenshot returns undefined when capturePage is unavailable", async () => {
   const webview = {} as unknown as BrowserWebViewElement;
   assert.equal(await captureBrowserWebViewScreenshot(webview), undefined);
+});
+
+// --- readBrowserWebViewSnapshot: screenshot capture decoupled from the text snapshot ---
+// Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md. The recurring load-event
+// path (did-stop-loading/did-finish-load) is TEXT-ONLY — it must NOT capture a screenshot, since
+// that storm pegged the host renderer. Pixels come only from captureBrowserWebViewScreenshot,
+// which the observe-time pull (pendingCapture) calls on demand.
+
+function snapshotWebView(): { webview: BrowserWebViewElement; calls: { capture: number } } {
+  const calls = { capture: 0 };
+  const webview = {
+    executeJavaScript: () =>
+      Promise.resolve({ url: "https://x.test/", pageTitle: "X", bodyTextPreview: "hello" }),
+    getURL: () => "https://x.test/",
+    capturePage: () => {
+      calls.capture += 1;
+      return Promise.resolve({
+        toDataURL: () => "data:image/png;base64,QUJD",
+        getSize: () => ({ width: 800, height: 600 }),
+      });
+    },
+  } as unknown as BrowserWebViewElement;
+  return { webview, calls };
+}
+
+test("readBrowserWebViewSnapshot is text-only and NEVER calls capturePage (no load-event storm)", async () => {
+  const { webview, calls } = snapshotWebView();
+  const snapshot = await readBrowserWebViewSnapshot(webview);
+  assert.equal(calls.capture, 0, "the load-event snapshot must never call capturePage");
+  assert.equal(snapshot.screenshot, undefined);
+  assert.equal(snapshot.url, "https://x.test/");
+  assert.equal(snapshot.pageTitle, "X");
+  assert.equal(snapshot.bodyTextPreview, "hello");
+});
+
+test("captureBrowserWebViewScreenshot is the single on-demand pixel-capture path", async () => {
+  const { webview, calls } = snapshotWebView();
+  const screenshot = await captureBrowserWebViewScreenshot(webview);
+  assert.equal(calls.capture, 1);
+  assert.equal(screenshot?.data, "QUJD");
+  assert.equal(screenshot?.width, 800);
 });
 
 // --- isWebViewSettled: guards the white-screen regression ---

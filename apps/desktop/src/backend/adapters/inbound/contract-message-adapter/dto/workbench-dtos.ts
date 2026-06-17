@@ -28,6 +28,9 @@ export function toWorkbenchPaneRefDto(
     if (pane.bodyTextPreview !== undefined) {
       dto.bodyTextPreview = pane.bodyTextPreview;
     }
+    if (pane.pendingCapture !== undefined) {
+      dto.pendingCapture = { ...pane.pendingCapture };
+    }
     if (pane.pendingAction !== undefined) {
       dto.pendingAction = { ...pane.pendingAction };
     }

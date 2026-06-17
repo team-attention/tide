@@ -36,6 +36,11 @@ export interface BrowserPaneRefDto extends BaseWorkbenchPaneRefDto {
   // in screenshot-pixel space for the on-screen cursor theater.
   agentDriving: boolean;
   agentCursor?: { x: number; y: number };
+  // An in-flight observe-driven pixel-capture request: the renderer host captures this pane
+  // and reports back via update_browser_capture_result. Screenshots are pulled on demand at
+  // observe time, not eagerly on every page-load. Spec:
+  // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
+  pendingCapture?: { captureId: string; requestedAt: string };
   pendingAction?: BrowserPaneActionDto;
   lastAction?: BrowserPaneActionResultDto;
 }

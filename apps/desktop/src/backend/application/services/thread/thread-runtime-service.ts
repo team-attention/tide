@@ -345,6 +345,7 @@ import {
   type WorkbenchCommandInput,
   type WorkbenchCommandResult,
 } from "../workbench/workbench-command-handler.ts";
+import { BrowserCaptureCoordinator } from "../workbench/browser-capture-coordinator.ts";
 import { WorkspaceQueryHandler } from "../workbench/workspace-query-handler.ts";
 
 export type { WorkbenchCommandInput, WorkbenchCommandResult };
@@ -466,6 +467,9 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       clock: this.clock,
       idGenerator: this.idGenerator,
     });
+    // Shared by the observe pull (sets pendingCapture + awaits) and the command handler
+    // (resolves on the renderer's update_browser_capture_result).
+    const browserCapture = new BrowserCaptureCoordinator();
     this.tideMcp = new TideMcpToolHandler({
       store: this.threads,
       clock: this.clock,
@@ -473,6 +477,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       emitAsyncEvent: (event) => this.emitAsyncEvent(event),
       workbenchFileOps: this.workbenchFileOps,
       workbenchExec: this.workbenchExec,
+      browserCapture,
     });
     this.workbenchCmd = new WorkbenchCommandHandler({
       threads: this.threads,
@@ -484,6 +489,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       workspaceFilePort: this.workspaceFilePort,
       workspaceCommandPort: this.workspaceCommandPort,
       workspaceCodeIntelligencePort: this.workspaceCodeIntelligencePort,
+      browserCapture,
     });
     this.workspaceQuery = new WorkspaceQueryHandler({
       workspaceFilePort: this.workspaceFilePort,

@@ -104,6 +104,13 @@ export function isWebViewSettled(webview: BrowserWebViewElement): boolean {
   }
 }
 
+// Read the cheap DOM text (url / title / body) only — NEVER a pixel screenshot. The recurring
+// load-event path (dom-ready/did-finish-load/did-stop-loading) fires repeatedly across every
+// mounted (incl. background) pane; capturing a full-page PNG on each — on the host renderer's
+// main thread — pegged the renderer at ~99% CPU. Pixels are now captured at exactly ONE place:
+// the observe-time pull (captureBrowserWebViewScreenshot via pendingCapture), so a page never
+// encodes a PNG unless an agent actually looks. Spec:
+// docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
 export async function readBrowserWebViewSnapshot(
   webview: BrowserWebViewElement,
 ): Promise<BrowserWebViewSnapshot> {
@@ -117,12 +124,10 @@ export async function readBrowserWebViewSnapshot(
     rawSnapshot !== null && typeof rawSnapshot === "object"
       ? (rawSnapshot as Record<string, unknown>)
       : {};
-  const screenshot = await captureBrowserWebViewScreenshot(webview);
   return {
     url: stringRecordField(snapshot, "url") ?? webview.getURL?.(),
     pageTitle: stringRecordField(snapshot, "pageTitle"),
     bodyTextPreview: stringRecordField(snapshot, "bodyTextPreview"),
-    ...(screenshot === undefined ? {} : { screenshot }),
   };
 }
 

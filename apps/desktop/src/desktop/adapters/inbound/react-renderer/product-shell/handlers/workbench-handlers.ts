@@ -1,10 +1,10 @@
-import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureComposerDraftThreadActive, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellDraftChanges, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureComposerDraftThreadActive, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellDraftChanges, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserCaptureResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserCaptureResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
-export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onBrowserSnapshot" | "onBrowserActionResult" | "onBackgroundBrowserSnapshot" | "onBackgroundBrowserActionResult" | "onOpenBrowserPane" | "onOpenChanges" | "onGitChanges" | "onGitFileDiff"> {
+export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onBrowserSnapshot" | "onBrowserActionResult" | "onBrowserCaptureResult" | "onBackgroundBrowserSnapshot" | "onBackgroundBrowserActionResult" | "onBackgroundBrowserCaptureResult" | "onOpenBrowserPane" | "onOpenChanges" | "onGitChanges" | "onGitFileDiff"> {
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onWorkbenchToggle: () =>
@@ -126,6 +126,12 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         dispatchBackendCommand(result.command);
         return result.state;
       }),
+    onBrowserCaptureResult: (paneId, captureResult) =>
+      setShellState((state) => {
+        const result = updateProductShellBrowserCaptureResult(state, paneId, captureResult);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
     onBackgroundBrowserSnapshot: (threadId, paneId, snapshot) =>
       setShellState((state) => {
         const result = updateProductShellBackgroundBrowserSnapshot(state, threadId, paneId, snapshot);
@@ -135,6 +141,12 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
     onBackgroundBrowserActionResult: (threadId, paneId, actionResult) =>
       setShellState((state) => {
         const result = updateProductShellBackgroundBrowserActionResult(state, threadId, paneId, actionResult);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onBackgroundBrowserCaptureResult: (threadId, paneId, captureResult) =>
+      setShellState((state) => {
+        const result = updateProductShellBackgroundBrowserCaptureResult(state, threadId, paneId, captureResult);
         dispatchBackendCommand(result.command);
         return result.state;
       }),
