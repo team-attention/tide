@@ -732,7 +732,9 @@ export function buildCodexFileChangeDetail(params: Record<string, unknown>): Pro
       continue;
     }
     const path = stringField(change, "path");
-    if (path !== undefined) {
+    // Several changes can touch one file — dedup so the card's location chips (key={path})
+    // stay unique (Gemini review).
+    if (path !== undefined && !locations.includes(path)) {
       locations.push(path);
     }
     const diff = stringField(change, "unifiedDiff") ?? stringField(change, "diff");

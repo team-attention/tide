@@ -103,3 +103,32 @@ test("acp buildAcpPermissionDetail: locations alone still surface as a detail", 
 test("acp buildAcpPermissionDetail: an empty toolCall yields no detail", () => {
   assert.equal(buildAcpPermissionDetail({}), undefined);
 });
+
+// Gemini review regressions: a pure addition (newText only) must not inject a spurious empty
+// "- " line, and duplicate locations must be deduped (unique React keys for the chips).
+test("acp buildAcpPermissionDetail: a pure addition emits only + lines (no empty - line)", () => {
+  assert.deepEqual(
+    buildAcpPermissionDetail({ content: [{ type: "diff", path: "new.ts", newText: "added line" }] }),
+    { format: "diff", body: "# new.ts\n+ added line", locations: ["new.ts"] },
+  );
+});
+
+test("acp buildAcpPermissionDetail: duplicate toolCall.locations are deduped", () => {
+  assert.deepEqual(buildAcpPermissionDetail({ locations: [{ path: "a.ts" }, { path: "a.ts" }] }), {
+    format: "text",
+    body: "a.ts",
+    locations: ["a.ts"],
+  });
+});
+
+test("codex buildCodexFileChangeDetail: duplicate change paths are deduped in locations", () => {
+  assert.deepEqual(
+    buildCodexFileChangeDetail({
+      changes: [
+        { path: "a.ts", diff: "d1" },
+        { path: "a.ts", diff: "d2" },
+      ],
+    }),
+    { format: "diff", body: "# a.ts\nd1\n\n# a.ts\nd2", locations: ["a.ts"] },
+  );
+});

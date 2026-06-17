@@ -29,9 +29,13 @@ export function acpOptionKind(option: Record<string, unknown>): PromptChoiceKind
 // not start emitting diffs).
 export function buildAcpPermissionDetail(toolCall: Record<string, unknown>): PromptDetail | undefined {
   const locations: string[] = Array.isArray(toolCall.locations)
-    ? toolCall.locations
-        .map((loc) => (isRecord(loc) ? stringField(loc, "path") : undefined))
-        .filter((path): path is string => path !== undefined)
+    ? Array.from(
+        new Set(
+          toolCall.locations
+            .map((loc) => (isRecord(loc) ? stringField(loc, "path") : undefined))
+            .filter((path): path is string => path !== undefined),
+        ),
+      )
     : [];
   const content = Array.isArray(toolCall.content) ? toolCall.content : [];
   const diffParts: string[] = [];
@@ -47,9 +51,12 @@ export function buildAcpPermissionDetail(toolCall: Record<string, unknown>): Pro
       if (path !== undefined && !locations.includes(path)) {
         locations.push(path);
       }
+      // Only emit lines for a side that is actually present — a pure addition/deletion has
+      // the other side undefined, and `"".split("\n")` would otherwise inject a spurious
+      // empty "- "/"+ " line (Gemini review). stringField already maps "" → undefined.
       const body = [
-        ...(oldText ?? "").split("\n").map((line) => `- ${line}`),
-        ...(newText ?? "").split("\n").map((line) => `+ ${line}`),
+        ...(oldText !== undefined ? oldText.split("\n").map((line) => `- ${line}`) : []),
+        ...(newText !== undefined ? newText.split("\n").map((line) => `+ ${line}`) : []),
       ].join("\n");
       diffParts.push(path !== undefined ? `# ${path}\n${body}` : body);
       continue;
