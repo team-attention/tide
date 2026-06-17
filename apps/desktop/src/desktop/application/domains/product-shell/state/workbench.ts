@@ -14,6 +14,10 @@ export function toggleProductShellWorkbench(state: ProductShellState): ProductSh
   return {
     ...state,
     workbenchOpen,
+    // Closing the Workbench abandons any pending in-pane Editor file picker (a transient
+    // "about to open a file" state), so it never lingers and re-appears instead of the
+    // Launcher when the Workbench is reopened.
+    editorPickerFilter: workbenchOpen ? state.editorPickerFilter : null,
     // Remember this thread's open/closed choice so switching away and back doesn't
     // re-derive it from pane visibility (which re-opened a workbench the user closed).
     workbenchOpenByThreadId:
@@ -335,6 +339,15 @@ export function ensureComposerDraftThreadActive(
       ...state,
       draftThreadId,
       activeThreadId: draftThreadId,
+      // The Draft Thread inherits the Composer's current Workbench open/closed state. Making
+      // it the active thread otherwise re-derives workbenchOpen from its (initially empty)
+      // pane set in applyProductShellThreadEvent and snaps the Workbench shut — e.g. opening
+      // the Editor file picker, which is renderer-only state with no backend pane yet, must
+      // keep the Workbench open rather than close it and strand the picker.
+      workbenchOpenByThreadId: {
+        ...state.workbenchOpenByThreadId,
+        [draftThreadId]: state.workbenchOpen,
+      },
       // Make appChrome reflect the Draft Thread so the workbench interaction handlers
       // (terminal input/resize, editor save, browser snapshot) — which operate on
       // appChrome.thread — target the draft. The backend's workbench.changed then fills

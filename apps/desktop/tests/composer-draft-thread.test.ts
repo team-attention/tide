@@ -6,7 +6,9 @@ import {
   createProductShellState,
   discardProductShellDraftThread,
   ensureComposerDraftThreadActive,
+  selectProductShellLauncherAction,
   submitProductShellComposerDraft,
+  toggleProductShellWorkbench,
   writeProductShellTerminalInput,
   type ProductShellState,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
@@ -98,6 +100,52 @@ test("sending starts the Draft Thread in place (reuses its id) and clears the dr
   // Draft binding cleared; the chat now has a thread (→ transcript).
   assert.equal(result.state.draftThreadId, null);
   assert.equal(result.state.agentChat.thread?.threadId, draftId);
+});
+
+// --- Editor file picker vs. Workbench open state (the second reported bug) ---
+
+test("the Composer Draft Thread inherits the Composer's Workbench-open state", () => {
+  // Making the draft active must remember the Composer's current open state, so a later
+  // re-derivation (thread.started) doesn't snap the Workbench shut on the new thread.
+  const open = ensureComposerDraftThreadActive({ ...composerState(), workbenchOpen: true });
+  assert.equal(open.state.workbenchOpenByThreadId[open.state.draftThreadId as string], true);
+});
+
+test("opening the Editor file picker keeps the Workbench open when the draft's empty workbench.changed arrives", () => {
+  // Composer with the Workbench open → click Editor: the draft becomes active and the in-pane
+  // file picker opens (editorPickerFilter set). The picker is renderer-only — it has NO
+  // backend pane — so the draft's first workbench.changed carries an empty pane set.
+  const draft = ensureComposerDraftThreadActive({ ...composerState(), workbenchOpen: true });
+  const draftId = draft.state.draftThreadId as string;
+  const picking = selectProductShellLauncherAction(draft.state, "open_editor");
+  assert.notEqual(picking.state.editorPickerFilter, null); // the picker is open
+  assert.equal(picking.state.workbenchOpen, true);
+
+  const afterEvent = applyProductShellBackendEvent(picking.state, {
+    kind: "workbench.changed",
+    payload: { threadId: draftId, panes: [] },
+  } as Parameters<typeof applyProductShellBackendEvent>[1]);
+
+  // The bug: the empty pane set read as "nothing visible" and closed the Workbench from
+  // under the picker. With the fix the open picker keeps it open.
+  assert.equal(afterEvent.workbenchOpen, true);
+  assert.notEqual(afterEvent.editorPickerFilter, null);
+});
+
+test("closing the Workbench abandons a pending Editor file picker (no stale picker on reopen)", () => {
+  const withPicker: ProductShellState = {
+    ...composerState(),
+    workbenchOpen: true,
+    editorPickerFilter: "",
+  };
+  const closed = toggleProductShellWorkbench(withPicker);
+  assert.equal(closed.workbenchOpen, false);
+  assert.equal(closed.editorPickerFilter, null); // picker abandoned on close
+
+  // Reopening shows the Launcher, not the stale picker.
+  const reopened = toggleProductShellWorkbench(closed);
+  assert.equal(reopened.workbenchOpen, true);
+  assert.equal(reopened.editorPickerFilter, null);
 });
 
 test("discarding the draft tears it down and returns the active pointer to the Composer", () => {
