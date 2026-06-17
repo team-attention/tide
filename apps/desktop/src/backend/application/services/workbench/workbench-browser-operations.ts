@@ -163,9 +163,14 @@ export async function observeBrowserOutput(
   // renderer to capture the live <webview> now and cache the result. Fall back to the last
   // cached screenshot when the pull yields nothing. text mode never captures.
   if (mode !== "text" && pullScreenshot !== undefined) {
-    const fresh = await pullScreenshot(pane);
-    if (fresh !== undefined) {
-      pane.screenshot = fresh;
+    try {
+      const fresh = await pullScreenshot(pane);
+      if (fresh !== undefined) {
+        pane.screenshot = fresh;
+      }
+    } catch {
+      // An unexpected puller failure (IPC / coordinator) degrades to the cached screenshot or
+      // DOM text below — never fail the whole observe tool call (Gemini review).
     }
   }
   // Attach the screenshot only for mode=screenshot|both (default text → no image, back-compat +

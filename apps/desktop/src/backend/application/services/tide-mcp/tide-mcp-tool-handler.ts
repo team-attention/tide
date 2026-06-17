@@ -144,18 +144,18 @@ export class TideMcpToolHandler {
   ): Promise<BrowserPaneScreenshot | undefined> {
     const captureId = this.idGenerator();
     pane.pendingCapture = { captureId, requestedAt: this.clock() };
-    this.emitAsyncEvent({ kind: "workbench_changed", thread: snapshotThread(thread) });
-    const screenshot = await this.browserCapture.request(
-      captureId,
-      BROWSER_CAPTURE_PULL_TIMEOUT_MS,
-    );
-    // On the happy path the result command already cleared pendingCapture; clear it here for the
-    // timeout path (and re-broadcast so the renderer host stops offering to capture this id).
-    if (pane.pendingCapture?.captureId === captureId) {
-      delete pane.pendingCapture;
+    try {
       this.emitAsyncEvent({ kind: "workbench_changed", thread: snapshotThread(thread) });
+      return await this.browserCapture.request(captureId, BROWSER_CAPTURE_PULL_TIMEOUT_MS);
+    } finally {
+      // On the happy path the result command already cleared pendingCapture; clear it here for
+      // the timeout path (and an unexpected emit/await throw) and re-broadcast so the renderer
+      // host stops offering to capture this id — never leave a stale pendingCapture on the pane.
+      if (pane.pendingCapture?.captureId === captureId) {
+        delete pane.pendingCapture;
+        this.emitAsyncEvent({ kind: "workbench_changed", thread: snapshotThread(thread) });
+      }
     }
-    return screenshot;
   }
 
   private resolveMcpThread(

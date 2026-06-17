@@ -290,18 +290,20 @@ export function WorkbenchBrowserPane(props: {
   // report it back — this is the ONLY place a screenshot is encoded, so a mounted pane never
   // PNG-encodes on the recurring page-load storm. Spec:
   // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
-  const capturedCaptureIdsRef = useRef<Set<string>>(new Set());
+  // Only the CURRENT pendingCapture needs de-duping (captureIds are unique + monotonic), so one
+  // last-id string is O(1) vs. a Set that would grow over the pane's lifetime (Gemini review).
+  const lastCapturedIdRef = useRef<string | null>(null);
   useEffect(() => {
     const webview = webviewRef.current;
     const capture = props.pane.pendingCapture;
     if (
       webview === null ||
       capture === undefined ||
-      capturedCaptureIdsRef.current.has(capture.captureId)
+      lastCapturedIdRef.current === capture.captureId
     ) {
       return;
     }
-    capturedCaptureIdsRef.current.add(capture.captureId);
+    lastCapturedIdRef.current = capture.captureId;
     const paneId = props.pane.paneId;
     const captureId = capture.captureId;
     void captureBrowserWebViewScreenshot(webview).then((screenshot) => {
@@ -607,17 +609,18 @@ function BackgroundBrowserWebView(props: {
   // while you watch another thread still gets FRESH pixels on tide_observe_browser. capturePage
   // only when the backend asks (pendingCapture) — never on the page-load storm. Spec:
   // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
-  const capturedCaptureIdsRef = useRef<Set<string>>(new Set());
+  // One last-id string (not a growing Set) — same O(1) de-dup as the active pane (Gemini review).
+  const lastCapturedIdRef = useRef<string | null>(null);
   useEffect(() => {
     const webview = webviewRef.current;
     if (
       webview === null ||
       pendingCapture === undefined ||
-      capturedCaptureIdsRef.current.has(pendingCapture.captureId)
+      lastCapturedIdRef.current === pendingCapture.captureId
     ) {
       return;
     }
-    capturedCaptureIdsRef.current.add(pendingCapture.captureId);
+    lastCapturedIdRef.current = pendingCapture.captureId;
     const captureId = pendingCapture.captureId;
     void captureBrowserWebViewScreenshot(webview).then((screenshot) => {
       handlers.onBackgroundBrowserCaptureResult(threadId, paneId, { captureId, screenshot });
