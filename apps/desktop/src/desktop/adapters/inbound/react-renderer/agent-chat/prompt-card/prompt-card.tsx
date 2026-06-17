@@ -194,8 +194,10 @@ function SinglePromptCard(props: {
             <span className="prompt-card__header-chip">{props.prompt.header}</span>
           ) : null}
         </span>
-        <p className="prompt-card__message">{props.prompt.message}</p>
-        {props.prompt.detail ? <PromptDetailView detail={props.prompt.detail} /> : null}
+        <div className="prompt-card__body">
+          <p className="prompt-card__message">{props.prompt.message}</p>
+          {props.prompt.detail ? <PromptDetailView detail={props.prompt.detail} /> : null}
+        </div>
       </div>
       <div className="prompt-card__options">
         {renderOptions({
@@ -387,7 +389,9 @@ function WizardPromptCard(props: {
             ))}
           </div>
         </div>
-        <p className="prompt-card__message">{step.message}</p>
+        <div className="prompt-card__body">
+          <p className="prompt-card__message">{step.message}</p>
+        </div>
       </div>
       <div className="prompt-card__options">
         {renderOptions({

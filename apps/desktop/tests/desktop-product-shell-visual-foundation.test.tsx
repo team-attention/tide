@@ -2784,18 +2784,28 @@ test("prompt_card_with_a_tall_body_caps_height_and_keeps_actions_reachable", () 
   const css = readProductShellCss();
 
   // The live prompt card renders the FULL body plus the answer controls — the controls
-  // must be present in the DOM (never conditionally dropped when the body is long).
+  // must be present in the DOM (never conditionally dropped when the body is long). The
+  // message + approval detail are wrapped in the single scrollable `.prompt-card__body`.
   assert.match(html, /aria-label="Agent prompt"/);
+  assert.match(html, /prompt-card__body/);
   assert.match(html, /pr body line 79/);
   assert.match(html, /Submit/);
   assert.match(html, /Allow/);
 
-  // The card is height-capped; its long regions scroll internally while the actions stay
-  // pinned (flex: 0 0 auto), so Skip/Submit are reachable however tall the body grows.
+  // The card is height-capped; the message/detail scroll together as ONE region
+  // (`.prompt-card__body`), while the kind badge, option list, and actions stay pinned
+  // (flex: 0 0 auto). The head clips (`overflow: hidden`) so a tall body can never overlap
+  // the options below it, and the option list never shrinks to cram Allow/Deny.
   assert.match(css, /\.prompt-card\s*{[^}]*max-height:/s);
-  assert.match(css, /\.prompt-card__message\s*{[^}]*overflow-y:\s*auto/s);
+  assert.match(css, /\.prompt-card__body\s*{[^}]*overflow-y:\s*auto/s);
+  assert.match(css, /\.prompt-card__head\s*{[^}]*overflow:\s*hidden/s);
+  assert.match(css, /\.prompt-card__options\s*{[^}]*flex:\s*0 0 auto/s);
   assert.match(css, /\.prompt-card__options\s*{[^}]*overflow-y:\s*auto/s);
   assert.match(css, /\.prompt-card__actions\s*{[^}]*flex:\s*0 0 auto/s);
+  // The "Other…" reply + note textareas live inside the scrollable option column; pin them
+  // (flex: 0 0 auto) so a tall option list can't flex-shrink them to crushed slivers.
+  assert.match(css, /\.prompt-card__other\s*{[^}]*flex:\s*0 0 auto/s);
+  assert.match(css, /\.prompt-card__note\s*{[^}]*flex:\s*0 0 auto/s);
 });
 
 test("product_shell_prompt_choice_row_emits_prompt_answer_command", () => {

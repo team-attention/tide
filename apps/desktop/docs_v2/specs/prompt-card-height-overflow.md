@@ -59,7 +59,11 @@ container), on the vertical axis: there the `auto` *column* grew to max-content;
   short content → card sizes to content (unchanged); tall content → card clamps and the
   inner regions scroll. The cap leaves room in the dock for the composer (and any usage
   meter / queued-steer stack) below it, so the composer stays visible too.
-- **D2 — Make the message the flexible scroll region.** `.prompt-card__head` gets
+- **D2 — Make the message the flexible scroll region.** *(Amended by
+  `prompt-card-detail-options-overlap.md` D1/D5: the scroll region moved off `__message` onto a
+  wrapping `.prompt-card__body` that scrolls the message + approval detail together, and the
+  head gained `overflow: hidden`, so a tall detail can't overlap the options below.)*
+  `.prompt-card__head` gets
   `flex: 1 1 auto; min-height: 0` and `.prompt-card__message` gets
   `flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain`. The
   kind badge ("APPROVAL NEEDED") stays pinned above; the long body scrolls within the card.
