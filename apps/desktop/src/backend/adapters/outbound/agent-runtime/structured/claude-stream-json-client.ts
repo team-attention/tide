@@ -317,7 +317,38 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     ack(stringField(response, "subtype") === "success");
   }
 
+  // Resolve every in-flight tool-permission request with a clean deny. Without this, an
+  // abort/teardown closes the control stream while a request is pending and claude records
+  // `Tool permission request failed: ... stream closed before response received` — a
+  // confusing error that survives into the resumed conversation (claude then awkwardly
+  // works around the "broken" tool, e.g. printing an AskUserQuestion as plain text). A user
+  // Stop while an AskUserQuestion / permission card is up — now reachable in waiting states
+  // — takes exactly this path, so deny first and let claude record a clean cancellation.
+  private denyPendingPermissions(message: string): void {
+    for (const pending of this.pendingPermissions.values()) {
+      // Best-effort: this runs on teardown, where stdin may already be ended/closed —
+      // a raw write would throw ERR_STREAM_WRITE_AFTER_END and abort the rest of cleanup
+      // (e.g. killing the child). Swallow it (Gemini review).
+      try {
+        this.writeLine({
+          type: "control_response",
+          response: {
+            subtype: "success",
+            request_id: pending.requestId,
+            response: { behavior: "deny", message, interrupt: false },
+          },
+        });
+      } catch {
+        // stream already closed — nothing to deny onto.
+      }
+    }
+    this.pendingPermissions.clear();
+  }
+
   async interrupt(): Promise<void> {
+    // Clean-deny any pending permission BEFORE aborting, so an open AskUserQuestion /
+    // permission resolves as "user interrupted" instead of a stream-closed error.
+    this.denyPendingPermissions("The user interrupted this tool use.");
     // The CLI replies with a result(error_during_execution) that flows to
     // turn_completed; the process stays usable for the next turn.
     this.writeLine({
@@ -335,6 +366,9 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       resolve(false);
     }
     this.pendingConfigAcks.clear();
+    // Best-effort clean-deny before the stream closes (flushed with the buffered stdin
+    // writes ahead of end()), so a stop mid-permission isn't recorded as a stream error.
+    this.denyPendingPermissions("The runtime was stopped before this tool use completed.");
     try {
       this.child.stdin.end();
     } catch {
