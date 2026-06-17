@@ -13,6 +13,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { highlightToHtml } from "../src/desktop/adapters/inbound/react-renderer/support/code-highlight.ts";
 
 import {
+  addProductShellComposerContextChip,
   applyProductShellBackendEvent,
   applyProductShellPromptState,
   applyStartPageEditorDefinition,
@@ -2909,6 +2910,32 @@ test("product_shell_gemini_selection_updates_start_command_launch_options", () =
     worktree: "current folder",
     branch: "main",
   });
+});
+
+test("product_shell_block_only_send_starts_a_thread_from_the_chip", () => {
+  // Spec: composer-block-only-send-and-focus. A composer holding ONLY a content chip
+  // (no typed text, no image) is a valid send — the attached block IS the input.
+  // submitProductShellComposerDraft must NOT early-return on an empty draft when a
+  // context chip is attached (the bug: it omitted contextChips from its guard).
+  const withChip = addProductShellComposerContextChip(createProductShellState(), {
+    id: "chip-1",
+    kind: "code",
+    label: "snippet.ts",
+    text: "const x = 1;",
+  });
+
+  const submitted = submitProductShellComposerDraft(withChip);
+
+  assert.equal(submitted.command?.kind, "thread.start");
+  assert.match(String(submitted.command?.payload.initialMessage), /const x = 1;/);
+});
+
+test("product_shell_empty_composer_send_is_a_noop", () => {
+  // Spec: composer-block-only-send-and-focus. With nothing attached and no draft,
+  // submit still sends nothing (the no-op path through submitComposer's same-ref return).
+  const submitted = submitProductShellComposerDraft(createProductShellState());
+
+  assert.equal(submitted.command, null);
 });
 
 test("product_shell_thread_started_preserves_gemini_model_label", () => {

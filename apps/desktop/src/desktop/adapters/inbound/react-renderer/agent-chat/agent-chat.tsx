@@ -32,6 +32,35 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const sessionRef = useRef<HTMLElement | null>(null);
+  // "Add to chat" (a workbench/transcript selection → a context chip) should drop the
+  // cursor straight into the NEWLY ADDED chip's comment field, so the user can note what
+  // they want about that selection without an extra click. A chip is always appended, so
+  // the new one is last; focus it by its id. Only fire on an INCREASE within the SAME
+  // thread — chips grow only through an explicit add, so this never steals focus on load
+  // or while editing an existing chip's comment. The shell is REUSED across thread
+  // switches (not remounted), so the count ref must be re-baselined when the thread
+  // changes, or opening a thread whose composer holds chips would read as an "add".
+  const threadId = viewModel.thread?.threadId;
+  const chips = viewModel.composer.contextChips;
+  const chipCount = chips.length;
+  const lastChipId = chipCount > 0 ? chips[chipCount - 1].id : null;
+  const prevChipCountRef = useRef(chipCount);
+  const prevThreadIdRef = useRef(threadId);
+  useEffect(() => {
+    const threadChanged = threadId !== prevThreadIdRef.current;
+    prevThreadIdRef.current = threadId;
+    if (threadChanged) {
+      prevChipCountRef.current = chipCount;
+      return;
+    }
+    if (chipCount > prevChipCountRef.current && lastChipId !== null) {
+      // Match by dataset rather than a built selector so any id value is handled safely.
+      Array.from(document.querySelectorAll<HTMLTextAreaElement>("textarea[data-chip-comment-id]"))
+        .find((el) => el.dataset.chipCommentId === lastChipId)
+        ?.focus();
+    }
+    prevChipCountRef.current = chipCount;
+  }, [chipCount, lastChipId, threadId]);
   // Floating "Add to chat" for a drag-selection inside the transcript — quoting
   // any part of the conversation into the composer as a message chip.
   const [transcriptSel, setTranscriptSel] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -87,7 +116,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   // Sticky auto-scroll: keep the transcript pinned to the bottom as content
   // streams in / new turns arrive, but ONLY while the user is already near the
   // bottom — if they scroll up to read history, don't yank them back down.
-  const threadId = viewModel.thread?.threadId;
+  // (`threadId` is derived above, by the chip-focus effect.)
   const stickToBottomRef = useRef(true);
   // The bug: a fast (even collapsed) reasoning stream re-pinned the transcript to the
   // bottom on every token, so the user couldn't scroll up. Fix: a USER wheel-up detaches

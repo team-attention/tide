@@ -272,11 +272,18 @@ function generateThreadId(): string {
 }
 
 // Formats an attached content chip into the outgoing message: a labeled header,
-// the user's per-region note (if any), then the referenced content.
+// the user's per-region note (if any), then the referenced content. A quoted MESSAGE
+// is the exception — its text already renders as a blockquote, and the "↳ <label>"
+// header is just a truncation of that same text, so it's dropped to avoid repeating
+// the quote. File/code/terminal/browser chips keep the header (the label is a
+// filename/source the content alone doesn't state).
 function formatContextChipForMessage(chip: AgentChatContextChip): string {
+  const note = chip.comment && chip.comment.trim().length > 0 ? chip.comment.trim() : "";
+  if (chip.kind === "message") {
+    return note.length > 0 ? `${note}\n\n${chip.text}` : chip.text;
+  }
   const head = `**↳ ${chip.label}**`;
-  const note = chip.comment && chip.comment.trim().length > 0 ? `\n${chip.comment.trim()}` : "";
-  return `${head}${note}\n\n${chip.text}`;
+  return `${head}${note.length > 0 ? `\n${note}` : ""}\n\n${chip.text}`;
 }
 
 export function submitComposer(

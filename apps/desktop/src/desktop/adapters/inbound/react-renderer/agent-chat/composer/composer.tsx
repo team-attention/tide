@@ -136,6 +136,9 @@ export function createComposer(
                   </div>
                   <textarea
                     className="composer-chip-card__comment"
+                    // Lets AgentChatShell focus THIS chip's comment field the moment the
+                    // chip is added ("Add to chat" → type your note here). See agent-chat.tsx.
+                    data-chip-comment-id={chip.id}
                     placeholder="Comment on this selection… (Enter to send, Shift+Enter for newline)"
                     value={chip.comment}
                     rows={1}

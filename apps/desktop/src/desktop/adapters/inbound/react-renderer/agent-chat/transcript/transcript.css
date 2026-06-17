@@ -67,11 +67,13 @@
   line-height: 1.55;
 }
 
-/* A user message carrying attached regions reads as a left-aligned card (the
-   right-aligned bubble is too cramped for code/quotes). */
+/* A user message carrying attached regions (a quote/code/terminal block) stays a
+   right-aligned bubble like any other user message — just allowed to grow wider than
+   plain prose so the quoted content isn't cramped. */
 
-.agent-session-turn--user:has(.agent-session-turn__body--attachments) {
-  justify-content: flex-start;
+.agent-session-turn--user .agent-session-turn__body--attachments {
+  width: fit-content;
+  max-width: min(680px, 100%);
 }
 
 /* A user message with an attached image: a media bubble holding the (path-free)
