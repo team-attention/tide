@@ -6,6 +6,7 @@ import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { applyProductShellThreadArchivedEvent, applyProductShellThreadEvent, applyProductShellThreadLaunchOptionsChangedEvent, applyProductShellThreadPinChangedEvent, applyProductShellThreadRenamedEvent, toProductShellThreadFromSummary } from "./thread-list.ts";
 import { setProductShellProviderCommands } from "./composer-bridge.ts";
+import { createStartAgentChatState } from "./start.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
 import { reconcileEditorDrafts } from "./workbench-editor.ts";
 import { projectsFromThreads } from "./view-model.ts";
@@ -33,14 +34,27 @@ export function applyProductShellBackendEvent(
   // (The active thread's own entry is captured into the map at switch time via
   // preserveActiveAgentChat, so we never double-fold it here.)
   const eventThreadId = threadIdFromBackendEvent(event);
+  // thread.hydrated / thread.started carry a thread's AUTHORITATIVE chat state (its
+  // blocks + a CLEARED `hydrating`). They must reach that thread's stored entry even
+  // when it is not the active surface at apply time. A hydrate is dispatched on open
+  // but its response resolves a round-trip later; if focus moved in that window (a
+  // notification jumped to another thread, a thread.listed nulled activeThreadId, …)
+  // the response matched neither the active surface NOR an existing background entry,
+  // so it was dropped — and `hydrating` was never cleared, stranding the thread on the
+  // loading skeleton until an app restart. Seed a fresh entry for these events so the
+  // hydrate is recorded no matter where focus is.
+  const seedsThreadState = event.kind === "thread.hydrated" || event.kind === "thread.started";
   const foldsIntoBackgroundThread =
     eventThreadId !== undefined &&
     eventThreadId !== state.activeThreadId &&
-    state.agentChatByThreadId[eventThreadId] !== undefined;
+    (state.agentChatByThreadId[eventThreadId] !== undefined || seedsThreadState);
   const agentChatByThreadId = foldsIntoBackgroundThread
     ? {
         ...state.agentChatByThreadId,
-        [eventThreadId]: applyAgentChatBackendEvent(state.agentChatByThreadId[eventThreadId], event),
+        [eventThreadId]: applyAgentChatBackendEvent(
+          state.agentChatByThreadId[eventThreadId] ?? createStartAgentChatState(),
+          event,
+        ),
       }
     : state.agentChatByThreadId;
   const nextState = {
