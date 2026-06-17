@@ -9,6 +9,7 @@ import { WorkbenchDiffPane } from "./diff-pane.tsx";
 import { WorkbenchTerminalPane } from "./terminal-pane.tsx";
 import { WorkbenchLauncherPane } from "./launcher-pane.tsx";
 import { ChangesPanel } from "./changes-panel.tsx";
+import { ErrorBoundary } from "../support/error-boundary.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // In-pane editor file picker: the Launcher pad becomes a searchable file list. The
@@ -69,6 +70,26 @@ export function createWorkbenchPaneContent(
   handlers: ProductShellHandlers,
   editorDraft: ProductShellViewModel["editorDrafts"][string] | undefined,
 ): ReactElement {
+  // Isolate each pane behind an error boundary: a throw in one pane's render/effect (e.g. a
+  // <webview> guest method called before dom-ready) shows an inline fallback for THAT pane
+  // instead of unmounting the whole app. resetKey=paneId so switching/reopening a pane
+  // retries automatically. This is the single chokepoint for both Stacked and Split layouts.
+  // The content MUST be a child COMPONENT (<WorkbenchPaneContent/>), not the result of a
+  // function call passed as children — a boundary only catches throws from rendering its
+  // descendants, so a thrown function-call result would escape past it to the parent.
+  return (
+    <ErrorBoundary resetKey={pane.paneId} label={`the ${pane.kind} pane`}>
+      <WorkbenchPaneContent pane={pane} handlers={handlers} editorDraft={editorDraft} />
+    </ErrorBoundary>
+  );
+}
+
+function WorkbenchPaneContent(props: {
+  pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;
+  handlers: ProductShellHandlers;
+  editorDraft: ProductShellViewModel["editorDrafts"][string] | undefined;
+}): ReactElement {
+  const { pane, handlers, editorDraft } = props;
   switch (pane.kind) {
     case "browser":
       // Key by paneId so a different/new browser pane fully remounts (fresh

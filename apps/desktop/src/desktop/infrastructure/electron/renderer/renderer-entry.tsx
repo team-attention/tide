@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 
 import { TideProductShell } from "../../../adapters/inbound/react-renderer/product-shell/product-shell.tsx";
+import { AppErrorFallback, ErrorBoundary } from "../../../adapters/inbound/react-renderer/product-shell/support/error-boundary.tsx";
 import { GlobalZoomIndicator } from "../../../adapters/inbound/react-renderer/product-shell/support/global-zoom.tsx";
 import type {
   AgentChatBackendEvent,
@@ -36,6 +37,10 @@ type WorkspaceFsBridgeResult =
 export function createInitialRendererElement() {
   return (
     <>
+    {/* Root safety net: any uncaught render/effect throw shows a recover card instead of a
+        blank white screen (the renderer had no error boundary at all). Per-pane + background
+        boundaries handle the workbench; this catches everything else (chat, rail, dialogs). */}
+    <ErrorBoundary fallback={(error, reset) => <AppErrorFallback error={error} reset={reset} />}>
     <TideProductShell
       onBackendCommand={dispatchBackendCommand}
       onBackendEvent={subscribeBackendEvents}
@@ -75,6 +80,7 @@ export function createInitialRendererElement() {
             }
       }
     />
+    </ErrorBoundary>
     <GlobalZoomIndicator />
     </>
   );

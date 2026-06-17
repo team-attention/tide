@@ -21,6 +21,7 @@ import { QuickOpenPalette } from "./search/quick-open.tsx";
 import type { QuickOpenFile } from "./search/quick-open.tsx";
 import { createWindowChromeToggles } from "./chrome/chrome.tsx";
 import { BackgroundBrowserHost } from "./workbench/browser-pane.tsx";
+import { ErrorBoundary } from "./support/error-boundary.tsx";
 import { ContentSearchPanel } from "./search/content-search.tsx";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { ProductShellStoreProvider, useShellStore, useStableHandlers } from "./store-context.ts";
@@ -691,8 +692,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         {/* Workbench + FileTree toggles live in a single fixed cluster at the window's
             top-right, so they never jump between column headers as panels open/close. */}
         {createWindowChromeToggles(layoutVm, handlers, showWorkbenchControls, inlineWorkbenchControls, collapseChromeToDots)}
-        {/* Offscreen host keeping background threads' Browser Panes alive for their agents. */}
-        <BackgroundBrowserHost panes={layoutVm.backgroundBrowserPanes} handlers={handlers} />
+        {/* Offscreen host keeping background threads' Browser Panes alive for their agents.
+            It's invisible, so an error there must never surface UI — a crash just drops the
+            host (the agents lose liveness) rather than taking down the app. */}
+        <ErrorBoundary fallback={() => null}>
+          <BackgroundBrowserHost panes={layoutVm.backgroundBrowserPanes} handlers={handlers} />
+        </ErrorBoundary>
         {viewModel.settingsOpen
           ? createSettingsModal(viewModel.worktreeSettings, themePref, handlers)
           : null}

@@ -197,7 +197,19 @@ export function applyProductShellBackendEvent(
         (pane) => pane.visible && pane.kind !== "launcher" && !existingPaneIds.has(pane.paneId),
       );
       const anyVisible = panes.some((pane) => pane.visible);
-      const nextWorkbenchOpen = hasNewRealPane ? true : anyVisible ? nextState.workbenchOpen : false;
+      // The in-pane Editor file picker is renderer-only state (it has no backend pane), so a
+      // workbench.changed carrying an empty pane set — e.g. the Composer Draft Thread's first
+      // event, fired the moment the user clicks Editor to open the picker — must NOT read as
+      // "nothing visible" and snap the workbench shut from under the picker. Treat an open
+      // picker like a visible pane: preserve the user's open state rather than closing.
+      // A string (incl. "") means the picker is open; null/undefined means closed. Use a
+      // typeof check rather than `!== null` so a missing value never reads as "open".
+      const pickerOpen = typeof nextState.editorPickerFilter === "string";
+      const nextWorkbenchOpen = hasNewRealPane
+        ? true
+        : anyVisible || pickerOpen
+          ? nextState.workbenchOpen
+          : false;
       return {
         ...nextState,
         threads:

@@ -2,6 +2,7 @@ import type { ProductShellViewModel } from "../../../../../application/domains/p
 import type { ProductShellHandlers } from "../support/types.ts";
 import {
   executeBrowserWebViewAction,
+  isWebViewSettled,
   readBrowserWebViewSnapshot,
   type BrowserWebViewElement,
 } from "./browser-webview-actions.ts";
@@ -271,7 +272,7 @@ export function WorkbenchBrowserPane(props: {
     // never be captured (the blank-observe bug). If the guest is already loaded, capture once
     // now; the listeners cover later loads/navigations. Deps are paneId-only so a backend
     // revision bump does not re-run this and trigger a redundant capture.
-    if (webview.isLoading?.() === false) {
+    if (isWebViewSettled(webview)) {
       emitSnapshot();
     }
     return () => {
@@ -559,7 +560,7 @@ function BackgroundBrowserWebView(props: {
     // never be captured (the blank-observe bug). If the guest is already loaded, capture once
     // now; the listeners cover later loads. Deps are paneId-only so a backend revision bump
     // does not re-run this and trigger a redundant capture.
-    if (webview.isLoading?.() === false) {
+    if (isWebViewSettled(webview)) {
       emitSnapshot();
     }
     return () => {
