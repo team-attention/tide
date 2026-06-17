@@ -244,7 +244,16 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     if (runtime.client.applyConfig === undefined) {
       return "restart_required";
     }
-    const acked = await runtime.client.applyConfig(plan.protocolParams);
+    // A throw here (dead child / broken pipe) degrades to a restart, same as a
+    // refusal — never an unhandled rejection on the setLaunchOptions command.
+    let acked = false;
+    try {
+      acked = await runtime.client.applyConfig(plan.protocolParams);
+    } catch (error) {
+      traceAgentRuntime(
+        `applySessionConfig ${runtime.agentId} threw: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     traceAgentRuntime(
       `applySessionConfig ${runtime.agentId} runtime=${handle.runtimeId} keys=${input.changedKeys.join(",")} acked=${acked}`,
     );

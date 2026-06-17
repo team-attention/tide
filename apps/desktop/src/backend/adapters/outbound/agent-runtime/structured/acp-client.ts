@@ -233,9 +233,14 @@ class AcpClient implements StructuredRuntimeClient {
   async applyConfig(protocolParams: Record<string, unknown>): Promise<boolean> {
     // ACP set_mode / set_config_option have no Tide-side failure signal today, so
     // treat delivery as applied (the live-vs-restart routing for these providers is
-    // unchanged by the claude bypass fix). See claude-bypass-live-capability.md.
-    this.applyConfigInternal(protocolParams);
-    return true;
+    // unchanged by the claude bypass fix). See claude-bypass-live-capability.md. A
+    // throw (dead process / closed stdin) degrades to a restart instead of rejecting.
+    try {
+      this.applyConfigInternal(protocolParams);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private applyConfigInternal(protocolParams: Record<string, unknown>): void {

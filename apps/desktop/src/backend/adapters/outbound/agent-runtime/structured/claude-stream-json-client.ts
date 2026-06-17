@@ -289,7 +289,15 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
         clearTimeout(timer);
         resolve(ok);
       });
-      this.writeLine({ type: "control_request", request_id: requestId, request });
+      try {
+        this.writeLine({ type: "control_request", request_id: requestId, request });
+      } catch {
+        // Dead/closed stdin (EPIPE / destroyed stream): clean up the timer + pending
+        // ack and degrade to a restart rather than leaving them dangling.
+        clearTimeout(timer);
+        this.pendingConfigAcks.delete(requestId);
+        resolve(false);
+      }
     });
   }
 
