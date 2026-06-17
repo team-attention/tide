@@ -13,7 +13,8 @@ pipeline, instead of collapsing each prompt to a single `message` string + bare
 - **claude — permission** (`kind:"approval"`): surface the tool's structured input (command /
   diff / target) as a card **detail**, not a flattened one-liner.
 - **codex — approval** (`kind:"approval"`): surface `command` + `cwd` for command approvals
-  and the file-change **diff** for fileChange approvals as a card detail.
+  as a card detail. (fileChange approvals carry NO inline diff — see Decisions — so they stay
+  headline-only with `reason`.)
 - **gemini + opencode — permission** (`kind:"approval"`, shared ACP): surface
   `toolCall.content` (diff/command preview) + `toolCall.locations` (affected paths) as a
   detail, and carry each option's ACP **`kind`** (`allow_once` / `allow_always` /
@@ -165,8 +166,9 @@ Backend domain (`thread.ts`) mirrors all of the above. `StructuredRuntimeWrite.p
    - claude AUQ: `buildOptionChoices`/`buildAskUserQuestionStep` read `option.description`,
      `option.preview`; step/prompt set `header` from `question.header`.
    - claude permission: build `detail` from the tool input (command/path/diff → `format`+`body`).
-   - codex: command approval → `detail{ format:"text", body: command + cwd }`; fileChange →
-     `detail{ format:"diff", body: <changes>, locations }`.
+   - codex: command approval → `detail{ format:"text", body: command + cwd }` (fields verified
+     against the schema). fileChange approval → headline only (`reason`): its params carry no
+     diff (see Decisions).
    - ACP: `detail` from `acpToolOutput(toolCall.content)` + `toolCall.locations`; each choice
      gets `kind` from `options[].kind`.
 2. DTO/domain type additions flow through `view-model`/`events` unmapped to `PromptCard`.
@@ -203,8 +205,8 @@ Backend:
 - claude AUQ answer with `notes` → `updatedInput.annotations[q] = { notes }`; with a chosen
   option that has a `preview` → `annotations[q].preview` echoes it; no notes ⇒ no `annotations`.
 - claude permission: tool input → `detail` (command → text, edit/write → diff).
-- codex: commandExecution approval → `detail.body` includes command + cwd; fileChange → 
-  `detail.format === "diff"` + `locations`.
+- codex: commandExecution approval → `detail.body` includes command + cwd. (fileChange has no
+  inline diff → no codex fileChange detail test.)
 - ACP: `surfacePermission` populates `detail` from `toolCall.content`/`locations` and each
   choice's `kind`; default option chosen by `kind` (allow_once) without the string match;
   no-`kind` payload still defaults via the fallback.
@@ -252,8 +254,15 @@ Contract/arch: DTO ↔ domain new fields stay structurally compatible (existing 
   - claude AUQ header/description + Write approval detail — confirmed (`pw-full-fidelity-*`).
   - gemini ACP detail + native option kinds — confirmed via a real WriteFile permission
     (`pw-provider-card-verify.cjs`).
-  - **codex fileChange diff shape stays UNVERIFIED live**: codex auto-approves safe ops in the
-    test config, so `item/fileChange/requestApproval` never surfaced a card. `buildCodexFileChangeDetail`
-    is therefore defensive (probes `unifiedDiff`/`diff`/`patch` and `changes[]`, falls back to
-    headline-only) and unit-tested; the shared card render path is proven live via claude + gemini.
-    Confirm the codex payload shape when a real codex approval can be triggered.
+  - **codex fileChange resolved by the protocol schema** (`codex app-server generate-json-schema`):
+    `FileChangeRequestApprovalParams` = `{ itemId, threadId, turnId, startedAtMs, reason?, grantRoot? }`
+    — **NO inline diff**; the edits live in a separate fileChange item referenced by `itemId`.
+    The earlier speculative `buildCodexFileChangeDetail` (probed `unifiedDiff`/`diff`/`changes[]`,
+    none of which exist) was **removed**; codex fileChange approvals are headline-only (`reason`)
+    until item correlation lands. `CommandExecutionRequestApprovalParams` DOES have `command`/`cwd`/
+    `reason`, so the codex command detail is correct. (The diff-bearing shape is the legacy
+    `ApplyPatchApprovalParams.fileChanges` — an object map of path → `{type:add|delete|update,
+    content|unified_diff}` — which Tide's `item/fileChange/requestApproval` handler does not receive;
+    surfacing the codex diff = a future itemId-correlation feature.)
+  - codex live card not triggerable (codex auto-approves safe ops); the shared card render path is
+    proven live via claude + gemini, and the codex command-detail fields are schema-verified.
