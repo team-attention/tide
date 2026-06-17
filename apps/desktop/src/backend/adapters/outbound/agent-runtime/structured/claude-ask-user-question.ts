@@ -74,18 +74,17 @@ export function surfaceAskUserQuestion(
     ...(multiSelect ? { multiSelect: true } : {}),
     source: "provider_hook",
   };
-  // Defer the emit: a follow-up question (Q2…) is surfaced WHILE the previous one is
-  // being answered, so emitting synchronously would queue it behind the about-to-be-
-  // cleared prior prompt — and the queue path re-emits the stale prior prompt,
-  // clobbering this one in the UI. setImmediate lets the answer flow settle (prompt
-  // cleared) so this surfaces cleanly as the visible card. Gated on the pending entry:
-  // a control_cancel_request landing inside this window already withdrew the
-  // interaction — emitting then would show a ghost card nothing can answer.
-  setImmediate(() => {
-    if (ctx.pendingPermissions.has(promptId)) {
-      ctx.onEvent({ kind: "prompt", promptState });
-    }
-  });
+  // Emit SYNCHRONOUSLY — no setImmediate. Deferring the emit on a timer made the FIRST/
+  // single question (the common case) race with surrounding stream events: a turn-end or
+  // re-poll landing in the deferral window left the thread Working with the card never
+  // surfaced (the "stuck waiting, no card" report). Ordering of a follow-up question (Q2…)
+  // surfaced during the previous answer is the BACKEND prompt queue's job
+  // (recordProviderPromptState queues behind a live prompt; answerPrompt promotes the next
+  // on settle) — a deterministic queue, not a timer. The pendingPermissions gate still
+  // guards a control_cancel_request that withdrew the interaction before this ran.
+  if (ctx.pendingPermissions.has(promptId)) {
+    ctx.onEvent({ kind: "prompt", promptState });
+  }
   return true;
 }
 

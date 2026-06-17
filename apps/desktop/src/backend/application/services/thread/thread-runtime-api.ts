@@ -192,6 +192,19 @@ export interface RecordProviderPromptStateResult {
   promptState: PromptState;
 }
 
+export interface WithdrawProviderPromptInput {
+  threadId: ThreadId;
+  promptId: string;
+}
+
+export interface WithdrawProviderPromptResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  // The prompt now visible after the withdrawal: the next queued prompt promoted into
+  // its place, or null when none remains (the turn resumes running).
+  promptState: PromptState | null;
+}
+
 export interface RecordProviderSessionRefInput {
   threadId: ThreadId;
   agentId: AgentId;
@@ -299,6 +312,9 @@ export interface ThreadRuntimeService {
   recordProviderPromptState(
     input: RecordProviderPromptStateInput,
   ): Promise<ServiceResult<RecordProviderPromptStateResult>>;
+  withdrawProviderPrompt(
+    input: WithdrawProviderPromptInput,
+  ): Promise<ServiceResult<WithdrawProviderPromptResult>>;
   recordProviderSessionRef(
     input: RecordProviderSessionRefInput,
   ): Promise<ServiceResult<RecordProviderSessionRefResult>>;

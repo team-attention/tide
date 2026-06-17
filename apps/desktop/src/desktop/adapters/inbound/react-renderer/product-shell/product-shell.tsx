@@ -351,62 +351,69 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     setIsResizing(true);
   };
   useEffect(() => {
-    // The async push channel can deliver one agentSessionBlock.upserted per
-    // streamed chunk — applying each as its own setState re-renders the whole
-    // shell at chunk rate (perf E3). Coalesce a burst into ONE state update per
-    // animation frame: order is preserved (a single ordered buffer folded in
-    // sequence), and the per-thread "broadcast" gating still keeps background
-    // threads out of the viewed surface. Terminal output and update-notices stay
-    // immediate — they early-return without touching shell state.
-    const pending: AgentChatBackendEvent[] = [];
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    // Event application is split by correctness sensitivity, NOT by a wall-clock window:
+    //
+    // - State/control/lifecycle events (prompt.changed, agentRuntime.stateChanged,
+    //   thread.hydrated/started, workbench.changed, …) apply IMMEDIATELY and synchronously.
+    //   A waiting/answer/turn transition must never sit in a timer — that was the root of
+    //   "backend is waiting but the chat still says Working" (a state delta stranded behind
+    //   a coalescing flush). No timing dependence on the correctness path.
+    //
+    // - Only `agentSessionBlock.upserted` (one per streamed token) is buffered + coalesced,
+    //   because applying each as its own setState re-renders the chat column at token rate
+    //   (perf E3). This buffer is PURELY a render throttle for streaming TEXT; it never
+    //   carries state transitions. An immediate event first DRAINS the buffer (preserving
+    //   order: streamed blocks before the transition), then applies itself.
+    const pendingBlocks: AgentChatBackendEvent[] = [];
+    let blockTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const flushPending = (): void => {
-      timer = null;
-      if (pending.length === 0) {
+    const foldBlocks = (state: ProductShellState): ProductShellState => {
+      if (pendingBlocks.length === 0) {
+        return state;
+      }
+      const batch = pendingBlocks.splice(0);
+      return batch.reduce(
+        (next, event) => applyProductShellBackendEvent(next, event, "broadcast"),
+        state,
+      );
+    };
+
+    const flushBlocks = (): void => {
+      blockTimer = null;
+      if (pendingBlocks.length === 0) {
         return;
       }
-      const batch = pending.splice(0);
+      setShellState(foldBlocks);
+    };
+
+    const applyImmediate = (event: AgentChatBackendEvent): void => {
+      if (blockTimer !== null) {
+        clearTimeout(blockTimer);
+        blockTimer = null;
+      }
       setShellState((state) => {
-        let next = state;
-        let activated = false;
-        for (const event of batch) {
-          next = applyProductShellBackendEvent(next, event, "broadcast");
-          if (event.kind === "thread.started" || event.kind === "thread.hydrated") {
-            activated = true;
-          }
-        }
-        // When a thread becomes active (started/hydrated) with the FileTree shown but
-        // no tree loaded yet, populate it. A tree carried over from the New Thread page
-        // (same cwd) is kept by the reducer, so the `fileTree === null` check skips the
-        // redundant reload. refresh_file_tree is idempotent, so one dispatch per batch
-        // is enough even if several activations coalesced.
-        if (activated && next.fileTreeOpen && next.activeThreadId && next.fileTree === null) {
+        // Drain any buffered streamed blocks FIRST so this transition lands after them.
+        let next = applyProductShellBackendEvent(foldBlocks(state), event, "broadcast");
+        // When a thread becomes active (started/hydrated) with the FileTree shown but no
+        // tree loaded yet, populate it (a same-cwd tree carried from the New Thread page is
+        // kept by the reducer; the null check skips a redundant reload).
+        if (
+          (event.kind === "thread.started" || event.kind === "thread.hydrated") &&
+          next.fileTreeOpen &&
+          next.activeThreadId &&
+          next.fileTree === null
+        ) {
           dispatchBackendCommand({
             kind: "workbench.command",
             payload: {
               threadId: next.activeThreadId,
               command: "refresh_file_tree",
-              data: { expandedPaths: next.expandedFolderPaths, maxEntries: 4000 }, // lazy: root level only
+              data: { expandedPaths: next.expandedFolderPaths, maxEntries: 4000 },
             },
           });
         }
         return next;
       });
-    };
-
-    const scheduleFlush = (): void => {
-      if (timer !== null) {
-        return;
-      }
-      // Coalesce a burst of streamed chunks into ONE state update per ~frame (perf E3): the
-      // first event arms a short timer; everything arriving in the window folds into one flush.
-      // A timer — deliberately NOT requestAnimationFrame — is the scheduler, because Chromium
-      // services rAF only while the page paints: an occluded window (e.g. Tide on another macOS
-      // Space) pauses rAF, stranding backend events so a background agent finishing never flips
-      // the running flag and never notifies until you return. Timers still run off screen (kept
-      // un-throttled via backgroundThrottling in main-window.ts), so the notification fires.
-      timer = setTimeout(flushPending, 16);
     };
 
     const unsubscribe = props.onBackendEvent?.((event) => {
@@ -436,13 +443,21 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         }
         return;
       }
-      pending.push(event);
-      scheduleFlush();
+      // Streamed token content: buffer + coalesce (render throttle only). Everything
+      // else is a state transition → apply now.
+      if (event.kind === "agentSessionBlock.upserted") {
+        pendingBlocks.push(event);
+        if (blockTimer === null) {
+          blockTimer = setTimeout(flushBlocks, 16);
+        }
+        return;
+      }
+      applyImmediate(event);
     });
 
     return () => {
-      if (timer !== null) {
-        clearTimeout(timer);
+      if (blockTimer !== null) {
+        clearTimeout(blockTimer);
       }
       unsubscribe?.();
     };

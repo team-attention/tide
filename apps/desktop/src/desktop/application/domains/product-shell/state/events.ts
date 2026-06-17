@@ -23,10 +23,31 @@ export function applyProductShellBackendEvent(
   const appChrome = applyToActiveSurfaces
     ? applyAppChromeBackendEvent(state.appChrome, event)
     : state.appChrome;
+  // AUTHORITATIVE PER-THREAD STATE: a per-thread event for a NON-active thread that we
+  // already hold chat state for is folded into that thread's stored entry — so its
+  // running/waiting/prompt/blocks stay current while it sits in the background. Without
+  // this, a background thread's prompt.changed/stateChanged/block events were dropped
+  // (active-surface only) and recovery leaned on a hydrate race at switch time, which
+  // broke under concurrency (a sibling thread's AskUserQuestion never surfaced; the chat
+  // stayed "Working"). Switching is now a pure projection of an already-current entry.
+  // (The active thread's own entry is captured into the map at switch time via
+  // preserveActiveAgentChat, so we never double-fold it here.)
+  const eventThreadId = threadIdFromBackendEvent(event);
+  const foldsIntoBackgroundThread =
+    eventThreadId !== undefined &&
+    eventThreadId !== state.activeThreadId &&
+    state.agentChatByThreadId[eventThreadId] !== undefined;
+  const agentChatByThreadId = foldsIntoBackgroundThread
+    ? {
+        ...state.agentChatByThreadId,
+        [eventThreadId]: applyAgentChatBackendEvent(state.agentChatByThreadId[eventThreadId], event),
+      }
+    : state.agentChatByThreadId;
   const nextState = {
     ...state,
     agentChat,
     appChrome,
+    agentChatByThreadId,
   };
 
   switch (event.kind) {
