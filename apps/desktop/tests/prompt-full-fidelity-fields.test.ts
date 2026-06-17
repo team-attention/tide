@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildPermissionDetail } from "../src/backend/adapters/outbound/agent-runtime/structured/claude-stream-json-client.ts";
-import { buildCodexFileChangeDetail } from "../src/backend/adapters/outbound/agent-runtime/structured/codex-app-server-client.ts";
 import { acpOptionKind, buildAcpPermissionDetail } from "../src/backend/adapters/outbound/agent-runtime/structured/acp-permission.ts";
 
 // Spec: docs_v2/specs/prompt-full-fidelity-fields.md — every provider's prompt now carries
@@ -38,32 +37,6 @@ test("claude buildPermissionDetail: a Write's content becomes a text detail with
 test("claude buildPermissionDetail: a tool with nothing previewable yields no detail", () => {
   assert.equal(buildPermissionDetail({ query: "needle" }), undefined);
   assert.equal(buildPermissionDetail({}), undefined);
-});
-
-// --- codex fileChange detail (defensive: shape not pinned by a fixture yet) ---
-
-test("codex buildCodexFileChangeDetail: a top-level unified diff becomes a diff detail", () => {
-  assert.deepEqual(buildCodexFileChangeDetail({ unifiedDiff: "@@ -1 +1 @@" }), {
-    format: "diff",
-    body: "@@ -1 +1 @@",
-  });
-});
-
-test("codex buildCodexFileChangeDetail: a changes[] array joins per-file diffs and collects paths", () => {
-  assert.deepEqual(
-    buildCodexFileChangeDetail({
-      changes: [
-        { path: "a.ts", diff: "d1" },
-        { path: "b.ts", unifiedDiff: "d2" },
-      ],
-    }),
-    { format: "diff", body: "# a.ts\nd1\n\n# b.ts\nd2", locations: ["a.ts", "b.ts"] },
-  );
-});
-
-test("codex buildCodexFileChangeDetail: an unparseable payload yields no detail (headline only)", () => {
-  assert.equal(buildCodexFileChangeDetail({}), undefined);
-  assert.equal(buildCodexFileChangeDetail({ changes: [] }), undefined);
 });
 
 // --- ACP option kind + permission detail (gemini / opencode) ---
@@ -119,16 +92,4 @@ test("acp buildAcpPermissionDetail: duplicate toolCall.locations are deduped", (
     body: "a.ts",
     locations: ["a.ts"],
   });
-});
-
-test("codex buildCodexFileChangeDetail: duplicate change paths are deduped in locations", () => {
-  assert.deepEqual(
-    buildCodexFileChangeDetail({
-      changes: [
-        { path: "a.ts", diff: "d1" },
-        { path: "a.ts", diff: "d2" },
-      ],
-    }),
-    { format: "diff", body: "# a.ts\nd1\n\n# a.ts\nd2", locations: ["a.ts"] },
-  );
 });

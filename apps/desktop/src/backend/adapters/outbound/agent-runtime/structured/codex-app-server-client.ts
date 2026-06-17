@@ -503,11 +503,14 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     if (method === "item/fileChange/requestApproval") {
+      // FileChangeRequestApprovalParams carries NO inline diff — only itemId/reason/threadId/
+      // turnId (verified via `codex app-server generate-json-schema`). The actual edits live in
+      // a separate fileChange item referenced by `itemId`; surfacing that diff needs item
+      // correlation (future work). So the headline — with `reason` — is the honest detail today.
       const reason = stringField(params, "reason");
       this.surfaceApproval(
         serverRequestId,
         reason !== undefined ? `Apply file changes — ${reason}` : "Apply file changes",
-        buildCodexFileChangeDetail(params),
       );
       return;
     }
@@ -711,46 +714,4 @@ function numberField(record: Record<string, unknown>, key: string): number | und
 
 function bounded(text: string): string {
   return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
-}
-
-// Build an approval-card detail from a codex `item/fileChange/requestApproval`. The exact
-// payload shape isn't pinned by a captured fixture yet (see spec residual risk), so probe
-// the common carriers defensively: a top-level unified-diff string, or a `changes[]` array
-// of `{ path, diff|unifiedDiff }`. Returns undefined (headline only) when nothing parses —
-// no worse than today, strictly better when the shape matches.
-export function buildCodexFileChangeDetail(params: Record<string, unknown>): PromptDetail | undefined {
-  const directDiff =
-    stringField(params, "unifiedDiff") ?? stringField(params, "diff") ?? stringField(params, "patch");
-  if (directDiff !== undefined) {
-    return { format: "diff", body: bounded(directDiff) };
-  }
-  const changes = Array.isArray(params.changes) ? params.changes : undefined;
-  if (changes === undefined) {
-    return undefined;
-  }
-  const parts: string[] = [];
-  const locations: string[] = [];
-  for (const change of changes) {
-    if (!isRecord(change)) {
-      continue;
-    }
-    const path = stringField(change, "path");
-    // Several changes can touch one file — dedup so the card's location chips (key={path})
-    // stay unique (Gemini review).
-    if (path !== undefined && !locations.includes(path)) {
-      locations.push(path);
-    }
-    const diff = stringField(change, "unifiedDiff") ?? stringField(change, "diff");
-    if (diff !== undefined) {
-      parts.push(path !== undefined ? `# ${path}\n${diff}` : diff);
-    }
-  }
-  if (parts.length === 0) {
-    return undefined;
-  }
-  return {
-    format: "diff",
-    body: bounded(parts.join("\n\n")),
-    ...(locations.length > 0 ? { locations } : {}),
-  };
 }
