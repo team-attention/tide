@@ -9,9 +9,10 @@ import {
 } from "./auto-update-status.ts";
 // App self-update bridge (spec: version-management.md, Lane 1). The thin Electron
 // shell over the pure auto-update-status core, mirroring notifications.ts over
-// notification-policy.ts. electron-updater downloads in the background; the
-// renderer's "Update & Restart" click is what actually applies it (quitAndInstall).
-// No silent forced restart.
+// notification-policy.ts. The flow is fully user-driven and visible: Tide only CHECKS
+// in the background; when an update is found it surfaces an "available" pill, the user
+// clicks Download (downloadUpdate), watches progress, then clicks Restart (quitAndInstall).
+// autoDownload is OFF — no surprise background pull — and there is no silent restart.
 
 // electron-updater is CommonJS; under NodeNext the default import is the module
 // namespace, and `autoUpdater` is the configured singleton off it.
@@ -64,6 +65,13 @@ export function registerAutoUpdate(getWindow: () => BrowserWindow | undefined): 
       void autoUpdater.checkForUpdates().catch(() => undefined);
     }
   });
+  // User clicked Download on the "available" pill. autoDownload is off, so this is what
+  // actually pulls the update; progress arrives via download-progress → "downloading".
+  ipcMain.handle("tide:app-update-download", () => {
+    if (active) {
+      void autoUpdater.downloadUpdate().catch(() => undefined);
+    }
+  });
 
   if (!active) {
     return;
@@ -80,10 +88,12 @@ export function registerAutoUpdate(getWindow: () => BrowserWindow | undefined): 
   // available/downloaded events report and thread it through the progress status.
   let pendingVersion = "";
 
-  autoUpdater.autoDownload = true;
-  // Harmless fallback only: if the user ignores the banner and later quits, the
-  // already-downloaded update installs on the next launch. The primary path is
-  // still the explicit "Update & Restart" click — never a surprise restart.
+  // OFF: an available update is shown, not pulled. The user starts the download from the
+  // pill (tide:app-update-download → downloadUpdate). This is the core of the visible,
+  // user-controlled flow the redesign wanted.
+  autoUpdater.autoDownload = false;
+  // Harmless fallback only: if the user DID download but quit before restarting, install
+  // the already-downloaded update on next launch. Never triggers a download on its own.
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on("checking-for-update", () => {

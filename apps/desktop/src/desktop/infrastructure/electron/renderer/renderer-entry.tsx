@@ -135,12 +135,14 @@ declare global {
           status:
             | { phase: "idle" }
             | { phase: "checking" }
+            | { phase: "available"; version: string }
             | { phase: "downloading"; version: string; percent: number }
             | { phase: "ready"; version: string; notes?: string }
             | { phase: "upToDate"; currentVersion: string }
             | { phase: "error"; message: string },
         ) => void,
       ): () => void;
+      downloadAppUpdate(): void;
       applyAppUpdate(): void;
       checkForAppUpdate(): void;
       getAppVersion(): Promise<string>;

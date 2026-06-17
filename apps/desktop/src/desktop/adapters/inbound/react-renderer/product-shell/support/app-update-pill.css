@@ -1,6 +1,7 @@
 /* App self-update pill (spec: version-management.md, Lane 1). Floats at the
    top-center, out of the way of the bottom-right zoom indicator and the composer.
-   The "ready" state is a prominent action button; "downloading" is a quiet hint. */
+   "available" (Download) and "ready" (Restart) are action buttons; "downloading"
+   shows a live progress bar; "error" is a quiet Retry. */
 .app-update-pill {
   position: fixed;
   top: 12px;
@@ -41,7 +42,57 @@ button.app-update-pill {
   outline-offset: 2px;
 }
 
+/* "available" — the Download call to action. Outlined (vs. the filled "ready") so the
+   two never look identical, and the hover fills it so it clearly reads as a button. */
+.app-update-pill--available {
+  border-color: var(--tide-text);
+}
+
+.app-update-pill--available:hover {
+  background: var(--tide-text);
+  color: var(--tide-bg);
+  transform: translateX(-50%) translateY(-1px);
+}
+
+.app-update-pill--available:focus-visible {
+  outline: 2px solid var(--tide-text);
+  outline-offset: 2px;
+}
+
+/* "downloading" — a label + live progress bar so the pull is visibly working. */
 .app-update-pill--downloading {
-  opacity: 0.85;
+  gap: 9px;
   font-weight: 500;
+}
+
+.app-update-pill__label {
+  white-space: nowrap;
+}
+
+.app-update-pill__track {
+  position: relative;
+  width: 72px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--tide-line);
+  overflow: hidden;
+}
+
+.app-update-pill__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--tide-text);
+  transition: width 160ms ease;
+}
+
+/* "error" — quiet, non-alarming retry affordance. */
+.app-update-pill--error {
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.app-update-pill--error:hover {
+  border-color: var(--tide-text);
 }

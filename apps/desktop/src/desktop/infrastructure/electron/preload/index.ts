@@ -56,6 +56,7 @@ export interface TideNotificationRequest {
 export type AppUpdateStatus =
   | { phase: "idle" }
   | { phase: "checking" }
+  | { phase: "available"; version: string }
   | { phase: "downloading"; version: string; percent: number }
   | { phase: "ready"; version: string; notes?: string }
   | { phase: "upToDate"; currentVersion: string }
@@ -92,9 +93,11 @@ export interface TidePreloadSurface {
   // the same user-action path as a left-rail click).
   onActivateThread(listener: (threadId: string) => void): () => void;
   // App self-update (packaged builds only; otherwise inert). Main pushes status as it
-  // checks/downloads; applyAppUpdate triggers quitAndInstall on the user's click;
-  // checkForAppUpdate forces a re-check; getAppVersion reads the running version.
+  // checks; downloadAppUpdate starts the download on the user's click (autoDownload is
+  // off); applyAppUpdate triggers quitAndInstall once downloaded; checkForAppUpdate forces
+  // a re-check; getAppVersion reads the running version.
   onAppUpdateChanged(listener: (status: AppUpdateStatus) => void): () => void;
+  downloadAppUpdate(): void;
   applyAppUpdate(): void;
   checkForAppUpdate(): void;
   getAppVersion(): Promise<string>;
@@ -211,6 +214,9 @@ export const tidePreloadSurface: TidePreloadSurface = {
     return () => {
       ipcRenderer.removeListener("tide:app-update-changed", wrapped);
     };
+  },
+  downloadAppUpdate() {
+    void ipcRenderer.invoke("tide:app-update-download");
   },
   applyAppUpdate() {
     void ipcRenderer.invoke("tide:app-update-apply");

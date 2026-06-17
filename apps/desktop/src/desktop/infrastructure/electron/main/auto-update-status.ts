@@ -4,11 +4,13 @@
 // how notification-policy.ts is the pure core behind notifications.ts.
 
 // The renderer-facing status. A discriminated union so the App Chrome pill renders
-// exactly one of: nothing (idle/checking/upToDate), a subtle progress hint
-// (downloading), or the "Update & Restart" affordance (ready).
+// exactly one of: nothing (idle/checking/upToDate), a "Download" affordance
+// (available — autoDownload is OFF, so the user starts the download), a progress hint
+// (downloading), the "Restart to update" affordance (ready), or a retry (error).
 export type AppUpdateStatus =
   | { phase: "idle" }
   | { phase: "checking" }
+  | { phase: "available"; version: string }
   | { phase: "downloading"; version: string; percent: number }
   | { phase: "ready"; version: string; notes?: string }
   | { phase: "upToDate"; currentVersion: string }
@@ -28,9 +30,10 @@ export function mapAutoUpdaterEvent(event: AutoUpdaterEvent): AppUpdateStatus {
   switch (event.kind) {
     case "checking-for-update":
       return { phase: "checking" };
-    // autoDownload is on, so an available update is already on its way down.
+    // autoDownload is OFF: surface the available update and wait for the user to click
+    // Download (which calls autoUpdater.downloadUpdate()) — no surprise background pull.
     case "update-available":
-      return { phase: "downloading", version: event.version, percent: 0 };
+      return { phase: "available", version: event.version };
     case "update-not-available":
       return { phase: "upToDate", currentVersion: event.currentVersion };
     case "download-progress":

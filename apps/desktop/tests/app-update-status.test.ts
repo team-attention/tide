@@ -12,11 +12,10 @@ test("mapAutoUpdaterEvent: checking → checking", () => {
   assert.deepEqual(mapAutoUpdaterEvent({ kind: "checking-for-update" }), { phase: "checking" });
 });
 
-test("mapAutoUpdaterEvent: available starts downloading (autoDownload on)", () => {
+test("mapAutoUpdaterEvent: available waits for the user (autoDownload off)", () => {
   assert.deepEqual(mapAutoUpdaterEvent({ kind: "update-available", version: "0.1.64" }), {
-    phase: "downloading",
+    phase: "available",
     version: "0.1.64",
-    percent: 0,
   });
 });
 
