@@ -302,34 +302,12 @@ export function createLiveBackendContractMessageAdapter(
   // tool_surface_ready agent's first prompt; the Tide MCP socket server marks a
   // runtime ready when that runtime completes its tools/list handshake.
   const readinessRegistry = createRuntimeReadinessRegistry();
-  // Serialize provider events PER THREAD before they reach the projector. Every
-  // handler mutates shared in-memory thread state (promptState / runtimeState /
-  // active runtime handle) ACROSS awaits; dispatching fire-and-forget let a
-  // permission `prompt` event interleave with concurrent turn/content events and
-  // get clobbered or silently dropped — the intermittent approval-card wedge that
-  // leaves the agent blocked on a can_use_tool with no response. Chaining per
-  // threadId (same idiom as persistInFlight) runs each event to completion in
-  // arrival order, so a prompt can't be raced out of existence; different threads
-  // still run concurrently.
-  const providerIngestInFlight = new Map<string, Promise<void>>();
-  const runProviderIngest = async (
-    providerEvent: Parameters<typeof projector.ingestStructuredProviderEvent>[0],
-  ): Promise<void> => {
-    const { threadId } = providerEvent;
-    const prior = providerIngestInFlight.get(threadId) ?? Promise.resolve();
-    const next = prior
-      .catch(() => {})
-      .then(() => projector.ingestStructuredProviderEvent(providerEvent));
-    providerIngestInFlight.set(threadId, next);
-    await next;
-    if (providerIngestInFlight.get(threadId) === next) {
-      providerIngestInFlight.delete(threadId);
-    }
-  };
   const providerCliRuntimePort = createAgentIntegrationAgentRuntimePort({
     integrations,
+    // The projector serializes ingestion per thread (see serializeIngest), so a
+    // fire-and-forget dispatch here can't race a thread's events against each other.
     onProviderEvent: (providerEvent) => {
-      void runProviderIngest(providerEvent);
+      void projector.ingestStructuredProviderEvent(providerEvent);
     },
   });
   const tideApiRuntimePort = createOpenAiApiAgentRuntimePort({
