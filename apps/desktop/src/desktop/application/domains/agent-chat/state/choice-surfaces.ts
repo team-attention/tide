@@ -1,6 +1,6 @@
 import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatProjectOption, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope } from "./types.ts";
 import { activeComposerTrigger, providerSetupCommandPayload, selectComposerAgent, setComposerActiveSurface } from "./composer.ts";
-import { CODEX_MODELS, PERMISSION_OPTIONS, REASONING_LEVELS, cliModelOptionsForAgent, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, isAgentAvailable, isAgentComingSoon, normalizePermissionValue, permissionConfigForAgent, runtimeSourceForBinding } from "./agent-vocab.ts";
+import { CODEX_MODELS, PERMISSION_OPTIONS, REASONING_LEVELS, cliModelOptionsForAgent, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, isAgentAvailable, isAgentAvailabilityKnown, isAgentComingSoon, normalizePermissionValue, permissionConfigForAgent, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { launchOptionsForState, updateComposerLaunchOptions, updateComposerScope } from "./launch-options.ts";
 import { buildOpencodeConnectSurface, getOpencodeEnvironment, isOpencodeUsable } from "./opencode-onramp.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
@@ -86,8 +86,10 @@ export function selectAgentChatChoiceSurfaceRow(
   switch (surfaceKind) {
     case "agent_menu": {
       const agentId = composerAgentIdForRow(rowId);
-      // Selecting a disabled (undetected or coming-soon) agent is a no-op.
-      if (agentId === null || !isAgentAvailable(agentId) || isAgentComingSoon(agentId)) {
+      // Coming-soon / unknown rows are no-ops. A not-installed agent IS selectable now:
+      // the handler ensures a Draft Thread + runs provider.checkReadiness so its install /
+      // sign-in card surfaces immediately. Spec: provider-cli-setup-handoff.md.
+      if (agentId === null || isAgentComingSoon(agentId)) {
         return { state, command: null };
       }
       return selectComposerAgent(state, agentId);
@@ -357,8 +359,9 @@ function permissionRowsForAgent(agentId: string, currentValue: string): AgentCha
   });
 }
 
-// One provider-CLI agent row: enabled+selectable when its CLI is detected, otherwise
-// shown disabled (greyed) — never removed.
+// One provider-CLI agent row: always selectable (so a not-installed agent can be picked to
+// start its install / sign-in handoff), labelled "Not installed" until its CLI is detected.
+// Only coming-soon rows are disabled. Never removed.
 function agentMenuRow(
   agentId: string,
   label: string,
@@ -367,9 +370,18 @@ function agentMenuRow(
   const selected = selectedAgentId === agentId;
   const comingSoon = isAgentComingSoon(agentId);
   const available = isAgentAvailable(agentId);
-  // An undetected provider reads "Not installed" (it was wrongly "Agent
-  // Integration") so the disabled row says WHY it can't be picked.
-  const detail = comingSoon ? "Coming soon" : !available ? "Not installed" : "Agent Integration";
+  const known = isAgentAvailabilityKnown();
+  // Until local detection arrives (known=false) show a neutral "Checking…" rather than a
+  // misleading "Agent Integration"; once known, an undetected provider reads "Not installed"
+  // so the row says WHY selecting it will offer install/sign-in. (Detection is fast + decoupled
+  // from opencode's catalog, so this window is sub-perceptible.) Spec: provider-cli-setup-handoff.
+  const detail = comingSoon
+    ? "Coming soon"
+    : !known
+      ? "Checking…"
+      : !available
+        ? "Not installed"
+        : "Agent Integration";
   return row(
     agentId,
     label,
@@ -378,7 +390,7 @@ function agentMenuRow(
     selected ? "check" : `identity:${agentId}`,
     selected,
     false,
-    comingSoon || !available,
+    comingSoon,
   );
 }
 

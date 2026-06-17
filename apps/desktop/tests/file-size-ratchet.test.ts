@@ -27,10 +27,14 @@ const PINNED_MAX: Record<string, number> = {
   // (composer-draft-thread): createDraftThread/discardDraftThread delegates + the
   // prepareStartInPlace branch in startThread (bodies extracted to DraftThreadService,
   // incl. newThreadRecord) + withdrawProviderPrompt (provider-retracted prompt recovery,
-  // spec waiting-state-recovery). +1: forward the AskUserQuestion answer `notes` to the
-  // runtime write (prompt-full-fidelity-fields Slice 2). The full thread-runtime-service
-  // split is still the real fix.
-  "backend/application/services/thread/thread-runtime-service.ts": 1612,
+  // spec waiting-state-recovery). +1: forward the AskUserQuestion answer `notes` to the runtime
+  // write (prompt-full-fidelity-fields Slice 2). +44: checkReadiness (on-demand Provider Readiness
+  // for the Composer slot-select handoff) + the no-pending-input readiness re-emit in
+  // replayPendingInputIfProviderReady (install/sign-in card refresh). Spec: provider-cli-setup-handoff.md.
+  // +8: checkReadiness replaces the WHOLE agentBinding (runtimeSource + cleared session), not just
+  // agentId, so a switched agent can't inherit a stale source/session (Gemini review on PR #136).
+  // The full thread-runtime-service split is still the real fix.
+  "backend/application/services/thread/thread-runtime-service.ts": 1666,
   // The inbound command switch (already at the 800 cap) gained the
   // provider.discoverCommands handler for live command mirroring, then the
   // thread.launchOptionsChanged event builder gained the applied + changedKeys
@@ -43,7 +47,18 @@ const PINNED_MAX: Record<string, number> = {
   // workbench.changed push for a Draft Thread started in place (composer-draft-thread) —
   // the minimal command surface for the Composer's Draft Thread; the per-domain handler
   // split remains the real fix.
-  "backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts": 857,
+  // +18: the provider.checkReadiness routing case (on-demand readiness for the Composer
+  // slot-select install/sign-in handoff). Spec: provider-cli-setup-handoff.md.
+  // +18: providerCatalogChangedEvent builder + connect re-push — opencode's catalog is delivered
+  // OUT OF BAND from thread.listed so the agent menu is never blocked behind opencode's
+  // subprocesses (same spec); the giant switch split remains the real fix.
+  "backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts": 893,
+  // live-backend is the composition root and sat right at the 800 cap. Decoupling opencode's
+  // catalog from thread.listed added a small startup push (setImmediate → providerCatalog.changed)
+  // so the agent menu's availableAgents is never gated by opencode's slower subprocesses. The real
+  // fix is the long-pending live-backend split; until then this holds so it can only shrink.
+  // Spec: provider-cli-setup-handoff.md.
+  "backend/infrastructure/node/live/live-backend.ts": 819,
 };
 
 function listSourceFiles(dir: string): string[] {

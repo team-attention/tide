@@ -11,6 +11,7 @@ import type {
   SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { ThreadScope } from "../../../../application/domains/thread/thread.ts";
+import { npmInstallSetupAction } from "../shared/provider-cli-commands.ts";
 
 // opencode (sst) runs as an ACP agent over stdio (`opencode acp`) — the SAME
 // Agent Client Protocol gemini speaks, verified live: initialize →
@@ -25,7 +26,7 @@ export interface OpencodeProviderState {
 }
 
 export type OpencodeExecutableResolver = (
-  command: "opencode",
+  command: "opencode" | "npm",
 ) => Promise<string | undefined> | string | undefined;
 
 export type OpencodeProviderStateReader = (input: {
@@ -88,11 +89,17 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
     const executablePath = await this.resolveExecutable("opencode");
     if (executablePath === undefined) {
+      const npmPath = (await this.resolveExecutable("npm")) ?? "npm";
       return {
         agentId: "opencode",
         ready: false,
         blockers: [
-          { kind: "not_installed", scope: "provider", message: "opencode executable was not found." },
+          {
+            kind: "not_installed",
+            scope: "provider",
+            message: "opencode executable was not found.",
+            setup: npmInstallSetupAction({ npmPath, agentId: "opencode", cwd }),
+          },
         ],
         capabilities: opencodeCapabilities,
       };

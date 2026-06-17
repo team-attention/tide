@@ -282,6 +282,24 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           (result) => this.trustWorkspaceEvents(typedCommand, result),
         );
       }
+      case "provider.checkReadiness": {
+        const typedCommand = command as BackendCommandEnvelope<"provider.checkReadiness">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.checkReadiness({
+            threadId: typedCommand.payload.threadId,
+            agentId: typedCommand.payload.agentId as ProviderCliAgentId,
+          }),
+          (result) => [
+            this.providerReadinessChangedEvent(
+              typedCommand,
+              result.thread.threadId,
+              result.providerReadiness,
+            ),
+            this.commandCompletedEvent(typedCommand),
+          ],
+        );
+      }
       case "provider.opencodeConnectApiKey": {
         const typed = command as BackendCommandEnvelope<"provider.opencodeConnectApiKey">;
         try {
@@ -291,9 +309,10 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           const message = error instanceof Error ? error.message : "opencode could not save the API key.";
           return [this.contractErrorEvent({ requestId: typed.requestId, code: "provider_runtime_failed", message, retryable: true })];
         }
-        // Re-list so the now-connected vendor + its models surface (catalogs invalidated).
+        // Re-list (threads/availableAgents) AND push the refreshed opencode catalog so the
+        // now-connected vendor + its models surface (catalogs were invalidated by the connect).
         return this.handleServiceResult(typed, await this.service.listThreads({}), (result) =>
-          [this.threadListedEvent(typed, result), this.commandCompletedEvent(typed)]);
+          [this.threadListedEvent(typed, result), this.providerCatalogChangedEvent(typed), this.commandCompletedEvent(typed)]);
       }
       case "provider.discoverCommands": {
         // The runtime probe resolves [] on any error/timeout (never rejects).
@@ -490,6 +509,23 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       payload: {
         threads: result.threads.map(toThreadSummaryDto),
         availableAgents: this.detectAvailableAgents?.(),
+      },
+    };
+  }
+
+  // opencode's catalog (vendors/models/version), delivered separately from thread.listed so the
+  // agent menu (availableAgents) is never blocked behind opencode's subprocesses. Pushed at
+  // startup (live-backend) and after a vendor connect. Spec: provider-cli-setup-handoff.md.
+  private providerCatalogChangedEvent(
+    command: BackendCommandEnvelope,
+  ): BackendEventEnvelope<"providerCatalog.changed"> {
+    return {
+      contractVersion: CONTRACT_VERSION,
+      eventId: this.nextEventId(),
+      requestId: command.requestId,
+      kind: "providerCatalog.changed",
+      emittedAt: this.clock(),
+      payload: {
         opencodeModels: this.enumerateOpencodeModels?.(),
         opencodeVendors: this.enumerateOpencodeVendors?.(),
         opencodeEnvironment: this.opencodeEnvironment?.(),

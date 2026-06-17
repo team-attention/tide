@@ -24,6 +24,7 @@ export type BackendCommandKind =
   | "provider.trustWorkspace"
   | "provider.opencodeConnectApiKey"
   | "provider.discoverCommands"
+  | "provider.checkReadiness"
   | "workbench.command"
   | "workspace.readFileTree"
   | "workspace.searchContent"
@@ -49,6 +50,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "provider.trustWorkspace",
   "provider.opencodeConnectApiKey",
   "provider.discoverCommands",
+  "provider.checkReadiness",
   "workbench.command",
   "workspace.readFileTree",
   "workspace.searchContent",
@@ -145,6 +147,10 @@ export interface BackendCommandPayloadByKind {
   // runtime. The backend replies with an agentRuntime.commandsChanged event.
   // See docs_v2/specs/live-provider-command-mirroring.md.
   "provider.discoverCommands": { agentId: string; cwd: string };
+  // Run Provider Readiness for an agent on demand (Composer slot select) so the
+  // install/sign-in card surfaces immediately. Backend replies providerReadiness.changed.
+  // See docs_v2/specs/provider-cli-setup-handoff.md.
+  "provider.checkReadiness": { threadId: ThreadId; agentId: string };
   "workbench.command": {
     threadId: ThreadId;
     command: string;

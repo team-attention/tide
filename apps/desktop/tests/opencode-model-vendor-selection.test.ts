@@ -64,6 +64,10 @@ test("opencode preflight reports not_installed and not_authenticated", async () 
   const missing = await opencodeIntegration({ executable: undefined }).preflight({ agentId: "opencode" });
   assert.equal(missing.ready, false);
   assert.equal(missing.blockers[0]?.kind, "not_installed");
+  // Install handoff (npm unresolved here ⇒ "npm" fallback). Spec: provider-cli-setup-handoff.md
+  assert.equal(missing.blockers[0]?.setup?.command, "npm");
+  assert.deepEqual(missing.blockers[0]?.setup?.args, ["install", "-g", "opencode-ai"]);
+  assert.equal(missing.blockers[0]?.setup?.expectedCompletion, "retry_preflight");
 
   const signedOut = await opencodeIntegration({ authenticated: false }).preflight({ agentId: "opencode" });
   assert.equal(signedOut.ready, false);

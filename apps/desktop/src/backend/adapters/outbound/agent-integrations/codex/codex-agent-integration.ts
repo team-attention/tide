@@ -15,6 +15,7 @@ import type {
 import type {
   ThreadScope,
 } from "../../../../application/domains/thread/thread.ts";
+import { npmInstallSetupAction } from "../shared/provider-cli-commands.ts";
 
 export interface CodexProviderState {
   authenticated: boolean;
@@ -25,7 +26,7 @@ export interface CodexProviderState {
 }
 
 export type CodexExecutableResolver = (
-  command: "codex",
+  command: "codex" | "npm",
 ) => Promise<string | undefined> | string | undefined;
 
 export type CodexProviderStateReader = (input: {
@@ -103,6 +104,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
     const executablePath = await this.resolveExecutable("codex");
     if (executablePath === undefined) {
+      const npmPath = (await this.resolveExecutable("npm")) ?? "npm";
       return {
         agentId: "codex",
         ready: false,
@@ -111,6 +113,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
             kind: "not_installed",
             scope: "provider",
             message: "Codex CLI executable was not found.",
+            setup: npmInstallSetupAction({ npmPath, agentId: "codex", cwd }),
           },
         ],
         capabilities: codexCapabilities,

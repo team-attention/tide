@@ -13,6 +13,7 @@ export function createProviderReadiness(
   if (viewModel.providerReadinessBlockers.length === 0) {
     return [];
   }
+  const agentLabel = viewModel.providerReadinessAgentLabel ?? "the provider";
 
   return [
     createChoiceSurface({
@@ -53,8 +54,8 @@ export function createProviderReadiness(
             ? [
                 {
                   rowId: `${blocker.kind}:setup`,
-                  label: "Set up in the provider terminal instead",
-                  detail: "opens the provider's own setup; your draft is kept",
+                  label: setupRowLabel(blocker.kind, agentLabel),
+                  detail: setupRowDetail(blocker.kind),
                   icon: "+",
                 },
               ]
@@ -73,4 +74,32 @@ export function createProviderReadiness(
       message: viewModel.providerReadinessBlockers.map((blocker) => blocker.message).join("\n"),
     }),
   ];
+}
+
+// Actionable label for a Provider Setup Surface row, so the user reads exactly what clicking does
+// ("Install Codex" / "Sign in to Codex") instead of a generic prompt. Spec: provider-cli-setup-handoff.
+function setupRowLabel(kind: string, agentLabel: string): string {
+  switch (kind) {
+    case "not_installed":
+      return `Install ${agentLabel}`;
+    case "not_authenticated":
+      return `Sign in to ${agentLabel}`;
+    case "onboarding_required":
+      return `Finish setting up ${agentLabel}`;
+    case "hook_bootstrap_required":
+      return `Set up ${agentLabel} for Tide`;
+    default:
+      return `Set up ${agentLabel} in a terminal`;
+  }
+}
+
+function setupRowDetail(kind: string): string {
+  switch (kind) {
+    case "not_installed":
+      return "installs the CLI in a terminal, then continues — your draft is kept";
+    case "not_authenticated":
+      return "opens its sign-in in a terminal, then continues — your draft is kept";
+    default:
+      return "opens the provider's own setup; your draft is kept";
+  }
 }

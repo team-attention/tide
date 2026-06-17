@@ -1,4 +1,4 @@
-import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, interruptProductShellRuntime, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, interruptProductShellRuntime, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft, ensureComposerDraftThreadActive } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { AgentChatThreadScope } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 
 // The Execution Context cwd a Composer scope points at — used to detect a project/worktree
@@ -204,6 +204,29 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
           setWorktreeCreate({ baseCwd });
         }
         setShellState((state) => setProductShellComposerActiveSurface(state, null));
+        return;
+      }
+      // Selecting an agent slot: select it, ensure a Draft Thread to host any Setup Surface,
+      // and run Provider Readiness so a not-installed / not-signed-in agent surfaces its
+      // install / sign-in card immediately (not only on Send). Spec: provider-cli-setup-handoff.md.
+      if (surfaceKind === "agent_menu") {
+        setShellState((state) => {
+          const selected = selectProductShellChoiceSurfaceRow(state, surfaceKind, rowId);
+          if (selected.command !== null) dispatchBackendCommand(selected.command);
+          const ensured = ensureComposerDraftThreadActive(selected.state);
+          if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+          const threadId = ensured.state.draftThreadId;
+          if (threadId !== null) {
+            dispatchBackendCommand({
+              kind: "provider.checkReadiness",
+              payload: {
+                threadId,
+                agentId: ensured.state.agentChat.composer.startOptions.agentBinding.agentId,
+              },
+            });
+          }
+          return ensured.state;
+        });
         return;
       }
       setShellState((state) => {

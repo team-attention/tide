@@ -46,6 +46,7 @@ export type BackendEventKind =
   | "agentRuntime.modelCatalogChanged"
   | "agentRuntime.noticePosted"
   | "providerReadiness.changed"
+  | "providerCatalog.changed"
   | "prompt.changed"
   | "agentSessionBlock.upserted"
   | "agentSessionBlock.completed"
@@ -77,6 +78,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "agentRuntime.modelCatalogChanged",
   "agentRuntime.noticePosted",
   "providerReadiness.changed",
+  "providerCatalog.changed",
   "prompt.changed",
   "agentSessionBlock.upserted",
   "agentSessionBlock.completed",
@@ -105,19 +107,23 @@ export interface BackendEventPayloadByKind {
     threads: ThreadSummaryDto[];
     // Provider-CLI agents detected on the local system (their executable resolves).
     // The composer agent menu enables these and shows the rest disabled (never
-    // removed). Absent = older backend; the UI then treats all as available.
+    // removed). Absent = older backend; the UI then treats all as available. This is
+    // `which`-based and fast, so thread.listed is never blocked behind opencode's
+    // slower catalog subprocesses (delivered separately via providerCatalog.changed).
     availableAgents?: ProviderCliAgentId[];
-    // opencode's authed model catalog (enumerated via `opencode models`). opencode
-    // is a multi-vendor router so its list is per-user, not hand-curated. Absent ⇒
-    // not yet enumerated; the composer falls back to "opencode default" only.
+  };
+  // opencode's catalog (vendors / models / version), delivered OUT OF BAND from thread.listed
+  // so the agent menu (availableAgents) is never gated behind opencode's slower subprocesses
+  // (`opencode models`/`auth list`/`--version`). Pushed once at startup (off the critical path)
+  // and again after a vendor connect. See provider-cli-setup-handoff.md.
+  "providerCatalog.changed": {
+    // opencode's authed model catalog (enumerated via `opencode models`); a multi-vendor router,
+    // so per-user, not hand-curated. Absent ⇒ not yet enumerated (composer uses "opencode default").
     opencodeModels?: ProviderModelDto[];
-    // opencode's vendor tiles (curated popular set + any connected-but-uncurated
-    // vendor), with connected-state read from `opencode auth list`. Drives the
-    // "Connect a model" on-ramp grid. Absent ⇒ older backend (panel shows nothing
-    // connected). See opencode-vendor-onramp.md.
+    // opencode's vendor tiles (curated popular set + any connected-but-uncurated vendor) with
+    // connected-state from `opencode auth list` — drives the "Connect a model" on-ramp grid.
     opencodeVendors?: OpencodeVendorDto[];
-    // opencode version + tested-with + resolved executable path (for launching the
-    // Provider Setup Surface `auth login -p <id>`). Absent ⇒ opencode not resolved.
+    // opencode version + tested-with + resolved executable path (for the Setup Surface auth login).
     opencodeEnvironment?: OpencodeEnvironmentDto;
   };
   "thread.hydrated": {

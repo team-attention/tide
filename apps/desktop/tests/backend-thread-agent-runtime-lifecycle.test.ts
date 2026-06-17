@@ -561,6 +561,67 @@ test("trusting_a_workspace_rechecks_provider_readiness", async () => {
   assert.equal(result.ok && result.providerReadiness.ready, true);
 });
 
+// --- Provider readiness on demand (Composer slot select) ---
+// Spec: docs_v2/specs/provider-cli-setup-handoff.md
+
+test("checkReadiness runs preflight for the chosen agent, rebinds the thread, and emits", async () => {
+  const fakes = createFakes();
+  const asyncEvents: ThreadRuntimeAsyncEvent[] = [];
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    onAsyncEvent: (event) => {
+      asyncEvents.push(event);
+    },
+    initialThreads: [
+      threadSeed("draft-1", {
+        // Seed a STALE binding (a previously-selected claude, with its runtimeSource + session):
+        // checkReadiness must replace it wholesale, not leave codex pointing at claude's source or
+        // try to resume claude's session (Gemini review).
+        agentBinding: {
+          agentId: "claude",
+          runtimeSource: { kind: "provider_cli", integrationId: "claude" },
+          providerSessionRef: { kind: "claude_transcript", value: "stale-claude" },
+        },
+        scope: { kind: "project", projectId: "p1", cwd: "/repo" },
+      }),
+    ],
+  });
+
+  // Pick a DIFFERENT agent than the seeded binding: the check must target the picked one,
+  // and the thread must be rebound so a later retry_preflight re-checks it.
+  const result = await service.checkReadiness({ threadId: "draft-1", agentId: "codex" });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(fakes.readiness.checks.at(-1)?.agentId, "codex");
+  assert.equal(result.providerReadiness.agentId, "codex");
+  // The WHOLE binding is replaced — agentId AND runtimeSource — and the stale session cleared, so
+  // codex never inherits claude's runtimeSource/providerSessionRef (Gemini review).
+  const binding = result.thread.agentBinding;
+  assert.equal(binding.agentId, "codex");
+  assert.equal(
+    binding.runtimeSource?.kind === "provider_cli" ? binding.runtimeSource.integrationId : undefined,
+    "codex",
+  );
+  assert.equal(binding.providerSessionRef, undefined);
+  assert.ok(asyncEvents.some((event) => event.kind === "provider_readiness_changed"));
+});
+
+test("checkReadiness fails for an unknown thread", async () => {
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [],
+  });
+
+  const result = await service.checkReadiness({ threadId: "missing", agentId: "codex" });
+  assert.equal(result.ok, false);
+});
+
 test("trusting_a_workspace_without_a_cwd_fails", async () => {
   // UC-1 BR-3: a Thread with no Execution Context cwd cannot be trusted.
   const fakes = createFakes();

@@ -46,6 +46,10 @@ test("gemini_preflight_reports_not_installed_and_not_authenticated", async () =>
   });
   assert.equal(missing.ready, false);
   assert.equal(missing.blockers[0]?.kind, "not_installed");
+  // Install handoff (npm unresolved here ⇒ "npm" fallback). Spec: provider-cli-setup-handoff.md
+  assert.equal(missing.blockers[0]?.setup?.command, "npm");
+  assert.deepEqual(missing.blockers[0]?.setup?.args, ["install", "-g", "@google/gemini-cli"]);
+  assert.equal(missing.blockers[0]?.setup?.expectedCompletion, "retry_preflight");
 
   const signedOut = await geminiIntegration({ authenticated: false }).preflight({
     agentId: "gemini",
