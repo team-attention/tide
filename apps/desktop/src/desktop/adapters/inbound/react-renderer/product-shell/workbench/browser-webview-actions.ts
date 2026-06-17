@@ -88,6 +88,22 @@ async function safeExecuteJavaScript(
   }
 }
 
+// True only when the guest has finished its current load. `<webview>.isLoading()`
+// is NOT a safe probe: like the other guest methods it throws *synchronously*
+// ("must be attached to the DOM and the dom-ready event emitted") until the guest
+// is ready — which is exactly the just-mounted case. `?.` does not help (the method
+// exists; calling it throws), so an un-guarded call in a mount effect escapes and
+// unmounts the whole React tree (white screen — there is no error boundary). Treat a
+// throw as "not settled yet": the dom-ready / did-finish-load listeners capture the
+// snapshot once the guest is actually ready.
+export function isWebViewSettled(webview: BrowserWebViewElement): boolean {
+  try {
+    return webview.isLoading?.() === false;
+  } catch {
+    return false;
+  }
+}
+
 export async function readBrowserWebViewSnapshot(
   webview: BrowserWebViewElement,
 ): Promise<BrowserWebViewSnapshot> {

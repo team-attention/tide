@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   captureBrowserWebViewScreenshot,
   executeBrowserWebViewAction,
+  isWebViewSettled,
   type BrowserWebViewAction,
   type BrowserWebViewElement,
   type BrowserWebViewInputEvent,
@@ -140,4 +141,29 @@ test("captureBrowserWebViewScreenshot returns base64 PNG + size from capturePage
 test("captureBrowserWebViewScreenshot returns undefined when capturePage is unavailable", async () => {
   const webview = {} as unknown as BrowserWebViewElement;
   assert.equal(await captureBrowserWebViewScreenshot(webview), undefined);
+});
+
+// --- isWebViewSettled: guards the white-screen regression ---
+
+test("isWebViewSettled returns false instead of throwing when isLoading() throws (pre-dom-ready)", () => {
+  // A just-mounted <webview> throws synchronously from isLoading() ("must be attached to
+  // the DOM and the dom-ready event emitted"). An un-guarded call escaped the snapshot
+  // mount effect and unmounted the whole React tree (white screen). The guard must swallow
+  // the throw and report "not settled".
+  const webview = {
+    isLoading: () => {
+      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
+    },
+  } as unknown as BrowserWebViewElement;
+  assert.doesNotThrow(() => isWebViewSettled(webview));
+  assert.equal(isWebViewSettled(webview), false);
+});
+
+test("isWebViewSettled returns true only when the guest finished loading", () => {
+  const loaded = { isLoading: () => false } as unknown as BrowserWebViewElement;
+  const loading = { isLoading: () => true } as unknown as BrowserWebViewElement;
+  const missing = {} as unknown as BrowserWebViewElement;
+  assert.equal(isWebViewSettled(loaded), true);
+  assert.equal(isWebViewSettled(loading), false);
+  assert.equal(isWebViewSettled(missing), false);
 });
