@@ -38,9 +38,9 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
       setShellState((state) => removeProductShellComposerContextChip(state, id)),
     onSetContextChipComment: (id, comment) =>
       setShellState((state) => setProductShellComposerContextChipComment(state, id, comment)),
-    onAnswerPromptText: (value) =>
+    onAnswerPromptText: (value, notes) =>
       setShellState((state) => {
-        const result = answerProductShellPromptText(state, value);
+        const result = answerProductShellPromptText(state, value, notes);
         dispatchBackendCommand(result.command);
         return result.state;
       }),

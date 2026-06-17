@@ -25,7 +25,7 @@ import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import type { ComposerAttachmentRef, PromptChoice, PromptState } from "../../../../application/domains/thread/thread.ts";
+import type { ComposerAttachmentRef, PromptChoice, PromptDetail, PromptState } from "../../../../application/domains/thread/thread.ts";
 import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   StructuredClientCallbacks,
@@ -560,7 +560,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       if (questions.length > 1 && surfaceAskUserQuestionWizard(ctx, requestId, toolInput, questions)) {
         return;
       }
-      if (questions.length > 0 && surfaceAskUserQuestion(ctx, requestId, toolInput, questions, {}, 0)) {
+      if (questions.length > 0 && surfaceAskUserQuestion(ctx, requestId, toolInput, questions, {}, 0, {})) {
         return;
       }
     }
@@ -577,6 +577,9 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     const message_ =
       stringField(toolInput, "description") ??
       (target !== undefined ? `${toolName}: ${target}` : `Claude Code permission required for ${toolName}.`);
+    // The structured input behind the headline: the Bash command, an Edit's before/after
+    // diff, or a Write's content — shown as the approval card's detail.
+    const detail = buildPermissionDetail(toolInput);
 
     const choices: PromptChoice[] = [
       { choiceId: "allow", label: "Allow", providerValue: STRUCTURED_ALLOW_TOKEN },
@@ -588,12 +591,40 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       agentId: this.agentId,
       kind: "approval",
       message: message_,
+      ...(detail !== undefined ? { detail } : {}),
       choices,
       defaultChoiceId: "allow",
       source: "provider_hook",
     };
     this.onEvent({ kind: "prompt", promptState });
   }
+}
+
+// Build an approval-card detail from a claude permission request's tool input: the Bash
+// `command` (text), an Edit's `old_string`/`new_string` (a simple +/- diff), or a Write's
+// `content` (text). Returns undefined when there is nothing worth previewing beyond the
+// headline message.
+export function buildPermissionDetail(toolInput: Record<string, unknown>): PromptDetail | undefined {
+  const command = stringField(toolInput, "command");
+  if (command !== undefined) {
+    return { format: "text", body: bounded(command) };
+  }
+  const filePath = stringField(toolInput, "file_path") ?? stringField(toolInput, "path");
+  const locations = filePath !== undefined ? { locations: [filePath] } : {};
+  const oldString = stringField(toolInput, "old_string");
+  const newString = stringField(toolInput, "new_string");
+  if (oldString !== undefined && newString !== undefined) {
+    const body = [
+      ...oldString.split("\n").map((line) => `- ${line}`),
+      ...newString.split("\n").map((line) => `+ ${line}`),
+    ].join("\n");
+    return { format: "diff", body: bounded(body), ...locations };
+  }
+  const content = stringField(toolInput, "content");
+  if (content !== undefined) {
+    return { format: "text", body: bounded(content), ...locations };
+  }
+  return undefined;
 }
 
 function bounded(text: string): string {

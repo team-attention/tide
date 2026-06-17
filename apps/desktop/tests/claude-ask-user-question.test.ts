@@ -92,6 +92,12 @@ function answersFrom(response: Record<string, unknown>): Record<string, unknown>
   return updatedInput.answers as Record<string, unknown>;
 }
 
+function annotationsFrom(response: Record<string, unknown>): Record<string, unknown> | undefined {
+  const inner = (response.response as Record<string, unknown>).response as Record<string, unknown>;
+  const updatedInput = inner.updatedInput as Record<string, unknown>;
+  return updatedInput.annotations as Record<string, unknown> | undefined;
+}
+
 function promptCollector(): { events: PromptState[]; onEvent: (event: StructuredProviderEvent) => void } {
   const events: PromptState[] = [];
   return {
@@ -247,6 +253,47 @@ test("AskUserQuestion: single-question Other free-text answer is delivered", asy
   }
 });
 
+// Spec: docs_v2/specs/prompt-full-fidelity-fields.md — the question `header` and each
+// option's `description`/`preview` must reach the surfaced prompt (previously dropped:
+// only `label` survived). A single question stays a plain card (no wizard steps).
+test("AskUserQuestion: question header and option description/preview flow into the prompt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = createClaudeStreamJsonClient({
+    plan: fakeProviderPlan(
+      [
+        {
+          question: "Which auth?",
+          header: "Auth method",
+          options: [
+            { label: "OAuth", description: "Browser sign-in via the provider", preview: "GET /authorize" },
+            { label: "API key", description: "Paste a key" },
+          ],
+        },
+      ],
+      receivedFile,
+    ),
+    threadId: "thread-1",
+    runtimeId: "rt-1",
+    onEvent,
+  });
+  try {
+    const prompt = await waitFor(() => events[0], "question prompt");
+    assert.equal(prompt.steps, undefined);
+    assert.equal(prompt.header, "Auth method");
+    const oauth = prompt.choices?.[0];
+    assert.equal(oauth?.label, "OAuth");
+    assert.equal(oauth?.description, "Browser sign-in via the provider");
+    assert.equal(oauth?.preview, "GET /authorize");
+    // An option without a preview omits it (optional field stays absent, not "").
+    assert.equal(prompt.choices?.[1]?.description, "Paste a key");
+    assert.equal(prompt.choices?.[1]?.preview, undefined);
+  } finally {
+    await client.stop();
+  }
+});
+
 // Spec: docs_v2/specs/mid-thread-launch-option-changes.md — applyConfig must
 // put the SDK-shaped set_model / set_permission_mode control requests on the
 // wire (the live mid-thread Launch Options path for a running claude session).
@@ -370,6 +417,105 @@ test("AskUserQuestion: a cancel right after the question pairs it with a withdra
     for (const id of promptIds) {
       assert.equal(withdrawnIds.has(id), true, `prompt ${id} was surfaced without a matching withdrawal`);
     }
+  } finally {
+    await client.stop();
+  }
+});
+
+// Spec: docs_v2/specs/prompt-full-fidelity-fields.md Slice 2 — a free-text note (and an echo
+// of the chosen option's authored preview) ride back to claude as updatedInput.annotations,
+// keyed by question text, additive to `answers`.
+test("AskUserQuestion: a note + chosen-option preview reach updatedInput.annotations", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = createClaudeStreamJsonClient({
+    plan: fakeProviderPlan(
+      [{ question: "Ship it?", header: "Ship", options: [{ label: "Yes", preview: "deploy.sh" }, { label: "No" }] }],
+      receivedFile,
+    ),
+    threadId: "thread-1",
+    runtimeId: "rt-1",
+    onEvent,
+  });
+  try {
+    const prompt = await waitFor(() => events[0], "question prompt");
+    await client.write({
+      kind: "prompt_answer",
+      promptId: prompt.promptId,
+      value: prompt.choices?.[0]?.providerValue ?? "",
+      notes: "only to staging, not prod",
+    });
+    const response = await waitFor(() => receivedControlResponse(receivedFile), "control_response");
+    assert.deepEqual(answersFrom(response), { "Ship it?": "Yes" });
+    assert.deepEqual(annotationsFrom(response), {
+      "Ship it?": { notes: "only to staging, not prod", preview: "deploy.sh" },
+    });
+  } finally {
+    await client.stop();
+  }
+});
+
+test("AskUserQuestion: an answer with no note and no option preview carries no annotations", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = createClaudeStreamJsonClient({
+    plan: fakeProviderPlan(
+      [{ question: "Ship it?", header: "Ship", options: [{ label: "Yes" }, { label: "No" }] }],
+      receivedFile,
+    ),
+    threadId: "thread-1",
+    runtimeId: "rt-1",
+    onEvent,
+  });
+  try {
+    const prompt = await waitFor(() => events[0], "question prompt");
+    await client.write({
+      kind: "prompt_answer",
+      promptId: prompt.promptId,
+      value: prompt.choices?.[0]?.providerValue ?? "",
+    });
+    const response = await waitFor(() => receivedControlResponse(receivedFile), "control_response");
+    assert.deepEqual(answersFrom(response), { "Ship it?": "Yes" });
+    assert.equal(annotationsFrom(response), undefined);
+  } finally {
+    await client.stop();
+  }
+});
+
+test("AskUserQuestion wizard: only steps that carry a note are annotated", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = createClaudeStreamJsonClient({
+    plan: fakeProviderPlan(
+      [
+        { question: "Pick one?", header: "Pick", options: [{ label: "A" }, { label: "B" }] },
+        { question: "Describe it?", header: "Desc", options: [{ label: "C" }] },
+      ],
+      receivedFile,
+    ),
+    threadId: "thread-1",
+    runtimeId: "rt-1",
+    onEvent,
+  });
+  try {
+    const prompt = await waitFor(() => events[0], "wizard prompt");
+    const steps = prompt.steps ?? [];
+    await client.write({
+      kind: "prompt_answer",
+      promptId: prompt.promptId,
+      value: "",
+      stepAnswers: [
+        { stepId: steps[0]?.stepId ?? "", value: steps[0]?.choices?.[0]?.providerValue ?? "", notes: "prefer the LTS one" },
+        { stepId: steps[1]?.stepId ?? "", value: steps[1]?.choices?.[0]?.providerValue ?? "" },
+      ],
+    });
+    const response = await waitFor(() => receivedControlResponse(receivedFile), "control_response");
+    assert.deepEqual(answersFrom(response), { "Pick one?": "A", "Describe it?": "C" });
+    // Only the step that carried a note is annotated.
+    assert.deepEqual(annotationsFrom(response), { "Pick one?": { notes: "prefer the LTS one" } });
   } finally {
     await client.stop();
   }

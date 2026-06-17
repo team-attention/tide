@@ -76,10 +76,31 @@ export type PromptKind =
   | "choice"
   | "command_picker";
 
+// Approval-option semantic carried natively by ACP (gemini/opencode); undefined for
+// claude/codex. Drives default selection + allow/reject styling without optionId matching.
+export type PromptChoiceKind =
+  | "allow_once"
+  | "allow_always"
+  | "reject_once"
+  | "reject_always";
+
+// What an approval/permission prompt asks the user to approve, normalized across providers.
+export interface PromptDetail {
+  format: "text" | "diff";
+  body: string;
+  locations?: string[];
+}
+
 export interface PromptChoice {
   choiceId: string;
   label: string;
   providerValue: string;
+  // Per-option explanation (claude AskUserQuestion option.description).
+  description?: string;
+  // Per-option preview content (claude AskUserQuestion option.preview).
+  preview?: string;
+  // Approval semantic (ACP options[].kind); undefined for claude/codex.
+  kind?: PromptChoiceKind;
 }
 
 // One question of a batched multi-step prompt (claude AskUserQuestion). `message` is the
@@ -87,6 +108,8 @@ export interface PromptChoice {
 export interface PromptStep {
   stepId: string;
   message: string;
+  // Short chip label for this question (claude AskUserQuestion question.header).
+  header?: string;
   choices?: PromptChoice[];
   defaultChoiceId?: string;
   multiSelect?: boolean;
@@ -97,6 +120,8 @@ export interface PromptStep {
 export interface PromptStepAnswer {
   stepId: string;
   value: string;
+  // Free-text note the user attached to this question (claude AskUserQuestion annotations).
+  notes?: string;
 }
 
 export interface PromptState {
@@ -105,6 +130,11 @@ export interface PromptState {
   agentId: AgentId;
   kind: PromptKind;
   message: string;
+  // Short chip label for a question (claude AskUserQuestion question.header).
+  header?: string;
+  // Approval/permission detail: the command/diff being approved (claude permission tool
+  // input, codex command/fileChange, ACP toolCall content + locations).
+  detail?: PromptDetail;
   choices?: PromptChoice[];
   defaultChoiceId?: string;
   // Multi-select question (e.g. claude AskUserQuestion multiSelect): the card toggles

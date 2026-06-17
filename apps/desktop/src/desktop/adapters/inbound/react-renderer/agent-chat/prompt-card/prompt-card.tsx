@@ -1,4 +1,4 @@
-import type { AgentChatPromptStep, AgentChatPromptStepAnswer, AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import type { AgentChatPromptChoice, AgentChatPromptDetail, AgentChatPromptStep, AgentChatPromptStepAnswer, AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { useEffect, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
@@ -17,7 +17,7 @@ import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } f
 export function PromptCard(props: {
   prompt: NonNullable<AgentChatShellViewModel["prompt"]>;
   onSelectChoice: (choiceId: string) => void;
-  onAnswerText: (value: string) => void;
+  onAnswerText: (value: string, notes?: string) => void;
   onAnswerSteps: (stepAnswers: AgentChatPromptStepAnswer[]) => void;
 }): ReactElement {
   const steps = props.prompt.steps;
@@ -33,10 +33,43 @@ export function PromptCard(props: {
   );
 }
 
+// The command / diff an approval prompt is asking the user to approve, with affected paths.
+// `format:"diff"` colorizes +/- lines; `"text"` renders as a monospace block.
+function PromptDetailView(props: { detail: AgentChatPromptDetail }): ReactElement {
+  const { detail } = props;
+  return (
+    <div className="prompt-card__detail" data-format={detail.format}>
+      <pre className="prompt-card__detail-body">
+        {detail.format === "diff"
+          ? detail.body.split("\n").map((line, index) => (
+              <span
+                key={index}
+                className="prompt-card__detail-line"
+                data-line={line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx"}
+              >
+                {line}
+                {"\n"}
+              </span>
+            ))
+          : detail.body}
+      </pre>
+      {detail.locations !== undefined && detail.locations.length > 0 ? (
+        <div className="prompt-card__detail-locations">
+          {detail.locations.map((path) => (
+            <span key={path} className="prompt-card__detail-location">
+              {path}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SinglePromptCard(props: {
   prompt: NonNullable<AgentChatShellViewModel["prompt"]>;
   onSelectChoice: (choiceId: string) => void;
-  onAnswerText: (value: string) => void;
+  onAnswerText: (value: string, notes?: string) => void;
 }): ReactElement {
   const choices = props.prompt.choices ?? [];
   const hasChoices = choices.length > 0;
@@ -49,6 +82,10 @@ function SinglePromptCard(props: {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [otherActive, setOtherActive] = useState(!hasChoices && !multiSelect);
   const [otherText, setOtherText] = useState("");
+  // AskUserQuestion (kind:"choice") is the only prompt with a per-answer note channel
+  // (claude annotations). Approval/permission cards have no native notes sink → no field.
+  const isAUQ = props.prompt.kind === "choice";
+  const [notes, setNotes] = useState("");
   const toggleMulti = (choiceId: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -66,6 +103,8 @@ function SinglePromptCard(props: {
     ? otherText.trim().length > 0
     : selectedId !== null;
   const submit = () => {
+    // Notes only ride on AskUserQuestion answers (claude annotations); undefined elsewhere.
+    const note = isAUQ && notes.trim().length > 0 ? notes.trim() : undefined;
     if (multiSelect) {
       if (selectedIds.size === 0) {
         return;
@@ -73,17 +112,24 @@ function SinglePromptCard(props: {
       // claude records the joined option labels as this question's answer (free-text
       // path — no STRUCTURED_OPTION_PREFIX). Preserve the listed order.
       const labels = choices.filter((choice) => selectedIds.has(choice.choiceId)).map((choice) => choice.label);
-      props.onAnswerText(labels.join(", "));
+      props.onAnswerText(labels.join(", "), note);
       return;
     }
     if (otherActive) {
       if (otherText.trim().length > 0) {
-        props.onAnswerText(otherText.trim());
+        props.onAnswerText(otherText.trim(), note);
       }
       return;
     }
     if (selectedId !== null) {
-      props.onSelectChoice(selectedId);
+      // For an AskUserQuestion pick, route through the value path (the chosen option's
+      // providerValue) so the note rides along; approval picks keep the choiceId path.
+      if (isAUQ) {
+        const value = choices.find((choice) => choice.choiceId === selectedId)?.providerValue ?? "";
+        props.onAnswerText(value, note);
+      } else {
+        props.onSelectChoice(selectedId);
+      }
     }
   };
   // Keyboard: ↑/↓ move between options (incl. "Other…"); ⌘/Ctrl+Enter submits the
@@ -142,8 +188,14 @@ function SinglePromptCard(props: {
   return (
     <div className="prompt-card" role="group" aria-label="Agent prompt">
       <div className="prompt-card__head">
-        <span className="prompt-card__kind">{multiSelect ? "Select all that apply" : kindLabel}</span>
+        <span className="prompt-card__kind">
+          {multiSelect ? "Select all that apply" : kindLabel}
+          {props.prompt.header ? (
+            <span className="prompt-card__header-chip">{props.prompt.header}</span>
+          ) : null}
+        </span>
         <p className="prompt-card__message">{props.prompt.message}</p>
+        {props.prompt.detail ? <PromptDetailView detail={props.prompt.detail} /> : null}
       </div>
       <div className="prompt-card__options">
         {renderOptions({
@@ -165,6 +217,9 @@ function SinglePromptCard(props: {
           },
           onOtherText: setOtherText,
           onOtherEnter: submit,
+          showNotes: isAUQ,
+          notes,
+          onNotes: setNotes,
         })}
       </div>
       <div className="prompt-card__actions">
@@ -187,6 +242,7 @@ interface StepAnswerState {
   selectedIds: Set<string>;
   otherActive: boolean;
   otherText: string;
+  notes: string;
 }
 
 function initStepAnswer(step: AgentChatPromptStep): StepAnswerState {
@@ -199,6 +255,7 @@ function initStepAnswer(step: AgentChatPromptStep): StepAnswerState {
     selectedIds: new Set(),
     otherActive: !hasChoices && !multiSelect,
     otherText: "",
+    notes: "",
   };
 }
 
@@ -246,10 +303,14 @@ function WizardPromptCard(props: {
   };
   const submit = () => {
     props.onAnswerSteps(
-      steps.map((eachStep, index) => ({
-        stepId: eachStep.stepId,
-        value: resolveStepValue(eachStep, answers[index]),
-      })),
+      steps.map((eachStep, index) => {
+        const note = answers[index].notes.trim();
+        return {
+          stepId: eachStep.stepId,
+          value: resolveStepValue(eachStep, answers[index]),
+          ...(note.length > 0 ? { notes: note } : {}),
+        };
+      }),
     );
   };
   const goNext = () => {
@@ -309,6 +370,7 @@ function WizardPromptCard(props: {
           <span className="prompt-card__kind">
             {multiSelect ? "Select all that apply" : "Question"}
             <span className="prompt-card__step-count"> · {stepIndex + 1} of {steps.length}</span>
+            {step.header ? <span className="prompt-card__header-chip">{step.header}</span> : null}
           </span>
           <div className="prompt-card__steps" role="tablist" aria-label="Steps">
             {steps.map((eachStep, index) => (
@@ -352,6 +414,9 @@ function WizardPromptCard(props: {
             setCurrent((prev) => ({ ...prev, otherActive: true, selectedId: null })),
           onOtherText: (value) => setCurrent((prev) => ({ ...prev, otherText: value })),
           onOtherEnter: goNext,
+          showNotes: true,
+          notes: answer.notes,
+          onNotes: (value) => setCurrent((prev) => ({ ...prev, notes: value })),
         })}
       </div>
       <div className="prompt-card__actions">
@@ -372,10 +437,21 @@ function WizardPromptCard(props: {
   );
 }
 
+// An option's secondary line is its human `description` (claude AskUserQuestion), or a
+// genuinely meaningful providerValue (e.g. a command/model id) when there is none. Internal
+// answer-routing tokens — every provider prefixes them "structured:" — are never shown.
+function optionSecondary(choice: AgentChatPromptChoice): string | undefined {
+  if (choice.description !== undefined && choice.description.length > 0) {
+    return choice.description;
+  }
+  const value = choice.providerValue;
+  return value && value !== choice.label && !value.startsWith("structured:") ? value : undefined;
+}
+
 // Shared option list (single pick / multi-select toggles / "Other…" free text) used by
 // both the single card and each wizard step, so they look and behave identically.
 function renderOptions(input: {
-  choices: { choiceId: string; label: string; providerValue: string }[];
+  choices: AgentChatPromptChoice[];
   multiSelect: boolean;
   selectedId: string | null;
   selectedIds: Set<string>;
@@ -387,13 +463,19 @@ function renderOptions(input: {
   onPickOther: () => void;
   onOtherText: (value: string) => void;
   onOtherEnter: () => void;
+  // AskUserQuestion-only: a free-text note that rides alongside the answer (claude
+  // annotations), shown below the options. Coexists with a selection (not mutually exclusive).
+  showNotes: boolean;
+  notes: string;
+  onNotes: (value: string) => void;
 }): ReactElement {
   const option = (
     key: string,
     label: string,
-    detail: string | undefined,
+    secondary: string | undefined,
     selected: boolean,
     onClick: () => void,
+    kind?: AgentChatPromptChoice["kind"],
   ) => (
     <button
       key={key}
@@ -401,32 +483,43 @@ function renderOptions(input: {
       className="prompt-card__option"
       data-selected={selected ? "true" : "false"}
       data-multi={input.multiSelect ? "true" : undefined}
+      data-kind={kind}
       aria-pressed={input.multiSelect ? selected : undefined}
       onClick={onClick}
     >
       <span className="prompt-card__radio" aria-hidden />
-      <span className="prompt-card__option-label">{label}</span>
-      {detail ? <span className="prompt-card__option-value">{detail}</span> : null}
+      <span className="prompt-card__option-text">
+        <span className="prompt-card__option-label">{label}</span>
+        {secondary ? <span className="prompt-card__option-value">{secondary}</span> : null}
+      </span>
     </button>
   );
+  // The focused single-select option's preview (claude AskUserQuestion option.preview):
+  // the mockup/code for the option the user is on, shown below the list.
+  const focused = input.choices.find((choice) => choice.choiceId === input.selectedId);
+  const preview = !input.multiSelect && !input.otherActive ? focused?.preview : undefined;
   return (
     <>
       {input.choices.map((choice) =>
         option(
           choice.choiceId,
           choice.label,
-          choice.providerValue && choice.providerValue !== choice.label ? choice.providerValue : undefined,
+          optionSecondary(choice),
           input.multiSelect
             ? input.selectedIds.has(choice.choiceId)
             : !input.otherActive && input.selectedId === choice.choiceId,
           input.multiSelect
             ? () => input.onToggleMulti(choice.choiceId)
             : () => input.onPickChoice(choice.choiceId),
+          choice.kind,
         ),
       )}
       {input.hasChoices && !input.multiSelect
         ? option("__other", "Other…", undefined, input.otherActive, input.onPickOther)
         : null}
+      {preview !== undefined && preview.length > 0 ? (
+        <pre className="prompt-card__option-preview" aria-label="Option preview">{preview}</pre>
+      ) : null}
       {input.otherActive ? (
         <textarea
           className="prompt-card__other"
@@ -443,6 +536,17 @@ function renderOptions(input: {
               input.onOtherEnter();
             }
           }}
+        />
+      ) : null}
+      {input.showNotes ? (
+        <textarea
+          className="prompt-card__note"
+          placeholder="Add a note (optional) — sent with your answer"
+          value={input.notes}
+          rows={2}
+          spellCheck={false}
+          aria-label="Note for this answer"
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => input.onNotes(event.currentTarget.value)}
         />
       ) : null}
     </>

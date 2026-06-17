@@ -23,7 +23,7 @@
 //   turn: the model is told and continues (verified live, 02-deny-flow.jsonl).
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-import type { ComposerAttachmentRef, PromptState } from "../../../../application/domains/thread/thread.ts";
+import type { ComposerAttachmentRef, PromptDetail, PromptState } from "../../../../application/domains/thread/thread.ts";
 import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   StructuredClientCallbacks,
@@ -490,8 +490,13 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   ): void {
     if (method === "item/commandExecution/requestApproval") {
       const command = stringField(params, "command") ?? "Run command";
+      const cwd = stringField(params, "cwd");
       const reason = stringField(params, "reason");
-      this.surfaceApproval(serverRequestId, reason !== undefined ? `${command} — ${reason}` : command);
+      this.surfaceApproval(
+        serverRequestId,
+        reason !== undefined ? `Run command — ${reason}` : "Run command",
+        { format: "text", body: cwd !== undefined ? `${command}\n\n# cwd: ${cwd}` : command },
+      );
       return;
     }
     if (method === "item/fileChange/requestApproval") {
@@ -499,6 +504,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       this.surfaceApproval(
         serverRequestId,
         reason !== undefined ? `Apply file changes — ${reason}` : "Apply file changes",
+        buildCodexFileChangeDetail(params),
       );
       return;
     }
@@ -509,7 +515,11 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     }
   }
 
-  private surfaceApproval(serverRequestId: number | string, message: string): void {
+  private surfaceApproval(
+    serverRequestId: number | string,
+    message: string,
+    detail?: PromptDetail,
+  ): void {
     const promptId = `codex-perm-${String(serverRequestId)}`;
     this.pendingApprovals.set(promptId, serverRequestId);
     const promptState: PromptState = {
@@ -518,6 +528,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       agentId: "codex",
       kind: "approval",
       message,
+      ...(detail !== undefined ? { detail } : {}),
       choices: [
         { choiceId: "allow", label: "Allow", providerValue: CODEX_ACCEPT_TOKEN },
         { choiceId: "deny", label: "Deny", providerValue: CODEX_DECLINE_TOKEN },
@@ -697,4 +708,44 @@ function numberField(record: Record<string, unknown>, key: string): number | und
 
 function bounded(text: string): string {
   return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
+}
+
+// Build an approval-card detail from a codex `item/fileChange/requestApproval`. The exact
+// payload shape isn't pinned by a captured fixture yet (see spec residual risk), so probe
+// the common carriers defensively: a top-level unified-diff string, or a `changes[]` array
+// of `{ path, diff|unifiedDiff }`. Returns undefined (headline only) when nothing parses —
+// no worse than today, strictly better when the shape matches.
+export function buildCodexFileChangeDetail(params: Record<string, unknown>): PromptDetail | undefined {
+  const directDiff =
+    stringField(params, "unifiedDiff") ?? stringField(params, "diff") ?? stringField(params, "patch");
+  if (directDiff !== undefined) {
+    return { format: "diff", body: bounded(directDiff) };
+  }
+  const changes = Array.isArray(params.changes) ? params.changes : undefined;
+  if (changes === undefined) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  const locations: string[] = [];
+  for (const change of changes) {
+    if (!isRecord(change)) {
+      continue;
+    }
+    const path = stringField(change, "path");
+    if (path !== undefined) {
+      locations.push(path);
+    }
+    const diff = stringField(change, "unifiedDiff") ?? stringField(change, "diff");
+    if (diff !== undefined) {
+      parts.push(path !== undefined ? `# ${path}\n${diff}` : diff);
+    }
+  }
+  if (parts.length === 0) {
+    return undefined;
+  }
+  return {
+    format: "diff",
+    body: bounded(parts.join("\n\n")),
+    ...(locations.length > 0 ? { locations } : {}),
+  };
 }

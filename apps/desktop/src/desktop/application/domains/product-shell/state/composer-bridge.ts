@@ -99,8 +99,9 @@ export function selectProductShellChoiceSurfaceRow(
 export function answerProductShellPromptText(
   state: ProductShellState,
   value: string,
+  notes?: string,
 ): ProductShellUpdateResult {
-  const result = answerPromptText(agentChatWithProjects(state), value);
+  const result = answerPromptText(agentChatWithProjects(state), value, notes);
   return { state: { ...state, agentChat: result.state }, command: result.command };
 }
 

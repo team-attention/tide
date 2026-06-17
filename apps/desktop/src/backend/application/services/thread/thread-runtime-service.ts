@@ -745,6 +745,7 @@ async answerPrompt(
       kind: "prompt_answer",
       value: promptAnswerValue(thread.promptState, input),
       choiceId: input.choiceId,
+      notes: input.notes,
       promptId: input.promptId,
       stepAnswers: input.stepAnswers,
       submittedAt: this.clock(),

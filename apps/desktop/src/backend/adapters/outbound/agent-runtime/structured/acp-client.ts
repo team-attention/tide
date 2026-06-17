@@ -36,6 +36,7 @@ import type {
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
+import { acpOptionKind, buildAcpPermissionDetail } from "./acp-permission.ts";
 
 export const GEMINI_OPTION_PREFIX = "structured:gemini-option:";
 
@@ -614,10 +615,14 @@ class AcpClient implements StructuredRuntimeClient {
         if (optionId === undefined || name === undefined) {
           return undefined;
         }
+        // ACP options carry a native `kind` (allow_once/allow_always/reject_*); surface it
+        // so the card can style + default by semantic instead of guessing from the id.
+        const kind = acpOptionKind(option);
         return {
           choiceId: optionId,
           label: name,
           providerValue: `${GEMINI_OPTION_PREFIX}${optionId}`,
+          ...(kind !== undefined ? { kind } : {}),
         };
       })
       .filter((choice): choice is PromptChoice => choice !== undefined);
@@ -626,22 +631,28 @@ class AcpClient implements StructuredRuntimeClient {
     }
     const promptId = `gemini-perm-${String(serverRequestId)}`;
     this.pendingPermissions.set(promptId, serverRequestId);
-    // gemini's own option order is [Allow always, Allow once, Reject]. Tide
-    // cards preselect the FIRST option, and plain "Allow once" is the right
-    // default — order it first (the structured answer routes by optionId, so
-    // display order is free).
-    choices.sort((a, b) => {
-      const rank = (choice: PromptChoice): number =>
-        choice.choiceId === "proceed_once" ? 0 : choice.choiceId.startsWith("proceed") ? 1 : 2;
-      return rank(a) - rank(b);
-    });
-    const allowOnce = choices.find((choice) => choice.choiceId === "proceed_once");
+    // Order allow-once first so the card preselects it (the answer routes by optionId, so
+    // display order is free). Prefer the native ACP option `kind`; fall back to the optionId
+    // convention (gemini's `proceed_once`/`proceed`) only when `kind` is absent.
+    const rank = (choice: PromptChoice): number => {
+      if (choice.kind === "allow_once") return 0;
+      if (choice.kind === "allow_always") return 1;
+      if (choice.kind === "reject_once" || choice.kind === "reject_always") return 3;
+      return choice.choiceId === "proceed_once" ? 0 : choice.choiceId.startsWith("proceed") ? 1 : 2;
+    };
+    choices.sort((a, b) => rank(a) - rank(b));
+    const allowOnce =
+      choices.find((choice) => choice.kind === "allow_once") ??
+      choices.find((choice) => choice.choiceId === "proceed_once");
+    // The diff/command preview + affected paths behind this permission (ACP toolCall).
+    const detail = buildAcpPermissionDetail(toolCall);
     const promptState: PromptState = {
       promptId,
       threadId: this.tideThreadId,
       agentId: this.agentId,
       kind: "approval",
       message: title,
+      ...(detail !== undefined ? { detail } : {}),
       choices,
       defaultChoiceId: (allowOnce ?? choices[0]).choiceId,
       source: "provider_hook",

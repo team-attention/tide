@@ -131,7 +131,7 @@ export interface ProductShellHandlers {
   onAddContentToChat: (chip: { kind: "code" | "terminal" | "browser" | "message"; label: string; text: string }) => void;
   onRemoveContextChip: (id: string) => void;
   onSetContextChipComment: (id: string, comment: string) => void;
-  onAnswerPromptText: (value: string) => void;
+  onAnswerPromptText: (value: string, notes?: string) => void;
   // Submit a multi-step prompt (wizard): one answer per step, all at once.
   onAnswerPromptSteps: (stepAnswers: AgentChatPromptStepAnswer[]) => void;
   onSubmit: () => void;

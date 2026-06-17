@@ -23,6 +23,8 @@ export interface TerminalInput {
   submittedAt: string;
   promptId?: string;
   choiceId?: string;
+  // Free-text note on a single-question AskUserQuestion answer (→ claude annotations).
+  notes?: string;
   // Multi-step prompt (wizard) answers, one per step. Forwarded to the structured write.
   stepAnswers?: PromptStepAnswer[];
   attachments?: ComposerAttachmentRef[];
