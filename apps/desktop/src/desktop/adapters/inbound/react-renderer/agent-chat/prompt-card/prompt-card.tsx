@@ -104,7 +104,8 @@ function SinglePromptCard(props: {
     : selectedId !== null;
   const submit = () => {
     // Notes only ride on AskUserQuestion answers (claude annotations); undefined elsewhere.
-    const note = isAUQ && notes.trim().length > 0 ? notes.trim() : undefined;
+    // Never on an "Other…" reply — that field is hidden then, so it'd be a stale, invisible note.
+    const note = isAUQ && !otherActive && notes.trim().length > 0 ? notes.trim() : undefined;
     if (multiSelect) {
       if (selectedIds.size === 0) {
         return;
@@ -306,7 +307,8 @@ function WizardPromptCard(props: {
   const submit = () => {
     props.onAnswerSteps(
       steps.map((eachStep, index) => {
-        const note = answers[index].notes.trim();
+        // The note field is hidden while a step's "Other…" is active, so don't ship one then.
+        const note = answers[index].otherActive ? "" : answers[index].notes.trim();
         return {
           stepId: eachStep.stepId,
           value: resolveStepValue(eachStep, answers[index]),
@@ -467,8 +469,9 @@ function renderOptions(input: {
   onPickOther: () => void;
   onOtherText: (value: string) => void;
   onOtherEnter: () => void;
-  // AskUserQuestion-only: a free-text note that rides alongside the answer (claude
-  // annotations), shown below the options. Coexists with a selection (not mutually exclusive).
+  // AskUserQuestion-only: a free-text note that rides alongside a *listed* selection
+  // (claude annotations), shown below the options. Hidden while "Other…" is active — the
+  // custom-reply field is already the free-text input, so a second box would be redundant.
   showNotes: boolean;
   notes: string;
   onNotes: (value: string) => void;
@@ -542,7 +545,7 @@ function renderOptions(input: {
           }}
         />
       ) : null}
-      {input.showNotes ? (
+      {input.showNotes && !input.otherActive ? (
         <textarea
           className="prompt-card__note"
           placeholder="Add a note (optional) — sent with your answer"
