@@ -64,6 +64,9 @@ export interface TideMcpToolHandlerDeps {
   workbenchFileOps: WorkbenchFileOperations;
   workbenchExec: WorkbenchExecOperations;
   browserCapture: BrowserCaptureCoordinator;
+  // Ceiling for the observe-time capture round-trip. Defaults to BROWSER_CAPTURE_PULL_TIMEOUT_MS;
+  // a backend-only test (no renderer to reply) injects a tiny value so observe degrades at once.
+  browserCapturePullTimeoutMs?: number;
 }
 
 export class TideMcpToolHandler {
@@ -74,6 +77,7 @@ export class TideMcpToolHandler {
   private readonly workbenchFileOps: WorkbenchFileOperations;
   private readonly workbenchExec: WorkbenchExecOperations;
   private readonly browserCapture: BrowserCaptureCoordinator;
+  private readonly browserCapturePullTimeoutMs: number;
 
   constructor(deps: TideMcpToolHandlerDeps) {
     this.store = deps.store;
@@ -83,6 +87,8 @@ export class TideMcpToolHandler {
     this.workbenchFileOps = deps.workbenchFileOps;
     this.workbenchExec = deps.workbenchExec;
     this.browserCapture = deps.browserCapture;
+    this.browserCapturePullTimeoutMs =
+      deps.browserCapturePullTimeoutMs ?? BROWSER_CAPTURE_PULL_TIMEOUT_MS;
   }
 
   listTools(): TideMcpToolDefinition[] {
@@ -146,7 +152,7 @@ export class TideMcpToolHandler {
     pane.pendingCapture = { captureId, requestedAt: this.clock() };
     try {
       this.emitAsyncEvent({ kind: "workbench_changed", thread: snapshotThread(thread) });
-      return await this.browserCapture.request(captureId, BROWSER_CAPTURE_PULL_TIMEOUT_MS);
+      return await this.browserCapture.request(captureId, this.browserCapturePullTimeoutMs);
     } finally {
       // On the happy path the result command already cleared pendingCapture; clear it here for
       // the timeout path (and an unexpected emit/await throw) and re-broadcast so the renderer

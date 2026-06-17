@@ -478,6 +478,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       workbenchFileOps: this.workbenchFileOps,
       workbenchExec: this.workbenchExec,
       browserCapture,
+      browserCapturePullTimeoutMs: input.browserCapturePullTimeoutMs,
     });
     this.workbenchCmd = new WorkbenchCommandHandler({
       threads: this.threads,

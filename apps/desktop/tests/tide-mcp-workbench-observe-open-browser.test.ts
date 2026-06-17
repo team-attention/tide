@@ -57,6 +57,7 @@ test("mcp_session_without_explicit_thread_id_resolves_thread_from_agent_runtime_
   // UC-1 BR-1: MCP Session resolves Thread.
   const fakes = createFakes();
   const service = createThreadRuntimeService({
+    browserCapturePullTimeoutMs: 20,
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -84,6 +85,7 @@ test("mcp_session_without_explicit_thread_id_resolves_thread_from_agent_runtime_
 test("tide_mcp_tool_surface_lists_bounded_workbench_tools", () => {
   // UC-1 BR-2: Tool list is bounded.
   const service = createThreadRuntimeService({
+    browserCapturePullTimeoutMs: 20,
     ...createFakes().ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -315,6 +317,7 @@ test("mcp_mutating_workbench_tool_emits_workbench_changed_async_event", async ()
   // Spec: docs_v2/specs/tide-mcp-workbench-mutation-events.md
   const events: ThreadRuntimeAsyncEvent[] = [];
   const service = createThreadRuntimeService({
+    browserCapturePullTimeoutMs: 20,
     ...createFakes().ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -339,6 +342,7 @@ test("mcp_observe_tool_does_not_emit_workbench_changed_async_event", async () =>
   // Spec: docs_v2/specs/tide-mcp-workbench-mutation-events.md
   const events: ThreadRuntimeAsyncEvent[] = [];
   const service = createThreadRuntimeService({
+    browserCapturePullTimeoutMs: 20,
     ...createFakes().ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -364,6 +368,7 @@ test("opening_browser_uses_tide_workbench_and_not_external_browser", async () =>
   // UC-3 BR-2: Open Browser does not open OS browser.
   const fakes = createFakes();
   const service = createThreadRuntimeService({
+    browserCapturePullTimeoutMs: 20,
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -438,6 +443,7 @@ test("browser_action_tool_schedules_pending_click_for_desktop_webview", async ()
   // Spec: docs_v2/specs/tide-mcp-browser-action-tool.md
   const events: ThreadRuntimeAsyncEvent[] = [];
   const service = createThreadRuntimeService({
+    browserCapturePullTimeoutMs: 20,
     ...createFakes().ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -1273,6 +1279,7 @@ function serviceWithActiveThreads(
   fakes = createFakes(),
 ) {
   return createThreadRuntimeService({
+    browserCapturePullTimeoutMs: 20,
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),

@@ -34,9 +34,10 @@ const PINNED_MAX: Record<string, number> = {
   // +8: checkReadiness replaces the WHOLE agentBinding (runtimeSource + cleared session), not just
   // agentId, so a switched agent can't inherit a stale source/session (Gemini review on PR #136).
   // The full thread-runtime-service split is still the real fix.
-  // +6: wiring the shared BrowserCaptureCoordinator into the MCP + workbench-command handlers
-  // for the observe-time screenshot pull (browser-pane-screenshot-on-load-decoupling).
-  "backend/application/services/thread/thread-runtime-service.ts": 1672,
+  // +7: wiring the shared BrowserCaptureCoordinator into the MCP + workbench-command handlers
+  // for the observe-time screenshot pull + the injectable pull timeout
+  // (browser-pane-screenshot-on-load-decoupling).
+  "backend/application/services/thread/thread-runtime-service.ts": 1673,
   // The inbound command switch (already at the 800 cap) gained the
   // provider.discoverCommands handler for live command mirroring, then the
   // thread.launchOptionsChanged event builder gained the applied + changedKeys
