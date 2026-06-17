@@ -20,6 +20,7 @@ import type {
   AgentId,
   ProviderCliAgentId,
 } from "../../../../application/domains/thread/thread.ts";
+import type { ProviderUpdateAdvisory } from "../../../../application/domains/provider-readiness/provider-readiness.ts";
 import {
   isProviderCliAgentId,
   sessionRefKindForAgent,
@@ -62,8 +63,22 @@ export interface CreateAgentIntegrationRuntimePortInput {
   idGenerator?: () => string;
 }
 
+// A synchronous source of "a newer CLI is published" advisories, consulted while
+// building readiness. The implementation (infra) caches versions and refreshes
+// off the critical path; here it is a pure lookup so readiness never blocks on a
+// subprocess or the network. Spec: version-management.md (Lane 2).
+export interface AgentCliUpdateChecker {
+  advisoryFor(
+    agentId: ProviderCliAgentId,
+    cwd: string,
+  ): ProviderUpdateAdvisory | undefined;
+}
+
 export interface CreateAgentIntegrationProviderReadinessPortInput {
   integrations: AgentIntegrationRegistry;
+  // Optional: attaches a non-blocking update advisory to the readiness result.
+  // Absent ⇒ no advisory (older wiring / tests that don't exercise updates).
+  updateChecker?: AgentCliUpdateChecker;
 }
 
 export function createAgentIntegrationProviderReadinessPort(
@@ -93,6 +108,15 @@ export function createAgentIntegrationProviderReadinessPort(
         launchOptions: checkInput.launchOptions,
       });
 
+      // A Provider Setup Surface terminal needs a working directory; the update
+      // is a global npm install, so the exact dir does not matter — use the
+      // thread's cwd when scoped, else the backend default.
+      const cwd =
+        checkInput.scope !== undefined && "cwd" in checkInput.scope
+          ? checkInput.scope.cwd
+          : ".";
+      const update = input.updateChecker?.advisoryFor(result.agentId, cwd);
+
       return {
         agentId: result.agentId,
         ready: result.ready,
@@ -105,6 +129,8 @@ export function createAgentIntegrationProviderReadinessPort(
         })),
         // Surface the runtime capabilities the service routes on (mid-turn steer).
         capabilities: { supportsTurnSteer: result.capabilities.supportsTurnSteer },
+        // Non-blocking: present only when a newer CLI is published; never gates `ready`.
+        ...(update ? { update } : {}),
       };
     },
   };

@@ -6,6 +6,7 @@ import { installApplicationMenu } from "./app-menu.ts";
 import { applyHostZoom } from "./zoom.ts";
 import { appRendererUrl, createMainWindow } from "./main-window.ts";
 import { registerNotificationBridge } from "./notifications.ts";
+import { registerAutoUpdate } from "./auto-update.ts";
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from "electron";
 
 import { basename, dirname, join } from "node:path";
@@ -556,6 +557,11 @@ ipcMain.handle("tide:backend-command", async (_event, command: BackendCommandEnv
 // needs-input / update event, main delivers it through the window-focus gate and routes
 // a click to thread activation. See specs/focus-aware-notifications.md.
 registerNotificationBridge(() => BrowserWindow.getAllWindows()[0]);
+
+// App self-update (packaged builds only): check the GitHub release feed in the
+// background and push status to the renderer's "Update & Restart" pill; the click
+// applies it. Inert in dev / unpackaged / test. See specs/version-management.md.
+registerAutoUpdate(() => BrowserWindow.getAllWindows()[0]);
 
 // Keep a stray error from hard-aborting the main process (SIGTRAP/brk). Log it
 // instead so the app survives and the cause is diagnosable.

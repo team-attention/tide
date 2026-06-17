@@ -46,6 +46,52 @@ test("package_scripts_declare_v2_electron_tooling", () => {
   assert.equal(packageJson.scripts.test, "npm run test:v2");
 });
 
+// Spec: version-management.md (Lane 1) — the app self-update feed config.
+test("electron_builder_declares_the_auto_update_feed", () => {
+  const config = JSON.parse(
+    fs.readFileSync(path.join(repoRoot, "electron-builder.json"), "utf8"),
+  ) as {
+    publish?: { provider?: string; owner?: string; repo?: string };
+    mac?: { target?: string[]; notarize?: { teamId?: string } };
+  };
+
+  // electron-updater needs the zip target + a generated latest-mac.yml; the dmg
+  // stays for first install.
+  assert.ok(config.mac?.target?.includes("zip"), "mac target must include zip for auto-update");
+  assert.ok(config.mac?.target?.includes("dmg"), "mac target keeps dmg for first install");
+  // The DEDICATED, Tide-desktop-only release repo electron-updater polls — so the v1
+  // Rust app's `v*` releases in the monorepo never confuse the stock GitHub provider.
+  assert.equal(config.publish?.provider, "github");
+  assert.equal(config.publish?.owner, "eatnug");
+  assert.equal(config.publish?.repo, "tide-desktop-releases");
+  // Notarization moves into electron-builder so the zip's app (not just the dmg) is
+  // notarized — an auto-updated app must pass Gatekeeper.
+  assert.equal(config.mac?.notarize?.teamId, "D86BXTY5VR");
+});
+
+test("electron_updater_is_a_runtime_dependency", () => {
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
+  ) as { dependencies?: Record<string, string> };
+  // Runtime (not dev) dep: the packaged Main process requires it, and electron-builder
+  // bundles `dependencies` into the app.
+  assert.ok(
+    packageJson.dependencies?.["electron-updater"] !== undefined,
+    "electron-updater must be a runtime dependency",
+  );
+});
+
+test("desktop_release_workflow_publishes_to_the_dedicated_repo", () => {
+  const workflow = fs.readFileSync(
+    path.join(repoRoot, "../../.github/workflows/desktop-release.yml"),
+    "utf8",
+  );
+  // electron-builder publishes straight to the dedicated releases repo, using a PAT
+  // (the default GITHUB_TOKEN can't write to another account/repo).
+  assert.match(workflow, /--publish always/);
+  assert.match(workflow, /DESKTOP_RELEASES_TOKEN/);
+});
+
 test("provider_smoke_script_is_opt_in", () => {
   const packageJson = readPackageJson();
   const smokeScript = fs.readFileSync(path.join(repoRoot, "scripts/v2-provider-smoke.mjs"), "utf8");
@@ -271,7 +317,8 @@ test("package_mac_script_targets_electron_builder_mac_package", () => {
   };
 
   assert.equal(packageJson.scripts["package:mac"], "node scripts/v2-tooling-command.mjs electron-builder --mac");
-  assert.deepEqual(electronBuilderConfig.mac.target, ["dmg"]);
+  // dmg (first install) + zip (electron-updater feed); see version-management.md.
+  assert.deepEqual(electronBuilderConfig.mac.target, ["dmg", "zip"]);
   assert.ok(electronBuilderConfig.files.includes("out/**"));
 });
 

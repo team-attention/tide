@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { TideProductShell } from "../../../adapters/inbound/react-renderer/product-shell/product-shell.tsx";
 import { AppErrorFallback, ErrorBoundary } from "../../../adapters/inbound/react-renderer/product-shell/support/error-boundary.tsx";
 import { GlobalZoomIndicator } from "../../../adapters/inbound/react-renderer/product-shell/support/global-zoom.tsx";
+import { AppUpdatePill } from "../../../adapters/inbound/react-renderer/product-shell/support/app-update-pill.tsx";
 import type {
   AgentChatBackendEvent,
 } from "../../../application/domains/agent-chat/agent-chat.ts";
@@ -82,6 +83,7 @@ export function createInitialRendererElement() {
     />
     </ErrorBoundary>
     <GlobalZoomIndicator />
+    <AppUpdatePill />
     </>
   );
 }
@@ -126,6 +128,22 @@ declare global {
       }): void;
       // Main asks the renderer to activate a thread (a clicked notification).
       onActivateThread(listener: (threadId: string) => void): () => void;
+      // App self-update (packaged only; inert otherwise). Main pushes status as it
+      // checks/downloads; applyAppUpdate triggers quitAndInstall on the user's click.
+      onAppUpdateChanged(
+        listener: (
+          status:
+            | { phase: "idle" }
+            | { phase: "checking" }
+            | { phase: "downloading"; version: string; percent: number }
+            | { phase: "ready"; version: string; notes?: string }
+            | { phase: "upToDate"; currentVersion: string }
+            | { phase: "error"; message: string },
+        ) => void,
+      ): () => void;
+      applyAppUpdate(): void;
+      checkForAppUpdate(): void;
+      getAppVersion(): Promise<string>;
       openDirectory(): Promise<string | null>;
       listProjects(): Promise<{ projectId: string; name: string; cwd: string }[]>;
       registerProject(cwd: string): Promise<{ projectId: string; name: string; cwd: string }[]>;

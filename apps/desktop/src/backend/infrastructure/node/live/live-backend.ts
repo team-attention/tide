@@ -1,5 +1,6 @@
 import { discoverAdoptedThreadSeeds, rebuildAdoptedConversation } from "./live-provider-discovery.ts";
 import { resolveExecutable } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
+import { createLiveAgentUpdateChecker } from "../provider/agent-update-checker.ts";
 import { locateClaudeTranscriptFile } from "../../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
 import { tideClaudeContextPrompt } from "../../../adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
 import { createLiveAgentSessionEventProjector, nextEventId, persistThreadBlocks } from "./live-projector.ts";
@@ -289,6 +290,12 @@ export function createLiveBackendContractMessageAdapter(
       },
     }),
   };
+  // Background agent-CLI update detection (spec: version-management.md, Lane 2).
+  const agentUpdateChecker = createLiveAgentUpdateChecker({
+    agentIds: Object.keys(integrations) as ProviderCliAgentId[],
+    resolveExecutable,
+  });
+
   let service: ThreadRuntimeService;
   const ptyLauncher = createPythonPtyProcessLauncher();
   const openAiAccountReader = createEnvironmentOpenAiProviderAccountReader(env);
@@ -347,6 +354,7 @@ export function createLiveBackendContractMessageAdapter(
     providerReadinessPort: createProviderReadinessRouterPort({
       providerCliReadiness: createAgentIntegrationProviderReadinessPort({
         integrations,
+        updateChecker: agentUpdateChecker,
       }),
       tideApiReadiness: createOpenAiProviderAccountReadinessPort({
         readAccount: openAiAccountReader,

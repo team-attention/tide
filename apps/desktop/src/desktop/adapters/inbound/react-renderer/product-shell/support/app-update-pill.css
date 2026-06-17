@@ -1,0 +1,47 @@
+/* App self-update pill (spec: version-management.md, Lane 1). Floats at the
+   top-center, out of the way of the bottom-right zoom indicator and the composer.
+   The "ready" state is a prominent action button; "downloading" is a quiet hint. */
+.app-update-pill {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 13px;
+  border: 1px solid var(--tide-line);
+  border-radius: 14px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: var(--tide-shadow-popover, 0 8px 18px -10px rgb(0 0 0 / 35%));
+}
+
+button.app-update-pill {
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+/* "ready" is the call to action — fill it so it reads as a button, not a label. */
+.app-update-pill--ready {
+  background: var(--tide-text);
+  color: var(--tide-bg);
+  border-color: var(--tide-text);
+}
+
+.app-update-pill--ready:hover {
+  transform: translateX(-50%) translateY(-1px);
+}
+
+.app-update-pill--ready:focus-visible {
+  outline: 2px solid var(--tide-text);
+  outline-offset: 2px;
+}
+
+.app-update-pill--downloading {
+  opacity: 0.85;
+  font-weight: 500;
+}

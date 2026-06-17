@@ -1,8 +1,11 @@
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
+import { promisify } from "node:util";
 
 import type { ProviderSetupSurfaceAction } from "../../../../application/ports/outbound/agent-integration-port.ts";
 // Provider CLI executable knowledge (audit A5/5.2): owned by the agent
 // integrations, consumed by infrastructure when spawning runtimes.
+
+const execFileAsync = promisify(execFile);
 
 export // Extracted from live-backend.ts (spec: navigable-source-structure).
 
@@ -63,4 +66,60 @@ export function resolveExecutable(command: string): string | undefined {
   }
   const resolved = result.stdout.trim();
   return resolved.length > 0 ? resolved : undefined;
+}
+
+// Build the Setup Surface action that updates an installed CLI in place:
+// `npm install -g <package>@latest` in the visible terminal, re-running preflight
+// on exit so the update advisory clears once the new version is on PATH. The
+// update counterpart of npmInstallSetupAction. Spec: version-management.md.
+export function npmUpdateSetupAction(input: {
+  npmPath: string;
+  agentId: "codex" | "claude" | "gemini" | "opencode";
+  cwd: string;
+}): ProviderSetupSurfaceAction {
+  return {
+    command: input.npmPath,
+    args: ["install", "-g", `${installPackageForAgent(input.agentId)}@latest`],
+    cwd: input.cwd,
+    expectedCompletion: "retry_preflight",
+  };
+}
+
+// The first semver-looking token in a CLI's `--version` / `npm view` output.
+// CLIs print version lines in different shapes ("1.2.3", "codex-cli 0.20.0",
+// "1.2.3 (Claude Code)"), so anchor on the version token, not the whole line.
+function parseVersionToken(text: string): string | undefined {
+  const match = text.match(/(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/);
+  return match?.[1];
+}
+
+// Read the installed version of a provider CLI by running `<exe> --version`.
+// Local + cheap; undefined when the binary cannot spawn or prints no version.
+// Some CLIs print the version to stderr, so both streams are scanned.
+export function providerVersionForExecutable(executablePath: string): string | undefined {
+  const result = spawnSync(executablePath, ["--version"], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  if (result.error !== undefined) {
+    return undefined;
+  }
+  return parseVersionToken(`${result.stdout ?? ""}\n${result.stderr ?? ""}`);
+}
+
+// Read the latest published version of an npm package via `npm view <pkg>
+// version`. Network I/O — async so the background update probe never blocks the
+// backend event loop; undefined on any failure (offline, missing npm, timeout).
+export async function latestPublishedVersion(
+  pkg: string,
+  npmPath: string,
+): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync(npmPath, ["view", pkg, "version"], {
+      timeout: 15000,
+    });
+    return parseVersionToken(stdout);
+  } catch {
+    return undefined;
+  }
 }

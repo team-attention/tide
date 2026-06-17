@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { handleComposerPaste } from "./attachments.ts";
 import { ArrowUp, Check, ChevronDown, Plus, ShieldCheck, Square, X } from "lucide-react";
 import { chipAnchorFromEvent, contextChipIcon, createContextChip } from "./context-chips.tsx";
-import { createProviderReadiness } from "../readiness/readiness.ts";
+import { createProviderReadiness, createProviderUpdateNudge } from "../readiness/readiness.ts";
 import { PromptCard } from "../prompt-card/prompt-card.tsx";
 import { createUsageMeter } from "./usage-meter.tsx";
 import { createQueuedSteerStack } from "./steer-queue.tsx";
@@ -302,6 +302,7 @@ export function createComposerStack(
       {/* composer.activeSurface (chip dropdown) is rendered as an anchored popover
           by AgentChatShell. Provider readiness and prompt cards remain in flow. */}
       {createProviderReadiness(viewModel, handlers.onChoiceSurfaceRowSelect)}
+      {createProviderUpdateNudge(viewModel, handlers.onChoiceSurfaceRowSelect)}
       {viewModel.prompt ? (
         <PromptCard
           key={viewModel.prompt.promptId}
