@@ -578,8 +578,48 @@ test("AskUserQuestion wizard: only steps that carry a note are annotated", async
     });
     const response = await waitFor(() => receivedControlResponse(receivedFile), "control_response");
     assert.deepEqual(answersFrom(response), { "Pick one?": "A", "Describe it?": "C" });
-    // Only the step that carried a note is annotated.
     assert.deepEqual(annotationsFrom(response), { "Pick one?": { notes: "prefer the LTS one" } });
+  } finally {
+    await client.stop();
+  }
+});
+
+test("interrupt cleanly denies a pending AskUserQuestion (no stream-closed error)", async () => {
+  // Spec: waiting-state-recovery. Interrupting/stopping with a tool-permission request in
+  // flight used to close the control stream with no response -> claude recorded
+  // "Tool permission ... stream closed before response received" and worked around the
+  // "broken" tool. interrupt() must DENY the pending request first so claude records a
+  // clean cancellation. (A Stop while an AskUserQuestion card is up takes this path.)
+  const dir = mkdtempSync(join(tmpdir(), "tide-auq-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = createClaudeStreamJsonClient({
+    plan: fakeProviderPlan([{ question: "Pick?", header: "P", options: [{ label: "A" }] }], receivedFile),
+    threadId: "thread-1",
+    runtimeId: "rt-1",
+    onEvent,
+  });
+  try {
+    await waitFor(() => events[0], "AskUserQuestion prompt");
+    await client.interrupt();
+    const deny = await waitFor(() => {
+      if (!existsSync(receivedFile)) return undefined;
+      for (const line of readFileSync(receivedFile, "utf8").split("\n")) {
+        if (line.trim().length === 0) continue;
+        try {
+          const parsed = JSON.parse(line) as Record<string, unknown>;
+          const inner = (parsed.response as Record<string, unknown> | undefined)?.response as
+            | Record<string, unknown>
+            | undefined;
+          if (parsed.type === "control_response" && inner?.behavior === "deny") return parsed;
+        } catch {
+          // The fake appends concurrently — ignore a partially written line and retry.
+        }
+      }
+      return undefined;
+    }, "deny control_response");
+    const response = deny.response as Record<string, unknown>;
+    assert.equal(response.request_id, "req-1", "denies the pending request before aborting");
   } finally {
     await client.stop();
   }

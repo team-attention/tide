@@ -23,6 +23,13 @@ resume 2/2, 3 concurrent threads stuck-on-Working 0 — was 1):
   folded into `agentChatByThreadId[threadId]` as they arrive (not active-surface-only with
   hydrate-on-switch recovery, which raced under concurrency). Switching is a projection of
   already-current state; a background thread's card is waiting for you when you arrive.
+- **D — clean teardown of a pending tool permission.** Interrupting/stopping the claude
+  runtime while a tool-permission request (incl. AskUserQuestion) is in flight closed the
+  control stream with no response, so claude recorded `Tool permission request failed: ...
+  stream closed before response received` and then worked around the "broken" tool (e.g.
+  printing the question as plain text). `interrupt()`/`stop()` now DENY every pending
+  permission first, so claude records a clean cancellation. Pairs with C/B making Stop
+  reachable in waiting states (so a Stop while a card is up takes this path).
 
 ## Scope
 
