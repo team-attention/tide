@@ -1150,6 +1150,34 @@ test("opening_thread_with_workbench_context_renders_right_workbench_tabs", () =>
   assert.equal(view.appChrome.workbenchTabStrip.visibleTabs[0].active, true);
 });
 
+test("stacked_workbench_tab_strip_lists_every_open_pane_uncapped", () => {
+  // The Stacked strip scrolls horizontally (workbench.tsx), so it must surface EVERY
+  // open pane as a tab — never the legacy AppChrome 6-tab cap, which would silently drop
+  // panes past the 6th from the strip (no overflow menu exists here to reach them).
+  const opened = openProductShellThread(createProductShellState(), "thread-workbench");
+  const panes = Array.from({ length: 9 }, (_, index) => ({
+    paneId: `pane-many-${index}`,
+    kind: "browser" as const,
+    title: `Pane ${index}`,
+    visible: true,
+    revision: `pane-many-${index}:rev`,
+    updatedAt: "2026-05-28T00:00:00.000Z",
+    loading: false,
+  }));
+  const state = applyProductShellBackendEvent(opened, {
+    kind: "workbench.changed",
+    payload: { threadId: "thread-workbench", activePaneId: "pane-many-0", panes },
+  });
+  const view = createProductShellViewModel(state);
+
+  assert.equal(view.appChrome.workbenchTabStrip.visibleTabs.length, 9);
+  assert.equal(view.appChrome.workbenchTabStrip.overflowTabs.length, 0);
+  assert.deepEqual(
+    view.appChrome.workbenchTabStrip.visibleTabs.map((tab) => tab.title),
+    panes.map((pane) => pane.title),
+  );
+});
+
 test("right_workbench_tab_actions_emit_backend_commands_and_apply_workbench_events", () => {
   const opened = openProductShellThread(createProductShellState(), "thread-workbench");
   const focused = focusProductShellWorkbenchPane(opened, "pane-thread-workbench-diff");
