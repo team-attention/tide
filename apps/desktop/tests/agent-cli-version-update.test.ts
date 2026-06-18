@@ -182,6 +182,56 @@ test("update checker: advisory only after refresh, only when installed < latest"
   assert.equal(checker.advisoryFor("codex", "."), undefined);
 });
 
+test("readiness port: refreshUpdateAdvisories clears a stale advisory after an in-place update", async () => {
+  // The bug: after an in-place CLI update completes, readiness re-checks but reads a
+  // stale version cache, so the "Update <Agent>" chip lingers. The Setup Surface
+  // completion path awaits port.refreshUpdateAdvisories() before re-checking, which
+  // re-reads the (now newer) installed version and drops the advisory.
+  let installedClaude = "1.0.0";
+  const checker = createAgentUpdateChecker({
+    agentIds: ["claude"],
+    readInstalledVersion: async () => installedClaude,
+    readLatestVersion: async () => "1.2.0",
+    buildUpdateSetup: (id, cwd) => ({
+      command: "npm",
+      args: ["install", "-g", `${id}@latest`],
+      cwd,
+      expectedCompletion: "retry_preflight",
+    }),
+  });
+  await checker.refresh(); // seed the cache (installed 1.0.0 < latest 1.2.0)
+
+  const port = createAgentIntegrationProviderReadinessPort({
+    integrations: registryWith("claude", fakeIntegration({ agentId: "claude", ready: true, blockers: [] })),
+    updateChecker: checker,
+  });
+
+  const before = await port.check({ agentId: "claude" });
+  assert.ok(before.update, "precondition: advisory is present while installed < latest");
+
+  // The user runs the update — the CLI is now at latest.
+  installedClaude = "1.2.0";
+  // Stale cache would still report an advisory until this refresh runs.
+  await port.refreshUpdateAdvisories?.();
+
+  const after = await port.check({ agentId: "claude" });
+  assert.equal(after.update, undefined, "the advisory clears once the cache reflects the update");
+});
+
+test("readiness port: refreshUpdateAdvisories ignores advisory refresh failures", async () => {
+  const port = createAgentIntegrationProviderReadinessPort({
+    integrations: registryWith("claude", fakeIntegration({ agentId: "claude", ready: true, blockers: [] })),
+    updateChecker: {
+      advisoryFor: () => undefined,
+      async refresh() {
+        throw new Error("network unavailable");
+      },
+    },
+  });
+
+  await assert.doesNotReject(() => port.refreshUpdateAdvisories?.());
+});
+
 test("update checker: not installed or unknown latest yields no advisory", async () => {
   const checker = createAgentUpdateChecker({
     agentIds: ["claude", "codex"],

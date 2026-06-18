@@ -5,6 +5,7 @@ import test from "node:test";
 import MarkdownIt from "markdown-it";
 
 import {
+  headingAnchorPlugin,
   renderMarkdownCached,
   taskListPlugin,
 } from "../src/desktop/adapters/inbound/react-renderer/support/markdown-rendering.ts";
@@ -76,4 +77,20 @@ test("markdown_task_list_does_not_execute_raw_html", () => {
   // html:false still escapes raw HTML in the label even with the task plugin on.
   assert.doesNotMatch(html, /<img src=x onerror/);
   assert.match(html, /&lt;img/);
+});
+
+test("markdown_heading_anchors_match_github_style_slugs_and_deduplicate", () => {
+  const md = makeRenderer();
+  md.use(headingAnchorPlugin);
+  const html = renderMarkdownCached(
+    md,
+    "# Hello, World!\n\n## Hello World\n\n## Hello World\n\n## [GitHub](https://github.com) and `Code`\n",
+  );
+
+  assert.match(html, /<h1 id="hello-world">/);
+  assert.match(html, /href="#hello-world"/);
+  assert.match(html, /<h2 id="hello-world-1">/);
+  assert.match(html, /<h2 id="hello-world-2">/);
+  assert.match(html, /<h2 id="github-and-code">/);
+  assert.doesNotMatch(html, /githubhttpsgithubcom/);
 });

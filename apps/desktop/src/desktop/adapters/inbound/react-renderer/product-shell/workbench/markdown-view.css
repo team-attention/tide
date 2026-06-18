@@ -16,23 +16,27 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-  padding: 8px 16px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--tide-line);
 }
 
 /* The breadcrumb takes the left of the row and ellipsizes; its standalone padding
    is dropped here (the header row owns the spacing). */
 .workbench-md-header .workbench-editor-breadcrumb {
-  flex: 1 1 auto;
+  flex: 1 1 160px;
   padding: 0;
+  min-height: 28px;
 }
 
 .workbench-md-controls {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   margin-left: auto;
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -149,11 +153,11 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 12px 32px 40px;
+  padding: 22px clamp(18px, 5vw, 48px) 48px;
   color: var(--tide-text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
   font-size: 15px;
-  line-height: 22px;
+  line-height: 1.58;
 }
 
 /* A long markdown file renders its WHOLE tree at once (dangerouslySetInnerHTML,

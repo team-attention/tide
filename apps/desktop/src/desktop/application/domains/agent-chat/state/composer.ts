@@ -303,17 +303,12 @@ export function submitComposer(
       : `${chips.map(formatContextChipForMessage).join("\n\n")}${draft.length > 0 ? `\n\n${draft}` : ""}`;
 
   if (state.promptState) {
-    return {
-      state,
-      command: {
-        kind: "prompt.answer",
-        payload: {
-          threadId: state.promptState.threadId,
-          promptId: state.promptState.promptId,
-          value: input,
-        },
-      },
-    };
+    // A prompt card owns the response — answering is done on the card (its choices /
+    // "Other" field), never by flushing the composer. The composer stays typeable so a
+    // follow-up can be drafted, but Send is disabled until the prompt is answered; the
+    // draft is then sent as a normal follow-up. So submitting here is a no-op (keeps the
+    // draft). Spec: prompt-composer-send-gating.
+    return { state, command: null };
   }
 
   const messageAttachments = attachmentsForMessage(attachments);

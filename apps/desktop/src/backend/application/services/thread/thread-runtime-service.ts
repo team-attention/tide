@@ -1476,6 +1476,11 @@ private async replayPendingInputIfProviderReady(
     thread: ThreadRecord,
     pane: TerminalPaneState,
   ): Promise<void> {
+    // A Setup Surface just completed — refresh the cached agent-CLI versions BEFORE
+    // re-checking readiness so a just-updated CLI reports its new version (otherwise the
+    // "Update <Agent>" advisory reads a stale cache and lingers). Spec: version-management.
+    await this.providerReadinessPort.refreshUpdateAdvisories?.();
+
     const pendingInput = thread.pendingInput;
     if (pendingInput === undefined) {
       // Proactive onboarding (Composer slot select, no input yet): a Setup Surface just

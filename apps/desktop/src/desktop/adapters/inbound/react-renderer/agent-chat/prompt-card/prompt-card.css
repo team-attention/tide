@@ -329,13 +329,13 @@
 .prompt-card__detail-line { display: block; }
 
 .prompt-card__detail-line[data-line="add"] {
-  background: color-mix(in srgb, var(--tide-success, #2e8b57) 16%, transparent);
-  color: var(--tide-success, #2e8b57);
+  background: color-mix(in srgb, var(--tide-success) 16%, transparent);
+  color: var(--tide-success);
 }
 
 .prompt-card__detail-line[data-line="del"] {
-  background: color-mix(in srgb, var(--tide-danger, #d2453f) 16%, transparent);
-  color: var(--tide-danger, #d2453f);
+  background: color-mix(in srgb, var(--tide-danger) 16%, transparent);
+  color: var(--tide-danger);
 }
 
 .prompt-card__detail-locations { display: flex; flex-wrap: wrap; gap: 6px; }

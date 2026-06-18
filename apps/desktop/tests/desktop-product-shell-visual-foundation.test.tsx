@@ -66,6 +66,7 @@ import {
   writeProductShellTerminalInput,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import { AgentIdentityIcon, TideProductShell } from "../src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.tsx";
+import { filterFileTreeEntries } from "../src/desktop/adapters/inbound/react-renderer/product-shell/file-tree/file-tree.tsx";
 import {
   CONTRACT_VERSION,
   validateBackendCommandEnvelope,
@@ -937,9 +938,10 @@ test("thread_archived_event_removes_the_thread_from_the_list", () => {
 test("thread_rows_use_list_style_selection_not_card_blocks", () => {
   const css = readProductShellCss();
 
-  assert.match(css, /\.thread-row--active\s*{[^}]*background:\s*var\(--tide-selection\)/s);
+  assert.match(css, /\.thread-row--active\s*{[^}]*background:\s*color-mix\([^}]*var\(--tide-selection\)/s);
   assert.doesNotMatch(css, /\.thread-row--active\s*{[^}]*linear-gradient/s);
   assert.doesNotMatch(css, /\.thread-row--active\s*{[^}]*border-color/s);
+  assert.doesNotMatch(css, /\.thread-row(?:--active|\[data-[^\]]+\])?\s*{[^}]*border-left/s);
 });
 
 test("composer_is_anchored_inside_agent_chat", () => {
@@ -1577,6 +1579,23 @@ test("code_editor_pane_has_no_markdown_preview_toggle", () => {
   assert.match(html, /aria-label="Editor Pane text"/);
 });
 
+test("editor_breadcrumb_without_relative_path_is_static", () => {
+  const html = renderProductShell(
+    editorPaneState({
+      title: "Scratch",
+      bodyText: "temporary buffer\n",
+      bodyTextPreview: "temporary buffer\n",
+      byteLength: 17,
+      truncated: false,
+    }),
+  );
+
+  assert.match(html, /workbench-editor-breadcrumb/);
+  assert.match(html, /title="Scratch"/);
+  assert.doesNotMatch(html, /aria-label="Open Scratch"/);
+  assert.doesNotMatch(html, /aria-label="Reveal Scratch in FileTree"/);
+});
+
 test("markdown_editor_pane_renders_preview_with_rendered_headings", () => {
   // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-1)
   const html = renderProductShell(
@@ -1592,8 +1611,11 @@ test("markdown_editor_pane_renders_preview_with_rendered_headings", () => {
   );
   // Markdown renders to a Preview (rendered headings), not raw "# " source.
   assert.match(html, /aria-label="Markdown preview"/);
-  assert.match(html, /<h1>Tide — Project Rules<\/h1>/);
-  assert.match(html, /<h2>Evidence-First<\/h2>/);
+  assert.match(html, /<h1 id="tide-project-rules">/);
+  assert.match(html, /href="#tide-project-rules"/);
+  assert.match(html, /Tide — Project Rules<\/h1>/);
+  assert.match(html, /<h2 id="evidence-first">/);
+  assert.match(html, /Evidence-First<\/h2>/);
   assert.doesNotMatch(html, /# Tide — Project Rules/);
   // A Preview/Edit toggle is present for markdown.
   assert.match(html, /Markdown view mode/);
@@ -2388,6 +2410,46 @@ test("file_tree_opens_as_one_independent_column_next_to_workbench", () => {
   assert.match(html, /data-column="workbench"/);
   assert.match(html, /data-column="file-tree"/);
   assert.equal((html.match(/aria-label="FileTree"/g) ?? []).length, 1);
+  assert.match(html, /aria-label="Filter files"/);
+});
+
+test("file_tree_filter_matches_paths_and_keeps_ancestor_folders", () => {
+  const entries = [
+    { id: "d-src", name: "src", relativePath: "src", depth: 0, kind: "folder" as const },
+    {
+      id: "d-workbench",
+      name: "workbench",
+      relativePath: "src/workbench",
+      depth: 1,
+      kind: "folder" as const,
+    },
+    {
+      id: "f-editor",
+      name: "editor-pane.tsx",
+      relativePath: "src/workbench/editor-pane.tsx",
+      depth: 2,
+      kind: "file" as const,
+    },
+    { id: "f-readme", name: "README.md", relativePath: "README.md", depth: 0, kind: "file" as const },
+  ];
+
+  assert.deepEqual(
+    filterFileTreeEntries(entries, "editor").map((entry) => entry.relativePath),
+    ["src", "src/workbench", "src/workbench/editor-pane.tsx"],
+  );
+  assert.deepEqual(
+    filterFileTreeEntries(
+      [null as unknown as (typeof entries)[number], ...entries],
+      "EDITOR",
+    ).map((entry) => entry.relativePath),
+    ["src", "src/workbench", "src/workbench/editor-pane.tsx"],
+  );
+  assert.deepEqual(
+    filterFileTreeEntries(entries, "README").map((entry) => entry.relativePath),
+    ["README.md"],
+  );
+  assert.equal(filterFileTreeEntries(entries, "   "), entries);
+  assert.deepEqual(filterFileTreeEntries(entries, "missing"), []);
 });
 
 test("an_expanding_folder_renders_a_skeleton_child_row_while_children_load", () => {

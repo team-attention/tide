@@ -924,7 +924,10 @@ test("hydrating_thread_with_workbench_panes_marks_workbench_open", () => {
   assert.equal(view.workbenchOpen, true);
 });
 
-test("active_prompt_state_routes_submit_to_prompt_answer", () => {
+test("active_prompt_state_makes_submit_a_no_op_and_keeps_the_draft", () => {
+  // A prompt card owns the response; the composer must NOT flush its draft as the
+  // prompt answer. Submitting while a prompt is up is a no-op that keeps the draft as
+  // a follow-up. (The Send button is also rendered disabled — see the render test.)
   const withThread = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),
     backendEvent("thread.hydrated", {
@@ -940,17 +943,13 @@ test("active_prompt_state_routes_submit_to_prompt_answer", () => {
       prompt,
     }),
   );
-  const state = updateComposerDraft(withPrompt, "allow_once").state;
+  const state = updateComposerDraft(withPrompt, "a follow-up").state;
 
   const result = submitComposer(state);
-  const command = result.command ? toBackendCommandDraft(result.command) : null;
 
-  assert.equal(command?.kind, "prompt.answer");
-  assert.deepEqual(command?.payload, {
-    threadId: "thread-shell",
-    promptId: "prompt-approval",
-    value: "allow_once",
-  });
+  assert.equal(result.command, null, "submit does not answer the prompt from the composer");
+  assert.equal(result.state.composer.draft, "a follow-up", "the draft is preserved as a follow-up");
+  assert.ok(result.state.promptState, "the prompt card stays up");
 });
 
 test("provider_readiness_blocker_preserves_the_composer_draft_and_marks_shell_blocked", () => {

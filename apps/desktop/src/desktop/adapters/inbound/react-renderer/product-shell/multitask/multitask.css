@@ -28,8 +28,6 @@
 }
 
 .tide-product-shell[data-multitask] .thread-row__time,
-.tide-product-shell[data-multitask] .thread-row__attention,
-.tide-product-shell[data-multitask] .thread-row__running,
 .tide-product-shell[data-multitask] .thread-row__actions,
 .tide-product-shell[data-multitask] .thread-row:hover .thread-row__time,
 .tide-product-shell[data-multitask] .thread-row:hover .thread-row__actions {

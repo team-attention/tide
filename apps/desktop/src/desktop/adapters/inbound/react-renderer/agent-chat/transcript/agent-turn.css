@@ -49,7 +49,7 @@
 
 .agent-turn-actions__icon--check {
   display: none;
-  color: #3a9c5e;
+  color: var(--tide-success);
 }
 
 .agent-turn-actions__btn--done .agent-turn-actions__icon--copy {
@@ -61,5 +61,5 @@
 }
 
 .agent-turn-actions__btn--done {
-  color: #3a9c5e;
+  color: var(--tide-success);
 }

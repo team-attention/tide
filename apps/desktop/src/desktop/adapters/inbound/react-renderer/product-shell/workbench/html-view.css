@@ -15,14 +15,16 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-  padding: 8px 16px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--tide-line);
 }
 
 .workbench-html-header .workbench-editor-breadcrumb {
-  flex: 1 1 auto;
+  flex: 1 1 160px;
   padding: 0;
+  min-height: 28px;
 }
 
 .workbench-html-toggle {

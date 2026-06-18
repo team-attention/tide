@@ -57,14 +57,14 @@
 
 .column-top-row__git-add,
 .changes-panel__add {
-  color: #3a9a4e;
+  color: var(--tide-diff-add);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .column-top-row__git-del,
 .changes-panel__del {
-  color: var(--tide-danger, #d8453b);
+  color: var(--tide-danger);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -220,16 +220,16 @@
 }
 
 .changes-panel__status--modified {
-  color: #d8951a;
+  color: var(--tide-warn);
 }
 
 .changes-panel__status--added,
 .changes-panel__status--untracked {
-  color: #3a9a4e;
+  color: var(--tide-diff-add);
 }
 
 .changes-panel__status--deleted {
-  color: var(--tide-danger, #d8453b);
+  color: var(--tide-danger);
 }
 
 .changes-panel__status--renamed {

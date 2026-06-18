@@ -1,5 +1,9 @@
 import MarkdownIt from "markdown-it";
-import { renderMarkdownCached, taskListPlugin } from "../../support/markdown-rendering.ts";
+import {
+  headingAnchorPlugin,
+  renderMarkdownCached,
+  taskListPlugin,
+} from "../../support/markdown-rendering.ts";
 import { guessLanguage, highlightToHtml } from "../../support/code-highlight.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -14,9 +18,10 @@ import { WorkbenchCodeEditor } from "./code-editor.tsx";
 // added by the shared plugin; fenced code is highlighted by the bundled
 // CodeMirror/Lezer highlighter (no new highlighter dependency).
 // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (D5, D6).
-const markdownRenderer = new MarkdownIt({ html: false, linkify: true, typographer: true });
+const markdownRenderer = new MarkdownIt({ html: false, linkify: true, typographer: false });
 
 markdownRenderer.use(taskListPlugin);
+markdownRenderer.use(headingAnchorPlugin);
 
 markdownRenderer.renderer.rules.fence = (tokens, index) => {
   const token = tokens[index];

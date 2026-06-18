@@ -384,3 +384,10 @@
   background: var(--tide-action);
   color: var(--tide-bg);
 }
+
+/* While a prompt card is up the Send button is disabled (the card owns the
+   response; the draft is held as a follow-up). Quiet it so it reads as inert. */
+.composer-shell__send:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
