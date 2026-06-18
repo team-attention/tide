@@ -57,6 +57,7 @@ export const selectThreadListViewModel = shellSelector(
     (state: ProductShellState) => state.creatingWorktreeForProjectId,
     (state: ProductShellState) => state.leftRailMenu,
     (state: ProductShellState) => state.activeThreadId,
+    (state: ProductShellState) => state.agentChat.hydrating,
     (state: ProductShellState) => state.archiveConfirmThreadId,
     (state: ProductShellState) => state.renamingThreadId,
   ],
@@ -74,6 +75,7 @@ export const selectThreadListViewModel = shellSelector(
     creatingWorktreeForProjectId,
     leftRailMenu,
     activeThreadId,
+    activeThreadHydrating,
     archiveConfirmThreadId,
     renamingThreadId,
   ): ProductShellThreadListViewModel => {
@@ -94,7 +96,7 @@ export const selectThreadListViewModel = shellSelector(
       archiveConfirmThreadId,
       renamingThreadId,
     } as ProductShellState;
-    return buildThreadListViewModel(view);
+    return buildThreadListViewModel(view, { activeThreadHydrating });
   },
 );
 
@@ -329,7 +331,10 @@ function pinnedItemViewKey(item: ProductShellPinnedItemView): string {
 
 // Lifted out of createProductShellViewModel so selectThreadListViewModel can run the
 // EXACT original Left-Rail thread-list logic (output pinned by the static render tests).
-function buildThreadListViewModel(state: ProductShellState): ProductShellThreadListViewModel {
+function buildThreadListViewModel(
+  state: ProductShellState,
+  options: { activeThreadHydrating?: boolean } = {},
+): ProductShellThreadListViewModel {
   const query = state.searchQuery.trim().toLowerCase();
   const matchesSearch = (thread: ProductShellThread): boolean =>
     query.length === 0 || thread.title.toLowerCase().includes(query);
@@ -382,7 +387,7 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
       // Pinned threads are lifted to the Pinned section (spec: left-rail-manual-ordering),
       // so they no longer nest under their project group.
       .filter((thread) => inGroup(thread, project) && thread.pinned !== true)
-      .map((thread) => toThreadView(thread, state)),
+      .map((thread) => toThreadView(thread, state, options.activeThreadHydrating === true)),
     attention: state.threads.some(
       (thread) => inGroup(thread, project) && thread.attention === true,
     ),
@@ -406,7 +411,10 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
       .map((project) => ({ kind: "project" as const, project })),
     ...visibleThreads
       .filter((thread) => thread.pinned)
-      .map((thread) => ({ kind: "thread" as const, thread: toThreadView(thread, state) })),
+      .map((thread) => ({
+        kind: "thread" as const,
+        thread: toThreadView(thread, state, options.activeThreadHydrating === true),
+      })),
   ];
   const pinnedRank = new Map(
     state.pinnedItemOrder.map((ref, index) => [pinnedItemRefKey(ref), index] as const),
@@ -435,9 +443,11 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
   const scratchThreads = visibleThreads
     // Pinned scratch threads are lifted to the Pinned section too (review feedback).
     .filter((thread) => thread.scope.kind === "scratch" && thread.pinned !== true)
-    .map((thread) => toThreadView(thread, state));
+    .map((thread) => toThreadView(thread, state, options.activeThreadHydrating === true));
   // "thread" group mode: one flat, already-sorted list of every visible thread.
-  const flatThreads = visibleThreads.map((thread) => toThreadView(thread, state));
+  const flatThreads = visibleThreads.map((thread) =>
+    toThreadView(thread, state, options.activeThreadHydrating === true),
+  );
   // Rail render order, live set, and ⌥1..9 shortcut numbering — see finalizeThreadList.
   return finalizeThreadList({
     groupBy: state.listSettings.groupBy,
@@ -645,6 +655,7 @@ function createFileTreeView(state: ProductShellState): ProductShellFileTreeView 
 function toThreadView(
   thread: ProductShellThread,
   state: ProductShellState,
+  activeThreadHydrating = false,
 ): ProductShellThreadView {
   const worktreeCwd =
     thread.scope.kind === "project" && worktreeRepoRootForCwd(thread.scope.cwd) !== null
@@ -653,6 +664,7 @@ function toThreadView(
   return {
     ...thread,
     active: thread.threadId === state.activeThreadId,
+    hydrating: thread.threadId === state.activeThreadId && activeThreadHydrating,
     archiveConfirming: state.archiveConfirmThreadId === thread.threadId,
     renaming: state.renamingThreadId === thread.threadId,
     contextMenuOpen:

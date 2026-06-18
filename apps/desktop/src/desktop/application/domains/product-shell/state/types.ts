@@ -517,6 +517,10 @@ export interface ProductShellUpdateResult {
 
 export interface ProductShellThreadView extends ProductShellThread {
   active: boolean;
+  // True for the active row while the backend hydrate snapshot is still pending.
+  // Selection is already local, but the row should not take the committed active
+  // background until the Thread data has actually hydrated.
+  hydrating: boolean;
   archiveConfirming: boolean;
   renaming: boolean;
   contextMenuOpen: boolean;
