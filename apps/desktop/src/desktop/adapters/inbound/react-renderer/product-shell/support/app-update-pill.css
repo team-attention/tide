@@ -8,6 +8,10 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 2000;
+  /* The pill floats over the frameless window's top drag region (.column-top-row is
+     -webkit-app-region: drag). Without this, the OS treats clicks on the pill as a
+     window drag and the Download/Restart button never fires. Punch a no-drag hole. */
+  -webkit-app-region: no-drag;
   display: inline-flex;
   align-items: center;
   height: 28px;
