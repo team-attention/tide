@@ -1096,6 +1096,27 @@ test("a_turn_end_after_the_prompt_is_answered_still_settles_the_runtime", async 
   assert.equal(done.ok && done.thread.promptState, undefined);
 });
 
+test("answering_one_of_a_parallel_batch_keeps_the_promoted_sibling_against_a_stray_turn_end", async () => {
+  // claude blocks the WHOLE turn until every parallel can_use_tool is answered (verified
+  // live). Answering the visible card promotes the queued sibling; a stray/inferred
+  // turn-end must NOT drop that still-unanswered promoted card — doing so orphans claude's
+  // pending request and wedges the turn "Working" forever with no card. Regression for
+  // claude-parallel-permission-wedge.md.
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "do it" });
+  await service.recordProviderPromptState({ threadId: "thread-busy", promptState: { ...approvalCard, promptId: "p1" } });
+  await service.recordProviderPromptState({ threadId: "thread-busy", promptState: { ...approvalCard, promptId: "p2", message: "Second?" } });
+
+  // Answer the visible card → the queued sibling p2 is promoted into the visible slot.
+  const answered = await service.answerPrompt({ threadId: "thread-busy", promptId: "p1", choiceId: "allow" });
+  assert.equal(answered.ok && answered.thread.promptState?.promptId, "p2");
+
+  // A stray turn-end arrives while p2 is still unanswered — it must survive, not settle.
+  const done = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(done.ok && done.runtimeState, "waiting_for_approval");
+  assert.equal(done.ok && done.thread.promptState?.promptId, "p2", "promoted sibling is not dropped by a stray turn-end");
+});
+
 test("stacked_followups_flush_in_fifo_order_one_per_turn_end", async () => {
   // Several follow-ups queued behind a live turn run in submission order, one per
   // turn-end; the runtime stays running until the queue drains, then goes idle.
@@ -4155,6 +4176,7 @@ test("batched_prompts_queue_and_each_answer_promotes_the_next", async () => {
   assert.equal(answered.ok && answered.promptState?.promptId, "perm-fetch-fintel");
   const midway = await service.hydrateThread({ threadId });
   assert.equal(midway.thread.promptState?.promptId, "perm-fetch-fintel");
+  assert.equal(midway.thread.promptQueue, undefined);
   assert.equal(midway.thread.runtimeState, "waiting_for_approval");
 
   // Answering the last one resumes the turn.
@@ -4212,13 +4234,16 @@ test("stop_clears_the_pending_prompt_and_its_queue", async () => {
   assert.equal(stale.ok, false);
 });
 
-test("turn_end_after_answering_a_card_settles_and_drops_the_rest_of_the_batch", async () => {
-  // Once the user has ACTED on the card, a turn-end is legitimate: denying the visible
-  // card can cancel the rest of a batch, the agent ends its turn, and the now-dead
-  // cards drop. The settle is ONE-SHOT — ignoring it because the thread was
-  // waiting_for_approval left the thread "Working" forever once the stale card was
-  // answered (adversarial review finding). (A turn-end on a NEVER-answered card is
-  // spurious and keeps the card — see the bare-turn-end test above.)
+test("a_spurious_turn_end_after_denying_one_of_a_batch_keeps_the_promoted_sibling", async () => {
+  // claude blocks the WHOLE turn until EVERY parallel can_use_tool is answered (verified
+  // live, claude 2.1.179): denying the visible card does NOT let it abandon the rest — it
+  // stays blocked on the siblings and emits no turn-end. So a non-force turn-end while a
+  // promoted sibling is still unanswered is SPURIOUS (claude's history reader can infer
+  // one) and must NOT drop it — dropping it orphaned claude's pending request and wedged
+  // the turn "Working" forever with no card. Abandoning a batch is the EXPLICIT job of Stop
+  // (see stop_clears_the_pending_prompt_and_its_queue). The legitimate "answer the last/only
+  // card then settle" path is unchanged (see a_turn_end_after_the_prompt_is_answered_...).
+  // Spec: claude-parallel-permission-wedge.md.
   const fakes = createFakes();
   const service = createThreadRuntimeService({
     ...fakes.ports,
@@ -4237,18 +4262,21 @@ test("turn_end_after_answering_a_card_settles_and_drops_the_rest_of_the_batch", 
       promptState: { promptId: id, threadId, agentId: "claude", kind: "approval", message: msg, source: "provider_hook" },
     });
   }
-  // The user denies the visible card (p1); p2 is promoted. The agent then abandons the
-  // batch and ends its turn — so the promoted, now-dead p2 must drop on the settle.
+  // Deny the visible card (p1); p2 is promoted into the visible slot (a fresh, unanswered
+  // episode). A spurious (non-force) turn-end now must KEEP p2 — claude is still blocked on it.
   const denied = await service.answerPrompt({ threadId, promptId: "p1", value: "decline" });
   assert.equal(denied.ok, true);
   const settled = await service.recordTurnComplete({ threadId });
   assert.equal(settled.ok, true);
   const after = await service.hydrateThread({ threadId });
-  assert.equal(after.thread.runtimeState, "idle");
-  assert.equal(after.thread.promptState, undefined);
-  // The dead cards are gone; answering them is rejected, not typed into nothing.
-  const stale = await service.answerPrompt({ threadId, promptId: "p2", value: "x" });
-  assert.equal(stale.ok, false);
+  assert.equal(after.thread.runtimeState, "waiting_for_approval");
+  assert.equal(after.thread.promptState?.promptId, "p2");
+  // Answering p2 drains the batch; the turn resumes and a later turn-end settles to idle.
+  const answered2 = await service.answerPrompt({ threadId, promptId: "p2", value: "decline" });
+  assert.equal(answered2.ok && answered2.runtimeState, "running");
+  const done = await service.recordTurnComplete({ threadId });
+  assert.equal(done.ok && done.thread.runtimeState, "idle");
+  assert.equal(done.ok && done.thread.promptState, undefined);
 });
 
 test("prompt_recorded_after_stop_is_rejected_not_resurrected", async () => {
