@@ -4,6 +4,7 @@ import type { TideThemePreference } from "../../support/theme.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ChangeEvent, ReactElement } from "react";
 import { createIconButton } from "../chrome/chrome.tsx";
+import { getStoredPref, setStoredPref } from "../../support/ui-prefs-store.ts";
 import { buildProvidersHubViewModel } from "../../../../../application/domains/agent-chat/state/providers-hub.ts";
 import { X } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
@@ -17,11 +18,8 @@ const LIST_SETTINGS_SCHEMA = 2;
 // List-display settings are a renderer-local pref (no backend contract); persist
 // them in localStorage so the grouping/sort choice survives reloads.
 export function loadListSettings(): ProductShellListSettings {
-  if (typeof localStorage === "undefined") {
-    return { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS };
-  }
   try {
-    const raw = localStorage.getItem(LIST_SETTINGS_STORAGE_KEY);
+    const raw = getStoredPref(LIST_SETTINGS_STORAGE_KEY);
     if (raw === null) {
       return { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS };
     }
@@ -42,11 +40,8 @@ export function loadListSettings(): ProductShellListSettings {
 }
 
 export function persistListSettings(settings: ProductShellListSettings): void {
-  if (typeof localStorage === "undefined") {
-    return;
-  }
   try {
-    localStorage.setItem(
+    setStoredPref(
       LIST_SETTINGS_STORAGE_KEY,
       JSON.stringify({ ...settings, schema: LIST_SETTINGS_SCHEMA }),
     );
@@ -65,11 +60,8 @@ export interface ProductShellRailOrder {
 // The Left Rail's manual order (pinned items + project folders) is a renderer-local
 // pref; persist it so a drag-reorder survives reloads. Spec: left-rail-manual-ordering.
 export function loadRailOrder(): ProductShellRailOrder {
-  if (typeof localStorage === "undefined") {
-    return { pinnedItemOrder: [], projectOrder: [] };
-  }
   try {
-    const raw = localStorage.getItem(RAIL_ORDER_STORAGE_KEY);
+    const raw = getStoredPref(RAIL_ORDER_STORAGE_KEY);
     if (raw === null) {
       return { pinnedItemOrder: [], projectOrder: [] };
     }
@@ -84,11 +76,8 @@ export function loadRailOrder(): ProductShellRailOrder {
 }
 
 export function persistRailOrder(order: ProductShellRailOrder): void {
-  if (typeof localStorage === "undefined") {
-    return;
-  }
   try {
-    localStorage.setItem(RAIL_ORDER_STORAGE_KEY, JSON.stringify(order));
+    setStoredPref(RAIL_ORDER_STORAGE_KEY, JSON.stringify(order));
   } catch {
     // Best-effort; ignore quota/serialization errors.
   }
@@ -101,11 +90,8 @@ const START_COMPOSER_STORAGE_KEY = "tide.startComposerDefaults";
 // Remembers the agent + model the user last chose in the Start Composer, so the
 // next New Thread defaults to it instead of always codex/gpt-5.5.
 export function loadPreferredStartComposer(): PreferredStartComposer | null {
-  if (typeof localStorage === "undefined") {
-    return null;
-  }
   try {
-    const raw = localStorage.getItem(START_COMPOSER_STORAGE_KEY);
+    const raw = getStoredPref(START_COMPOSER_STORAGE_KEY);
     if (raw === null) {
       return null;
     }
@@ -126,22 +112,16 @@ export function loadPreferredStartComposer(): PreferredStartComposer | null {
 }
 
 export function persistPreferredStartComposer(defaults: PreferredStartComposer): void {
-  if (typeof localStorage === "undefined") {
-    return;
-  }
   try {
-    localStorage.setItem(START_COMPOSER_STORAGE_KEY, JSON.stringify(defaults));
+    setStoredPref(START_COMPOSER_STORAGE_KEY, JSON.stringify(defaults));
   } catch {
     // Best-effort.
   }
 }
 
 export function loadWorktreeSettings(): ProductShellWorktreeSettings {
-  if (typeof localStorage === "undefined") {
-    return { ...DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS };
-  }
   try {
-    const raw = localStorage.getItem(WORKTREE_SETTINGS_STORAGE_KEY);
+    const raw = getStoredPref(WORKTREE_SETTINGS_STORAGE_KEY);
     if (raw === null) {
       return { ...DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS };
     }
@@ -159,11 +139,8 @@ export function loadWorktreeSettings(): ProductShellWorktreeSettings {
 }
 
 export function persistWorktreeSettings(settings: ProductShellWorktreeSettings): void {
-  if (typeof localStorage === "undefined") {
-    return;
-  }
   try {
-    localStorage.setItem(WORKTREE_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    setStoredPref(WORKTREE_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
   } catch {
     // Best-effort.
   }

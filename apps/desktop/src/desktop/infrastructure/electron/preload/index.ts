@@ -62,6 +62,23 @@ export type AppUpdateStatus =
   | { phase: "upToDate"; currentVersion: string }
   | { phase: "error"; message: string };
 
+// Read the UI prefs from Main synchronously at preload time (sendSync). This hits the Main
+// process — which reads the small JSON file via Node fs, instantly — NOT the renderer's
+// localStorage, whose first sync access at boot stalls ~3.8s while the bundle loads. The
+// value is ready before any page script runs, so the inline theme script reads it flash-free.
+// See main/ui-prefs.ts.
+function readUiPrefsSync(): Record<string, string> {
+  try {
+    const prefs = ipcRenderer.sendSync("tide:get-ui-prefs") as unknown;
+    if (prefs !== null && typeof prefs === "object") {
+      return prefs as Record<string, string>;
+    }
+  } catch {
+    // main handler not ready / failed — fall back to empty (renderer uses defaults)
+  }
+  return {};
+}
+
 export interface TidePreloadSurface {
   contractVersion: 1;
   transport: "message_port";
@@ -101,6 +118,12 @@ export interface TidePreloadSurface {
   applyAppUpdate(): void;
   checkForAppUpdate(): void;
   getAppVersion(): Promise<string>;
+  // Renderer UI prefs (theme, rail order, list/worktree settings, start composer), read
+  // synchronously from Main at preload (sync IPC) so the renderer never touches localStorage
+  // on the boot path (that first sync access stalls ~3.8s). Raw string values keyed by the
+  // legacy storage key. saveUiPref persists a change to the Main-owned file. See ui-prefs.ts.
+  uiPrefs: Record<string, string>;
+  saveUiPref(key: string, value: string): void;
   // Native folder picker + persisted project registry (Main-owned).
   openDirectory(): Promise<string | null>;
   listProjects(): Promise<ProjectRegistryEntry[]>;
@@ -217,6 +240,10 @@ export const tidePreloadSurface: TidePreloadSurface = {
   },
   downloadAppUpdate() {
     void ipcRenderer.invoke("tide:app-update-download");
+  },
+  uiPrefs: readUiPrefsSync(),
+  saveUiPref(key: string, value: string) {
+    void ipcRenderer.invoke("tide:save-ui-pref", key, value);
   },
   applyAppUpdate() {
     void ipcRenderer.invoke("tide:app-update-apply");

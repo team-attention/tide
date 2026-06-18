@@ -7,6 +7,7 @@ import { applyHostZoom } from "./zoom.ts";
 import { appRendererUrl, createMainWindow } from "./main-window.ts";
 import { registerNotificationBridge } from "./notifications.ts";
 import { registerAutoUpdate, logUpdateEvent } from "./auto-update.ts";
+import { readUiPrefs, saveUiPref } from "./ui-prefs.ts";
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from "electron";
 
 import { basename, dirname, join } from "node:path";
@@ -562,6 +563,21 @@ registerNotificationBridge(() => BrowserWindow.getAllWindows()[0]);
 // background and push status to the renderer's "Update & Restart" pill; the click
 // applies it. Inert in dev / unpackaged / test. See specs/version-management.md.
 registerAutoUpdate(() => BrowserWindow.getAllWindows()[0]);
+
+// The renderer reads its UI prefs synchronously at preload time over this channel. NOT
+// localStorage (the renderer's first sync localStorage access stalls ~3.8s at boot while
+// the bundle loads) and NOT process argv (keeps a structured object off the launch command
+// line). Main reads the small JSON file (Node fs, instant) and returns it. See ui-prefs.ts.
+ipcMain.on("tide:get-ui-prefs", (event) => {
+  event.returnValue = readUiPrefs();
+});
+
+// Persist a renderer UI pref to the Main-owned prefs file (read back at the next boot). See ui-prefs.ts.
+ipcMain.handle("tide:save-ui-pref", (_event, key: unknown, value: unknown) => {
+  if (typeof key === "string" && typeof value === "string") {
+    saveUiPref(key, value);
+  }
+});
 
 // Keep a stray error from hard-aborting the main process (SIGTRAP/brk). Log it
 // instead so the app survives and the cause is diagnosable.
