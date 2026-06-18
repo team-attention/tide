@@ -82,10 +82,15 @@ test("markdown_task_list_does_not_execute_raw_html", () => {
 test("markdown_heading_anchors_match_github_style_slugs_and_deduplicate", () => {
   const md = makeRenderer();
   md.use(headingAnchorPlugin);
-  const html = renderMarkdownCached(md, "# Hello, World!\n\n## Hello World\n\n## Hello World\n");
+  const html = renderMarkdownCached(
+    md,
+    "# Hello, World!\n\n## Hello World\n\n## Hello World\n\n## [GitHub](https://github.com) and `Code`\n",
+  );
 
   assert.match(html, /<h1 id="hello-world">/);
   assert.match(html, /href="#hello-world"/);
   assert.match(html, /<h2 id="hello-world-1">/);
   assert.match(html, /<h2 id="hello-world-2">/);
+  assert.match(html, /<h2 id="github-and-code">/);
+  assert.doesNotMatch(html, /githubhttpsgithubcom/);
 });

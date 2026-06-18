@@ -93,7 +93,11 @@ export function createAgentIntegrationProviderReadinessPort(
       // Force the version cache fresh so the next `check()` reflects a just-completed
       // in-place CLI update (otherwise the update advisory lingers until the next slow
       // background refresh / restart). No-op when the checker can't refresh.
-      await input.updateChecker?.refresh?.();
+      try {
+        await input.updateChecker?.refresh?.();
+      } catch {
+        // Refresh is advisory-only; never let a transient checker failure block replay.
+      }
     },
     async check(checkInput) {
       if (!isProviderCliAgentId(checkInput.agentId)) {

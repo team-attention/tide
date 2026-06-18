@@ -27,21 +27,28 @@ export function filterFileTreeEntries(
   entries: FileTreeEntryView[],
   filterDraft: string,
 ): FileTreeEntryView[] {
-  const normalizedFilter = filterDraft.trim().toLocaleLowerCase();
+  const normalizedFilter = filterDraft.trim().toLowerCase();
   if (normalizedFilter.length === 0) {
     return entries;
   }
   const visiblePaths = new Set<string>();
   for (const entry of entries) {
-    if (!entry.relativePath.toLocaleLowerCase().includes(normalizedFilter)) {
+    const relativePath = entry?.relativePath;
+    if (typeof relativePath !== "string" || relativePath.length === 0) {
       continue;
     }
-    const parts = entry.relativePath.split("/");
+    if (!relativePath.toLowerCase().includes(normalizedFilter)) {
+      continue;
+    }
+    const parts = relativePath.split("/");
     for (let index = 1; index <= parts.length; index++) {
       visiblePaths.add(parts.slice(0, index).join("/"));
     }
   }
-  return entries.filter((entry) => visiblePaths.has(entry.relativePath));
+  return entries.filter((entry) => {
+    const relativePath = entry?.relativePath;
+    return typeof relativePath === "string" && visiblePaths.has(relativePath);
+  });
 }
 
 // Shimmer rows shown while the active thread's file tree is (re)loading, so a thread

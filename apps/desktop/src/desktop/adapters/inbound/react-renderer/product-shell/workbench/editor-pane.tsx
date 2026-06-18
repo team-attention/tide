@@ -112,11 +112,11 @@ function createEditorBreadcrumb(
     segments.push({
       kind: index === pathSegments.length - 1 ? "file" : "folder",
       label: segment,
-      path: pathSegments.slice(0, index + 1).join("/"),
+      path: pane.relativePath ? pathSegments.slice(0, index + 1).join("/") : undefined,
     });
   });
   if (segments.length === 0) {
-    segments.push({ kind: "file", label: pane.title, path: pane.relativePath ?? pane.title });
+    segments.push({ kind: "file", label: pane.title, path: pane.relativePath });
   }
   const createCrumb = (
     segment: (typeof segments)[number],

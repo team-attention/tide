@@ -218,6 +218,20 @@ test("readiness port: refreshUpdateAdvisories clears a stale advisory after an i
   assert.equal(after.update, undefined, "the advisory clears once the cache reflects the update");
 });
 
+test("readiness port: refreshUpdateAdvisories ignores advisory refresh failures", async () => {
+  const port = createAgentIntegrationProviderReadinessPort({
+    integrations: registryWith("claude", fakeIntegration({ agentId: "claude", ready: true, blockers: [] })),
+    updateChecker: {
+      advisoryFor: () => undefined,
+      async refresh() {
+        throw new Error("network unavailable");
+      },
+    },
+  });
+
+  await assert.doesNotReject(() => port.refreshUpdateAdvisories?.());
+});
+
 test("update checker: not installed or unknown latest yields no advisory", async () => {
   const checker = createAgentUpdateChecker({
     agentIds: ["claude", "codex"],

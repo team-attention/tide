@@ -48,7 +48,7 @@ export function headingAnchorPlugin(md: MarkdownIt): void {
       if (!/^h[1-6]$/.test(open.tag) || open.type !== "heading_open" || inline.type !== "inline") {
         continue;
       }
-      const base = githubHeadingSlug(inline.content);
+      const base = githubHeadingSlug(headingPlainText(inline));
       const count = used.get(base) ?? 0;
       used.set(base, count + 1);
       const id = count === 0 ? base : `${base}-${count}`;
@@ -58,6 +58,30 @@ export function headingAnchorPlugin(md: MarkdownIt): void {
       inline.children = [anchor, ...(inline.children ?? [])];
     }
   });
+}
+
+function headingPlainText(inline: Token): string {
+  const children = inline.children;
+  if (!children || children.length === 0) {
+    return inline.content;
+  }
+  const parts: string[] = [];
+  collectHeadingPlainText(children, parts);
+  return parts.join("");
+}
+
+function collectHeadingPlainText(tokens: Token[], parts: string[]): void {
+  for (const token of tokens) {
+    if (token.type === "text" || token.type === "code_inline") {
+      parts.push(token.content);
+    } else if (token.type === "softbreak" || token.type === "hardbreak") {
+      parts.push(" ");
+    } else if (token.type === "image") {
+      parts.push(token.content);
+    } else if (token.children && token.children.length > 0) {
+      collectHeadingPlainText(token.children, parts);
+    }
+  }
 }
 
 function githubHeadingSlug(text: string): string {

@@ -1579,6 +1579,23 @@ test("code_editor_pane_has_no_markdown_preview_toggle", () => {
   assert.match(html, /aria-label="Editor Pane text"/);
 });
 
+test("editor_breadcrumb_without_relative_path_is_static", () => {
+  const html = renderProductShell(
+    editorPaneState({
+      title: "Scratch",
+      bodyText: "temporary buffer\n",
+      bodyTextPreview: "temporary buffer\n",
+      byteLength: 17,
+      truncated: false,
+    }),
+  );
+
+  assert.match(html, /workbench-editor-breadcrumb/);
+  assert.match(html, /title="Scratch"/);
+  assert.doesNotMatch(html, /aria-label="Open Scratch"/);
+  assert.doesNotMatch(html, /aria-label="Reveal Scratch in FileTree"/);
+});
+
 test("markdown_editor_pane_renders_preview_with_rendered_headings", () => {
   // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-1)
   const html = renderProductShell(
@@ -2418,6 +2435,13 @@ test("file_tree_filter_matches_paths_and_keeps_ancestor_folders", () => {
 
   assert.deepEqual(
     filterFileTreeEntries(entries, "editor").map((entry) => entry.relativePath),
+    ["src", "src/workbench", "src/workbench/editor-pane.tsx"],
+  );
+  assert.deepEqual(
+    filterFileTreeEntries(
+      [null as unknown as (typeof entries)[number], ...entries],
+      "EDITOR",
+    ).map((entry) => entry.relativePath),
     ["src", "src/workbench", "src/workbench/editor-pane.tsx"],
   );
   assert.deepEqual(
