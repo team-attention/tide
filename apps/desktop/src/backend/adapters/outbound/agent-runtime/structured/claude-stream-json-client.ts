@@ -222,6 +222,21 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       answerAskUserQuestion(this.askUserQuestionContext(), pending, input);
       return;
     }
+    // Allow ONLY on the explicit allow token. Anything else — the Skip button (value ""),
+    // a dismissed card, or an unrecognized answer — defaults to DENY: never silently run a
+    // tool the user did not explicitly approve. (Skip used to fall through here and ALLOW.)
+    // See claude-parallel-permission-wedge.md.
+    if (input.value !== STRUCTURED_ALLOW_TOKEN) {
+      this.writeLine({
+        type: "control_response",
+        response: {
+          subtype: "success",
+          request_id: pending.requestId,
+          response: { behavior: "deny", message: "The user did not approve this tool use.", interrupt: false },
+        },
+      });
+      return;
+    }
     // Generic permission allow: no answer payload.
     this.writeLine({
       type: "control_response",

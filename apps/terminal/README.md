@@ -7,7 +7,7 @@
 **A native macOS Workspace where humans and coding agents share Terminal, Editor, Diff, and Browser Panes.**
 
 [![Release](https://img.shields.io/github/v/release/team-attention/tide?style=flat-square&color=blue)](https://github.com/team-attention/tide/releases)
-[![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](../../LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](../../LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)
 ![Rust](https://img.shields.io/badge/rust-2021-orange?style=flat-square)
 
@@ -17,7 +17,7 @@ Tide Terminal is a native macOS (Rust + WGPU) Integrated Task Environment for ag
 
 Through the Agent Gateway and Tide MCP Runtime, Wrapped Agents can inspect Workspace structure and Pane geometry, operate Browser Panes through Tide Terminal's Browser Pane Runtime, capture Terminal or Editor Pane content on request, and manage Context Artifacts. Browser Pane operations are the default path for Wrapped Agents using the Tide MCP Runtime; external browser runtimes remain explicit fallbacks.
 
-> Looking for the Electron agent workspace? See **[Tide](../desktop/)** (`apps/desktop/`).
+> If you actually like living in the terminal, this is your Tide. If you'd rather not, the desktop **[Tide](../desktop/)** (`apps/desktop/`) gives you and your agent a shared workbench instead.
 
 https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
@@ -161,4 +161,4 @@ Terminals are still the substrate. The difference is that the surrounding Worksp
 
 ## License
 
-[AGPL-3.0](../../LICENSE). Contributions are accepted under the [Contributor License Agreement](../../CLA.md).
+[MIT](../../LICENSE).

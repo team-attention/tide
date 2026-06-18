@@ -624,3 +624,100 @@ test("interrupt cleanly denies a pending AskUserQuestion (no stream-closed error
     await client.stop();
   }
 });
+
+// A FAKE provider that raises ONE generic (non-AskUserQuestion) tool permission and records
+// every stdin line — so a prompt answer's control_response (allow vs deny) can be inspected.
+function fakeBashPermissionPlan(receivedFile: string): ProviderLaunchPlan {
+  const script = [
+    'const fs = require("node:fs");',
+    `console.log(${JSON.stringify(
+      JSON.stringify({
+        type: "control_request",
+        request_id: "req-bash-1",
+        request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "rm -rf /tmp/victim" } },
+      }),
+    )});`,
+    'let buf = "";',
+    'process.stdin.setEncoding("utf8");',
+    'process.stdin.on("data", (chunk) => {',
+    "  buf += chunk;",
+    "  let i;",
+    '  while ((i = buf.indexOf("\\n")) >= 0) {',
+    "    const line = buf.slice(0, i);",
+    "    buf = buf.slice(i + 1);",
+    '    if (line.trim().length > 0) fs.appendFileSync(process.env.TIDE_FAKE_OUT, line + "\\n");',
+    "  }",
+    "});",
+  ].join("\n");
+  return {
+    command: process.execPath,
+    args: ["-e", script],
+    env: { TIDE_FAKE_OUT: receivedFile },
+    cwd: tmpdir(),
+    transport: "claude_stream_json",
+    expectedSignalSources: [],
+  };
+}
+
+function behaviorOf(response: Record<string, unknown>): unknown {
+  const inner = (response.response as Record<string, unknown>).response as Record<string, unknown>;
+  return inner.behavior;
+}
+
+test("Skip (empty answer) on a claude permission card DENIES the tool — never silently allows", async () => {
+  // Spec: claude-parallel-permission-wedge.md. The Skip button answers with value "" — that
+  // used to fall through to the generic-allow branch and RUN the command. An empty /
+  // unrecognized answer must deny.
+  const dir = mkdtempSync(join(tmpdir(), "tide-perm-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = createClaudeStreamJsonClient({
+    plan: fakeBashPermissionPlan(receivedFile),
+    threadId: "thread-1",
+    runtimeId: "rt-1",
+    onEvent,
+  });
+  try {
+    const prompt = await waitFor(() => events[0], "permission prompt");
+    assert.equal(prompt.kind, "approval");
+    await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: "" });
+    const response = await waitFor(() => receivedControlResponse(receivedFile), "control_response");
+    assert.equal(behaviorOf(response), "deny", "an empty (Skip) answer must DENY, not allow");
+  } finally {
+    await client.stop();
+  }
+});
+
+test("the explicit allow token allows, and the deny token denies, a claude permission", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-perm-"));
+  // Allow path.
+  {
+    const receivedFile = join(dir, "allow.jsonl");
+    const { events, onEvent } = promptCollector();
+    const client = createClaudeStreamJsonClient({ plan: fakeBashPermissionPlan(receivedFile), threadId: "t", runtimeId: "r", onEvent });
+    try {
+      const prompt = await waitFor(() => events[0], "permission prompt");
+      const allow = prompt.choices?.find((choice) => choice.choiceId === "allow")?.providerValue ?? "";
+      await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: allow });
+      const response = await waitFor(() => receivedControlResponse(receivedFile), "control_response");
+      assert.equal(behaviorOf(response), "allow");
+    } finally {
+      await client.stop();
+    }
+  }
+  // Deny path.
+  {
+    const receivedFile = join(dir, "deny.jsonl");
+    const { events, onEvent } = promptCollector();
+    const client = createClaudeStreamJsonClient({ plan: fakeBashPermissionPlan(receivedFile), threadId: "t", runtimeId: "r", onEvent });
+    try {
+      const prompt = await waitFor(() => events[0], "permission prompt");
+      const deny = prompt.choices?.find((choice) => choice.choiceId === "deny")?.providerValue ?? "";
+      await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: deny });
+      const response = await waitFor(() => receivedControlResponse(receivedFile), "control_response");
+      assert.equal(behaviorOf(response), "deny");
+    } finally {
+      await client.stop();
+    }
+  }
+});
