@@ -5,6 +5,20 @@ use std::sync::Arc;
 use crate::term::ClipboardType;
 use crate::vte::ansi::Rgb;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GraphicsProtocol {
+    Kitty,
+    Sixel,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GraphicsData {
+    pub protocol: GraphicsProtocol,
+    pub row: u16,
+    pub col: u16,
+    pub payload: Vec<u8>,
+}
+
 /// Terminal event.
 ///
 /// These events instruct the UI over changes that can't be handled by the terminal emulation layer
@@ -64,6 +78,9 @@ pub enum Event {
 
     /// Terminal notification (OSC 9).
     Notification(String),
+
+    /// Terminal graphics protocol payload stripped from the PTY stream.
+    Graphics(GraphicsData),
 }
 
 impl Debug for Event {
@@ -86,6 +103,9 @@ impl Debug for Event {
                 write!(f, "PrivateModeUpdate({mode}, {enabled})")
             },
             Event::Notification(msg) => write!(f, "Notification({msg})"),
+            Event::Graphics(data) => {
+                write!(f, "Graphics({:?}, {} bytes)", data.protocol, data.payload.len())
+            },
         }
     }
 }

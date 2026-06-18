@@ -1,7 +1,7 @@
 // InteractionState — mouse/drag/scroll interaction state.
 
 use super::drag_types::{HoverTarget, PaneDragState};
-use crate::tide_core::{PaneId, Rect};
+use crate::tide_core::{MouseButton, PaneId, Rect};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
@@ -9,6 +9,8 @@ pub(crate) struct InteractionState {
     pub pane_drag: PaneDragState,
     pub scroll_accumulator: HashMap<PaneId, f32>,
     pub mouse_left_pressed: bool,
+    pub mouse_pressed_button: Option<MouseButton>,
+    pub terminal_mouse_source: Option<PaneId>,
     pub text_selection_drag_source: Option<PaneId>,
     pub scrollbar_dragging: Option<PaneId>,
     pub scrollbar_drag_rect: Option<Rect>,
@@ -30,6 +32,8 @@ impl InteractionState {
             pane_drag: PaneDragState::Idle,
             scroll_accumulator: HashMap::new(),
             mouse_left_pressed: false,
+            mouse_pressed_button: None,
+            terminal_mouse_source: None,
             text_selection_drag_source: None,
             scrollbar_dragging: None,
             scrollbar_drag_rect: None,

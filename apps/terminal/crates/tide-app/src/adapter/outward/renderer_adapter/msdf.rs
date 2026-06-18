@@ -183,6 +183,24 @@ impl MsdfFontStore {
         let face = font_data.face();
         generate_msdf_glyph(&face, character)
     }
+
+    /// Generate MSDF for a shaped glyph id from a registered font face.
+    pub fn generate_by_glyph_id(
+        &self,
+        family: &str,
+        bold: bool,
+        italic: bool,
+        glyph_id: u16,
+    ) -> Option<MsdfGlyph> {
+        let key = FontKey {
+            family: family.to_string(),
+            bold,
+            italic,
+        };
+        let font_data = self.fonts.get(&key)?;
+        let face = font_data.face();
+        generate_msdf_glyph_by_id(&face, ttf_parser::GlyphId(glyph_id), None)
+    }
 }
 
 /// MSDF generation result for a single glyph.
@@ -207,6 +225,16 @@ const TARGET_EM_TEXELS: f64 = 48.0;
 
 /// Generate an MSDF for a single glyph from its font outline.
 fn generate_msdf_glyph(face: &ttf_parser::Face<'_>, character: char) -> Option<MsdfGlyph> {
+    let glyph_id = face.glyph_index(character)?;
+    generate_msdf_glyph_by_id(face, glyph_id, Some(character))
+}
+
+/// Generate an MSDF for a single glyph id from its font outline.
+fn generate_msdf_glyph_by_id(
+    face: &ttf_parser::Face<'_>,
+    glyph_id: ttf_parser::GlyphId,
+    character: Option<char>,
+) -> Option<MsdfGlyph> {
     use fdsm::bezier::scanline::FillRule;
     use fdsm::generate::generate_msdf;
     use fdsm::render::correct_sign_msdf;
@@ -214,15 +242,11 @@ fn generate_msdf_glyph(face: &ttf_parser::Face<'_>, character: char) -> Option<M
     use fdsm::transform::Transform;
     use image::RgbImage;
 
-    let glyph_id = face.glyph_index(character)?;
     let bbox = match face.glyph_bounding_box(glyph_id) {
         Some(b) => b,
         None => {
-            if character.is_ascii_graphic() {
-                log::warn!(
-                    "MSDF: no bounding box for '{character}' glyph_id={:?}",
-                    glyph_id
-                );
+            if character.is_some_and(|ch| ch.is_ascii_graphic()) {
+                log::warn!("MSDF: no bounding box for '{:?}' glyph_id={:?}", character, glyph_id);
             }
             return None;
         }
@@ -241,9 +265,10 @@ fn generate_msdf_glyph(face: &ttf_parser::Face<'_>, character: char) -> Option<M
     let mut shape = match fdsm_ttf_parser::load_shape_from_face(face, glyph_id) {
         Some(s) => s,
         None => {
-            if character.is_ascii_graphic() {
+            if character.is_some_and(|ch| ch.is_ascii_graphic()) {
                 log::warn!(
-                    "MSDF: load_shape_from_face returned None for '{character}' glyph_id={:?}",
+                    "MSDF: load_shape_from_face returned None for '{:?}' glyph_id={:?}",
+                    character,
                     glyph_id
                 );
             }

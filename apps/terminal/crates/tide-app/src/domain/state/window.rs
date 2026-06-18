@@ -19,8 +19,10 @@ pub(crate) struct WindowState {
     pub scale_factor: f32,
     pub window_size: (u32, u32),
     pub cached_cell_size: crate::tide_core::Size,
+    pub current_font_family: String,
     pub current_font_size: f32,
     pub cell_size_table: Vec<crate::tide_core::Size>,
+    pub pending_font_family: Option<String>,
     pub pending_font_size: Option<f32>,
     pub dark_mode: bool,
     pub top_inset: f32,
@@ -33,6 +35,8 @@ pub(crate) struct WindowState {
     pub sidebar_handle_dragging: bool,
     /// Whether the window currently has OS focus. Tracked via `PlatformEvent::Focused`.
     pub is_focused: bool,
+    /// Last native NSWindow title sent through the platform command channel.
+    pub native_title: String,
     pub notification_authorization_status: NotificationAuthorizationStatus,
 }
 
@@ -42,8 +46,10 @@ impl WindowState {
             scale_factor: 1.0,
             window_size: (1200, 800),
             cached_cell_size: crate::tide_core::Size::new(0.0, 0.0),
+            current_font_family: "Menlo".to_string(),
             current_font_size: 14.0,
             cell_size_table: Vec::new(),
+            pending_font_family: None,
             pending_font_size: None,
             dark_mode: true,
             top_inset,
@@ -55,6 +61,7 @@ impl WindowState {
             sidebar_side: LayoutSide::Left,
             sidebar_handle_dragging: false,
             is_focused: true,
+            native_title: "Tide".to_string(),
             notification_authorization_status: NotificationAuthorizationStatus::Unknown,
         }
     }

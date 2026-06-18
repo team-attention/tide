@@ -11,6 +11,9 @@ use crate::pane::PaneKind;
 pub(crate) fn pane_title(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> String {
     match panes.get(&id) {
         Some(PaneKind::Terminal(pane)) => {
+            if let Some(title) = pane.context.osc_title.as_ref() {
+                return title.clone();
+            }
             if let Some(cwd) = pane.backend.detect_cwd_fallback() {
                 let components: Vec<_> = cwd.components().collect();
                 if components.len() <= 2 {

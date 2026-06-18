@@ -112,6 +112,15 @@ impl GpuPort for RealGpu {
             false
         }
     }
+
+    fn set_font_family(&mut self, family: &str) -> bool {
+        if let Some(renderer) = self.renderer.as_mut() {
+            renderer.set_font_family(family);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 // ── Noop implementation (tests) ──
@@ -162,6 +171,9 @@ impl GpuPort for NoopGpu {
     fn remove_pane_cache(&mut self, _pane_id: PaneId) {}
     fn set_clear_color(&mut self, _color: crate::tide_core::Color) {}
     fn set_font_size(&mut self, _size: f32) -> bool {
+        false
+    }
+    fn set_font_family(&mut self, _family: &str) -> bool {
         false
     }
 }

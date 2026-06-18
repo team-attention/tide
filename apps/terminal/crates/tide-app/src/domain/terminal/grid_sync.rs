@@ -12,7 +12,7 @@ use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::cell::Flags as CellFlags;
 use alacritty_terminal::term::cell::LineLength;
-use alacritty_terminal::term::{Term, TermMode};
+use alacritty_terminal::term::{ClipboardType, Term, TermMode};
 
 use crate::tide_core::{CursorShape, CursorState, TerminalCell, TerminalGrid};
 
@@ -55,6 +55,7 @@ pub(super) struct SharedSnapshot {
     pub(super) grid: TerminalGrid,
     pub(super) inverse_cursor: Option<(u16, u16)>,
     pub(super) url_ranges: Vec<Vec<(usize, usize)>>,
+    pub(super) hyperlink_ranges: Vec<Vec<(usize, usize, String)>>,
     pub(super) wrapped_rows: Vec<bool>,
     pub(super) generation: u64,
     pub(super) cursor: CursorState,
@@ -79,6 +80,26 @@ pub(super) struct TermEventListener {
     pub(super) mode_2031: Arc<AtomicBool>,
     /// OSC 9 notification messages queued for main thread processing.
     pub(super) notifications: Arc<Mutex<Vec<String>>>,
+    /// Pending OSC 0/2 title change (last-write-wins).
+    pub(super) pending_title: Arc<Mutex<Option<TitleChange>>>,
+    /// Edge-triggered BEL flag.
+    pub(super) bell_pending: Arc<AtomicBool>,
+    /// OSC 52 clipboard-write requests queued for the main thread.
+    pub(super) clipboard_writes: Arc<Mutex<Vec<(ClipboardTarget, String)>>>,
+    /// OSC 52 clipboard-read requests queued for the main thread (gated).
+    pub(super) clipboard_loads: Arc<Mutex<Vec<(ClipboardTarget, ClipboardLoadFormatter)>>>,
+    /// Policy: allow OSC 52 clipboard reads (default false).
+    pub(super) clipboard_read_allowed: Arc<AtomicBool>,
+    /// Terminal graphics payloads queued for main thread parsing/rendering.
+    pub(super) graphics_events: Arc<Mutex<Vec<alacritty_terminal::event::GraphicsData>>>,
+}
+
+/// Map alacritty's `ClipboardType` onto our boundary `ClipboardTarget`.
+fn clipboard_target(ty: ClipboardType) -> ClipboardTarget {
+    match ty {
+        ClipboardType::Clipboard => ClipboardTarget::Clipboard,
+        ClipboardType::Selection => ClipboardTarget::Selection,
+    }
 }
 
 impl TermEventListener {
@@ -195,6 +216,39 @@ impl EventListener for TermEventListener {
                 }
                 // Mark dirty + wake so main thread processes the notification
             }
+            Event::Title(title) => {
+                // OSC 0 / OSC 2: program sets the window title. Last write wins.
+                if let Ok(mut pending) = self.pending_title.lock() {
+                    *pending = Some(TitleChange::Set(title.clone()));
+                }
+                // Mark dirty + wake so the main thread applies the title.
+            }
+            Event::ResetTitle => {
+                if let Ok(mut pending) = self.pending_title.lock() {
+                    *pending = Some(TitleChange::Reset);
+                }
+            }
+            Event::Bell => {
+                // BEL: edge-triggered. Coalesces multiple bells in one frame.
+                self.bell_pending.store(true, Ordering::Relaxed);
+            }
+            Event::ClipboardStore(ty, text) => {
+                // OSC 52 write: queue for the main thread to push to the system
+                // pasteboard. (No AppKit call on the PTY thread.)
+                if let Ok(mut q) = self.clipboard_writes.lock() {
+                    q.push((clipboard_target(*ty), text.clone()));
+                }
+            }
+            Event::ClipboardLoad(ty, formatter) => {
+                // OSC 52 read: drop unless explicitly allowed (secure default).
+                if self.clipboard_read_allowed.load(Ordering::Relaxed) {
+                    if let Ok(mut q) = self.clipboard_loads.lock() {
+                        q.push((clipboard_target(*ty), formatter.clone()));
+                    }
+                } else {
+                    return; // No response — matches xterm's denied-read behavior.
+                }
+            }
             Event::PrivateModeUpdate(2031, enabled) => {
                 // Mode 2031: app opts in/out of color-scheme change notifications.
                 self.mode_2031.store(*enabled, Ordering::Relaxed);
@@ -216,6 +270,11 @@ impl EventListener for TermEventListener {
                 }
                 return;
             }
+            Event::Graphics(data) => {
+                if let Ok(mut queue) = self.graphics_events.lock() {
+                    queue.push(data.clone());
+                }
+            }
             _ => {}
         }
         self.dirty.store(true, Ordering::Relaxed);
@@ -234,13 +293,14 @@ impl EventListener for TermEventListener {
 
 pub(super) struct GridSyncer {
     pub(super) term: Arc<FairMutex<Term<TermEventListener>>>,
-    pub(super) raw_buf: Vec<(char, AnsiColor, AnsiColor, CellFlags)>,
-    pub(super) prev_raw_buf: Vec<(char, AnsiColor, AnsiColor, CellFlags)>,
+    pub(super) raw_buf: Vec<(char, AnsiColor, AnsiColor, CellFlags, Option<String>)>,
+    pub(super) prev_raw_buf: Vec<(char, AnsiColor, AnsiColor, CellFlags, Option<String>)>,
     pub(super) palette_buf: [Option<AnsiRgb>; 256],
     pub(super) grid: TerminalGrid,
     pub(super) inverse_cursor: Option<(u16, u16)>,
     pub(super) cached_cursor: CursorState,
     pub(super) url_ranges: Vec<Vec<(usize, usize)>>,
+    pub(super) hyperlink_ranges: Vec<Vec<(usize, usize, String)>>,
     pub(super) wrapped_rows: Vec<bool>,
     pub(super) grid_generation: u64,
     pub(super) url_row_buf: String,
@@ -290,6 +350,7 @@ impl GridSyncer {
                     AnsiColor::Named(NamedColor::Foreground),
                     AnsiColor::Named(NamedColor::Background),
                     CellFlags::empty(),
+                    None,
                 ),
             );
             self.wrapped_rows.resize(total_lines, false);
@@ -305,7 +366,13 @@ impl GridSyncer {
                 for col_idx in 0..cols {
                     let point = Point::new(line, Column(col_idx));
                     let cell = &grid[point];
-                    self.raw_buf[base + col_idx] = (cell.c, cell.fg, cell.bg, cell.flags);
+                    self.raw_buf[base + col_idx] = (
+                        cell.c,
+                        cell.fg,
+                        cell.bg,
+                        cell.flags,
+                        cell.hyperlink().map(|link| link.uri().to_string()),
+                    );
                 }
             }
 
@@ -365,7 +432,7 @@ impl GridSyncer {
 
             for (col_idx, tc) in row.iter_mut().enumerate().take(cols) {
                 let idx = base + col_idx;
-                let raw = self.raw_buf[idx];
+                let raw = self.raw_buf[idx].clone();
 
                 // Skip unchanged cells (same char, fg, bg, flags)
                 if same_size && self.prev_raw_buf[idx] == raw {
@@ -373,10 +440,11 @@ impl GridSyncer {
                 }
                 any_changed = true;
 
-                let (c, fg, bg, flags) = raw;
+                let (c, fg, bg, flags, hyperlink) = raw;
 
                 if flags.contains(CellFlags::WIDE_CHAR_SPACER) {
                     tc.character = '\0';
+                    tc.hyperlink = hyperlink;
                     // Preserve background for selection/ANSI highlights on
                     // the second half of wide characters (Korean, CJK, etc.).
                     let mut bg_color = Terminal::convert_color(dark_mode, &bg, &self.palette_buf);
@@ -448,6 +516,7 @@ impl GridSyncer {
                 let background = if bg_is_default { None } else { Some(bg_color) };
 
                 tc.character = c;
+                tc.hyperlink = hyperlink;
                 tc.style.bold = flags.contains(CellFlags::BOLD);
                 tc.style.dim = flags.contains(CellFlags::DIM);
                 tc.style.italic = flags.contains(CellFlags::ITALIC);
@@ -480,22 +549,55 @@ impl GridSyncer {
         self.grid.cols = cols as u16;
         self.grid.rows = total_lines as u16;
 
-        // Scan for URLs in the visible grid
+        // Scan for URLs and OSC 8 hyperlinks in the visible grid.
         if any_changed || !same_size {
-            self.detect_urls();
+            self.detect_link_ranges();
         }
     }
 
-    /// Detect URLs in the grid and store column ranges per row.
-    fn detect_urls(&mut self) {
+    /// Detect URLs and OSC 8 hyperlinks in the grid and store column ranges per row.
+    fn detect_link_ranges(&mut self) {
         let re = terminal_url_regex();
 
         let rows = self.grid.cells.len();
         self.url_ranges.resize(rows, Vec::new());
+        self.hyperlink_ranges.resize(rows, Vec::new());
 
         for (row_idx, row) in self.grid.cells.iter().enumerate() {
             self.url_ranges[row_idx].clear();
+            self.hyperlink_ranges[row_idx].clear();
             self.url_row_buf.clear();
+
+            let mut active_hyperlink: Option<(usize, String)> = None;
+            for (col_idx, c) in row.iter().enumerate() {
+                match (&mut active_hyperlink, c.hyperlink.as_ref()) {
+                    (None, Some(uri)) => {
+                        active_hyperlink = Some((col_idx, uri.clone()));
+                    }
+                    (Some((_, active_uri)), Some(uri)) if active_uri == uri => {}
+                    (Some((start, active_uri)), Some(uri)) => {
+                        self.hyperlink_ranges[row_idx].push((
+                            *start,
+                            col_idx,
+                            active_uri.clone(),
+                        ));
+                        active_hyperlink = Some((col_idx, uri.clone()));
+                    }
+                    (Some((start, active_uri)), None) => {
+                        self.hyperlink_ranges[row_idx].push((
+                            *start,
+                            col_idx,
+                            active_uri.clone(),
+                        ));
+                        active_hyperlink = None;
+                    }
+                    (None, None) => {}
+                }
+            }
+            if let Some((start, uri)) = active_hyperlink {
+                self.hyperlink_ranges[row_idx].push((start, row.len(), uri));
+            }
+
             for c in row.iter() {
                 self.url_row_buf.push(if c.character == '\0' {
                     ' '
@@ -511,6 +613,7 @@ impl GridSyncer {
             }
         }
         self.url_ranges.truncate(rows);
+        self.hyperlink_ranges.truncate(rows);
     }
 }
 
@@ -548,6 +651,7 @@ pub(super) fn grid_sync_thread_main(
                 snap.grid.clone_from(&syncer.grid);
                 snap.inverse_cursor = syncer.inverse_cursor;
                 snap.url_ranges.clone_from(&syncer.url_ranges);
+                snap.hyperlink_ranges.clone_from(&syncer.hyperlink_ranges);
                 snap.wrapped_rows.clone_from(&syncer.wrapped_rows);
                 snap.generation = syncer.grid_generation;
                 snap.cursor = syncer.cached_cursor;
