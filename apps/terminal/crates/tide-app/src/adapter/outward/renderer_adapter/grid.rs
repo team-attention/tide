@@ -1,9 +1,51 @@
 use std::collections::HashSet;
 
-use crate::tide_core::{Color, Rect, Size, TextStyle, Vec2};
+use cosmic_text::{Buffer as CosmicBuffer, Metrics, Shaping};
 
+use crate::tide_core::{Color, Rect, Size, TerminalCell, TextStyle, Vec2};
+
+use super::font::attrs_for_family;
 use super::vertex::{GridBgInstance, GridGlyphInstance};
 use super::WgpuRenderer;
+
+const PROGRAMMING_LIGATURE_PATTERNS: &[&str] = &[
+    "!==", "===", "<=>", "=>", "->", "<-", "<=", ">=", "==", "!=", "::", ":=", "&&", "||",
+    "++", "--", "/*", "*/", "</", "/>", "..", "...",
+];
+
+fn ligature_run_char(ch: char) -> bool {
+    ch.is_ascii_graphic()
+}
+
+fn contains_programming_ligature_sequence(text: &str) -> bool {
+    PROGRAMMING_LIGATURE_PATTERNS
+        .iter()
+        .any(|pattern| text.contains(pattern))
+}
+
+fn ligature_run_end(cells: &[TerminalCell], start: usize, cols: usize) -> Option<(usize, String)> {
+    if start >= cols || start >= cells.len() || !ligature_run_char(cells[start].character) {
+        return None;
+    }
+
+    let style = cells[start].style;
+    let mut end = start;
+    let mut text = String::new();
+    while end < cols && end < cells.len() {
+        let cell = &cells[end];
+        if cell.style != style || !ligature_run_char(cell.character) {
+            break;
+        }
+        text.push(cell.character);
+        end += 1;
+    }
+
+    if end - start >= 2 && contains_programming_ligature_sequence(&text) {
+        Some((end, text))
+    } else {
+        None
+    }
+}
 
 #[derive(Default)]
 pub struct PaneGridCache {
@@ -260,5 +302,157 @@ impl WgpuRenderer {
                 ],
             });
         }
+    }
+
+    /// Draw a terminal row, shaping same-style ASCII runs that contain common
+    /// programming ligature sequences.
+    pub fn draw_grid_row(
+        &mut self,
+        cells: &[TerminalCell],
+        row: usize,
+        cols: usize,
+        cell_size: Size,
+        offset: Vec2,
+    ) {
+        let mut col = 0;
+        let cols = cols.min(cells.len());
+        while col < cols {
+            if let Some((end, text)) = ligature_run_end(cells, col, cols) {
+                let style = cells[col].style;
+                if let Some(glyphs) =
+                    self.shape_grid_ligature_run(&text, row, col, style, cell_size, offset)
+                {
+                    for bg_col in col..end {
+                        self.draw_grid_cell(' ', row, bg_col, cells[bg_col].style, cell_size, offset);
+                    }
+                    if self.active_pane_id.is_some() {
+                        self.active_pane_cache.glyph_instances.extend(glyphs);
+                    } else {
+                        self.grid_glyph_instances.extend(glyphs);
+                    }
+                    col = end;
+                    continue;
+                }
+            }
+
+            let cell = &cells[col];
+            if !((cell.character == '\0' || cell.character == ' ')
+                && cell.style.background.is_none())
+            {
+                self.draw_grid_cell(cell.character, row, col, cell.style, cell_size, offset);
+            }
+            col += 1;
+        }
+    }
+
+    fn shape_grid_ligature_run(
+        &mut self,
+        text: &str,
+        row: usize,
+        col: usize,
+        style: TextStyle,
+        cell_size: Size,
+        offset: Vec2,
+    ) -> Option<Vec<GridGlyphInstance>> {
+        let scale = self.scale_factor;
+        let font_size_px = self.base_font_size * scale;
+        let line_height = (font_size_px * 1.2).ceil();
+        let metrics = Metrics::new(font_size_px, line_height);
+
+        let mut attrs = attrs_for_family(&self.font_family);
+        if style.bold {
+            attrs = attrs.weight(cosmic_text::Weight::BOLD);
+        }
+        if style.italic {
+            attrs = attrs.style(cosmic_text::Style::Italic);
+        }
+
+        let mut buffer = CosmicBuffer::new(&mut self.font_system, metrics);
+        buffer.set_text(&mut self.font_system, text, attrs, Shaping::Advanced);
+        buffer.shape_until_scroll(&mut self.font_system, false);
+
+        let px = (offset.x + col as f32 * cell_size.width) * scale;
+        let py = (offset.y + row as f32 * cell_size.height) * scale;
+        let ch = cell_size.height * scale;
+        let baseline_y = self.baseline_y(ch);
+        let em_scale = self.em_scale();
+
+        let mut instances = Vec::new();
+        let glyphs = buffer.layout_runs().next()?.glyphs.to_vec();
+        for glyph in glyphs {
+            let region = self.ensure_shaped_glyph_cached(
+                glyph.font_id,
+                glyph.glyph_id,
+                style.bold,
+                style.italic,
+            );
+            if region.is_empty() {
+                continue;
+            }
+
+            let glyph_x = glyph.x + glyph.font_size * glyph.x_offset;
+            let glyph_y = glyph.y - glyph.font_size * glyph.y_offset;
+            let gx = px + glyph_x + region.em_left * em_scale;
+            let gy = py + baseline_y + glyph_y - region.em_top * em_scale;
+            let gw = region.em_width * em_scale;
+            let gh = region.em_height * em_scale;
+
+            instances.push(GridGlyphInstance {
+                position: [gx, gy],
+                size: [gw, gh],
+                uv_min: region.uv_min,
+                uv_max: region.uv_max,
+                color: [
+                    style.foreground.r,
+                    style.foreground.g,
+                    style.foreground.b,
+                    style.foreground.a,
+                ],
+            });
+        }
+
+        if instances.is_empty() {
+            None
+        } else {
+            Some(instances)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tide_core::Color;
+
+    fn cell(ch: char) -> TerminalCell {
+        TerminalCell {
+            character: ch,
+            style: TextStyle {
+                foreground: Color::WHITE,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
+            hyperlink: None,
+        }
+    }
+
+    #[test]
+    fn programming_ligature_detection_recognizes_common_sequences() {
+        assert!(contains_programming_ligature_sequence("foo=>bar"));
+        assert!(contains_programming_ligature_sequence("value !== other"));
+        assert!(contains_programming_ligature_sequence("Vec::<T>"));
+        assert!(!contains_programming_ligature_sequence("plain_text"));
+    }
+
+    #[test]
+    fn ligature_runs_stop_at_style_and_space_boundaries() {
+        let mut cells = vec![cell('a'), cell('='), cell('>'), cell(' '), cell('-'), cell('>')];
+        cells[2].style.bold = true;
+
+        assert_eq!(ligature_run_end(&cells, 0, cells.len()), None);
+        assert_eq!(ligature_run_end(&cells, 4, cells.len()), Some((6, "->".to_string())));
     }
 }

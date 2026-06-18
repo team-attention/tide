@@ -20,7 +20,7 @@ export function createThreadRow(
         className={[
           "thread-row",
           showScope ? "thread-row--scoped" : "",
-          thread.active ? "thread-row--active" : "",
+          thread.active && !thread.hydrating ? "thread-row--active" : "",
           thread.contextMenuOpen ? "thread-row--menu-open" : "",
           thread.archiveConfirming ? "thread-row--archive-confirming" : "",
         ]
@@ -30,6 +30,7 @@ export function createThreadRow(
         data-thread-row={thread.threadId}
         data-active={thread.active}
         data-scoped={showScope ? "true" : undefined}
+        data-hydrating={thread.hydrating ? "true" : undefined}
         data-running={thread.running ? "true" : undefined}
         data-attention={thread.attention ? "true" : undefined}
         onMouseLeave={thread.archiveConfirming ? handlers.onLeftRailTransientClear : undefined}

@@ -30,6 +30,16 @@ pub struct GlyphCacheKey {
     pub italic: bool,
 }
 
+/// Key for shaped glyphs that do not have a stable Unicode scalar, such as
+/// OpenType programming ligatures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ShapedGlyphCacheKey {
+    pub font_id: fontdb::ID,
+    pub glyph_id: u16,
+    pub bold: bool,
+    pub italic: bool,
+}
+
 pub const ATLAS_SIZE: u32 = 4096;
 
 pub struct GlyphAtlas {
@@ -41,6 +51,7 @@ pub struct GlyphAtlas {
     row_height: u32,
     /// Map from glyph key to atlas region
     pub cache: HashMap<GlyphCacheKey, AtlasRegion>,
+    pub shaped_cache: HashMap<ShapedGlyphCacheKey, AtlasRegion>,
 }
 
 impl GlyphAtlas {
@@ -68,16 +79,18 @@ impl GlyphAtlas {
             cursor_y: 0,
             row_height: 0,
             cache: HashMap::new(),
+            shaped_cache: HashMap::new(),
         }
     }
 
     /// Clear the atlas cache, allowing it to be repacked from scratch.
     pub fn reset(&mut self) {
-        let count = self.cache.len();
+        let count = self.cache.len() + self.shaped_cache.len();
         self.cursor_x = 0;
         self.cursor_y = 0;
         self.row_height = 0;
         self.cache.clear();
+        self.shaped_cache.clear();
         log::warn!("Glyph atlas full: cleared {count} cached glyphs");
     }
 

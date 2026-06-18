@@ -26,7 +26,7 @@ use atlas::GlyphAtlas;
 use grid::PaneGridCache;
 use msdf::MsdfFontStore;
 pub(crate) use raster_icon::RasterIconAsset;
-use raster_icon::{RasterIconDrawCall, RasterIconTexture};
+use raster_icon::{RasterIconDrawCall, RasterIconTexture, TerminalImageDrawCall};
 pub(crate) use svg_icon::SvgIconPalette;
 use vertex::{ChromeRectVertex, GlyphVertex, GridBgInstance, GridGlyphInstance, RectVertex};
 
@@ -51,6 +51,7 @@ pub struct WgpuRenderer {
     pub(crate) raster_icon_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) raster_icon_sampler: wgpu::Sampler,
     pub(crate) raster_icon_textures: HashMap<&'static str, RasterIconTexture>,
+    pub(crate) terminal_image_textures: HashMap<u64, RasterIconTexture>,
 
     // Text subsystem
     pub(crate) font_system: FontSystem,
@@ -128,6 +129,7 @@ pub struct WgpuRenderer {
     pub(crate) top_icon_vertices: Vec<GlyphVertex>,
     pub(crate) top_icon_indices: Vec<u32>,
     pub(crate) top_icon_draws: Vec<RasterIconDrawCall>,
+    pub(crate) top_image_draws: Vec<TerminalImageDrawCall>,
     pub(crate) top_glyph_vertices: Vec<GlyphVertex>,
     pub(crate) top_glyph_indices: Vec<u32>,
     pub(crate) top_rect_vb: wgpu::Buffer,
@@ -150,6 +152,7 @@ pub struct WgpuRenderer {
     // Current frame state
     pub(crate) screen_size: Size,
     pub(crate) scale_factor: f32,
+    pub(crate) font_family: String,
     pub(crate) base_font_size: f32,
 
     // Cached cell metrics
@@ -232,6 +235,7 @@ impl Renderer for WgpuRenderer {
         self.top_icon_vertices.clear();
         self.top_icon_indices.clear();
         self.top_icon_draws.clear();
+        self.top_image_draws.clear();
         self.top_glyph_vertices.clear();
         self.top_glyph_indices.clear();
     }
@@ -374,7 +378,8 @@ impl WgpuRenderer {
     pub fn set_scale_factor(&mut self, scale: f32) {
         if (scale - self.scale_factor).abs() > 0.001 {
             self.scale_factor = scale;
-            self.cell_size_table = Self::precompute_cell_sizes(&mut self.font_system, scale);
+            self.cell_size_table =
+                Self::precompute_cell_sizes(&mut self.font_system, scale, &self.font_family);
             self.cached_cell_size = self.lookup_cell_size(self.base_font_size);
         }
     }

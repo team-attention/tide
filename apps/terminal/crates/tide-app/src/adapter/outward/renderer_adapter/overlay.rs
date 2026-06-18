@@ -574,6 +574,16 @@ impl WgpuRenderer {
                         );
                     }
                 }
+                for draw in &self.top_image_draws {
+                    if let Some(texture) = self.terminal_image_textures.get(&draw.key) {
+                        pass.set_bind_group(1, &texture.bind_group, &[]);
+                        pass.draw_indexed(
+                            draw.index_start..draw.index_start + draw.index_count,
+                            0,
+                            0..1,
+                        );
+                    }
+                }
             }
 
             if top_glyph_count > 0 {

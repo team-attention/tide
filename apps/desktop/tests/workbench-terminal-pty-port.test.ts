@@ -81,3 +81,58 @@ test("workbench_terminal_pty_port_accepts_interactive_input", { skip: SKIP_REAL_
     `expected the live terminal to echo written input, got: ${JSON.stringify(output)}`,
   );
 });
+
+test("workbench_terminal_pty_port_leaves_terminal_query_replies_to_xterm", { skip: SKIP_REAL_PTY_IN_CI }, async () => {
+  // Visible Workbench terminals have xterm.js attached. The backend bridge must
+  // not also synthesize CPR/DA/color replies, or interactive CLIs can read those
+  // duplicate bytes as typed answers.
+  const port = createPtyWorkbenchTerminalPort({
+    launcher: createPythonPtyProcessLauncher(),
+  });
+  const cwd = mkdtempSync(path.join(tmpdir(), "tide-terminal-"));
+
+  let output = "";
+  const exit = await new Promise<{ exitCode: number | null; signal: string | null }>(
+    (resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("terminal query test did not exit")), 5000);
+      void port
+        .start({
+          threadId: "thread-terminal",
+          paneId: "pane-terminal-query",
+          command: "python3",
+          args: [
+            "-c",
+            [
+              "import os, select, sys, time, tty",
+              "tty.setraw(sys.stdin.fileno())",
+              "sys.stdout.buffer.write(b'\\x1b[6n')",
+              "sys.stdout.buffer.flush()",
+              "deadline = time.time() + 0.5",
+              "data = b''",
+              "while time.time() < deadline:",
+              "    ready, _, _ = select.select([sys.stdin], [], [], 0.05)",
+              "    if ready:",
+              "        data += os.read(sys.stdin.fileno(), 128)",
+              "print('\\nreply=' + data.decode('latin1').encode('unicode_escape').decode(), flush=True)",
+            ].join("\n"),
+          ],
+          cwd,
+          onOutput: (chunk) => {
+            output += chunk.body;
+          },
+          onExit: (result) => {
+            clearTimeout(timeout);
+            resolve(result);
+          },
+        })
+        .catch((error: unknown) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+    },
+  );
+
+  assert.equal(exit.exitCode, 0);
+  assert.match(output, /reply=/);
+  assert.doesNotMatch(output, /\\x1b\[1;1R/);
+});

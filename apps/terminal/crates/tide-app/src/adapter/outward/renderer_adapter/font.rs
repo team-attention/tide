@@ -1,7 +1,7 @@
 use crate::tide_core::Size;
 use cosmic_text::{Attrs, Buffer as CosmicBuffer, Family, FontSystem, Metrics, Shaping};
 
-use super::atlas::{AtlasRegion, GlyphCacheKey};
+use super::atlas::{AtlasRegion, GlyphCacheKey, ShapedGlyphCacheKey};
 use super::WgpuRenderer;
 
 #[cfg(target_os = "macos")]
@@ -50,11 +50,51 @@ mod coretext_fallback {
 const FONT_SIZE_MIN: u32 = 8;
 const FONT_SIZE_MAX: u32 = 32;
 
+pub(super) fn attrs_for_family(family: &str) -> Attrs<'_> {
+    if family == "Monospace" {
+        Attrs::new().family(Family::Monospace)
+    } else {
+        Attrs::new().family(Family::Name(family))
+    }
+}
+
 impl WgpuRenderer {
+    fn empty_atlas_region() -> AtlasRegion {
+        AtlasRegion {
+            uv_min: [0.0, 0.0],
+            uv_max: [0.0, 0.0],
+            em_left: 0.0,
+            em_top: 0.0,
+            em_width: 0.0,
+            em_height: 0.0,
+        }
+    }
+
+    fn register_cosmic_font_face(
+        &mut self,
+        face_id: fontdb::ID,
+        family_key: &str,
+        bold: bool,
+        italic: bool,
+    ) -> bool {
+        let mut font_data = None;
+        self.font_system.db().with_face_data(face_id, |data, index| {
+            font_data = Some((data.to_vec(), index));
+        });
+        if let Some((data, index)) = font_data {
+            self.msdf_font_store
+                .register_font(family_key, bold, italic, data, index);
+            true
+        } else {
+            false
+        }
+    }
+
     pub(crate) fn compute_cell_size(
         font_system: &mut FontSystem,
         scale_factor: f32,
         base_font_size: f32,
+        font_family: &str,
     ) -> Size {
         let font_size = base_font_size * scale_factor;
         let line_height = (font_size * 1.2).ceil();
@@ -65,7 +105,7 @@ impl WgpuRenderer {
         buffer.set_text(
             font_system,
             "M",
-            Attrs::new().family(Family::Monospace),
+            attrs_for_family(font_family),
             Shaping::Advanced,
         );
         buffer.shape_until_scroll(font_system, false);
@@ -86,9 +126,10 @@ impl WgpuRenderer {
     pub(crate) fn precompute_cell_sizes(
         font_system: &mut FontSystem,
         scale_factor: f32,
+        font_family: &str,
     ) -> Vec<Size> {
         (FONT_SIZE_MIN..=FONT_SIZE_MAX)
-            .map(|s| Self::compute_cell_size(font_system, scale_factor, s as f32))
+            .map(|s| Self::compute_cell_size(font_system, scale_factor, s as f32, font_family))
             .collect()
     }
 
@@ -98,7 +139,12 @@ impl WgpuRenderer {
         if let Some(&size) = self.cell_size_table.get(idx) {
             size
         } else {
-            Self::compute_cell_size(&mut self.font_system, self.scale_factor, base_font_size)
+            Self::compute_cell_size(
+                &mut self.font_system,
+                self.scale_factor,
+                base_font_size,
+                &self.font_family,
+            )
         }
     }
 
@@ -133,12 +179,13 @@ impl WgpuRenderer {
         italic: bool,
         font_size: f32,
         scale_factor: f32,
+        font_family: &str,
     ) -> Option<fontdb::ID> {
         let font_size_px = font_size * scale_factor;
         let line_height = (font_size_px * 1.2).ceil();
         let metrics = Metrics::new(font_size_px, line_height);
 
-        let mut attrs = Attrs::new().family(Family::Monospace);
+        let mut attrs = attrs_for_family(font_family);
         if bold {
             attrs = attrs.weight(cosmic_text::Weight::BOLD);
         }
@@ -177,11 +224,20 @@ impl WgpuRenderer {
             return *region;
         }
 
-        // Try Monospace first
-        let region = self.try_generate_msdf(character, bold, italic, "Monospace");
+        // Try configured primary font first.
+        let primary_family = self.font_family.clone();
+        let region = self.try_generate_msdf(character, bold, italic, &primary_family);
         if !region.is_empty() {
             self.atlas.cache.insert(key, region);
             return region;
+        }
+
+        if primary_family != "Monospace" {
+            let region = self.try_generate_msdf(character, bold, italic, "Monospace");
+            if !region.is_empty() {
+                self.atlas.cache.insert(key, region);
+                return region;
+            }
         }
 
         // Use cosmic-text's shaping engine to discover the right font.
@@ -195,17 +251,10 @@ impl WgpuRenderer {
             italic,
             self.base_font_size,
             self.scale_factor,
+            &primary_family,
         ) {
             let family_key = format!("cosmic-{face_id}");
-            let mut font_data = None;
-            self.font_system
-                .db()
-                .with_face_data(face_id, |data, index| {
-                    font_data = Some((data.to_vec(), index));
-                });
-            if let Some((data, index)) = font_data {
-                self.msdf_font_store
-                    .register_font(&family_key, bold, italic, data, index);
+            if self.register_cosmic_font_face(face_id, &family_key, bold, italic) {
                 let region = self.try_generate_msdf(character, bold, italic, &family_key);
                 if !region.is_empty() {
                     self.atlas.cache.insert(key, region);
@@ -239,10 +288,23 @@ impl WgpuRenderer {
                 &[(false, false)]
             };
             for &(fb_bold, fb_italic) in fallback_attempts {
-                let region = self.try_generate_msdf(character, fb_bold, fb_italic, "Monospace");
+                let region =
+                    self.try_generate_msdf(character, fb_bold, fb_italic, &primary_family);
                 if !region.is_empty() {
                     self.atlas.cache.insert(key, region);
                     return region;
+                }
+                if primary_family != "Monospace" {
+                    let region = self.try_generate_msdf(
+                        character,
+                        fb_bold,
+                        fb_italic,
+                        "Monospace",
+                    );
+                    if !region.is_empty() {
+                        self.atlas.cache.insert(key, region);
+                        return region;
+                    }
                 }
                 // cosmic-text fallback for style variants
                 if let Some(face_id) = Self::discover_font_via_cosmic(
@@ -252,22 +314,10 @@ impl WgpuRenderer {
                     fb_italic,
                     self.base_font_size,
                     self.scale_factor,
+                    &primary_family,
                 ) {
                     let family_key = format!("cosmic-{face_id}");
-                    let mut font_data = None;
-                    self.font_system
-                        .db()
-                        .with_face_data(face_id, |data, index| {
-                            font_data = Some((data.to_vec(), index));
-                        });
-                    if let Some((data, index)) = font_data {
-                        self.msdf_font_store.register_font(
-                            &family_key,
-                            fb_bold,
-                            fb_italic,
-                            data,
-                            index,
-                        );
+                    if self.register_cosmic_font_face(face_id, &family_key, fb_bold, fb_italic) {
                         let region =
                             self.try_generate_msdf(character, fb_bold, fb_italic, &family_key);
                         if !region.is_empty() {
@@ -294,16 +344,40 @@ impl WgpuRenderer {
         }
 
         // All attempts failed — cache empty region to avoid repeated retries.
-        let empty = AtlasRegion {
-            uv_min: [0.0, 0.0],
-            uv_max: [0.0, 0.0],
-            em_left: 0.0,
-            em_top: 0.0,
-            em_width: 0.0,
-            em_height: 0.0,
-        };
+        let empty = Self::empty_atlas_region();
         self.atlas.cache.insert(key, empty);
         empty
+    }
+
+    /// Generate and cache an MSDF glyph for an already-shaped font glyph id.
+    pub(crate) fn ensure_shaped_glyph_cached(
+        &mut self,
+        font_id: fontdb::ID,
+        glyph_id: u16,
+        bold: bool,
+        italic: bool,
+    ) -> AtlasRegion {
+        let key = ShapedGlyphCacheKey {
+            font_id,
+            glyph_id,
+            bold,
+            italic,
+        };
+
+        if let Some(region) = self.atlas.shaped_cache.get(&key) {
+            return *region;
+        }
+
+        let family_key = format!("cosmic-{font_id}");
+        if !self.register_cosmic_font_face(font_id, &family_key, bold, italic) {
+            let empty = Self::empty_atlas_region();
+            self.atlas.shaped_cache.insert(key, empty);
+            return empty;
+        }
+
+        let region = self.try_generate_msdf_by_glyph_id(glyph_id, bold, italic, &family_key);
+        self.atlas.shaped_cache.insert(key, region);
+        region
     }
 
     /// Try to generate an MSDF glyph using the given font family.
@@ -314,14 +388,7 @@ impl WgpuRenderer {
         italic: bool,
         family: &str,
     ) -> AtlasRegion {
-        let empty = AtlasRegion {
-            uv_min: [0.0, 0.0],
-            uv_max: [0.0, 0.0],
-            em_left: 0.0,
-            em_top: 0.0,
-            em_width: 0.0,
-            em_height: 0.0,
-        };
+        let empty = Self::empty_atlas_region();
 
         // Ensure font is loaded
         let loaded = self
@@ -340,7 +407,7 @@ impl WgpuRenderer {
             None => return empty,
         };
 
-        let cache_len_before = self.atlas.cache.len();
+        let cache_len_before = self.atlas.cache.len() + self.atlas.shaped_cache.len();
         let region = self.atlas.upload_glyph(
             &self.queue,
             msdf_glyph.width,
@@ -351,7 +418,47 @@ impl WgpuRenderer {
             msdf_glyph.em_height,
             &msdf_glyph.rgba_data,
         );
-        if self.atlas.cache.is_empty() && cache_len_before > 0 {
+        if self.atlas.cache.is_empty() && self.atlas.shaped_cache.is_empty() && cache_len_before > 0
+        {
+            self.atlas_reset_count += 1;
+            self.grid_needs_upload = true;
+            self.chrome_needs_upload = true;
+            self.warmup_ascii();
+            self.warmup_common_unicode();
+        }
+        region
+    }
+
+    fn try_generate_msdf_by_glyph_id(
+        &mut self,
+        glyph_id: u16,
+        bold: bool,
+        italic: bool,
+        family: &str,
+    ) -> AtlasRegion {
+        let empty = Self::empty_atlas_region();
+
+        let msdf_glyph = match self
+            .msdf_font_store
+            .generate_by_glyph_id(family, bold, italic, glyph_id)
+        {
+            Some(g) => g,
+            None => return empty,
+        };
+
+        let cache_len_before = self.atlas.cache.len() + self.atlas.shaped_cache.len();
+        let region = self.atlas.upload_glyph(
+            &self.queue,
+            msdf_glyph.width,
+            msdf_glyph.height,
+            msdf_glyph.em_left,
+            msdf_glyph.em_top,
+            msdf_glyph.em_width,
+            msdf_glyph.em_height,
+            &msdf_glyph.rgba_data,
+        );
+        if self.atlas.cache.is_empty() && self.atlas.shaped_cache.is_empty() && cache_len_before > 0
+        {
             self.atlas_reset_count += 1;
             self.grid_needs_upload = true;
             self.chrome_needs_upload = true;
@@ -364,6 +471,26 @@ impl WgpuRenderer {
     /// Get the current base font size.
     pub fn font_size(&self) -> f32 {
         self.base_font_size
+    }
+
+    pub fn font_family(&self) -> &str {
+        &self.font_family
+    }
+
+    pub fn set_font_family(&mut self, family: &str) {
+        let family = family.trim();
+        if family.is_empty() || family == self.font_family {
+            return;
+        }
+        self.font_family = family.to_string();
+        self.cell_size_table =
+            Self::precompute_cell_sizes(&mut self.font_system, self.scale_factor, &self.font_family);
+        self.cached_cell_size = self.lookup_cell_size(self.base_font_size);
+        self.atlas.reset();
+        self.invalidate_all_pane_caches();
+        self.atlas_reset_count += 1;
+        self.grid_needs_upload = true;
+        self.chrome_needs_upload = true;
     }
 
     /// Change the base font size at runtime (clamped to 8.0..=32.0).

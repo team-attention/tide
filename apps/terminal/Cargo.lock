@@ -34,6 +34,7 @@ dependencies = [
  "rustix",
  "rustix-openpty",
  "serde",
+ "serde_json",
  "signal-hook",
  "unicode-width 0.2.2",
  "vte",
@@ -3149,6 +3150,7 @@ version = "0.51.49"
 dependencies = [
  "alacritty_terminal",
  "arboard",
+ "base64",
  "block2",
  "bytemuck",
  "core-foundation 0.10.1",
