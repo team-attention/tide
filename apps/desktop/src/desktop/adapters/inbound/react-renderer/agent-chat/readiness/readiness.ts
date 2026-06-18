@@ -76,43 +76,10 @@ export function createProviderReadiness(
   ];
 }
 
-// The non-blocking agent-CLI update nudge (spec: version-management.md, Lane 2).
-// Separate from the blocking readiness card above: it renders whenever an update
-// advisory is present — even when the agent is ready and has no blockers — and a
-// single click runs the same Provider Setup Surface terminal handoff as install,
-// updating the CLI in place (npm install -g <pkg>@latest).
-export function createProviderUpdateNudge(
-  viewModel: AgentChatShellViewModel,
-  onRowSelect?: (
-    surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
-    rowId: string,
-  ) => void,
-): ReactElement[] {
-  const advisory = viewModel.providerUpdateAdvisory;
-  if (advisory === undefined) {
-    return [];
-  }
-  return [
-    createChoiceSurface({
-      key: "provider-update",
-      onRowSelect,
-      surface: {
-        surfaceKind: "provider_readiness",
-        title: `Update ${advisory.agentLabel}`,
-        sourceLabel: "Update available",
-        rows: [
-          {
-            rowId: "update_available:setup",
-            label: `Update ${advisory.agentLabel}`,
-            detail: `v${advisory.currentVersion} → v${advisory.latestVersion} — updates the CLI in a terminal, your draft is kept`,
-            icon: "↑",
-          },
-        ],
-      },
-      message: `A newer ${advisory.agentLabel} CLI is available (v${advisory.latestVersion}).`,
-    }),
-  ];
-}
+// The non-blocking agent-CLI update advisory is no longer a choice-surface card —
+// it renders as a compact `↑ Update <Agent>` chip in the composer toolbar
+// (composer.tsx), which fires the same `update_available:setup` Setup Surface
+// handoff on click. Spec: version-management.md (Lane 2), D2.
 
 // Actionable label for a Provider Setup Surface row, so the user reads exactly what clicking does
 // ("Install Codex" / "Sign in to Codex") instead of a generic prompt. Spec: provider-cli-setup-handoff.

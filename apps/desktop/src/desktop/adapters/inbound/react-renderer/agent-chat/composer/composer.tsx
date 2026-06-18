@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { handleComposerPaste } from "./attachments.ts";
 import { ArrowUp, Check, ChevronDown, Plus, ShieldCheck, Square, X } from "lucide-react";
 import { chipAnchorFromEvent, contextChipIcon, createContextChip } from "./context-chips.tsx";
-import { createProviderReadiness, createProviderUpdateNudge } from "../readiness/readiness.ts";
+import { createProviderReadiness } from "../readiness/readiness.ts";
 import { PromptCard } from "../prompt-card/prompt-card.tsx";
 import { createUsageMeter } from "./usage-meter.tsx";
 import { createQueuedSteerStack } from "./steer-queue.tsx";
@@ -193,6 +193,24 @@ export function createComposer(
             <ChevronDown size={13} strokeWidth={1.9} className="composer-shell__chip-chevron" aria-hidden />
           </button>
           <span className="composer-shell__toolbar-spacer" />
+          {/* Non-blocking agent-CLI update advisory (spec: version-management.md, Lane 2 / D2):
+              a quiet pill, not a card. Present even when the agent is ready and on the start
+              composer. One click runs the same Setup Surface terminal update as install
+              (update_available:setup); the vX → vY detail lives in the tooltip. */}
+          {viewModel.providerUpdateAdvisory ? (
+            <button
+              type="button"
+              className="composer-shell__choice-chip composer-shell__choice-chip--update"
+              title={`v${viewModel.providerUpdateAdvisory.currentVersion} → v${viewModel.providerUpdateAdvisory.latestVersion} — updates the CLI in a terminal, your draft is kept`}
+              aria-label={`Update ${viewModel.providerUpdateAdvisory.agentLabel}`}
+              onClick={() =>
+                handlers.onChoiceSurfaceRowSelect?.("provider_readiness", "update_available:setup")
+              }
+            >
+              <ArrowUp size={14} strokeWidth={2} className="composer-shell__chip-icon" aria-hidden />
+              <span className="composer-shell__chip-label">{`Update ${viewModel.providerUpdateAdvisory.agentLabel}`}</span>
+            </button>
+          ) : null}
           <button
             type="button"
             className="composer-shell__choice-chip composer-shell__choice-chip--model"
@@ -305,7 +323,6 @@ export function createComposerStack(
       {/* composer.activeSurface (chip dropdown) is rendered as an anchored popover
           by AgentChatShell. Provider readiness and prompt cards remain in flow. */}
       {createProviderReadiness(viewModel, handlers.onChoiceSurfaceRowSelect)}
-      {createProviderUpdateNudge(viewModel, handlers.onChoiceSurfaceRowSelect)}
       {viewModel.prompt ? (
         <PromptCard
           key={viewModel.prompt.promptId}
