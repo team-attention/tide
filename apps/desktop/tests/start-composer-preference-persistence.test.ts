@@ -12,32 +12,31 @@ import {
 // the persistence allowlist was hardcoded to codex/claude/openai_api, silently
 // dropping opencode + gemini, so their model choice was never remembered).
 
-// In-memory localStorage shim — the Node test env has no DOM. The settings
-// helpers read `localStorage` at call time, so installing it on globalThis is
-// enough; they no-op when it is absent.
-class MemoryStorage {
-  private readonly store = new Map<string, string>();
-  getItem(key: string): string | null {
-    return this.store.has(key) ? (this.store.get(key) as string) : null;
-  }
-  setItem(key: string, value: string): void {
-    this.store.set(key, String(value));
-  }
-  removeItem(key: string): void {
-    this.store.delete(key);
-  }
-  clear(): void {
-    this.store.clear();
-  }
-  key(index: number): string | null {
-    return Array.from(this.store.keys())[index] ?? null;
+// Prefs no longer live in localStorage — they are owned by Main and injected into the
+// renderer as window.tide.uiPrefs (the boot localStorage access stalled ~3.8s; see
+// ui-prefs.ts / ui-prefs-store.ts). Shim window.tide with an in-memory snapshot whose
+// saveUiPref writes back into the same snapshot the loaders read — i.e. simulate the
+// file→inject round-trip a relaunch would do.
+const uiPrefs: Record<string, string> = {};
+(globalThis as { window?: unknown }).window = {
+  tide: {
+    uiPrefs,
+    saveUiPref(key: string, value: string): void {
+      uiPrefs[key] = value;
+    },
+  },
+};
+
+function clearPrefs(): void {
+  for (const key of Object.keys(uiPrefs)) {
+    delete uiPrefs[key];
   }
 }
 
-(globalThis as { localStorage?: Storage }).localStorage = new MemoryStorage() as unknown as Storage;
+const START_COMPOSER_KEY = "tide.startComposerDefaults";
 
 test("an opencode Start Composer preference round-trips through storage", () => {
-  localStorage.clear();
+  clearPrefs();
   persistPreferredStartComposer({
     agentId: "opencode",
     model: "openai/gpt-5.5",
@@ -53,7 +52,7 @@ test("an opencode Start Composer preference round-trips through storage", () => 
 });
 
 test("a gemini Start Composer preference round-trips through storage", () => {
-  localStorage.clear();
+  clearPrefs();
   persistPreferredStartComposer({ agentId: "gemini", model: "gemini-3-pro-preview", permission: "default" });
   const loaded = loadPreferredStartComposer();
   assert.equal(loaded?.agentId, "gemini");
@@ -61,12 +60,9 @@ test("a gemini Start Composer preference round-trips through storage", () => {
 });
 
 test("an unknown persisted agent loads as null (no preference)", () => {
-  localStorage.clear();
-  persistPreferredStartComposer({ agentId: "opencode", model: "openai/gpt-5.5" });
-  // Corrupt the stored record to an unknown agent on whatever key was written.
-  const key = (globalThis.localStorage as unknown as MemoryStorage).key(0);
-  assert.notEqual(key, null);
-  localStorage.setItem(key as string, JSON.stringify({ agentId: "bogus", model: "x" }));
+  clearPrefs();
+  // A stored record for an agent the build no longer knows must load as null.
+  uiPrefs[START_COMPOSER_KEY] = JSON.stringify({ agentId: "bogus", model: "x" });
   assert.equal(loadPreferredStartComposer(), null);
 });
 

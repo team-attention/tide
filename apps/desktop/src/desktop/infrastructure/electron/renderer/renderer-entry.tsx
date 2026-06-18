@@ -146,6 +146,8 @@ declare global {
       applyAppUpdate(): void;
       checkForAppUpdate(): void;
       getAppVersion(): Promise<string>;
+      uiPrefs: Record<string, string>;
+      saveUiPref(key: string, value: string): void;
       openDirectory(): Promise<string | null>;
       listProjects(): Promise<{ projectId: string; name: string; cwd: string }[]>;
       registerProject(cwd: string): Promise<{ projectId: string; name: string; cwd: string }[]>;

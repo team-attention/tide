@@ -5,28 +5,22 @@
 // localStorage so it survives restarts and is read synchronously at boot (see
 // the inline script in index.html) to avoid a light→dark flash.
 
+import { getStoredPref, setStoredPref } from "./ui-prefs-store.ts";
+
 export type TideThemePreference = "light" | "dark" | "auto";
 
 export const TIDE_THEME_STORAGE_KEY = "tide.theme";
 
 export function loadThemePreference(): TideThemePreference {
-  try {
-    const value = localStorage.getItem(TIDE_THEME_STORAGE_KEY);
-    if (value === "light" || value === "dark" || value === "auto") {
-      return value;
-    }
-  } catch {
-    // localStorage unavailable (sandbox/probe) — fall through to the default.
+  const value = getStoredPref(TIDE_THEME_STORAGE_KEY);
+  if (value === "light" || value === "dark" || value === "auto") {
+    return value;
   }
   return "auto";
 }
 
 export function saveThemePreference(pref: TideThemePreference): void {
-  try {
-    localStorage.setItem(TIDE_THEME_STORAGE_KEY, pref);
-  } catch {
-    // Non-fatal: the live document still updates; only persistence is lost.
-  }
+  setStoredPref(TIDE_THEME_STORAGE_KEY, pref);
 }
 
 export function systemPrefersDark(): boolean {
