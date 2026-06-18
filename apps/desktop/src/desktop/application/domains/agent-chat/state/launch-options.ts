@@ -8,11 +8,11 @@ export function launchOptionsForState(
   return state.thread ? state.thread.launchOptions : state.composer.startOptions.launchOptions;
 }
 
-// The Directory chip label. A pending "create on send" intent (worktree === "new")
-// renders as "New worktree" (with the typed name when given), so the chip never
-// shows the raw "new" sentinel. Existing worktree paths compact to their branch
-// or basename while the underlying launch option keeps the absolute path.
-export function directoryContextValue(
+// The Environment chip label. A pending "create on send" intent (worktree === "new")
+// renders as a branch creation state, so the chip never shows the raw sentinel.
+// Existing worktree paths compact to their branch or basename while the underlying
+// launch option keeps the absolute path.
+export function environmentContextValue(
   options: AgentChatStartOptions,
   worktrees: AgentChatWorktreeOption[],
 ): string {
@@ -21,13 +21,13 @@ export function directoryContextValue(
   if (worktree === "new") {
     const typed = launchOptions?.newWorktreeName;
     const name = typeof typed === "string" ? typed.trim() : "";
-    return name.length > 0 ? `New worktree: ${name}` : "New worktree (auto)";
+    return name.length > 0 ? `New branch: ${name}` : "New branch";
   }
   if (typeof worktree === "string" && worktree !== "current folder" && worktree.length > 0) {
     const existing = worktrees.find((entry) => entry.path === worktree);
     return existing?.branch ?? basenameOf(worktree);
   }
-  return String(worktree ?? "current folder");
+  return "Local";
 }
 
 // The Launch Option keys that affect a running Agent Runtime — a mid-thread

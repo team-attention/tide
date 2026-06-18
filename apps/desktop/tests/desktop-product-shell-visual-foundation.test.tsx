@@ -961,7 +961,7 @@ test("agent_chat_empty_state_reads_like_a_product_start_surface", () => {
   assert.match(html, /What should we build in tide\?/);
   assert.match(html, /Do anything/);
   assert.match(html, /Codex CLI/);
-  assert.match(html, /current folder/);
+  assert.match(html, /Local/);
   assert.doesNotMatch(html, /Review changes/);
   assert.doesNotMatch(html, /Open a browser check/);
   assert.doesNotMatch(html, /Continue implementation/);
@@ -3119,7 +3119,7 @@ test("product_shell_thread_started_preserves_gemini_model_label", () => {
     "Gemini CLI",
     "tide",
     "main",
-    "current folder",
+    "Local",
   ]);
 });
 

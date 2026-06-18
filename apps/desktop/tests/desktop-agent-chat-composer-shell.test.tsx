@@ -106,7 +106,7 @@ test("sending_an_empty_start_composer_draft_emits_no_command", () => {
 
 // Spec: docs_v2/specs/worktree-start-experience.md
 
-test("new_worktree_intent_defers_creation_and_labels_the_worktree_chip", () => {
+test("new_branch_intent_defers_creation_and_labels_the_environment_chip", () => {
   const base = createAgentChatShellState({
     startOptions: {
       agentBinding: { agentId: "claude" },
@@ -115,17 +115,17 @@ test("new_worktree_intent_defers_creation_and_labels_the_worktree_chip", () => {
     },
   });
 
-  // Blank name → pending intent; the chip reads "New worktree (auto)" (never "new").
+  // Blank name -> pending intent; the chip reads "New branch" (never "new").
   const auto = setComposerNewWorktreeIntent(base, { name: "" }).state;
   assert.equal(auto.composer.startOptions.launchOptions?.worktree, "new");
   assert.equal(auto.composer.startOptions.launchOptions?.newWorktreeName, "");
   const autoItems = createAgentChatShellViewModel(auto).composer.contextItems;
-  assert.equal(autoItems.find((item) => item.label === "Directory")?.value, "New worktree (auto)");
+  assert.equal(autoItems.find((item) => item.label === "Environment")?.value, "New branch");
 
-  // Typed name → chip reads "New worktree: <name>".
+  // Typed name -> chip reads "New branch: <name>".
   const named = setComposerNewWorktreeIntent(base, { name: "spike" }).state;
   const namedItems = createAgentChatShellViewModel(named).composer.contextItems;
-  assert.equal(namedItems.find((item) => item.label === "Directory")?.value, "New worktree: spike");
+  assert.equal(namedItems.find((item) => item.label === "Environment")?.value, "New branch: spike");
 
   // A base branch chosen in the inline form is stored as the launch branch (the
   // `git worktree add` start point read at send). The Branch chip reflects it.
@@ -163,14 +163,12 @@ test("resolving_new_worktree_intent_rescopes_and_resets_launch_options", () => {
   assert.equal("newWorktreeName" in options, false);
 });
 
-test("composer_worktree_menu_offers_delete_on_existing_worktrees", () => {
-  // Spec: docs_v2/specs/worktree-branch-deletion.md — each existing worktree row
-  // carries a trailing delete action (routed via a `delete-worktree:` rowId).
+test("composer_environment_menu_offers_three_start_modes", () => {
   const base = createAgentChatShellState({
     startOptions: {
       agentBinding: { agentId: "claude" },
       scope: { kind: "project", projectId: "repo", cwd: "/repo" },
-      launchOptions: { worktree: "current folder" },
+      launchOptions: { worktree: "current folder", branch: "fix-login" },
     },
   });
   const state: AgentChatShellState = {
@@ -182,16 +180,16 @@ test("composer_worktree_menu_offers_delete_on_existing_worktrees", () => {
   };
 
   const surface = createAgentChatShellViewModel(state).composer.activeSurface;
-  const worktreeRow = surface?.rows.find(
-    (entry) => entry.rowId === "worktree:/repo.worktree/fix-login",
-  );
-  assert.equal(worktreeRow?.action?.rowId, "delete-worktree:/repo.worktree/fix-login");
-  // The "current folder" / new-worktree affordances carry no delete action.
-  assert.equal(surface?.rows.find((entry) => entry.rowId === "worktree:current")?.action, undefined);
-  assert.equal(surface?.rows.find((entry) => entry.rowId === "new-worktree")?.action, undefined);
+  assert.equal(surface?.title, "Environment");
+  assert.deepEqual(surface?.rows.map((entry) => entry.label), [
+    "Local",
+    "New branch",
+    "Existing worktree",
+  ]);
+  assert.deepEqual(surface?.rows.map((entry) => entry.action), [undefined, undefined, undefined]);
 });
 
-test("branch_selection_auto_selects_an_existing_worktree_directory", () => {
+test("branch_selection_changes_branch_without_forcing_a_worktree_directory", () => {
   const base = createAgentChatShellState({
     startOptions: {
       agentBinding: { agentId: "claude" },
@@ -220,15 +218,44 @@ test("branch_selection_auto_selects_an_existing_worktree_directory", () => {
   assert.deepEqual(selected.composer.startOptions.scope, {
     kind: "project",
     projectId: "repo",
-    cwd: "/repo.worktree/feature-x",
+    cwd: "/repo",
   });
   assert.equal(selected.composer.startOptions.launchOptions?.branch, "feature/x");
-  assert.equal(selected.composer.startOptions.launchOptions?.worktree, "/repo.worktree/feature-x");
+  assert.equal(selected.composer.startOptions.launchOptions?.worktree, "current folder");
   const items = createAgentChatShellViewModel(selected).composer.contextItems;
-  assert.equal(items.find((item) => item.label === "Directory")?.value, "feature/x");
+  assert.equal(items.find((item) => item.label === "Environment")?.value, "Local");
 });
 
-test("directory_selection_current_folder_restores_the_current_worktree_scope", () => {
+test("selecting_new_branch_marks_a_new_worktree_intent_without_opening_a_name_step", () => {
+  const base = createAgentChatShellState({
+    startOptions: {
+      agentBinding: { agentId: "claude" },
+      scope: { kind: "project", projectId: "repo", cwd: "/repo" },
+      launchOptions: { worktree: "current folder", branch: "main" },
+    },
+  });
+  const state: AgentChatShellState = {
+    ...setComposerActiveSurface(base, "branch_menu").state,
+    availableBranches: [
+      { name: "main", kind: "local", current: true },
+      { name: "develop", kind: "local", current: false },
+    ],
+  };
+
+  const selected = selectAgentChatChoiceSurfaceRow(
+    state,
+    "branch_menu",
+    "create-branch",
+  ).state;
+
+  assert.equal(selected.composer.startOptions.launchOptions?.worktree, "new");
+  assert.equal(selected.composer.startOptions.launchOptions?.newWorktreeName, "");
+  assert.equal(selected.composer.startOptions.launchOptions?.branch, "main");
+  const items = createAgentChatShellViewModel(selected).composer.contextItems;
+  assert.equal(items.find((item) => item.label === "Environment")?.value, "New branch");
+});
+
+test("environment_selection_local_restores_the_current_folder_scope", () => {
   const base = createAgentChatShellState({
     startOptions: {
       agentBinding: { agentId: "claude" },
@@ -256,7 +283,7 @@ test("directory_selection_current_folder_restores_the_current_worktree_scope", (
     cwd: "/repo",
   });
   assert.equal(selected.composer.startOptions.launchOptions?.worktree, "current folder");
-  assert.equal(selected.composer.startOptions.launchOptions?.branch, "main");
+  assert.equal(selected.composer.startOptions.launchOptions?.branch, "feature/x");
 });
 
 test("submitting_an_existing_worktree_directory_scopes_the_thread_to_that_cwd", () => {
@@ -431,7 +458,7 @@ test("new_thread_start_screen_renders_start_composer_without_fake_cues", () => {
   assert.match(html, /What should we build in tide\?/);
   assert.match(html, /Do anything/);
   assert.match(html, /Codex CLI/);
-  assert.match(html, /current folder/);
+  assert.match(html, /Local/);
   assert.match(html, /GPT-5\.5 High/);
   assert.doesNotMatch(html, /Start with one focused Thread/);
   assert.doesNotMatch(html, /Review changes/);
@@ -1885,16 +1912,14 @@ test("branch_menu_lists_real_git_branches_not_placeholders", () => {
 
   assert.match(html, /feature\/x/);
   assert.match(html, /origin\/main/);
-  assert.match(html, /Create new branch/);
+  assert.match(html, /New branch/);
+  assert.match(html, /Home/);
   // The old fabricated placeholders are gone.
   assert.doesNotMatch(html, /feature\/sidebar/);
   assert.doesNotMatch(html, /release\/2026-05/);
 });
 
-test("composer_branch_menu_offers_delete_on_safe_local_branches_only", () => {
-  // Spec: docs_v2/specs/branch-deletion-from-picker.md — a trailing delete action
-  // (routed via `delete-branch:`) appears ONLY on local branches that aren't the
-  // current branch and aren't checked out in any worktree.
+test("composer_branch_menu_keeps_branch_management_out_of_the_start_flow", () => {
   const base = createAgentChatShellState({
     startOptions: {
       agentBinding: { agentId: "claude" },
@@ -1916,37 +1941,39 @@ test("composer_branch_menu_offers_delete_on_safe_local_branches_only", () => {
     ],
   };
   const surface = createAgentChatShellViewModel(state).composer.activeSurface;
-  const rowFor = (name: string) => surface?.rows.find((entry) => entry.rowId === `branch:${name}`);
-  // Deletable: a plain local branch with no worktree, not the current one.
-  assert.equal(rowFor("feature/x")?.action?.rowId, "delete-branch:feature/x");
-  // Not deletable: current branch, remote ref, worktree-backed branch.
-  assert.equal(rowFor("main")?.action, undefined);
-  assert.equal(rowFor("origin/main")?.action, undefined);
-  assert.equal(rowFor("wt-branch")?.action, undefined);
+  assert.deepEqual(surface?.rows.map((entry) => entry.action), surface?.rows.map(() => undefined));
+  assert.deepEqual(surface?.rows.slice(0, 2).map((entry) => entry.label), ["New branch", "Home"]);
 });
 
 test("branch_menu_falls_back_to_current_value_when_no_git_data", () => {
   // Spec: docs_v2/specs/git-backed-worktree-branch-menus.md UC-3
   const html = renderShell(setComposerActiveSurface(createAgentChatShellState(), "branch_menu").state);
-  assert.match(html, /Create new branch/);
+  assert.match(html, /New branch/);
   assert.doesNotMatch(html, /feature\/sidebar/);
   assert.doesNotMatch(html, /codex\/v2-shell/);
 });
 
-test("worktree_menu_lists_real_worktrees", () => {
+test("environment_menu_lists_start_modes_not_all_worktrees", () => {
   // Spec: docs_v2/specs/git-backed-worktree-branch-menus.md UC-2
   const base: AgentChatShellState = {
-    ...createAgentChatShellState(),
+    ...createAgentChatShellState({
+      startOptions: {
+        agentBinding: { agentId: "codex" },
+        launchOptions: { worktree: "current folder", branch: "feature/x" },
+      },
+    }),
     availableWorktrees: [
       { path: "/Users/you/Workspace/tide", branch: "main", current: true },
       { path: "/Users/you/Workspace/tide-wt", branch: "feature/x", current: false },
     ],
   };
   const html = renderShell(setComposerActiveSurface(base, "worktree_menu").state);
-  assert.match(html, /current folder/);
+  assert.match(html, /Environment/);
+  assert.match(html, /Local/);
+  assert.match(html, /New branch/);
+  assert.match(html, /Existing worktree/);
   assert.match(html, /feature\/x/);
-  assert.match(html, /New worktree/);
-  assert.doesNotMatch(html, /existing worktree/);
+  assert.doesNotMatch(html, /New worktree/);
 });
 
 test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {

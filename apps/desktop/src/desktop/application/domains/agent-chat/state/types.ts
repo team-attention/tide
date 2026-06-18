@@ -492,7 +492,7 @@ export interface AgentChatContextChipView {
 }
 
 export interface AgentChatContextItem {
-  label: "Agent" | "Project" | "Scratch" | "Directory" | "Branch";
+  label: "Agent" | "Project" | "Scratch" | "Environment" | "Branch";
   value: string;
   runtimeSourceKind?: AgentChatAgentRuntimeSource["kind"];
   // For the Agent chip: the agent id, so the renderer can show the per-agent

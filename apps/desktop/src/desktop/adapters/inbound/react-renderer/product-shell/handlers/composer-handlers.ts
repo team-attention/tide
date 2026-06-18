@@ -187,25 +187,6 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
         }
         return;
       }
-      // "New worktree" / "Create new branch" open an inline name input; creation
-      // runs on submit and re-scopes the composer to the new worktree.
-      if (
-        (surfaceKind === "worktree_menu" && rowId === "new-worktree") ||
-        (surfaceKind === "branch_menu" && rowId === "create-branch")
-      ) {
-        const scope = shellState.agentChat.composer.startOptions.scope;
-        const baseCwd =
-          scope === undefined
-            ? undefined
-            : scope.kind === "project"
-            ? scope.cwd
-            : scope.scratchCwd;
-        if (baseCwd !== undefined) {
-          setWorktreeCreate({ baseCwd });
-        }
-        setShellState((state) => setProductShellComposerActiveSurface(state, null));
-        return;
-      }
       // Selecting an agent slot: select it, ensure a Draft Thread to host any Setup Surface,
       // and run Provider Readiness so a not-installed / not-signed-in agent surfaces its
       // install / sign-in card immediately (not only on Send). Spec: provider-cli-setup-handoff.md.
