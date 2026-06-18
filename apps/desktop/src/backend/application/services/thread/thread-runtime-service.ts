@@ -1,4 +1,4 @@
-import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
+import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
 import { ComposerQueueService } from "./composer-queue-service.ts";
 import type {
   AgentSessionBlock,
@@ -65,6 +65,7 @@ import type {
 import { TIDE_MCP_WORKBENCH_TOOL_NAMES } from "../../domains/workbench/workbench.ts";
 
 import {
+  blocksWithStreamingTail,
   cloneAgentBinding,
   cloneBlocks,
   cloneFileTreeView,
@@ -589,7 +590,10 @@ async hydrateThread(
       ok: true,
       thread: snapshotThread(thread),
       runtimeState: thread.runtimeState,
-      blocks: cloneBlocks(thread.cachedBlocks),
+      // Settled cache PLUS any still-streaming in-flight blocks, so a re-hydrate mid-turn
+      // (open/switch/reconnect) shows the live transcript instead of collapsing to the
+      // last finalized state. See docs_v2/specs/hydrate-live-streaming-tail.md.
+      blocks: blocksWithStreamingTail(thread.cachedBlocks, thread.streamingBlocks),
     };
   }
 
@@ -1045,6 +1049,11 @@ async recordAgentSessionBlock(
     } else {
       thread.cachedBlocks[existingIndex] = reference;
     }
+    // Graduated to settled: drop any streaming copy of the same id so the hydrate union
+    // never double-counts it (spec hydrate-live-streaming-tail.md).
+    thread.streamingBlocks = thread.streamingBlocks.filter(
+      (streamed) => streamed.blockId !== reference.blockId,
+    );
     thread.updatedAt = this.clock();
 
     return {
@@ -1053,6 +1062,15 @@ async recordAgentSessionBlock(
       runtimeState: thread.runtimeState,
       blocks: cloneBlocks(thread.cachedBlocks),
     };
+  }
+
+  // In-memory streaming tail (never cachedBlocks/persistence) so hydrate can surface
+  // in-flight content; the store-only mutation lives in ThreadCrudService beside the
+  // other block-cache ops. See spec hydrate-live-streaming-tail.md.
+  recordStreamingBlock(
+    input: RecordStreamingBlockInput,
+  ): Promise<ServiceResult<RecordStreamingBlockResult>> {
+    return this.threadCrud.recordStreamingBlock(input);
   }
 
 async resumeAgentRuntime(
@@ -1356,6 +1374,10 @@ private async replayPendingInputAfterTrust(thread: ThreadRecord): Promise<void> 
     thread.promptState = undefined;
     thread.promptQueue = undefined;
     thread.promptAnsweredPendingSettle = false;
+    // The ended turn's in-flight stream is finished: its blocks have either finalized
+    // into cachedBlocks (evicted there) or were aborted. Clear the streaming tail so it
+    // never leaks into the next turn's hydrate. See spec hydrate-live-streaming-tail.md.
+    thread.streamingBlocks = [];
 
     const queued = thread.pendingInput;
     if (queued !== undefined && queued.kind === "composer_input") {

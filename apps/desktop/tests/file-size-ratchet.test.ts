@@ -39,7 +39,11 @@ const PINNED_MAX: Record<string, number> = {
   // (browser-pane-screenshot-on-load-decoupling).
   // +9: seedCachedBlocksIfEmpty — the facade delegate + ThreadCrudService method that lazily
   // fills a metadata-only restored thread's blocks on first open (thread-list-metadata-first-restore).
-  "backend/application/services/thread/thread-runtime-service.ts": 1682,
+  // +22: the live streaming tail — hydrate unions in-flight (still-streaming) blocks onto
+  // cachedBlocks so a re-hydrate mid-turn doesn't drop them, recordAgentSessionBlock evicts the
+  // finalized id, recordTurnComplete clears the tail at settle, and a recordStreamingBlock facade
+  // delegate (impl in ThreadCrudService) records deltas. Spec: hydrate-live-streaming-tail.md.
+  "backend/application/services/thread/thread-runtime-service.ts": 1704,
   // The inbound command switch (already at the 800 cap) gained the
   // provider.discoverCommands handler for live command mirroring, then the
   // thread.launchOptionsChanged event builder gained the applied + changedKeys

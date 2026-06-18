@@ -76,6 +76,14 @@ function createCountingFixture() {
       return { ...frame, frameId: "frame-1" };
     },
     async recordAgentSessionBlock() {},
+    // In-memory streaming tail mirror; must NOT persist (the delta path stays disk-free).
+    async recordStreamingBlock() {
+      return {
+        ok: true as const,
+        thread: { threadId: THREAD, agentBinding: { agentId: AGENT } },
+        runtimeState: "running",
+      };
+    },
     async recordTurnComplete() {
       return {
         ok: true as const,

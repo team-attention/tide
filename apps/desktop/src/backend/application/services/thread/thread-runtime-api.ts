@@ -245,6 +245,16 @@ export interface RecordAgentSessionBlockResult {
   blocks: AgentSessionBlockReference[];
 }
 
+export interface RecordStreamingBlockInput {
+  threadId: ThreadId;
+  block: AgentSessionBlock;
+}
+
+export interface RecordStreamingBlockResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+}
+
 export interface ResumeAgentRuntimeInput {
   threadId: ThreadId;
 }
@@ -343,6 +353,12 @@ export interface ThreadRuntimeService {
   recordAgentSessionBlock(
     input: RecordAgentSessionBlockInput,
   ): Promise<ServiceResult<RecordAgentSessionBlockResult>>;
+  // Records a still-streaming block (status "streaming") into the in-memory streaming
+  // tail WITHOUT touching cachedBlocks or persistence, so hydrate can include in-flight
+  // content. recordAgentSessionBlock (finalize) evicts the same blockId.
+  recordStreamingBlock(
+    input: RecordStreamingBlockInput,
+  ): Promise<ServiceResult<RecordStreamingBlockResult>>;
   resumeAgentRuntime(
     input: ResumeAgentRuntimeInput,
   ): Promise<ServiceResult<ResumeAgentRuntimeResult>>;

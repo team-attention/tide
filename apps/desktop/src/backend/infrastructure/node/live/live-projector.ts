@@ -321,6 +321,11 @@ export function createLiveAgentSessionEventProjector(input: {
         };
         emitBlockUpdate({ update: { kind: "upsert", block }, blocks, onEvent: input.onEvent });
         blocksByThread.set(eventInput.threadId, [...blocks.values()]);
+        // Mirror the in-flight block into the service's in-memory streaming tail (NOT
+        // cachedBlocks, NOT persistence) so a re-hydrate mid-turn still surfaces it. The
+        // matching content_record finalizes the same blockId into cachedBlocks and evicts
+        // it here. See docs_v2/specs/hydrate-live-streaming-tail.md.
+        await service.recordStreamingBlock({ threadId: eventInput.threadId, block });
         return;
       }
       if (event.kind === "prompt") {

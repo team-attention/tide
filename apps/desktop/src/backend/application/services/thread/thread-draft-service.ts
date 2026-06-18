@@ -56,6 +56,7 @@ export function newThreadRecord(input: {
     createdAt: input.capturedAt,
     updatedAt: input.capturedAt,
     cachedBlocks: [],
+    streamingBlocks: [],
     rawFrameSequence: 0,
     mcpToolCallCount: 0,
     workbench: defaultWorkbenchState(),

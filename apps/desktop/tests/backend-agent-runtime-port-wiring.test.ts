@@ -439,6 +439,18 @@ test("live_agent_session_projection_emits_prompt_changed_for_prompt_state", () =
   assert.match(source, /kind:\s*"prompt\.changed"/);
 });
 
+test("live_agent_session_projection_records_streaming_deltas_into_the_streaming_tail", () => {
+  // Spec: docs_v2/specs/hydrate-live-streaming-tail.md
+  // The content_delta (live streaming) branch must mirror each in-flight block into the
+  // service's streaming tail so a re-hydrate mid-turn can union it onto cachedBlocks.
+  const source = fs.readFileSync(
+    path.join(repoRoot, "src/backend/infrastructure/node/live/live-projector.ts"),
+    "utf8",
+  );
+  const contentDelta = source.slice(source.indexOf('event.kind === "content_delta"'));
+  assert.match(contentDelta, /recordStreamingBlock\(\{\s*threadId:/);
+});
+
 test("a_turn_end_does_not_force_settle_a_live_prompt_card_only_a_runtime_exit_does", () => {
   // Regression (spec: waiting-state-recovery): a turn-end must NOT pass force based on
   // having produced a final message / notice. The AskUserQuestion pattern emits BOTH a
