@@ -94,19 +94,23 @@ function parseVersionToken(text: string): string | undefined {
 }
 
 // Read the installed version of a provider CLI by running `<exe> --version`.
-// Local + cheap; undefined when the binary cannot spawn or prints no version.
-// Some CLIs print the version to stderr, so both streams are scanned.
-export function providerVersionForExecutable(executablePath: string): string | undefined {
-  const result = spawnSync(executablePath, ["--version"], {
-    encoding: "utf8",
-    timeout: 5000,
-  });
-  // Reject a CLI that failed to spawn OR ran but exited non-zero (status null when
-  // killed/timed out): a crash's stderr could otherwise carry a version-like string.
-  if (result.error !== undefined || result.status !== 0) {
+// ASYNC (execFile, not spawnSync): some CLIs take a few hundred ms to print their
+// version, and probing all installed providers synchronously at boot (the update
+// checker's startup refresh) froze the backend event loop for ~1s — stalling the
+// cold-boot rail skeleton. Off the loop it never blocks. Some CLIs print the version
+// to stderr, so both streams are scanned; undefined when the binary cannot spawn.
+export async function providerVersionForExecutable(executablePath: string): Promise<string | undefined> {
+  try {
+    const { stdout, stderr } = await execFileAsync(executablePath, ["--version"], {
+      encoding: "utf8",
+      timeout: 5000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return parseVersionToken(`${stdout ?? ""}\n${stderr ?? ""}`);
+  } catch {
+    // Failed to spawn, exited non-zero, or timed out — no readable version.
     return undefined;
   }
-  return parseVersionToken(`${result.stdout ?? ""}\n${result.stderr ?? ""}`);
 }
 
 // Read the latest published version of an npm package via `npm view <pkg>

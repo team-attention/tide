@@ -63,7 +63,7 @@ const PINNED_MAX: Record<string, number> = {
   // subprocesses (same spec); the giant switch split remains the real fix.
   // +25: pushThreadListedEvents builder — a no-requestId thread.listed refresh pushed when the
   // background adopted-session discovery finds external sessions (thread-list-metadata-first-restore).
-  "backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts": 918,
+  "backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts": 919,
   // live-backend (the composition root) dropped under the 800 cap once its persistence +
   // metadata-first restore collaborator was extracted to live-backend-restore.ts
   // (thread-list-metadata-first-restore), so it no longer needs a pinned ceiling.

@@ -22,8 +22,9 @@ const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export interface AgentUpdateCheckerDeps {
   agentIds: ProviderCliAgentId[];
   // Installed version of the agent's CLI (`<exe> --version`), or undefined when
-  // not installed / unreadable. Local + cheap, so kept synchronous.
-  readInstalledVersion: (agentId: ProviderCliAgentId) => string | undefined;
+  // not installed / unreadable. Spawns the CLI, so async — keeps the startup refresh
+  // off the backend event loop (a sync probe of all providers froze it ~1s at boot).
+  readInstalledVersion: (agentId: ProviderCliAgentId) => Promise<string | undefined>;
   // Latest published version (`npm view <pkg> version`), or undefined on failure.
   // Network I/O, so asynchronous — refresh awaits all agents in parallel.
   readLatestVersion: (agentId: ProviderCliAgentId) => Promise<string | undefined>;
@@ -66,7 +67,7 @@ export function createAgentUpdateChecker(
       const before = new Map(deps.agentIds.map((id) => [id, hasAdvisory(id)]));
       await Promise.all(
         deps.agentIds.map(async (agentId) => {
-          const current = deps.readInstalledVersion(agentId);
+          const current = await deps.readInstalledVersion(agentId);
           if (current === undefined) {
             // Not installed (or unreadable): drop any stale versions so no advisory
             // lingers for an agent the user just uninstalled.
@@ -101,7 +102,7 @@ export function createLiveAgentUpdateChecker(input: {
     agentIds: input.agentIds,
     readInstalledVersion: (agentId) => {
       const exe = input.resolveExecutable(executableForAgent(agentId));
-      return exe === undefined ? undefined : providerVersionForExecutable(exe);
+      return exe === undefined ? Promise.resolve(undefined) : providerVersionForExecutable(exe);
     },
     readLatestVersion: (agentId) => latestPublishedVersion(installPackageForAgent(agentId), npmPath),
     buildUpdateSetup: (agentId, cwd) => npmUpdateSetupAction({ npmPath, agentId, cwd }),

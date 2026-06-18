@@ -1,6 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import type { OpencodeEnvironmentDto, OpencodeVendorDto, ProviderModelDto } from "../../../../shared/contracts/index.ts";
+
+const execFileAsync = promisify(execFile);
 
 // The opencode vendor on-ramp's backend source (spec: opencode-vendor-onramp.md).
 // Reads opencode's OWN machine-global auth (`opencode auth list`,
@@ -137,8 +140,8 @@ export function reconcileVendorUsability(
 const CACHE_TTL_MS = 60_000;
 
 export interface OpencodeVendorCatalog {
-  get: () => OpencodeVendorDto[];
-  environment: () => OpencodeEnvironmentDto;
+  get: () => Promise<OpencodeVendorDto[]>;
+  environment: () => Promise<OpencodeEnvironmentDto>;
   // Drop cached vendor/version so the next call re-reads `opencode auth list` (e.g.
   // right after a new vendor sign-in).
   invalidate: () => void;
@@ -149,20 +152,28 @@ export function createOpencodeVendorCatalog(
 ): OpencodeVendorCatalog {
   let vendorCache: OpencodeVendorDto[] = buildOpencodeVendors([]);
   let vendorFetchedAt = 0;
+  let vendorInflight: Promise<void> | null = null;
   let versionCache: string | undefined;
   let versionFetchedAt = 0;
+  let versionInflight: Promise<void> | null = null;
 
-  const run = (executablePath: string, args: string[]): string =>
-    execFileSync(executablePath, args, {
+  // ASYNC (execFile, not execFileSync): opencode's CLI can take seconds to start, and
+  // a synchronous spawn froze the backend event loop, stalling the cold-boot rail
+  // skeleton. These run off the loop; the vendor catalog is delivered out of band on
+  // providerCatalog.changed, so it never needs to block a reply.
+  const run = async (executablePath: string, args: string[]): Promise<string> => {
+    const { stdout } = await execFileAsync(executablePath, args, {
       encoding: "utf8",
-      // Both `auth list` and `--version` are fast local calls; keep the synchronous
-      // call short so a hung CLI can't block the backend for long.
+      // Both `auth list` and `--version` are fast local calls; bound them so a hung
+      // CLI can't keep the catalog stale forever.
       timeout: 1_000,
-      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 4 * 1024 * 1024,
     });
+    return stdout;
+  };
 
   return {
-    get: () => {
+    get: async () => {
       const executablePath = resolveExecutable("opencode");
       if (executablePath === undefined) {
         vendorCache = buildOpencodeVendors([]);
@@ -171,16 +182,23 @@ export function createOpencodeVendorCatalog(
       const now = Date.now();
       if (now - vendorFetchedAt > CACHE_TTL_MS) {
         vendorFetchedAt = now;
-        try {
-          vendorCache = buildOpencodeVendors(parseOpencodeAuthList(run(executablePath, ["auth", "list"])));
-        } catch {
-          // Not installed / errored / timed out — curated tiles, none connected.
-          vendorCache = buildOpencodeVendors([]);
-        }
+        vendorInflight ??= (async () => {
+          try {
+            vendorCache = buildOpencodeVendors(parseOpencodeAuthList(await run(executablePath, ["auth", "list"])));
+          } catch {
+            // Not installed / errored / timed out — curated tiles, none connected.
+            vendorCache = buildOpencodeVendors([]);
+          }
+        })().finally(() => {
+          vendorInflight = null;
+        });
+        await vendorInflight;
+      } else if (vendorInflight !== null) {
+        await vendorInflight;
       }
       return vendorCache;
     },
-    environment: () => {
+    environment: async () => {
       const executablePath = resolveExecutable("opencode");
       if (executablePath === undefined) {
         return { testedWith: OPENCODE_TESTED_WITH };
@@ -188,14 +206,21 @@ export function createOpencodeVendorCatalog(
       const now = Date.now();
       if (now - versionFetchedAt > CACHE_TTL_MS) {
         versionFetchedAt = now;
-        try {
-          versionCache = run(executablePath, ["--version"])
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .find((line) => line.length > 0);
-        } catch {
-          versionCache = undefined;
-        }
+        versionInflight ??= (async () => {
+          try {
+            versionCache = (await run(executablePath, ["--version"]))
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .find((line) => line.length > 0);
+          } catch {
+            versionCache = undefined;
+          }
+        })().finally(() => {
+          versionInflight = null;
+        });
+        await versionInflight;
+      } else if (versionInflight !== null) {
+        await versionInflight;
       }
       return { version: versionCache, testedWith: OPENCODE_TESTED_WITH, executablePath };
     },

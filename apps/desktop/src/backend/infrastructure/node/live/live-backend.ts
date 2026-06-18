@@ -413,19 +413,25 @@ export function createLiveBackendContractMessageAdapter(
   // critical path and push providerCatalog.changed when ready. (The adapter re-pushes it after a
   // vendor connect.) See provider-cli-setup-handoff.md.
   setImmediate(() => {
-    emitBackendEvents([
-      {
-        contractVersion: CONTRACT_VERSION,
-        eventId: nextEventId(),
-        kind: "providerCatalog.changed",
-        emittedAt: new Date().toISOString(),
-        payload: {
-          opencodeModels: detection.enumerateOpencodeModels(),
-          opencodeVendors: detection.enumerateOpencodeVendors(),
-          opencodeEnvironment: detection.opencodeEnvironment(),
+    // Enumerate asynchronously: opencode's CLI spawns can take seconds, and doing them
+    // synchronously here froze the backend event loop — delaying the already-computed
+    // thread.list reply (and so the cold-boot rail skeleton) by ~2.5s. Off the loop, the
+    // catalog simply arrives a moment later without blocking anything.
+    void (async () => {
+      emitBackendEvents([
+        {
+          contractVersion: CONTRACT_VERSION,
+          eventId: nextEventId(),
+          kind: "providerCatalog.changed",
+          emittedAt: new Date().toISOString(),
+          payload: {
+            opencodeModels: await detection.enumerateOpencodeModels(),
+            opencodeVendors: await detection.enumerateOpencodeVendors(),
+            opencodeEnvironment: await detection.opencodeEnvironment(),
+          },
         },
-      },
-    ]);
+      ]);
+    })();
   });
 
   return createPersistentLiveBackendAdapter({

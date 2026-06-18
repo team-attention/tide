@@ -16,11 +16,14 @@ import { createOpencodeAuthServer } from "./opencode-auth-server.ts";
 
 export interface ProviderDetection {
   detectAvailableAgents: () => ProviderCliAgentId[];
-  enumerateOpencodeModels: () => ProviderModelDto[];
+  // opencode catalog reads spawn the opencode CLI, which can be slow to start — they
+  // run asynchronously (off the backend event loop) so they never freeze command
+  // delivery, and are surfaced out of band on providerCatalog.changed.
+  enumerateOpencodeModels: () => Promise<ProviderModelDto[]>;
   // opencode vendor tiles (curated + connected-state from `opencode auth list`) and
   // its environment (version + executable path), for the vendor on-ramp.
-  enumerateOpencodeVendors: () => OpencodeVendorDto[];
-  opencodeEnvironment: () => OpencodeEnvironmentDto;
+  enumerateOpencodeVendors: () => Promise<OpencodeVendorDto[]>;
+  opencodeEnvironment: () => Promise<OpencodeEnvironmentDto>;
   // Set an opencode vendor's API key via opencode's own server (the canonical path), then
   // drop the cached vendor/model catalogs so the next thread.listed reflects it.
   connectOpencodeApiKey: (vendorId: string, key: string) => Promise<void>;
@@ -45,7 +48,8 @@ export function createProviderDetection(input: {
     enumerateOpencodeModels: () => opencodeCatalog.get(),
     // Mark connected-but-unusable vendors (e.g. expired auth) by cross-referencing the
     // model catalog, so the on-ramp can offer "Reconnect" (spec: opencode-vendor-reconnect.md).
-    enumerateOpencodeVendors: () => reconcileVendorUsability(opencodeVendorCatalog.get(), opencodeCatalog.get()),
+    enumerateOpencodeVendors: async () =>
+      reconcileVendorUsability(await opencodeVendorCatalog.get(), await opencodeCatalog.get()),
     opencodeEnvironment: () => opencodeVendorCatalog.environment(),
     connectOpencodeApiKey: async (vendorId, key) => {
       await opencodeAuthServer.setApiKey(vendorId, key);

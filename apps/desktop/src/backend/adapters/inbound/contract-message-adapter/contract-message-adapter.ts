@@ -63,11 +63,11 @@ export interface CreateBackendContractMessageAdapterInput {
   // opencode's authed model catalog (`opencode models`), surfaced on thread.listed so
   // the composer model menu can offer the user's real vendor/model list. Evaluated
   // per call (cached in the enumerator) so a new `opencode auth login` is picked up.
-  enumerateOpencodeModels?: () => ProviderModelDto[];
+  enumerateOpencodeModels?: () => Promise<ProviderModelDto[]>;
   // opencode vendor tiles + connected-state (`opencode auth list`) and environment
   // (version + executable path), surfaced on thread.listed for the vendor on-ramp.
-  enumerateOpencodeVendors?: () => OpencodeVendorDto[];
-  opencodeEnvironment?: () => OpencodeEnvironmentDto;
+  enumerateOpencodeVendors?: () => Promise<OpencodeVendorDto[]>;
+  opencodeEnvironment?: () => Promise<OpencodeEnvironmentDto>;
   connectOpencodeApiKey?: (vendorId: string, key: string) => Promise<void>;
   // Probe an agent's REAL command set for the composer menu (live-provider-command-mirroring.md).
   discoverProviderCommands?: (
@@ -95,9 +95,9 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
   private readonly detectAvailableAgents?: () => ProviderCliAgentId[];
-  private readonly enumerateOpencodeModels?: () => ProviderModelDto[];
-  private readonly enumerateOpencodeVendors?: () => OpencodeVendorDto[];
-  private readonly opencodeEnvironment?: () => OpencodeEnvironmentDto;
+  private readonly enumerateOpencodeModels?: () => Promise<ProviderModelDto[]>;
+  private readonly enumerateOpencodeVendors?: () => Promise<OpencodeVendorDto[]>;
+  private readonly opencodeEnvironment?: () => Promise<OpencodeEnvironmentDto>;
   private readonly connectOpencodeApiKey?: (vendorId: string, key: string) => Promise<void>;
   private readonly discoverProviderCommands?: (
     agentId: string,
@@ -315,8 +315,9 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         }
         // Re-list (threads/availableAgents) AND push the refreshed opencode catalog so the
         // now-connected vendor + its models surface (catalogs were invalidated by the connect).
+        const catalogEvent = await this.providerCatalogChangedEvent(typed);
         return this.handleServiceResult(typed, await this.service.listThreads({}), (result) =>
-          [this.threadListedEvent(typed, result), this.providerCatalogChangedEvent(typed), this.commandCompletedEvent(typed)]);
+          [this.threadListedEvent(typed, result), catalogEvent, this.commandCompletedEvent(typed)]);
       }
       case "provider.discoverCommands": {
         // The runtime probe resolves [] on any error/timeout (never rejects).
@@ -541,9 +542,9 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
   // opencode's catalog (vendors/models/version), delivered separately from thread.listed so the
   // agent menu (availableAgents) is never blocked behind opencode's subprocesses. Pushed at
   // startup (live-backend) and after a vendor connect. Spec: provider-cli-setup-handoff.md.
-  private providerCatalogChangedEvent(
+  private async providerCatalogChangedEvent(
     command: BackendCommandEnvelope,
-  ): BackendEventEnvelope<"providerCatalog.changed"> {
+  ): Promise<BackendEventEnvelope<"providerCatalog.changed">> {
     return {
       contractVersion: CONTRACT_VERSION,
       eventId: this.nextEventId(),
@@ -551,9 +552,9 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       kind: "providerCatalog.changed",
       emittedAt: this.clock(),
       payload: {
-        opencodeModels: this.enumerateOpencodeModels?.(),
-        opencodeVendors: this.enumerateOpencodeVendors?.(),
-        opencodeEnvironment: this.opencodeEnvironment?.(),
+        opencodeModels: await this.enumerateOpencodeModels?.(),
+        opencodeVendors: await this.enumerateOpencodeVendors?.(),
+        opencodeEnvironment: await this.opencodeEnvironment?.(),
       },
     };
   }

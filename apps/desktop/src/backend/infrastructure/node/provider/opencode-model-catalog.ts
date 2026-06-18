@@ -1,6 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import type { ProviderModelDto } from "../../../../shared/contracts/index.ts";
+
+const execFileAsync = promisify(execFile);
 
 // Enumerates opencode's AUTHED model catalog by running `opencode models` (a local,
 // fast cache lookup — never `--refresh`, which hits the network). opencode is a
@@ -9,13 +12,16 @@ import type { ProviderModelDto } from "../../../../shared/contracts/index.ts";
 // `provider/model` id per line — we split on the first `/` into vendor + model.
 //
 // Cached per process with a short TTL so the subprocess is not respawned on every
-// thread.list. Synchronous (execFileSync) because thread.listed is built
-// synchronously; the call is bounded by a timeout and the result is cached.
+// thread.list. ASYNCHRONOUS (execFile, not execFileSync): opencode's CLI can take a
+// couple of seconds to start, and a synchronous spawn here froze the backend event
+// loop — delaying delivery of the already-computed thread.list reply and so the cold-
+// boot rail skeleton by ~2.5s. The catalog is delivered out of band on
+// providerCatalog.changed (never inside thread.listed), so it never needs to block.
 
 const CACHE_TTL_MS = 60_000;
 
 interface OpencodeModelCatalog {
-  get: () => ProviderModelDto[];
+  get: () => Promise<ProviderModelDto[]>;
   // Drop the cached result so the next get() re-runs `opencode models` (e.g. right
   // after a new vendor sign-in).
   invalidate: () => void;
@@ -45,21 +51,23 @@ export function createOpencodeModelCatalog(
 ): OpencodeModelCatalog {
   let cache: ProviderModelDto[] = [];
   let fetchedAt = 0;
+  // Share one in-flight refresh so concurrent get() callers don't each spawn opencode.
+  let inflight: Promise<void> | null = null;
 
-  const refresh = (): void => {
+  const refresh = async (): Promise<void> => {
     const executablePath = resolveExecutable("opencode");
     if (executablePath === undefined) {
       cache = [];
       return;
     }
     try {
-      const stdout = execFileSync(executablePath, ["models"], {
+      const { stdout } = await execFileAsync(executablePath, ["models"], {
         encoding: "utf8",
-        // `opencode models` is a fast local cache lookup; keep the synchronous call
-        // short so a hung/slow CLI can't block the backend for long.
+        // `opencode models` is a fast local cache lookup; keep the call bounded so a
+        // hung/slow CLI can't keep the catalog stale forever (it runs off the event
+        // loop, so it never blocks the backend).
         timeout: 1_000,
-        // opencode prints the list to stdout; ignore stderr noise.
-        stdio: ["ignore", "pipe", "ignore"],
+        maxBuffer: 4 * 1024 * 1024,
       });
       cache = parseOpencodeModels(stdout);
     } catch {
@@ -69,11 +77,16 @@ export function createOpencodeModelCatalog(
   };
 
   return {
-    get: () => {
+    get: async () => {
       const now = Date.now();
       if (now - fetchedAt > CACHE_TTL_MS) {
         fetchedAt = now;
-        refresh();
+        inflight ??= refresh().finally(() => {
+          inflight = null;
+        });
+        await inflight;
+      } else if (inflight !== null) {
+        await inflight;
       }
       return cache;
     },

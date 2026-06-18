@@ -159,7 +159,7 @@ test("readiness port: no checker means no advisory", async () => {
 test("update checker: advisory only after refresh, only when installed < latest", async () => {
   const checker = createAgentUpdateChecker({
     agentIds: ["claude", "codex"],
-    readInstalledVersion: (id) => (id === "claude" ? "1.0.0" : "2.0.0"),
+    readInstalledVersion: async (id) => (id === "claude" ? "1.0.0" : "2.0.0"),
     readLatestVersion: async (id) => (id === "claude" ? "1.2.0" : "2.0.0"),
     buildUpdateSetup: (id, cwd) => ({
       command: "npm",
@@ -185,7 +185,7 @@ test("update checker: advisory only after refresh, only when installed < latest"
 test("update checker: not installed or unknown latest yields no advisory", async () => {
   const checker = createAgentUpdateChecker({
     agentIds: ["claude", "codex"],
-    readInstalledVersion: (id) => (id === "claude" ? undefined : "1.0.0"),
+    readInstalledVersion: async (id) => (id === "claude" ? undefined : "1.0.0"),
     readLatestVersion: async (id) => (id === "claude" ? "9.9.9" : undefined),
     buildUpdateSetup: (id, cwd) => ({ command: "npm", args: [`${id}@latest`], cwd, expectedCompletion: "retry_preflight" }),
   });
