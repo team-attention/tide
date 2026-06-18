@@ -50,6 +50,12 @@
   font-weight: 500;
 }
 
+.thread-row--scoped {
+  height: 36px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
 .thread-row__main {
   min-width: 0;
   flex: 1 1 auto;
@@ -142,7 +148,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
   overflow: hidden;
 }
 
@@ -154,7 +160,7 @@
 
 .thread-row__scope {
   font-size: 11px;
-  line-height: 1.2;
+  line-height: 13px;
   color: var(--tide-muted);
   overflow: hidden;
   text-overflow: ellipsis;

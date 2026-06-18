@@ -3,7 +3,7 @@ import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
 import { createIconButton, menuAnchorFromEvent } from "../chrome/chrome.tsx";
 import { AgentIdentityIcon } from "../support/agent-identity.tsx";
-import { threadScopeLabel } from "./thread-section.tsx";
+import { pinnedThreadScopeLabel } from "./thread-section.tsx";
 import { Archive, GitBranch, Pin, PinOff, Trash2 } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
@@ -19,6 +19,7 @@ export function createThreadRow(
       <div
         className={[
           "thread-row",
+          showScope ? "thread-row--scoped" : "",
           thread.active ? "thread-row--active" : "",
           thread.contextMenuOpen ? "thread-row--menu-open" : "",
           thread.archiveConfirming ? "thread-row--archive-confirming" : "",
@@ -28,6 +29,7 @@ export function createThreadRow(
         data-left-row-kind="thread"
         data-thread-row={thread.threadId}
         data-active={thread.active}
+        data-scoped={showScope ? "true" : undefined}
         data-running={thread.running ? "true" : undefined}
         data-attention={thread.attention ? "true" : undefined}
         onMouseLeave={thread.archiveConfirming ? handlers.onLeftRailTransientClear : undefined}
@@ -77,7 +79,12 @@ export function createThreadRow(
             {showScope ? (
               <span className="thread-row__label">
                 <span className="thread-row__title">{thread.title}</span>
-                <span className="thread-row__scope">{threadScopeLabel(thread.scope)}</span>
+                <span
+                  className="thread-row__scope"
+                  title={thread.scope.kind === "project" ? thread.scope.cwd : undefined}
+                >
+                  {pinnedThreadScopeLabel(thread.scope)}
+                </span>
               </span>
             ) : thread.worktreeBranch !== undefined ? (
               <span className="thread-row__title-row">

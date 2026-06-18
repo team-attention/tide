@@ -11,7 +11,13 @@ import {
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import type { ProductShellState } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
-function summary(threadId: string, projectId: string, pinned: boolean, updatedAt: string) {
+function summary(
+  threadId: string,
+  projectId: string,
+  pinned: boolean,
+  updatedAt: string,
+  lastKnownState = "idle",
+) {
   return {
     threadId,
     title: `Thread ${threadId}`,
@@ -21,7 +27,7 @@ function summary(threadId: string, projectId: string, pinned: boolean, updatedAt
     updatedAt,
     pinned,
     archived: false,
-    lastKnownState: "idle",
+    lastKnownState,
   };
 }
 
@@ -44,6 +50,17 @@ test("a pinned thread is lifted out of its project group into the Pinned section
   const p1 = vm.projectGroups.find((group) => group.projectId === "p1");
   assert.deepEqual(p1?.threads.map((thread) => thread.threadId), ["t2"]); // pinned t1 gone
   assert.deepEqual(vm.pinnedThreads.map((thread) => thread.threadId), ["t1"]);
+});
+
+test("a pinned running thread does not bubble running state to its source project", () => {
+  const state = seed([
+    summary("t1", "p1", true, "2026-06-11T00:02:00.000Z", "running"),
+    summary("t2", "p1", false, "2026-06-11T00:01:00.000Z", "idle"),
+  ]);
+  const vm = selectThreadListViewModel(state);
+  const p1 = vm.projectGroups.find((group) => group.projectId === "p1");
+  assert.equal(vm.pinnedThreads.find((thread) => thread.threadId === "t1")?.running, true);
+  assert.equal(p1?.running, false);
 });
 
 test("a pinned scratch thread is lifted out of the Scratch list into Pinned", () => {

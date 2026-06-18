@@ -4,6 +4,7 @@ import type { ReactElement } from "react";
 import { createSectionHeader } from "./section-header.tsx";
 import { createThreadRow } from "./thread-row.tsx";
 import type { AgentChatThreadScope } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree/path.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createThreadSection(
@@ -41,4 +42,24 @@ export function threadScopeLabel(scope: AgentChatThreadScope): string {
   return scope.kind === "project"
     ? scope.cwd.split("/").filter((seg: string) => seg.length > 0).pop() ?? scope.cwd
     : "Scratch";
+}
+
+export function pinnedThreadScopeLabel(scope: AgentChatThreadScope): string {
+  if (scope.kind !== "project") {
+    return "Scratch";
+  }
+  const worktreeRepoRoot = worktreeRepoRootForCwd(scope.cwd);
+  if (worktreeRepoRoot !== null) {
+    const repo = basenameLabel(worktreeRepoRoot) ?? scope.projectId;
+    const branch = basenameLabel(scope.cwd);
+    return branch === null ? repo : `${repo} / ${branch}`;
+  }
+  const cwdLabel = basenameLabel(scope.cwd);
+  return cwdLabel === null || cwdLabel === scope.projectId
+    ? scope.projectId
+    : `${scope.projectId} / ${cwdLabel}`;
+}
+
+function basenameLabel(path: string): string | null {
+  return path.split(/[/\\]/).filter((seg: string) => seg.length > 0).pop() ?? null;
 }

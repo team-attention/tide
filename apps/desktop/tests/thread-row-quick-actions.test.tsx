@@ -55,6 +55,18 @@ test("pinned_thread_row_shows_unpin_quick_action", () => {
   assert.doesNotMatch(markup, /aria-label="Pin"/);
 });
 
+test("pinned_worktree_thread_row_shows_repo_and_worktree_context", () => {
+  const markup = renderRow(true, "/Users/you/repo.worktree/feature-x");
+  assert.match(markup, /repo \/ feature-x/);
+  assert.match(markup, /title="\/Users\/you\/repo\.worktree\/feature-x"/);
+});
+
+test("pinned_thread_row_scope_label_handles_windows_paths", () => {
+  const markup = renderRow(true, "C:\\Users\\you\\repo");
+  assert.match(markup, /p1 \/ repo/);
+  assert.doesNotMatch(markup, /p1 \/ C:\\Users\\you\\repo/);
+});
+
 test("delete_worktree_is_a_direct_action_for_worktree_threads_only", () => {
   // A plain (non-worktree) thread shows only Pin + Archive — nothing to delete.
   assert.doesNotMatch(renderRow(false), /aria-label="Delete worktree"/);
