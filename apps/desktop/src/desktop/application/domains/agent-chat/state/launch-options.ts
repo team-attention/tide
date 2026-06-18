@@ -1,5 +1,5 @@
 import type { AgentChatShellState, AgentChatShellUpdateResult, AgentChatStartOptions, AgentChatThreadScope, AgentChatWorktreeOption } from "./types.ts";
-import { basenameOf } from "./choice-surfaces.ts";
+import { basenameOf } from "./path-labels.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
 export function launchOptionsForState(

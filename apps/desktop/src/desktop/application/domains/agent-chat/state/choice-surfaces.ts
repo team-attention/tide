@@ -3,6 +3,8 @@ import { activeComposerTrigger, providerSetupCommandPayload, selectComposerAgent
 import { CODEX_MODELS, PERMISSION_OPTIONS, REASONING_LEVELS, cliModelOptionsForAgent, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, isAgentAvailable, isAgentAvailabilityKnown, isAgentComingSoon, normalizePermissionValue, permissionConfigForAgent, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { launchOptionsForState, updateComposerLaunchOptions, updateComposerScope } from "./launch-options.ts";
 import { buildOpencodeConnectSurface, getOpencodeEnvironment, isOpencodeUsable } from "./opencode-onramp.ts";
+import { basenameOf } from "./path-labels.ts";
+import { row } from "./choice-row.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
 export function selectAgentChatChoiceSurfaceRow(
@@ -417,19 +419,6 @@ function agentMenuRow(
   );
 }
 
-function row(
-  rowId: string,
-  label: string,
-  detail?: string,
-  meta?: string,
-  icon = "",
-  selected = false,
-  danger = false,
-  disabled = false,
-): AgentChatChoiceSurfaceRowView {
-  return { rowId, label, detail, meta, icon, selected, danger, disabled };
-}
-
 function composerAgentIdForRow(
   rowId: string,
 ): AgentChatAgentId | null {
@@ -702,12 +691,6 @@ export function branchDeletableFromPicker(
   worktreeBranches: ReadonlySet<string>,
 ): boolean {
   return branch.kind === "local" && !branch.current && !worktreeBranches.has(branch.name);
-}
-
-export function basenameOf(path: string): string {
-  const trimmed = path.replace(/\/+$/, "");
-  const slash = trimmed.lastIndexOf("/");
-  return slash === -1 ? trimmed : trimmed.slice(slash + 1);
 }
 
 function scopeForProjectRow(
