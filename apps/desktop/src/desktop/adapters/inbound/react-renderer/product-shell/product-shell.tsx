@@ -13,7 +13,7 @@ import { useDeleteDialogs } from "./support/use-delete-dialogs.ts";
 import { createProductShellFileDialogs } from "./product-shell-file-dialogs.tsx";
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
-import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
+import { fitColumnsToWidth, PRODUCT_SHELL_CHAT_MIN, resizeProductShellColumns, useColumnPresence } from "./support/layout.ts";
 import { useActivateThreadFromMain, useCloseIntentFromMenu, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useProductShellEscape, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
 import { useMultitaskNavigation } from "./multitask/use-multitask-navigation.tsx";
 import { RailPeek } from "./left-rail/rail-peek.tsx";
@@ -283,7 +283,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   }, [shellState.threads, shellState.activeThreadId]);
 
   // The agent-chat column never shrinks below the composer's usable width.
-  const CHAT_MIN = 440;
+  const CHAT_MIN = PRODUCT_SHELL_CHAT_MIN;
   const startColumnResize = (
     edge: "left" | "workbench" | "fileTree",
     event: { clientX: number; preventDefault: () => void },
@@ -291,8 +291,6 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     event.preventDefault();
     const startX = event.clientX;
     const start = columnWidths;
-    const clamp = (value: number, min: number, max: number) =>
-      Math.max(min, Math.min(max, value));
     // Coalesce pointermove into one state update per animation frame. Raw
     // pointermove fires ~60–120x/sec and each setState re-renders the whole shell
     // (chat + workbench webview + file tree), which is the main resize jank.
@@ -303,30 +301,21 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       const dx = latestDx;
       // Keep every column inside the viewport: the flexible chat track must keep
       // at least CHAT_MIN, so a resizable column can't grow past the space left
-      // by the other open columns. This prevents horizontal overflow/scroll.
+      // by the other open columns. The FileTree handle is the seam between
+      // Workbench and FileTree when both are open, so it redistributes that fixed
+      // right-hand area instead of asking the viewport for more width.
       const total = bodyRef.current?.clientWidth ?? window.innerWidth;
-      setColumnWidths((current) => {
-        if (edge === "left") {
-          const reserved =
-            (viewModel.workbenchOpen ? current.workbench : 0) +
-            (viewModel.fileTreeOpen ? current.fileTree : 0);
-          const max = Math.max(200, total - reserved - CHAT_MIN);
-          return { ...current, left: clamp(start.left + dx, 200, max) };
-        }
-        if (edge === "workbench") {
-          // Handle on the workbench's left edge: dragging right shrinks it.
-          const reserved =
-            (viewModel.leftRailOpen ? current.left : 0) +
-            (viewModel.fileTreeOpen ? current.fileTree : 0);
-          const max = Math.max(320, total - reserved - CHAT_MIN);
-          return { ...current, workbench: clamp(start.workbench - dx, 320, max) };
-        }
-        const reserved =
-          (viewModel.leftRailOpen ? current.left : 0) +
-          (viewModel.workbenchOpen ? current.workbench : 0);
-        const max = Math.max(240, total - reserved - CHAT_MIN);
-        return { ...current, fileTree: clamp(start.fileTree - dx, 240, max) };
-      });
+      setColumnWidths(() =>
+        resizeProductShellColumns({
+          edge,
+          start,
+          dx,
+          totalWidth: total,
+          leftRailOpen: viewModel.leftRailOpen,
+          workbenchOpen: viewModel.workbenchOpen,
+          fileTreeOpen: viewModel.fileTreeOpen,
+        }),
+      );
     };
     const onMove = (move: PointerEvent) => {
       latestDx = move.clientX - startX;
@@ -779,5 +768,5 @@ export function projectCwdById(state: ProductShellState, projectId: string): str
 // component stays here; moved pieces are re-exported for path compatibility.
 export { WorktreeDeleteDialog, type WorktreeDeleteTarget } from "./dialogs/worktree-delete-dialog.tsx";
 export { AgentIdentityIcon, agentMonogram } from "./support/agent-identity.tsx";
-export { fitColumnsToWidth } from "./support/layout.ts";
+export { fitColumnsToWidth, PRODUCT_SHELL_CHAT_MIN, resizeProductShellColumns } from "./support/layout.ts";
 export type { ProjectRegistryEntry, GitContextResult, ProjectRegistryBridge, TideProductShellProps } from "./support/types.ts";
