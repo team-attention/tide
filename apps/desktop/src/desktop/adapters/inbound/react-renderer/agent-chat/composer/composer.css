@@ -300,6 +300,13 @@
   min-width: 112px;
 }
 
+/* The non-blocking agent-CLI update advisory (version-management.md, D2): a quiet
+   pill matching the other chips, only its leading ↑ takes the text color (instead
+   of the muted icon tone) so it reads as an action without shouting. */
+.composer-shell__choice-chip--update .composer-shell__chip-icon {
+  color: var(--tide-text);
+}
+
 /* Inline feedback after a mid-thread launch-option change (see
    docs_v2/specs/mid-thread-launch-option-feedback.md). "applied" = a brief green
    confirmation that self-dismisses; "pending" = a persistent muted tag that the

@@ -58,9 +58,11 @@ own different plumbing because the apply mechanisms and process owners differ.
   = true` so the build is ready; the visible affordance's button calls
   `autoUpdater.quitAndInstall()`. No silent restart. (User refined the earlier
   "fully automatic" answer to "notify, click to update".)
-- **D2. Agent update = non-blocking inline nudge** in the readiness / composer
-  surface, not a Settings hub and never a gate. An outdated-but-working CLI keeps
-  `ready: true`.
+- **D2. Agent update = non-blocking chip** in the composer toolbar (a quiet pill
+  beside the Permission/Model chips, present from the start composer on), not a
+  full readiness card, not a Settings hub, and never a gate. An
+  outdated-but-working CLI keeps `ready: true`. A single click runs the same
+  Setup Surface terminal update handoff (no extra confirm step).
 - **D3. One epic, sliced.** Lane 2 (backend-local, reuses Setup Surface) ships
   first; Lane 1 (Main process + CI/publish) second. Designed together here.
 - **D4. Detection.** Agent installed version via `<cli> --version` (local, cheap,
@@ -184,11 +186,14 @@ a readiness re-emit for an agent when it first learns a newer version exists.
    fresh. (Implemented this way rather than a proactive push: readiness is already
    re-checked constantly during use, so a dedicated re-emit was unnecessary for v1.
    A proactive `providerReadiness.changed` after a probe is a noted follow-up.)
-4. Renderer `readiness.ts`: when the view model exposes `update`, render a
-   non-blocking nudge (separate from the blocking "Provider setup required"
-   surface) — "Update <Agent> — vX → vY" — whose action runs the Setup Surface
-   handoff (`npm install -g <pkg>@latest` in the visible terminal, then
-   `retry_preflight`). Renders even when `blockers` is empty and `ready` is true.
+4. Renderer composer toolbar: when the view model exposes `update`, render a
+   compact `↑ Update <Agent>` chip beside the Permission/Model chips (NOT a
+   separate choice-surface card). The version detail (`vX → vY`) lives in the
+   chip's tooltip. A single click runs the same Setup Surface handoff as install
+   (`npm install -g <pkg>@latest` in the visible terminal, then `retry_preflight`)
+   via the `update_available:setup` row. The chip renders even when `blockers` is
+   empty and `ready` is true, and shows from the start composer (the toolbar is
+   not gated on an active thread). Absent `update`, no chip renders.
 
 ## Invariants
 
@@ -217,9 +222,11 @@ a readiness re-emit for an agent when it first learns a newer version exists.
   installed `<` latest ⇒ `update` attached with the `@latest` setup action;
   installed `===` latest ⇒ no `update`; latest unknown ⇒ no `update`; in all cases
   `ready` and `blockers` equal the no-advisory baseline.
-- **Renderer nudge.** View model with `update` renders an "Update <Agent>" nudge
-  even when `blockers` is empty / `ready` true; selecting the row dispatches the
-  Setup Surface handoff; absent `update` renders nothing.
+- **Renderer chip.** View model with `update` renders an `↑ Update <Agent>` chip
+  in the composer toolbar even when `blockers` is empty / `ready` true, and with
+  no active thread (start composer); the chip is NOT a choice-surface card;
+  clicking it dispatches the `update_available:setup` Setup Surface handoff;
+  absent `update` renders no chip.
 - **App-update status mapping (pure).** `mapAutoUpdaterEvent` maps
   checking/available/download-progress/downloaded/error/not-available to the right
   `AppUpdateStatus`.
