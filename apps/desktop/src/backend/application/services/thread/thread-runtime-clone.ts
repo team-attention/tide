@@ -87,6 +87,22 @@ export function cloneBlocks(
   }));
 }
 
+// The live transcript = the settled cache plus any still-streaming blocks that have not
+// yet finalized into it (a block id present in the cache is already settled and wins).
+// The streaming tail is in-memory only, so this union is computed at read time and never
+// stored or persisted. See docs_v2/specs/hydrate-live-streaming-tail.md.
+export function blocksWithStreamingTail(
+  cachedBlocks: AgentSessionBlockReference[],
+  streamingBlocks: AgentSessionBlockReference[],
+): AgentSessionBlockReference[] {
+  if (streamingBlocks.length === 0) {
+    return cloneBlocks(cachedBlocks);
+  }
+  const settledIds = new Set(cachedBlocks.map((block) => block.blockId));
+  const tail = streamingBlocks.filter((block) => !settledIds.has(block.blockId));
+  return cloneBlocks([...cachedBlocks, ...tail]);
+}
+
 export function clonePendingInput(
   pendingInput: PendingInput | undefined,
 ): PendingInput | undefined {

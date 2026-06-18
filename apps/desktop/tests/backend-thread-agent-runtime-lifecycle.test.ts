@@ -1694,6 +1694,168 @@ test("recording_agent_session_block_upserts_cached_block_for_hydrate", async () 
   assert.deepEqual(fakes.runtime.events, []);
 });
 
+test("hydrate_returns_the_streaming_tail_without_polluting_cached_blocks", async () => {
+  // Spec: docs_v2/specs/hydrate-live-streaming-tail.md
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-stream")],
+  });
+  const settled: AgentSessionBlock = {
+    blockId: "structured:rt:msg:0",
+    threadId: "thread-stream",
+    agentId: "codex",
+    kind: "agent_message",
+    role: "agent",
+    sourceFrameIds: ["frame-1"],
+    status: "complete",
+    body: "Settled answer",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const streaming: AgentSessionBlock = {
+    blockId: "structured:rt:msg:1",
+    threadId: "thread-stream",
+    agentId: "codex",
+    kind: "agent_message",
+    role: "agent",
+    sourceFrameIds: [],
+    status: "streaming",
+    body: "In-flight half...",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await service.recordAgentSessionBlock({ threadId: "thread-stream", block: settled });
+  await service.recordStreamingBlock({ threadId: "thread-stream", block: streaming });
+  const hydrated = await service.hydrateThread({ threadId: "thread-stream" });
+
+  // I3: hydrate surfaces settled history PLUS the in-flight tail.
+  assert.deepEqual(
+    hydrated.ok && hydrated.blocks.map((block) => block.body),
+    ["Settled answer", "In-flight half..."],
+  );
+  // I1/I5: the streaming block is NOT in the persisted snapshot's cachedBlocks.
+  assert.deepEqual(
+    hydrated.ok && hydrated.thread.cachedBlocks.map((block) => block.body),
+    ["Settled answer"],
+  );
+});
+
+test("finalizing_a_streaming_block_evicts_it_so_hydrate_has_one_settled_copy", async () => {
+  // Spec: docs_v2/specs/hydrate-live-streaming-tail.md
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-final")],
+  });
+  const streaming: AgentSessionBlock = {
+    blockId: "structured:rt:msg:0",
+    threadId: "thread-final",
+    agentId: "codex",
+    kind: "agent_message",
+    role: "agent",
+    sourceFrameIds: [],
+    status: "streaming",
+    body: "partial",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const finalized: AgentSessionBlock = {
+    ...streaming,
+    status: "complete",
+    body: "complete answer",
+    updatedAt: "2026-05-27T00:00:01.000Z",
+  };
+
+  await service.recordStreamingBlock({ threadId: "thread-final", block: streaming });
+  await service.recordAgentSessionBlock({ threadId: "thread-final", block: finalized });
+  const hydrated = await service.hydrateThread({ threadId: "thread-final" });
+
+  // I4: exactly one copy — the settled block won and the streaming copy was evicted.
+  assert.deepEqual(
+    hydrated.ok && hydrated.blocks.map((block) => block.body),
+    ["complete answer"],
+  );
+});
+
+test("repeated_streaming_deltas_for_the_same_block_stay_idempotent", async () => {
+  // Spec: docs_v2/specs/hydrate-live-streaming-tail.md
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-delta")],
+  });
+  const base: AgentSessionBlock = {
+    blockId: "structured:rt:msg:0",
+    threadId: "thread-delta",
+    agentId: "codex",
+    kind: "agent_message",
+    role: "agent",
+    sourceFrameIds: [],
+    status: "streaming",
+    body: "He",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await service.recordStreamingBlock({ threadId: "thread-delta", block: base });
+  await service.recordStreamingBlock({
+    threadId: "thread-delta",
+    block: { ...base, body: "Hello" },
+  });
+  const hydrated = await service.hydrateThread({ threadId: "thread-delta" });
+
+  assert.deepEqual(
+    hydrated.ok && hydrated.blocks.map((block) => block.body),
+    ["Hello"],
+  );
+});
+
+test("turn_complete_clears_the_streaming_tail", async () => {
+  // Spec: docs_v2/specs/hydrate-live-streaming-tail.md
+  const fakes = createFakes();
+  const activeRuntimeHandle: AgentRuntimeHandle = {
+    runtimeId: "rt-settle",
+    threadId: "thread-settle",
+    agentId: "codex",
+  };
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-settle", { runtimeState: "running", activeRuntimeHandle }),
+    ],
+  });
+  const streaming: AgentSessionBlock = {
+    blockId: "structured:rt:msg:0",
+    threadId: "thread-settle",
+    agentId: "codex",
+    kind: "agent_message",
+    role: "agent",
+    sourceFrameIds: [],
+    status: "streaming",
+    body: "aborted half",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await service.recordStreamingBlock({ threadId: "thread-settle", block: streaming });
+  await service.recordTurnComplete({ threadId: "thread-settle" });
+  const hydrated = await service.hydrateThread({ threadId: "thread-settle" });
+
+  // I2: an orphan (never-finalized) streaming block is cleared at settle, so a later
+  // hydrate is cachedBlocks-only.
+  assert.deepEqual(hydrated.ok && hydrated.blocks.map((block) => block.body), []);
+});
+
 test("stopping_agent_runtime_preserves_thread_metadata", async () => {
   const fakes = createFakes();
   const activeRuntimeHandle: AgentRuntimeHandle = {

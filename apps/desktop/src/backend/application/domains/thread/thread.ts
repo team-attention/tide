@@ -198,6 +198,13 @@ export interface ThreadRecord {
   createdAt: string;
   updatedAt: string;
   cachedBlocks: AgentSessionBlockReference[];
+  // The live, still-streaming Agent Session Blocks for the current turn (status
+  // "streaming") that have not yet finalized into `cachedBlocks`. In-memory turn state
+  // only; NEVER persisted or snapshotted — the durable Agent Session Cache stays
+  // finalized-only. `hydrateThread` unions this tail onto `cachedBlocks` so a re-hydrate
+  // mid-turn never drops in-flight content. Evicted per blockId on finalize, cleared at
+  // turn settle. See docs_v2/specs/hydrate-live-streaming-tail.md.
+  streamingBlocks: AgentSessionBlockReference[];
   // `pendingInput` is the HEAD of the Composer follow-up queue (the next message
   // to run); `pendingInputQueue` holds the rest, FIFO. Splitting head+tail keeps
   // the single-queued path byte-identical (tail empty) while letting the user

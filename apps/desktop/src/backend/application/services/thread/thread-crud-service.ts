@@ -5,9 +5,13 @@ import type {
   ThreadSnapshot,
 } from "../../domains/thread/thread.ts";
 import { failure, type ServiceResult } from "../support/service-result.ts";
-import { cloneBlocks } from "./thread-runtime-clone.ts";
+import { cloneBlocks, toAgentSessionBlockReference } from "./thread-runtime-clone.ts";
 import { normalizeThreadSeed, snapshotThread } from "./thread-snapshot.ts";
 import type { ThreadStore } from "./thread-store.ts";
+import type {
+  RecordStreamingBlockInput,
+  RecordStreamingBlockResult,
+} from "./thread-runtime-api.ts";
 
 // Thread store/list responsibility split out of ThreadRuntimeService. These
 // operations only read/mutate Thread metadata via the shared ThreadStore and the
@@ -104,6 +108,40 @@ export class ThreadCrudService {
     }
     thread.cachedBlocks = cloneBlocks(blocks);
     return true;
+  }
+
+  // Records a still-streaming Agent Session Block into the in-memory streaming tail ONLY
+  // — never cachedBlocks, never persistence — so the durable Agent Session Cache stays
+  // finalized-only while hydrate unions the in-flight tail onto it. Upsert by blockId
+  // keeps repeated deltas idempotent; recordAgentSessionBlock (finalize) evicts the same
+  // id. See docs_v2/specs/hydrate-live-streaming-tail.md.
+  async recordStreamingBlock(
+    input: RecordStreamingBlockInput,
+  ): Promise<ServiceResult<RecordStreamingBlockResult>> {
+    const thread = this.store.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+    if (input.block.agentId !== thread.agentBinding.agentId) {
+      return failure(
+        "agent_binding_locked",
+        "Agent Session Block must belong to the Thread Agent Binding.",
+      );
+    }
+    const reference = toAgentSessionBlockReference(input.block);
+    const existingIndex = thread.streamingBlocks.findIndex(
+      (block) => block.blockId === reference.blockId,
+    );
+    if (existingIndex === -1) {
+      thread.streamingBlocks.push(reference);
+    } else {
+      thread.streamingBlocks[existingIndex] = reference;
+    }
+    return {
+      ok: true,
+      thread: snapshotThread(thread),
+      runtimeState: thread.runtimeState,
+    };
   }
 
   async listThreads(

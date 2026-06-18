@@ -48,6 +48,9 @@ export function normalizeThreadSeed(seed: ThreadSeed): ThreadRecord {
     createdAt: seed.createdAt,
     updatedAt: seed.updatedAt,
     cachedBlocks: cloneBlocks(seed.cachedBlocks ?? []),
+    // In-memory only; a restored thread has no live turn, so it starts empty and is
+    // never seeded from a persisted seed. See spec hydrate-live-streaming-tail.md.
+    streamingBlocks: [],
     pendingInput: clonePendingInput(seed.pendingInput),
     promptState: clonePromptState(seed.promptState),
     activeRuntimeHandle: cloneRuntimeHandle(seed.activeRuntimeHandle),
