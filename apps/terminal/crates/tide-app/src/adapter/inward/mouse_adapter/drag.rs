@@ -225,6 +225,16 @@ pub(crate) fn handle_cursor_moved_logical(
             ctx.request_redraw();
         }
     } else {
+        if let Some(button) = ctx.interaction().mouse_pressed_button {
+            if super::forward_terminal_mouse_drag(ctx, pos, button) {
+                ctx.request_redraw();
+                return;
+            }
+        } else if super::forward_terminal_mouse_move(ctx, pos) {
+            ctx.request_redraw();
+            return;
+        }
+
         // URL bar drag selection
         if ctx.interaction().mouse_left_pressed {
             super::selection::handle_url_bar_drag(ctx, pos);

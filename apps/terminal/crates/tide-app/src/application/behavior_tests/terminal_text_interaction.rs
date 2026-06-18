@@ -63,6 +63,25 @@ impl ClipboardPort for RecordingClipboard {
     }
 }
 
+#[test]
+fn loaded_user_settings_apply_osc52_read_policy_to_existing_terminals() {
+    let (mut app, terminal_id) = app_with_terminal(80, 6);
+    app.settings.terminal.osc52_read = true;
+
+    app.apply_loaded_user_settings();
+
+    let terminal = app
+        .panes
+        .get(&terminal_id)
+        .and_then(|pane| match pane {
+            PaneKind::Terminal(terminal) => Some(terminal),
+            _ => None,
+        })
+        .expect("expected terminal pane");
+
+    assert!(terminal.backend.clipboard_read_allowed_for_test());
+}
+
 // --- UC-1: ActivateWrappedTerminalUrl ---
 
 #[test]
@@ -107,6 +126,67 @@ fn cmd_clicking_a_wrapped_terminal_url_opens_the_full_url() {
     assert_eq!(browser.url, full_url);
     assert_eq!(app.focus.focus_area, FocusArea::Dock);
     assert_eq!(app.panes.len(), 2);
+}
+
+#[test]
+fn cmd_clicking_osc8_hyperlink_opens_explicit_target() {
+    // UC-1 BR-2: OSC 8 target takes precedence over URL-looking label text.
+    let visible_url = "https://visible.example/path";
+    let target_url = "https://target.example/docs";
+    let (mut app, terminal_id) = app_with_terminal(80, 6);
+    let pane_rect = Rect::new(
+        24.0,
+        12.0,
+        80.0 * app.window.cached_cell_size.width + 2.0 * PANE_PADDING,
+        TAB_BAR_HEIGHT + 6.0 * app.window.cached_cell_size.height,
+    );
+    app.pane_rects = vec![(terminal_id, pane_rect)];
+    app.visual_pane_rects = vec![(terminal_id, pane_rect)];
+    app.window.modifiers.meta = true;
+
+    let mut click_row = 0;
+    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
+        pane.backend.bench_sync_grid();
+        pane.backend.bench_write_to_term(
+            format!("\x1b[2J\x1b[H\x1b]8;;{target_url}\x1b\\{visible_url}\x1b]8;;\x1b\\")
+                .as_bytes(),
+        );
+        pane.backend.bench_sync_grid();
+        pane.backend.bench_sync_grid();
+        click_row = pane
+            .backend
+            .grid()
+            .cells
+            .iter()
+            .position(|cells| {
+                cells
+                    .iter()
+                    .take(visible_url.len())
+                    .map(|cell| cell.character)
+                    .collect::<String>()
+                    == visible_url
+            })
+            .expect("expected OSC 8 label in terminal grid");
+    }
+
+    app.handle_action(
+        Action::RouteToPane(terminal_id),
+        Some(InputEvent::MouseClick {
+            position: terminal_click_position(pane_rect, app.window.cached_cell_size, click_row, 10),
+            button: MouseButton::Left,
+        }),
+    );
+
+    let browser = app
+        .panes
+        .values()
+        .find_map(|pane| match pane {
+            PaneKind::Browser(browser) => Some(browser),
+            _ => None,
+        })
+        .expect("expected Browser Pane to open");
+
+    assert_eq!(browser.url, target_url);
 }
 
 // --- UC-2: CopyWrappedTerminalSelection ---

@@ -244,7 +244,8 @@ impl App {
         } else {
             0.0
         };
-        Self {
+        let settings = state::settings::load_settings();
+        let mut app = Self {
             tide_window_id: TideWindowId::default(),
             allow_crash_recovery: false,
             ports: Ports::noop(),
@@ -273,7 +274,7 @@ impl App {
             header_hit_zones: Vec::new(),
             ws: state::WorkspaceManager::new(),
             context_artifacts: state::ContextArtifactStore::new(),
-            settings: state::settings::load_settings(),
+            settings,
             terminal_spawn_config: crate::tide_terminal::TerminalSpawnConfig::default(),
             bg: state::BackgroundServices::new(),
             assoc: state::PaneAssociations::new(),
@@ -284,14 +285,56 @@ impl App {
             tide_window_close_requested: false,
             notified_panes: std::collections::HashSet::new(),
             agent_notification_snippets: HashMap::new(),
-        }
+        };
+        app.apply_loaded_user_settings();
+        app
     }
 
     // ── Helpers ──
 
+    pub(crate) fn apply_loaded_user_settings(&mut self) {
+        let family = self.settings.appearance.font_family.trim();
+        if !family.is_empty() {
+            self.window.current_font_family = family.to_string();
+            if !self.ports.gpu.set_font_family(family) && family != "Menlo" {
+                self.window.pending_font_family = Some(family.to_string());
+            }
+        }
+
+        let font_size = self.settings.appearance.font_size.clamp(8.0, 32.0);
+        self.window.current_font_size = font_size;
+        self.window.cached_cell_size = self.window.lookup_cell_size(font_size);
+        if !self.ports.gpu.set_font_size(font_size) && (font_size - 14.0).abs() >= 0.01 {
+            self.window.pending_font_size = Some(font_size);
+        }
+
+        self.window.dark_mode = self.settings.appearance.theme.is_dark();
+        let dark = self.window.dark_mode;
+        for pane in self.panes.values_mut() {
+            match pane {
+                PaneKind::Terminal(terminal) => {
+                    terminal.backend.set_dark_mode(dark);
+                    terminal
+                        .backend
+                        .set_clipboard_read_allowed(self.settings.terminal.osc52_read);
+                }
+                PaneKind::Editor(editor) => editor.editor.set_dark_mode(dark),
+                PaneKind::Browser(browser) if browser.render_mode => browser.sync_theme_vars(dark),
+                _ => {}
+            }
+        }
+
+        self.ports.gpu.set_clear_color(self.palette().border_color);
+        self.cache.pane_generations.clear();
+        self.cache.invalidate_chrome();
+        self.cache.needs_redraw = true;
+    }
+
     /// Install an event-loop waker on a terminal pane so the PTY thread
     /// can wake us from sleep when new output arrives.
     pub(crate) fn install_pty_waker(&self, pane: &TerminalPane) {
+        pane.backend
+            .set_clipboard_read_allowed(self.settings.terminal.osc52_read);
         if let Some(ref waker) = self.bg.event_loop_waker {
             let w = waker.clone();
             pane.backend.set_waker(Box::new(move || w()));
@@ -338,6 +381,7 @@ impl App {
             self.router.keybinding_map = Some(state::settings::build_keybinding_map(&settings));
         }
         self.settings = settings;
+        self.apply_loaded_user_settings();
         self.queue_notification_permission_request_if_auto_integration_enabled();
         self.cache.invalidate_chrome();
         self.cache.needs_redraw = true;
@@ -617,11 +661,23 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.cache.invalidate_chrome();
         self.cache.layout_generation = self.cache.layout_generation.wrapping_add(1);
         self.compute_layout();
+
+        self.settings.appearance.font_size = size;
+        self.ports.persistence.save_settings(&self.settings);
+        self.pending_platform_commands
+            .push(crate::tide_platform::WindowCommand::BroadcastSettingsChanged);
     }
 
     fn flush_pending_font_size(&mut self) {
+        if let Some(family) = self.window.pending_font_family.take() {
+            if !self.ports.gpu.set_font_family(&family) {
+                self.window.pending_font_family = Some(family);
+            }
+        }
         if let Some(size) = self.window.pending_font_size.take() {
-            self.ports.gpu.set_font_size(size);
+            if !self.ports.gpu.set_font_size(size) {
+                self.window.pending_font_size = Some(size);
+            }
         }
     }
 

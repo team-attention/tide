@@ -1427,6 +1427,11 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::ToggleTheme => {
                 self.window.dark_mode = !self.window.dark_mode;
+                self.settings.appearance.theme =
+                    crate::state::settings::ThemePreference::from_dark_mode(self.window.dark_mode);
+                self.ports.persistence.save_settings(&self.settings);
+                self.pending_platform_commands
+                    .push(crate::tide_platform::WindowCommand::BroadcastSettingsChanged);
                 let border_color = self.palette().border_color;
                 self.ports.gpu.set_clear_color(border_color);
                 let dark = self.window.dark_mode;

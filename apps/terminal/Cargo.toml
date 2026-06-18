@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/alacritty_terminal",
     "crates/tide-app",
     "crates/tide-e2e-tests",
 ]

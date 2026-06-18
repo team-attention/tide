@@ -244,6 +244,7 @@ pub struct TerminalGrid {
 pub struct TerminalCell {
     pub character: char,
     pub style: TextStyle,
+    pub hyperlink: Option<String>,
 }
 
 impl Default for TerminalCell {
@@ -251,8 +252,26 @@ impl Default for TerminalCell {
         Self {
             character: ' ',
             style: TextStyle::default(),
+            hyperlink: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalGraphicProtocol {
+    Kitty,
+    Sixel,
+}
+
+#[derive(Debug, Clone)]
+pub struct TerminalGraphic {
+    pub key: u64,
+    pub protocol: TerminalGraphicProtocol,
+    pub row: u16,
+    pub col: u16,
+    pub width_cells: u16,
+    pub height_cells: u16,
+    pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -369,6 +388,7 @@ pub trait TerminalBackend {
     fn write(&mut self, data: &[u8]);
     fn process(&mut self);
     fn grid(&self) -> &TerminalGrid;
+    fn graphics(&self) -> &[TerminalGraphic];
     fn resize(&mut self, cols: u16, rows: u16);
     fn cwd(&self) -> Option<PathBuf>;
     fn cursor(&self) -> CursorState;

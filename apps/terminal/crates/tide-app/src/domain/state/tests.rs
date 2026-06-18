@@ -399,6 +399,8 @@ fn render_cache_is_chrome_dirty() {
 fn interaction_state_new_defaults() {
     let is = InteractionState::new();
     assert!(!is.mouse_left_pressed);
+    assert!(is.mouse_pressed_button.is_none());
+    assert!(is.terminal_mouse_source.is_none());
     assert!(is.text_selection_drag_source.is_none());
     assert!(is.scrollbar_dragging.is_none());
     assert!(is.hover_target.is_none());

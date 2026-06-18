@@ -29,7 +29,10 @@ impl crate::TextExtractPort for App {
                     return None;
                 }
 
-                Self::extract_wrapped_terminal_url(&pane.backend, row as usize, col as usize)
+                Self::extract_explicit_terminal_hyperlink(&pane.backend, row as usize, col as usize)
+                    .or_else(|| {
+                        Self::extract_wrapped_terminal_url(&pane.backend, row as usize, col as usize)
+                    })
             }
             // Editor Panes have no clickable-URL extraction (LivePreviewMode,
             // which provided it, was removed).
@@ -149,6 +152,20 @@ impl crate::TextExtractPort for App {
 }
 
 impl App {
+    fn extract_explicit_terminal_hyperlink(
+        terminal: &crate::tide_terminal::Terminal,
+        row: usize,
+        col: usize,
+    ) -> Option<String> {
+        terminal
+            .hyperlink_ranges()
+            .get(row)?
+            .iter()
+            .find_map(|(start_col, end_col, uri)| {
+                (col >= *start_col && col < *end_col).then(|| uri.clone())
+            })
+    }
+
     fn extract_wrapped_terminal_url(
         terminal: &crate::tide_terminal::Terminal,
         row: usize,
@@ -296,4 +313,3 @@ impl App {
         None
     }
 }
-

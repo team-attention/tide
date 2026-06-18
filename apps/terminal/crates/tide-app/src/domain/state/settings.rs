@@ -13,6 +13,10 @@ pub struct TideSettings {
     pub keybindings: Vec<KeybindingOverride>,
     #[serde(default = "default_true")]
     pub auto_integration: bool,
+    #[serde(default)]
+    pub appearance: AppearanceSettings,
+    #[serde(default)]
+    pub terminal: TerminalSettings,
 }
 
 fn default_true() -> bool {
@@ -25,8 +29,62 @@ impl Default for TideSettings {
             worktree: WorktreeSettings::default(),
             keybindings: Vec::new(),
             auto_integration: true,
+            appearance: AppearanceSettings::default(),
+            terminal: TerminalSettings::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemePreference {
+    Light,
+    #[default]
+    Dark,
+}
+
+impl ThemePreference {
+    pub fn is_dark(self) -> bool {
+        matches!(self, Self::Dark)
+    }
+
+    pub fn from_dark_mode(dark: bool) -> Self {
+        if dark { Self::Dark } else { Self::Light }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppearanceSettings {
+    #[serde(default = "default_font_family")]
+    pub font_family: String,
+    #[serde(default = "default_font_size")]
+    pub font_size: f32,
+    #[serde(default)]
+    pub theme: ThemePreference,
+}
+
+fn default_font_family() -> String {
+    "Menlo".to_string()
+}
+
+fn default_font_size() -> f32 {
+    14.0
+}
+
+impl Default for AppearanceSettings {
+    fn default() -> Self {
+        Self {
+            font_family: default_font_family(),
+            font_size: default_font_size(),
+            theme: ThemePreference::Dark,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TerminalSettings {
+    #[serde(default)]
+    pub osc52_read: bool,
 }
 
 /// A single keybinding override stored in settings.json.
@@ -214,4 +272,43 @@ pub fn build_keybinding_map(settings: &TideSettings) -> crate::tide_input::Keybi
         .filter_map(|o| o.to_binding())
         .collect();
     crate::tide_input::KeybindingMap::with_overrides(overrides)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserializing_legacy_settings_fills_appearance_and_terminal_defaults() {
+        let settings: TideSettings =
+            serde_json::from_str(r#"{"auto_integration":false}"#).expect("settings parse");
+
+        assert!(!settings.auto_integration);
+        assert_eq!(settings.appearance.font_family, "Menlo");
+        assert!((settings.appearance.font_size - 14.0).abs() < f32::EPSILON);
+        assert_eq!(settings.appearance.theme, ThemePreference::Dark);
+        assert!(!settings.terminal.osc52_read);
+    }
+
+    #[test]
+    fn deserializing_user_config_reads_appearance_and_terminal_settings() {
+        let settings: TideSettings = serde_json::from_str(
+            r#"{
+                "appearance": {
+                    "font_family": "JetBrains Mono",
+                    "font_size": 16.0,
+                    "theme": "light"
+                },
+                "terminal": {
+                    "osc52_read": true
+                }
+            }"#,
+        )
+        .expect("settings parse");
+
+        assert_eq!(settings.appearance.font_family, "JetBrains Mono");
+        assert!((settings.appearance.font_size - 16.0).abs() < f32::EPSILON);
+        assert_eq!(settings.appearance.theme, ThemePreference::Light);
+        assert!(settings.terminal.osc52_read);
+    }
 }

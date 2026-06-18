@@ -592,6 +592,17 @@ fn active_terminal_header_preserves_title_when_git_badges_are_present() {
 }
 
 #[test]
+fn terminal_pane_title_prefers_program_osc_title() {
+    // Terminal OSC 0/2 titles should override the cwd-derived fallback title.
+    let (mut panes, _) = terminal_with_git_info(1);
+    if let Some(PaneKind::Terminal(terminal)) = panes.get_mut(&1) {
+        terminal.context.osc_title = Some("vim main.rs".to_string());
+    }
+
+    assert_eq!(pane_title(&panes, 1), "vim main.rs");
+}
+
+#[test]
 fn active_stage_tab_preserves_title_when_git_badges_are_present() {
     // UC-6 BR-17: Active stacked Stage tabs keep a readable title when git badges are present.
     let (panes, expected_title) = terminal_with_git_info(2);
@@ -1056,6 +1067,7 @@ fn terminal_cwd_change_clears_stale_git_badges_before_poll_results_arrive() {
             is_current: true,
         }),
         child_dead: false,
+        osc_title: None,
     };
 
     let changed = sync_terminal_badge_runtime_context(

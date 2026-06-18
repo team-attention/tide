@@ -12,7 +12,7 @@ use objc2::runtime::{AnyObject, Bool, NSObject};
 use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationOptions, NSApplicationActivationPolicy,
-    NSBackingStoreType, NSRunningApplication, NSView, NSWindow, NSWindowStyleMask,
+    NSBackingStoreType, NSBeep, NSRunningApplication, NSView, NSWindow, NSWindowStyleMask,
 };
 use objc2_foundation::MainThreadMarker;
 use objc2_foundation::{CGFloat, NSMutableArray, NSPoint, NSRect, NSSize, NSString};
@@ -860,6 +860,16 @@ impl PlatformWindow for MacosWindow {
             let nsapp: Retained<AnyObject> = msg_send_id![app_cls, sharedApplication];
             let _: () = msg_send![&nsapp, requestUserAttention: 0_isize]; // NSInformationalRequest = 0
         }
+    }
+
+    fn bell(&self) {
+        unsafe {
+            NSBeep();
+        }
+    }
+
+    fn set_window_title(&self, title: &str) {
+        self.ns_window.setTitle(&NSString::from_str(title));
     }
 }
 

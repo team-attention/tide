@@ -1123,9 +1123,14 @@ impl App {
                 Some(self.ports.clock.now() + terminal_badge_check_delay());
         }
 
-        // Drain OSC 9 notifications from terminals
+        // Drain terminal side-channel events (OSC 9, OSC 0/2, BEL, OSC 52).
         {
+            use crate::tide_platform::WindowCommand;
+            use crate::tide_terminal::TitleChange;
+
             let mut terminal_notifications = Vec::new();
+            let mut platform_commands = Vec::new();
+            let mut title_changed = false;
 
             let active_terminal_ids: Vec<u64> = self
                 .panes
@@ -1139,25 +1144,90 @@ impl App {
                 })
                 .collect();
             for id in active_terminal_ids {
-                if let Some(PaneKind::Terminal(tp)) = self.panes.get(&id) {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&id) {
                     for msg in tp.backend.drain_notifications() {
                         terminal_notifications.push((id, msg));
                     }
-                }
-            }
-
-            for (workspace_idx, workspace) in self.ws.workspaces.iter().enumerate() {
-                if workspace_idx == self.ws.active {
-                    continue;
-                }
-                for (&id, pane) in &workspace.panes {
-                    if let PaneKind::Terminal(tp) = pane {
-                        for msg in tp.backend.drain_notifications() {
-                            terminal_notifications.push((id, msg));
+                    if let Some(change) = tp.backend.drain_title() {
+                        match change {
+                            TitleChange::Set(title) => {
+                                tp.context.osc_title = Some(title);
+                            }
+                            TitleChange::Reset => {
+                                tp.context.osc_title = None;
+                            }
+                        };
+                        title_changed = true;
+                    }
+                    if tp.backend.take_bell() {
+                        platform_commands.push(WindowCommand::Bell);
+                    }
+                    for (_target, text) in tp.backend.drain_clipboard_writes() {
+                        let _ = self.ports.clipboard.set_text(&text);
+                    }
+                    for (_target, formatter) in tp.backend.drain_clipboard_loads() {
+                        if let Ok(text) = self.ports.clipboard.get_text() {
+                            let response = formatter(&text);
+                            tp.backend.write(response.as_bytes());
                         }
                     }
                 }
             }
+
+            let active_workspace = self.ws.active;
+            for (workspace_idx, workspace) in self.ws.workspaces.iter_mut().enumerate() {
+                if workspace_idx == active_workspace {
+                    continue;
+                }
+                for (&id, pane) in workspace.panes.iter_mut() {
+                    if let PaneKind::Terminal(tp) = pane {
+                        for msg in tp.backend.drain_notifications() {
+                            terminal_notifications.push((id, msg));
+                        }
+                        if let Some(change) = tp.backend.drain_title() {
+                            match change {
+                                TitleChange::Set(title) => {
+                                    tp.context.osc_title = Some(title);
+                                }
+                                TitleChange::Reset => {
+                                    tp.context.osc_title = None;
+                                }
+                            }
+                            title_changed = true;
+                        }
+                        if tp.backend.take_bell() {
+                            platform_commands.push(WindowCommand::Bell);
+                        }
+                        for (_target, text) in tp.backend.drain_clipboard_writes() {
+                            let _ = self.ports.clipboard.set_text(&text);
+                        }
+                        for (_target, formatter) in tp.backend.drain_clipboard_loads() {
+                            if let Ok(text) = self.ports.clipboard.get_text() {
+                                let response = formatter(&text);
+                                tp.backend.write(response.as_bytes());
+                            }
+                        }
+                    }
+                }
+            }
+
+            if title_changed {
+                self.cache.invalidate_chrome();
+                crate::AppCorePort::request_redraw(self);
+            }
+            let focused_window_title = self
+                .focus
+                .focused
+                .and_then(|id| match self.panes.get(&id) {
+                    Some(PaneKind::Terminal(tp)) => tp.context.osc_title.clone(),
+                    _ => None,
+                })
+                .unwrap_or_else(|| "Tide".to_string());
+            if self.window.native_title != focused_window_title {
+                self.window.native_title = focused_window_title.clone();
+                platform_commands.push(WindowCommand::SetWindowTitle(focused_window_title));
+            }
+            self.pending_platform_commands.extend(platform_commands);
 
             for (id, msg) in terminal_notifications {
                 self.handle_terminal_notification(id, &msg);
@@ -1191,6 +1261,12 @@ impl App {
                     }
                     WindowCommand::RequestUserAttention => {
                         window.request_user_attention();
+                    }
+                    WindowCommand::Bell => {
+                        window.bell();
+                    }
+                    WindowCommand::SetWindowTitle(ref title) => {
+                        window.set_window_title(title);
                     }
                     WindowCommand::RequestNotificationPermission => {
                         window.request_notification_permission();

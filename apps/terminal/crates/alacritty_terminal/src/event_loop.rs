@@ -14,7 +14,7 @@ use std::time::Instant;
 use log::error;
 use polling::{Event as PollingEvent, Events, PollMode};
 
-use crate::event::{self, Event, EventListener, WindowSize};
+use crate::event::{self, Event, EventListener, GraphicsData, GraphicsProtocol, WindowSize};
 use crate::sync::FairMutex;
 use crate::term::Term;
 use crate::{thread, tty};
@@ -150,8 +150,24 @@ where
                 writer.write_all(&buf[..unprocessed]).unwrap();
             }
 
-            // Parse the incoming bytes.
-            state.parser.advance(&mut **terminal, &buf[..unprocessed]);
+            // Parse the incoming bytes, stripping terminal graphics payloads so
+            // binary image data is not interpreted as printable text.
+            for token in state.graphics.advance(&buf[..unprocessed]) {
+                match token {
+                    PtyToken::Bytes(bytes) => state.parser.advance(&mut **terminal, &bytes),
+                    PtyToken::Graphics(protocol, payload) => {
+                        let point = terminal.grid().cursor.point;
+                        let row = point.line.0.max(0) as u16;
+                        let col = point.column.0 as u16;
+                        self.event_proxy.send_event(Event::Graphics(GraphicsData {
+                            protocol,
+                            row,
+                            col,
+                            payload,
+                        }));
+                    },
+                }
+            }
 
             processed += unprocessed;
             unprocessed = 0;
@@ -392,6 +408,142 @@ impl EventLoopSender {
     }
 }
 
+enum PtyToken {
+    Bytes(Vec<u8>),
+    Graphics(GraphicsProtocol, Vec<u8>),
+}
+
+#[derive(Default)]
+struct GraphicsEscapeExtractor {
+    state: GraphicsState,
+    plain: Vec<u8>,
+}
+
+enum GraphicsState {
+    Ground,
+    Esc,
+    KittyApc(Vec<u8>),
+    KittyApcEsc(Vec<u8>),
+    Dcs(Vec<u8>),
+    DcsEsc(Vec<u8>),
+}
+
+impl Default for GraphicsState {
+    fn default() -> Self {
+        Self::Ground
+    }
+}
+
+impl GraphicsEscapeExtractor {
+    fn advance(&mut self, bytes: &[u8]) -> Vec<PtyToken> {
+        let mut tokens = Vec::new();
+        for &byte in bytes {
+            self.advance_byte(byte, &mut tokens);
+        }
+        self.flush_plain(&mut tokens);
+        tokens
+    }
+
+    fn advance_byte(&mut self, byte: u8, tokens: &mut Vec<PtyToken>) {
+        let state = std::mem::replace(&mut self.state, GraphicsState::Ground);
+        match state {
+            GraphicsState::Ground => {
+                if byte == 0x1b {
+                    self.state = GraphicsState::Esc;
+                } else {
+                    self.plain.push(byte);
+                    self.state = GraphicsState::Ground;
+                }
+            },
+            GraphicsState::Esc => match byte {
+                b'_' => {
+                    self.flush_plain(tokens);
+                    self.state = GraphicsState::KittyApc(Vec::new());
+                },
+                b'P' => {
+                    self.flush_plain(tokens);
+                    self.state = GraphicsState::Dcs(Vec::new());
+                },
+                _ => {
+                    self.plain.push(0x1b);
+                    self.plain.push(byte);
+                    self.state = GraphicsState::Ground;
+                },
+            },
+            GraphicsState::KittyApc(mut payload) => {
+                if byte == 0x1b {
+                    self.state = GraphicsState::KittyApcEsc(payload);
+                } else {
+                    payload.push(byte);
+                    self.state = GraphicsState::KittyApc(payload);
+                }
+            },
+            GraphicsState::KittyApcEsc(mut payload) => {
+                if byte == b'\\' {
+                    if payload.first() == Some(&b'G') {
+                        tokens.push(PtyToken::Graphics(GraphicsProtocol::Kitty, payload));
+                    } else {
+                        let mut bytes = Vec::with_capacity(payload.len() + 4);
+                        bytes.extend_from_slice(b"\x1b_");
+                        bytes.append(&mut payload);
+                        bytes.extend_from_slice(b"\x1b\\");
+                        tokens.push(PtyToken::Bytes(bytes));
+                    }
+                    self.state = GraphicsState::Ground;
+                } else {
+                    payload.push(0x1b);
+                    payload.push(byte);
+                    self.state = GraphicsState::KittyApc(payload);
+                }
+            },
+            GraphicsState::Dcs(mut payload) => {
+                if byte == 0x1b {
+                    self.state = GraphicsState::DcsEsc(payload);
+                } else {
+                    payload.push(byte);
+                    self.state = GraphicsState::Dcs(payload);
+                }
+            },
+            GraphicsState::DcsEsc(mut payload) => {
+                if byte == b'\\' {
+                    if dcs_payload_is_sixel(&payload) {
+                        tokens.push(PtyToken::Graphics(GraphicsProtocol::Sixel, payload));
+                    } else {
+                        let mut bytes = Vec::with_capacity(payload.len() + 4);
+                        bytes.extend_from_slice(b"\x1bP");
+                        bytes.append(&mut payload);
+                        bytes.extend_from_slice(b"\x1b\\");
+                        tokens.push(PtyToken::Bytes(bytes));
+                    }
+                    self.state = GraphicsState::Ground;
+                } else {
+                    payload.push(0x1b);
+                    payload.push(byte);
+                    self.state = GraphicsState::Dcs(payload);
+                }
+            },
+        }
+    }
+
+    fn flush_plain(&mut self, tokens: &mut Vec<PtyToken>) {
+        if !self.plain.is_empty() {
+            tokens.push(PtyToken::Bytes(std::mem::take(&mut self.plain)));
+        }
+    }
+}
+
+fn dcs_payload_is_sixel(payload: &[u8]) -> bool {
+    for byte in payload.iter().copied() {
+        match byte {
+            0x30..=0x3f => continue,     // DCS parameters
+            0x20..=0x2f => return false, // intermediates, e.g. DECRQSS "$q"
+            0x40..=0x7e => return byte == b'q',
+            _ => return false,
+        }
+    }
+    false
+}
+
 /// All of the mutable state needed to run the event loop.
 ///
 /// Contains list of items to write, current write state, etc. Anything that
@@ -401,6 +553,7 @@ pub struct State {
     write_list: VecDeque<Cow<'static, [u8]>>,
     writing: Option<Writing>,
     parser: ansi::Processor,
+    graphics: GraphicsEscapeExtractor,
 }
 
 impl State {
@@ -480,6 +633,57 @@ impl<T> PeekableReceiver<T> {
                 Err(TryRecvError::Disconnected) => panic!("event loop channel closed"),
                 res => res.ok(),
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn token_bytes(token: &PtyToken) -> Option<&[u8]> {
+        match token {
+            PtyToken::Bytes(bytes) => Some(bytes),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn graphics_extractor_splits_kitty_apc_from_plain_text() {
+        let mut extractor = GraphicsEscapeExtractor::default();
+        let tokens = extractor.advance(b"ab\x1b_Gf=100;AAAA\x1b\\cd");
+
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(token_bytes(&tokens[0]), Some(&b"ab"[..]));
+        match &tokens[1] {
+            PtyToken::Graphics(GraphicsProtocol::Kitty, payload) => {
+                assert_eq!(payload, b"Gf=100;AAAA");
+            },
+            _ => panic!("expected kitty graphics token"),
+        }
+        assert_eq!(token_bytes(&tokens[2]), Some(&b"cd"[..]));
+    }
+
+    #[test]
+    fn graphics_extractor_preserves_non_sixel_dcs() {
+        let mut extractor = GraphicsEscapeExtractor::default();
+        let tokens = extractor.advance(b"\x1bP$qm\x1b\\");
+
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(token_bytes(&tokens[0]), Some(&b"\x1bP$qm\x1b\\"[..]));
+    }
+
+    #[test]
+    fn graphics_extractor_recognizes_sixel_dcs() {
+        let mut extractor = GraphicsEscapeExtractor::default();
+        let tokens = extractor.advance(b"\x1bPq\"1;1;1;1#0~~\x1b\\");
+
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0] {
+            PtyToken::Graphics(GraphicsProtocol::Sixel, payload) => {
+                assert!(payload.starts_with(b"q"));
+            },
+            _ => panic!("expected sixel graphics token"),
         }
     }
 }

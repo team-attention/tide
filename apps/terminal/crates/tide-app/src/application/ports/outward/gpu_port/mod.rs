@@ -34,4 +34,5 @@ pub(crate) trait GpuPort {
     fn remove_pane_cache(&mut self, pane_id: PaneId);
     fn set_clear_color(&mut self, color: crate::tide_core::Color);
     fn set_font_size(&mut self, size: f32) -> bool;
+    fn set_font_family(&mut self, family: &str) -> bool;
 }

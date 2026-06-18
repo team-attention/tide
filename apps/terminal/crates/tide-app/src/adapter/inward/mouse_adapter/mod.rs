@@ -3,7 +3,9 @@
 pub(crate) mod drag;
 mod selection;
 
-use crate::tide_core::{FileTreeSource, InputEvent, MouseButton, Rect, Vec2};
+use crate::tide_core::{
+    FileTreeSource, InputEvent, MouseButton, PaneId, Rect, TerminalBackend, Vec2,
+};
 use crate::tide_platform::WindowProxy;
 
 use crate::pane::PaneKind;
@@ -62,25 +64,188 @@ impl<
 {
 }
 
+#[derive(Debug, Clone, Copy)]
+enum TerminalMouseReport {
+    Press(MouseButton),
+    Release(MouseButton),
+    Drag(MouseButton),
+    Move,
+}
+
+fn clamp_to_rect(pos: Vec2, rect: Rect) -> Vec2 {
+    let max_x = (rect.x + rect.width - 0.001).max(rect.x);
+    let max_y = (rect.y + rect.height - 0.001).max(rect.y);
+    Vec2::new(pos.x.max(rect.x).min(max_x), pos.y.max(rect.y).min(max_y))
+}
+
+fn usize_to_u16(value: usize) -> u16 {
+    value.min(u16::MAX as usize) as u16
+}
+
+fn terminal_cell_for_pane(
+    ctx: &(impl AppCorePort + PaneAccessPort),
+    pos: Vec2,
+    pane_id: PaneId,
+    clamp: bool,
+) -> Option<(u16, u16)> {
+    if !matches!(ctx.pane(pane_id), Some(PaneKind::Terminal(_))) {
+        return None;
+    }
+
+    let (_, visual_rect) = ctx
+        .visual_pane_rects()
+        .iter()
+        .find(|(id, _)| *id == pane_id)?;
+    let cell_size = ctx.cell_size();
+    let inner = crate::pane::pane_content_rect(*visual_rect, terminal_content_top(cell_size.height));
+    let target_pos = if clamp {
+        clamp_to_rect(pos, inner)
+    } else {
+        if !inner.contains(pos) {
+            return None;
+        }
+        pos
+    };
+    let (row, col) =
+        crate::adapter::inward::click_adapter::hit_test::pixel_to_cell(ctx, target_pos, pane_id)?;
+    Some((usize_to_u16(col), usize_to_u16(row)))
+}
+
+fn terminal_cell_at(
+    ctx: &(impl AppCorePort + PaneAccessPort),
+    pos: Vec2,
+) -> Option<(PaneId, u16, u16)> {
+    for (pane_id, _) in ctx.visual_pane_rects().to_vec() {
+        if let Some((col, row)) = terminal_cell_for_pane(ctx, pos, pane_id, false) {
+            return Some((pane_id, col, row));
+        }
+    }
+    None
+}
+
+fn terminal_mouse_report_bytes(
+    ctx: &impl MousePorts,
+    pane_id: PaneId,
+    report: TerminalMouseReport,
+    col: u16,
+    row: u16,
+) -> Option<Vec<u8>> {
+    let modifiers = ctx.modifiers();
+    match ctx.pane(pane_id) {
+        Some(PaneKind::Terminal(pane)) => match report {
+            TerminalMouseReport::Press(button) => {
+                pane.backend.mouse_press_to_bytes(button, &modifiers, col, row)
+            }
+            TerminalMouseReport::Release(button) => {
+                pane.backend.mouse_release_to_bytes(button, &modifiers, col, row)
+            }
+            TerminalMouseReport::Drag(button) => {
+                pane.backend.mouse_drag_to_bytes(button, &modifiers, col, row)
+            }
+            TerminalMouseReport::Move => pane.backend.mouse_move_to_bytes(&modifiers, col, row),
+        },
+        _ => None,
+    }
+}
+
+fn forward_terminal_mouse_report(
+    ctx: &mut impl MousePorts,
+    pane_id: PaneId,
+    report: TerminalMouseReport,
+    col: u16,
+    row: u16,
+) -> bool {
+    let Some(bytes) = terminal_mouse_report_bytes(ctx, pane_id, report, col, row) else {
+        return false;
+    };
+
+    ctx.focus_terminal(pane_id);
+    if let Some(PaneKind::Terminal(pane)) = ctx.pane_mut(pane_id) {
+        pane.backend.write(&bytes);
+        true
+    } else {
+        false
+    }
+}
+
+fn forward_terminal_mouse_press(ctx: &mut impl MousePorts, button: MouseButton) -> bool {
+    let pos = ctx.last_cursor_pos();
+    let Some((pane_id, col, row)) = terminal_cell_at(ctx, pos) else {
+        return false;
+    };
+    if forward_terminal_mouse_report(
+        ctx,
+        pane_id,
+        TerminalMouseReport::Press(button),
+        col,
+        row,
+    ) {
+        ctx.interaction_mut().terminal_mouse_source = Some(pane_id);
+        return true;
+    }
+    false
+}
+
+fn forward_terminal_mouse_release(ctx: &mut impl MousePorts, button: MouseButton) -> bool {
+    let Some(pane_id) = ctx.interaction().terminal_mouse_source else {
+        return false;
+    };
+    ctx.interaction_mut().terminal_mouse_source = None;
+
+    let pos = ctx.last_cursor_pos();
+    let Some((col, row)) = terminal_cell_for_pane(ctx, pos, pane_id, true) else {
+        return false;
+    };
+    forward_terminal_mouse_report(
+        ctx,
+        pane_id,
+        TerminalMouseReport::Release(button),
+        col,
+        row,
+    )
+}
+
+pub(super) fn forward_terminal_mouse_drag(
+    ctx: &mut impl MousePorts,
+    pos: Vec2,
+    button: MouseButton,
+) -> bool {
+    let Some(pane_id) = ctx.interaction().terminal_mouse_source else {
+        return false;
+    };
+    let Some((col, row)) = terminal_cell_for_pane(ctx, pos, pane_id, true) else {
+        return false;
+    };
+    forward_terminal_mouse_report(ctx, pane_id, TerminalMouseReport::Drag(button), col, row)
+}
+
+pub(super) fn forward_terminal_mouse_move(ctx: &mut impl MousePorts, pos: Vec2) -> bool {
+    let Some((pane_id, col, row)) = terminal_cell_at(ctx, pos) else {
+        return false;
+    };
+    forward_terminal_mouse_report(ctx, pane_id, TerminalMouseReport::Move, col, row)
+}
+
 pub(crate) fn handle_mouse_down(
     ctx: &mut impl MousePorts,
     button: MouseButton,
     window: &WindowProxy,
 ) {
-    if button == MouseButton::Left {
+    {
         let interaction = ctx.interaction_mut();
-        interaction.mouse_left_pressed = true;
-        interaction.text_selection_drag_source = None;
+        interaction.mouse_pressed_button = Some(button);
+        interaction.terminal_mouse_source = None;
+        if button == MouseButton::Left {
+            interaction.mouse_left_pressed = true;
+            interaction.text_selection_drag_source = None;
+        }
+    }
 
+    if button == MouseButton::Left {
         // Check editor scrollbar click
         if check_scrollbar_click(ctx, ctx.last_cursor_pos()) {
             ctx.request_redraw();
             return;
-        }
-
-        // Start text selection if clicking on pane content
-        if selection::start_text_selection(ctx) {
-            // selection started — fall through to continue processing
         }
     }
 
@@ -378,6 +543,18 @@ pub(crate) fn handle_mouse_down(
         return;
     }
 
+    if forward_terminal_mouse_press(ctx, button) {
+        ctx.request_redraw();
+        return;
+    }
+
+    if button == MouseButton::Left {
+        // Start text selection if clicking on pane content.
+        if selection::start_text_selection(ctx) {
+            // Selection started — fall through to keep existing focus/click routing behavior.
+        }
+    }
+
     // General mouse input routing
     handle_mouse_input_core(ctx, button, window);
     ctx.request_redraw();
@@ -550,6 +727,10 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
 }
 
 pub(crate) fn handle_mouse_up(ctx: &mut impl MousePorts, button: MouseButton) {
+    if ctx.interaction().mouse_pressed_button == Some(button) {
+        ctx.interaction_mut().mouse_pressed_button = None;
+    }
+
     let hover_cleared = if button == MouseButton::Left {
         let interaction = ctx.interaction_mut();
         interaction.mouse_left_pressed = false;
@@ -563,6 +744,14 @@ pub(crate) fn handle_mouse_up(ctx: &mut impl MousePorts, button: MouseButton) {
         ctx.request_redraw();
     } else if button == MouseButton::Left {
         ctx.interaction_mut().mouse_left_pressed = false;
+    }
+
+    if ctx.interaction().terminal_mouse_source.is_some() {
+        if forward_terminal_mouse_release(ctx, button) {
+            ctx.request_redraw();
+            return;
+        }
+        ctx.request_redraw();
     }
 
     // End workspace sidebar drag

@@ -4,6 +4,7 @@ use crate::adapter::outward::view::{
 };
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
+use crate::state::settings::ThemePreference;
 use crate::state::{ConfigPageState, ConfigSection};
 use crate::theme::{DARK, LIGHT};
 use crate::tide_core::{Key, Modifiers};
@@ -87,6 +88,25 @@ fn font_size_starts_at_14() {
     // UC-2 BR-4: Font size starts at 14
     let app = test_app();
     assert!((app.window.current_font_size - 14.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn loaded_user_settings_apply_font_theme_and_pending_renderer_values() {
+    let mut app = test_app();
+    app.settings.appearance.font_family = "JetBrains Mono".to_string();
+    app.settings.appearance.font_size = 18.0;
+    app.settings.appearance.theme = ThemePreference::Light;
+
+    app.apply_loaded_user_settings();
+
+    assert_eq!(app.window.current_font_family, "JetBrains Mono");
+    assert!((app.window.current_font_size - 18.0).abs() < f32::EPSILON);
+    assert!(!app.window.dark_mode);
+    assert_eq!(
+        app.window.pending_font_family.as_deref(),
+        Some("JetBrains Mono")
+    );
+    assert_eq!(app.window.pending_font_size, Some(18.0));
 }
 
 // --- UC-3: LightModeChrome ---

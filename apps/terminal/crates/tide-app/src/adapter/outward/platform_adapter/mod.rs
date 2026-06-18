@@ -179,6 +179,12 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
 
     /// Request user attention (dock bounce). Uses informational (single bounce).
     fn request_user_attention(&self) {}
+
+    /// Ring the system bell (terminal BEL). No-op on platforms without one.
+    fn bell(&self) {}
+
+    /// Set the native window title (terminal OSC 0/2).
+    fn set_window_title(&self, _title: &str) {}
 }
 
 // ──────────────────────────────────────────────
@@ -256,6 +262,10 @@ pub enum WindowCommand {
     RequestNotificationPermission,
     RequestUserAttention,
     BroadcastSettingsChanged,
+    /// Ring the system bell (terminal BEL / `\a`).
+    Bell,
+    /// Set the native window title (terminal OSC 0/2).
+    SetWindowTitle(String),
 }
 
 /// A `WindowCommand` addressed to one `Tide Window`.
@@ -347,6 +357,12 @@ pub fn execute_window_command(window: &dyn PlatformWindow, cmd: WindowCommand) {
         }
         WindowCommand::RequestUserAttention => {
             window.request_user_attention();
+        }
+        WindowCommand::Bell => {
+            window.bell();
+        }
+        WindowCommand::SetWindowTitle(ref title) => {
+            window.set_window_title(title);
         }
         WindowCommand::BroadcastSettingsChanged => {}
     }
@@ -476,6 +492,14 @@ impl WindowProxy {
 
     pub fn request_user_attention(&self) {
         self.send(WindowCommand::RequestUserAttention);
+    }
+
+    pub fn bell(&self) {
+        self.send(WindowCommand::Bell);
+    }
+
+    pub fn set_window_title(&self, title: &str) {
+        self.send(WindowCommand::SetWindowTitle(title.to_string()));
     }
 
     pub fn broadcast_settings_changed(&self) {

@@ -10,7 +10,8 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{
-    Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend, TerminalGrid, Vec2,
+    Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend, TerminalGraphicProtocol,
+    TerminalGrid, Vec2,
 };
 use crate::tide_renderer::WgpuRenderer;
 use crate::tide_terminal::git::GitInfo;
@@ -77,6 +78,8 @@ pub struct TerminalContext {
     pub current_worktree: Option<crate::tide_terminal::git::WorktreeInfo>,
     /// Whether the child shell process has died.
     pub child_dead: bool,
+    /// Program-set title from OSC 0/2. `None` = no program title (use default).
+    pub osc_title: Option<String>,
 }
 
 impl Default for TerminalContext {
@@ -88,6 +91,7 @@ impl Default for TerminalContext {
             worktree_count: 0,
             current_worktree: None,
             child_dead: false,
+            osc_title: None,
         }
     }
 }
@@ -370,18 +374,28 @@ impl TerminalPane {
         let cols = (grid.cols as usize).min(max_cols);
 
         for row in 0..rows {
-            for col in 0..cols {
-                if col >= grid.cells[row].len() {
-                    break;
-                }
-                let cell = &grid.cells[row][col];
-                if (cell.character == '\0' || cell.character == ' ')
-                    && cell.style.background.is_none()
-                {
-                    continue;
-                }
-                renderer.draw_grid_cell(cell.character, row, col, cell.style, cell_size, offset);
+            renderer.draw_grid_row(&grid.cells[row], row, cols, cell_size, offset);
+        }
+    }
+
+    pub fn render_graphics(&self, rect: Rect, renderer: &mut WgpuRenderer) {
+        let cell_size = renderer.cell_size();
+        let offset = terminal_grid_origin(rect);
+
+        for graphic in self.backend.graphics() {
+            if !matches!(
+                graphic.protocol,
+                TerminalGraphicProtocol::Kitty | TerminalGraphicProtocol::Sixel
+            ) {
+                continue;
             }
+            let rect = Rect::new(
+                offset.x + graphic.col as f32 * cell_size.width,
+                offset.y + graphic.row as f32 * cell_size.height,
+                graphic.width_cells as f32 * cell_size.width,
+                graphic.height_cells as f32 * cell_size.height,
+            );
+            renderer.draw_terminal_image(graphic.key, &graphic.bytes, rect);
         }
     }
 
@@ -394,11 +408,28 @@ impl TerminalPane {
     ) {
         let cell_size = renderer.cell_size();
         let url_ranges = self.backend.url_ranges();
+        let hyperlink_ranges = self.backend.hyperlink_ranges();
 
         let max_cols = terminal_grid_cols(rect, cell_size);
         let offset = terminal_grid_origin(rect);
 
         let max_rows = (rect.height / cell_size.height).ceil() as usize;
+
+        for (row, ranges) in hyperlink_ranges.iter().enumerate() {
+            if row >= max_rows {
+                break;
+            }
+            for &(start_col, end_col, _) in ranges {
+                let clamped_end = end_col.min(max_cols);
+                if start_col >= max_cols {
+                    continue;
+                }
+                let x = offset.x + start_col as f32 * cell_size.width;
+                let y = offset.y + (row as f32 + 1.0) * cell_size.height - 1.0;
+                let w = (clamped_end - start_col) as f32 * cell_size.width;
+                renderer.draw_rect(Rect::new(x, y, w, 1.0), link_color);
+            }
+        }
 
         for (row, ranges) in url_ranges.iter().enumerate() {
             if row >= max_rows {
@@ -503,7 +534,7 @@ impl TerminalPane {
     }
 
     pub fn handle_key(&mut self, key: &Key, modifiers: &Modifiers) {
-        let bytes = Terminal::key_to_bytes(key, modifiers);
+        let bytes = self.backend.key_event_to_bytes(key, modifiers);
         if !bytes.is_empty() {
             // Scroll back to bottom on user input (applied atomically during next grid sync)
             if self.backend.display_offset() > 0 {

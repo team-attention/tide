@@ -29,18 +29,42 @@ use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Rgb as AnsiR
 use unicode_width::UnicodeWidthChar;
 
 mod color;
+mod graphics;
 pub mod git;
 mod grid_sync;
 mod key_input;
+mod mouse_input;
 mod urls;
 mod wheel_input;
 
 use grid_sync::*;
+use graphics::{GraphicsUpdate, TerminalGraphicsState};
 pub(crate) use urls::{terminal_url_regex, trim_url_trailing};
 
 use crate::tide_core::{
-    Color, CursorShape, CursorState, TerminalBackend, TerminalCell, TerminalGrid, TideWindowId,
+    Color, CursorShape, CursorState, TerminalBackend, TerminalCell, TerminalGraphic, TerminalGrid,
+    TideWindowId,
 };
+
+/// A program-issued terminal title change (OSC 0 / OSC 2 / reset).
+/// `Set` carries the new title; `Reset` clears back to the default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TitleChange {
+    Set(String),
+    Reset,
+}
+
+/// Which pasteboard an OSC 52 request targets. macOS has no separate primary
+/// selection, so both map to the single system pasteboard at the adapter layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipboardTarget {
+    Clipboard,
+    Selection,
+}
+
+/// Formatter supplied by the VT engine for an OSC 52 read response — transforms
+/// the clipboard text into the expected escape-sequence reply.
+pub type ClipboardLoadFormatter = Arc<dyn Fn(&str) -> String + Send + Sync + 'static>;
 
 /// Number of scrollback history lines to keep.
 const SCROLLBACK_LINES: usize = 10_000;
@@ -171,6 +195,8 @@ pub struct Terminal {
     cached_cursor: CursorState,
     /// Detected URL ranges per row (read from snapshot)
     url_ranges: Vec<Vec<(usize, usize)>>,
+    /// OSC 8 hyperlink ranges per row (read from snapshot).
+    hyperlink_ranges: Vec<Vec<(usize, usize, String)>>,
     /// Whether each visible row ends because of terminal wrap instead of a hard line break.
     wrapped_rows: Vec<bool>,
     /// Grid generation counter
@@ -197,6 +223,24 @@ pub struct Terminal {
     _sync_join: Option<std::thread::JoinHandle<()>>,
     /// OSC 9 notification queue (shared with TermEventListener on PTY thread)
     notifications: Arc<Mutex<Vec<String>>>,
+    /// Pending OSC 0/2 title change (last-write-wins, shared with listener).
+    pending_title: Arc<Mutex<Option<TitleChange>>>,
+    /// Edge-triggered bell flag (BEL), shared with listener.
+    bell_pending: Arc<AtomicBool>,
+    /// OSC 52 clipboard-write queue (shared with listener).
+    clipboard_writes: Arc<Mutex<Vec<(ClipboardTarget, String)>>>,
+    /// OSC 52 clipboard-read request queue (shared with listener). Only populated
+    /// when `clipboard_read_allowed` is true.
+    clipboard_loads: Arc<Mutex<Vec<(ClipboardTarget, ClipboardLoadFormatter)>>>,
+    /// Policy: allow OSC 52 clipboard reads. Defaults to false (secure default
+    /// matching xterm / Ghostty — a remote program must not silently exfiltrate
+    /// the clipboard).
+    clipboard_read_allowed: Arc<AtomicBool>,
+    /// Terminal graphics protocol payloads queued by the PTY thread.
+    graphics_events: Arc<Mutex<Vec<alacritty_terminal::event::GraphicsData>>>,
+    /// Parsed, active terminal graphics placements.
+    graphics: Vec<TerminalGraphic>,
+    graphics_state: TerminalGraphicsState,
 }
 
 impl Terminal {
@@ -247,6 +291,14 @@ impl Terminal {
         let dark_mode_flag = Arc::new(AtomicBool::new(dark_mode));
         let mode_2031_flag = Arc::new(AtomicBool::new(false));
         let notifications: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let pending_title: Arc<Mutex<Option<TitleChange>>> = Arc::new(Mutex::new(None));
+        let bell_pending = Arc::new(AtomicBool::new(false));
+        let clipboard_writes: Arc<Mutex<Vec<(ClipboardTarget, String)>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let clipboard_loads: Arc<Mutex<Vec<(ClipboardTarget, ClipboardLoadFormatter)>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let clipboard_read_allowed = Arc::new(AtomicBool::new(false));
+        let graphics_events = Arc::new(Mutex::new(Vec::new()));
         let listener = TermEventListener {
             dirty: dirty.clone(),
             pty_writer: pty_writer.clone(),
@@ -254,9 +306,23 @@ impl Terminal {
             dark_mode: dark_mode_flag.clone(),
             mode_2031: mode_2031_flag.clone(),
             notifications: notifications.clone(),
+            pending_title: pending_title.clone(),
+            bell_pending: bell_pending.clone(),
+            clipboard_writes: clipboard_writes.clone(),
+            clipboard_loads: clipboard_loads.clone(),
+            clipboard_read_allowed: clipboard_read_allowed.clone(),
+            graphics_events: graphics_events.clone(),
         };
 
-        let config = TermConfig::default();
+        let mut config = TermConfig::default();
+        // Allow OSC 52 copy and paste at the engine level. The actual paste
+        // (clipboard read) is additionally gated by `clipboard_read_allowed`
+        // (default off) in the listener — engine `OnlyCopy` would deny reads
+        // outright before our policy can apply.
+        config.osc52 = alacritty_terminal::term::Osc52::CopyPaste;
+        // Let applications opt into Kitty keyboard protocol modes with
+        // CSI = Ps u / CSI > Ps u. Encoding is applied at input time.
+        config.kitty_keyboard = true;
         let term = Term::new(config, &term_size, listener.clone());
         let term = Arc::new(FairMutex::new(term));
 
@@ -329,6 +395,7 @@ impl Terminal {
             grid: Self::build_empty_grid(cols, rows),
             inverse_cursor: None,
             url_ranges: Vec::new(),
+            hyperlink_ranges: Vec::new(),
             wrapped_rows: Vec::new(),
             generation: 0,
             cursor: CursorState {
@@ -354,6 +421,7 @@ impl Terminal {
                 shape: CursorShape::Block,
             },
             url_ranges: Vec::new(),
+            hyperlink_ranges: Vec::new(),
             wrapped_rows: Vec::new(),
             grid_generation: 0,
             url_row_buf: String::new(),
@@ -404,6 +472,7 @@ impl Terminal {
                 shape: CursorShape::Block,
             },
             url_ranges: Vec::new(),
+            hyperlink_ranges: Vec::new(),
             wrapped_rows: Vec::new(),
             grid_generation: 0,
             stay_at_bottom,
@@ -417,7 +486,87 @@ impl Terminal {
             sync_shutdown,
             _sync_join: Some(sync_join),
             notifications,
+            pending_title,
+            bell_pending,
+            clipboard_writes,
+            clipboard_loads,
+            clipboard_read_allowed,
+            graphics_events,
+            graphics: Vec::new(),
+            graphics_state: TerminalGraphicsState::default(),
         })
+    }
+
+    fn drain_graphics_events(&mut self) {
+        let events = if let Ok(mut queue) = self.graphics_events.lock() {
+            std::mem::take(&mut *queue)
+        } else {
+            Vec::new()
+        };
+        if events.is_empty() {
+            return;
+        }
+
+        let mut changed = false;
+        for event in events {
+            match self.graphics_state.handle_event(event) {
+                Some(GraphicsUpdate::Image(graphic)) => {
+                    self.graphics.push(graphic);
+                    if self.graphics.len() > 128 {
+                        let overflow = self.graphics.len() - 128;
+                        self.graphics.drain(0..overflow);
+                    }
+                    changed = true;
+                }
+                Some(GraphicsUpdate::Clear) => {
+                    self.graphics.clear();
+                    changed = true;
+                }
+                None => {}
+            }
+        }
+
+        if changed {
+            self.grid_generation = self.grid_generation.wrapping_add(1);
+            self.dirty.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Drain the pending OSC 0/2 title change (last-write-wins). `None` if no
+    /// title change since the last drain.
+    pub fn drain_title(&self) -> Option<TitleChange> {
+        self.pending_title.lock().ok().and_then(|mut t| t.take())
+    }
+
+    /// Take and clear the edge-triggered bell flag. Returns true if the program
+    /// rang the bell since the last call.
+    pub fn take_bell(&self) -> bool {
+        self.bell_pending.swap(false, Ordering::Relaxed)
+    }
+
+    /// Drain queued OSC 52 clipboard-write requests.
+    pub fn drain_clipboard_writes(&self) -> Vec<(ClipboardTarget, String)> {
+        if let Ok(mut q) = self.clipboard_writes.lock() {
+            std::mem::take(&mut *q)
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Drain queued OSC 52 clipboard-read requests. Only ever non-empty when
+    /// clipboard-read is allowed (otherwise the listener drops them).
+    pub fn drain_clipboard_loads(&self) -> Vec<(ClipboardTarget, ClipboardLoadFormatter)> {
+        if let Ok(mut q) = self.clipboard_loads.lock() {
+            std::mem::take(&mut *q)
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Set the OSC 52 clipboard-read policy. Default is `false`.
+    pub fn set_clipboard_read_allowed(&self, allowed: bool) {
+        self.clipboard_read_allowed
+            .store(allowed, Ordering::Relaxed);
     }
 
     /// Drain pending OSC 9 notifications from the PTY thread.
@@ -528,6 +677,7 @@ impl Terminal {
             std::mem::swap(&mut self.cached_grid, &mut snap.grid);
             self.inverse_cursor = snap.inverse_cursor;
             std::mem::swap(&mut self.url_ranges, &mut snap.url_ranges);
+            std::mem::swap(&mut self.hyperlink_ranges, &mut snap.hyperlink_ranges);
             std::mem::swap(&mut self.wrapped_rows, &mut snap.wrapped_rows);
             self.grid_generation = snap.generation;
             self.cached_cursor = snap.cursor;
@@ -637,6 +787,11 @@ impl Terminal {
         &self.url_ranges
     }
 
+    /// Returns detected OSC 8 hyperlink ranges per row.
+    pub fn hyperlink_ranges(&self) -> &[Vec<(usize, usize, String)>] {
+        &self.hyperlink_ranges
+    }
+
     /// Returns whether the visible row ended because of terminal wrap.
     pub fn visible_row_is_wrapped(&self, row: usize) -> bool {
         self.wrapped_rows.get(row).copied().unwrap_or(false)
@@ -664,6 +819,7 @@ impl Terminal {
             } else {
                 cell.c
             };
+            terminal_cell.hyperlink = cell.hyperlink().map(|link| link.uri().to_string());
             cells.push(terminal_cell);
         }
         Some(cells)
@@ -736,6 +892,7 @@ impl Terminal {
         };
         self.wrapped_rows = wrapped_rows;
         self.url_ranges.clear();
+        self.hyperlink_ranges.clear();
         self.grid_generation += 1;
     }
 
@@ -828,6 +985,11 @@ impl Terminal {
         self.dark_mode.load(Ordering::Relaxed)
     }
 
+    #[cfg(test)]
+    pub fn clipboard_read_allowed_for_test(&self) -> bool {
+        self.clipboard_read_allowed.load(Ordering::Relaxed)
+    }
+
     /// Enter stay-at-bottom mode: every sync_grid will scroll to bottom until
     /// the user explicitly scrolls away via scroll_display().
     pub fn request_scroll_to_bottom(&mut self) {
@@ -871,10 +1033,15 @@ impl TerminalBackend for Terminal {
 
         // Consume the latest snapshot from the sync thread (cheap: just pointer swaps)
         self.consume_snapshot();
+        self.drain_graphics_events();
     }
 
     fn grid(&self) -> &TerminalGrid {
         &self.cached_grid
+    }
+
+    fn graphics(&self) -> &[TerminalGraphic] {
+        &self.graphics
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {

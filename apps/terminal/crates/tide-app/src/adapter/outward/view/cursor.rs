@@ -39,6 +39,7 @@ pub(crate) fn render_cursor_and_highlights(
                     rect,
                     terminal_content_top(renderer.cell_size().height) + pane_bar,
                 );
+                pane.render_graphics(inner, renderer);
                 // Only render cursor on the focused pane (and hide when search bar is active
                 // or IME preedit is composing — preedit overlay replaces the cursor).
                 if focused == Some(id) && search_focus != Some(id) && app.ime.preedit.is_empty() {

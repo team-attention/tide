@@ -423,7 +423,8 @@ impl WgpuRenderer {
         let mut font_system = cosmic_text::FontSystem::new();
 
         // Precompute cell sizes for all font sizes (8..=32) and look up initial
-        let cell_size_table = Self::precompute_cell_sizes(&mut font_system, scale_factor);
+        let font_family = "Menlo";
+        let cell_size_table = Self::precompute_cell_sizes(&mut font_system, scale_factor, font_family);
         let cached_cell_size = cell_size_table[(14 - 8) as usize];
 
         // --- MSDF font store ---
@@ -497,6 +498,7 @@ impl WgpuRenderer {
             raster_icon_bind_group_layout,
             raster_icon_sampler,
             raster_icon_textures: HashMap::new(),
+            terminal_image_textures: HashMap::new(),
             font_system,
             msdf_font_store,
             // Per-pane grid caching
@@ -559,6 +561,7 @@ impl WgpuRenderer {
             top_icon_vertices: Vec::with_capacity(128),
             top_icon_indices: Vec::with_capacity(192),
             top_icon_draws: Vec::with_capacity(16),
+            top_image_draws: Vec::with_capacity(16),
             top_glyph_vertices: Vec::with_capacity(512),
             top_glyph_indices: Vec::with_capacity(768),
             top_rect_vb: create_buf("top_rect_vb", vb_usage),
@@ -579,6 +582,7 @@ impl WgpuRenderer {
             top_glyph_ib_capacity: initial_buf_size as usize,
             screen_size: Size::new(800.0, 600.0),
             scale_factor,
+            font_family: font_family.to_string(),
             base_font_size: 14.0,
             cached_cell_size,
             cell_size_table,
