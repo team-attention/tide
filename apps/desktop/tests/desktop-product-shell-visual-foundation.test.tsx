@@ -351,6 +351,43 @@ test("a_late_thread_hydrated_for_a_non_active_thread_clears_its_skeleton_so_swit
   );
 });
 
+test("left_rail_defers_active_row_background_until_thread_hydrates", () => {
+  // The click still selects immediately (data-active=true, chat skeleton shows), but
+  // the row should not look committed until thread.hydrated confirms the snapshot.
+  const summary = {
+    threadId: "thread-a",
+    title: "A",
+    agentBinding: { agentId: "codex", runtimeSource: { kind: "provider_cli", integrationId: "codex" } },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    createdAt: "2026-06-16T00:00:00.000Z",
+    updatedAt: "2026-06-16T00:01:00.000Z",
+    pinned: false,
+    archived: false,
+    lastKnownState: "idle",
+  };
+  const base = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: { threads: [summary] },
+  });
+
+  const opened = openProductShellThreadFromLeftRail(base, "thread-a", {
+    backendTransportAvailable: true,
+  }).state;
+  const openingRow = extractByDataAttribute(renderProductShell(opened), "data-thread-row", "thread-a");
+  assert.match(openingRow, /data-active="true"/);
+  assert.match(openingRow, /data-hydrating="true"/);
+  assert.doesNotMatch(openingRow, /thread-row--active/);
+
+  const hydrated = applyProductShellBackendEvent(opened, {
+    kind: "thread.hydrated",
+    payload: { thread: summary, blocks: [], runtimeState: "idle", prompt: null },
+  });
+  const hydratedRow = extractByDataAttribute(renderProductShell(hydrated), "data-thread-row", "thread-a");
+  assert.match(hydratedRow, /data-active="true"/);
+  assert.doesNotMatch(hydratedRow, /data-hydrating="true"/);
+  assert.match(hydratedRow, /thread-row--active/);
+});
+
 test("a_background_threads_prompt_folds_into_its_stored_state_no_hydrate_needed_on_switch", () => {
   // The concurrency guarantee (spec: waiting-state-recovery): a sibling thread that raises
   // an AskUserQuestion WHILE you are viewing another thread must have its card waiting for
