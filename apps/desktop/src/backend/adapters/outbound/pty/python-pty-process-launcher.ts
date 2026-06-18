@@ -88,6 +88,7 @@ function spawnProcess(
   const env = {
     ...process.env,
     ...plan.env,
+    EMULATE_TERMINAL_QUERIES: emulateTerminalQueries ? "1" : "0",
   };
 
   // fd 0-2 are the PTY stdio; fd 3 is a dedicated control pipe the bridge reads
@@ -95,7 +96,6 @@ function spawnProcess(
   return spawn("python3", [
     "-c",
     pythonPtyBridgeSource,
-    emulateTerminalQueries ? "1" : "0",
     plan.command,
     ...plan.args,
   ], {
@@ -116,8 +116,8 @@ import subprocess
 import sys
 import termios
 
-emulate_terminal_queries = len(sys.argv) > 1 and sys.argv[1] == "1"
-command = sys.argv[2:]
+emulate_terminal_queries = os.environ.pop("EMULATE_TERMINAL_QUERIES", "1") == "1"
+command = sys.argv[1:]
 if not command:
     sys.stderr.write("missing pty command\n")
     sys.exit(2)
