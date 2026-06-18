@@ -1953,6 +1953,27 @@ test("branch_menu_falls_back_to_current_value_when_no_git_data", () => {
   assert.doesNotMatch(html, /codex\/v2-shell/);
 });
 
+test("branch_menu_keeps_selected_branch_when_git_data_is_incomplete", () => {
+  const base = createAgentChatShellState({
+    startOptions: {
+      agentBinding: { agentId: "claude" },
+      launchOptions: { branch: "release/missing" },
+    },
+  });
+  const state: AgentChatShellState = {
+    ...setComposerActiveSurface(base, "branch_menu").state,
+    availableBranches: [
+      { name: "main", kind: "local", current: true },
+      { name: "feature/x", kind: "local", current: false },
+    ],
+  };
+
+  const surface = createAgentChatShellViewModel(state).composer.activeSurface;
+  const selected = surface?.rows.find((entry) => entry.rowId === "branch:release/missing");
+  assert.equal(selected?.label, "release/missing");
+  assert.equal(selected?.selected, true);
+});
+
 test("environment_menu_lists_start_modes_not_all_worktrees", () => {
   // Spec: docs_v2/specs/git-backed-worktree-branch-menus.md UC-2
   const base: AgentChatShellState = {

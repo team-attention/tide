@@ -696,7 +696,7 @@ function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowVi
     ),
   ];
   const ordered = branchRowsAfterPinned(branches, selected, defaultBranch);
-  if (ordered.length === 0 && selected !== defaultBranch) {
+  if (!branches.some((branch) => branch.name === selected) && selected !== defaultBranch) {
     rows.push(row(`branch:${selected}`, selected, undefined, undefined, "check", true));
   }
   for (const branch of ordered) {
