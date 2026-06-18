@@ -731,6 +731,18 @@ function selectComposerDirectoryRow(
   rowId: string,
 ): AgentChatShellUpdateResult {
   if (rowId === "worktree:current") {
+    const currentWorktree = state.availableWorktrees?.find((entry) => entry.current);
+    if (currentWorktree !== undefined) {
+      const scoped = updateComposerScope(state, {
+        kind: "project",
+        projectId: currentProjectId(state) ?? basenameOf(currentWorktree.path),
+        cwd: currentWorktree.path,
+      }).state;
+      return updateComposerLaunchOptions(scoped, {
+        worktree: "current folder",
+        ...(currentWorktree.branch ? { branch: currentWorktree.branch } : {}),
+      });
+    }
     return updateComposerLaunchOptions(state, { worktree: "current folder" });
   }
   if (rowId.startsWith("worktree:")) {

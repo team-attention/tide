@@ -228,6 +228,37 @@ test("branch_selection_auto_selects_an_existing_worktree_directory", () => {
   assert.equal(items.find((item) => item.label === "Directory")?.value, "feature/x");
 });
 
+test("directory_selection_current_folder_restores_the_current_worktree_scope", () => {
+  const base = createAgentChatShellState({
+    startOptions: {
+      agentBinding: { agentId: "claude" },
+      scope: { kind: "project", projectId: "repo", cwd: "/repo.worktree/feature-x" },
+      launchOptions: { worktree: "/repo.worktree/feature-x", branch: "feature/x" },
+    },
+  });
+  const state: AgentChatShellState = {
+    ...setComposerActiveSurface(base, "worktree_menu").state,
+    availableWorktrees: [
+      { path: "/repo", branch: "main", current: true },
+      { path: "/repo.worktree/feature-x", branch: "feature/x", current: false },
+    ],
+  };
+
+  const selected = selectAgentChatChoiceSurfaceRow(
+    state,
+    "worktree_menu",
+    "worktree:current",
+  ).state;
+
+  assert.deepEqual(selected.composer.startOptions.scope, {
+    kind: "project",
+    projectId: "repo",
+    cwd: "/repo",
+  });
+  assert.equal(selected.composer.startOptions.launchOptions?.worktree, "current folder");
+  assert.equal(selected.composer.startOptions.launchOptions?.branch, "main");
+});
+
 test("submitting_an_existing_worktree_directory_scopes_the_thread_to_that_cwd", () => {
   const state = updateComposerDraft(
     createAgentChatShellState({
