@@ -4,42 +4,67 @@
 
 # Tide
 
-**Local, open-source coding-agent workspaces — two products under one brand.**
+### The shared workbench for you and your coding agent.
 
-[![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
-![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)
+**See what your agent sees. Open the code, edit it, comment on it, right alongside it.**
+<br/>Works with **opencode, Claude Code, Codex, and Gemini**. Local and open-source.
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)
+[![Release](https://img.shields.io/github/v/release/team-attention/tide?style=flat-square)](https://github.com/team-attention/tide/releases/latest)
+[![Stars](https://img.shields.io/github/stars/team-attention/tide?style=social)](https://github.com/team-attention/tide/stargazers)
+
+<!-- HERO: once the demo gif exists, drop it here:
+<a href="LINK_TO_DEMO"><img src="assets/hero.gif" alt="Tide, a shared workbench for you and your coding agent" width="820" /></a>
+-->
+
+**[⬇ Download for macOS](https://github.com/team-attention/tide/releases/latest)** &nbsp;·&nbsp; **[▶ Watch the demo](LINK_TO_DEMO)**
 
 </div>
+
+---
+
+## The idea
+
+Let's stop pretending we suddenly love the terminal.
+
+We spent years getting away from it. That's the whole reason IDEs exist. Then a coding agent showed up living in one, and overnight we all decided that narrating into a black box was fine again.
+
+The good news is Codex and Claude seem to have come around, and they're pushing in this exact direction. The thing is, they each come with their own annoyances. Codex won't let you edit a file right there in the editor. Claude's workbench feels like an afterthought. And neither one is open source.
+
+So I built Tide. It's one workbench you and your agent share. It runs the code, opens the browser, clicks through the page, and you're right there with it. Open a file, fix a line, or grab the wheel whenever you want. Works with whatever agent you already use: Claude Code, Codex, Gemini, opencode.
+
+This is pretty much what working with an agent should feel like.
+
+*(Still insist on the terminal? We have a thing for you too: [Tide Terminal](apps/terminal/). No hard feelings.)*
+
+## Why Tide
+
+- 🤝 **One shared workbench.** Browser, Diff, Editor, and Terminal panes that you and the agent both read and operate.
+- ✍️ **You work too.** Open files, edit them, leave comments, steer mid-task. The agent is not the only one with hands.
+- 👁 **Watch the browser, take the wheel.** See the agent click through a page, and grab control whenever you want.
+- 🔀 **Bring your own agent.** opencode, Claude Code, Codex, Gemini. Same workbench, switch per task.
+- 🔒 **Local and account-free.** MIT-licensed. No Tide account, no Tide cloud. Tide drives the agent CLIs you already use.
+
+## Install
+
+Download the latest `.dmg` from [Releases](https://github.com/team-attention/tide/releases/latest) and drag it to Applications. Signed and notarized for macOS.
+
+> Tide runs your locally-installed agent CLIs. On first launch it helps you connect the ones you have.
+
+---
+
+## Two products, one brand
 
 Tide is a monorepo with two independent products that share the brand but not code:
 
 | Product | Path | Stack | What it is |
 |---------|------|-------|------------|
-| **[Tide](apps/desktop/)** | [`apps/desktop/`](apps/desktop/) | Electron + Node + React | A chat-centered, multi-agent Codex App alternative. |
-| **[Tide Terminal](apps/terminal/)** | [`apps/terminal/`](apps/terminal/) | Rust + WGPU (native macOS) | The original Tide — a terminal-centered agent Workspace. |
+| **[Tide](apps/desktop/)** | [`apps/desktop/`](apps/desktop/) | Electron + Node + React | The shared-workbench desktop app above. |
+| **[Tide Terminal](apps/terminal/)** | [`apps/terminal/`](apps/terminal/) | Rust + WGPU (native macOS) | The original Tide, a terminal-centered agent workspace. |
 
-Both run Codex, Claude Code, Gemini, and Antigravity as first-class agents. Each app builds independently from its own directory — **never build from the repo root**. Full details live in each product's README.
-
----
-
-## Tide  ·  the chat-centered agent app
-
-A free, open-source [Codex App](apps/desktop/) alternative: a focused Agent Chat per Thread, a Composer anchored to that chat, and a Workbench (Browser / Diff / Editor / Terminal Panes) that appears only when the Thread needs it — local, open, and multi-agent.
-
-**Download:** grab the latest `Tide` `.dmg` from [Releases](https://github.com/team-attention/tide/releases/latest) and drag it to Applications. → Details: **[apps/desktop/README.md](apps/desktop/README.md)**
-
----
-
-## Tide Terminal  ·  the terminal-centered workspace
-
-A native macOS (Rust + WGPU) Workspace where humans and coding agents share Terminal, Editor, Diff, and Browser Panes, driven through the Agent Gateway and Tide MCP Runtime.
-
-**Download:** grab the latest `Tide Terminal` `.dmg` from [Releases](https://github.com/team-attention/tide/releases) and drag it to Applications. → Details: **[apps/terminal/README.md](apps/terminal/README.md)**
-
----
+Each app builds independently from its own directory. **Never build from the repo root.** Full details live in each product's README.
 
 ## License
 
-Copyright © 2025 eatnug. Licensed under [AGPL-3.0](LICENSE).
-
-Contributions are accepted under the [Contributor License Agreement](CLA.md), which lets the owner offer the Project under AGPL-3.0 **and** under separate commercial licenses. For commercial licensing, contact the owner.
+Copyright © 2025 eatnug. Licensed under the [MIT License](LICENSE).

@@ -4,19 +4,19 @@
 
 # Tide
 
-**A free, open-source Codex App alternative for local coding-agent work — with multi-agent support.**
+**The shared workbench for you and your coding agent. Local, open-source, bring your own agent.**
 
-[![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](../../LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](../../LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)
 ![Electron](https://img.shields.io/badge/electron-node%20%2B%20react-47848F?style=flat-square)
 
 </div>
 
-Tide is a chat-centered desktop app (Electron + Node + React) for running coding agents locally. It follows the Codex App experience — a focused Agent Chat per Thread, a Composer anchored to that chat, and a Workbench that appears only when the active Thread needs it — but it is **local, open, and multi-agent**.
+Tide is a desktop app (Electron + Node + React) that puts you and your coding agent in one shared workbench. Each Thread has a focused Agent Chat with its Composer anchored to it, plus a Workbench (Browser, Diff, Editor, and Terminal Panes with a FileTree) that you and the agent both read and operate. It runs your locally-installed agent CLIs, so you bring your own and switch per task.
 
-- **Codex CLI, Claude Code, and Antigravity CLI** are first-class Provider CLI Agents.
-- **OpenAI API** is available as an API-backed Tide Agent when direct API runtime support is enabled.
-- Any Thread can be powered by any supported Agent.
+- **Claude Code, Codex, Gemini, and opencode** are first-class agents.
+- Any Thread can be powered by any supported agent.
+- Local and account-free. Tide drives the CLIs already on your machine.
 
 When split vertically, the mental model is:
 
@@ -45,4 +45,4 @@ Download the latest Tide `.dmg` from [Releases](https://github.com/team-attentio
 
 ## License
 
-[AGPL-3.0](../../LICENSE). Contributions are accepted under the [Contributor License Agreement](../../CLA.md).
+[MIT](../../LICENSE).

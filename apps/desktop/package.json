@@ -6,6 +6,7 @@
   "main": "out/main/electron-main.js",
   "author": "Tide",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22.6"
