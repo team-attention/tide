@@ -1,4 +1,4 @@
-import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatProjectOption, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope } from "./types.ts";
+import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatProjectOption, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope, AgentChatWorktreeOption } from "./types.ts";
 import { activeComposerTrigger, providerSetupCommandPayload, selectComposerAgent, setComposerActiveSurface } from "./composer.ts";
 import { CODEX_MODELS, PERMISSION_OPTIONS, REASONING_LEVELS, cliModelOptionsForAgent, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, isAgentAvailable, isAgentAvailabilityKnown, isAgentComingSoon, normalizePermissionValue, permissionConfigForAgent, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { launchOptionsForState, updateComposerLaunchOptions, updateComposerScope } from "./launch-options.ts";
@@ -189,12 +189,11 @@ export function selectAgentChatChoiceSurfaceRow(
       return scope ? updateComposerScope(state, scope) : { state, command: null };
     }
     case "worktree_menu": {
-      const worktree = worktreeForRow(rowId);
-      return worktree ? updateComposerLaunchOptions(state, { worktree }) : { state, command: null };
+      return selectComposerDirectoryRow(state, rowId);
     }
     case "branch_menu": {
       const branch = branchForRow(rowId);
-      return branch ? updateComposerLaunchOptions(state, { branch }) : { state, command: null };
+      return branch ? selectComposerBranch(state, branch) : { state, command: null };
     }
     case "command_suggestions": {
       // Selecting a command/skill row (rowId "command:/name" or "command:$name")
@@ -308,7 +307,7 @@ export function createActiveComposerSurface(
     case "worktree_menu":
       return {
         surfaceKind,
-        title: "Worktree",
+        title: "Directory",
         sourceLabel: "Execution Context",
         rows: worktreeMenuRows(state),
       };
@@ -626,8 +625,17 @@ function projectMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowV
 function worktreeMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowView[] {
   const selected = String(launchOptionsForState(state)?.worktree ?? "current folder");
   const worktrees = state.availableWorktrees ?? [];
+  const currentWorktree = worktrees.find((entry) => entry.current);
+  const currentSelected = selected === "current folder" || selected === currentWorktree?.path;
   const rows: AgentChatChoiceSurfaceRowView[] = [
-    row("worktree:current", "current folder", "main worktree", undefined, "folder", selected === "current folder"),
+    row(
+      "worktree:current",
+      "current folder",
+      currentWorktree?.path ?? "selected directory",
+      undefined,
+      "folder",
+      currentSelected,
+    ),
   ];
   for (const worktree of worktrees.filter((entry) => !entry.current)) {
     const label = worktree.branch ?? basenameOf(worktree.path);
@@ -718,15 +726,67 @@ function scopeForProjectRow(
   return null;
 }
 
-function worktreeForRow(rowId: string): string | undefined {
+function selectComposerDirectoryRow(
+  state: AgentChatShellState,
+  rowId: string,
+): AgentChatShellUpdateResult {
   if (rowId === "worktree:current") {
-    return "current folder";
+    return updateComposerLaunchOptions(state, { worktree: "current folder" });
   }
   if (rowId.startsWith("worktree:")) {
-    return rowId.slice("worktree:".length);
+    const path = rowId.slice("worktree:".length);
+    const worktree = state.availableWorktrees?.find((entry) => entry.path === path);
+    const scoped = updateComposerScope(state, {
+      kind: "project",
+      projectId: currentProjectId(state) ?? basenameOf(path),
+      cwd: path,
+    }).state;
+    return updateComposerLaunchOptions(scoped, {
+      worktree: path,
+      ...(worktree?.branch ? { branch: worktree.branch } : {}),
+    });
   }
-  // "new-worktree" is a create affordance, wired later.
-  return undefined;
+  // "new-worktree" is a create affordance, wired in the Desktop adapter.
+  return { state, command: null };
+}
+
+function selectComposerBranch(
+  state: AgentChatShellState,
+  branch: string,
+): AgentChatShellUpdateResult {
+  const matchingWorktree = worktreeForBranch(state.availableWorktrees ?? [], branch);
+  if (matchingWorktree === undefined) {
+    return updateComposerLaunchOptions(state, { branch });
+  }
+  const scoped = updateComposerScope(state, {
+    kind: "project",
+    projectId: currentProjectId(state) ?? basenameOf(matchingWorktree.path),
+    cwd: matchingWorktree.path,
+  }).state;
+  return updateComposerLaunchOptions(scoped, {
+    branch,
+    worktree: worktreeLaunchValueForSelection(state.availableWorktrees ?? [], matchingWorktree),
+  });
+}
+
+function worktreeForBranch(
+  worktrees: AgentChatWorktreeOption[],
+  branch: string,
+): AgentChatWorktreeOption | undefined {
+  return worktrees.find((entry) => entry.branch === branch);
+}
+
+function worktreeLaunchValueForSelection(
+  worktrees: AgentChatWorktreeOption[],
+  worktree: AgentChatWorktreeOption,
+): string {
+  const mainWorktreePath = worktrees[0]?.path;
+  return worktree.path === mainWorktreePath ? "current folder" : worktree.path;
+}
+
+function currentProjectId(state: AgentChatShellState): string | null {
+  const scope = state.thread?.scope ?? state.composer.startOptions.scope;
+  return scope?.kind === "project" ? scope.projectId : null;
 }
 
 function branchForRow(rowId: string): string | undefined {

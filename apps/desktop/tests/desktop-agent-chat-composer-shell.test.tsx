@@ -120,12 +120,12 @@ test("new_worktree_intent_defers_creation_and_labels_the_worktree_chip", () => {
   assert.equal(auto.composer.startOptions.launchOptions?.worktree, "new");
   assert.equal(auto.composer.startOptions.launchOptions?.newWorktreeName, "");
   const autoItems = createAgentChatShellViewModel(auto).composer.contextItems;
-  assert.equal(autoItems.find((item) => item.label === "Worktree")?.value, "New worktree (auto)");
+  assert.equal(autoItems.find((item) => item.label === "Directory")?.value, "New worktree (auto)");
 
   // Typed name → chip reads "New worktree: <name>".
   const named = setComposerNewWorktreeIntent(base, { name: "spike" }).state;
   const namedItems = createAgentChatShellViewModel(named).composer.contextItems;
-  assert.equal(namedItems.find((item) => item.label === "Worktree")?.value, "New worktree: spike");
+  assert.equal(namedItems.find((item) => item.label === "Directory")?.value, "New worktree: spike");
 
   // A base branch chosen in the inline form is stored as the launch branch (the
   // `git worktree add` start point read at send). The Branch chip reflects it.
@@ -189,6 +189,70 @@ test("composer_worktree_menu_offers_delete_on_existing_worktrees", () => {
   // The "current folder" / new-worktree affordances carry no delete action.
   assert.equal(surface?.rows.find((entry) => entry.rowId === "worktree:current")?.action, undefined);
   assert.equal(surface?.rows.find((entry) => entry.rowId === "new-worktree")?.action, undefined);
+});
+
+test("branch_selection_auto_selects_an_existing_worktree_directory", () => {
+  const base = createAgentChatShellState({
+    startOptions: {
+      agentBinding: { agentId: "claude" },
+      scope: { kind: "project", projectId: "repo", cwd: "/repo" },
+      launchOptions: { worktree: "current folder", branch: "main" },
+    },
+  });
+  const state: AgentChatShellState = {
+    ...setComposerActiveSurface(base, "branch_menu").state,
+    availableBranches: [
+      { name: "main", kind: "local", current: true },
+      { name: "feature/x", kind: "local", current: false },
+    ],
+    availableWorktrees: [
+      { path: "/repo", branch: "main", current: true },
+      { path: "/repo.worktree/feature-x", branch: "feature/x", current: false },
+    ],
+  };
+
+  const selected = selectAgentChatChoiceSurfaceRow(
+    state,
+    "branch_menu",
+    "branch:feature/x",
+  ).state;
+
+  assert.deepEqual(selected.composer.startOptions.scope, {
+    kind: "project",
+    projectId: "repo",
+    cwd: "/repo.worktree/feature-x",
+  });
+  assert.equal(selected.composer.startOptions.launchOptions?.branch, "feature/x");
+  assert.equal(selected.composer.startOptions.launchOptions?.worktree, "/repo.worktree/feature-x");
+  const items = createAgentChatShellViewModel(selected).composer.contextItems;
+  assert.equal(items.find((item) => item.label === "Directory")?.value, "feature/x");
+});
+
+test("submitting_an_existing_worktree_directory_scopes_the_thread_to_that_cwd", () => {
+  const state = updateComposerDraft(
+    createAgentChatShellState({
+      startOptions: {
+        agentBinding: { agentId: "claude" },
+        scope: { kind: "project", projectId: "repo", cwd: "/repo" },
+        launchOptions: { worktree: "/repo.worktree/fix-login", branch: "fix-login" },
+      },
+    }),
+    "Continue in the existing worktree",
+  ).state;
+
+  const result = submitComposer(state);
+
+  assert.equal(result.command?.kind, "thread.start");
+  assert.deepEqual(result.command?.payload.scope, {
+    kind: "project",
+    projectId: "repo",
+    cwd: "/repo.worktree/fix-login",
+  });
+  assert.deepEqual(result.state.thread?.scope, {
+    kind: "project",
+    projectId: "repo",
+    cwd: "/repo.worktree/fix-login",
+  });
 });
 
 // --- UC-2: Compose Composer Attachments ---

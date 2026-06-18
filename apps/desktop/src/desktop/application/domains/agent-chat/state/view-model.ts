@@ -2,7 +2,7 @@ import type { AgentChatBlock, AgentChatBlockView, AgentChatContextItem, AgentCha
 import { codexModelLabel, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, modelLabelForAgent, permissionLabelForValue, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { createActiveComposerSurface } from "./choice-surfaces.ts";
 import { isOpencodeUsable } from "./opencode-onramp.ts";
-import { launchOptionsForState, worktreeContextValue } from "./launch-options.ts";
+import { directoryContextValue, launchOptionsForState } from "./launch-options.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
 export function createAgentChatShellViewModel(
@@ -57,7 +57,7 @@ export function createAgentChatShellViewModel(
       contextControlsEditable: state.thread === null,
       contextItems: state.thread
         ? readOnlyThreadContextItems(state.thread)
-        : startContextItems(state.composer.startOptions),
+        : startContextItems(state.composer.startOptions, state),
       attachments: state.composer.attachments.map((attachment) => ({
         id: attachment.id,
         name: attachment.name,
@@ -221,17 +221,20 @@ function readOnlyThreadContextItems(
     projectOrScratch,
   ];
 
-  if (thread.context?.worktree) {
-    items.push({ label: "Worktree", value: thread.context.worktree });
-  }
   if (thread.context?.branch) {
     items.push({ label: "Branch", value: thread.context.branch });
+  }
+  if (thread.context?.worktree) {
+    items.push({ label: "Directory", value: thread.context.worktree });
   }
 
   return items;
 }
 
-function startContextItems(options: AgentChatStartOptions): AgentChatContextItem[] {
+function startContextItems(
+  options: AgentChatStartOptions,
+  state: AgentChatShellState,
+): AgentChatContextItem[] {
   const scope = options.scope;
   const projectOrScratch =
     scope?.kind === "project"
@@ -246,11 +249,11 @@ function startContextItems(options: AgentChatStartOptions): AgentChatContextItem
       agentId: options.agentBinding.agentId,
     },
     projectOrScratch,
-    {
-      label: "Worktree",
-      value: worktreeContextValue(options.launchOptions),
-    },
     { label: "Branch", value: String(options.launchOptions?.branch ?? "main") },
+    {
+      label: "Directory",
+      value: directoryContextValue(options, state.availableWorktrees ?? []),
+    },
   ];
 }
 
