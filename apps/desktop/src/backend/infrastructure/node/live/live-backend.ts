@@ -304,6 +304,8 @@ export function createLiveBackendContractMessageAdapter(
   const readinessRegistry = createRuntimeReadinessRegistry();
   const providerCliRuntimePort = createAgentIntegrationAgentRuntimePort({
     integrations,
+    // The projector serializes ingestion per thread (see serializeIngest), so a
+    // fire-and-forget dispatch here can't race a thread's events against each other.
     onProviderEvent: (providerEvent) => {
       void projector.ingestStructuredProviderEvent(providerEvent);
     },

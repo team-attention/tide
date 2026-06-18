@@ -93,6 +93,32 @@ export function createLiveAgentSessionEventProjector(input: {
     await Promise.all([...ids].map((id) => flushPersist(id)));
   };
 
+  // Serialize event ingestion PER THREAD. Both ingest paths mutate shared
+  // in-memory thread state (blocksByThread, promptState, runtimeState, the active
+  // runtime handle) across awaits; without ordering, events that arrive close
+  // together (streaming deltas, a tool_use, a permission prompt, turn-state
+  // changes) interleave at their await points and race — a permission prompt can
+  // be clobbered or silently dropped, leaving the agent blocked on a can_use_tool
+  // with no approval card (the intermittent "is it running or done?" wedge).
+  // Chaining per threadId (same idiom as persistInFlight) runs each event to
+  // completion in arrival order; different threads still run concurrently. The
+  // try/finally guarantees the map entry is cleared even if a handler throws.
+  const ingestInFlight = new Map<string, Promise<unknown>>();
+  const serializeIngest = (threadId: string, run: () => Promise<unknown>): Promise<void> => {
+    const prior = ingestInFlight.get(threadId) ?? Promise.resolve();
+    const next = prior.catch(() => {}).then(run);
+    ingestInFlight.set(threadId, next);
+    return (async () => {
+      try {
+        await next;
+      } finally {
+        if (ingestInFlight.get(threadId) === next) {
+          ingestInFlight.delete(threadId);
+        }
+      }
+    })();
+  };
+
   // Last usage signature emitted per thread, so identical usage isn't re-emitted
   // on every history poll (the chip would otherwise churn every tick).
 
@@ -261,7 +287,7 @@ export function createLiveAgentSessionEventProjector(input: {
       payload: Record<string, unknown>;
       body: string;
     }): Promise<void> {
-      await appendFrameAndEmit(frameInput);
+      return serializeIngest(frameInput.threadId, () => appendFrameAndEmit(frameInput));
     },
     // Normalized protocol events from a STRUCTURED provider runtime (the
     // runtime-event spine realized): content records flow through the same
@@ -274,6 +300,7 @@ export function createLiveAgentSessionEventProjector(input: {
       runtimeId: string;
       event: StructuredProviderEvent;
     }): Promise<void> {
+      return serializeIngest(eventInput.threadId, async () => {
       const service = input.service();
       const event = eventInput.event;
       if (event.kind === "session_ref") {
@@ -433,6 +460,7 @@ export function createLiveAgentSessionEventProjector(input: {
         });
         await flushPersist(eventInput.threadId);
       }
+      });
     },
     // Flush every pending debounced conversation-cache write immediately. Wired to
     // backend shutdown so a clean quit never loses the trailing debounce window.
