@@ -760,7 +760,6 @@ async answerPrompt(
     }
     this.answeringPromptByThread.set(input.threadId, input.promptId);
     try {
-
     await this.agentRuntimePort.writeInput(thread.activeRuntimeHandle, {
       kind: "prompt_answer",
       value: promptAnswerValue(thread.promptState, input),
@@ -780,12 +779,13 @@ async answerPrompt(
     // the single slot dropped. With none queued, the turn resumes running.
     const next = (thread.promptQueue ?? []).shift();
     if (next !== undefined) {
-      const nextKnown: LastKnownState =
-        runtimeStateForPromptKind(next.kind) === "waiting_for_approval"
-          ? "waiting_for_approval"
-          : "waiting_for_input";
+      const nextRuntimeState = runtimeStateForPromptKind(next.kind);
+      const nextKnown: LastKnownState = nextRuntimeState === "waiting_for_approval"
+        ? "waiting_for_approval"
+        : "waiting_for_input";
       thread.promptState = next;
-      thread.runtimeState = runtimeStateForPromptKind(next.kind);
+      thread.promptAnsweredPendingSettle = false;
+      thread.runtimeState = nextRuntimeState;
       thread.lifecycleState = nextKnown;
       thread.lastKnownState = nextKnown;
       thread.updatedAt = this.clock();
