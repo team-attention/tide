@@ -774,10 +774,10 @@ async answerPrompt(
     // ended because of it) and may settle the dead cards. See recordTurnComplete.
     thread.promptAnsweredPendingSettle = true;
 
-    // Promote the next queued prompt (a batched multi-permission turn) so the
-    // user answers them one at a time instead of the agent hanging on the ones
-    // the single slot dropped. With none queued, the turn resumes running.
-    const next = (thread.promptQueue ?? []).shift();
+    // Promote the next queued prompt (a batched multi-permission turn) so the user
+    // answers them one at a time instead of hanging on prompts the single slot dropped.
+    const next = thread.promptQueue?.shift();
+    if (thread.promptQueue?.length === 0) thread.promptQueue = undefined;
     if (next !== undefined) {
       const nextRuntimeState = runtimeStateForPromptKind(next.kind);
       const nextKnown: LastKnownState = nextRuntimeState === "waiting_for_approval"

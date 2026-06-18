@@ -4176,6 +4176,7 @@ test("batched_prompts_queue_and_each_answer_promotes_the_next", async () => {
   assert.equal(answered.ok && answered.promptState?.promptId, "perm-fetch-fintel");
   const midway = await service.hydrateThread({ threadId });
   assert.equal(midway.thread.promptState?.promptId, "perm-fetch-fintel");
+  assert.equal(midway.thread.promptQueue, undefined);
   assert.equal(midway.thread.runtimeState, "waiting_for_approval");
 
   // Answering the last one resumes the turn.
