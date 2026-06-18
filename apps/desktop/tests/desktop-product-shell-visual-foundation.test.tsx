@@ -3118,8 +3118,8 @@ test("product_shell_thread_started_preserves_gemini_model_label", () => {
   assert.deepEqual(view.agentChat.composer.contextItems.map((item) => item.value), [
     "Gemini CLI",
     "tide",
-    "current folder",
     "main",
+    "current folder",
   ]);
 });
 

@@ -1,5 +1,5 @@
-import type { AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope } from "./types.ts";
-import { basenameOf } from "./choice-surfaces.ts";
+import type { AgentChatShellState, AgentChatShellUpdateResult, AgentChatStartOptions, AgentChatThreadScope, AgentChatWorktreeOption } from "./types.ts";
+import { basenameOf } from "./path-labels.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
 export function launchOptionsForState(
@@ -8,15 +8,24 @@ export function launchOptionsForState(
   return state.thread ? state.thread.launchOptions : state.composer.startOptions.launchOptions;
 }
 
-// The Worktree chip label. A pending "create on send" intent (worktree === "new")
+// The Directory chip label. A pending "create on send" intent (worktree === "new")
 // renders as "New worktree" (with the typed name when given), so the chip never
-// shows the raw "new" sentinel. See docs_v2/specs/worktree-start-experience.md.
-export function worktreeContextValue(launchOptions: Record<string, unknown> | undefined): string {
+// shows the raw "new" sentinel. Existing worktree paths compact to their branch
+// or basename while the underlying launch option keeps the absolute path.
+export function directoryContextValue(
+  options: AgentChatStartOptions,
+  worktrees: AgentChatWorktreeOption[],
+): string {
+  const launchOptions = options.launchOptions;
   const worktree = launchOptions?.worktree;
   if (worktree === "new") {
     const typed = launchOptions?.newWorktreeName;
     const name = typeof typed === "string" ? typed.trim() : "";
     return name.length > 0 ? `New worktree: ${name}` : "New worktree (auto)";
+  }
+  if (typeof worktree === "string" && worktree !== "current folder" && worktree.length > 0) {
+    const existing = worktrees.find((entry) => entry.path === worktree);
+    return existing?.branch ?? basenameOf(worktree);
   }
   return String(worktree ?? "current folder");
 }

@@ -1,4 +1,4 @@
-import type { AgentChatAgentId, AgentChatComposerAttachment, AgentChatComposerMessageAttachment, AgentChatComposerSurfaceKind, AgentChatContextChip, AgentChatPromptStepAnswer, AgentChatProviderSetupSurfaceAction, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadSummary } from "./types.ts";
+import type { AgentChatAgentId, AgentChatComposerAttachment, AgentChatComposerMessageAttachment, AgentChatComposerSurfaceKind, AgentChatContextChip, AgentChatPromptStepAnswer, AgentChatProviderSetupSurfaceAction, AgentChatShellState, AgentChatShellUpdateResult, AgentChatStartOptions, AgentChatThreadSummary } from "./types.ts";
 import { defaultModelValueForAgent, defaultPermissionForAgent, runtimeSourceForAgent } from "./agent-vocab.ts";
 import { cloneStringRecord, launchOptionsForState } from "./launch-options.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
@@ -345,7 +345,7 @@ export function submitComposer(
   // that id to the backend (startThread honors it). The view switches to the new
   // thread immediately, so a slow backend can't leave the user clicking again and
   // spawning duplicate threads.
-  const startOptions = state.composer.startOptions;
+  const startOptions = startOptionsWithExistingWorktreeScope(state.composer.startOptions);
   const newThreadId = generateThreadId();
   const nowIso = new Date().toISOString();
   const optimisticThread: AgentChatThreadSummary = {
@@ -379,6 +379,30 @@ export function submitComposer(
         launchOptions: startOptions.launchOptions,
         ...(messageAttachments ? { attachments: messageAttachments } : {}),
       },
+    },
+  };
+}
+
+function startOptionsWithExistingWorktreeScope(
+  startOptions: AgentChatStartOptions,
+): AgentChatStartOptions {
+  const worktree = startOptions.launchOptions?.worktree;
+  if (
+    typeof worktree !== "string" ||
+    worktree.length === 0 ||
+    worktree === "current folder" ||
+    worktree === "new" ||
+    startOptions.scope?.kind !== "project" ||
+    startOptions.scope.cwd === worktree
+  ) {
+    return startOptions;
+  }
+  return {
+    ...startOptions,
+    scope: {
+      kind: "project",
+      projectId: startOptions.scope.projectId,
+      cwd: worktree,
     },
   };
 }
