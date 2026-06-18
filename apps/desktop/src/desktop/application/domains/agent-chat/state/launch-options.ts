@@ -9,7 +9,7 @@ export function launchOptionsForState(
 }
 
 // The Environment chip label. A pending "create on send" intent (worktree === "new")
-// renders as a branch creation state, so the chip never shows the raw sentinel.
+// renders as a new-worktree state, so the chip never shows the raw sentinel.
 // Existing worktree paths compact to their branch or basename while the underlying
 // launch option keeps the absolute path.
 export function environmentContextValue(
@@ -21,7 +21,7 @@ export function environmentContextValue(
   if (worktree === "new") {
     const typed = launchOptions?.newWorktreeName;
     const name = typeof typed === "string" ? typed.trim() : "";
-    return name.length > 0 ? `New branch: ${name}` : "New branch";
+    return name.length > 0 ? `New worktree: ${name}` : "New worktree";
   }
   if (typeof worktree === "string" && worktree !== "current folder" && worktree.length > 0) {
     const existing = worktrees.find((entry) => entry.path === worktree);

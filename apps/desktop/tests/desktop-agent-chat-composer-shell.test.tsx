@@ -106,7 +106,7 @@ test("sending_an_empty_start_composer_draft_emits_no_command", () => {
 
 // Spec: docs_v2/specs/worktree-start-experience.md
 
-test("new_branch_intent_defers_creation_and_labels_the_environment_chip", () => {
+test("new_worktree_intent_defers_creation_and_labels_the_environment_chip", () => {
   const base = createAgentChatShellState({
     startOptions: {
       agentBinding: { agentId: "claude" },
@@ -115,19 +115,19 @@ test("new_branch_intent_defers_creation_and_labels_the_environment_chip", () => 
     },
   });
 
-  // Blank name -> pending intent; the chip reads "New branch" (never "new").
+  // Blank name -> pending intent; the chip reads "New worktree" (never "new").
   const auto = setComposerNewWorktreeIntent(base, { name: "" }).state;
   assert.equal(auto.composer.startOptions.launchOptions?.worktree, "new");
   assert.equal(auto.composer.startOptions.launchOptions?.newWorktreeName, "");
   const autoItems = createAgentChatShellViewModel(auto).composer.contextItems;
-  assert.equal(autoItems.find((item) => item.label === "Environment")?.value, "New branch");
+  assert.equal(autoItems.find((item) => item.label === "Environment")?.value, "New worktree");
 
-  // Typed name -> chip reads "New branch: <name>".
+  // Typed name -> chip reads "New worktree: <name>".
   const named = setComposerNewWorktreeIntent(base, { name: "spike" }).state;
   const namedItems = createAgentChatShellViewModel(named).composer.contextItems;
-  assert.equal(namedItems.find((item) => item.label === "Environment")?.value, "New branch: spike");
+  assert.equal(namedItems.find((item) => item.label === "Environment")?.value, "New worktree: spike");
 
-  // A base branch chosen in the inline form is stored as the launch branch (the
+  // A base branch chosen for the pending worktree is stored as the launch branch (the
   // `git worktree add` start point read at send). The Branch chip reflects it.
   const based = setComposerNewWorktreeIntent(base, { name: "spike", baseBranch: "develop" }).state;
   assert.equal(based.composer.startOptions.launchOptions?.branch, "develop");
@@ -183,7 +183,7 @@ test("composer_environment_menu_offers_three_start_modes", () => {
   assert.equal(surface?.title, "Environment");
   assert.deepEqual(surface?.rows.map((entry) => entry.label), [
     "Local",
-    "New branch",
+    "New worktree",
     "Existing worktree",
   ]);
   assert.deepEqual(surface?.rows.map((entry) => entry.action), [undefined, undefined, undefined]);
@@ -252,7 +252,7 @@ test("selecting_new_branch_marks_a_new_worktree_intent_without_opening_a_name_st
   assert.equal(selected.composer.startOptions.launchOptions?.newWorktreeName, "");
   assert.equal(selected.composer.startOptions.launchOptions?.branch, "main");
   const items = createAgentChatShellViewModel(selected).composer.contextItems;
-  assert.equal(items.find((item) => item.label === "Environment")?.value, "New branch");
+  assert.equal(items.find((item) => item.label === "Environment")?.value, "New worktree");
 });
 
 test("environment_selection_local_restores_the_current_folder_scope", () => {
@@ -1970,10 +1970,9 @@ test("environment_menu_lists_start_modes_not_all_worktrees", () => {
   const html = renderShell(setComposerActiveSurface(base, "worktree_menu").state);
   assert.match(html, /Environment/);
   assert.match(html, /Local/);
-  assert.match(html, /New branch/);
+  assert.match(html, /New worktree/);
   assert.match(html, /Existing worktree/);
   assert.match(html, /feature\/x/);
-  assert.doesNotMatch(html, /New worktree/);
 });
 
 test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {

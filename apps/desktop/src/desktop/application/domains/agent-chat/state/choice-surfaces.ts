@@ -659,7 +659,7 @@ function worktreeMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRow
     ),
     row(
       "new-worktree",
-      "New branch",
+      "New worktree",
       `from ${selectedBranch}`,
       undefined,
       "plus",
