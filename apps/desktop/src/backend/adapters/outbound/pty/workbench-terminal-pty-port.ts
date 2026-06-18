@@ -40,6 +40,7 @@ class PtyWorkbenchTerminalPort implements WorkbenchTerminalPort {
         cwd: input.cwd,
         expectedSignalSources: [],
       },
+      emulateTerminalQueries: false,
       onOutput: input.onOutput,
       onExit: input.onExit,
     });

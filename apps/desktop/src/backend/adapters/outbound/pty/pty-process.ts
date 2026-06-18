@@ -25,6 +25,10 @@ export interface PtyProcessExit {
 export interface PtyProcessSpawnInput {
   runtimeId: string;
   plan: ProviderLaunchPlan;
+  // Hidden PTY consumers have no frontend terminal emulator, so the bridge can
+  // answer common terminal capability queries. Visible Workbench terminals use
+  // xterm.js, which must own those replies to avoid duplicate CPR bytes in stdin.
+  emulateTerminalQueries?: boolean;
   onOutput?: (output: PtyProcessOutput) => void;
   onExit?: (exit: PtyProcessExit) => void;
 }

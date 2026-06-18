@@ -12,7 +12,7 @@ export function createPythonPtyProcessLauncher(): PtyProcessLauncher {
 
 class PythonPtyProcessLauncher implements PtyProcessLauncher {
   async spawn(input: PtyProcessSpawnInput): Promise<PtyProcessHandle> {
-    const child = spawnProcess(input.plan);
+    const child = spawnProcess(input.plan, input.emulateTerminalQueries ?? true);
     tracePtyLauncher(`spawned runtime=${input.runtimeId} command=${input.plan.command}`);
     child.stdout.on("data", (chunk: Buffer) => {
       tracePtyLauncher(`stdout runtime=${input.runtimeId} bytes=${chunk.byteLength}`);
@@ -81,7 +81,10 @@ class ChildProcessPtyHandle implements PtyProcessHandle {
   }
 }
 
-function spawnProcess(plan: ProviderLaunchPlan): ChildProcessWithoutNullStreams {
+function spawnProcess(
+  plan: ProviderLaunchPlan,
+  emulateTerminalQueries = true,
+): ChildProcessWithoutNullStreams {
   const env = {
     ...process.env,
     ...plan.env,
@@ -89,7 +92,13 @@ function spawnProcess(plan: ProviderLaunchPlan): ChildProcessWithoutNullStreams 
 
   // fd 0-2 are the PTY stdio; fd 3 is a dedicated control pipe the bridge reads
   // resize messages ("rows,cols\n") from.
-  return spawn("python3", ["-c", pythonPtyBridgeSource, plan.command, ...plan.args], {
+  return spawn("python3", [
+    "-c",
+    pythonPtyBridgeSource,
+    emulateTerminalQueries ? "1" : "0",
+    plan.command,
+    ...plan.args,
+  ], {
     cwd: plan.cwd,
     env,
     stdio: ["pipe", "pipe", "pipe", "pipe"],
@@ -107,7 +116,8 @@ import subprocess
 import sys
 import termios
 
-command = sys.argv[1:]
+emulate_terminal_queries = len(sys.argv) > 1 and sys.argv[1] == "1"
+command = sys.argv[2:]
 if not command:
     sys.stderr.write("missing pty command\n")
     sys.exit(2)
@@ -228,7 +238,8 @@ while True:
                 else:
                     raise
             if data:
-                write_terminal_query_replies(master_fd, data)
+                if emulate_terminal_queries:
+                    write_terminal_query_replies(master_fd, data)
                 sys.stdout.buffer.write(data)
                 sys.stdout.buffer.flush()
         elif key.data == "stdin" and stdin_open:
