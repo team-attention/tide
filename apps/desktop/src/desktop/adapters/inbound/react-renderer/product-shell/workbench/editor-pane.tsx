@@ -35,7 +35,7 @@ export function WorkbenchEditorPane(props: {
   // The file-path breadcrumb. For markdown/html it rides INSIDE the view's header row
   // (alongside the Preview/Code toggle) so the controls sit in the path bar — one row,
   // like the Browser Pane's address bar. For code it stays a standalone path bar.
-  const breadcrumb = createEditorBreadcrumb(props.pane, props.draft?.dirty === true);
+  const breadcrumb = createEditorBreadcrumb(props.pane, props.draft?.dirty === true, props.handlers);
   return (
     <div
       className="workbench-pane-content workbench-pane-content--editor"
@@ -92,33 +92,76 @@ export function WorkbenchEditorPane(props: {
 function createEditorBreadcrumb(
   pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>,
   dirty: boolean,
+  handlers: ProductShellHandlers,
 ): ReactElement {
   const relativePath = pane.relativePath ?? pane.title;
-  const segments = relativePath.split("/").filter((segment) => segment.length > 0);
+  const pathSegments = relativePath.split("/").filter((segment) => segment.length > 0);
+  const segments: Array<{
+    kind: "root" | "folder" | "file";
+    label: string;
+    path?: string;
+  }> = [];
   if (pane.filePath && pane.relativePath && pane.filePath.endsWith(pane.relativePath)) {
     const root = pane.filePath.slice(0, pane.filePath.length - pane.relativePath.length);
     const rootName = root.replace(/\/+$/, "").split("/").pop();
     if (rootName) {
-      segments.unshift(rootName);
+      segments.push({ kind: "root", label: rootName });
     }
   }
+  pathSegments.forEach((segment, index) => {
+    segments.push({
+      kind: index === pathSegments.length - 1 ? "file" : "folder",
+      label: segment,
+      path: pathSegments.slice(0, index + 1).join("/"),
+    });
+  });
+  if (segments.length === 0) {
+    segments.push({ kind: "file", label: pane.title, path: pane.relativePath ?? pane.title });
+  }
+  const createCrumb = (
+    segment: (typeof segments)[number],
+    index: number,
+  ): ReactElement => {
+    const className = `workbench-editor-breadcrumb__crumb workbench-editor-breadcrumb__crumb--${segment.kind}`;
+    if (segment.path === undefined) {
+      return (
+        <span key={`crumb-${index}`} className={className} title={segment.label}>
+          {segment.label}
+        </span>
+      );
+    }
+    const title =
+      segment.kind === "folder"
+        ? `Reveal ${segment.path} in FileTree`
+        : `Open ${segment.path}`;
+    return (
+      <button
+        key={`crumb-${index}`}
+        type="button"
+        className={className}
+        title={title}
+        aria-label={title}
+        onClick={() =>
+          segment.kind === "folder"
+            ? handlers.onFileTreeEntryOpen(segment.path as string)
+            : handlers.onOpenFile(segment.path as string)
+        }
+      >
+        {segment.label}
+      </button>
+    );
+  };
   return (
     <div className="workbench-editor-breadcrumb" aria-label="Editor breadcrumb">
       {segments.flatMap((segment, index) =>
         index < segments.length - 1
           ? [
-              <span key={`crumb-${index}`} className="workbench-editor-breadcrumb__crumb">
-                {segment}
-              </span>,
+              createCrumb(segment, index),
               <span key={`sep-${index}`} className="workbench-editor-breadcrumb__sep">
                 ›
               </span>,
             ]
-          : [
-              <span key={`crumb-${index}`} className="workbench-editor-breadcrumb__crumb">
-                {segment}
-              </span>,
-            ],
+          : [createCrumb(segment, index)],
       )}
       {dirty ? (
         <span className="workbench-editor-breadcrumb__dirty" title="Unsaved changes">

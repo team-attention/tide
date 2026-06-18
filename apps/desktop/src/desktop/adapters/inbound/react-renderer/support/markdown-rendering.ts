@@ -36,6 +36,50 @@ export function taskListPlugin(md: MarkdownIt): void {
   });
 }
 
+// GitHub-style heading ids + hover anchors for README previews. Raw HTML is still
+// disabled; this injects only renderer-authored markup with escaped attributes.
+export function headingAnchorPlugin(md: MarkdownIt): void {
+  md.core.ruler.after("inline", "tide-heading-anchors", (state) => {
+    const used = new Map<string, number>();
+    const tokens = state.tokens;
+    for (let i = 0; i < tokens.length - 1; i++) {
+      const open = tokens[i];
+      const inline = tokens[i + 1];
+      if (!/^h[1-6]$/.test(open.tag) || open.type !== "heading_open" || inline.type !== "inline") {
+        continue;
+      }
+      const base = githubHeadingSlug(inline.content);
+      const count = used.get(base) ?? 0;
+      used.set(base, count + 1);
+      const id = count === 0 ? base : `${base}-${count}`;
+      open.attrSet("id", id);
+      const anchor = new state.Token("html_inline", "", 0);
+      anchor.content = `<a class="markdown-heading-anchor" href="#${escapeHtmlAttr(id)}" aria-label="Link to this heading">#</a>`;
+      inline.children = [anchor, ...(inline.children ?? [])];
+    }
+  });
+}
+
+function githubHeadingSlug(text: string): string {
+  const slug = text
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\p{Letter}\p{Number}\s-]/gu, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return slug.length > 0 ? slug : "heading";
+}
+
+function escapeHtmlAttr(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 // A task-list item is an inline token preceded by a paragraph_open inside a
 // list_item_open, whose rendered text begins with a checkbox marker.
 function isTaskListItem(tokens: Token[], index: number): boolean {

@@ -148,8 +148,8 @@
 .worktree-delete__warn {
   padding: 7px 10px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--tide-danger, #d8453b) 12%, transparent);
-  color: var(--tide-danger, #d8453b);
+  background: color-mix(in srgb, var(--tide-danger) 12%, transparent);
+  color: var(--tide-danger);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -159,7 +159,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: var(--tide-danger, #d8453b);
+  background: var(--tide-danger);
   color: #fff;
 }
 

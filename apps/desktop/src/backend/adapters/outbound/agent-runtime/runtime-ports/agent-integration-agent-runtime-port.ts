@@ -72,6 +72,10 @@ export interface AgentCliUpdateChecker {
     agentId: ProviderCliAgentId,
     cwd: string,
   ): ProviderUpdateAdvisory | undefined;
+  // Re-read installed + latest versions into the cache `advisoryFor` answers from.
+  // Optional: only the live (refreshable) checker implements it; absent in tests/older
+  // wiring. Used to clear a stale advisory right after an in-place CLI update.
+  refresh?(): Promise<unknown>;
 }
 
 export interface CreateAgentIntegrationProviderReadinessPortInput {
@@ -85,6 +89,12 @@ export function createAgentIntegrationProviderReadinessPort(
   input: CreateAgentIntegrationProviderReadinessPortInput,
 ): ProviderReadinessPort {
   return {
+    async refreshUpdateAdvisories() {
+      // Force the version cache fresh so the next `check()` reflects a just-completed
+      // in-place CLI update (otherwise the update advisory lingers until the next slow
+      // background refresh / restart). No-op when the checker can't refresh.
+      await input.updateChecker?.refresh?.();
+    },
     async check(checkInput) {
       if (!isProviderCliAgentId(checkInput.agentId)) {
         return {

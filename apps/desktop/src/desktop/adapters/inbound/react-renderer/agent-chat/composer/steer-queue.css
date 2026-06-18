@@ -124,6 +124,6 @@
 }
 
 .composer-steer__delete:hover {
-  background: var(--tide-danger, #e5484d);
+  background: var(--tide-danger);
   color: #fff;
 }

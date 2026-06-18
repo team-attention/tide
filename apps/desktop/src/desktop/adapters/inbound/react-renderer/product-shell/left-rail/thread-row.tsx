@@ -28,6 +28,8 @@ export function createThreadRow(
         data-left-row-kind="thread"
         data-thread-row={thread.threadId}
         data-active={thread.active}
+        data-running={thread.running ? "true" : undefined}
+        data-attention={thread.attention ? "true" : undefined}
         onMouseLeave={thread.archiveConfirming ? handlers.onLeftRailTransientClear : undefined}
         // Right-click anywhere on the row opens the same Thread context menu as
         // the ⋯ overflow button (Pin / Archive / Delete worktree).

@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { CSSProperties, DragEvent, ReactElement } from "react";
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellFileTreeMenu, ProductShellTreeEdit } from "../../../../../application/domains/product-shell/product-shell.ts";
@@ -19,6 +19,29 @@ export interface FileTreeColumnViewModel {
   fileTreeEdit: ProductShellTreeEdit | null;
   fileTreeMenu: ProductShellFileTreeMenu | null;
   fileTreeNotice: string | null;
+}
+
+type FileTreeEntryView = ProductShellViewModel["fileTree"]["entries"][number];
+
+export function filterFileTreeEntries(
+  entries: FileTreeEntryView[],
+  filterDraft: string,
+): FileTreeEntryView[] {
+  const normalizedFilter = filterDraft.trim().toLocaleLowerCase();
+  if (normalizedFilter.length === 0) {
+    return entries;
+  }
+  const visiblePaths = new Set<string>();
+  for (const entry of entries) {
+    if (!entry.relativePath.toLocaleLowerCase().includes(normalizedFilter)) {
+      continue;
+    }
+    const parts = entry.relativePath.split("/");
+    for (let index = 1; index <= parts.length; index++) {
+      visiblePaths.add(parts.slice(0, index).join("/"));
+    }
+  }
+  return entries.filter((entry) => visiblePaths.has(entry.relativePath));
 }
 
 // Shimmer rows shown while the active thread's file tree is (re)loading, so a thread
@@ -215,11 +238,17 @@ function FileTreeColumn(props: {
   const { viewModel, handlers } = props;
   const { fileTree, fileTreeEdit, fileTreeMenu, fileTreeNotice } = viewModel;
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+  const [filterDraft, setFilterDraft] = useState("");
 
   const renamingPath =
     fileTreeEdit?.kind === "rename" ? fileTreeEdit.targetPath : undefined;
   const newFolderParent =
     fileTreeEdit?.kind === "new-folder" ? fileTreeEdit.parentPath : undefined;
+  const filterActive = filterDraft.trim().length > 0;
+  const entriesForView = useMemo(
+    () => filterFileTreeEntries(fileTree.entries, filterDraft),
+    [fileTree.entries, filterDraft],
+  );
 
   return (
     <aside className="file-tree-column" aria-label="FileTree" data-column="file-tree">
@@ -275,7 +304,25 @@ function FileTreeColumn(props: {
       <div className="file-tree-column__body">
         <label className="file-tree-column__search">
           <Search size={14} strokeWidth={1.9} aria-hidden />
-          <span>Filter files...</span>
+          <input
+            className="file-tree-column__search-input"
+            aria-label="Filter files"
+            placeholder="Filter files..."
+            spellCheck={false}
+            value={filterDraft}
+            onChange={(event) => setFilterDraft(event.currentTarget.value)}
+          />
+          {filterDraft.length > 0 ? (
+            <button
+              type="button"
+              className="file-tree-column__search-clear"
+              title="Clear filter"
+              aria-label="Clear file filter"
+              onClick={() => setFilterDraft("")}
+            >
+              <X size={12} strokeWidth={2} aria-hidden />
+            </button>
+          ) : null}
         </label>
         {/* The entries container is the root drop target: dropping here (not on a
             folder) moves an item to the workspace root. */}
@@ -308,7 +355,7 @@ function FileTreeColumn(props: {
                       />,
                     ]
                   : []),
-                ...fileTree.entries.flatMap((entry) => {
+                ...entriesForView.flatMap((entry) => {
                   const rows: ReactElement[] =
                     renamingPath === entry.relativePath
                       ? [
@@ -356,6 +403,13 @@ function FileTreeColumn(props: {
                   }
                   return rows;
                 }),
+                ...(filterActive && entriesForView.length === 0
+                  ? [
+                      <div key="__file-tree-filter-empty__" className="file-tree-column__empty">
+                        No matching files
+                      </div>,
+                    ]
+                  : []),
               ]}
         </div>
       </div>

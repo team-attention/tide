@@ -16,10 +16,12 @@
   --tide-text: #242424;
   --tide-muted: #8a8781;
   --tide-action: #343038;
+  --tide-accent: #3970f0;
   /* Text/icons sitting ON an --tide-action-colored surface (a filled accent
      button). In dark the accent surface flips light, so this flips dark. */
   --tide-on-action: #ffffff;
   --tide-danger: #ba322f;
+  --tide-danger-rgb: 186, 50, 47;
   --tide-line-strong: #d9d6cf;
   /* Neutral "ink" over a surface — scrollbar thumbs + skeleton shimmer. Held as
      an RGB triplet so the alpha-composited rules theme with one override. */
@@ -27,6 +29,11 @@
   /* Semantic diff add/remove. Tuned for the light surface; flipped in dark. */
   --tide-diff-add: #1a7f37;
   --tide-diff-del: #cf222e;
+  /* Semantic status: success (running dot, applied flashes) + warn (amber). Were
+     undefined → every call site invented a different fallback hex (4 greens, 2 ambers),
+     none dark-adapted. Tuned for light here; brightened for dark below. */
+  --tide-success: #1f9d54;
+  --tide-warn: #c0871c;
   --tide-hover: color-mix(in srgb, var(--tide-selection) 72%, transparent);
   --tide-shadow-popover: 0 8px 18px -10px rgb(52 48 56 / 12%);
   --tide-shadow-composer: 0 8px 11px rgba(52, 48, 56, 0.13);
@@ -58,12 +65,16 @@
   --tide-text: #ecebe7;
   --tide-muted: #9a948a;
   --tide-action: #ecebe7;
+  --tide-accent: #7aa2ff;
   --tide-on-action: #1a1917;
   --tide-danger: #f0625f;
+  --tide-danger-rgb: 240, 98, 95;
   --tide-line-strong: #494540;
   --tide-ink-rgb: 232, 230, 224;
   --tide-diff-add: #3fb950;
   --tide-diff-del: #f85149;
+  --tide-success: #3fb968;
+  --tide-warn: #e0a93f;
   --tide-hover: color-mix(in srgb, var(--tide-selection) 72%, transparent);
   --tide-shadow-popover: 0 8px 18px -10px rgb(0 0 0 / 60%);
   --tide-shadow-composer: 0 8px 14px rgba(0, 0, 0, 0.5);

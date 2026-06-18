@@ -5,18 +5,22 @@
 }
 
 .markdown-body h1 {
-  margin: 24px 0 12px;
+  margin: 0 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--tide-line);
   font-weight: 700;
-  font-size: 25px;
-  line-height: 30px;
+  font-size: 30px;
+  line-height: 38px;
   color: var(--tide-text);
 }
 
 .markdown-body h2 {
-  margin: 22px 0 10px;
+  margin: 28px 0 14px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--tide-line);
   font-weight: 700;
-  font-size: 19px;
-  line-height: 26px;
+  font-size: 22px;
+  line-height: 30px;
   color: var(--tide-text);
 }
 
@@ -29,7 +33,7 @@
 }
 
 .markdown-body h4 {
-  margin: 16px 0 6px;
+  margin: 16px 0 8px;
   font-weight: 600;
   font-size: 14.5px;
   line-height: 22px;
@@ -49,7 +53,7 @@
 .markdown-body p,
 .markdown-body ul,
 .markdown-body ol {
-  margin: 0 0 12px;
+  margin: 0 0 16px;
 }
 
 .markdown-body ul,
@@ -61,6 +65,10 @@
   margin: 4px 0;
 }
 
+.markdown-body li > p {
+  margin: 8px 0;
+}
+
 .markdown-body a {
   color: var(--tide-action);
   text-decoration: underline;
@@ -68,7 +76,7 @@
 }
 
 .markdown-body code {
-  padding: 2px 6px;
+  padding: 0.16em 0.38em;
   border-radius: 6px;
   background: var(--tide-surface);
   border: 1px solid var(--tide-line);
@@ -76,9 +84,9 @@
 }
 
 .markdown-body pre {
-  margin: 0 0 14px;
-  padding: 12px 14px;
-  border-radius: 10px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 8px;
   background: var(--tide-surface);
   border: 1px solid var(--tide-line);
   overflow: auto;
@@ -92,14 +100,14 @@
 }
 
 .markdown-body blockquote {
-  margin: 0 0 12px;
+  margin: 0 0 16px;
   padding: 2px 0 2px 14px;
   border-left: 3px solid var(--tide-line-strong);
   color: var(--tide-muted);
 }
 
 .markdown-body hr {
-  margin: 20px 0;
+  margin: 24px 0;
   border: 0;
   border-top: 1px solid var(--tide-line);
 }
@@ -112,6 +120,36 @@
   max-width: 100%;
   height: auto;
   border-radius: 8px;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  position: relative;
+  scroll-margin-top: 16px;
+}
+
+.markdown-body .markdown-heading-anchor {
+  display: inline-flex;
+  width: 18px;
+  margin-left: -22px;
+  margin-right: 4px;
+  color: var(--tide-muted);
+  text-decoration: none;
+  opacity: 0;
+}
+
+.markdown-body h1:hover .markdown-heading-anchor,
+.markdown-body h2:hover .markdown-heading-anchor,
+.markdown-body h3:hover .markdown-heading-anchor,
+.markdown-body h4:hover .markdown-heading-anchor,
+.markdown-body h5:hover .markdown-heading-anchor,
+.markdown-body h6:hover .markdown-heading-anchor,
+.markdown-body .markdown-heading-anchor:focus-visible {
+  opacity: 1;
 }
 
 /* Highlighted fenced code (md-fence) reuses the shared tok-* token colors. */
@@ -127,7 +165,7 @@
   display: block;
   width: max-content;
   max-width: 100%;
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   overflow-x: auto;
   border-collapse: collapse;
   font-size: 14px;

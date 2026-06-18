@@ -93,5 +93,5 @@
 }
 
 .workbench-launcher-new-file-input:focus {
-  border-color: color-mix(in srgb, var(--tide-accent, var(--tide-line-strong)) 60%, var(--tide-line));
+  border-color: color-mix(in srgb, var(--tide-accent) 60%, var(--tide-line));
 }

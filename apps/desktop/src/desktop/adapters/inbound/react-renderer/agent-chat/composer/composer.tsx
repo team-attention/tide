@@ -236,7 +236,7 @@ export function createComposer(
             viewModel.chatState === "waiting_for_input") &&
           !composerHasContent(viewModel)
             ? createComposerStopButton(handlers.onInterrupt)
-            : createComposerSendButton(viewModel.composer.submitLabel)}
+            : createComposerSendButton(viewModel.composer.submitLabel, viewModel.prompt != null)}
         </div>
       </div>
     </form>
@@ -287,12 +287,22 @@ function ChipFeedbackBadge({ feedback }: { feedback: LaunchOptionFeedback | unde
   );
 }
 
-// Submit button: queues the draft (mid-run) or starts the turn (idle).
-function createComposerSendButton(label: string): ReactElement {
+// Submit button: queues the draft (mid-run) or starts the turn (idle). While a
+// prompt card is up it is disabled — the card owns the response, and the composer
+// draft is held as a follow-up (you can type, but you answer the prompt first).
+function createComposerSendButton(label: string, disabled = false): ReactElement {
+  const title = disabled ? "Answer the prompt above first" : label;
   return (
-    <button key="send" type="submit" className="composer-shell__send" title={label} aria-label={label}>
+    <button
+      key="send"
+      type="submit"
+      className="composer-shell__send"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+    >
       <ArrowUp size={17} strokeWidth={2.4} aria-hidden />
-      <span className="visually-hidden">{label}</span>
+      <span className="visually-hidden">{title}</span>
     </button>
   );
 }

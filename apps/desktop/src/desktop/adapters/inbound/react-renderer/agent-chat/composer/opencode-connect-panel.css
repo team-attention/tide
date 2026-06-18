@@ -6,9 +6,8 @@
 
 .oc-connect {
   --oc-ok: var(--tide-diff-add);
-  /* Amber attention accent for a connected-but-unusable vendor ("Reconnect") — not
-     green (usable) and not red (danger). Theme-stable literal. */
-  --oc-warn: #c98a14;
+  /* Amber attention accent for a connected-but-unusable vendor ("Reconnect"). */
+  --oc-warn: var(--tide-warn);
   display: flex;
   flex-direction: column;
   width: 384px;

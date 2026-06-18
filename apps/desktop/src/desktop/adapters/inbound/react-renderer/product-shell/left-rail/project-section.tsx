@@ -56,6 +56,8 @@ export function createProjectGroup(
           data-left-row-kind="project"
           data-project-row={project.projectId}
           data-expanded={project.expanded}
+          data-running={project.running ? "true" : undefined}
+          data-attention={project.attention ? "true" : undefined}
         >
           <button
             className="project-row__toggle"
