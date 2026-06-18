@@ -370,31 +370,33 @@ function buildThreadListViewModel(
     thread.scope.kind === "project" &&
     groupingProjectId(thread.scope.projectId) === project.projectId;
 
-  const toGroup = (project: ProductShellProject): ProductShellProjectGroupView => ({
-    projectId: project.projectId,
-    name: project.name,
-    cwd: project.cwd,
-    // Projects are expanded by default. Searching force-expands every group so
-    // matches are visible without manual expansion. Expand state is keyed by
-    // projectId, so a project pinned + listed expands consistently in both.
-    expanded: searching || !state.collapsedProjectIds.includes(project.projectId),
-    contextMenuOpen:
-      state.leftRailMenu?.kind === "project" && state.leftRailMenu.projectId === project.projectId,
-    pinned: state.pinnedProjectIds.includes(project.projectId),
-    renaming: state.renamingProjectId === project.projectId,
-    creatingWorktree: state.creatingWorktreeForProjectId === project.projectId,
-    threads: visibleThreads
-      // Pinned threads are lifted to the Pinned section (spec: left-rail-manual-ordering),
-      // so they no longer nest under their project group.
-      .filter((thread) => inGroup(thread, project) && thread.pinned !== true)
-      .map((thread) => toThreadView(thread, state, options.activeThreadHydrating === true)),
-    attention: state.threads.some(
-      (thread) => inGroup(thread, project) && thread.attention === true,
-    ),
-    running: state.threads.some(
-      (thread) => inGroup(thread, project) && thread.running === true,
-    ),
-  });
+  const toGroup = (project: ProductShellProject): ProductShellProjectGroupView => {
+    // Pinned threads are lifted to the Pinned section (spec:
+    // left-rail-manual-ordering), so their row state should not also bubble to the
+    // source project group.
+    const groupThreads = visibleThreads.filter(
+      (thread) => inGroup(thread, project) && thread.pinned !== true,
+    );
+    return {
+      projectId: project.projectId,
+      name: project.name,
+      cwd: project.cwd,
+      // Projects are expanded by default. Searching force-expands every group so
+      // matches are visible without manual expansion. Expand state is keyed by
+      // projectId, so a project pinned + listed expands consistently in both.
+      expanded: searching || !state.collapsedProjectIds.includes(project.projectId),
+      contextMenuOpen:
+        state.leftRailMenu?.kind === "project" && state.leftRailMenu.projectId === project.projectId,
+      pinned: state.pinnedProjectIds.includes(project.projectId),
+      renaming: state.renamingProjectId === project.projectId,
+      creatingWorktree: state.creatingWorktreeForProjectId === project.projectId,
+      threads: groupThreads.map((thread) =>
+        toThreadView(thread, state, options.activeThreadHydrating === true),
+      ),
+      attention: groupThreads.some((thread) => thread.attention === true),
+      running: groupThreads.some((thread) => thread.running === true),
+    };
+  };
   // Worktree Projects folded into a repo no longer appear as their own group.
   const topLevelProjects = projects.filter((project) => !worktreeRemap.has(project.projectId));
 
