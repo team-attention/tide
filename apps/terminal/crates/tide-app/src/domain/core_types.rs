@@ -271,7 +271,9 @@ pub struct TerminalGraphic {
     pub col: u16,
     pub width_cells: u16,
     pub height_cells: u16,
-    pub bytes: Vec<u8>,
+    pub width_px: u32,
+    pub height_px: u32,
+    pub rgba: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy)]

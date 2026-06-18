@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{
-    Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend, TerminalGraphicProtocol,
-    TerminalGrid, Vec2,
+    Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend,
+    TerminalGraphicProtocol, TerminalGrid, Vec2,
 };
 use crate::tide_renderer::WgpuRenderer;
 use crate::tide_terminal::git::GitInfo;
@@ -395,7 +395,13 @@ impl TerminalPane {
                 graphic.width_cells as f32 * cell_size.width,
                 graphic.height_cells as f32 * cell_size.height,
             );
-            renderer.draw_terminal_image(graphic.key, &graphic.bytes, rect);
+            renderer.draw_terminal_image(
+                graphic.key,
+                graphic.width_px,
+                graphic.height_px,
+                &graphic.rgba,
+                rect,
+            );
         }
     }
 

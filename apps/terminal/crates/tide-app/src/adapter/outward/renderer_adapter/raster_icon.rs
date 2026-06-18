@@ -74,8 +74,15 @@ impl WgpuRenderer {
         );
     }
 
-    pub fn draw_terminal_image(&mut self, key: u64, bytes: &[u8], rect: Rect) {
-        if !self.ensure_terminal_image_cached(key, bytes) {
+    pub fn draw_terminal_image(
+        &mut self,
+        key: u64,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+        rect: Rect,
+    ) {
+        if !self.ensure_terminal_image_cached(key, width, height, rgba) {
             return;
         }
         push_terminal_image_quad(
@@ -165,18 +172,25 @@ impl WgpuRenderer {
         }
     }
 
-    fn ensure_terminal_image_cached(&mut self, key: u64, bytes: &[u8]) -> bool {
+    fn ensure_terminal_image_cached(
+        &mut self,
+        key: u64,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> bool {
         match self.terminal_image_textures.entry(key) {
             Entry::Occupied(_) => true,
             Entry::Vacant(slot) => {
-                let Ok(decoded) = image::load_from_memory(bytes) else {
-                    log::warn!("Failed to decode terminal image {key}");
+                let Some(expected_len) = width
+                    .checked_mul(height)
+                    .and_then(|pixels| pixels.checked_mul(4))
+                    .map(|len| len as usize)
+                else {
                     return false;
                 };
-                let rgba = decoded.to_rgba8();
-                let width = rgba.width();
-                let height = rgba.height();
-                if width == 0 || height == 0 {
+                if width == 0 || height == 0 || rgba.len() < expected_len {
+                    log::warn!("Invalid terminal image dimensions for {key}");
                     return false;
                 }
 
@@ -202,7 +216,7 @@ impl WgpuRenderer {
                         origin: wgpu::Origin3d::ZERO,
                         aspect: wgpu::TextureAspect::All,
                     },
-                    rgba.as_raw(),
+                    &rgba[..expected_len],
                     wgpu::ImageDataLayout {
                         offset: 0,
                         bytes_per_row: Some(width * 4),

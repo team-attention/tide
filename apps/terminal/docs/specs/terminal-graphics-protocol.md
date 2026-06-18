@@ -33,9 +33,9 @@ Implemented support:
   dimensions when omitted.
 - Delete action `a=d` clears active graphics.
 
-Decoded PNG and converted raw images are stored as active terminal graphics
-placements and rendered each frame using the existing GPU raster texture
-pipeline.
+Decoded PNG and raw Kitty image payloads are normalized to RGBA pixels before
+they enter the renderer. Active terminal graphics placements render each frame
+by uploading those pre-decoded pixels through the GPU raster texture pipeline.
 
 ## Sixel
 
@@ -48,12 +48,16 @@ Implemented subset:
 - Carriage return (`$`) and sixel newline (`-`).
 - Basic sixel data bytes (`?` through `~`).
 
-Decoded Sixel pixels are converted to PNG bytes and rendered through the same
-GPU raster texture path as Kitty images.
+Decoded Sixel pixels are stored as RGBA pixels and rendered through the same
+GPU raster texture path as Kitty images. The decoder uses a bounded flat RGBA
+buffer rather than per-pixel hash storage.
 
 ## Limits
 
 - Active rendered Kitty images are capped at 128 placements per terminal.
+- Terminal image dimensions are capped at 4096 by 4096 pixels.
+- Sixel repeat runs that would exceed the terminal image dimension cap are
+  rejected before iterating.
 - The Sixel decoder intentionally covers the common bitmap subset; advanced
   scrolling/transparent background policies and HLS palette mode are not
   implemented.
