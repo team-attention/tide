@@ -74,38 +74,52 @@ test("the update advisory is a chip, not a choice-surface card", () => {
 
 test("clicking the update chip dispatches the update_available:setup Setup Surface", async () => {
   const dom = new JSDOM("<!doctype html><html><body></body></html>");
-  (globalThis as unknown as { window: unknown }).window = dom.window;
-  (globalThis as unknown as { document: unknown }).document = dom.window.document;
-  (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-  const selected: Array<[string, string]> = [];
-  const handlers: ComposerHandlers = {
-    onChoiceSurfaceRowSelect: (surfaceKind, rowId) => selected.push([surfaceKind, rowId]),
+  // This test needs real DOM globals (the other tests here render to static markup).
+  // Save + restore them so the mutation can't leak to anything that runs after.
+  const g = globalThis as unknown as {
+    window?: unknown;
+    document?: unknown;
+    IS_REACT_ACT_ENVIRONMENT?: boolean;
   };
+  const original = { window: g.window, document: g.document, actEnv: g.IS_REACT_ACT_ENVIRONMENT };
+  g.window = dom.window;
+  g.document = dom.window.document;
+  g.IS_REACT_ACT_ENVIRONMENT = true;
 
-  const { createRoot } = await import("react-dom/client");
-  const container = dom.window.document.createElement("div");
-  dom.window.document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(
-      createComposer(
-        viewModelWith({ currentVersion: "2.1.179", latestVersion: "2.1.181", setup: advisorySetup }),
-        handlers,
-      ),
-    );
-  });
+  try {
+    const selected: Array<[string, string]> = [];
+    const handlers: ComposerHandlers = {
+      onChoiceSurfaceRowSelect: (surfaceKind, rowId) => selected.push([surfaceKind, rowId]),
+    };
 
-  const chip = container.querySelector(".composer-shell__choice-chip--update");
-  assert.ok(chip, "expected an update chip in the toolbar");
-  await act(async () => {
-    (chip as HTMLButtonElement).dispatchEvent(
-      new dom.window.MouseEvent("click", { bubbles: true }),
-    );
-  });
-  await act(async () => {
-    root.unmount();
-  });
+    const { createRoot } = await import("react-dom/client");
+    const container = dom.window.document.createElement("div");
+    dom.window.document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createComposer(
+          viewModelWith({ currentVersion: "2.1.179", latestVersion: "2.1.181", setup: advisorySetup }),
+          handlers,
+        ),
+      );
+    });
 
-  assert.deepEqual(selected, [["provider_readiness", "update_available:setup"]]);
+    const chip = container.querySelector(".composer-shell__choice-chip--update");
+    assert.ok(chip, "expected an update chip in the toolbar");
+    await act(async () => {
+      (chip as HTMLButtonElement).dispatchEvent(
+        new dom.window.MouseEvent("click", { bubbles: true }),
+      );
+    });
+    await act(async () => {
+      root.unmount();
+    });
+
+    assert.deepEqual(selected, [["provider_readiness", "update_available:setup"]]);
+  } finally {
+    g.window = original.window;
+    g.document = original.document;
+    g.IS_REACT_ACT_ENVIRONMENT = original.actEnv;
+  }
 });
