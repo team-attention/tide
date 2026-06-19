@@ -29,7 +29,7 @@ export function createWorkbenchColumn(
     viewModel.editorPicker === null &&
     viewModel.workbenchLayoutMode === "split" &&
     viewModel.workbenchLayoutTree !== null &&
-    viewModel.appChrome.visibleWorkbenchPanes.length > 1;
+    viewModel.appChrome.openWorkbenchPanes.length > 1;
   const tabIconSize = 13;
   const workbenchTabIcon = (kind: string): ReactElement => {
     switch (kind) {

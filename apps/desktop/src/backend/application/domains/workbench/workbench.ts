@@ -53,7 +53,6 @@ export interface WorkbenchPaneRef {
   paneId: WorkbenchPaneId;
   kind: WorkbenchPaneKind;
   title: string;
-  visible: boolean;
   revision: string;
   updatedAt: string;
 }
@@ -65,7 +64,6 @@ export interface BrowserPaneState {
   url?: string;
   pageTitle?: string;
   loading: boolean;
-  visible: boolean;
   revision: string;
   updatedAt: string;
   bodyTextPreview?: string;
@@ -151,7 +149,6 @@ export interface TerminalPaneState {
   paneId: WorkbenchPaneId;
   kind: "terminal";
   title: string;
-  visible: boolean;
   revision: string;
   updatedAt: string;
   command?: string;
@@ -174,7 +171,6 @@ export interface EditorPaneState {
   title: string;
   filePath: string;
   relativePath: string;
-  visible: boolean;
   revision: string;
   updatedAt: string;
   bodyText: string;
@@ -213,7 +209,6 @@ export interface DiffPaneState {
   title: string;
   filePath: string;
   relativePath: string;
-  visible: boolean;
   revision: string;
   updatedAt: string;
   diffText: string;
@@ -238,7 +233,6 @@ export interface LauncherPaneState {
   paneId: WorkbenchPaneId;
   kind: "launcher";
   title: string;
-  visible: boolean;
   revision: string;
   updatedAt: string;
   actions: LauncherPaneAction[];
@@ -251,7 +245,6 @@ export interface ChangesPaneState {
   paneId: WorkbenchPaneId;
   kind: "changes";
   title: string;
-  visible: boolean;
   revision: string;
   updatedAt: string;
   cwd: string;

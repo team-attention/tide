@@ -94,7 +94,6 @@ export class WorkbenchFileOperations {
         title: titleFromRelativePath(file.value.relativePath),
         filePath: file.value.path,
         relativePath: file.value.relativePath,
-        visible: true,
         revision: this.idGenerator(),
         updatedAt: this.clock(),
         bodyText: file.value.content,
@@ -103,7 +102,6 @@ export class WorkbenchFileOperations {
         truncated: file.value.truncated,
       } satisfies EditorPaneState);
 
-    pane.visible = true;
     pane.title = titleFromRelativePath(file.value.relativePath);
     pane.relativePath = file.value.relativePath;
     pane.revision = this.idGenerator();
@@ -165,7 +163,6 @@ export class WorkbenchFileOperations {
         title: `Diff: ${titleFromRelativePath(edit.value.relativePath)}`,
         filePath: edit.value.path,
         relativePath: edit.value.relativePath,
-        visible: true,
         revision: this.idGenerator(),
         updatedAt: this.clock(),
         diffText: diff,
@@ -174,7 +171,6 @@ export class WorkbenchFileOperations {
         afterByteLength: edit.value.afterByteLength,
       } satisfies DiffPaneState);
 
-    pane.visible = true;
     pane.title = `Diff: ${titleFromRelativePath(edit.value.relativePath)}`;
     pane.relativePath = edit.value.relativePath;
     pane.diffText = diff;
@@ -293,7 +289,6 @@ export class WorkbenchFileOperations {
       return;
     }
 
-    pane.visible = true;
     pane.title = titleFromRelativePath(file.relativePath);
     pane.relativePath = file.relativePath;
     pane.bodyText = file.afterContent;
@@ -309,7 +304,6 @@ export class WorkbenchFileOperations {
     pane: EditorPaneState,
     file: WorkspaceFileWrite,
   ): void {
-    pane.visible = true;
     pane.title = titleFromRelativePath(file.relativePath);
     pane.filePath = file.path;
     pane.relativePath = file.relativePath;

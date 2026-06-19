@@ -1,5 +1,5 @@
 // Spec: docs_v2/specs/browser-pane-action-liveness.md
-// Every visible agent-owned Browser Pane must have exactly one live <webview> so its
+// Every open agent-owned Browser Pane must have exactly one live <webview> so its
 // agent-scheduled actions execute instead of sitting `pending`. The foreground hosts
 // only the active thread's currently-shown pane; deriveBackgroundBrowserPanes must
 // cover everything else — including the active thread's off-screen browser panes.
@@ -8,8 +8,8 @@ import test from "node:test";
 
 import { deriveBackgroundBrowserPanes } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
-function browserPane(paneId: string, visible = true) {
-  return { paneId, kind: "browser" as const, title: "Naver", visible, revision: "r1" };
+function browserPane(paneId: string) {
+  return { paneId, kind: "browser" as const, title: "Naver", revision: "r1" };
 }
 
 function stateWith(input: {
@@ -62,7 +62,7 @@ test("the foregrounded active browser pane is excluded (no duplicate webview)", 
   assert.deepEqual(panes, []);
 });
 
-test("non-active threads' visible browser panes are still kept alive (regression)", () => {
+test("non-active threads' open browser panes are still kept alive (regression)", () => {
   const panes = deriveBackgroundBrowserPanes(
     stateWith({
       activeThreadId: "t1",
@@ -77,12 +77,12 @@ test("non-active threads' visible browser panes are still kept alive (regression
   assert.deepEqual(panes.map((p) => p.paneId), ["p2"]);
 });
 
-test("hidden (not visible) browser panes are never hosted", () => {
+test("closed browser panes are absent and never hosted", () => {
   const panes = deriveBackgroundBrowserPanes(
     stateWith({
       activeThreadId: "t1",
       workbenchOpen: false,
-      threads: [{ threadId: "t1", panes: [browserPane("p1", false)] }],
+      threads: [{ threadId: "t1", panes: [] }],
     }),
   );
   assert.deepEqual(panes, []);

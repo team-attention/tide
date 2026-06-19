@@ -25,7 +25,6 @@ function startFileEditorPane(file: ProductShellStartPageFile): AppChromeWorkbenc
     paneId,
     kind: "editor",
     title: name,
-    visible: true,
     // Stable: the editor is value-controlled, so the revision only identifies the
     // pane; it never drives a remount here.
     revision: paneId,
@@ -58,7 +57,6 @@ function untitledEditorPane(file: ProductShellUntitledFile): AppChromeWorkbenchP
     paneId: file.id,
     kind: "editor",
     title: file.title,
-    visible: true,
     revision: file.id,
     updatedAt: shellTimestamp,
     relativePath: file.title,
@@ -142,13 +140,12 @@ function composerLauncherPane(): AppChromeWorkbenchPaneRef {
     paneId: COMPOSER_LAUNCHER_PANE_ID,
     kind: "launcher",
     title: "Launcher",
-    visible: true,
     revision: COMPOSER_LAUNCHER_PANE_ID,
     updatedAt: shellTimestamp,
     actions: [
       { actionId: "open_browser", label: "Browser", description: "Open a Browser Pane", enabled: true },
       { actionId: "open_editor", label: "Editor", description: "Pick a file from the FileTree to edit", enabled: true },
-      { actionId: "open_terminal", label: "Terminal", description: "Open a visible Terminal Pane", enabled: true },
+      { actionId: "open_terminal", label: "Terminal", description: "Open a Terminal Pane", enabled: true },
       { actionId: "open_diff", label: "Diff", description: "View working-tree changes (git)", enabled: true },
     ],
   };
@@ -162,7 +159,6 @@ function draftPaneRef(pane: ProductShellDraftPane): AppChromeWorkbenchPaneRef {
       paneId: pane.paneId,
       kind: "changes",
       title: pane.title,
-      visible: true,
       revision: "draft",
       updatedAt: shellTimestamp,
       cwd: pane.cwd,
@@ -172,7 +168,6 @@ function draftPaneRef(pane: ProductShellDraftPane): AppChromeWorkbenchPaneRef {
     paneId: pane.paneId,
     kind: "browser",
     title: pane.title,
-    visible: true,
     // Stable revision: a draft Browser Pane is renderer-owned (its <webview> drives
     // itself); the revision only identifies the pane, it never gates a snapshot here.
     revision: "draft",

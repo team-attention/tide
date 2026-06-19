@@ -100,7 +100,6 @@ function figmaFixtureState() {
           paneId: "pane-editor",
           kind: "editor",
           title: "workbench-markdown-preview-editor.md",
-          visible: true,
           revision: "pane-editor:rev",
           updatedAt: "2026-05-31T00:00:00.000Z",
           filePath: "/Users/you/Workspace/tide/docs_v2/specs/workbench-markdown-preview-editor.md",
@@ -133,7 +132,7 @@ function figmaFixtureState() {
   });
 }
 
-// Split-layout fixture: three visible workbench panes with split mode on, so the
+// Split-layout fixture: three open workbench panes with split mode on, so the
 // draggable binary split-tree (tiling + dividers + pane-header drag handles) can
 // be screenshotted and drag-drop exercised. Not shipped.
 // A workbench with three editor panes. `?mode=stacked` renders it as-is (the tab
@@ -145,7 +144,6 @@ function stackedMultiFixtureState(fileTreeOpen: boolean) {
     paneId,
     kind: "editor" as const,
     title,
-    visible: true,
     revision: `${paneId}:rev`,
     updatedAt: "2026-05-31T00:00:00.000Z",
     filePath: `/Users/you/Workspace/tide/${title}`,
@@ -416,7 +414,6 @@ function diffFixtureState() {
           paneId: "pane-diff",
           kind: "diff",
           title: "diff-view.ts",
-          visible: true,
           revision: "pane-diff:rev",
           updatedAt: "2026-05-31T00:00:00.000Z",
           filePath: "/Users/you/Workspace/tide/src/diff-view.ts",
@@ -448,7 +445,6 @@ function browserFixtureState() {
           paneId: "pane-browser",
           kind: "browser",
           title: "Browser",
-          visible: true,
           revision: "pane-browser:rev",
           updatedAt: "2026-05-31T00:00:00.000Z",
           url: "data:text/html,%3Cbody%20style%3D%22margin%3A0%3Bbackground%3A%23123456%3Bcolor%3A%23fff%3Bfont%3A40px%20sans-serif%3Bdisplay%3Aflex%3Balign-items%3Acenter%3Bjustify-content%3Acenter%3Bheight%3A100vh%22%3EBROWSER%20PANE%20LIVE%3C%2Fbody%3E",

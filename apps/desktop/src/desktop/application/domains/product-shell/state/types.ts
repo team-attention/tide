@@ -205,18 +205,18 @@ export interface ProductShellState {
   leftRailOpen: boolean;
   workbenchOpen: boolean;
   // The user's explicit open/closed choice for the Workbench column, per thread.
-  // Switching threads otherwise re-derives `workbenchOpen` from pane visibility, which
+  // Switching threads otherwise re-derives `workbenchOpen` from open panes, which
   // re-opened a workbench the user had closed when they returned to the thread. No
-  // entry = derive from pane visibility (the first-visit default).
+  // entry = derive from whether the thread has panes (the first-visit default).
   workbenchOpenByThreadId: Record<string, boolean>;
   // The active workbench pane is expanded to fill the window (focus mode). The
   // left rail / chat / filetree columns are hidden while on.
   workbenchFullscreen: boolean;
-  // Tab-group mode (default: one visible pane + tab strip) vs split mode (panes
+  // Tab-group mode (default: one active pane + tab strip) vs split mode (panes
   // arranged in a draggable binary split-tree). Like the Tide Terminal workspace.
   workbenchLayoutMode: "stacked" | "split";
   // The split-mode layout tree (null until entering split). Reconciled against
-  // the live visible panes on read.
+  // the live open panes on read.
   workbenchLayoutTree: WorkbenchSplitNode | null;
   fileTreeOpen: boolean;
   leftRailMenu: ProductShellLeftRailMenu | null;
@@ -294,7 +294,7 @@ export interface ProductShellState {
   draftWorkbenchPanes: ProductShellDraftPane[];
   draftActiveWorkbenchPaneId: string | null;
   // The Composer's backend Draft Thread: a real (unstarted, no-agent) thread that hosts the
-  // visible Terminal/Editor/Diff/Browser panes pre-send (their PTYs/files/webviews need a
+  // Terminal/Editor/Diff/Browser panes pre-send (their PTYs/files/webviews need a
   // backend thread). Created lazily on the first Launcher action, at which point it becomes
   // the ACTIVE thread (activeThreadId === draftThreadId) so the whole app operates on it
   // through the normal active-thread path; the chat stays the start Composer because

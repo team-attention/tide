@@ -554,7 +554,7 @@ test("left_ui_search_is_a_nav_row_until_activated", () => {
 
 test("a_launcher_only_workbench_change_does_not_force_the_workbench_open", () => {
   // Opening the FileTree emits a refresh_file_tree -> workbench.changed carrying
-  // just the (default-visible) launcher pane. That must NOT pop the Workbench open.
+  // just the default launcher pane. That must NOT pop the Workbench open.
   // The thread must be the ACTIVE one for its workbench changes to touch the view
   // (a background thread's pane change is ignored — see multi-thread-routing).
   const hydrated = applyProductShellBackendEvent(createProductShellState(), {
@@ -581,24 +581,23 @@ test("a_launcher_only_workbench_change_does_not_force_the_workbench_open", () =>
     payload: {
       threadId: "thread-wb",
       panes: [
-        { paneId: "p-launcher", kind: "launcher", title: "Workbench launcher", visible: true, revision: "1", updatedAt: "2026-06-01T00:00:00.000Z" },
+        { paneId: "p-launcher", kind: "launcher", title: "Workbench launcher", revision: "1", updatedAt: "2026-06-01T00:00:00.000Z" },
       ],
     },
   });
   assert.equal(launcherOnly.workbenchOpen, false, "launcher-only change keeps workbench closed");
 
-  // A real (non-launcher) visible pane does auto-open the workbench.
+  // A real (non-launcher) pane does auto-open the workbench.
   const withEditor = applyProductShellBackendEvent(launcherOnly, {
     kind: "workbench.changed",
     payload: {
       threadId: "thread-wb",
       panes: [
-        { paneId: "p-launcher", kind: "launcher", title: "Workbench launcher", visible: false, revision: "2", updatedAt: "2026-06-01T00:00:00.000Z" },
-        { paneId: "p-editor", kind: "editor", title: "app.ts", visible: true, revision: "2", updatedAt: "2026-06-01T00:00:00.000Z" },
+        { paneId: "p-editor", kind: "editor", title: "app.ts", revision: "2", updatedAt: "2026-06-01T00:00:00.000Z" },
       ],
     },
   });
-  assert.equal(withEditor.workbenchOpen, true, "a visible editor pane opens the workbench");
+  assert.equal(withEditor.workbenchOpen, true, "an editor pane opens the workbench");
 });
 
 test("an_existing_pane_update_does_not_reopen_a_workbench_the_user_closed", () => {
@@ -612,7 +611,7 @@ test("an_existing_pane_update_does_not_reopen_a_workbench_the_user_closed", () =
       payload: {
         threadId: "thread-workbench",
         panes: [
-          { paneId: "p-term", kind: "terminal", title: "Terminal", visible: true, revision: "1", updatedAt: "2026-06-01T00:00:00.000Z" },
+          { paneId: "p-term", kind: "terminal", title: "Terminal", revision: "1", updatedAt: "2026-06-01T00:00:00.000Z" },
         ],
       },
     },
@@ -627,7 +626,7 @@ test("an_existing_pane_update_does_not_reopen_a_workbench_the_user_closed", () =
     payload: {
       threadId: "thread-workbench",
       panes: [
-        { paneId: "p-term", kind: "terminal", title: "Terminal", visible: true, revision: "2", updatedAt: "2026-06-01T00:00:01.000Z" },
+        { paneId: "p-term", kind: "terminal", title: "Terminal", revision: "2", updatedAt: "2026-06-01T00:00:01.000Z" },
       ],
     },
   });
@@ -1163,7 +1162,6 @@ test("stacked_workbench_tab_strip_lists_every_open_pane_uncapped", () => {
     paneId: `pane-many-${index}`,
     kind: "browser" as const,
     title: `Pane ${index}`,
-    visible: true,
     revision: `pane-many-${index}:rev`,
     updatedAt: "2026-05-28T00:00:00.000Z",
     loading: false,
@@ -1217,18 +1215,9 @@ test("right_workbench_tab_actions_emit_backend_commands_and_apply_workbench_even
           paneId: "pane-thread-workbench-browser",
           kind: "browser",
           title: "Browser preview",
-          visible: true,
           revision: "pane-thread-workbench-browser:rev",
           updatedAt: "2026-05-28T00:00:00.000Z",
           loading: false,
-        },
-        {
-          paneId: "pane-thread-workbench-diff",
-          kind: "diff",
-          title: "Review diff",
-          visible: false,
-          revision: "pane-thread-workbench-diff:rev",
-          updatedAt: "2026-05-28T00:00:00.000Z",
         },
       ],
     },
@@ -1271,7 +1260,7 @@ test("opening_closed_workbench_for_active_thread_emits_open_launcher", () => {
 
 test("open_workbench_tab_strip_renders_new_pane_action", () => {
   // Spec: docs_v2/specs/app-chrome-workbench-tab-strip.md UC-6 D9
-  // thread-workbench opens with visible panes, so the Workbench is open.
+  // thread-workbench opens with panes, so the Workbench is open.
   const state = openProductShellThread(createProductShellState(), "thread-workbench");
   const html = renderProductShell(state);
   assert.match(html, /aria-label="New Pane"/);
@@ -1292,7 +1281,6 @@ test("workbench_browser_pane_renders_url_loading_and_preview", () => {
             paneId: "pane-browser",
             kind: "browser",
             title: "Browser preview",
-            visible: true,
             revision: "pane-browser:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             loading: true,
@@ -1331,7 +1319,6 @@ test("workbench_browser_pane_renders_electron_webview_for_url", () => {
             paneId: "pane-browser",
             kind: "browser",
             title: "Browser preview",
-            visible: true,
             revision: "pane-browser:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             loading: false,
@@ -1364,7 +1351,6 @@ test("product_shell_browser_webview_snapshot_emits_update_command", () => {
             paneId: "pane-browser",
             kind: "browser",
             title: "Browser preview",
-            visible: true,
             revision: "pane-browser:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             loading: true,
@@ -1414,7 +1400,6 @@ test("product_shell_browser_action_result_emits_workbench_command", () => {
             paneId: "pane-browser",
             kind: "browser",
             title: "Browser preview",
-            visible: true,
             revision: "pane-browser:action-rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             loading: false,
@@ -1477,7 +1462,6 @@ test("product_shell_browser_capture_result_emits_workbench_command", () => {
             paneId: "pane-browser",
             kind: "browser",
             title: "Browser preview",
-            visible: true,
             revision: "pane-browser:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             loading: false,
@@ -1524,7 +1508,6 @@ function editorPaneState(pane: Record<string, unknown>) {
           {
             paneId: "pane-editor",
             kind: "editor",
-            visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             ...pane,
@@ -1728,7 +1711,6 @@ test("editing_workbench_editor_pane_marks_draft_dirty", () => {
             paneId: "pane-editor",
             kind: "editor",
             title: "README.md",
-            visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             filePath: "/Users/you/Workspace/tide/README.md",
@@ -1768,7 +1750,6 @@ test("saving_workbench_editor_pane_emits_save_editor_file_command", () => {
               paneId: "pane-editor",
               kind: "editor",
               title: "README.md",
-              visible: true,
               revision: "pane-editor:rev",
               updatedAt: "2026-05-28T00:00:00.000Z",
               filePath: "/Users/you/Workspace/tide/README.md",
@@ -1816,7 +1797,6 @@ test("product_shell_go_to_definition_emits_cursor_position_command", () => {
             paneId: "pane-editor",
             kind: "editor",
             title: "app.ts",
-            visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             filePath: "/Users/you/Workspace/tide/src/app.ts",
@@ -1864,7 +1844,6 @@ test("product_shell_find_references_emits_go_to_references_command", () => {
             paneId: "pane-editor",
             kind: "editor",
             title: "app.ts",
-            visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             filePath: "/Users/you/Workspace/tide/src/app.ts",
@@ -1912,7 +1891,6 @@ test("workbench_editor_pane_renders_references_list", () => {
             paneId: "pane-editor",
             kind: "editor",
             title: "app.ts",
-            visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             filePath: "/Users/you/Workspace/tide/src/app.ts",
@@ -1958,7 +1936,6 @@ test("truncated_workbench_editor_pane_renders_read_only", () => {
             paneId: "pane-editor",
             kind: "editor",
             title: "large.md",
-            visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             filePath: "/Users/you/Workspace/tide/large.md",
@@ -1993,7 +1970,6 @@ test("workbench_diff_pane_renders_diff_metadata_and_text", () => {
             paneId: "pane-diff",
             kind: "diff",
             title: "README.md diff",
-            visible: true,
             revision: "pane-diff:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             filePath: "/Users/you/Workspace/tide/README.md",
@@ -2031,7 +2007,6 @@ test("workbench_diff_pane_renders_structured_unified_diff_lines", () => {
             paneId: "pane-diff",
             kind: "diff",
             title: "README.md diff",
-            visible: true,
             revision: "pane-diff:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             filePath: "/Users/you/Workspace/tide/README.md",
@@ -2522,7 +2497,6 @@ test("workbench_launcher_pane_renders_real_workbench_actions", () => {
             paneId: "pane-launcher",
             kind: "launcher",
             title: "Workbench launcher",
-            visible: true,
             revision: "rev-launcher",
             updatedAt: "2026-05-29T00:00:00.000Z",
             actions: [
@@ -2552,7 +2526,7 @@ test("workbench_launcher_pane_renders_real_workbench_actions", () => {
   assert.match(html, /Open a Browser Pane/);
   assert.match(html, /FileTree/);
   assert.match(html, /Show the Thread FileTree/);
-  assert.doesNotMatch(html, /No visible Workbench Pane/);
+  assert.doesNotMatch(html, /No Workbench Pane/);
 });
 
 test("product_shell_launcher_terminal_action_emits_open_terminal_command", () => {
@@ -2568,14 +2542,13 @@ test("product_shell_launcher_terminal_action_emits_open_terminal_command", () =>
             paneId: "pane-launcher",
             kind: "launcher",
             title: "Workbench launcher",
-            visible: true,
             revision: "rev-launcher",
             updatedAt: "2026-05-29T00:00:00.000Z",
             actions: [
               {
                 actionId: "open_terminal",
                 label: "Terminal",
-                description: "Open a visible Terminal Pane",
+                description: "Open a Terminal Pane",
                 enabled: true,
               },
             ],
@@ -2606,7 +2579,6 @@ test("product_shell_launcher_browser_action_emits_open_browser_command", () => {
             paneId: "pane-launcher",
             kind: "launcher",
             title: "Workbench launcher",
-            visible: true,
             revision: "rev-launcher",
             updatedAt: "2026-05-29T00:00:00.000Z",
             actions: [
@@ -2671,7 +2643,7 @@ test("composer_launcher_is_a_placeholder_resolved_into_the_browser_on_open", () 
   assert.equal(state.activeThreadId, null);
 
   // Empty composer Workbench shows the Launcher placeholder.
-  const empty = selectWorkbenchViewModel(state).appChrome.visibleWorkbenchPanes;
+  const empty = selectWorkbenchViewModel(state).appChrome.openWorkbenchPanes;
   assert.equal(empty[0]?.kind, "launcher");
 
   // Picking Browser adds a live draft pane (renderer-local, no backend command)...
@@ -2680,7 +2652,7 @@ test("composer_launcher_is_a_placeholder_resolved_into_the_browser_on_open", () 
   assert.equal(opened.state.draftWorkbenchPanes.length, 1);
   assert.equal(opened.state.draftWorkbenchPanes[0]?.kind, "browser");
   // ...and the Launcher placeholder is RESOLVED (gone): only the Browser shows.
-  const panes = selectWorkbenchViewModel(opened.state).appChrome.visibleWorkbenchPanes;
+  const panes = selectWorkbenchViewModel(opened.state).appChrome.openWorkbenchPanes;
   assert.equal(panes.length, 1);
   assert.equal(panes[0]?.kind, "browser");
 });
@@ -2716,7 +2688,6 @@ test("product_shell_launcher_editor_action_opens_in_pane_file_picker", () => {
             paneId: "pane-launcher",
             kind: "launcher",
             title: "Workbench launcher",
-            visible: true,
             revision: "rev-launcher",
             updatedAt: "2026-05-29T00:00:00.000Z",
             actions: [
@@ -3213,7 +3184,6 @@ function providerSetupTerminalPane() {
     paneId: "pane-provider-setup",
     kind: "terminal",
     title: "Provider setup: codex",
-    visible: true,
     revision: "pane-provider-setup:rev",
     updatedAt: "2026-05-28T00:00:00.000Z",
     status: "running",

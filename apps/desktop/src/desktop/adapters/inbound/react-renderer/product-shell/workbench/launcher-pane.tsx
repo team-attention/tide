@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { ExternalLink, FilePlus, FileText, FolderOpen, GitBranchPlus, Square, Terminal } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
-// Default Launcher shown when the Workbench has no visible Pane yet. Mirrors the
+// Default Launcher shown when the Workbench has no open Pane yet. Mirrors the
 // backend launcher action set so the empty Workbench is never a dead end.
 export function emptyWorkbenchLauncherPane(): NonNullable<
   ProductShellViewModel["appChrome"]["activeWorkbenchPane"]
@@ -17,7 +17,7 @@ export function emptyWorkbenchLauncherPane(): NonNullable<
     actions: [
       { actionId: "open_browser", label: "Browser", description: "Open a Browser Pane", enabled: true },
       { actionId: "open_editor", label: "Editor", description: "Pick a file from the FileTree to edit", enabled: true },
-      { actionId: "open_terminal", label: "Terminal", description: "Open a visible Terminal Pane", enabled: true },
+      { actionId: "open_terminal", label: "Terminal", description: "Open a Terminal Pane", enabled: true },
       { actionId: "open_diff", label: "Diff", description: "Available after a file edit or review target", enabled: false },
     ],
   } as NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;

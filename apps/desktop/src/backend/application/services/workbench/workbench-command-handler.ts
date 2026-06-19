@@ -75,7 +75,7 @@ export interface WorkbenchCommandHandlerDeps {
   browserCapture: BrowserCaptureCoordinator;
 }
 
-// Dispatches visible Workbench commands (open/close panes, terminal input/resize,
+// Dispatches Workbench commands (open/close panes, terminal input/resize,
 // editor save, navigation, file-tree refresh) to the pane operation collaborators
 // and WorkbenchRuntime. Field names mirror the former service so the command
 // bodies are unchanged. Extracted from thread-runtime-service.ts.
@@ -140,7 +140,6 @@ export class WorkbenchCommandHandler {
         const opened = openBrowserOutput(thread, browserData, this.idGenerator, this.clock);
         const pane = workbenchPaneById(thread.workbench, opened.pane.paneId);
         if (pane !== undefined) {
-          pane.visible = true;
           thread.workbench.activePaneId = pane.paneId;
         }
         removeLauncherPane(thread, launcherToReplace);
@@ -329,7 +328,6 @@ export class WorkbenchCommandHandler {
         }
         const pane = workbenchPaneById(thread.workbench, opened.value.pane.paneId);
         if (pane !== undefined) {
-          pane.visible = true;
           thread.workbench.activePaneId = pane.paneId;
         }
         removeLauncherPane(thread, launcherToReplace);
@@ -398,14 +396,12 @@ export class WorkbenchCommandHandler {
             paneId: this.idGenerator(),
             kind: "changes",
             title: "Changes",
-            visible: true,
             revision: this.idGenerator(),
             updatedAt: this.clock(),
             cwd: root,
           };
           thread.workbench.panes.push(pane);
         }
-        pane.visible = true;
         pane.cwd = root;
         pane.updatedAt = this.clock();
         thread.workbench.activePaneId = pane.paneId;
@@ -528,8 +524,8 @@ export class WorkbenchCommandHandler {
             "Workbench Pane target was not found.",
           );
         }
-        // PTY teardown is the command handler's job (it owns the runtime); the
-        // visible-state close + active reassignment is the shared helper.
+        // PTY teardown is the command handler's job (it owns the runtime); pane
+        // removal + active reassignment is the shared helper.
         if (pane.kind === "terminal") {
           await this.workbenchRuntime.stopTerminalPane(pane);
         }
@@ -669,7 +665,6 @@ export class WorkbenchCommandHandler {
             label: definition.location.label,
             sourcePaneId: pane.paneId,
           };
-          targetPane.visible = true;
           thread.workbench.activePaneId = targetPane.paneId;
         }
         thread.workbench.focusOwner = "workbench";
@@ -725,7 +720,6 @@ export class WorkbenchCommandHandler {
             label: location.label,
           })),
         };
-        pane.visible = true;
         pane.revision = this.idGenerator();
         pane.updatedAt = this.clock();
         thread.workbench.activePaneId = pane.paneId;

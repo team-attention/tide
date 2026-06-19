@@ -101,7 +101,7 @@ test("closing an untitled tab discards it and clears the active override", () =>
 
 test("the view-model derives an editor pane for the untitled, only in its context", () => {
   const opened = newProductShellUntitledFile(startStateWithRoot());
-  const panes = selectWorkbenchViewModel(opened).appChrome.visibleWorkbenchPanes;
+  const panes = selectWorkbenchViewModel(opened).appChrome.openWorkbenchPanes;
   const untitledPane = panes.find((pane) => pane.paneId === "untitled:1");
   assert.ok(untitledPane !== undefined, "untitled pane is shown on the start page");
   assert.equal(untitledPane?.kind, "editor");
@@ -111,7 +111,7 @@ test("the view-model derives an editor pane for the untitled, only in its contex
     ...opened,
     untitledFiles: opened.untitledFiles.map((file) => ({ ...file, threadId: "other" })),
   };
-  const panes2 = selectWorkbenchViewModel(wrongContext).appChrome.visibleWorkbenchPanes;
+  const panes2 = selectWorkbenchViewModel(wrongContext).appChrome.openWorkbenchPanes;
   assert.ok(
     panes2.every((pane) => pane.paneId !== "untitled:1"),
     "untitled bound to another context is hidden",

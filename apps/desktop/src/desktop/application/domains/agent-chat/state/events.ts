@@ -13,7 +13,7 @@ export function applyAgentChatBackendEvent(
         providerReadiness?: AgentChatProviderReadiness;
         runtimeState?: AgentRuntimeStateName;
         prompt?: AgentChatPromptState | null;
-        workbenchPanes?: { visible?: boolean }[];
+        workbenchPanes?: unknown[];
       };
       return {
         ...state,
@@ -42,7 +42,7 @@ export function applyAgentChatBackendEvent(
         workbenchOpen:
           payload.workbenchPanes === undefined
             ? state.workbenchOpen
-            : payload.workbenchPanes.some((pane) => pane.visible === true),
+            : payload.workbenchPanes.length > 0,
       };
     }
     case "agentRuntime.usageChanged": {
@@ -193,10 +193,10 @@ export function applyAgentChatBackendEvent(
       };
     }
     case "workbench.changed": {
-      const payload = event.payload as { panes?: { visible?: boolean }[] };
+      const payload = event.payload as { panes?: unknown[] };
       return {
         ...state,
-        workbenchOpen: (payload.panes ?? []).some((pane) => pane.visible === true),
+        workbenchOpen: (payload.panes ?? []).length > 0,
       };
     }
     case "contract.error": {

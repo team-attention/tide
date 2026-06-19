@@ -244,7 +244,7 @@ function observeThreadOutput(thread: ThreadRecord): TideObserveThreadOutput {
     agentId: thread.agentBinding.agentId,
     agentChatState: thread.runtimeState,
     promptActive: thread.promptState !== undefined,
-    workbenchOpen: thread.workbench.panes.some((pane) => pane.visible),
+    workbenchOpen: thread.workbench.panes.length > 0,
     availableTools: [...TIDE_MCP_WORKBENCH_TOOL_NAMES],
   };
 }
@@ -309,7 +309,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   },
   {
     name: "tide_observe_workbench",
-    description: "Observe visible Workbench Pane refs for the owning Thread without mutating state.",
+    description: "Observe Workbench Pane refs for the owning Thread without mutating state.",
     inputSchema: {
       type: "object",
       properties: {
@@ -319,7 +319,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   },
   {
     name: "tide_open_browser",
-    description: "Create, reveal, or navigate a visible Tide Browser Pane in the owning Thread Workbench.",
+    description: "Create, reveal, or navigate an open Tide Browser Pane in the owning Thread Workbench.",
     inputSchema: {
       type: "object",
       properties: {
@@ -350,7 +350,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   {
     name: "tide_act_browser",
     description:
-      "Operate a visible Tide Browser Pane like a human (hybrid). Coordinate computer-use actions move a visible cursor and drive the live page via real input events: move_to/click_at (x,y; click_at takes optional button and clickCount), scroll (x,y,deltaX,deltaY), key (keys like \"Enter\" or \"Cmd+A\"), and type (text into the focused element). Selector actions click/type_text (selector, text) are the reliability fallback. Coordinates are the Browser Pane's CSS pixels.",
+      "Operate an open Tide Browser Pane like a human (hybrid). Coordinate computer-use actions move the cursor and drive the live page via real input events: move_to/click_at (x,y; click_at takes optional button and clickCount), scroll (x,y,deltaX,deltaY), key (keys like \"Enter\" or \"Cmd+A\"), and type (text into the focused element). Selector actions click/type_text (selector, text) are the reliability fallback. Coordinates are the Browser Pane's CSS pixels.",
     inputSchema: {
       type: "object",
       properties: {
@@ -387,7 +387,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   },
   {
     name: "tide_open_file",
-    description: "Create, reveal, or refresh a visible Tide Editor Pane for a text file in the owning Thread root.",
+    description: "Create, reveal, or refresh an open Tide Editor Pane for a text file in the owning Thread root.",
     inputSchema: {
       type: "object",
       properties: {
@@ -414,7 +414,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   },
   {
     name: "tide_go_to_definition",
-    description: "Navigate from an existing Editor Pane cursor position to a visible definition Editor Pane.",
+    description: "Navigate from an existing Editor Pane cursor position to an open definition Editor Pane.",
     inputSchema: {
       type: "object",
       properties: {
@@ -427,7 +427,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   },
   {
     name: "tide_go_to_references",
-    description: "List every Thread-root use site of the symbol at an Editor Pane cursor position as a visible references list on that Pane.",
+    description: "List every Thread-root use site of the symbol at an Editor Pane cursor position as an open references list on that Pane.",
     inputSchema: {
       type: "object",
       properties: {
@@ -440,7 +440,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   },
   {
     name: "tide_open_terminal",
-    description: "Open or reveal a visible interactive Terminal Pane in the owning Thread Workbench.",
+    description: "Open or reveal an interactive Terminal Pane in the owning Thread Workbench.",
     inputSchema: {
       type: "object",
       properties: {

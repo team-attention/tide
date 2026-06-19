@@ -53,7 +53,6 @@ export function openBrowserOutput(
       title: requestedTitle ?? browserTitleFromUrl(requestedUrl),
       url: requestedUrl,
       loading: false,
-      visible: true,
       revision: idGenerator(),
       updatedAt: capturedAt,
     };
@@ -70,7 +69,6 @@ export function openBrowserOutput(
   }
 
   const urlChanged = requestedUrl !== undefined && requestedUrl !== reusablePane.url;
-  reusablePane.visible = true;
   reusablePane.title =
     requestedTitle ?? browserTitleFromUrl(requestedUrl ?? reusablePane.url);
   if (requestedUrl !== undefined) {

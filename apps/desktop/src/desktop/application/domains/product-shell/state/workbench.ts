@@ -36,10 +36,10 @@ export function toggleProductShellWorkbench(state: ProductShellState): ProductSh
   };
 }
 
-// Visible workbench pane ids, in tab order — the live set the split tree is
+// Open workbench pane ids, in tab order — the live set the split tree is
 // reconciled against.
-function workbenchVisiblePaneIds(state: ProductShellState): string[] {
-  return state.appChrome.workbenchPanes.filter((pane) => pane.visible).map((pane) => pane.paneId);
+function workbenchOpenPaneIds(state: ProductShellState): string[] {
+  return state.appChrome.workbenchPanes.map((pane) => pane.paneId);
 }
 
 // Set the workbench presentation to Stacked (one active pane + tab strip) or
@@ -56,7 +56,7 @@ export function setProductShellWorkbenchLayout(
     workbenchLayoutMode: mode,
     workbenchLayoutTree:
       mode === "split"
-        ? reconcileTree(state.workbenchLayoutTree, workbenchVisiblePaneIds(state))
+        ? reconcileTree(state.workbenchLayoutTree, workbenchOpenPaneIds(state))
         : state.workbenchLayoutTree,
   };
   if (state.activeThreadId === null) {
@@ -89,7 +89,7 @@ export function applyProductShellWorkbenchDrop(
   targetPaneId: string,
   zone: DropZone,
 ): ProductShellState {
-  const tree = reconcileTree(state.workbenchLayoutTree, workbenchVisiblePaneIds(state));
+  const tree = reconcileTree(state.workbenchLayoutTree, workbenchOpenPaneIds(state));
   if (tree === null) {
     return state;
   }
@@ -102,7 +102,7 @@ export function setProductShellWorkbenchSplitRatio(
   path: ("a" | "b")[],
   ratio: number,
 ): ProductShellState {
-  const tree = reconcileTree(state.workbenchLayoutTree, workbenchVisiblePaneIds(state));
+  const tree = reconcileTree(state.workbenchLayoutTree, workbenchOpenPaneIds(state));
   if (tree === null) {
     return state;
   }
@@ -128,8 +128,7 @@ export function toggleProductShellWorkbenchWithLauncher(
     return { state: nextState, command: null };
   }
 
-  const hasVisiblePane = state.appChrome.workbenchPanes.some((pane) => pane.visible);
-  if (hasVisiblePane) {
+  if (state.appChrome.workbenchPanes.length > 0) {
     return { state: nextState, command: null };
   }
 
@@ -245,7 +244,7 @@ export function selectProductShellLauncherAction(
     return { state, command: null };
   }
   const launcher = state.appChrome.workbenchPanes.find(
-    (pane) => pane.kind === "launcher" && pane.visible,
+    (pane) => pane.kind === "launcher",
   );
   const action = launcher?.actions?.find((candidate) => candidate.actionId === actionId);
   // The EMPTY-workbench launcher is a synthetic, frontend-only pane (no backend
@@ -776,7 +775,6 @@ export function workbenchPane(
     paneId,
     kind,
     title,
-    visible: true,
     revision: "preview-1",
     updatedAt: shellTimestamp,
   };

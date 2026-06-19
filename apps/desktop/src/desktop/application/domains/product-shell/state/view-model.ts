@@ -190,7 +190,7 @@ export const selectWorkbenchViewModel = shellSelector(
       // works on the New Thread page too).
       workbenchLayoutTree: reconcileTree(
         workbenchLayoutTree,
-        appChromeForView.workbenchPanes.filter((pane) => pane.visible).map((pane) => pane.paneId),
+        appChromeForView.workbenchPanes.map((pane) => pane.paneId),
       ),
       editorPicker: createEditorPickerView({ editorPickerFilter, fileTree } as ProductShellState),
       editorDrafts:
@@ -450,11 +450,11 @@ function buildThreadListViewModel(state: ProductShellState): ProductShellThreadL
   });
 }
 
-// Every visible agent-owned Browser Pane needs exactly one live <webview> so its
+// Every open agent-owned Browser Pane needs exactly one live <webview> so its
 // agent-scheduled actions actually execute (otherwise tide_act_browser sits `pending`
 // forever and the turn hangs). The foreground workbench hosts a webview ONLY for the
 // active thread's currently-shown pane (workbench open + that pane active); every other
-// visible Browser Pane — non-active threads, AND the active thread's panes that aren't
+// Browser Pane — non-active threads, AND the active thread's panes that aren't
 // foregrounded (workbench closed, or a different pane active) — needs an offscreen
 // webview here. The one pane already foregrounded is excluded to avoid a duplicate.
 // See docs_v2/specs/browser-pane-action-liveness.md.
@@ -466,7 +466,7 @@ export function deriveBackgroundBrowserPanes(
   return state.threads.flatMap((thread) => {
     const isActive = thread.threadId === state.activeThreadId;
     return thread.workbenchPanes
-      .filter((pane) => pane.kind === "browser" && pane.visible)
+      .filter((pane) => pane.kind === "browser")
       .filter(
         (pane) =>
           !(

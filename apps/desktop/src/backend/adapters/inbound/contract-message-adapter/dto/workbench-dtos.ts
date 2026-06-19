@@ -10,7 +10,6 @@ export function toWorkbenchPaneRefDto(
       paneId: pane.paneId,
       kind: "browser",
       title: pane.title,
-      visible: pane.visible,
       revision: pane.revision,
       updatedAt: pane.updatedAt,
       loading: pane.loading,
@@ -44,7 +43,6 @@ export function toWorkbenchPaneRefDto(
       paneId: pane.paneId,
       kind: "launcher",
       title: pane.title,
-      visible: pane.visible,
       revision: pane.revision,
       updatedAt: pane.updatedAt,
       actions: pane.actions.map((action) => ({ ...action })),
@@ -55,7 +53,6 @@ export function toWorkbenchPaneRefDto(
     paneId: pane.paneId,
     kind: pane.kind,
     title: pane.title,
-    visible: pane.visible,
     revision: pane.revision,
     updatedAt: pane.updatedAt,
   };

@@ -230,7 +230,6 @@ function browserPane(paneId: string, title: string): WorkbenchPaneRefDto {
     paneId,
     kind: "browser",
     title,
-    visible: true,
     revision: `${paneId}:rev`,
     updatedAt: later,
     url: "http://localhost:3000",
@@ -243,7 +242,6 @@ function terminalPane(paneId: string, title: string): WorkbenchPaneRefDto {
     paneId,
     kind: "terminal",
     title,
-    visible: true,
     revision: `${paneId}:rev`,
     updatedAt: later,
   };

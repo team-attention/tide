@@ -605,7 +605,7 @@ function hydrateProductShellThread(
         thread: threadSummary,
         blocks,
         runtimeState,
-        workbenchPanes: thread.workbenchPanes.filter((pane) => pane.visible),
+        workbenchPanes: thread.workbenchPanes,
       },
     });
   const appChrome = applyAppChromeBackendEvent(createAppChromeState(), {
@@ -618,7 +618,7 @@ function hydrateProductShellThread(
         launchOptions: cloneLaunchOptions(thread.launchOptions),
       },
       runtimeState,
-      workbenchPanes: thread.workbenchPanes.filter((pane) => pane.visible),
+      workbenchPanes: thread.workbenchPanes,
     },
   });
 
@@ -634,7 +634,7 @@ function hydrateProductShellThread(
     // from pane visibility on the first visit (no entry yet).
     workbenchOpen:
       state.workbenchOpenByThreadId[thread.threadId] ??
-      thread.workbenchPanes.some((pane) => pane.visible),
+      thread.workbenchPanes.length > 0,
     leftRailMenu: null,
     archiveConfirmThreadId: null,
     fileTree: null,
@@ -721,7 +721,7 @@ export function applyProductShellThreadEvent(
     // thread's refresh never touches the active view's open state.
     workbenchOpen: isActiveThread
       ? state.workbenchOpenByThreadId[threadSummary.threadId] ??
-        shellThread.workbenchPanes.some((pane) => pane.visible)
+        shellThread.workbenchPanes.length > 0
       : state.workbenchOpen,
     // Reflect the opened thread's Stacked/Split presentation (per-Thread, backend
     // owned). Only for the active thread, so a background thread.started doesn't

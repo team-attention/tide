@@ -104,7 +104,7 @@ test("composer_draft_changes_pane_renders_as_a_changes_pane_carrying_its_cwd", (
     "/repo",
   );
   const workbench = selectWorkbenchViewModel(state);
-  const pane = workbench.appChrome.visibleWorkbenchPanes.find((candidate) => candidate.kind === "changes");
+  const pane = workbench.appChrome.openWorkbenchPanes.find((candidate) => candidate.kind === "changes");
   assert.ok(pane, "expected a changes pane in the composer workbench view-model");
   assert.equal(pane?.cwd, "/repo");
   // It's the active pane (the badge click reveals it).

@@ -22,7 +22,7 @@ import { cloneFileTreeView } from "../thread/thread-runtime-clone.ts";
 // a thread root: the start (New Thread) page's file tree, file viewer/editor and
 // its save, the Cmd+Shift+F content search, and the editor's language-intelligence
 // queries. Extracted from WorkbenchCommandHandler (file-size ratchet), which keeps
-// the thread-bound visible Workbench commands.
+// the thread-bound Workbench commands.
 
 export interface ReadWorkspaceFileTreeInput {
   cwd: string;

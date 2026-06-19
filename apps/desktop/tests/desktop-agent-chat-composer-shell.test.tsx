@@ -2235,7 +2235,6 @@ function browserPane(paneId: string): WorkbenchPaneRefDto {
     paneId,
     kind: "browser",
     title: "Local preview",
-    visible: true,
     revision: "rev-1",
     updatedAt: later,
     url: "http://localhost:3000",
