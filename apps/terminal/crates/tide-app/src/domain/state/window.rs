@@ -2,9 +2,7 @@
 
 use super::focus::LayoutSide;
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) enum NotificationAuthorizationStatus {
     #[default]
     Unknown,
@@ -25,6 +23,7 @@ pub(crate) struct WindowState {
     pub pending_font_family: Option<String>,
     pub pending_font_size: Option<f32>,
     pub dark_mode: bool,
+    pub theme_palette: crate::state::settings::ThemePalettePreference,
     pub top_inset: f32,
     pub is_fullscreen: bool,
     pub pending_fullscreen_toggle: bool,
@@ -52,6 +51,7 @@ impl WindowState {
             pending_font_family: None,
             pending_font_size: None,
             dark_mode: true,
+            theme_palette: crate::state::settings::ThemePalettePreference::Tide,
             top_inset,
             is_fullscreen: false,
             pending_fullscreen_toggle: false,
@@ -80,11 +80,7 @@ impl WindowState {
     }
 
     pub fn palette(&self) -> &'static crate::theme::ThemePalette {
-        if self.dark_mode {
-            &crate::theme::DARK
-        } else {
-            &crate::theme::LIGHT
-        }
+        crate::theme::palette_for(self.dark_mode, self.theme_palette)
     }
 
     pub fn logical_size(&self) -> crate::tide_core::Size {

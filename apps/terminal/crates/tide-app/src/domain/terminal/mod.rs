@@ -29,16 +29,16 @@ use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Rgb as AnsiR
 use unicode_width::UnicodeWidthChar;
 
 mod color;
-mod graphics;
 pub mod git;
+mod graphics;
 mod grid_sync;
 mod key_input;
 mod mouse_input;
 mod urls;
 mod wheel_input;
 
-use grid_sync::*;
 use graphics::{GraphicsUpdate, TerminalGraphicsState};
+use grid_sync::*;
 pub(crate) use urls::{terminal_url_regex, trim_url_trailing};
 
 use crate::tide_core::{
@@ -66,8 +66,19 @@ pub enum ClipboardTarget {
 /// the clipboard text into the expected escape-sequence reply.
 pub type ClipboardLoadFormatter = Arc<dyn Fn(&str) -> String + Send + Sync + 'static>;
 
-/// Number of scrollback history lines to keep.
-const SCROLLBACK_LINES: usize = 10_000;
+/// Default number of scrollback history lines to keep.
+pub const DEFAULT_SCROLLBACK_LINES: usize = 10_000;
+/// Upper bound for user-configurable scrollback. This keeps accidental settings
+/// edits from forcing catastrophic grid allocation.
+pub const MAX_SCROLLBACK_LINES: usize = 200_000;
+/// Tide's current compatibility identity for child PTYs.
+///
+/// Tide intentionally advertises an established baseline instead of a
+/// Tide-specific terminfo entry until the compatibility suite proves a custom
+/// entry is worth shipping.
+pub const TERM_ENV_VALUE: &str = "xterm-256color";
+/// Truecolor capability marker exported alongside TERM.
+pub const COLORTERM_ENV_VALUE: &str = "truecolor";
 
 /// Whether agent auto-integration is enabled (wrapper PATH injection + shell integration).
 /// Explicit terminal spawn configuration — the Agent Gateway socket, agent
@@ -75,17 +86,32 @@ const SCROLLBACK_LINES: usize = 10_000;
 /// Built once in `main` (per process), owned by the terminal factory, and passed
 /// into the spawn functions. Replaces the former process-global statics so this
 /// configuration is explicit data, not ambient global state in the domain.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct TerminalSpawnConfig {
     /// Agent Gateway socket path; exported as `TIDE_TERMINAL_SOCKET` to every PTY.
     pub gateway_socket: Option<String>,
     /// Directory of agent wrapper scripts (claude, codex, …), prepended to PATH
-    /// via the shell-integration hook so wrappers shadow the real binaries.
+    /// via shell integration so wrappers shadow the real binaries.
     pub agent_wrapper_dir: Option<String>,
-    /// Directory of shell-integration files (.zshenv for the ZDOTDIR hijack).
+    /// Directory of shell-integration files. zsh is automatic through ZDOTDIR;
+    /// bash and fish can source the bundled snippets from this directory.
     pub shell_integration_dir: Option<String>,
     /// Whether agent auto-integration (wrapper + shell hook) is enabled.
     pub auto_integration: bool,
+    /// Maximum number of scrollback history lines for newly spawned terminals.
+    pub scrollback_lines: usize,
+}
+
+impl Default for TerminalSpawnConfig {
+    fn default() -> Self {
+        Self {
+            gateway_socket: None,
+            agent_wrapper_dir: None,
+            shell_integration_dir: None,
+            auto_integration: false,
+            scrollback_lines: DEFAULT_SCROLLBACK_LINES,
+        }
+    }
 }
 
 impl TerminalSpawnConfig {
@@ -98,7 +124,12 @@ impl TerminalSpawnConfig {
             agent_wrapper_dir,
             shell_integration_dir,
             auto_integration,
+            scrollback_lines: DEFAULT_SCROLLBACK_LINES,
         }
+    }
+
+    pub fn resolved_scrollback_lines(&self) -> usize {
+        self.scrollback_lines.min(MAX_SCROLLBACK_LINES)
     }
 
     /// Inject the Agent Gateway and (when auto-integration is on) the wrapper /
@@ -109,18 +140,26 @@ impl TerminalSpawnConfig {
         if let Some(socket) = &self.gateway_socket {
             env.insert(String::from("TIDE_TERMINAL_SOCKET"), socket.clone());
         }
-        // Agent wrappers: ZDOTDIR hijack + __TIDE_TERMINAL_WRAPPER_DIR env var.
+        // Agent wrappers: shell integration + __TIDE_TERMINAL_WRAPPER_DIR env var.
         // Only injected when auto-integration is enabled.
         // Direct PATH injection doesn't work on macOS because /etc/zprofile
         // runs path_helper which reconstructs PATH from scratch.
-        // Instead, ZDOTDIR points to shell-integration/ which has a .zshenv
-        // that registers a precmd hook to prepend the wrapper bin/ to PATH
-        // after all init files have run (including path_helper).
+        // For zsh, ZDOTDIR points to shell-integration/ which has a .zshenv
+        // that registers a precmd hook after all init files have run. For bash
+        // and fish, Tide exposes the same shell-integration directory so users
+        // can opt into the bundled snippets from their normal startup files.
         if self.auto_integration {
             if let Some(wrapper_dir) = &self.agent_wrapper_dir {
-                env.insert(String::from("__TIDE_TERMINAL_WRAPPER_DIR"), wrapper_dir.clone());
+                env.insert(
+                    String::from("__TIDE_TERMINAL_WRAPPER_DIR"),
+                    wrapper_dir.clone(),
+                );
             }
             if let Some(shell_dir) = &self.shell_integration_dir {
+                env.insert(
+                    String::from("TIDE_TERMINAL_SHELL_INTEGRATION_DIR"),
+                    shell_dir.clone(),
+                );
                 // Save user's original ZDOTDIR before overwriting
                 if let Ok(orig) = std::env::var("ZDOTDIR") {
                     env.insert(String::from("__TIDE_TERMINAL_ORIG_ZDOTDIR"), orig);
@@ -131,6 +170,19 @@ impl TerminalSpawnConfig {
     }
 }
 
+pub fn apply_terminal_compat_env(
+    env: &mut std::collections::HashMap<String, String>,
+    dark_mode: bool,
+) {
+    env.insert(String::from("TERM"), String::from(TERM_ENV_VALUE));
+    env.insert(String::from("COLORTERM"), String::from(COLORTERM_ENV_VALUE));
+    env.insert(String::from("PROMPT_EOL_MARK"), String::new());
+    if dark_mode {
+        env.insert(String::from("COLORFGBG"), String::from("15;0"));
+    } else {
+        env.insert(String::from("COLORFGBG"), String::from("0;15"));
+    }
+}
 
 /// Discover agent wrapper and shell-integration directories from the running
 /// `.app` bundle. Returns `(agent_wrapper_dir, shell_integration_dir)`. Looks for
@@ -232,15 +284,15 @@ pub struct Terminal {
     /// OSC 52 clipboard-read request queue (shared with listener). Only populated
     /// when `clipboard_read_allowed` is true.
     clipboard_loads: Arc<Mutex<Vec<(ClipboardTarget, ClipboardLoadFormatter)>>>,
-    /// Policy: allow OSC 52 clipboard reads. Defaults to false (secure default
-    /// matching xterm / Ghostty — a remote program must not silently exfiltrate
-    /// the clipboard).
+    /// Policy: allow OSC 52 clipboard reads. Defaults to false so a remote
+    /// program cannot silently exfiltrate the clipboard.
     clipboard_read_allowed: Arc<AtomicBool>,
     /// Terminal graphics protocol payloads queued by the PTY thread.
     graphics_events: Arc<Mutex<Vec<alacritty_terminal::event::GraphicsData>>>,
     /// Parsed, active terminal graphics placements.
     graphics: Vec<TerminalGraphic>,
     graphics_state: TerminalGraphicsState,
+    scrollback_lines: usize,
 }
 
 impl Terminal {
@@ -282,7 +334,10 @@ impl Terminal {
             cell_height,
         };
 
-        let term_size = TermDimensions::new(cols as usize, rows as usize);
+        let scrollback_lines = spawn_config
+            .map(TerminalSpawnConfig::resolved_scrollback_lines)
+            .unwrap_or(DEFAULT_SCROLLBACK_LINES);
+        let term_size = TermDimensions::new(cols as usize, rows as usize, scrollback_lines);
 
         let dirty = Arc::new(AtomicBool::new(true));
         let pty_writer = Arc::new(Mutex::new(None));
@@ -315,6 +370,7 @@ impl Terminal {
         };
 
         let mut config = TermConfig::default();
+        config.scrolling_history = scrollback_lines;
         // Allow OSC 52 copy and paste at the engine level. The actual paste
         // (clipboard read) is additionally gated by `clipboard_read_allowed`
         // (default off) in the listener — engine `OnlyCopy` would deny reads
@@ -332,14 +388,7 @@ impl Terminal {
         // Use provided cwd, or fall back to $HOME so .app bundles don't land in /
         let working_directory = cwd.or_else(|| std::env::var("HOME").ok().map(PathBuf::from));
         let mut env = std::collections::HashMap::new();
-        env.insert(String::from("TERM"), String::from("xterm-256color"));
-        env.insert(String::from("COLORTERM"), String::from("truecolor"));
-        env.insert(String::from("PROMPT_EOL_MARK"), String::new());
-        if dark_mode {
-            env.insert(String::from("COLORFGBG"), String::from("15;0"));
-        } else {
-            env.insert(String::from("COLORFGBG"), String::from("0;15"));
-        }
+        apply_terminal_compat_env(&mut env, dark_mode);
         if let Some(id) = pane_id {
             env.insert(String::from("TIDE_TERMINAL_PANE"), id.to_string());
         }
@@ -355,7 +404,10 @@ impl Terminal {
         }
         // TIDE_TERMINAL_BIN is always set (supports manual `tide` CLI usage)
         if let Ok(exe) = std::env::current_exe() {
-            env.insert(String::from("TIDE_TERMINAL_BIN"), exe.to_string_lossy().to_string());
+            env.insert(
+                String::from("TIDE_TERMINAL_BIN"),
+                exe.to_string_lossy().to_string(),
+            );
         }
         // Agent Gateway socket + (when auto-integration is on) the wrapper /
         // shell-integration env, from the explicit spawn config.
@@ -494,6 +546,7 @@ impl Terminal {
             graphics_events,
             graphics: Vec::new(),
             graphics_state: TerminalGraphicsState::default(),
+            scrollback_lines,
         })
     }
 
@@ -567,6 +620,24 @@ impl Terminal {
     pub fn set_clipboard_read_allowed(&self, allowed: bool) {
         self.clipboard_read_allowed
             .store(allowed, Ordering::Relaxed);
+    }
+
+    pub fn set_scrollback_lines(&mut self, lines: usize) {
+        let lines = lines.min(MAX_SCROLLBACK_LINES);
+        if self.scrollback_lines == lines {
+            return;
+        }
+        self.scrollback_lines = lines;
+        let mut config = TermConfig::default();
+        config.scrolling_history = lines;
+        config.osc52 = alacritty_terminal::term::Osc52::CopyPaste;
+        config.kitty_keyboard = true;
+        {
+            let mut term = self.term.lock();
+            term.set_options(config);
+        }
+        self.dirty.store(true, Ordering::Relaxed);
+        self.notify_sync_thread();
     }
 
     /// Drain pending OSC 9 notifications from the PTY thread.
@@ -1065,7 +1136,7 @@ impl TerminalBackend for Terminal {
             cell_height,
         };
 
-        let term_size = TermDimensions::new(cols as usize, rows as usize);
+        let term_size = TermDimensions::new(cols as usize, rows as usize, self.scrollback_lines);
 
         {
             let mut term = self.term.lock();

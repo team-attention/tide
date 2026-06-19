@@ -101,6 +101,7 @@ fn configure_window_app(
         gateway_info.socket_path.clone(),
         app.settings.auto_integration,
     );
+    app.terminal_spawn_config.scrollback_lines = app.settings.terminal.resolved_scrollback_lines();
     app.gateway.connected_clients_shared = gateway_info.connected_clients_shared.clone();
     app.bg.event_loop_waker = Some(combined_waker.clone());
     app.ports.file_watcher.init(Some(combined_waker));
@@ -276,6 +277,14 @@ fn main() {
     }
     if args.len() >= 2 && args[1] == "notify" {
         let exit_code = adapter::inward::cli_adapter::notify::run_notify(&args[2..]);
+        std::process::exit(exit_code);
+    }
+    if args.len() >= 2 && args[1] == "benchmark" {
+        let exit_code = adapter::inward::benchmark_adapter::run_benchmark(&args[2..]);
+        std::process::exit(exit_code);
+    }
+    if args.len() >= 2 && args[1] == "compatibility" {
+        let exit_code = adapter::inward::compatibility_adapter::run_compatibility(&args[2..]);
         std::process::exit(exit_code);
     }
 

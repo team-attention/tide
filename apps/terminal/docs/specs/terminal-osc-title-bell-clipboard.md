@@ -30,9 +30,8 @@
   system clipboard via `ClipboardPort`. `Selection` clipboard is treated as the
   same system pasteboard (macOS has no separate selection buffer).
 - **OSC 52 read**: `ClipboardLoad` is implemented end-to-end but **gated by a
-  policy flag that defaults to OFF** (matching xterm / Ghostty secure
-  defaults — a remote program must not be able to exfiltrate the clipboard
-  silently). When enabled, the system clipboard text is formatted by the
+  policy flag that defaults to OFF**. A remote program must not be able to
+  exfiltrate the clipboard silently. When enabled, the system clipboard text is formatted by the
   engine-supplied formatter and written back to the PTY. When disabled, the
   request is dropped (no response), which is the safe xterm behavior.
 

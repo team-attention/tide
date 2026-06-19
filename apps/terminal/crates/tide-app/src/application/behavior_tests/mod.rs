@@ -48,6 +48,7 @@ mod pane_close_responsiveness;
 mod pane_header_actions;
 mod pane_lifecycle;
 mod preview_scroll;
+mod product_surface;
 mod render_cache_behavior;
 mod search_behavior;
 mod session_behavior;

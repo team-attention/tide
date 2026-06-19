@@ -19,9 +19,13 @@ use crate::adapter::outward::view::header::{
 };
 use crate::adapter::outward::view::{
     integration_toggle_notification_indicator_color, pane_surface_attention_status,
+    titlebar_workspace_attention_panel_detail_text, titlebar_workspace_attention_panel_text,
+    titlebar_workspace_meta_text, titlebar_workspace_task_status_text,
     workspace_item_indicator_color, workspace_item_indicator_status, wrapped_agent_blink_time,
 };
 use crate::application::services::file_tree_service::sync_terminal_badge_runtime_context;
+use crate::pane::browser::{BrowserPane, BrowserPermissionKind, BrowserPermissionRequest};
+use crate::pane::diff::{DiffFileEntry, DiffPane};
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalContext, TerminalPane};
 use crate::state::FocusArea;
@@ -391,6 +395,438 @@ fn workspace_connected_idle_renders_an_idle_presence_dot() {
 }
 
 #[test]
+fn workspace_task_status_text_separates_attention_running_and_connected() {
+    // UC-4 BR-14: Workspace rail metadata names the task state, not just the colored indicator.
+    let mut app = test_app();
+    let (layout, first_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    let second_id = first_id + 1;
+    app.layout = layout;
+    app.focus.focused = Some(first_id);
+    app.focus.stage_focused = Some(first_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let first_terminal = TerminalPane::with_cwd(
+        first_id,
+        80,
+        24,
+        Some(PathBuf::from("/tmp/tide-needs")),
+        true,
+    )
+    .unwrap();
+    let second_terminal = TerminalPane::with_cwd(second_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(first_id, PaneKind::Terminal(first_terminal));
+    app.panes
+        .insert(second_id, PaneKind::Terminal(second_terminal));
+    app.gateway.detected_agents.insert(
+        first_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::NeedsInput),
+    );
+    app.gateway.detected_agents.insert(
+        second_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::Running),
+    );
+    app.agent_notification_snippets
+        .insert(first_id, "approval needed".to_string());
+
+    assert_eq!(
+        titlebar_workspace_task_status_text(&app, app.ws.active),
+        Some("needs input")
+    );
+    assert!(
+        titlebar_workspace_meta_text(&app, app.ws.active)
+            .starts_with("needs input - approval needed - "),
+        "workspace metadata should lead with the action state and notification detail"
+    );
+
+    app.gateway
+        .detected_agents
+        .get_mut(&first_id)
+        .unwrap()
+        .status = Some(crate::state::gateway_status::AgentStatus::Idle);
+    assert_eq!(
+        titlebar_workspace_task_status_text(&app, app.ws.active),
+        Some("finished")
+    );
+
+    app.gateway
+        .detected_agents
+        .get_mut(&first_id)
+        .unwrap()
+        .status = Some(crate::state::gateway_status::AgentStatus::Running);
+    assert_eq!(
+        titlebar_workspace_task_status_text(&app, app.ws.active),
+        Some("running")
+    );
+
+    app.gateway
+        .detected_agents
+        .get_mut(&first_id)
+        .unwrap()
+        .status = None;
+    app.gateway
+        .detected_agents
+        .get_mut(&second_id)
+        .unwrap()
+        .status = None;
+    assert_eq!(
+        titlebar_workspace_task_status_text(&app, app.ws.active),
+        Some("connected")
+    );
+}
+
+#[test]
+fn workspace_attention_panel_summarizes_unread_task_notifications() {
+    // UC-4 BR-21: Workspace rail attention panel summarizes unresolved task notifications without opening a dashboard.
+    let mut app = test_app();
+    let (active_layout, active_terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = active_layout;
+    app.focus.focused = Some(active_terminal_id);
+    app.focus.stage_focused = Some(active_terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.panes.insert(
+        active_terminal_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(active_terminal_id, 80, 24, None, true).unwrap()),
+    );
+    app.gateway.detected_agents.insert(
+        active_terminal_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::NeedsInput),
+    );
+    app.agent_notification_snippets
+        .insert(active_terminal_id, "approval needed".to_string());
+
+    let inactive_terminal_id = app.layout.alloc_id();
+    let (inactive_layout, _) =
+        crate::tide_layout::SplitLayout::with_initial_pane_id(inactive_terminal_id);
+    let mut inactive_panes = HashMap::new();
+    inactive_panes.insert(
+        inactive_terminal_id,
+        PaneKind::Terminal(
+            TerminalPane::with_cwd(inactive_terminal_id, 80, 24, None, true).unwrap(),
+        ),
+    );
+    app.ws.workspaces = vec![
+        crate::Workspace {
+            name: "Active".to_string(),
+            layout: crate::tide_layout::SplitLayout::new(),
+            focused: Some(active_terminal_id),
+            panes: HashMap::new(),
+        },
+        crate::Workspace {
+            name: "Review".to_string(),
+            layout: inactive_layout,
+            focused: Some(inactive_terminal_id),
+            panes: inactive_panes,
+        },
+    ];
+    app.ws.workspace_extras = vec![crate::WorkspaceExtras::new(), crate::WorkspaceExtras::new()];
+    app.gateway.detected_agents.insert(
+        inactive_terminal_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::Idle),
+    );
+    app.agent_notification_snippets
+        .insert(inactive_terminal_id, "tests are green".to_string());
+    app.notified_panes.insert(inactive_terminal_id);
+
+    assert_eq!(
+        titlebar_workspace_attention_panel_text(&app),
+        Some("2 need attention".to_string())
+    );
+    assert_eq!(
+        titlebar_workspace_attention_panel_detail_text(&app),
+        Some("Active: approval needed".to_string())
+    );
+
+    app.gateway
+        .detected_agents
+        .get_mut(&active_terminal_id)
+        .unwrap()
+        .status = Some(crate::state::gateway_status::AgentStatus::Running);
+    app.gateway
+        .detected_agents
+        .get_mut(&inactive_terminal_id)
+        .unwrap()
+        .status = None;
+    app.agent_notification_snippets.clear();
+    app.notified_panes.clear();
+
+    assert_eq!(
+        titlebar_workspace_attention_panel_text(&app),
+        Some("1 running".to_string())
+    );
+    assert_eq!(
+        titlebar_workspace_attention_panel_detail_text(&app),
+        Some("Active: running".to_string())
+    );
+}
+
+#[test]
+fn inactive_workspace_task_metadata_keeps_status_and_cwd_visible() {
+    // UC-4 BR-15: Inactive Workspace rows keep both agent state and terminal location visible.
+    let mut app = test_app();
+    let active_workspace = crate::Workspace {
+        name: "Active".to_string(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    };
+    let (inactive_layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    let mut inactive_terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    inactive_terminal.context.cwd = Some(PathBuf::from("/tmp/tide-finished"));
+    let mut inactive_panes = HashMap::new();
+    inactive_panes.insert(terminal_id, PaneKind::Terminal(inactive_terminal));
+    let inactive_workspace = crate::Workspace {
+        name: "Review".to_string(),
+        layout: inactive_layout,
+        focused: Some(terminal_id),
+        panes: inactive_panes,
+    };
+
+    app.ws.workspaces = vec![active_workspace, inactive_workspace];
+    app.ws.workspace_extras = vec![crate::WorkspaceExtras::new(), {
+        let mut extras = crate::WorkspaceExtras::new();
+        extras.stage_focused = Some(terminal_id);
+        extras
+    }];
+    app.ws.active = 0;
+    app.gateway.detected_agents.insert(
+        terminal_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::Idle),
+    );
+
+    assert_eq!(
+        titlebar_workspace_task_status_text(&app, 1),
+        Some("finished")
+    );
+    assert_eq!(
+        titlebar_workspace_meta_text(&app, 1),
+        "finished - /tmp/tide-finished"
+    );
+}
+
+#[test]
+fn workspace_task_metadata_includes_git_changes_context_and_cwd() {
+    // UC-4 BR-16: Workspace rail metadata includes task-local git and Context Artifact signals.
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let mut terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    terminal.context.cwd = Some(PathBuf::from("/tmp/tide-task"));
+    terminal.context.git_info = Some(GitInfo {
+        branch: "feature/workbench".to_string(),
+        status: GitStatus {
+            changed_files: 3,
+            additions: 12,
+            deletions: 4,
+        },
+    });
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    app.gateway.detected_agents.insert(
+        terminal_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::Running),
+    );
+    let artifact_id = app.context_artifacts.allocate_id();
+    app.context_artifacts.artifacts.insert(
+        artifact_id,
+        crate::state::ContextArtifact {
+            artifact_id,
+            source_pane_id: terminal_id,
+            associated_terminal_id: terminal_id,
+            pane_kind: "terminal".to_string(),
+            source_label: "Terminal".to_string(),
+            selection: None,
+            content: "test failure".to_string(),
+            comment: "inspect this failure".to_string(),
+            pinned: false,
+            deliveries: Vec::new(),
+        },
+    );
+
+    let meta = titlebar_workspace_meta_text(&app, app.ws.active);
+    let expected_prefix = "running - feature/workbench 3 changed - ctx 1 pending - ";
+    assert!(
+        meta.starts_with(expected_prefix),
+        "workspace metadata should lead with task, git, and Context Artifact signals: {meta}"
+    );
+    assert!(
+        meta.len() > expected_prefix.len(),
+        "workspace metadata should still include a cwd signal"
+    );
+}
+
+#[test]
+fn workspace_task_metadata_distinguishes_delivered_context_artifacts() {
+    // UC-4 BR-19: Workspace rail metadata distinguishes pending from delivered Context Artifacts.
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let mut terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    terminal.context.cwd = Some(PathBuf::from("/tmp/tide-task"));
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+
+    let artifact_id = app.context_artifacts.allocate_id();
+    app.context_artifacts.artifacts.insert(
+        artifact_id,
+        crate::state::ContextArtifact {
+            artifact_id,
+            source_pane_id: terminal_id,
+            associated_terminal_id: terminal_id,
+            pane_kind: "terminal".to_string(),
+            source_label: "Terminal".to_string(),
+            selection: None,
+            content: "test failure".to_string(),
+            comment: "inspect this failure".to_string(),
+            pinned: false,
+            deliveries: vec![crate::state::context_artifact::ContextArtifactDelivery {
+                sequence: 1,
+                terminal_input_injected: true,
+            }],
+        },
+    );
+
+    let meta = titlebar_workspace_meta_text(&app, app.ws.active);
+
+    assert!(
+        meta.contains("ctx 1 sent"),
+        "workspace metadata should show delivered Context Artifact state: {meta}"
+    );
+}
+
+#[test]
+fn workspace_task_metadata_reports_exited_terminal_without_agent() {
+    // UC-4 BR-17: Workspace rail metadata reports terminal exit even without a wrapped agent.
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let mut terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    terminal.context.child_dead = true;
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+
+    let meta = titlebar_workspace_meta_text(&app, app.ws.active);
+    assert!(
+        meta.starts_with("terminal exited - "),
+        "workspace metadata should expose a terminal-exit task event: {meta}"
+    );
+}
+
+#[test]
+fn workspace_task_metadata_reports_browser_attention_event() {
+    // UC-4 BR-18: Workspace rail metadata reports Browser Pane review/attention state.
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    let browser_id = app.layout.alloc_id();
+    let mut browser = BrowserPane::with_url(browser_id, "https://example.com".to_string());
+    browser.pending_permission = Some(BrowserPermissionRequest {
+        kind: BrowserPermissionKind::Camera,
+        origin: "https://example.com".to_string(),
+    });
+    app.panes.insert(browser_id, PaneKind::Browser(browser));
+    app.add_pane_to_dock(browser_id, Some(terminal_id));
+
+    let meta = titlebar_workspace_meta_text(&app, app.ws.active);
+    assert!(
+        meta.starts_with("browser permission:") && meta.contains(" - "),
+        "workspace metadata should expose Browser attention before passive metadata: {meta}"
+    );
+}
+
+#[test]
+fn workspace_task_metadata_reports_terminal_context_surface_count() {
+    // UC-4 BR-20: Workspace rail metadata makes Terminal Context Surface support panes visible.
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    let browser_id = app.layout.alloc_id();
+    app.panes.insert(
+        browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            browser_id,
+            "https://example.com".to_string(),
+        )),
+    );
+    app.add_pane_to_dock(browser_id, Some(terminal_id));
+
+    let meta = titlebar_workspace_meta_text(&app, app.ws.active);
+    assert!(
+        meta.starts_with("surface stacked 1 - "),
+        "workspace metadata should expose Terminal Context Surface mode and pane count: {meta}"
+    );
+
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&terminal_id) {
+        terminal.dock_view_mode = crate::state::ViewMode::Split;
+    }
+    let meta = titlebar_workspace_meta_text(&app, app.ws.active);
+    assert!(
+        meta.starts_with("surface split 1 - "),
+        "workspace metadata should update when Terminal Context Surface switches mode: {meta}"
+    );
+}
+
+#[test]
+fn workspace_task_metadata_reports_diff_event() {
+    // UC-4 BR-19: Workspace rail metadata reports Diff Pane review state.
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    let diff_id = app.layout.alloc_id();
+    let mut diff = DiffPane::new_empty(diff_id, PathBuf::from("/tmp/tide-diff"));
+    diff.loaded = true;
+    diff.files = vec![
+        DiffFileEntry {
+            status: "M".to_string(),
+            path: "src/main.rs".to_string(),
+            additions: 3,
+            deletions: 1,
+        },
+        DiffFileEntry {
+            status: "A".to_string(),
+            path: "src/lib.rs".to_string(),
+            additions: 8,
+            deletions: 0,
+        },
+    ];
+    app.panes.insert(diff_id, PaneKind::Diff(diff));
+    app.add_pane_to_dock(diff_id, Some(terminal_id));
+
+    let meta = titlebar_workspace_meta_text(&app, app.ws.active);
+    assert!(
+        meta.starts_with("diff 2 files - "),
+        "workspace metadata should expose Diff review state before passive metadata: {meta}"
+    );
+}
+
+#[test]
 fn editor_does_not_inherit_wrapped_agent_chrome_from_associated_terminal() {
     // UC-2 BR-5: A non-terminal Pane never inherits wrapped-agent pane chrome from its Associated Terminal.
     let mut app = test_app();
@@ -727,6 +1163,38 @@ fn active_markdown_live_preview_chrome_keeps_plain_and_comment_badges_visible() 
     assert_eq!(layout.visible_badges, 2);
     assert!(layout.title_w >= TAB_MIN_TITLE_WIDTH);
     assert_eq!(badges[0].action, Some(HeaderHitAction::MarkdownPreview));
+    assert_eq!(badges[1].action, Some(HeaderHitAction::AddComment));
+}
+
+#[test]
+fn active_browser_review_chrome_keeps_operation_and_comment_badges_visible() {
+    // UC-7 BR-25: Browser Pane tabs surface current web operation state before review/comment affordances.
+    let mut browser = BrowserPane::with_url(1, "https://example.com".to_string());
+    browser.pending_permission = Some(BrowserPermissionRequest {
+        kind: BrowserPermissionKind::Camera,
+        origin: "https://example.com".to_string(),
+    });
+
+    let mut panes = HashMap::new();
+    panes.insert(1, PaneKind::Browser(browser));
+
+    let badges = active_tab_badges(&panes, &1, true, true);
+    let badge_widths: Vec<f32> = badges
+        .iter()
+        .map(|badge| badge.text.chars().count() as f32 * 8.0 + BADGE_PADDING_H * 2.0)
+        .collect();
+    let layout = reserve_title_before_badges(
+        200.0,
+        &badge_widths,
+        shared_tab_active_width_cap(620.0, 2) - (TAB_H_PAD * 2.0 + 16.0),
+        TAB_MIN_TITLE_WIDTH,
+        4.0,
+    );
+
+    assert_eq!(layout.visible_badges, 2);
+    assert!(layout.title_w >= TAB_MIN_TITLE_WIDTH);
+    assert_eq!(badges[0].text, "permission");
+    assert_eq!(badges[0].action, None);
     assert_eq!(badges[1].action, Some(HeaderHitAction::AddComment));
 }
 

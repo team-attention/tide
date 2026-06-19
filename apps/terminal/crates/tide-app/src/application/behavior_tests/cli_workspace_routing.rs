@@ -981,10 +981,7 @@ fn cli_rename_workspace_with_empty_name_is_a_no_op() {
     assert_eq!(app.ws.workspaces[active].name, original);
 
     let result_ws = app
-        .handle_cli_command(
-            "rename-workspace",
-            json!({ "ws_index": 1, "name": "   " }),
-        )
+        .handle_cli_command("rename-workspace", json!({ "ws_index": 1, "name": "   " }))
         .expect("rename-workspace should succeed even on whitespace name");
     assert_eq!(result_ws["ws_index"], 1);
     assert_eq!(result_ws["name"], "WS1");
@@ -1003,7 +1000,10 @@ fn cli_rename_workspace_with_out_of_bounds_index_returns_error() {
         json!({ "ws_index": len, "name": "Nope" }),
     );
 
-    assert!(result.is_err(), "out-of-bounds ws_index must return an error");
+    assert!(
+        result.is_err(),
+        "out-of-bounds ws_index must return an error"
+    );
 
     let after: Vec<String> = app.ws.workspaces.iter().map(|w| w.name.clone()).collect();
     assert_eq!(before, after, "no Workspace name should change");

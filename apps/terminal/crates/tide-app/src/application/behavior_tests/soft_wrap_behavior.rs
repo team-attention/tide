@@ -12,8 +12,7 @@ fn horizontal_code_block_scroll_does_not_move_vertical_document_scroll() {
     // scroll — axis lock for the "가로 스크롤이 세로에 영향" report.
     use crate::adapter::inward::scroll_adapter::handle_scroll;
     let long = "x".repeat(200);
-    let (mut app, id, _path) =
-        app_with_markdown_editor(&format!("# H\n\n```\n{}\n```\n", long));
+    let (mut app, id, _path) = app_with_markdown_editor(&format!("# H\n\n```\n{}\n```\n", long));
     let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
     app.visual_pane_rects = vec![(id, pane_rect)];
     app.window.last_cursor_pos = crate::tide_core::Vec2::new(
@@ -66,7 +65,7 @@ fn korean_wrapped_caret_rect_lands_on_the_glyph() {
     let mut pane = EditorPane::new_empty(1);
     pane.soft_wrap = true;
     pane.editor.buffer.lines = vec!["가가가가".to_string()]; // 4 CJK glyphs, bytes 0,3,6,9
-    // Wrap at 5 cells: each width-2 glyph forces an early break, so rows are 4 cells.
+                                                             // Wrap at 5 cells: each width-2 glyph forces an early break, so rows are 4 cells.
     pane.ensure_wrap_map(5);
     assert!(pane.effective_soft_wrap());
 

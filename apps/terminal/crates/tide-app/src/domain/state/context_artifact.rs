@@ -7,6 +7,12 @@ use crate::tide_core::PaneId;
 use serde_json::{json, Value};
 
 #[derive(Clone)]
+pub(crate) struct ContextArtifactDelivery {
+    pub sequence: u64,
+    pub terminal_input_injected: bool,
+}
+
+#[derive(Clone)]
 pub(crate) struct ContextArtifact {
     pub artifact_id: u64,
     pub source_pane_id: PaneId,
@@ -17,6 +23,21 @@ pub(crate) struct ContextArtifact {
     pub content: String,
     pub comment: String,
     pub pinned: bool,
+    pub deliveries: Vec<ContextArtifactDelivery>,
+}
+
+impl ContextArtifact {
+    pub(crate) fn record_delivery(&mut self, terminal_input_injected: bool) {
+        let sequence = self
+            .deliveries
+            .last()
+            .map(|delivery| delivery.sequence.saturating_add(1))
+            .unwrap_or(1);
+        self.deliveries.push(ContextArtifactDelivery {
+            sequence,
+            terminal_input_injected,
+        });
+    }
 }
 
 pub(crate) struct ContextArtifactStore {
@@ -55,7 +76,21 @@ pub(crate) fn serialize_selection(selection: &Selection) -> Value {
     })
 }
 
+pub(crate) fn serialize_delivery(delivery: &ContextArtifactDelivery) -> Value {
+    json!({
+        "sequence": delivery.sequence,
+        "terminal_input_injected": delivery.terminal_input_injected,
+    })
+}
+
 pub(crate) fn context_artifact_json(artifact: &ContextArtifact) -> Value {
+    let deliveries: Vec<Value> = artifact.deliveries.iter().map(serialize_delivery).collect();
+    let last_delivery = artifact
+        .deliveries
+        .last()
+        .map(serialize_delivery)
+        .unwrap_or(Value::Null);
+
     json!({
         "artifact_id": artifact.artifact_id,
         "pane_id": artifact.source_pane_id,
@@ -65,6 +100,10 @@ pub(crate) fn context_artifact_json(artifact: &ContextArtifact) -> Value {
         "content": artifact.content,
         "comment": artifact.comment,
         "pinned": artifact.pinned,
+        "delivered": !artifact.deliveries.is_empty(),
+        "delivery_count": artifact.deliveries.len(),
+        "deliveries": deliveries,
+        "last_delivery": last_delivery,
         "selection": artifact.selection.as_ref().map(serialize_selection).unwrap_or(Value::Null),
     })
 }

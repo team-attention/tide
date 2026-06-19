@@ -49,7 +49,10 @@ fn test_inject_event_round_trips_and_queues_a_platform_event() {
     assert_eq!(app.injected_events.len(), 1);
     assert!(matches!(
         app.injected_events[0],
-        PlatformEvent::KeyDown { key: Key::Enter, .. }
+        PlatformEvent::KeyDown {
+            key: Key::Enter,
+            ..
+        }
     ));
 }
 

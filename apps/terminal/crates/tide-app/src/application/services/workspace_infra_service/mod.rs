@@ -978,6 +978,7 @@ mod tests {
                     content: "keep me".into(),
                     comment: "owner stays in source workspace".into(),
                     pinned: false,
+                    deliveries: Vec::new(),
                 },
             );
             id

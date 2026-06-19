@@ -142,6 +142,22 @@ pub(crate) fn region_header_anchor_pane_id(
     best.map(|(id, _)| id)
 }
 
+pub(crate) fn terminal_context_surface_header_identity_label(
+    app: &App,
+    context_pane_id: u64,
+) -> Option<String> {
+    let owner_terminal_id = app.terminal_owning(context_pane_id)?;
+    let terminal = match app.panes.get(&owner_terminal_id) {
+        Some(crate::pane::PaneKind::Terminal(terminal)) => terminal,
+        _ => return None,
+    };
+    Some(header::terminal_context_surface_identity_label(
+        &crate::ui::pane_title(&app.panes, owner_terminal_id),
+        terminal.dock_layout.all_pane_ids().len(),
+        terminal.dock_view_mode == crate::state::ViewMode::Stacked,
+    ))
+}
+
 /// Render dock background, pane borders/backgrounds, pane headers (tab bars),
 /// and browser navigation bars. Returns the computed header hit zones.
 pub(super) fn render_pane_chrome(
@@ -328,6 +344,7 @@ pub(super) fn render_pane_chrome(
         let auto_fit_active_tab = !app.interaction.tab_manual_scroll.contains(&id);
 
         if is_dock_stacked && header::dock_stacked_uses_shared_tab_bar(&dock_stacked_tabs) {
+            let surface_identity_label = terminal_context_surface_header_identity_label(app, id);
             let tab_zones = header::render_dock_stacked_tab_bar(
                 id,
                 rect,
@@ -341,6 +358,7 @@ pub(super) fn render_pane_chrome(
                 blink_time,
                 scroll_off,
                 auto_fit_active_tab,
+                surface_identity_label.as_deref(),
                 Some(
                     header::surface_view_mode_header_action(
                         header::HeaderSurfaceKind::TerminalContextSurface,
@@ -353,6 +371,8 @@ pub(super) fn render_pane_chrome(
         } else if has_dock_tab_bar {
             // Dock pane: render ONLY the tab bar (includes close/maximize)
             let tg = dock_tab_groups.get(&id).unwrap();
+            let surface_identity_label =
+                terminal_context_surface_header_identity_label(app, tg.active_pane());
             let tab_zones = header::render_dock_tab_bar(
                 id,
                 rect,
@@ -367,6 +387,7 @@ pub(super) fn render_pane_chrome(
                 blink_time,
                 scroll_off,
                 auto_fit_active_tab,
+                surface_identity_label.as_deref(),
                 if dock_header_anchor == Some(id) {
                     Some(
                         header::surface_view_mode_header_action(
@@ -437,6 +458,12 @@ pub(super) fn render_pane_chrome(
                 }
                 _ => None,
             };
+            let surface_identity_label = match surface_kind {
+                header::HeaderSurfaceKind::TerminalContextSurface => {
+                    terminal_context_surface_header_identity_label(app, id)
+                }
+                header::HeaderSurfaceKind::Stage => None,
+            };
             let zones = header::render_pane_header_inner(
                 id,
                 rect,
@@ -451,6 +478,7 @@ pub(super) fn render_pane_chrome(
                 blink_time,
                 agent_chrome_state.is_some(),
                 surface_kind,
+                surface_identity_label.as_deref(),
                 surface_view_mode_action,
             );
             all_hit_zones.extend(zones);

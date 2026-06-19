@@ -523,7 +523,11 @@ pub(crate) fn preview_selection_rects(
         }
         let visual_row = row - scroll;
         let line_width = pane.preview_line_display_width(row);
-        let col_start = if row == start.0 { start.1.min(line_width) } else { 0 };
+        let col_start = if row == start.0 {
+            start.1.min(line_width)
+        } else {
+            0
+        };
         let col_end = if row == end.0 {
             end.1.min(line_width)
         } else {

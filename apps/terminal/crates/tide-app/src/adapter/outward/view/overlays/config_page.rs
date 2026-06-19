@@ -1,5 +1,6 @@
 use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 
+use crate::state::settings::ThemePalettePreference;
 use crate::theme::*;
 use crate::App;
 use crate::AppCorePort;
@@ -22,6 +23,32 @@ pub(crate) fn config_page_theme_toggle_text(dark_mode: bool) -> &'static str {
         "Switch to Light"
     } else {
         "Switch to Dark"
+    }
+}
+
+pub(crate) fn config_page_theme_palette_status_text(
+    palette: ThemePalettePreference,
+) -> &'static str {
+    palette.display_name()
+}
+
+pub(crate) fn config_page_theme_palette_toggle_text(palette: ThemePalettePreference) -> String {
+    format!("Next: {}", palette.next().display_name())
+}
+
+pub(crate) fn config_page_osc52_read_status_text(allowed: bool) -> &'static str {
+    if allowed {
+        "Allowed"
+    } else {
+        "Blocked"
+    }
+}
+
+pub(crate) fn config_page_osc52_read_toggle_text(allowed: bool) -> &'static str {
+    if allowed {
+        "Block"
+    } else {
+        "Allow"
     }
 }
 
@@ -98,12 +125,13 @@ pub(super) fn render_config_page(
     let tab_h = CONFIG_PAGE_TAB_H;
     let tab_y = title_y + title_h + 1.0;
     let tab_text_y = tab_y + (tab_h - cell_height) / 2.0;
-    let tab_w = popup_w / 3.0;
     let tab_labels = [
         (ConfigSection::Keybindings, "Keybindings"),
         (ConfigSection::Worktree, "Worktree"),
+        (ConfigSection::Terminal, "Terminal"),
         (ConfigSection::Appearance, "Appearance"),
     ];
+    let tab_w = popup_w / tab_labels.len() as f32;
 
     let tab_clip = Rect::new(popup_x, tab_y, popup_w, tab_h);
     for (idx, (section, label)) in tab_labels.iter().enumerate() {
@@ -129,7 +157,8 @@ pub(super) fn render_config_page(
     let active_tab_idx = match page.section {
         ConfigSection::Keybindings => 0,
         ConfigSection::Worktree => 1,
-        ConfigSection::Appearance => 2,
+        ConfigSection::Terminal => 2,
+        ConfigSection::Appearance => 3,
     };
     let active_tab_x = popup_x + active_tab_idx as f32 * tab_w;
     renderer.draw_top_rect(
@@ -420,47 +449,181 @@ pub(super) fn render_config_page(
                 Rect::new(popup_x, cf_help_y, popup_w, cell_height + 4.0),
             );
         }
-        ConfigSection::Appearance => {
-            let row_y = content_top + 12.0;
-            let row_h = line_height + 8.0;
-            renderer.draw_top_rect(
-                Rect::new(
-                    popup_x + POPUP_SELECTED_INSET,
-                    row_y,
-                    popup_w - 2.0 * POPUP_SELECTED_INSET,
-                    row_h,
-                ),
-                p.popup_selected,
-            );
-
-            let item_y = row_y + (row_h - cell_height) / 2.0;
+        ConfigSection::Terminal => {
+            let input_h = cell_height + POPUP_INPUT_PADDING;
+            let selected_field = page.selected_field;
+            let selected_border = accent_color;
             let label_style = bold_style(tab_active_color);
+
+            // ── Scrollback lines ──
+            let y = content_top + 8.0;
+            let item_y = y + (line_height - cell_height) / 2.0;
             renderer.draw_top_text(
-                "Theme",
+                "Scrollback lines",
                 Vec2::new(popup_x + item_pad, item_y),
                 label_style,
-                Rect::new(popup_x + item_pad, row_y, popup_w * 0.30, row_h),
+                Rect::new(popup_x, y, popup_w, line_height),
             );
 
-            let status = config_page_theme_status_text(app.window.dark_mode);
+            let input_y = y + line_height + 4.0;
+            let input_rect = Rect::new(
+                popup_x + item_pad,
+                input_y,
+                popup_w - 2.0 * item_pad,
+                input_h,
+            );
+            renderer.draw_top_rect(
+                input_rect,
+                if page.terminal_scrollback_editing {
+                    p.popup_selected
+                } else {
+                    p.surface_bg
+                },
+            );
+            let input_border = if selected_field == 0 && !page.terminal_scrollback_editing {
+                selected_border
+            } else {
+                p.popup_border
+            };
+            draw_popup_border(renderer, input_rect, input_border);
+
+            let text_x = popup_x + item_pad + POPUP_TEXT_INSET;
+            let text_y = input_y + (input_h - cell_height) / 2.0;
+            let text_clip = Rect::new(
+                text_x,
+                input_y,
+                popup_w - 2.0 * item_pad - 2.0 * POPUP_TEXT_INSET,
+                input_h,
+            );
+            if page.terminal_scrollback_input.is_empty() && !page.terminal_scrollback_editing {
+                let muted_style = text_style(tab_inactive_color);
+                renderer.draw_top_text(
+                    &crate::tide_terminal::DEFAULT_SCROLLBACK_LINES.to_string(),
+                    Vec2::new(text_x, text_y),
+                    muted_style,
+                    text_clip,
+                );
+            } else {
+                let ts = text_style(p.tab_text_focused);
+                renderer.draw_top_text(
+                    &page.terminal_scrollback_input.text,
+                    Vec2::new(text_x, text_y),
+                    ts,
+                    text_clip,
+                );
+            }
+
+            if page.terminal_scrollback_editing {
+                let cx = text_x
+                    + visual_width(
+                        &page.terminal_scrollback_input.text
+                            [..page.terminal_scrollback_input.cursor],
+                    ) as f32
+                        * cell_size.width;
+                draw_cursor_beam(renderer, cx, text_y, cell_height, p.cursor_accent);
+            }
+
+            // ── OSC 52 read ──
+            let row_y = input_y + input_h + 16.0;
+            let row_h = line_height + 8.0;
+            if selected_field == 1 {
+                renderer.draw_top_rect(
+                    Rect::new(
+                        popup_x + POPUP_SELECTED_INSET,
+                        row_y,
+                        popup_w - 2.0 * POPUP_SELECTED_INSET,
+                        row_h,
+                    ),
+                    p.popup_selected,
+                );
+            }
+
+            let row_item_y = row_y + (row_h - cell_height) / 2.0;
+            renderer.draw_top_text(
+                "OSC 52 read",
+                Vec2::new(popup_x + item_pad, row_item_y),
+                label_style,
+                Rect::new(popup_x + item_pad, row_y, popup_w * 0.35, row_h),
+            );
+
+            let status = config_page_osc52_read_status_text(page.terminal_osc52_read);
             let status_style = text_style(p.tab_text_focused);
             renderer.draw_top_text(
                 status,
-                Vec2::new(popup_x + popup_w * 0.38, item_y),
+                Vec2::new(popup_x + popup_w * 0.44, row_item_y),
                 status_style,
-                Rect::new(popup_x + popup_w * 0.38, row_y, popup_w * 0.20, row_h),
+                Rect::new(popup_x + popup_w * 0.44, row_y, popup_w * 0.20, row_h),
             );
 
-            let action = config_page_theme_toggle_text(app.window.dark_mode);
+            let action = config_page_osc52_read_toggle_text(page.terminal_osc52_read);
             let action_w = action.len() as f32 * cell_size.width;
             let action_x = popup_x + popup_w - item_pad - action_w;
             let action_style = text_style(accent_color);
             renderer.draw_top_text(
                 action,
-                Vec2::new(action_x, item_y),
+                Vec2::new(action_x, row_item_y),
                 action_style,
                 Rect::new(action_x, row_y, action_w, row_h),
             );
+        }
+        ConfigSection::Appearance => {
+            let selected_field = page.selected_field.min(1);
+            let mode_row_y = content_top + 12.0;
+            let row_h = line_height + 8.0;
+            let label_style = bold_style(tab_active_color);
+            let rows = [
+                (
+                    "Mode",
+                    config_page_theme_status_text(app.window.dark_mode).to_string(),
+                    config_page_theme_toggle_text(app.window.dark_mode).to_string(),
+                ),
+                (
+                    "Palette",
+                    config_page_theme_palette_status_text(app.window.theme_palette).to_string(),
+                    config_page_theme_palette_toggle_text(app.window.theme_palette),
+                ),
+            ];
+
+            for (idx, (label, status, action)) in rows.iter().enumerate() {
+                let row_y = mode_row_y + idx as f32 * (row_h + 8.0);
+                if selected_field == idx {
+                    renderer.draw_top_rect(
+                        Rect::new(
+                            popup_x + POPUP_SELECTED_INSET,
+                            row_y,
+                            popup_w - 2.0 * POPUP_SELECTED_INSET,
+                            row_h,
+                        ),
+                        p.popup_selected,
+                    );
+                }
+
+                let item_y = row_y + (row_h - cell_height) / 2.0;
+                renderer.draw_top_text(
+                    label,
+                    Vec2::new(popup_x + item_pad, item_y),
+                    label_style,
+                    Rect::new(popup_x + item_pad, row_y, popup_w * 0.30, row_h),
+                );
+
+                let status_style = text_style(p.tab_text_focused);
+                renderer.draw_top_text(
+                    status,
+                    Vec2::new(popup_x + popup_w * 0.38, item_y),
+                    status_style,
+                    Rect::new(popup_x + popup_w * 0.38, row_y, popup_w * 0.24, row_h),
+                );
+
+                let action_w = action.len() as f32 * cell_size.width;
+                let action_x = popup_x + popup_w - item_pad - action_w;
+                let action_style = text_style(accent_color);
+                renderer.draw_top_text(
+                    action,
+                    Vec2::new(action_x, item_y),
+                    action_style,
+                    Rect::new(action_x, row_y, action_w, row_h),
+                );
+            }
         }
     }
 
@@ -482,7 +645,16 @@ pub(super) fn render_config_page(
                 "Esc close  Tab section  \u{2191}\u{2193} select  \u{21B5} edit"
             }
         }
-        ConfigSection::Appearance => "Esc close  Tab section  Enter toggle theme",
+        ConfigSection::Terminal => {
+            if page.terminal_scrollback_editing {
+                "\u{21B5} done  Esc cancel"
+            } else {
+                "Esc close  Tab section  \u{2191}\u{2193} select  \u{21B5} edit/toggle"
+            }
+        }
+        ConfigSection::Appearance => {
+            "Esc close  Tab section  \u{2191}\u{2193} select  \u{21B5} change"
+        }
     };
     let hint_text_w = hint_text.len() as f32 * cell_size.width;
     let hint_text_x = popup_x + (popup_w - hint_text_w) / 2.0;

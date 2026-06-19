@@ -108,6 +108,7 @@ pub struct BrowserSnapshot {
 
 pub const BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES: usize = 128 * 1024;
 pub const BROWSER_SNAPSHOT_HISTORY_LIMIT: usize = 2;
+pub const BROWSER_REVIEW_HISTORY_LIMIT: usize = 6;
 pub const BROWSER_PAGE_MAP_REGION_LIMIT: usize = 30;
 pub const BROWSER_PAGE_MAP_INTERACTABLE_LIMIT: usize = 80;
 pub const BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES: usize = 160;
@@ -135,6 +136,23 @@ fn automation_cursor_motion_duration_ms(from: (f64, f64), to: (f64, f64)) -> u64
         BROWSER_AUTOMATION_CURSOR_MIN_MOTION_MS,
         BROWSER_AUTOMATION_CURSOR_MAX_MOTION_MS,
     )
+}
+
+fn browser_external_handoff_record(
+    reason: Option<&str>,
+    url: Option<&str>,
+) -> BrowserExternalHandoff {
+    BrowserExternalHandoff {
+        reason: reason
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("external_handoff")
+            .to_string(),
+        url: url
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+    }
 }
 
 /// One retained BrowserSnapshot anchor for bounded diff_since operations.
@@ -198,8 +216,10 @@ impl BrowserPageMap {
     /// the domain — the event-loop adapter just hands the JSON over.)
     pub(crate) fn from_bridge_json(value: Option<&serde_json::Value>) -> Option<Self> {
         let value = value?;
-        let regions =
-            parse_page_elements(value.get("regions").and_then(|v| v.as_array()), BrowserPageElementKind::Region);
+        let regions = parse_page_elements(
+            value.get("regions").and_then(|v| v.as_array()),
+            BrowserPageElementKind::Region,
+        );
         let interactables = parse_page_elements(
             value.get("interactables").and_then(|v| v.as_array()),
             BrowserPageElementKind::Interactable,
@@ -252,13 +272,37 @@ fn parse_page_element(
             .and_then(|v| v.as_str())
             .map(str::to_string)
             .filter(|s| !s.trim().is_empty()),
-        tag: value.get("tag").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        label: value.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        text: value.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        value: value.get("value").and_then(|v| v.as_str()).map(str::to_string),
-        placeholder: value.get("placeholder").and_then(|v| v.as_str()).map(str::to_string),
-        action: value.get("action").and_then(|v| v.as_str()).map(str::to_string),
-        disabled: value.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false),
+        tag: value
+            .get("tag")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        label: value
+            .get("label")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        text: value
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        value: value
+            .get("value")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        placeholder: value
+            .get("placeholder")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        action: value
+            .get("action")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        disabled: value
+            .get("disabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         rect,
     })
 }
@@ -298,6 +342,23 @@ pub struct BrowserPaneScreenshot {
     pub device_scale: f64,
     /// Browser Pane Generation at capture time.
     pub generation: u64,
+}
+
+/// Bounded review/comment record created from Browser Pane Context Artifacts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserReviewHistoryEntry {
+    pub artifact_id: u64,
+    pub comment: String,
+    pub source_label: String,
+    pub delivered: bool,
+    pub delivery_count: usize,
+}
+
+/// Last explicit handoff from Tide Browser Pane Runtime to an external browser.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserExternalHandoff {
+    pub reason: String,
+    pub url: Option<String>,
 }
 
 /// Wrapper-managed visual control state for an actively driven Browser Pane.
@@ -349,6 +410,8 @@ pub struct BrowserPane {
     pub page_map: Option<BrowserPageMap>,
     /// Bounded in-memory BrowserSnapshot history for read/find/diff tools.
     snapshot_history: Vec<BrowserSnapshotHistoryEntry>,
+    /// Bounded in-memory Browser review/comment history for visible collaboration loops.
+    review_history: Vec<BrowserReviewHistoryEntry>,
     /// Latest page selection snapshot captured from the WKWebView bridge.
     pub page_selection: Option<BrowserSelectionSnapshot>,
     /// Visible Browser Automation Cursor state for agent-driven Browser Pane actions.
@@ -380,6 +443,8 @@ pub struct BrowserPane {
     /// BR-14: Adapter consumes this to call the completion handler, then clears it.
     /// BR-15: Scoped to requesting Pane only.
     pub certificate_decision: Option<BrowserCertificateDecision>,
+    /// Most recent explicit external browser handoff for MCP-visible Browser Runtime Router state.
+    last_external_handoff: Option<BrowserExternalHandoff>,
 
     // --- Render Pane fields (Phase 3: Generative UI) ---
     /// Whether this pane is in render mode (agent-provided HTML via loadHTMLString).
@@ -424,6 +489,7 @@ impl BrowserPane {
             page_snapshot: None,
             page_map: None,
             snapshot_history: Vec::new(),
+            review_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
             agent_screenshot: None,
@@ -436,6 +502,7 @@ impl BrowserPane {
             permission_decision: None,
             pending_certificate_error: None,
             certificate_decision: None,
+            last_external_handoff: None,
             render_mode: false,
             render_title: None,
             render_html: None,
@@ -469,6 +536,7 @@ impl BrowserPane {
             page_snapshot: None,
             page_map: None,
             snapshot_history: Vec::new(),
+            review_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
             agent_screenshot: None,
@@ -481,6 +549,7 @@ impl BrowserPane {
             permission_decision: None,
             pending_certificate_error: None,
             certificate_decision: None,
+            last_external_handoff: None,
             render_mode: false,
             render_title: None,
             render_html: None,
@@ -514,6 +583,7 @@ impl BrowserPane {
             page_snapshot: None,
             page_map: None,
             snapshot_history: Vec::new(),
+            review_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
             agent_screenshot: None,
@@ -526,6 +596,7 @@ impl BrowserPane {
             permission_decision: None,
             pending_certificate_error: None,
             certificate_decision: None,
+            last_external_handoff: None,
             render_mode: true,
             render_title: Some(title),
             render_html: Some(html),
@@ -558,6 +629,7 @@ impl BrowserPane {
             page_snapshot: None,
             page_map: None,
             snapshot_history: Vec::new(),
+            review_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
             agent_screenshot: None,
@@ -570,6 +642,7 @@ impl BrowserPane {
             permission_decision: None,
             pending_certificate_error: None,
             certificate_decision: None,
+            last_external_handoff: None,
             render_mode: true,
             render_title: Some(title),
             render_html: None,
@@ -622,6 +695,7 @@ impl BrowserPane {
         self.permission_decision = None; // BR-12: clear on navigation
         self.pending_certificate_error = None; // BR-13: clear on navigation
         self.certificate_decision = None; // BR-14: clear on navigation
+        self.last_external_handoff = None;
         self.selection_bridge_installed = false;
         self.clear_page_snapshot();
         self.clear_page_selection();
@@ -782,11 +856,13 @@ impl BrowserPane {
         self.permission_decision = None;
         self.pending_certificate_error = None;
         self.certificate_decision = None;
+        self.last_external_handoff = None;
         self.context_menu = None;
         self.page_selection = None;
         self.page_snapshot = None;
         self.page_map = None;
         self.snapshot_history.clear();
+        self.review_history.clear();
         self.search = None;
         self.agent_browser_control_mode = None;
         self.agent_observed_generation = None;
@@ -969,10 +1045,11 @@ impl BrowserPane {
 
     /// Apply an explicit external handoff for a Browser Pane flow that Tide
     /// cannot complete in-app in this pass, such as a download fallback.
-    pub fn apply_external_handoff(&mut self, url: Option<&str>) {
+    pub fn apply_external_handoff(&mut self, reason: Option<&str>, url: Option<&str>) {
         let keep_distinct_draft = self.has_distinct_url_draft();
+        let handoff = browser_external_handoff_record(reason, url);
 
-        if let Some(url) = url.filter(|s| !s.is_empty()) {
+        if let Some(url) = handoff.url.as_deref() {
             self.url = url.to_string();
             if !keep_distinct_draft {
                 self.url_input = self.url.clone();
@@ -980,10 +1057,21 @@ impl BrowserPane {
             }
         }
 
+        self.last_external_handoff = Some(handoff);
         self.loading = false;
         self.selection_bridge_installed = false;
         self.clear_page_snapshot();
         self.clear_page_selection();
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Record a user-requested external handoff without mutating the in-app page state.
+    pub fn record_external_handoff(&mut self, reason: Option<&str>, url: Option<&str>) {
+        let handoff = browser_external_handoff_record(reason, url);
+        if self.last_external_handoff.as_ref() == Some(&handoff) {
+            return;
+        }
+        self.last_external_handoff = Some(handoff);
         self.generation = self.generation.wrapping_add(1);
     }
 
@@ -997,6 +1085,7 @@ impl BrowserPane {
 
         let previous_committed = self.url.clone();
         self.url = current.to_string();
+        self.last_external_handoff = None;
         self.selection_bridge_installed = false;
         self.clear_page_snapshot();
         self.clear_page_selection();
@@ -1129,6 +1218,60 @@ impl BrowserPane {
 
     pub fn snapshot_history(&self) -> &[BrowserSnapshotHistoryEntry] {
         &self.snapshot_history
+    }
+
+    pub fn review_history(&self) -> &[BrowserReviewHistoryEntry] {
+        &self.review_history
+    }
+
+    pub fn latest_review(&self) -> Option<&BrowserReviewHistoryEntry> {
+        self.review_history.last()
+    }
+
+    pub fn last_external_handoff(&self) -> Option<&BrowserExternalHandoff> {
+        self.last_external_handoff.as_ref()
+    }
+
+    pub fn record_review_artifact(
+        &mut self,
+        artifact_id: u64,
+        comment: String,
+        source_label: String,
+        delivery_count: usize,
+    ) {
+        let delivered = delivery_count > 0;
+        if let Some(entry) = self
+            .review_history
+            .iter_mut()
+            .find(|entry| entry.artifact_id == artifact_id)
+        {
+            if entry.comment == comment
+                && entry.source_label == source_label
+                && entry.delivered == delivered
+                && entry.delivery_count == delivery_count
+            {
+                return;
+            }
+            entry.comment = comment;
+            entry.source_label = source_label;
+            entry.delivered = delivered;
+            entry.delivery_count = delivery_count;
+            self.generation = self.generation.wrapping_add(1);
+            return;
+        }
+
+        self.review_history.push(BrowserReviewHistoryEntry {
+            artifact_id,
+            comment,
+            source_label,
+            delivered,
+            delivery_count,
+        });
+        if self.review_history.len() > BROWSER_REVIEW_HISTORY_LIMIT {
+            let overflow = self.review_history.len() - BROWSER_REVIEW_HISTORY_LIMIT;
+            self.review_history.drain(0..overflow);
+        }
+        self.generation = self.generation.wrapping_add(1);
     }
 
     pub fn snapshot_history_entry(&self, generation: u64) -> Option<&BrowserSnapshotHistoryEntry> {
@@ -1646,4 +1789,3 @@ fn normalize_navigation_url(url: &str) -> String {
         format!("https://{}", url)
     }
 }
-

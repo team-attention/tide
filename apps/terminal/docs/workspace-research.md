@@ -25,7 +25,7 @@ Tide Window → [Workspace rail | Stage | Terminal Context Surface | FileTree Vi
 
 ```
 Terminal ◄──────────────────────────────────────────► IDE
-Ghostty  Rio  Kitty  tmux  Zellij  iTerm2  WezTerm  Wave  Warp
+Native terminal  Kitty  tmux  Zellij  iTerm2  WezTerm  Wave  Warp
                                       ↑
                                     Tide (current)
 ```
@@ -34,14 +34,14 @@ Ghostty  Rio  Kitty  tmux  Zellij  iTerm2  WezTerm  Wave  Warp
 
 ## Analysis by Approach
 
-### 1. "Just Do Terminals Well" — Ghostty, Rio
+### 1. "Just Do Terminals Well" — Native Terminal Apps
 
 **Model:** Window > Tab > Split
 
 - Only saves layout (window position, tab structure, split direction).
 - No session/workspace concept.
-- Ghostty: `window-save-state` option (layout only, no scrollback preservation).
-- Rio: No session persistence at all.
+- Some native terminal apps persist layout only, without scrollback preservation.
+- Others do not persist sessions at all.
 
 **Pros:** Clean. Focused on a single role.
 **Cons:** Doesn't solve the context-switching problem. Delegates to tmux/zellij.
@@ -248,7 +248,7 @@ end)
 
 | App | Hierarchy | Session Persist | Project Isolation | Auto Save | Terminal Feel |
 |---|---|---|---|---|---|
-| Ghostty | Window > Tab > Split | Layout only | None | Yes (layout) | ★★★★★ |
+| Native terminal | Window > Tab > Split | Layout only | None | Yes (layout) | ★★★★★ |
 | Rio | Window > Tab > Split | None | None | No | ★★★★★ |
 | Kitty | OS Window > Tab > Window | Session file (manual) | OS Window = project | No | ★★★★☆ |
 | tmux | Session > Window > Pane | Plugin-dependent | Session = project | No | ★★★★☆ |
@@ -282,7 +282,7 @@ end)
 - SSH sessions survive network disconnects / app restarts
 - `wsh` CLI for controlling GUI from within the terminal
 
-### Ghostty — Undo Close
+### Native Terminal UX — Undo Close
 - Can undo split/tab close within a timeout
 - Small but meaningful UX innovation
 

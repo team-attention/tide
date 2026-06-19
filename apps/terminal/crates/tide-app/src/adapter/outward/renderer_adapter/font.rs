@@ -78,9 +78,11 @@ impl WgpuRenderer {
         italic: bool,
     ) -> bool {
         let mut font_data = None;
-        self.font_system.db().with_face_data(face_id, |data, index| {
-            font_data = Some((data.to_vec(), index));
-        });
+        self.font_system
+            .db()
+            .with_face_data(face_id, |data, index| {
+                font_data = Some((data.to_vec(), index));
+            });
         if let Some((data, index)) = font_data {
             self.msdf_font_store
                 .register_font(family_key, bold, italic, data, index);
@@ -288,19 +290,13 @@ impl WgpuRenderer {
                 &[(false, false)]
             };
             for &(fb_bold, fb_italic) in fallback_attempts {
-                let region =
-                    self.try_generate_msdf(character, fb_bold, fb_italic, &primary_family);
+                let region = self.try_generate_msdf(character, fb_bold, fb_italic, &primary_family);
                 if !region.is_empty() {
                     self.atlas.cache.insert(key, region);
                     return region;
                 }
                 if primary_family != "Monospace" {
-                    let region = self.try_generate_msdf(
-                        character,
-                        fb_bold,
-                        fb_italic,
-                        "Monospace",
-                    );
+                    let region = self.try_generate_msdf(character, fb_bold, fb_italic, "Monospace");
                     if !region.is_empty() {
                         self.atlas.cache.insert(key, region);
                         return region;
@@ -483,8 +479,11 @@ impl WgpuRenderer {
             return;
         }
         self.font_family = family.to_string();
-        self.cell_size_table =
-            Self::precompute_cell_sizes(&mut self.font_system, self.scale_factor, &self.font_family);
+        self.cell_size_table = Self::precompute_cell_sizes(
+            &mut self.font_system,
+            self.scale_factor,
+            &self.font_family,
+        );
         self.cached_cell_size = self.lookup_cell_size(self.base_font_size);
         self.atlas.reset();
         self.invalidate_all_pane_caches();

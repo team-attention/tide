@@ -715,7 +715,11 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                 }
             };
 
+            self.settings.terminal.osc52_read = page.terminal_osc52_read;
+            self.settings.terminal.scrollback_lines = page.terminal_scrollback_lines();
+
             self.ports.persistence.save_settings(&self.settings);
+            self.apply_loaded_user_settings();
             self.pending_platform_commands
                 .push(crate::tide_platform::WindowCommand::BroadcastSettingsChanged);
 
@@ -961,10 +965,12 @@ impl App {
             .map(|v| v.join(", "))
             .unwrap_or_default();
 
-        self.modal.config_page = Some(crate::ConfigPageState::new(
+        self.modal.config_page = Some(crate::ConfigPageState::with_terminal_settings(
             bindings,
             worktree_pattern,
             copy_files,
+            self.settings.terminal.osc52_read,
+            self.settings.terminal.resolved_scrollback_lines(),
         ));
         self.cache.invalidate_chrome();
     }

@@ -138,7 +138,10 @@ fn subsequence_highlight_mask(lower_text: &[char], query_lower: &str) -> Vec<boo
         for start in 0..=(lower_text.len() - qchars.len()) {
             if lower_text[start..start + qchars.len()] == qchars[..] {
                 let boundary = start == 0
-                    || matches!(lower_text[start - 1], ' ' | '_' | '-' | '.' | '/' | ':' | '<' | '(');
+                    || matches!(
+                        lower_text[start - 1],
+                        ' ' | '_' | '-' | '.' | '/' | ':' | '<' | '('
+                    );
                 let rank = if boundary { 0u8 } else { 1u8 };
                 if best.map_or(true, |(r, _)| rank < r) {
                     best = Some((rank, start));
@@ -231,7 +234,10 @@ mod tests {
         let mask = subsequence_highlight_mask(&text, "on");
         // index 7,8 = the standalone "on" (after the space).
         assert!(mask[7] && mask[8], "boundary 'on' highlighted");
-        assert!(!mask[4] && !mask[5], "the 'on' inside 'button' not highlighted");
+        assert!(
+            !mask[4] && !mask[5],
+            "the 'on' inside 'button' not highlighted"
+        );
     }
 }
 
@@ -463,7 +469,11 @@ pub(super) fn render_file_finder(
             list_clip,
         );
 
-        let primary_color = if is_selected { p.tab_text_focused } else { primary_dim };
+        let primary_color = if is_selected {
+            p.tab_text_focused
+        } else {
+            primary_dim
+        };
 
         match finder.mode {
             crate::state::FileFinderMode::Files => {
@@ -485,8 +495,7 @@ pub(super) fn render_file_finder(
                     );
                     cx += visual_width(&dir_disp) as f32 * cell_w;
                 }
-                let name_disp =
-                    ellipsize_end(name, avail.saturating_sub(visual_width(&dir_disp)));
+                let name_disp = ellipsize_end(name, avail.saturating_sub(visual_width(&dir_disp)));
                 let name_style = TextStyle {
                     foreground: primary_color,
                     background: None,
@@ -547,12 +556,7 @@ pub(super) fn render_file_finder(
         };
         if !label.is_empty() {
             let ty = list_top + (line_height - cell_height) / 2.0;
-            renderer.draw_top_text(
-                label,
-                Vec2::new(text_x, ty),
-                text_style(dir_dim),
-                list_clip,
-            );
+            renderer.draw_top_text(label, Vec2::new(text_x, ty), text_style(dir_dim), list_clip);
         }
     }
 

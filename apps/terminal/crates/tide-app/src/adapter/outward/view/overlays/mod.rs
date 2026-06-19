@@ -4,6 +4,7 @@ mod context_comment;
 mod context_menu;
 mod file_finder;
 pub(crate) mod git_switcher;
+mod onboarding;
 mod save_dialog;
 mod search_bar;
 
@@ -53,7 +54,12 @@ pub(super) fn draw_input_with_preedit(
             Rect::new(preedit_x, pos.y, preedit_w, cell_size.height),
             preedit_bg,
         );
-        renderer.draw_top_text(preedit, Vec2::new(preedit_x, pos.y), text_style(preedit_fg), clip);
+        renderer.draw_top_text(
+            preedit,
+            Vec2::new(preedit_x, pos.y),
+            text_style(preedit_fg),
+            clip,
+        );
         renderer.draw_top_rect(
             Rect::new(preedit_x, pos.y + cell_size.height - 1.0, preedit_w, 1.0),
             preedit_fg,
@@ -85,7 +91,11 @@ pub(crate) fn search_bar_cursor_advance_cells(query: &str, cursor: usize, preedi
 }
 
 #[cfg(test)]
-pub(crate) use config_page::{config_page_theme_status_text, config_page_theme_toggle_text};
+pub(crate) use config_page::{
+    config_page_osc52_read_status_text, config_page_osc52_read_toggle_text,
+    config_page_theme_palette_status_text, config_page_theme_palette_toggle_text,
+    config_page_theme_status_text, config_page_theme_toggle_text,
+};
 pub(crate) use context_comment::context_comment_composer_cursor_area;
 #[cfg(test)]
 pub(crate) use context_comment::{composer_input_rect, composer_popup_rect};
@@ -203,6 +213,7 @@ pub(crate) fn render_overlays(
     git_switcher::render_git_switcher(app, renderer, p);
     context_menu::render_context_menu(app, renderer, p);
     context_comment::render_context_comment_composer(app, renderer, p);
+    onboarding::render_first_run_guide(app, renderer, p);
     config_page::render_config_page(app, renderer, p);
 }
 

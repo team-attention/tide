@@ -233,11 +233,33 @@ pub(super) fn handle_search_bar_key(
             ctx.set_search_focus(None);
         }
         Key::Enter => {
-            if modifiers.shift {
+            if crate::adapter::inward::search_adapter::search_bar_is_editor_replacement_focused(
+                ctx,
+                search_pane_id,
+            ) {
+                if modifiers.meta {
+                    crate::adapter::inward::search_adapter::search_bar_replace_all(
+                        ctx,
+                        search_pane_id,
+                    );
+                } else {
+                    crate::adapter::inward::search_adapter::search_bar_replace_current(
+                        ctx,
+                        search_pane_id,
+                    );
+                }
+            } else if modifiers.shift {
                 crate::adapter::inward::search_adapter::search_prev_match(ctx, search_pane_id);
             } else {
                 crate::adapter::inward::search_adapter::search_next_match(ctx, search_pane_id);
             }
+        }
+        Key::Tab => {
+            crate::adapter::inward::search_adapter::search_bar_toggle_replace_field(
+                ctx,
+                search_pane_id,
+                modifiers.shift,
+            );
         }
         Key::Backspace => {
             crate::adapter::inward::search_adapter::search_bar_backspace(ctx, search_pane_id);

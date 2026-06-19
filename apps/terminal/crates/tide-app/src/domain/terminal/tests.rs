@@ -14,25 +14,103 @@ mod tests {
         term
     }
 
+    #[test]
+    fn terminal_product_compatibility_smoke_covers_core_matrix_baseline() {
+        // Product Standard: docs/product-standard.md
+        // Terminal Capabilities: docs/terminal-capabilities.md
+        //
+        // This is intentionally a broad smoke, not a replacement for the
+        // narrower protocol tests below. It keeps the public capability matrix
+        // anchored to one repeatable domain test.
+        let mut terminal = Terminal::new(80, 24).expect("terminal backend");
+        terminal.bench_sync_grid();
+        terminal.bench_write_to_term(
+            b"\x1b[2J\x1b[Hsmoke https://example.test\n\
+              \x1b[31mred\x1b[0m\n\
+              \x1b]8;id=docs;https://target.example/docs\x07link\x1b]8;;\x07\n\
+              \x07\x1b]2;Tide Smoke\x07\x1b]52;c;T0s=\x07",
+        );
+        terminal.bench_sync_grid();
+        terminal.bench_sync_grid();
+
+        assert!(
+            !terminal.search_buffer("smoke").is_empty(),
+            "terminal search should find visible text"
+        );
+        assert!(
+            terminal.url_ranges().iter().any(|row| !row.is_empty()),
+            "plain URL detection should report at least one range"
+        );
+        assert!(
+            terminal.hyperlink_ranges().iter().any(|row| row
+                .iter()
+                .any(|(_, _, uri)| uri == "https://target.example/docs")),
+            "OSC 8 hyperlink target should be preserved"
+        );
+        assert!(
+            terminal
+                .grid()
+                .cells
+                .iter()
+                .flatten()
+                .any(|cell| cell.character == 'r'
+                    && cell.style.foreground
+                        == Terminal::named_color_to_rgb(true, NamedColor::Red)),
+            "ANSI red text should survive grid sync"
+        );
+        assert_eq!(
+            terminal.drain_title(),
+            Some(TitleChange::Set("Tide Smoke".to_string()))
+        );
+        assert!(terminal.take_bell(), "BEL should set the bell flag");
+        assert_eq!(
+            terminal.drain_clipboard_writes(),
+            vec![(ClipboardTarget::Clipboard, "OK".to_string())]
+        );
+
+        let interactive = term_with_modes(&["\x1b[?1000h", "\x1b[?1006h", "\x1b[=1u"]);
+        assert_eq!(
+            interactive.mouse_press_to_bytes(MouseButton::Left, &Modifiers::default(), 4, 9),
+            Some(b"\x1b[<0;5;10M".to_vec())
+        );
+        assert_eq!(
+            interactive.wheel_to_bytes(true, 1, 4, 9),
+            Some(b"\x1b[<64;5;10M".to_vec())
+        );
+        assert_eq!(
+            interactive.key_event_to_bytes(&Key::Enter, &Modifiers::default()),
+            b"\x1b[13u".to_vec()
+        );
+    }
+
     // UC-1 BR-1: alt screen + alt scroll, wheel up -> Cursor Up
     #[test]
     fn wheel_up_on_alt_screen_sends_cursor_up() {
         let t = term_with_modes(&["\x1b[?1049h", "\x1b[?1007h"]);
-        assert_eq!(t.wheel_to_bytes(true, 1, 0, 0), Some(vec![0x1b, b'[', b'A']));
+        assert_eq!(
+            t.wheel_to_bytes(true, 1, 0, 0),
+            Some(vec![0x1b, b'[', b'A'])
+        );
     }
 
     // UC-1 BR-1: alt screen + alt scroll, wheel down -> Cursor Down
     #[test]
     fn wheel_down_on_alt_screen_sends_cursor_down() {
         let t = term_with_modes(&["\x1b[?1049h", "\x1b[?1007h"]);
-        assert_eq!(t.wheel_to_bytes(false, 1, 0, 0), Some(vec![0x1b, b'[', b'B']));
+        assert_eq!(
+            t.wheel_to_bytes(false, 1, 0, 0),
+            Some(vec![0x1b, b'[', b'B'])
+        );
     }
 
     // UC-1 BR-2: APP_CURSOR (DECCKM) selects SS3 (ESC O) over CSI (ESC [)
     #[test]
     fn wheel_on_alt_screen_with_app_cursor_uses_ss3() {
         let t = term_with_modes(&["\x1b[?1049h", "\x1b[?1007h", "\x1b[?1h"]);
-        assert_eq!(t.wheel_to_bytes(true, 1, 0, 0), Some(vec![0x1b, b'O', b'A']));
+        assert_eq!(
+            t.wheel_to_bytes(true, 1, 0, 0),
+            Some(vec![0x1b, b'O', b'A'])
+        );
     }
 
     // UC-1 BR-3: line count repeats the arrow sequence
@@ -49,14 +127,20 @@ mod tests {
     #[test]
     fn mouse_reporting_takes_priority_over_alternate_scroll() {
         let t = term_with_modes(&["\x1b[?1049h", "\x1b[?1007h", "\x1b[?1000h", "\x1b[?1006h"]);
-        assert_eq!(t.wheel_to_bytes(true, 1, 4, 9), Some(b"\x1b[<64;5;10M".to_vec()));
+        assert_eq!(
+            t.wheel_to_bytes(true, 1, 4, 9),
+            Some(b"\x1b[<64;5;10M".to_vec())
+        );
     }
 
     // UC-2 BR-5: SGR mouse encoding
     #[test]
     fn wheel_with_sgr_mouse_uses_sgr_encoding() {
         let t = term_with_modes(&["\x1b[?1000h", "\x1b[?1006h"]);
-        assert_eq!(t.wheel_to_bytes(false, 1, 0, 0), Some(b"\x1b[<65;1;1M".to_vec()));
+        assert_eq!(
+            t.wheel_to_bytes(false, 1, 0, 0),
+            Some(b"\x1b[<65;1;1M".to_vec())
+        );
     }
 
     // UC-2 BR-5: legacy X10 mouse encoding (no SGR)
@@ -336,7 +420,9 @@ mod tests {
     fn osc8_hyperlink_ranges_expose_target_uri() {
         let mut t = Terminal::new(80, 24).expect("terminal backend");
         t.bench_sync_grid();
-        t.bench_write_to_term(b"\x1b[2J\x1b[H\x1b]8;id=docs;https://target.example/docs\x07label\x1b]8;;\x07");
+        t.bench_write_to_term(
+            b"\x1b[2J\x1b[H\x1b]8;id=docs;https://target.example/docs\x07label\x1b]8;;\x07",
+        );
         t.bench_sync_grid();
         t.bench_sync_grid();
 
@@ -344,7 +430,14 @@ mod tests {
             .grid()
             .cells
             .iter()
-            .position(|cells| cells.iter().take(5).map(|cell| cell.character).collect::<String>() == "label")
+            .position(|cells| {
+                cells
+                    .iter()
+                    .take(5)
+                    .map(|cell| cell.character)
+                    .collect::<String>()
+                    == "label"
+            })
             .expect("expected OSC 8 label in grid");
         assert_eq!(
             t.grid().cells[row][..5]
@@ -453,6 +546,7 @@ mod tests {
             agent_wrapper_dir: Some("/bundle/bin".to_string()),
             shell_integration_dir: Some("/bundle/shell".to_string()),
             auto_integration: true,
+            ..Default::default()
         };
         let mut env = std::collections::HashMap::new();
         cfg.apply_integration_env(&mut env);
@@ -460,7 +554,29 @@ mod tests {
             env.get("__TIDE_TERMINAL_WRAPPER_DIR").map(String::as_str),
             Some("/bundle/bin")
         );
-        assert_eq!(env.get("ZDOTDIR").map(String::as_str), Some("/bundle/shell"));
+        assert_eq!(
+            env.get("ZDOTDIR").map(String::as_str),
+            Some("/bundle/shell")
+        );
+        assert_eq!(
+            env.get("TIDE_TERMINAL_SHELL_INTEGRATION_DIR")
+                .map(String::as_str),
+            Some("/bundle/shell")
+        );
+    }
+
+    #[test]
+    fn bundled_shell_integration_covers_zsh_bash_and_fish_wrapper_path_setup() {
+        let zsh = include_str!("../../../resources/shell-integration/.zshenv");
+        let bash = include_str!("../../../resources/shell-integration/bash.sh");
+        let fish = include_str!("../../../resources/shell-integration/config.fish");
+
+        assert!(zsh.contains("__TIDE_TERMINAL_WRAPPER_DIR"));
+        assert!(zsh.contains("add-zsh-hook precmd _tide_fix_path"));
+        assert!(bash.contains("__TIDE_TERMINAL_WRAPPER_DIR"));
+        assert!(bash.contains("PATH=$__TIDE_TERMINAL_WRAPPER_DIR"));
+        assert!(fish.contains("__TIDE_TERMINAL_WRAPPER_DIR"));
+        assert!(fish.contains("set -gx PATH \"$__TIDE_TERMINAL_WRAPPER_DIR\""));
     }
 
     #[test]
@@ -469,5 +585,72 @@ mod tests {
         let mut env = std::collections::HashMap::new();
         cfg.apply_integration_env(&mut env);
         assert!(!env.contains_key("TIDE_TERMINAL_SOCKET"));
+        assert_eq!(cfg.resolved_scrollback_lines(), DEFAULT_SCROLLBACK_LINES);
+    }
+
+    #[test]
+    fn terminal_compat_env_uses_documented_xterm_truecolor_strategy() {
+        let mut dark_env = std::collections::HashMap::new();
+        apply_terminal_compat_env(&mut dark_env, true);
+
+        assert_eq!(TERM_ENV_VALUE, "xterm-256color");
+        assert_eq!(COLORTERM_ENV_VALUE, "truecolor");
+        assert_eq!(
+            dark_env.get("TERM").map(String::as_str),
+            Some(TERM_ENV_VALUE)
+        );
+        assert_eq!(
+            dark_env.get("COLORTERM").map(String::as_str),
+            Some(COLORTERM_ENV_VALUE)
+        );
+        assert_eq!(
+            dark_env.get("PROMPT_EOL_MARK").map(String::as_str),
+            Some("")
+        );
+        assert_eq!(dark_env.get("COLORFGBG").map(String::as_str), Some("15;0"));
+        assert!(
+            dark_env
+                .get("TERM")
+                .is_none_or(|term| !term.contains("tide")),
+            "Tide must not advertise a custom terminfo entry until one ships"
+        );
+
+        let mut light_env = std::collections::HashMap::new();
+        apply_terminal_compat_env(&mut light_env, false);
+        assert_eq!(light_env.get("COLORFGBG").map(String::as_str), Some("0;15"));
+    }
+
+    #[test]
+    fn terminal_spawn_config_controls_scrollback_history_limit() {
+        let cfg = TerminalSpawnConfig {
+            scrollback_lines: 2,
+            ..Default::default()
+        };
+        let mut terminal =
+            Terminal::with_cwd_for_window(8, 2, None, true, None, None, None, Some(&cfg))
+                .expect("terminal backend");
+
+        terminal.bench_sync_grid();
+        terminal.bench_write_to_term(b"one\ntwo\nthree\nfour\nfive\n");
+        terminal.bench_sync_grid();
+        terminal.bench_sync_grid();
+
+        assert!(
+            terminal.history_size() <= 2,
+            "history_size={} should respect configured scrollback limit",
+            terminal.history_size()
+        );
+    }
+
+    #[test]
+    fn set_scrollback_lines_updates_existing_terminal_history_limit() {
+        let mut terminal = Terminal::new(8, 2).expect("terminal backend");
+        terminal.set_scrollback_lines(0);
+        terminal.bench_sync_grid();
+        terminal.bench_write_to_term(b"one\ntwo\nthree\nfour\nfive\n");
+        terminal.bench_sync_grid();
+        terminal.bench_sync_grid();
+
+        assert_eq!(terminal.history_size(), 0);
     }
 }

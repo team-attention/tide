@@ -15,6 +15,7 @@ use crate::PaneAccessPort;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TextInputTarget {
     ConfigPageCopyFiles,
+    ConfigPageTerminalScrollback,
     ConfigPageWorktree,
     FileTreeRename,
     WorkspaceRename,
@@ -47,6 +48,8 @@ pub(crate) fn text_input_target(ctx: &impl TextRoutingPorts) -> TextInputTarget 
     if let Some(ref page) = modal.config_page {
         return if page.copy_files_editing {
             TextInputTarget::ConfigPageCopyFiles
+        } else if page.terminal_scrollback_editing {
+            TextInputTarget::ConfigPageTerminalScrollback
         } else if page.worktree_editing {
             TextInputTarget::ConfigPageWorktree
         } else {
@@ -155,6 +158,14 @@ impl App {
                         page.worktree_input.insert_char(ch);
                     }
                     page.dirty = true;
+                    crate::AppCorePort::invalidate_chrome(self);
+                }
+            }
+            TextInputTarget::ConfigPageTerminalScrollback => {
+                if let Some(ref mut page) = self.modal.config_page {
+                    for ch in text.chars() {
+                        page.insert_terminal_scrollback_char(ch);
+                    }
                     crate::AppCorePort::invalidate_chrome(self);
                 }
             }

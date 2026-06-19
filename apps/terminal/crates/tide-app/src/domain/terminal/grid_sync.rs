@@ -16,7 +16,7 @@ use alacritty_terminal::term::{ClipboardType, Term, TermMode};
 
 use crate::tide_core::{CursorShape, CursorState, TerminalCell, TerminalGrid};
 
-// Brings the parent terminal module's items into scope: SCROLLBACK_LINES,
+// Brings the parent terminal module's items into scope: DEFAULT_SCROLLBACK_LINES,
 // WIDE_CHAR_SPACER, the alacritty type aliases (Event, AnsiColor, …), and the
 // `color` helpers the sync code shares with `Terminal`.
 use super::*;
@@ -25,11 +25,16 @@ use super::*;
 pub(super) struct TermDimensions {
     cols: usize,
     rows: usize,
+    scrollback_lines: usize,
 }
 
 impl TermDimensions {
-    pub(super) fn new(cols: usize, rows: usize) -> Self {
-        Self { cols, rows }
+    pub(super) fn new(cols: usize, rows: usize, scrollback_lines: usize) -> Self {
+        Self {
+            cols,
+            rows,
+            scrollback_lines,
+        }
     }
 }
 
@@ -43,7 +48,7 @@ impl Dimensions for TermDimensions {
     }
 
     fn total_lines(&self) -> usize {
-        self.rows + SCROLLBACK_LINES
+        self.rows + self.scrollback_lines
     }
 }
 
@@ -576,19 +581,11 @@ impl GridSyncer {
                     }
                     (Some((_, active_uri)), Some(uri)) if active_uri == uri => {}
                     (Some((start, active_uri)), Some(uri)) => {
-                        self.hyperlink_ranges[row_idx].push((
-                            *start,
-                            col_idx,
-                            active_uri.clone(),
-                        ));
+                        self.hyperlink_ranges[row_idx].push((*start, col_idx, active_uri.clone()));
                         active_hyperlink = Some((col_idx, uri.clone()));
                     }
                     (Some((start, active_uri)), None) => {
-                        self.hyperlink_ranges[row_idx].push((
-                            *start,
-                            col_idx,
-                            active_uri.clone(),
-                        ));
+                        self.hyperlink_ranges[row_idx].push((*start, col_idx, active_uri.clone()));
                         active_hyperlink = None;
                     }
                     (None, None) => {}

@@ -284,6 +284,7 @@ impl GlobalAction {
             GlobalAction::ScrollHalfPageUp,
             GlobalAction::ScrollHalfPageDown,
             GlobalAction::ToggleFileTree,
+            GlobalAction::ToggleWorkspaceSidebar,
             GlobalAction::ToggleDock,
         ]
     }
@@ -602,8 +603,10 @@ impl KeybindingMap {
     pub fn with_overrides(overrides: Vec<(Hotkey, GlobalAction)>) -> Self {
         let mut bindings = Self::default_bindings();
         for (hotkey, action) in overrides {
-            // Remove any existing binding for this action
-            bindings.retain(|(_, a)| a.action_key() != action.action_key());
+            // Remove existing bindings for this action and for this hotkey.
+            // This keeps manually-edited settings deterministic: later
+            // overrides win instead of leaving first-match collisions behind.
+            bindings.retain(|(h, a)| a.action_key() != action.action_key() && h != &hotkey);
             bindings.push((hotkey, action));
         }
         Self { bindings }
