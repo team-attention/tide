@@ -316,6 +316,9 @@ function sendInternalRequest(
       clearTimeout(timeout);
       socket.off("data", handleData);
       socket.off("connect", handleConnect);
+      socket.off("error", handleError);
+      socket.off("close", handleClose);
+      socket.off("end", handleClose);
     }
 
     function settleResolve(value: unknown): void {
@@ -360,10 +363,18 @@ function sendInternalRequest(
       socket.write(`${JSON.stringify(request)}\n`);
     }
 
-    socket.setEncoding("utf8");
-    socket.on("error", (error) => {
+    function handleError(error: Error): void {
       settleReject(error);
-    });
+    }
+
+    function handleClose(): void {
+      settleReject(new Error("Tide MCP socket closed before returning a complete response."));
+    }
+
+    socket.setEncoding("utf8");
+    socket.on("error", handleError);
+    socket.on("close", handleClose);
+    socket.on("end", handleClose);
     socket.on("data", handleData);
     socket.once("connect", handleConnect);
   });

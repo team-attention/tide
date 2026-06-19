@@ -235,11 +235,11 @@ function createWorkbenchEditorReferences(
 }
 
 function fileNameForReference(relativePath: string): string {
-  return relativePath.split("/").filter(Boolean).pop() ?? relativePath;
+  return relativePath.replaceAll("\\", "/").split("/").filter(Boolean).pop() ?? relativePath;
 }
 
 function folderForReference(relativePath: string): string {
-  const parts = relativePath.split("/").filter(Boolean);
+  const parts = relativePath.replaceAll("\\", "/").split("/").filter(Boolean);
   parts.pop();
   return parts.join("/");
 }

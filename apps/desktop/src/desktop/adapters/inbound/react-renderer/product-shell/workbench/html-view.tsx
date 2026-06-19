@@ -40,6 +40,11 @@ export function WorkbenchHtmlView(props: {
 }): ReactElement {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const webviewRef = useRef<BrowserWebViewElement | null>(null);
+  const [webviewElement, setWebviewElement] = useState<BrowserWebViewElement | null>(null);
+  const setWebviewRef = useCallback((element: BrowserWebViewElement | null) => {
+    webviewRef.current = element;
+    setWebviewElement(element);
+  }, []);
   const canPreview = typeof props.filePath === "string" && props.filePath.length > 0;
   const [mode, setMode] = useState<"preview" | "code">("preview");
   const find = useInPaneFindState();
@@ -67,7 +72,7 @@ export function WorkbenchHtmlView(props: {
     onPrevious: previewFindPrevious,
   });
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
     if (webview === null) {
       return undefined;
     }
@@ -82,9 +87,9 @@ export function WorkbenchHtmlView(props: {
     };
     webview.addEventListener("found-in-page", onFound);
     return () => webview.removeEventListener("found-in-page", onFound);
-  }, [props.paneId, find.setActiveIndex]);
+  }, [webviewElement, find.setActiveIndex]);
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
     const query = find.query.trim();
     if (webview === null) {
       return undefined;
@@ -96,7 +101,7 @@ export function WorkbenchHtmlView(props: {
     }
     webview.findInPage?.(query, { findNext: false, forward: true, matchCase: false });
     return undefined;
-  }, [effectiveMode, find.open, find.query, props.paneId]);
+  }, [webviewElement, effectiveMode, find.open, find.query, props.paneId]);
   const toggle = (target: "preview" | "code", label: string) => (
     <button
       type="button"
@@ -137,7 +142,7 @@ export function WorkbenchHtmlView(props: {
               createElement call (same as the Browser Pane). file:// renders the saved
               page with its relative assets. */}
           {createElement("webview", {
-            ref: webviewRef,
+            ref: setWebviewRef,
             className: "workbench-html-webview",
             "data-html-pane-webview": props.paneId,
             src: fileUrlFromPath(props.filePath as string),

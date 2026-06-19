@@ -563,7 +563,11 @@ function resolveInsideRoot(
 }
 
 function candidateInsideRoot(root: string, candidate: string): boolean {
-  return candidate === root || candidate.startsWith(`${root}${path.sep}`);
+  if (candidate === root) {
+    return true;
+  }
+  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  return candidate.startsWith(prefix);
 }
 
 function remapRepoPathIntoDefaultWorktree(root: string, candidate: string): string | null {
