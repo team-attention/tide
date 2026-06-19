@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveAugmentedPath } from "../src/backend/infrastructure/node/live/resolve-shell-path.ts";
+import {
+  resolveAugmentedEnvironment,
+  resolveAugmentedPath,
+} from "../src/backend/infrastructure/node/live/resolve-shell-path.ts";
 
 // Why: a Finder-launched packaged app only gets the minimal launchd PATH, so the
 // Agent Runtime's `which <cli>` cannot find provider CLIs in ~/.local/bin etc.
@@ -73,4 +76,142 @@ test("windows_path_is_left_unchanged", () => {
     runShell: () => "should-not-be-used",
   });
   assert.equal(result, current);
+});
+
+test("login_shell_auth_environment_is_imported_for_provider_runtimes", () => {
+  const result = resolveAugmentedEnvironment({
+    platform: "darwin",
+    currentEnv: {
+      HOME: "/Users/me",
+      PATH: "/usr/bin:/bin",
+      TIDE_APP_DATA_ROOT: "/tmp/tide-app",
+      ELECTRON_RUN_AS_NODE: "1",
+    },
+    runShellEnv: () => ({
+      PATH: "/Users/me/.local/bin:/opt/homebrew/bin:/usr/bin",
+      GH_TOKEN: "shell-gh-token",
+      GITHUB_TOKEN: "shell-github-token",
+      SSH_AUTH_SOCK: "/private/tmp/ssh-agent.sock",
+      XDG_CONFIG_HOME: "/Users/me/.config",
+      AWS_PROFILE: "work",
+      KUBECONFIG: "/Users/me/.kube/config",
+      PNPM_HOME: "/Users/me/Library/pnpm",
+      CUSTOM_PROJECT_ENV: "from-shell",
+      PWD: "/wrong-cwd",
+      TIDE_APP_DATA_ROOT: "/wrong",
+      ELECTRON_RUN_AS_NODE: "0",
+    }),
+  });
+
+  assert.equal(result.GH_TOKEN, "shell-gh-token");
+  assert.equal(result.GITHUB_TOKEN, "shell-github-token");
+  assert.equal(result.SSH_AUTH_SOCK, "/private/tmp/ssh-agent.sock");
+  assert.equal(result.XDG_CONFIG_HOME, "/Users/me/.config");
+  assert.equal(result.AWS_PROFILE, "work");
+  assert.equal(result.KUBECONFIG, "/Users/me/.kube/config");
+  assert.equal(result.PNPM_HOME, "/Users/me/Library/pnpm");
+  assert.equal(result.CUSTOM_PROJECT_ENV, "from-shell");
+  assert.equal(result.PWD, undefined);
+  assert.equal(result.TIDE_APP_DATA_ROOT, "/tmp/tide-app");
+  assert.equal(result.ELECTRON_RUN_AS_NODE, "1");
+  assert.ok(result.PATH?.split(":").includes("/Users/me/.local/bin"));
+});
+
+test("interactive_login_shell_environment_is_preferred_for_provider_runtimes", () => {
+  const modes: string[] = [];
+  const result = resolveAugmentedEnvironment({
+    platform: "darwin",
+    currentEnv: {
+      HOME: "/Users/me",
+      PATH: "/usr/bin:/bin",
+    },
+    runShellEnv: (_shell, mode) => {
+      modes.push(mode);
+      if (mode === "interactive_login") {
+        return {
+          PATH: "/Users/me/.local/bin:/interactive/bin:/usr/bin",
+          GH_TOKEN: "interactive-token",
+          CODEX_HOME: "/Users/me/.codex",
+        };
+      }
+      return {
+        PATH: "/login/bin:/usr/bin",
+        GH_TOKEN: "login-token",
+        CODEX_HOME: "/Users/me/.codex-login",
+      };
+    },
+  });
+
+  assert.deepEqual(modes, ["interactive_login"]);
+  assert.equal(result.GH_TOKEN, "interactive-token");
+  assert.equal(result.CODEX_HOME, "/Users/me/.codex");
+  assert.ok(result.PATH?.split(":").includes("/interactive/bin"));
+});
+
+test("augmented_environment_reads_shell_environment_from_the_launch_cwd", () => {
+  const cwds: Array<string | undefined> = [];
+  const inheritedPaths: Array<string | undefined> = [];
+  const result = resolveAugmentedEnvironment({
+    platform: "darwin",
+    currentEnv: {
+      HOME: "/Users/me",
+      PATH: "/usr/bin:/bin",
+    },
+    cwd: "/Users/me/project",
+    runShellEnv: (_shell, _mode, cwd, env) => {
+      cwds.push(cwd);
+      inheritedPaths.push(env.PATH);
+      return {
+        PATH: "/Users/me/project/.direnv/bin:/usr/bin",
+        PROJECT_ENV: "from-direnv",
+      };
+    },
+  });
+
+  assert.deepEqual(cwds, ["/Users/me/project"]);
+  assert.deepEqual(inheritedPaths, ["/usr/bin:/bin"]);
+  assert.equal(result.PROJECT_ENV, "from-direnv");
+  assert.ok(result.PATH?.split(":").includes("/Users/me/project/.direnv/bin"));
+});
+
+test("augmented_environment_falls_back_to_login_shell_when_interactive_shell_fails", () => {
+  const modes: string[] = [];
+  const result = resolveAugmentedEnvironment({
+    platform: "darwin",
+    currentEnv: {
+      HOME: "/Users/me",
+      PATH: "/usr/bin:/bin",
+    },
+    runShellEnv: (_shell, mode) => {
+      modes.push(mode);
+      if (mode === "interactive_login") {
+        throw new Error("interactive shell startup timed out");
+      }
+      return {
+        PATH: "/Users/me/.local/bin:/login/bin:/usr/bin",
+        GH_TOKEN: "login-token",
+      };
+    },
+  });
+
+  assert.deepEqual(modes, ["interactive_login", "login"]);
+  assert.equal(result.GH_TOKEN, "login-token");
+  assert.ok(result.PATH?.split(":").includes("/login/bin"));
+});
+
+test("augmented_environment_falls_back_to_current_env_when_shell_env_fails", () => {
+  const result = resolveAugmentedEnvironment({
+    platform: "darwin",
+    currentEnv: {
+      HOME: "/Users/me",
+      PATH: "/usr/bin:/bin",
+      GH_TOKEN: "current-token",
+    },
+    runShellEnv: () => {
+      throw new Error("shell unavailable");
+    },
+  });
+
+  assert.equal(result.GH_TOKEN, "current-token");
+  assert.ok(result.PATH?.split(":").includes("/opt/homebrew/bin"));
 });

@@ -20,6 +20,23 @@ export interface ResolveAugmentedPathDeps {
   runShell?: (shell: string) => string;
 }
 
+export interface ResolveAugmentedEnvironmentDeps {
+  platform?: NodeJS.Platform;
+  currentEnv?: NodeJS.ProcessEnv;
+  shell?: string;
+  homeDir?: string;
+  cwd?: string;
+  /** Returns the user's full environment from a shell startup mode. Injected for tests. */
+  runShellEnv?: (
+    shell: string,
+    mode: ShellEnvMode,
+    cwd: string | undefined,
+    env: NodeJS.ProcessEnv,
+  ) => Record<string, string>;
+}
+
+export type ShellEnvMode = "interactive_login" | "login";
+
 const DARWIN_FALLBACK_DIRS = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin"];
 const LINUX_FALLBACK_DIRS = ["/usr/local/bin"];
 
@@ -41,15 +58,71 @@ export function resolveAugmentedPath(deps: ResolveAugmentedPathDeps = {}): strin
     shellPath = "";
   }
 
+  return mergePathEntries({
+    platform,
+    homeDir,
+    shellPath,
+    currentPath,
+  });
+}
+
+export function resolveAugmentedEnvironment(
+  deps: ResolveAugmentedEnvironmentDeps = {},
+): NodeJS.ProcessEnv {
+  const platform = deps.platform ?? process.platform;
+  const currentEnv = deps.currentEnv ?? process.env;
+  if (platform === "win32") {
+    return { ...currentEnv };
+  }
+
+  const homeDir = deps.homeDir ?? currentEnv.HOME ?? os.homedir();
+  const shell = deps.shell ?? currentEnv.SHELL ?? "/bin/zsh";
+  const cwd = deps.cwd;
+  const runShellEnv = deps.runShellEnv ?? defaultRunShellEnv;
+
+  let shellEnv: Record<string, string> = {};
+  try {
+    shellEnv = runShellEnv(shell, "interactive_login", cwd, currentEnv);
+  } catch {
+    try {
+      shellEnv = runShellEnv(shell, "login", cwd, currentEnv);
+    } catch {
+      shellEnv = {};
+    }
+  }
+
+  const result: NodeJS.ProcessEnv = { ...currentEnv };
+  for (const [key, value] of Object.entries(shellEnv)) {
+    if (value.length === 0 || !shouldImportShellEnv(key)) {
+      continue;
+    }
+    result[key] = value;
+  }
+
+  result.PATH = mergePathEntries({
+    platform,
+    homeDir,
+    shellPath: shellEnv.PATH ?? "",
+    currentPath: currentEnv.PATH ?? "",
+  });
+  return result;
+}
+
+function mergePathEntries(input: {
+  platform: NodeJS.Platform;
+  homeDir: string;
+  shellPath: string;
+  currentPath: string;
+}): string {
   const fallbackDirs = [
-    `${homeDir}/.local/bin`,
-    ...(platform === "darwin" ? DARWIN_FALLBACK_DIRS : LINUX_FALLBACK_DIRS),
+    `${input.homeDir}/.local/bin`,
+    ...(input.platform === "darwin" ? DARWIN_FALLBACK_DIRS : LINUX_FALLBACK_DIRS),
   ];
 
   const merged = [
-    ...shellPath.split(":"),
+    ...input.shellPath.split(":"),
     ...fallbackDirs,
-    ...currentPath.split(":"),
+    ...input.currentPath.split(":"),
   ].filter((entry) => entry.length > 0 && !isV1WrapperBinDir(entry));
 
   return Array.from(new Set(merged)).join(":");
@@ -65,6 +138,7 @@ function isV1WrapperBinDir(entry: string): boolean {
 }
 
 const PATH_MARKER = "__TIDE_PATH__";
+const ENV_MARKER = "__TIDE_ENV__";
 
 function defaultRunShell(shell: string): string {
   // Use a LOGIN (-l) but NON-interactive shell — NOT interactive (-i). PATH is set in
@@ -82,4 +156,75 @@ function defaultRunShell(shell: string): string {
   );
   const match = output.match(new RegExp(`${PATH_MARKER}([\\s\\S]*)${PATH_MARKER}`));
   return match ? match[1] : "";
+}
+
+function defaultRunShellEnv(
+  shell: string,
+  mode: ShellEnvMode,
+  cwd: string | undefined,
+  env: NodeJS.ProcessEnv,
+): Record<string, string> {
+  // Provider runtimes should see the same auth/tool env as `codex`, `claude`,
+  // etc. launched by the user's normal terminal. Many users export those values
+  // from interactive rc files (.zshrc, asdf/mise/nvm/direnv hooks), so try an
+  // interactive login shell first. Keep the timeout short and fall back to a
+  // non-interactive login shell because prompt/plugin startup can block.
+  const shellFlag = mode === "interactive_login" ? "-lic" : "-lc";
+  const output = execFileSync(
+    shell,
+    [shellFlag, shellEnvSnapshotCommand(shell)],
+    { cwd, encoding: "utf8", env, timeout: 3000, stdio: ["ignore", "pipe", "ignore"] },
+  );
+  const match = output.match(new RegExp(`${ENV_MARKER}([\\s\\S]*)${ENV_MARKER}`));
+  return match ? parseNullSeparatedEnv(match[1]) : {};
+}
+
+function shellEnvSnapshotCommand(shell: string): string {
+  const shellName = shell.split("/").pop() ?? "";
+  const direnvShell = shellName === "zsh" ? "zsh" : shellName === "fish" ? undefined : "bash";
+  const direnvPrefix =
+    direnvShell === undefined
+      ? ""
+      : `if command -v direnv >/dev/null 2>&1; then eval "$(direnv export ${direnvShell} 2>/dev/null)" || true; fi; `;
+  return `${direnvPrefix}printf '${ENV_MARKER}'; /usr/bin/env -0; printf '${ENV_MARKER}'`;
+}
+
+function parseNullSeparatedEnv(value: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const entry of value.split("\0")) {
+    if (entry.length === 0) {
+      continue;
+    }
+    const equalsIndex = entry.indexOf("=");
+    if (equalsIndex <= 0) {
+      continue;
+    }
+    const key = entry.slice(0, equalsIndex);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      continue;
+    }
+    env[key] = entry.slice(equalsIndex + 1);
+  }
+  return env;
+}
+
+function shouldImportShellEnv(key: string): boolean {
+  if (key === "PATH") {
+    return false;
+  }
+  return !isProcessInternalShellEnv(key);
+}
+
+function isProcessInternalShellEnv(key: string): boolean {
+  if (key.startsWith("TIDE_") || key.startsWith("ELECTRON_")) {
+    return true;
+  }
+  return (
+    key === "_" ||
+    key === "PWD" ||
+    key === "OLDPWD" ||
+    key === "SHLVL" ||
+    key === "PPID" ||
+    key.startsWith("BASH_FUNC_")
+  );
 }

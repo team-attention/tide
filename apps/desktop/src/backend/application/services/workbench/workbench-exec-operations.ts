@@ -52,6 +52,7 @@ export interface WorkbenchExecOperationsDeps {
   workbenchRuntime: WorkbenchRuntime;
   workbenchFileOps: WorkbenchFileOperations;
   defaultWorkbenchTerminalCommand: string;
+  defaultWorkbenchTerminalArgs: string[];
   clock: () => string;
   idGenerator: () => string;
 }
@@ -62,6 +63,7 @@ export class WorkbenchExecOperations {
   private readonly workbenchRuntime: WorkbenchRuntime;
   private readonly workbenchFileOps: WorkbenchFileOperations;
   private readonly defaultWorkbenchTerminalCommand: string;
+  private readonly defaultWorkbenchTerminalArgs: string[];
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
 
@@ -71,6 +73,7 @@ export class WorkbenchExecOperations {
     this.workbenchRuntime = deps.workbenchRuntime;
     this.workbenchFileOps = deps.workbenchFileOps;
     this.defaultWorkbenchTerminalCommand = deps.defaultWorkbenchTerminalCommand;
+    this.defaultWorkbenchTerminalArgs = [...deps.defaultWorkbenchTerminalArgs];
     this.clock = deps.clock;
     this.idGenerator = deps.idGenerator;
   }
@@ -399,7 +402,8 @@ export class WorkbenchExecOperations {
     }
 
     const command = optionalString(input?.command) ?? this.defaultWorkbenchTerminalCommand;
-    const args = arrayOfStrings(input?.args);
+    const args =
+      input?.args === undefined ? [...this.defaultWorkbenchTerminalArgs] : arrayOfStrings(input.args);
     const existingPane = thread.workbench.panes.find(
       (pane): pane is TerminalPaneState =>
         pane.kind === "terminal" &&

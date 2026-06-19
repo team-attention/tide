@@ -7,6 +7,7 @@ import {
   createPersistentLiveBackendAdapter,
   persistThreadEvents,
 } from "./live-backend-restore.ts";
+import { resolveAugmentedEnvironment } from "./resolve-shell-path.ts";
 export {
   threadSeedFromStorageRecord,
   threadStorageRecordFromThreadSummary,
@@ -304,6 +305,8 @@ export function createLiveBackendContractMessageAdapter(
   const readinessRegistry = createRuntimeReadinessRegistry();
   const providerCliRuntimePort = createAgentIntegrationAgentRuntimePort({
     integrations,
+    resolveRuntimeEnvironment: ({ cwd, planEnv }) =>
+      resolveAugmentedEnvironment({ currentEnv: { ...env, ...planEnv }, cwd }),
     // The projector serializes ingestion per thread (see serializeIngest), so a
     // fire-and-forget dispatch here can't race a thread's events against each other.
     onProviderEvent: (providerEvent) => {
@@ -383,6 +386,7 @@ export function createLiveBackendContractMessageAdapter(
     // workbench-editor-language-intelligence).
     workspaceCodeIntelligencePort: createWorkspaceCodeIntelligenceRouter(),
     defaultWorkbenchTerminalCommand: env.SHELL ?? "sh",
+    defaultWorkbenchTerminalArgs: env.SHELL === undefined ? [] : ["-l"],
     onAsyncEvent: (event) => {
       emitBackendEvents(backendEventsFromThreadRuntimeAsyncEvent(event));
     },
