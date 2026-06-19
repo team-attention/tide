@@ -4,7 +4,7 @@
 
 ### As-Is
 
-`MacosApp::run_with_window()` in [crates/tide-app/src/adapter/outward/platform_adapter/macos/app.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/platform_adapter/macos/app.rs:43) creates the shared `NSApplication` and starts Tide with `NSApplicationActivationPolicy::Regular`. `MacosWindow::show_window()` in [crates/tide-app/src/adapter/outward/platform_adapter/macos/window.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/platform_adapter/macos/window.rs:770) keeps the regular activation/order-front path idempotent when Tide reveals a `Tide Window`.
+`MacosApp::run_with_window()` in [apps/terminal/crates/tide-app/src/adapter/outward/platform_adapter/macos/app.rs](../../crates/tide-app/src/adapter/outward/platform_adapter/macos/app.rs) creates the shared `NSApplication` and starts Tide with `NSApplicationActivationPolicy::Regular`. `MacosWindow::show_window()` in [apps/terminal/crates/tide-app/src/adapter/outward/platform_adapter/macos/window.rs](../../crates/tide-app/src/adapter/outward/platform_adapter/macos/window.rs) keeps the regular activation/order-front path idempotent when Tide reveals a `Tide Window`.
 
 Tide never installs an `App Main Menu` on `NSApplication`. A repo-wide search for `NSMenu`, `setMainMenu`, and `mainMenu` inside `crates/tide-app/src/adapter/outward/platform_adapter/macos/` returns no Tide-owned menu setup before this change. That means Tide becomes a regular macOS app window without ever giving AppKit a native menu bar model to reveal in a `Full-Screen Space`.
 

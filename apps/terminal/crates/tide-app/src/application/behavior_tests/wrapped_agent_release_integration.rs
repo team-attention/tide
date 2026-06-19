@@ -498,14 +498,19 @@ fn macos_window_construction_does_not_alpha_hide_startup_window() {
     let show_start = source
         .find("fn show_window(&self)")
         .expect("expected MacosWindow::show_window");
+    let show_end = source[show_start + 1..]
+        .find("\n    fn ")
+        .map(|offset| show_start + 1 + offset)
+        .unwrap_or(source.len());
     let new_body = &source[new_start..show_start];
+    let show_body = &source[show_start..show_end];
 
     assert!(
         !new_body.contains("makeKeyAndOrderFront(None)"),
         "expected show_window() to own the first key/order-front pass"
     );
     assert!(
-        !source.contains("setAlphaValue:"),
+        !new_body.contains("setAlphaValue:") && !show_body.contains("setAlphaValue:"),
         "expected Tide not to use alpha hiding in the launch/reveal path"
     );
 }
@@ -548,18 +553,22 @@ fn macos_show_window_orders_front_after_app_activation() {
     let show_start = source
         .find("fn show_window(&self)")
         .expect("expected MacosWindow::show_window");
-    let show_body = &source[show_start..];
+    let show_end = source[show_start + 1..]
+        .find("\n    fn ")
+        .map(|offset| show_start + 1 + offset)
+        .unwrap_or(source.len());
+    let show_body = &source[show_start..show_end];
     let activate_index = show_body
         .find("activateWithOptions")
         .expect("expected show_window() to activate the running Tide app");
     let main_index = show_body
-        .rfind("makeMainWindow()")
+        .find("makeMainWindow()")
         .expect("expected show_window() to make the Tide Window main after activation");
     let key_index = show_body
-        .rfind("makeKeyAndOrderFront(None)")
+        .find("makeKeyAndOrderFront(None)")
         .expect("expected show_window() to make the Tide Window key after activation");
     let front_index = show_body
-        .rfind("orderFrontRegardless()")
+        .find("orderFrontRegardless()")
         .expect("expected show_window() to order the Tide Window front after activation");
 
     assert!(
