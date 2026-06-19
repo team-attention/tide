@@ -117,6 +117,28 @@ jobs:
 
           xcrun stapler staple "$DMG_PATH"
 
+      - name: Build updater metadata
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          scripts/build-update-metadata.sh "$VERSION" target/dist
+
+      # The dedicated repo below is the Tide Terminal updater feed. The monorepo
+      # also contains the Electron Tide app's `tide-v*` releases, so a product-specific
+      # feed keeps updater clients from filtering mixed release history.
+      - name: Publish updater feed to the dedicated terminal releases repo
+        env:
+          GH_TOKEN: ${{ secrets.TERMINAL_RELEASES_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "v${VERSION}" \
+            "target/dist/Tide-Terminal-${VERSION}.dmg" \
+            "target/dist/latest-mac.json" \
+            --repo eatnug/tide-terminal-releases \
+            --title "Tide Terminal v${VERSION}" \
+            --generate-notes
+
+      # Keep this monorepo release as the canonical human-facing download, matching
+      # the historical Tide Terminal release path.
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

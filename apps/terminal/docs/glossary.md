@@ -195,6 +195,8 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Soft Wrap** | Automatic line wrapping at viewport width. Enabled for prose files (`.md`, `.txt`). Line numbers only on first visual row. |
 | **Application-Rendered Prose Reflow Row** | A `Terminal Pane` row that appears visually wrapped because a TUI application rendered prose across multiple rows itself, without emulator `WRAPLINE` metadata. |
 | **Agent Gateway** | Built-in subsystem for programmatic control via Unix socket. Always on, zero config. Comprises socket server, CLI client, and MCP bridge. |
+| **Terminal Update Feed** | The product-specific release channel for Tide Terminal updater clients. It is backed by the Terminal Releases Repo and publishes the final macOS DMG plus `latest-mac.json` metadata. |
+| **Terminal Releases Repo** | The dedicated GitHub releases repository `eatnug/tide-terminal-releases`, separate from the monorepo's human-facing releases so Tide Terminal updater clients never need to filter Electron Tide app releases. |
 | **CliCommand** | A command received from an external process via the Agent Gateway socket. Enqueued as an `AppEvent` variant for single-threaded dispatch. |
 | **GatewayStatus** | Tracks Agent Gateway state: socket listening status, connected client count, active render streams. Displayed as a badge in the chrome. |
 | **App Main Menu** | The native macOS `NSMenu` installed on `NSApplication`. It drives the system menu bar, including top-edge reveal inside a `Full-Screen Space`. |
