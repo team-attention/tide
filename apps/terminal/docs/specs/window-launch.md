@@ -8,6 +8,7 @@
 - The source `Info.plist` and `scripts/build-app.sh` currently stamp `LSMultipleInstancesProhibited`, and the macOS startup path checks for an existing Tide app instance before `MacosWindow::new(...)`.
 - Tide's macOS platform path currently holds exactly one `MacosWindow` per `Tide Instance`, so `Cmd+N` can only work today by launching another `Tide Instance`.
 - macOS notification identifiers already encode the owning `Tide Instance` PID and target `PaneId`, and activation already relays `activate-notification-target` to the owning `Tide Instance`.
+- The 0.51.52 launch reveal path calls `makeMainWindow()` before the Tide `Window` is made key/ordered front, and the installed app aborts after AppKit throws from `-[NSWindow _changeJustMain]`.
 
 ### To-Be
 
@@ -16,6 +17,7 @@
 - The legacy `SystemProcess::launch_new_tide_window` bundle path is not part of the `Cmd+N` flow.
 - The bundled app path must allow multiple Tide instances, and the macOS startup path must create a new Tide `Window` instead of reusing an already-running Tide instance during ordinary launch.
 - Ordinary Tide launch must use regular native app activation, and revealing a newly launched Tide `Window` must keep it foreground/frontmost instead of briefly flashing and then falling behind the previously active app.
+- The launch reveal path must activate Tide before the final fronting pass, then make/order the Tide `Window` front before explicitly making it the main window.
 - Notification activation must continue to encode the owning `Tide Instance` PID plus `TideWindowId` and target `PaneId`, relay to the owning `Tide Instance` when needed, and reveal the owning `Tide Window`.
 
 ### Approach
@@ -94,11 +96,13 @@
   1. `MacosApp::run` starts Tide with regular native app activation
   2. `MacosWindow::new` avoids alpha-hiding the startup `Tide Window`
   3. `show_window()` activates the running Tide app
-  4. `show_window()` performs the final key/main/order-front calls after app activation
+  4. `show_window()` performs the final key/order-front calls after app activation
+  5. `show_window()` calls `makeMainWindow()` only after the Tide `Window` has been ordered front
 - **Postcondition**: The newly revealed Tide `Window` stays frontmost after launch
 - **Business Rules**:
   - BR-11: `show_window()` must activate the running Tide app before its final key/main/order-front pass
   - BR-12: ordinary launch must not use `NSApplicationActivationPolicy::Accessory` or alpha hiding in the startup window path
+  - BR-13: `show_window()` must order the Tide `Window` front before explicitly calling `makeMainWindow()`
 
 ## Invariants
 
@@ -122,7 +126,7 @@
 | UC-3 | BR-8 | `activate_notification_target_cli_command_switches_to_target_workspace_and_focuses_the_target_pane` |
 | UC-3 | BR-8 | `activate_notification_target_cli_command_queues_window_reveal` |
 | UC-3 | BR-9 | `notification_window_reveal_restores_ime_proxy_focus_after_show_window` |
-| UC-4 | BR-11 | `macos_show_window_orders_front_after_app_activation` |
+| UC-4 | BR-11, BR-13 | `macos_show_window_orders_front_before_making_window_main_after_app_activation` |
 | UC-4 | BR-12 | `macos_launch_path_uses_regular_activation_for_ordinary_launch` |
 | UC-4 | BR-12 | `macos_window_construction_does_not_alpha_hide_startup_window` |
 

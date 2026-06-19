@@ -546,9 +546,10 @@ fn macos_show_window_uses_full_window_activation_for_full_screen_space() {
 }
 
 #[test]
-fn macos_show_window_orders_front_after_app_activation() {
-    // Window Launch UC-4 BR-11: launch reveal must activate Tide before the final
-    // key/main/order-front pass so the Tide Window stays frontmost.
+fn macos_show_window_orders_front_before_making_window_main_after_app_activation() {
+    // UC-4 BR-15 / Window Launch UC-4 BR-11, BR-13: launch reveal must activate
+    // Tide before the final key/order-front pass, then order the Tide Window
+    // front before making it main.
     let source = include_str!("../../adapter/outward/platform_adapter/macos/window.rs");
     let show_start = source
         .find("fn show_window(&self)")
@@ -563,7 +564,7 @@ fn macos_show_window_orders_front_after_app_activation() {
         .expect("expected show_window() to activate the running Tide app");
     let main_index = show_body
         .find("makeMainWindow()")
-        .expect("expected show_window() to make the Tide Window main after activation");
+        .expect("expected show_window() to make the Tide Window main after ordering front");
     let key_index = show_body
         .find("makeKeyAndOrderFront(None)")
         .expect("expected show_window() to make the Tide Window key after activation");
@@ -572,8 +573,12 @@ fn macos_show_window_orders_front_after_app_activation() {
         .expect("expected show_window() to order the Tide Window front after activation");
 
     assert!(
-        activate_index < main_index && activate_index < key_index && activate_index < front_index,
-        "expected running-app activation before the final key/main/order-front pass"
+        activate_index < key_index && activate_index < front_index,
+        "expected running-app activation before the final key/order-front pass"
+    );
+    assert!(
+        key_index < main_index && front_index < main_index,
+        "expected Tide Window ordering before the explicit makeMainWindow() call"
     );
 }
 
