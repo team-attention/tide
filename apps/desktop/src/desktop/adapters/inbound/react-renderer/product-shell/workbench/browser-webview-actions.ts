@@ -318,7 +318,7 @@ async function executeSelectorTypeFallback(
     }));
     return { ok: true, message: "Typed " + payload.selector + " via DOM fallback" };
   })(${payload})`;
-  return browserActionExecutionFromUnknown(await webview.executeJavaScript(script));
+  return browserActionExecutionFromUnknown(await webview.executeJavaScript?.(script));
 }
 
 async function resolveSelectorTarget(
@@ -547,7 +547,7 @@ async function describePoint(
       message: parts.join("") + (disabled ? "; disabled" : "") + (formValid === false ? "; form invalid" : ""),
     };
   })(${payload})`;
-  return browserActionExecutionFromUnknown(await webview.executeJavaScript(script));
+  return browserActionExecutionFromUnknown(await webview.executeJavaScript?.(script));
 }
 
 // "Cmd+Shift+A" → { keyCode: "A", modifiers: ["cmd", "shift"] }. Electron sendInputEvent
