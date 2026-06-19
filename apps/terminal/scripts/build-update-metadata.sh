@@ -6,7 +6,9 @@ VERSION="${1:-}"
 DIST_DIR="${2:-$ROOT_DIR/target/dist}"
 
 if [ -z "$VERSION" ]; then
-    VERSION=$(grep '^version' "$ROOT_DIR/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+    if [ -f "$ROOT_DIR/Cargo.toml" ]; then
+        VERSION=$(grep -E '^[[:space:]]*version[[:space:]]*=' "$ROOT_DIR/Cargo.toml" | head -1 | cut -d'"' -f2 || true)
+    fi
 fi
 
 if [ -z "$VERSION" ]; then
@@ -26,7 +28,14 @@ if [ ! -f "$DMG_PATH" ]; then
     exit 1
 fi
 
-SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
+if command -v shasum >/dev/null 2>&1; then
+    SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
+elif command -v sha256sum >/dev/null 2>&1; then
+    SHA256=$(sha256sum "$DMG_PATH" | awk '{print $1}')
+else
+    echo "Neither shasum nor sha256sum found" >&2
+    exit 1
+fi
 SIZE_BYTES=$(wc -c < "$DMG_PATH" | tr -d ' ')
 RELEASE_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 

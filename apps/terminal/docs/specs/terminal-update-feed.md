@@ -80,6 +80,13 @@
   - BR-5: The update-feed release must upload both the DMG and `latest-mac.json`
   - BR-6: The metadata must include version, DMG artifact name, size, SHA-256,
     release URL, and download URL
+  - BR-7: If no version argument is provided, version discovery must tolerate a
+    missing or unmatched `Cargo.toml` and fail through the script's explicit
+    version error instead of aborting under `set -euo pipefail`
+  - BR-8: SHA-256 generation must use the available platform checksum tool,
+    preferring `shasum` and falling back to `sha256sum`
+  - BR-9: Workflow behavior tests should assert named release steps and their
+    required tokens rather than depending on unrelated YAML formatting
 
 ## Invariants
 
@@ -87,7 +94,9 @@
 2. The Terminal Update Feed is product-specific and never relies on filtering
    mixed monorepo releases.
 3. The metadata hash is computed from the final notarized DMG.
-4. Runtime updater behavior remains out of scope until a dedicated Tide Terminal
+4. Metadata script failures must be explicit and readable when required inputs
+   or checksum tools are unavailable.
+5. Runtime updater behavior remains out of scope until a dedicated Tide Terminal
    updater client is specified.
 
 ## Tests
@@ -95,8 +104,9 @@
 | UC | BR | Test function |
 |----|----|---------------|
 | UC-1 | BR-1, BR-2 | `terminal_release_workflow_keeps_the_monorepo_download_release` |
-| UC-2 | BR-3, BR-4, BR-5 | `terminal_release_workflow_publishes_the_update_feed_to_the_dedicated_repo` |
-| UC-2 | BR-6 | `terminal_update_metadata_script_writes_latest_mac_json` |
+| UC-2 | BR-3, BR-4, BR-5, BR-9 | `terminal_release_workflow_publishes_the_update_feed_to_the_dedicated_repo` |
+| UC-2 | BR-6, BR-8 | `terminal_update_metadata_script_writes_latest_mac_json` |
+| UC-2 | BR-7 | `terminal_update_metadata_script_reports_missing_default_version_cleanly` |
 
 ## Location
 
