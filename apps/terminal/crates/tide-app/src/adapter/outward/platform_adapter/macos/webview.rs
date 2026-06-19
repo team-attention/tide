@@ -95,7 +95,6 @@ static ACTIVE_BROWSER_AUTH_POPUPS: std::sync::LazyLock<
     Mutex<HashMap<WebViewTarget, Vec<BrowserAuthPopupPtr>>>,
 > = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-
 /// Return true when a URL is an opener-bound Browser Auth Popup.
 pub(crate) fn is_browser_auth_popup_url(url: &str) -> bool {
     let Some(after_scheme) = url.strip_prefix("https://") else {
@@ -2155,8 +2154,8 @@ impl WebViewHandle {
         }
         let tide_window_id = self.tide_window_id;
         let pane_id = self.pane_id;
-        let completion =
-            block2::RcBlock::new(move |image: *mut AnyObject, _error: *mut AnyObject| {
+        let completion = block2::RcBlock::new(
+            move |image: *mut AnyObject, _error: *mut AnyObject| {
                 if image.is_null() {
                     return;
                 }
@@ -2182,7 +2181,8 @@ impl WebViewHandle {
                     if png.is_null() {
                         return;
                     }
-                    let b64: *mut AnyObject = msg_send![png, base64EncodedStringWithOptions: 0usize];
+                    let b64: *mut AnyObject =
+                        msg_send![png, base64EncodedStringWithOptions: 0usize];
                     if b64.is_null() {
                         return;
                     }
@@ -2190,7 +2190,9 @@ impl WebViewHandle {
                     if utf8.is_null() {
                         return;
                     }
-                    let data = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                    let data = std::ffi::CStr::from_ptr(utf8)
+                        .to_string_lossy()
+                        .into_owned();
                     if data.is_empty() {
                         return;
                     }
@@ -2215,7 +2217,8 @@ impl WebViewHandle {
                 };
                 queue_bridge_message_for_window(tide_window_id, json);
                 wake_event_loop();
-            });
+            },
+        );
         unsafe {
             let _: () = msg_send![
                 &self.webview,

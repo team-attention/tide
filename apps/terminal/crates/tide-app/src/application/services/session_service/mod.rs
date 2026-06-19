@@ -25,7 +25,11 @@ fn session_path() -> Option<PathBuf> {
 
 fn context_area_session_path() -> Option<PathBuf> {
     let config_dir = dirs::config_dir()?;
-    Some(config_dir.join("tide-terminal").join("session_context_area.json"))
+    Some(
+        config_dir
+            .join("tide-terminal")
+            .join("session_context_area.json"),
+    )
 }
 
 pub fn save_context_area_session(data: &SessionContextArea) {
@@ -237,6 +241,28 @@ fn snapshot_to_session(snap: &LayoutSnapshot, app: &App) -> SessionLayout {
 // ──────────────────────────────────────────────
 
 impl App {
+    pub(crate) fn record_restore_event(
+        &mut self,
+        kind: crate::state::RestoreEventKind,
+        crash_recovery: bool,
+    ) {
+        let restored_panes = self.panes.len();
+        let restored_context_panes = self
+            .panes
+            .values()
+            .filter_map(|pane| match pane {
+                PaneKind::Terminal(terminal) => Some(terminal.dock_layout.all_pane_ids().len()),
+                _ => None,
+            })
+            .sum();
+        self.last_restore_event = Some(crate::state::WorkspaceRestoreEvent {
+            kind,
+            crash_recovery,
+            restored_panes,
+            restored_context_panes,
+        });
+    }
+
     pub(crate) fn restore_from_session(&mut self, session: Session) -> bool {
         // Rebuild layout tree from session, collecting pane info
         let mut pane_infos: Vec<(PaneId, Option<PathBuf>)> = Vec::new();

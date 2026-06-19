@@ -1,7 +1,9 @@
 // Inward (driving) adapters: outside world → application.
 
+pub(crate) mod benchmark_adapter;
 pub(crate) mod cli_adapter;
 pub(crate) mod click_adapter;
+pub(crate) mod compatibility_adapter;
 pub(crate) mod drag_drop_adapter;
 pub(crate) mod event_loop_adapter;
 pub(crate) mod ime_adapter;

@@ -8,10 +8,10 @@ The current editor already has a real `EditorState`, `EditorPane`, Markdown prev
 ### To-Be
 The editor roadmap is delivered in controlled phases instead of a rewrite.
 
-- Phase 1 establishes EditorPane solidity. Markdown opens in authoring mode, preview becomes explicit, and input, click, scroll, search, and toggle behavior feel predictable.
+- Phase 1 establishes EditorPane solidity. Markdown opens in authoring mode, preview becomes explicit, and input, click, scroll, search, replacement, and toggle behavior feel predictable.
 - A bounded Editor Chrome polish slice applies `DESIGN.md` to the existing Pane header, TabGroup chrome, gutter, and current-line surfaces without changing `EditorState` semantics or adding new knowledge-work workflows.
 - Phase 2 adds Obsidian-like knowledge-work workflows on standard Markdown only: split preview, frontmatter-aware navigation, outline navigation, and link/backlink affordances.
-- Phase 3 adds IDE-grade polish for code editing: find and replace, folding, diagnostics, hover, go-to-definition, and similar workflows.
+- Phase 3 adds IDE-grade polish for code editing: folding, diagnostics, hover, go-to-definition, and similar workflows.
 
 Phase 1 is the first solidity target. It finishes the authoring-first model that already exists in the worktree and tightens the remaining behavior without changing architecture.
 
@@ -22,7 +22,8 @@ Phase 1 is the first solidity target. It finishes the authoring-first model that
 4. Keep preview as a dedicated reading mode with explicit entry, explicit exit, and synchronized context on both transitions.
 5. Preserve Soft Wrap for prose authoring and keep preview rendering independent from Soft Wrap layout.
 6. Add behavior tests for the authoring-first flow and the bounded polish slice before implementation lands.
-7. Stage knowledge-work and IDE-polish work behind later specs so the current slice stays narrow and verifiable.
+7. Add bounded human-facing find/replace through the existing Search Bar before broader IDE workflows.
+8. Stage knowledge-work and IDE-polish work behind later specs so the current slice stays narrow and verifiable.
 
 ## Bounded Contexts
 
@@ -87,6 +88,22 @@ Phase 1 is the first solidity target. It finishes the authoring-first model that
   - BR-14: Authoring-mode clicks reposition the cursor through the current authoring layout.
   - BR-15: Preview-mode clicks do not mutate the buffer.
 
+### UC-5: ReplaceFromSearchBar
+- **Actor**: User
+- **Trigger**: The focused Editor Pane has an active Search Bar
+- **Precondition**: The Pane is in source mode
+- **Flow**:
+  1. The user enters a search query.
+  2. The user opens the replacement field.
+  3. The user enters replacement text.
+  4. The user replaces the current match or all current matches.
+- **Postcondition**: The Editor buffer is updated and search results are refreshed.
+- **Business Rules**:
+  - BR-19: The replacement field is visible in the Editor Search Bar.
+  - BR-20: Replace current changes only the active match.
+  - BR-21: Replace all changes the current match set and refreshes search.
+  - BR-22: Preview mode blocks replacement mutation.
+
 ### UC-4: PreserveProseReadabilityDuringAuthoring
 - **Actor**: User
 - **Trigger**: Open, resize, scroll, or navigate within a prose Editor Pane
@@ -127,6 +144,10 @@ Phase 1 is the first solidity target. It finishes the authoring-first model that
 | UC-3 | BR-14 | `editor_behavior` | `click_in_authoring_mode_moves_cursor_using_current_layout` |
 | UC-4 | BR-16 | `soft_wrap_behavior` | `markdown_authoring_opens_with_soft_wrap_active` |
 | UC-4 | BR-18 | `soft_wrap_behavior` | `cursor_visible_after_rewrap` |
+| UC-5 | BR-19 | `editor_behavior` | `editor_search_bar_replaces_current_match_from_replace_field` |
+| UC-5 | BR-20 | `editor_behavior` | `editor_search_bar_replaces_current_match_from_replace_field` |
+| UC-5 | BR-21 | `editor_behavior` | `editor_search_bar_replace_all_updates_all_current_matches` |
+| UC-5 | BR-22 | `editor_behavior` | `editor_search_bar_replace_does_not_mutate_preview_mode` |
 
 ## Location
 

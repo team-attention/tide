@@ -362,10 +362,14 @@ impl App {
                     .get("url")
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.trim().is_empty());
+                let reason = parsed
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty());
 
                 match self.pane_mut(pane_id) {
                     Some(PaneKind::Browser(browser)) => {
-                        browser.apply_external_handoff(url);
+                        browser.apply_external_handoff(reason, url);
                         true
                     }
                     _ => false,
@@ -391,9 +395,8 @@ impl App {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
                     .filter(|s| !s.trim().is_empty());
-                let page_map = crate::pane::browser::BrowserPageMap::from_bridge_json(
-                    parsed.get("page_map"),
-                );
+                let page_map =
+                    crate::pane::browser::BrowserPageMap::from_bridge_json(parsed.get("page_map"));
 
                 let snapshot =
                     if text.trim().is_empty() && page_title.is_none() && page_url.is_none() {
@@ -713,10 +716,23 @@ impl App {
             self.init_gpu(window);
 
             if let Some(session) = saved_session {
-                if !self.restore_from_session(session) {
+                if self.restore_from_session(session) {
+                    self.record_restore_event(
+                        crate::state::RestoreEventKind::SessionRestored,
+                        true,
+                    );
+                } else {
+                    self.record_restore_event(
+                        crate::state::RestoreEventKind::SessionRestoreFailed,
+                        true,
+                    );
                     self.create_initial_pane(None);
                 }
             } else {
+                self.record_restore_event(
+                    crate::state::RestoreEventKind::SessionRestoreMissing,
+                    true,
+                );
                 self.create_initial_pane(None);
             }
         } else {
@@ -741,6 +757,10 @@ impl App {
 
             if let Some(ref session) = saved_session {
                 self.restore_preferences(session, early_terminal);
+                self.record_restore_event(
+                    crate::state::RestoreEventKind::PreferencesRestored,
+                    false,
+                );
             } else {
                 self.create_initial_pane(early_terminal);
             }

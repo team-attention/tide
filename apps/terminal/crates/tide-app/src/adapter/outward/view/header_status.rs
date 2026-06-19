@@ -122,4 +122,3 @@ pub(crate) fn stage_terminal_dot_visual_state(
 
     terminal_chrome_visual_state(panes, detected_agents, pane_id)
 }
-

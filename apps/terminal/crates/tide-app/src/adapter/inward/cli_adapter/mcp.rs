@@ -166,9 +166,11 @@ fn mcp_instructions() -> &'static str {
         "FileTree View is a separate filesystem view, not a Pane. ",
         "Workspace rail is task navigation. ",
         "Pane kinds are Terminal, Editor, Diff, Browser, and Launcher. ",
-        "Tide MCP tools can observe surfaces and Pane geometry, open Editor and Browser Panes, adjust Layout Targets, send keys to the Terminal, capture Pane content or selections, and manage Context Artifacts. ",
+        "Tide MCP tools can observe surfaces and Pane geometry, open Editor and Browser Panes, adjust Layout Targets, send keys to the Terminal, search and replace inside owned Editor Panes, search Terminals, capture Pane content or selections, and manage Context Artifacts. ",
         "Tool descriptions define the exact intent, placement, and limits for each action. ",
-        "First call tide_observe_workspace with detail=compact when you need current Caller Pane orientation, Terminal Context Surface owner, Pane membership, or Browser Pane targets; use detail=full when you need complete geometry or Browser Pane visual-fit guidance. ",
+        "First call tide_observe_workspace with detail=compact when you need current Caller Pane orientation, Terminal Context Surface owner, Pane membership, Browser Pane targets, or project_config Workspace/Action recipes; use detail=full when you need complete geometry or Browser Pane visual-fit guidance. ",
+        "After session restore, read task_monitor.agent_resume_policy: Tide restores Workspace layout, Terminal cwd, and surfaces, but never automatically resumes provider child processes, terminal scrollback, or provider conversations. ",
+        "Use tide_observe_terminal to inspect your live Terminal work surface, including visible output, cursor, cwd, shell status, scrollback position, URL ranges, and OSC 8 hyperlinks before deciding what command or keys to send next. Use tide_find_in_terminal for older scrollback, errors, test failures, and command output that is no longer visible. Use tide_capture_pane, tide_find_in_editor, and tide_replace_in_editor for task-local Editor Pane reading and focused edits before asking the user to paste file contents. ",
         "Tide layout: the Stage holds Terminals; each active Stage Terminal owns a Terminal Context Surface for related Panes. ",
         "Use tide_layout_action for Layout Target mutations such as Terminal Context Surface width or pane_split ratio; explicit Terminal Context Surface targets use owner_terminal_id and do not depend on starting UI focus; tide_resize_pane is legacy Stage split compatibility. ",
         "Tool Selection Guidance: if a Browser Pane observation has visual_fit.tool_selection.next_tool=tide_layout_action, select that recommended Tide tool next, then re-observe with tide_observe_workspace or tide_browser_observe before Browser Pane content actions. ",
@@ -193,7 +195,7 @@ pub(crate) fn mcp_initialize_for_test() -> serde_json::Value {
 }
 
 pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
-    serde_json::json!([
+    let mut tools = serde_json::json!([
         {
             "name": "tide_list_panes",
             "description": "List panes with id, kind, rect, and focus status. Wrapped Agent calls are scoped to the Caller Pane Terminal boundary.",
@@ -201,12 +203,38 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_observe_workspace",
-            "description": "Provider-neutral Tide MCP Runtime preflight. Use detail=compact for mechanical orientation and current Browser Pane targets. Use detail=full for Stage, Terminal Context Surface, visible Pane geometry, focus, Browser Pane visual fit, Tool Selection Guidance, and Browser Runtime Router policy. If visual_fit.tool_selection recommends tide_layout_action, choose that layout tool next and then re-observe.",
+            "description": "Provider-neutral Tide MCP Runtime preflight. Use detail=compact for mechanical orientation, project_config Workspace/Action recipes, and current Browser Pane targets. Use detail=full for Stage, Terminal Context Surface, visible Pane geometry, focus, Browser Pane visual fit, Tool Selection Guidance, and Browser Runtime Router policy. If visual_fit.tool_selection recommends tide_layout_action, choose that layout tool next and then re-observe.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "detail": { "type": "string", "enum": ["compact", "full"], "description": "compact reports Caller Pane orientation and Browser Pane targets; full includes complete geometry and visual-fit guidance" }
                 }
+            }
+        },
+        {
+            "name": "tide_observe_terminal",
+            "description": "Observe the caller Terminal Pane as a structured work surface: visible screen rows, cursor, cwd, child pid, shell state, scrollback position, selection, URL ranges, and OSC 8 hyperlink metadata. Wrapped Agent calls are scoped to the Caller Pane Terminal.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target Terminal Pane ID; omitted target resolves to Caller Pane before UI focus. Wrapped Agents may observe only their Caller Pane Terminal." },
+                    "detail": { "type": "string", "enum": ["compact", "full"], "description": "compact returns recent visible rows; full returns the visible grid, bounded by max_lines" },
+                    "max_lines": { "type": "integer", "description": "Maximum visible rows to return, capped by Tide." }
+                }
+            }
+        },
+        {
+            "name": "tide_find_in_terminal",
+            "description": "Search the caller Terminal Pane's scrollback and visible screen for a literal query. Returns absolute rows, columns, matching lines, optional context, and truncation metadata. Wrapped Agent calls are scoped to the Caller Pane Terminal.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target Terminal Pane ID; omitted target resolves to Caller Pane before UI focus. Wrapped Agents may search only their Caller Pane Terminal." },
+                    "query": { "type": "string", "description": "Literal query to search for. Search is case-insensitive." },
+                    "max_matches": { "type": "integer", "description": "Maximum matches to return, capped by Tide." },
+                    "context_lines": { "type": "integer", "description": "Number of context lines before and after each match, capped by Tide." }
+                },
+                "required": ["query"]
             }
         },
         {
@@ -535,7 +563,45 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
     ])
     .as_array()
     .expect("mcp tool definitions should be an array")
-    .clone()
+    .clone();
+    tools.insert(4, mcp_find_in_editor_tool_definition());
+    tools.insert(5, mcp_replace_in_editor_tool_definition());
+    tools
+}
+
+fn mcp_find_in_editor_tool_definition() -> serde_json::Value {
+    serde_json::json!({
+        "name": "tide_find_in_editor",
+        "description": "Search a Tide Editor Pane buffer for a literal query. Returns file path, editor mode, cursor, line/column matches, optional context, and truncation metadata. Wrapped Agent calls are scoped to Editor Panes owned by the Caller Pane Terminal.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pane_id": { "type": "integer", "description": "Target Editor Pane ID. Wrapped Agents may search only Editor Panes owned by their Caller Pane Terminal." },
+                "query": { "type": "string", "description": "Literal query to search for. Search is case-insensitive." },
+                "max_matches": { "type": "integer", "description": "Maximum matches to return, capped by Tide." },
+                "context_lines": { "type": "integer", "description": "Number of context lines before and after each match, capped by Tide." }
+            },
+            "required": ["query"]
+        }
+    })
+}
+
+fn mcp_replace_in_editor_tool_definition() -> serde_json::Value {
+    serde_json::json!({
+        "name": "tide_replace_in_editor",
+        "description": "Apply bounded literal replacements inside an owned Tide Editor Pane buffer. Defaults to the first match; pass all=true or max_replacements for broader focused edits. Wrapped Agent calls are scoped to Editor Panes owned by the Caller Pane Terminal.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pane_id": { "type": "integer", "description": "Target Editor Pane ID. Wrapped Agents may edit only Editor Panes owned by their Caller Pane Terminal." },
+                "query": { "type": "string", "description": "Literal query to replace. Search is case-insensitive." },
+                "replacement": { "type": "string", "description": "Replacement text." },
+                "all": { "type": "boolean", "description": "When true, replace all matches up to Tide's replacement cap." },
+                "max_replacements": { "type": "integer", "description": "Maximum replacements to apply, capped by Tide." }
+            },
+            "required": ["query", "replacement"]
+        }
+    })
 }
 
 fn mcp_tools_list(id: serde_json::Value) -> serde_json::Value {
@@ -585,6 +651,10 @@ fn mcp_tools_call(
     let method = match tool_name {
         "tide_list_panes" => "list-panes",
         "tide_observe_workspace" => "observe-workspace",
+        "tide_observe_terminal" => "observe-terminal",
+        "tide_find_in_terminal" => "find-in-terminal",
+        "tide_find_in_editor" => "find-in-editor",
+        "tide_replace_in_editor" => "replace-in-editor",
         "tide_rename_workspace" => "rename-workspace",
         "tide_capture_pane" => "capture-pane",
         "tide_capture_selection" => "capture-selection",
@@ -658,7 +728,10 @@ pub(crate) fn mcp_tool_call_content(result: &serde_json::Value) -> Vec<serde_jso
     let mut text_value = result.clone();
     let mut image_block: Option<serde_json::Value> = None;
 
-    if let Some(screenshot) = text_value.get_mut("screenshot").and_then(|s| s.as_object_mut()) {
+    if let Some(screenshot) = text_value
+        .get_mut("screenshot")
+        .and_then(|s| s.as_object_mut())
+    {
         if let Some(data) = screenshot
             .get("data")
             .and_then(|value| value.as_str())

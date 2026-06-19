@@ -17,14 +17,16 @@ pub(crate) use chrome::{
     file_tree_disclosure_color, file_tree_expanded_directory_chrome, file_tree_focus_chrome,
     file_tree_hover_shows_overlay, file_tree_name_style, file_tree_row_slab_clip,
     integration_toggle_notification_indicator_color, pane_surface_attention_status,
-    region_header_anchor_pane_id, titlebar_action_button_icon, titlebar_action_icon_text_glyph,
+    region_header_anchor_pane_id, terminal_context_surface_header_identity_label,
+    titlebar_action_button_icon, titlebar_action_icon_text_glyph,
     titlebar_action_raster_icon_asset, titlebar_button_backdrop_level, titlebar_identity_origin_x,
     titlebar_identity_origin_x_for_window, titlebar_surface_button_icon,
     titlebar_surface_icon_text_glyph, titlebar_surface_raster_icon_asset,
     titlebar_toggle_button_draws_hotkey_hint, titlebar_toggle_button_height,
-    titlebar_toggle_button_width, titlebar_workspace_meta_text, titlebar_workspace_title,
-    workspace_item_indicator_color, workspace_item_indicator_status, BrowserNavIcon,
-    TitlebarActionIcon, TitlebarSurfaceIcon,
+    titlebar_toggle_button_width, titlebar_workspace_attention_panel_detail_text,
+    titlebar_workspace_attention_panel_text, titlebar_workspace_meta_text,
+    titlebar_workspace_task_status_text, titlebar_workspace_title, workspace_item_indicator_color,
+    workspace_item_indicator_status, BrowserNavIcon, TitlebarActionIcon, TitlebarSurfaceIcon,
 };
 #[cfg(test)]
 pub(crate) use cursor::editor_selection_rects;
@@ -36,6 +38,8 @@ pub(crate) use header::{header_action_raster_icon_asset, header_close_raster_ico
 pub(crate) use launcher::launcher_icon_raster_icon_asset;
 #[cfg(test)]
 pub(crate) use overlays::{
+    config_page_osc52_read_status_text, config_page_osc52_read_toggle_text,
+    config_page_theme_palette_status_text, config_page_theme_palette_toggle_text,
     config_page_theme_status_text, config_page_theme_toggle_text, context_menu_icon,
     context_menu_icon_text_glyph, context_menu_raster_icon_asset, search_bar_close_icon_text_glyph,
     search_close_raster_icon_asset, ContextMenuIcon,

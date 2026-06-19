@@ -13,11 +13,15 @@
 
 </div>
 
-Tide Terminal is a native macOS (Rust + WGPU) Integrated Task Environment for agent-led software work — the original Tide. Run Claude Code, Codex, Gemini, or Antigravity in Terminal Panes, split larger tasks into Workspaces, inspect code and diffs beside the task, and give Wrapped Agents a human-visible Browser Pane for previews, docs, and verification.
+Tide Terminal is a native macOS (Rust + WGPU) Integrated Task Environment for agent-led software work, the original Tide. Run Claude Code, Codex, Gemini, or Antigravity in Terminal Panes, split larger tasks into Workspaces, inspect code and diffs beside the task, and give Wrapped Agents a human-visible Browser Pane for previews, docs, and verification.
 
 Through the Agent Gateway and Tide MCP Runtime, Wrapped Agents can inspect Workspace structure and Pane geometry, operate Browser Panes through Tide Terminal's Browser Pane Runtime, capture Terminal or Editor Pane content on request, and manage Context Artifacts. Browser Pane operations are the default path for Wrapped Agents using the Tide MCP Runtime; external browser runtimes remain explicit fallbacks.
 
-> If you actually like living in the terminal, this is your Tide. If you'd rather not, the desktop **[Tide](../desktop/)** (`apps/desktop/`) gives you and your agent a shared workbench instead.
+> Prefer a terminal-first workflow? This is Tide Terminal: the native macOS path
+> where the Terminal stays the live source of truth and the workbench stays
+> shared with your agent.
+
+**Product demo**
 
 https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
@@ -25,13 +29,21 @@ https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
 Download the latest Tide Terminal `.dmg` from [Releases](https://github.com/team-attention/tide/releases), open it, and drag **Tide Terminal** to Applications.
 
-> Building from source / contributing: see [`CLAUDE.md`](CLAUDE.md).
+Release DMGs are expected to be signed and notarized for macOS Gatekeeper. For
+the update-feed boundary, source builds, and maintainer release path, see
+[Install and release](docs/install-release.md).
+
+> Building from source / contributing: start with [Install and release](docs/install-release.md), then see [`CLAUDE.md`](CLAUDE.md).
 
 ## Features
 
+### Use A Real Native Terminal Surface
+
+Tide's Terminal Pane is PTY-backed with alacritty-based VT parsing, WGPU rendering, scrollback, search, OSC 8 hyperlinks, OSC 52 clipboard writes, OSC 9 notifications, mouse reporting, wheel forwarding, Kitty keyboard protocol support, configurable scrollback, built-in light/dark palettes, and a conservative `TERM=xterm-256color` strategy. The current capability boundary is documented in [Terminal capabilities](docs/terminal-capabilities.md).
+
 ### Run Multiple Coding Agents
 
-Launch Claude Code, Codex, Gemini, or Antigravity from Terminal Panes. Split agents side by side in the Stage, keep separate tasks in separate Workspaces, and when they are launched through Tide Terminal wrappers or auto-integration, see whether each Wrapped Agent is running, idle, or waiting for input.
+Launch Claude Code, Codex, Gemini, Antigravity, or opencode from Terminal Panes. Split agents side by side in the Stage, keep separate tasks in separate Workspaces, and when they are launched through Tide Terminal wrappers or auto-integration, see whether each Wrapped Agent is running, idle, or waiting for input.
 
 ### Keep Each Task in a Workspace
 
@@ -73,7 +85,7 @@ Agents can create Render Panes (Browser Panes in render mode) with `tide_render_
 ## Quick Start
 
 1. Open Tide Terminal. It starts with one Workspace and one Terminal Pane.
-2. Run a coding agent inside the Terminal, such as Claude Code, Codex, Gemini, or Antigravity.
+2. Run a coding agent inside the Terminal, such as Claude Code, Codex, Gemini, Antigravity, or opencode.
 3. Add another Terminal with `Cmd+T`, split the current FocusArea top/bottom with `Cmd+Shift+T`, or open a Browser Pane with `Cmd+Shift+B`.
 4. Open or focus the Dock with `Cmd+\`. If opening the Dock creates or focuses a Launcher, use the Launcher keys: `B` for a Browser Pane, `E` for a new Editor Pane, `O` to open a file, or `T` for a Terminal Pane.
 5. The Dock is tied to the focused Terminal Pane in the Stage. When you move between Terminal Panes, the Dock swaps to that Terminal's Terminal Context Surface.
@@ -138,6 +150,9 @@ Some Browser and Editor Pane shortcuts below are handled inside the focused Pane
 | --- | --- |
 | `Cmd+S` | Save focused Editor Pane, or open Save As for an untitled Editor Pane |
 | `Cmd+F` | Find in the focused Terminal, Editor, or Browser Pane |
+| `Tab` in Editor Search | Open or switch the replace field |
+| `Enter` in Editor Replace | Replace the current match |
+| `Cmd+Enter` in Editor Replace | Replace all current matches |
 | `Cmd+C` / `Cmd+V` | Copy / paste |
 | `Cmd+U` / `Cmd+D` | Scroll half page up / down |
 | `Cmd++` or `Cmd+=` / `Cmd+-` / `Cmd+0` | Increase / decrease / reset font size |
@@ -147,13 +162,32 @@ Some Browser and Editor Pane shortcuts below are handled inside the focused Pane
 
 ## Why Tide Terminal?
 
-Tide Terminal is not trying to replace your terminal, editor, browser, or LLM. It is a shared task environment around them.
+Tide Terminal is terminal-first, not terminal-only. It should be comfortable
+enough to keep open as a daily terminal, and useful because each task becomes a
+shared Workspace around the live Terminal.
 
-Terminals are still the substrate. The difference is that the surrounding Workspace is structured: Panes have identity, layout is inspectable, Browser Pane work is visible, context can be captured as Context Artifacts, and agents can use the same surfaces the human is using.
+Terminals are still the substrate. The difference is that the surrounding
+Workspace is structured: Panes have identity, layout is inspectable, Browser
+Pane work is visible, context can be captured as Context Artifacts, and agents
+can use the same surfaces the human is using.
 
 ## Documentation
 
 - [Vision](docs/vision.md)
+- [Product Standard](docs/product-standard.md)
+- [Known limitations](docs/known-limitations.md)
+- [Install and release](docs/install-release.md)
+- [Terminal capabilities](docs/terminal-capabilities.md)
+- [Compatibility diagnostics](docs/compatibility.md)
+- [Benchmarks](docs/benchmarks.md)
+- [Tide MCP Runtime](docs/mcp-runtime.md)
+- [Agent tool guidance](docs/agent-tool-guidance.md)
+- [Project local configuration](docs/project-config.md)
+- [Settings](docs/settings.md)
+- [Shell integration](docs/shell-integration.md)
+- [SSH and remote workflow](docs/ssh-remote.md)
+- [TERM and terminfo](docs/terminfo.md)
+- [Keybindings](docs/keybindings.md)
 - [Roadmap](docs/roadmap.md)
 - [System docs](docs/README.md)
 - [Domain glossary](docs/glossary.md)

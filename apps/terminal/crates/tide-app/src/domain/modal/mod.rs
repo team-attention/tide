@@ -882,9 +882,7 @@ impl ContextMenuState {
                 shell_idle,
                 ..
             } => ContextMenuAction::items(*is_dir, *is_app_bundle, *shell_idle),
-            ContextMenuTarget::WorkspaceSidebarItem { .. } => {
-                ContextMenuAction::workspace_items()
-            }
+            ContextMenuTarget::WorkspaceSidebarItem { .. } => ContextMenuAction::workspace_items(),
             ContextMenuTarget::EditorSymbol { .. } => ContextMenuAction::editor_symbol_items(),
         }
     }
@@ -921,6 +919,7 @@ impl ContextMenuState {
 pub(crate) enum ConfigSection {
     Keybindings,
     Worktree,
+    Terminal,
     Appearance,
 }
 
@@ -940,6 +939,9 @@ pub(crate) struct ConfigPageState {
     /// Which field is selected in Worktree tab (0 = base_dir_pattern, 1 = copy_files)
     pub selected_field: usize,
     pub bindings: Vec<(crate::tide_input::GlobalAction, crate::tide_input::Hotkey)>,
+    pub terminal_osc52_read: bool,
+    pub terminal_scrollback_input: InputLine,
+    pub terminal_scrollback_editing: bool,
     pub dirty: bool,
 }
 
@@ -948,6 +950,22 @@ impl ConfigPageState {
         bindings: Vec<(crate::tide_input::GlobalAction, crate::tide_input::Hotkey)>,
         worktree_pattern: String,
         copy_files: String,
+    ) -> Self {
+        Self::with_terminal_settings(
+            bindings,
+            worktree_pattern,
+            copy_files,
+            false,
+            crate::tide_terminal::DEFAULT_SCROLLBACK_LINES,
+        )
+    }
+
+    pub fn with_terminal_settings(
+        bindings: Vec<(crate::tide_input::GlobalAction, crate::tide_input::Hotkey)>,
+        worktree_pattern: String,
+        copy_files: String,
+        terminal_osc52_read: bool,
+        terminal_scrollback_lines: usize,
     ) -> Self {
         Self {
             section: ConfigSection::Keybindings,
@@ -960,8 +978,56 @@ impl ConfigPageState {
             copy_files_editing: false,
             selected_field: 0,
             bindings,
+            terminal_osc52_read,
+            terminal_scrollback_input: InputLine::with_text(terminal_scrollback_lines.to_string()),
+            terminal_scrollback_editing: false,
             dirty: false,
         }
+    }
+
+    pub fn set_keybinding_with_swap(
+        &mut self,
+        action_index: usize,
+        hotkey: crate::tide_input::Hotkey,
+    ) {
+        if action_index >= self.bindings.len() {
+            return;
+        }
+
+        let previous = self.bindings[action_index].1.clone();
+        if let Some((conflict_index, _)) = self
+            .bindings
+            .iter()
+            .enumerate()
+            .find(|(i, (_, existing))| *i != action_index && *existing == hotkey)
+        {
+            self.bindings[conflict_index].1 = previous;
+        }
+        self.bindings[action_index].1 = hotkey;
+        self.dirty = true;
+    }
+
+    pub fn toggle_terminal_osc52_read(&mut self) {
+        self.terminal_osc52_read = !self.terminal_osc52_read;
+        self.dirty = true;
+    }
+
+    pub fn insert_terminal_scrollback_char(&mut self, ch: char) {
+        if ch.is_ascii_digit() {
+            self.terminal_scrollback_input.insert_char(ch);
+            self.dirty = true;
+        }
+    }
+
+    pub fn terminal_scrollback_lines(&self) -> usize {
+        let trimmed = self.terminal_scrollback_input.text.trim();
+        if trimmed.is_empty() {
+            return crate::tide_terminal::DEFAULT_SCROLLBACK_LINES;
+        }
+        trimmed
+            .parse::<usize>()
+            .unwrap_or(crate::tide_terminal::DEFAULT_SCROLLBACK_LINES)
+            .min(crate::tide_terminal::MAX_SCROLLBACK_LINES)
     }
 }
 

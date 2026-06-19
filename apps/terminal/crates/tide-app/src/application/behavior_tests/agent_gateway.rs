@@ -1528,7 +1528,11 @@ fn notify_does_not_bump_chrome_when_no_agent() {
 fn wrapper_scripts_are_generated_at_known_path() {
     // UC-1: Wrapper scripts should be created in $TMPDIR/tide-<pid>-bin/
     let pid = std::process::id();
-    let expected_dir = format!("{}/tide-terminal-{}-bin", std::env::temp_dir().display(), pid);
+    let expected_dir = format!(
+        "{}/tide-terminal-{}-bin",
+        std::env::temp_dir().display(),
+        pid
+    );
     // generate_agent_wrappers is called in main, but we can verify
     // the expected path format
     assert!(expected_dir.contains(&format!("tide-terminal-{}-bin", pid)));
@@ -1558,12 +1562,13 @@ fn codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook() {
     assert!(wrapper.contains("\"PermissionRequest\""));
     assert!(wrapper.contains("\"Stop\""));
     assert!(wrapper.contains("notify agent-running --pane \"$TIDE_TERMINAL_PANE\" --agent codex"));
-    assert!(wrapper
-        .contains("notify agent-needs-input --pane \"$TIDE_TERMINAL_PANE\" --agent codex --payload-stdin"));
+    assert!(wrapper.contains(
+        "notify agent-needs-input --pane \"$TIDE_TERMINAL_PANE\" --agent codex --payload-stdin"
+    ));
     assert!(wrapper.contains("\"matcher\": \"Bash\""));
-    assert!(
-        wrapper.contains("notify codex-stop --pane \"$TIDE_TERMINAL_PANE\" --agent codex --payload-stdin")
-    );
+    assert!(wrapper.contains(
+        "notify codex-stop --pane \"$TIDE_TERMINAL_PANE\" --agent codex --payload-stdin"
+    ));
     assert!(wrapper.contains("tide_notify \"agent-detached\""));
     assert!(!wrapper.contains("rm -rf \"$TIDE_TERMINAL_CODEX_HOME\""));
     assert!(wrapper.contains("tide:wrapped-agent:codex:$1"));
@@ -1677,11 +1682,14 @@ fn claude_wrapper_forwards_hook_stdin_payloads_for_notification_and_stop() {
     assert!(wrapper.contains(
         "notify agent-needs-input --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude --payload-stdin"
     ));
-    assert!(wrapper
-        .contains("notify agent-idle --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude --payload-stdin"));
+    assert!(wrapper.contains(
+        "notify agent-idle --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude --payload-stdin"
+    ));
     assert!(wrapper.contains("tide_notify agent-attached"));
     assert!(wrapper.contains("tide_notify agent-detached"));
-    assert!(wrapper.contains("notify agent-running --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude"));
+    assert!(
+        wrapper.contains("notify agent-running --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude")
+    );
 }
 
 #[test]
@@ -1695,11 +1703,13 @@ fn gemini_wrapper_forwards_hook_stdin_payloads_for_notification_and_after_agent(
     assert!(wrapper.contains(
         "notify agent-needs-input --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini --payload-stdin"
     ));
-    assert!(wrapper
-        .contains("notify agent-idle --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini --payload-stdin"));
+    assert!(wrapper.contains(
+        "notify agent-idle --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini --payload-stdin"
+    ));
     assert!(wrapper.contains("tide_notify agent-attached"));
     assert!(wrapper.contains("tide_notify agent-detached"));
-    assert!(wrapper.contains("notify agent-running --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini"));
+    assert!(wrapper
+        .contains("notify agent-running --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini"));
 }
 
 #[test]
@@ -4265,4 +4275,3 @@ fn notification_activation_with_missing_pane_is_no_op() {
         Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
 }
-

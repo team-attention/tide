@@ -265,10 +265,7 @@ impl App {
     }
 
     /// Open the finder populated with LSP "Find References" results.
-    fn show_reference_results(
-        &mut self,
-        locations: Vec<crate::tide_lsp::manager::LspLocation>,
-    ) {
+    fn show_reference_results(&mut self, locations: Vec<crate::tide_lsp::manager::LspLocation>) {
         let base_dir = self.resolve_base_dir();
         let hits: Vec<crate::state::WorkspaceSearchHit> = locations
             .into_iter()

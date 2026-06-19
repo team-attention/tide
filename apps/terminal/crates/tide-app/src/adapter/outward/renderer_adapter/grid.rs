@@ -9,8 +9,8 @@ use super::vertex::{GridBgInstance, GridGlyphInstance};
 use super::WgpuRenderer;
 
 const PROGRAMMING_LIGATURE_PATTERNS: &[&str] = &[
-    "!==", "===", "<=>", "=>", "->", "<-", "<=", ">=", "==", "!=", "::", ":=", "&&", "||",
-    "++", "--", "/*", "*/", "</", "/>", "..", "...",
+    "!==", "===", "<=>", "=>", "->", "<-", "<=", ">=", "==", "!=", "::", ":=", "&&", "||", "++",
+    "--", "/*", "*/", "</", "/>", "..", "...",
 ];
 
 fn ligature_run_char(ch: char) -> bool {
@@ -323,7 +323,14 @@ impl WgpuRenderer {
                     self.shape_grid_ligature_run(&text, row, col, style, cell_size, offset)
                 {
                     for bg_col in col..end {
-                        self.draw_grid_cell(' ', row, bg_col, cells[bg_col].style, cell_size, offset);
+                        self.draw_grid_cell(
+                            ' ',
+                            row,
+                            bg_col,
+                            cells[bg_col].style,
+                            cell_size,
+                            offset,
+                        );
                     }
                     if self.active_pane_id.is_some() {
                         self.active_pane_cache.glyph_instances.extend(glyphs);
@@ -449,10 +456,20 @@ mod tests {
 
     #[test]
     fn ligature_runs_stop_at_style_and_space_boundaries() {
-        let mut cells = vec![cell('a'), cell('='), cell('>'), cell(' '), cell('-'), cell('>')];
+        let mut cells = vec![
+            cell('a'),
+            cell('='),
+            cell('>'),
+            cell(' '),
+            cell('-'),
+            cell('>'),
+        ];
         cells[2].style.bold = true;
 
         assert_eq!(ligature_run_end(&cells, 0, cells.len()), None);
-        assert_eq!(ligature_run_end(&cells, 4, cells.len()), Some((6, "->".to_string())));
+        assert_eq!(
+            ligature_run_end(&cells, 4, cells.len()),
+            Some((6, "->".to_string()))
+        );
     }
 }

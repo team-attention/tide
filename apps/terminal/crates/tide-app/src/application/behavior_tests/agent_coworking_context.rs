@@ -761,6 +761,7 @@ fn contextartifact_terminal_input_is_formatted_for_paired_agent_injection() {
         content: "route".to_string(),
         comment: "paired only".to_string(),
         pinned: true,
+        deliveries: Vec::new(),
     };
 
     let prompt = format_context_artifact_terminal_input(&artifact);
@@ -786,6 +787,7 @@ fn contextartifact_terminal_input_uses_human_readable_source_label() {
         content: String::new(),
         comment: "review this".to_string(),
         pinned: false,
+        deliveries: Vec::new(),
     };
 
     let prompt = format_context_artifact_terminal_input(&artifact);
@@ -793,6 +795,61 @@ fn contextartifact_terminal_input_uses_human_readable_source_label() {
     assert!(prompt.contains("Source:"));
     assert!(prompt.contains("/tmp/nested/context.md"));
     assert!(!prompt.contains("editor pane 14"));
+}
+
+#[test]
+fn diff_context_artifact_source_label_uses_selected_file() {
+    // UC-5 BR-28: Diff Pane Context Artifacts name the selected file, not just the diff root or first changed file.
+    let (mut app, terminal_id) = app_with_terminal();
+    let diff_id = app.layout.split(terminal_id, SplitDirection::Horizontal);
+    let mut diff = DiffPane::new_empty(diff_id, PathBuf::from("/tmp/tide-review"));
+    diff.loaded = true;
+    diff.side_by_side = false;
+    diff.files = vec![
+        DiffFileEntry {
+            status: "M".to_string(),
+            path: "src/first.rs".to_string(),
+            additions: 1,
+            deletions: 0,
+        },
+        DiffFileEntry {
+            status: "M".to_string(),
+            path: "src/selected.rs".to_string(),
+            additions: 1,
+            deletions: 1,
+        },
+    ];
+    diff.expanded = HashSet::from([0, 1]);
+    diff.diff_cache
+        .insert(0, vec![DiffLine::Context("first context".to_string())]);
+    diff.diff_cache.insert(
+        1,
+        vec![
+            DiffLine::Removed("old selected".to_string()),
+            DiffLine::Added("new selected".to_string()),
+        ],
+    );
+    diff.selection = Some(Selection {
+        anchor: (4, 0),
+        end: (4, 14),
+    });
+    app.panes.insert(diff_id, PaneKind::Diff(diff));
+    app.assoc.associated_terminal.insert(diff_id, terminal_id);
+
+    let created = app
+        .handle_cli_command(
+            "create-context-artifact",
+            json!({
+                "pane_id": diff_id,
+                "comment": "review selected change",
+                "_caller_pane": terminal_id
+            }),
+        )
+        .unwrap();
+
+    assert_eq!(created["source_label"], "/tmp/tide-review/src/selected.rs");
+    assert_eq!(created["pane_kind"], "diff");
+    assert_eq!(created["content"], "- old selected");
 }
 
 #[test]

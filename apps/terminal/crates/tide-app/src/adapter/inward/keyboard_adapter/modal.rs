@@ -523,21 +523,7 @@ pub(super) fn handle_config_page_key(
                 .and_then(|p| p.recording.as_ref().map(|r| r.action_index));
             if let Some(action_index) = action_index {
                 if let Some(page) = ctx.modal_mut().config_page.as_mut() {
-                    if action_index < page.bindings.len() {
-                        for (i, (_, existing)) in page.bindings.iter_mut().enumerate() {
-                            if i != action_index && *existing == hotkey {
-                                *existing = crate::tide_input::Hotkey::new(
-                                    Key::Char('?'),
-                                    false,
-                                    false,
-                                    false,
-                                    false,
-                                );
-                            }
-                        }
-                        page.bindings[action_index].1 = hotkey;
-                        page.dirty = true;
-                    }
+                    page.set_keybinding_with_swap(action_index, hotkey);
                     page.recording = None;
                 }
             }
@@ -648,6 +634,56 @@ pub(super) fn handle_config_page_key(
         return;
     }
 
+    let is_terminal_scrollback_editing = ctx
+        .modal()
+        .config_page
+        .as_ref()
+        .map(|p| p.terminal_scrollback_editing)
+        .unwrap_or(false);
+
+    if is_terminal_scrollback_editing {
+        match key {
+            Key::Escape | Key::Enter => {
+                if let Some(page) = ctx.modal_mut().config_page.as_mut() {
+                    page.terminal_scrollback_editing = false;
+                    page.dirty = true;
+                }
+            }
+            Key::Backspace => {
+                if let Some(page) = ctx.modal_mut().config_page.as_mut() {
+                    page.terminal_scrollback_input.backspace();
+                    page.dirty = true;
+                }
+            }
+            Key::Delete => {
+                if let Some(page) = ctx.modal_mut().config_page.as_mut() {
+                    page.terminal_scrollback_input.delete_char();
+                    page.dirty = true;
+                }
+            }
+            Key::Left => {
+                if let Some(page) = ctx.modal_mut().config_page.as_mut() {
+                    page.terminal_scrollback_input.move_cursor_left();
+                }
+            }
+            Key::Right => {
+                if let Some(page) = ctx.modal_mut().config_page.as_mut() {
+                    page.terminal_scrollback_input.move_cursor_right();
+                }
+            }
+            Key::Char(ch) => {
+                if !modifiers.ctrl && !modifiers.meta {
+                    if let Some(page) = ctx.modal_mut().config_page.as_mut() {
+                        page.insert_terminal_scrollback_char(ch);
+                    }
+                }
+            }
+            _ => {}
+        }
+        ctx.invalidate_chrome();
+        return;
+    }
+
     match key {
         Key::Escape => {
             ctx.close_config_page();
@@ -656,12 +692,16 @@ pub(super) fn handle_config_page_key(
             if let Some(page) = ctx.modal_mut().config_page.as_mut() {
                 page.section = match page.section {
                     ConfigSection::Keybindings => ConfigSection::Worktree,
-                    ConfigSection::Worktree => ConfigSection::Appearance,
+                    ConfigSection::Worktree => ConfigSection::Terminal,
+                    ConfigSection::Terminal => ConfigSection::Appearance,
                     ConfigSection::Appearance => ConfigSection::Keybindings,
                 };
                 page.selected = 0;
                 page.scroll_offset = 0;
                 page.selected_field = 0;
+                page.worktree_editing = false;
+                page.copy_files_editing = false;
+                page.terminal_scrollback_editing = false;
             }
         }
         Key::Up | Key::Char('k') => {
@@ -681,7 +721,16 @@ pub(super) fn handle_config_page_key(
                                 page.selected_field -= 1;
                             }
                         }
-                        ConfigSection::Appearance => {}
+                        ConfigSection::Terminal => {
+                            if page.selected_field > 0 {
+                                page.selected_field -= 1;
+                            }
+                        }
+                        ConfigSection::Appearance => {
+                            if page.selected_field > 0 {
+                                page.selected_field -= 1;
+                            }
+                        }
                     }
                 }
             }
@@ -705,18 +754,37 @@ pub(super) fn handle_config_page_key(
                                 page.selected_field += 1;
                             }
                         }
-                        ConfigSection::Appearance => {}
+                        ConfigSection::Terminal => {
+                            if page.selected_field < 1 {
+                                page.selected_field += 1;
+                            }
+                        }
+                        ConfigSection::Appearance => {
+                            if page.selected_field < 1 {
+                                page.selected_field += 1;
+                            }
+                        }
                     }
                 }
             }
         }
         Key::Enter => {
-            let section = ctx.modal().config_page.as_ref().map(|page| page.section);
-            match section {
-                Some(ConfigSection::Appearance) => {
+            let selection = ctx
+                .modal()
+                .config_page
+                .as_ref()
+                .map(|page| (page.section, page.selected_field));
+            match selection {
+                Some((ConfigSection::Appearance, 0)) => {
                     ctx.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
                 }
-                Some(ConfigSection::Keybindings | ConfigSection::Worktree) => {
+                Some((ConfigSection::Appearance, _)) => {
+                    ctx.cycle_theme_palette();
+                }
+                Some((
+                    ConfigSection::Keybindings | ConfigSection::Worktree | ConfigSection::Terminal,
+                    _,
+                )) => {
                     if let Some(page) = ctx.modal_mut().config_page.as_mut() {
                         match page.section {
                             ConfigSection::Keybindings => {
@@ -727,6 +795,11 @@ pub(super) fn handle_config_page_key(
                             ConfigSection::Worktree => match page.selected_field {
                                 0 => page.worktree_editing = true,
                                 1 => page.copy_files_editing = true,
+                                _ => {}
+                            },
+                            ConfigSection::Terminal => match page.selected_field {
+                                0 => page.terminal_scrollback_editing = true,
+                                1 => page.toggle_terminal_osc52_read(),
                                 _ => {}
                             },
                             ConfigSection::Appearance => {}

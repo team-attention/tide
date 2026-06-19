@@ -441,11 +441,7 @@ impl crate::application::ports::inward::LayoutPort for App {
     }
 
     fn palette(&self) -> &'static ThemePalette {
-        if self.window.dark_mode {
-            &DARK
-        } else {
-            &LIGHT
-        }
+        self.window.palette()
     }
 
     /// Compute the full layout: Workspace rail + Stage + Terminal Context Surface + FileTree View.

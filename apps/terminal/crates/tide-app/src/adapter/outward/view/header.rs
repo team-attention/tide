@@ -82,6 +82,7 @@ pub(crate) struct SinglePaneHeaderChrome {
 
 const HEADER_ACTION_TILE_SIZE: f32 = 18.0;
 const HEADER_ACTION_TILE_RADIUS: f32 = 4.0;
+const SURFACE_IDENTITY_OWNER_MAX_CHARS: usize = 24;
 
 /// Badge specification for editor pane headers.
 /// Computed by `editor_header_badges()` and consumed by both single-pane
@@ -139,6 +140,36 @@ pub(crate) fn editor_header_badges(ep: &crate::pane::editor::EditorPane) -> Vec<
     }
 
     badges
+}
+
+/// Compute which right-side badges a Browser Pane should display.
+/// Browser operation badges intentionally collapse to one state so the pane
+/// header stays scannable while still surfacing user-actionable work.
+pub(crate) fn browser_header_badges(bp: &crate::pane::browser::BrowserPane) -> Vec<EditorBadge> {
+    let text = if bp.pending_permission.is_some() {
+        "permission"
+    } else if bp.pending_certificate_error.is_some() {
+        "certificate"
+    } else if let Some(download) = bp.download_state.as_ref() {
+        if download.completed {
+            "downloaded"
+        } else {
+            "downloading"
+        }
+    } else if bp.streaming {
+        "streaming"
+    } else if bp.loading {
+        "loading"
+    } else if bp.latest_review().is_some() {
+        "reviewed"
+    } else {
+        return Vec::new();
+    };
+
+    vec![EditorBadge {
+        text: text.to_string(),
+        action: None,
+    }]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -315,12 +346,127 @@ pub(crate) fn surface_view_mode_header_action(
     }
 }
 
+pub(crate) fn header_action_hover_label(
+    action: &HeaderHitAction,
+    surface: HeaderSurfaceKind,
+) -> Option<&'static str> {
+    match (surface, action) {
+        (HeaderSurfaceKind::TerminalContextSurface, HeaderHitAction::AddPane) => {
+            Some("Add context pane")
+        }
+        (HeaderSurfaceKind::Stage, HeaderHitAction::AddPane) => Some("Add stage terminal"),
+        (HeaderSurfaceKind::TerminalContextSurface, HeaderHitAction::SplitHorizontal) => {
+            Some("Split context horizontally")
+        }
+        (HeaderSurfaceKind::TerminalContextSurface, HeaderHitAction::SplitVertical) => {
+            Some("Split context vertically")
+        }
+        (HeaderSurfaceKind::Stage, HeaderHitAction::SplitHorizontal) => {
+            Some("Split terminal horizontally")
+        }
+        (HeaderSurfaceKind::Stage, HeaderHitAction::SplitVertical) => {
+            Some("Split terminal vertically")
+        }
+        (HeaderSurfaceKind::TerminalContextSurface, HeaderHitAction::ToggleDockViewMode(true)) => {
+            Some("Show context as split")
+        }
+        (HeaderSurfaceKind::TerminalContextSurface, HeaderHitAction::ToggleDockViewMode(false)) => {
+            Some("Stack context panes")
+        }
+        (HeaderSurfaceKind::Stage, HeaderHitAction::ToggleStageViewMode(true)) => {
+            Some("Show Stage as split")
+        }
+        (HeaderSurfaceKind::Stage, HeaderHitAction::ToggleStageViewMode(false)) => {
+            Some("Stack Stage terminals")
+        }
+        (_, HeaderHitAction::OpenBrowser) => Some("Open browser pane"),
+        (_, HeaderHitAction::NewFile) => Some("New file pane"),
+        _ => None,
+    }
+}
+
 pub(crate) fn header_leading_view_mode_width(action: Option<&HeaderHitAction>) -> f32 {
     if action.is_some() {
         HEADER_ACTION_TILE_SIZE + TAB_CONTENT_SPACING
     } else {
         0.0
     }
+}
+
+fn compact_surface_owner_label(owner_label: &str) -> String {
+    let owner_label = owner_label.trim();
+    let owner_label = if owner_label.is_empty() {
+        "Terminal"
+    } else {
+        owner_label
+    };
+    let char_count = owner_label.chars().count();
+    if char_count <= SURFACE_IDENTITY_OWNER_MAX_CHARS {
+        owner_label.to_string()
+    } else {
+        let take = SURFACE_IDENTITY_OWNER_MAX_CHARS.saturating_sub(3);
+        let compacted = owner_label
+            .chars()
+            .take(take)
+            .collect::<String>()
+            .trim_end_matches([' ', '-', '_'])
+            .to_string();
+        format!("{}...", compacted)
+    }
+}
+
+pub(crate) fn terminal_context_surface_identity_label(
+    owner_label: &str,
+    pane_count: usize,
+    is_stacked: bool,
+) -> String {
+    let mode = if is_stacked { "stacked" } else { "split" };
+    let pane_word = if pane_count == 1 { "pane" } else { "panes" };
+    format!(
+        "Context: {} / {} / {} {}",
+        compact_surface_owner_label(owner_label),
+        mode,
+        pane_count,
+        pane_word
+    )
+}
+
+fn header_surface_identity_badge_width(cell_w: f32, label: &str) -> f32 {
+    if label.trim().is_empty() {
+        0.0
+    } else {
+        label.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0
+    }
+}
+
+pub(crate) fn header_surface_identity_width(cell_w: f32, label: Option<&str>) -> f32 {
+    label
+        .map(|label| header_surface_identity_badge_width(cell_w, label))
+        .filter(|width| *width > 0.0)
+        .map(|width| width + TAB_CONTENT_SPACING)
+        .unwrap_or(0.0)
+}
+
+pub(crate) fn header_surface_identity_fits(
+    available_w: f32,
+    cell_w: f32,
+    label: &str,
+    leading_view_mode_width: f32,
+    header_action_width: f32,
+) -> bool {
+    let identity_w = header_surface_identity_width(cell_w, Some(label));
+    if identity_w <= 0.0 {
+        return false;
+    }
+    let action_reserve = if header_action_width > 0.0 {
+        header_action_width + TAB_H_PAD
+    } else {
+        0.0
+    };
+    let minimum_title_reserve = TAB_MIN_TITLE_WIDTH + BADGE_GAP + 16.0 + TAB_H_PAD;
+
+    available_w
+        >= TAB_H_PAD + leading_view_mode_width + identity_w + minimum_title_reserve + action_reserve
 }
 
 pub(crate) fn dock_tab_group_uses_shared_tab_bar(tab_group: &crate::tide_layout::TabGroup) -> bool {
@@ -635,6 +781,43 @@ fn render_header_action_strip(
     }
 }
 
+fn render_header_surface_identity(
+    renderer: &mut WgpuRenderer,
+    x: f32,
+    text_y: f32,
+    cell_w: f32,
+    cell_height: f32,
+    label: &str,
+    is_focused: bool,
+    p: &ThemePalette,
+) {
+    let width = header_surface_identity_badge_width(cell_w, label);
+    if width <= 0.0 {
+        return;
+    }
+    let bg = if is_focused {
+        badge_tint(p.tab_text_focused, 0.07)
+    } else {
+        badge_tint(p.tab_text, 0.045)
+    };
+    let text_color = if is_focused {
+        p.tab_text_focused
+    } else {
+        p.tab_text
+    };
+    render_badge_colored(
+        renderer,
+        x,
+        text_y,
+        width,
+        cell_height,
+        label,
+        text_color,
+        bg,
+        4.0,
+    );
+}
+
 fn render_header_action_tile(
     renderer: &mut WgpuRenderer,
     rect: Rect,
@@ -798,6 +981,27 @@ fn editor_badge_colors(
             p.badge_conflict,
             badge_tint(p.badge_conflict, if is_focused { 0.16 } else { 0.10 }),
         ),
+        None if badge.text == "permission" || badge.text == "certificate" => (
+            p.badge_conflict,
+            badge_tint(p.badge_conflict, if is_focused { 0.16 } else { 0.10 }),
+        ),
+        None if badge.text == "downloaded" => (
+            p.git_added,
+            badge_tint(p.git_added, if is_focused { 0.16 } else { 0.10 }),
+        ),
+        None if badge.text == "downloading"
+            || badge.text == "streaming"
+            || badge.text == "loading" =>
+        {
+            (
+                if is_focused {
+                    p.tab_text_focused
+                } else {
+                    p.tab_text_active
+                },
+                badge_tint(p.border_focused, if is_focused { 0.16 } else { 0.10 }),
+            )
+        }
         _ => (if is_focused { p.badge_text } else { p.tab_text }, base_bg),
     }
 }
@@ -854,6 +1058,7 @@ pub(crate) fn active_tab_badges(
             }
             badges
         }
+        Some(PaneKind::Browser(bp)) => browser_header_badges(bp),
         _ => Vec::new(),
     };
     if let Some(comment_badge) = selection_comment_badge(panes, *id, is_focused, show_comment_badge)
@@ -893,6 +1098,7 @@ pub fn render_pane_header(
         false,
         HeaderSurfaceKind::TerminalContextSurface,
         None,
+        None,
     )
 }
 
@@ -910,6 +1116,7 @@ pub fn render_pane_header_inner(
     blink_time: Option<f64>,
     show_stage_terminal_dot: bool,
     surface_kind: HeaderSurfaceKind,
+    surface_identity_label: Option<&str>,
     surface_view_mode_action: Option<HeaderHitAction>,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
@@ -921,6 +1128,16 @@ pub fn render_pane_header_inner(
     let header_actions = single_pane_header_action_specs_for_surface(surface_kind);
     let header_action_width = header_action_strip_width(cell_w, &header_actions);
     let leading_view_mode_width = header_leading_view_mode_width(surface_view_mode_action.as_ref());
+    let surface_identity_label = surface_identity_label.filter(|label| {
+        header_surface_identity_fits(
+            rect.width,
+            cell_w,
+            label,
+            leading_view_mode_width,
+            header_action_width,
+        )
+    });
+    let surface_identity_width = header_surface_identity_width(cell_w, surface_identity_label);
     let text_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
     let action_strip_start_x =
         header_action_strip_start_x(rect.x + rect.width, header_action_width);
@@ -947,6 +1164,8 @@ pub fn render_pane_header_inner(
     // --- Build content: [pad 6] [dot?] [icon 14x14] [gap 6] [title...] [spacer] [badges...] [close 16x16 (9px icon)] [pad 6] ---
     let view_mode_action_x = rect.x + TAB_H_PAD;
     let mut cx = view_mode_action_x + leading_view_mode_width;
+    let surface_identity_x = cx;
+    cx += surface_identity_width;
 
     let visible_dot_state = if show_stage_terminal_dot || agent_chrome_state.is_some() {
         agent_chrome_state
@@ -1035,6 +1254,10 @@ pub fn render_pane_header_inner(
             } else {
                 p.tab_text
             };
+            for badge in browser_header_badges(bp) {
+                let (text_color, bg) = editor_badge_colors(&badge, p, is_focused);
+                inline_badges.push((badge.text.clone(), text_color, bg, badge.action.clone()));
+            }
             (t, c)
         }
         Some(PaneKind::Diff(dp)) => {
@@ -1101,7 +1324,7 @@ pub fn render_pane_header_inner(
         title_w_raw,
         &badge_widths,
         visible_dot_state.is_some(),
-        leading_view_mode_width,
+        leading_view_mode_width + surface_identity_width,
     );
 
     // Draw full-width focused single-pane header surface.
@@ -1160,6 +1383,19 @@ pub fn render_pane_header_inner(
     let close_hit_x = rect.x + header_layout.close_hit_x;
     let title_layout = header_layout.title_layout;
     let title_w = title_layout.title_w;
+
+    if let Some(label) = surface_identity_label {
+        render_header_surface_identity(
+            renderer,
+            surface_identity_x,
+            text_y,
+            cell_w,
+            cell_height,
+            label,
+            is_focused,
+            p,
+        );
+    }
 
     // Draw title text
     let title_style = TextStyle {
@@ -1255,6 +1491,7 @@ pub fn render_dock_tab_bar(
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
+    surface_identity_label: Option<&str>,
     surface_view_mode_action: Option<HeaderHitAction>,
 ) -> Vec<HeaderHitZone> {
     render_tab_bar_impl(
@@ -1274,6 +1511,7 @@ pub fn render_dock_tab_bar(
         blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,
+        surface_identity_label,
         surface_view_mode_action,
     )
 }
@@ -1298,6 +1536,7 @@ fn render_tab_bar_impl(
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
+    surface_identity_label: Option<&str>,
     surface_view_mode_action: Option<HeaderHitAction>,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
@@ -1338,6 +1577,29 @@ fn render_tab_bar_impl(
             p,
             &mut zones,
         );
+    }
+
+    let surface_identity_label = surface_identity_label.filter(|label| {
+        header_surface_identity_fits(
+            rect.width,
+            cell_w,
+            label,
+            header_leading_view_mode_width(surface_view_mode_action.as_ref()),
+            header_action_width,
+        )
+    });
+    if let Some(label) = surface_identity_label {
+        render_header_surface_identity(
+            renderer,
+            content_left,
+            rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0,
+            cell_w,
+            cell_height,
+            label,
+            is_focused,
+            p,
+        );
+        content_left += header_surface_identity_width(cell_w, Some(label));
     }
 
     if content_right - content_left < 40.0 {
@@ -1684,6 +1946,7 @@ pub fn render_stage_tab_bar(
         blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,
+        None,
         surface_view_mode_action,
     )
 }
@@ -1702,6 +1965,7 @@ pub fn render_dock_stacked_tab_bar(
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
+    surface_identity_label: Option<&str>,
     surface_view_mode_action: Option<HeaderHitAction>,
 ) -> Vec<HeaderHitZone> {
     if dock_pane_ids.len() < 2 {
@@ -1724,6 +1988,7 @@ pub fn render_dock_stacked_tab_bar(
         blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,
+        surface_identity_label,
         surface_view_mode_action,
     )
 }
@@ -1783,6 +2048,9 @@ pub(crate) fn render_badge_colored(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pane::browser::{
+        BrowserCertificateError, BrowserPane, BrowserPermissionKind, BrowserPermissionRequest,
+    };
     use crate::pane::editor::EditorPane;
     use crate::pane::TerminalPane;
     use crate::tide_core::PaneId;
@@ -1990,6 +2258,68 @@ mod tests {
     }
 
     #[test]
+    fn browser_header_badges_prioritize_actionable_operation_state() {
+        let mut browser = BrowserPane::with_url(7, "https://example.com".into());
+        browser.loading = true;
+        browser.streaming = true;
+        browser.begin_download("https://example.com/report.pdf", "/tmp/tide-report.pdf");
+        browser.set_certificate_error(BrowserCertificateError {
+            host: "example.com".to_string(),
+            reason: "expired".to_string(),
+        });
+        browser.request_permission(BrowserPermissionRequest {
+            kind: BrowserPermissionKind::Camera,
+            origin: "https://example.com".to_string(),
+        });
+
+        assert_eq!(browser_header_badges(&browser)[0].text, "permission");
+
+        browser.pending_permission = None;
+        assert_eq!(browser_header_badges(&browser)[0].text, "certificate");
+
+        browser.pending_certificate_error = None;
+        assert_eq!(browser_header_badges(&browser)[0].text, "downloading");
+
+        browser.complete_download();
+        assert_eq!(browser_header_badges(&browser)[0].text, "downloaded");
+
+        browser.download_state = None;
+        assert_eq!(browser_header_badges(&browser)[0].text, "streaming");
+
+        browser.streaming = false;
+        browser.loading = true;
+        assert_eq!(browser_header_badges(&browser)[0].text, "loading");
+
+        browser.loading = false;
+        browser.record_review_artifact(
+            9,
+            "review this".to_string(),
+            "https://example.com".to_string(),
+            1,
+        );
+        assert_eq!(browser_header_badges(&browser)[0].text, "reviewed");
+    }
+
+    #[test]
+    fn browser_operation_badge_precedes_comment_badge() {
+        let mut browser = BrowserPane::with_url(1, "https://example.com".into());
+        browser.loading = true;
+
+        let mut panes = HashMap::new();
+        panes.insert(1, PaneKind::Browser(browser));
+
+        let badges = active_tab_badges(&panes, &1, true, true);
+        let badge_texts: Vec<&str> = badges.iter().map(|badge| badge.text.as_str()).collect();
+
+        assert_eq!(
+            badge_texts,
+            vec!["loading", "comment"],
+            "active Browser chrome should keep operation state ahead of comment affordances"
+        );
+        assert_eq!(badges[1].action, Some(HeaderHitAction::AddComment));
+    }
+
+    #[test]
     fn narrow_editor_header_preserves_title_before_optional_badges() {
         let layout = reserve_title_before_badges(180.0, &[48.0, 56.0], 96.0, 64.0, 8.0);
 
@@ -2051,6 +2381,108 @@ mod tests {
             ]
         );
         assert!(!actions.contains(&HeaderHitAction::AddPane));
+    }
+
+    #[test]
+    fn terminal_context_surface_identity_label_names_owner_mode_and_count() {
+        assert_eq!(
+            terminal_context_surface_identity_label("Terminal 1", 1, true),
+            "Context: Terminal 1 / stacked / 1 pane"
+        );
+        assert_eq!(
+            terminal_context_surface_identity_label("workspace-shell", 3, false),
+            "Context: workspace-shell / split / 3 panes"
+        );
+    }
+
+    #[test]
+    fn terminal_context_surface_header_actions_use_context_hover_labels() {
+        assert_eq!(
+            header_action_hover_label(
+                &HeaderHitAction::AddPane,
+                HeaderSurfaceKind::TerminalContextSurface,
+            ),
+            Some("Add context pane")
+        );
+        assert_eq!(
+            header_action_hover_label(
+                &HeaderHitAction::SplitHorizontal,
+                HeaderSurfaceKind::TerminalContextSurface,
+            ),
+            Some("Split context horizontally")
+        );
+        assert_eq!(
+            header_action_hover_label(
+                &HeaderHitAction::SplitVertical,
+                HeaderSurfaceKind::TerminalContextSurface,
+            ),
+            Some("Split context vertically")
+        );
+        assert_eq!(
+            header_action_hover_label(
+                &HeaderHitAction::ToggleDockViewMode(true),
+                HeaderSurfaceKind::TerminalContextSurface,
+            ),
+            Some("Show context as split")
+        );
+        assert_eq!(
+            header_action_hover_label(
+                &HeaderHitAction::ToggleDockViewMode(false),
+                HeaderSurfaceKind::TerminalContextSurface,
+            ),
+            Some("Stack context panes")
+        );
+    }
+
+    #[test]
+    fn stage_header_actions_keep_stage_specific_hover_labels() {
+        assert_eq!(
+            header_action_hover_label(&HeaderHitAction::AddPane, HeaderSurfaceKind::Stage),
+            Some("Add stage terminal")
+        );
+        assert_eq!(
+            header_action_hover_label(&HeaderHitAction::SplitHorizontal, HeaderSurfaceKind::Stage,),
+            Some("Split terminal horizontally")
+        );
+        assert_eq!(
+            header_action_hover_label(
+                &HeaderHitAction::ToggleStageViewMode(false),
+                HeaderSurfaceKind::Stage,
+            ),
+            Some("Stack Stage terminals")
+        );
+    }
+
+    #[test]
+    fn terminal_context_surface_identity_compacts_long_owner_labels() {
+        assert_eq!(
+            terminal_context_surface_identity_label(
+                "a-very-long-terminal-working-directory",
+                2,
+                true
+            ),
+            "Context: a-very-long-terminal... / stacked / 2 panes"
+        );
+    }
+
+    #[test]
+    fn surface_identity_width_is_reserved_only_when_header_has_room() {
+        let label = terminal_context_surface_identity_label("Terminal 1", 1, true);
+        let cell_w = 8.0;
+        let leading_w =
+            header_leading_view_mode_width(Some(&HeaderHitAction::ToggleDockViewMode(true)));
+        let action_w = header_action_strip_width(
+            cell_w,
+            &single_pane_header_action_specs_for_surface(HeaderSurfaceKind::TerminalContextSurface),
+        );
+
+        assert!(header_surface_identity_width(cell_w, Some(&label)) > 0.0);
+        assert!(header_surface_identity_fits(
+            520.0, cell_w, &label, leading_w, action_w
+        ));
+        assert!(!header_surface_identity_fits(
+            220.0, cell_w, &label, leading_w, action_w
+        ));
     }
 
     #[test]

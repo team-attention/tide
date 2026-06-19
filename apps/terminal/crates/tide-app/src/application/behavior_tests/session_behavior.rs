@@ -1,6 +1,7 @@
 // Spec: docs/specs/session.md
 use crate::application::ports::outward::persistence_port::{Session, SessionLayout};
 use crate::pane::PaneKind;
+use crate::DockPort;
 
 fn terminal_pane_count(app: &crate::App) -> usize {
     app.panes
@@ -230,6 +231,37 @@ fn restore_preferences_applies_light_mode_to_prespawned_terminal() {
         !terminal.backend.dark_mode_for_test(),
         "pre-spawned Terminal backend should match restored light mode"
     );
+}
+
+#[test]
+fn restore_event_records_restored_stage_and_context_pane_counts() {
+    // UC-3 BR-12: Workspace task monitors can summarize launch/session restore outcomes.
+    let mut app = crate::App::new();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        terminal_id,
+        PaneKind::Terminal(
+            crate::pane::TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap(),
+        ),
+    );
+    let context_id = app.layout.alloc_id();
+    app.panes.insert(
+        context_id,
+        PaneKind::Browser(crate::pane::browser::BrowserPane::new(context_id)),
+    );
+    app.add_pane_to_dock(context_id, Some(terminal_id));
+
+    app.record_restore_event(crate::state::RestoreEventKind::SessionRestored, true);
+
+    let event = app
+        .last_restore_event
+        .as_ref()
+        .expect("restore event should be recorded");
+    assert_eq!(event.kind, crate::state::RestoreEventKind::SessionRestored);
+    assert!(event.crash_recovery);
+    assert_eq!(event.restored_panes, 2);
+    assert_eq!(event.restored_context_panes, 1);
 }
 
 #[test]

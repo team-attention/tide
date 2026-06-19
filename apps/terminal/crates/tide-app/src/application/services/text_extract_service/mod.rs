@@ -31,7 +31,11 @@ impl crate::TextExtractPort for App {
 
                 Self::extract_explicit_terminal_hyperlink(&pane.backend, row as usize, col as usize)
                     .or_else(|| {
-                        Self::extract_wrapped_terminal_url(&pane.backend, row as usize, col as usize)
+                        Self::extract_wrapped_terminal_url(
+                            &pane.backend,
+                            row as usize,
+                            col as usize,
+                        )
                     })
             }
             // Editor Panes have no clickable-URL extraction (LivePreviewMode,

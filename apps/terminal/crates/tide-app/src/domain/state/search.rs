@@ -11,22 +11,63 @@ pub struct SearchMatch {
     pub len: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchField {
+    Query,
+    Replacement,
+}
+
 /// Search state for a single pane.
 pub struct SearchState {
     pub input: InputLine,
+    pub replacement: InputLine,
     pub matches: Vec<SearchMatch>,
     pub current: Option<usize>, // index into matches
     pub visible: bool,
+    pub replace_visible: bool,
+    pub active_field: SearchField,
 }
 
 impl SearchState {
     pub fn new() -> Self {
         Self {
             input: InputLine::new(),
+            replacement: InputLine::new(),
             matches: Vec::new(),
             current: None,
             visible: true,
+            replace_visible: false,
+            active_field: SearchField::Query,
         }
+    }
+
+    pub fn active_input_mut(&mut self) -> &mut InputLine {
+        if self.replace_visible && self.active_field == SearchField::Replacement {
+            &mut self.replacement
+        } else {
+            &mut self.input
+        }
+    }
+
+    pub fn active_input(&self) -> &InputLine {
+        if self.replace_visible && self.active_field == SearchField::Replacement {
+            &self.replacement
+        } else {
+            &self.input
+        }
+    }
+
+    pub fn focus_query(&mut self) {
+        self.active_field = SearchField::Query;
+    }
+
+    pub fn focus_replacement(&mut self) {
+        self.replace_visible = true;
+        self.active_field = SearchField::Replacement;
+    }
+
+    pub fn is_replacement_focused(&self) -> bool {
+        self.replace_visible && self.active_field == SearchField::Replacement
     }
 
     pub fn next_match(&mut self) {

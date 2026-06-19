@@ -32,7 +32,9 @@ fn reading_view_h1_and_h2_get_underline_rules() {
     // h3 gets no rule.
     let h3 = render("### Small\n");
     assert!(
-        !h3.iter().map(line_text).any(|t| t.contains('═') || t.contains('─')),
+        !h3.iter()
+            .map(line_text)
+            .any(|t| t.contains('═') || t.contains('─')),
         "h3 should not get an underline rule"
     );
 }

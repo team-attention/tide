@@ -2,7 +2,7 @@
 // Source: app.rs
 
 use crate::header::HeaderHitZone;
-use crate::tide_core::{PaneId, Rect, Size};
+use crate::tide_core::{PaneId, Rect, Size, Vec2};
 
 pub(crate) trait AppCorePort {
     // ── Sizing ──
@@ -10,6 +10,8 @@ pub(crate) trait AppCorePort {
     fn logical_size(&self) -> Size;
     fn cell_size(&self) -> Size;
     fn apply_font_size(&mut self, size: f32);
+    fn cycle_theme_palette(&mut self);
+    fn dismiss_first_run_guide_at(&mut self, pos: Vec2) -> bool;
     fn flush_pending_font_size(&mut self);
 
     // ── Cache invalidation (adapters call these; implementation handles internals) ──

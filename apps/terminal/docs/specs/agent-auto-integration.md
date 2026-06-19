@@ -6,7 +6,7 @@
 
 - `TideSettings.auto_integration` is persisted in `crates/tide-app/src/domain/state/settings.rs` and defaults to `true`.
 - `discover_agent_resources()` in `crates/tide-app/src/domain/terminal/mod.rs` discovers bundled resources for the fixed Wrapped Agent set: `claude`, `codex`, `gemini`, `agy` (Antigravity — see [docs/specs/antigravity-wrapped-agent.md](antigravity-wrapped-agent.md)), and `opencode` (see [docs/specs/opencode-wrapped-agent.md](opencode-wrapped-agent.md)).
-- Every new `Terminal` exports `TIDE_TERMINAL_SOCKET`, `TIDE_TERMINAL_PANE`, `TIDE_TERMINAL_WORKSPACE`, and `TIDE_TERMINAL_BIN`. When auto-integration is enabled, the PTY environment also injects `__TIDE_TERMINAL_WRAPPER_DIR` (and `__TIDE_TERMINAL_ORIG_ZDOTDIR`) and overrides `ZDOTDIR` so Tide's shell integration can place the bundled wrappers ahead of the real commands.
+- Every new `Terminal` exports `TIDE_TERMINAL_SOCKET`, `TIDE_TERMINAL_PANE`, `TIDE_TERMINAL_WORKSPACE`, and `TIDE_TERMINAL_BIN`. When auto-integration is enabled, the PTY environment also injects `__TIDE_TERMINAL_WRAPPER_DIR` and `TIDE_TERMINAL_SHELL_INTEGRATION_DIR`. zsh additionally receives the `ZDOTDIR` path so Tide's shell integration can place bundled wrappers ahead of the real commands automatically. bash and fish use documented opt-in snippets from the same shell-integration directory.
 - The checked-in Claude and Gemini wrappers currently map their documented hook names into `tide notify` lifecycle events, but they do not yet forward the hook `stdin` JSON that already contains response text for `Notification` and `AfterAgent`.
 - The checked-in Codex wrapper still uses the official `UserPromptSubmit` hook, but its completed-turn path has to move off top-level `notify` and onto the documented `Stop` hook plus `transcript_path` so Tide can wait for main-thread completion.
 - The checked-in Codex-specific spec already requires a documented `UserPromptSubmit` hook so each new Codex turn can return the source `Pane` to `Running`, while wrapper launch only marks `Wrapped Agent Presence`.
@@ -79,6 +79,8 @@ The common routing rule is the same for all three agents: macOS notification rou
 - **Business Rules**:
   - BR-3: `TIDE_TERMINAL_BIN` is exported even when wrapper auto-integration is disabled
   - BR-4: Wrapper path injection only happens while auto-integration is enabled
+  - BR-16: `TIDE_TERMINAL_SHELL_INTEGRATION_DIR` is exported when auto-integration is enabled so documented bash/fish snippets can find bundled integration files.
+  - BR-17: zsh remains the only automatic shell startup integration; bash and fish are opt-in snippets.
 
 ### UC-3: ReportWrappedAgentLifecycle
 
@@ -139,6 +141,7 @@ The common routing rule is the same for all three agents: macOS notification rou
 2. Tide does not guess coding-agent hook APIs or config keys beyond what the checked-in wrapper resources prove.
 3. PTY environment injection remains the only auto-integration path Tide owns directly.
 4. Wrapper payload forwarding uses only documented hook `stdin` JSON or checked-in official agent payloads.
+5. Prompt marks and OSC 7 current-directory tracking are outside the current shell integration contract.
 
 ## Tests
 
@@ -154,6 +157,8 @@ The common routing rule is the same for all three agents: macOS notification rou
 | UC-4 | BR-14 | `wrapper_managed_presence_with_unknown_pid_survives_gateway_connection_refresh` |
 | UC-4 | BR-14 | `wrapper_managed_presence_with_unknown_pid_survives_shell_idle_redetection_gap` |
 | UC-1 | BR-1 | `wrapper_scripts_are_generated_at_known_path` |
+| UC-2 | BR-16 | `spawn_config_injects_wrapper_and_zdotdir_when_auto_integration_on` |
+| UC-2 | BR-17 | `bundled_shell_integration_covers_zsh_bash_and_fish_wrapper_path_setup` |
 | UC-5 | BR-13 | `claude_wrapper_forwards_hook_stdin_payloads_for_notification_and_stop` |
 | UC-5 | BR-14 | `gemini_wrapper_forwards_hook_stdin_payloads_for_notification_and_after_agent` |
 

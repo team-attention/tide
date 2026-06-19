@@ -18,7 +18,8 @@ pub(crate) use file_tree::{file_tree_hover_shows_overlay, file_tree_row_slab_cli
 #[cfg(test)]
 pub(crate) use tab_bar::{
     browser_nav_icon_for_target, browser_nav_icon_text_glyph, browser_nav_raster_icon_asset,
-    pane_surface_attention_status, region_header_anchor_pane_id, BrowserNavIcon,
+    pane_surface_attention_status, region_header_anchor_pane_id,
+    terminal_context_surface_header_identity_label, BrowserNavIcon,
 };
 #[cfg(test)]
 pub(crate) use titlebar::{
@@ -28,9 +29,10 @@ pub(crate) use titlebar::{
     titlebar_identity_origin_x_for_window, titlebar_surface_button_icon,
     titlebar_surface_icon_text_glyph, titlebar_surface_raster_icon_asset,
     titlebar_toggle_button_draws_hotkey_hint, titlebar_toggle_button_height,
-    titlebar_toggle_button_width, titlebar_workspace_meta_text, titlebar_workspace_title,
-    workspace_item_indicator_color, workspace_item_indicator_status, TitlebarActionIcon,
-    TitlebarSurfaceIcon,
+    titlebar_toggle_button_width, titlebar_workspace_attention_panel_detail_text,
+    titlebar_workspace_attention_panel_text, titlebar_workspace_meta_text,
+    titlebar_workspace_task_status_text, titlebar_workspace_title, workspace_item_indicator_color,
+    workspace_item_indicator_status, TitlebarActionIcon, TitlebarSurfaceIcon,
 };
 
 /// Render the chrome layer: file tree panel, editor panel + tabs, pane backgrounds,

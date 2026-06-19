@@ -67,6 +67,10 @@ impl TerminalFactoryPort for RealTerminalFactory {
     fn set_auto_integration(&mut self, enabled: bool) {
         self.config.auto_integration = enabled;
     }
+
+    fn set_scrollback_lines(&mut self, lines: usize) {
+        self.config.scrollback_lines = lines.min(crate::tide_terminal::MAX_SCROLLBACK_LINES);
+    }
 }
 
 // ── Noop implementation (tests) ──
@@ -101,4 +105,5 @@ impl TerminalFactoryPort for NoopTerminalFactory {
 
     fn set_spawn_config(&mut self, _config: crate::tide_terminal::TerminalSpawnConfig) {}
     fn set_auto_integration(&mut self, _enabled: bool) {}
+    fn set_scrollback_lines(&mut self, _lines: usize) {}
 }

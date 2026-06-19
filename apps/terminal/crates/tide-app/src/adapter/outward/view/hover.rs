@@ -1,16 +1,92 @@
-use crate::tide_core::{Rect, Renderer};
+use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 
 use super::chrome::{file_tree_hover_shows_overlay, file_tree_row_slab_clip};
 use crate::state::drag_types::PaneDragState;
 use crate::theme::*;
 use crate::App;
+use crate::DockPort;
+
+const HOVER_HELP_PAD_X: f32 = 8.0;
+const HOVER_HELP_PAD_Y: f32 = 5.0;
+const HOVER_HELP_GAP: f32 = 6.0;
+const HOVER_HELP_SCREEN_PAD: f32 = 8.0;
+
+pub(crate) fn header_action_hover_surface(
+    app: &App,
+    pane_id: crate::tide_core::PaneId,
+) -> crate::header::HeaderSurfaceKind {
+    if app.is_pane_in_dock(pane_id) {
+        crate::header::HeaderSurfaceKind::TerminalContextSurface
+    } else {
+        crate::header::HeaderSurfaceKind::Stage
+    }
+}
+
+pub(crate) fn hover_help_rect_for_zone(
+    zone: Rect,
+    label: &str,
+    cell_size: crate::tide_core::Size,
+    logical: crate::tide_core::Size,
+) -> Rect {
+    let width = label.chars().count() as f32 * cell_size.width + HOVER_HELP_PAD_X * 2.0;
+    let height = cell_size.height + HOVER_HELP_PAD_Y * 2.0;
+    let max_x = (logical.width - width - HOVER_HELP_SCREEN_PAD).max(HOVER_HELP_SCREEN_PAD);
+    let x = (zone.x + zone.width / 2.0 - width / 2.0)
+        .max(HOVER_HELP_SCREEN_PAD)
+        .min(max_x);
+    let preferred_y = zone.y - height - HOVER_HELP_GAP;
+    let fallback_y = zone.y + zone.height + HOVER_HELP_GAP;
+    let max_y = (logical.height - height - HOVER_HELP_SCREEN_PAD).max(HOVER_HELP_SCREEN_PAD);
+    let y = if preferred_y >= HOVER_HELP_SCREEN_PAD {
+        preferred_y
+    } else {
+        fallback_y.min(max_y)
+    };
+
+    Rect::new(x, y, width, height)
+}
+
+fn render_hover_help_label(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    p: &ThemePalette,
+    logical: crate::tide_core::Size,
+    zone: Rect,
+    label: &str,
+) {
+    let cell_size = renderer.cell_size();
+    let rect = hover_help_rect_for_zone(zone, label, cell_size, logical);
+    renderer.draw_rect(rect, p.popup_bg);
+    renderer.draw_rect(Rect::new(rect.x, rect.y, rect.width, 1.0), p.popup_border);
+    renderer.draw_rect(
+        Rect::new(rect.x, rect.y + rect.height - 1.0, rect.width, 1.0),
+        p.popup_border,
+    );
+    renderer.draw_rect(Rect::new(rect.x, rect.y, 1.0, rect.height), p.popup_border);
+    renderer.draw_rect(
+        Rect::new(rect.x + rect.width - 1.0, rect.y, 1.0, rect.height),
+        p.popup_border,
+    );
+    renderer.draw_text(
+        label,
+        Vec2::new(rect.x + HOVER_HELP_PAD_X, rect.y + HOVER_HELP_PAD_Y),
+        TextStyle {
+            foreground: p.tab_text_focused,
+            background: None,
+            bold: false,
+            dim: false,
+            italic: false,
+            underline: false,
+        },
+        rect,
+    );
+}
 
 /// Render hover highlights (overlay layer) for the currently hovered UI element.
 pub(crate) fn render_hover(
     app: &App,
     renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
-    _logical: crate::tide_core::Size,
+    logical: crate::tide_core::Size,
     visual_pane_rects: &[(u64, Rect)],
     show_file_tree: bool,
     file_tree_scroll: f32,
@@ -88,6 +164,12 @@ pub(crate) fn render_hover(
                         .find(|z| z.pane_id == *pane_id && &z.action == action)
                     {
                         renderer.draw_rect(zone.rect, p.hover_tab);
+                        let surface = header_action_hover_surface(app, *pane_id);
+                        if let Some(label) =
+                            crate::header::header_action_hover_label(action, surface)
+                        {
+                            render_hover_help_label(renderer, p, logical, zone.rect, label);
+                        }
                     }
                 }
                 crate::state::drag_types::HoverTarget::LauncherChoice(_, _) => {
@@ -221,5 +303,38 @@ pub(crate) fn render_hover(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tide_core::Size;
+
+    #[test]
+    fn hover_help_rect_prefers_above_the_action_when_space_allows() {
+        let rect = hover_help_rect_for_zone(
+            Rect::new(100.0, 80.0, 18.0, 28.0),
+            "Split context horizontally",
+            Size::new(8.0, 16.0),
+            Size::new(360.0, 240.0),
+        );
+
+        assert!(rect.y < 80.0);
+        assert!(rect.x >= HOVER_HELP_SCREEN_PAD);
+        assert!(rect.x + rect.width <= 360.0 - HOVER_HELP_SCREEN_PAD + 0.1);
+    }
+
+    #[test]
+    fn hover_help_rect_falls_below_top_edge_actions() {
+        let rect = hover_help_rect_for_zone(
+            Rect::new(6.0, 6.0, 18.0, 28.0),
+            "Add context pane",
+            Size::new(8.0, 16.0),
+            Size::new(220.0, 160.0),
+        );
+
+        assert!(rect.y > 6.0);
+        assert_eq!(rect.x, HOVER_HELP_SCREEN_PAD);
     }
 }

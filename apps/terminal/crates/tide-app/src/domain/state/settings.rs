@@ -17,6 +17,8 @@ pub struct TideSettings {
     pub appearance: AppearanceSettings,
     #[serde(default)]
     pub terminal: TerminalSettings,
+    #[serde(default)]
+    pub onboarding: OnboardingSettings,
 }
 
 fn default_true() -> bool {
@@ -31,6 +33,7 @@ impl Default for TideSettings {
             auto_integration: true,
             appearance: AppearanceSettings::default(),
             terminal: TerminalSettings::default(),
+            onboarding: OnboardingSettings::default(),
         }
     }
 }
@@ -49,7 +52,38 @@ impl ThemePreference {
     }
 
     pub fn from_dark_mode(dark: bool) -> Self {
-        if dark { Self::Dark } else { Self::Light }
+        if dark {
+            Self::Dark
+        } else {
+            Self::Light
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThemePalettePreference {
+    #[default]
+    Tide,
+    Graphite,
+    Sage,
+}
+
+impl ThemePalettePreference {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Tide => "Tide",
+            Self::Graphite => "Graphite",
+            Self::Sage => "Sage",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Tide => Self::Graphite,
+            Self::Graphite => Self::Sage,
+            Self::Sage => Self::Tide,
+        }
     }
 }
 
@@ -61,6 +95,8 @@ pub struct AppearanceSettings {
     pub font_size: f32,
     #[serde(default)]
     pub theme: ThemePreference,
+    #[serde(default)]
+    pub palette: ThemePalettePreference,
 }
 
 fn default_font_family() -> String {
@@ -77,14 +113,43 @@ impl Default for AppearanceSettings {
             font_family: default_font_family(),
             font_size: default_font_size(),
             theme: ThemePreference::Dark,
+            palette: ThemePalettePreference::Tide,
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalSettings {
     #[serde(default)]
     pub osc52_read: bool,
+    #[serde(default = "default_scrollback_lines")]
+    pub scrollback_lines: usize,
+}
+
+fn default_scrollback_lines() -> usize {
+    crate::tide_terminal::DEFAULT_SCROLLBACK_LINES
+}
+
+impl Default for TerminalSettings {
+    fn default() -> Self {
+        Self {
+            osc52_read: false,
+            scrollback_lines: default_scrollback_lines(),
+        }
+    }
+}
+
+impl TerminalSettings {
+    pub fn resolved_scrollback_lines(&self) -> usize {
+        self.scrollback_lines
+            .min(crate::tide_terminal::MAX_SCROLLBACK_LINES)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OnboardingSettings {
+    #[serde(default)]
+    pub first_run_guide_dismissed: bool,
 }
 
 /// A single keybinding override stored in settings.json.
@@ -287,7 +352,13 @@ mod tests {
         assert_eq!(settings.appearance.font_family, "Menlo");
         assert!((settings.appearance.font_size - 14.0).abs() < f32::EPSILON);
         assert_eq!(settings.appearance.theme, ThemePreference::Dark);
+        assert_eq!(settings.appearance.palette, ThemePalettePreference::Tide);
         assert!(!settings.terminal.osc52_read);
+        assert_eq!(
+            settings.terminal.scrollback_lines,
+            crate::tide_terminal::DEFAULT_SCROLLBACK_LINES
+        );
+        assert!(!settings.onboarding.first_run_guide_dismissed);
     }
 
     #[test]
@@ -297,10 +368,15 @@ mod tests {
                 "appearance": {
                     "font_family": "JetBrains Mono",
                     "font_size": 16.0,
-                    "theme": "light"
+                    "theme": "light",
+                    "palette": "graphite"
                 },
                 "terminal": {
-                    "osc52_read": true
+                    "osc52_read": true,
+                    "scrollback_lines": 20000
+                },
+                "onboarding": {
+                    "first_run_guide_dismissed": true
                 }
             }"#,
         )
@@ -309,6 +385,12 @@ mod tests {
         assert_eq!(settings.appearance.font_family, "JetBrains Mono");
         assert!((settings.appearance.font_size - 16.0).abs() < f32::EPSILON);
         assert_eq!(settings.appearance.theme, ThemePreference::Light);
+        assert_eq!(
+            settings.appearance.palette,
+            ThemePalettePreference::Graphite
+        );
         assert!(settings.terminal.osc52_read);
+        assert_eq!(settings.terminal.scrollback_lines, 20_000);
+        assert!(settings.onboarding.first_run_guide_dismissed);
     }
 }

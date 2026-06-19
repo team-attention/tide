@@ -284,6 +284,31 @@ fn config_page_copy_files_editing_receives_text() {
 }
 
 #[test]
+fn config_page_terminal_scrollback_editing_receives_numeric_text_only() {
+    // UC-2 BR-20: ConfigPage terminal scrollback editing receives text but keeps the setting numeric.
+    let mut app = test_app();
+    let mut cp = ConfigPageState::new(vec![], String::new(), String::new());
+    cp.terminal_scrollback_input.text.clear();
+    cp.terminal_scrollback_input.cursor = 0;
+    cp.terminal_scrollback_editing = true;
+    app.modal.config_page = Some(cp);
+    assert_eq!(
+        text_routing_adapter::text_input_target(&app),
+        TextInputTarget::ConfigPageTerminalScrollback
+    );
+
+    app.send_text_to_target("12x3");
+
+    let page = app
+        .modal
+        .config_page
+        .as_ref()
+        .expect("config page should remain open");
+    assert_eq!(page.terminal_scrollback_input.text, "123");
+    assert!(page.dirty);
+}
+
+#[test]
 fn typing_in_empty_browser_pane_routes_text_to_url_bar() {
     // Spec: docs/specs/browser-pane-ux.md
     // UC-1 BR-2: Typing or pasting in an empty Browser Pane routes text to the Browser URL bar

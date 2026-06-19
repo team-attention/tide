@@ -82,7 +82,12 @@ struct RecordingLsp {
 }
 
 impl crate::outward::LspPort for RecordingLsp {
-    fn init(&mut self, _root: &std::path::Path, _waker: Option<crate::tide_platform::WakeCallback>) {}
+    fn init(
+        &mut self,
+        _root: &std::path::Path,
+        _waker: Option<crate::tide_platform::WakeCallback>,
+    ) {
+    }
     fn is_initialized(&self) -> bool {
         true
     }
@@ -148,12 +153,22 @@ fn go_to_definition_uses_lsp_when_a_server_is_available() {
     });
     crate::FileTreePort::execute_context_menu_action(&mut app, 0);
 
-    assert_eq!(definitions.lock().unwrap().len(), 1, "one LSP definition request");
+    assert_eq!(
+        definitions.lock().unwrap().len(),
+        1,
+        "one LSP definition request"
+    );
     let (uri, line, character) = definitions.lock().unwrap()[0].clone();
-    assert!(uri.ends_with("src/util.ts"), "request targets the file: {uri}");
+    assert!(
+        uri.ends_with("src/util.ts"),
+        "request targets the file: {uri}"
+    );
     assert_eq!((line, character), (0, 16));
     // The finder fallback must NOT have opened.
-    assert!(app.modal.file_finder.is_none(), "LSP path used, not the search fallback");
+    assert!(
+        app.modal.file_finder.is_none(),
+        "LSP path used, not the search fallback"
+    );
 }
 
 #[test]
@@ -181,7 +196,10 @@ fn find_references_hits_render_in_finder_and_filter_in_memory() {
     // Typing narrows the injected hits in memory (only b.ts's preview has 'x').
     finder.insert_char('x');
     assert_eq!(finder.filtered.len(), 1);
-    assert_eq!(finder.workspace_search_hits[finder.filtered[0]].path, PathBuf::from("src/b.ts"));
+    assert_eq!(
+        finder.workspace_search_hits[finder.filtered[0]].path,
+        PathBuf::from("src/b.ts")
+    );
 }
 
 #[test]
@@ -220,7 +238,10 @@ fn editor_definition_query_prefixes_local_symbol_with_at() {
         "export function fooBar() { return 1 }\nconst y = fooBar()\n",
     );
     assert_eq!(app.editor_definition_query(id, "fooBar"), "@fooBar");
-    assert_eq!(app.editor_definition_query(id, "SomethingElse"), "#SomethingElse");
+    assert_eq!(
+        app.editor_definition_query(id, "SomethingElse"),
+        "#SomethingElse"
+    );
 }
 
 #[test]

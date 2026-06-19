@@ -7,13 +7,13 @@ use crate::adapter::outward::clock_adapter::FixedClock;
 use crate::adapter::outward::view::{
     browser_nav_icon_for_target, browser_nav_icon_text_glyph, context_menu_icon,
     context_menu_icon_text_glyph, file_tree_row_slab_clip, region_header_anchor_pane_id,
-    search_bar_close_icon_text_glyph, titlebar_action_button_icon, titlebar_action_icon_text_glyph,
-    titlebar_button_backdrop_level, titlebar_identity_origin_x,
-    titlebar_identity_origin_x_for_window, titlebar_surface_button_icon,
-    titlebar_surface_icon_text_glyph, titlebar_toggle_button_draws_hotkey_hint,
-    titlebar_toggle_button_height, titlebar_toggle_button_width, titlebar_workspace_meta_text,
-    titlebar_workspace_title, BrowserNavIcon, ContextMenuIcon, TitlebarActionIcon,
-    TitlebarSurfaceIcon,
+    search_bar_close_icon_text_glyph, terminal_context_surface_header_identity_label,
+    titlebar_action_button_icon, titlebar_action_icon_text_glyph, titlebar_button_backdrop_level,
+    titlebar_identity_origin_x, titlebar_identity_origin_x_for_window,
+    titlebar_surface_button_icon, titlebar_surface_icon_text_glyph,
+    titlebar_toggle_button_draws_hotkey_hint, titlebar_toggle_button_height,
+    titlebar_toggle_button_width, titlebar_workspace_meta_text, titlebar_workspace_title,
+    BrowserNavIcon, ContextMenuIcon, TitlebarActionIcon, TitlebarSurfaceIcon,
 };
 use crate::event_loop::handle_platform_event;
 use crate::header::{
@@ -202,6 +202,7 @@ impl TerminalFactoryPort for DelayedTerminalFactory {
 
     fn set_spawn_config(&mut self, _config: crate::tide_terminal::TerminalSpawnConfig) {}
     fn set_auto_integration(&mut self, _enabled: bool) {}
+    fn set_scrollback_lines(&mut self, _lines: usize) {}
 }
 
 fn root_split_ratio(app: &App) -> f32 {
@@ -260,6 +261,43 @@ fn terminal_context_surface_header_keeps_context_tab_chrome() {
     assert!(action_kinds.contains(&HeaderHitAction::SplitVertical));
     assert!(!action_kinds.contains(&HeaderHitAction::AddPane));
     assert!(!action_kinds.contains(&HeaderHitAction::OpenBrowser));
+}
+
+#[test]
+fn terminal_context_surface_header_identity_names_owner_mode_and_count() {
+    // UC-2 BR-40: Terminal Context Surface headers identify their owning Stage Terminal.
+    let (mut app, terminal_id) = app_with_context_pane();
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&terminal_id) {
+        terminal.context.osc_title = Some("tide-workbench".to_string());
+    }
+    let first_context_id = match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => terminal.dock_focused.expect("context pane focus"),
+        _ => panic!("stage terminal should exist"),
+    };
+
+    assert_eq!(
+        terminal_context_surface_header_identity_label(&app, first_context_id).as_deref(),
+        Some("Context: tide-workbench / stacked / 1 pane")
+    );
+    assert_eq!(
+        terminal_context_surface_header_identity_label(&app, terminal_id),
+        None
+    );
+
+    let second_context_id = app.layout.alloc_id();
+    app.panes.insert(
+        second_context_id,
+        PaneKind::Browser(crate::pane::browser::BrowserPane::new(second_context_id)),
+    );
+    app.add_pane_to_dock(second_context_id, Some(terminal_id));
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&terminal_id) {
+        terminal.dock_view_mode = ViewMode::Split;
+    }
+
+    assert_eq!(
+        terminal_context_surface_header_identity_label(&app, second_context_id).as_deref(),
+        Some("Context: tide-workbench / split / 2 panes")
+    );
 }
 
 #[test]

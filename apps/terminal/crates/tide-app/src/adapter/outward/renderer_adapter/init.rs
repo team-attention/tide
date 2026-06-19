@@ -424,7 +424,8 @@ impl WgpuRenderer {
 
         // Precompute cell sizes for all font sizes (8..=32) and look up initial
         let font_family = "Menlo";
-        let cell_size_table = Self::precompute_cell_sizes(&mut font_system, scale_factor, font_family);
+        let cell_size_table =
+            Self::precompute_cell_sizes(&mut font_system, scale_factor, font_family);
         let cached_cell_size = cell_size_table[(14 - 8) as usize];
 
         // --- MSDF font store ---

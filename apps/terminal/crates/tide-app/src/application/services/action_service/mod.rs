@@ -92,11 +92,7 @@ impl App {
                 .file_path()
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|| ep.title()),
-            Some(PaneKind::Diff(dp)) => dp
-                .files
-                .first()
-                .map(|file| dp.cwd.join(&file.path).display().to_string())
-                .unwrap_or_else(|| dp.cwd.display().to_string()),
+            Some(PaneKind::Diff(dp)) => dp.review_source_label(),
             Some(PaneKind::Browser(bp)) => bp
                 .page_selection
                 .as_ref()
@@ -289,11 +285,33 @@ impl App {
             content,
             comment,
             pinned,
+            deliveries: Vec::new(),
         };
         self.context_artifacts
             .artifacts
             .insert(artifact.artifact_id, artifact.clone());
+        self.record_browser_review_from_artifact(&artifact);
         artifact
+    }
+
+    pub(crate) fn record_browser_review_from_artifact(
+        &mut self,
+        artifact: &crate::ContextArtifact,
+    ) {
+        if artifact.pane_kind != "browser" {
+            return;
+        }
+        let Some(PaneKind::Browser(browser)) = self.panes.get_mut(&artifact.source_pane_id) else {
+            return;
+        };
+        browser.record_review_artifact(
+            artifact.artifact_id,
+            artifact.comment.clone(),
+            artifact.source_label.clone(),
+            artifact.deliveries.len(),
+        );
+        self.cache.invalidate_pane(artifact.source_pane_id);
+        self.cache.invalidate_chrome();
     }
 
     fn inject_context_artifact_into_paired_terminal(
@@ -339,21 +357,28 @@ impl App {
         true
     }
 
-    pub(crate) fn deliver_context_artifact(&mut self, artifact: &crate::ContextArtifact) -> bool {
-        let terminal_input_injected = self.inject_context_artifact_into_paired_terminal(artifact);
-        let mut payload = crate::state::context_artifact::context_artifact_json(artifact);
-        if let Some(obj) = payload.as_object_mut() {
-            obj.insert(
-                "terminal_input_injected".to_string(),
-                serde_json::json!(terminal_input_injected),
-            );
-        }
+    pub(crate) fn deliver_context_artifact(&mut self, artifact_id: u64) -> Option<bool> {
+        let artifact = self.context_artifacts.artifacts.get(&artifact_id)?.clone();
+        let terminal_input_injected = self.inject_context_artifact_into_paired_terminal(&artifact);
+        let (associated_terminal_id, updated_artifact, payload) = {
+            let artifact = self.context_artifacts.artifacts.get_mut(&artifact_id)?;
+            artifact.record_delivery(terminal_input_injected);
+            let mut payload = crate::state::context_artifact::context_artifact_json(artifact);
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert(
+                    "terminal_input_injected".to_string(),
+                    serde_json::json!(terminal_input_injected),
+                );
+            }
+            (artifact.associated_terminal_id, artifact.clone(), payload)
+        };
+        self.record_browser_review_from_artifact(&updated_artifact);
         self.gateway.notify_for_owner(
-            artifact.associated_terminal_id,
+            associated_terminal_id,
             "context-artifact-delivered",
             payload,
         );
-        terminal_input_injected
+        Some(terminal_input_injected)
     }
 
     pub(crate) fn open_context_comment_composer(
@@ -401,7 +426,7 @@ impl App {
             composer.pinned,
         );
 
-        self.deliver_context_artifact(&artifact);
+        self.deliver_context_artifact(artifact.artifact_id);
 
         self.invalidate_chrome();
         self.request_redraw();
@@ -653,7 +678,9 @@ impl App {
             .find(|s| symbol_label_defines(&s.label, identifier));
         let chosen = exact.or_else(|| {
             let lo = identifier.to_lowercase();
-            symbols.iter().find(|s| s.label.to_lowercase().contains(&lo))
+            symbols
+                .iter()
+                .find(|s| s.label.to_lowercase().contains(&lo))
         })?;
         Some((base.join(&chosen.path), chosen.line))
     }
@@ -693,9 +720,8 @@ fn enclosing_quoted(chars: &[char], col: usize) -> Option<String> {
 
 /// A path-like token (no quotes) around `col`.
 fn path_token(chars: &[char], col: usize) -> Option<String> {
-    let is_path = |c: char| {
-        c.is_alphanumeric() || matches!(c, '/' | '\\' | '.' | '-' | '_' | '~' | '@')
-    };
+    let is_path =
+        |c: char| c.is_alphanumeric() || matches!(c, '/' | '\\' | '.' | '-' | '_' | '~' | '@');
     if !is_path(chars[col]) {
         return None;
     }
@@ -772,7 +798,11 @@ impl crate::application::ports::inward::ActionPort for App {
             _ => None,
         };
         if let Some(url) = url {
-            let _ = self.ports.process.open_url(&url);
+            if self.ports.process.open_url(&url).is_ok() {
+                if let Some(PaneKind::Browser(browser)) = self.panes.get_mut(&focused) {
+                    browser.record_external_handoff(Some("user_open_external"), Some(&url));
+                }
+            }
         }
     }
 
@@ -1170,8 +1200,9 @@ impl crate::application::ports::inward::ActionPort for App {
                                 // the wheel (mouse reporting or Alternate Screen +
                                 // Alternate Scroll), send it to the PTY instead of
                                 // scrolling local scrollback.
-                                if let Some(bytes) =
-                                    pane.backend.wheel_to_bytes(up, notches, wheel_col, wheel_row)
+                                if let Some(bytes) = pane
+                                    .backend
+                                    .wheel_to_bytes(up, notches, wheel_col, wheel_row)
                                 {
                                     pane.backend.write(&bytes);
                                 } else {
@@ -1565,7 +1596,10 @@ mod cmd_click_nav_tests {
     #[test]
     fn symbol_label_defines_matches_whole_word() {
         assert!(symbol_label_defines("export function fooBar(", "fooBar"));
-        assert!(symbol_label_defines("class BackendAdapter implements", "BackendAdapter"));
+        assert!(symbol_label_defines(
+            "class BackendAdapter implements",
+            "BackendAdapter"
+        ));
         assert!(!symbol_label_defines("fooBarBaz()", "fooBar"));
     }
 
