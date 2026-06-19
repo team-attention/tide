@@ -773,9 +773,10 @@ impl PlatformWindow for MacosWindow {
                 | NSApplicationActivationOptions::NSApplicationActivateIgnoringOtherApps;
             #[allow(deprecated)]
             let _: bool = running_app.activateWithOptions(activation_options);
-            self.ns_window.makeMainWindow();
             self.ns_window.makeKeyAndOrderFront(None);
             self.ns_window.orderFrontRegardless();
+            // AppKit can throw if an unordered window is made main first.
+            self.ns_window.makeMainWindow();
         }
         self.window_revealed.set(true);
     }
