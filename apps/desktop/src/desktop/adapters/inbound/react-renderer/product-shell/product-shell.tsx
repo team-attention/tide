@@ -696,7 +696,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             It's invisible, so an error there must never surface UI — a crash just drops the
             host (the agents lose liveness) rather than taking down the app. */}
         <ErrorBoundary fallback={() => null}>
-          <BackgroundBrowserHost panes={layoutVm.backgroundBrowserPanes} handlers={handlers} />
+          <BackgroundBrowserHost
+            panes={layoutVm.backgroundBrowserPanes}
+            handlers={stableHandlers}
+          />
         </ErrorBoundary>
         {viewModel.settingsOpen
           ? createSettingsModal(viewModel.worktreeSettings, themePref, handlers)
