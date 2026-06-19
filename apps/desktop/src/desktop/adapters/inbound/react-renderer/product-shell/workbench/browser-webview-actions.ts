@@ -51,6 +51,16 @@ export type BrowserWebViewAction = NonNullable<
 
 export type BrowserWebViewActionExecution = { ok: boolean; message: string };
 
+interface BrowserActionTarget {
+  ok: boolean;
+  message: string;
+  x?: number;
+  y?: number;
+  description?: string;
+  disabled?: boolean;
+  formValid?: boolean;
+}
+
 // Electron <webview> guest methods only work once the guest is attached AND has
 // emitted dom-ready. Before that, executeJavaScript throws *synchronously* and
 // capturePage() never resolves. These two guards keep a not-ready (or non-painting)
@@ -192,7 +202,8 @@ export async function executeBrowserWebViewAction(
   }
 }
 
-// Selector path — unchanged reliability fallback (querySelector + DOM dispatch).
+// Selector path: find the target in the page DOM, then prefer Electron input events so
+// React-controlled fields and real click handlers see the same event family a user sends.
 async function executeSelectorAction(
   webview: BrowserWebViewElement,
   action: BrowserWebViewAction,
@@ -200,43 +211,230 @@ async function executeSelectorAction(
   if (webview.executeJavaScript === undefined) {
     return { ok: false, message: "Browser WebView does not expose script execution." };
   }
-  const payload = JSON.stringify({
-    kind: action.kind,
-    selector: action.selector ?? "",
-    text: action.text ?? "",
-  });
+  if (action.kind === "click") {
+    const target = await resolveSelectorTarget(webview, action.selector ?? "");
+    if (!target.ok) {
+      return { ok: false, message: target.message };
+    }
+    if (target.disabled === true) {
+      return { ok: false, message: `${target.message}; target is disabled.` };
+    }
+    if (target.formValid === false) {
+      return { ok: false, message: `${target.message}; containing form is invalid.` };
+    }
+    if (webview.sendInputEvent === undefined || target.x === undefined || target.y === undefined) {
+      return executeSelectorClickFallback(webview, action.selector ?? "");
+    }
+    webview.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
+    webview.sendInputEvent({
+      type: "mouseDown",
+      x: target.x,
+      y: target.y,
+      button: "left",
+      clickCount: 1,
+    });
+    webview.sendInputEvent({
+      type: "mouseUp",
+      x: target.x,
+      y: target.y,
+      button: "left",
+      clickCount: 1,
+    });
+    return {
+      ok: true,
+      message: `Clicked ${action.selector ?? ""} at ${Math.round(target.x)},${Math.round(target.y)} (${target.description ?? "target"})`,
+    };
+  }
+
+  if (action.kind === "type_text") {
+    return executeSelectorTypeText(webview, action.selector ?? "", action.text ?? "");
+  }
+  return { ok: false, message: "Unsupported Browser action." };
+}
+
+async function executeSelectorClickFallback(
+  webview: BrowserWebViewElement,
+  selector: string,
+): Promise<BrowserWebViewActionExecution> {
+  const payload = JSON.stringify({ selector });
   const script = `((payload) => {
     const target = document.querySelector(payload.selector);
     if (!target) {
       return { ok: false, message: "Selector not found: " + payload.selector };
     }
     target.scrollIntoView?.({ block: "center", inline: "center" });
-    if (payload.kind === "click") {
-      target.click();
-      return { ok: true, message: "Clicked " + payload.selector };
+    target.click();
+    return { ok: true, message: "Clicked " + payload.selector + " via DOM fallback" };
+  })(${payload})`;
+  return browserActionExecutionFromUnknown(await webview.executeJavaScript?.(script));
+}
+
+async function executeSelectorTypeText(
+  webview: BrowserWebViewElement,
+  selector: string,
+  text: string,
+): Promise<BrowserWebViewActionExecution> {
+  const prepared = await prepareEditableTarget(webview, selector);
+  if (!prepared.ok) {
+    return { ok: false, message: prepared.message };
+  }
+  if (webview.sendInputEvent === undefined) {
+    return executeSelectorTypeFallback(webview, selector, text);
+  }
+  replaceFocusedText(webview, text);
+  await delay(50);
+  const valueInfo = await readFocusedEditableValue(webview);
+  const suffix = valueInfo.message.length > 0 ? `; ${valueInfo.message}` : "";
+  return {
+    ok: valueInfo.ok,
+    message: `Typed ${text.length} character(s) into ${selector}${suffix}`,
+  };
+}
+
+async function executeSelectorTypeFallback(
+  webview: BrowserWebViewElement,
+  selector: string,
+  text: string,
+): Promise<BrowserWebViewActionExecution> {
+  const payload = JSON.stringify({ selector, text });
+  const script = `((payload) => {
+    const target = document.querySelector(payload.selector);
+    if (!target) {
+      return { ok: false, message: "Selector not found: " + payload.selector };
     }
-    if (payload.kind === "type_text") {
-      target.focus?.();
-      if ("value" in target) {
-        target.value = payload.text;
-        target.dispatchEvent(new Event("input", { bubbles: true }));
-        target.dispatchEvent(new Event("change", { bubbles: true }));
-        return { ok: true, message: "Typed " + payload.selector };
-      }
-      target.textContent = payload.text;
-      target.dispatchEvent(new Event("input", { bubbles: true }));
-      return { ok: true, message: "Typed " + payload.selector };
+    target.scrollIntoView?.({ block: "center", inline: "center" });
+    target.focus?.();
+    if ("value" in target) {
+      target.value = payload.text;
+      target.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertText",
+        data: payload.text,
+      }));
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+      return { ok: true, message: "Typed " + payload.selector + " via DOM fallback" };
     }
-    return { ok: false, message: "Unsupported Browser action." };
+    target.textContent = payload.text;
+    target.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      inputType: "insertText",
+      data: payload.text,
+    }));
+    return { ok: true, message: "Typed " + payload.selector + " via DOM fallback" };
   })(${payload})`;
   return browserActionExecutionFromUnknown(await webview.executeJavaScript(script));
 }
 
+async function resolveSelectorTarget(
+  webview: BrowserWebViewElement,
+  selector: string,
+): Promise<BrowserActionTarget> {
+  const payload = JSON.stringify({ selector });
+  const script = `((payload) => {
+    const target = document.querySelector(payload.selector);
+    if (!target) {
+      return { ok: false, message: "Selector not found: " + payload.selector };
+    }
+    target.scrollIntoView?.({ block: "center", inline: "center" });
+    const rect = target.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return { ok: false, message: "Selector is not visible: " + payload.selector };
+    }
+    const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
+    const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
+    const hit = document.elementFromPoint(x, y);
+    const hitMatches = hit !== null && (hit === target || target.contains(hit));
+    const form = "form" in target ? target.form : undefined;
+    const tagName = target.tagName?.toLowerCase?.() ?? "element";
+    const label = [
+      tagName,
+      target.id ? "#" + target.id : "",
+      typeof target.className === "string" && target.className.trim().length > 0
+        ? "." + target.className.trim().split(/\\s+/).slice(0, 3).join(".")
+        : "",
+      hitMatches ? "hit" : "center-obscured",
+    ].filter(Boolean).join("");
+    return {
+      ok: true,
+      message: "Resolved " + payload.selector,
+      x,
+      y,
+      description: label,
+      disabled: target.disabled === true || target.getAttribute?.("aria-disabled") === "true",
+      formValid: form && typeof form.checkValidity === "function" ? form.checkValidity() : true,
+    };
+  })(${payload})`;
+  return browserActionTargetFromUnknown(await webview.executeJavaScript?.(script));
+}
+
+async function prepareEditableTarget(
+  webview: BrowserWebViewElement,
+  selector: string,
+): Promise<BrowserActionTarget> {
+  const payload = JSON.stringify({ selector });
+  const script = `((payload) => {
+    const target = document.querySelector(payload.selector);
+    if (!target) {
+      return { ok: false, message: "Selector not found: " + payload.selector };
+    }
+    target.scrollIntoView?.({ block: "center", inline: "center" });
+    const editable = "value" in target || target.isContentEditable === true;
+    if (!editable) {
+      return { ok: false, message: "Selector is not editable: " + payload.selector };
+    }
+    target.focus?.();
+    if (document.activeElement !== target) {
+      return { ok: false, message: "Selector could not be focused: " + payload.selector };
+    }
+    if ("value" in target && typeof target.setSelectionRange === "function") {
+      target.setSelectionRange(0, String(target.value ?? "").length);
+    } else {
+      const selection = window.getSelection?.();
+      const range = document.createRange();
+      range.selectNodeContents(target);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+    const rect = target.getBoundingClientRect();
+    return {
+      ok: true,
+      message: "Focused " + payload.selector,
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      description: target.tagName?.toLowerCase?.() ?? "editable",
+      disabled: target.disabled === true || target.getAttribute?.("aria-disabled") === "true",
+    };
+  })(${payload})`;
+  return browserActionTargetFromUnknown(await webview.executeJavaScript?.(script));
+}
+
+async function readFocusedEditableValue(
+  webview: BrowserWebViewElement,
+): Promise<BrowserWebViewActionExecution> {
+  if (webview.executeJavaScript === undefined) {
+    return { ok: true, message: "" };
+  }
+  const script = `(() => {
+    const target = document.activeElement;
+    if (!target) {
+      return { ok: false, message: "no focused element after type" };
+    }
+    if ("value" in target) {
+      return { ok: true, message: "focused value length " + String(target.value ?? "").length };
+    }
+    if (target.isContentEditable === true) {
+      return { ok: true, message: "focused text length " + String(target.textContent ?? "").length };
+    }
+    return { ok: false, message: "focused element is not editable after type" };
+  })()`;
+  return browserActionExecutionFromUnknown(await webview.executeJavaScript(script));
+}
+
 // Coordinate computer-use path — real input events on the live <webview>.
-function executeInputEventAction(
+async function executeInputEventAction(
   webview: BrowserWebViewElement,
   action: BrowserWebViewAction,
-): BrowserWebViewActionExecution {
+): Promise<BrowserWebViewActionExecution> {
   if (webview.sendInputEvent === undefined) {
     return { ok: false, message: "Browser WebView does not expose input events." };
   }
@@ -254,10 +452,12 @@ function executeInputEventAction(
       }
       const button = action.button ?? "left";
       const clickCount = action.clickCount ?? 1;
+      const point = await describePoint(webview, action.x, action.y);
       webview.sendInputEvent({ type: "mouseMove", x: action.x, y: action.y });
       webview.sendInputEvent({ type: "mouseDown", x: action.x, y: action.y, button, clickCount });
       webview.sendInputEvent({ type: "mouseUp", x: action.x, y: action.y, button, clickCount });
-      return { ok: true, message: `Clicked at ${action.x},${action.y}` };
+      const suffix = point.message.length > 0 ? ` (${point.message})` : "";
+      return { ok: true, message: `Clicked at ${action.x},${action.y}${suffix}` };
     }
     case "scroll": {
       if (action.x === undefined || action.y === undefined) {
@@ -287,7 +487,7 @@ function executeInputEventAction(
         return { ok: false, message: "Type browser action requires text." };
       }
       for (const char of action.text) {
-        webview.sendInputEvent({ type: "char", keyCode: char });
+        sendTextCharacter(webview, char);
       }
       return { ok: true, message: `Typed ${action.text.length} character(s)` };
     }
@@ -298,6 +498,61 @@ function executeInputEventAction(
 
 function invalidCoordinates(): BrowserWebViewActionExecution {
   return { ok: false, message: "Coordinate browser action requires numeric x and y." };
+}
+
+function replaceFocusedText(webview: BrowserWebViewElement, text: string): void {
+  webview.sendInputEvent?.({ type: "keyDown", keyCode: "A", modifiers: ["cmd"] });
+  webview.sendInputEvent?.({ type: "keyUp", keyCode: "A", modifiers: ["cmd"] });
+  if (text.length === 0) {
+    webview.sendInputEvent?.({ type: "keyDown", keyCode: "Backspace" });
+    webview.sendInputEvent?.({ type: "keyUp", keyCode: "Backspace" });
+    return;
+  }
+  for (const char of text) {
+    sendTextCharacter(webview, char);
+  }
+}
+
+function sendTextCharacter(webview: BrowserWebViewElement, char: string): void {
+  if (char === "\n") {
+    webview.sendInputEvent?.({ type: "keyDown", keyCode: "Enter" });
+    webview.sendInputEvent?.({ type: "keyUp", keyCode: "Enter" });
+    return;
+  }
+  webview.sendInputEvent?.({ type: "char", keyCode: char });
+}
+
+async function describePoint(
+  webview: BrowserWebViewElement,
+  x: number,
+  y: number,
+): Promise<BrowserWebViewActionExecution> {
+  if (webview.executeJavaScript === undefined) {
+    return { ok: true, message: "" };
+  }
+  const payload = JSON.stringify({ x, y });
+  const script = `((payload) => {
+    const target = document.elementFromPoint(payload.x, payload.y);
+    if (!target) {
+      return { ok: true, message: "no element under point" };
+    }
+    const tagName = target.tagName?.toLowerCase?.() ?? "element";
+    const parts = [
+      tagName,
+      target.id ? "#" + target.id : "",
+      typeof target.className === "string" && target.className.trim().length > 0
+        ? "." + target.className.trim().split(/\\s+/).slice(0, 3).join(".")
+        : "",
+    ].filter(Boolean);
+    const disabled = target.disabled === true || target.getAttribute?.("aria-disabled") === "true";
+    const form = "form" in target ? target.form : undefined;
+    const formValid = form && typeof form.checkValidity === "function" ? form.checkValidity() : true;
+    return {
+      ok: true,
+      message: parts.join("") + (disabled ? "; disabled" : "") + (formValid === false ? "; form invalid" : ""),
+    };
+  })(${payload})`;
+  return browserActionExecutionFromUnknown(await webview.executeJavaScript(script));
 }
 
 // "Cmd+Shift+A" → { keyCode: "A", modifiers: ["cmd", "shift"] }. Electron sendInputEvent
@@ -335,6 +590,27 @@ function browserActionExecutionFromUnknown(value: unknown): BrowserWebViewAction
     return { ok, message };
   }
   return { ok: false, message: "Browser action returned an invalid result." };
+}
+
+function browserActionTargetFromUnknown(value: unknown): BrowserActionTarget {
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return {
+      ok: typeof record.ok === "boolean" ? record.ok : false,
+      message:
+        typeof record.message === "string" ? record.message : "Browser action target resolved.",
+      x: typeof record.x === "number" ? record.x : undefined,
+      y: typeof record.y === "number" ? record.y : undefined,
+      description: typeof record.description === "string" ? record.description : undefined,
+      disabled: typeof record.disabled === "boolean" ? record.disabled : undefined,
+      formValid: typeof record.formValid === "boolean" ? record.formValid : undefined,
+    };
+  }
+  return { ok: false, message: "Browser action target returned an invalid result." };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function stringRecordField(

@@ -1,6 +1,6 @@
 // Spec: docs_v2/specs/browser-pane-agent-computer-use.md
 // Slice 1b — coordinate computer-use actions drive the live <webview> through real
-// sendInputEvent; the selector path stays on the executeJavaScript reliability fallback.
+// sendInputEvent; selector actions resolve a DOM target, then prefer real input events.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -101,16 +101,89 @@ test("type sends one char event per character into the focused element", async (
   }
 });
 
-test("selector click stays on the executeJavaScript path (no input events)", async () => {
-  const { webview, inputEvents, scripts } = fakeWebView();
+test("selector click resolves a target and sends real mouse events", async () => {
+  const inputEvents: BrowserWebViewInputEvent[] = [];
+  const scripts: string[] = [];
+  const webview = {
+    sendInputEvent: (event: BrowserWebViewInputEvent) => {
+      inputEvents.push(event);
+    },
+    executeJavaScript: (code: string) => {
+      scripts.push(code);
+      return Promise.resolve({
+        ok: true,
+        message: "Resolved button.primary",
+        x: 40,
+        y: 50,
+        description: "button.primaryhit",
+        disabled: false,
+        formValid: true,
+      });
+    },
+  } as unknown as BrowserWebViewElement;
   const result = await executeBrowserWebViewAction(
     webview,
     action({ kind: "click", selector: "button.primary" }),
   );
   assert.equal(result.ok, true);
-  assert.equal(inputEvents.length, 0);
+  assert.deepEqual(inputEvents.map((event) => event.type), ["mouseMove", "mouseDown", "mouseUp"]);
+  const down = inputEvents[1];
+  assert.equal(down.type, "mouseDown");
+  if (down.type === "mouseDown") {
+    assert.equal(down.x, 40);
+    assert.equal(down.y, 50);
+  }
   assert.equal(scripts.length, 1);
-  assert.match(scripts[0], /querySelector/);
+});
+
+test("selector click reports an invalid form before sending mouse events", async () => {
+  const inputEvents: BrowserWebViewInputEvent[] = [];
+  const webview = {
+    sendInputEvent: (event: BrowserWebViewInputEvent) => {
+      inputEvents.push(event);
+    },
+    executeJavaScript: () =>
+      Promise.resolve({
+        ok: true,
+        message: "Resolved button.primary",
+        x: 40,
+        y: 50,
+        description: "button.primaryhit",
+        disabled: false,
+        formValid: false,
+      }),
+  } as unknown as BrowserWebViewElement;
+  const result = await executeBrowserWebViewAction(
+    webview,
+    action({ kind: "click", selector: "button.primary" }),
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.message, /form is invalid/);
+  assert.equal(inputEvents.length, 0);
+});
+
+test("selector type_text focuses the target and sends char events", async () => {
+  const inputEvents: BrowserWebViewInputEvent[] = [];
+  const scripts: string[] = [];
+  const webview = {
+    sendInputEvent: (event: BrowserWebViewInputEvent) => {
+      inputEvents.push(event);
+    },
+    executeJavaScript: (code: string) => {
+      scripts.push(code);
+      return Promise.resolve({
+        ok: true,
+        message: code.includes("document.activeElement") ? "focused value length 2" : "focused",
+      });
+    },
+  } as unknown as BrowserWebViewElement;
+  const result = await executeBrowserWebViewAction(
+    webview,
+    action({ kind: "type_text", selector: "input.title", text: "hi" }),
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(inputEvents.map((event) => event.type), ["keyDown", "keyUp", "char", "char"]);
+  assert.equal(scripts.length, 2);
 });
 
 test("a coordinate action on a webview without sendInputEvent fails gracefully", async () => {
