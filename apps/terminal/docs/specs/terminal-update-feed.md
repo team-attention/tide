@@ -67,7 +67,7 @@
 
 - **Actor**: Release workflow
 - **Trigger**: The notarized DMG exists
-- **Precondition**: `TERMINAL_RELEASES_TOKEN` can write to the Terminal Releases Repo
+- **Precondition**: `DESKTOP_RELEASES_TOKEN` can write to the Terminal Releases Repo
 - **Flow**:
   1. The workflow runs the release metadata script for the current version
   2. The script writes `latest-mac.json` beside the DMG
@@ -76,7 +76,7 @@
   release path for Tide Terminal updater clients
 - **Business Rules**:
   - BR-3: The update-feed release must target `eatnug/tide-terminal-releases`
-  - BR-4: The update-feed release must use `TERMINAL_RELEASES_TOKEN`
+  - BR-4: The update-feed release must use `DESKTOP_RELEASES_TOKEN`
   - BR-5: The update-feed release must upload both the DMG and `latest-mac.json`
   - BR-6: The metadata must include version, DMG artifact name, size, SHA-256,
     release URL, and download URL

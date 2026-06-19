@@ -127,7 +127,7 @@ jobs:
       # feed keeps updater clients from filtering mixed release history.
       - name: Publish updater feed to the dedicated terminal releases repo
         env:
-          GH_TOKEN: ${{ secrets.TERMINAL_RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.DESKTOP_RELEASES_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           gh release create "v${VERSION}" \

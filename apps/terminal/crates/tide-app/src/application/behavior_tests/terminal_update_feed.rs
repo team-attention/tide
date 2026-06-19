@@ -72,7 +72,7 @@ fn terminal_release_workflow_publishes_the_update_feed_to_the_dedicated_repo() {
     assert_contains_all(
         updater_release,
         &[
-            "TERMINAL_RELEASES_TOKEN",
+            "DESKTOP_RELEASES_TOKEN",
             "gh release create",
             "target/dist/Tide-Terminal-${VERSION}.dmg",
             "target/dist/latest-mac.json",
