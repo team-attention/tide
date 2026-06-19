@@ -574,7 +574,8 @@ mod tests {
         assert!(zsh.contains("__TIDE_TERMINAL_WRAPPER_DIR"));
         assert!(zsh.contains("add-zsh-hook precmd _tide_fix_path"));
         assert!(bash.contains("__TIDE_TERMINAL_WRAPPER_DIR"));
-        assert!(bash.contains("PATH=$__TIDE_TERMINAL_WRAPPER_DIR"));
+        assert!(bash.contains("_tide_path_without_wrapper=\":$PATH:\""));
+        assert!(bash.contains("PATH=\"$__TIDE_TERMINAL_WRAPPER_DIR"));
         assert!(fish.contains("__TIDE_TERMINAL_WRAPPER_DIR"));
         assert!(fish.contains("set -gx PATH \"$__TIDE_TERMINAL_WRAPPER_DIR\""));
     }

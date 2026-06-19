@@ -193,6 +193,10 @@ fn observing_workspace_reports_provider_neutral_surfaces_and_panes() {
     assert_eq!(active_task["state"], "needs_input");
     assert_eq!(active_task["pane_counts"]["terminal"].as_u64(), Some(1));
     assert_eq!(active_task["pane_counts"]["browser"].as_u64(), Some(1));
+    assert_eq!(
+        active_task["pane_counts"]["terminal_context"].as_u64(),
+        Some(1)
+    );
     assert_eq!(active_task["agent_counts"]["needs_input"].as_u64(), Some(1));
     let terminal_context_summary = &active_task["terminals"][0]["terminal_context_surface"];
     assert_eq!(terminal_context_summary["mode"], "stacked");

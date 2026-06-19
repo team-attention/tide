@@ -2034,7 +2034,6 @@ fn workspace_task_entry_json(
             PaneKind::Terminal(terminal) => {
                 terminal_count += 1;
                 let context_panes = terminal.dock_layout.all_pane_ids();
-                context_pane_count += context_panes.len();
                 terminals.push(json!({
                     "pane_id": pane_id,
                     "title": if active { app.pane_title(pane_id) } else { format!("Terminal {pane_id}") },
