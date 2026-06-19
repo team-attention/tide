@@ -1,7 +1,9 @@
 import type { ProductShellHandlers } from "../support/types.ts";
-import { createElement, useState } from "react";
+import { createElement, useCallback, useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { WorkbenchCodeEditor } from "./code-editor.tsx";
+import type { BrowserWebViewElement } from "./browser-webview-actions.ts";
+import { InPaneFindBar, useInPaneFindState, usePaneFindIntent } from "../../support/in-pane-find.tsx";
 // Extracted alongside markdown-view.tsx (spec: workbench-html-preview.md).
 
 // Build a file:// URL from an absolute path, encoding each segment so spaces / # / ?
@@ -36,10 +38,70 @@ export function WorkbenchHtmlView(props: {
   breadcrumb?: ReactElement;
   handlers: ProductShellHandlers;
 }): ReactElement {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const webviewRef = useRef<BrowserWebViewElement | null>(null);
+  const [webviewElement, setWebviewElement] = useState<BrowserWebViewElement | null>(null);
+  const setWebviewRef = useCallback((element: BrowserWebViewElement | null) => {
+    webviewRef.current = element;
+    setWebviewElement(element);
+  }, []);
   const canPreview = typeof props.filePath === "string" && props.filePath.length > 0;
   const [mode, setMode] = useState<"preview" | "code">("preview");
+  const find = useInPaneFindState();
+  const [matchCount, setMatchCount] = useState(0);
   // No resolvable file path ⇒ nothing to render in a browser; show Code only.
   const effectiveMode = canPreview ? mode : "code";
+  const previewFindNext = useCallback(() => {
+    const query = find.query.trim();
+    if (query.length > 0) {
+      webviewRef.current?.findInPage?.(query, { findNext: true, forward: true, matchCase: false });
+    }
+  }, [find.query]);
+  const previewFindPrevious = useCallback(() => {
+    const query = find.query.trim();
+    if (query.length > 0) {
+      webviewRef.current?.findInPage?.(query, { findNext: true, forward: false, matchCase: false });
+    }
+  }, [find.query]);
+  usePaneFindIntent(rootRef, {
+    enabled: effectiveMode === "preview",
+    open: find.open,
+    onOpen: find.openFind,
+    onClose: find.closeFind,
+    onNext: previewFindNext,
+    onPrevious: previewFindPrevious,
+  });
+  useEffect(() => {
+    const webview = webviewElement;
+    if (webview === null) {
+      return undefined;
+    }
+    const onFound = (event: Event): void => {
+      const result = (event as BrowserFoundInPageEvent).result;
+      if (typeof result?.matches === "number") {
+        setMatchCount(result.matches);
+      }
+      if (typeof result?.activeMatchOrdinal === "number" && result.activeMatchOrdinal > 0) {
+        find.setActiveIndex(result.activeMatchOrdinal - 1);
+      }
+    };
+    webview.addEventListener("found-in-page", onFound);
+    return () => webview.removeEventListener("found-in-page", onFound);
+  }, [webviewElement, find.setActiveIndex]);
+  useEffect(() => {
+    const webview = webviewElement;
+    const query = find.query.trim();
+    if (webview === null) {
+      return undefined;
+    }
+    if (!find.open || effectiveMode !== "preview" || query.length === 0) {
+      setMatchCount(0);
+      webview.stopFindInPage?.("clearSelection");
+      return undefined;
+    }
+    webview.findInPage?.(query, { findNext: false, forward: true, matchCase: false });
+    return undefined;
+  }, [webviewElement, effectiveMode, find.open, find.query, props.paneId]);
   const toggle = (target: "preview" | "code", label: string) => (
     <button
       type="button"
@@ -52,7 +114,7 @@ export function WorkbenchHtmlView(props: {
     </button>
   );
   return (
-    <div className="workbench-html" data-html-mode={effectiveMode}>
+    <div ref={rootRef} className="workbench-html" data-html-mode={effectiveMode}>
       <div className="workbench-html-header">
         {props.breadcrumb ?? null}
         {canPreview ? (
@@ -62,12 +124,25 @@ export function WorkbenchHtmlView(props: {
           </div>
         ) : null}
       </div>
+      {find.open && effectiveMode === "preview" ? (
+        <InPaneFindBar
+          query={find.query}
+          matchCount={matchCount}
+          activeIndex={find.activeIndex}
+          placeholder="Find in preview"
+          onQueryChange={find.setQuery}
+          onNext={previewFindNext}
+          onPrevious={previewFindPrevious}
+          onClose={find.closeFind}
+        />
+      ) : null}
       {effectiveMode === "preview" ? (
         <div className="workbench-html-stage">
           {/* `<webview>` is an Electron custom element with no JSX typing, so it stays a
               createElement call (same as the Browser Pane). file:// renders the saved
               page with its relative assets. */}
           {createElement("webview", {
+            ref: setWebviewRef,
             className: "workbench-html-webview",
             "data-html-pane-webview": props.paneId,
             src: fileUrlFromPath(props.filePath as string),
@@ -90,3 +165,10 @@ export function WorkbenchHtmlView(props: {
     </div>
   );
 }
+
+type BrowserFoundInPageEvent = Event & {
+  result?: {
+    activeMatchOrdinal?: number;
+    matches?: number;
+  };
+};

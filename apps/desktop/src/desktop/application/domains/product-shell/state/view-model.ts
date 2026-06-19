@@ -462,13 +462,12 @@ function buildThreadListViewModel(
   });
 }
 
-// Every open agent-owned Browser Pane needs exactly one live <webview> so its
-// agent-scheduled actions actually execute (otherwise tide_act_browser sits `pending`
-// forever and the turn hangs). The foreground workbench hosts a webview ONLY for the
-// active thread's currently-shown pane (workbench open + that pane active); every other
-// Browser Pane — non-active threads, AND the active thread's panes that aren't
-// foregrounded (workbench closed, or a different pane active) — needs an offscreen
-// webview here. The one pane already foregrounded is excluded to avoid a duplicate.
+// Browser Panes need a live <webview> only while visible, active-thread warm, or leased
+// by pending agent work. The foreground workbench hosts a webview ONLY for the
+// active thread's currently-shown pane (workbench open + that pane active). Active-thread
+// offscreen browsers stay warm for user continuity; non-active threads only get a live
+// background webview while an agent/browser lease is active (pending action/capture or
+// driving overlay). Idle non-active browsers remain cold snapshots to cap memory.
 // See docs_v2/specs/browser-pane-action-liveness.md.
 export function deriveBackgroundBrowserPanes(
   state: Pick<ProductShellState, "threads" | "activeThreadId" | "workbenchOpen"> & {
@@ -486,6 +485,13 @@ export function deriveBackgroundBrowserPanes(
             state.workbenchOpen &&
             state.appChrome.activeWorkbenchPaneId === pane.paneId
           ),
+      )
+      .filter(
+        (pane) =>
+          isActive ||
+          pane.pendingAction !== undefined ||
+          pane.pendingCapture !== undefined ||
+          pane.agentDriving === true,
       )
       .map((pane) => ({ ...pane, threadId: thread.threadId }));
   });

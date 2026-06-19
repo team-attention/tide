@@ -17,6 +17,7 @@ export interface WorkbenchTerminalStartInput {
   command: string;
   args: string[];
   cwd: string;
+  env?: Record<string, string>;
   onOutput?: (output: WorkbenchTerminalOutput) => void;
   onExit?: (exit: WorkbenchTerminalExit) => Promise<void> | void;
 }

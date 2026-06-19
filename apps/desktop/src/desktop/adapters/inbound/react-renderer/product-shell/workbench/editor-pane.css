@@ -77,57 +77,162 @@ button.workbench-editor-breadcrumb__crumb:active {
 
 .workbench-editor-references {
   flex: 0 0 auto;
-  max-height: 40%;
+  max-height: min(34%, 260px);
   margin: 0;
   border-top: 1px solid var(--tide-line);
+  background: var(--tide-bg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
 .workbench-editor-references__heading {
-  padding: 8px 10px;
-  background: var(--tide-surface);
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 6px 10px 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--tide-bg);
   border-bottom: 1px solid var(--tide-line);
+}
+
+.workbench-editor-references__title {
+  flex: 0 0 auto;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
   color: var(--tide-text);
 }
 
+.workbench-editor-references__query {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 46ch;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid var(--tide-line);
+  border-radius: 5px;
+  background: var(--tide-surface);
+  color: var(--tide-muted);
+  font: 11px/1.2 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-editor-references__count {
+  flex: 0 0 auto;
+  min-width: 22px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--tide-selection);
+  color: var(--tide-text);
+  font: 600 11px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
 .workbench-editor-references__empty {
-  padding: 10px;
+  padding: 14px 12px;
   color: var(--tide-muted);
   font-size: 12px;
 }
 
 .workbench-editor-references__list {
   margin: 0;
-  padding: 0;
+  padding: 4px 6px 6px;
   list-style: none;
-  max-height: 220px;
   overflow: auto;
 }
 
-.workbench-editor-references__item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--tide-line);
+.workbench-editor-references__item-wrap {
+  margin: 0;
 }
 
-.workbench-editor-references__item:last-child {
-  border-bottom: none;
+.workbench-editor-references__item {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.workbench-editor-references__item:hover {
+  background: var(--tide-selection);
+}
+
+.workbench-editor-references__item:focus-visible {
+  outline: 2px solid var(--tide-action);
+  outline-offset: -1px;
+}
+
+.workbench-editor-references__item:active {
+  background: color-mix(in srgb, var(--tide-selection) 76%, var(--tide-action) 8%);
+}
+
+.workbench-editor-references__meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tide-muted);
+}
+
+.workbench-editor-references__meta svg {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+}
+
+.workbench-editor-references__file {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tide-text);
+  font: 600 12px/1.35 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.workbench-editor-references__path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tide-muted);
+  font: 11px/1.35 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .workbench-editor-references__location {
+  flex: 0 0 auto;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border: 1px solid var(--tide-line);
+  border-radius: 5px;
+  background: var(--tide-bg);
   font: 11px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: var(--tide-muted);
 }
 
 .workbench-editor-references__label {
+  min-width: 0;
   font: 12px/1.5 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: var(--tide-text);
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

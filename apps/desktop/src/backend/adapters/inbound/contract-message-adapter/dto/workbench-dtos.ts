@@ -97,6 +97,9 @@ export function toWorkbenchPaneRefDto(
     }
   }
   if (pane.kind === "terminal") {
+    if (pane.terminalRole !== undefined) {
+      dto.terminalRole = pane.terminalRole;
+    }
     if (pane.command !== undefined) {
       dto.command = pane.command;
     }

@@ -6,10 +6,12 @@ import CodeMirror from "@uiw/react-codemirror";
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap } from "@codemirror/view";
 import type { ViewUpdate } from "@codemirror/view";
+import { SearchQuery } from "@codemirror/search";
 import { editorLanguageExtensions } from "./editor-pane.tsx";
 import { codeIntelligenceExtensions } from "./code-intel-extensions.ts";
 import type { CodeIntelContext } from "./code-intel-extensions.ts";
 import { CornerDownRight } from "lucide-react";
+import { InPaneFindBar, useInPaneFindState, usePaneFindIntent } from "../../support/in-pane-find.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 // Language-intelligence extensions: spec workbench-editor-language-intelligence.
 
@@ -37,7 +39,9 @@ export function WorkbenchCodeEditor(props: {
   relativePath?: string;
   handlers: ProductShellHandlers;
 }): ReactElement {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<ReactCodeMirrorRef>(null);
+  const find = useInPaneFindState();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   // The text selection captured when the context menu opened (before the caret is
   // moved to the clicked symbol), so "Add selection to chat" / Cut / Copy use it.
@@ -52,6 +56,50 @@ export function WorkbenchCodeEditor(props: {
   // Latest props for the intel extensions (built once, see useMemo below).
   const propsRef = useRef(props);
   propsRef.current = props;
+  const findMatches = useMemo(() => {
+    const query = find.query.trim();
+    if (query.length === 0) {
+      return [];
+    }
+    const view = editorRef.current?.view;
+    if (view !== undefined) {
+      const search = new SearchQuery({ search: find.query, caseSensitive: false, literal: true });
+      const matches: { from: number; to: number }[] = [];
+      const cursor = search.getCursor(view.state);
+      for (let next = cursor.next(); !next.done; next = cursor.next()) {
+        matches.push({ from: next.value.from, to: next.value.to });
+      }
+      return matches;
+    }
+    return plainTextMatches(props.value, find.query);
+  }, [find.query, props.value, props.revision]);
+  const findMatchCount = findMatches.length;
+  useEffect(() => {
+    if (!find.open || find.query.trim().length === 0 || findMatches.length === 0) {
+      return;
+    }
+    const view = editorRef.current?.view;
+    if (view === undefined) {
+      return;
+    }
+    const index = Math.max(0, Math.min(find.activeIndex, findMatches.length - 1));
+    if (index !== find.activeIndex) {
+      find.setActiveIndex(index);
+    }
+    const match = findMatches[index];
+    view.dispatch({
+      selection: { anchor: match.from, head: match.to },
+      scrollIntoView: true,
+    });
+  }, [find.open, find.query, find.activeIndex, findMatches, find.setActiveIndex]);
+  usePaneFindIntent(rootRef, {
+    enabled: true,
+    open: find.open,
+    onOpen: find.openFind,
+    onClose: find.closeFind,
+    onNext: () => find.next(findMatchCount),
+    onPrevious: () => find.previous(findMatchCount),
+  });
 
   // Attach a code selection to the composer as a chip (shared by the right-click
   // menu and the floating selection toolbar).
@@ -282,6 +330,7 @@ export function WorkbenchCodeEditor(props: {
 
   return (
     <div
+      ref={rootRef}
       className="workbench-editor-surface"
       aria-label="Editor Pane text"
       data-editor-language={props.language}
@@ -289,6 +338,18 @@ export function WorkbenchCodeEditor(props: {
       onContextMenu={openContextMenu}
       onMouseDownCapture={onCmdClick}
     >
+      {find.open ? (
+        <InPaneFindBar
+          query={find.query}
+          matchCount={findMatchCount}
+          activeIndex={find.activeIndex}
+          placeholder="Find in file"
+          onQueryChange={find.setQuery}
+          onNext={() => find.next(findMatchCount)}
+          onPrevious={() => find.previous(findMatchCount)}
+          onClose={find.closeFind}
+        />
+      ) : null}
       <CodeMirror
         ref={editorRef}
         className="workbench-editor-cm"
@@ -359,4 +420,16 @@ export function WorkbenchCodeEditor(props: {
       )}
     </div>
   );
+}
+
+function plainTextMatches(value: string, query: string): { from: number; to: number }[] {
+  const needle = query.toLocaleLowerCase();
+  const haystack = value.toLocaleLowerCase();
+  const matches: { from: number; to: number }[] = [];
+  let offset = haystack.indexOf(needle);
+  while (needle.length > 0 && offset !== -1) {
+    matches.push({ from: offset, to: offset + query.length });
+    offset = haystack.indexOf(needle, offset + query.length);
+  }
+  return matches;
 }

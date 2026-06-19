@@ -1952,10 +1952,13 @@ test("workbench_editor_pane_renders_references_list", () => {
   const html = renderProductShell(state);
 
   assert.match(html, /aria-label="References"/);
-  assert.match(html, /References to src\/app\.ts \(2\)/);
-  // Locations render as relativePath:line+1:character+1.
-  assert.match(html, /src\/app\.ts:1:14/);
-  assert.match(html, /src\/lib\.ts:8:3/);
+  assert.match(html, /workbench-editor-references__title[^>]*>References/);
+  assert.match(html, /workbench-editor-references__query[^>]*>src\/app\.ts/);
+  assert.match(html, /workbench-editor-references__count[^>]*>2/);
+  assert.match(html, /aria-label="Open reference src\/app\.ts:1:14"/);
+  assert.match(html, /aria-label="Open reference src\/lib\.ts:8:3"/);
+  assert.match(html, /workbench-editor-references__file[^>]*>app\.ts/);
+  assert.match(html, /workbench-editor-references__path[^>]*>src/);
   assert.match(html, /return value;/);
 });
 

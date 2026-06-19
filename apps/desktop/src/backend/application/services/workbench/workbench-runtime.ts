@@ -31,6 +31,7 @@ export interface WorkbenchTerminalOpenInput {
   command: string;
   args: string[];
   cwd: string;
+  env?: Record<string, string>;
 }
 
 export interface WorkbenchRuntimeDeps {
@@ -96,6 +97,7 @@ export class WorkbenchRuntime {
         pane.cwd === setup.cwd,
     );
     if (existing !== undefined) {
+      existing.terminalRole = "provider_setup";
       existing.status = "ready";
       existing.args = [...setup.args];
       existing.env = cloneEnv(setup.env);
@@ -108,6 +110,7 @@ export class WorkbenchRuntime {
     const pane: TerminalPaneState = {
       paneId: this.idGenerator(),
       kind: "terminal",
+      terminalRole: "provider_setup",
       title: `Provider setup: ${commandName(setup.command)}`,
       revision: this.idGenerator(),
       updatedAt: this.clock(),
@@ -134,8 +137,10 @@ export class WorkbenchRuntime {
         pane.cwd === input.cwd,
     );
     if (existing !== undefined) {
+      existing.terminalRole = "session";
       existing.title = "Terminal";
       existing.args = [...input.args];
+      existing.env = cloneEnv(input.env);
       existing.status = this.workbenchTerminalHandles.has(existing.paneId)
         ? "running"
         : "ready";
@@ -147,11 +152,13 @@ export class WorkbenchRuntime {
     const pane: TerminalPaneState = {
       paneId: this.idGenerator(),
       kind: "terminal",
+      terminalRole: "session",
       title: "Terminal",
       revision: this.idGenerator(),
       updatedAt: this.clock(),
       command: input.command,
       args: [...input.args],
+      env: cloneEnv(input.env),
       cwd: input.cwd,
       status: "ready",
     };
@@ -233,6 +240,7 @@ export class WorkbenchRuntime {
         paneId: pane.paneId,
         command: pane.command,
         args: pane.args ?? [],
+        env: cloneEnv(pane.env),
         cwd: pane.cwd,
         onOutput: (output) =>
           this.appendWorkbenchTerminalOutput(thread.threadId, pane.paneId, output),

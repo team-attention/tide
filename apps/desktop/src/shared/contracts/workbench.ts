@@ -97,6 +97,7 @@ export interface NonBrowserWorkbenchPaneRefDto extends BaseWorkbenchPaneRefDto {
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  terminalRole?: "session" | "command_result" | "provider_setup";
   status?: "ready" | "running" | "completed" | "failed";
   expectedCompletion?: "process_exit" | "retry_preflight";
   transcriptPreview?: string;

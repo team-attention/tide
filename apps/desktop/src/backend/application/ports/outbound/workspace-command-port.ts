@@ -47,6 +47,7 @@ export interface WorkspaceCommandPort {
     command: string;
     args: string[];
     cwd: string;
+    env?: Record<string, string>;
     timeoutMs: number;
     byteLimit: number;
     startedAt: string;

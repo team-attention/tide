@@ -63,4 +63,17 @@ export class BrowserCaptureCoordinator {
     entry.resolve(screenshot);
     return true;
   }
+
+  // Cancel a pending observe-time capture when its owning Browser Pane or Thread is torn down.
+  // Resolve as undefined so the waiting MCP tool degrades instead of sitting on the timeout.
+  cancel(captureId: string): boolean {
+    const entry = this.pending.get(captureId);
+    if (entry === undefined) {
+      return false;
+    }
+    this.clearTimeoutFn(entry.timer);
+    this.pending.delete(captureId);
+    entry.resolve(undefined);
+    return true;
+  }
 }

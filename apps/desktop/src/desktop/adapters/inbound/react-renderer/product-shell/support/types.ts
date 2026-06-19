@@ -243,7 +243,7 @@ export interface ProductShellHandlers {
   onFileTreeMenuClose: () => void;
   // Drag-and-drop move: move `fromRel` so it lands at `toRel`.
   onFileTreeMove: (fromRel: string, toRel: string) => void;
-  // Toolbar refresh + transient-notice dismiss.
+  // FileTree refresh command + transient-notice dismiss.
   onFileTreeRefresh: () => void;
   onFileTreeNoticeClear: () => void;
   onTerminalInput: (paneId: string, bytes: string) => void;

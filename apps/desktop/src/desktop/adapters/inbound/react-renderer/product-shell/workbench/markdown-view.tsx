@@ -10,6 +10,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import { CornerDownRight, Crosshair } from "lucide-react";
 import { WorkbenchCodeEditor } from "./code-editor.tsx";
+import {
+  InPaneFindBar,
+  useDomTextFind,
+  useInPaneFindState,
+  usePaneFindIntent,
+} from "../../support/in-pane-find.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // Markdown rendering for the Editor Pane Preview. `html: false` escapes raw HTML
@@ -56,7 +62,9 @@ export function WorkbenchMarkdownView(props: {
   handlers: ProductShellHandlers;
 }): ReactElement {
   const [mode, setMode] = useState<"preview" | "edit">("preview");
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const find = useInPaneFindState();
   // Floating "Add to chat" for a drag-selection inside the rendered preview.
   const [selToolbar, setSelToolbar] = useState<{ x: number; y: number; text: string } | null>(null);
   // "Pick block" mode: hover-highlight rendered blocks; click toggles each into a
@@ -191,6 +199,23 @@ export function WorkbenchMarkdownView(props: {
   // Render once per source string (cached), so unrelated re-renders don't
   // re-parse the whole file. Spec D8.
   const previewHtml = useMemo(() => renderMarkdownCached(markdownRenderer, props.value), [props.value]);
+  const previewFindEnabled = mode === "preview" || props.readOnly;
+  const previewMatchCount = useDomTextFind({
+    rootRef: previewRef,
+    open: find.open && previewFindEnabled,
+    query: find.query,
+    activeIndex: find.activeIndex,
+    refreshKey: previewHtml,
+    onActiveIndexChange: find.setActiveIndex,
+  });
+  usePaneFindIntent(rootRef, {
+    enabled: previewFindEnabled,
+    open: find.open,
+    onOpen: find.openFind,
+    onClose: find.closeFind,
+    onNext: () => find.next(previewMatchCount),
+    onPrevious: () => find.previous(previewMatchCount),
+  });
   // Memoize the preview ELEMENT (not just its html): when the drag-select
   // "Add to chat" toolbar toggles (a setSelToolbar state change), a re-created
   // preview element gets reconciled and its text nodes detach — collapsing the
@@ -268,7 +293,12 @@ export function WorkbenchMarkdownView(props: {
     </button>
   );
   return (
-    <div className="workbench-md" data-md-mode={mode} data-md-picking={pickBlock ? "true" : "false"}>
+    <div
+      ref={rootRef}
+      className="workbench-md"
+      data-md-mode={mode}
+      data-md-picking={pickBlock ? "true" : "false"}
+    >
       <div className="workbench-md-header">
         {props.breadcrumb ?? null}
         <div className="workbench-md-controls">
@@ -322,6 +352,18 @@ export function WorkbenchMarkdownView(props: {
           ) : null}
         </div>
       </div>
+      {find.open && previewFindEnabled ? (
+        <InPaneFindBar
+          query={find.query}
+          matchCount={previewMatchCount}
+          activeIndex={find.activeIndex}
+          placeholder="Find in preview"
+          onQueryChange={find.setQuery}
+          onNext={() => find.next(previewMatchCount)}
+          onPrevious={() => find.previous(previewMatchCount)}
+          onClose={find.closeFind}
+        />
+      ) : null}
       {mode === "preview" || props.readOnly ? (
         <>
           {previewBody}

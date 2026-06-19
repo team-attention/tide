@@ -103,6 +103,30 @@ async function mountShell(state: ReturnType<typeof editorState>) {
   return root;
 }
 
+async function pressFindShortcut(): Promise<void> {
+  await act(async () => {
+    dom.window.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", {
+        key: "f",
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+}
+
+async function setFindInputValue(value: string): Promise<HTMLInputElement> {
+  const input = dom.window.document.querySelector(".in-pane-find__input") as HTMLInputElement | null;
+  assert.ok(input, "find input should be visible");
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")?.set;
+  await act(async () => {
+    setter?.call(input, value);
+    input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  return input;
+}
+
 test("workbench_editor_pane_mounts_codemirror_with_file_content_and_line_numbers", async () => {
   const code = "export const value = 1;\nconst doubled = value * 2;\n";
   const root = await mountShell(editorState(code, "src/app.ts"));
@@ -121,6 +145,58 @@ test("workbench_editor_pane_mounts_codemirror_with_file_content_and_line_numbers
     // The editable surface is a CodeMirror contenteditable, not a plain textarea.
     assert.equal(dom.window.document.querySelector(".workbench-editor-cm .cm-editor") !== null, true);
     assert.equal(dom.window.document.querySelector(".workbench-editor-textarea"), null);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("workbench_editor_cmd_f_opens_tide_find_bar_not_codemirror_default_panel", async () => {
+  // Spec: in-pane search should use Tide chrome, not CodeMirror's default white
+  // search/replace panel.
+  const root = await mountShell(editorState("const value = 1;\nconst next = value + 1;\n", "src/app.ts"));
+  try {
+    const content = dom.window.document.querySelector(".cm-content") as HTMLElement | null;
+    assert.ok(content, "CodeMirror content should mount");
+    content.focus();
+
+    await pressFindShortcut();
+
+    const input = dom.window.document.querySelector(".in-pane-find__input") as HTMLInputElement | null;
+    assert.ok(input, "Tide find input should open");
+    assert.equal(input.placeholder, "Find in file");
+    assert.equal(dom.window.document.querySelector(".cm-search"), null);
+
+    await setFindInputValue("value");
+    assert.match(dom.window.document.querySelector(".in-pane-find__count")?.textContent ?? "", /1 \/ 2/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("markdown_preview_cmd_f_searches_the_rendered_preview_surface", async () => {
+  // Spec: read-only rendered panes do not have a CodeMirror focus target, so the
+  // last interacted pane still owns Cmd/Ctrl+F.
+  const root = await mountShell(editorState("# Title\n\nSome body text.\n", "notes.md"));
+  try {
+    const preview = dom.window.document.querySelector(".workbench-md-preview") as HTMLElement | null;
+    assert.ok(preview, "preview renders by default");
+    await act(async () => {
+      preview.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
+    });
+
+    await pressFindShortcut();
+
+    const input = dom.window.document.querySelector(".in-pane-find__input") as HTMLInputElement | null;
+    assert.ok(input, "preview find input should open");
+    assert.equal(input.placeholder, "Find in preview");
+    assert.equal(dom.window.document.querySelector(".workbench-editor-cm .cm-editor"), null);
+
+    await setFindInputValue("body");
+    assert.match(dom.window.document.querySelector(".in-pane-find__count")?.textContent ?? "", /1 \/ 1/);
   } finally {
     await act(async () => {
       root.unmount();

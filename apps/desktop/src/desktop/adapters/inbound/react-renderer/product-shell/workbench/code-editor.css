@@ -7,7 +7,14 @@
   min-width: 0;
   width: 100%;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   background: var(--tide-bg);
+}
+
+.workbench-editor-cm {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .workbench-editor-cm,
