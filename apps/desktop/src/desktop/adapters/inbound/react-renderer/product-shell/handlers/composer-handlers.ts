@@ -1,5 +1,9 @@
-import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, interruptProductShellRuntime, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft, ensureComposerDraftThreadActive } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, interruptProductShellRuntime, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft, ensureComposerDraftThreadActive, type ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { AgentChatThreadScope } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import { resolveWorktreeName } from "../../../../../../shared/worktree/name.ts";
+import { makeWorktreeHash } from "../dialogs/worktree-name-input.tsx";
+import type { ProductShellHandlers } from "../support/types.ts";
+import type { ProductShellHandlerContext } from "./context.ts";
 
 // The Execution Context cwd a Composer scope points at — used to detect a project/worktree
 // switch (which must discard the Composer's Draft Thread, whose panes belong to the old cwd).
@@ -7,14 +11,24 @@ function composerScopeCwd(scope: AgentChatThreadScope | undefined): string | und
   if (scope === undefined) return undefined;
   return scope.kind === "project" ? scope.cwd : scope.scratchCwd;
 }
-import { resolveWorktreeName } from "../../../../../../shared/worktree/name.ts";
-import { makeWorktreeHash } from "../dialogs/worktree-name-input.tsx";
+
+function selectedBranchForNewWorktree(state: ProductShellState): string {
+  const value = state.agentChat.thread
+    ? state.agentChat.thread.launchOptions?.branch
+    : state.agentChat.composer.startOptions.launchOptions?.branch;
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value;
+  }
+  for (const candidate of ["main", "master", "trunk"]) {
+    if (state.gitBranches.some((branch) => branch.name === candidate)) {
+      return candidate;
+    }
+  }
+  return state.gitBranches.find((branch) => branch.current && branch.kind === "local")?.name ?? "main";
+}
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
-import type { ProductShellHandlers } from "../support/types.ts";
-import type { ProductShellHandlerContext } from "./context.ts";
-
-export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onAnswerPromptSteps" | "onSubmit" | "onInterrupt" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onOpencodeConnectApiKey" | "onAddAttachment" | "onRemoveAttachment"> {
+export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onAnswerPromptSteps" | "onSubmit" | "onInterrupt" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onChoiceSurfaceInputSubmit" | "onOpencodeConnectApiKey" | "onAddAttachment" | "onRemoveAttachment"> {
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, startColumnResize } = ctx;
   return {
     onDraftChange: (draft) => setShellState((state) => updateProductShellComposerDraft(state, draft)),
@@ -150,6 +164,11 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
       ),
     onComposerSurfaceChange: (surface) =>
       setShellState((state) => setProductShellComposerActiveSurface(state, surface)),
+    onChoiceSurfaceInputSubmit: (surfaceKind, rowId, value) => {
+      if (surfaceKind === "branch_menu" && rowId === "create-branch") {
+        submitWorktreeCreate(value, selectedBranchForNewWorktree(shellState));
+      }
+    },
     onChoiceSurfaceRowSelect: (surfaceKind, rowId) => {
       // "Open folder" in the chip only scopes the Start Composer to the picked
       // folder (Execution Context). It is NOT registered as a persisted project
@@ -174,7 +193,7 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
       // See docs_v2/specs/branch-deletion-from-picker.md.
       if (surfaceKind === "branch_menu" && rowId.startsWith("delete-branch:")) {
         const branch = rowId.slice("delete-branch:".length);
-        const scope = shellState.agentChat.composer.startOptions.scope;
+        const scope = shellState.agentChat.thread?.scope ?? shellState.agentChat.composer.startOptions.scope;
         const cwd =
           scope === undefined
             ? undefined

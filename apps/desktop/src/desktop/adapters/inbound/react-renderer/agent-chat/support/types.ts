@@ -18,6 +18,11 @@ export interface AgentChatShellProps {
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
   ) => void;
+  onChoiceSurfaceInputSubmit?: (
+    surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
+    rowId: string,
+    value: string,
+  ) => void;
   // The on-ramp panel's in-app API-key field → set the vendor's key (canonical: backend
   // → opencode server).
   onOpencodeConnectApiKey?: (vendorId: string, key: string) => void;
@@ -60,6 +65,11 @@ export interface ComposerHandlers {
   onChoiceSurfaceRowSelect?: (
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
+  ) => void;
+  onChoiceSurfaceInputSubmit?: (
+    surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
+    rowId: string,
+    value: string,
   ) => void;
   // The on-ramp panel's in-app API-key field → set the vendor's key (canonical: backend
   // → opencode server).

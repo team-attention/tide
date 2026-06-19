@@ -12,6 +12,11 @@ export function createChipPopover(input: {
   surface: AgentChatChoiceSurfaceView;
   anchor: AnchorRect;
   onRowSelect?: (surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"], rowId: string) => void;
+  onInputSubmit?: (
+    surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
+    rowId: string,
+    value: string,
+  ) => void;
   onOpencodeConnectApiKey?: (vendorId: string, key: string) => void;
   onClose: () => void;
 }): ReactElement {
@@ -55,6 +60,7 @@ export function createChipPopover(input: {
             key: `popover:${input.surface.surfaceKind}`,
             surface: input.surface,
             onRowSelect: input.onRowSelect,
+            onInputSubmit: input.onInputSubmit,
           })
         )}
       </div>

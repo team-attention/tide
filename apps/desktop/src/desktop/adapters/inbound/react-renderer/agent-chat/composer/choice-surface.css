@@ -132,6 +132,60 @@
   color: var(--tide-danger);
 }
 
+.choice-surface__inline-create {
+  display: grid;
+  gap: 7px;
+  padding: 7px 8px 8px;
+  border-radius: 8px;
+  background: var(--tide-selection);
+}
+
+.choice-surface__inline-title {
+  min-height: 20px;
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.choice-surface__inline-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  gap: 6px;
+}
+
+.choice-surface__inline-input {
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--tide-line);
+  border-radius: 7px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font-size: 13px;
+  outline: none;
+}
+
+.choice-surface__inline-input:focus {
+  border-color: var(--tide-line-strong, var(--tide-muted));
+}
+
+.choice-surface__inline-submit {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--tide-line);
+  border-radius: 7px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.choice-surface__inline-submit:hover {
+  background: var(--tide-surface);
+}
+
 .choice-surface__row-detail {
   font-size: 12px;
 }

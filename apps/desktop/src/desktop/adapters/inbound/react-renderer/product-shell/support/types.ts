@@ -145,6 +145,11 @@ export interface ProductShellHandlers {
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
   ) => void;
+  onChoiceSurfaceInputSubmit: (
+    surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
+    rowId: string,
+    value: string,
+  ) => void;
   // Set an opencode vendor's API key (the on-ramp panel's in-app key field) the
   // canonical way — backend PUTs it to opencode's own server.
   onOpencodeConnectApiKey: (vendorId: string, key: string) => void;
