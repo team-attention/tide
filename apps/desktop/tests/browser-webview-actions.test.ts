@@ -117,7 +117,6 @@ test("selector click resolves a target and sends real mouse events", async () =>
         y: 50,
         description: "button.primaryhit",
         disabled: false,
-        formValid: true,
       });
     },
   } as unknown as BrowserWebViewElement;
@@ -136,7 +135,7 @@ test("selector click resolves a target and sends real mouse events", async () =>
   assert.equal(scripts.length, 1);
 });
 
-test("selector click reports an invalid form before sending mouse events", async () => {
+test("selector click does not block a target inside an invalid form", async () => {
   const inputEvents: BrowserWebViewInputEvent[] = [];
   const webview = {
     sendInputEvent: (event: BrowserWebViewInputEvent) => {
@@ -157,9 +156,8 @@ test("selector click reports an invalid form before sending mouse events", async
     webview,
     action({ kind: "click", selector: "button.primary" }),
   );
-  assert.equal(result.ok, false);
-  assert.match(result.message, /form is invalid/);
-  assert.equal(inputEvents.length, 0);
+  assert.equal(result.ok, true);
+  assert.deepEqual(inputEvents.map((event) => event.type), ["mouseMove", "mouseDown", "mouseUp"]);
 });
 
 test("selector type_text focuses the target and sends char events", async () => {

@@ -13,6 +13,7 @@ function composerScopeCwd(scope: AgentChatThreadScope | undefined): string | und
 }
 
 function selectedBranchForNewWorktree(state: ProductShellState): string {
+  const branches = state.gitBranches ?? [];
   const value = state.agentChat.thread
     ? state.agentChat.thread.launchOptions?.branch
     : state.agentChat.composer.startOptions.launchOptions?.branch;
@@ -20,11 +21,11 @@ function selectedBranchForNewWorktree(state: ProductShellState): string {
     return value;
   }
   for (const candidate of ["main", "master", "trunk"]) {
-    if (state.gitBranches.some((branch) => branch.name === candidate)) {
+    if (branches.some((branch) => branch.name === candidate)) {
       return candidate;
     }
   }
-  return state.gitBranches.find((branch) => branch.current && branch.kind === "local")?.name ?? "main";
+  return branches.find((branch) => branch.current && branch.kind === "local")?.name ?? "main";
 }
 // Extracted from product-shell.ts (entry-module rule follow-up).
 

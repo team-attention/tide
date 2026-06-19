@@ -82,6 +82,29 @@ test("codex app-server item completed reuses the pending tool row block id", () 
   assert.equal(completed?.payload.status, "complete");
 });
 
+test("codex app-server item without an id still gets a stable tool row id", () => {
+  const item = {
+    type: "commandExecution",
+    command: "npm run typecheck",
+  };
+  const pending = codexToolCallRecordFromItem({
+    runtimeId: "runtime-1",
+    sequence: 9,
+    status: "pending",
+    item,
+  });
+  const completed = codexToolCallRecordFromItem({
+    runtimeId: "runtime-1",
+    sequence: 9,
+    status: "complete",
+    item,
+  });
+
+  assert.equal(pending?.itemId, "command:npm run typecheck");
+  assert.equal(pending?.payload.blockId, completed?.payload.blockId);
+  assert.equal(completed?.payload.callId, pending?.payload.callId);
+});
+
 test("ACP prompt blocks carry a NATIVE image ContentBlock (base64) per attachment", () => {
   const dir = mkdtempSync(join(tmpdir(), "acp-img-"));
   try {

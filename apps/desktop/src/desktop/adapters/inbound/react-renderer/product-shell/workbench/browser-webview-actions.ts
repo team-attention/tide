@@ -58,7 +58,6 @@ interface BrowserActionTarget {
   y?: number;
   description?: string;
   disabled?: boolean;
-  formValid?: boolean;
 }
 
 // Electron <webview> guest methods only work once the guest is attached AND has
@@ -219,9 +218,6 @@ async function executeSelectorAction(
     if (target.disabled === true) {
       return { ok: false, message: `${target.message}; target is disabled.` };
     }
-    if (target.formValid === false) {
-      return { ok: false, message: `${target.message}; containing form is invalid.` };
-    }
     if (webview.sendInputEvent === undefined || target.x === undefined || target.y === undefined) {
       return executeSelectorClickFallback(webview, action.selector ?? "");
     }
@@ -344,7 +340,6 @@ async function resolveSelectorTarget(
     const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
     const hit = document.elementFromPoint(x, y);
     const hitMatches = hit !== null && (hit === target || target.contains(hit));
-    const form = "form" in target ? target.form : undefined;
     const tagName = target.tagName?.toLowerCase?.() ?? "element";
     const label = [
       tagName,
@@ -361,7 +356,6 @@ async function resolveSelectorTarget(
       y,
       description: label,
       disabled: target.disabled === true || target.getAttribute?.("aria-disabled") === "true",
-      formValid: form && typeof form.checkValidity === "function" ? form.checkValidity() : true,
     };
   })(${payload})`;
   return browserActionTargetFromUnknown(await webview.executeJavaScript?.(script));
@@ -427,7 +421,7 @@ async function readFocusedEditableValue(
     }
     return { ok: false, message: "focused element is not editable after type" };
   })()`;
-  return browserActionExecutionFromUnknown(await webview.executeJavaScript(script));
+  return browserActionExecutionFromUnknown(await webview.executeJavaScript?.(script));
 }
 
 // Coordinate computer-use path — real input events on the live <webview>.
@@ -501,8 +495,9 @@ function invalidCoordinates(): BrowserWebViewActionExecution {
 }
 
 function replaceFocusedText(webview: BrowserWebViewElement, text: string): void {
-  webview.sendInputEvent?.({ type: "keyDown", keyCode: "A", modifiers: ["cmd"] });
-  webview.sendInputEvent?.({ type: "keyUp", keyCode: "A", modifiers: ["cmd"] });
+  const selectAllModifier = process.platform === "darwin" ? "cmd" : "control";
+  webview.sendInputEvent?.({ type: "keyDown", keyCode: "A", modifiers: [selectAllModifier] });
+  webview.sendInputEvent?.({ type: "keyUp", keyCode: "A", modifiers: [selectAllModifier] });
   if (text.length === 0) {
     webview.sendInputEvent?.({ type: "keyDown", keyCode: "Backspace" });
     webview.sendInputEvent?.({ type: "keyUp", keyCode: "Backspace" });
@@ -603,7 +598,6 @@ function browserActionTargetFromUnknown(value: unknown): BrowserActionTarget {
       y: typeof record.y === "number" ? record.y : undefined,
       description: typeof record.description === "string" ? record.description : undefined,
       disabled: typeof record.disabled === "boolean" ? record.disabled : undefined,
-      formValid: typeof record.formValid === "boolean" ? record.formValid : undefined,
     };
   }
   return { ok: false, message: "Browser action target returned an invalid result." };

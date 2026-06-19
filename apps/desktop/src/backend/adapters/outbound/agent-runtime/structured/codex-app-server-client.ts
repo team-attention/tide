@@ -81,7 +81,7 @@ export function codexToolCallRecordFromItem(input: {
   status: "pending" | "complete";
 }): CodexToolCallRecord | undefined {
   const itemType = stringField(input.item, "type") ?? stringField(input.item, "itemType");
-  const itemId = stringField(input.item, "id") ?? String(input.sequence);
+  const itemId = codexToolItemId(input.item, String(input.sequence));
   const blockId = `structured:${input.runtimeId}:${input.sequence}:${itemId}`;
 
   if (itemType === "commandExecution") {
@@ -141,6 +141,34 @@ export function codexToolCallRecordFromItem(input: {
     };
   }
   return undefined;
+}
+
+function codexToolItemId(item: Record<string, unknown>, fallback: string): string {
+  const explicit = stringField(item, "id");
+  if (explicit !== undefined) {
+    return explicit;
+  }
+  const itemType = stringField(item, "type") ?? stringField(item, "itemType");
+  if (itemType === "commandExecution") {
+    return `command:${stringField(item, "command") ?? ""}`;
+  }
+  if (itemType === "mcpToolCall") {
+    const server = stringField(item, "server") ?? "mcp";
+    const tool = stringField(item, "tool") ?? "tool";
+    return `mcp:${server}:${tool}:${jsonText(item.arguments ?? {})}`;
+  }
+  if (itemType === "webSearch") {
+    return `webSearch:${stringField(item, "query") ?? ""}`;
+  }
+  return fallback;
+}
+
+function jsonText(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 function isCodexVisibleToolItem(item: Record<string, unknown>): boolean {
@@ -637,7 +665,9 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     const itemType = stringField(item, "type") ?? stringField(item, "itemType");
-    const itemId = stringField(item, "id") ?? String(this.recordIndex);
+    const itemId = isCodexVisibleToolItem(item)
+      ? codexToolItemId(item, String(this.recordIndex))
+      : (stringField(item, "id") ?? String(this.recordIndex));
     if (itemType === "agentMessage") {
       // Finalize the streamed text under the SAME blockId the deltas used
       // (msg:<itemId>), so streaming → final is one block, never duplicated.
@@ -718,7 +748,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     if (!isCodexVisibleToolItem(item)) {
       return;
     }
-    const itemId = stringField(item, "id") ?? String(this.recordIndex);
+    const itemId = codexToolItemId(item, String(this.recordIndex));
     const sequence = this.sequenceForToolItem(itemId);
     const record = codexToolCallRecordFromItem({
       item,
@@ -730,6 +760,9 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     this.emitRecord(record.sourceRef, record.payload, record.body);
+    if (status === "complete") {
+      this.toolItemSequences.delete(itemId);
+    }
   }
 
   private sequenceForToolItem(itemId: string): number {

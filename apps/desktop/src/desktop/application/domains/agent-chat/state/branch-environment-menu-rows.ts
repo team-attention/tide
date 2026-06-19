@@ -166,7 +166,7 @@ function withBranchDeleteAction(
   branch: { name: string; kind: "local" | "remote"; current: boolean } | undefined,
   worktrees: AgentChatWorktreeOption[],
 ): AgentChatChoiceSurfaceRowView {
-  if (!branchDeletableFromPicker(branch, worktrees)) {
+  if (branch === undefined || !branchDeletableFromPicker(branch, worktrees)) {
     return branchRow;
   }
   return {
