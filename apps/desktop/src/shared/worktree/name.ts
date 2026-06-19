@@ -56,7 +56,7 @@ export function resolveWorktreeName(input: {
 function withoutWorktreeBranchPrefix(value: string): string {
   const trimmed = value.trim();
   const prefix = `${WORKTREE_BRANCH_PREFIX}/`;
-  return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : trimmed;
+  return trimmed.toLowerCase().startsWith(prefix) ? trimmed.slice(prefix.length) : trimmed;
 }
 
 function withWorktreeBranchPrefix(name: string): string {

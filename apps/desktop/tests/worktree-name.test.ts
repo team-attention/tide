@@ -62,6 +62,10 @@ test("resolve_worktree_name_uses_typed_name_over_message", () => {
     resolveWorktreeName({ typedName: "tide/spike", firstMessage: "anything", makeHash: () => "wt-x" }),
     "tide/spike",
   );
+  assert.equal(
+    resolveWorktreeName({ typedName: "TIDE/Spike", firstMessage: "anything", makeHash: () => "wt-x" }),
+    "tide/spike",
+  );
 });
 
 test("resolve_worktree_name_falls_back_to_hash_for_non_ascii_message", () => {

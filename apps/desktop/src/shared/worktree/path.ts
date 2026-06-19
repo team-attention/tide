@@ -24,7 +24,7 @@ export function sanitizeWorktreeBranch(name: string): string {
 export function worktreeBranchName(name: string): string {
   const raw = name.trim();
   const prefix = `${DEFAULT_WORKTREE_BRANCH_PREFIX}/`;
-  const unprefixed = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
+  const unprefixed = raw.toLowerCase().startsWith(prefix) ? raw.slice(prefix.length) : raw;
   const sanitized = sanitizeWorktreeBranch(unprefixed).replace(/^-+|-+$/g, "");
   return `${prefix}${sanitized.length > 0 ? sanitized : "worktree"}`;
 }
