@@ -31,6 +31,15 @@ import type {
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
+import {
+  codexToolCallRecordFromItem,
+  codexToolItemId,
+  isCodexVisibleToolItem,
+} from "./codex-tool-call-record.ts";
+export {
+  codexToolCallRecordFromItem,
+  type CodexToolCallRecord,
+} from "./codex-tool-call-record.ts";
 
 export const CODEX_ACCEPT_TOKEN = "structured:accept";
 export const CODEX_DECLINE_TOKEN = "structured:decline";
@@ -106,6 +115,9 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private readonly streamBodies = new Map<string, string>();
   // itemId -> accumulated reasoning summary text (model_reasoning_summary=detailed).
   private readonly reasoningBodies = new Map<string, string>();
+  // Tool-like items can hang between item/started and item/completed. Keep the
+  // sequence stable so the pending row updates in place when completion arrives.
+  private readonly toolItemSequences = new Map<string, number>();
   private flushScheduled = false;
   private readonly scanUpdate = createUpdateNoticeScanner((message) =>
     this.onEvent({ kind: "runtime_notice", level: "info", message }),
@@ -439,6 +451,10 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       }
       return;
     }
+    if (method === "item/started") {
+      this.emitStartedItem(isRecord(params.item) ? params.item : undefined);
+      return;
+    }
     if (method === "item/completed") {
       this.flushStream();
       this.emitItem(isRecord(params.item) ? params.item : undefined);
@@ -482,8 +498,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       }
       return;
     }
-    // thread/started, turn/started, item/started, deltas, status changes:
-    // rendering consumes completed items only in this slice.
+    // thread/started, turn/started, deltas, status changes: no visible block.
   }
 
   private handleServerRequest(
@@ -550,8 +565,9 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     const itemType = stringField(item, "type") ?? stringField(item, "itemType");
-    const itemId = stringField(item, "id") ?? String(this.recordIndex);
-    const blockBase = `structured:${this.runtimeId}:${this.recordIndex}`;
+    const itemId = isCodexVisibleToolItem(item)
+      ? codexToolItemId(item, String(this.recordIndex))
+      : (stringField(item, "id") ?? String(this.recordIndex));
     if (itemType === "agentMessage") {
       // Finalize the streamed text under the SAME blockId the deltas used
       // (msg:<itemId>), so streaming → final is one block, never duplicated.
@@ -592,23 +608,12 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     if (itemType === "commandExecution") {
-      const command = stringField(item, "command") ?? "";
       const output = stringField(item, "aggregatedOutput") ?? "";
       const exitCode = numberField(item, "exitCode");
       const status = stringField(item, "status");
-      this.recordIndex += 1;
-      this.emitRecord(`${blockBase}:${itemId}`, {
-        type: "tool_call",
-        toolName: "shell",
-        callId: itemId,
-        arguments: command,
-        body: bounded(command),
-        status: "complete",
-        blockId: `${blockBase}:${itemId}`,
-        sourceRuntimeId: this.runtimeId,
-      }, bounded(command));
-      this.recordIndex += 1;
+      this.emitToolCallItem(item, "complete");
       const resultBlock = `structured:${this.runtimeId}:${this.recordIndex}`;
+      this.recordIndex += 1;
       this.emitRecord(`${resultBlock}:${itemId}`, {
         type: "tool_result",
         toolName: "shell",
@@ -623,37 +628,52 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     if (itemType === "mcpToolCall") {
-      const server = stringField(item, "server") ?? "mcp";
-      const tool = stringField(item, "tool") ?? "tool";
-      const argumentsText = JSON.stringify(item.arguments ?? {});
-      this.recordIndex += 1;
-      this.emitRecord(`${blockBase}:${itemId}`, {
-        type: "tool_call",
-        toolName: `${server}.${tool}`,
-        callId: itemId,
-        arguments: argumentsText,
-        body: bounded(argumentsText),
-        status: "complete",
-        blockId: `${blockBase}:${itemId}`,
-        sourceRuntimeId: this.runtimeId,
-      }, bounded(argumentsText));
+      this.emitToolCallItem(item, "complete");
       return;
     }
     if (itemType === "webSearch") {
-      const query = stringField(item, "query") ?? "";
-      this.recordIndex += 1;
-      this.emitRecord(`${blockBase}:${itemId}`, {
-        type: "tool_call",
-        toolName: "web_search",
-        callId: itemId,
-        arguments: query,
-        body: query,
-        status: "complete",
-        blockId: `${blockBase}:${itemId}`,
-        sourceRuntimeId: this.runtimeId,
-      }, query);
+      this.emitToolCallItem(item, "complete");
     }
     // userMessage / plan / fileChange render via their own flows later.
+  }
+
+  private emitStartedItem(item: Record<string, unknown> | undefined): void {
+    if (item === undefined) {
+      return;
+    }
+    this.emitToolCallItem(item, "pending");
+  }
+
+  private emitToolCallItem(item: Record<string, unknown>, status: "pending" | "complete"): void {
+    if (!isCodexVisibleToolItem(item)) {
+      return;
+    }
+    const itemId = codexToolItemId(item, String(this.recordIndex));
+    const sequence = this.sequenceForToolItem(itemId);
+    const record = codexToolCallRecordFromItem({
+      item,
+      runtimeId: this.runtimeId,
+      sequence,
+      status,
+    });
+    if (record === undefined) {
+      return;
+    }
+    this.emitRecord(record.sourceRef, record.payload, record.body);
+    if (status === "complete") {
+      this.toolItemSequences.delete(itemId);
+    }
+  }
+
+  private sequenceForToolItem(itemId: string): number {
+    const existing = this.toolItemSequences.get(itemId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const sequence = this.recordIndex;
+    this.recordIndex += 1;
+    this.toolItemSequences.set(itemId, sequence);
+    return sequence;
   }
 
   private emitRecord(sourceRef: string, payload: Record<string, unknown>, body: string): void {

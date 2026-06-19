@@ -51,6 +51,10 @@ interface StructuredRuntimeState {
 
 export interface CreateAgentIntegrationRuntimePortInput {
   integrations: AgentIntegrationRegistry;
+  resolveRuntimeEnvironment?: (input: {
+    cwd: string;
+    planEnv: Record<string, string>;
+  }) => NodeJS.ProcessEnv;
   // Normalized protocol events from the structured runtime clients (content
   // records, prompts, turn ends, session refs).
   onProviderEvent?: (input: {
@@ -160,6 +164,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   private readonly integrations: AgentIntegrationRegistry;
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
+  private readonly resolveRuntimeEnvironment?: CreateAgentIntegrationRuntimePortInput["resolveRuntimeEnvironment"];
   private readonly onProviderEvent?: CreateAgentIntegrationRuntimePortInput["onProviderEvent"];
   private readonly runtimes = new Map<string, StructuredRuntimeState>();
   // Probed real command sets per (agentId:cwd) — see discoverCommands.
@@ -172,6 +177,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     this.integrations = input.integrations;
     this.clock = input.clock ?? defaultClock;
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
+    this.resolveRuntimeEnvironment = input.resolveRuntimeEnvironment;
     this.onProviderEvent = input.onProviderEvent;
   }
 
@@ -384,8 +390,12 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           }
         };
         try {
+          const probePlan = this.withRuntimeEnvironment({
+            ...plan,
+            env: { ...plan.env, TIDE_RUNTIME_ID: runtimeId, TIDE_AGENT_ID: agentId },
+          });
           client = this.createTransportClient({
-            plan: { ...plan, env: { ...plan.env, TIDE_RUNTIME_ID: runtimeId, TIDE_AGENT_ID: agentId } },
+            plan: probePlan,
             threadId: `probe-${runtimeId}`,
             runtimeId,
             agentId,
@@ -444,11 +454,12 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
         TIDE_AGENT_ID: agentId,
       },
     };
+    const runtimePlanWithEnv = this.withRuntimeEnvironment(runtimePlan);
     const emit = (event: StructuredProviderEvent): void => {
       void this.onProviderEvent?.({ threadId, agentId, runtimeId, event });
     };
     const client = this.createTransportClient({
-      plan: runtimePlan,
+      plan: runtimePlanWithEnv,
       threadId,
       runtimeId,
       agentId,
@@ -462,10 +473,34 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     // A launch-assigned session ref (claude/gemini minted --session-id) binds the
     // thread immediately; structured clients also emit session_ref from the
     // protocol's own session id.
-    if (runtimePlan.providerSessionRef !== undefined) {
-      emit({ kind: "session_ref", ref: { ...runtimePlan.providerSessionRef } });
+    if (runtimePlanWithEnv.providerSessionRef !== undefined) {
+      emit({ kind: "session_ref", ref: { ...runtimePlanWithEnv.providerSessionRef } });
     }
     return { runtimeId, threadId, agentId };
+  }
+
+  private withRuntimeEnvironment(plan: ProviderLaunchPlan): ProviderLaunchPlan {
+    if (this.resolveRuntimeEnvironment === undefined) {
+      return plan;
+    }
+    let runtimeEnv: NodeJS.ProcessEnv = {};
+    try {
+      runtimeEnv = this.resolveRuntimeEnvironment({ cwd: plan.cwd, planEnv: plan.env });
+    } catch {
+      runtimeEnv = {};
+    }
+    const resolvedEnv: Record<string, string> = {};
+    for (const [key, value] of Object.entries(runtimeEnv)) {
+      if (value !== undefined) {
+        resolvedEnv[key] = value;
+      }
+    }
+    return {
+      ...plan,
+      // The launch plan must win over shell env because it carries Tide's runtime
+      // IDs, MCP socket config, and provider-specific protocol configuration.
+      env: { ...resolvedEnv, ...plan.env },
+    };
   }
 
   // Build the structured client for a launch plan's transport. Shared by the

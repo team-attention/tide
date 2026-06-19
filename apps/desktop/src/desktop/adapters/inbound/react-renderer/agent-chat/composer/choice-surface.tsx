@@ -1,5 +1,5 @@
 import type { AgentChatChoiceSurfaceView } from "../../../../../application/domains/agent-chat/agent-chat.ts";
-import type { ReactElement, ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react";
 import { Bot, Check, FileText, Folder, FolderPlus, GitBranch, Layers, PanelsTopLeft, Paperclip, Plus, Trash2, Wrench } from "lucide-react";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
@@ -11,10 +11,50 @@ export function createChoiceSurface(input: {
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
   ) => void;
+  onInputSubmit?: (
+    surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
+    rowId: string,
+    value: string,
+  ) => void;
 }): ReactElement {
   return (
-    <section
+    <ChoiceSurface
       key={input.key}
+      surface={input.surface}
+      message={input.message}
+      onRowSelect={input.onRowSelect}
+      onInputSubmit={input.onInputSubmit}
+    />
+  );
+}
+
+function ChoiceSurface(input: {
+  surface: AgentChatChoiceSurfaceView;
+  message?: string;
+  onRowSelect?: (
+    surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
+    rowId: string,
+  ) => void;
+  onInputSubmit?: (
+    surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
+    rowId: string,
+    value: string,
+  ) => void;
+}): ReactElement {
+  const [inlineRowId, setInlineRowId] = useState<string | null>(null);
+  const [inlineDraft, setInlineDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    setInlineRowId(null);
+    setInlineDraft("");
+  }, [input.surface.surfaceKind]);
+  useEffect(() => {
+    if (inlineRowId !== null) {
+      inputRef.current?.focus();
+    }
+  }, [inlineRowId]);
+  return (
+    <section
       className="choice-surface"
       aria-label="Choice Surface"
       data-choice-surface={input.surface.surfaceKind}
@@ -25,19 +65,46 @@ export function createChoiceSurface(input: {
         <span>{input.surface.sourceLabel}</span>
       </header>
       {input.message ? <p className="choice-surface__message">{input.message}</p> : null}
-      {createChoiceRows(input.surface, input.onRowSelect)}
+      {createChoiceRows({
+        surface: input.surface,
+        inlineRowId,
+        inlineDraft,
+        inputRef,
+        onInlineDraftChange: setInlineDraft,
+        onInlineRowOpen: (rowId) => {
+          setInlineRowId(rowId);
+          setInlineDraft("");
+        },
+        onInlineRowClose: () => {
+          setInlineRowId(null);
+          setInlineDraft("");
+        },
+        onInputSubmit: input.onInputSubmit,
+        onRowSelect: input.onRowSelect,
+      })}
     </section>
   );
 }
 
-function createChoiceRows(
-  surface: AgentChatChoiceSurfaceView,
+function createChoiceRows(input: {
+  surface: AgentChatChoiceSurfaceView;
+  inlineRowId: string | null;
+  inlineDraft: string;
+  inputRef: { current: HTMLInputElement | null };
+  onInlineDraftChange: (value: string) => void;
+  onInlineRowOpen: (rowId: string) => void;
+  onInlineRowClose: () => void;
+  onInputSubmit?: (
+    surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
+    rowId: string,
+    value: string,
+  ) => void;
   onRowSelect?: (
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
-  ) => void,
-): ReactElement | null {
-  const rows = surface.rows;
+  ) => void;
+}): ReactElement | null {
+  const rows = input.surface.rows;
   if (rows.length === 0) {
     return null;
   }
@@ -45,6 +112,44 @@ function createChoiceRows(
   return (
     <div className="choice-surface__rows">
       {rows.map((row) => {
+        const inline = inlineCreateConfig(input.surface.surfaceKind, row.rowId);
+        if (inline !== null && input.inlineRowId === row.rowId) {
+          const submit = (event: FormEvent<HTMLFormElement>) => {
+            event.preventDefault();
+            input.onInputSubmit?.(input.surface.surfaceKind, row.rowId, input.inlineDraft);
+          };
+          return (
+            <form key={row.rowId} className="choice-surface__inline-create" onSubmit={submit}>
+              <div className="choice-surface__inline-title">
+                <span className="choice-surface__row-icon" aria-hidden>
+                  {choiceRowIcon(row.icon)}
+                </span>
+                <span className="choice-surface__row-label">{row.label}</span>
+                {row.detail ? <span className="choice-surface__row-detail">{row.detail}</span> : null}
+              </div>
+              <div className="choice-surface__inline-controls">
+                <input
+                  ref={input.inputRef}
+                  className="choice-surface__inline-input"
+                  value={input.inlineDraft}
+                  placeholder={inline.placeholder}
+                  aria-label={inline.ariaLabel}
+                  spellCheck={false}
+                  onChange={(event) => input.onInlineDraftChange(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      input.onInlineRowClose();
+                    }
+                  }}
+                />
+                <button type="submit" className="choice-surface__inline-submit">
+                  Use
+                </button>
+              </div>
+            </form>
+          );
+        }
         const rowButton = (
           <button
             key={row.rowId}
@@ -55,7 +160,13 @@ function createChoiceRows(
             data-selected={row.selected ? "true" : "false"}
             disabled={row.disabled === true}
             aria-disabled={row.disabled === true}
-            onClick={row.disabled ? undefined : () => onRowSelect?.(surface.surfaceKind, row.rowId)}
+            onClick={
+              row.disabled
+                ? undefined
+                : inline !== null
+                  ? () => input.onInlineRowOpen(row.rowId)
+                  : () => input.onRowSelect?.(input.surface.surfaceKind, row.rowId)
+            }
           >
             <span className="choice-surface__row-icon" aria-hidden>
               {choiceRowIcon(row.icon)}
@@ -80,7 +191,7 @@ function createChoiceRows(
               className="choice-surface__row-action"
               aria-label={action.label}
               title={action.label}
-              onClick={() => onRowSelect?.(surface.surfaceKind, action.rowId)}
+              onClick={() => input.onRowSelect?.(input.surface.surfaceKind, action.rowId)}
             >
               {choiceRowIcon(action.icon)}
             </button>
@@ -89,6 +200,19 @@ function createChoiceRows(
       })}
     </div>
   );
+}
+
+function inlineCreateConfig(
+  surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
+  rowId: string,
+): { placeholder: string; ariaLabel: string } | null {
+  if (surfaceKind === "branch_menu" && rowId === "create-branch") {
+    return {
+      placeholder: "branch name (optional)",
+      ariaLabel: "New branch name",
+    };
+  }
+  return null;
 }
 
 // Choice-surface rows carry a semantic icon key (e.g. "folder", "check") which
@@ -143,4 +267,3 @@ function choiceRowIcon(icon: string | undefined): ReactNode {
   // Unknown values render nothing rather than leaking a stray glyph string.
   return lucide[icon] ?? null;
 }
-

@@ -25,6 +25,18 @@ function safeWebviewExec(webview: BrowserWebViewElement, code: string): Promise<
   }
 }
 
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForPostActionSettle(webview: BrowserWebViewElement): Promise<void> {
+  await wait(150);
+  const deadline = Date.now() + 1200;
+  while (!isWebViewSettled(webview) && Date.now() < deadline) {
+    await wait(75);
+  }
+}
+
 // Injected into the Browser Pane's <webview> to run a devtools-style element
 // picker. Clicking toggles an element into a multi-selection (kept in
 // `window.__tidePicks`); the host reads the array + count and tears down via
@@ -326,6 +338,7 @@ export function WorkbenchBrowserPane(props: {
     const revision = props.pane.revision;
     void executeBrowserWebViewAction(webview, action)
       .then(async (actionResult) => {
+        await waitForPostActionSettle(webview);
         // Text-only: the post-action pixels (if the agent wants them) are pulled on its next
         // tide_observe_browser via pendingCapture, not captured here. Spec:
         // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
@@ -641,6 +654,7 @@ function BackgroundBrowserWebView(props: {
     executedActionIdsRef.current.add(pendingAction.actionId);
     void executeBrowserWebViewAction(webview, pendingAction)
       .then(async (actionResult) => {
+        await waitForPostActionSettle(webview);
         // Text-only: post-action pixels are pulled on the agent's next observe (pendingCapture).
         const snapshot = await readBrowserWebViewSnapshot(webview);
         handlers.onBackgroundBrowserActionResult(threadId, paneId, {

@@ -4,7 +4,10 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { codexTurnInput } from "../src/backend/adapters/outbound/agent-runtime/structured/codex-app-server-client.ts";
+import {
+  codexToolCallRecordFromItem,
+  codexTurnInput,
+} from "../src/backend/adapters/outbound/agent-runtime/structured/codex-app-server-client.ts";
 import { acpPromptBlocks } from "../src/backend/adapters/outbound/agent-runtime/structured/acp-client.ts";
 import { claudeUserContent } from "../src/backend/adapters/outbound/agent-runtime/structured/claude-stream-json-client.ts";
 
@@ -27,6 +30,79 @@ test("codex turn input carries a NATIVE localImage item per attachment (not just
 test("codex turn input with no attachments is exactly the text item (no regression)", () => {
   assert.deepEqual(codexTurnInput("hi"), [{ type: "text", text: "hi" }]);
   assert.deepEqual(codexTurnInput("hi", []), [{ type: "text", text: "hi" }]);
+});
+
+test("codex app-server item started surfaces a pending MCP tool row", () => {
+  const record = codexToolCallRecordFromItem({
+    runtimeId: "runtime-1",
+    sequence: 7,
+    status: "pending",
+    item: {
+      type: "mcpToolCall",
+      id: "call-github-pr",
+      server: "github",
+      tool: "_create_pull_request",
+      arguments: { repository_full_name: "team-attention/tide", head: "new" },
+    },
+  });
+
+  assert.equal(record?.sourceRef, "structured:runtime-1:7:call-github-pr");
+  assert.deepEqual(record?.payload, {
+    type: "tool_call",
+    toolName: "github._create_pull_request",
+    callId: "call-github-pr",
+    arguments: "{\"repository_full_name\":\"team-attention/tide\",\"head\":\"new\"}",
+    body: "{\"repository_full_name\":\"team-attention/tide\",\"head\":\"new\"}",
+    status: "pending",
+    blockId: "structured:runtime-1:7:call-github-pr",
+    sourceRuntimeId: "runtime-1",
+  });
+});
+
+test("codex app-server item completed reuses the pending tool row block id", () => {
+  const item = {
+    type: "webSearch",
+    id: "search-1",
+    query: "site:github.com/team-attention/tide/pull new",
+  };
+  const pending = codexToolCallRecordFromItem({
+    runtimeId: "runtime-1",
+    sequence: 8,
+    status: "pending",
+    item,
+  });
+  const completed = codexToolCallRecordFromItem({
+    runtimeId: "runtime-1",
+    sequence: 8,
+    status: "complete",
+    item,
+  });
+
+  assert.equal(pending?.payload.blockId, completed?.payload.blockId);
+  assert.equal(completed?.payload.status, "complete");
+});
+
+test("codex app-server item without an id still gets a stable tool row id", () => {
+  const item = {
+    type: "commandExecution",
+    command: "npm run typecheck",
+  };
+  const pending = codexToolCallRecordFromItem({
+    runtimeId: "runtime-1",
+    sequence: 9,
+    status: "pending",
+    item,
+  });
+  const completed = codexToolCallRecordFromItem({
+    runtimeId: "runtime-1",
+    sequence: 9,
+    status: "complete",
+    item,
+  });
+
+  assert.equal(pending?.itemId, "command:npm run typecheck");
+  assert.equal(pending?.payload.blockId, completed?.payload.blockId);
+  assert.equal(completed?.payload.callId, pending?.payload.callId);
 });
 
 test("ACP prompt blocks carry a NATIVE image ContentBlock (base64) per attachment", () => {

@@ -1919,7 +1919,7 @@ test("branch_menu_lists_real_git_branches_not_placeholders", () => {
   assert.doesNotMatch(html, /release\/2026-05/);
 });
 
-test("composer_branch_menu_keeps_branch_management_out_of_the_start_flow", () => {
+test("composer_branch_menu_offers_delete_on_safe_local_branches_only", () => {
   const base = createAgentChatShellState({
     startOptions: {
       agentBinding: { agentId: "claude" },
@@ -1941,8 +1941,15 @@ test("composer_branch_menu_keeps_branch_management_out_of_the_start_flow", () =>
     ],
   };
   const surface = createAgentChatShellViewModel(state).composer.activeSurface;
-  assert.deepEqual(surface?.rows.map((entry) => entry.action), surface?.rows.map(() => undefined));
   assert.deepEqual(surface?.rows.slice(0, 2).map((entry) => entry.label), ["New branch", "Home"]);
+  assert.equal(surface?.rows.find((entry) => entry.rowId === "branch:main")?.action, undefined);
+  assert.deepEqual(surface?.rows.find((entry) => entry.rowId === "branch:feature/x")?.action, {
+    rowId: "delete-branch:feature/x",
+    label: "Delete branch feature/x",
+    icon: "trash",
+  });
+  assert.equal(surface?.rows.find((entry) => entry.rowId === "branch:wt-branch")?.action, undefined);
+  assert.equal(surface?.rows.find((entry) => entry.rowId === "branch:origin/main")?.action, undefined);
 });
 
 test("branch_menu_falls_back_to_current_value_when_no_git_data", () => {

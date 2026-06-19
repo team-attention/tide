@@ -3301,6 +3301,7 @@ test("opening_workbench_terminal_starts_thread_scoped_terminal_pane", async () =
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
     defaultWorkbenchTerminalCommand: "zsh",
+    defaultWorkbenchTerminalArgs: ["-l"],
     initialThreads: [
       threadSeed("thread-terminal", {
         scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
@@ -3315,11 +3316,38 @@ test("opening_workbench_terminal_starts_thread_scoped_terminal_pane", async () =
 
   assert.equal(opened.ok, true);
   assert.equal(fakes.workbenchTerminal.starts[0]?.command, "zsh");
+  assert.deepEqual(fakes.workbenchTerminal.starts[0]?.args, ["-l"]);
   assert.equal(fakes.workbenchTerminal.starts[0]?.cwd, "/repo/tide");
   assert.equal(opened.ok && opened.thread.workbench.panes[0]?.kind, "terminal");
   assert.equal(opened.ok && opened.thread.workbench.panes[0]?.title, "Terminal");
   assert.equal(opened.ok && opened.thread.workbench.panes[0]?.status, "running");
   assert.equal(opened.ok && opened.thread.workbench.focusOwner, "workbench");
+});
+
+test("opening_workbench_terminal_preserves_explicit_command_args", async () => {
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    defaultWorkbenchTerminalCommand: "zsh",
+    defaultWorkbenchTerminalArgs: ["-l"],
+    initialThreads: [
+      threadSeed("thread-terminal-explicit", {
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+      }),
+    ],
+  });
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-terminal-explicit",
+    command: "open_terminal",
+    data: { command: "bash", args: ["-lc", "echo hi"] },
+  });
+
+  assert.equal(opened.ok, true);
+  assert.equal(fakes.workbenchTerminal.starts[0]?.command, "bash");
+  assert.deepEqual(fakes.workbenchTerminal.starts[0]?.args, ["-lc", "echo hi"]);
 });
 
 test("workbench_terminal_input_writes_to_visible_terminal_handle", async () => {

@@ -38,6 +38,7 @@ export interface CreateThreadRuntimeServiceInput {
   // dir (creates it). See docs_v2/specs/scratch-execution-context.md.
   ensureScratchDirectory?: (threadId: string) => string;
   defaultWorkbenchTerminalCommand?: string;
+  defaultWorkbenchTerminalArgs?: string[];
   clock?: () => string;
   idGenerator?: () => string;
   initialThreads?: ThreadSeed[];

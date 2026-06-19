@@ -214,6 +214,7 @@ import type {
 } from "../../ports/outbound/workbench-terminal-port.ts";
 
 const DEFAULT_WORKBENCH_TERMINAL_COMMAND = "sh";
+const DEFAULT_WORKBENCH_TERMINAL_ARGS: string[] = [];
 
 export type {
   RawAgentFrame,
@@ -366,39 +367,25 @@ function defaultIdGenerator(): string {
 
 class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   private readonly composerQueue: ComposerQueueService;
-agentRuntimePort: AgentRuntimePort;
+  agentRuntimePort: AgentRuntimePort;
+  providerReadinessPort: ProviderReadinessPort;
+  ptyTranscriptPort: PtyTranscriptPort;
+  providerSetupSurfaceTerminalPort?: ProviderSetupSurfaceTerminalPort;
+  workbenchTerminalPort?: WorkbenchTerminalPort;
+  workspaceCommandPort: WorkspaceCommandPort;
+  workspaceFilePort: WorkspaceFilePort;
+  workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
+  composerAttachmentStorePort?: ComposerAttachmentStorePort;
+  providerTrustPort?: ProviderTrustPort;
+  ensureScratchDirectory?: (threadId: string) => string;
+  defaultWorkbenchTerminalCommand: string;
+  defaultWorkbenchTerminalArgs: string[];
+  clock: () => string;
+  idGenerator: () => string;
+  onAsyncEvent?: (event: ThreadRuntimeAsyncEvent) => Promise<void> | void;
+  threads = new ThreadStore();
 
-providerReadinessPort: ProviderReadinessPort;
-
-ptyTranscriptPort: PtyTranscriptPort;
-
-providerSetupSurfaceTerminalPort?: ProviderSetupSurfaceTerminalPort;
-
-workbenchTerminalPort?: WorkbenchTerminalPort;
-
-workspaceCommandPort: WorkspaceCommandPort;
-
-workspaceFilePort: WorkspaceFilePort;
-
-workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
-
-composerAttachmentStorePort?: ComposerAttachmentStorePort;
-
-providerTrustPort?: ProviderTrustPort;
-
-ensureScratchDirectory?: (threadId: string) => string;
-
-defaultWorkbenchTerminalCommand: string;
-
-clock: () => string;
-
-idGenerator: () => string;
-
-onAsyncEvent?: (event: ThreadRuntimeAsyncEvent) => Promise<void> | void;
-
-threads = new ThreadStore();
-
-// threadId -> promptId currently being written to the runtime (answer claim).
+  // threadId -> promptId currently being written to the runtime (answer claim).
   private readonly answeringPromptByThread = new Map<string, string>();
 
 private readonly threadCrud: ThreadCrudService;
@@ -431,6 +418,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
     this.ensureScratchDirectory = input.ensureScratchDirectory;
     this.defaultWorkbenchTerminalCommand =
       input.defaultWorkbenchTerminalCommand ?? DEFAULT_WORKBENCH_TERMINAL_COMMAND;
+    this.defaultWorkbenchTerminalArgs = [...(input.defaultWorkbenchTerminalArgs ?? DEFAULT_WORKBENCH_TERMINAL_ARGS)];
     this.clock = input.clock ?? defaultClock;
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
     this.onAsyncEvent = input.onAsyncEvent;
@@ -464,6 +452,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       workbenchRuntime: this.workbenchRuntime,
       workbenchFileOps: this.workbenchFileOps,
       defaultWorkbenchTerminalCommand: this.defaultWorkbenchTerminalCommand,
+      defaultWorkbenchTerminalArgs: this.defaultWorkbenchTerminalArgs,
       clock: this.clock,
       idGenerator: this.idGenerator,
     });
@@ -485,6 +474,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       clock: this.clock,
       idGenerator: this.idGenerator,
       defaultWorkbenchTerminalCommand: this.defaultWorkbenchTerminalCommand,
+      defaultWorkbenchTerminalArgs: this.defaultWorkbenchTerminalArgs,
       workbenchRuntime: this.workbenchRuntime,
       workbenchFileOps: this.workbenchFileOps,
       workspaceFilePort: this.workspaceFilePort,

@@ -62,12 +62,14 @@ export function worktreeMenuRows(state: AgentChatShellState): AgentChatChoiceSur
 }
 
 // Real git branches with the creation affordance and the default branch pinned at
-// the top. Branch rows intentionally avoid management actions and noisy local/remote
-// metadata; this menu only chooses the base branch for the thread.
+// the top. Safe local branches also get a trailing delete affordance, mirroring
+// the worktree picker.
 export function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowView[] {
   const selected = String(launchOptionsForState(state)?.branch ?? "main");
   const branches = state.availableBranches ?? [];
+  const worktrees = state.availableWorktrees ?? [];
   const defaultBranch = defaultBranchName(branches, selected);
+  const defaultBranchOption = branches.find((branch) => branch.name === defaultBranch);
   const rows: AgentChatChoiceSurfaceRowView[] = [
     row(
       "create-branch",
@@ -77,13 +79,17 @@ export function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfa
       "plus",
       launchOptionsForState(state)?.worktree === "new",
     ),
-    row(
-      `branch:${defaultBranch}`,
-      "Home",
-      defaultBranch,
-      undefined,
-      selected === defaultBranch ? "check" : "branch",
-      selected === defaultBranch,
+    withBranchDeleteAction(
+      row(
+        `branch:${defaultBranch}`,
+        "Home",
+        defaultBranch,
+        undefined,
+        selected === defaultBranch ? "check" : "branch",
+        selected === defaultBranch,
+      ),
+      defaultBranchOption,
+      worktrees,
     ),
   ];
   const ordered = branchRowsAfterPinned(branches, selected, defaultBranch);
@@ -93,13 +99,17 @@ export function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfa
   for (const branch of ordered) {
     const isSelected = branch.name === selected;
     rows.push(
-      row(
-        `branch:${branch.name}`,
-        branch.name,
-        undefined,
-        undefined,
-        isSelected ? "check" : "branch",
-        isSelected,
+      withBranchDeleteAction(
+        row(
+          `branch:${branch.name}`,
+          branch.name,
+          undefined,
+          undefined,
+          isSelected ? "check" : "branch",
+          isSelected,
+        ),
+        branch,
+        worktrees,
       ),
     );
   }
@@ -139,4 +149,32 @@ export function worktreeForBranch(
   branch: string,
 ): AgentChatWorktreeOption | undefined {
   return worktrees.find((entry) => entry.branch === branch);
+}
+
+export function branchDeletableFromPicker(
+  branch: { name: string; kind: "local" | "remote"; current: boolean } | undefined,
+  worktrees: AgentChatWorktreeOption[],
+): boolean {
+  return branch !== undefined &&
+    branch.kind === "local" &&
+    !branch.current &&
+    !worktrees.some((worktree) => worktree.branch === branch.name);
+}
+
+function withBranchDeleteAction(
+  branchRow: AgentChatChoiceSurfaceRowView,
+  branch: { name: string; kind: "local" | "remote"; current: boolean } | undefined,
+  worktrees: AgentChatWorktreeOption[],
+): AgentChatChoiceSurfaceRowView {
+  if (branch === undefined || !branchDeletableFromPicker(branch, worktrees)) {
+    return branchRow;
+  }
+  return {
+    ...branchRow,
+    action: {
+      rowId: `delete-branch:${branch.name}`,
+      label: `Delete branch ${branch.name}`,
+      icon: "trash",
+    },
+  };
 }

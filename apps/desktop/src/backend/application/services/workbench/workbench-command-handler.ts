@@ -67,6 +67,7 @@ export interface WorkbenchCommandHandlerDeps {
   clock: () => string;
   idGenerator: () => string;
   defaultWorkbenchTerminalCommand: string;
+  defaultWorkbenchTerminalArgs: string[];
   workbenchRuntime: WorkbenchRuntime;
   workbenchFileOps: WorkbenchFileOperations;
   workspaceFilePort: WorkspaceFilePort;
@@ -84,6 +85,7 @@ export class WorkbenchCommandHandler {
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
   private readonly defaultWorkbenchTerminalCommand: string;
+  private readonly defaultWorkbenchTerminalArgs: string[];
   private readonly workbenchRuntime: WorkbenchRuntime;
   private readonly workbenchFileOps: WorkbenchFileOperations;
   private readonly workspaceFilePort: WorkspaceFilePort;
@@ -96,6 +98,7 @@ export class WorkbenchCommandHandler {
     this.clock = deps.clock;
     this.idGenerator = deps.idGenerator;
     this.defaultWorkbenchTerminalCommand = deps.defaultWorkbenchTerminalCommand;
+    this.defaultWorkbenchTerminalArgs = [...deps.defaultWorkbenchTerminalArgs];
     this.workbenchRuntime = deps.workbenchRuntime;
     this.workbenchFileOps = deps.workbenchFileOps;
     this.workspaceFilePort = deps.workspaceFilePort;
@@ -356,7 +359,10 @@ export class WorkbenchCommandHandler {
           return failure(resolvedCwd.error.code, resolvedCwd.error.message);
         }
         const command = optionalString(input.data?.command) ?? this.defaultWorkbenchTerminalCommand;
-        const args = arrayOfStrings(input.data?.args);
+        const args =
+          input.data?.args === undefined
+            ? [...this.defaultWorkbenchTerminalArgs]
+            : arrayOfStrings(input.data.args);
         // Resolve the Launcher placeholder in place (the Terminal takes its slot).
         const launcherToReplace = activeLauncherPaneId(thread);
         const pane = this.workbenchRuntime.openWorkbenchTerminal(thread, {

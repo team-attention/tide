@@ -12,13 +12,19 @@ import {
   runAgentReaperGuardianFromEnv,
   spawnAgentReaperGuardian,
 } from "../live/agent-reaper-guardian.ts";
-import { resolveAugmentedPath } from "../live/resolve-shell-path.ts";
+import { resolveAugmentedEnvironment } from "../live/resolve-shell-path.ts";
 import { runTideMcpStdioBridgeFromEnv } from "./tide-mcp-stdio-entrypoint.ts";
 
-// A Finder/Dock-launched packaged app only inherits the minimal launchd PATH, so
-// the Agent Runtime's `which codex|claude|gemini` finds nothing and no provider ever
-// spawns. Restore the user's real login-shell PATH before anything resolves a CLI.
-process.env.PATH = resolveAugmentedPath();
+// A Finder/Dock-launched packaged app only inherits the minimal launchd env, so
+// provider runtimes miss both CLI search paths and exported shell variables that
+// terminal-launched agents see (tokens, SSH_AUTH_SOCK, asdf/mise/nvm/direnv vars,
+// project cloud env, etc.). Restore the user's shell environment before anything
+// resolves or spawns a provider.
+for (const [key, value] of Object.entries(resolveAugmentedEnvironment())) {
+  if (value !== undefined) {
+    process.env[key] = value;
+  }
+}
 
 // Guardian mode: the detached watchdog the backend spawns below. It outlives a
 // hard-killed backend and reaps its orphaned agents the moment that backend dies,
