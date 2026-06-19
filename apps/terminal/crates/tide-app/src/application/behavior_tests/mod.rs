@@ -57,6 +57,7 @@ mod stage_split_only;
 mod terminal_context;
 mod terminal_pane_inset;
 mod terminal_text_interaction;
+mod terminal_update_feed;
 mod text_input_routing;
 mod theme_behavior;
 mod tide_mcp_runtime;
