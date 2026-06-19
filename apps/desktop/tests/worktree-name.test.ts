@@ -43,12 +43,12 @@ test("resolve_worktree_name_prefers_typed_then_slug_then_hash", () => {
   // UC-3: a typed name wins over the message.
   assert.equal(
     resolveWorktreeName({ typedName: "spike", firstMessage: "do the thing", makeHash: () => "wt-deadbe" }),
-    "spike",
+    "tide/spike",
   );
   // UC-1: no typed name -> slug of the message.
   assert.equal(
     resolveWorktreeName({ firstMessage: "Fix the login bug", makeHash: () => "wt-deadbe" }),
-    "fix-the-login-bug",
+    "tide/fix-the-login-bug",
   );
 });
 
@@ -56,7 +56,11 @@ test("resolve_worktree_name_uses_typed_name_over_message", () => {
   // A typed name is ASCII-slugged but otherwise respected verbatim.
   assert.equal(
     resolveWorktreeName({ typedName: "My Feature!", firstMessage: "anything", makeHash: () => "wt-x" }),
-    "my-feature",
+    "tide/my-feature",
+  );
+  assert.equal(
+    resolveWorktreeName({ typedName: "tide/spike", firstMessage: "anything", makeHash: () => "wt-x" }),
+    "tide/spike",
   );
 });
 
@@ -64,17 +68,17 @@ test("resolve_worktree_name_falls_back_to_hash_for_non_ascii_message", () => {
   // UC-2: blank name + Korean message -> hash (the terminal, always-valid fallback).
   assert.equal(
     resolveWorktreeName({ firstMessage: "로그인 버그 고쳐줘", makeHash: () => "wt-a3f9c2" }),
-    "wt-a3f9c2",
+    "tide/wt-a3f9c2",
   );
   // A too-short auto slug (< 3 chars) also falls back to the hash.
   assert.equal(
     resolveWorktreeName({ firstMessage: "ok", makeHash: () => "wt-a3f9c2" }),
-    "wt-a3f9c2",
+    "tide/wt-a3f9c2",
   );
   // A typed non-ASCII name has no usable slug -> falls through to the message/hash.
   assert.equal(
     resolveWorktreeName({ typedName: "스파이크", firstMessage: "로그인", makeHash: () => "wt-a3f9c2" }),
-    "wt-a3f9c2",
+    "tide/wt-a3f9c2",
   );
 });
 

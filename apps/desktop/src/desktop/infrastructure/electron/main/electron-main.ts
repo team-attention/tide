@@ -27,7 +27,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   computeWorktreePath,
-  sanitizeWorktreeBranch,
+  worktreeBranchName,
   worktreeAddArgs,
   worktreeRemoveArgs,
   branchDeleteArgs,
@@ -130,7 +130,7 @@ ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown, name: unknow
     : [];
   const baseBranch = typeof opts.baseBranch === "string" ? opts.baseBranch : undefined;
   const rawName = typeof name === "string" ? name.trim() : "";
-  const branch = sanitizeWorktreeBranch(
+  const branch = worktreeBranchName(
     rawName.length > 0 ? rawName : `${basename(cwd) || "tide"}-wt`,
   );
   const worktreePath = computeWorktreePath(cwd, branch, { baseDirPattern });

@@ -63,6 +63,20 @@
   color: var(--tide-action);
 }
 
+.app-update-button--downloading svg {
+  opacity: 0.45;
+}
+
+.app-update-button--downloading::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1.5px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-top-color: currentColor;
+  border-radius: 999px;
+  animation: app-update-spin 800ms linear infinite;
+}
+
 .app-update-button__progress {
   position: absolute;
   left: 5px;
@@ -73,4 +87,10 @@
   border-radius: 999px;
   background: currentColor;
   transition: width 160ms ease;
+}
+
+@keyframes app-update-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

@@ -23,6 +23,11 @@ export function AppUpdateButton(): ReactElement | null {
     return () => off?.();
   }, []);
 
+  const requestDownload = (version: string): void => {
+    setStatus({ phase: "downloading", version, percent: 0 });
+    window.tide?.downloadAppUpdate?.();
+  };
+
   if (status.phase === "available") {
     return (
       <button
@@ -30,7 +35,7 @@ export function AppUpdateButton(): ReactElement | null {
         className="app-update-button app-update-button--available"
         title={`Tide ${status.version} is available. Download update.`}
         aria-label={`Download Tide ${status.version} update`}
-        onClick={() => window.tide?.downloadAppUpdate?.()}
+        onClick={() => requestDownload(status.version)}
       >
         <Download size={15} strokeWidth={1.9} aria-hidden />
       </button>

@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   computeWorktreePath,
   sanitizeWorktreeBranch,
+  worktreeBranchName,
   worktreeAddArgs,
   worktreeRemoveArgs,
   branchDeleteArgs,
@@ -35,6 +36,15 @@ test("computes_default_worktree_path_as_repo_sibling", () => {
   assert.equal(
     computeWorktreePath("/Users/me/repo/", "fix"),
     "/Users/me/repo.worktree/fix",
+  );
+});
+
+test("worktree_branch_name_uses_tide_namespace_but_path_stays_flat", () => {
+  assert.equal(worktreeBranchName("fix download"), "tide/fix-download");
+  assert.equal(worktreeBranchName("tide/fix/download"), "tide/fix-download");
+  assert.equal(
+    computeWorktreePath("/Users/me/repo", "tide/fix-download"),
+    "/Users/me/repo.worktree/tide-fix-download",
   );
 });
 

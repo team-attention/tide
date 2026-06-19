@@ -70,6 +70,11 @@ test("app update renders as one icon-only button and keeps actions user driven",
       download.click();
     });
     assert.deepEqual(calls, ["download"]);
+    const requested = container.querySelector(".app-update-button--downloading") as HTMLButtonElement | null;
+    assert.ok(requested, "clicking Download should immediately show a download-in-progress state");
+    assert.equal(requested.disabled, true);
+    assert.match(requested.getAttribute("aria-label") ?? "", /Downloading Tide 0\.2\.0: 0%/);
+    assert.equal(requested.style.getPropertyValue("--app-update-progress"), "0%");
 
     await act(async () => {
       listeners[0]?.({ phase: "error", message: "network" });
