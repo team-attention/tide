@@ -15,6 +15,7 @@
 - `WindowCommand::CreateWindow` carries the triggering `Tide Window` logical size, so `Cmd+N` opens the new `Tide Window` at the same content size as the source `Tide Window`.
 - The legacy `SystemProcess::launch_new_tide_window` bundle path is not part of the `Cmd+N` flow.
 - The bundled app path must allow multiple Tide instances, and the macOS startup path must create a new Tide `Window` instead of reusing an already-running Tide instance during ordinary launch.
+- Ordinary Tide launch must use regular native app activation, and revealing a newly launched Tide `Window` must keep it foreground/frontmost instead of briefly flashing and then falling behind the previously active app.
 - Notification activation must continue to encode the owning `Tide Instance` PID plus `TideWindowId` and target `PaneId`, relay to the owning `Tide Instance` when needed, and reveal the owning `Tide Window`.
 
 ### Approach
@@ -84,6 +85,21 @@
   - BR-8: `activate-notification-target` must focus the target `Workspace` and `Pane`, then queue Tide `Window` reveal
   - BR-9: Notification activation reveal must restore the native keyboard/IME target after `show_window()`
 
+### UC-4: RevealLaunchedTideWindowFrontmost
+
+- **Actor**: User
+- **Trigger**: The user launches Tide Terminal from Finder, Dock, Spotlight, or CLI
+- **Precondition**: Another macOS app is frontmost when Tide orders its launch `Tide Window` front
+- **Flow**:
+  1. `MacosApp::run` starts Tide with regular native app activation
+  2. `MacosWindow::new` avoids alpha-hiding the startup `Tide Window`
+  3. `show_window()` activates the running Tide app
+  4. `show_window()` performs the final key/main/order-front calls after app activation
+- **Postcondition**: The newly revealed Tide `Window` stays frontmost after launch
+- **Business Rules**:
+  - BR-11: `show_window()` must activate the running Tide app before its final key/main/order-front pass
+  - BR-12: ordinary launch must not use `NSApplicationActivationPolicy::Accessory` or alpha hiding in the startup window path
+
 ## Invariants
 
 1. `GlobalAction::NewWindow` must request an in-process `Tide Window`.
@@ -106,6 +122,9 @@
 | UC-3 | BR-8 | `activate_notification_target_cli_command_switches_to_target_workspace_and_focuses_the_target_pane` |
 | UC-3 | BR-8 | `activate_notification_target_cli_command_queues_window_reveal` |
 | UC-3 | BR-9 | `notification_window_reveal_restores_ime_proxy_focus_after_show_window` |
+| UC-4 | BR-11 | `macos_show_window_orders_front_after_app_activation` |
+| UC-4 | BR-12 | `macos_launch_path_uses_regular_activation_for_ordinary_launch` |
+| UC-4 | BR-12 | `macos_window_construction_does_not_alpha_hide_startup_window` |
 
 ## Location
 
@@ -117,3 +136,4 @@
 | Process adapter | `crates/tide-app/src/application/ports/outward/process_port/mod.rs`, `crates/tide-app/src/adapter/outward/process_adapter/mod.rs` | Add Tide-window launch method and bundle-aware implementation |
 | Bundle launch | `crates/tide-app/Info.plist`, `scripts/build-app.sh`, `crates/tide-app/src/adapter/outward/platform_adapter/macos/app.rs` | Remove single-instance launch behavior |
 | Behavior tests | `crates/tide-app/src/application/behavior_tests/{bundle_behavior.rs,window_launch_behavior.rs,wrapped_agent_release_integration.rs}` | Cover `NewWindow`, bundle launch, and notification focus |
+| macOS window reveal | `crates/tide-app/src/adapter/outward/platform_adapter/macos/{app.rs,window.rs}` | Keep ordinary launch regular and keep launch-time reveal frontmost by ordering after app activation |

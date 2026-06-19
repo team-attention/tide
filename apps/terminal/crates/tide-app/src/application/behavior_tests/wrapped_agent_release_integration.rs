@@ -134,8 +134,8 @@ fn local_bundle_build_script_fails_closed_if_lsrequirescarbon_survives() {
 }
 
 #[test]
-fn macos_launch_path_defers_activation_until_window_reveal() {
-    // UC-1 BR-3: MacosApp::run must defer regular app activation until explicit window reveal.
+fn macos_launch_path_uses_regular_activation_for_ordinary_launch() {
+    // UC-1 BR-3: ordinary Tide launch must use regular native app activation.
     let source = include_str!("../../adapter/outward/platform_adapter/macos/app.rs");
     let window_source = include_str!("../../adapter/outward/platform_adapter/macos/window.rs");
     let show_start = window_source
@@ -143,11 +143,11 @@ fn macos_launch_path_defers_activation_until_window_reveal() {
         .expect("expected MacosWindow::show_window");
     let show_body = &window_source[show_start..];
 
-    assert!(source.contains("NSApplicationActivationPolicy::Accessory"));
     assert!(
-        !source.contains("setActivationPolicy(NSApplicationActivationPolicy::Regular)"),
-        "expected MacosApp::run to defer regular app activation until show_window()"
+        !source.contains("NSApplicationActivationPolicy::Accessory"),
+        "expected ordinary Tide launch not to start as an accessory app"
     );
+    assert!(source.contains("setActivationPolicy(NSApplicationActivationPolicy::Regular)"));
     assert!(show_body.contains("setActivationPolicy(NSApplicationActivationPolicy::Regular)"));
 }
 
@@ -489,8 +489,8 @@ fn macos_notification_activation_relay_suppresses_non_owning_window_after_succes
 }
 
 #[test]
-fn macos_window_construction_keeps_window_hidden_until_show_window() {
-    // UC-4 BR-14: MacosWindow::new must keep the Tide Window hidden until show_window().
+fn macos_window_construction_does_not_alpha_hide_startup_window() {
+    // UC-4 BR-14: MacosWindow::new must not alpha-hide the startup Tide Window.
     let source = include_str!("../../adapter/outward/platform_adapter/macos/window.rs");
     let new_start = source
         .find("pub fn new(")
@@ -498,11 +498,20 @@ fn macos_window_construction_keeps_window_hidden_until_show_window() {
     let show_start = source
         .find("fn show_window(&self)")
         .expect("expected MacosWindow::show_window");
+    let show_end = source[show_start + 1..]
+        .find("\n    fn ")
+        .map(|offset| show_start + 1 + offset)
+        .unwrap_or(source.len());
     let new_body = &source[new_start..show_start];
+    let show_body = &source[show_start..show_end];
 
     assert!(
         !new_body.contains("makeKeyAndOrderFront(None)"),
-        "expected MacosWindow::new to keep the Tide Window hidden until show_window()"
+        "expected show_window() to own the first key/order-front pass"
+    );
+    assert!(
+        !new_body.contains("setAlphaValue:") && !show_body.contains("setAlphaValue:"),
+        "expected Tide not to use alpha hiding in the launch/reveal path"
     );
 }
 
@@ -534,6 +543,38 @@ fn macos_show_window_uses_full_window_activation_for_full_screen_space() {
     assert!(show_body.contains("makeMainWindow()"));
     assert!(show_body.contains("NSRunningApplication::currentApplication()"));
     assert!(show_body.contains("NSApplicationActivateAllWindows"));
+}
+
+#[test]
+fn macos_show_window_orders_front_after_app_activation() {
+    // Window Launch UC-4 BR-11: launch reveal must activate Tide before the final
+    // key/main/order-front pass so the Tide Window stays frontmost.
+    let source = include_str!("../../adapter/outward/platform_adapter/macos/window.rs");
+    let show_start = source
+        .find("fn show_window(&self)")
+        .expect("expected MacosWindow::show_window");
+    let show_end = source[show_start + 1..]
+        .find("\n    fn ")
+        .map(|offset| show_start + 1 + offset)
+        .unwrap_or(source.len());
+    let show_body = &source[show_start..show_end];
+    let activate_index = show_body
+        .find("activateWithOptions")
+        .expect("expected show_window() to activate the running Tide app");
+    let main_index = show_body
+        .find("makeMainWindow()")
+        .expect("expected show_window() to make the Tide Window main after activation");
+    let key_index = show_body
+        .find("makeKeyAndOrderFront(None)")
+        .expect("expected show_window() to make the Tide Window key after activation");
+    let front_index = show_body
+        .find("orderFrontRegardless()")
+        .expect("expected show_window() to order the Tide Window front after activation");
+
+    assert!(
+        activate_index < main_index && activate_index < key_index && activate_index < front_index,
+        "expected running-app activation before the final key/main/order-front pass"
+    );
 }
 
 // --- Antigravity Wrapped Agent (Spec: docs/specs/antigravity-wrapped-agent.md) ---

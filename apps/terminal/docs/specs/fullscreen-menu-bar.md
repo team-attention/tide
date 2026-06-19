@@ -4,15 +4,15 @@
 
 ### As-Is
 
-`MacosApp::run_with_window()` in [crates/tide-app/src/adapter/outward/platform_adapter/macos/app.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/platform_adapter/macos/app.rs:43) creates the shared `NSApplication` and starts Tide with `NSApplicationActivationPolicy::Accessory`. `MacosWindow::show_window()` in [crates/tide-app/src/adapter/outward/platform_adapter/macos/window.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/platform_adapter/macos/window.rs:770) later promotes the app to `NSApplicationActivationPolicy::Regular` when Tide reveals a `Tide Window`.
+`MacosApp::run_with_window()` in [apps/terminal/crates/tide-app/src/adapter/outward/platform_adapter/macos/app.rs](../../crates/tide-app/src/adapter/outward/platform_adapter/macos/app.rs) creates the shared `NSApplication` and starts Tide with `NSApplicationActivationPolicy::Regular`. `MacosWindow::show_window()` in [apps/terminal/crates/tide-app/src/adapter/outward/platform_adapter/macos/window.rs](../../crates/tide-app/src/adapter/outward/platform_adapter/macos/window.rs) keeps the regular activation/order-front path idempotent when Tide reveals a `Tide Window`.
 
 Tide never installs an `App Main Menu` on `NSApplication`. A repo-wide search for `NSMenu`, `setMainMenu`, and `mainMenu` inside `crates/tide-app/src/adapter/outward/platform_adapter/macos/` returns no Tide-owned menu setup before this change. That means Tide becomes a regular macOS app window without ever giving AppKit a native menu bar model to reveal in a `Full-Screen Space`.
 
-Apple's AppKit documentation states that `NSApplication.ActivationPolicy.accessory` "doesn't have a menu bar" and that the app menu bar is exposed through `NSApplication.mainMenu`. Tide currently flips to `Regular`, but it never installs that `App Main Menu`, so the user's fullscreen top-edge hover affordance is incomplete.
+Apple's AppKit menu bar is exposed through `NSApplication.mainMenu`. Tide currently becomes a regular macOS app window, but it never installs that `App Main Menu`, so the user's fullscreen top-edge hover affordance is incomplete.
 
 ### To-Be
 
-Tide installs a minimal native `App Main Menu` once per `Tide Instance`. The menu must exist before Tide promotes itself to `NSApplicationActivationPolicy::Regular` and reveals a `Tide Window`.
+Tide installs a minimal native `App Main Menu` once per `Tide Instance`. The menu must exist before Tide confirms `NSApplicationActivationPolicy::Regular` and reveals a `Tide Window`.
 
 The installed `App Main Menu` includes the standard top-level roots a macOS app needs to feel native: the Tide app menu plus `File`, `Edit`, `View`, `Window`, and `Help`. Tide also registers the native `Window` and `Help` menus with `NSApplication` so AppKit can attach its standard behaviors.
 
@@ -40,7 +40,7 @@ The installed `App Main Menu` includes the standard top-level roots a macOS app 
 - **Flow**:
   1. Tide prepares to reveal a native `Tide Window`.
   2. Tide ensures the shared `NSApplication` has an `App Main Menu`.
-  3. Tide promotes the app to `NSApplicationActivationPolicy::Regular`.
+  3. Tide confirms the app is using `NSApplicationActivationPolicy::Regular`.
   4. Tide orders the `Tide Window` front and lets AppKit manage fullscreen menu-bar reveal.
 - **Postcondition**: A fullscreen Tide reveal happens with a native `App Main Menu` already installed.
 - **Business Rules**:
@@ -63,9 +63,9 @@ The installed `App Main Menu` includes the standard top-level roots a macOS app 
 
 ## Invariants
 
-1. Tide still starts with `NSApplicationActivationPolicy::Accessory` until it actually needs to reveal a `Tide Window`.
+1. Tide uses `NSApplicationActivationPolicy::Regular` for ordinary launch.
 2. `App Main Menu` installation must be idempotent for a shared `NSApplication`.
-3. `show_window()` remains the single place that promotes Tide to `NSApplicationActivationPolicy::Regular` for native reveal.
+3. `show_window()` remains the native reveal path that activates and orders the `Tide Window` front.
 
 ## Tests
 

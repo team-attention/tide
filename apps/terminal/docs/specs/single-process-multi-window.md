@@ -219,7 +219,7 @@ Business Rules:
 - Crash recovery restore is a `Tide Instance` startup concern, not a per-window concern.
 - Periodic crash-recovery session auto-save must be owned by the focused `Tide Window`.
 - Cross-thread wakeups must dispatch to the main queue before emitting native view redraw events.
-- A newly created invisible native `Tide Window` must receive a first frame request before it can be revealed.
+- A newly created native `Tide Window` must receive a first frame request before its final launch reveal/order-front pass.
 - Platform callbacks must be able to create or close a `Tide Window` without re-entering the native window registry borrow.
 
 ## Tests

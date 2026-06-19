@@ -58,9 +58,9 @@ impl MacosApp {
 
         let app = NSApplication::sharedApplication(mtm);
         ensure_app_main_menu(mtm);
-        // Start without a Dock icon. show_window() promotes the app to Regular
-        // only when this Tide Instance really needs to reveal its Tide Window.
-        app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+        // Ordinary launches should follow the native AppKit foreground path.
+        // show_window() still performs the final activation/order-front pass.
+        app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
 
         Self::create_window(tide_window_id, config, callback);
 

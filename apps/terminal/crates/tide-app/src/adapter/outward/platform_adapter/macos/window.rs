@@ -578,12 +578,6 @@ impl MacosWindow {
             let _: () = msg_send![&ns_window, setBackgroundColor: &*bg_color];
         }
 
-        // Start invisible — show_window() reveals after the first frame renders,
-        // so the user never sees a blank window during GPU initialization.
-        unsafe {
-            let _: () = msg_send![&ns_window, setAlphaValue: 0.0_f64];
-        }
-
         // Set the window delegate for resize/focus/close events
         let delegate =
             super::view::TideWindowDelegate::new(tide_window_id, Rc::clone(&callback), mtm);
@@ -773,16 +767,15 @@ impl PlatformWindow for MacosWindow {
         app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
         unsafe {
             self.ns_window.deminiaturize(None);
-            self.ns_window.makeKeyAndOrderFront(None);
-            self.ns_window.orderFrontRegardless();
-            self.ns_window.makeMainWindow();
             let running_app = NSRunningApplication::currentApplication();
             #[allow(deprecated)]
             let activation_options = NSApplicationActivationOptions::NSApplicationActivateAllWindows
                 | NSApplicationActivationOptions::NSApplicationActivateIgnoringOtherApps;
             #[allow(deprecated)]
             let _: bool = running_app.activateWithOptions(activation_options);
-            let _: () = msg_send![&self.ns_window, setAlphaValue: 1.0_f64];
+            self.ns_window.makeMainWindow();
+            self.ns_window.makeKeyAndOrderFront(None);
+            self.ns_window.orderFrontRegardless();
         }
         self.window_revealed.set(true);
     }
