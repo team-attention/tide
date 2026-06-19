@@ -149,7 +149,6 @@ import {
   diffPaneRef,
   editorPaneRef,
   firstBrowserPane,
-  firstVisiblePane,
   launcherPaneActions,
   snapshotWorkbench,
   terminalPaneRef,

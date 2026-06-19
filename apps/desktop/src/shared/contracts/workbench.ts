@@ -19,7 +19,6 @@ export interface BaseWorkbenchPaneRefDto {
   paneId: WorkbenchPaneId;
   kind: "browser" | "diff" | "editor" | "terminal" | "launcher" | "changes";
   title: string;
-  visible: boolean;
   revision: string;
   updatedAt: string;
 }

@@ -41,7 +41,6 @@ export function workbenchPaneRef(
     paneId: pane.paneId,
     kind: pane.kind,
     title: pane.title,
-    visible: pane.visible,
     revision: pane.revision,
     updatedAt: pane.updatedAt,
   };
@@ -168,7 +167,7 @@ export function launcherPaneActions(): LauncherPaneState["actions"] {
     {
       actionId: "open_terminal",
       label: "Terminal",
-      description: "Open a visible Terminal Pane",
+      description: "Open a Terminal Pane",
       enabled: true,
     },
     {
@@ -183,17 +182,13 @@ export function launcherPaneActions(): LauncherPaneState["actions"] {
 export function firstBrowserPane(
   workbench: WorkbenchState,
 ): BrowserPaneState | undefined {
-  // Only a VISIBLE browser pane is reusable. close_pane merely hides a pane
-  // (visible=false) rather than removing it; without this filter, opening a
-  // browser after closing one reused the hidden pane with its stale URL/page
-  // instead of starting fresh.
   const activePane = workbench.panes.find(
     (pane): pane is BrowserPaneState =>
-      pane.kind === "browser" && pane.paneId === workbench.activePaneId && pane.visible,
+      pane.kind === "browser" && pane.paneId === workbench.activePaneId,
   );
   return (
     activePane ??
-    workbench.panes.find((pane): pane is BrowserPaneState => pane.kind === "browser" && pane.visible)
+    workbench.panes.find((pane): pane is BrowserPaneState => pane.kind === "browser")
   );
 }
 
@@ -207,10 +202,10 @@ export function workbenchPaneById(
   return workbench.panes.find((pane) => pane.paneId === paneId);
 }
 
-export function firstVisiblePane(
+export function firstPane(
   workbench: WorkbenchState,
 ): WorkbenchState["panes"][number] | undefined {
-  return workbench.panes.find((pane) => pane.visible);
+  return workbench.panes[0];
 }
 
 // Reveal + activate a pane. Mutates the workbench; returns the pane (or undefined
@@ -224,33 +219,31 @@ export function focusWorkbenchPaneState(
   if (pane === undefined) {
     return undefined;
   }
-  pane.visible = true;
   pane.updatedAt = clock();
   workbench.activePaneId = pane.paneId;
   workbench.focusOwner = "workbench";
   return pane;
 }
 
-// Hide a pane and reassign the active pane / focus owner. Mutates the workbench;
-// returns the pane (or undefined if absent). PTY teardown for a terminal pane is
-// the caller's responsibility (it owns the runtime). Shared by the close_pane
-// Workbench command and tide_close_pane.
+// Remove a pane and reassign the active pane / focus owner. PTY teardown for a
+// terminal pane is the caller's responsibility (it owns the runtime). Shared by
+// the close_pane Workbench command and tide_close_pane.
 export function closeWorkbenchPaneState(
   workbench: WorkbenchState,
   paneId: string | undefined,
   clock: () => string,
 ): WorkbenchState["panes"][number] | undefined {
-  const pane = workbenchPaneById(workbench, paneId);
-  if (pane === undefined) {
+  if (paneId === undefined) {
     return undefined;
   }
-  pane.visible = false;
-  if (pane.kind === "terminal" && pane.status === "running") {
-    pane.status = "completed";
+  const paneIndex = workbench.panes.findIndex((candidate) => candidate.paneId === paneId);
+  if (paneIndex === -1) {
+    return undefined;
   }
+  const [pane] = workbench.panes.splice(paneIndex, 1);
   pane.updatedAt = clock();
   if (workbench.activePaneId === pane.paneId) {
-    workbench.activePaneId = firstVisiblePane(workbench)?.paneId;
+    workbench.activePaneId = firstPane(workbench)?.paneId;
   }
   workbench.focusOwner =
     workbench.activePaneId === undefined ? "composer" : workbench.focusOwner;

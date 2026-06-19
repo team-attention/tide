@@ -1,7 +1,8 @@
-import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatProjectOption, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope, AgentChatWorktreeOption } from "./types.ts";
+import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatProjectOption, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope } from "./types.ts";
 import { activeComposerTrigger, providerSetupCommandPayload, selectComposerAgent, setComposerActiveSurface } from "./composer.ts";
 import { CODEX_MODELS, PERMISSION_OPTIONS, REASONING_LEVELS, cliModelOptionsForAgent, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, isAgentAvailable, isAgentAvailabilityKnown, isAgentComingSoon, normalizePermissionValue, permissionConfigForAgent, runtimeSourceForBinding } from "./agent-vocab.ts";
-import { launchOptionsForState, updateComposerLaunchOptions, updateComposerScope } from "./launch-options.ts";
+import { branchMenuRows, defaultBranchName, worktreeForBranch, worktreeMenuRows } from "./branch-environment-menu-rows.ts";
+import { launchOptionsForState, setComposerNewWorktreeIntent, updateComposerLaunchOptions, updateComposerScope } from "./launch-options.ts";
 import { buildOpencodeConnectSurface, getOpencodeEnvironment, isOpencodeUsable } from "./opencode-onramp.ts";
 import { basenameOf } from "./path-labels.ts";
 import { row } from "./choice-row.ts";
@@ -191,9 +192,16 @@ export function selectAgentChatChoiceSurfaceRow(
       return scope ? updateComposerScope(state, scope) : { state, command: null };
     }
     case "worktree_menu": {
-      return selectComposerDirectoryRow(state, rowId);
+      return selectComposerEnvironmentRow(state, rowId);
     }
     case "branch_menu": {
+      if (rowId === "create-branch") {
+        const baseBranch = String(
+          launchOptionsForState(state)?.branch ??
+            defaultBranchName(state.availableBranches ?? [], "main"),
+        );
+        return setComposerNewWorktreeIntent(state, { name: "", baseBranch });
+      }
       const branch = branchForRow(rowId);
       return branch ? selectComposerBranch(state, branch) : { state, command: null };
     }
@@ -309,7 +317,7 @@ export function createActiveComposerSurface(
     case "worktree_menu":
       return {
         surfaceKind,
-        title: "Directory",
+        title: "Environment",
         sourceLabel: "Execution Context",
         rows: worktreeMenuRows(state),
       };
@@ -608,91 +616,6 @@ function projectMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowV
   ];
 }
 
-// Real worktrees for the active scope: "current folder" (the main worktree)
-// plus any additional git worktrees, then a "new worktree" affordance. Falls
-// back to just "current folder" for Scratch / non-git scopes.
-function worktreeMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowView[] {
-  const selected = String(launchOptionsForState(state)?.worktree ?? "current folder");
-  const worktrees = state.availableWorktrees ?? [];
-  const currentWorktree = worktrees.find((entry) => entry.current);
-  const currentSelected = selected === "current folder" || selected === currentWorktree?.path;
-  const rows: AgentChatChoiceSurfaceRowView[] = [
-    row(
-      "worktree:current",
-      "current folder",
-      currentWorktree?.path ?? "selected directory",
-      undefined,
-      "folder",
-      currentSelected,
-    ),
-  ];
-  for (const worktree of worktrees.filter((entry) => !entry.current)) {
-    const label = worktree.branch ?? basenameOf(worktree.path);
-    const entry = row(`worktree:${worktree.path}`, label, worktree.path, undefined, "folder", selected === worktree.path);
-    // A trailing trash affordance opens the delete dialog (Desktop adapter
-    // special-cases the `delete-worktree:` rowId). See
-    // docs_v2/specs/worktree-branch-deletion.md.
-    entry.action = { rowId: `delete-worktree:${worktree.path}`, label: `Delete worktree ${label}`, icon: "trash" };
-    rows.push(entry);
-  }
-  // Selecting this opens an inline name input (handled in the Desktop adapter):
-  // it creates a git worktree off the current scope and re-scopes the composer.
-  rows.push(row("new-worktree", "New worktree", "create a git worktree", undefined, "folder-plus"));
-  return rows;
-}
-
-// Real git branches (local before remote, current marked); falls back to just
-// the current launch value when no git data is available.
-function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowView[] {
-  const selected = String(launchOptionsForState(state)?.branch ?? "main");
-  const branches = state.availableBranches ?? [];
-  // A branch checked out in a worktree can't be deleted with `git branch -d` (git
-  // refuses a branch checked out anywhere), so those get no trash — same for the
-  // current branch and remote rows. See branchDeletableFromPicker.
-  const worktreeBranches = new Set(
-    (state.availableWorktrees ?? [])
-      .map((entry) => entry.branch)
-      .filter((name): name is string => name !== null),
-  );
-  const rows: AgentChatChoiceSurfaceRowView[] = [];
-  if (branches.length === 0) {
-    rows.push(row(`branch:${selected}`, selected, "current", undefined, "check", true));
-  } else {
-    const ordered = [...branches].sort((a, b) => Number(a.kind === "remote") - Number(b.kind === "remote"));
-    for (const branch of ordered) {
-      const isSelected = branch.name === selected;
-      const entry = row(
-        `branch:${branch.name}`,
-        branch.name,
-        branch.current ? "current" : branch.kind,
-        undefined,
-        isSelected ? "check" : "branch",
-        isSelected,
-      );
-      // Safe-to-delete only: a trailing trash opens the branch-delete dialog (the
-      // Desktop adapter special-cases the `delete-branch:` rowId). See
-      // docs_v2/specs/branch-deletion-from-picker.md.
-      if (branchDeletableFromPicker(branch, worktreeBranches)) {
-        entry.action = { rowId: `delete-branch:${branch.name}`, label: `Delete branch ${branch.name}`, icon: "trash" };
-      }
-      rows.push(entry);
-    }
-  }
-  // Creating a branch from the Composer isn't wired yet — show it disabled.
-  rows.push(row("create-branch", "Create new branch", "new worktree + branch", undefined, "plus"));
-  return rows;
-}
-
-// A branch is safe to delete from the picker only when git would actually let us:
-// it's local (not a remote ref), not the checked-out branch, and not checked out
-// in any worktree. See docs_v2/specs/branch-deletion-from-picker.md.
-export function branchDeletableFromPicker(
-  branch: { name: string; kind: "local" | "remote"; current: boolean },
-  worktreeBranches: ReadonlySet<string>,
-): boolean {
-  return branch.kind === "local" && !branch.current && !worktreeBranches.has(branch.name);
-}
-
 function scopeForProjectRow(
   rowId: string,
   state: AgentChatShellState,
@@ -709,10 +632,20 @@ function scopeForProjectRow(
   return null;
 }
 
-function selectComposerDirectoryRow(
+function selectComposerEnvironmentRow(
   state: AgentChatShellState,
   rowId: string,
 ): AgentChatShellUpdateResult {
+  if (rowId === "new-worktree") {
+    const baseBranch = String(
+      launchOptionsForState(state)?.branch ??
+        defaultBranchName(state.availableBranches ?? [], "main"),
+    );
+    return setComposerNewWorktreeIntent(state, { name: "", baseBranch });
+  }
+  if (rowId === "worktree:existing-unavailable") {
+    return { state, command: null };
+  }
   if (rowId === "worktree:current") {
     const currentWorktree = state.availableWorktrees?.find((entry) => entry.current);
     if (currentWorktree !== undefined) {
@@ -723,7 +656,6 @@ function selectComposerDirectoryRow(
       }).state;
       return updateComposerLaunchOptions(scoped, {
         worktree: "current folder",
-        ...(currentWorktree.branch ? { branch: currentWorktree.branch } : {}),
       });
     }
     return updateComposerLaunchOptions(state, { worktree: "current folder" });
@@ -741,7 +673,6 @@ function selectComposerDirectoryRow(
       ...(worktree?.branch ? { branch: worktree.branch } : {}),
     });
   }
-  // "new-worktree" is a create affordance, wired in the Desktop adapter.
   return { state, command: null };
 }
 
@@ -749,34 +680,34 @@ function selectComposerBranch(
   state: AgentChatShellState,
   branch: string,
 ): AgentChatShellUpdateResult {
-  const matchingWorktree = worktreeForBranch(state.availableWorktrees ?? [], branch);
-  if (matchingWorktree === undefined) {
-    return updateComposerLaunchOptions(state, { branch });
+  const launchOptions = launchOptionsForState(state);
+  const selectedWorktree =
+    typeof launchOptions?.worktree === "string"
+      ? (state.availableWorktrees ?? []).find((entry) => entry.path === launchOptions.worktree)
+      : undefined;
+  if (selectedWorktree !== undefined && selectedWorktree.branch !== branch) {
+    return selectLocalEnvironmentForBranch(state, branch);
+  }
+  return updateComposerLaunchOptions(state, { branch });
+}
+
+function selectLocalEnvironmentForBranch(
+  state: AgentChatShellState,
+  branch: string,
+): AgentChatShellUpdateResult {
+  const currentWorktree = state.availableWorktrees?.find((entry) => entry.current);
+  if (currentWorktree === undefined) {
+    return updateComposerLaunchOptions(state, { branch, worktree: "current folder" });
   }
   const scoped = updateComposerScope(state, {
     kind: "project",
-    projectId: currentProjectId(state) ?? basenameOf(matchingWorktree.path),
-    cwd: matchingWorktree.path,
+    projectId: currentProjectId(state) ?? basenameOf(currentWorktree.path),
+    cwd: currentWorktree.path,
   }).state;
   return updateComposerLaunchOptions(scoped, {
     branch,
-    worktree: worktreeLaunchValueForSelection(state.availableWorktrees ?? [], matchingWorktree),
+    worktree: "current folder",
   });
-}
-
-function worktreeForBranch(
-  worktrees: AgentChatWorktreeOption[],
-  branch: string,
-): AgentChatWorktreeOption | undefined {
-  return worktrees.find((entry) => entry.branch === branch);
-}
-
-function worktreeLaunchValueForSelection(
-  worktrees: AgentChatWorktreeOption[],
-  worktree: AgentChatWorktreeOption,
-): string {
-  const mainWorktreePath = worktrees[0]?.path;
-  return worktree.path === mainWorktreePath ? "current folder" : worktree.path;
 }
 
 function currentProjectId(state: AgentChatShellState): string | null {

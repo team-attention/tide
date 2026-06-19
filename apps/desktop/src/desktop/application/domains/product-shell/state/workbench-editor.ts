@@ -388,7 +388,7 @@ export function reconcileEditorDrafts(
 ): Record<string, ProductShellEditorDraft> {
   const next: Record<string, ProductShellEditorDraft> = {};
   for (const pane of panes) {
-    if (pane.kind !== "editor" || pane.visible === false || pane.truncated === true) {
+    if (pane.kind !== "editor" || pane.truncated === true) {
       continue;
     }
     const draft = drafts[pane.paneId];

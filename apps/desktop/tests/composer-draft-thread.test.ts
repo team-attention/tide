@@ -30,7 +30,6 @@ const terminalPane = {
   paneId: "term-1",
   kind: "terminal" as const,
   title: "Terminal",
-  visible: true,
   revision: "rev-1",
   updatedAt: "2026-06-16T00:00:00.000Z",
   status: "running" as const,

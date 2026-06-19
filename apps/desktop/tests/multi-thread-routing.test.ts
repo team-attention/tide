@@ -248,12 +248,12 @@ test("a background thread opening a browser does not open the workbench on the N
   assert.equal(state.activeThreadId, null);
   assert.equal(state.workbenchOpen, false);
 
-  // The background thread's agent opens a visible Browser Pane.
+  // The background thread's agent opens a Browser Pane.
   state = applyProductShellBackendEvent(state, {
     kind: "workbench.changed" as const,
     payload: {
       threadId: "thread-bg",
-      panes: [{ paneId: "p1", kind: "browser", title: "Naver", visible: true, revision: "r1" }],
+      panes: [{ paneId: "p1", kind: "browser", title: "Naver", revision: "r1" }],
     },
   });
 
@@ -274,7 +274,7 @@ test("the active thread opening a browser still opens its workbench", () => {
     kind: "workbench.changed" as const,
     payload: {
       threadId: "thread-a",
-      panes: [{ paneId: "p1", kind: "browser", title: "Naver", visible: true, revision: "r1" }],
+      panes: [{ paneId: "p1", kind: "browser", title: "Naver", revision: "r1" }],
     },
   });
 
@@ -289,12 +289,12 @@ test("a closed workbench stays closed after switching threads and back", () => {
   state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
   state = applyProductShellBackendEvent(state, hydrated("thread-b", "codex", []));
   state = clickThread(state, "thread-a");
-  // A visible pane opens the workbench on thread A.
+  // An open pane opens the workbench on thread A.
   state = applyProductShellBackendEvent(state, {
     kind: "workbench.changed" as const,
     payload: {
       threadId: "thread-a",
-      panes: [{ paneId: "p1", kind: "browser", title: "Naver", visible: true, revision: "r1" }],
+      panes: [{ paneId: "p1", kind: "browser", title: "Naver", revision: "r1" }],
     },
   });
   assert.equal(state.workbenchOpen, true);

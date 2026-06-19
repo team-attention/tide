@@ -580,7 +580,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     layoutVm.workbenchLayoutMode === "split" &&
     layoutVm.workbenchLayoutTree !== null &&
     layoutVm.editorPicker === null &&
-    layoutVm.appChrome.visibleWorkbenchPanes.length > 1;
+    layoutVm.appChrome.openWorkbenchPanes.length > 1;
   const inlineWorkbenchControls = showWorkbenchControls && !splitActive && rightColWidth >= 400;
   const collapseChromeToDots = showWorkbenchControls && splitActive && !layoutVm.fileTreeOpen;
 

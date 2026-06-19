@@ -347,7 +347,7 @@ test("thread_start_seeds_adopted_composer_panes_into_the_workbench", async () =>
   const browser = result.ok
     ? result.thread.workbench.panes.find((pane) => pane.kind === "browser")
     : undefined;
-  assert.equal(browser?.visible, true);
+  assert.equal(browser?.kind, "browser");
   assert.equal(
     browser !== undefined && browser.kind === "browser" ? browser.url : undefined,
     "https://seeded.test",
@@ -2172,7 +2172,7 @@ test("createDraftThread_registers_a_draft_with_a_workbench_and_does_not_start_an
 });
 
 test("open_terminal_on_a_draft_thread_starts_a_visible_pty_without_an_agent", async () => {
-  // Spec: composer-draft-thread — the visible Terminal Pane works pre-send, against the
+  // Spec: composer-draft-thread — the Terminal Pane works pre-send, against the
   // Draft Thread's own Workbench, with no agent runtime.
   const fakes = createFakes();
   const service = createThreadRuntimeService({
@@ -2803,15 +2803,9 @@ test("closing_running_provider_setup_surface_stops_setup_process", async () => {
   assert.equal(closed.ok, true);
   assert.equal(fakes.setupSurface.stops.length, 1);
   assert.equal(
-    closed.thread.workbench.panes.find((pane) => pane.paneId === paneId)?.visible,
+    closed.thread.workbench.panes.some((pane) => pane.paneId === paneId),
     false,
   );
-  const closedPane = closed.thread.workbench.panes.find((pane) => pane.paneId === paneId);
-  assert.equal(closedPane?.kind, "terminal");
-  if (closedPane?.kind !== "terminal") {
-    throw new Error("Expected closed Provider Setup Surface terminal pane.");
-  }
-  assert.equal(closedPane.status, "completed");
 });
 
 test("workbench_command_focus_and_close_pane_updates_backend_workbench_state", async () => {
@@ -2850,7 +2844,7 @@ test("workbench_command_focus_and_close_pane_updates_backend_workbench_state", a
   });
   assert.equal(closed.ok, true);
   assert.equal(
-    closed.thread.workbench.panes.find((pane) => pane.paneId === "pane-two")?.visible,
+    closed.thread.workbench.panes.some((pane) => pane.paneId === "pane-two"),
     false,
   );
   assert.equal(closed.thread.workbench.activePaneId, "pane-one");
@@ -2959,7 +2953,6 @@ test("go_to_definition_opens_target_editor_pane_with_navigation_target", async (
               title: "app.ts",
               filePath: "/repo/tide/src/app.ts",
               relativePath: "src/app.ts",
-              visible: true,
               revision: "rev-source",
               updatedAt: now,
               bodyText: "import { answer } from './answer';\nconsole.log(answer);\n",
@@ -3024,7 +3017,6 @@ test("go_to_definition_without_result_returns_not_found_without_workbench_mutati
         title: "app.ts",
         filePath: "/repo/tide/src/app.ts",
         relativePath: "src/app.ts",
-        visible: true,
         revision: "rev-source",
         updatedAt: now,
         bodyText: "console.log('no symbol');\n",
@@ -3097,7 +3089,6 @@ test("go_to_references_lists_use_sites_on_the_source_editor_pane", async () => {
         title: "app.ts",
         filePath: "/repo/tide/src/app.ts",
         relativePath: "src/app.ts",
-        visible: true,
         revision: "rev-source",
         updatedAt: now,
         bodyText: "export const value = 1;\nconst a = value;\n",
@@ -3187,10 +3178,10 @@ test("opening_workbench_launcher_creates_or_reveals_single_launcher_pane", async
   assert.equal(closed.ok, true);
   assert.equal(revealed.ok, true);
   assert.equal(revealed.ok && revealed.thread.workbench.panes.length, 1);
-  assert.equal(revealed.ok && revealed.thread.workbench.panes[0]?.visible, true);
+  assert.equal(revealed.ok && revealed.thread.workbench.panes[0]?.kind, "launcher");
 });
 
-test("opening_browser_from_workbench_command_creates_visible_browser_pane", async () => {
+test("opening_browser_from_workbench_command_creates_open_browser_pane", async () => {
   // Spec: docs_v2/specs/workbench-launcher-pane.md
   const service = createThreadRuntimeService({
     ...createFakes().ports,
@@ -3388,7 +3379,6 @@ test("saving_editor_pane_writes_open_file_and_refreshes_revision", async () => {
               title: "README.md",
               filePath: "/repo/tide/README.md",
               relativePath: "README.md",
-              visible: true,
               revision: "rev-1",
               updatedAt: now,
               bodyText: "# Tide\n",
@@ -3452,7 +3442,6 @@ test("saving_editor_pane_with_stale_revision_returns_conflict_without_write", as
               title: "README.md",
               filePath: "/repo/tide/README.md",
               relativePath: "README.md",
-              visible: true,
               revision: "rev-current",
               updatedAt: now,
               bodyText: "# Tide\n",
@@ -3506,7 +3495,6 @@ test("saving_truncated_editor_pane_returns_conflict_without_write", async () => 
               title: "large.md",
               filePath: "/repo/tide/large.md",
               relativePath: "large.md",
-              visible: true,
               revision: "rev-large",
               updatedAt: now,
               bodyText: "partial",
@@ -3577,7 +3565,6 @@ function browserPane(paneId: string, title: string) {
     paneId,
     kind: "browser" as const,
     title,
-    visible: true,
     revision: `${paneId}:rev`,
     updatedAt: now,
     loading: false,

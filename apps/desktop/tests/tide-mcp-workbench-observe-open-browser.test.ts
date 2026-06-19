@@ -209,7 +209,7 @@ test("tide_focus_pane_and_tide_close_pane_let_the_agent_manipulate_panes", async
   assert.equal(
     observed.ok &&
       observed.output.kind === "observe_workbench" &&
-      observed.output.panes.some((pane) => pane.paneId === paneId && pane.visible),
+      observed.output.panes.some((pane) => pane.paneId === paneId),
     false,
   );
 });
@@ -236,10 +236,10 @@ test("opening_browser_from_an_active_launcher_resolves_the_launcher_in_place", a
   });
   assert.equal(opened.ok, true);
   if (opened.ok) {
-    // Launcher resolved: gone, replaced by exactly one visible Browser Pane.
+    // Launcher resolved: gone, replaced by exactly one Browser Pane.
     assert.equal(opened.workbench.panes.filter((pane) => pane.kind === "launcher").length, 0);
     assert.equal(
-      opened.workbench.panes.filter((pane) => pane.kind === "browser" && pane.visible).length,
+      opened.workbench.panes.filter((pane) => pane.kind === "browser").length,
       1,
     );
   }
@@ -253,7 +253,7 @@ test("opening_two_different_files_yields_two_editor_panes_for_split", async () =
   const second = await service.handleWorkbenchCommand({ threadId: "thread-multi", command: "open_editor", data: { path: "b.md" } });
   assert.equal(second.ok, true);
   if (second.ok) {
-    const editors = second.workbench.panes.filter((pane) => pane.kind === "editor" && pane.visible);
+    const editors = second.workbench.panes.filter((pane) => pane.kind === "editor");
     assert.equal(editors.length, 2);
   }
 });
@@ -277,7 +277,7 @@ test("multiple_browsers_come_from_opening_multiple_launchers", async () => {
   assert.equal(second.ok, true);
   if (second.ok) {
     assert.equal(
-      second.workbench.panes.filter((pane) => pane.kind === "browser" && pane.visible).length,
+      second.workbench.panes.filter((pane) => pane.kind === "browser").length,
       2,
     );
     assert.equal(second.workbench.panes.filter((pane) => pane.kind === "launcher").length, 0);
@@ -286,8 +286,8 @@ test("multiple_browsers_come_from_opening_multiple_launchers", async () => {
 
 // --- UC-3: Agent opens Browser Pane ---
 
-test("opening_browser_creates_visible_browser_pane_in_thread_workbench", async () => {
-  // UC-3 BR-1: Open Browser creates visible pane.
+test("opening_browser_creates_browser_pane_in_thread_workbench", async () => {
+  // UC-3 BR-1: Open Browser creates a pane.
   const service = serviceWithActiveThread("thread-browser", "runtime-browser");
 
   const opened = await openBrowser(
@@ -303,7 +303,6 @@ test("opening_browser_creates_visible_browser_pane_in_thread_workbench", async (
   assert.equal(opened.output.kind, "open_browser");
   assert.equal(opened.output.visibleSideEffect, "created");
   assert.equal(opened.output.pane.kind, "browser");
-  assert.equal(opened.output.pane.visible, true);
   assert.equal(opened.output.pane.url, "https://example.test/docs");
   assert.equal(observed.ok, true);
   assert.equal(observed.ok && observed.output.panes.length, 1);
@@ -386,7 +385,6 @@ test("opening_browser_uses_tide_workbench_and_not_external_browser", async () =>
     "https://example.test/no-external",
   );
 
-  assert.equal(opened.output.pane.visible, true);
   assert.equal(opened.output.pane.kind, "browser");
   assert.deepEqual(fakes.runtime.events, []);
 });
@@ -799,7 +797,7 @@ test("reading_file_returns_bounded_content_without_mutating_workbench", async ()
   assert.equal(result.ok && result.thread.workbench.panes.length, 0);
 });
 
-test("opening_file_creates_visible_editor_pane_in_thread_workbench", async () => {
+test("opening_file_creates_open_editor_pane_in_thread_workbench", async () => {
   // Spec: docs_v2/specs/tide-mcp-file-workbench-tools.md
   const fakes = createFakes({
     files: {
@@ -1136,7 +1134,7 @@ test("running_terminal_command_creates_completed_terminal_pane", async () => {
   assert.deepEqual(fakes.runtime.events, []);
 });
 
-test("opening_visible_terminal_from_mcp_creates_running_terminal_pane", async () => {
+test("opening_terminal_from_mcp_creates_running_terminal_pane", async () => {
   // Spec: docs_v2/specs/tide-mcp-open-terminal-tool.md
   const fakes = createFakes();
   const service = serviceWithActiveThread(

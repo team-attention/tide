@@ -78,7 +78,6 @@ function editorState(bodyText: string, relativePath: string) {
             paneId: "pane-editor",
             kind: "editor",
             title: relativePath,
-            visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
             filePath: `/repo/${relativePath}`,

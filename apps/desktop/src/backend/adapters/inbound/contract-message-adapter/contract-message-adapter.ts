@@ -690,12 +690,12 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           runtimeState: result.runtimeState,
         },
       },
-      // If the started thread already has visible Workbench panes — a Draft Thread started
+      // If the started thread already has Workbench panes — a Draft Thread started
       // in place carries its Terminal/Editor/Diff, or a fresh start adopted Browser drafts
       // — push the Workbench now so it renders immediately instead of waiting for the
       // pane's next event. Omitted for an empty Workbench (no behavior change there).
       // See docs_v2/specs/composer-draft-thread.md.
-      ...(result.thread.workbench.panes.some((pane) => pane.visible)
+      ...(result.thread.workbench.panes.length > 0
         ? [this.workbenchChangedEvent(command, result.thread)]
         : []),
       this.commandCompletedEvent(command),

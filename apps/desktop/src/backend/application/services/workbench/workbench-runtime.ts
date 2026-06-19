@@ -48,7 +48,7 @@ export interface WorkbenchRuntimeDeps {
   ) => Promise<void>;
 }
 
-// Owns the visible Workbench Terminal + Provider Setup Surface pane lifecycle:
+// Owns the Workbench Terminal + Provider Setup Surface pane lifecycle:
 // creating the panes, starting/stopping their PTY-backed processes, streaming
 // output, and recording completion. Shared by the workbench-command and Tide MCP
 // paths. Extracted from thread-runtime-service.ts behind one lifecycle callback
@@ -96,7 +96,6 @@ export class WorkbenchRuntime {
         pane.cwd === setup.cwd,
     );
     if (existing !== undefined) {
-      existing.visible = true;
       existing.status = "ready";
       existing.args = [...setup.args];
       existing.env = cloneEnv(setup.env);
@@ -110,7 +109,6 @@ export class WorkbenchRuntime {
       paneId: this.idGenerator(),
       kind: "terminal",
       title: `Provider setup: ${commandName(setup.command)}`,
-      visible: true,
       revision: this.idGenerator(),
       updatedAt: this.clock(),
       command: setup.command,
@@ -136,7 +134,6 @@ export class WorkbenchRuntime {
         pane.cwd === input.cwd,
     );
     if (existing !== undefined) {
-      existing.visible = true;
       existing.title = "Terminal";
       existing.args = [...input.args];
       existing.status = this.workbenchTerminalHandles.has(existing.paneId)
@@ -151,7 +148,6 @@ export class WorkbenchRuntime {
       paneId: this.idGenerator(),
       kind: "terminal",
       title: "Terminal",
-      visible: true,
       revision: this.idGenerator(),
       updatedAt: this.clock(),
       command: input.command,

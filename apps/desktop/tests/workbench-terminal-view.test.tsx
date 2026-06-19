@@ -64,7 +64,6 @@ function terminalState() {
             paneId: "pane-term",
             kind: "terminal",
             title: "zsh",
-            visible: true,
             revision: "pane-term:rev",
             updatedAt: "2026-05-31T00:00:00.000Z",
             status: "running",

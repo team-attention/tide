@@ -84,9 +84,9 @@ test("reconcile reports thread editor panes to close for the changed path", () =
     appChrome: {
       ...base.appChrome,
       workbenchPanes: [
-        { paneId: "p1", kind: "editor", title: "a.ts", visible: true, revision: "r", relativePath: "src/a.ts" },
-        { paneId: "p2", kind: "editor", title: "c.ts", visible: true, revision: "r", relativePath: "src/c.ts" },
-        { paneId: "b1", kind: "browser", title: "web", visible: true, revision: "r" },
+        { paneId: "p1", kind: "editor", title: "a.ts", revision: "r", relativePath: "src/a.ts" },
+        { paneId: "p2", kind: "editor", title: "c.ts", revision: "r", relativePath: "src/c.ts" },
+        { paneId: "b1", kind: "browser", title: "web", revision: "r" },
       ],
     },
   };

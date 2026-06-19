@@ -39,7 +39,6 @@ export function openWorkbenchLauncher(
     (pane): pane is LauncherPaneState => pane.kind === "launcher",
   );
   if (existingPane !== undefined) {
-    existingPane.visible = true;
     existingPane.title = WORKBENCH_LAUNCHER_TITLE;
     existingPane.actions = launcherPaneActions();
     existingPane.revision = idGenerator();
@@ -51,7 +50,6 @@ export function openWorkbenchLauncher(
     paneId: idGenerator(),
     kind: "launcher",
     title: WORKBENCH_LAUNCHER_TITLE,
-    visible: true,
     revision: idGenerator(),
     updatedAt: clock(),
     actions: launcherPaneActions(),

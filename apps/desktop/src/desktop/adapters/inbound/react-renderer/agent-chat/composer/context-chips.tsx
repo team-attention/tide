@@ -112,7 +112,7 @@ function surfaceForContextItem(item: AgentChatContextItem): AgentChatComposerSur
     case "Project":
     case "Scratch":
       return "project_menu";
-    case "Directory":
+    case "Environment":
       return "worktree_menu";
     case "Branch":
       return "branch_menu";
@@ -136,7 +136,7 @@ function contextItemIcon(item: AgentChatContextItem): ReactNode {
       return <Folder {...props} />;
     case "Scratch":
       return <FileText {...props} />;
-    case "Directory":
+    case "Environment":
       return <FolderGit2 {...props} />;
     case "Branch":
       return <GitBranch {...props} />;

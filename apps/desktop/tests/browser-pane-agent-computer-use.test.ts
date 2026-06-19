@@ -25,7 +25,6 @@ function browserThread(overrides: Partial<BrowserPaneState> = {}): ThreadRecord 
     title: "Example",
     url: "https://example.test",
     loading: false,
-    visible: true,
     revision: "rev-1",
     updatedAt: now,
     ...overrides,

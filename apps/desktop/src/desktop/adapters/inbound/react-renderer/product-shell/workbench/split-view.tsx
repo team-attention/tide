@@ -183,7 +183,7 @@ export function WorkbenchSplitView(props: {
   };
 
   const renderPaneCard = (paneId: string): ReactElement | null => {
-    const pane = viewModel.appChrome.visibleWorkbenchPanes.find((p) => p.paneId === paneId);
+    const pane = viewModel.appChrome.openWorkbenchPanes.find((p) => p.paneId === paneId);
     if (pane === undefined) {
       return null;
     }

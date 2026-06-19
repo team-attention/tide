@@ -3,7 +3,7 @@
 // area into two children along a direction at a ratio. Dragging a pane onto
 // another pane's edge inserts a new Split (top/bottom => column, left/right =>
 // row); dropping on the center swaps the two panes. The tree is reconciled
-// against the live visible-pane set so opening/closing panes keeps it valid.
+// against the live open-pane set so opening/closing panes keeps it valid.
 //
 // Pure + framework-free so it is fully unit-testable without React.
 
@@ -82,33 +82,33 @@ function replaceLeafPaneId(
   return { ...node, a: replaceLeafPaneId(node.a, oldId, newId), b: replaceLeafPaneId(node.b, oldId, newId) };
 }
 
-// Reconcile the tree with the live visible-pane set: drop panes that closed,
+// Reconcile the tree with the live open-pane set: drop panes that closed,
 // append panes that opened (as a row split at the root), and rebuild from
 // scratch when there is no tree yet.
 export function reconcileTree(
   node: WorkbenchSplitNode | null,
-  visiblePaneIds: string[],
+  openPaneIds: string[],
 ): WorkbenchSplitNode | null {
-  const visible = new Set(visiblePaneIds);
+  const open = new Set(openPaneIds);
   const treeIds = paneIdsInTree(node);
   const treeIdSet = new Set(treeIds);
   // A pane resolved IN PLACE — e.g. a Launcher slot becoming the Browser the user
   // picked from it: exactly one pane left and one arrived → swap the newcomer into
   // the old pane's slot, instead of collapsing the slot and appending the newcomer
   // on the far right of the split.
-  const removed = treeIds.filter((id) => !visible.has(id));
-  const added = visiblePaneIds.filter((id) => !treeIdSet.has(id));
+  const removed = treeIds.filter((id) => !open.has(id));
+  const added = openPaneIds.filter((id) => !treeIdSet.has(id));
   if (node !== null && removed.length === 1 && added.length === 1) {
     return replaceLeafPaneId(node, removed[0], added[0]);
   }
   let next = node;
   for (const paneId of treeIds) {
-    if (!visible.has(paneId)) {
+    if (!open.has(paneId)) {
       next = removePane(next, paneId);
     }
   }
   const present = new Set(paneIdsInTree(next));
-  for (const paneId of visiblePaneIds) {
+  for (const paneId of openPaneIds) {
     if (!present.has(paneId)) {
       if (next === null) {
         next = leaf(paneId);

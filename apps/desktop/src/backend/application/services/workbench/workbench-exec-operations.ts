@@ -101,7 +101,7 @@ export class WorkbenchExecOperations {
     };
   }
 
-  // tide_close_pane: hide a pane (and stop its PTY when it's a Terminal Pane).
+  // tide_close_pane: remove a pane (and stop its PTY when it's a Terminal Pane).
   async closePaneOutput(
     thread: ThreadRecord,
     input: Record<string, unknown> | undefined,
@@ -211,7 +211,6 @@ export class WorkbenchExecOperations {
       label: definition.location.label,
       sourcePaneId: sourcePane.paneId,
     };
-    targetPane.visible = true;
     thread.workbench.activePaneId = targetPane.paneId;
     thread.updatedAt = this.clock();
 
@@ -278,7 +277,6 @@ export class WorkbenchExecOperations {
       truncated: references.truncated,
       items,
     };
-    sourcePane.visible = true;
     sourcePane.revision = this.idGenerator();
     sourcePane.updatedAt = this.clock();
     thread.workbench.activePaneId = sourcePane.paneId;
@@ -341,7 +339,6 @@ export class WorkbenchExecOperations {
       paneId: this.idGenerator(),
       kind: "terminal",
       title: `Command: ${commandName(run.command)}`,
-      visible: true,
       revision: this.idGenerator(),
       updatedAt: run.completedAt,
       command: run.command,

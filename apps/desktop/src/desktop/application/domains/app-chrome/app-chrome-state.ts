@@ -36,7 +36,6 @@ export interface AppChromeWorkbenchPaneRef {
   paneId: string;
   kind: AppChromeWorkbenchPaneKind;
   title: string;
-  visible: boolean;
   revision: string;
   updatedAt: string;
   loading?: boolean;
@@ -139,9 +138,9 @@ export interface AppChromeViewModel {
   statusBar: AppChromeStatusBarView;
   workbenchTabStrip: WorkbenchTabStripView;
   activeWorkbenchPane?: AppChromeWorkbenchPaneRef;
-  // All visible panes (full refs), in tab order — for split-mode tiling. In
-  // tab-group mode only activeWorkbenchPane is shown.
-  visibleWorkbenchPanes: AppChromeWorkbenchPaneRef[];
+  // Open panes (full refs), in tab order — for split-mode tiling. In tab-group
+  // mode only activeWorkbenchPane is shown.
+  openWorkbenchPanes: AppChromeWorkbenchPaneRef[];
   errorMessage?: string;
 }
 
@@ -253,14 +252,16 @@ export function applyAppChromeBackendEvent(
         runtimeState?: AppChromeRuntimeState;
         workbenchPanes?: AppChromeWorkbenchPaneRef[];
       };
+      const panes = payload.workbenchPanes ?? state.workbenchPanes;
       return {
         ...state,
         thread: payload.thread,
         runtimeState: payload.runtimeState ?? state.runtimeState,
-        workbenchPanes: payload.workbenchPanes ?? state.workbenchPanes,
+        workbenchPanes: panes,
         activeWorkbenchPaneId:
-          firstVisiblePaneId(payload.workbenchPanes ?? state.workbenchPanes) ??
-          state.activeWorkbenchPaneId,
+          state.activeWorkbenchPaneId && paneExists(panes, state.activeWorkbenchPaneId)
+            ? state.activeWorkbenchPaneId
+            : firstPaneId(panes),
       };
     }
     case "thread.started": {
@@ -318,7 +319,7 @@ export function applyAppChromeBackendEvent(
             ? payload.activePaneId
             : state.activeWorkbenchPaneId && paneExists(panes, state.activeWorkbenchPaneId)
             ? state.activeWorkbenchPaneId
-            : firstVisiblePaneId(panes),
+            : firstPaneId(panes),
       };
     }
     case "contract.error": {
@@ -338,11 +339,11 @@ export function createAppChromeViewModel(
   options: AppChromeViewOptions = {},
 ): AppChromeViewModel {
   const maxVisibleTabs = options.maxVisibleTabs ?? DEFAULT_MAX_VISIBLE_TABS;
-  const visiblePanes = state.workbenchPanes.filter((pane) => pane.visible);
-  const tabs = visiblePanes.map((pane) => toWorkbenchTabView(pane, state));
+  const openPanes = state.workbenchPanes;
+  const tabs = openPanes.map((pane) => toWorkbenchTabView(pane, state));
   const activeWorkbenchPane =
-    visiblePanes.find((pane) => pane.paneId === state.activeWorkbenchPaneId) ??
-    visiblePanes[0];
+    openPanes.find((pane) => pane.paneId === state.activeWorkbenchPaneId) ??
+    openPanes[0];
 
   return {
     statusBar: {
@@ -360,7 +361,7 @@ export function createAppChromeViewModel(
       overflowTabs: tabs.slice(maxVisibleTabs),
     },
     activeWorkbenchPane,
-    visibleWorkbenchPanes: visiblePanes,
+    openWorkbenchPanes: openPanes,
     errorMessage: state.errorMessage,
   };
 }
@@ -437,7 +438,7 @@ export function writeWorkbenchTerminalInput(
   bytes: string,
 ): AppChromeUpdateResult {
   const pane = state.workbenchPanes.find(
-    (candidate) => candidate.paneId === paneId && candidate.visible,
+    (candidate) => candidate.paneId === paneId,
   );
   if (!state.thread || pane?.kind !== "terminal" || pane.status !== "running" || bytes.length === 0) {
     return { state, command: null };
@@ -461,8 +462,8 @@ export function writeWorkbenchTerminalInput(
 }
 
 // Tells the backend to resize the PTY to match the rendered terminal grid, so the
-// shell wraps + redraws correctly. Does not change visible state (no activePane
-// side effects) — it's a pure transport for cols/rows.
+// shell wraps + redraws correctly. Does not change activePane state — it's a pure
+// transport for cols/rows.
 export function resizeWorkbenchTerminal(
   state: AppChromeState,
   paneId: string,
@@ -470,7 +471,7 @@ export function resizeWorkbenchTerminal(
   rows: number,
 ): AppChromeUpdateResult {
   const pane = state.workbenchPanes.find(
-    (candidate) => candidate.paneId === paneId && candidate.visible,
+    (candidate) => candidate.paneId === paneId,
   );
   if (!state.thread || pane?.kind !== "terminal" || pane.status !== "running") {
     return { state, command: null };
@@ -563,17 +564,17 @@ function toWorkbenchTabView(
   };
 }
 
-function firstVisiblePaneId(
+function firstPaneId(
   panes: AppChromeWorkbenchPaneRef[],
 ): string | undefined {
-  return panes.find((pane) => pane.visible)?.paneId;
+  return panes[0]?.paneId;
 }
 
 function paneExists(
   panes: AppChromeWorkbenchPaneRef[],
   paneId: string,
 ): boolean {
-  return panes.some((pane) => pane.paneId === paneId && pane.visible);
+  return panes.some((pane) => pane.paneId === paneId);
 }
 
 function formatAgentLabel(agentId: string): string {
