@@ -8,6 +8,8 @@ export interface WorktreePathSettings {
   baseDirPattern?: string;
 }
 
+const DEFAULT_WORKTREE_BRANCH_PREFIX = "tide";
+
 // A single name drives the worktree branch + directory: slashes and whitespace
 // become dashes so it is a safe branch + path segment.
 export function sanitizeWorktreeBranch(name: string): string {
@@ -15,6 +17,16 @@ export function sanitizeWorktreeBranch(name: string): string {
     .trim()
     .replace(/\s+/g, "-")
     .replace(/\//g, "-");
+}
+
+// Git branch name for Tide-created worktrees. The branch is namespaced as
+// `tide/<name>`, while the worktree directory still uses sanitizeWorktreeBranch.
+export function worktreeBranchName(name: string): string {
+  const raw = name.trim();
+  const prefix = `${DEFAULT_WORKTREE_BRANCH_PREFIX}/`;
+  const unprefixed = raw.toLowerCase().startsWith(prefix) ? raw.slice(prefix.length) : raw;
+  const sanitized = sanitizeWorktreeBranch(unprefixed).replace(/^-+|-+$/g, "");
+  return `${prefix}${sanitized.length > 0 ? sanitized : "worktree"}`;
 }
 
 export function computeWorktreePath(
