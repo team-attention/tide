@@ -11,6 +11,7 @@ not copy-paste launch boilerplate — see `lib/` (added by Phase 2.4).
 |---|---|---|
 | `v2-tooling-command.mjs` | Wraps electron-vite/tsc/electron-builder; node-version preflight. Used by `npm run dev/build/typecheck`. | node ≥ 22.6 |
 | `assert-node-version.mjs` | Fails fast if node < 22.6 (the `--experimental-strip-types` floor). Runs as `pretest`. | — |
+| `v2-verification-loop.mjs` | Runs the deterministic Tide verification loop: diff check, typecheck, affected tests, full tests, optional build/smoke, plus JSON/Markdown reports. Used by `npm run verify:tide`. | node ≥ 22.6 |
 
 ## Verification battery
 
@@ -26,6 +27,21 @@ Run the whole battery via `npm run e2e` (Phase 2.1). Individual scripts:
 | `v2-claude-second-permission.mjs` | claude batched multi-permission (the second box surfaces). | claude auth |
 | `pw-claude-research-permissions.cjs` | claude WebSearch + two batched WebFetch cards → final answer (the user's exact research scenario). | claude auth |
 | `pw-restart-verify.cjs` | App restart restores the conversation from cache. | built app |
+
+## Verification loop
+
+`npm run verify:tide` is the default local loop for AI-assisted and human review:
+
+- `git diff --check`
+- `npm run typecheck`
+- affected tests selected from changed files
+- full `npm run test:v2`
+- optional `--build` or `--smoke`
+
+Reports are written to `dist/verification/latest.json` and
+`dist/verification/latest.md`, with per-gate logs under `dist/verification/runs/`.
+Use `npm run verify:tide -- --quick` for a tighter edit loop, and
+`npm run verify:tide -- --smoke` before risky runtime or packaging changes.
 
 ## Targeted UI / feature verifiers
 

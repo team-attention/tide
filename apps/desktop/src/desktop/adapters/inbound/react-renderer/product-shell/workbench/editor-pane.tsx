@@ -1,6 +1,7 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
+import { fileIconFor } from "../../support/file-icons.ts";
 import { WorkbenchMarkdownView } from "./markdown-view.tsx";
 import { WorkbenchHtmlView } from "./html-view.tsx";
 import { WorkbenchCodeEditor } from "./code-editor.tsx";
@@ -79,7 +80,7 @@ export function WorkbenchEditorPane(props: {
               relativePath={props.pane.relativePath ?? props.pane.filePath}
               handlers={props.handlers}
             />
-            {createWorkbenchEditorReferences(props.pane.references)}
+            {createWorkbenchEditorReferences(props.pane.references, props.handlers)}
           </div>
         </>
       )}
@@ -176,35 +177,71 @@ function createWorkbenchEditorReferences(
   references: NonNullable<
     ProductShellViewModel["appChrome"]["activeWorkbenchPane"]
   >["references"],
+  handlers: ProductShellHandlers,
 ): ReactElement | null {
   if (references === undefined) {
     return null;
   }
-  const heading = `References${references.query ? ` to ${references.query}` : ""} (${references.items.length}${references.truncated ? "+" : ""})`;
+  const countLabel = `${references.items.length}${references.truncated ? "+" : ""}`;
   return (
     <div className="workbench-editor-references" aria-label="References">
-      <div className="workbench-editor-references__heading">{heading}</div>
+      <div className="workbench-editor-references__heading">
+        <span className="workbench-editor-references__title">References</span>
+        {references.query ? (
+          <code className="workbench-editor-references__query">{references.query}</code>
+        ) : null}
+        <span className="workbench-editor-references__count">{countLabel}</span>
+      </div>
       {references.items.length === 0 ? (
         <div className="workbench-editor-references__empty">No references found.</div>
       ) : (
         <ul className="workbench-editor-references__list">
-          {references.items.map((item, index) => (
-            <li
-              key={`${item.relativePath}:${item.line}:${item.character}:${index}`}
-              className="workbench-editor-references__item"
-            >
-              <span className="workbench-editor-references__location">
-                {`${item.relativePath}:${item.line + 1}:${item.character + 1}`}
-              </span>
-              {item.label ? (
-                <span className="workbench-editor-references__label">{item.label}</span>
-              ) : null}
-            </li>
-          ))}
+          {references.items.map((item, index) => {
+            const Icon = fileIconFor(fileNameForReference(item.relativePath));
+            const folder = folderForReference(item.relativePath);
+            const lineColumn = `${item.line + 1}:${item.character + 1}`;
+            const preview = item.label?.trim() || "No preview";
+            return (
+              <li
+                key={`${item.relativePath}:${item.line}:${item.character}:${index}`}
+                className="workbench-editor-references__item-wrap"
+              >
+                <button
+                  type="button"
+                  className="workbench-editor-references__item"
+                  title={`Open ${item.relativePath}:${lineColumn}`}
+                  aria-label={`Open reference ${item.relativePath}:${lineColumn}`}
+                  onClick={() => handlers.onOpenFile(item.relativePath)}
+                >
+                  <span className="workbench-editor-references__meta">
+                    <Icon size={13} strokeWidth={1.8} aria-hidden />
+                    <span className="workbench-editor-references__file">
+                      {fileNameForReference(item.relativePath)}
+                    </span>
+                    {folder.length > 0 ? (
+                      <span className="workbench-editor-references__path">{folder}</span>
+                    ) : null}
+                    <span className="workbench-editor-references__location">{lineColumn}</span>
+                  </span>
+                  <code className="workbench-editor-references__label">{preview}</code>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
   );
+}
+
+function fileNameForReference(relativePath: string): string {
+  return relativePath.split("/").filter(Boolean).pop() ?? relativePath;
+}
+
+function folderForReference(relativePath: string): string {
+  const parts = relativePath.split("/").filter(Boolean);
+  parts.pop();
+  return parts.join("/");
 }
 
 export function inferEditorLanguage(path: string | undefined): string {

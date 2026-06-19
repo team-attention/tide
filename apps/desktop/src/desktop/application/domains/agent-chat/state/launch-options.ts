@@ -19,9 +19,7 @@ export function environmentContextValue(
   const launchOptions = options.launchOptions;
   const worktree = launchOptions?.worktree;
   if (worktree === "new") {
-    const typed = launchOptions?.newWorktreeName;
-    const name = typeof typed === "string" ? typed.trim() : "";
-    return name.length > 0 ? `New worktree: ${name}` : "New worktree";
+    return "New worktree";
   }
   if (typeof worktree === "string" && worktree !== "current folder" && worktree.length > 0) {
     const existing = worktrees.find((entry) => entry.path === worktree);

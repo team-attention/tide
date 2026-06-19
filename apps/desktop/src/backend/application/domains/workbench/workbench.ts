@@ -148,6 +148,7 @@ export interface BrowserPaneScreenshot {
 export interface TerminalPaneState {
   paneId: WorkbenchPaneId;
   kind: "terminal";
+  terminalRole?: "session" | "command_result" | "provider_setup";
   title: string;
   revision: string;
   updatedAt: string;
@@ -291,6 +292,7 @@ export interface NonBrowserWorkbenchPaneRef extends WorkbenchPaneRef {
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  terminalRole?: "session" | "command_result" | "provider_setup";
   status?: "ready" | "running" | "completed" | "failed";
   expectedCompletion?: "process_exit" | "retry_preflight";
   transcriptPreview?: string;

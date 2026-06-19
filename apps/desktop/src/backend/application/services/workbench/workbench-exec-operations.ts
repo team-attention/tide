@@ -341,6 +341,7 @@ export class WorkbenchExecOperations {
     const pane: TerminalPaneState = {
       paneId: this.idGenerator(),
       kind: "terminal",
+      terminalRole: "command_result",
       title: `Command: ${commandName(run.command)}`,
       revision: this.idGenerator(),
       updatedAt: run.completedAt,

@@ -244,6 +244,13 @@ function startContextItems(
       ? { label: "Project" as const, value: scope.projectId }
       : { label: "Scratch" as const, value: scope?.scratchCwd || "Scratch" };
 
+  const branch = String(options.launchOptions?.branch ?? "main");
+  const pendingWorktreeBranch =
+    options.launchOptions?.worktree === "new" && typeof options.launchOptions?.newWorktreeName === "string"
+      ? options.launchOptions.newWorktreeName.trim()
+      : "";
+  const branchValue = pendingWorktreeBranch.length > 0 ? pendingWorktreeBranch : branch;
+
   return [
     {
       label: "Agent",
@@ -252,7 +259,7 @@ function startContextItems(
       agentId: options.agentBinding.agentId,
     },
     projectOrScratch,
-    { label: "Branch", value: String(options.launchOptions?.branch ?? "main") },
+    { label: "Branch", value: branchValue },
     {
       label: "Environment",
       value: environmentContextValue(options, state.availableWorktrees ?? []),

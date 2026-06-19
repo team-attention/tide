@@ -362,9 +362,14 @@ export function createLiveBackendContractMessageAdapter(
     }),
     workbenchTerminalPort: createPtyWorkbenchTerminalPort({
       launcher: ptyLauncher,
+      resolveRuntimeEnvironment: ({ cwd, planEnv }) =>
+        resolveAugmentedEnvironment({ currentEnv: { ...env, ...planEnv }, cwd }),
     }),
     ptyTranscriptPort: createMemoryPtyTranscriptPort(),
-    workspaceCommandPort: createNodeWorkspaceCommandPort(),
+    workspaceCommandPort: createNodeWorkspaceCommandPort({
+      resolveRuntimeEnvironment: ({ cwd, planEnv }) =>
+        resolveAugmentedEnvironment({ currentEnv: { ...env, ...planEnv }, cwd }),
+    }),
     workspaceFilePort: createNodeWorkspaceFilePort(),
     composerAttachmentStorePort: createNodeComposerAttachmentStorePort(join(appDataRoot, "attachments")),
     providerTrustPort: createNodeProviderTrustPort(homeDir, bootstrapArtifacts.codexHome),

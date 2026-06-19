@@ -1,6 +1,7 @@
 // Spec: docs_v2/specs/worktree-start-experience.md
-// Clicking "New branch" in the composer Branch picker expands an inline name input
-// in the dropdown. Confirming it only records the deferred new-worktree intent.
+// Clicking "New worktree branch" in the composer Branch picker expands an inline
+// name input in the dropdown. Confirming it only records the deferred
+// new-worktree intent.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -73,7 +74,7 @@ function seededWorktreeMenuState() {
   return setProductShellComposerActiveSurface(withGit, "worktree_menu");
 }
 
-test("composer_branch_menu_new_branch_expands_an_inline_name_input", async () => {
+test("composer_branch_menu_new_worktree_branch_expands_an_inline_name_input", async () => {
   const container = dom.window.document.createElement("div");
   dom.window.document.body.appendChild(container);
   const root = createRoot(container);
@@ -84,17 +85,17 @@ test("composer_branch_menu_new_branch_expands_an_inline_name_input", async () =>
     });
 
     const newBranch = [...container.querySelectorAll(".choice-surface__row")].find(
-      (button) => button.textContent?.includes("New branch"),
+      (button) => button.textContent?.includes("New worktree branch"),
     ) as HTMLButtonElement | undefined;
-    assert.ok(newBranch, "Branch picker should render a New branch row");
+    assert.ok(newBranch, "Branch picker should render a New worktree branch row");
 
     await act(async () => {
       newBranch.click();
     });
 
     const input = container.querySelector(".choice-surface__inline-input") as HTMLInputElement | null;
-    assert.ok(input, "New branch should expand an inline name input in the dropdown");
-    assert.equal(input.getAttribute("aria-label"), "New branch name");
+    assert.ok(input, "New worktree branch should expand an inline name input in the dropdown");
+    assert.equal(input.getAttribute("aria-label"), "New worktree branch name");
     assert.equal(dom.window.document.activeElement, input);
     assert.equal(container.querySelector(".worktree-create__input"), null);
   } finally {

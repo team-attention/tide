@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { TideProductShell } from "../../../adapters/inbound/react-renderer/product-shell/product-shell.tsx";
 import { AppErrorFallback, ErrorBoundary } from "../../../adapters/inbound/react-renderer/product-shell/support/error-boundary.tsx";
 import { GlobalZoomIndicator } from "../../../adapters/inbound/react-renderer/product-shell/support/global-zoom.tsx";
-import { AppUpdatePill } from "../../../adapters/inbound/react-renderer/product-shell/support/app-update-pill.tsx";
 import type {
   AgentChatBackendEvent,
 } from "../../../application/domains/agent-chat/agent-chat.ts";
@@ -83,7 +82,6 @@ export function createInitialRendererElement() {
     />
     </ErrorBoundary>
     <GlobalZoomIndicator />
-    <AppUpdatePill />
     </>
   );
 }
@@ -106,6 +104,7 @@ declare global {
       sendBackendCommand(command: BackendCommandEnvelope): Promise<BackendEventEnvelope[]>;
       onBackendEvent(listener: (event: BackendEventEnvelope) => void): () => void;
       onCloseIntent(listener: () => void): () => void;
+      onFindIntent(listener: () => void): () => void;
       // A link inside a Browser Pane asked to open elsewhere — Main denies the stray
       // popup window and hands the URL here. `newPane` true (Cmd/Ctrl/middle-click,
       // window.open) opens a new Browser Pane; false (a plain target=_blank click)

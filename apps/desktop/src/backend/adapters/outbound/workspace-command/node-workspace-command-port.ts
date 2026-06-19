@@ -7,11 +7,26 @@ import type {
   WorkspaceCommandRunResult,
 } from "../../../application/ports/outbound/workspace-command-port.ts";
 
-export function createNodeWorkspaceCommandPort(): WorkspaceCommandPort {
-  return new NodeWorkspaceCommandPort();
+export interface CreateNodeWorkspaceCommandPortInput {
+  resolveRuntimeEnvironment?: (input: {
+    cwd: string;
+    planEnv: Record<string, string>;
+  }) => NodeJS.ProcessEnv;
+}
+
+export function createNodeWorkspaceCommandPort(
+  input: CreateNodeWorkspaceCommandPortInput = {},
+): WorkspaceCommandPort {
+  return new NodeWorkspaceCommandPort(input);
 }
 
 class NodeWorkspaceCommandPort implements WorkspaceCommandPort {
+  private readonly resolveRuntimeEnvironment?: CreateNodeWorkspaceCommandPortInput["resolveRuntimeEnvironment"];
+
+  constructor(input: CreateNodeWorkspaceCommandPortInput) {
+    this.resolveRuntimeEnvironment = input.resolveRuntimeEnvironment;
+  }
+
   async resolveCwd(input: {
     root: string;
     cwd?: string;
@@ -46,6 +61,7 @@ class NodeWorkspaceCommandPort implements WorkspaceCommandPort {
     command: string;
     args: string[];
     cwd: string;
+    env?: Record<string, string>;
     timeoutMs: number;
     byteLimit: number;
     startedAt: string;
@@ -70,7 +86,7 @@ class NodeWorkspaceCommandPort implements WorkspaceCommandPort {
       const child = spawn(input.command, input.args, {
         cwd: input.cwd,
         shell: false,
-        env: process.env,
+        env: this.resolveEnvironment(input.cwd, input.env ?? {}),
       });
 
       const timeout = setTimeout(() => {
@@ -165,6 +181,30 @@ class NodeWorkspaceCommandPort implements WorkspaceCommandPort {
         });
       });
     });
+  }
+
+  private resolveEnvironment(
+    cwd: string,
+    planEnv: Record<string, string>,
+  ): NodeJS.ProcessEnv {
+    if (this.resolveRuntimeEnvironment === undefined) {
+      return { ...process.env, ...planEnv };
+    }
+
+    let runtimeEnv: NodeJS.ProcessEnv = {};
+    try {
+      runtimeEnv = this.resolveRuntimeEnvironment({ cwd, planEnv });
+    } catch {
+      runtimeEnv = {};
+    }
+
+    const resolvedEnv: NodeJS.ProcessEnv = {};
+    for (const [key, value] of Object.entries(runtimeEnv)) {
+      if (value !== undefined) {
+        resolvedEnv[key] = value;
+      }
+    }
+    return { ...resolvedEnv, ...planEnv };
   }
 }
 

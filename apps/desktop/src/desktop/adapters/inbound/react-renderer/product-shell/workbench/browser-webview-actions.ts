@@ -36,6 +36,11 @@ export type BrowserWebViewElement = HTMLElement & {
   canGoBack?: () => boolean;
   canGoForward?: () => boolean;
   isLoading?: () => boolean;
+  findInPage?: (
+    text: string,
+    options?: { forward?: boolean; findNext?: boolean; matchCase?: boolean },
+  ) => number;
+  stopFindInPage?: (action: "clearSelection" | "keepSelection" | "activateSelection") => void;
   sendInputEvent?: (event: BrowserWebViewInputEvent) => void;
   capturePage?: () => Promise<{
     toDataURL?: () => string;

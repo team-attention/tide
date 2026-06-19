@@ -1126,9 +1126,11 @@ test("running_terminal_command_creates_completed_terminal_pane", async () => {
   assert.equal(result.ok && result.output.exitCode, 0);
   assert.match(result.ok ? result.output.transcript : "", /all tests passed/);
   assert.equal(result.ok && result.output.pane.kind, "terminal");
+  assert.equal(result.ok && result.output.pane.terminalRole, "command_result");
   assert.equal(result.ok && result.output.pane.status, "completed");
   assert.equal(result.ok && result.thread.workbench.panes.length, 1);
   assert.equal(result.ok && result.thread.workbench.panes[0]?.kind, "terminal");
+  assert.equal(result.ok && result.thread.workbench.panes[0]?.terminalRole, "command_result");
   assert.equal(result.ok && result.thread.workbench.focusOwner, "composer");
   assert.equal(fakes.commands.runs.length, 1);
   assert.deepEqual(fakes.runtime.events, []);
