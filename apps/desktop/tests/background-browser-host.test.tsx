@@ -2,7 +2,7 @@
 // Regression: the offscreen Browser host must not form a snapshot feedback loop when
 // its backend echo re-renders the Product Shell.
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after } from "node:test";
 import { JSDOM } from "jsdom";
 import { act } from "react";
 
@@ -18,19 +18,38 @@ const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "https://app.test/",
 });
 
-(globalThis as unknown as { window: unknown }).window = dom.window;
-(globalThis as unknown as { document: unknown }).document = dom.window.document;
-(globalThis as unknown as { HTMLElement: unknown }).HTMLElement = dom.window.HTMLElement;
-(globalThis as unknown as { Element: unknown }).Element = dom.window.Element;
-(globalThis as unknown as { MutationObserver: unknown }).MutationObserver =
-  dom.window.MutationObserver;
-(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+const patchedGlobalKeys = [
+  "window",
+  "document",
+  "HTMLElement",
+  "Element",
+  "MutationObserver",
+  "ResizeObserver",
+  "IS_REACT_ACT_ENVIRONMENT",
+] as const;
+type PatchedGlobalKey = (typeof patchedGlobalKeys)[number];
+const testGlobals = globalThis as unknown as Partial<Record<PatchedGlobalKey, unknown>>;
+const originalGlobals = Object.fromEntries(
+  patchedGlobalKeys.map((key) => [
+    key,
+    {
+      hadOwnProperty: Object.prototype.hasOwnProperty.call(globalThis, key),
+      value: testGlobals[key],
+    },
+  ]),
+) as Record<PatchedGlobalKey, { hadOwnProperty: boolean; value: unknown }>;
+
+testGlobals.window = dom.window;
+testGlobals.document = dom.window.document;
+testGlobals.HTMLElement = dom.window.HTMLElement;
+testGlobals.Element = dom.window.Element;
+testGlobals.MutationObserver = dom.window.MutationObserver;
+testGlobals.ResizeObserver = class {
   observe() {}
   unobserve() {}
   disconnect() {}
 };
-(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+testGlobals.IS_REACT_ACT_ENVIRONMENT = true;
 
 const originalCreateElement = dom.window.document.createElement.bind(dom.window.document);
 dom.window.document.createElement = ((tagName: string, options?: ElementCreationOptions) => {
@@ -48,6 +67,18 @@ dom.window.document.createElement = ((tagName: string, options?: ElementCreation
   }
   return element;
 }) as typeof dom.window.document.createElement;
+
+after(() => {
+  dom.window.document.createElement = originalCreateElement;
+  for (const key of patchedGlobalKeys) {
+    const original = originalGlobals[key];
+    if (original.hadOwnProperty) {
+      testGlobals[key] = original.value;
+    } else {
+      delete testGlobals[key];
+    }
+  }
+});
 
 test("background browser snapshot echo does not re-run the settled-webview snapshot effect", async () => {
   const { createRoot } = await import("react-dom/client");
