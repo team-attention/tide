@@ -203,7 +203,7 @@
   text-decoration-color: currentColor;
 }
 
-.workbench-md-preview.markdown-body p img {
+.workbench-md-preview.markdown-body img {
   vertical-align: text-bottom;
   border-radius: 4px;
 }
@@ -221,7 +221,7 @@
    safe for "Pick block": the nodes still exist for querySelectorAll, and text
    extraction falls back to textContent (which needs no layout) when a skipped
    block's innerText is empty. */
-.workbench-md-preview > * {
+.workbench-md-preview.markdown-body > * {
   max-width: min(100%, 780px);
   margin-left: auto;
   margin-right: auto;
