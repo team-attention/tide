@@ -48,7 +48,6 @@ async function assertRuntimeEnvironmentApplied(
     env: { TERM: "plan-term", TIDE_SOCKET: "plan-socket" },
     cwd,
     transport,
-    expectedSignalSources: [{ kind: "provider_history", description: "test" }],
   };
   const resolverCalls: Array<{ cwd: string; planEnv: Record<string, string> }> = [];
   const port = createAgentIntegrationAgentRuntimePort({
@@ -106,12 +105,10 @@ function fakeIntegration(
         ready: true,
         blockers: [],
         capabilities: {
-          supportsHiddenPty: true,
           supportsResume: true,
           supportsTideMcp: true,
           supportsHooks: true,
           supportsReadableHistory: true,
-          requiresTerminalKeyProtocol: agentId === "claude",
           supportsTurnSteer: agentId === "codex",
         },
         launchPlan: plan,

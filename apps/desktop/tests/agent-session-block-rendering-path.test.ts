@@ -324,13 +324,13 @@ test("reader_output_is_stable_for_same_frame_sequence", () => {
   );
 });
 
-// --- UC-2: Render interactive PTY output ---
+// --- UC-2: Ignore legacy/raw PTY output ---
 
-test("interactive_pty_output_is_transport_not_a_visible_block", () => {
-  // UC-2 BR-1: the hidden PTY is runtime transport, not a visible terminal
-  // renderer. A provider TUI (cursor redraws/spinners) is unreadable as text and
-  // must NOT become a visible Agent Session block; the raw frame is retained as
-  // evidence and visible content comes from provider history / structured blocks.
+test("legacy_pty_output_is_not_a_visible_block", () => {
+  // UC-2 BR-1: legacy provider TUI captures (cursor redraws/spinners) are
+  // unreadable as text and must NOT become visible Agent Session blocks; the raw
+  // frame is retained as evidence and visible content comes from provider history
+  // / structured blocks.
   const reader = createFixtureAgentSessionReader();
   const result = reader.read({
     thread,

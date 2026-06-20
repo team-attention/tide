@@ -1764,7 +1764,7 @@ test("claude_model_menu_lists_fable_5", () => {
   assert.match(renderShell(claudeModelMenu), /Fable 5/);
 });
 
-test("openai_api_readiness_mentions_provider_account_not_hidden_pty", () => {
+test("openai_api_readiness_mentions_provider_account_setup", () => {
   const openAiState = selectComposerAgent(createAgentChatShellState(), "openai_api").state;
   const blocked = applyAgentChatBackendEvent(openAiState, {
     kind: "providerReadiness.changed",
@@ -1788,7 +1788,7 @@ test("openai_api_readiness_mentions_provider_account_not_hidden_pty", () => {
   assert.match(html, /Provider Account required/);
   assert.match(html, /Open Provider Account setup/);
   assert.match(html, /preserve draft/);
-  assert.doesNotMatch(html, /hidden PTY/i);
+  assert.doesNotMatch(html, /PTY/i);
   assert.doesNotMatch(html, /Directory Trust/);
   assert.doesNotMatch(html, /provider CLI hooks/i);
 });

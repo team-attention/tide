@@ -38,7 +38,6 @@ class PtyWorkbenchTerminalPort implements WorkbenchTerminalPort {
           LANG: process.env.LANG ?? process.env.LC_ALL ?? "en_US.UTF-8",
         },
         cwd: input.cwd,
-        expectedSignalSources: [],
       },
       emulateTerminalQueries: false,
       onOutput: input.onOutput,

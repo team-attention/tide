@@ -1,7 +1,7 @@
 // Spec: docs_v2/specs/scratch-execution-context.md — codex launches against an
 // overlaid CODEX_HOME whose config.toml is a bootstrap-time snapshot of the real
 // trust. Granting trust must reach BOTH configs, or the running codex still prompts
-// for directory trust in the hidden PTY and the turn hangs.
+// for directory trust from the config it actually reads.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";

@@ -1,4 +1,9 @@
 import type { AgentChatAgentBinding, AgentChatAgentId, AgentChatAgentRuntimeSource } from "./types.ts";
+import {
+  AGENT_DESCRIPTORS,
+  agentDescriptor,
+  type AgentPermissionConfig,
+} from "../../../../../shared/contracts/agent-descriptors.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
 // Codex models, read from the installed codex binary (matches the Codex app
@@ -17,107 +22,29 @@ export function codexModelLabel(model: string): string {
 }
 
 export function formatAgentLabel(agentId: string): string {
-  switch (agentId) {
-    case "codex":
-      return "Codex CLI";
-    case "claude":
-      return "Claude Code";
-    case "gemini":
-      return "Gemini CLI";
-    case "opencode":
-      return "opencode";
-    case "openai_api":
-      return "OpenAI API";
-    default:
-      return agentId;
-  }
+  return agentDescriptor(agentId)?.displayName ?? agentId;
 }
 
-// Permission/approval modes, presented to match each provider's own app rather
-// than exposing raw CLI flags: Codex mirrors the Codex app's 3 approval modes,
-// Claude mirrors the Claude app's mode list, gemini/opencode use the same friendly
-// shape. `value` is what flows to the Agent Integration (which maps it to the
-// provider's real flags); `label`/`detail` are the human presentation.
-// Permission presentation is the desktop layer's own vocabulary (this domain is
-// deliberately isolated from shared/contracts). Each agent's config carries a
-// `legacyValueMap`: raw permission values from threads created before the friendly
-// modes, mapped to the closest current mode — DATA, not the per-agent `=== "codex"`
-// branches this replaced.
-interface PermissionOption {
-  id: string;
-  value: string;
-  label: string;
-  detail: string;
-  danger?: boolean;
-}
+// Permission/approval modes are shared descriptor data. The desktop state layer
+// consumes that table instead of keeping a second hand-maintained copy.
+type PermissionConfig = AgentPermissionConfig;
 
-interface PermissionConfig {
-  default: string;
-  options: PermissionOption[];
-  legacyValueMap?: Record<string, string>;
-}
+export const PERMISSION_OPTIONS: Record<string, PermissionConfig> = Object.fromEntries(
+  Object.values(AGENT_DESCRIPTORS).map((descriptor) => [
+    descriptor.id,
+    clonePermissionConfig(descriptor.permission),
+  ]),
+) as Record<string, PermissionConfig>;
 
-export const PERMISSION_OPTIONS: Record<string, PermissionConfig> = {
-  codex: {
-    default: "approve-for-me",
-    options: [
-      { id: "codex-ask", value: "ask-for-approval", label: "Ask for approval", detail: "Edits & internet need approval" },
-      { id: "codex-auto", value: "approve-for-me", label: "Approve for me", detail: "Only unsafe actions ask" },
-      { id: "codex-full", value: "full-access", label: "Full access", detail: "Unrestricted files & internet", danger: true },
-    ],
-    legacyValueMap: {
-      "read-only": "ask-for-approval",
-      untrusted: "ask-for-approval",
-      "on-request": "ask-for-approval",
-      "workspace-write": "approve-for-me",
-      "on-failure": "approve-for-me",
-      "danger-full-access": "full-access",
-      never: "full-access",
-      "dangerously-bypass-approvals-and-sandbox": "full-access",
-    },
-  },
-  claude: {
-    default: "default",
-    options: [
-      { id: "claude-ask", value: "default", label: "Ask permissions", detail: "Approve edits & tools" },
-      { id: "claude-accept", value: "acceptEdits", label: "Accept edits", detail: "Auto-approve file edits" },
-      { id: "claude-plan", value: "plan", label: "Plan mode", detail: "Plan without editing" },
-      { id: "claude-auto", value: "auto", label: "Auto mode", detail: "Run autonomously" },
-      { id: "claude-bypass", value: "bypassPermissions", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
-    ],
-    legacyValueMap: { dontAsk: "acceptEdits" },
-  },
-  gemini: {
-    default: "default",
-    options: [
-      { id: "gemini-ask", value: "default", label: "Ask permissions", detail: "Approve tools manually" },
-      { id: "gemini-edit", value: "auto_edit", label: "Auto edits", detail: "Auto-approve edits only" },
-      { id: "gemini-plan", value: "plan", label: "Plan mode", detail: "Read-only planning" },
-      { id: "gemini-yolo", value: "yolo", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
-    ],
-  },
-  // opencode's ACP session exposes exactly two modes (`session/new` configOptions
-  // category "mode": build | plan) — NOT the four gemini-style modes. Build runs
-  // tools per opencode's own permission config; Plan is read-only. The Agent
-  // Integration maps these to the ACP `modeId`.
-  opencode: {
-    default: "build",
-    options: [
-      { id: "opencode-build", value: "build", label: "Build", detail: "Runs tools per opencode config" },
-      { id: "opencode-plan", value: "plan", label: "Plan", detail: "Read-only, no edits" },
-    ],
-    // Threads created while opencode borrowed gemini's modes map onto build/plan.
-    legacyValueMap: { default: "build", auto_edit: "build", yolo: "build" },
-  },
-  openai_api: {
-    default: "Auto-review",
-    options: [
-      { id: "tide-auto-review", value: "Auto-review", label: "Auto-review", detail: "Tide tool policy" },
-      { id: "tide-ask-first", value: "Ask before tools", label: "Ask before tools", detail: "Tide tool policy" },
-      { id: "tide-read-only", value: "Read-only", label: "Read-only", detail: "Tide workspace policy" },
-    ],
-  },
-};
+function clonePermissionConfig(config: AgentPermissionConfig): PermissionConfig {
+  return {
+    default: config.default,
+    options: config.options.map((option) => ({ ...option })),
+    ...(config.legacyValueMap !== undefined
+      ? { legacyValueMap: { ...config.legacyValueMap } }
+      : {}),
+  };
+}
 
 export function permissionConfigForAgent(agentId: string): PermissionConfig {
   return PERMISSION_OPTIONS[agentId] ?? PERMISSION_OPTIONS.codex;

@@ -95,13 +95,7 @@ test("claude_ready_preflight_returns_structured_stream_json_plan", async () => {
   assert.ok(joined.includes("--allow-dangerously-skip-permissions"));
   assert.ok(joined.includes(`--mcp-config /tmp/tide-claude-mcp.json`));
   assert.ok(joined.includes(`--settings /tmp/tide-claude-settings.json`));
-  // No TUI: no startup delays, no submit-key, no PTY env.
-  assert.equal(result.launchPlan?.inputTiming, undefined);
-  assert.equal(result.launchPlan?.submitKeySequence, undefined);
-  assert.deepEqual(
-    result.launchPlan?.expectedSignalSources.map((source) => source.kind),
-    ["pty_transcript", "provider_hook", "provider_history", "tide_mcp"],
-  );
+  // No TUI: no startup delays, no terminal key protocol.
 });
 
 test("claude_launch_plan_applies_provider_native_model_and_permission_mode", async () => {
@@ -196,9 +190,10 @@ test("claude_start_plan_mints_session_id_and_keeps_initial_prompt_off_argv", asy
   assert.equal(plan.providerSessionRef?.value, plan.args[sessionFlag + 1]);
 });
 
-// Claude's shell-command permission is an interactive boxed menu in the hidden PTY
-// (its Notification hook only signals "needs input" without the choices), so the
-// claude integration scrapes that frame — captured live from Claude Code.
+// Legacy Claude shell-command permission fixture: the old PTY/TUI path exposed an
+// interactive boxed menu while its Notification hook only signaled "needs input".
+// Kept as parser regression coverage for historical frames captured live from
+// Claude Code.
 const CLAUDE_TUI_APPROVAL_FRAME = [
   "\x1b[2J\x1b[H",
   "Bash command",

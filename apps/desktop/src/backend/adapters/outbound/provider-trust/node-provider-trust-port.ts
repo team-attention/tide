@@ -11,8 +11,7 @@ import type { ProviderTrustPort } from "../../../application/ports/outbound/prov
 // codexOverlayHome is Tide's overlaid CODEX_HOME (the one codex actually launches
 // against). Its config.toml is a bootstrap-time SNAPSHOT of the real config's trust,
 // so a trust written only to the real ~/.codex/config.toml is invisible to the running
-// codex — it would still prompt for directory trust in the hidden PTY (and then its MCP
-// surface never connects, hanging the turn). So codex trust is written to BOTH the real
+// codex. So codex trust is written to BOTH the real
 // config (readiness reads it; persists for the next bootstrap) and the overlay config
 // (the running session reads it). See docs_v2/specs/scratch-execution-context.md.
 export function createNodeProviderTrustPort(
@@ -25,8 +24,8 @@ export function createNodeProviderTrustPort(
       // A provider's trust check is a case/symlink-SENSITIVE string match against
       // the cwd its process resolves via getcwd() — the canonical on-disk path.
       // Tide may hold a different spelling (macOS /var -> /private/var, case-
-      // insensitive FS casing), so trust BOTH spellings or the hidden PTY blocks
-      // on a trust dialog nobody can see. realpathSync.native returns the true
+      // insensitive FS casing), so trust BOTH spellings or the provider can still
+      // block on a trust dialog/setup gate. realpathSync.native returns the true
       // kernel path (plain realpathSync does not fix casing on macOS).
       for (const cwd of cwdSpellings(input.cwd)) {
         switch (input.agentId) {
@@ -69,7 +68,7 @@ function trustCodex(home: string, cwd: string, overlayHome?: string): void {
   // Real config: readiness reads it, and it persists across bootstraps.
   writeCodexTrust(join(home, ".codex", "config.toml"), cwd);
   // Overlay config (CODEX_HOME the running codex uses): without this the live session
-  // doesn't see the trust and prompts for it in the hidden PTY.
+  // doesn't see the trust.
   if (overlayHome !== undefined) {
     writeCodexTrust(join(overlayHome, "config.toml"), cwd);
   }

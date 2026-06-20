@@ -10,7 +10,6 @@ import type {
   AgentStartPlanInput,
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
-  ProviderSignalSource,
   SessionConfigUpdateInput,
   SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
@@ -54,36 +53,14 @@ export interface CreateClaudeAgentIntegrationInput {
 }
 
 const claudeCapabilities: AgentIntegrationCapabilities = {
-  supportsHiddenPty: true,
   supportsResume: true,
   supportsTideMcp: true,
   supportsHooks: true,
   supportsReadableHistory: true,
-  requiresTerminalKeyProtocol: true,
   // The stream-json control protocol has no mid-turn input injection — a
   // second user message during a turn queues until the turn ends.
   supportsTurnSteer: false,
 };
-
-const expectedSignalSources: ProviderSignalSource[] = [
-  {
-    kind: "pty_transcript",
-    description: "Captured hidden PTY input and output.",
-  },
-  {
-    kind: "provider_hook",
-    description:
-      "Claude UserPromptSubmit, PermissionRequest, PreToolUse, Elicitation, Notification, and Stop hooks.",
-  },
-  {
-    kind: "provider_history",
-    description: "Claude transcript JSONL under provider-owned project history.",
-  },
-  {
-    kind: "tide_mcp",
-    description: "Tide MCP Tool Surface attached to the same Claude session.",
-  },
-];
 
 export function createClaudeAgentIntegration(
   input: CreateClaudeAgentIntegrationInput,
@@ -267,7 +244,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     sessionId?: string;
   }): ProviderLaunchPlan {
     // STRUCTURED TRANSPORT: the stream-json control protocol over plain stdio —
-    // no hidden PTY, no TUI. Evidence-based (live transcripts, claude 2.1.170;
+    // no PTY, no TUI. Evidence-based (live transcripts, claude 2.1.170;
     // the official Agent SDK passes exactly these flags):
     // - --permission-prompt-tool stdio is REQUIRED for can_use_tool permission
     //   requests to arrive; without it tools are silently auto-blocked.
@@ -324,9 +301,6 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       env: {},
       cwd: input.cwd,
       transport: "claude_stream_json",
-      expectedSignalSources: expectedSignalSources.map((source) => ({
-        ...source,
-      })),
       ...(input.sessionId !== undefined
         ? {
             providerSessionRef: {

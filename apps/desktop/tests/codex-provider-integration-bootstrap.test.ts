@@ -119,13 +119,7 @@ test("codex_ready_preflight_returns_app_server_plan_with_tide_mcp_config", async
     ),
   );
   // No TUI machinery on a structured plan.
-  assert.equal(result.launchPlan?.inputTiming, undefined);
-  assert.equal(result.launchPlan?.autoRespondPrompts, undefined);
   assert.equal(result.launchPlan?.args.includes("--dangerously-bypass-hook-trust"), false);
-  assert.deepEqual(
-    result.launchPlan?.expectedSignalSources.map((source) => source.kind),
-    ["pty_transcript", "provider_hook", "provider_history", "tide_mcp"],
-  );
 });
 
 test("codex_launch_plan_applies_model_sandbox_and_approval_via_protocol_params", async () => {

@@ -5,6 +5,10 @@ import {
   executeBrowserWebViewAction,
   isWebViewSettled,
   readBrowserWebViewSnapshot,
+  safeBrowserWebViewCommand,
+  safeBrowserWebViewGetUrl,
+  safeBrowserWebViewLoadUrl,
+  safeExecuteJavaScript,
   type BrowserWebViewElement,
 } from "./browser-webview-actions.ts";
 import { BrowserAgentOverlay } from "./browser-agent-overlay.tsx";
@@ -12,18 +16,6 @@ import { createElement, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import { ArrowLeft, ArrowRight, CornerDownRight, Crosshair, ExternalLink, FileText, RotateCw } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
-
-// `<webview>.executeJavaScript` throws *synchronously* if called before the
-// guest has emitted `dom-ready`. Wrap it so an early call (e.g. from an effect
-// that runs on mount) can never throw out and unmount the whole React tree.
-function safeWebviewExec(webview: BrowserWebViewElement, code: string): Promise<unknown> {
-  try {
-    const result = webview.executeJavaScript?.(code);
-    return result instanceof Promise ? result.catch(() => undefined) : Promise.resolve(undefined);
-  } catch {
-    return Promise.resolve(undefined);
-  }
-}
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -91,13 +83,13 @@ export function WorkbenchBrowserPane(props: {
     }
     if (!pickMode) {
       setPickCount(0);
-      void safeWebviewExec(webview, "window.__tideCancelPick && window.__tideCancelPick()");
+      void safeExecuteJavaScript(webview, "window.__tideCancelPick && window.__tideCancelPick()");
       return undefined;
     }
-    void safeWebviewExec(webview, BROWSER_ELEMENT_PICKER_SCRIPT);
+    void safeExecuteJavaScript(webview, BROWSER_ELEMENT_PICKER_SCRIPT);
     let cancelled = false;
     const poll = window.setInterval(() => {
-      void safeWebviewExec(webview, "(window.__tidePicks ? window.__tidePicks.length : 0)").then((count) => {
+      void safeExecuteJavaScript(webview, "(window.__tidePicks ? window.__tidePicks.length : 0)").then((count) => {
         if (!cancelled && typeof count === "number") {
           setPickCount(count);
         }
@@ -106,7 +98,7 @@ export function WorkbenchBrowserPane(props: {
     return () => {
       cancelled = true;
       window.clearInterval(poll);
-      void safeWebviewExec(webview, "window.__tideCancelPick && window.__tideCancelPick()");
+      void safeExecuteJavaScript(webview, "window.__tideCancelPick && window.__tideCancelPick()");
     };
   }, [pickMode, props.pane.paneId]);
   const confirmElementPicks = () => {
@@ -114,7 +106,7 @@ export function WorkbenchBrowserPane(props: {
     if (webview === null) {
       return;
     }
-    void safeWebviewExec(webview, "JSON.stringify(window.__tidePicks || [])").then((raw) => {
+    void safeExecuteJavaScript(webview, "JSON.stringify(window.__tidePicks || [])").then((raw) => {
       let picks: { text?: string; tag?: string }[] = [];
       try {
         picks = typeof raw === "string" ? (JSON.parse(raw) as { text?: string; tag?: string }[]) : [];
@@ -149,7 +141,7 @@ export function WorkbenchBrowserPane(props: {
     const script =
       "(() => { const s = window.getSelection && window.getSelection(); const t = s ? s.toString() : ''; if (!t.trim()) return { text: '' }; const r = s.rangeCount ? s.getRangeAt(0).getBoundingClientRect() : null; return { text: t, left: r ? r.left : 0, top: r ? r.top : 0 }; })()";
     const tick = () => {
-      void safeWebviewExec(webview, script)
+      void safeExecuteJavaScript(webview, script)
         .then((result) => {
           if (cancelled) {
             return;
@@ -222,21 +214,34 @@ export function WorkbenchBrowserPane(props: {
     if (target === requestedUrlRef.current) {
       return; // already handled (initial src, or a prior navigation/echo)
     }
-    let current = "";
-    try {
-      current = typeof webview.getURL === "function" ? webview.getURL() : "";
-    } catch {
+    const current = safeBrowserWebViewGetUrl(webview);
+    if (current === undefined) {
       return; // not dom-ready yet — the initial src load is in flight
     }
     requestedUrlRef.current = target;
     if (target === current) {
       return; // snapshot echo: the webview is already here
     }
-    void webview.loadURL(target).catch(() => undefined);
+    safeBrowserWebViewLoadUrl(webview, target);
   }, [props.pane.url, props.pane.paneId]);
-  const goBack = () => webviewRef.current?.goBack?.();
-  const goForward = () => webviewRef.current?.goForward?.();
-  const reload = () => webviewRef.current?.reload?.();
+  const goBack = () => {
+    const webview = webviewRef.current;
+    if (webview !== null) {
+      safeBrowserWebViewCommand(webview, "goBack");
+    }
+  };
+  const goForward = () => {
+    const webview = webviewRef.current;
+    if (webview !== null) {
+      safeBrowserWebViewCommand(webview, "goForward");
+    }
+  };
+  const reload = () => {
+    const webview = webviewRef.current;
+    if (webview !== null) {
+      safeBrowserWebViewCommand(webview, "reload");
+    }
+  };
   const navigate = () => {
     const url = normalizeBrowserUrl(address);
     if (url.length === 0) {
@@ -244,8 +249,8 @@ export function WorkbenchBrowserPane(props: {
     }
     setAddress(url);
     const webview = webviewRef.current;
-    if (webview?.loadURL !== undefined) {
-      void webview.loadURL(url).catch(() => undefined);
+    if (webview !== null) {
+      safeBrowserWebViewLoadUrl(webview, url);
     }
     // Report the navigation so the backend pane reflects it; did-finish-load
     // will follow up with the resolved title/body snapshot.

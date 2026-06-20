@@ -6,7 +6,6 @@ import type {
   AgentResumePlanInput,
   AgentStartPlanInput,
   ProviderLaunchPlan,
-  ProviderSignalSource,
   SessionConfigUpdateInput,
   SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
@@ -49,20 +48,13 @@ export interface CreateOpencodeAgentIntegrationInput {
 }
 
 const opencodeCapabilities: AgentIntegrationCapabilities = {
-  supportsHiddenPty: false,
   supportsResume: true,
   supportsTideMcp: true,
   supportsHooks: false,
   supportsReadableHistory: true,
-  requiresTerminalKeyProtocol: false,
   // ACP has session/cancel but no mid-turn input injection — follow-up queues.
   supportsTurnSteer: false,
 };
-
-const expectedSignalSources: ProviderSignalSource[] = [
-  { kind: "provider_history", description: "opencode ACP session updates over stdio." },
-  { kind: "tide_mcp", description: "Tide MCP Tool Surface attached via ACP session/new." },
-];
 
 export function createOpencodeAgentIntegration(
   input: CreateOpencodeAgentIntegrationInput,
@@ -200,7 +192,6 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
             }
           : {}),
       },
-      expectedSignalSources: expectedSignalSources.map((source) => ({ ...source })),
     };
   }
 }

@@ -377,8 +377,8 @@ export function createLiveBackendContractMessageAdapter(
       // check (claude ~/.claude.json, codex config.toml) is a case-SENSITIVE string
       // match against the cwd it resolves via getcwd() — i.e. the stored casing. If we
       // trust the "Tide" string but the kernel resolves the launch cwd to the stored
-      // "tide", claude shows its directory-trust dialog and the hidden-PTY turn hangs
-      // forever. Node's JS realpathSync does NOT correct case on macOS; realpathSync.native
+      // "tide", the provider can still hit its directory-trust gate. Node's JS realpathSync
+      // does NOT correct case on macOS; realpathSync.native
       // (libc realpath) returns the true on-disk casing, matching the provider's getcwd.
       return realpathSync.native(dir);
     },
