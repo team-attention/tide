@@ -291,6 +291,25 @@ test("renderer_entry_mounts_the_react_app_into_the_root_element", () => {
   assert.match(renderer, /createInitialRendererElement\(\)/);
 });
 
+test("renderer_index_html_paints_static_boot_rail_before_react_bundle", () => {
+  const html = fs.readFileSync(
+    path.join(repoRoot, "src/desktop/infrastructure/electron/renderer/index.html"),
+    "utf8",
+  );
+
+  assert.match(html, /class="tide-boot-shell"/);
+  assert.match(html, /class="tide-boot-rail"/);
+  assert.match(html, /class="tide-boot-sections"/);
+  assert.match(html, /@keyframes tide-boot-shimmer/);
+  assert.match(html, /setAttribute\("data-platform", isMac \? "mac" : "other"\)/);
+  assert.match(html, /\.tide-boot-traffic\s*{\s*display: none;/);
+  assert.match(html, /\[data-platform="mac"\] \.tide-boot-traffic\s*{\s*display: inline-flex;/);
+  assert.ok(
+    html.indexOf("tide-boot-shell") < html.indexOf("renderer-entry.tsx"),
+    "static boot rail must be parsed before the React renderer bundle starts loading",
+  );
+});
+
 test("npm_run_typecheck_runs_scaffold_check", () => {
   const result = runNpmScript("typecheck");
 
