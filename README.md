@@ -1,6 +1,6 @@
 # Tide
 
-### Open-source Codex app alternative.
+### Open-source Codex app alternative for working with agents, not just chatting with them.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 ![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)
@@ -8,6 +8,10 @@
 [![Stars](https://img.shields.io/github/stars/team-attention/tide?style=social)](https://github.com/team-attention/tide/stargazers)
 
 **[Download for macOS](https://github.com/team-attention/tide/releases/latest)** · **[Watch the demo](https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad)**
+
+<img src="assets/tide.png" alt="Tide app screenshot" width="100%">
+
+<img src="assets/tide-terminal.png" alt="Tide Terminal screenshot" width="100%">
 
 ---
 
@@ -17,18 +21,28 @@ AI agents changed how we build software, but the interface somehow moved
 backward.
 
 We're watching logs scroll, juggling chats, terminals, diffs, browsers, and
-files, trying to coordinate work that should be happening in one place.
+files, trying to coordinate work that should already be happening in one
+place.
 
-Tide is a free, open-source Codex app alternative.
+Tide is a free, open-source workbench for agent-led software work. It keeps
+the conversation, commands, code, diffs, browser previews, and shared context
+inside one task surface, so you and your agent can work from the same state.
 
 **Don't just chat with AI.**
 
 **Work with agents on a shared workbench.**
 
-It supports **Codex, Claude Code, Gemini, and opencode**.
+It supports **Codex, Claude Code, Gemini and opencode** through
+the CLIs you already run locally.
 
-Well, there's [Tide Terminal](apps/terminal/) if you insist: a lighter
-terminal-first workspace with splits, file tree, and agent context built in.
+There are two ways to use the same idea:
+
+- **[Tide](apps/desktop/)**: the chat-first Codex app alternative. Agent Chat
+  stays central, and the Workbench opens when a Thread needs browser, diff,
+  editor, terminal, file, or context-artifact surfaces.
+- **[Tide Terminal](apps/terminal/)**: the terminal-first native macOS
+  workspace. The Terminal stays the live source of truth, with shared panes and
+  agent context around it.
 
 Download Tide. Star the repo.
 
