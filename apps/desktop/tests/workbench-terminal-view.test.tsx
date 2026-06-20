@@ -51,7 +51,7 @@ const { TideProductShell } = await import(
   "../src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.tsx"
 );
 
-function terminalState() {
+function terminalState(terminalRole: "session" | "command_result" = "session") {
   return applyProductShellBackendEvent(
     openProductShellThread(createProductShellState(), "thread-workbench"),
     {
@@ -66,6 +66,7 @@ function terminalState() {
             title: "zsh",
             revision: "pane-term:rev",
             updatedAt: "2026-05-31T00:00:00.000Z",
+            terminalRole,
             status: "running",
             command: "/bin/zsh",
             cwd: "/repo/tide",
@@ -90,6 +91,23 @@ test("workbench_terminal_pane_mounts_an_xterm_terminal", async () => {
     assert.ok(host, "terminal host element should render");
     // xterm initialized inside the host (the .xterm element is created by term.open()).
     assert.ok(host.querySelector(".xterm"), "xterm should mount inside the terminal host");
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("workbench_terminal_pane_marks_command_result_terminals_as_read_only_role", async () => {
+  const root = createRoot(dom.window.document.getElementById("root"));
+  await act(async () => {
+    root.render(<TideProductShell initialState={terminalState("command_result")} />);
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  try {
+    const shell = dom.window.document.querySelector(".workbench-terminal");
+    assert.equal(shell?.getAttribute("data-terminal-role"), "command_result");
   } finally {
     await act(async () => {
       root.unmount();

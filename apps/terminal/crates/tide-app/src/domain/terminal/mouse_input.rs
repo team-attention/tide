@@ -56,7 +56,12 @@ impl Terminal {
     }
 
     /// Convert buttonless pointer motion into bytes for any-motion reporting.
-    pub fn mouse_move_to_bytes(&self, modifiers: &Modifiers, col: u16, row: u16) -> Option<Vec<u8>> {
+    pub fn mouse_move_to_bytes(
+        &self,
+        modifiers: &Modifiers,
+        col: u16,
+        row: u16,
+    ) -> Option<Vec<u8>> {
         self.mouse_report_to_bytes(MouseReportKind::Move, None, modifiers, col, row)
     }
 

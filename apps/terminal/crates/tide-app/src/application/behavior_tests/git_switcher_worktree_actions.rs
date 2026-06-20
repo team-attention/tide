@@ -249,7 +249,9 @@ fn deleting_git_switcher_worktree_uses_the_main_worktree_as_git_root() {
     );
 
     // UC-2 BR-2: the dispatched Remove job resolves the main worktree as its root.
-    let job = job_rx.try_recv().expect("delete should dispatch a worktree job");
+    let job = job_rx
+        .try_recv()
+        .expect("delete should dispatch a worktree job");
     match job {
         crate::state::background::WorktreeJob::Remove {
             main_cwd,
@@ -266,11 +268,10 @@ fn deleting_git_switcher_worktree_uses_the_main_worktree_as_git_root() {
     }
 
     // The row is removed optimistically so the click stays instant.
-    assert!(app
-        .modal
-        .git_switcher
-        .as_ref()
-        .map_or(true, |gs| gs.worktrees.iter().all(|w| w.path != delete_worktree)));
+    assert!(app.modal.git_switcher.as_ref().map_or(true, |gs| gs
+        .worktrees
+        .iter()
+        .all(|w| w.path != delete_worktree)));
     assert_eq!(
         list_worktree_calls.load(Ordering::Relaxed),
         baseline_list_calls,
@@ -307,7 +308,9 @@ fn git_switcher_open_reads_worktrees_from_poller_cache_without_spawning_git() {
     }];
 
     let (mut app, list_calls) = recording_git_app(vec![]);
-    app.bg.cached_repo_roots.insert(cwd.clone(), Some(root.clone()));
+    app.bg
+        .cached_repo_roots
+        .insert(cwd.clone(), Some(root.clone()));
     app.bg.cached_worktrees.insert(root.clone(), cached.clone());
 
     let result = app.git_worktrees_for_switcher(&cwd);
@@ -361,7 +364,9 @@ fn dispatch_worktree_add_sends_job_without_blocking() {
         follow_up: WorktreeFollowUp::CdTerminalIfIdle { pane_id: 7 },
     });
 
-    let job = job_rx.try_recv().expect("add should dispatch a worktree job");
+    let job = job_rx
+        .try_recv()
+        .expect("add should dispatch a worktree job");
     match job {
         WorktreeJob::Add {
             branch,

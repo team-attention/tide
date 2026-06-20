@@ -4,7 +4,7 @@
 //
 // When a full-screen TUI takes the Alternate Screen (zero scrollback) or enables
 // mouse reporting, the wheel must be forwarded to the PTY as input instead of
-// scrolling the local scrollback. This mirrors xterm/Ghostty/iTerm behavior.
+// scrolling the local scrollback.
 
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::TermMode;

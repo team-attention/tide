@@ -140,7 +140,7 @@ button.file-tree-row:hover {
   color: var(--tide-action);
 }
 
-/* FileTree header toolbar (New File / New Folder / Refresh) — compact icon buttons
+/* FileTree header toolbar (New File / New Folder) — compact icon buttons
    in the column's top-row trailing area. Spec: workbench-filetree-file-operations. */
 .file-tree-toolbar {
   display: flex;

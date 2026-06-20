@@ -28,6 +28,13 @@ If the saved preference is light mode, the first `Terminal Pane` must use the
 light terminal palette from the first frame, including when Tide installs a
 pre-spawned `Terminal`.
 
+Agent resume is an explicit policy, not an implicit process restore. Tide
+restores Workspace layout, Terminal cwd, Terminal Context Surface state, and
+side-surface preferences, but it never automatically restarts provider child
+processes, restores terminal scrollback, or resumes provider conversations.
+`tide_observe_workspace` exposes this provider-by-provider in
+`task_monitor.agent_resume_policy`.
+
 ### Approach
 
 1. Preserve the existing `Session` serialization contract.
@@ -40,6 +47,8 @@ pre-spawned `Terminal`.
    full `restore_from_session` behavior for crash recovery.
 6. When restoring preferences, apply the restored theme to any pre-spawned
    `Terminal` before installing it as the first `Terminal Pane`.
+7. Expose a provider-specific `Agent Resume Policy` through the MCP task monitor
+   so wrapped agents do not infer live process recovery from restored layout.
 
 ## Bounded Contexts
 
@@ -101,6 +110,26 @@ pre-spawned `Terminal`.
   - BR-10: Ordinary launch must use default `WindowConfig` size instead of `Session.window_width` / `Session.window_height`
   - BR-11: The boot sequence seeds the Workspace rail once at startup; creating the initial `Terminal Pane` must not push a duplicate `Workspace`, so a fresh non-crash launch ends with exactly one `Workspace`
 
+### UC-4: DefineWrappedAgentResumePolicy
+
+- **Actor**: Wrapped Agent
+- **Trigger**: Agent observes a Workspace after launch or crash recovery
+- **Precondition**: Tide may have restored Workspace layout or preferences
+- **Flow**:
+  1. Agent calls `tide_observe_workspace`
+  2. Tide reports `task_monitor.agent_resume_policy`
+  3. Agent sees provider rows for `claude`, `codex`, `gemini`, `agy`, and
+     `opencode`
+  4. Each provider row says Tide does not automatically resume provider child
+     processes or provider conversations
+- **Postcondition**: The agent treats restored layout/cwd as context, not proof
+  that a provider session is alive
+- **Business Rules**:
+  - BR-12: `task_monitor.agent_resume_policy` must list every checked-in Wrapped Agent provider
+  - BR-13: Tide must report `automatic_agent_process_resume=false`
+  - BR-14: Tide must report `provider_resume_invoked_by_tide=false`
+  - BR-15: Tide must report live child processes, terminal scrollback, and provider conversations as outside the restore scope
+
 ## Tests
 
 | UC | BR | Test |
@@ -115,6 +144,8 @@ pre-spawned `Terminal`.
 | UC-3 | BR-9 | `restore_preferences_applies_light_mode_to_prespawned_terminal` |
 | UC-3 | BR-10 | `launch_window_config_uses_default_size_despite_saved_session_dimensions` |
 | UC-3 | BR-11 | `boot_seed_then_initial_pane_yields_exactly_one_workspace` |
+| UC-4 | BR-12/BR-13/BR-14/BR-15 | `observing_workspace_reports_provider_neutral_surfaces_and_panes` |
+| UC-4 | BR-12/BR-13/BR-14/BR-15 | `workspace_task_monitor` compatibility fixture |
 
 ## Location
 

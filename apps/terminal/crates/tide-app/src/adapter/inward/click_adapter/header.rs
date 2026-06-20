@@ -403,8 +403,7 @@ pub(crate) fn handle_git_switcher_button(
                     // Run remove + branch-delete off the app thread; remove the
                     // row optimistically so the click stays instant and a second
                     // click can't re-target the same (now-gone) row.
-                    let delete_branch =
-                        branch_name.filter(|b| b != "main" && b != "master");
+                    let delete_branch = branch_name.filter(|b| b != "main" && b != "master");
                     ctx.dispatch_worktree_remove(main_cwd, wt_path.clone(), delete_branch, true);
                 }
             }

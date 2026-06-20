@@ -196,7 +196,11 @@ impl WrapMap {
         let byte_col = byte_col.min(line.len());
         let char_idx = line[..byte_col].chars().count();
         if self.wrap_width == 0 {
-            return line.chars().take(char_idx).map(|c| c.width().unwrap_or(1)).sum();
+            return line
+                .chars()
+                .take(char_idx)
+                .map(|c| c.width().unwrap_or(1))
+                .sum();
         }
         // Display width from the start of the containing wrapped row to the
         // cursor — NOT `display_col % wrap_width`, which drifts once an early

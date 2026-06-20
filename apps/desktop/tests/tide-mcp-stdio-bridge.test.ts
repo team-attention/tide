@@ -208,6 +208,50 @@ test("tide_mcp_stdio_socket_round_trip_lets_an_agent_observe_the_thread", async 
   assert.equal(call?.result.structuredContent.threadId, "thread-mcp");
 });
 
+test("tide_mcp_stdio_socket_round_trip_times_out_a_stalled_backend_handler", async () => {
+  const socketPath = path.join(mkdtempSync(path.join(tmpdir(), "tide-mcp-stall-")), "mcp.sock");
+  const server = createTideMcpSocketServer({
+    socketPath,
+    adapter: {
+      listTools: () => [],
+      callTool: async () => new Promise(() => {}),
+    },
+  });
+  await server.listen();
+
+  const responses: string[] = [];
+  try {
+    await runTideMcpSocketBackedLineDelimitedStdio({
+      socketPath,
+      requestTimeoutMs: 20,
+      env: {
+        TIDE_RUNTIME_ID: "runtime-mcp",
+        TIDE_AGENT_ID: "codex",
+        TIDE_THREAD_ID: "thread-mcp",
+      },
+      input: [
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: "stall",
+          method: "tools/call",
+          params: { name: "tide_observe_thread", arguments: {} },
+        }),
+      ],
+      writeLine: (line) => {
+        responses.push(line);
+      },
+    });
+  } finally {
+    await server.close();
+  }
+
+  assert.equal(responses.length, 1);
+  const failed = JSON.parse(responses[0]);
+  assert.equal(failed.id, "stall");
+  assert.equal(failed.error.code, -32603);
+  assert.match(failed.error.message, /Timed out waiting for Tide MCP socket response/);
+});
+
 test("tide_mcp_stdio_socket_round_trip_lets_an_agent_operate_the_workbench", async () => {
   // End-to-end: the agent opens a Browser Pane through MCP and a follow-up
   // observation reflects the mutation, proving operate (not just observe).

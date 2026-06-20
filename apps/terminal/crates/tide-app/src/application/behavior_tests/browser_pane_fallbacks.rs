@@ -103,6 +103,11 @@ fn external_handoff_prefers_committed_browser_url_when_browser_is_not_editing() 
     };
     assert!(bp.loading);
     assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    let handoff = bp
+        .last_external_handoff()
+        .expect("manual external open should leave an explicit handoff record");
+    assert_eq!(handoff.reason, "user_open_external");
+    assert_eq!(handoff.url.as_deref(), Some("https://example.com/login"));
 }
 
 #[test]
@@ -136,6 +141,14 @@ fn external_handoff_prefers_url_bar_draft_when_browser_is_editing() {
     };
     assert!(bp.url_input_focused);
     assert!(bp.loading);
+    let handoff = bp
+        .last_external_handoff()
+        .expect("manual external open should record the URL draft handoff");
+    assert_eq!(handoff.reason, "user_open_external");
+    assert_eq!(
+        handoff.url.as_deref(),
+        Some("https://example.com/login?continue=workspace")
+    );
 }
 
 #[test]
@@ -209,6 +222,14 @@ fn download_external_handoff_clears_loading_and_updates_committed_browser_url() 
     assert!(!bp.loading);
     assert_eq!(bp.url, "https://example.com/report.pdf");
     assert_eq!(bp.url_input, "https://example.com/report.pdf");
+    let handoff = bp
+        .last_external_handoff()
+        .expect("download fallback should leave an explicit handoff record");
+    assert_eq!(handoff.reason, "download");
+    assert_eq!(
+        handoff.url.as_deref(),
+        Some("https://example.com/report.pdf")
+    );
 }
 
 #[test]
@@ -239,6 +260,11 @@ fn download_external_handoff_preserves_distinct_browser_url_draft() {
     assert!(!bp.loading);
     assert_eq!(bp.url, "https://example.com/download");
     assert_eq!(bp.url_input, "https://example.com/login?continue=workspace");
+    let handoff = bp
+        .last_external_handoff()
+        .expect("download fallback should preserve an explicit handoff record");
+    assert_eq!(handoff.reason, "download");
+    assert_eq!(handoff.url.as_deref(), Some("https://example.com/download"));
 }
 
 #[test]
@@ -276,6 +302,12 @@ fn download_external_handoff_updates_originating_background_browser_pane() {
     assert!(!background.loading);
     assert_eq!(background.url, "https://example.com/report.pdf");
     assert_eq!(background.url_input, "https://example.com/report.pdf");
+    assert_eq!(
+        background
+            .last_external_handoff()
+            .and_then(|handoff| handoff.url.as_deref()),
+        Some("https://example.com/report.pdf")
+    );
 
     let Some(PaneKind::Browser(focused)) = app.panes.get(&focused_id) else {
         panic!("focused browser pane should exist");
@@ -283,4 +315,5 @@ fn download_external_handoff_updates_originating_background_browser_pane() {
     assert!(focused.loading);
     assert_eq!(focused.url, "https://example.com/dashboard");
     assert_eq!(focused.url_input, "https://example.com/dashboard");
+    assert!(focused.last_external_handoff().is_none());
 }

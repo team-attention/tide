@@ -104,7 +104,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       launchOptions: input.launchOptions,
     });
     const setup = codexSetupAction(executablePath, cwd);
-    const hookSetup = codexSetupAction(executablePath, cwd, providerState.codexHome);
+    const hookSetup = codexSetupAction(executablePath, cwd);
     const blockers: AgentIntegrationReadinessBlocker[] = [];
 
     if (!providerState.authenticated) {
@@ -157,7 +157,6 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       launchPlan: this.codexLaunchPlan({
         executablePath,
         cwd,
-        codexHome: providerState.codexHome,
         resumeRef: undefined,
         launchOptions: input.launchOptions,
       }),
@@ -167,16 +166,10 @@ class CodexAgentIntegration implements AgentIntegrationPort {
   async buildStartPlan(input: AgentStartPlanInput): Promise<ProviderLaunchPlan> {
     const executablePath = (await this.resolveExecutable("codex")) ?? "codex";
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
-    const providerState = await this.readProviderState({
-      cwd,
-      executablePath,
-      launchOptions: input.launchOptions,
-    });
 
     return this.codexLaunchPlan({
       executablePath,
       cwd,
-      codexHome: providerState.codexHome,
       resumeRef: undefined,
       launchOptions: input.launchOptions,
       initialPrompt: input.initialPrompt,
@@ -187,16 +180,10 @@ class CodexAgentIntegration implements AgentIntegrationPort {
   async buildResumePlan(input: AgentResumePlanInput): Promise<ProviderLaunchPlan> {
     const executablePath = (await this.resolveExecutable("codex")) ?? "codex";
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
-    const providerState = await this.readProviderState({
-      cwd,
-      executablePath,
-      launchOptions: input.launchOptions,
-    });
 
     return this.codexLaunchPlan({
       executablePath,
       cwd,
-      codexHome: providerState.codexHome,
       resumeRef: input.providerSessionRef.value,
       launchOptions: input.launchOptions,
       runtimeId: input.runtimeId,
@@ -241,7 +228,6 @@ class CodexAgentIntegration implements AgentIntegrationPort {
   private codexLaunchPlan(input: {
     executablePath: string;
     cwd: string;
-    codexHome?: string;
     resumeRef?: string;
     launchOptions?: Record<string, unknown>;
     initialPrompt?: string;
@@ -263,14 +249,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
               TIDE_AGENT_ID: "codex",
             },
           };
-    const env: Record<string, string> = {
-      TERM: "xterm-256color",
-      COLORTERM: "truecolor",
-    };
-    if (input.codexHome !== undefined) {
-      env.CODEX_HOME = input.codexHome;
-    }
-
+    const env: Record<string, string> = {};
     // STRUCTURED TRANSPORT: the app-server protocol over plain stdio — the same
     // protocol the Codex IDE extension speaks. Session parameters (cwd,
     // approvalPolicy, sandbox, model, reasoning effort) ride thread/start via
@@ -308,23 +287,17 @@ class CodexAgentIntegration implements AgentIntegrationPort {
 function codexSetupAction(
   executablePath: string,
   cwd: string,
-  codexHome?: string,
 ): ProviderSetupSurfaceAction {
-  const action: ProviderSetupSurfaceAction = {
+  return {
     command: executablePath,
     args: ["--no-alt-screen"],
     cwd,
     expectedCompletion: "retry_preflight",
   };
-  if (codexHome !== undefined) {
-    action.env = { CODEX_HOME: codexHome };
-  }
-  return action;
 }
 
 function codexConfigArgs(tideMcp: CodexTideMcpConfig | undefined): string[] {
   const config = [
-    'plugins."browser-use@openai-bundled".enabled=false',
     // Stream the model's reasoning summary so Tide can show codex's thinking
     // (without this, reasoning items arrive empty — verified live).
     "model_reasoning_summary=detailed",

@@ -92,12 +92,11 @@ test("gemini_start_plan_defaults_to_prompting_mode_not_yolo", async () => {
   assert.equal(planMode.protocolParams?.modeId, "plan");
 });
 
-test("gemini_launch_env_forces_workspace_trust", async () => {
-  // ACP surfaces no trust prompt and an untrusted cwd SILENTLY skips MCP
-  // servers and locks privileged modes — trust is a Tide product decision,
-  // forced via gemini's supported env override.
+test("gemini_launch_env_includes_tide_bridge_workspace_trust", async () => {
   const plan = await geminiIntegration().buildStartPlan({ agentId: "gemini" });
-  assert.equal(plan.env.GEMINI_CLI_TRUST_WORKSPACE, "true");
+  assert.deepEqual(plan.env, {
+    GEMINI_CLI_TRUST_WORKSPACE: "true",
+  });
 });
 
 // Spec: docs_v2/specs/mid-thread-launch-option-changes.md

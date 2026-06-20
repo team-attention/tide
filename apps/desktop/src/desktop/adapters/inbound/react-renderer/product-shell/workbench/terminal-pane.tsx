@@ -1,9 +1,11 @@
 import * as xtermModule from "@xterm/xterm";
-import { useEffect, useRef, useState } from "react";
+import type { Terminal as XtermTerminalInstance } from "@xterm/xterm";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import { CornerDownRight } from "lucide-react";
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
+import { InPaneFindBar, useInPaneFindState, usePaneFindIntent } from "../../support/in-pane-find.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // `@xterm/xterm` is CommonJS, and its export shape differs across loaders: the
@@ -45,11 +47,54 @@ export function routeProductShellTerminalOutput(paneId: string, chunk: string): 
 function WorkbenchTerminalView(props: {
   paneId: string;
   initialText: string;
-  onInput: (paneId: string, bytes: string) => void;
+  onInput?: (paneId: string, bytes: string) => void;
   onResize?: (paneId: string, cols: number, rows: number) => void;
   onAddSelection?: (text: string) => void;
 }): ReactElement {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const termRef = useRef<XtermTerminalInstance | null>(null);
+  const findOpenRef = useRef(false);
+  const [bufferVersion, setBufferVersion] = useState(0);
+  const find = useInPaneFindState();
+  useEffect(() => {
+    findOpenRef.current = find.open;
+    if (find.open) {
+      setBufferVersion((version) => version + 1);
+    }
+  }, [find.open]);
+  const terminalMatches = useMemo(
+    () => readTerminalMatches(termRef.current, find.query),
+    [find.query, bufferVersion],
+  );
+  const terminalMatchCount = terminalMatches.length;
+  usePaneFindIntent(rootRef, {
+    enabled: true,
+    open: find.open,
+    onOpen: find.openFind,
+    onClose: find.closeFind,
+    onNext: () => find.next(terminalMatchCount),
+    onPrevious: () => find.previous(terminalMatchCount),
+  });
+  useEffect(() => {
+    const term = termRef.current;
+    if (!find.open || find.query.trim().length === 0 || terminalMatches.length === 0 || term === null) {
+      return;
+    }
+    const index = Math.max(0, Math.min(find.activeIndex, terminalMatches.length - 1));
+    if (index !== find.activeIndex) {
+      find.setActiveIndex(index);
+    }
+    const match = terminalMatches[index];
+    const searchable = term as SearchableTerminal;
+    searchable.scrollToLine?.(Math.max(0, match.row - 2));
+    searchable.select?.(match.column, match.row, Math.max(1, match.length));
+  }, [find.open, find.query, find.activeIndex, find.setActiveIndex, terminalMatches]);
+  useEffect(() => {
+    if (!find.open) {
+      (termRef.current as SearchableTerminal | null)?.clearSelection?.();
+    }
+  }, [find.open]);
   // Floating "Add to chat" button that follows the terminal text selection.
   const [selToolbar, setSelToolbar] = useState<{ x: number; y: number } | null>(null);
   useEffect(() => {
@@ -95,12 +140,21 @@ function WorkbenchTerminalView(props: {
         brightWhite: "#ffffff",
       },
     });
+    termRef.current = term;
     term.open(host);
     if (props.initialText.length > 0) {
       term.write(props.initialText);
     }
-    const dataSub = term.onData((data) => props.onInput(props.paneId, data));
-    terminalOutputSinks.set(props.paneId, (chunk) => term.write(chunk));
+    const dataSub =
+      props.onInput === undefined
+        ? undefined
+        : term.onData((data) => props.onInput?.(props.paneId, data));
+    terminalOutputSinks.set(props.paneId, (chunk) => {
+      term.write(chunk);
+      if (findOpenRef.current) {
+        setBufferVersion((version) => version + 1);
+      }
+    });
     const readSelection = () => {
       const withSel = term as unknown as { getSelection?: () => string };
       return typeof withSel.getSelection === "function" ? withSel.getSelection() : "";
@@ -183,13 +237,27 @@ function WorkbenchTerminalView(props: {
       terminalSelectionGetters.delete(props.paneId);
       host.removeEventListener("mouseup", onHostMouseUp);
       selSub?.dispose();
-      dataSub.dispose();
+      dataSub?.dispose();
       observer?.disconnect();
       term.dispose();
+      termRef.current = null;
     };
   }, [props.paneId]);
   return (
-    <>
+    <div className="workbench-terminal-view" ref={rootRef}>
+      {find.open ? (
+        <InPaneFindBar
+          query={find.query}
+          matchCount={terminalMatchCount}
+          activeIndex={find.activeIndex}
+          placeholder="Find in terminal"
+          tone="dark"
+          onQueryChange={find.setQuery}
+          onNext={() => find.next(terminalMatchCount)}
+          onPrevious={() => find.previous(terminalMatchCount)}
+          onClose={find.closeFind}
+        />
+      ) : null}
       <div className="workbench-terminal-xterm" data-terminal-xterm={props.paneId} ref={hostRef} />
       {selToolbar === null ? null : (
         <button
@@ -209,8 +277,43 @@ function WorkbenchTerminalView(props: {
           Add to chat
         </button>
       )}
-    </>
+    </div>
   );
+}
+
+type SearchableTerminal = XtermTerminalInstance & {
+  buffer?: {
+    active?: {
+      length?: number;
+      getLine?: (index: number) => { translateToString: (trimRight?: boolean) => string } | undefined;
+    };
+  };
+  select?: (column: number, row: number, length: number) => void;
+  scrollToLine?: (line: number) => void;
+  clearSelection?: () => void;
+};
+
+function readTerminalMatches(
+  term: XtermTerminalInstance | null,
+  query: string,
+): { row: number; column: number; length: number }[] {
+  const needle = query.trim().toLocaleLowerCase();
+  if (term === null || needle.length === 0) {
+    return [];
+  }
+  const active = (term as SearchableTerminal).buffer?.active;
+  const length = active?.length ?? 0;
+  const matches: { row: number; column: number; length: number }[] = [];
+  for (let row = 0; row < length; row += 1) {
+    const line = active?.getLine?.(row)?.translateToString(true) ?? "";
+    const haystack = line.toLocaleLowerCase();
+    let column = haystack.indexOf(needle);
+    while (column !== -1) {
+      matches.push({ row, column, length: query.trim().length });
+      column = haystack.indexOf(needle, column + Math.max(needle.length, 1));
+    }
+  }
+  return matches;
 }
 
 export function WorkbenchTerminalPane(props: {
@@ -220,13 +323,18 @@ export function WorkbenchTerminalPane(props: {
   // A real dark terminal: the xterm surface fills the pane and takes keystrokes
   // directly (xterm.onData routes to onTerminalInput). Selecting text shows a
   // floating "Add to chat" anchored to the selection (no always-on button).
+  const interactive = props.pane.terminalRole !== "command_result";
   return (
-    <div className="workbench-terminal" data-terminal-status={props.pane.status ?? "ready"}>
+    <div
+      className="workbench-terminal"
+      data-terminal-role={props.pane.terminalRole ?? "session"}
+      data-terminal-status={props.pane.status ?? "ready"}
+    >
       <WorkbenchTerminalView
         paneId={props.pane.paneId}
         initialText={props.pane.transcriptPreview ?? ""}
-        onInput={props.handlers.onTerminalInput}
-        onResize={props.handlers.onTerminalResize}
+        onInput={interactive ? props.handlers.onTerminalInput : undefined}
+        onResize={interactive ? props.handlers.onTerminalResize : undefined}
         onAddSelection={(text: string) =>
           props.handlers.onAddContentToChat({
             kind: "terminal",

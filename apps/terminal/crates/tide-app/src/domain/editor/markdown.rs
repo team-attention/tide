@@ -1124,4 +1124,3 @@ pub fn render_markdown_preview(
 
     result
 }
-

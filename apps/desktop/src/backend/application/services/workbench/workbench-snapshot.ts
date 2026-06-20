@@ -70,6 +70,7 @@ export function terminalPaneRef(pane: TerminalPaneState): WorkbenchPaneSnapshotR
   return {
     ...workbenchPaneRef(pane),
     kind: "terminal",
+    terminalRole: terminalPaneRole(pane),
     command: pane.command,
     args: pane.args === undefined ? undefined : [...pane.args],
     env: cloneEnv(pane.env),
@@ -83,6 +84,21 @@ export function terminalPaneRef(pane: TerminalPaneState): WorkbenchPaneSnapshotR
     startedAt: pane.startedAt,
     completedAt: pane.completedAt,
   };
+}
+
+export function terminalPaneRole(
+  pane: TerminalPaneState,
+): NonNullable<TerminalPaneState["terminalRole"]> {
+  if (pane.terminalRole !== undefined) {
+    return pane.terminalRole;
+  }
+  if (pane.expectedCompletion !== undefined) {
+    return "provider_setup";
+  }
+  if (pane.completedAt !== undefined || pane.timedOut !== undefined) {
+    return "command_result";
+  }
+  return "session";
 }
 
 export function editorPaneRef(pane: EditorPaneState): WorkbenchPaneSnapshotRef {

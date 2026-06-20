@@ -311,20 +311,24 @@ pub(crate) fn handle_config_page_click(
     // Tab bar area
     let tab_h = crate::theme::CONFIG_PAGE_TAB_H;
     let tab_y = title_y + title_h + 1.0;
-    let tab_w = popup_w / 3.0;
+    let tab_w = popup_w / 4.0;
 
     // Click on tab bar → switch section
     if pos.y >= tab_y && pos.y < tab_y + tab_h {
         if let Some(ref mut page) = ctx.modal_mut().config_page {
-            let tab_idx = ((pos.x - popup_x) / tab_w).floor().clamp(0.0, 2.0) as usize;
+            let tab_idx = ((pos.x - popup_x) / tab_w).floor().clamp(0.0, 3.0) as usize;
             page.section = match tab_idx {
                 0 => ConfigSection::Keybindings,
                 1 => ConfigSection::Worktree,
+                2 => ConfigSection::Terminal,
                 _ => ConfigSection::Appearance,
             };
             page.selected = 0;
             page.scroll_offset = 0;
             page.selected_field = 0;
+            page.worktree_editing = false;
+            page.copy_files_editing = false;
+            page.terminal_scrollback_editing = false;
         }
         ctx.invalidate_chrome();
         return;
@@ -338,6 +342,7 @@ pub(crate) fn handle_config_page_click(
 
     if pos.y >= content_top && pos.y < content_bottom {
         let mut toggle_theme = false;
+        let mut cycle_theme_palette = false;
         if let Some(ref mut page) = ctx.modal_mut().config_page {
             match page.section {
                 ConfigSection::Keybindings => {
@@ -368,17 +373,43 @@ pub(crate) fn handle_config_page_click(
                         page.worktree_editing = false;
                     }
                 }
+                ConfigSection::Terminal => {
+                    let input_h = cell_height + crate::theme::POPUP_INPUT_PADDING;
+
+                    let scrollback_input_y = content_top + 8.0 + line_height + 4.0;
+                    if pos.y >= scrollback_input_y && pos.y < scrollback_input_y + input_h {
+                        page.selected_field = 0;
+                        page.terminal_scrollback_editing = true;
+                    }
+
+                    let osc52_row_y = scrollback_input_y + input_h + 16.0;
+                    let osc52_row_h = line_height + 8.0;
+                    if pos.y >= osc52_row_y && pos.y < osc52_row_y + osc52_row_h {
+                        page.selected_field = 1;
+                        page.terminal_scrollback_editing = false;
+                        page.toggle_terminal_osc52_read();
+                    }
+                }
                 ConfigSection::Appearance => {
-                    let row_y = content_top + 12.0;
                     let row_h = line_height + 8.0;
-                    if pos.y >= row_y && pos.y < row_y + row_h {
+                    let mode_row_y = content_top + 12.0;
+                    if pos.y >= mode_row_y && pos.y < mode_row_y + row_h {
+                        page.selected_field = 0;
                         toggle_theme = true;
+                    }
+                    let palette_row_y = mode_row_y + row_h + 8.0;
+                    if pos.y >= palette_row_y && pos.y < palette_row_y + row_h {
+                        page.selected_field = 1;
+                        cycle_theme_palette = true;
                     }
                 }
             }
         }
         if toggle_theme {
             ctx.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
+        }
+        if cycle_theme_palette {
+            ctx.cycle_theme_palette();
         }
         ctx.invalidate_chrome();
     }

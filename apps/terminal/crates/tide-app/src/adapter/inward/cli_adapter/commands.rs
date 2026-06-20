@@ -2,25 +2,27 @@
 // All command functions are free functions taking port trait bounds.
 // App.handle_cli_command() is the thin dispatch bridge.
 
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use crate::pane::browser::{
-    BrowserAutomationCursor, BrowserPageElement, BrowserPageElementKind, BrowserPageMap,
-    BrowserPane, BrowserPaneScreenshot, BrowserSelectionSnapshot, BrowserSnapshot,
-    BROWSER_PAGE_MAP_INTERACTABLE_LIMIT,
-    BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES, BROWSER_PAGE_MAP_REGION_LIMIT,
-    BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES, BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES,
-};
 use crate::agent::notification::{
     classify_codex_completed_turn_payload, codex_stop_notification_snippet,
-    resolve_codex_stop_payload, wrapped_agent_notification_snippet_from_payload, CodexStopResolution,
+    resolve_codex_stop_payload, wrapped_agent_notification_snippet_from_payload,
+    CodexStopResolution,
+};
+use crate::pane::browser::{
+    BrowserAutomationCursor, BrowserPageElement, BrowserPageElementKind, BrowserPageMap,
+    BrowserPane, BrowserPaneScreenshot, BrowserReviewHistoryEntry, BrowserSelectionSnapshot,
+    BrowserSnapshot, BROWSER_PAGE_MAP_INTERACTABLE_LIMIT, BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES,
+    BROWSER_PAGE_MAP_REGION_LIMIT, BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES,
+    BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES,
 };
 use crate::pane::PaneKind;
 use crate::state::gateway_status::{AgentInfo, AgentStatus};
 use crate::state::FocusArea;
-use crate::tide_core::{PaneId, Rect, SplitDirection, TerminalBackend};
+use crate::tide_core::{CursorShape, PaneId, Rect, SplitDirection, TerminalBackend};
 use crate::tide_layout::LayoutSnapshot;
 use crate::ActionPort;
 use crate::AppCorePort;
@@ -150,6 +152,10 @@ impl crate::App {
             // Phase 1 — Observe
             "list-panes" => cli_list_panes(self),
             "observe-workspace" => cli_observe_workspace(self, params),
+            "observe-terminal" => cli_observe_terminal(self, params),
+            "find-in-terminal" => cli_find_in_terminal(self, params),
+            "find-in-editor" => cli_find_in_editor(self, params),
+            "replace-in-editor" => cli_replace_in_editor(self, params),
             "rename-workspace" => cli_rename_workspace(self, params),
             "capture-pane" => cli_capture_pane(self, params),
             "capture-selection" => cli_capture_selection(self, params),
@@ -332,6 +338,12 @@ enum WorkspaceObserveDetail {
     Compact,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TerminalObserveDetail {
+    Full,
+    Compact,
+}
+
 fn browser_observe_detail(params: &Value) -> Result<BrowserObserveDetail, CliError> {
     if param_bool(params, &["compact", "summary"]) {
         return Ok(BrowserObserveDetail::Compact);
@@ -409,6 +421,27 @@ fn workspace_observe_detail(params: &Value) -> Result<WorkspaceObserveDetail, Cl
         "compact" | "summary" => Ok(WorkspaceObserveDetail::Compact),
         other => Err(CliError::InvalidParams(format!(
             "unsupported workspace observe detail: {other}"
+        ))),
+    }
+}
+
+fn terminal_observe_detail(params: &Value) -> Result<TerminalObserveDetail, CliError> {
+    if param_bool(params, &["compact", "summary"]) {
+        return Ok(TerminalObserveDetail::Compact);
+    }
+    let Some(detail) = params
+        .get("detail")
+        .or_else(|| params.get("mode"))
+        .and_then(|value| value.as_str())
+    else {
+        return Ok(TerminalObserveDetail::Compact);
+    };
+
+    match detail {
+        "full" => Ok(TerminalObserveDetail::Full),
+        "compact" | "summary" => Ok(TerminalObserveDetail::Compact),
+        other => Err(CliError::InvalidParams(format!(
+            "unsupported terminal observe detail: {other}"
         ))),
     }
 }
@@ -1010,6 +1043,21 @@ fn browser_operation_json(active: bool) -> Value {
     })
 }
 
+fn browser_external_runtime_json(browser: &BrowserPane) -> Value {
+    match browser.last_external_handoff() {
+        Some(handoff) => json!({
+            "kind": "external_browser_runtime_handoff",
+            "runtime": "external_default_browser",
+            "explicit": true,
+            "visible_in_tide": false,
+            "reason": handoff.reason.clone(),
+            "url": handoff.url.clone(),
+            "tide_browser_pane_retained": true,
+        }),
+        None => Value::Null,
+    }
+}
+
 fn set_agent_browser_control_mode(
     browser: &mut BrowserPane,
     decision: &AgentBrowserControlDecision,
@@ -1314,6 +1362,79 @@ fn terminal_cwd_json(pane: Option<&PaneKind>) -> Value {
     }
 }
 
+fn path_json(path: Option<&Path>) -> Value {
+    path.map(|path| json!(path.to_string_lossy()))
+        .unwrap_or(Value::Null)
+}
+
+fn project_config_start_path(
+    ctx: &crate::App,
+    caller_terminal_id: Option<PaneId>,
+) -> Option<PathBuf> {
+    caller_terminal_id
+        .or_else(|| ctx.focused_terminal_id())
+        .and_then(|terminal_id| match ctx.pane(terminal_id) {
+            Some(PaneKind::Terminal(terminal)) => terminal
+                .context
+                .cwd
+                .clone()
+                .or_else(|| terminal.backend.detect_cwd_fallback()),
+            _ => None,
+        })
+        .or_else(|| std::env::current_dir().ok())
+}
+
+fn workspace_project_config_json(ctx: &crate::App, caller_terminal_id: Option<PaneId>) -> Value {
+    let start = project_config_start_path(ctx, caller_terminal_id);
+    match crate::state::project_config::load_project_config_for_start(start.as_deref()) {
+        crate::state::project_config::ProjectConfigLoad::Loaded(loaded) => json!({
+            "kind": "project_local_config",
+            "state": "loaded",
+            "convention": crate::state::project_config::PROJECT_CONFIG_RELATIVE_PATH,
+            "start": path_json(start.as_deref()),
+            "root": loaded.root.to_string_lossy(),
+            "path": loaded.path.to_string_lossy(),
+            "workspace_count": loaded.config.workspaces.len(),
+            "action_count": loaded.config.actions.len(),
+            "workspaces": loaded.config.workspaces,
+            "actions": loaded.config.actions,
+            "execution": {
+                "automatic": false,
+                "recommended_tool": "tide_send_keys",
+                "reason": "project actions are visible recipes and are not run without explicit terminal input",
+            },
+        }),
+        crate::state::project_config::ProjectConfigLoad::Invalid {
+            start,
+            root,
+            path,
+            error,
+        } => json!({
+            "kind": "project_local_config",
+            "state": "invalid",
+            "convention": crate::state::project_config::PROJECT_CONFIG_RELATIVE_PATH,
+            "start": path_json(start.as_deref()),
+            "root": root.to_string_lossy(),
+            "path": path.to_string_lossy(),
+            "error": error,
+            "workspace_count": 0,
+            "action_count": 0,
+            "workspaces": [],
+            "actions": [],
+        }),
+        crate::state::project_config::ProjectConfigLoad::NotFound { start } => json!({
+            "kind": "project_local_config",
+            "state": "not_found",
+            "convention": crate::state::project_config::PROJECT_CONFIG_RELATIVE_PATH,
+            "start": path_json(start.as_deref()),
+            "workspace_count": 0,
+            "action_count": 0,
+            "workspaces": [],
+            "actions": [],
+        }),
+    }
+}
+
 fn terminal_context_active_pane_id(
     ctx: &impl PaneAccessPort,
     owner_terminal_id: PaneId,
@@ -1323,6 +1444,13 @@ fn terminal_context_active_pane_id(
             .dock_focused
             .or_else(|| terminal.dock_layout.all_pane_ids().into_iter().next()),
         _ => None,
+    }
+}
+
+fn terminal_context_surface_mode_label(mode: crate::state::ViewMode) -> &'static str {
+    match mode {
+        crate::state::ViewMode::Split => "split",
+        crate::state::ViewMode::Stacked => "stacked",
     }
 }
 
@@ -1357,10 +1485,845 @@ fn compact_visual_fit_summary(visual_fit: &Value) -> Value {
     })
 }
 
-fn cli_observe_workspace_compact(
-    ctx: &(impl AppCorePort + DockPort + FocusNavPort + GatewayPort + PaneAccessPort),
+fn browser_review_entry_json(pane_id: PaneId, entry: &BrowserReviewHistoryEntry) -> Value {
+    json!({
+        "pane_id": pane_id,
+        "artifact_id": entry.artifact_id,
+        "comment": entry.comment,
+        "source_label": entry.source_label,
+        "delivered": entry.delivered,
+        "delivery_count": entry.delivery_count,
+    })
+}
+
+fn browser_review_history_json(pane_id: PaneId, browser: &BrowserPane) -> Value {
+    let delivered = browser
+        .review_history()
+        .iter()
+        .filter(|entry| entry.delivered)
+        .count();
+    let recent = browser
+        .review_history()
+        .iter()
+        .rev()
+        .take(3)
+        .map(|entry| browser_review_entry_json(pane_id, entry))
+        .collect::<Vec<_>>();
+
+    json!({
+        "total": browser.review_history().len(),
+        "delivered": delivered,
+        "pending_delivery": browser.review_history().len().saturating_sub(delivered),
+        "latest": browser
+            .latest_review()
+            .map(|entry| browser_review_entry_json(pane_id, entry))
+            .unwrap_or(Value::Null),
+        "recent": recent,
+    })
+}
+
+fn workspace_agent_status_label(status: Option<AgentStatus>) -> &'static str {
+    match status {
+        Some(AgentStatus::Running) => "running",
+        Some(AgentStatus::Idle) => "idle",
+        Some(AgentStatus::NeedsInput) => "needs_input",
+        None => "unknown",
+    }
+}
+
+struct WorkspaceContextArtifactCounts {
+    total: usize,
+    pinned: usize,
+    delivered: usize,
+    pending_delivery: usize,
+    delivery_count: usize,
+}
+
+fn workspace_context_artifact_counts(
+    app: &crate::App,
+    workspace_idx: usize,
+    caller_terminal_id: Option<PaneId>,
+) -> WorkspaceContextArtifactCounts {
+    let artifacts = if workspace_idx == app.ws.active {
+        Some(&app.context_artifacts)
+    } else {
+        app.ws.workspace_context_artifacts.get(workspace_idx)
+    };
+    let Some(artifacts) = artifacts else {
+        return WorkspaceContextArtifactCounts {
+            total: 0,
+            pinned: 0,
+            delivered: 0,
+            pending_delivery: 0,
+            delivery_count: 0,
+        };
+    };
+
+    artifacts
+        .artifacts
+        .values()
+        .filter(|artifact| {
+            caller_terminal_id
+                .map(|caller| artifact.associated_terminal_id == caller)
+                .unwrap_or(true)
+        })
+        .fold(
+            WorkspaceContextArtifactCounts {
+                total: 0,
+                pinned: 0,
+                delivered: 0,
+                pending_delivery: 0,
+                delivery_count: 0,
+            },
+            |mut counts, artifact| {
+                counts.total += 1;
+                counts.pinned += usize::from(artifact.pinned);
+                counts.delivery_count += artifact.deliveries.len();
+                if artifact.deliveries.is_empty() {
+                    counts.pending_delivery += 1;
+                } else {
+                    counts.delivered += 1;
+                }
+                counts
+            },
+        )
+}
+
+fn workspace_task_pane_entries<'a>(
+    app: &'a crate::App,
+    workspace_idx: usize,
+    caller_terminal_id: Option<PaneId>,
+) -> Vec<(PaneId, &'a PaneKind)> {
+    let raw_entries = if workspace_idx == app.ws.active {
+        app.panes
+            .iter()
+            .map(|(id, pane)| (*id, pane))
+            .collect::<Vec<_>>()
+    } else {
+        app.ws
+            .workspaces
+            .get(workspace_idx)
+            .map(|workspace| {
+                workspace
+                    .panes
+                    .iter()
+                    .map(|(id, pane)| (*id, pane))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+
+    raw_entries
+        .into_iter()
+        .filter(|(id, _pane)| {
+            let Some(caller_terminal_id) = caller_terminal_id else {
+                return true;
+            };
+            if workspace_idx != app.ws.active {
+                return false;
+            }
+            let owner_terminal_id = app.terminal_owning(*id);
+            pane_is_in_caller_terminal_scope(*id, owner_terminal_id, caller_terminal_id)
+        })
+        .collect()
+}
+
+fn workspace_task_stage_terminal_ids(
+    app: &crate::App,
+    workspace_idx: usize,
+    caller_terminal_id: Option<PaneId>,
+) -> HashSet<PaneId> {
+    if let Some(caller_terminal_id) = caller_terminal_id {
+        return [caller_terminal_id].into_iter().collect();
+    }
+
+    if workspace_idx == app.ws.active {
+        return app
+            .panes
+            .iter()
+            .filter_map(|(&pane_id, pane)| {
+                (matches!(pane, PaneKind::Terminal(_)) && !app.is_pane_in_dock(pane_id))
+                    .then_some(pane_id)
+            })
+            .collect();
+    }
+
+    let Some(workspace) = app.ws.workspaces.get(workspace_idx) else {
+        return HashSet::new();
+    };
+    let stage_pane_ids = workspace.layout.all_pane_ids();
+    if stage_pane_ids.is_empty() {
+        workspace
+            .panes
+            .iter()
+            .filter_map(|(&pane_id, pane)| matches!(pane, PaneKind::Terminal(_)).then_some(pane_id))
+            .collect()
+    } else {
+        stage_pane_ids
+            .into_iter()
+            .filter(|pane_id| matches!(workspace.panes.get(pane_id), Some(PaneKind::Terminal(_))))
+            .collect()
+    }
+}
+
+fn workspace_task_state(
+    running_agents: usize,
+    idle_agents: usize,
+    needs_input_agents: usize,
+    terminal_count: usize,
+) -> &'static str {
+    if needs_input_agents > 0 {
+        "needs_input"
+    } else if idle_agents > 0 {
+        "ready"
+    } else if running_agents > 0 {
+        "running"
+    } else if terminal_count > 0 {
+        "active"
+    } else {
+        "empty"
+    }
+}
+
+fn workspace_agent_lifecycle_label(agent: &AgentInfo) -> &'static str {
+    match agent.status {
+        Some(AgentStatus::Running) => "running",
+        Some(AgentStatus::Idle) => "idle",
+        Some(AgentStatus::NeedsInput) => "needs_input",
+        None if agent.gateway_connected => "connected",
+        None => "unknown",
+    }
+}
+
+fn workspace_agent_notification_state(
+    status: Option<AgentStatus>,
+    routed: bool,
+    has_snippet: bool,
+) -> &'static str {
+    match (status, routed, has_snippet) {
+        (Some(AgentStatus::NeedsInput), true, _) => "needs_input_routed",
+        (Some(AgentStatus::NeedsInput), false, _) => "needs_input",
+        (Some(AgentStatus::Idle), true, _) => "idle_routed",
+        (Some(AgentStatus::Idle), false, _) => "idle",
+        (_, true, _) => "routed",
+        (_, false, true) => "snippet",
+        _ => "none",
+    }
+}
+
+struct WorkspaceTaskEventCandidate {
+    priority: u8,
+    kind: &'static str,
+    pane_id: Option<PaneId>,
+    agent_status: Option<AgentStatus>,
+    summary: String,
+    restore_event: Option<crate::state::WorkspaceRestoreEvent>,
+}
+
+fn browser_task_event_candidate(
+    pane_id: PaneId,
+    browser: &BrowserPane,
+) -> Option<WorkspaceTaskEventCandidate> {
+    if let Some(permission) = browser.pending_permission.as_ref() {
+        return Some(WorkspaceTaskEventCandidate {
+            priority: 5,
+            kind: "browser_permission",
+            pane_id: Some(pane_id),
+            agent_status: None,
+            summary: format!("browser permission: {}", permission.origin),
+            restore_event: None,
+        });
+    }
+    if let Some(certificate) = browser.pending_certificate_error.as_ref() {
+        return Some(WorkspaceTaskEventCandidate {
+            priority: 6,
+            kind: "browser_certificate",
+            pane_id: Some(pane_id),
+            agent_status: None,
+            summary: format!("browser certificate: {}", certificate.host),
+            restore_event: None,
+        });
+    }
+    if let Some(download) = browser.download_state.as_ref() {
+        return Some(WorkspaceTaskEventCandidate {
+            priority: 15,
+            kind: "browser_download",
+            pane_id: Some(pane_id),
+            agent_status: None,
+            summary: if download.completed {
+                "browser download complete".to_string()
+            } else {
+                "browser downloading".to_string()
+            },
+            restore_event: None,
+        });
+    }
+    if browser.streaming {
+        return Some(WorkspaceTaskEventCandidate {
+            priority: 22,
+            kind: "render_streaming",
+            pane_id: Some(pane_id),
+            agent_status: None,
+            summary: "render streaming".to_string(),
+            restore_event: None,
+        });
+    }
+    if browser.loading {
+        return Some(WorkspaceTaskEventCandidate {
+            priority: 25,
+            kind: "browser_loading",
+            pane_id: Some(pane_id),
+            agent_status: None,
+            summary: "browser loading".to_string(),
+            restore_event: None,
+        });
+    }
+    if let Some(review) = browser.latest_review() {
+        let (comment, truncated) = truncate_utf8_to_byte_limit(&review.comment, 80);
+        let summary = if comment.trim().is_empty() {
+            format!("browser review #{}", review.artifact_id)
+        } else if truncated {
+            format!("browser review: {}...", comment)
+        } else {
+            format!("browser review: {}", comment)
+        };
+        return Some(WorkspaceTaskEventCandidate {
+            priority: 55,
+            kind: "browser_review",
+            pane_id: Some(pane_id),
+            agent_status: None,
+            summary,
+            restore_event: None,
+        });
+    }
+
+    None
+}
+
+fn diff_task_event_candidate(
+    pane_id: PaneId,
+    diff: &crate::pane::diff::DiffPane,
+) -> Option<WorkspaceTaskEventCandidate> {
+    if !diff.loaded {
+        return Some(WorkspaceTaskEventCandidate {
+            priority: 45,
+            kind: "diff_loading",
+            pane_id: Some(pane_id),
+            agent_status: None,
+            summary: "diff loading".to_string(),
+            restore_event: None,
+        });
+    }
+    if !diff.files.is_empty() {
+        return Some(WorkspaceTaskEventCandidate {
+            priority: 50,
+            kind: "diff_changes",
+            pane_id: Some(pane_id),
+            agent_status: None,
+            summary: format!("diff {} files", diff.files.len()),
+            restore_event: None,
+        });
+    }
+
+    None
+}
+
+fn restore_task_event_candidate(
+    event: &crate::state::WorkspaceRestoreEvent,
+) -> WorkspaceTaskEventCandidate {
+    let (kind, summary) = match event.kind {
+        crate::state::RestoreEventKind::SessionRestored => (
+            "session_restore",
+            if event.crash_recovery {
+                "session restored after crash"
+            } else {
+                "session restored"
+            },
+        ),
+        crate::state::RestoreEventKind::SessionRestoreFailed => {
+            ("session_restore_failed", "session restore failed")
+        }
+        crate::state::RestoreEventKind::SessionRestoreMissing => {
+            ("session_restore_missing", "session restore missing")
+        }
+        crate::state::RestoreEventKind::PreferencesRestored => (
+            "preferences_restore",
+            "preferences restored from saved session",
+        ),
+    };
+
+    WorkspaceTaskEventCandidate {
+        priority: 70,
+        kind,
+        pane_id: None,
+        agent_status: None,
+        summary: summary.to_string(),
+        restore_event: Some(event.clone()),
+    }
+}
+
+fn workspace_task_last_event_json(candidates: &[WorkspaceTaskEventCandidate]) -> Value {
+    let Some(selected) = candidates.iter().min_by_key(|candidate| candidate.priority) else {
+        return Value::Null;
+    };
+
+    let mut event = json!({
+        "kind": selected.kind,
+        "pane_id": selected.pane_id,
+        "summary": selected.summary,
+    });
+
+    if selected.kind == "agent_notification" {
+        event["agent_status"] = json!(workspace_agent_status_label(selected.agent_status));
+    }
+    if let Some(restore_event) = selected.restore_event.as_ref() {
+        event["crash_recovery"] = json!(restore_event.crash_recovery);
+        event["restored_panes"] = json!(restore_event.restored_panes);
+        event["restored_context_panes"] = json!(restore_event.restored_context_panes);
+    }
+
+    event
+}
+
+fn workspace_task_attention_panel_json(workspaces: &[Value]) -> Value {
+    let mut items = Vec::new();
+    let mut running_count = 0usize;
+
+    for workspace in workspaces {
+        if workspace["agent_lifecycle"]["state"] == "running" {
+            running_count += 1;
+        }
+        let pending = workspace["agent_lifecycle"]["notifications"]["pending"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        for notification in pending {
+            items.push(json!({
+                "workspace_index": workspace["workspace_index"],
+                "workspace_name": workspace["name"],
+                "pane_id": notification["pane_id"],
+                "agent": notification["name"],
+                "status": notification["status"],
+                "state": notification["state"],
+                "attention": notification["attention"],
+                "routed": notification["routed"],
+                "summary": notification["snippet"],
+            }));
+        }
+    }
+
+    json!({
+        "kind": "workspace_attention_panel",
+        "visible": !items.is_empty() || running_count > 0,
+        "unread_count": items.len(),
+        "running_count": running_count,
+        "items": items,
+    })
+}
+
+fn workspace_agent_resume_provider_policy_json(
+    provider: &str,
+    display_name: &str,
+    wrapper_command: &str,
+) -> Value {
+    json!({
+        "provider": provider,
+        "display_name": display_name,
+        "wrapper_command": wrapper_command,
+        "wrapped_agent_supported": true,
+        "resume_mode": "explicit_provider_cli_only",
+        "automatic_process_resume": false,
+        "provider_resume_invoked_by_tide": false,
+        "restored_by_tide": [
+            "workspace_layout",
+            "terminal_cwd",
+            "terminal_context_surface",
+            "side_surface_preferences"
+        ],
+        "not_restored_by_tide": [
+            "live_child_process",
+            "provider_conversation",
+            "terminal_scrollback"
+        ],
+        "agent_action": "relaunch this provider in the restored Terminal cwd; use provider-native resume only when the user or agent explicitly chooses it",
+    })
+}
+
+fn workspace_agent_resume_policy_json() -> Value {
+    json!({
+        "kind": "agent_resume_policy",
+        "provider_neutral": true,
+        "session_restore_scope": {
+            "workspace_layout": true,
+            "terminal_cwd": true,
+            "terminal_context_surface": true,
+            "side_surface_preferences": true,
+            "live_child_processes": false,
+            "terminal_scrollback": false,
+            "provider_conversations": false,
+        },
+        "automatic_agent_process_resume": false,
+        "provider_resume_invoked_by_tide": false,
+        "default_resume_mode": "explicit_provider_cli_only",
+        "providers": [
+            workspace_agent_resume_provider_policy_json("claude", "Claude Code", "claude"),
+            workspace_agent_resume_provider_policy_json("codex", "Codex", "codex"),
+            workspace_agent_resume_provider_policy_json("gemini", "Gemini", "gemini"),
+            workspace_agent_resume_provider_policy_json("agy", "Antigravity", "agy"),
+            workspace_agent_resume_provider_policy_json("opencode", "opencode", "opencode"),
+        ],
+    })
+}
+
+fn workspace_task_entry_json(
+    app: &crate::App,
+    workspace_idx: usize,
     caller_terminal_id: Option<PaneId>,
 ) -> Value {
+    let active = workspace_idx == app.ws.active;
+    let name = if active {
+        app.active_workspace_name()
+    } else {
+        app.ws
+            .workspaces
+            .get(workspace_idx)
+            .map(|workspace| workspace.name.clone())
+            .unwrap_or_else(|| format!("Workspace {}", workspace_idx + 1))
+    };
+    let focused_pane_id = if active {
+        app.focus.focused
+    } else {
+        app.ws
+            .workspaces
+            .get(workspace_idx)
+            .and_then(|workspace| workspace.focused)
+    };
+    let pane_entries = workspace_task_pane_entries(app, workspace_idx, caller_terminal_id);
+    let stage_terminal_ids =
+        workspace_task_stage_terminal_ids(app, workspace_idx, caller_terminal_id);
+
+    let mut terminal_count = 0usize;
+    let mut editor_count = 0usize;
+    let mut browser_count = 0usize;
+    let mut diff_count = 0usize;
+    let mut launcher_count = 0usize;
+    let mut context_pane_count = 0usize;
+    let mut running_agents = 0usize;
+    let mut idle_agents = 0usize;
+    let mut needs_input_agents = 0usize;
+    let mut unknown_agents = 0usize;
+    let mut terminals = Vec::new();
+    let mut agents = Vec::new();
+    let mut lifecycle_agents = Vec::new();
+    let mut lifecycle_wrapper_managed = 0usize;
+    let mut lifecycle_gateway_connected = 0usize;
+    let mut lifecycle_running = 0usize;
+    let mut lifecycle_idle = 0usize;
+    let mut lifecycle_needs_input = 0usize;
+    let mut lifecycle_connected = 0usize;
+    let mut lifecycle_unknown = 0usize;
+    let mut notification_with_snippet = 0usize;
+    let mut notification_routed = 0usize;
+    let mut notification_attention = 0usize;
+    let mut notification_pending = Vec::new();
+    let mut last_event_candidates = Vec::new();
+    let mut browser_reviews: Vec<(PaneId, BrowserReviewHistoryEntry)> = Vec::new();
+
+    for (pane_id, pane) in pane_entries {
+        match pane {
+            PaneKind::Terminal(terminal) => {
+                terminal_count += 1;
+                let context_panes = terminal.dock_layout.all_pane_ids();
+                terminals.push(json!({
+                    "pane_id": pane_id,
+                    "title": if active { app.pane_title(pane_id) } else { format!("Terminal {pane_id}") },
+                    "cwd": terminal_cwd_json(Some(pane)),
+                    "shell_idle": terminal.context.shell_idle,
+                    "child_dead": terminal.context.child_dead,
+                    "context_pane_count": context_panes.len(),
+                    "terminal_context_surface": {
+                        "mode": terminal_context_surface_mode_label(terminal.dock_view_mode),
+                        "pane_count": context_panes.len(),
+                        "focused_pane_id": terminal.dock_focused,
+                    },
+                }));
+                if terminal.context.child_dead {
+                    last_event_candidates.push(WorkspaceTaskEventCandidate {
+                        priority: 40,
+                        kind: "terminal_exit",
+                        pane_id: Some(pane_id),
+                        agent_status: None,
+                        summary: "terminal exited".to_string(),
+                        restore_event: None,
+                    });
+                }
+            }
+            PaneKind::Editor(_) => editor_count += 1,
+            PaneKind::Browser(browser) => {
+                browser_count += 1;
+                browser_reviews.extend(
+                    browser
+                        .review_history()
+                        .iter()
+                        .cloned()
+                        .map(|entry| (pane_id, entry)),
+                );
+                if let Some(event) = browser_task_event_candidate(pane_id, browser) {
+                    last_event_candidates.push(event);
+                }
+            }
+            PaneKind::Diff(diff) => {
+                diff_count += 1;
+                if let Some(event) = diff_task_event_candidate(pane_id, diff) {
+                    last_event_candidates.push(event);
+                }
+            }
+            PaneKind::Launcher(_) => launcher_count += 1,
+        }
+
+        if !matches!(pane, PaneKind::Terminal(_)) {
+            context_pane_count += 1;
+        }
+
+        if let Some(agent) = app.gateway.detected_agents.get(&pane_id) {
+            match agent.status {
+                Some(AgentStatus::Running) => running_agents += 1,
+                Some(AgentStatus::Idle) => idle_agents += 1,
+                Some(AgentStatus::NeedsInput) => needs_input_agents += 1,
+                None => unknown_agents += 1,
+            }
+            agents.push(json!({
+                "pane_id": pane_id,
+                "name": agent.name,
+                "pid": agent.pid,
+                "wrapper_managed": agent.wrapper_managed,
+                "gateway_connected": agent.gateway_connected,
+                "status": workspace_agent_status_label(agent.status),
+                "notification_snippet": app.agent_notification_snippets.get(&pane_id),
+            }));
+            if agent.wrapper_managed && stage_terminal_ids.contains(&pane_id) {
+                lifecycle_wrapper_managed += 1;
+                lifecycle_gateway_connected += usize::from(agent.gateway_connected);
+                match agent.status {
+                    Some(AgentStatus::Running) => lifecycle_running += 1,
+                    Some(AgentStatus::Idle) => lifecycle_idle += 1,
+                    Some(AgentStatus::NeedsInput) => lifecycle_needs_input += 1,
+                    None if agent.gateway_connected => lifecycle_connected += 1,
+                    None => lifecycle_unknown += 1,
+                }
+
+                let snippet = app.agent_notification_snippets.get(&pane_id).cloned();
+                let has_snippet = snippet
+                    .as_deref()
+                    .is_some_and(|snippet| !snippet.trim().is_empty());
+                let routed = app.notified_panes.contains(&pane_id);
+                let attention = matches!(
+                    agent.status,
+                    Some(AgentStatus::Idle | AgentStatus::NeedsInput)
+                );
+                let notification_state =
+                    workspace_agent_notification_state(agent.status, routed, has_snippet);
+                notification_with_snippet += usize::from(has_snippet);
+                notification_routed += usize::from(routed);
+                notification_attention += usize::from(attention);
+
+                let lifecycle_entry = json!({
+                    "pane_id": pane_id,
+                    "name": agent.name,
+                    "pid": agent.pid,
+                    "status": workspace_agent_status_label(agent.status),
+                    "lifecycle": workspace_agent_lifecycle_label(agent),
+                    "gateway_connected": agent.gateway_connected,
+                    "notification": {
+                        "state": notification_state,
+                        "attention": attention,
+                        "routed": routed,
+                        "snippet": snippet,
+                    },
+                });
+                if attention || routed || has_snippet {
+                    notification_pending.push(json!({
+                        "pane_id": pane_id,
+                        "name": agent.name,
+                        "status": workspace_agent_status_label(agent.status),
+                        "state": notification_state,
+                        "attention": attention,
+                        "routed": routed,
+                        "snippet": app.agent_notification_snippets.get(&pane_id),
+                    }));
+                }
+                lifecycle_agents.push(lifecycle_entry);
+            }
+            if agent.wrapper_managed {
+                if let Some(snippet) = app
+                    .agent_notification_snippets
+                    .get(&pane_id)
+                    .map(|snippet| snippet.trim())
+                    .filter(|snippet| !snippet.is_empty())
+                {
+                    let priority = match agent.status {
+                        Some(AgentStatus::NeedsInput) => 0,
+                        Some(AgentStatus::Idle) => 10,
+                        Some(AgentStatus::Running) => 20,
+                        None => 30,
+                    };
+                    last_event_candidates.push(WorkspaceTaskEventCandidate {
+                        priority,
+                        kind: "agent_notification",
+                        pane_id: Some(pane_id),
+                        agent_status: agent.status,
+                        summary: snippet.to_string(),
+                        restore_event: None,
+                    });
+                }
+            }
+        }
+    }
+
+    if active {
+        if let Some(restore_event) = app.last_restore_event.as_ref() {
+            last_event_candidates.push(restore_task_event_candidate(restore_event));
+        }
+    }
+
+    let artifact_counts = workspace_context_artifact_counts(app, workspace_idx, caller_terminal_id);
+    browser_reviews.sort_by(|a, b| b.1.artifact_id.cmp(&a.1.artifact_id));
+    let browser_reviews_delivered = browser_reviews
+        .iter()
+        .filter(|(_, review)| review.delivered)
+        .count();
+    let browser_reviews_recent = browser_reviews
+        .iter()
+        .take(3)
+        .map(|(pane_id, review)| browser_review_entry_json(*pane_id, review))
+        .collect::<Vec<_>>();
+    let browser_reviews_latest = browser_reviews
+        .first()
+        .map(|(pane_id, review)| browser_review_entry_json(*pane_id, review))
+        .unwrap_or(Value::Null);
+    let has_agent_notification = if active {
+        needs_input_agents > 0
+            || idle_agents > 0
+            || agents.iter().any(|agent| {
+                agent["pane_id"]
+                    .as_u64()
+                    .is_some_and(|pane_id| app.notified_panes.contains(&pane_id))
+            })
+    } else {
+        app.ws
+            .workspace_extras
+            .get(workspace_idx)
+            .is_some_and(|extras| extras.has_agent_notification)
+            || needs_input_agents > 0
+            || idle_agents > 0
+    };
+
+    json!({
+        "workspace_index": workspace_idx,
+        "name": name,
+        "active": active,
+        "focused_pane_id": focused_pane_id,
+        "state": workspace_task_state(
+            running_agents,
+            idle_agents,
+            needs_input_agents,
+            terminal_count,
+        ),
+        "has_agent_notification": has_agent_notification,
+        "last_event": workspace_task_last_event_json(&last_event_candidates),
+        "pane_counts": {
+            "total": terminal_count + editor_count + browser_count + diff_count + launcher_count,
+            "terminal": terminal_count,
+            "editor": editor_count,
+            "browser": browser_count,
+            "diff": diff_count,
+            "launcher": launcher_count,
+            "terminal_context": context_pane_count,
+        },
+        "agent_counts": {
+            "total": running_agents + idle_agents + needs_input_agents + unknown_agents,
+            "running": running_agents,
+            "idle": idle_agents,
+            "needs_input": needs_input_agents,
+            "unknown": unknown_agents,
+        },
+        "agent_lifecycle": {
+            "scope": if caller_terminal_id.is_some() { "caller_terminal" } else { "workspace_stage" },
+            "state": workspace_task_state(
+                lifecycle_running,
+                lifecycle_idle,
+                lifecycle_needs_input,
+                terminal_count,
+            ),
+            "wrapper_managed": lifecycle_wrapper_managed,
+            "gateway_connected": lifecycle_gateway_connected,
+            "running": lifecycle_running,
+            "idle": lifecycle_idle,
+            "needs_input": lifecycle_needs_input,
+            "connected": lifecycle_connected,
+            "unknown": lifecycle_unknown,
+            "notifications": {
+                "has_any": has_agent_notification,
+                "with_snippet": notification_with_snippet,
+                "routed": notification_routed,
+                "attention": notification_attention,
+                "pending": notification_pending,
+            },
+            "agents": lifecycle_agents,
+        },
+        "context_artifacts": {
+            "total": artifact_counts.total,
+            "pinned": artifact_counts.pinned,
+            "delivered": artifact_counts.delivered,
+            "pending_delivery": artifact_counts.pending_delivery,
+            "delivery_count": artifact_counts.delivery_count,
+        },
+        "browser_reviews": {
+            "total": browser_reviews.len(),
+            "delivered": browser_reviews_delivered,
+            "pending_delivery": browser_reviews.len().saturating_sub(browser_reviews_delivered),
+            "latest": browser_reviews_latest,
+            "recent": browser_reviews_recent,
+        },
+        "terminals": terminals,
+        "agents": agents,
+    })
+}
+
+fn workspace_task_monitor_json(app: &crate::App, caller_terminal_id: Option<PaneId>) -> Value {
+    let workspace_count = app.ws.workspaces.len().max(app.ws.active + 1);
+    let workspace_indices = if caller_terminal_id.is_some() {
+        vec![app.ws.active]
+    } else {
+        (0..workspace_count).collect::<Vec<_>>()
+    };
+    let workspaces = workspace_indices
+        .iter()
+        .map(|workspace_idx| workspace_task_entry_json(app, *workspace_idx, caller_terminal_id))
+        .collect::<Vec<_>>();
+    let attention_panel = workspace_task_attention_panel_json(&workspaces);
+
+    json!({
+        "kind": "workspace_task_monitor",
+        "scoped_to_caller": caller_terminal_id.is_some(),
+        "active_workspace_index": app.ws.active,
+        "workspace_count": workspace_count,
+        "sidebar_visible": app.ws.show_sidebar,
+        "project_config": workspace_project_config_json(app, caller_terminal_id),
+        "attention_panel": attention_panel,
+        "agent_resume_policy": workspace_agent_resume_policy_json(),
+        "workspaces": workspaces,
+        "next_tools": [
+            "tide_observe_workspace",
+            "tide_observe_terminal",
+            "tide_find_in_terminal",
+            "tide_send_keys",
+            "tide_list_context_artifacts",
+        ],
+    })
+}
+
+fn cli_observe_workspace_compact(ctx: &crate::App, caller_terminal_id: Option<PaneId>) -> Value {
     let active_terminal_id = ctx.focused_terminal_id();
     let focused_id = caller_terminal_id.or_else(|| ctx.focused_pane());
     let focus_area = if caller_terminal_id.is_some() {
@@ -1394,10 +2357,11 @@ fn cli_observe_workspace_compact(
             "focused": focused_id == Some(id),
         }));
 
-        if matches!(pane, PaneKind::Browser(_)) {
+        if let PaneKind::Browser(browser) = pane {
             let visual_fit =
                 browser_visual_fit(rect, owner_terminal_id, ctx.focused_terminal_id(), id);
             let visual_fit_summary = compact_visual_fit_summary(&visual_fit);
+            let review_history = browser_review_history_json(id, browser);
             browser_targets.push(json!({
                 "pane_id": id,
                 "title": ctx.pane_title(id),
@@ -1406,6 +2370,8 @@ fn cli_observe_workspace_compact(
                 "visual_fit_status": visual_fit_summary["status"].clone(),
                 "background_runtime_available": visual_fit_summary["background_runtime_available"].clone(),
                 "next_tool": visual_fit_summary["next_tool"].clone(),
+                "review_count": review_history["total"].clone(),
+                "latest_review": review_history["latest"].clone(),
             }));
         }
     }
@@ -1423,6 +2389,7 @@ fn cli_observe_workspace_compact(
             "title": ctx.pane_title(caller),
             "cwd": terminal_cwd_json(ctx.pane(caller)),
         })),
+        "project_config": workspace_project_config_json(ctx, caller_terminal_id),
         "terminal_context_surface": surface_owner.map(|owner| json!({
             "owner_terminal_id": owner,
             "visible": surface_rect.is_some(),
@@ -1431,14 +2398,12 @@ fn cli_observe_workspace_compact(
         })),
         "panes": panes,
         "browser_targets": browser_targets,
+        "task_monitor": workspace_task_monitor_json(ctx, caller_terminal_id),
     })
 }
 
 /// UC-1: ObserveTideWorkspace — return provider-neutral Tide surfaces and Pane geometry.
-fn cli_observe_workspace(
-    ctx: &mut (impl AppCorePort + DockPort + FocusNavPort + GatewayPort + LayoutPort + PaneAccessPort),
-    params: Value,
-) -> Result<Value, CliError> {
+fn cli_observe_workspace(ctx: &mut crate::App, params: Value) -> Result<Value, CliError> {
     let detail = workspace_observe_detail(&params)?;
     ctx.compute_layout();
 
@@ -1507,7 +2472,7 @@ fn cli_observe_workspace(
             "focused": focused_id == Some(id),
         });
 
-        if matches!(pane, PaneKind::Browser(_)) {
+        if let PaneKind::Browser(browser) = pane {
             entry.as_object_mut().unwrap().insert(
                 "visual_fit".to_string(),
                 browser_visual_fit(rect, owner_terminal_id, ctx.focused_terminal_id(), id),
@@ -1520,6 +2485,14 @@ fn cli_observe_workspace(
                 .as_object_mut()
                 .unwrap()
                 .insert("human_visible".to_string(), json!(rect.is_some()));
+            entry.as_object_mut().unwrap().insert(
+                "external_runtime".to_string(),
+                browser_external_runtime_json(browser),
+            );
+            entry.as_object_mut().unwrap().insert(
+                "review_history".to_string(),
+                browser_review_history_json(id, browser),
+            );
         }
 
         panes.push(entry);
@@ -1530,6 +2503,7 @@ fn cli_observe_workspace(
         "browser_runtime_router": {
             "default_runtime": "tide_browser_pane",
             "external_runtime": "explicit_fallback_only",
+            "fallback_observable_field": "panes[].external_runtime",
             "provider_neutral": true,
             "human_visible_default": true,
         },
@@ -1539,6 +2513,8 @@ fn cli_observe_workspace(
         },
         "surfaces": surfaces,
         "panes": panes,
+        "project_config": workspace_project_config_json(ctx, caller_terminal_id),
+        "task_monitor": workspace_task_monitor_json(ctx, caller_terminal_id),
     }))
 }
 
@@ -1705,6 +2681,634 @@ fn cli_capture_pane(
     }
 }
 
+const TERMINAL_OBSERVE_COMPACT_LINES: usize = 12;
+const TERMINAL_OBSERVE_MAX_LINES: usize = 200;
+const TERMINAL_FIND_DEFAULT_MATCH_LIMIT: usize = 50;
+const TERMINAL_FIND_MAX_MATCH_LIMIT: usize = 200;
+const TERMINAL_FIND_MAX_CONTEXT_LINES: usize = 5;
+const EDITOR_FIND_DEFAULT_MATCH_LIMIT: usize = 50;
+const EDITOR_FIND_MAX_MATCH_LIMIT: usize = 200;
+const EDITOR_FIND_MAX_CONTEXT_LINES: usize = 5;
+const EDITOR_REPLACE_DEFAULT_LIMIT: usize = 1;
+const EDITOR_REPLACE_MAX_LIMIT: usize = 200;
+
+fn terminal_observe_target_pane_id(
+    ctx: &(impl FocusNavPort + GatewayPort + PaneAccessPort),
+    params: &Value,
+) -> Result<PaneId, CliError> {
+    let pane_id = command_target_pane_id(ctx, params, "pane_id")?;
+    if let Some(caller) = ctx.cli_caller_pane() {
+        match ctx.pane(caller) {
+            Some(PaneKind::Terminal(_)) => {}
+            Some(other) => {
+                return Err(CliError::InvalidPaneKind {
+                    pane_id: caller,
+                    expected: "terminal Caller Pane",
+                    actual: pane_kind_label(other),
+                });
+            }
+            None => return Err(CliError::PaneNotFound(caller)),
+        }
+        if pane_id != caller {
+            return Err(CliError::InvalidParams(format!(
+                "Terminal observation is caller-scoped: pane {pane_id} is not Caller Pane {caller}"
+            )));
+        }
+    }
+    match ctx.pane(pane_id) {
+        Some(PaneKind::Terminal(_)) => Ok(pane_id),
+        Some(other) => Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "terminal",
+            actual: pane_kind_label(other),
+        }),
+        None => Err(CliError::PaneNotFound(pane_id)),
+    }
+}
+
+fn terminal_observe_line_limit(
+    params: &Value,
+    detail: TerminalObserveDetail,
+    visible_rows: usize,
+) -> usize {
+    let default = match detail {
+        TerminalObserveDetail::Compact => TERMINAL_OBSERVE_COMPACT_LINES,
+        TerminalObserveDetail::Full => visible_rows,
+    };
+    params
+        .get("max_lines")
+        .or_else(|| params.get("lines"))
+        .and_then(|value| value.as_u64())
+        .map(|value| value as usize)
+        .unwrap_or(default)
+        .clamp(1, TERMINAL_OBSERVE_MAX_LINES)
+        .min(visible_rows.max(1))
+}
+
+fn terminal_line_text(cells: &[crate::tide_core::TerminalCell]) -> String {
+    let mut text = String::with_capacity(cells.len());
+    for cell in cells {
+        if cell.character != '\0' {
+            text.push(cell.character);
+        }
+    }
+    text.trim_end().to_string()
+}
+
+fn terminal_buffer_line_text(tp: &crate::pane::TerminalPane, absolute_row: usize) -> String {
+    tp.backend
+        .buffer_row_cells(absolute_row)
+        .map(|cells| terminal_line_text(&cells))
+        .unwrap_or_default()
+}
+
+fn terminal_find_match_limit(params: &Value) -> usize {
+    params
+        .get("max_matches")
+        .or_else(|| params.get("limit"))
+        .and_then(|value| value.as_u64())
+        .map(|value| value as usize)
+        .unwrap_or(TERMINAL_FIND_DEFAULT_MATCH_LIMIT)
+        .clamp(1, TERMINAL_FIND_MAX_MATCH_LIMIT)
+}
+
+fn terminal_find_context_lines(params: &Value) -> usize {
+    params
+        .get("context_lines")
+        .or_else(|| params.get("context"))
+        .and_then(|value| value.as_u64())
+        .map(|value| value as usize)
+        .unwrap_or(0)
+        .min(TERMINAL_FIND_MAX_CONTEXT_LINES)
+}
+
+fn editor_find_match_limit(params: &Value) -> usize {
+    params
+        .get("max_matches")
+        .or_else(|| params.get("limit"))
+        .and_then(|value| value.as_u64())
+        .map(|value| value as usize)
+        .unwrap_or(EDITOR_FIND_DEFAULT_MATCH_LIMIT)
+        .clamp(1, EDITOR_FIND_MAX_MATCH_LIMIT)
+}
+
+fn editor_find_context_lines(params: &Value) -> usize {
+    params
+        .get("context_lines")
+        .or_else(|| params.get("context"))
+        .and_then(|value| value.as_u64())
+        .map(|value| value as usize)
+        .unwrap_or(0)
+        .min(EDITOR_FIND_MAX_CONTEXT_LINES)
+}
+
+fn editor_replace_limit(params: &Value) -> usize {
+    let default = if param_bool(params, &["all", "replace_all"]) {
+        EDITOR_REPLACE_MAX_LIMIT
+    } else {
+        EDITOR_REPLACE_DEFAULT_LIMIT
+    };
+    params
+        .get("max_replacements")
+        .or_else(|| params.get("limit"))
+        .and_then(|value| value.as_u64())
+        .map(|value| value as usize)
+        .unwrap_or(default)
+        .clamp(1, EDITOR_REPLACE_MAX_LIMIT)
+}
+
+fn editor_tool_target_pane_id(
+    ctx: &(impl DockPort + FocusNavPort + GatewayPort + PaneAccessPort),
+    params: &Value,
+) -> Result<PaneId, CliError> {
+    let pane_id = command_target_pane_id(ctx, params, "pane_id")?;
+    if let Some(caller) = caller_terminal_scope(ctx) {
+        let owner_terminal_id = ctx
+            .associated_terminal(pane_id)
+            .or_else(|| ctx.terminal_owning(pane_id));
+        if !pane_is_in_caller_terminal_scope(pane_id, owner_terminal_id, caller) {
+            return Err(CliError::InvalidParams(format!(
+                "Editor observation is caller-scoped: pane {pane_id} is not owned by Caller Pane {caller}"
+            )));
+        }
+    }
+    match ctx.pane(pane_id) {
+        Some(PaneKind::Editor(_)) => Ok(pane_id),
+        Some(other) => Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "editor",
+            actual: pane_kind_label(other),
+        }),
+        None => Err(CliError::PaneNotFound(pane_id)),
+    }
+}
+
+fn editor_mode_label(editor: &crate::pane::editor::EditorPane) -> &'static str {
+    if editor.diff_mode {
+        "diff"
+    } else if editor.preview_mode {
+        "preview"
+    } else {
+        "source"
+    }
+}
+
+fn editor_byte_col_for_char_col(line: &str, char_col: usize) -> usize {
+    line.char_indices()
+        .nth(char_col)
+        .map(|(idx, _)| idx)
+        .unwrap_or(line.len())
+}
+
+fn editor_replace_match(
+    editor: &mut crate::pane::editor::EditorPane,
+    search_match: &crate::state::search::SearchMatch,
+    replacement: &str,
+) -> Option<serde_json::Value> {
+    let line_text = editor.editor.buffer.line(search_match.line)?.to_string();
+    let start_col = editor_byte_col_for_char_col(&line_text, search_match.col);
+    let end_col = editor_byte_col_for_char_col(&line_text, search_match.col + search_match.len);
+    let start = crate::tide_editor::EditorPosition {
+        line: search_match.line,
+        col: start_col,
+    };
+    let end = crate::tide_editor::EditorPosition {
+        line: search_match.line,
+        col: end_col,
+    };
+    let before = line_text[start_col..end_col].to_string();
+    let replace_start = editor.editor.buffer.delete_range(start, end);
+    let replace_end = editor.editor.buffer.insert_text(replace_start, replacement);
+    editor.editor.cursor.set_position(replace_end);
+    editor.editor.cursor.desired_col = replace_end.col;
+    editor.selection = None;
+    editor.search = None;
+    Some(json!({
+        "line": search_match.line,
+        "col": search_match.col,
+        "len": search_match.len,
+        "before": before,
+        "after": replacement,
+    }))
+}
+
+fn terminal_cell_range_text(
+    cells: &[crate::tide_core::TerminalCell],
+    start: usize,
+    end: usize,
+) -> String {
+    let mut text = String::new();
+    for cell in cells
+        .iter()
+        .skip(start.min(cells.len()))
+        .take(end.saturating_sub(start))
+    {
+        if cell.character != '\0' {
+            text.push(cell.character);
+        }
+    }
+    text.trim_end().to_string()
+}
+
+fn terminal_url_ranges_json(
+    cells: &[crate::tide_core::TerminalCell],
+    ranges: &[(usize, usize)],
+) -> Value {
+    Value::Array(
+        ranges
+            .iter()
+            .map(|(start, end)| {
+                json!({
+                    "start_col": start,
+                    "end_col": end,
+                    "text": terminal_cell_range_text(cells, *start, *end),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn terminal_hyperlink_ranges_json(
+    cells: &[crate::tide_core::TerminalCell],
+    ranges: &[(usize, usize, String)],
+) -> Value {
+    Value::Array(
+        ranges
+            .iter()
+            .map(|(start, end, uri)| {
+                json!({
+                    "start_col": start,
+                    "end_col": end,
+                    "text": terminal_cell_range_text(cells, *start, *end),
+                    "uri": uri,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn cursor_shape_label(shape: CursorShape) -> &'static str {
+    match shape {
+        CursorShape::Block => "block",
+        CursorShape::Beam => "beam",
+        CursorShape::Underline => "underline",
+    }
+}
+
+/// ObserveTerminal — read the live terminal work surface as structured MCP data.
+fn cli_observe_terminal(
+    ctx: &(impl FocusNavPort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let detail = terminal_observe_detail(&params)?;
+    let pane_id = terminal_observe_target_pane_id(ctx, &params)?;
+    let PaneKind::Terminal(tp) = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))? else {
+        unreachable!("terminal_observe_target_pane_id validates terminal pane kind");
+    };
+
+    let grid = tp.backend.grid();
+    let visible_rows = grid.cells.len();
+    let line_limit = terminal_observe_line_limit(&params, detail, visible_rows);
+    let first_row = visible_rows.saturating_sub(line_limit);
+    let history_size = tp.backend.history_size();
+    let display_offset = tp.backend.display_offset();
+    let visible_start_absolute_row = history_size.saturating_sub(display_offset);
+    let url_ranges = tp.backend.url_ranges();
+    let hyperlink_ranges = tp.backend.hyperlink_ranges();
+
+    let mut rows = Vec::new();
+    for row_idx in first_row..visible_rows {
+        let cells = &grid.cells[row_idx];
+        rows.push(json!({
+            "row": row_idx,
+            "absolute_row": visible_start_absolute_row + row_idx,
+            "text": terminal_line_text(cells),
+            "wrapped": tp.backend.visible_row_is_wrapped(row_idx),
+            "urls": terminal_url_ranges_json(
+                cells,
+                url_ranges.get(row_idx).map(Vec::as_slice).unwrap_or(&[]),
+            ),
+            "hyperlinks": terminal_hyperlink_ranges_json(
+                cells,
+                hyperlink_ranges
+                    .get(row_idx)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+            ),
+        }));
+    }
+
+    let selection = tp
+        .selection
+        .as_ref()
+        .map(|selection| {
+            json!({
+                "active": true,
+                "range": serialize_selection(selection),
+                "content": tp.selected_text(selection),
+            })
+        })
+        .unwrap_or_else(|| json!({"active": false}));
+    let cursor = tp.backend.cursor();
+    let detail_label = match detail {
+        TerminalObserveDetail::Full => "full",
+        TerminalObserveDetail::Compact => "compact",
+    };
+    let content = rows
+        .iter()
+        .filter_map(|row| row.get("text").and_then(|text| text.as_str()))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok(json!({
+        "pane_id": pane_id,
+        "kind": "terminal",
+        "detail": detail_label,
+        "title": ctx.pane_title(pane_id),
+        "cwd": terminal_cwd_json(ctx.pane(pane_id)),
+        "pid": tp.backend.child_pid(),
+        "shell_idle": tp.context.shell_idle,
+        "child_dead": tp.context.child_dead,
+        "osc_title": tp.context.osc_title,
+        "grid": {
+            "cols": grid.cols,
+            "rows": grid.rows,
+            "visible_rows": visible_rows,
+            "history_lines": history_size,
+            "display_offset": display_offset,
+            "visible_start_absolute_row": visible_start_absolute_row,
+        },
+        "cursor": {
+            "row": cursor.row,
+            "col": cursor.col,
+            "visible": cursor.visible,
+            "shape": cursor_shape_label(cursor.shape),
+        },
+        "screen": {
+            "content": content,
+            "rows": rows,
+            "truncation": {
+                "rows_truncated": first_row > 0,
+                "original_rows": visible_rows,
+                "returned_rows": visible_rows.saturating_sub(first_row),
+                "limit_rows": line_limit,
+            },
+        },
+        "selection": selection,
+    }))
+}
+
+/// FindInTerminal — search the caller terminal scrollback + visible screen.
+fn cli_find_in_terminal(
+    ctx: &(impl FocusNavPort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = terminal_observe_target_pane_id(ctx, &params)?;
+    let query = params
+        .get("query")
+        .or_else(|| params.get("text"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            CliError::InvalidParams("find-in-terminal requires non-empty query".into())
+        })?;
+    let match_limit = terminal_find_match_limit(&params);
+    let context_lines = terminal_find_context_lines(&params);
+    let PaneKind::Terminal(tp) = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))? else {
+        unreachable!("terminal_observe_target_pane_id validates terminal pane kind");
+    };
+
+    let all_matches = tp.backend.search_buffer(query);
+    let returned_matches = all_matches
+        .iter()
+        .take(match_limit)
+        .map(|(absolute_row, col, len)| {
+            let context_start = absolute_row.saturating_sub(context_lines);
+            let context_end = absolute_row.saturating_add(context_lines);
+            let context = (context_start..=context_end)
+                .filter_map(|row| {
+                    tp.backend.buffer_row_cells(row).map(|cells| {
+                        json!({
+                            "absolute_row": row,
+                            "text": terminal_line_text(&cells),
+                        })
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "absolute_row": absolute_row,
+                "col": col,
+                "len": len,
+                "line": terminal_buffer_line_text(tp, *absolute_row),
+                "context": context,
+            })
+        })
+        .collect::<Vec<_>>();
+    let grid = tp.backend.grid();
+    let visible_start_absolute_row = tp
+        .backend
+        .history_size()
+        .saturating_sub(tp.backend.display_offset());
+
+    Ok(json!({
+        "pane_id": pane_id,
+        "kind": "terminal",
+        "query": query,
+        "case_sensitive": false,
+        "search_scope": {
+            "history_lines": tp.backend.history_size(),
+            "visible_rows": grid.cells.len(),
+            "visible_start_absolute_row": visible_start_absolute_row,
+        },
+        "matches": returned_matches,
+        "truncation": {
+            "matches_truncated": all_matches.len() > match_limit,
+            "total_matches": all_matches.len(),
+            "returned_matches": all_matches.len().min(match_limit),
+            "limit_matches": match_limit,
+            "context_lines": context_lines,
+        },
+    }))
+}
+
+/// FindInEditor — search an Editor Pane buffer and return bounded structured matches.
+fn cli_find_in_editor(
+    ctx: &(impl DockPort + FocusNavPort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = editor_tool_target_pane_id(ctx, &params)?;
+    let query = params
+        .get("query")
+        .or_else(|| params.get("text"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| CliError::InvalidParams("find-in-editor requires non-empty query".into()))?;
+    let match_limit = editor_find_match_limit(&params);
+    let context_lines = editor_find_context_lines(&params);
+    let PaneKind::Editor(editor) = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))? else {
+        unreachable!("editor_tool_target_pane_id validates editor pane kind");
+    };
+
+    let mut search = crate::state::search::SearchState::new();
+    search.input = crate::state::InputLine::with_text(query.to_string());
+    crate::state::search::execute_search_editor(&mut search, &editor.editor.buffer.lines);
+
+    let line_count = editor.editor.buffer.line_count();
+    let returned_matches = search
+        .matches
+        .iter()
+        .take(match_limit)
+        .map(|search_match| {
+            let context_start = search_match.line.saturating_sub(context_lines);
+            let context_end = search_match
+                .line
+                .saturating_add(context_lines)
+                .min(line_count.saturating_sub(1));
+            let context = if line_count == 0 {
+                Vec::new()
+            } else {
+                (context_start..=context_end)
+                    .filter_map(|line| {
+                        editor.editor.buffer.line(line).map(|text| {
+                            json!({
+                                "line": line,
+                                "text": text,
+                            })
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            };
+            json!({
+                "line": search_match.line,
+                "col": search_match.col,
+                "len": search_match.len,
+                "line_text": editor
+                    .editor
+                    .buffer
+                    .line(search_match.line)
+                    .unwrap_or_default(),
+                "context": context,
+            })
+        })
+        .collect::<Vec<_>>();
+    let cursor = editor.editor.cursor_position();
+
+    Ok(json!({
+        "pane_id": pane_id,
+        "kind": "editor",
+        "query": query,
+        "case_sensitive": false,
+        "file_path": editor
+            .editor
+            .file_path()
+            .map(|path| path.to_string_lossy().to_string()),
+        "dirty": editor.editor.is_modified(),
+        "mode": editor_mode_label(editor),
+        "cursor": {
+            "line": cursor.line,
+            "col": cursor.col,
+        },
+        "search_scope": {
+            "source": "buffer",
+            "line_count": line_count,
+        },
+        "matches": returned_matches,
+        "truncation": {
+            "matches_truncated": search.matches.len() > match_limit,
+            "total_matches": search.matches.len(),
+            "returned_matches": search.matches.len().min(match_limit),
+            "limit_matches": match_limit,
+            "context_lines": context_lines,
+        },
+    }))
+}
+
+/// ReplaceInEditor — apply bounded literal replacements to an owned Editor Pane.
+fn cli_replace_in_editor(
+    ctx: &mut (impl DockPort + FocusNavPort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = editor_tool_target_pane_id(ctx, &params)?;
+    let query = params
+        .get("query")
+        .or_else(|| params.get("text"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            CliError::InvalidParams("replace-in-editor requires non-empty query".into())
+        })?;
+    let replacement = params
+        .get("replacement")
+        .or_else(|| params.get("replace_with"))
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| CliError::InvalidParams("replacement required".into()))?;
+    let replacement_limit = editor_replace_limit(&params);
+
+    let pane = ctx
+        .pane_mut(pane_id)
+        .ok_or(CliError::PaneNotFound(pane_id))?;
+    let PaneKind::Editor(editor) = pane else {
+        unreachable!("editor_tool_target_pane_id validates editor pane kind");
+    };
+    if editor.preview_mode {
+        return Err(CliError::InvalidParams(
+            "replace-in-editor requires source mode; switch the Editor Pane out of preview first"
+                .into(),
+        ));
+    }
+
+    let mut search = crate::state::search::SearchState::new();
+    search.input = crate::state::InputLine::with_text(query.to_string());
+    crate::state::search::execute_search_editor(&mut search, &editor.editor.buffer.lines);
+    let total_matches = search.matches.len();
+    let to_replace = search
+        .matches
+        .iter()
+        .take(replacement_limit)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let was_dirty = editor.editor.is_modified();
+    let mut replaced = Vec::new();
+    for search_match in to_replace.iter().rev() {
+        if let Some(result) = editor_replace_match(editor, search_match, replacement) {
+            replaced.push(result);
+        }
+    }
+    replaced.reverse();
+    let cursor = editor.editor.cursor_position();
+
+    Ok(json!({
+        "ok": true,
+        "pane_id": pane_id,
+        "kind": "editor",
+        "query": query,
+        "replacement": replacement,
+        "case_sensitive": false,
+        "file_path": editor
+            .editor
+            .file_path()
+            .map(|path| path.to_string_lossy().to_string()),
+        "mode": editor_mode_label(editor),
+        "dirty_before": was_dirty,
+        "dirty_after": editor.editor.is_modified(),
+        "cursor": {
+            "line": cursor.line,
+            "col": cursor.col,
+        },
+        "replacements": replaced,
+        "truncation": {
+            "matches_truncated": total_matches > replacement_limit,
+            "total_matches": total_matches,
+            "applied_replacements": replaced.len(),
+            "limit_replacements": replacement_limit,
+        },
+    }))
+}
+
 /// UC-1: ObserveBrowserPaneAutomationState — read structured Browser Pane state.
 fn cli_browser_observe(
     ctx: &mut (impl AppCorePort + DockPort + FocusNavPort + GatewayPort + LayoutPort + PaneAccessPort),
@@ -1790,7 +3394,7 @@ fn cli_browser_observe(
         "vision": vision_label,
         "screenshot": screenshot_json,
         "runtime": "tide_browser_pane",
-        "external_runtime": Value::Null,
+        "external_runtime": browser_external_runtime_json(browser),
         "operation": browser_operation_json(control_decision.active),
         "requires_prior_observe_for_actions": true,
         "cursor_semantics": browser_cursor_semantics_json(),
@@ -2714,10 +4318,7 @@ fn cli_activate_notification_target(
 }
 
 /// UC-3: RenameWorkspaceViaMcp — rename a Workspace by index (defaults to active).
-fn cli_rename_workspace(
-    ctx: &mut impl WorkspaceNavPort,
-    params: Value,
-) -> Result<Value, CliError> {
+fn cli_rename_workspace(ctx: &mut impl WorkspaceNavPort, params: Value) -> Result<Value, CliError> {
     let name = params
         .get("name")
         .and_then(|v| v.as_str())
@@ -3303,11 +4904,13 @@ fn cli_create_context_artifact(ctx: &mut crate::App, params: Value) -> Result<Va
         content,
         comment,
         pinned,
+        deliveries: Vec::new(),
     };
     let artifact_id = artifact.artifact_id;
     ctx.context_artifacts
         .artifacts
         .insert(artifact_id, artifact.clone());
+    ctx.record_browser_review_from_artifact(&artifact);
 
     Ok(active_artifact_json(&artifact))
 }
@@ -3403,12 +5006,21 @@ fn cli_send_context_artifact(ctx: &mut crate::App, params: Value) -> Result<Valu
         .ok_or(CliError::PaneNotFound(artifact_id))?;
     ensure_artifact_owner(caller_terminal_id, artifact.associated_terminal_id)?;
 
-    let terminal_input_injected = ctx.deliver_context_artifact(&artifact);
+    let terminal_input_injected = ctx
+        .deliver_context_artifact(artifact_id)
+        .ok_or(CliError::PaneNotFound(artifact_id))?;
+    let artifact = ctx
+        .context_artifacts
+        .artifacts
+        .get(&artifact_id)
+        .cloned()
+        .ok_or(CliError::PaneNotFound(artifact_id))?;
 
     Ok(json!({
         "ok": true,
         "artifact_id": artifact_id,
-        "terminal_input_injected": terminal_input_injected
+        "terminal_input_injected": terminal_input_injected,
+        "artifact": active_artifact_json(&artifact),
     }))
 }
 
@@ -3521,7 +5133,11 @@ pub(crate) fn list_integration_status() -> Vec<Value> {
                     EnableMethod::CliCommand(_) => content.contains("[mcp_servers.tide-terminal]"),
                     _ => serde_json::from_str::<Value>(&content)
                         .ok()
-                        .map(|v| v.get("mcpServers").and_then(|m| m.get("tide-terminal")).is_some())
+                        .map(|v| {
+                            v.get("mcpServers")
+                                .and_then(|m| m.get("tide-terminal"))
+                                .is_some()
+                        })
                         .unwrap_or(false),
                 }
             } else {
@@ -3848,5 +5464,3 @@ fn cli_notify(
 
     Ok(json!({"ok": true}))
 }
-
-

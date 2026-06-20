@@ -9,6 +9,7 @@ import { createRailSkeleton } from "./skeletons.tsx";
 import { createPinnedSection } from "./pinned-section.tsx";
 import { createThreadSection } from "./thread-section.tsx";
 import { createProjectSection } from "./project-section.tsx";
+import { AppUpdateButton } from "../support/app-update-pill.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createLeftRail(
@@ -36,6 +37,7 @@ export function createLeftRail(
           handlers.onLeftRailToggle,
           "top-row-button",
         )}
+        <AppUpdateButton />
       </header>
       <nav className="left-rail__nav" aria-label="Left Rail actions">
         {createLeftNavRow("New thread", <MessageSquarePlus size={16} strokeWidth={1.9} />, handlers.onNewThread)}

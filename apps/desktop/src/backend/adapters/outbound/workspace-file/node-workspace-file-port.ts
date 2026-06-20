@@ -1,6 +1,7 @@
 import { mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { worktreeRepoRootForCwd } from "../../../../shared/worktree/path.ts";
 import type {
   WorkspaceFileEditResult,
   WorkspaceFileError,
@@ -536,11 +537,14 @@ function resolveInsideRoot(
   | { ok: true; root: string; path: string; relativePath: string }
   | { ok: false; error: WorkspaceFileError } {
   const root = path.resolve(rootInput);
-  const candidate = path.isAbsolute(fileInput)
+  const directCandidate = path.isAbsolute(fileInput)
     ? path.resolve(fileInput)
     : path.resolve(root, fileInput);
+  const candidate = candidateInsideRoot(root, directCandidate)
+    ? directCandidate
+    : remapRepoPathIntoDefaultWorktree(root, directCandidate) ?? directCandidate;
 
-  if (candidate !== root && !candidate.startsWith(`${root}${path.sep}`)) {
+  if (!candidateInsideRoot(root, candidate)) {
     return {
       ok: false,
       error: {
@@ -556,4 +560,25 @@ function resolveInsideRoot(
     path: candidate,
     relativePath: path.relative(root, candidate) || ".",
   };
+}
+
+function candidateInsideRoot(root: string, candidate: string): boolean {
+  if (candidate === root) {
+    return true;
+  }
+  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  return candidate.startsWith(prefix);
+}
+
+function remapRepoPathIntoDefaultWorktree(root: string, candidate: string): string | null {
+  const repoRoot = worktreeRepoRootForCwd(root);
+  if (repoRoot === null) {
+    return null;
+  }
+  const repo = path.resolve(repoRoot);
+  if (!candidateInsideRoot(repo, candidate)) {
+    return null;
+  }
+  const relativePath = path.relative(repo, candidate);
+  return path.resolve(root, relativePath);
 }

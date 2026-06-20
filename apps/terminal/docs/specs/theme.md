@@ -1,12 +1,12 @@
 # Spec: Theme
 
-Theme switching and font defaults.
+Theme switching, built-in palettes, and font defaults.
 
 ## Bounded Contexts
 
 | Context | Role |
 |---------|------|
-| `tide-app` | dark_mode flag, font size, cache invalidation |
+| `tide-app` | dark_mode flag, built-in palette selection, font size, cache invalidation |
 | `ModalStack` | ConfigPage Appearance section for text-first theme controls |
 
 ## Use Cases
@@ -31,6 +31,23 @@ Theme switching and font defaults.
 - **Trigger**: App initialization
 - **Business Rules**:
   - BR-4: Font size starts at 14
+
+### UC-2A: SelectBuiltinPalette
+
+- **Actor**: User
+- **Trigger**: User selects the Palette row in ConfigPage Appearance, or launches with `appearance.palette` in settings JSON
+- **Precondition**: App is running
+- **Flow**:
+  1. Tide reads `appearance.palette`, defaulting to `tide` for legacy settings.
+  2. Tide resolves the active UI palette from `(dark_mode, palette)`.
+  3. Pressing Enter or clicking the Palette row cycles `Tide -> Graphite -> Sage -> Tide`.
+  4. Tide saves settings, broadcasts the settings change, invalidates chrome, and clears pane render generations.
+- **Postcondition**: The selected built-in palette is visible immediately and persists across launches.
+- **Business Rules**:
+  - BR-28: Built-in palettes must include `tide`, `graphite`, and `sage`.
+  - BR-29: Each built-in palette must provide dark and light chrome variants.
+  - BR-30: Non-default built-in palettes must keep primary chrome text readable and avoid high-chroma inactive states.
+  - BR-31: Palette changes must not break legacy `appearance.theme` settings.
 
 ### UC-3: LightModeChrome
 
@@ -95,14 +112,18 @@ Theme switching and font defaults.
 - **Trigger**: User opens ConfigPage and selects the Appearance section
 - **Precondition**: ConfigPage is open
 - **Flow**:
-  1. Tide renders an Appearance section with a text label for the current theme mode.
-  2. Tide renders the next theme action as text instead of exposing a titlebar theme icon.
-  3. Pressing Enter or clicking the Appearance theme row invokes `GlobalAction::ToggleTheme`.
-- **Postcondition**: The current theme mode is visible in ConfigPage text and theme switching remains keyboard/click reachable.
+  1. Tide renders an Appearance section with text labels for the current mode and built-in palette.
+  2. Tide renders the next mode and next palette actions as text.
+  3. Pressing Enter or clicking the Mode row invokes `GlobalAction::ToggleTheme`.
+  4. Pressing Enter or clicking the Palette row cycles the built-in palette.
+- **Postcondition**: The current mode and palette are visible in ConfigPage text and remain keyboard/click reachable.
 - **Business Rules**:
   - BR-12: ConfigPage Appearance must expose the current theme as text: `Dark` or `Light`.
   - BR-13: ConfigPage Appearance must expose the next theme action as text: `Switch to Light` or `Switch to Dark`.
   - BR-14: Activating the Appearance theme row must toggle theme through the same `GlobalAction::ToggleTheme` path.
+  - BR-32: ConfigPage Appearance must expose the current built-in palette as text: `Tide`, `Graphite`, or `Sage`.
+  - BR-33: ConfigPage Appearance must expose the next palette action as text.
+  - BR-34: Activating the Palette row must cycle the built-in palette without closing ConfigPage.
 
 ### UC-6: DarkModeEditorSurface
 
@@ -126,6 +147,8 @@ Theme switching and font defaults.
 | UC-1 | BR-2 | `toggle_theme_switches_between_dark_and_light` |
 | UC-1 | BR-3 | `toggle_theme_clears_all_pane_generations_in_render_cache` |
 | UC-2 | BR-4 | `font_size_starts_at_14` |
+| UC-2A | BR-28/BR-29/BR-30 | `named_builtin_palettes_resolve_to_distinct_quiet_chrome` |
+| UC-2A | BR-31 | `deserializing_legacy_settings_fills_appearance_and_terminal_defaults` |
 | UC-3 | BR-5/BR-6/BR-7 | `light_mode_palette_keeps_borders_subtle_and_text_readable` |
 | UC-3 | BR-8 | `file_tree_disclosure_chevrons_use_mode_aware_opacity` |
 | UC-3 | BR-15/BR-16 | `light_mode_palette_separates_chrome_layers_and_current_line` |
@@ -144,6 +167,7 @@ Theme switching and font defaults.
 | UC-4A | BR-27 | `dark_typescript_generics_color_as_types_not_jsx_tags` |
 | UC-5 | BR-12/BR-13 | `config_page_appearance_theme_uses_text_status` |
 | UC-5 | BR-14 | `config_page_appearance_theme_toggle_switches_theme` |
+| UC-5 | BR-32/BR-33/BR-34 | `config_page_appearance_palette_row_cycles_named_palette` |
 | UC-6 | BR-20/BR-21 | `dark_mode_editor_surface_has_document_depth_without_loud_overlays` |
 
 ## Location

@@ -246,7 +246,11 @@ fn generate_msdf_glyph_by_id(
         Some(b) => b,
         None => {
             if character.is_some_and(|ch| ch.is_ascii_graphic()) {
-                log::warn!("MSDF: no bounding box for '{:?}' glyph_id={:?}", character, glyph_id);
+                log::warn!(
+                    "MSDF: no bounding box for '{:?}' glyph_id={:?}",
+                    character,
+                    glyph_id
+                );
             }
             return None;
         }

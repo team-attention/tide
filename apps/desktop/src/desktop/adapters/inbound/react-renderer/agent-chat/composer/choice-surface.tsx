@@ -208,8 +208,8 @@ function inlineCreateConfig(
 ): { placeholder: string; ariaLabel: string } | null {
   if (surfaceKind === "branch_menu" && rowId === "create-branch") {
     return {
-      placeholder: "branch name (optional)",
-      ariaLabel: "New branch name",
+      placeholder: "worktree branch name (optional)",
+      ariaLabel: "New worktree branch name",
     };
   }
   return null;

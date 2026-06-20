@@ -5,7 +5,7 @@
 
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
-use crate::state::{FocusArea, ViewMode};
+use crate::state::{ConfigPageState, FocusArea, ViewMode};
 use crate::tide_core::{Key, LayoutEngine, Modifiers, SplitDirection};
 use crate::tide_input::{Direction, GlobalAction, KeybindingMap};
 use crate::ActionPort;
@@ -697,7 +697,8 @@ fn cmd_shift_hjkl_maps_to_dock_navigate() {
 
 #[test]
 fn keybinding_settings_omit_retired_tab_group_and_unbound_dock_split_actions() {
-    // UC-10 BR-1/BR-2: Settings hides retired tab-group shortcuts and no-default Dock split internals.
+    // UC-10 BR-1/BR-2/BR-3: Settings hides retired tab-group shortcuts and
+    // no-default internals, while exposing every default-bound action.
     let actions = GlobalAction::all_actions();
     let defaults = KeybindingMap::new();
 
@@ -727,6 +728,79 @@ fn keybinding_settings_omit_retired_tab_group_and_unbound_dock_split_actions() {
             action.action_key()
         );
     }
+
+    for (_, default_action) in KeybindingMap::default_bindings() {
+        assert!(
+            GlobalAction::all_actions()
+                .iter()
+                .any(|action| action.action_key() == default_action.action_key()),
+            "{} has a default hotkey and should be shown in keybinding settings",
+            default_action.action_key()
+        );
+    }
+}
+
+#[test]
+fn keybinding_settings_swap_conflicting_hotkeys_instead_of_placeholder_unbinding() {
+    // UC-10 BR-4: Recording a hotkey already used by another action swaps the
+    // conflicting action onto the previous hotkey instead of assigning a fake
+    // placeholder key that could later be routed as a real shortcut.
+    let mut page = ConfigPageState::new(
+        vec![
+            (
+                GlobalAction::ToggleFileTree,
+                crate::tide_input::Hotkey::new(Key::Char('b'), false, false, true, false),
+            ),
+            (
+                GlobalAction::ToggleWorkspaceSidebar,
+                crate::tide_input::Hotkey::new(Key::Char('e'), false, false, true, false),
+            ),
+        ],
+        String::new(),
+        String::new(),
+    );
+
+    page.set_keybinding_with_swap(
+        1,
+        crate::tide_input::Hotkey::new(Key::Char('b'), false, false, true, false),
+    );
+
+    assert_eq!(
+        page.bindings[0].1,
+        crate::tide_input::Hotkey::new(Key::Char('e'), false, false, true, false)
+    );
+    assert_eq!(
+        page.bindings[1].1,
+        crate::tide_input::Hotkey::new(Key::Char('b'), false, false, true, false)
+    );
+    assert!(page.dirty);
+}
+
+#[test]
+fn keybinding_overrides_remove_same_hotkey_collisions_with_last_override_winning() {
+    // UC-10 BR-5: Manually-edited settings may contain conflicts. The runtime
+    // map resolves same-hotkey collisions deterministically instead of relying
+    // on first-match lookup order.
+    let cmd_b = crate::tide_input::Hotkey::new(Key::Char('b'), false, false, true, false);
+    let map = KeybindingMap::with_overrides(vec![
+        (cmd_b.clone(), GlobalAction::ToggleFileTree),
+        (cmd_b.clone(), GlobalAction::ToggleWorkspaceSidebar),
+    ]);
+    let mods = Modifiers {
+        shift: false,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
+
+    assert_eq!(
+        map.lookup(&Key::Char('b'), &mods),
+        Some(GlobalAction::ToggleWorkspaceSidebar)
+    );
+    assert!(
+        map.hotkey_for(&GlobalAction::ToggleFileTree).is_none(),
+        "same-hotkey conflict should unbind the earlier action"
+    );
 }
 
 #[test]

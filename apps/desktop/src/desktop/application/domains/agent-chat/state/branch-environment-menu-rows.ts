@@ -61,9 +61,9 @@ export function worktreeMenuRows(state: AgentChatShellState): AgentChatChoiceSur
   ];
 }
 
-// Real git branches with the creation affordance and the default branch pinned at
-// the top. Safe local branches also get a trailing delete affordance, mirroring
-// the worktree picker.
+// Real git branches with the new-worktree-branch affordance and the default branch
+// pinned at the top. Safe local branches also get a trailing delete affordance,
+// mirroring the worktree picker.
 export function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowView[] {
   const selected = String(launchOptionsForState(state)?.branch ?? "main");
   const branches = state.availableBranches ?? [];
@@ -73,7 +73,7 @@ export function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfa
   const rows: AgentChatChoiceSurfaceRowView[] = [
     row(
       "create-branch",
-      "New branch",
+      "New worktree branch",
       `from ${selected}`,
       undefined,
       "plus",

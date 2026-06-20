@@ -161,10 +161,7 @@ import { createNodeComposerAttachmentStorePort } from "../../../adapters/outboun
 
 import { createNodeProviderTrustPort } from "../../../adapters/outbound/provider-trust/node-provider-trust-port.ts";
 
-import {
-  ensureProviderBootstrapArtifacts,
-  providerBootstrapArtifactsForHome,
-} from "../provider/provider-bootstrap-artifacts.ts";
+import { ensureProviderBootstrapArtifacts } from "../provider/provider-bootstrap-artifacts.ts";
 
 import type { AgentSessionBlockUpdate } from "../../../application/domains/agent-session/agent-session-block.ts";
 
@@ -242,10 +239,29 @@ export function createLiveBackendContractMessageAdapter(
     tidePane: env.TIDE_PANE,
     tideWindow: env.TIDE_WINDOW,
   });
+  const defaultCodexHome = bootstrapArtifacts.codexHome;
+  const codexHomeCache = new Map<string, string>();
+  const effectiveCodexHome = (cwd: string): string => {
+    const cached = codexHomeCache.get(cwd);
+    if (cached !== undefined) {
+      return cached;
+    }
+    let codexHome = defaultCodexHome;
+    try {
+      const value = resolveAugmentedEnvironment({ currentEnv: { ...env }, cwd }).CODEX_HOME;
+      if (value !== undefined && value.length > 0) {
+        codexHome = value;
+      }
+    } catch {
+      codexHome = defaultCodexHome;
+    }
+    codexHomeCache.set(cwd, codexHome);
+    return codexHome;
+  };
   const integrations = {
     codex: createCodexAgentIntegration({
       resolveExecutable: () => resolveExecutable("codex"),
-      readProviderState: ({ cwd }) => readCodexProviderStateFromHome(homeDir, cwd),
+      readProviderState: ({ cwd }) => readCodexProviderStateFromHome(homeDir, cwd, effectiveCodexHome(cwd)),
       tideMcp: {
         command: bootstrapArtifacts.tideMcpCommandPath,
         args: [],
@@ -362,12 +378,17 @@ export function createLiveBackendContractMessageAdapter(
     }),
     workbenchTerminalPort: createPtyWorkbenchTerminalPort({
       launcher: ptyLauncher,
+      resolveRuntimeEnvironment: ({ cwd, planEnv }) =>
+        resolveAugmentedEnvironment({ currentEnv: { ...env, ...planEnv }, cwd }),
     }),
     ptyTranscriptPort: createMemoryPtyTranscriptPort(),
-    workspaceCommandPort: createNodeWorkspaceCommandPort(),
+    workspaceCommandPort: createNodeWorkspaceCommandPort({
+      resolveRuntimeEnvironment: ({ cwd, planEnv }) =>
+        resolveAugmentedEnvironment({ currentEnv: { ...env, ...planEnv }, cwd }),
+    }),
     workspaceFilePort: createNodeWorkspaceFilePort(),
     composerAttachmentStorePort: createNodeComposerAttachmentStorePort(join(appDataRoot, "attachments")),
-    providerTrustPort: createNodeProviderTrustPort(homeDir, bootstrapArtifacts.codexHome),
+    providerTrustPort: createNodeProviderTrustPort(homeDir, effectiveCodexHome),
     ensureScratchDirectory: (threadId: string) => {
       const dir = join(appDataRoot, "scratch", threadId);
       mkdirSync(dir, { recursive: true });
@@ -449,6 +470,7 @@ export function createLiveBackendContractMessageAdapter(
     service,
     persistence,
     homeDir,
+    codexHome: effectiveCodexHome(process.cwd()),
     appDataRoot,
     emitBackendEvents,
   });

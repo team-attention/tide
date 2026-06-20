@@ -1,12 +1,16 @@
 // Spec: docs/specs/theme.md
 use crate::adapter::outward::view::{
+    config_page_osc52_read_status_text, config_page_osc52_read_toggle_text,
+    config_page_theme_palette_status_text, config_page_theme_palette_toggle_text,
     config_page_theme_status_text, config_page_theme_toggle_text, file_tree_disclosure_color,
 };
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
-use crate::state::settings::ThemePreference;
+use crate::state::settings::{ThemePalettePreference, ThemePreference};
 use crate::state::{ConfigPageState, ConfigSection};
-use crate::theme::{DARK, LIGHT};
+use crate::theme::{
+    palette_for, DARK, GRAPHITE_DARK, GRAPHITE_LIGHT, LIGHT, SAGE_DARK, SAGE_LIGHT,
+};
 use crate::tide_core::{Key, Modifiers};
 use crate::tide_editor::highlight::{Highlighter, DARK_SYNTAX_THEME_NAME, LIGHT_SYNTAX_THEME_NAME};
 use crate::tide_editor::markdown::MarkdownTheme;
@@ -96,12 +100,15 @@ fn loaded_user_settings_apply_font_theme_and_pending_renderer_values() {
     app.settings.appearance.font_family = "JetBrains Mono".to_string();
     app.settings.appearance.font_size = 18.0;
     app.settings.appearance.theme = ThemePreference::Light;
+    app.settings.appearance.palette = ThemePalettePreference::Graphite;
 
     app.apply_loaded_user_settings();
 
     assert_eq!(app.window.current_font_family, "JetBrains Mono");
     assert!((app.window.current_font_size - 18.0).abs() < f32::EPSILON);
     assert!(!app.window.dark_mode);
+    assert_eq!(app.window.theme_palette, ThemePalettePreference::Graphite);
+    assert_color_near(app.window.palette().surface_bg, GRAPHITE_LIGHT.surface_bg);
     assert_eq!(
         app.window.pending_font_family.as_deref(),
         Some("JetBrains Mono")
@@ -175,6 +182,25 @@ fn dark_mode_editor_surface_has_document_depth_without_loud_overlays() {
     assert!(DARK.active_indent_guide.a > DARK.indent_guide.a);
     assert!(DARK.active_indent_guide.a <= 0.16);
     assert!(DARK.scrollbar_thumb.a <= 0.11);
+}
+
+#[test]
+fn named_builtin_palettes_resolve_to_distinct_quiet_chrome() {
+    let graphite_dark = palette_for(true, ThemePalettePreference::Graphite);
+    let graphite_light = palette_for(false, ThemePalettePreference::Graphite);
+    let sage_dark = palette_for(true, ThemePalettePreference::Sage);
+    let sage_light = palette_for(false, ThemePalettePreference::Sage);
+
+    assert_color_near(graphite_dark.surface_bg, GRAPHITE_DARK.surface_bg);
+    assert_color_near(graphite_light.surface_bg, GRAPHITE_LIGHT.surface_bg);
+    assert_color_near(sage_dark.surface_bg, SAGE_DARK.surface_bg);
+    assert_color_near(sage_light.surface_bg, SAGE_LIGHT.surface_bg);
+    assert!(color_distance(graphite_dark.dock_tab_underline, DARK.dock_tab_underline) >= 0.10);
+    assert!(color_distance(sage_dark.dock_tab_underline, DARK.dock_tab_underline) >= 0.10);
+    assert!(contrast_ratio(graphite_light.tab_text_focused, graphite_light.pane_bg) >= 4.5);
+    assert!(contrast_ratio(sage_light.tab_text_focused, sage_light.pane_bg) >= 4.5);
+    assert!(graphite_dark.current_line_bg.a <= 0.050);
+    assert!(sage_dark.current_line_bg.a <= 0.050);
 }
 
 #[test]
@@ -487,7 +513,10 @@ fn dark_typescript_generics_color_as_types_not_jsx_tags() {
             saw_type_arg = true;
         }
     }
-    assert!(saw_type_arg, "expected generic type arguments to be checked");
+    assert!(
+        saw_type_arg,
+        "expected generic type arguments to be checked"
+    );
 }
 
 #[test]
@@ -563,6 +592,22 @@ fn config_page_appearance_theme_uses_text_status() {
     assert_eq!(config_page_theme_status_text(false), "Light");
     assert_eq!(config_page_theme_toggle_text(true), "Switch to Light");
     assert_eq!(config_page_theme_toggle_text(false), "Switch to Dark");
+    assert_eq!(
+        config_page_theme_palette_status_text(ThemePalettePreference::Graphite),
+        "Graphite"
+    );
+    assert_eq!(
+        config_page_theme_palette_toggle_text(ThemePalettePreference::Graphite),
+        "Next: Sage"
+    );
+}
+
+#[test]
+fn config_page_terminal_osc52_read_uses_text_status() {
+    assert_eq!(config_page_osc52_read_status_text(true), "Allowed");
+    assert_eq!(config_page_osc52_read_status_text(false), "Blocked");
+    assert_eq!(config_page_osc52_read_toggle_text(true), "Block");
+    assert_eq!(config_page_osc52_read_toggle_text(false), "Allow");
 }
 
 #[test]
@@ -582,5 +627,33 @@ fn config_page_appearance_theme_toggle_switches_theme() {
     );
 
     assert!(!app.window.dark_mode);
+    assert!(app.modal.config_page.is_some());
+}
+
+#[test]
+fn config_page_appearance_palette_row_cycles_named_palette() {
+    let mut app = test_app();
+    let mut page = ConfigPageState::new(vec![], String::new(), String::new());
+    page.section = ConfigSection::Appearance;
+    page.selected_field = 1;
+    app.modal.config_page = Some(page);
+
+    assert_eq!(
+        app.settings.appearance.palette,
+        ThemePalettePreference::Tide
+    );
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        Key::Enter,
+        Modifiers::default(),
+        None,
+    );
+
+    assert_eq!(
+        app.settings.appearance.palette,
+        ThemePalettePreference::Graphite
+    );
+    assert_eq!(app.window.theme_palette, ThemePalettePreference::Graphite);
+    assert_color_near(app.window.palette().surface_bg, GRAPHITE_DARK.surface_bg);
     assert!(app.modal.config_page.is_some());
 }

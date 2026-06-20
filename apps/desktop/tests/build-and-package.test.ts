@@ -118,6 +118,25 @@ test("provider_smoke_script_is_opt_in", () => {
   assert.doesNotMatch(smokeScript, /Provider smoke tests are opt-in; configure local provider CLIs/);
 });
 
+test("verification_loop_script_is_declared_and_writes_reports", () => {
+  const packageJson = readPackageJson();
+  const verifyScript = fs.readFileSync(
+    path.join(repoRoot, "scripts/v2-verification-loop.mjs"),
+    "utf8",
+  );
+
+  assert.equal(packageJson.scripts["verify:tide"], "node scripts/v2-verification-loop.mjs");
+  assert.match(verifyScript, /diff-check/);
+  assert.match(verifyScript, /typecheck/);
+  assert.match(verifyScript, /focused-tests/);
+  assert.match(verifyScript, /full-tests/);
+  assert.match(verifyScript, /latest\.json/);
+  assert.match(verifyScript, /latest\.md/);
+  assert.match(verifyScript, /--quick/);
+  assert.match(verifyScript, /--smoke/);
+  assert.match(verifyScript, /selectAffectedTests/);
+});
+
 test("provider_smoke_supports_fake_openai_output_verification", () => {
   const smokeScript = fs.readFileSync(path.join(repoRoot, "scripts/v2-provider-smoke.mjs"), "utf8");
 
@@ -225,6 +244,21 @@ test("electron_main_enables_webview_tag_for_workbench_browser_panes", () => {
   assert.match(main, /contextIsolation:\s*true/);
 });
 
+test("application_menu_routes_find_to_the_host_renderer_even_from_webview_focus", () => {
+  // Spec: in-pane find should open for Browser Pane webviews, which do not send
+  // renderer keydown events to the host React tree.
+  const main = readMainProcessSource();
+  const preload = fs.readFileSync(path.join(repoRoot, "src/desktop/infrastructure/electron/preload/index.ts"), "utf8");
+  const renderer = fs.readFileSync(path.join(repoRoot, "src/desktop/infrastructure/electron/renderer/renderer-entry.tsx"), "utf8");
+
+  assert.match(main, /Find in Pane/);
+  assert.match(main, /CmdOrCtrl\+F/);
+  assert.match(main, /tide:find-intent/);
+  assert.match(preload, /onFindIntent/);
+  assert.match(preload, /ipcRenderer\.on\("tide:find-intent"/);
+  assert.match(renderer, /onFindIntent\(listener: \(\) => void\): \(\) => void/);
+});
+
 test("electron_main_has_opt_in_runtime_smoke_hook", () => {
   const main = readMainProcessSource();
 
@@ -255,6 +289,25 @@ test("renderer_entry_mounts_the_react_app_into_the_root_element", () => {
   assert.match(renderer, /createRoot/);
   assert.match(renderer, /document\.getElementById\("root"\)/);
   assert.match(renderer, /createInitialRendererElement\(\)/);
+});
+
+test("renderer_index_html_paints_static_boot_rail_before_react_bundle", () => {
+  const html = fs.readFileSync(
+    path.join(repoRoot, "src/desktop/infrastructure/electron/renderer/index.html"),
+    "utf8",
+  );
+
+  assert.match(html, /class="tide-boot-shell"/);
+  assert.match(html, /class="tide-boot-rail"/);
+  assert.match(html, /class="tide-boot-sections"/);
+  assert.match(html, /@keyframes tide-boot-shimmer/);
+  assert.match(html, /setAttribute\("data-platform", isMac \? "mac" : "other"\)/);
+  assert.match(html, /\.tide-boot-traffic\s*{\s*display: none;/);
+  assert.match(html, /\[data-platform="mac"\] \.tide-boot-traffic\s*{\s*display: inline-flex;/);
+  assert.ok(
+    html.indexOf("tide-boot-shell") < html.indexOf("renderer-entry.tsx"),
+    "static boot rail must be parsed before the React renderer bundle starts loading",
+  );
 });
 
 test("npm_run_typecheck_runs_scaffold_check", () => {

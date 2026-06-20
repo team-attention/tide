@@ -87,6 +87,9 @@ export interface TidePreloadSurface {
   // Cmd+W "close intent" from the application menu — the renderer decides what to
   // close (a focused Workbench pane, else the active thread → start composer).
   onCloseIntent(listener: () => void): () => void;
+  // Cmd/Ctrl+F from the application menu, routed through the host renderer so
+  // Browser Pane <webview> focus cannot swallow in-pane search.
+  onFindIntent(listener: () => void): () => void;
   // A Browser Pane link asked to open elsewhere. Main denies the stray popup window and
   // forwards the URL so the renderer drives the backend open_browser path: `newPane`
   // true (Cmd/Ctrl/middle-click, window.open) opens a new Browser Pane; false (a plain
@@ -192,6 +195,13 @@ export const tidePreloadSurface: TidePreloadSurface = {
     ipcRenderer.on("tide:close-intent", wrapped);
     return () => {
       ipcRenderer.removeListener("tide:close-intent", wrapped);
+    };
+  },
+  onFindIntent(listener) {
+    const wrapped = () => listener();
+    ipcRenderer.on("tide:find-intent", wrapped);
+    return () => {
+      ipcRenderer.removeListener("tide:find-intent", wrapped);
     };
   },
   onOpenBrowserPane(listener) {

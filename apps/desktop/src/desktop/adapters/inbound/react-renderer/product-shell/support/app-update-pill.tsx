@@ -1,14 +1,10 @@
+import { Download, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 
-// App self-update pill (spec: version-management.md, Lane 1). A small floating
-// affordance, sibling to GlobalZoomIndicator. The flow is user-driven and visible:
-//   • available   → "Download" button (autoDownload is off; the click starts the pull)
-//   • downloading → live progress bar + percent
-//   • ready       → "Restart to update" button (quitAndInstall — no silent restart)
-//   • error       → "Retry" button (re-check)
-// idle / checking / upToDate render nothing. In dev / unpackaged / test the updater is
-// inert, so Main never pushes a non-idle status and this stays hidden.
+// App self-update control (spec: version-management.md, Lane 1). It lives in the
+// Left Rail's top row as one icon-only affordance, so update state stays available
+// without floating over the user's work.
 
 type AppUpdateStatus =
   | { phase: "idle" }
@@ -19,7 +15,7 @@ type AppUpdateStatus =
   | { phase: "upToDate"; currentVersion: string }
   | { phase: "error"; message: string };
 
-export function AppUpdatePill(): ReactElement | null {
+export function AppUpdateButton(): ReactElement | null {
   const [status, setStatus] = useState<AppUpdateStatus>({ phase: "idle" });
 
   useEffect(() => {
@@ -27,36 +23,39 @@ export function AppUpdatePill(): ReactElement | null {
     return () => off?.();
   }, []);
 
+  const requestDownload = (version: string): void => {
+    setStatus({ phase: "downloading", version, percent: 0 });
+    window.tide?.downloadAppUpdate?.();
+  };
+
   if (status.phase === "available") {
     return (
       <button
         type="button"
-        className="app-update-pill app-update-pill--available"
-        title={`Tide ${status.version} is available — click to download`}
-        aria-label={`Update available: Tide ${status.version}. Click to download.`}
-        onClick={() => window.tide?.downloadAppUpdate?.()}
+        className="app-update-button app-update-button--available"
+        title={`Tide ${status.version} is available. Download update.`}
+        aria-label={`Download Tide ${status.version} update`}
+        onClick={() => requestDownload(status.version)}
       >
-        {`↓ Update available — Tide ${status.version}`}
+        <Download size={15} strokeWidth={1.9} aria-hidden />
       </button>
     );
   }
 
   if (status.phase === "downloading") {
+    const percent = Math.max(0, Math.min(100, Math.round(status.percent)));
     return (
-      <div
-        className="app-update-pill app-update-pill--downloading"
-        title={`Downloading Tide ${status.version}…`}
-        role="progressbar"
-        aria-label={`Downloading Tide ${status.version}`}
-        aria-valuenow={status.percent}
-        aria-valuemin={0}
-        aria-valuemax={100}
+      <button
+        type="button"
+        className="app-update-button app-update-button--downloading"
+        title={`Downloading Tide ${status.version}: ${percent}%`}
+        aria-label={`Downloading Tide ${status.version}: ${percent}%`}
+        disabled
+        style={{ "--app-update-progress": `${percent}%` } as CSSProperties}
       >
-        <span className="app-update-pill__label">{`Downloading… ${status.percent}%`}</span>
-        <span className="app-update-pill__track">
-          <span className="app-update-pill__fill" style={{ width: `${status.percent}%` }} />
-        </span>
-      </div>
+        <Download size={15} strokeWidth={1.9} aria-hidden />
+        <span className="app-update-button__progress" aria-hidden />
+      </button>
     );
   }
 
@@ -64,12 +63,12 @@ export function AppUpdatePill(): ReactElement | null {
     return (
       <button
         type="button"
-        className="app-update-pill app-update-pill--ready"
-        title={`Tide ${status.version} downloaded — restart to install`}
-        aria-label={`Tide ${status.version} downloaded — restart to update`}
+        className="app-update-button app-update-button--ready"
+        title={`Tide ${status.version} is ready. Restart to update.`}
+        aria-label={`Restart Tide to install version ${status.version}`}
         onClick={() => window.tide?.applyAppUpdate?.()}
       >
-        {`Restart to update — Tide ${status.version}`}
+        <RefreshCw size={15} strokeWidth={1.9} aria-hidden />
       </button>
     );
   }
@@ -78,12 +77,12 @@ export function AppUpdatePill(): ReactElement | null {
     return (
       <button
         type="button"
-        className="app-update-pill app-update-pill--error"
-        title={status.message}
-        aria-label={`Update failed: ${status.message}. Click to retry.`}
+        className="app-update-button app-update-button--error"
+        title={`Update failed: ${status.message}. Retry.`}
+        aria-label={`Update failed: ${status.message}. Retry update check.`}
         onClick={() => window.tide?.checkForAppUpdate?.()}
       >
-        {"Update failed — Retry"}
+        <Download size={15} strokeWidth={1.9} aria-hidden />
       </button>
     );
   }

@@ -14,8 +14,7 @@ This breaks full-screen TUIs. When an application enters the **Alternate Screen*
 alternate grid which is created with **zero scrollback** (`inactive_grid =
 Grid::new(num_lines, num_cols, 0)` in the alacritty fork). So `scroll_display()`
 cannot move `display_offset`, and because Tide also doesn't translate the wheel into
-input for the app, the wheel is completely dead. Confirmed against Ghostty/iTerm,
-which scroll the same app fine because they implement wheel forwarding.
+input for the app, the wheel is completely dead.
 
 ### To-Be
 On a wheel event over a Terminal Pane, Tide consults the foreground program's
@@ -29,7 +28,7 @@ On a wheel event over a Terminal Pane, Tide consults the foreground program's
    respecting `APP_CURSOR` (DECCKM): `ESC O A/B` when set, else `ESC [ A/B`.
 3. **Otherwise**: unchanged — scroll the local scrollback via `scroll_display()`.
 
-Mouse reporting takes priority over Alternate Scroll (matches xterm/Ghostty).
+Mouse reporting takes priority over Alternate Scroll.
 
 ### Approach
 1. Add `Terminal::wheel_to_bytes(up, lines, col, row) -> Option<Vec<u8>>` in

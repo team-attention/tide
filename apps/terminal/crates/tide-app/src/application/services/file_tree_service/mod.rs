@@ -801,8 +801,8 @@ impl App {
                 self.cache.invalidate_chrome();
             }
             // Editor-only actions never reach the file-tree menu.
-            crate::ContextMenuAction::GoToDefinition
-            | crate::ContextMenuAction::FindReferences => {}
+            crate::ContextMenuAction::GoToDefinition | crate::ContextMenuAction::FindReferences => {
+            }
         }
         self.cache.needs_redraw = true;
     }

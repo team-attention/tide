@@ -3,7 +3,6 @@ import { ComposerQueueService } from "./composer-queue-service.ts";
 import type {
   AgentSessionBlock,
 } from "../../domains/agent-session/agent-session-block.ts";
-
 import {
   createLocalUserMessageBlock,
 } from "../../domains/agent-session/agent-session-block.ts";
@@ -91,6 +90,7 @@ import { boundedDiffText, unifiedContentDiff } from "../support/diff-text.ts";
 
 import { ThreadStore } from "./thread-store.ts";
 import { promptAnswerValue } from "./prompt-answer-value.ts";
+import { ThreadArchiveService } from "./thread-archive-service.ts";
 
 import { normalizeThreadSeed, snapshotThread, threadRoot } from "./thread-snapshot.ts";
 
@@ -389,19 +389,14 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   private readonly answeringPromptByThread = new Map<string, string>();
 
 private readonly threadCrud: ThreadCrudService;
-
   private readonly draftThreads: DraftThreadService;
-
 private readonly workbenchRuntime: WorkbenchRuntime;
-
 private readonly workbenchFileOps: WorkbenchFileOperations;
-
 private readonly workbenchExec: WorkbenchExecOperations;
-
 private readonly tideMcp: TideMcpToolHandler;
-
 private readonly workbenchCmd: WorkbenchCommandHandler;
   private readonly workspaceQuery: WorkspaceQueryHandler;
+  private readonly threadArchive: ThreadArchiveService;
 
 constructor(input: CreateThreadRuntimeServiceInput) {
     this.agentRuntimePort = input.agentRuntimePort;
@@ -459,6 +454,12 @@ constructor(input: CreateThreadRuntimeServiceInput) {
     // Shared by the observe pull (sets pendingCapture + awaits) and the command handler
     // (resolves on the renderer's update_browser_capture_result).
     const browserCapture = new BrowserCaptureCoordinator();
+    this.threadArchive = new ThreadArchiveService({
+      agentRuntimePort: this.agentRuntimePort,
+      workbenchRuntime: this.workbenchRuntime,
+      browserCapture,
+      clock: this.clock,
+    });
     this.tideMcp = new TideMcpToolHandler({
       store: this.threads,
       clock: this.clock,
@@ -523,10 +524,20 @@ listThreads(input: ListThreadsInput): Promise<ServiceResult<ListThreadsResult>> 
     return this.threadCrud.listThreads(input);
   }
 
-archiveThread(
-    input: ArchiveThreadInput,
-  ): Promise<ServiceResult<ArchiveThreadResult>> {
-    return this.threadCrud.archiveThread(input);
+async archiveThread(input: ArchiveThreadInput): Promise<ServiceResult<ArchiveThreadResult>> {
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+    if (input.archived) {
+      await this.threadArchive.teardownThreadForArchive(thread);
+      return this.threadCrud.archiveThread(input);
+    }
+    const result = await this.threadCrud.archiveThread(input);
+    if (result.ok && this.threadArchive.resetThreadAfterUnarchive(thread)) {
+      return { ok: true, thread: snapshotThread(thread) };
+    }
+    return result;
   }
 
 setThreadPinned(

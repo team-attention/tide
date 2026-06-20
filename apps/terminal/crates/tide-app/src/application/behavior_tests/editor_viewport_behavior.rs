@@ -458,7 +458,10 @@ fn preview_selection_highlight_aligns_with_centered_text_column() {
     let (pane, pane_rect, cell_size) = wide_preview_pane("Hello world");
     let content_rect = pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size);
     let content_inset = pane.preview_content_inset_for_target(content_rect, cell_size);
-    assert!(content_inset > 0.0, "wide preview should have a non-zero inset");
+    assert!(
+        content_inset > 0.0,
+        "wide preview should have a non-zero inset"
+    );
 
     let selection = Selection {
         anchor: (0, 0),
@@ -487,7 +490,13 @@ fn preview_click_on_glyph_origin_hits_first_column() {
         content_rect.y + cell_size.height * 0.5,
     );
     let (rr, rc) = pane
-        .selection_hit_cell(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size, pos, false)
+        .selection_hit_cell(
+            pane_rect,
+            crate::theme::TAB_BAR_HEIGHT,
+            cell_size,
+            pos,
+            false,
+        )
         .expect("click inside preview should hit a cell");
     let (row, col) = pane
         .selection_position_for_cell(rr, rc)
@@ -510,7 +519,13 @@ fn preview_click_past_line_end_anchors_at_line_end() {
         content_rect.y + cell_size.height * 0.5,
     );
     let (rr, rc) = pane
-        .selection_hit_cell(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size, pos, false)
+        .selection_hit_cell(
+            pane_rect,
+            crate::theme::TAB_BAR_HEIGHT,
+            cell_size,
+            pos,
+            false,
+        )
         .expect("click inside preview should hit a cell");
     let (row, col) = pane
         .selection_position_for_cell(rr, rc)

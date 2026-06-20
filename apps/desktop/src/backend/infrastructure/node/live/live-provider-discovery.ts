@@ -50,7 +50,7 @@ function readRegisteredProjects(appDataRoot: string): RegisteredProjectEntry[] {
   }
 }
 
-function createDiscoveryFs(homeDir: string): DiscoveryFs {
+function createDiscoveryFs(homeDir: string, codexHome?: string): DiscoveryFs {
   return {
     listClaudeTranscripts: (cwd) => {
       const dir = claudeProjectTranscriptsDir(homeDir, cwd);
@@ -75,7 +75,7 @@ function createDiscoveryFs(homeDir: string): DiscoveryFs {
       return out;
     },
     listCodexRollouts: () =>
-      recentCodexRollouts(homeDir, 0).flatMap((path) => {
+      recentCodexRollouts(homeDir, 0, codexHome).flatMap((path) => {
         try {
           return [{ path, mtimeMs: statSync(path).mtimeMs }];
         } catch {
@@ -88,6 +88,7 @@ function createDiscoveryFs(homeDir: string): DiscoveryFs {
 
 export function discoverAdoptedThreadSeeds(input: {
   homeDir: string;
+  codexHome?: string;
   appDataRoot: string;
   persistedRecords: ThreadStorageRecord[];
 }): ThreadSeed[] {
@@ -115,7 +116,7 @@ export function discoverAdoptedThreadSeeds(input: {
 
   const sessions = discoverLocalSessions({
     cwds: [...cwds],
-    fs: createDiscoveryFs(input.homeDir),
+    fs: createDiscoveryFs(input.homeDir, input.codexHome),
   });
   return adoptedThreadSeedsFromSessions({
     sessions,

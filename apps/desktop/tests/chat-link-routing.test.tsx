@@ -1,10 +1,11 @@
 // Chat links must open in the in-app Browser Pane, never navigate the top-level
 // window (the freeze bug). These pin the two halves of that routing: the chat
 // markdown marks http(s) links for in-app handling, and the product-shell state
-// function emits an open_browser command (at the clicked URL) that opens the
-// workbench browser tab.
+// function emits an open_browser command (at the clicked URL) that opens a new
+// workbench browser pane.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { JSDOM } from "jsdom";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
@@ -13,6 +14,7 @@ import {
 } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
 import { applyBackendEventToAgentChatShell } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/contract-adapter.ts";
 import { AgentChatShell } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.tsx";
+import { createAgentSession } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/transcript/transcript.tsx";
 import {
   openProductShellBrowserAtUrl,
   type ProductShellState,
@@ -82,7 +84,55 @@ test("an http link in an agent message is marked for the in-app browser pane (no
   assert.ok(markup.includes('data-open-file="/tmp/x.ts"'));
 });
 
-test("openProductShellBrowserAtUrl opens the workbench + emits open_browser with the url", () => {
+test("session link click requests a new in-app browser pane", () => {
+  const dom = new JSDOM('<a data-open-browser-link="https://example.com/page">link</a>');
+  const originalElement = (globalThis as unknown as { Element?: unknown }).Element;
+  (globalThis as unknown as { Element: unknown }).Element = dom.window.Element;
+  const anchor = dom.window.document.querySelector("a");
+  assert.ok(anchor !== null);
+  let opened: { url: string; options?: { newPane?: boolean } } | null = null;
+  let prevented = false;
+
+  try {
+    const session = createAgentSession(
+      [],
+      "ready",
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (url, options) => {
+        opened = { url, options };
+      },
+    );
+    const onClick = (session.props as {
+      onClick: (event: { target: EventTarget | null; preventDefault: () => void }) => void;
+    }).onClick;
+    onClick({
+      target: anchor,
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
+  } finally {
+    if (originalElement === undefined) {
+      delete (globalThis as unknown as { Element?: unknown }).Element;
+    } else {
+      (globalThis as unknown as { Element: unknown }).Element = originalElement;
+    }
+  }
+
+  assert.equal(prevented, true);
+  assert.deepEqual(opened, {
+    url: "https://example.com/page",
+    options: { newPane: true },
+  });
+});
+
+test("openProductShellBrowserAtUrl opens the workbench + emits open_browser in a new pane by default", () => {
   const result = openProductShellBrowserAtUrl(
     { activeThreadId: "t1", workbenchOpen: false } as unknown as ProductShellState,
     "https://example.com/page",
@@ -95,13 +145,13 @@ test("openProductShellBrowserAtUrl opens the workbench + emits open_browser with
   );
   assert.deepEqual(
     result.command?.kind === "workbench.command" ? result.command.payload.data : null,
-    { url: "https://example.com/page" },
+    { url: "https://example.com/page", disposition: "new_browser_pane" },
   );
 });
 
 test("openProductShellBrowserAtUrl opens a draft pane with no active thread; empty url is a no-op", () => {
-  // Composer (New Thread) page: no backend thread, so a link (e.g. Cmd/Ctrl+click in
-  // a draft Browser Pane) opens a renderer-owned draft pane — not a backend command.
+  // Composer (New Thread) page: no backend thread, so a link opens a
+  // renderer-owned draft pane, not a backend command.
   const draft = openProductShellBrowserAtUrl(
     { activeThreadId: null, draftWorkbenchPanes: [] } as unknown as ProductShellState,
     "https://x",

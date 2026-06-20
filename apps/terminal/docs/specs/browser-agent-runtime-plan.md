@@ -88,7 +88,7 @@ The BrowserSnapshot tool state must be per-PaneId, per-Workspace, bounded, and m
 1. Store only bounded in-memory BrowserSnapshot history. Proposed V1 limits are: at most 128 KiB of snapshot text per BrowserSnapshot returned to a caller, at most two retained BrowserSnapshot Generations per Browser Pane for `diff_since`, at most 50 `find_in_snapshot` matches per call, at most 2 KiB of context per match, and at most 64 KiB of diff output per call. Overflow must be represented as truncation metadata.
 2. Do not persist BrowserSnapshot history to disk, do not include it in cold Workspace storage, and do not expose it as ambient agent prompt context.
 3. Treat each BrowserSnapshot anchor as owned by exactly one Browser Pane and one Workspace. A stale PaneId, missing Caller Pane, wrong Associated Terminal, wrong Workspace, or stale Generation must return an explicit error or stale status.
-4. Preserve current transient cleanup: closing a Browser Pane, clearing transient Browser Pane state, or cold-storing a Workspace drops BrowserSnapshot history and invalidates anchors.
+4. Preserve current transient cleanup: closing a Browser Pane, clearing transient Browser Pane state, or cold-storing a Workspace drops BrowserSnapshot history, Browser review history, and invalidates anchors.
 5. Missing snapshot behavior is explicit: `read_snapshot` reports missing, `find_in_snapshot` returns no matches with missing status, and `diff_since` rejects missing baseline or missing current BrowserSnapshot.
 
 Agent Browser Control Mode is separate from ordinary Gateway/MCP behavior. It is a visual mode for natural Browser Automation Cursor mimic behavior, not an authorization shortcut:
@@ -253,6 +253,7 @@ Resolution: Tide Browser Pane is the first browser surface for Tide task verific
   3. Tide creates a Workspace-local `Context Artifact` with source `PaneId`, `Associated Terminal`, optional selection, comment, and `Source Label`.
   4. Tide delivers the artifact to the paired agent when delivery is allowed.
   5. Paired agent can later list/read/pull the artifact explicitly.
+  6. Tide records the Browser review in bounded Browser Pane history for human chrome and MCP task-monitor visibility.
 - **Postcondition**: Human Browser Pane feedback becomes task-local agent context.
 - **Business Rules**:
   - BR-18: Browser Pane comments must create `Context Artifact`s, not hidden prompt injections.
@@ -261,6 +262,9 @@ Resolution: Tide Browser Pane is the first browser surface for Tide task verific
   - BR-21: Immediate delivery must target only the paired agent.
   - BR-22: Agent read/list behavior must remain explicit; V1 must not auto-inject ambient Browser Pane context into every agent turn.
   - BR-23: Artifact delivery text must use `Source Label` rather than only internal `PaneId`.
+  - BR-24: Browser Pane Context Artifact create/send flows must update bounded per-Pane review history with comment, source label, delivery status, and delivery count.
+  - BR-25: `tide_observe_workspace` must expose Browser review history in Browser Pane entries and the Workspace task monitor, including latest/recent comments and delivery state.
+  - BR-26: Browser chrome may surface a quiet `reviewed` state when no higher-priority Browser operation state is active.
 
 ### UC-6: ResolveHumanAgentOwnership
 
@@ -331,7 +335,7 @@ Resolution: Tide Browser Pane is the first browser surface for Tide task verific
   - BR-35: `find_in_snapshot` searches only the cached BrowserSnapshot without refreshing the Browser Pane and returns bounded match results.
   - BR-36: `diff_since` requires a Generation anchor owned by the same Browser Pane and Workspace and rejects stale, missing, or mismatched anchors.
   - BR-37: BrowserSnapshot tools must enforce per-PaneId ownership, Associated Terminal authorization, Caller Pane presence, and Workspace locality.
-  - BR-38: Closing a Browser Pane, clearing transient Browser Pane state, or cold-storing a Workspace must drop BrowserSnapshot history and invalidate snapshot anchors.
+  - BR-38: Closing a Browser Pane, clearing transient Browser Pane state, or cold-storing a Workspace must drop BrowserSnapshot history, Browser review history, and invalidate snapshot anchors.
 
 ### UC-10: GateAgentBrowserControlMode
 
@@ -524,7 +528,7 @@ V1 implementation must add or update behavior tests before code changes. Require
 | UC-9: ReadAndDiffBrowserSnapshot | BR-35 | `browser_agent_runtime` | `browser_snapshot_find_searches_cached_snapshot_without_refresh` |
 | UC-9: ReadAndDiffBrowserSnapshot | BR-36 | `browser_agent_runtime` | `browser_snapshot_diff_rejects_stale_generation` |
 | UC-9: ReadAndDiffBrowserSnapshot | BR-37, BR-42 | `browser_agent_runtime` | `browser_snapshot_cache_is_pane_and_workspace_scoped` |
-| UC-9: ReadAndDiffBrowserSnapshot | BR-38 | `browser_agent_runtime` | `closing_or_cold_storing_browser_pane_drops_snapshot_history` |
+| UC-9: ReadAndDiffBrowserSnapshot | BR-38 | `browser_agent_runtime` | `closing_or_cold_storing_browser_pane_drops_transient_browser_history` |
 | UC-10: GateAgentBrowserControlMode | BR-39 | `browser_agent_runtime` | `non_wrapper_browser_action_does_not_enter_agent_browser_control_mode` |
 | UC-10: GateAgentBrowserControlMode | BR-40 | `browser_agent_runtime` | `wrapper_managed_browser_action_enters_agent_browser_control_mode` |
 | UC-10: GateAgentBrowserControlMode | BR-41 | `browser_agent_runtime` | `agent_browser_control_mode_preserves_modal_sensitive_and_generation_gates` |

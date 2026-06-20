@@ -417,9 +417,7 @@ fn browser_automation_cursor_is_injected_through_the_browser_bridge_dom_path() {
 
     assert!(bridge_source.contains("window.__tideSetAutomationCursor = (payload) => {"));
     assert!(bridge_source.contains("window.__tideClearAutomationCursor = () => {"));
-    assert!(
-        bridge_source.contains("document.createElementNS('http://www.w3.org/2000/svg', 'svg')")
-    );
+    assert!(bridge_source.contains("document.createElementNS('http://www.w3.org/2000/svg', 'svg')"));
     assert!(bridge_source.contains("shape.setAttribute('viewBox', '0 0 24 24')"));
     assert!(bridge_source.contains(
         "cursor.style.transition = 'left 280ms cubic-bezier(0.2, 0.8, 0.2, 1), top 280ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease-out';"

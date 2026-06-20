@@ -333,16 +333,10 @@ fn right_click_on_workspace_sidebar_item_opens_context_menu_with_rename() {
     let rect = app
         .workspace_sidebar_item_rect(0)
         .expect("workspace sidebar item rect");
-    app.window.last_cursor_pos = crate::tide_core::Vec2::new(
-        rect.x + rect.width / 2.0,
-        rect.y + rect.height / 2.0,
-    );
+    app.window.last_cursor_pos =
+        crate::tide_core::Vec2::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
 
-    crate::adapter::inward::mouse_adapter::handle_mouse_down(
-        &mut app,
-        MouseButton::Right,
-        &window,
-    );
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(&mut app, MouseButton::Right, &window);
 
     let menu = app
         .modal

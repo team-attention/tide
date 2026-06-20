@@ -9,9 +9,9 @@ import {
   executeBrowserWebViewAction,
   isWebViewSettled,
   readBrowserWebViewSnapshot,
-  safeBrowserWebViewCommand,
-  safeBrowserWebViewGetUrl,
-  safeBrowserWebViewLoadUrl,
+  safeGetWebViewURL,
+  safeInvokeWebView,
+  safeLoadWebViewURL,
   type BrowserWebViewAction,
   type BrowserWebViewElement,
   type BrowserWebViewInputEvent,
@@ -251,7 +251,7 @@ test("readBrowserWebViewSnapshot is text-only and NEVER calls capturePage (no lo
   assert.equal(snapshot.bodyTextPreview, "hello");
 });
 
-test("readBrowserWebViewSnapshot does not throw when pre-dom-ready guest methods throw", async () => {
+test("readBrowserWebViewSnapshot tolerates pre-dom-ready getURL throws", async () => {
   const webview = {
     executeJavaScript: () => {
       throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
@@ -263,46 +263,9 @@ test("readBrowserWebViewSnapshot does not throw when pre-dom-ready guest methods
 
   const snapshot = await readBrowserWebViewSnapshot(webview);
 
-  assert.deepEqual(snapshot, {
-    url: undefined,
-    pageTitle: undefined,
-    bodyTextPreview: undefined,
-  });
-});
-
-test("safeBrowserWebViewGetUrl returns undefined instead of throwing before dom-ready", () => {
-  const webview = {
-    getURL: () => {
-      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
-    },
-  } as unknown as BrowserWebViewElement;
-
-  assert.equal(safeBrowserWebViewGetUrl(webview), undefined);
-});
-
-test("safeBrowserWebViewLoadUrl swallows sync and async pre-dom-ready failures", async () => {
-  const syncThrowing = {
-    loadURL: () => {
-      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
-    },
-  } as unknown as BrowserWebViewElement;
-  const asyncRejecting = {
-    loadURL: () => Promise.reject(new Error("not ready")),
-  } as unknown as BrowserWebViewElement;
-
-  assert.doesNotThrow(() => safeBrowserWebViewLoadUrl(syncThrowing, "https://example.test/"));
-  assert.doesNotThrow(() => safeBrowserWebViewLoadUrl(asyncRejecting, "https://example.test/"));
-  await Promise.resolve();
-});
-
-test("safeBrowserWebViewCommand swallows pre-dom-ready navigation command failures", () => {
-  const webview = {
-    reload: () => {
-      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
-    },
-  } as unknown as BrowserWebViewElement;
-
-  assert.doesNotThrow(() => safeBrowserWebViewCommand(webview, "reload"));
+  assert.equal(snapshot.url, undefined);
+  assert.equal(snapshot.pageTitle, undefined);
+  assert.equal(snapshot.bodyTextPreview, undefined);
 });
 
 test("captureBrowserWebViewScreenshot is the single on-demand pixel-capture path", async () => {
@@ -336,4 +299,25 @@ test("isWebViewSettled returns true only when the guest finished loading", () =>
   assert.equal(isWebViewSettled(loaded), true);
   assert.equal(isWebViewSettled(loading), false);
   assert.equal(isWebViewSettled(missing), false);
+});
+
+test("safe webview wrappers swallow pre-dom-ready guest API throws", () => {
+  let loadCalls = 0;
+  const webview = {
+    getURL: () => {
+      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
+    },
+    loadURL: () => {
+      loadCalls += 1;
+      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
+    },
+    reload: () => {
+      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
+    },
+  } as unknown as BrowserWebViewElement;
+
+  assert.doesNotThrow(() => safeLoadWebViewURL(webview, "https://example.test/"));
+  assert.doesNotThrow(() => safeInvokeWebView(webview, "reload"));
+  assert.equal(safeGetWebViewURL(webview), undefined);
+  assert.equal(loadCalls, 1);
 });

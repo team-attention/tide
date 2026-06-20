@@ -18,7 +18,10 @@ mod ime;
 mod input_latency;
 pub(crate) mod input_line;
 mod interaction;
+pub(crate) mod onboarding;
 mod platform;
+pub(crate) mod project_config;
+mod restore_event;
 mod surface_animation;
 mod timing;
 mod window;
@@ -37,6 +40,11 @@ pub(crate) use ime::ImeState;
 pub(crate) use input_latency::InputLatencyState;
 pub(crate) use input_line::{abbreviate_path, shell_escape, InputLine};
 pub(crate) use interaction::InteractionState;
+pub(crate) use onboarding::{
+    first_run_guide_dismiss_hit, first_run_guide_geometry, FIRST_RUN_GUIDE_DISMISS_LABEL,
+    FIRST_RUN_GUIDE_ROWS, FIRST_RUN_GUIDE_TITLE,
+};
+pub(crate) use restore_event::{RestoreEventKind, WorkspaceRestoreEvent};
 pub(crate) use surface_animation::{
     SplitTransitionAnimation, SplitTransitionScope, SurfaceVisibilityAnimation,
 };

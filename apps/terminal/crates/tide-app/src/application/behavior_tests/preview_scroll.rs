@@ -422,5 +422,3 @@ fn preview_scrollbar_drag_clamps_to_visible_range() {
     };
     assert_eq!(pane.preview_scroll, 0);
 }
-
-

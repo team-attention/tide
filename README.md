@@ -14,21 +14,23 @@
 [![Release](https://img.shields.io/github/v/release/team-attention/tide?style=flat-square)](https://github.com/team-attention/tide/releases/latest)
 [![Stars](https://img.shields.io/github/stars/team-attention/tide?style=social)](https://github.com/team-attention/tide/stargazers)
 
-<!-- HERO: once the demo gif exists, drop it here:
-<a href="LINK_TO_DEMO"><img src="assets/hero.gif" alt="Tide, a shared workbench for you and your coding agent" width="820" /></a>
--->
-
-**[⬇ Download for macOS](https://github.com/team-attention/tide/releases/latest)** &nbsp;·&nbsp; **[▶ Watch the demo](LINK_TO_DEMO)**
+**[⬇ Download for macOS](https://github.com/team-attention/tide/releases/latest)** &nbsp;·&nbsp; **[▶ Watch the demo](https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad)**
 
 </div>
+
+https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
 ---
 
 ## The idea
 
-Let's stop pretending we suddenly love the terminal.
+Terminals are still where the work actually runs. The problem is pretending an
+agent's terminal should be a sealed black box.
 
-We spent years getting away from it. That's the whole reason IDEs exist. Then a coding agent showed up living in one, and overnight we all decided that narrating into a black box was fine again.
+We built IDEs because software work needs context: code, browser state, diffs,
+running commands, and a way to take the wheel. Then a coding agent showed up
+living in a terminal, and overnight a lot of workflows collapsed back into
+narrating at an opaque process.
 
 The good news is Codex and Claude seem to have come around, and they're pushing in this exact direction. The thing is, they each come with their own annoyances. Codex won't let you edit a file right there in the editor. Claude's workbench feels like an afterthought. And neither one is open source.
 
@@ -36,7 +38,7 @@ So I built Tide. It's one workbench you and your agent share. It runs the code, 
 
 This is pretty much what working with an agent should feel like.
 
-*(Still insist on the terminal? We have a thing for you too: [Tide Terminal](apps/terminal/). No hard feelings.)*
+*(Prefer a terminal-first workflow? [Tide Terminal](apps/terminal/) keeps the live terminal at the center and wraps it with the same shared workbench model.)*
 
 ## Why Tide
 

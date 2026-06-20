@@ -1952,10 +1952,13 @@ test("workbench_editor_pane_renders_references_list", () => {
   const html = renderProductShell(state);
 
   assert.match(html, /aria-label="References"/);
-  assert.match(html, /References to src\/app\.ts \(2\)/);
-  // Locations render as relativePath:line+1:character+1.
-  assert.match(html, /src\/app\.ts:1:14/);
-  assert.match(html, /src\/lib\.ts:8:3/);
+  assert.match(html, /workbench-editor-references__title[^>]*>References/);
+  assert.match(html, /workbench-editor-references__query[^>]*>src\/app\.ts/);
+  assert.match(html, /workbench-editor-references__count[^>]*>2/);
+  assert.match(html, /aria-label="Open reference src\/app\.ts:1:14"/);
+  assert.match(html, /aria-label="Open reference src\/lib\.ts:8:3"/);
+  assert.match(html, /workbench-editor-references__file[^>]*>app\.ts/);
+  assert.match(html, /workbench-editor-references__path[^>]*>src/);
   assert.match(html, /return value;/);
 });
 
@@ -2655,20 +2658,20 @@ test("workbench_set_layout_split_emits_set_layout_mode_command", () => {
   });
 });
 
-test("chat_link_open_browser_uses_new_pane_disposition_only_with_modifier", () => {
-  // Spec: docs_v2/specs/workbench-dock-parity.md (T5) — cmd/ctrl+click → new pane.
+test("chat_link_open_browser_defaults_to_new_pane_disposition", () => {
+  // Spec: docs_v2/specs/workbench-dock-parity.md (T5). Session links open beside existing pages.
   const state = openProductShellThread(createProductShellState(), "thread-sketch");
-  const reuse = openProductShellBrowserAtUrl(state, "https://a.test");
+  const opened = openProductShellBrowserAtUrl(state, "https://a.test");
+  assert.deepEqual(opened.command?.payload, {
+    threadId: "thread-sketch",
+    command: "open_browser",
+    data: { url: "https://a.test", disposition: "new_browser_pane" },
+  });
+  const reuse = openProductShellBrowserAtUrl(state, "https://a.test", { newPane: false });
   assert.deepEqual(reuse.command?.payload, {
     threadId: "thread-sketch",
     command: "open_browser",
     data: { url: "https://a.test" },
-  });
-  const newPane = openProductShellBrowserAtUrl(state, "https://a.test", { newPane: true });
-  assert.deepEqual(newPane.command?.payload, {
-    threadId: "thread-sketch",
-    command: "open_browser",
-    data: { url: "https://a.test", disposition: "new_browser_pane" },
   });
 });
 

@@ -6,6 +6,12 @@ import { createNewThreadStartSurface } from "./start-surface/start-surface.tsx";
 import { createThreadHeader } from "./thread-header/thread-header.tsx";
 import { createComposerStack } from "./composer/composer.tsx";
 import {
+  InPaneFindBar,
+  useDomTextFind,
+  useInPaneFindState,
+  usePaneFindIntent,
+} from "../support/in-pane-find.tsx";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -31,7 +37,9 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   // A pasted-image attachment enlarged into a lightbox (its data: URL), or null.
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const shellRef = useRef<HTMLElement | null>(null);
   const sessionRef = useRef<HTMLElement | null>(null);
+  const transcriptFind = useInPaneFindState();
   // "Add to chat" (a workbench/transcript selection → a context chip) should drop the
   // cursor straight into the NEWLY ADDED chip's comment field, so the user can note what
   // they want about that selection without an extra click. A chip is always appended, so
@@ -41,6 +49,11 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   // switches (not remounted), so the count ref must be re-baselined when the thread
   // changes, or opening a thread whose composer holds chips would read as an "add".
   const threadId = viewModel.thread?.threadId;
+  const isNewThreadStart =
+    viewModel.composer.mode === "start" &&
+    viewModel.blocks.length === 0 &&
+    viewModel.providerReadinessBlockers.length === 0 &&
+    viewModel.prompt === null;
   const chips = viewModel.composer.contextChips;
   const chipCount = chips.length;
   const lastChipId = chipCount > 0 ? chips[chipCount - 1].id : null;
@@ -111,6 +124,22 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       props.onOpenBrowserPane,
     ],
   );
+  const transcriptMatchCount = useDomTextFind({
+    rootRef: sessionRef,
+    open: transcriptFind.open && !isNewThreadStart,
+    query: transcriptFind.query,
+    activeIndex: transcriptFind.activeIndex,
+    refreshKey: viewModel.blocks,
+    onActiveIndexChange: transcriptFind.setActiveIndex,
+  });
+  usePaneFindIntent(shellRef, {
+    enabled: !isNewThreadStart,
+    open: transcriptFind.open,
+    onOpen: transcriptFind.openFind,
+    onClose: transcriptFind.closeFind,
+    onNext: () => transcriptFind.next(transcriptMatchCount),
+    onPrevious: () => transcriptFind.previous(transcriptMatchCount),
+  });
   // Hidden <input type=file> for the "Files and images" composer-menu action.
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Sticky auto-scroll: keep the transcript pinned to the bottom as content
@@ -206,12 +235,6 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [hasActiveSurface, imagePreview, props.onComposerSurfaceChange]);
-  const isNewThreadStart =
-    viewModel.composer.mode === "start" &&
-    viewModel.blocks.length === 0 &&
-    viewModel.providerReadinessBlockers.length === 0 &&
-    viewModel.prompt === null;
-
   // Chips open their dropdown anchored to themselves: capture the chip rect and
   // then flip the surface open. Closing routes through the same surface change.
   const openSurface = (kind: AgentChatComposerSurfaceKind, rect: AnchorRect) => {
@@ -315,6 +338,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   if (isNewThreadStart) {
     return (
       <main
+        ref={shellRef}
         className="agent-chat-shell agent-chat-shell--start"
         data-chat-state={viewModel.chatState}
         data-runtime-state={viewModel.runtimeState}
@@ -329,12 +353,27 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
 
   return (
     <main
+      ref={shellRef}
       className={`agent-chat-shell${props.showThreadHeader === false ? " agent-chat-shell--embedded" : ""}`}
       data-chat-state={viewModel.chatState}
       data-runtime-state={viewModel.runtimeState}
     >
       {props.showThreadHeader === false ? null : createThreadHeader(viewModel)}
-      {sessionView}
+      <div className="agent-chat-shell__session-region">
+        {transcriptFind.open ? (
+          <InPaneFindBar
+            query={transcriptFind.query}
+            matchCount={transcriptMatchCount}
+            activeIndex={transcriptFind.activeIndex}
+            placeholder="Find in session"
+            onQueryChange={transcriptFind.setQuery}
+            onNext={() => transcriptFind.next(transcriptMatchCount)}
+            onPrevious={() => transcriptFind.previous(transcriptMatchCount)}
+            onClose={transcriptFind.closeFind}
+          />
+        ) : null}
+        {sessionView}
+      </div>
       {createComposerStack(viewModel, handlers)}
       {transcriptSel === null || props.onQuote === undefined ? null : (
         <button

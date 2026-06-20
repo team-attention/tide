@@ -30,7 +30,7 @@ It does not implement full Agent Session readers, Workbench tool contracts, Desk
 - `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` says Provider Readiness must be satisfied before sending user input because setup screens can capture Composer bytes.
 - `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` records fresh-state Codex, Claude Code, and Antigravity CLI setup screens observed on 2026-05-27: authentication, onboarding/theme/safety/terms, and Directory Trust can all appear before the normal Composer.
 - User decision on 2026-05-27 selected Codex CLI as the first Provider Integration bootstrap provider.
-- `crates/tide-app/resources/bin/codex` injects Codex hooks, Tide MCP config, and a Tide skill into an overlay `CODEX_HOME`.
+- Historical v1 reference: `crates/tide-app/resources/bin/codex` injected Codex hooks, Tide MCP config, and a Tide skill into an overlay `CODEX_HOME`; the current structured runtime no longer uses that wrapper shape.
 - `crates/tide-app/resources/bin/claude` injects Claude MCP config with `--mcp-config`, hook settings with `--settings`, and a Tide context prompt.
 - `crates/tide-app/resources/bin/gemini` shows the existing wrapper pattern for a Gemini-like CLI using system defaults, MCP config, hooks, and context injection. Antigravity v2 must be researched and implemented as Antigravity-specific, not assumed to be the same binary.
 - `docs_v2/master-plan.md` says Codex `exec --json`, Claude print-mode JSON, Claude Remote Control, and batch modes are research or fixture inputs, not v2 runtime transports.
@@ -181,23 +181,22 @@ The Backend PTY launcher therefore sets an explicit default terminal window size
 
 The Backend PTY launcher also replies to the basic terminal capability queries observed in provider evidence runs: cursor position report, foreground/background color query, primary device attributes, and keyboard protocol query. These replies are hidden PTY transport behavior, not a user-visible terminal renderer.
 
-### D16. Codex hook trust is Provider Readiness
+### D16. Codex structured runtime uses provider-native home
 
-Live Codex hidden PTY diagnostics showed `PermissionRequest hooks ... hook needs review` blocking Composer input even when the launch included `--dangerously-bypass-hook-trust`.
+Codex now runs through `codex app-server`, not a hook-driven hidden PTY wrapper.
+Tide attaches only its MCP surface through app-server config overrides. It does
+not inject a generated `CODEX_HOME`, disable Codex plugins, or force terminal
+display env.
 
-Codex hook trust is therefore a Provider Readiness gate. Tide must preserve provider-written `hooks.state` trust entries in the generated Codex overlay config, and must not launch a real Thread turn until the generated Tide hooks are trusted for the overlay `hooks.json`.
+Authentication, onboarding, directory trust, trust writes, and rollout discovery
+use the effective Codex home from the user's terminal shell environment, falling
+back to `~/.codex`.
 
-The Codex hook setup action may run the provider setup surface with the overlay `CODEX_HOME`, while authentication, onboarding, and Directory Trust setup stay provider-native against the user's real Codex home.
+### D17. Provider CLI environment parity
 
-The generated Codex hook command must point at a stable Tide-owned provider signal runner script, not directly at whichever Node, Electron Main, or Electron utilityProcess executable happened to create the bootstrap files. Otherwise the hook command changes between Backend-only smoke and Electron smoke, making previously trusted Codex hook entries stale while still looking present in the overlay config.
-
-When Tide rewrites the Codex overlay, it may preserve existing `hooks.state` entries only if the previous `hooks.json` content matches the next generated `hooks.json` content. If the hook definition changes, Backend must treat hook trust as incomplete and return Provider Readiness instead of starting the Thread turn.
-
-### D17. Codex overlay mirrors the full real home except Tide-owned entries
-
-The overlay `CODEX_HOME` exists only so Tide can own a few entries (`config.toml`, `hooks.json`, `skills`) without mutating the user's real `~/.codex`. Every other entry in the real Codex home must be symlinked into the overlay, mirrored dynamically rather than from a fixed allow-list.
-
-Codex keeps live state in version-suffixed sqlite databases (observed 2026-06-03: `state_5.sqlite`, `goals_1.sqlite`, `logs_2.sqlite`, `memories_1.sqlite`, plus their `-wal`/`-shm` siblings and a `sqlite/` directory). Their names change across Codex releases. A hardcoded allow-list that omits them — and a prune step that deletes anything not on the list — leaves the overlay without a usable database, so Codex refuses to start with "its local database appears to be damaged". The v1 wrapper (`crates/tide-app/resources/bin/codex`) already mirrors the full home (`for entry in *`, excluding only Tide-owned entries); the v2 overlay must do the same so it survives Codex adding new state files. The prune step may remove only overlay entries that are neither Tide-owned nor present in the real home (stale/dangling links).
+Provider runtimes receive the user's terminal shell environment snapshot plus
+only protocol-required additive Tide wiring. Tide must not silently override
+provider-owned auth, trust, plugin, or home-directory behavior.
 
 ## Out Of Scope
 
@@ -353,7 +352,7 @@ First implementation behavior:
 
 Initial known reference:
 
-- Existing v1 wrapper injects `mcp_servers.tide`, hook config, and overlay `CODEX_HOME`.
+- Historical v1 wrapper injected `mcp_servers.tide`, hook config, and overlay `CODEX_HOME`; the current structured runtime keeps provider-native Codex home behavior.
 - Smoke found `codex --no-alt-screen` usable inside PTY and `codex resume` appending to rollout history.
 - Fresh-state Codex showed sign-in choices, browser OAuth, post-login safety/autonomy notes, and Directory Trust before normal use.
 

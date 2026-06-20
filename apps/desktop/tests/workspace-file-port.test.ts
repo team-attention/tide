@@ -201,3 +201,25 @@ test("readTextFile without create still reports a missing file as not found", as
     assert.equal(result.error.code, "workspace_file_not_found");
   }
 });
+
+test("readTextFile remaps repo absolute links into the active default worktree", async () => {
+  const repoRoot = fixtureRoot({ "src/app.ts": "main copy" });
+  const worktreeRoot = `${repoRoot}.worktree/feature-x`;
+  fs.mkdirSync(path.join(worktreeRoot, "src"), { recursive: true });
+  fs.writeFileSync(path.join(worktreeRoot, "src/app.ts"), "worktree copy", "utf8");
+
+  const port = createNodeWorkspaceFilePort();
+  const result = await port.readTextFile({
+    root: worktreeRoot,
+    path: path.join(repoRoot, "src/app.ts"),
+    byteLimit: 4096,
+  });
+
+  assert.ok(result.ok);
+  if (result.ok) {
+    assert.equal(result.file.root, worktreeRoot);
+    assert.equal(result.file.path, path.join(worktreeRoot, "src/app.ts"));
+    assert.equal(result.file.relativePath, "src/app.ts");
+    assert.equal(result.file.content, "worktree copy");
+  }
+});

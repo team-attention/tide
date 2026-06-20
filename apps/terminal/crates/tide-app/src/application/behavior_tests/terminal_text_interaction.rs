@@ -6,11 +6,12 @@ use std::rc::Rc;
 use crate::application::ports::inward::ActionPort;
 use crate::application::ports::outward::clipboard_port::ClipboardPort;
 use crate::pane::{PaneKind, Selection, TerminalPane};
-use crate::state::FocusArea;
+use crate::state::{ConfigPageState, ConfigSection, FocusArea};
 use crate::theme::{terminal_content_top, PANE_PADDING, TAB_BAR_HEIGHT};
 use crate::tide_core::{InputEvent, MouseButton, Rect, TerminalBackend, Vec2};
 use crate::tide_input::{Action, GlobalAction};
 use crate::App;
+use crate::WorkspaceNavPort;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -80,6 +81,73 @@ fn loaded_user_settings_apply_osc52_read_policy_to_existing_terminals() {
         .expect("expected terminal pane");
 
     assert!(terminal.backend.clipboard_read_allowed_for_test());
+}
+
+#[test]
+fn loaded_user_settings_apply_scrollback_policy_to_existing_terminals() {
+    let (mut app, terminal_id) = app_with_terminal(8, 2);
+    app.settings.terminal.scrollback_lines = 0;
+
+    app.apply_loaded_user_settings();
+
+    let terminal = app
+        .panes
+        .get_mut(&terminal_id)
+        .and_then(|pane| match pane {
+            PaneKind::Terminal(terminal) => Some(terminal),
+            _ => None,
+        })
+        .expect("expected terminal pane");
+
+    terminal.backend.bench_sync_grid();
+    terminal
+        .backend
+        .bench_write_to_term(b"one\ntwo\nthree\nfour\nfive\n");
+    terminal.backend.bench_sync_grid();
+    terminal.backend.bench_sync_grid();
+
+    assert_eq!(terminal.backend.history_size(), 0);
+}
+
+#[test]
+fn config_page_terminal_settings_save_and_apply_to_existing_terminals() {
+    let (mut app, terminal_id) = app_with_terminal(8, 2);
+    let mut page = ConfigPageState::with_terminal_settings(
+        vec![],
+        String::new(),
+        String::new(),
+        false,
+        crate::tide_terminal::DEFAULT_SCROLLBACK_LINES,
+    );
+    page.section = ConfigSection::Terminal;
+    page.terminal_osc52_read = true;
+    page.terminal_scrollback_input.text = "0".to_string();
+    page.terminal_scrollback_input.cursor = 1;
+    page.dirty = true;
+    app.modal.config_page = Some(page);
+
+    WorkspaceNavPort::close_config_page(&mut app);
+
+    assert!(app.settings.terminal.osc52_read);
+    assert_eq!(app.settings.terminal.scrollback_lines, 0);
+    assert_eq!(app.terminal_spawn_config.scrollback_lines, 0);
+
+    let terminal = app
+        .panes
+        .get_mut(&terminal_id)
+        .and_then(|pane| match pane {
+            PaneKind::Terminal(terminal) => Some(terminal),
+            _ => None,
+        })
+        .expect("expected terminal pane");
+
+    assert!(terminal.backend.clipboard_read_allowed_for_test());
+    terminal.backend.bench_sync_grid();
+    terminal
+        .backend
+        .bench_write_to_term(b"one\ntwo\nthree\nfour\nfive\n");
+    terminal.backend.bench_sync_grid();
+    assert_eq!(terminal.backend.history_size(), 0);
 }
 
 // --- UC-1: ActivateWrappedTerminalUrl ---
@@ -172,7 +240,12 @@ fn cmd_clicking_osc8_hyperlink_opens_explicit_target() {
     app.handle_action(
         Action::RouteToPane(terminal_id),
         Some(InputEvent::MouseClick {
-            position: terminal_click_position(pane_rect, app.window.cached_cell_size, click_row, 10),
+            position: terminal_click_position(
+                pane_rect,
+                app.window.cached_cell_size,
+                click_row,
+                10,
+            ),
             button: MouseButton::Left,
         }),
     );

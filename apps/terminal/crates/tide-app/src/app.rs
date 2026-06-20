@@ -229,6 +229,8 @@ pub(crate) struct App {
     pub(crate) notified_panes: std::collections::HashSet<PaneId>,
     /// Last unresolved notification snippet per wrapped-agent source Pane.
     pub(crate) agent_notification_snippets: HashMap<PaneId, String>,
+    /// Last launch/session restore outcome visible to Workspace task monitors.
+    pub(crate) last_restore_event: Option<state::WorkspaceRestoreEvent>,
 }
 
 // `App` is `Send` structurally: every field is `Send`, with the genuinely
@@ -285,6 +287,7 @@ impl App {
             tide_window_close_requested: false,
             notified_panes: std::collections::HashSet::new(),
             agent_notification_snippets: HashMap::new(),
+            last_restore_event: None,
         };
         app.apply_loaded_user_settings();
         app
@@ -309,7 +312,13 @@ impl App {
         }
 
         self.window.dark_mode = self.settings.appearance.theme.is_dark();
+        self.window.theme_palette = self.settings.appearance.palette;
         let dark = self.window.dark_mode;
+        let scrollback_lines = self.settings.terminal.resolved_scrollback_lines();
+        self.terminal_spawn_config.scrollback_lines = scrollback_lines;
+        self.ports
+            .terminal_factory
+            .set_scrollback_lines(scrollback_lines);
         for pane in self.panes.values_mut() {
             match pane {
                 PaneKind::Terminal(terminal) => {
@@ -317,6 +326,7 @@ impl App {
                     terminal
                         .backend
                         .set_clipboard_read_allowed(self.settings.terminal.osc52_read);
+                    terminal.backend.set_scrollback_lines(scrollback_lines);
                 }
                 PaneKind::Editor(editor) => editor.editor.set_dark_mode(dark),
                 PaneKind::Browser(browser) if browser.render_mode => browser.sync_theme_vars(dark),
@@ -372,6 +382,7 @@ impl App {
     pub(crate) fn reload_settings_from_persistence(&mut self) {
         let settings = self.ports.persistence.load_settings();
         self.terminal_spawn_config.auto_integration = settings.auto_integration;
+        self.terminal_spawn_config.scrollback_lines = settings.terminal.resolved_scrollback_lines();
         self.ports
             .terminal_factory
             .set_auto_integration(settings.auto_integration);
@@ -666,6 +677,43 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.ports.persistence.save_settings(&self.settings);
         self.pending_platform_commands
             .push(crate::tide_platform::WindowCommand::BroadcastSettingsChanged);
+    }
+
+    fn cycle_theme_palette(&mut self) {
+        let next = self.settings.appearance.palette.next();
+        self.settings.appearance.palette = next;
+        self.window.theme_palette = next;
+        self.ports.persistence.save_settings(&self.settings);
+        self.pending_platform_commands
+            .push(crate::tide_platform::WindowCommand::BroadcastSettingsChanged);
+
+        self.ports.gpu.set_clear_color(self.palette().border_color);
+        self.cache.pane_generations.clear();
+        self.cache.invalidate_chrome();
+        self.cache.layout_generation = self.cache.layout_generation.wrapping_add(1);
+        self.cache.needs_redraw = true;
+    }
+
+    fn dismiss_first_run_guide_at(&mut self, pos: crate::tide_core::Vec2) -> bool {
+        if self.settings.onboarding.first_run_guide_dismissed {
+            return false;
+        }
+        if !crate::state::first_run_guide_dismiss_hit(
+            self.logical_size(),
+            self.window.cached_cell_size,
+            self.window.top_inset,
+            pos,
+        ) {
+            return false;
+        }
+
+        self.settings.onboarding.first_run_guide_dismissed = true;
+        self.ports.persistence.save_settings(&self.settings);
+        self.pending_platform_commands
+            .push(crate::tide_platform::WindowCommand::BroadcastSettingsChanged);
+        self.cache.invalidate_chrome();
+        self.cache.needs_redraw = true;
+        true
     }
 
     fn flush_pending_font_size(&mut self) {

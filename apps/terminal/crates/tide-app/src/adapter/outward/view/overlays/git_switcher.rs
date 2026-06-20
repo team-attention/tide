@@ -5,9 +5,7 @@ use crate::theme::*;
 use crate::App;
 use crate::AppCorePort;
 
-use super::{
-    bold_style, draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style,
-};
+use super::{bold_style, draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style};
 
 pub(crate) struct CurrentWorktreeRowLayout {
     pub display_name: String,

@@ -5,58 +5,44 @@ import {
   executeBrowserWebViewAction,
   isWebViewSettled,
   readBrowserWebViewSnapshot,
-  safeBrowserWebViewCommand,
-  safeBrowserWebViewGetUrl,
-  safeBrowserWebViewLoadUrl,
-  safeExecuteJavaScript,
+  safeGetWebViewURL,
+  safeInvokeWebView,
+  safeLoadWebViewURL,
   type BrowserWebViewElement,
 } from "./browser-webview-actions.ts";
 import { BrowserAgentOverlay } from "./browser-agent-overlay.tsx";
-import { createElement, useEffect, useRef, useState } from "react";
+import {
+  BROWSER_ELEMENT_PICKER_SCRIPT,
+  normalizeBrowserUrl,
+  safeWebviewExec,
+  waitForPostActionSettle,
+} from "./browser-pane-helpers.ts";
+import { createElement, useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import { ArrowLeft, ArrowRight, CornerDownRight, Crosshair, ExternalLink, FileText, RotateCw } from "lucide-react";
+import { InPaneFindBar, useInPaneFindState, usePaneFindIntent } from "../../support/in-pane-find.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForPostActionSettle(webview: BrowserWebViewElement): Promise<void> {
-  await wait(150);
-  const deadline = Date.now() + 1200;
-  while (!isWebViewSettled(webview) && Date.now() < deadline) {
-    await wait(75);
-  }
-}
-
-// Injected into the Browser Pane's <webview> to run a devtools-style element
-// picker. Clicking toggles an element into a multi-selection (kept in
-// `window.__tidePicks`); the host reads the array + count and tears down via
-// `window.__tideCancelPick`.
-const BROWSER_ELEMENT_PICKER_SCRIPT = `(() => {
-  if (window.__tidePickerActive) return;
-  window.__tidePickerActive = true;
-  window.__tidePicks = [];
-  var els = [];
-  var style = document.createElement('style');
-  style.id = '__tidePickerStyle';
-  style.textContent = '.__tidePickHover{outline:2px dashed #4c8bf5 !important;outline-offset:1px;cursor:crosshair !important;}.__tidePicked{outline:2px solid #4c8bf5 !important;outline-offset:1px;background:rgba(76,139,245,0.14) !important;cursor:crosshair !important;}';
-  document.documentElement.appendChild(style);
-  var last = null;
-  function sync(){ window.__tidePicks = els.map(function(x){ return { text:(x.innerText||x.textContent||'').trim().slice(0,3000), tag:(x.tagName||'element').toLowerCase() }; }); }
-  function over(e){ if(last && els.indexOf(last)<0){last.classList.remove('__tidePickHover');} last=e.target; if(last&&last.classList&&els.indexOf(last)<0){last.classList.add('__tidePickHover');} }
-  function click(e){ e.preventDefault(); e.stopPropagation(); var el=e.target; var i=els.indexOf(el); if(i>=0){ els.splice(i,1); el.classList.remove('__tidePicked'); } else { els.push(el); el.classList.remove('__tidePickHover'); el.classList.add('__tidePicked'); } sync(); }
-  function cleanup(){ els.forEach(function(x){x.classList.remove('__tidePicked');}); if(last){last.classList.remove('__tidePickHover');} document.removeEventListener('mouseover',over,true); document.removeEventListener('click',click,true); var s=document.getElementById('__tidePickerStyle'); if(s){s.remove();} window.__tidePickerActive=false; window.__tidePicks=[]; els=[]; }
-  window.__tideCancelPick=cleanup;
-  document.addEventListener('mouseover',over,true);
-  document.addEventListener('click',click,true);
-})()`;
+type BrowserFoundInPageEvent = Event & {
+  result?: {
+    activeMatchOrdinal?: number;
+    matches?: number;
+  };
+};
 
 export function WorkbenchBrowserPane(props: {
   pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;
   handlers: ProductShellHandlers;
 }): ReactElement {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const webviewRef = useRef<BrowserWebViewElement | null>(null);
+  const [webviewElement, setWebviewElement] = useState<BrowserWebViewElement | null>(null);
+  const setWebviewRef = useCallback((element: BrowserWebViewElement | null) => {
+    webviewRef.current = element;
+    setWebviewElement(element);
+  }, []);
+  const find = useInPaneFindState();
+  const [browserMatchCount, setBrowserMatchCount] = useState(0);
   const executedActionIdsRef = useRef<Set<string>>(new Set());
   // The webview `src` is PINNED to the pane's initial URL and never re-bound to
   // pane.url. A page load fires did-finish-load → snapshot, which writes the
@@ -76,20 +62,73 @@ export function WorkbenchBrowserPane(props: {
   // confirm attaches them all.
   const [pickMode, setPickMode] = useState(false);
   const [pickCount, setPickCount] = useState(0);
+  const browserFindNext = useCallback(() => {
+    const query = find.query.trim();
+    if (query.length === 0) {
+      return;
+    }
+    webviewRef.current?.findInPage?.(query, { findNext: true, forward: true, matchCase: false });
+  }, [find.query]);
+  const browserFindPrevious = useCallback(() => {
+    const query = find.query.trim();
+    if (query.length === 0) {
+      return;
+    }
+    webviewRef.current?.findInPage?.(query, { findNext: true, forward: false, matchCase: false });
+  }, [find.query]);
+  usePaneFindIntent(rootRef, {
+    enabled: true,
+    open: find.open,
+    onOpen: find.openFind,
+    onClose: find.closeFind,
+    onNext: browserFindNext,
+    onPrevious: browserFindPrevious,
+  });
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
+    if (webview === null) {
+      return undefined;
+    }
+    const onFound = (event: Event): void => {
+      const result = (event as BrowserFoundInPageEvent).result;
+      if (typeof result?.matches === "number") {
+        setBrowserMatchCount(result.matches);
+      }
+      if (typeof result?.activeMatchOrdinal === "number" && result.activeMatchOrdinal > 0) {
+        find.setActiveIndex(result.activeMatchOrdinal - 1);
+      }
+    };
+    webview.addEventListener("found-in-page", onFound);
+    return () => webview.removeEventListener("found-in-page", onFound);
+  }, [webviewElement, find.setActiveIndex]);
+  useEffect(() => {
+    const webview = webviewElement;
+    const query = find.query.trim();
+    if (webview === null) {
+      return undefined;
+    }
+    if (!find.open || query.length === 0) {
+      setBrowserMatchCount(0);
+      webview.stopFindInPage?.("clearSelection");
+      return undefined;
+    }
+    webview.findInPage?.(query, { findNext: false, forward: true, matchCase: false });
+    return undefined;
+  }, [webviewElement, find.open, find.query, props.pane.paneId]);
+  useEffect(() => {
+    const webview = webviewElement;
     if (webview?.executeJavaScript === undefined) {
       return undefined;
     }
     if (!pickMode) {
       setPickCount(0);
-      void safeExecuteJavaScript(webview, "window.__tideCancelPick && window.__tideCancelPick()");
+      void safeWebviewExec(webview, "window.__tideCancelPick && window.__tideCancelPick()");
       return undefined;
     }
-    void safeExecuteJavaScript(webview, BROWSER_ELEMENT_PICKER_SCRIPT);
+    void safeWebviewExec(webview, BROWSER_ELEMENT_PICKER_SCRIPT);
     let cancelled = false;
     const poll = window.setInterval(() => {
-      void safeExecuteJavaScript(webview, "(window.__tidePicks ? window.__tidePicks.length : 0)").then((count) => {
+      void safeWebviewExec(webview, "(window.__tidePicks ? window.__tidePicks.length : 0)").then((count) => {
         if (!cancelled && typeof count === "number") {
           setPickCount(count);
         }
@@ -98,15 +137,15 @@ export function WorkbenchBrowserPane(props: {
     return () => {
       cancelled = true;
       window.clearInterval(poll);
-      void safeExecuteJavaScript(webview, "window.__tideCancelPick && window.__tideCancelPick()");
+      void safeWebviewExec(webview, "window.__tideCancelPick && window.__tideCancelPick()");
     };
-  }, [pickMode, props.pane.paneId]);
+  }, [webviewElement, pickMode, props.pane.paneId]);
   const confirmElementPicks = () => {
     const webview = webviewRef.current;
     if (webview === null) {
       return;
     }
-    void safeExecuteJavaScript(webview, "JSON.stringify(window.__tidePicks || [])").then((raw) => {
+    void safeWebviewExec(webview, "JSON.stringify(window.__tidePicks || [])").then((raw) => {
       let picks: { text?: string; tag?: string }[] = [];
       try {
         picks = typeof raw === "string" ? (JSON.parse(raw) as { text?: string; tag?: string }[]) : [];
@@ -133,7 +172,7 @@ export function WorkbenchBrowserPane(props: {
     });
   };
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
     if (webview?.executeJavaScript === undefined) {
       return undefined;
     }
@@ -141,7 +180,7 @@ export function WorkbenchBrowserPane(props: {
     const script =
       "(() => { const s = window.getSelection && window.getSelection(); const t = s ? s.toString() : ''; if (!t.trim()) return { text: '' }; const r = s.rangeCount ? s.getRangeAt(0).getBoundingClientRect() : null; return { text: t, left: r ? r.left : 0, top: r ? r.top : 0 }; })()";
     const tick = () => {
-      void safeExecuteJavaScript(webview, script)
+      void safeWebviewExec(webview, script)
         .then((result) => {
           if (cancelled) {
             return;
@@ -164,7 +203,7 @@ export function WorkbenchBrowserPane(props: {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [props.pane.paneId, props.pane.url]);
+  }, [webviewElement, props.pane.paneId, props.pane.url]);
   // Keep the address bar in sync when the backend reports a navigated URL.
   useEffect(() => {
     if (props.pane.url !== undefined) {
@@ -174,7 +213,7 @@ export function WorkbenchBrowserPane(props: {
   // Back/forward availability, tracked from the webview's own navigation events.
   const [nav, setNav] = useState<{ canBack: boolean; canForward: boolean }>({ canBack: false, canForward: false });
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
     if (webview === null) {
       return undefined;
     }
@@ -196,7 +235,7 @@ export function WorkbenchBrowserPane(props: {
       webview.removeEventListener("did-navigate-in-page", update);
       webview.removeEventListener("did-finish-load", update);
     };
-  }, [props.pane.paneId]);
+  }, [webviewElement, props.pane.paneId]);
   // Apply EXTERNAL navigation (agent action / chat link → open_browser →
   // pane.url) via the webview API. `requestedUrlRef` tracks the URL we last
   // intended to be at — seeded with the initial src so we never re-load it at
@@ -206,7 +245,7 @@ export function WorkbenchBrowserPane(props: {
   // while real navigation (incl. from about:blank) still works.
   const requestedUrlRef = useRef(initialSrcRef.current);
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
     const target = props.pane.url;
     if (webview?.loadURL === undefined || target === undefined || target.length === 0) {
       return;
@@ -214,32 +253,37 @@ export function WorkbenchBrowserPane(props: {
     if (target === requestedUrlRef.current) {
       return; // already handled (initial src, or a prior navigation/echo)
     }
-    const current = safeBrowserWebViewGetUrl(webview);
+    const current = safeGetWebViewURL(webview);
     if (current === undefined) {
-      return; // not dom-ready yet — the initial src load is in flight
+      const loadWhenReady = () => {
+        requestedUrlRef.current = target;
+        safeLoadWebViewURL(webview, target);
+      };
+      webview.addEventListener("dom-ready", loadWhenReady, { once: true });
+      return () => webview.removeEventListener("dom-ready", loadWhenReady);
     }
     requestedUrlRef.current = target;
     if (target === current) {
       return; // snapshot echo: the webview is already here
     }
-    safeBrowserWebViewLoadUrl(webview, target);
-  }, [props.pane.url, props.pane.paneId]);
+    safeLoadWebViewURL(webview, target);
+  }, [webviewElement, props.pane.url, props.pane.paneId]);
   const goBack = () => {
     const webview = webviewRef.current;
     if (webview !== null) {
-      safeBrowserWebViewCommand(webview, "goBack");
+      safeInvokeWebView(webview, "goBack");
     }
   };
   const goForward = () => {
     const webview = webviewRef.current;
     if (webview !== null) {
-      safeBrowserWebViewCommand(webview, "goForward");
+      safeInvokeWebView(webview, "goForward");
     }
   };
   const reload = () => {
     const webview = webviewRef.current;
     if (webview !== null) {
-      safeBrowserWebViewCommand(webview, "reload");
+      safeInvokeWebView(webview, "reload");
     }
   };
   const navigate = () => {
@@ -249,8 +293,8 @@ export function WorkbenchBrowserPane(props: {
     }
     setAddress(url);
     const webview = webviewRef.current;
-    if (webview !== null) {
-      safeBrowserWebViewLoadUrl(webview, url);
+    if (webview?.loadURL !== undefined) {
+      safeLoadWebViewURL(webview, url);
     }
     // Report the navigation so the backend pane reflects it; did-finish-load
     // will follow up with the resolved title/body snapshot.
@@ -268,7 +312,7 @@ export function WorkbenchBrowserPane(props: {
     snapshotRevisionRef.current = props.pane.revision;
   }, [props.pane.revision]);
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
     if (webview === null) {
       return;
     }
@@ -301,7 +345,7 @@ export function WorkbenchBrowserPane(props: {
       webview.removeEventListener("did-finish-load", emitSnapshot);
       webview.removeEventListener("did-stop-loading", emitSnapshot);
     };
-  }, [props.handlers, props.pane.paneId]);
+  }, [webviewElement, props.handlers, props.pane.paneId]);
   // Observe-time pixel-capture pull: the backend marks this pane with a pendingCapture when the
   // agent calls tide_observe_browser(vision). Capture the live <webview> NOW (capturePage) and
   // report it back — this is the ONLY place a screenshot is encoded, so a mounted pane never
@@ -311,7 +355,7 @@ export function WorkbenchBrowserPane(props: {
   // last-id string is O(1) vs. a Set that would grow over the pane's lifetime (Gemini review).
   const lastCapturedIdRef = useRef<string | null>(null);
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
     const capture = props.pane.pendingCapture;
     if (
       webview === null ||
@@ -326,9 +370,9 @@ export function WorkbenchBrowserPane(props: {
     void captureBrowserWebViewScreenshot(webview).then((screenshot) => {
       props.handlers.onBrowserCaptureResult(paneId, { captureId, screenshot });
     });
-  }, [props.handlers, props.pane.paneId, props.pane.pendingCapture?.captureId]);
+  }, [webviewElement, props.handlers, props.pane.paneId, props.pane.pendingCapture?.captureId]);
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
     const action = props.pane.pendingAction;
     if (
       webview === null ||
@@ -367,6 +411,7 @@ export function WorkbenchBrowserPane(props: {
         });
       });
   }, [
+    webviewElement,
     props.handlers,
     props.pane.paneId,
     props.pane.pendingAction?.actionId,
@@ -374,7 +419,7 @@ export function WorkbenchBrowserPane(props: {
     props.pane.url,
   ]);
   return (
-    <div className="workbench-pane-content workbench-pane-content--browser">
+    <div ref={rootRef} className="workbench-pane-content workbench-pane-content--browser">
       {/* Slim editable address bar — the page fills the pane below it. */}
       <form
         className="workbench-browser-bar"
@@ -495,13 +540,25 @@ export function WorkbenchBrowserPane(props: {
           <Crosshair size={14} strokeWidth={1.8} aria-hidden />
         </button>
       </form>
+      {find.open ? (
+        <InPaneFindBar
+          query={find.query}
+          matchCount={browserMatchCount}
+          activeIndex={find.activeIndex}
+          placeholder="Find in page"
+          onQueryChange={find.setQuery}
+          onNext={browserFindNext}
+          onPrevious={browserFindPrevious}
+          onClose={find.closeFind}
+        />
+      ) : null}
       {/* `<webview>` is an Electron custom element with no JSX.IntrinsicElements
           typing, so it stays a createElement call (the string-tag overload accepts
           its partition/src attrs and the BrowserWebViewElement ref). The relative
           stage lets the agent-driving overlay sit exactly over the page area. */}
       <div className="workbench-browser-stage">
         {createElement("webview", {
-          ref: webviewRef,
+          ref: setWebviewRef,
           className: "workbench-browser-webview",
           "data-browser-pane-webview": props.pane.paneId,
           src: initialSrcRef.current,
@@ -576,7 +633,13 @@ function BackgroundBrowserWebView(props: {
   handlers: ProductShellHandlers;
 }): ReactElement {
   const webviewRef = useRef<BrowserWebViewElement | null>(null);
+  const [webviewElement, setWebviewElement] = useState<BrowserWebViewElement | null>(null);
+  const setWebviewRef = useCallback((element: BrowserWebViewElement | null) => {
+    webviewRef.current = element;
+    setWebviewElement(element);
+  }, []);
   const executedActionIdsRef = useRef<Set<string>>(new Set());
+  const [settleVersion, setSettleVersion] = useState(0);
   const { threadId, paneId, revision, url, pendingAction, pendingCapture } = props.pane;
   const handlers = props.handlers;
 
@@ -593,11 +656,12 @@ function BackgroundBrowserWebView(props: {
   // Pixels are pulled on demand at observe time (pendingCapture). Spec:
   // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
     if (webview === null) {
       return;
     }
     const emitSnapshot = () => {
+      setSettleVersion((version) => version + 1);
       void readBrowserWebViewSnapshot(webview).then((snapshot) => {
         handlers.onBackgroundBrowserSnapshot(threadId, paneId, {
           revision: snapshotRevisionRef.current,
@@ -621,7 +685,7 @@ function BackgroundBrowserWebView(props: {
       webview.removeEventListener("did-finish-load", emitSnapshot);
       webview.removeEventListener("did-stop-loading", emitSnapshot);
     };
-  }, [handlers, threadId, paneId]);
+  }, [webviewElement, handlers, threadId, paneId]);
 
   // Observe-time pixel-capture pull for a background thread's pane: an agent driving its browser
   // while you watch another thread still gets FRESH pixels on tide_observe_browser. capturePage
@@ -630,11 +694,12 @@ function BackgroundBrowserWebView(props: {
   // One last-id string (not a growing Set) — same O(1) de-dup as the active pane (Gemini review).
   const lastCapturedIdRef = useRef<string | null>(null);
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
     if (
       webview === null ||
       pendingCapture === undefined ||
-      lastCapturedIdRef.current === pendingCapture.captureId
+      lastCapturedIdRef.current === pendingCapture.captureId ||
+      !isWebViewSettled(webview)
     ) {
       return;
     }
@@ -643,16 +708,17 @@ function BackgroundBrowserWebView(props: {
     void captureBrowserWebViewScreenshot(webview).then((screenshot) => {
       handlers.onBackgroundBrowserCaptureResult(threadId, paneId, { captureId, screenshot });
     });
-  }, [handlers, threadId, paneId, pendingCapture?.captureId]);
+  }, [webviewElement, handlers, threadId, paneId, pendingCapture?.captureId, settleVersion]);
 
   // Execute a scheduled background action (click/type) against the offscreen webview.
   useEffect(() => {
-    const webview = webviewRef.current;
+    const webview = webviewElement;
     if (
       webview === null ||
       url === undefined ||
       pendingAction === undefined ||
-      executedActionIdsRef.current.has(pendingAction.actionId)
+      executedActionIdsRef.current.has(pendingAction.actionId) ||
+      !isWebViewSettled(webview)
     ) {
       return;
     }
@@ -680,30 +746,14 @@ function BackgroundBrowserWebView(props: {
           loading: false,
         });
       });
-  }, [handlers, threadId, paneId, revision, url, pendingAction?.actionId]);
+  }, [webviewElement, handlers, threadId, paneId, revision, url, pendingAction?.actionId, settleVersion]);
 
   // See the WorkbenchBrowserPane note: `<webview>` stays a createElement call.
   return createElement("webview", {
-    ref: webviewRef,
+    ref: setWebviewRef,
     className: "background-browser-host__webview",
     "data-browser-pane-webview": paneId,
     src: url ?? "about:blank",
     partition: "persist:tide-workbench-browser",
   });
-}
-
-// Turn a user-typed address into a navigable URL: keep explicit schemes, treat a
-// dotted token as a bare host (https://), and fall back to a web search.
-function normalizeBrowserUrl(input: string): string {
-  const value = input.trim();
-  if (value.length === 0) {
-    return "";
-  }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) || value.startsWith("about:")) {
-    return value;
-  }
-  if (/^[^\s/]+\.[^\s/]+/.test(value)) {
-    return `https://${value}`;
-  }
-  return `https://www.google.com/search?q=${encodeURIComponent(value)}`;
 }

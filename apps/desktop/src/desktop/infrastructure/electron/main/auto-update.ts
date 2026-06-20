@@ -44,6 +44,15 @@ export function logUpdateEvent(message: string): void {
 export function registerAutoUpdate(getWindow: () => BrowserWindow | undefined): void {
   const isDev = process.argv.includes("--tide-dev-app");
   const active = shouldRunAutoUpdater({ isPackaged: app.isPackaged, isDev });
+  // The download-progress event carries no version, so remember the version the
+  // available/downloaded events report and thread it through the progress status.
+  let pendingVersion = "";
+  const push = (status: AppUpdateStatus): void => {
+    const window = getWindow();
+    if (window !== undefined && !window.isDestroyed()) {
+      window.webContents.send("tide:app-update-changed", status);
+    }
+  };
 
   ipcMain.handle("tide:app-version", () => app.getVersion());
   ipcMain.handle("tide:app-update-apply", () => {
@@ -69,24 +78,18 @@ export function registerAutoUpdate(getWindow: () => BrowserWindow | undefined): 
   // actually pulls the update; progress arrives via download-progress → "downloading".
   ipcMain.handle("tide:app-update-download", () => {
     if (active) {
-      void autoUpdater.downloadUpdate().catch(() => undefined);
+      if (pendingVersion.length > 0) {
+        push(mapAutoUpdaterEvent({ kind: "download-progress", version: pendingVersion, percent: 0 }));
+      }
+      void autoUpdater.downloadUpdate().catch((error) => {
+        push(mapAutoUpdaterEvent({ kind: "error", message: error instanceof Error ? error.message : String(error) }));
+      });
     }
   });
 
   if (!active) {
     return;
   }
-
-  const push = (status: AppUpdateStatus): void => {
-    const window = getWindow();
-    if (window !== undefined && !window.isDestroyed()) {
-      window.webContents.send("tide:app-update-changed", status);
-    }
-  };
-
-  // The download-progress event carries no version, so remember the version the
-  // available/downloaded events report and thread it through the progress status.
-  let pendingVersion = "";
 
   // OFF: an available update is shown, not pulled. The user starts the download from the
   // pill (tide:app-update-download → downloadUpdate). This is the core of the visible,

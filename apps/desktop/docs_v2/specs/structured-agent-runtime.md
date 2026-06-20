@@ -31,9 +31,8 @@ works" — capture a transcript first.** Known empirical traps already encoded:
   can_use_tool permission requests; without it tools are silently auto-blocked.
 - codex app-server is JSON-RPC-SHAPED but never emits a `jsonrpc` field; the
   server sends REQUESTS (approvals) from its own id namespace.
-- gemini ACP generates the session id agent-side (no minting); an untrusted cwd
-  SILENTLY skips MCP servers — `GEMINI_CLI_TRUST_WORKSPACE=true` is the
-  source-verified override (trust remains a Tide product decision).
+- gemini ACP generates the session id agent-side (no minting); provider runtime
+  env stays aligned with the user's terminal shell snapshot.
 
 ## Architecture
 
@@ -74,7 +73,7 @@ never calls.
 | permission | `control_request: can_use_tool` → `control_response` allow/deny; AskUserQuestion carries options, answered via `updatedInput.answers` | server request `item/*/requestApproval` → `{decision}` | server request `session/request_permission` → `{outcome:{outcome:"selected", optionId}}` |
 | turn end | `result` message (usage + modelUsage.contextWindow) | `turn/completed` (+tokenUsage/updated) | `session/prompt` resolution (`stopReason`, `_meta.quota`) |
 | resume | `--resume <id>` at spawn | `thread/resume` in protocol | `session/load` in protocol |
-| trust | non-TTY mode skips the dialog by design; Tide trust flow stays | no trust gate in protocol (sandbox/approval is the model) | forced via `GEMINI_CLI_TRUST_WORKSPACE=true` |
+| trust | non-TTY mode skips the dialog by design; Tide trust flow stays | no trust gate in protocol (sandbox/approval is the model) | ACP has no visible trust prompt; Tide adds Gemini's workspace-trust bridge env so MCP can load |
 | auth failure | result `is_error` + "Not logged in" synthetic message | 401 error notifications (preflight gates earlier) | session/new error -32000 |
 
 ## What this kills (for the three structured providers)

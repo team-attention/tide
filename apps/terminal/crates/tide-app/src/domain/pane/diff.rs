@@ -306,6 +306,10 @@ impl DiffPane {
     /// Find which file index a virtual row belongs to.
     pub fn file_index_at_row(&self, visual_row: usize) -> Option<usize> {
         let target_row = self.scroll as usize + visual_row;
+        self.file_index_at_virtual_row(target_row)
+    }
+
+    fn file_index_at_virtual_row(&self, target_row: usize) -> Option<usize> {
         let mut row_idx = 0usize;
         for (fi, _) in self.files.iter().enumerate() {
             if fi > 0 {
@@ -330,6 +334,41 @@ impl DiffPane {
             }
         }
         None
+    }
+
+    pub fn file_index_for_selection(&self, selection: &crate::pane::Selection) -> Option<usize> {
+        let (start, end) = if selection.anchor < selection.end {
+            (selection.anchor, selection.end)
+        } else {
+            (selection.end, selection.anchor)
+        };
+
+        for row in start.0..=end.0 {
+            if let Some(file_index) = self.file_index_at_virtual_row(row) {
+                return Some(file_index);
+            }
+        }
+        None
+    }
+
+    pub fn review_source_label(&self) -> String {
+        let file_index = self
+            .selection
+            .as_ref()
+            .and_then(|selection| self.file_index_for_selection(selection))
+            .or(self.selected)
+            .filter(|index| self.files.get(*index).is_some())
+            .or_else(|| (self.files.len() == 1).then_some(0));
+
+        if let Some(file) = file_index.and_then(|index| self.files.get(index)) {
+            return self.cwd.join(&file.path).display().to_string();
+        }
+
+        if self.files.len() > 1 {
+            format!("{} ({} files)", self.cwd.display(), self.files.len())
+        } else {
+            self.cwd.display().to_string()
+        }
     }
 
     /// Get horizontal scroll for a specific file.

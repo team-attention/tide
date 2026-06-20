@@ -157,6 +157,92 @@ fn search_bar_receives_text_in_preview_mode() {
 }
 
 #[test]
+fn editor_search_bar_replaces_current_match_from_replace_field() {
+    // UC-1 BR-7: Editor Search Bar exposes a human-facing replacement field for focused replace.
+    let (mut app, id) = app_with_editor();
+    if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&id) {
+        pane.editor.buffer.lines = vec!["foo foo".to_string()];
+        pane.search = Some(crate::state::search::SearchState::new());
+    }
+    app.focus.search_focus = Some(id);
+
+    for ch in "foo".chars() {
+        crate::adapter::inward::search_adapter::search_bar_insert(&mut app, id, ch);
+    }
+    crate::adapter::inward::search_adapter::search_bar_toggle_replace_field(&mut app, id, false);
+    for ch in "bar".chars() {
+        crate::adapter::inward::search_adapter::search_bar_insert(&mut app, id, ch);
+    }
+    crate::adapter::inward::search_adapter::search_bar_replace_current(&mut app, id);
+
+    if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
+        assert_eq!(pane.editor.buffer.line(0), Some("bar foo"));
+        let search = pane.search.as_ref().expect("search bar remains open");
+        assert_eq!(search.input.text, "foo");
+        assert_eq!(search.replacement.text, "bar");
+        assert!(search.is_replacement_focused());
+        assert_eq!(search.matches.len(), 1);
+    } else {
+        panic!("expected editor pane");
+    }
+}
+
+#[test]
+fn editor_search_bar_replace_all_updates_all_current_matches() {
+    // UC-1 BR-8: Editor Search Bar can apply a replacement across the current bounded match set.
+    let (mut app, id) = app_with_editor();
+    if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&id) {
+        pane.editor.buffer.lines = vec!["foo foo".to_string(), "foo".to_string()];
+        pane.search = Some(crate::state::search::SearchState::new());
+    }
+    app.focus.search_focus = Some(id);
+
+    for ch in "foo".chars() {
+        crate::adapter::inward::search_adapter::search_bar_insert(&mut app, id, ch);
+    }
+    crate::adapter::inward::search_adapter::search_bar_toggle_replace_field(&mut app, id, false);
+    for ch in "bar".chars() {
+        crate::adapter::inward::search_adapter::search_bar_insert(&mut app, id, ch);
+    }
+    crate::adapter::inward::search_adapter::search_bar_replace_all(&mut app, id);
+
+    if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
+        assert_eq!(pane.editor.buffer.line(0), Some("bar bar"));
+        assert_eq!(pane.editor.buffer.line(1), Some("bar"));
+        let search = pane.search.as_ref().expect("search bar remains open");
+        assert_eq!(search.matches.len(), 0);
+        assert!(pane.editor.is_modified());
+    } else {
+        panic!("expected editor pane");
+    }
+}
+
+#[test]
+fn editor_search_bar_replace_does_not_mutate_preview_mode() {
+    // UC-1 BR-9: Preview mode remains read-oriented even when the replace field is open.
+    let (mut app, id, _path) = app_with_markdown_editor("foo");
+    if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&id) {
+        pane.preview_mode = true;
+        let mut search = crate::state::search::SearchState::new();
+        search.input = crate::state::InputLine::with_text("foo".to_string());
+        search.replacement = crate::state::InputLine::with_text("bar".to_string());
+        search.focus_replacement();
+        crate::state::search::execute_search_editor(&mut search, &pane.editor.buffer.lines);
+        pane.search = Some(search);
+    }
+    app.focus.search_focus = Some(id);
+
+    crate::adapter::inward::search_adapter::search_bar_replace_all(&mut app, id);
+
+    if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
+        assert_eq!(pane.editor.buffer.line(0), Some("foo"));
+        assert!(!pane.editor.is_modified());
+    } else {
+        panic!("expected editor pane");
+    }
+}
+
+#[test]
 fn ime_commit_reaches_search_bar_in_preview_mode() {
     // UC-1 BR-5: IME commit also reaches the search bar while preview mode is active
     let (mut app, id) = app_with_editor();

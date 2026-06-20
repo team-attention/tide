@@ -213,7 +213,8 @@ pub(crate) fn handle_scroll(
         // Check if scrolling over the file tree
         let ft_visible = ctx.ft().visible;
         let ft_rect = ctx.ft().rect;
-        if ft_visible && ft_rect.is_some_and(|r| cursor_pos.x >= r.x && cursor_pos.x < r.x + r.width)
+        if ft_visible
+            && ft_rect.is_some_and(|r| cursor_pos.x >= r.x && cursor_pos.x < r.x + r.width)
         {
             let max_scroll = ctx.file_tree_max_scroll();
             let current_scroll = ctx.ft().scroll;

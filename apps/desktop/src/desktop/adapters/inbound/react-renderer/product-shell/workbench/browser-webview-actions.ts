@@ -36,6 +36,11 @@ export type BrowserWebViewElement = HTMLElement & {
   canGoBack?: () => boolean;
   canGoForward?: () => boolean;
   isLoading?: () => boolean;
+  findInPage?: (
+    text: string,
+    options?: { forward?: boolean; findNext?: boolean; matchCase?: boolean },
+  ) => number;
+  stopFindInPage?: (action: "clearSelection" | "keepSelection" | "activateSelection") => void;
   sendInputEvent?: (event: BrowserWebViewInputEvent) => void;
   capturePage?: () => Promise<{
     toDataURL?: () => string;
@@ -62,49 +67,10 @@ interface BrowserActionTarget {
 
 // Electron <webview> guest methods only work once the guest is attached AND has
 // emitted dom-ready. Before that, executeJavaScript throws *synchronously* and
-// capturePage() never resolves. These guards keep a not-ready (or non-painting)
+// capturePage() never resolves. These two guards keep a not-ready (or non-painting)
 // webview from stalling the snapshot pipeline — which otherwise leaves the pane
 // "pending"/agent-driving forever because onBrowserActionResult never fires.
 const CAPTURE_TIMEOUT_MS = 2000;
-
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    typeof (value as { then?: unknown }).then === "function"
-  );
-}
-
-function safeGuestMethod<T>(method: (() => T) | undefined): T | undefined {
-  try {
-    return method?.();
-  } catch {
-    return undefined;
-  }
-}
-
-export function safeBrowserWebViewGetUrl(
-  webview: BrowserWebViewElement,
-): string | undefined {
-  return safeGuestMethod(() => webview.getURL?.());
-}
-
-export function safeBrowserWebViewLoadUrl(
-  webview: BrowserWebViewElement,
-  url: string,
-): void {
-  const result = safeGuestMethod(() => webview.loadURL?.(url));
-  if (isPromiseLike(result)) {
-    void Promise.resolve(result).catch(() => undefined);
-  }
-}
-
-export function safeBrowserWebViewCommand(
-  webview: BrowserWebViewElement,
-  command: "goBack" | "goForward" | "reload",
-): void {
-  void safeGuestMethod(() => webview[command]?.());
-}
 
 function raceTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
   // Renderer-resolved setTimeout returns a DOM `number` here (not NodeJS.Timeout);
@@ -122,7 +88,7 @@ function raceTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined>
   });
 }
 
-export async function safeExecuteJavaScript(
+async function safeExecuteJavaScript(
   webview: BrowserWebViewElement,
   script: string,
 ): Promise<unknown> {
@@ -136,6 +102,33 @@ export async function safeExecuteJavaScript(
   }
 }
 
+export function safeGetWebViewURL(webview: BrowserWebViewElement): string | undefined {
+  try {
+    return webview.getURL?.();
+  } catch {
+    return undefined;
+  }
+}
+
+export function safeLoadWebViewURL(webview: BrowserWebViewElement, url: string): void {
+  try {
+    void webview.loadURL?.(url)?.catch(() => undefined);
+  } catch {
+    // Electron guest methods throw synchronously before dom-ready.
+  }
+}
+
+export function safeInvokeWebView(
+  webview: BrowserWebViewElement,
+  method: "goBack" | "goForward" | "reload",
+): void {
+  try {
+    webview[method]?.();
+  } catch {
+    // Ignore pre-dom-ready guest API throws from toolbar clicks.
+  }
+}
+
 // True only when the guest has finished its current load. `<webview>.isLoading()`
 // is NOT a safe probe: like the other guest methods it throws *synchronously*
 // ("must be attached to the DOM and the dom-ready event emitted") until the guest
@@ -145,7 +138,11 @@ export async function safeExecuteJavaScript(
 // throw as "not settled yet": the dom-ready / did-finish-load listeners capture the
 // snapshot once the guest is actually ready.
 export function isWebViewSettled(webview: BrowserWebViewElement): boolean {
-  return safeGuestMethod(() => webview.isLoading?.()) === false;
+  try {
+    return webview.isLoading?.() === false;
+  } catch {
+    return false;
+  }
 }
 
 // Read the cheap DOM text (url / title / body) only — NEVER a pixel screenshot. The recurring
@@ -169,7 +166,7 @@ export async function readBrowserWebViewSnapshot(
       ? (rawSnapshot as Record<string, unknown>)
       : {};
   return {
-    url: stringRecordField(snapshot, "url") ?? safeBrowserWebViewGetUrl(webview),
+    url: stringRecordField(snapshot, "url") ?? safeGetWebViewURL(webview),
     pageTitle: stringRecordField(snapshot, "pageTitle"),
     bodyTextPreview: stringRecordField(snapshot, "bodyTextPreview"),
   };

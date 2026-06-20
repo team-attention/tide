@@ -101,11 +101,13 @@ The live Backend wiring does not mark every installed provider ready by default.
 
 It reads bounded provider-owned files for authentication, onboarding, and Directory Trust evidence:
 
-- Codex: `~/.codex/auth.json` and `~/.codex/config.toml`.
+- Codex: effective `CODEX_HOME` from the user's shell environment, falling back
+  to `~/.codex`, reading `auth.json` and `config.toml`.
 - Claude Code: `~/.claude.json` and `~/.claude/settings.json`.
 - Antigravity: `~/.gemini/oauth_creds.json`, `~/.gemini/google_accounts.json`, `~/.gemini/antigravity-cli/cache/onboarding.json`, `~/.gemini/antigravity-cli/settings.json`, and Tide bootstrap files under `~/.gemini/config`.
 
-Codex session reference discovery reads recent rollout files from real Codex history and the Tide CODEX_HOME overlay. The overlay path is required because live Codex launches run with Tide's generated CODEX_HOME.
+Codex session reference discovery reads recent rollout files from the same
+effective Codex home used by the spawned CLI.
 
 ### D9. Tide API Agents do not enter Provider CLI wiring
 

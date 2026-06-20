@@ -18,6 +18,9 @@ import type {
 import type { TideMcpToolSurfaceAdapter } from "../tide-mcp-tool-surface/tide-mcp-tool-surface-adapter.ts";
 import type { RuntimeReadinessRegistry } from "../../../application/services/provider/runtime-readiness-registry.ts";
 
+const TIDE_MCP_HANDLER_TIMEOUT_MS = 125_000;
+const TIDE_MCP_INTERNAL_REQUEST_TIMEOUT_MS = 130_000;
+
 export interface TideMcpSocketServer {
   readonly socketPath: string;
   listen(): Promise<void>;
@@ -35,6 +38,7 @@ export interface CreateTideMcpSocketServerInput {
 export interface CreateTideMcpSocketClientCallbacksInput {
   socketPath: string;
   session?: TideMcpSessionRef;
+  requestTimeoutMs?: number;
 }
 
 export interface RunTideMcpSocketBackedLineDelimitedStdioInput {
@@ -42,6 +46,7 @@ export interface RunTideMcpSocketBackedLineDelimitedStdioInput {
   env: TideMcpRuntimeEnv;
   input: RunTideMcpLineDelimitedStdioInput["input"];
   writeLine: RunTideMcpLineDelimitedStdioInput["writeLine"];
+  requestTimeoutMs?: number;
 }
 
 type InternalMcpResponse =
@@ -92,7 +97,7 @@ export function createTideMcpSocketClientCallbacks(
         id: nextRequestId(),
         method: "tide_mcp/list_tools",
         params: resolvedSession === undefined ? {} : { session: resolvedSession },
-      });
+      }, input.requestTimeoutMs);
       const tools = recordField(result)?.tools;
       return Array.isArray(tools) ? (tools as TideMcpToolDefinition[]) : [];
     },
@@ -106,7 +111,7 @@ export function createTideMcpSocketClientCallbacks(
           toolName: toolCall.toolName,
           input: toolCall.input,
         },
-      });
+      }, input.requestTimeoutMs);
       return result as ServiceResult<TideMcpToolCallResult>;
     },
   };
@@ -117,6 +122,7 @@ export async function runTideMcpSocketBackedLineDelimitedStdio(
 ): Promise<void> {
   const callbacks = createTideMcpSocketClientCallbacks({
     socketPath: input.socketPath,
+    requestTimeoutMs: input.requestTimeoutMs,
   });
   const handler = createTideMcpJsonRpcHandler({
     listTools: callbacks.listTools,
@@ -206,13 +212,20 @@ class NodeTideMcpSocketServer implements TideMcpSocketServer {
       return;
     }
 
-    // Every request MUST get exactly one response. If the handler throws, the
-    // client (sendInternalRequest) has no timeout by design, so a missing response
-    // would hang the agent's MCP tool call forever ("Working…" with no end). Answer
-    // with a JSON-RPC error instead so the round-trip always completes.
+    // Every request MUST get exactly one response. If the handler throws or stalls,
+    // answer with a JSON-RPC error so the agent's MCP tool call does not stay in a
+    // permanent "Working..." state.
     let response: InternalMcpResponse;
     try {
-      response = await this.requestHandler.handle(request);
+      response = await withTimeout(
+        this.requestHandler.handle(request),
+        TIDE_MCP_HANDLER_TIMEOUT_MS,
+        () => internalError(
+          jsonRpcId(recordField(request)?.id),
+          -32603,
+          "Timed out waiting for Tide MCP socket handler.",
+        ),
+      );
     } catch (error) {
       response = internalError(jsonRpcId(recordField(request)?.id), -32603, errorMessage(error));
     }
@@ -286,15 +299,48 @@ function parseInternalToolCall(
 function sendInternalRequest(
   socketPath: string,
   request: Record<string, unknown>,
+  timeoutMs: number = TIDE_MCP_INTERNAL_REQUEST_TIMEOUT_MS,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(socketPath);
     let buffer = "";
+    let settled = false;
 
-    socket.setEncoding("utf8");
-    socket.once("error", reject);
-    socket.on("data", (chunk) => {
-      buffer += chunk;
+    const timeout = setTimeout(() => {
+      settleReject(new Error("Timed out waiting for Tide MCP socket response."));
+      socket.destroy();
+    }, timeoutMs);
+    unrefTimer(timeout);
+
+    function cleanup(): void {
+      clearTimeout(timeout);
+      socket.off("data", handleData);
+      socket.off("connect", handleConnect);
+      socket.off("error", handleError);
+      socket.off("close", handleClose);
+      socket.off("end", handleClose);
+    }
+
+    function settleResolve(value: unknown): void {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(value);
+    }
+
+    function settleReject(error: unknown): void {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(error);
+    }
+
+    function handleData(chunk: Buffer | string): void {
+      buffer += chunk.toString();
       const newlineIndex = buffer.indexOf("\n");
       if (newlineIndex === -1) {
         return;
@@ -304,18 +350,67 @@ function sendInternalRequest(
       try {
         const response = JSON.parse(line) as InternalMcpResponse;
         if ("error" in response) {
-          reject(new Error(response.error.message));
+          settleReject(new Error(response.error.message));
           return;
         }
-        resolve(response.result);
+        settleResolve(response.result);
       } catch (error) {
-        reject(error);
+        settleReject(error);
       }
-    });
-    socket.once("connect", () => {
+    }
+
+    function handleConnect(): void {
       socket.write(`${JSON.stringify(request)}\n`);
-    });
+    }
+
+    function handleError(error: Error): void {
+      settleReject(error);
+    }
+
+    function handleClose(): void {
+      settleReject(new Error("Tide MCP socket closed before returning a complete response."));
+    }
+
+    socket.setEncoding("utf8");
+    socket.on("error", handleError);
+    socket.on("close", handleClose);
+    socket.on("end", handleClose);
+    socket.on("data", handleData);
+    socket.once("connect", handleConnect);
   });
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: () => T,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      resolve(fallback());
+    }, timeoutMs);
+    unrefTimer(timeout);
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
+
+function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+  if (
+    typeof timer === "object" &&
+    "unref" in timer &&
+    typeof timer.unref === "function"
+  ) {
+    timer.unref();
+  }
 }
 
 let nextId = 1;

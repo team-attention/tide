@@ -97,7 +97,8 @@ fn terminal_cell_for_pane(
         .iter()
         .find(|(id, _)| *id == pane_id)?;
     let cell_size = ctx.cell_size();
-    let inner = crate::pane::pane_content_rect(*visual_rect, terminal_content_top(cell_size.height));
+    let inner =
+        crate::pane::pane_content_rect(*visual_rect, terminal_content_top(cell_size.height));
     let target_pos = if clamp {
         clamp_to_rect(pos, inner)
     } else {
@@ -133,15 +134,15 @@ fn terminal_mouse_report_bytes(
     let modifiers = ctx.modifiers();
     match ctx.pane(pane_id) {
         Some(PaneKind::Terminal(pane)) => match report {
-            TerminalMouseReport::Press(button) => {
-                pane.backend.mouse_press_to_bytes(button, &modifiers, col, row)
-            }
-            TerminalMouseReport::Release(button) => {
-                pane.backend.mouse_release_to_bytes(button, &modifiers, col, row)
-            }
-            TerminalMouseReport::Drag(button) => {
-                pane.backend.mouse_drag_to_bytes(button, &modifiers, col, row)
-            }
+            TerminalMouseReport::Press(button) => pane
+                .backend
+                .mouse_press_to_bytes(button, &modifiers, col, row),
+            TerminalMouseReport::Release(button) => pane
+                .backend
+                .mouse_release_to_bytes(button, &modifiers, col, row),
+            TerminalMouseReport::Drag(button) => pane
+                .backend
+                .mouse_drag_to_bytes(button, &modifiers, col, row),
             TerminalMouseReport::Move => pane.backend.mouse_move_to_bytes(&modifiers, col, row),
         },
         _ => None,
@@ -173,13 +174,7 @@ fn forward_terminal_mouse_press(ctx: &mut impl MousePorts, button: MouseButton) 
     let Some((pane_id, col, row)) = terminal_cell_at(ctx, pos) else {
         return false;
     };
-    if forward_terminal_mouse_report(
-        ctx,
-        pane_id,
-        TerminalMouseReport::Press(button),
-        col,
-        row,
-    ) {
+    if forward_terminal_mouse_report(ctx, pane_id, TerminalMouseReport::Press(button), col, row) {
         ctx.interaction_mut().terminal_mouse_source = Some(pane_id);
         return true;
     }
@@ -196,13 +191,7 @@ fn forward_terminal_mouse_release(ctx: &mut impl MousePorts, button: MouseButton
     let Some((col, row)) = terminal_cell_for_pane(ctx, pos, pane_id, true) else {
         return false;
     };
-    forward_terminal_mouse_report(
-        ctx,
-        pane_id,
-        TerminalMouseReport::Release(button),
-        col,
-        row,
-    )
+    forward_terminal_mouse_report(ctx, pane_id, TerminalMouseReport::Release(button), col, row)
 }
 
 pub(super) fn forward_terminal_mouse_drag(
@@ -255,6 +244,14 @@ pub(crate) fn handle_mouse_down(
             ctx.request_redraw();
             return;
         }
+    }
+
+    if button == MouseButton::Left
+        && !ctx.modal().is_any_open()
+        && ctx.dismiss_first_run_guide_at(ctx.last_cursor_pos())
+    {
+        ctx.request_redraw();
+        return;
     }
 
     // Handle modal/popup clicks

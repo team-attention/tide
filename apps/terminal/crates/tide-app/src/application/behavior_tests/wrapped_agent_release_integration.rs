@@ -181,7 +181,8 @@ fn codex_wrapper_uses_a_stable_codex_home_overlay() {
     assert!(wrapper.contains("TIDE_TERMINAL_CODEX_HOME"));
     assert!(wrapper.contains("REAL_CODEX_HOME"));
     assert!(wrapper.contains("TIDE_TERMINAL_WRAPPER_CONFIG_ROOT"));
-    assert!(wrapper.contains("TIDE_TERMINAL_CODEX_HOME=\"$TIDE_TERMINAL_WRAPPER_CONFIG_ROOT/codex/home\""));
+    assert!(wrapper
+        .contains("TIDE_TERMINAL_CODEX_HOME=\"$TIDE_TERMINAL_WRAPPER_CONFIG_ROOT/codex/home\""));
     assert!(!wrapper.contains("mktemp -d /tmp/tide-codex-home"));
     assert!(!wrapper.contains("rm -rf \"$TIDE_TERMINAL_CODEX_HOME\""));
 }
@@ -195,9 +196,9 @@ fn codex_wrapper_installs_user_prompt_submit_and_stop_hooks() {
     assert!(wrapper.contains("\"Stop\""));
     assert!(wrapper.contains("features.hooks=true"));
     assert!(!wrapper.contains("features.codex_hooks=true"));
-    assert!(
-        wrapper.contains("notify codex-stop --pane \"$TIDE_TERMINAL_PANE\" --agent codex --payload-stdin")
-    );
+    assert!(wrapper.contains(
+        "notify codex-stop --pane \"$TIDE_TERMINAL_PANE\" --agent codex --payload-stdin"
+    ));
     assert!(wrapper.contains("is_tide_managed_hook_group"));
     assert!(!wrapper.contains("codex-turn-complete"));
 }
@@ -218,8 +219,12 @@ fn agent_wrappers_use_stable_hook_bearing_config_files() {
     assert!(!gemini.contains("CONTEXT_DIR=\"$(mktemp"));
 
     assert!(codex.contains("notify agent-running --pane \"$TIDE_TERMINAL_PANE\" --agent codex"));
-    assert!(claude.contains("notify agent-running --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude"));
-    assert!(gemini.contains("notify agent-running --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini"));
+    assert!(
+        claude.contains("notify agent-running --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude")
+    );
+    assert!(
+        gemini.contains("notify agent-running --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini")
+    );
 }
 
 #[test]
@@ -230,9 +235,14 @@ fn agent_wrappers_forward_tide_window_to_mcp_server() {
     let claude = include_str!("../../../resources/bin/claude");
     let gemini = include_str!("../../../resources/bin/gemini");
 
-    assert!(codex.contains(r#"mcp_servers.tide-terminal.env.TIDE_TERMINAL_SOCKET=\"$TIDE_TERMINAL_SOCKET\""#));
-    assert!(codex.contains(r#"mcp_servers.tide-terminal.env.TIDE_TERMINAL_PANE=\"$TIDE_TERMINAL_PANE\""#));
-    assert!(codex.contains(r#"mcp_servers.tide-terminal.env.TIDE_TERMINAL_WINDOW=\"$TIDE_TERMINAL_WINDOW\""#));
+    assert!(codex.contains(
+        r#"mcp_servers.tide-terminal.env.TIDE_TERMINAL_SOCKET=\"$TIDE_TERMINAL_SOCKET\""#
+    ));
+    assert!(codex
+        .contains(r#"mcp_servers.tide-terminal.env.TIDE_TERMINAL_PANE=\"$TIDE_TERMINAL_PANE\""#));
+    assert!(codex.contains(
+        r#"mcp_servers.tide-terminal.env.TIDE_TERMINAL_WINDOW=\"$TIDE_TERMINAL_WINDOW\""#
+    ));
     assert!(claude.contains(
         "\"env\": { \"TIDE_TERMINAL_SOCKET\": \"$TIDE_TERMINAL_SOCKET\", \"TIDE_TERMINAL_PANE\": \"$TIDE_TERMINAL_PANE\", \"TIDE_TERMINAL_WINDOW\": \"$TIDE_TERMINAL_WINDOW\" }"
     ));
@@ -605,7 +615,8 @@ fn antigravity_wrapper_installs_tide_plugin_without_mutating_user_config() {
     assert!(wrapper.contains(r#""$PLUGIN_DIR/plugin.json""#));
     assert!(wrapper.contains(r#""$PLUGIN_DIR/mcp_config.json""#));
     assert!(wrapper.contains(r#""$PLUGIN_DIR/hooks.json""#));
-    assert!(wrapper.contains(r#""tide-terminal": { "command": "$TIDE_TERMINAL_BIN", "args": ["mcp"] }"#));
+    assert!(wrapper
+        .contains(r#""tide-terminal": { "command": "$TIDE_TERMINAL_BIN", "args": ["mcp"] }"#));
     // must not edit the user's own mcp_config.json
     assert!(!wrapper.contains("config/mcp_config.json"));
 }
@@ -696,8 +707,14 @@ fn wrapped_agent_display_name_covers_opencode_and_antigravity() {
     use crate::state::gateway_status::wrapped_agent_display_name;
 
     assert_eq!(wrapped_agent_display_name("opencode"), Some("opencode"));
-    assert_eq!(wrapped_agent_display_name("antigravity"), Some("Antigravity"));
-    assert_eq!(wrapped_agent_display_name("Antigravity"), Some("Antigravity"));
+    assert_eq!(
+        wrapped_agent_display_name("antigravity"),
+        Some("Antigravity")
+    );
+    assert_eq!(
+        wrapped_agent_display_name("Antigravity"),
+        Some("Antigravity")
+    );
 }
 
 #[test]

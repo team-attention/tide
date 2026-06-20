@@ -69,9 +69,13 @@ pub(crate) enum WorkspaceScanResult {
 pub(crate) enum WorktreeFollowUp {
     None,
     /// `cd` the terminal into the new worktree if its shell is idle.
-    CdTerminalIfIdle { pane_id: crate::tide_core::PaneId },
+    CdTerminalIfIdle {
+        pane_id: crate::tide_core::PaneId,
+    },
     /// Split a new terminal pane rooted in the new worktree.
-    SplitPane { pane_id: crate::tide_core::PaneId },
+    SplitPane {
+        pane_id: crate::tide_core::PaneId,
+    },
 }
 
 /// A worktree mutation to run off the app thread (the slow git part). Follow-ups

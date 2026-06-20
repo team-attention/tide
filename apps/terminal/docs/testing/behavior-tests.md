@@ -52,7 +52,7 @@ mod pane_lifecycle {
 | `search_behavior` | `search.md` | 6 | Search query, match navigation, wrap |
 | `ime_behavior` | `ime.md` | 8 | Composition lifecycle, cleanup on switch/close |
 | `render_cache_behavior` | `terminal-sync.md` UC-2 | 5 | Cache invalidation, generation tracking |
-| `theme_behavior` | `theme.md` | 4 | Theme toggle, font default, cache clear |
+| `theme_behavior` | `theme.md` | 26 | Theme mode, built-in palettes, editor text, cache clear |
 | `session_behavior` | `session.md` | 3 | Session serialization, restore, defaults |
 | `file_tree_scroll` | `file-tree.md` | 3 | Scroll clamping, hidden preservation |
 

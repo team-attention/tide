@@ -105,10 +105,7 @@ impl Terminal {
             _ => return None,
         };
 
-        let disambiguated_key = matches!(
-            key,
-            Key::Enter | Key::Tab | Key::Backspace | Key::Escape
-        );
+        let disambiguated_key = matches!(key, Key::Enter | Key::Tab | Key::Backspace | Key::Escape);
         if !report_all && !(disambiguate && (has_modifiers || disambiguated_key)) {
             return None;
         }

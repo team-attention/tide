@@ -6,7 +6,7 @@ import { relativeBaseName } from "../../../../../application/domains/product-she
 import type { ProductShellHandlers } from "../support/types.ts";
 import { createColumnResizeHandle } from "../chrome/chrome.tsx";
 import { createFileTreeContextMenuOverlay } from "./file-tree-context-menu.tsx";
-import { ChevronRight, FilePlus, Folder, FolderOpen, FolderPlus, RefreshCw, Search, X } from "lucide-react";
+import { ChevronRight, FilePlus, Folder, FolderOpen, FolderPlus, Search, X } from "lucide-react";
 import { fileIconFor } from "../../support/file-icons.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure); file
 // operations (toolbar / context menu / inline edits / drag-move) added per
@@ -283,15 +283,6 @@ function FileTreeColumn(props: {
             onClick={() => handlers.onFileTreeNewFolder("")}
           >
             <FolderPlus size={14} strokeWidth={1.9} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="file-tree-toolbar__button"
-            title="Refresh"
-            aria-label="Refresh FileTree"
-            onClick={() => handlers.onFileTreeRefresh()}
-          >
-            <RefreshCw size={13} strokeWidth={1.9} aria-hidden />
           </button>
         </div>
       </header>

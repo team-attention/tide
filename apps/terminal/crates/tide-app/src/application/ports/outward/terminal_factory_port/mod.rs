@@ -33,4 +33,7 @@ pub(crate) trait TerminalFactoryPort {
 
     /// Update whether agent auto-integration is enabled (settings toggle).
     fn set_auto_integration(&mut self, enabled: bool);
+
+    /// Update scrollback line count for future terminal creation.
+    fn set_scrollback_lines(&mut self, lines: usize);
 }

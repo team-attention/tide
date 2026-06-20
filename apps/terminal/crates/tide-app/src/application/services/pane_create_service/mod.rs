@@ -1221,7 +1221,8 @@ impl App {
                             .copy_files_to_worktree(&root, &wt_path);
                         match follow_up {
                             WorktreeFollowUp::CdTerminalIfIdle { pane_id } => {
-                                if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id) {
+                                if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id)
+                                {
                                     if pane.context.shell_idle {
                                         let cmd = format!(
                                             "cd {}\n",

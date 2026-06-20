@@ -115,24 +115,30 @@ test("new_worktree_intent_defers_creation_and_labels_the_environment_chip", () =
     },
   });
 
-  // Blank name -> pending intent; the chip reads "New worktree" (never "new").
+  // Blank name -> pending intent; the Environment chip reads "New worktree" (never
+  // "new"), and the Branch chip keeps the base branch until a target branch name
+  // exists.
   const auto = setComposerNewWorktreeIntent(base, { name: "" }).state;
   assert.equal(auto.composer.startOptions.launchOptions?.worktree, "new");
   assert.equal(auto.composer.startOptions.launchOptions?.newWorktreeName, "");
   const autoItems = createAgentChatShellViewModel(auto).composer.contextItems;
   assert.equal(autoItems.find((item) => item.label === "Environment")?.value, "New worktree");
+  assert.equal(autoItems.find((item) => item.label === "Branch")?.value, "main");
 
-  // Typed name -> chip reads "New worktree: <name>".
+  // Typed name -> Branch chip reads the target branch name, while Environment stays
+  // the mode label.
   const named = setComposerNewWorktreeIntent(base, { name: "spike" }).state;
   const namedItems = createAgentChatShellViewModel(named).composer.contextItems;
-  assert.equal(namedItems.find((item) => item.label === "Environment")?.value, "New worktree: spike");
+  assert.equal(namedItems.find((item) => item.label === "Branch")?.value, "spike");
+  assert.equal(namedItems.find((item) => item.label === "Environment")?.value, "New worktree");
 
   // A base branch chosen for the pending worktree is stored as the launch branch (the
-  // `git worktree add` start point read at send). The Branch chip reflects it.
+  // `git worktree add` start point read at send). The Branch chip still favors the
+  // target branch name when one was typed.
   const based = setComposerNewWorktreeIntent(base, { name: "spike", baseBranch: "develop" }).state;
   assert.equal(based.composer.startOptions.launchOptions?.branch, "develop");
   const basedItems = createAgentChatShellViewModel(based).composer.contextItems;
-  assert.equal(basedItems.find((item) => item.label === "Branch")?.value, "develop");
+  assert.equal(basedItems.find((item) => item.label === "Branch")?.value, "spike");
 });
 
 test("resolving_new_worktree_intent_rescopes_and_resets_launch_options", () => {
@@ -226,7 +232,7 @@ test("branch_selection_changes_branch_without_forcing_a_worktree_directory", () 
   assert.equal(items.find((item) => item.label === "Environment")?.value, "Local");
 });
 
-test("selecting_new_branch_marks_a_new_worktree_intent_without_opening_a_name_step", () => {
+test("selecting_new_worktree_branch_marks_a_new_worktree_intent_without_opening_a_name_step", () => {
   const base = createAgentChatShellState({
     startOptions: {
       agentBinding: { agentId: "claude" },
@@ -253,6 +259,7 @@ test("selecting_new_branch_marks_a_new_worktree_intent_without_opening_a_name_st
   assert.equal(selected.composer.startOptions.launchOptions?.branch, "main");
   const items = createAgentChatShellViewModel(selected).composer.contextItems;
   assert.equal(items.find((item) => item.label === "Environment")?.value, "New worktree");
+  assert.equal(items.find((item) => item.label === "Branch")?.value, "main");
 });
 
 test("environment_selection_local_restores_the_current_folder_scope", () => {
@@ -1912,7 +1919,7 @@ test("branch_menu_lists_real_git_branches_not_placeholders", () => {
 
   assert.match(html, /feature\/x/);
   assert.match(html, /origin\/main/);
-  assert.match(html, /New branch/);
+  assert.match(html, /New worktree branch/);
   assert.match(html, /Home/);
   // The old fabricated placeholders are gone.
   assert.doesNotMatch(html, /feature\/sidebar/);
@@ -1941,7 +1948,7 @@ test("composer_branch_menu_offers_delete_on_safe_local_branches_only", () => {
     ],
   };
   const surface = createAgentChatShellViewModel(state).composer.activeSurface;
-  assert.deepEqual(surface?.rows.slice(0, 2).map((entry) => entry.label), ["New branch", "Home"]);
+  assert.deepEqual(surface?.rows.slice(0, 2).map((entry) => entry.label), ["New worktree branch", "Home"]);
   assert.equal(surface?.rows.find((entry) => entry.rowId === "branch:main")?.action, undefined);
   assert.deepEqual(surface?.rows.find((entry) => entry.rowId === "branch:feature/x")?.action, {
     rowId: "delete-branch:feature/x",
@@ -1955,7 +1962,7 @@ test("composer_branch_menu_offers_delete_on_safe_local_branches_only", () => {
 test("branch_menu_falls_back_to_current_value_when_no_git_data", () => {
   // Spec: docs_v2/specs/git-backed-worktree-branch-menus.md UC-3
   const html = renderShell(setComposerActiveSurface(createAgentChatShellState(), "branch_menu").state);
-  assert.match(html, /New branch/);
+  assert.match(html, /New worktree branch/);
   assert.doesNotMatch(html, /feature\/sidebar/);
   assert.doesNotMatch(html, /codex\/v2-shell/);
 });

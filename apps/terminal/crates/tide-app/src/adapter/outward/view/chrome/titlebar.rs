@@ -3,6 +3,7 @@ use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 use crate::state::drag_types::HoverTarget;
 use crate::theme::*;
 use crate::App;
+use crate::DockPort;
 use crate::PaneLifecyclePort;
 
 use super::super::raster_icons::{
@@ -168,9 +169,643 @@ pub(crate) fn titlebar_action_raster_icon_asset(
 }
 
 pub(crate) fn titlebar_workspace_meta_text(app: &App, workspace_index: usize) -> String {
-    workspace_terminal_cwd(app, workspace_index)
+    let mut signals = Vec::new();
+
+    if let Some(status) = titlebar_workspace_task_status_text(app, workspace_index) {
+        signals.push(status.to_string());
+    }
+    if let Some(event) = workspace_task_event_signal_text(app, workspace_index) {
+        signals.push(event);
+    }
+    if let Some(surface) = workspace_terminal_context_surface_signal_text(app, workspace_index) {
+        signals.push(surface);
+    }
+    if let Some(git) = workspace_terminal_git_signal_text(app, workspace_index) {
+        signals.push(git);
+    }
+    if let Some(context) = workspace_context_artifact_signal_text(app, workspace_index) {
+        signals.push(context);
+    }
+    if let Some(cwd) = workspace_terminal_cwd(app, workspace_index)
         .map(|path| crate::state::abbreviate_path(&path))
+        .filter(|path| !path.is_empty())
+    {
+        signals.push(cwd);
+    }
+
+    signals.join(" - ")
+}
+
+pub(crate) fn titlebar_workspace_task_status_text(
+    app: &App,
+    workspace_index: usize,
+) -> Option<&'static str> {
+    workspace_stage_agent_task_state(app, workspace_index).label()
+}
+
+pub(crate) fn titlebar_workspace_attention_panel_text(app: &App) -> Option<String> {
+    let (attention, running, connected) = workspace_attention_panel_counts(app);
+    if attention > 0 {
+        return Some(if attention == 1 {
+            "1 needs attention".to_string()
+        } else {
+            format!("{attention} need attention")
+        });
+    }
+    if running > 0 {
+        return Some(format!("{running} running"));
+    }
+    if connected > 0 {
+        return Some(format!("{connected} connected"));
+    }
+    None
+}
+
+pub(crate) fn titlebar_workspace_attention_panel_detail_text(app: &App) -> Option<String> {
+    workspace_attention_panel_primary_signal(app)
+}
+
+fn titlebar_workspace_attention_panel_status(app: &App) -> Option<crate::header::AgentChromeState> {
+    use crate::header::AgentChromeState;
+
+    let (attention, running, connected) = workspace_attention_panel_counts(app);
+    if attention > 0 {
+        return Some(AgentChromeState::Attention);
+    }
+    if running > 0 {
+        return Some(AgentChromeState::Running);
+    }
+    if connected > 0 {
+        return Some(AgentChromeState::ConnectedIdle);
+    }
+    None
+}
+
+fn workspace_attention_panel_counts(app: &App) -> (usize, usize, usize) {
+    let mut attention = 0usize;
+    let mut running = 0usize;
+    let mut connected = 0usize;
+
+    for i in 0..workspace_count(app) {
+        let state = workspace_stage_agent_task_state(app, i);
+        let extra_attention = app
+            .ws
+            .workspace_extras
+            .get(i)
+            .is_some_and(|extras| extras.has_agent_notification);
+        if state.has_needs_input || state.has_finished || extra_attention {
+            attention += 1;
+        } else if state.has_running {
+            running += 1;
+        } else if state.has_connected {
+            connected += 1;
+        }
+    }
+
+    (attention, running, connected)
+}
+
+fn workspace_attention_panel_primary_signal(app: &App) -> Option<String> {
+    let mut fallback_running = None;
+    let mut fallback_connected = None;
+
+    for i in 0..workspace_count(app) {
+        let state = workspace_stage_agent_task_state(app, i);
+        let extra_attention = app
+            .ws
+            .workspace_extras
+            .get(i)
+            .is_some_and(|extras| extras.has_agent_notification);
+        if state.has_needs_input || state.has_finished || extra_attention {
+            return Some(workspace_attention_panel_line(
+                app,
+                i,
+                state.label().unwrap_or("attention"),
+            ));
+        }
+        if state.has_running && fallback_running.is_none() {
+            fallback_running = Some(workspace_attention_panel_line(app, i, "running"));
+        } else if state.has_connected && fallback_connected.is_none() {
+            fallback_connected = Some(workspace_attention_panel_line(app, i, "connected"));
+        }
+    }
+
+    fallback_running.or(fallback_connected)
+}
+
+fn workspace_attention_panel_line(
+    app: &App,
+    workspace_index: usize,
+    fallback_status: &str,
+) -> String {
+    let name = workspace_display_name(app, workspace_index);
+    let detail = workspace_stage_agent_event(app, workspace_index)
+        .map(|event| compact_workspace_meta_signal(&event.summary))
+        .unwrap_or_else(|| fallback_status.to_string());
+    compact_workspace_meta_signal(&format!("{name}: {detail}"))
+}
+
+fn workspace_display_name(app: &App, workspace_index: usize) -> String {
+    app.ws
+        .workspaces
+        .get(workspace_index)
+        .map(|workspace| workspace.name.clone())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| format!("Workspace {}", workspace_index + 1))
+}
+
+fn workspace_count(app: &App) -> usize {
+    app.ws.workspaces.len().max(app.ws.active + 1)
+}
+
+fn workspace_task_event_signal_text(app: &App, workspace_index: usize) -> Option<String> {
+    workspace_stage_agent_event(app, workspace_index)
+        .map(|event| compact_workspace_meta_signal(&event.summary))
+        .or_else(|| workspace_browser_event_signal_text(app, workspace_index))
+        .or_else(|| workspace_terminal_exit_signal_text(app, workspace_index))
+        .or_else(|| workspace_diff_event_signal_text(app, workspace_index))
+}
+
+fn workspace_browser_event_signal_text(app: &App, workspace_index: usize) -> Option<String> {
+    workspace_pane_entries(app, workspace_index)
+        .into_iter()
+        .filter_map(|(pane_id, pane)| match pane {
+            crate::pane::PaneKind::Browser(browser) => browser_task_event_signal(pane_id, browser),
+            _ => None,
+        })
+        .min_by_key(|(priority, _)| *priority)
+        .map(|(_, summary)| summary)
+}
+
+fn browser_task_event_signal(
+    _pane_id: crate::tide_core::PaneId,
+    browser: &crate::pane::browser::BrowserPane,
+) -> Option<(u8, String)> {
+    if let Some(permission) = browser.pending_permission.as_ref() {
+        return Some((
+            5,
+            compact_workspace_meta_signal(&format!("browser permission: {}", permission.origin)),
+        ));
+    }
+    if let Some(certificate) = browser.pending_certificate_error.as_ref() {
+        return Some((
+            6,
+            compact_workspace_meta_signal(&format!("browser certificate: {}", certificate.host)),
+        ));
+    }
+    if let Some(download) = browser.download_state.as_ref() {
+        return Some((
+            15,
+            if download.completed {
+                "browser download complete".to_string()
+            } else {
+                "browser downloading".to_string()
+            },
+        ));
+    }
+    if browser.streaming {
+        return Some((22, "render streaming".to_string()));
+    }
+    if browser.loading {
+        return Some((25, "browser loading".to_string()));
+    }
+
+    None
+}
+
+fn workspace_diff_event_signal_text(app: &App, workspace_index: usize) -> Option<String> {
+    workspace_pane_entries(app, workspace_index)
+        .into_iter()
+        .filter_map(|(pane_id, pane)| match pane {
+            crate::pane::PaneKind::Diff(diff) => diff_task_event_signal(pane_id, diff),
+            _ => None,
+        })
+        .min_by_key(|(priority, _)| *priority)
+        .map(|(_, summary)| summary)
+}
+
+fn diff_task_event_signal(
+    _pane_id: crate::tide_core::PaneId,
+    diff: &crate::pane::diff::DiffPane,
+) -> Option<(u8, String)> {
+    if !diff.loaded {
+        return Some((45, "diff loading".to_string()));
+    }
+    if !diff.files.is_empty() {
+        return Some((50, format!("diff {} files", diff.files.len())));
+    }
+
+    None
+}
+
+fn workspace_pane_entries(
+    app: &App,
+    workspace_index: usize,
+) -> Vec<(crate::tide_core::PaneId, &crate::pane::PaneKind)> {
+    if workspace_index == app.ws.active {
+        return app
+            .panes
+            .iter()
+            .map(|(&pane_id, pane)| (pane_id, pane))
+            .collect();
+    }
+
+    app.ws
+        .workspaces
+        .get(workspace_index)
+        .map(|workspace| {
+            workspace
+                .panes
+                .iter()
+                .map(|(&pane_id, pane)| (pane_id, pane))
+                .collect()
+        })
         .unwrap_or_default()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorkspaceStageAgentEvent {
+    pane_id: crate::tide_core::PaneId,
+    summary: String,
+}
+
+fn workspace_stage_agent_event(
+    app: &App,
+    workspace_index: usize,
+) -> Option<WorkspaceStageAgentEvent> {
+    let candidates = workspace_stage_agent_event_candidates(app, workspace_index);
+
+    [
+        crate::state::gateway_status::AgentStatus::NeedsInput,
+        crate::state::gateway_status::AgentStatus::Idle,
+        crate::state::gateway_status::AgentStatus::Running,
+    ]
+    .into_iter()
+    .find_map(|target_status| {
+        candidates.iter().find_map(|(pane_id, agent)| {
+            (agent.status == Some(target_status))
+                .then(|| app.agent_notification_snippets.get(pane_id))
+                .flatten()
+                .map(|summary| WorkspaceStageAgentEvent {
+                    pane_id: *pane_id,
+                    summary: summary.clone(),
+                })
+        })
+    })
+    .or_else(|| {
+        candidates.iter().find_map(|(pane_id, _)| {
+            app.notified_panes
+                .contains(pane_id)
+                .then(|| app.agent_notification_snippets.get(pane_id))
+                .flatten()
+                .map(|summary| WorkspaceStageAgentEvent {
+                    pane_id: *pane_id,
+                    summary: summary.clone(),
+                })
+        })
+    })
+}
+
+fn workspace_stage_agent_event_candidates<'a>(
+    app: &'a App,
+    workspace_index: usize,
+) -> Vec<(
+    crate::tide_core::PaneId,
+    &'a crate::state::gateway_status::AgentInfo,
+)> {
+    workspace_stage_terminal_pane_ids(app, workspace_index)
+        .into_iter()
+        .filter_map(|pane_id| {
+            app.gateway
+                .detected_agents
+                .get(&pane_id)
+                .filter(|agent| agent.wrapper_managed)
+                .map(|agent| (pane_id, agent))
+        })
+        .collect()
+}
+
+fn workspace_stage_terminal_pane_ids(
+    app: &App,
+    workspace_index: usize,
+) -> Vec<crate::tide_core::PaneId> {
+    if workspace_index == app.ws.active {
+        return app
+            .panes
+            .iter()
+            .filter_map(|(&pane_id, pane)| {
+                if matches!(pane, crate::pane::PaneKind::Terminal(_))
+                    && !app.is_pane_in_dock(pane_id)
+                {
+                    Some(pane_id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+    }
+
+    let Some(workspace) = app.ws.workspaces.get(workspace_index) else {
+        return Vec::new();
+    };
+
+    let stage_pane_ids = workspace.layout.all_pane_ids();
+    if stage_pane_ids.is_empty() {
+        workspace
+            .panes
+            .iter()
+            .filter_map(|(&pane_id, pane)| {
+                matches!(pane, crate::pane::PaneKind::Terminal(_)).then_some(pane_id)
+            })
+            .collect()
+    } else {
+        stage_pane_ids
+            .into_iter()
+            .filter(|pane_id| {
+                matches!(
+                    workspace.panes.get(pane_id),
+                    Some(crate::pane::PaneKind::Terminal(_))
+                )
+            })
+            .collect()
+    }
+}
+
+fn workspace_terminal_exit_signal_text(app: &App, workspace_index: usize) -> Option<String> {
+    if workspace_index == app.ws.active {
+        return workspace_stage_terminal_pane_ids(app, workspace_index)
+            .into_iter()
+            .find_map(|pane_id| {
+                terminal_pane_from_map(&app.panes, pane_id)
+                    .filter(|terminal| terminal.context.child_dead)
+                    .map(|_| "terminal exited".to_string())
+            });
+    }
+
+    let workspace = app.ws.workspaces.get(workspace_index)?;
+    workspace_stage_terminal_pane_ids(app, workspace_index)
+        .into_iter()
+        .find_map(|pane_id| {
+            terminal_pane_from_map(&workspace.panes, pane_id)
+                .filter(|terminal| terminal.context.child_dead)
+                .map(|_| "terminal exited".to_string())
+        })
+}
+
+fn compact_workspace_meta_signal(text: &str) -> String {
+    let trimmed = text.trim();
+    const MAX_CHARS: usize = 36;
+    if trimmed.chars().count() <= MAX_CHARS {
+        return trimmed.to_string();
+    }
+
+    let mut compact = trimmed
+        .chars()
+        .take(MAX_CHARS.saturating_sub(3))
+        .collect::<String>();
+    compact.push_str("...");
+    compact
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct WorkspaceStageAgentTaskState {
+    has_needs_input: bool,
+    has_finished: bool,
+    has_running: bool,
+    has_connected: bool,
+}
+
+impl WorkspaceStageAgentTaskState {
+    fn label(self) -> Option<&'static str> {
+        if self.has_needs_input {
+            return Some("needs input");
+        }
+        if self.has_finished {
+            return Some("finished");
+        }
+        if self.has_running {
+            return Some("running");
+        }
+        if self.has_connected {
+            return Some("connected");
+        }
+        None
+    }
+}
+
+fn workspace_stage_agent_task_state(
+    app: &App,
+    workspace_index: usize,
+) -> WorkspaceStageAgentTaskState {
+    if workspace_index == app.ws.active {
+        let pane_ids = app.panes.iter().filter_map(|(&pane_id, pane)| {
+            if matches!(pane, crate::pane::PaneKind::Terminal(_)) && !app.is_pane_in_dock(pane_id) {
+                Some(pane_id)
+            } else {
+                None
+            }
+        });
+        return workspace_stage_agent_task_state_for(app, &app.panes, pane_ids);
+    }
+
+    let Some(workspace) = app.ws.workspaces.get(workspace_index) else {
+        return WorkspaceStageAgentTaskState::default();
+    };
+
+    let stage_pane_ids = workspace.layout.all_pane_ids();
+    if stage_pane_ids.is_empty() {
+        let pane_ids = workspace.panes.iter().filter_map(|(&pane_id, pane)| {
+            if matches!(pane, crate::pane::PaneKind::Terminal(_)) {
+                Some(pane_id)
+            } else {
+                None
+            }
+        });
+        workspace_stage_agent_task_state_for(app, &workspace.panes, pane_ids)
+    } else {
+        workspace_stage_agent_task_state_for(app, &workspace.panes, stage_pane_ids.into_iter())
+    }
+}
+
+fn workspace_stage_agent_task_state_for(
+    app: &App,
+    panes: &std::collections::HashMap<crate::tide_core::PaneId, crate::pane::PaneKind>,
+    pane_ids: impl Iterator<Item = crate::tide_core::PaneId>,
+) -> WorkspaceStageAgentTaskState {
+    use crate::state::gateway_status::AgentStatus;
+
+    let mut state = WorkspaceStageAgentTaskState::default();
+
+    for pane_id in pane_ids {
+        if !matches!(
+            panes.get(&pane_id),
+            Some(crate::pane::PaneKind::Terminal(_))
+        ) {
+            continue;
+        }
+        let Some(agent) = app
+            .gateway
+            .detected_agents
+            .get(&pane_id)
+            .filter(|agent| agent.wrapper_managed)
+        else {
+            continue;
+        };
+
+        match agent.status {
+            Some(AgentStatus::NeedsInput) => state.has_needs_input = true,
+            Some(AgentStatus::Idle) => state.has_finished = true,
+            Some(AgentStatus::Running) => state.has_running = true,
+            None if agent.gateway_connected => state.has_connected = true,
+            None => {}
+        }
+    }
+
+    state
+}
+
+fn workspace_terminal_git_signal_text(app: &App, workspace_index: usize) -> Option<String> {
+    let git = workspace_terminal_git_info(app, workspace_index)?;
+    if git.branch.trim().is_empty() {
+        return None;
+    }
+
+    if git.status.changed_files > 0 {
+        Some(format!(
+            "{} {} changed",
+            git.branch, git.status.changed_files
+        ))
+    } else {
+        Some(git.branch.clone())
+    }
+}
+
+fn workspace_terminal_context_surface_signal_text(
+    app: &App,
+    workspace_index: usize,
+) -> Option<String> {
+    let mut context_pane_count = 0usize;
+    let mut has_split = false;
+
+    for pane_id in workspace_stage_terminal_pane_ids(app, workspace_index) {
+        let Some(terminal) = workspace_terminal_pane_by_id(app, workspace_index, pane_id) else {
+            continue;
+        };
+        context_pane_count += terminal.dock_layout.all_pane_ids().len();
+        if terminal.dock_view_mode == crate::state::ViewMode::Split {
+            has_split = true;
+        }
+    }
+
+    (context_pane_count > 0).then(|| {
+        let mode = if has_split { "split" } else { "stacked" };
+        format!("surface {} {}", mode, context_pane_count)
+    })
+}
+
+fn workspace_terminal_pane_by_id(
+    app: &App,
+    workspace_index: usize,
+    pane_id: crate::tide_core::PaneId,
+) -> Option<&crate::pane::TerminalPane> {
+    if workspace_index == app.ws.active {
+        return terminal_pane_from_map(&app.panes, pane_id);
+    }
+
+    app.ws
+        .workspaces
+        .get(workspace_index)
+        .and_then(|workspace| terminal_pane_from_map(&workspace.panes, pane_id))
+}
+
+fn workspace_terminal_git_info(
+    app: &App,
+    workspace_index: usize,
+) -> Option<&crate::tide_terminal::git::GitInfo> {
+    workspace_terminal_pane(app, workspace_index)
+        .and_then(|terminal| terminal.context.git_info.as_ref())
+}
+
+fn workspace_terminal_pane(
+    app: &App,
+    workspace_index: usize,
+) -> Option<&crate::pane::TerminalPane> {
+    if workspace_index == app.ws.active {
+        return app
+            .focused_terminal_id()
+            .and_then(|pane_id| terminal_pane_from_map(&app.panes, pane_id))
+            .or_else(|| {
+                app.focus
+                    .focused
+                    .and_then(|pane_id| terminal_pane_from_map(&app.panes, pane_id))
+            })
+            .or_else(|| {
+                app.layout
+                    .all_pane_ids()
+                    .into_iter()
+                    .find_map(|pane_id| terminal_pane_from_map(&app.panes, pane_id))
+            })
+            .or_else(|| app.panes.values().find_map(terminal_pane_from_kind));
+    }
+
+    let workspace = app.ws.workspaces.get(workspace_index)?;
+    let preferred_terminal = app
+        .ws
+        .workspace_extras
+        .get(workspace_index)
+        .and_then(|extras| extras.stage_focused)
+        .or(workspace.focused);
+
+    preferred_terminal
+        .and_then(|pane_id| terminal_pane_from_map(&workspace.panes, pane_id))
+        .or_else(|| {
+            workspace
+                .layout
+                .pane_ids()
+                .into_iter()
+                .find_map(|pane_id| terminal_pane_from_map(&workspace.panes, pane_id))
+        })
+        .or_else(|| workspace.panes.values().find_map(terminal_pane_from_kind))
+}
+
+fn terminal_pane_from_map(
+    panes: &std::collections::HashMap<crate::tide_core::PaneId, crate::pane::PaneKind>,
+    pane_id: crate::tide_core::PaneId,
+) -> Option<&crate::pane::TerminalPane> {
+    panes.get(&pane_id).and_then(terminal_pane_from_kind)
+}
+
+fn terminal_pane_from_kind(pane: &crate::pane::PaneKind) -> Option<&crate::pane::TerminalPane> {
+    match pane {
+        crate::pane::PaneKind::Terminal(terminal) => Some(terminal),
+        _ => None,
+    }
+}
+
+fn workspace_context_artifact_signal_text(app: &App, workspace_index: usize) -> Option<String> {
+    let artifacts = if workspace_index == app.ws.active {
+        Some(&app.context_artifacts)
+    } else {
+        app.ws.workspace_context_artifacts.get(workspace_index)
+    }?;
+
+    let count = artifacts.artifacts.len();
+    if count == 0 {
+        return None;
+    }
+
+    let delivered = artifacts
+        .artifacts
+        .values()
+        .filter(|artifact| !artifact.deliveries.is_empty())
+        .count();
+    let pending = count.saturating_sub(delivered);
+
+    if pending > 0 {
+        Some(format!("ctx {} pending", pending))
+    } else {
+        Some(format!("ctx {} sent", delivered))
+    }
 }
 
 fn workspace_terminal_cwd(app: &App, workspace_index: usize) -> Option<std::path::PathBuf> {
@@ -837,9 +1472,85 @@ pub(super) fn render_titlebar_and_sidebar(
             }
         }
 
-        // "+ New Workspace" button at bottom -- use "+" when narrow
         let btn_h = cs.height + 12.0;
         let btn_y = ws_rect.y + ws_rect.height - edge_inset - btn_h - WS_SIDEBAR_PADDING;
+
+        if !compact {
+            if let Some(summary) = titlebar_workspace_attention_panel_text(app) {
+                let panel_h = cs.height * 2.0 + 14.0;
+                let panel_y = btn_y - item_gap - panel_h;
+                let items_end_y = if app.ws.workspaces.is_empty() {
+                    geo.start_y
+                } else {
+                    let last = geo.item_rect(app.ws.workspaces.len() - 1);
+                    last.y + last.height
+                };
+                if panel_y > items_end_y + item_gap {
+                    let panel_rect = Rect::new(content_x, panel_y, content_w, panel_h);
+                    let panel_status = titlebar_workspace_attention_panel_status(app);
+                    let is_attention =
+                        panel_status == Some(crate::header::AgentChromeState::Attention);
+                    let panel_bg = if is_attention {
+                        crate::tide_core::Color::new(0.95, 0.65, 0.2, 0.115)
+                    } else {
+                        p.badge_bg
+                    };
+                    renderer.draw_chrome_rounded_rect(panel_rect, panel_bg, FILE_TREE_ROW_RADIUS);
+
+                    let dot_size = 7.0_f32;
+                    let dot_color = workspace_item_indicator_color(
+                        panel_status.unwrap_or(crate::header::AgentChromeState::ConnectedIdle),
+                        blink_time,
+                    );
+                    let text_x = panel_rect.x + WS_SIDEBAR_ITEM_PAD_H + dot_size + 7.0;
+                    let summary_y = panel_rect.y + 6.0;
+                    renderer.draw_chrome_rounded_rect(
+                        Rect::new(
+                            panel_rect.x + WS_SIDEBAR_ITEM_PAD_H,
+                            summary_y + (cs.height - dot_size) / 2.0,
+                            dot_size,
+                            dot_size,
+                        ),
+                        dot_color,
+                        dot_size / 2.0,
+                    );
+                    renderer.draw_chrome_text(
+                        &summary,
+                        Vec2::new(text_x, summary_y),
+                        TextStyle {
+                            foreground: p.tab_text_focused,
+                            background: None,
+                            bold: true,
+                            dim: false,
+                            italic: false,
+                            underline: false,
+                        },
+                        panel_rect,
+                    );
+
+                    if let Some(detail) = titlebar_workspace_attention_panel_detail_text(app) {
+                        renderer.draw_chrome_text(
+                            &detail,
+                            Vec2::new(
+                                panel_rect.x + WS_SIDEBAR_ITEM_PAD_H,
+                                summary_y + cs.height + 2.0,
+                            ),
+                            TextStyle {
+                                foreground: p.tab_text,
+                                background: None,
+                                bold: false,
+                                dim: false,
+                                italic: false,
+                                underline: false,
+                            },
+                            panel_rect,
+                        );
+                    }
+                }
+            }
+        }
+
+        // "+ New Workspace" button at bottom -- use "+" when narrow
         let btn_rect = Rect::new(content_x, btn_y, content_w, btn_h);
 
         if matches!(

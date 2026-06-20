@@ -11,6 +11,10 @@ function sendTogglePanel(panel: "leftRail" | "fileTree" | "workbench"): void {
   BrowserWindow.getFocusedWindow()?.webContents.send("tide:toggle-panel", panel);
 }
 
+function sendFindIntent(menuWindow: BrowserWindow | undefined): void {
+  (menuWindow ?? BrowserWindow.getFocusedWindow() ?? undefined)?.webContents.send("tide:find-intent");
+}
+
 // Zoom the HOST window's webContents directly instead of using the built-in
 // "zoomIn"/"zoomOut"/"resetZoom" roles. Those roles act on the *focused*
 // webContents — when a Browser Pane <webview> has focus that's the guest page,
@@ -46,7 +50,26 @@ export function installApplicationMenu(): void {
   const isMac = process.platform === "darwin";
   const template: MenuItemConstructorOptions[] = [
     ...(isMac ? [{ role: "appMenu" } as MenuItemConstructorOptions] : []),
-    { role: "editMenu" },
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "pasteAndMatchStyle" },
+        { role: "delete" },
+        { role: "selectAll" },
+        { type: "separator" },
+        {
+          label: "Find in Pane",
+          accelerator: "CmdOrCtrl+F",
+          click: (_item, win) => sendFindIntent(win as BrowserWindow | undefined),
+        },
+      ],
+    },
     {
       label: "View",
       submenu: [

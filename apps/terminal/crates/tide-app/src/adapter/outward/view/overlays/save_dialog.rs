@@ -4,9 +4,7 @@ use crate::theme::*;
 use crate::App;
 use crate::AppCorePort;
 
-use super::{
-    bold_style, draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style,
-};
+use super::{bold_style, draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style};
 
 /// Render the save-as popup (filename entry for untitled files).
 pub(super) fn render_save_as(
@@ -84,7 +82,11 @@ pub(super) fn render_save_as(
         renderer,
         &save_as.directory.text,
         save_as.directory.cursor,
-        if is_dir_active { app.ime.preedit.as_str() } else { "" },
+        if is_dir_active {
+            app.ime.preedit.as_str()
+        } else {
+            ""
+        },
         Vec2::new(content_x, dir_text_y),
         cell_size,
         dir_clip,
@@ -126,7 +128,11 @@ pub(super) fn render_save_as(
         renderer,
         &save_as.filename.text,
         save_as.filename.cursor,
-        if is_dir_active { "" } else { app.ime.preedit.as_str() },
+        if is_dir_active {
+            ""
+        } else {
+            app.ime.preedit.as_str()
+        },
         Vec2::new(content_x, name_text_y),
         cell_size,
         name_clip,
@@ -135,7 +141,13 @@ pub(super) fn render_save_as(
         p.ime_preedit_fg,
     );
     if !is_dir_active {
-        draw_cursor_beam(renderer, name_beam, name_text_y, cell_height, p.cursor_accent);
+        draw_cursor_beam(
+            renderer,
+            name_beam,
+            name_text_y,
+            cell_height,
+            p.cursor_accent,
+        );
     }
 
     // Hint bar

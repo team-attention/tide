@@ -144,6 +144,115 @@ test("archiving_a_thread_excludes_it_from_the_default_list_but_keeps_it_retrieva
   );
 });
 
+test("archiving_a_live_thread_tears_down_runtime_terminal_and_browser_pending_state", async () => {
+  const activeRuntimeHandle: AgentRuntimeHandle = {
+    runtimeId: "runtime-live",
+    threadId: "thread-archive-live",
+    agentId: "codex",
+  };
+  const browser = {
+    ...browserPane("browser-archive", "Browser"),
+    agentDriving: true,
+    agentCursor: { x: 12, y: 18 },
+    userControlled: true,
+    pendingCapture: { captureId: "capture-archive", requestedAt: now },
+    pendingAction: {
+      actionId: "action-archive",
+      kind: "click_at" as const,
+      x: 12,
+      y: 18,
+      requestedAt: now,
+    },
+  };
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("archive"),
+    initialThreads: [
+      threadSeed("thread-archive-live", {
+        lifecycleState: "running",
+        runtimeState: "running",
+        lastKnownState: "running",
+        activeRuntimeHandle,
+        pendingInput: {
+          kind: "composer_input",
+          value: "queued follow-up",
+          submittedAt: now,
+        },
+        promptState: {
+          promptId: "prompt-archive",
+          kind: "question",
+          message: "Continue?",
+          requestedAt: now,
+        },
+        streamingBlocks: [
+          {
+            blockId: "streaming-archive",
+            kind: "agent_message",
+            role: "agent",
+            status: "streaming",
+            body: "still running",
+            updatedAt: now,
+          },
+        ],
+        workbench: {
+          panes: [browser],
+          activePaneId: browser.paneId,
+          focusOwner: "workbench",
+          layoutMode: "stacked",
+        },
+      }),
+    ],
+  });
+  await service.handleWorkbenchCommand({
+    threadId: "thread-archive-live",
+    command: "open_terminal",
+  });
+
+  const archived = await service.archiveThread({
+    threadId: "thread-archive-live",
+    archived: true,
+  });
+  const lateExit = await service.recordTurnComplete({
+    threadId: "thread-archive-live",
+    force: true,
+  });
+  const hydrated = await service.hydrateThread({
+    threadId: "thread-archive-live",
+  });
+
+  assert.equal(archived.ok, true);
+  assert.equal(archived.ok && archived.thread.lifecycleState, "archived");
+  assert.equal(archived.ok && archived.thread.live, false);
+  assert.equal(archived.ok && archived.thread.runtimeState, "stopped");
+  assert.equal(archived.ok && archived.thread.lastKnownState, "archived");
+  assert.equal(archived.ok && archived.thread.pendingInput, undefined);
+  assert.deepEqual(archived.ok && archived.thread.queuedInputs, []);
+  assert.equal(archived.ok && archived.thread.promptState, undefined);
+  assert.deepEqual(fakes.runtime.stops, [activeRuntimeHandle]);
+  assert.equal(fakes.workbenchTerminal.handles[0]?.stops.length, 1);
+  const archivedBrowser =
+    archived.ok &&
+    archived.thread.workbench.panes.find((pane) => pane.paneId === "browser-archive");
+  assert.equal(archivedBrowser && archivedBrowser.kind, "browser");
+  assert.equal(
+    archivedBrowser && archivedBrowser.kind === "browser" && archivedBrowser.agentDriving,
+    false,
+  );
+  assert.equal(
+    archivedBrowser && archivedBrowser.kind === "browser" && archivedBrowser.pendingAction,
+    undefined,
+  );
+  assert.equal(
+    archivedBrowser && archivedBrowser.kind === "browser" && archivedBrowser.pendingCapture,
+    undefined,
+  );
+  assert.equal(lateExit.ok && lateExit.thread.lifecycleState, "archived");
+  assert.equal(hydrated.ok && hydrated.thread.lifecycleState, "archived");
+  assert.equal(hydrated.ok && hydrated.thread.live, false);
+});
+
 test("archiving_a_missing_thread_returns_thread_not_found", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({
@@ -2346,6 +2455,7 @@ test("workbench_command_open_provider_setup_surface_creates_terminal_pane", asyn
   assert.equal(opened.thread.pendingInput?.value, "Preserve this draft");
   assert.equal(opened.thread.workbench.panes.length, 1);
   assert.equal(opened.thread.workbench.panes[0]?.kind, "terminal");
+  assert.equal(opened.thread.workbench.panes[0]?.terminalRole, "provider_setup");
   assert.equal(opened.thread.workbench.panes[0]?.title, "Provider setup: codex");
   assert.equal(opened.thread.workbench.panes[0]?.command, "/usr/local/bin/codex");
   assert.equal(opened.thread.workbench.panes[0]?.cwd, "/repo");
@@ -3319,6 +3429,7 @@ test("opening_workbench_terminal_starts_thread_scoped_terminal_pane", async () =
   assert.deepEqual(fakes.workbenchTerminal.starts[0]?.args, ["-l"]);
   assert.equal(fakes.workbenchTerminal.starts[0]?.cwd, "/repo/tide");
   assert.equal(opened.ok && opened.thread.workbench.panes[0]?.kind, "terminal");
+  assert.equal(opened.ok && opened.thread.workbench.panes[0]?.terminalRole, "session");
   assert.equal(opened.ok && opened.thread.workbench.panes[0]?.title, "Terminal");
   assert.equal(opened.ok && opened.thread.workbench.panes[0]?.status, "running");
   assert.equal(opened.ok && opened.thread.workbench.focusOwner, "workbench");

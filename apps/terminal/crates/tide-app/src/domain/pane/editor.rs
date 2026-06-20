@@ -38,7 +38,6 @@ pub(crate) struct SoftWrapDisplayRowInfo {
     pub sub_row: usize,
 }
 
-
 impl MarkdownListContinuation {
     fn parse(line: &str) -> Option<Self> {
         let marker_start = line
@@ -915,8 +914,7 @@ impl EditorPane {
             let row = self.preview_scroll + rel_row;
             // Clicking in a line's trailing whitespace anchors at the line end
             // rather than at an out-of-range column far past the text.
-            let col =
-                (self.preview_h_scroll + rel_col).min(self.preview_line_display_width(row));
+            let col = (self.preview_h_scroll + rel_col).min(self.preview_line_display_width(row));
             return Some((row, col));
         }
         if self.effective_soft_wrap() {

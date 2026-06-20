@@ -762,6 +762,93 @@ fn browser_context_artifact_delivers_only_to_paired_agent() {
 }
 
 #[test]
+fn browser_context_artifact_delivery_records_review_history() {
+    // UC-5 BR-24: Browser review comments keep delivery history for list/read and delivery events.
+    let (mut app, browser_id, terminal_a) = app_with_browser("https://example.com/docs");
+
+    let (tx, rx) = mpsc::channel::<String>();
+    app.handle_cli_command_with_subscribe(
+        "subscribe",
+        json!({"events": ["context-artifact-delivered"], "_caller_pane": terminal_a}),
+        Some(tx),
+    )
+    .unwrap();
+
+    let created = app
+        .handle_cli_command(
+            "create-context-artifact",
+            json!({"pane_id": browser_id, "comment": "review this", "_caller_pane": terminal_a}),
+        )
+        .unwrap();
+    assert_eq!(created["delivered"], false);
+    assert_eq!(created["delivery_count"], 0);
+    assert!(created["deliveries"].as_array().unwrap().is_empty());
+    let browser = match app.panes.get(&browser_id) {
+        Some(PaneKind::Browser(browser)) => browser,
+        _ => panic!("browser pane should exist"),
+    };
+    assert_eq!(browser.review_history().len(), 1);
+    assert_eq!(browser.latest_review().unwrap().comment, "review this");
+    assert!(!browser.latest_review().unwrap().delivered);
+
+    let artifact_id = created["artifact_id"].as_u64().unwrap();
+    let first_send = app
+        .handle_cli_command(
+            "send-context-artifact",
+            json!({"artifact_id": artifact_id, "_caller_pane": terminal_a}),
+        )
+        .unwrap();
+    assert_eq!(first_send["artifact"]["delivered"], true);
+    assert_eq!(first_send["artifact"]["delivery_count"], 1);
+    assert_eq!(
+        first_send["artifact"]["last_delivery"]["sequence"].as_u64(),
+        Some(1)
+    );
+    let browser = match app.panes.get(&browser_id) {
+        Some(PaneKind::Browser(browser)) => browser,
+        _ => panic!("browser pane should exist"),
+    };
+    assert!(browser.latest_review().unwrap().delivered);
+    assert_eq!(browser.latest_review().unwrap().delivery_count, 1);
+
+    let delivered_event = rx.try_recv().expect("delivery event should be emitted");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&delivered_event).expect("delivery event should be valid json");
+    let data = &parsed["params"]["data"];
+    assert_eq!(data["delivered"], true);
+    assert_eq!(data["delivery_count"], 1);
+    assert_eq!(data["deliveries"][0]["sequence"].as_u64(), Some(1));
+
+    app.handle_cli_command(
+        "send-context-artifact",
+        json!({"artifact_id": artifact_id, "_caller_pane": terminal_a}),
+    )
+    .unwrap();
+
+    let read = app
+        .handle_cli_command(
+            "read-context-artifact",
+            json!({"artifact_id": artifact_id, "_caller_pane": terminal_a}),
+        )
+        .unwrap();
+    assert_eq!(read["delivery_count"], 2);
+    assert_eq!(read["last_delivery"]["sequence"].as_u64(), Some(2));
+    let browser = match app.panes.get(&browser_id) {
+        Some(PaneKind::Browser(browser)) => browser,
+        _ => panic!("browser pane should exist"),
+    };
+    assert_eq!(browser.latest_review().unwrap().delivery_count, 2);
+
+    let list = app
+        .handle_cli_command(
+            "list-context-artifacts",
+            json!({"_caller_pane": terminal_a}),
+        )
+        .unwrap();
+    assert_eq!(list[0]["delivery_count"], 2);
+}
+
+#[test]
 fn browser_context_artifact_list_read_are_workspace_and_terminal_scoped() {
     // UC-5 BR-19 / BR-20 / BR-22: Browser Context Artifact list/read stay Workspace-local and Associated Terminal-authorized.
     let (mut app, browser_id, terminal_a) = app_with_browser("https://example.com/docs");
@@ -1005,6 +1092,59 @@ fn browser_runtime_guidance_focuses_on_tide_browser_pane_runtime() {
     assert!(!instructions.contains("External Browser Runtime"));
     assert!(!instructions.contains("fallback reason"));
     assert!(instructions.contains("Browser Runtime Router"));
+}
+
+#[test]
+fn explicit_external_browser_handoff_is_mcp_visible_after_fallback() {
+    // UC-8 BR-34: External Browser Runtime handoff is explicit in MCP state after Tide cannot keep work in the Browser Pane.
+    let (mut app, browser_id, _terminal_id) = app_with_browser("https://example.com/report");
+
+    assert!(app.apply_webview_bridge_message(
+        &json!({
+            "kind": "browser-external-handoff",
+            "pane_id": browser_id,
+            "reason": "download",
+            "url": "https://example.com/report.pdf"
+        })
+        .to_string()
+    ));
+
+    let observed = observe_browser(&mut app, browser_id);
+    assert_eq!(observed["runtime"], "tide_browser_pane");
+    assert_eq!(
+        observed["external_runtime"]["kind"],
+        "external_browser_runtime_handoff"
+    );
+    assert_eq!(observed["external_runtime"]["explicit"], true);
+    assert_eq!(observed["external_runtime"]["visible_in_tide"], false);
+    assert_eq!(observed["external_runtime"]["reason"], "download");
+    assert_eq!(
+        observed["external_runtime"]["url"],
+        "https://example.com/report.pdf"
+    );
+    assert_eq!(
+        observed["external_runtime"]["tide_browser_pane_retained"],
+        true
+    );
+
+    let workspace = app
+        .handle_cli_command("observe-workspace", json!({}))
+        .expect("workspace observe should succeed");
+    assert_eq!(
+        workspace["browser_runtime_router"]["fallback_observable_field"],
+        "panes[].external_runtime"
+    );
+    let browser_entry = workspace["panes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|pane| pane["pane_id"].as_u64() == Some(browser_id))
+        .expect("Browser Pane should be listed");
+    assert_eq!(browser_entry["external_runtime"]["reason"], "download");
+    assert_eq!(
+        browser_entry["external_runtime"]["url"],
+        "https://example.com/report.pdf"
+    );
 }
 
 #[test]
@@ -1287,8 +1427,8 @@ fn browser_snapshot_cache_is_pane_and_workspace_scoped() {
 }
 
 #[test]
-fn closing_or_cold_storing_browser_pane_drops_snapshot_history() {
-    // UC-9 BR-38: closing or cold-storing a Browser Pane drops BrowserSnapshot history and invalidates anchors.
+fn closing_or_cold_storing_browser_pane_drops_transient_browser_history() {
+    // UC-9 BR-38: closing or cold-storing a Browser Pane drops transient Browser history and invalidates anchors.
     let (mut app, terminal_id, browser_id) =
         app_with_caller_and_browser("https://example.com/close");
     set_browser_snapshot(
@@ -1326,6 +1466,15 @@ fn closing_or_cold_storing_browser_pane_drops_snapshot_history() {
         "Cold",
         "https://example.com/cold",
     );
+    if let Some(PaneKind::Browser(browser)) = app.panes.get_mut(&browser_id) {
+        browser.record_review_artifact(
+            77,
+            "cold review".to_string(),
+            "https://example.com/cold".to_string(),
+            1,
+        );
+        assert_eq!(browser.review_history().len(), 1);
+    }
     app.ws.workspaces.push(Workspace {
         name: "WS0".into(),
         layout: crate::tide_layout::SplitLayout::new(),
@@ -1342,6 +1491,14 @@ fn closing_or_cold_storing_browser_pane_drops_snapshot_history() {
         )
         .expect("cold-stored Browser Pane still exists after reload");
     assert_eq!(read["status"], "missing");
+    let browser = match app.panes.get(&browser_id) {
+        Some(PaneKind::Browser(browser)) => browser,
+        _ => panic!("browser pane should still exist after reload"),
+    };
+    assert!(
+        browser.review_history().is_empty(),
+        "cold storage should drop transient Browser review history"
+    );
     assert!(app
         .handle_cli_command(
             "browser-diff-since",
