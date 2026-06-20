@@ -27,7 +27,7 @@ When the task needs more than text, the Workbench opens beside it with Browser,
 Diff, Editor, Terminal, FileTree, and Context Artifact views that you and the
 agent can both inspect.
 
-- **Claude Code, Codex, Gemini, and opencode** are first-class agents.
+- **Claude Code, Codex, Gemini and opencode** are first-class agents.
 - Any Thread can be powered by any supported agent.
 - Local and account-free. Tide drives the CLIs already on your machine.
 - The Agent Runtime stays out of the way until the Workbench needs to make the
