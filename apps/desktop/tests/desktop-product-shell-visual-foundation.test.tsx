@@ -44,7 +44,7 @@ import {
   selectWorkbenchViewModel,
   setProductShellWorkbenchLayout,
   openProductShellBrowserAtUrl,
-  openProductShellDraftBrowser,
+  ensureComposerDraftThreadActive,
   setProductShellComposerActiveSurface,
   setProductShellComposerFolderScope,
   setProductShellRegisteredProjects,
@@ -2675,10 +2675,10 @@ test("chat_link_open_browser_defaults_to_new_pane_disposition", () => {
   });
 });
 
-test("composer_launcher_is_a_placeholder_resolved_into_the_browser_on_open", () => {
-  // Spec: docs_v2/specs/workbench-dock-parity.md (T7/T8) — composer-screen launcher
-  // is a PLACEHOLDER: empty shows the Launcher; picking Browser RESOLVES it (the
-  // Launcher is replaced by the Browser Pane, not kept beside it). v1 parity.
+test("composer_browser_launcher_action_routes_through_the_draft_thread", () => {
+  // Spec: docs_v2/specs/composer-draft-thread.md — the composer Launcher is a
+  // placeholder until a Draft Thread exists. Browser then opens as a backend
+  // Thread-owned Workbench pane, not as renderer-local adoption state.
   const state = createProductShellState({ includeFixtureData: false });
   assert.equal(state.activeThreadId, null);
 
@@ -2686,31 +2686,15 @@ test("composer_launcher_is_a_placeholder_resolved_into_the_browser_on_open", () 
   const empty = selectWorkbenchViewModel(state).appChrome.openWorkbenchPanes;
   assert.equal(empty[0]?.kind, "launcher");
 
-  // Picking Browser adds a live draft pane (renderer-local, no backend command)...
-  const opened = selectProductShellLauncherAction(state, "open_browser");
-  assert.equal(opened.command, null);
-  assert.equal(opened.state.draftWorkbenchPanes.length, 1);
-  assert.equal(opened.state.draftWorkbenchPanes[0]?.kind, "browser");
-  // ...and the Launcher placeholder is RESOLVED (gone): only the Browser shows.
-  const panes = selectWorkbenchViewModel(opened.state).appChrome.openWorkbenchPanes;
-  assert.equal(panes.length, 1);
-  assert.equal(panes[0]?.kind, "browser");
-});
+  const inert = selectProductShellLauncherAction(state, "open_browser");
+  assert.equal(inert.command, null);
+  assert.equal(inert.state.activeThreadId, null);
 
-test("composer_draft_browsers_are_adopted_by_the_new_thread_on_send", () => {
-  // Spec: docs_v2/specs/workbench-dock-parity.md (T7) — adoption on send.
-  let state = openProductShellDraftBrowser(createProductShellState(), "https://adopt.test");
-  state = updateProductShellComposerDraft(state, "start with this page open");
-  const result = submitProductShellComposerDraft(state);
-  assert.equal(result.command?.kind, "thread.start");
-  const seeded =
-    result.command?.kind === "thread.start" ? result.command.payload.initialWorkbenchPanes : undefined;
-  assert.equal(seeded?.length, 1);
-  assert.equal(seeded?.[0]?.kind, "browser");
-  assert.equal(seeded?.[0]?.url, "https://adopt.test");
-  // The drafts are handed off and the Workbench stays open for the adopted pane.
-  assert.equal(result.state.draftWorkbenchPanes.length, 0);
-  assert.equal(result.state.workbenchOpen, true);
+  const draft = ensureComposerDraftThreadActive(state);
+  const opened = selectProductShellLauncherAction(draft.state, "open_browser");
+  assert.equal(opened.command?.kind, "workbench.command");
+  assert.equal(opened.command?.payload.threadId, draft.state.draftThreadId);
+  assert.equal(opened.command?.payload.command, "open_browser");
 });
 
 test("product_shell_launcher_editor_action_opens_in_pane_file_picker", () => {

@@ -102,5 +102,5 @@ interface ThreadSummaryDto {
 ## Implementation Notes
 
 - Keep Launch Options as provider-native JSON-compatible values.
-- Do not normalize model names across Provider CLI Agents and Tide API Agents.
+- Do not normalize model names across Provider CLI Agents.
 - Do not use Launch Options to allow changing an existing Thread's Agent Binding.

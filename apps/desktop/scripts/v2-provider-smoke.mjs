@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { createServer } from "node:http";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -20,7 +19,7 @@ import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const providerCliAgents = new Set(["codex", "claude", "gemini", "opencode"]);
-const selectableAgents = new Set([...providerCliAgents, "openai_api"]);
+const selectableAgents = providerCliAgents;
 
 const options = parseArgs(process.argv.slice(2));
 if (options.help) {
@@ -34,7 +33,6 @@ if (!selectableAgents.has(options.agent)) {
 
 const token = `TIDE_PROVIDER_SMOKE_${options.agent}_${Date.now()}`;
 const appDataRoot = options.appDataRoot ?? mkdtempSync(path.join(tmpdir(), "tide-provider-smoke-"));
-const fakeOpenAi = options.fakeOpenAi ? await startFakeOpenAiServer(token) : null;
 let shellState = createProductShellState({ includeFixtureData: false });
 const pushedEvents = [];
 
@@ -77,13 +75,6 @@ const adapter = createLiveBackendContractMessageAdapter({
     ...process.env,
     TIDE_APP_DATA_ROOT: appDataRoot,
     TIDE_MCP_ENTRYPOINT: path.join(repoRoot, "out/main/backend-entrypoint.js"),
-    ...(fakeOpenAi
-      ? {
-          OPENAI_API_KEY: "sk-tide-provider-smoke",
-          OPENAI_BASE_URL: fakeOpenAi.baseUrl,
-          OPENAI_MODEL: "gpt-5.5",
-        }
-      : {}),
   },
   onEvent: (event) => {
     pushedEvents.push(event);
@@ -186,13 +177,12 @@ try {
       answerBlocksWithToken,
       agentOutputFound,
       pushedCount: pushedEvents.length,
-      fakeOpenAiRequestCount: fakeOpenAi?.requestCount() ?? 0,
     });
 
     if (view.agentChat.thread?.agentLabel !== labelForAgent(options.agent)) {
       throw new Error(`Unexpected Agent label: ${view.agentChat.thread?.agentLabel}`);
     }
-    if ((providerCliAgents.has(options.agent) || options.agent === "openai_api") && !agentOutputFound) {
+    if (providerCliAgents.has(options.agent) && !agentOutputFound) {
       throw new Error("Hydrated Agent Session did not include the live token in an Agent output block.");
     }
     if (answerBlocksWithToken > 1) {
@@ -220,17 +210,15 @@ try {
     });
   }
 
-  await fakeOpenAi?.close();
   process.exit(smokeExitCode);
 }
 
 function parseArgs(args) {
   const parsed = {
-    agent: process.env.TIDE_PROVIDER_SMOKE_AGENT ?? "antigravity",
+    agent: process.env.TIDE_PROVIDER_SMOKE_AGENT ?? "codex",
     timeoutMs: Number(process.env.TIDE_PROVIDER_SMOKE_TIMEOUT_MS ?? 75000),
     appDataRoot: process.env.TIDE_PROVIDER_SMOKE_APP_DATA_ROOT,
     message: process.env.TIDE_PROVIDER_SMOKE_MESSAGE,
-    fakeOpenAi: process.env.TIDE_PROVIDER_SMOKE_FAKE_OPENAI === "1",
     expectProviderNotReady: process.env.TIDE_PROVIDER_SMOKE_EXPECT_PROVIDER_NOT_READY === "1",
     openSetupSurface: process.env.TIDE_PROVIDER_SMOKE_OPEN_SETUP_SURFACE === "1",
     help: false,
@@ -254,9 +242,6 @@ function parseArgs(args) {
         break;
       case "--message":
         parsed.message = readValue(args, ++index, "--message");
-        break;
-      case "--fake-openai":
-        parsed.fakeOpenAi = true;
         break;
       case "--expect-provider-not-ready":
         parsed.expectProviderNotReady = true;
@@ -285,16 +270,11 @@ function readValue(args, index, flag) {
 }
 
 function rowIdForAgent(agent) {
-  switch (agent) {
-    case "openai_api":
-      return "openai-api";
-    default:
-      return agent;
-  }
+  return agent;
 }
 
 function normalizeAgentArg(agent) {
-  return agent === "openai-api" ? "openai_api" : agent;
+  return agent;
 }
 
 function labelForAgent(agent) {
@@ -303,12 +283,10 @@ function labelForAgent(agent) {
       return "Codex CLI";
     case "claude":
       return "Claude Code";
-    case "antigravity":
-      return "Antigravity CLI";
     case "gemini":
       return "Gemini CLI";
-    case "openai_api":
-      return "OpenAI API";
+    case "opencode":
+      return "opencode";
     default:
       return agent;
   }
@@ -406,84 +384,20 @@ async function openProviderSetupSurfaceSmoke(input) {
   });
 }
 
-function startFakeOpenAiServer(token) {
-  let requestCount = 0;
-  const server = createServer((request, response) => {
-    if (request.method !== "POST" || request.url !== "/v1/responses") {
-      response.writeHead(404, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ error: { message: "Not found" } }));
-      return;
-    }
-
-    let body = "";
-    request.setEncoding("utf8");
-    request.on("data", (chunk) => {
-      body += chunk;
-    });
-    request.on("end", () => {
-      requestCount += 1;
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(
-        JSON.stringify({
-          id: `resp-provider-smoke-${requestCount}`,
-          output_text: token,
-          received: parseJsonOrNull(body),
-        }),
-      );
-    });
-  });
-
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        reject(new Error("Fake OpenAI server did not bind a TCP address."));
-        return;
-      }
-      resolve({
-        baseUrl: `http://127.0.0.1:${address.port}/v1`,
-        requestCount: () => requestCount,
-        close: () =>
-          new Promise((closeResolve, closeReject) => {
-            server.close((error) => {
-              if (error) {
-                closeReject(error);
-                return;
-              }
-              closeResolve();
-            });
-          }),
-      });
-    });
-  });
-}
-
-function parseJsonOrNull(value) {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
-}
-
 function printHelp() {
-  console.log(`Usage: npm run test:smoke:providers -- --agent antigravity
+  console.log(`Usage: npm run test:smoke:providers -- --agent codex
 
 Options:
-  --agent codex|claude|antigravity|openai_api
+  --agent codex|claude|gemini|opencode
   --timeout-ms 75000
   --app-data-root /tmp/tide-provider-smoke
   --message "Prompt text"
-  --fake-openai
   --expect-provider-not-ready
   --open-setup-surface
 
 The smoke uses Product Shell start state, sends it through the live Backend
 adapter, waits for provider-owned Agent Session output, hydrates the Thread,
 and verifies the selected Agent remains active in the Composer chrome.
-Use --fake-openai with --agent openai_api to verify the Tide API runtime
-without requiring external network access or a real Provider Account.
 Use --expect-provider-not-ready --open-setup-surface to verify a Provider
 Readiness setup action opens and closes a Workbench Terminal Pane without
 auto-accepting provider-native setup prompts.`);

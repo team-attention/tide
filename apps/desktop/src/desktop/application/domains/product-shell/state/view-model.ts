@@ -142,7 +142,6 @@ export const selectWorkbenchViewModel = shellSelector(
     (state: ProductShellState) => state.workbenchFullscreen,
     (state: ProductShellState) => state.fileTree,
     (state: ProductShellState) => state.editorPickerFilter,
-    (state: ProductShellState) => state.draftWorkbenchPanes,
     (state: ProductShellState) => state.draftActiveWorkbenchPaneId,
     (state: ProductShellState) => state.untitledFiles,
   ],
@@ -156,25 +155,21 @@ export const selectWorkbenchViewModel = shellSelector(
     workbenchFullscreen,
     fileTree,
     editorPickerFilter,
-    draftWorkbenchPanes,
     draftActiveWorkbenchPaneId,
     untitledFiles,
   ): ProductShellWorkbenchViewModel => {
     const startFiles = activeThreadId === null ? startPageFiles : [];
     // Untitled files show only in the context (thread/start) they were created in.
     const untitledForView = untitledFiles.filter((file) => file.threadId === activeThreadId);
-    // Composer (New Thread) page: there are no backend panes yet, so the view-model
-    // derives the Workbench — a synthetic Launcher FIRST, then live draft Browser
-    // Panes, then the start-page editor + untitled tabs. These are renderer-local
-    // and get adopted by the Thread the first send creates. Inside a thread, untitled
-    // tabs are appended onto the backend snapshot (never stored in it, so never
-    // clobbered).
+    // Composer (New Thread) page before a Draft Thread exists: derive only the
+    // synthetic Launcher plus start-page editor / untitled tabs. Browser/Changes/
+    // Terminal/Editor launcher actions create a backend Draft Thread and then render
+    // through the normal active-thread appChrome path.
     const appChromeForView =
       activeThreadId !== null
         ? appendUntitledPanes(appChrome, untitledForView, draftActiveWorkbenchPaneId)
         : composerWorkbenchAppChrome(
             appChrome,
-            draftWorkbenchPanes,
             startFiles,
             untitledForView,
             draftActiveWorkbenchPaneId,

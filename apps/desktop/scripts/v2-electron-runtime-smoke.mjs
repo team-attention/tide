@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { createServer } from "node:http";
 import { existsSync, mkdtempSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -20,7 +19,7 @@ import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 const require = createRequire(import.meta.url);
 const electronPath = require("electron");
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const selectableAgents = new Set(["codex", "claude", "gemini", "opencode", "openai_api"]);
+const selectableAgents = new Set(["codex", "claude", "gemini", "opencode"]);
 
 const options = parseArgs(process.argv.slice(2));
 if (options.help) {
@@ -39,7 +38,6 @@ if (!existsSync(electronMain)) {
 
 const token = `TIDE_ELECTRON_SMOKE_${options.agent}_${Date.now()}`;
 const appDataRoot = options.appDataRoot ?? mkdtempSync(path.join(tmpdir(), "tide-electron-smoke-"));
-const fakeOpenAi = options.fakeOpenAi ? await startFakeOpenAiServer(token) : null;
 const submitted = createStartCommand({
   agent: options.agent,
   message: options.message ?? `Reply exactly with this token and nothing else: ${token}`,
@@ -60,8 +58,7 @@ try {
     token,
     appDataRoot,
     timeoutMs: options.timeoutMs,
-    fakeOpenAi,
-    expectPushedAgentOutput: options.fakeOpenAi,
+    expectPushedAgentOutput: false,
     expectProviderNotReady: options.expectProviderNotReady,
     openSetupSurface: options.openSetupSurface,
   });
@@ -108,10 +105,6 @@ try {
         throw new Error("Electron smoke did not find the token in an Agent output block.");
       }
 
-      if (options.fakeOpenAi && !smokeResult.pushedAgentOutputFound) {
-        throw new Error("Electron smoke did not receive the token through a pushed Agent output block.");
-      }
-
       console.log(JSON.stringify({
         phase: "electron-smoke-passed",
         appDataRoot,
@@ -121,15 +114,12 @@ try {
         blockCount: smokeResult.blockCount,
         pushedAgentOutputFound: smokeResult.pushedAgentOutputFound,
         pushedCount: smokeResult.pushedCount,
-        fakeOpenAiRequestCount: fakeOpenAi?.requestCount() ?? 0,
       }));
     }
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   exitCode = 1;
-} finally {
-  await fakeOpenAi?.close();
 }
 
 if (exitCode !== 0) {
@@ -149,20 +139,6 @@ function createStartCommand(input) {
   if (submitted.command?.kind !== "thread.start") {
     throw new Error("Product Shell did not emit thread.start.");
   }
-  if (input.agent === "openai_api") {
-    // The Tide-API agent is intentionally not selectable through the composer
-    // menu (CLI agents only there), so the menu path above falls back to the
-    // default CLI agent. Build the binding directly against the contract shape
-    // (tests/shared-contracts.test.ts pins thread.start + tide_api source).
-    submitted.command.payload.agentBinding = {
-      agentId: "openai_api",
-      runtimeSource: { kind: "tide_api", provider: "openai" },
-    };
-    submitted.command.payload.launchOptions = {
-      model: "gpt-5.5",
-      permission: "Auto-review",
-    };
-  }
   return submitted.command;
 }
 
@@ -180,14 +156,6 @@ function runElectronSmoke(input) {
         TIDE_ELECTRON_SMOKE_OPEN_SETUP_SURFACE: input.openSetupSurface ? "1" : "0",
         TIDE_BACKEND_COMMAND_TIMEOUT_MS: String(input.timeoutMs + 10000),
         TIDE_BACKEND_TRACE: "1",
-        ...(input.fakeOpenAi
-          ? {
-              TIDE_ELECTRON_SMOKE_FAKE_OPENAI: "1",
-              OPENAI_API_KEY: "sk-tide-electron-smoke",
-              OPENAI_BASE_URL: input.fakeOpenAi.baseUrl,
-              OPENAI_MODEL: "gpt-5.5",
-            }
-          : {}),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -226,11 +194,10 @@ function parseSmokeResult(stdout) {
 
 function parseArgs(args) {
   const parsed = {
-    agent: process.env.TIDE_ELECTRON_SMOKE_AGENT ?? "openai_api",
+    agent: process.env.TIDE_ELECTRON_SMOKE_AGENT ?? "codex",
     timeoutMs: Number(process.env.TIDE_ELECTRON_SMOKE_TIMEOUT_MS ?? 75000),
     appDataRoot: process.env.TIDE_ELECTRON_SMOKE_APP_DATA_ROOT,
     message: process.env.TIDE_ELECTRON_SMOKE_MESSAGE,
-    fakeOpenAi: process.env.TIDE_ELECTRON_SMOKE_FAKE_OPENAI === "1",
     expectProviderNotReady: process.env.TIDE_ELECTRON_SMOKE_EXPECT_PROVIDER_NOT_READY === "1",
     openSetupSurface: process.env.TIDE_ELECTRON_SMOKE_OPEN_SETUP_SURFACE === "1",
     help: false,
@@ -255,9 +222,6 @@ function parseArgs(args) {
       case "--message":
         parsed.message = readValue(args, ++index, "--message");
         break;
-      case "--fake-openai":
-        parsed.fakeOpenAi = true;
-        break;
       case "--expect-provider-not-ready":
         parsed.expectProviderNotReady = true;
         break;
@@ -273,12 +237,6 @@ function parseArgs(args) {
     throw new Error("--timeout-ms must be at least 1000.");
   }
 
-  // The Tide-API agent is the auth-free path: default to the fake OpenAI
-  // server unless the caller explicitly wired a real endpoint.
-  if (parsed.agent === "openai_api" && process.env.TIDE_ELECTRON_SMOKE_FAKE_OPENAI === undefined && !args.includes("--fake-openai")) {
-    parsed.fakeOpenAi = true;
-  }
-
   return parsed;
 }
 
@@ -291,83 +249,21 @@ function readValue(args, index, flag) {
 }
 
 function rowIdForAgent(agent) {
-  return agent === "openai_api" ? "openai-api" : agent;
+  return agent;
 }
 
 function normalizeAgentArg(agent) {
-  return agent === "openai-api" ? "openai_api" : agent;
-}
-
-function startFakeOpenAiServer(token) {
-  let requestCount = 0;
-  const server = createServer((request, response) => {
-    if (request.method !== "POST" || request.url !== "/v1/responses") {
-      response.writeHead(404, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ error: { message: "Not found" } }));
-      return;
-    }
-
-    let body = "";
-    request.setEncoding("utf8");
-    request.on("data", (chunk) => {
-      body += chunk;
-    });
-    request.on("end", () => {
-      requestCount += 1;
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(
-        JSON.stringify({
-          id: `resp-electron-smoke-${requestCount}`,
-          output_text: token,
-          received: parseJsonOrNull(body),
-        }),
-      );
-    });
-  });
-
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        reject(new Error("Fake OpenAI server did not bind a TCP address."));
-        return;
-      }
-      resolve({
-        baseUrl: `http://127.0.0.1:${address.port}/v1`,
-        requestCount: () => requestCount,
-        close: () =>
-          new Promise((closeResolve, closeReject) => {
-            server.close((error) => {
-              if (error) {
-                closeReject(error);
-                return;
-              }
-              closeResolve();
-            });
-          }),
-      });
-    });
-  });
-}
-
-function parseJsonOrNull(value) {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
+  return agent;
 }
 
 function printHelp() {
-  console.log(`Usage: npm run test:smoke:electron -- --agent openai_api
+  console.log(`Usage: npm run test:smoke:electron -- --agent codex
 
 Options:
-  --agent codex|claude|gemini|opencode|openai_api
+  --agent codex|claude|gemini|opencode
   --timeout-ms 75000
   --app-data-root /tmp/tide-electron-smoke
   --message "Prompt text"
-  --fake-openai
   --expect-provider-not-ready
   --open-setup-surface
 
@@ -375,8 +271,6 @@ The smoke requires npm run build first. It launches the built Electron app,
 uses the Renderer preload surface window.tide, sends a Product Shell
 thread.start command through Main IPC to the Backend utilityProcess, hydrates
 the Thread, and verifies the selected Agent produced an output block.
-Use --fake-openai with --agent openai_api to verify Tide API runtime wiring
-without requiring external network access or a real Provider Account.
 Use --expect-provider-not-ready --open-setup-surface to verify a Provider
 Readiness blocker and setup Pane path without treating the blocker as failure.`);
 }

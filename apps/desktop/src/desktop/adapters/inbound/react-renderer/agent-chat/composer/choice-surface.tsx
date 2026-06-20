@@ -228,8 +228,6 @@ export function agentMonogramFor(agentId: string): string {
       return "Ge";
     case "opencode":
       return "Oc";
-    case "openai_api":
-      return "AI";
     default:
       return "Co";
   }

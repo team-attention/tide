@@ -70,9 +70,6 @@ export interface StartThreadInput {
   scope?: ThreadScope;
   launchOptions?: Record<string, unknown>;
   attachments?: ComposerAttachmentInput[];
-  // Panes the user opened on the composer (New Thread) screen, adopted by this
-  // Thread (seeded into its Workbench at start). See workbench-dock-parity.
-  initialWorkbenchPanes?: Array<{ kind: "browser" | "editor"; url?: string; path?: string; title?: string }>;
 }
 
 export interface StartThreadResult {
@@ -149,8 +146,8 @@ export interface TrustWorkspaceResult {
 
 export interface CheckReadinessInput {
   threadId: ThreadId;
-  // Provider-CLI only — the install/sign-in handoff is for the CLI agents (codex/claude/gemini/
-  // opencode); a Tide API agent has no CLI to install. Narrowing here lets checkReadiness rebuild
+  // Provider-CLI only — the install/sign-in handoff is for the CLI agents
+  // (codex/claude/gemini/opencode). Narrowing here lets checkReadiness rebuild
   // the full provider_cli runtimeSource without a cast.
   agentId: ProviderCliAgentId;
 }

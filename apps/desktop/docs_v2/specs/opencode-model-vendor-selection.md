@@ -146,8 +146,8 @@ Live-probed against opencode-ai 1.17.1 (`opencode acp`) + the installed binary +
   effort as `budget_tokens` rather than discrete values, show opencode's discrete fallback or
   hide; no custom slider this slice.
 - claude/codex/gemini menus (stay static, accurate as-is).
-- A unified **Providers & Models hub** + first-run onboarding (install guidance, in-app
-  openai_api key entry, proactive no-provider on-ramp) — deferred; this slice ships only the
+- A unified **Providers & Models hub** + first-run onboarding (install guidance,
+  proactive no-provider on-ramp) — deferred; this slice ships only the
   opencode picker + the "Not installed" chip label.
 - `session/fork`/`list` multi-session features.
 
@@ -214,7 +214,7 @@ makes the effort chip appear in the same round-trip.
 - The Start Composer remembers the last-picked agent + model/effort/permission across New
   Threads and app restarts for EVERY offered agent (opencode and gemini included), exactly
   like codex/claude. The localStorage preference is gated by `isProductShellAgentIdentity`
-  (the five real agents), never a hardcoded codex/claude/openai_api allowlist that silently
+  (the four real agents), never a hardcoded codex/claude allowlist that silently
   drops opencode/gemini.
 
 ## Tests

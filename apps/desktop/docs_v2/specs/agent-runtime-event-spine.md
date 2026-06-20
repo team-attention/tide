@@ -109,8 +109,7 @@ scraped in the wrong layer.
 - Changing provider launch/resume command shaping (already in adapters).
 - Changing the Agent Session Block schema or reader contract.
 - Persistence format changes beyond storing Last Known State already supported.
-- Tide API Agent (OpenAI) runtime — it implements the same port with a trivial
-  source, but its mapping is not detailed here.
+- Direct API Agent runtimes; they are not part of the current v2 runtime path.
 
 ## Domain Model
 

@@ -149,16 +149,15 @@ test("openProductShellBrowserAtUrl opens the workbench + emits open_browser in a
   );
 });
 
-test("openProductShellBrowserAtUrl opens a draft pane with no active thread; empty url is a no-op", () => {
-  // Composer (New Thread) page: no backend thread, so a link opens a
-  // renderer-owned draft pane, not a backend command.
+test("openProductShellBrowserAtUrl is a no-op with no active thread; empty url is a no-op", () => {
+  // Composer (New Thread) page Browser links are routed by the React handler:
+  // it creates a Draft Thread first, then calls this reducer with an active thread.
   const draft = openProductShellBrowserAtUrl(
-    { activeThreadId: null, draftWorkbenchPanes: [] } as unknown as ProductShellState,
+    { activeThreadId: null } as unknown as ProductShellState,
     "https://x",
   );
   assert.equal(draft.command, null);
-  assert.equal(draft.state.draftWorkbenchPanes.length, 1);
-  assert.equal(draft.state.draftWorkbenchPanes[0]?.url, "https://x");
+  assert.equal(draft.state.activeThreadId, null);
   // An empty url is a genuine no-op even with an active thread.
   assert.equal(
     openProductShellBrowserAtUrl({ activeThreadId: "t1" } as unknown as ProductShellState, "").command,

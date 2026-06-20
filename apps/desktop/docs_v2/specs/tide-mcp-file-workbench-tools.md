@@ -10,7 +10,7 @@ It covers:
 - Opening a visible Editor Pane for a text file.
 - Returning Editor Pane refs through Workbench snapshots.
 - Preventing path traversal outside the active Thread root.
-- Exposing the file tools to Provider CLI Agents and Tide API Agents through the same Tide MCP Tool Surface list.
+- Exposing the file tools to Provider CLI Agents through the same Tide MCP Tool Surface list.
 
 It does not cover:
 
@@ -68,13 +68,11 @@ The result includes:
 
 Binary-looking files are rejected for this first slice.
 
-### D5. Same tool list feeds Provider CLI and Tide API Agents
+### D5. Same tool list feeds Provider CLI Agents
 
 The tool definitions returned by `listTideMcpTools()` include Browser and File Workbench tools.
 
 Provider CLI Agents receive them through provider-attached MCP.
-
-Tide API Agents receive them as OpenAI function tools through `docs_v2/specs/tide-api-agent-tool-calls.md`.
 
 ## Domain Model
 

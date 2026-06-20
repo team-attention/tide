@@ -12,11 +12,8 @@
 > - `thread-runtime-service.ts` was not shrunk: it is ~400 lines of API types
 >   plus one 1,382-line lifecycle class; the class split remains the
 >   `thread-runtime-service-decomposition.md` collaborator refactor (pinned).
-> - The electron smoke's dead `antigravity` default was replaced with a direct
->   `openai_api` thread.start binding (audit Phase-2.3's prescribed fix), making
->   `npm run test:smoke:electron` the auth-free end-to-end gate; it passed
->   against the decomposed app, as did the 682-test suite, typecheck, build,
->   and a pw-smoke screenshot pass.
+> - Later revisions removed the direct API-agent smoke path; current smoke scripts
+>   target provider CLI Agents only.
 >
 > **Layer consolidation follow-up (same day):** the desktop top level had
 > drifted into two mixed taxonomies (hexagon layers + `main/ preload/

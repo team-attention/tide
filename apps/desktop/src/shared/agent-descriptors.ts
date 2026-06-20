@@ -31,8 +31,7 @@ export interface AgentDescriptor {
   displayName: string;
   // Two-letter badge (Codex/Claude both start with C, so each gets a distinct code).
   monogram: string;
-  // True for provider-CLI agents (codex/claude/gemini/opencode); false for the
-  // Tide API agent (openai_api), which runs through the OpenAI API, not a CLI.
+  // True for provider-CLI agents (codex/claude/gemini/opencode).
   isProviderCli: boolean;
   // The provider session reference kind, for provider-CLI agents only.
   sessionRefKind?: ProviderSessionRefDto["kind"];
@@ -114,20 +113,6 @@ export const AGENT_DESCRIPTORS: Record<AgentId, AgentDescriptor> = {
         { id: "opencode-plan", value: "plan", label: "Plan", detail: "Read-only, no edits" },
       ],
       legacyValueMap: { default: "build", auto_edit: "build", yolo: "build" },
-    },
-  },
-  openai_api: {
-    id: "openai_api",
-    displayName: "OpenAI API",
-    monogram: "AI",
-    isProviderCli: false,
-    permission: {
-      default: "Auto-review",
-      options: [
-        { id: "tide-auto-review", value: "Auto-review", label: "Auto-review", detail: "Tide tool policy" },
-        { id: "tide-ask-first", value: "Ask before tools", label: "Ask before tools", detail: "Tide tool policy" },
-        { id: "tide-read-only", value: "Read-only", label: "Read-only", detail: "Tide workspace policy" },
-      ],
     },
   },
 };

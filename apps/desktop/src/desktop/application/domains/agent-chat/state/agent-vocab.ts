@@ -209,13 +209,6 @@ export function runtimeSourceForBinding(binding: AgentChatAgentBinding): AgentCh
 }
 
 export function runtimeSourceForAgent(agentId: string): AgentChatAgentRuntimeSource {
-  if (agentId === "openai_api") {
-    return {
-      kind: "tide_api",
-      provider: "openai",
-    };
-  }
-
   const providerAgent =
     agentId === "claude" || agentId === "gemini" || agentId === "opencode"
       ? agentId
@@ -234,8 +227,6 @@ export function defaultModelValueForAgent(agentId: string): string {
       return "Gemini default";
     case "opencode":
       return "opencode default";
-    case "openai_api":
-      return "gpt-5.5";
     default:
       return "gpt-5.5";
   }

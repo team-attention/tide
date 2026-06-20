@@ -434,9 +434,17 @@ function applyProductShellThreadListEvent(
   const threads = (payload.threads ?? [])
     .filter((thread) => !thread.archived)
     .map(toProductShellThreadFromSummary);
-  const activeThreadId = threads.some((thread) => thread.threadId === state.activeThreadId)
+  const activeThreadIsListed =
+    state.activeThreadId !== null &&
+    threads.some((thread) => thread.threadId === state.activeThreadId);
+  const activeThreadIsDraft =
+    state.activeThreadId !== null &&
+    state.draftThreadId !== null &&
+    state.activeThreadId === state.draftThreadId;
+  const activeThreadId = activeThreadIsListed || activeThreadIsDraft
     ? state.activeThreadId
     : null;
+  const activeContextPreserved = activeThreadId !== null && activeThreadId === state.activeThreadId;
 
   return {
     ...state,
@@ -446,7 +454,7 @@ function applyProductShellThreadListEvent(
     threadsLoaded: true,
     leftRailMenu: null,
     archiveConfirmThreadId: null,
-    fileTree: null,
-    editorDrafts: {},
+    fileTree: activeContextPreserved ? state.fileTree : null,
+    editorDrafts: activeContextPreserved ? state.editorDrafts : {},
   };
 }

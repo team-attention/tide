@@ -31,7 +31,7 @@ It covers:
 
 When live Backend observes a provider session reference for the active runtime, it records the reference on `Thread.agentBinding.providerSessionRef`.
 
-The Thread Agent Binding stays locked to its original Agent. A discovered Antigravity reference cannot attach to a Codex, Claude, or Tide API Thread.
+The Thread Agent Binding stays locked to its original Agent. A discovered provider session reference cannot attach to a Thread owned by a different provider CLI Agent.
 
 ### D2. Runtime discovery persists immediately
 

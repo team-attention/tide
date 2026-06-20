@@ -211,7 +211,7 @@ function preferredWorktreeForPersistence(value: unknown): "current folder" | "ne
   return undefined;
 }
 
-// The five real agent identities the Start Composer can launch. Single source of
+// The four provider-CLI agent identities the Start Composer can launch. Single source of
 // truth for "is this a known agent" guards (preference persistence) so they can't
 // drift into a stale subset — the bug that silently dropped opencode/gemini from
 // the remembered Start Composer default.
@@ -220,7 +220,6 @@ const PRODUCT_SHELL_AGENT_IDENTITIES: ReadonlySet<string> = new Set<ProductShell
   "claude",
   "gemini",
   "opencode",
-  "openai_api",
 ]);
 
 export function isProductShellAgentIdentity(
@@ -236,12 +235,6 @@ export function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
 }
 
 export function agentBindingForShellAgent(agentId: ProductShellAgentIdentity): AgentChatAgentBinding {
-  if (agentId === "openai_api") {
-    return {
-      agentId,
-      runtimeSource: { kind: "tide_api", provider: "openai" },
-    };
-  }
   return {
     agentId,
     runtimeSource: { kind: "provider_cli", integrationId: agentId },

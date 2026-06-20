@@ -1,4 +1,4 @@
-import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureComposerDraftThreadActive, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellDraftChanges, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserCaptureResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserCaptureResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureComposerDraftThreadActive, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserCaptureResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserCaptureResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
 import type { ProductShellHandlers } from "../support/types.ts";
@@ -13,15 +13,22 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         dispatchBackendCommand(result.command);
         return result.state;
       }),
-    // Open the read-only git Changes pane. Inside a thread it's a first-class singleton
-    // backend pane (the backend creates/reveals it + makes it active). On the composer
-    // (New Thread) page there's no thread to own a backend pane, so open a renderer-local
-    // draft Changes pane from the badge's cwd — same pattern as the composer draft Browser.
-    // Spec: git-changes-view (Composer pre-thread Changes).
+    // Open the read-only git Changes pane. On the composer (New Thread) page this
+    // first creates the Composer Draft Thread, then opens the backend-owned Changes
+    // pane against that thread so it carries into the started Thread.
     onOpenChanges: (cwd) =>
       setShellState((state) => {
         if (state.activeThreadId === null) {
-          return cwd === undefined ? state : openProductShellDraftChanges(state, cwd);
+          if (cwd === undefined) {
+            return state;
+          }
+          const ensured = ensureComposerDraftThreadActive(state);
+          dispatchBackendCommand(ensured.command);
+          dispatchBackendCommand({
+            kind: "workbench.command",
+            payload: { threadId: ensured.state.activeThreadId as string, command: "open_diff" },
+          });
+          return { ...ensured.state, workbenchOpen: true };
         }
         dispatchBackendCommand({
           kind: "workbench.command",
@@ -173,7 +180,15 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
       }),
     onOpenBrowserPane: (url, options) =>
       setShellState((state) => {
-        const result = openProductShellBrowserAtUrl(state, url, options);
+        const activeState =
+          state.activeThreadId === null
+            ? (() => {
+                const ensured = ensureComposerDraftThreadActive(state);
+                dispatchBackendCommand(ensured.command);
+                return ensured.state;
+              })()
+            : state;
+        const result = openProductShellBrowserAtUrl(activeState, url, options);
         dispatchBackendCommand(result.command);
         return result.state;
       }),

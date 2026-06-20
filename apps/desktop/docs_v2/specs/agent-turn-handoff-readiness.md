@@ -6,8 +6,7 @@ Unify how the FIRST user turn is delivered to a freshly spawned Agent Runtime,
 behind one shared "turn handoff" path gated by a per-integration **readiness
 gate**. Remove the two sources of fragmentation that exist today:
 
-- the first prompt is delivered differently per agent (provider CLIs embed it as a
-  launch argv `[PROMPT]`; Tide API agents deliver it via `writeInput`), and
+- the first prompt is delivered differently per provider CLI, and
 - a blind `inputTiming.startupDelayMs` timer stands in for "the runtime is ready".
 
 In scope:
@@ -56,8 +55,8 @@ Observed 2026-06-07 with codex-cli 0.136.0 (gpt-5.5) driving Tide v2:
     tools before the turn and reliably accepts the launch prompt; routing it through
     TUI-typing-after-gate was observed to drop the prompt (turn never answered), so
     claude keeps its proven launch delivery.
-  - antigravity → `immediate` + launch-time `--prompt-interactive` (server-first).
-  - Tide API agents → `immediate`, delivered by their own runtime port.
+  - gemini → `immediate` through its structured runtime start path.
+  - opencode → `immediate` through its structured runtime start path.
   The READINESS GATE is the uniform abstraction; the delivery transport differs only
   where a provider's launch behavior demands it (codex), recorded here rather than
   scattered as ad-hoc per-agent branching.

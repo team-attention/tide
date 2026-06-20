@@ -22,13 +22,12 @@ Use implementation terms only when describing the current code boundary that bac
 | **Follow-up Composer** | The Composer state shown inside an existing Thread. It inherits the active Thread's Agent, Project, Worktree, and Branch. The Agent is locked after the Thread starts. |
 | **Composer Options** | The searchable options menu opened from the Composer. Before a Thread starts, it contains Launch Options. After an Agent Runtime starts, it can also expose In-Session Commands and attach/context controls without making every option a permanent chip. |
 | **Composer Attachment** | An image the user attaches to the next Composer message via paste, shown as a preview chip. On send, Tide materializes it to a file in the Thread workspace and references its absolute path in the message text so the Agent can read it. |
-| **Workspace Trust** | The provider-owned record that an Execution Context cwd is trusted to run the Agent (claude `hasTrustDialogAccepted`, codex `trust_level`, antigravity `trustedWorkspaces`). Tide can grant it on the user's behalf from the directory-trust readiness blocker. |
-| **Agent** | The coding worker selected for a Thread. Current visible choices include Codex CLI, Claude Code, Antigravity CLI, and API-backed Tide Agents such as OpenAI API. |
+| **Workspace Trust** | The provider-owned record that an Execution Context cwd is trusted to run the Agent (claude `hasTrustDialogAccepted`, codex `trust_level`, provider-specific equivalents). Tide can grant it on the user's behalf from the directory-trust readiness blocker. |
+| **Agent** | The coding worker selected for a Thread. Current visible choices are Codex CLI, Claude Code, Gemini CLI, and opencode. |
 | **Agent Icon** | A compact visual identity shown in a Thread row to indicate which Agent owns or last ran that Thread. |
-| **Agent Binding** | The selected Agent identity and Agent Runtime Source attached to a Thread. It controls default launch behavior, model source, readiness path, and sidebar identity. |
-| **Agent Runtime Source** | The source that powers a selected Agent. A Provider CLI Agent uses the provider's CLI through a hidden PTY. A Tide API Agent uses a Tide-owned API runtime and provider account. |
-| **Provider CLI Agent** | An Agent backed by a provider-native CLI, such as Codex CLI, Claude Code, or Antigravity CLI. It uses an Agent Integration, hidden PTY, Provider Signals, and provider-owned Raw Agent Session history. |
-| **Tide API Agent** | An Agent backed by Tide's own API runtime, such as OpenAI API. It does not launch a provider CLI hidden PTY. Its setup, model list, and runtime behavior come from Tide's API integration and Provider Account state. |
+| **Agent Binding** | The selected provider CLI Agent identity attached to a Thread. It controls default launch behavior, model source, readiness path, and sidebar identity. |
+| **Agent Runtime Source** | The source that powers a selected Agent. Current v2 supports Provider CLI source only. |
+| **Provider CLI Agent** | An Agent backed by a provider-native CLI, such as Codex CLI, Claude Code, Gemini CLI, or opencode. It uses an Agent Integration, hidden PTY or structured provider runtime, Provider Signals, and provider-owned Raw Agent Session history. |
 | **Agent Integration** | The Tide connection layer for one Agent. It launches and resumes the provider CLI inside a hidden PTY, sends user input, reads runtime output and provider signals, exposes confirmed supported features, and preserves the Raw Agent Session reference. |
 | **Agent Runtime** | The hidden PTY-backed provider CLI process that powers a Thread. It is not shown as a default Terminal Pane. |
 | **Agent Runtime State** | Backend-owned operational state for a Thread's Agent Runtime, such as not started, starting, running, waiting for input, waiting for approval, idle, stopping, stopped, or failed. |
@@ -47,7 +46,7 @@ Use implementation terms only when describing the current code boundary that bac
 | **Provider Readiness** | The selected Agent's provider-owned setup state required before a real Thread turn can start. It includes authentication, first-run onboarding, Directory Trust, hook/bootstrap readiness, and any provider setup prompt that can capture Composer input before it reaches the Agent Runtime conversation. |
 | **Provider Setup Surface** | A temporary provider-native setup surface shown when Provider Readiness is incomplete. Tide preserves pending Composer input, lets the user complete the provider's own authentication, onboarding, or Directory Trust flow in a visible terminal surface, then re-runs Provider Readiness before starting the Thread turn. It is not the Agent Runtime conversation. |
 | **Directory Trust** | A provider-owned safety decision that allows an Agent to read, edit, or execute in a cwd/root path. It is attached to the provider and directory, not to Tide's Thread identity. It can be required when starting a Thread for a new Project, Scratch cwd, worktree, or other Execution Context. Tide may surface or remember that the provider asked for it, but the provider remains the source of truth. |
-| **Raw Agent Session** | The original Codex CLI, Claude Code, or Antigravity CLI session that could also be seen in a terminal. It includes the provider-owned session id, conversation id, log path, output, and resume identity. |
+| **Raw Agent Session** | The original provider CLI session that could also be seen in a terminal. It includes the provider-owned session id, conversation id, log path, output, and resume identity. |
 | **Agent Chat** | The central UI region inside a Thread. It contains the visible Agent Session and Composer. |
 | **App Chrome** | The compact non-content UI around Agent Chat and Workbench, including top chrome, status bar, Workbench Tab Strip, Pane toolbars, icon buttons, menus, and small state indicators. |
 | **Status Bar** | A compact App Chrome surface for operational state such as Backend connection, selected Agent, Agent Runtime state, Provider Readiness, or active Project/Branch context. It is not a global Thread queue or settings panel. |
@@ -64,8 +63,7 @@ Use implementation terms only when describing the current code boundary that bac
 | **In-Session Commands** | Provider-native commands available after the Agent Runtime starts, such as slash commands, model pickers, skill commands, plugin commands, shell escapes, or other interactive command menus. |
 | **Permission Chip** | A Composer chip that shows the selected provider-native permission or approval value for the Thread. |
 | **Model Chip** | A Composer chip that shows the selected provider-native model value. Before launch it sets a Launch Option. After launch it opens or mirrors the provider-native model In-Session Command when supported. |
-| **Model Source** | The source of values and behavior behind the Model Chip. For a Provider CLI Agent it is the selected Agent Integration or provider-native in-session model command. For a Tide API Agent it is Tide's API integration and Provider Account model list. |
-| **Provider Account** | Provider-owned authentication or credential state used by a Tide API Agent, such as an OpenAI API key. It is not the same as Provider Readiness for a provider CLI hidden PTY, even when both appear as setup blockers. |
+| **Model Source** | The source of values and behavior behind the Model Chip. It is the selected provider CLI Agent Integration or provider-native in-session model command. |
 | **Project Option** | A Composer option that shows or changes the selected Project or Scratch context. |
 | **Worktree Option** | A Composer option that shows whether the Thread runs in the current folder, a new worktree, or an existing worktree. |
 | **Branch Option** | A Composer option that shows or changes the git branch selected for the Thread. |
@@ -93,10 +91,9 @@ Use implementation terms only when describing the current code boundary that bac
 | Pinned Project | Project shortcut metadata |
 | Pinned Thread | Workspace-indexed shortcut metadata |
 | Scratch Thread | Workspace plus Tide-managed cwd under an application support root |
-| Agent | Wrapped Agent, AgentInfo, AgentStatus, or future API-backed Agent metadata |
-| Agent Runtime Source | Agent-specific runtime source selection, such as hidden PTY provider CLI or Tide API runtime |
+| Agent | Wrapped Agent, AgentInfo, AgentStatus, or provider CLI Agent metadata |
+| Agent Runtime Source | Provider CLI runtime source selection |
 | Provider CLI Agent | Agent-specific launch, resume, input, output, and feature-detection code |
-| Tide API Agent | Tide-owned API client/runtime code plus provider account readiness |
 | Agent Integration | Agent-specific provider CLI launch, resume, input, output, and feature-detection code |
 | Agent Runtime | Hidden PTY-backed provider CLI process |
 | Agent Chat | Active Workspace main interaction area |
@@ -110,7 +107,7 @@ Use implementation terms only when describing the current code boundary that bac
 | Composer Options | Supported Agent Feature metadata plus Thread execution metadata |
 | Permission Chip | Provider-native CLI permission, approval, sandbox, or policy arguments |
 | Model Chip | Provider-native launch model argument plus provider-native in-session model command when supported |
-| Model Source | Provider CLI capability metadata or Tide API model metadata |
+| Model Source | Provider CLI capability metadata |
 | Project Option | Project metadata or Scratch Thread metadata |
 | Worktree Option | cwd/worktree launch metadata |
 | Branch Option | git branch launch metadata |

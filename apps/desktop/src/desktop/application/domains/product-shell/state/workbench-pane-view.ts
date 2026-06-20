@@ -1,5 +1,4 @@
 import type {
-  ProductShellDraftPane,
   ProductShellEditorDraft,
   ProductShellStartPageFile,
   ProductShellState,
@@ -10,8 +9,8 @@ import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-stat
 import { shellTimestamp } from "./create.ts";
 // Renderer-derived Workbench panes for the composer (New Thread) page and untitled
 // files — split out of view-model.ts (file-size ratchet). The start-page editor,
-// untitled tabs, the composer Launcher, and draft Browser/Changes panes are all
-// renderer-local panes the view-model assembles around the backend snapshot. Spec:
+// untitled tabs, and the composer Launcher are renderer-local panes the view-model
+// assembles before a backend Draft Thread exists. Spec:
 // workbench-dock-parity / workbench-filetree-file-operations.
 
 // A start (New Thread) page open file, as a Workbench editor pane. There is no
@@ -99,13 +98,12 @@ export function appendUntitledPanes(
 }
 
 // Build the composer (New Thread) page Workbench view when no Draft Thread is active yet
-// (no backend pane opened): a synthetic Launcher first, then the live draft Browser Panes,
-// then the start-page editor and any untitled tabs. Once the user opens a backend pane the
-// Composer's Draft Thread becomes the active thread and the view-model renders it through
-// the normal active-thread path instead. See docs_v2/specs/composer-draft-thread.md.
+// (no backend pane opened): a synthetic Launcher first, then the start-page editor and
+// any untitled tabs. Once the user opens a backend pane the Composer's Draft Thread
+// becomes the active thread and the view-model renders it through the normal active-thread
+// path instead. See docs_v2/specs/composer-draft-thread.md.
 export function composerWorkbenchAppChrome(
   appChrome: ProductShellState["appChrome"],
-  draftPanes: ProductShellDraftPane[],
   startFiles: ProductShellStartPageFile[],
   untitled: ProductShellUntitledFile[],
   draftActivePaneId: string | null,
@@ -117,10 +115,9 @@ export function composerWorkbenchAppChrome(
   // into the chosen pane rather than persisting beside it.
   const showLauncher =
     draftActivePaneId === COMPOSER_LAUNCHER_PANE_ID ||
-    (draftPanes.length === 0 && startFiles.length === 0 && untitled.length === 0);
+    (startFiles.length === 0 && untitled.length === 0);
   const panes: AppChromeWorkbenchPaneRef[] = [
     ...(showLauncher ? [composerLauncherPane()] : []),
-    ...draftPanes.map(draftPaneRef),
     ...startFiles.map(startFileEditorPane),
     ...untitled.map(untitledEditorPane),
   ];
@@ -131,10 +128,9 @@ export function composerWorkbenchAppChrome(
   return { ...appChrome, workbenchPanes: panes, activeWorkbenchPaneId };
 }
 
-// The composer Launcher: every pane works pre-send. Browser opens a renderer-owned draft
-// pane; Editor/Terminal/Diff open against the Composer's backend Draft Thread (created on
-// first use), so a real Terminal PTY / Editor / git Changes view is live before send and
-// carries into the Thread on send. See docs_v2/specs/composer-draft-thread.md.
+// The composer Launcher: every pane works pre-send by creating the Composer's backend
+// Draft Thread on first use, so Browser/Editor/Terminal/Diff are real Thread Workbench
+// panes before send and carry into the Thread on send. See docs_v2/specs/composer-draft-thread.md.
 function composerLauncherPane(): AppChromeWorkbenchPaneRef {
   return {
     paneId: COMPOSER_LAUNCHER_PANE_ID,
@@ -148,31 +144,5 @@ function composerLauncherPane(): AppChromeWorkbenchPaneRef {
       { actionId: "open_terminal", label: "Terminal", description: "Open a Terminal Pane", enabled: true },
       { actionId: "open_diff", label: "Diff", description: "View working-tree changes (git)", enabled: true },
     ],
-  };
-}
-
-function draftPaneRef(pane: ProductShellDraftPane): AppChromeWorkbenchPaneRef {
-  // The composer git Changes draft: a renderer-local Changes pane rendered purely from its
-  // cwd (ChangesPanel self-fetches). Spec: git-changes-view (Composer pre-thread Changes).
-  if (pane.kind === "changes") {
-    return {
-      paneId: pane.paneId,
-      kind: "changes",
-      title: pane.title,
-      revision: "draft",
-      updatedAt: shellTimestamp,
-      cwd: pane.cwd,
-    };
-  }
-  return {
-    paneId: pane.paneId,
-    kind: "browser",
-    title: pane.title,
-    // Stable revision: a draft Browser Pane is renderer-owned (its <webview> drives
-    // itself); the revision only identifies the pane, it never gates a snapshot here.
-    revision: "draft",
-    updatedAt: shellTimestamp,
-    url: pane.url,
-    loading: false,
   };
 }

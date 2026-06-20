@@ -57,6 +57,49 @@ test("ensureComposerDraftThreadActive is idempotent (reuses the active draft)", 
   assert.equal(second.state.draftThreadId, first.state.draftThreadId);
 });
 
+test("thread.listed keeps the active Composer Draft Thread even though drafts are not in the rail", () => {
+  const draft = ensureComposerDraftThreadActive(composerState());
+  const draftId = draft.state.draftThreadId as string;
+  const withDirtyEditor: ProductShellState = {
+    ...draft.state,
+    workbenchOpen: true,
+    editorDrafts: {
+      "pane-editor": {
+        paneId: "pane-editor",
+        baseRevision: "pane-editor:rev",
+        content: "dirty edit",
+        dirty: true,
+      },
+    },
+  };
+
+  const afterList = applyProductShellBackendEvent(withDirtyEditor, {
+    kind: "thread.listed",
+    payload: { threads: [] },
+  } as Parameters<typeof applyProductShellBackendEvent>[1]);
+
+  assert.equal(afterList.activeThreadId, draftId);
+  assert.equal(afterList.draftThreadId, draftId);
+  assert.equal(afterList.appChrome.thread?.threadId, draftId);
+  assert.equal(afterList.agentChat.thread, null);
+  assert.equal(afterList.editorDrafts["pane-editor"]?.dirty, true);
+});
+
+test("Composer Draft Thread routes Browser and Diff launcher actions to backend workbench panes", () => {
+  const draft = ensureComposerDraftThreadActive(composerState());
+  const draftId = draft.state.draftThreadId as string;
+
+  const browser = selectProductShellLauncherAction(draft.state, "open_browser");
+  assert.equal(browser.command?.kind, "workbench.command");
+  assert.equal((browser.command as { payload: { threadId: string; command: string } }).payload.threadId, draftId);
+  assert.equal((browser.command as { payload: { command: string } }).payload.command, "open_browser");
+
+  const diff = selectProductShellLauncherAction(draft.state, "open_diff");
+  assert.equal(diff.command?.kind, "workbench.command");
+  assert.equal((diff.command as { payload: { threadId: string; command: string } }).payload.threadId, draftId);
+  assert.equal((diff.command as { payload: { command: string } }).payload.command, "open_diff");
+});
+
 test("typing into the Composer's Draft Thread terminal routes to the draft (the bug)", () => {
   // Make the draft active, then deliver its terminal via workbench.changed (gate passes
   // because activeThreadId === draftId), then type into it.

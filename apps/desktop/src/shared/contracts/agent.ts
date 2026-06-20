@@ -1,17 +1,10 @@
 export type ProviderCliAgentId = "codex" | "claude" | "gemini" | "opencode";
-export type TideApiAgentId = "openai_api";
-export type AgentId = ProviderCliAgentId | TideApiAgentId;
+export type AgentId = ProviderCliAgentId;
 
-export type AgentRuntimeSourceDto =
-  | {
-      kind: "provider_cli";
-      integrationId: ProviderCliAgentId;
-    }
-  | {
-      kind: "tide_api";
-      provider: "openai";
-      accountId?: string;
-    };
+export interface AgentRuntimeSourceDto {
+  kind: "provider_cli";
+  integrationId: ProviderCliAgentId;
+}
 
 export interface AgentBindingDto {
   agentId: AgentId;

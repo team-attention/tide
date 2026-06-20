@@ -304,11 +304,11 @@ function buildGates(input) {
   if (input.options.smoke) {
     gates.push({
       id: "electron-smoke",
-      title: "Electron runtime smoke with fake OpenAI",
+      title: "Electron runtime smoke with provider CLI",
       category: "smoke",
       cwd: appRoot,
       command: npmCommand(),
-      args: ["run", "test:smoke:electron", "--", "--fake-openai"],
+      args: ["run", "test:smoke:electron"],
     });
   }
 

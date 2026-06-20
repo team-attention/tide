@@ -3,7 +3,7 @@ import type { AppChromeBackendCommand, AppChromeEditorNavigationTarget, AppChrom
 import type { WorkbenchSplitNode } from "./workbench-split-tree.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
-export type ProductShellAgentIdentity = "codex" | "claude" | "gemini" | "opencode" | "openai_api";
+export type ProductShellAgentIdentity = "codex" | "claude" | "gemini" | "opencode";
 
 export type ProductShellLeftRailMenu =
   | { kind: "thread"; threadId: string }
@@ -185,21 +185,6 @@ export interface ProductShellFileTreeMenu {
 // derives it. See docs_v2/specs/workbench-dock-parity.md.
 export const COMPOSER_LAUNCHER_PANE_ID = "composer-launcher";
 
-// A pane the user opened on the composer (New Thread) page, before any thread
-// exists. Rendered live in the renderer (a Browser Pane owns its own <webview>);
-// adopted by the Thread the first send creates (seeded via thread.start). Only
-// browsers and the read-only git Changes view are supported pre-thread (editor uses
-// startPageFile; terminal / diff-of-an-edit need a thread).
-export interface ProductShellDraftPane {
-  paneId: string;
-  kind: "browser" | "changes";
-  title: string;
-  // Browser draft: the (optional) seeded URL.
-  url?: string;
-  // git Changes draft: the repo cwd whose working-tree diff ChangesPanel self-fetches.
-  cwd?: string;
-}
-
 export interface ProductShellState {
   activeThreadId: string | null;
   leftRailOpen: boolean;
@@ -288,10 +273,6 @@ export interface ProductShellState {
   worktreeSettings: ProductShellWorktreeSettings;
   // Whether the Settings panel (modal) is open.
   settingsOpen: boolean;
-  // Composer (New Thread) page Workbench, used only while activeThreadId === null:
-  // panes opened from the Launcher before any thread exists. Adopted by the Thread
-  // the first send creates, then cleared. See docs_v2/specs/workbench-dock-parity.md.
-  draftWorkbenchPanes: ProductShellDraftPane[];
   draftActiveWorkbenchPaneId: string | null;
   // The Composer's backend Draft Thread: a real (unstarted, no-agent) thread that hosts the
   // Terminal/Editor/Diff/Browser panes pre-send (their PTYs/files/webviews need a

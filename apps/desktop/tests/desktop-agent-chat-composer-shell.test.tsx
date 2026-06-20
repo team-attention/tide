@@ -1436,33 +1436,31 @@ test("composer_shell_command_adapter_only_claims_shell_owned_backend_command_kin
   assert.match(source, /"agentRuntime\.stop"/);
 });
 
-test("agent_chip_renders_one_visible_value_for_provider_cli_and_tide_api_sources", () => {
+test("agent_chip_renders_one_visible_value_for_provider_cli_sources", () => {
   const codexHtml = renderShell(createAgentChatShellState());
-  const openAiState = selectComposerAgent(createAgentChatShellState(), "openai_api").state;
-  const openAiHtml = renderShell(openAiState);
+  const opencodeHtml = renderShell(selectComposerAgent(createAgentChatShellState(), "opencode").state);
 
   assert.equal((codexHtml.match(/data-context-kind="agent"/g) ?? []).length, 1);
-  assert.equal((openAiHtml.match(/data-context-kind="agent"/g) ?? []).length, 1);
+  assert.equal((opencodeHtml.match(/data-context-kind="agent"/g) ?? []).length, 1);
   assert.match(codexHtml, /Codex CLI/);
-  assert.match(openAiHtml, /OpenAI API/);
-  assert.match(openAiHtml, /data-agent-runtime-source="tide_api"/);
-  assert.doesNotMatch(openAiHtml, /Tide API runtime.*Codex Agent Integration/s);
+  assert.match(opencodeHtml, /opencode/);
+  assert.match(opencodeHtml, /data-agent-runtime-source="provider_cli"/);
 });
 
-test("model_chip_routes_menu_data_by_agent_runtime_source", () => {
+test("model_chip_routes_menu_data_by_provider_cli_agent", () => {
   const codexState = setComposerActiveSurface(createAgentChatShellState(), "model_menu").state;
-  const openAiState = setComposerActiveSurface(
-    selectComposerAgent(createAgentChatShellState(), "openai_api").state,
+  const opencodeState = setComposerActiveSurface(
+    selectComposerAgent(createAgentChatShellState(), "opencode").state,
     "model_menu",
   ).state;
   const codexHtml = renderShell(codexState);
-  const openAiHtml = renderShell(openAiState);
+  const opencodeHtml = renderShell(opencodeState);
 
   assert.match(codexHtml, /Model/);
   assert.match(codexHtml, /Codex Agent Integration/);
   assert.doesNotMatch(codexHtml, /OpenAI Provider Account/);
-  assert.match(openAiHtml, /OpenAI Provider Account/);
-  assert.doesNotMatch(openAiHtml, /Codex Agent Integration/);
+  assert.match(opencodeHtml, /opencode/);
+  assert.match(opencodeHtml, /Add a vendor/);
 });
 
 test("codex_model_chip_renders_polished_label_but_stores_provider_native_value", () => {
@@ -1511,14 +1509,18 @@ test("selecting_gemini_updates_visible_model_and_permission_defaults_away_from_c
   assert.notEqual(view.composer.modelLabel, "GPT-5.5 High");
 });
 
-test("selecting_openai_api_uses_api_model_id_not_codex_model_label", () => {
-  const selected = selectComposerAgent(createAgentChatShellState(), "openai_api").state;
+test("selecting_opencode_uses_provider_cli_model_and_permission_defaults", () => {
+  const selected = selectComposerAgent(createAgentChatShellState(), "opencode").state;
   const view = createAgentChatShellViewModel(selected);
 
-  assert.equal(selected.composer.startOptions.agentBinding.agentId, "openai_api");
-  assert.equal(selected.composer.startOptions.agentBinding.runtimeSource?.kind, "tide_api");
-  assert.equal(selected.composer.startOptions.launchOptions?.model, "gpt-5.5");
-  assert.equal(view.composer.modelLabel, "gpt-5.5");
+  assert.equal(selected.composer.startOptions.agentBinding.agentId, "opencode");
+  assert.deepEqual(selected.composer.startOptions.agentBinding.runtimeSource, {
+    kind: "provider_cli",
+    integrationId: "opencode",
+  });
+  assert.equal(selected.composer.startOptions.launchOptions?.model, "opencode default");
+  assert.equal(view.composer.modelLabel, "Default");
+  assert.equal(view.composer.permissionLabel, "Build");
 });
 
 test("follow_up_composer_model_label_uses_active_thread_launch_options", () => {
@@ -1597,9 +1599,9 @@ test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
       "permission_menu",
     ).state,
   );
-  const openAiHtml = renderShell(
+  const opencodeHtml = renderShell(
     setComposerActiveSurface(
-      selectComposerAgent(createAgentChatShellState(), "openai_api").state,
+      selectComposerAgent(createAgentChatShellState(), "opencode").state,
       "permission_menu",
     ).state,
   );
@@ -1617,9 +1619,11 @@ test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
   assert.match(geminiHtml, /Auto edits/);
   assert.match(geminiHtml, /Bypass permissions/);
   assert.doesNotMatch(geminiHtml, /Accept edits/);
-  assert.match(openAiHtml, /Tide tool policy/);
-  assert.doesNotMatch(openAiHtml, /workspace-write/);
-  assert.doesNotMatch(openAiHtml, /Bypass permissions/);
+  // opencode mirrors its own small mode set.
+  assert.match(opencodeHtml, /Build/);
+  assert.match(opencodeHtml, /Plan/);
+  assert.doesNotMatch(opencodeHtml, /Tide tool policy/);
+  assert.doesNotMatch(opencodeHtml, /Bypass permissions/);
 });
 
 test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", () => {
@@ -1771,20 +1775,20 @@ test("claude_model_menu_lists_fable_5", () => {
   assert.match(renderShell(claudeModelMenu), /Fable 5/);
 });
 
-test("openai_api_readiness_mentions_provider_account_setup", () => {
-  const openAiState = selectComposerAgent(createAgentChatShellState(), "openai_api").state;
-  const blocked = applyAgentChatBackendEvent(openAiState, {
+test("provider_cli_readiness_mentions_setup_without_dropping_draft", () => {
+  const codexState = selectComposerAgent(createAgentChatShellState(), "codex").state;
+  const blocked = applyAgentChatBackendEvent(codexState, {
     kind: "providerReadiness.changed",
     payload: {
       readiness: {
-        agentId: "openai_api",
+        agentId: "codex",
         ready: false,
         blockers: [
           {
-            kind: "provider_account_required",
-            scope: "provider_account",
-            message: "Provider Account required: OpenAI API key.",
-            action: "Open Provider Account setup",
+            kind: "not_installed",
+            scope: "provider",
+            message: "Codex CLI is not installed.",
+            action: "Install Codex CLI",
           },
         ],
       },
@@ -1793,12 +1797,11 @@ test("openai_api_readiness_mentions_provider_account_setup", () => {
   const html = renderShell(blocked);
   const text = visibleText(html);
 
-  assert.match(html, /Provider Account required/);
-  assert.match(html, /Open Provider Account setup/);
+  assert.match(html, /Codex CLI is not installed/);
+  assert.match(html, /Install Codex CLI/);
   assert.match(html, /preserve draft/);
-  assert.doesNotMatch(text, /PTY/i);
-  assert.doesNotMatch(text, /Directory Trust/);
-  assert.doesNotMatch(text, /provider CLI hooks/i);
+  assert.doesNotMatch(text, /OpenAI API/);
+  assert.doesNotMatch(text, /Provider Account/);
 });
 
 test("composer_menu_rows_update_start_context_and_close_the_surface", () => {

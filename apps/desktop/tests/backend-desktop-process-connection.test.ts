@@ -863,12 +863,13 @@ test("live_backend_records_runtime_output_blocks_before_hydrate_snapshots", () =
   assert.match(source, /schedulePersist\(frameInput\.threadId\)/);
 });
 
-test("live_backend_awaits_tide_api_structured_frame_projection_for_push_events", () => {
-  // Spec: docs_v2/specs/tide-api-agent-runtime.md
+test("live_backend_does_not_wire_openai_api_agent_runtime", () => {
   const source = readRepoFile("src/backend/infrastructure/node/live/live-backend.ts");
 
-  assert.match(source, /onRawFrame:\s*\(frame\)\s*=>\s*{\s*return projector\.ingestStructuredFrame\(frame\);\s*}/s);
-  assert.doesNotMatch(source, /onRawFrame:\s*\(frame\)\s*=>\s*{\s*void projector\.ingestStructuredFrame\(frame\);/s);
+  assert.doesNotMatch(source, /openai-api-agent-runtime-port/);
+  assert.doesNotMatch(source, /createOpenAiApiAgentRuntimePort/);
+  assert.doesNotMatch(source, /createAgentRuntimeRouterPort/);
+  assert.doesNotMatch(source, /ingestStructuredFrame/);
 });
 
 test("thread_summary_storage_record_preserves_scope_and_agent_binding", () => {

@@ -43,8 +43,7 @@ export interface ProviderReadinessResult {
   agentId: AgentId;
   ready: boolean;
   blockers: ProviderReadinessBlocker[];
-  // Present for Provider CLI agents (derived from the integration's declared
-  // capabilities). Absent for Tide API agents.
+  // Derived from the provider CLI integration's declared capabilities.
   capabilities?: ProviderRuntimeCapabilitySummary;
   // A non-blocking "a newer CLI is published" advisory. Independent of `ready`:
   // an outdated-but-working CLI still starts Threads. Spec: version-management.md.

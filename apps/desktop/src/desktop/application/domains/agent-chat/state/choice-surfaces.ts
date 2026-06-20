@@ -130,7 +130,7 @@ export function selectAgentChatChoiceSurfaceRow(
       if (reasoning !== undefined) {
         return updateComposerLaunchOptions(state, { reasoning });
       }
-      const model = modelForRow(rowId, runtimeSourceForBinding(state.composer.startOptions.agentBinding).kind);
+      const model = modelForRow(rowId);
       return model ? updateComposerLaunchOptions(state, { model }) : { state, command: null };
     }
     case "opencode_connect": {
@@ -238,7 +238,6 @@ export function createActiveComposerSurface(
   }
 
   const binding = state.thread?.agentBinding ?? state.composer.startOptions.agentBinding;
-  const source = runtimeSourceForBinding(binding);
   const agentLabel = formatAgentLabel(binding.agentId);
   const launchOptions = launchOptionsForState(state);
   const selectedModel = String(
@@ -251,8 +250,6 @@ export function createActiveComposerSurface(
         surfaceKind,
         title: "Agent",
         sourceLabel: "Agent Binding",
-        // Tide API Agents / OpenAI API are hidden for now (provider-CLI only).
-        // The openai_api binding + runtime still exist; they're just not offered here.
         // Provider-CLI agents are listed; ones whose CLI is not detected on the local
         // system are shown DISABLED (greyed), never removed.
         rows: [
@@ -268,11 +265,7 @@ export function createActiveComposerSurface(
         title: "Model",
         sourceLabel: agentLabel,
         rows:
-          source.kind === "tide_api"
-            ? [
-                row("gpt-55-high", "gpt-5.5", "OpenAI Provider Account", undefined, "check", selectedModel === "gpt-5.5"),
-              ]
-            : binding.agentId === "codex"
+          binding.agentId === "codex"
               ? codexModelMenuRows(state, selectedModel)
               : binding.agentId === "claude"
                 ? [
@@ -439,23 +432,17 @@ function composerAgentIdForRow(
       return "gemini";
     case "opencode":
       return "opencode";
-    case "openai-api":
-      return "openai_api";
     default:
       return null;
   }
 }
 
-function modelForRow(
-  rowId: string,
-  sourceKind: AgentChatAgentRuntimeSource["kind"] = "provider_cli",
-): string | undefined {
+function modelForRow(rowId: string): string | undefined {
   // CLI model rows carry their provider-native value as `model:<value>`.
   if (rowId.startsWith("model:")) {
     return rowId.slice("model:".length);
   }
   switch (rowId) {
-    case "gpt-55-high":
     case "codex-model":
       return "gpt-5.5";
     case "claude-default":

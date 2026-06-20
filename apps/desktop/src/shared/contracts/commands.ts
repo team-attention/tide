@@ -4,7 +4,6 @@ import type { ThreadId, WorkbenchPaneId } from "./ids.ts";
 import type { PromptStepAnswerDto } from "./prompt.ts";
 import type { JsonObject } from "./json.ts";
 import type { ThreadScopeDto } from "./thread.ts";
-import type { WorkbenchSeedPaneDto } from "./workbench.ts";
 
 export type BackendCommandKind =
   | "thread.list"
@@ -99,8 +98,6 @@ export interface BackendCommandPayloadByKind {
     scope?: ThreadScopeDto;
     launchOptions?: JsonObject;
     attachments?: ComposerAttachment[];
-    // Composer-screen panes adopted by the new Thread (seeded at start).
-    initialWorkbenchPanes?: WorkbenchSeedPaneDto[];
   };
   "thread.archive": { threadId: ThreadId; archived: boolean };
   "thread.setPinned": { threadId: ThreadId; pinned: boolean };

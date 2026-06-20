@@ -137,7 +137,7 @@ Desktop renders and sends user intent. Backend owns provider processes, PTY inpu
 
 ### What This Is
 
-Agent Integration is the provider-specific layer for Codex CLI, Claude Code, and Antigravity CLI.
+Agent Integration is the provider-specific layer for Codex CLI, Claude Code, Gemini CLI, and opencode.
 
 Each Agent Integration owns:
 
@@ -157,7 +157,7 @@ Each Agent Integration owns:
 
 | Option | Description |
 |--------|-------------|
-| A. Provider-specific integrations behind one capability contract | Build Codex, Claude, and Antigravity integrations separately, then expose confirmed capabilities through a shared Tide contract. |
+| A. Provider-specific integrations behind one capability contract | Build Codex, Claude, Gemini, and opencode integrations separately, then expose confirmed capabilities through a shared Tide contract. |
 | B. One generic CLI adapter | Treat all providers as the same interactive CLI shape and normalize details immediately. |
 | C. Shell-only integration | Do not attach hooks or MCP; interact through PTY text only. |
 
@@ -181,7 +181,8 @@ The existing Tide wrappers prove the basic pattern: launch the provider CLI thro
 
 - Codex launch/resume/MCP/hook/readiness path.
 - Claude launch/resume/MCP/hook/readiness path.
-- Antigravity launch/resume/MCP/hook/readiness path.
+- Gemini launch/resume/MCP/readiness path.
+- opencode launch/resume/MCP/vendor/readiness path.
 - Provider Readiness preflight command or observation method.
 - Provider-owned history reference format per provider.
 - Prompt and permission payload examples per provider.

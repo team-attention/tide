@@ -170,7 +170,8 @@ export interface ProductShellHandlers {
   onLauncherAction: (actionId: string) => void;
   // Open the read-only git Changes view (working-tree diff). Wired to the launcher's
   // Diff action + the top-bar branch badge. Inside a thread it opens the backend singleton
-  // pane; on the composer (no thread) `cwd` opens a renderer-local draft Changes pane.
+  // pane; on the composer, `cwd` lets the handler first create the Draft Thread, then open
+  // the backend singleton on that draft.
   // Spec: git-changes-view.
   onOpenChanges: (cwd?: string) => void;
   // The Changes pane self-fetches its data from its cwd (Main-process git).

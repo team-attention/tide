@@ -16,6 +16,7 @@ import type {
   ProductShellFileTreeEntryView,
   ProductShellState,
 } from "../src/desktop/application/domains/product-shell/state/types.ts";
+import { startFilePaneId } from "../src/desktop/application/domains/product-shell/state/types.ts";
 
 const SRC: ProductShellFileTreeEntryView = { id: "src", name: "src", relativePath: "src", depth: 0, kind: "folder" };
 const README: ProductShellFileTreeEntryView = { id: "readme.md", name: "readme.md", relativePath: "readme.md", depth: 0, kind: "file" };
@@ -204,25 +205,25 @@ test("closing_workbench_pane_clears_editor_picker", () => {
 
 test("closing_start_page_workbench_pane_clears_editor_picker", () => {
   const start = startPageState();
+  const paneId = startFilePaneId("README.md");
   const state: ProductShellState = {
     ...start,
     workbenchOpen: true,
     editorPickerFilter: "",
-    draftActiveWorkbenchPaneId: "draft-browser-1",
-    draftWorkbenchPanes: [
+    draftActiveWorkbenchPaneId: paneId,
+    startPageFiles: [
       {
-        paneId: "draft-browser-1",
-        kind: "browser",
-        title: "Browser",
-        revision: "rev",
-        updatedAt: "2026-05-28T00:00:00.000Z",
-        url: "https://example.com",
+        cwd: "/repo",
+        relativePath: "README.md",
+        content: "# README",
+        truncated: false,
       },
     ],
   };
 
-  const result = closeProductShellWorkbenchPane(state, "draft-browser-1");
+  const result = closeProductShellWorkbenchPane(state, paneId);
 
   assert.equal(result.state.editorPickerFilter, null);
   assert.equal(result.command, null);
+  assert.equal(result.state.startPageFiles.length, 0);
 });

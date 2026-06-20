@@ -168,7 +168,7 @@ test("provider_readiness_port_uses_selected_agent_integration_preflight", async 
   });
 });
 
-test("provider_readiness_port_reports_provider_account_blocker_for_tide_api_agent", async () => {
+test("provider_readiness_port_rejects_non_provider_cli_agent", async () => {
   const codex = fakeIntegration("codex", startPlan("codex"));
   const claude = fakeIntegration("claude", startPlan("claude"));
   const gemini = fakeIntegration("gemini", startPlan("gemini"));
@@ -186,10 +186,10 @@ test("provider_readiness_port_reports_provider_account_blocker_for_tide_api_agen
   assert.equal(result.agentId, "openai_api");
   assert.deepEqual(result.blockers, [
     {
-      kind: "provider_account_required",
-      message: "OpenAI Provider Account setup is required before starting this Tide API Agent.",
+      kind: "unknown",
+      message: "Unknown provider CLI agent.",
       scope: "provider",
-      action: "open_provider",
+      action: "none",
     },
   ]);
   assert.equal(codex.preflightInputs.length, 0);

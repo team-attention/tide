@@ -9,7 +9,7 @@ import {
 
 // Spec: docs_v2/specs/opencode-model-vendor-selection.md — the Start Composer
 // remembers the last-picked agent + model for EVERY offered agent (regression:
-// the persistence allowlist was hardcoded to codex/claude/openai_api, silently
+// the persistence allowlist was hardcoded to codex/claude, silently
 // dropping opencode + gemini, so their model choice was never remembered).
 
 // Prefs no longer live in localStorage — they are owned by Main and injected into the
@@ -68,10 +68,11 @@ test("an unknown persisted agent loads as null (no preference)", () => {
   assert.equal(loadPreferredStartComposer(), null);
 });
 
-test("isProductShellAgentIdentity accepts the five agents, rejects undefined/unknown", () => {
-  for (const id of ["codex", "claude", "gemini", "opencode", "openai_api"]) {
+test("isProductShellAgentIdentity accepts the four provider CLI agents, rejects undefined/unknown", () => {
+  for (const id of ["codex", "claude", "gemini", "opencode"]) {
     assert.equal(isProductShellAgentIdentity(id), true, `expected ${id} to be a valid agent`);
   }
   assert.equal(isProductShellAgentIdentity(undefined), false);
+  assert.equal(isProductShellAgentIdentity("openai_api"), false);
   assert.equal(isProductShellAgentIdentity("bogus"), false);
 });

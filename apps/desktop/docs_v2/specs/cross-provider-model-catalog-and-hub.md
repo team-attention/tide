@@ -88,8 +88,8 @@ Grounded in the integrations + live ACP probes (opencode 1.17.1, gemini 0.46-cla
 ## Out Of Scope
 
 - Real enumeration for claude/codex (impossible) — they stay curated.
-- Authenticating providers from scratch beyond launching the existing Setup Surface; no in-app
-  API-key vault (openai_api key entry is a separate P3 item).
+- Authenticating providers from scratch beyond launching the existing Setup Surface; no
+  generic in-app API-key vault.
 - Live gemini model switching (stays restart) and any new live mechanism — apply path unchanged.
 - First-run onboarding beyond P1's "Not installed" chip.
 - A models.dev-style cost/context column in the hub (nice-to-have; later).

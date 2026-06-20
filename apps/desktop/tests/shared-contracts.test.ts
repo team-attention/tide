@@ -424,18 +424,13 @@ test("Prompt choices preserve provider-native values", () => {
   );
 });
 
-test("Agent Binding preserves source-aware Provider CLI and Tide API runtime sources", () => {
+test("Agent Binding preserves provider CLI runtime sources", () => {
   const codexBinding: AgentBindingDto = {
     agentId: "codex",
     runtimeSource: { kind: "provider_cli", integrationId: "codex" },
   };
-  const openAiBinding: AgentBindingDto = {
-    agentId: "openai_api",
-    runtimeSource: { kind: "tide_api", provider: "openai", accountId: "acct-1" },
-  };
 
   assert.deepEqual(JSON.parse(JSON.stringify(codexBinding)), codexBinding);
-  assert.deepEqual(JSON.parse(JSON.stringify(openAiBinding)), openAiBinding);
 });
 
 test("thread_start_rejects_fake_vendor_api_runtime_branch", () => {
@@ -457,21 +452,8 @@ test("thread_start_rejects_fake_vendor_api_runtime_branch", () => {
   assert.equal(result.error.code, "invalid_command");
 });
 
-test("thread_start_accepts_openai_api_only_with_tide_api_runtime_source", () => {
-  const accepted = validateBackendCommandEnvelope({
-    contractVersion: CONTRACT_VERSION,
-    requestId: "req-openai-source",
-    kind: "thread.start",
-    issuedAt,
-    payload: {
-      initialMessage: "hello",
-      agentBinding: {
-        agentId: "openai_api",
-        runtimeSource: { kind: "tide_api", provider: "openai" },
-      },
-    },
-  });
-  const rejected = validateBackendCommandEnvelope({
+test("thread_start_rejects_openai_api_and_tide_api_runtime_source", () => {
+  const rejectedOpenAi = validateBackendCommandEnvelope({
     contractVersion: CONTRACT_VERSION,
     requestId: "req-openai-source-missing",
     kind: "thread.start",
@@ -481,10 +463,24 @@ test("thread_start_accepts_openai_api_only_with_tide_api_runtime_source", () => 
       agentBinding: { agentId: "openai_api" },
     },
   });
+  const rejectedTideApi = validateBackendCommandEnvelope({
+    contractVersion: CONTRACT_VERSION,
+    requestId: "req-openai-source",
+    kind: "thread.start",
+    issuedAt,
+    payload: {
+      initialMessage: "hello",
+      agentBinding: {
+        agentId: "codex",
+        runtimeSource: { kind: "tide_api", provider: "openai" },
+      },
+    },
+  });
 
-  assert.equal(accepted.ok, true);
-  assert.equal(rejected.ok, false);
-  assert.equal(rejected.error.code, "invalid_command");
+  assert.equal(rejectedOpenAi.ok, false);
+  assert.equal(rejectedOpenAi.error.code, "invalid_command");
+  assert.equal(rejectedTideApi.ok, false);
+  assert.equal(rejectedTideApi.error.code, "invalid_command");
 });
 
 test("Provider Readiness setup actions can carry provider setup env", () => {

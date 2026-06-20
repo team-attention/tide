@@ -106,7 +106,6 @@ import {
   actBrowserOutput,
   clearAgentBrowserDriving,
   observeBrowserOutput,
-  seedInitialWorkbenchPanes,
 } from "../workbench/workbench-browser-operations.ts";
 
 import { WorkbenchFileOperations } from "../workbench/workbench-file-operations.ts";
@@ -626,11 +625,6 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
       });
       this.threads.set(threadId, thread);
     }
-    // Adopt composer-screen panes (renderer draft Browser Panes; race-free; spec:
-    // workbench-dock-parity). For a Draft Thread this ADDS them alongside the Terminal/
-    // Editor/Diff panes it already owns — both ride into the started Thread.
-    await seedInitialWorkbenchPanes(thread, input.initialWorkbenchPanes, this.idGenerator, this.clock, (target, fileInput) => this.workbenchFileOps.openFileOutput(target, fileInput));
-
     // A Scratch Thread runs in a real Tide-owned per-thread dir; materialize + trust
     // it before readiness/attachments so the agent proceeds without a trust prompt.
     // See docs_v2/specs/scratch-execution-context.md.
@@ -676,10 +670,8 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
     });
 
     // Provider CLIs receive the first message as the launch-time initial prompt
-    // (positional/flag), which reliably starts a turn. Tide API Agents have no
-    // launch argv, so they still receive it via writeInput.
-    const deliverPromptViaLaunch =
-      thread.agentBinding.runtimeSource?.kind === "provider_cli";
+    // (positional/flag), which reliably starts a turn.
+    const deliverPromptViaLaunch = true;
     const attachmentsForRuntime = messageAttachments.length > 0 ? messageAttachments : undefined;
     markThreadStarting(thread, this.clock);
     let handle: AgentRuntimeHandle;
@@ -1601,10 +1593,8 @@ private async startOrResumeRuntimeForPendingInput(
     // A fresh Provider CLI start must receive the first message as the launch-time
     // initial prompt (positional/flag), which reliably starts a turn — exactly like
     // startThread. Without it the CLI launches idle and the typed-in message does not
-    // begin a turn (the held first message never resolves). Tide API Agents have no
-    // launch argv, so they receive it via writeInput.
-    const deliverPromptViaLaunch =
-      thread.agentBinding.runtimeSource?.kind === "provider_cli";
+    // begin a turn (the held first message never resolves).
+    const deliverPromptViaLaunch = true;
     const handle = await this.agentRuntimePort.start({
       threadId: thread.threadId,
       agentBinding: cloneAgentBinding(thread.agentBinding),
