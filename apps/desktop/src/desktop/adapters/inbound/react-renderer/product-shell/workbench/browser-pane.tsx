@@ -5,9 +5,11 @@ import {
   executeBrowserWebViewAction,
   isWebViewSettled,
   readBrowserWebViewSnapshot,
+  safeFindInWebView,
   safeGetWebViewURL,
   safeInvokeWebView,
   safeLoadWebViewURL,
+  safeStopFindInWebView,
   type BrowserWebViewElement,
 } from "./browser-webview-actions.ts";
 import { BrowserAgentOverlay } from "./browser-agent-overlay.tsx";
@@ -67,14 +69,20 @@ export function WorkbenchBrowserPane(props: {
     if (query.length === 0) {
       return;
     }
-    webviewRef.current?.findInPage?.(query, { findNext: true, forward: true, matchCase: false });
+    const webview = webviewRef.current;
+    if (webview !== null) {
+      safeFindInWebView(webview, query, { findNext: true, forward: true, matchCase: false });
+    }
   }, [find.query]);
   const browserFindPrevious = useCallback(() => {
     const query = find.query.trim();
     if (query.length === 0) {
       return;
     }
-    webviewRef.current?.findInPage?.(query, { findNext: true, forward: false, matchCase: false });
+    const webview = webviewRef.current;
+    if (webview !== null) {
+      safeFindInWebView(webview, query, { findNext: true, forward: false, matchCase: false });
+    }
   }, [find.query]);
   usePaneFindIntent(rootRef, {
     enabled: true,
@@ -109,10 +117,10 @@ export function WorkbenchBrowserPane(props: {
     }
     if (!find.open || query.length === 0) {
       setBrowserMatchCount(0);
-      webview.stopFindInPage?.("clearSelection");
+      safeStopFindInWebView(webview, "clearSelection");
       return undefined;
     }
-    webview.findInPage?.(query, { findNext: false, forward: true, matchCase: false });
+    safeFindInWebView(webview, query, { findNext: false, forward: true, matchCase: false });
     return undefined;
   }, [webviewElement, find.open, find.query, props.pane.paneId]);
   useEffect(() => {

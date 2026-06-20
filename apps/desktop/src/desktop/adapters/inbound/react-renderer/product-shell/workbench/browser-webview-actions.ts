@@ -129,6 +129,29 @@ export function safeInvokeWebView(
   }
 }
 
+export function safeFindInWebView(
+  webview: BrowserWebViewElement,
+  text: string,
+  options?: { forward?: boolean; findNext?: boolean; matchCase?: boolean },
+): number | undefined {
+  try {
+    return webview.findInPage?.(text, options);
+  } catch {
+    return undefined;
+  }
+}
+
+export function safeStopFindInWebView(
+  webview: BrowserWebViewElement,
+  action: "clearSelection" | "keepSelection" | "activateSelection",
+): void {
+  try {
+    webview.stopFindInPage?.(action);
+  } catch {
+    // Ignore pre-dom-ready guest API throws from the find bar mount/close path.
+  }
+}
+
 // True only when the guest has finished its current load. `<webview>.isLoading()`
 // is NOT a safe probe: like the other guest methods it throws *synchronously*
 // ("must be attached to the DOM and the dom-ready event emitted") until the guest

@@ -9,9 +9,11 @@ import {
   executeBrowserWebViewAction,
   isWebViewSettled,
   readBrowserWebViewSnapshot,
+  safeFindInWebView,
   safeGetWebViewURL,
   safeInvokeWebView,
   safeLoadWebViewURL,
+  safeStopFindInWebView,
   type BrowserWebViewAction,
   type BrowserWebViewElement,
   type BrowserWebViewInputEvent,
@@ -303,6 +305,8 @@ test("isWebViewSettled returns true only when the guest finished loading", () =>
 
 test("safe webview wrappers swallow pre-dom-ready guest API throws", () => {
   let loadCalls = 0;
+  let findCalls = 0;
+  let stopFindCalls = 0;
   const webview = {
     getURL: () => {
       throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
@@ -314,10 +318,22 @@ test("safe webview wrappers swallow pre-dom-ready guest API throws", () => {
     reload: () => {
       throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
     },
+    findInPage: () => {
+      findCalls += 1;
+      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
+    },
+    stopFindInPage: () => {
+      stopFindCalls += 1;
+      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
+    },
   } as unknown as BrowserWebViewElement;
 
   assert.doesNotThrow(() => safeLoadWebViewURL(webview, "https://example.test/"));
   assert.doesNotThrow(() => safeInvokeWebView(webview, "reload"));
+  assert.doesNotThrow(() => safeFindInWebView(webview, "query"));
+  assert.doesNotThrow(() => safeStopFindInWebView(webview, "clearSelection"));
   assert.equal(safeGetWebViewURL(webview), undefined);
   assert.equal(loadCalls, 1);
+  assert.equal(findCalls, 1);
+  assert.equal(stopFindCalls, 1);
 });

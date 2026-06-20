@@ -2,7 +2,11 @@ import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement, useCallback, useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { WorkbenchCodeEditor } from "./code-editor.tsx";
-import type { BrowserWebViewElement } from "./browser-webview-actions.ts";
+import {
+  safeFindInWebView,
+  safeStopFindInWebView,
+  type BrowserWebViewElement,
+} from "./browser-webview-actions.ts";
 import { InPaneFindBar, useInPaneFindState, usePaneFindIntent } from "../../support/in-pane-find.tsx";
 // Extracted alongside markdown-view.tsx (spec: workbench-html-preview.md).
 
@@ -53,14 +57,16 @@ export function WorkbenchHtmlView(props: {
   const effectiveMode = canPreview ? mode : "code";
   const previewFindNext = useCallback(() => {
     const query = find.query.trim();
-    if (query.length > 0) {
-      webviewRef.current?.findInPage?.(query, { findNext: true, forward: true, matchCase: false });
+    const webview = webviewRef.current;
+    if (query.length > 0 && webview !== null) {
+      safeFindInWebView(webview, query, { findNext: true, forward: true, matchCase: false });
     }
   }, [find.query]);
   const previewFindPrevious = useCallback(() => {
     const query = find.query.trim();
-    if (query.length > 0) {
-      webviewRef.current?.findInPage?.(query, { findNext: true, forward: false, matchCase: false });
+    const webview = webviewRef.current;
+    if (query.length > 0 && webview !== null) {
+      safeFindInWebView(webview, query, { findNext: true, forward: false, matchCase: false });
     }
   }, [find.query]);
   usePaneFindIntent(rootRef, {
@@ -96,10 +102,10 @@ export function WorkbenchHtmlView(props: {
     }
     if (!find.open || effectiveMode !== "preview" || query.length === 0) {
       setMatchCount(0);
-      webview.stopFindInPage?.("clearSelection");
+      safeStopFindInWebView(webview, "clearSelection");
       return undefined;
     }
-    webview.findInPage?.(query, { findNext: false, forward: true, matchCase: false });
+    safeFindInWebView(webview, query, { findNext: false, forward: true, matchCase: false });
     return undefined;
   }, [webviewElement, effectiveMode, find.open, find.query, props.paneId]);
   const toggle = (target: "preview" | "code", label: string) => (
