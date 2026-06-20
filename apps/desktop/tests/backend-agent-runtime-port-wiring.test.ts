@@ -616,16 +616,6 @@ function writeProviderFiles(home: string, cwd: string): void {
   writeFile(path.join(home, ".gemini", "oauth_creds.json"), "{}");
 }
 
-function appendCodexOverlayHookTrust(
-  artifacts: ReturnType<typeof providerBootstrapArtifactsForHome>,
-): void {
-  fs.appendFileSync(
-    path.join(artifacts.codexHome, "config.toml"),
-    `\n[hooks.state."${artifacts.codexHooksPath}:permission_request:0:0"]\ntrusted_hash = "sha256:permission"\n\n[hooks.state."${artifacts.codexHooksPath}:user_prompt_submit:0:0"]\ntrusted_hash = "sha256:prompt"\n\n[hooks.state."${artifacts.codexHooksPath}:stop:0:0"]\ntrusted_hash = "sha256:stop"\n`,
-    "utf8",
-  );
-}
-
 test("codex_provider_history_reader_derives_provider_session_ref_from_rollout_path", () => {
   // Spec: docs_v2/specs/live-provider-session-reference-discovery.md
   const rolloutPath = path.join(

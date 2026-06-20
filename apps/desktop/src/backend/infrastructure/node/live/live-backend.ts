@@ -161,10 +161,7 @@ import { createNodeComposerAttachmentStorePort } from "../../../adapters/outboun
 
 import { createNodeProviderTrustPort } from "../../../adapters/outbound/provider-trust/node-provider-trust-port.ts";
 
-import {
-  ensureProviderBootstrapArtifacts,
-  providerBootstrapArtifactsForHome,
-} from "../provider/provider-bootstrap-artifacts.ts";
+import { ensureProviderBootstrapArtifacts } from "../provider/provider-bootstrap-artifacts.ts";
 
 import type { AgentSessionBlockUpdate } from "../../../application/domains/agent-session/agent-session-block.ts";
 
@@ -242,11 +239,24 @@ export function createLiveBackendContractMessageAdapter(
     tidePane: env.TIDE_PANE,
     tideWindow: env.TIDE_WINDOW,
   });
+  const defaultCodexHome = bootstrapArtifacts.codexHome;
+  const codexHomeCache = new Map<string, string>();
   const effectiveCodexHome = (cwd: string): string => {
-    const value = resolveAugmentedEnvironment({ currentEnv: { ...env }, cwd }).CODEX_HOME;
-    return value !== undefined && value.length > 0
-      ? value
-      : providerBootstrapArtifactsForHome({ homeDir }).codexHome;
+    const cached = codexHomeCache.get(cwd);
+    if (cached !== undefined) {
+      return cached;
+    }
+    let codexHome = defaultCodexHome;
+    try {
+      const value = resolveAugmentedEnvironment({ currentEnv: { ...env }, cwd }).CODEX_HOME;
+      if (value !== undefined && value.length > 0) {
+        codexHome = value;
+      }
+    } catch {
+      codexHome = defaultCodexHome;
+    }
+    codexHomeCache.set(cwd, codexHome);
+    return codexHome;
   };
   const integrations = {
     codex: createCodexAgentIntegration({
