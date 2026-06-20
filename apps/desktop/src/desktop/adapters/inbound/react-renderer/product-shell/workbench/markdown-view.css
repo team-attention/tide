@@ -153,11 +153,64 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 22px clamp(18px, 5vw, 48px) 48px;
+  padding: 26px clamp(20px, 5vw, 56px) 56px;
   color: var(--tide-text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-  font-size: 15px;
-  line-height: 1.58;
+  font-size: 14.5px;
+  line-height: 1.62;
+  text-rendering: optimizeLegibility;
+}
+
+.workbench-md-preview.markdown-body h1 {
+  margin-bottom: 18px;
+  padding-bottom: 10px;
+  font-size: 32px;
+  line-height: 40px;
+  letter-spacing: 0;
+}
+
+.workbench-md-preview.markdown-body h2 {
+  margin-top: 30px;
+  margin-bottom: 14px;
+  font-size: 22px;
+  line-height: 30px;
+  letter-spacing: 0;
+}
+
+.workbench-md-preview.markdown-body h3 {
+  margin-top: 22px;
+  margin-bottom: 10px;
+  font-size: 18px;
+  line-height: 26px;
+  letter-spacing: 0;
+}
+
+.workbench-md-preview.markdown-body p,
+.workbench-md-preview.markdown-body ul,
+.workbench-md-preview.markdown-body ol {
+  margin-bottom: 14px;
+}
+
+.workbench-md-preview.markdown-body a {
+  color: var(--tide-text);
+  text-decoration-color: color-mix(in srgb, var(--tide-text) 55%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.workbench-md-preview.markdown-body a:hover {
+  color: var(--tide-action);
+  text-decoration-color: currentColor;
+}
+
+.workbench-md-preview.markdown-body p img {
+  vertical-align: text-bottom;
+  border-radius: 4px;
+}
+
+.workbench-md-preview.markdown-body hr {
+  margin-top: 28px;
+  margin-bottom: 30px;
 }
 
 /* A long markdown file renders its WHOLE tree at once (dangerouslySetInnerHTML,
@@ -169,6 +222,9 @@
    extraction falls back to textContent (which needs no layout) when a skipped
    block's innerText is empty. */
 .workbench-md-preview > * {
+  max-width: min(100%, 780px);
+  margin-left: auto;
+  margin-right: auto;
   content-visibility: auto;
   contain-intrinsic-size: auto 40px;
 }
