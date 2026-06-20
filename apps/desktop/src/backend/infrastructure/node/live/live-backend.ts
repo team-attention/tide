@@ -244,7 +244,9 @@ export function createLiveBackendContractMessageAdapter(
   });
   const effectiveCodexHome = (cwd: string): string => {
     const value = resolveAugmentedEnvironment({ currentEnv: { ...env }, cwd }).CODEX_HOME;
-    return value !== undefined && value.length > 0 ? value : join(homeDir, ".codex");
+    return value !== undefined && value.length > 0
+      ? value
+      : providerBootstrapArtifactsForHome({ homeDir }).codexHome;
   };
   const integrations = {
     codex: createCodexAgentIntegration({
