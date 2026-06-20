@@ -1,6 +1,4 @@
-<div align="center">
-
-<img src="assets/icon.png" alt="Tide" width="96" />
+![Tide](assets/icon.png)
 
 # Tide
 
@@ -11,11 +9,7 @@
 [![Release](https://img.shields.io/github/v/release/team-attention/tide?style=flat-square)](https://github.com/team-attention/tide/releases/latest)
 [![Stars](https://img.shields.io/github/stars/team-attention/tide?style=social)](https://github.com/team-attention/tide/stargazers)
 
-**[⬇ Download for macOS](https://github.com/team-attention/tide/releases/latest)** &nbsp;·&nbsp; **[▶ Watch the demo](https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad)**
-
-</div>
-
-https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
+**[Download for macOS](https://github.com/team-attention/tide/releases/latest)** · **[Watch the demo](https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad)**
 
 ---
 
@@ -29,7 +23,8 @@ files, trying to coordinate work that should be happening in one place.
 
 Tide is a free, open-source Codex app alternative.
 
-**Don't just chat with AI.**<br/>
+**Don't just chat with AI.**
+
 **Work with agents on a shared workbench.**
 
 It supports **Codex, Claude Code, Gemini, and opencode**.
