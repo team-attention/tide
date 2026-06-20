@@ -34,8 +34,8 @@ Tide is a free, open-source Codex app alternative.
 
 It supports **Codex, Claude Code, Gemini, and opencode**.
 
-Well, there's [Tide Terminal](apps/terminal/) if you insist: a native macOS,
-terminal-centered agent workspace.
+Well, there's [Tide Terminal](apps/terminal/) if you insist: the same shared
+workbench model, with the terminal at the center.
 
 Download Tide. Star the repo.
 
