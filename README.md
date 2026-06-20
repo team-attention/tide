@@ -9,7 +9,7 @@
 
 **[Download for macOS](https://github.com/team-attention/tide/releases/latest)** · **[Watch the demo](https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad)**
 
-<img src="assets/tide.png" alt="Tide app screenshot" width="100%">
+<img src="assets/tide-readme.png" alt="Tide app screenshot" width="100%">
 
 <img src="assets/tide-terminal.png" alt="Tide Terminal screenshot" width="100%">
 

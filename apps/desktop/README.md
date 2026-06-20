@@ -12,7 +12,7 @@
 
 </div>
 
-<img src="../../assets/tide.png" alt="Tide app screenshot" width="100%">
+<img src="../../assets/tide-readme.png" alt="Tide app screenshot" width="100%">
 
 Tide is the chat-first desktop app in this repo: a local, open-source
 workbench for agent-led software work.
