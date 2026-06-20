@@ -120,10 +120,9 @@ export function createAgentSession(
           : null;
         if (browserUrl) {
           event.preventDefault();
-          // cmd/ctrl+click opens the link in a NEW Browser Pane (beside the page
-          // you're reading); a plain click reuses the active one.
-          const newPane = event.metaKey === true || event.ctrlKey === true;
-          onOpenBrowserPane?.(browserUrl, { newPane });
+          // Chat/session links open as their own Browser Pane. In-page links inside
+          // a Browser Pane still keep their normal browser semantics.
+          onOpenBrowserPane?.(browserUrl, { newPane: true });
           return;
         }
         const path = onOpenFile ? target.closest("[data-open-file]")?.getAttribute("data-open-file") : null;
