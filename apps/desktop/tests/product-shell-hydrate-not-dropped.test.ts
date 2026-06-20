@@ -136,13 +136,25 @@ test("reselecting the active thread does not replace its ready chat with a hydra
   assert.equal(ready.agentChat.hydrating, false);
   assert.equal(ready.agentChat.blocks.length, 1);
 
-  const reselected = openProductShellThreadFromLeftRail(ready, "x", {
-    backendTransportAvailable: true,
-  });
+  const reselected = openProductShellThreadFromLeftRail(
+    {
+      ...ready,
+      leftRailMenu: { kind: "thread", threadId: "x" },
+      archiveConfirmThreadId: "x",
+      renamingThreadId: "x",
+    },
+    "x",
+    {
+      backendTransportAvailable: true,
+    },
+  );
 
   assert.equal(reselected.state.activeThreadId, "x");
   assert.equal(reselected.state.agentChat.hydrating, false);
   assert.equal(reselected.state.agentChat.blocks.length, 1);
+  assert.equal(reselected.state.leftRailMenu, null);
+  assert.equal(reselected.state.archiveConfirmThreadId, null);
+  assert.equal(reselected.state.renamingThreadId, null);
   assert.equal(reselected.command?.kind, "thread.hydrate");
 });
 

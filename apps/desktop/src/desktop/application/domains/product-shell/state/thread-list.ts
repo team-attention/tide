@@ -524,6 +524,7 @@ export function openProductShellThreadFromLeftRail(
         ...state,
         leftRailMenu: null,
         archiveConfirmThreadId: null,
+        renamingThreadId: null,
       },
       command: input.backendTransportAvailable
         ? { kind: "thread.hydrate", payload: { threadId } }
