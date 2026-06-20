@@ -4,7 +4,7 @@
 
 # Tide
 
-### The shared workbench for you and your coding agent.
+### Open-source Codex alternative.
 
 **See what your agent sees. Open the code, edit it, comment on it, right alongside it.**
 <br/>Works with **opencode, Claude Code, Codex, and Gemini**. Local and open-source.
