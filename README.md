@@ -24,19 +24,21 @@ https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
 ## The idea
 
-Terminals are still where the work actually runs. The problem is pretending an
-agent's terminal should be a sealed black box.
+Let's stop pretending working in terminals is fun.
 
-We built IDEs because software work needs context: code, browser state, diffs,
-running commands, and a way to take the wheel. Then a coding agent showed up
-living in a terminal, and overnight a lot of workflows collapsed back into
-narrating at an opaque process.
+AI agents changed how we build software, but the interface somehow moved
+backward.
 
-The good news is Codex and Claude seem to have come around, and they're pushing in this exact direction. The thing is, they each come with their own annoyances. Codex won't let you edit a file right there in the editor. Claude's workbench feels like an afterthought. And neither one is open source.
+We're watching logs scroll, juggling chats, terminals, diffs, browsers, and
+files, trying to coordinate work that should be happening in one place.
 
-So I built Tide. It's one workbench you and your agent share. It runs the code, opens the browser, clicks through the page, and you're right there with it. Open a file, fix a line, or grab the wheel whenever you want. Works with whatever agent you already use: Claude Code, Codex, Gemini, opencode.
+Tide is an open-source Codex alternative built around a simple idea:
 
-This is pretty much what working with an agent should feel like.
+**Don't just chat with AI. Work with agents on a shared workbench.**
+
+It supports **Codex, Claude Code, Gemini, and opencode**.
+
+Free, open source, and built for how agentic work should actually feel.
 
 *(Prefer a terminal-first workflow? [Tide Terminal](apps/terminal/) keeps the live terminal at the center and wraps it with the same shared workbench model.)*
 
