@@ -404,10 +404,11 @@ export function discardProductShellDraftThread(
   };
 }
 
-// Opens an http(s) link (clicked in a chat message) in the Workbench Browser
-// Pane, opening the Workbench column if needed — the default destination for a
-// chat link, so it never replaces the app window. The pane's own toolbar offers
-// "open in external browser" for when the user wants their system browser.
+// Opens an http(s) link (clicked in a chat message) in a fresh Workbench Browser
+// Pane, opening the Workbench column if needed. This is the default destination
+// for a chat link, so it never replaces either the app window or the page already
+// open in another Browser Pane. The pane's own toolbar offers "open in external
+// browser" for when the user wants their system browser.
 export function openProductShellBrowserAtUrl(
   state: ProductShellState,
   url: string,
@@ -417,16 +418,15 @@ export function openProductShellBrowserAtUrl(
     return { state, command: null };
   }
   // Composer (New Thread) page: there is no backend thread yet, so a link opens a
-  // renderer-owned DRAFT Browser Pane — a fresh one, since opening a link in a new
-  // pane (Cmd/Ctrl+click) always wants its own pane beside the current page.
+  // fresh renderer-owned draft Browser Pane.
   if (state.activeThreadId === null) {
     return { state: openProductShellDraftBrowser(state, url), command: null };
   }
-  // Plain click reuses the active Browser Pane; cmd/ctrl+click forces a new one
-  // (so a link can open beside the page you're already reading).
-  const data = options?.newPane === true
-    ? { url, disposition: "new_browser_pane" as const }
-    : { url };
+  // Chat/session links default to a fresh Browser Pane so they never replace the page
+  // you're already reading. Callers that explicitly want reuse can pass newPane: false.
+  const data = options?.newPane === false
+    ? { url }
+    : { url, disposition: "new_browser_pane" as const };
   return {
     state: { ...state, workbenchOpen: true },
     command: {

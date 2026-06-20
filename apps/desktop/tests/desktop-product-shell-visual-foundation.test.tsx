@@ -2658,20 +2658,20 @@ test("workbench_set_layout_split_emits_set_layout_mode_command", () => {
   });
 });
 
-test("chat_link_open_browser_uses_new_pane_disposition_only_with_modifier", () => {
-  // Spec: docs_v2/specs/workbench-dock-parity.md (T5) — cmd/ctrl+click → new pane.
+test("chat_link_open_browser_defaults_to_new_pane_disposition", () => {
+  // Spec: docs_v2/specs/workbench-dock-parity.md (T5). Session links open beside existing pages.
   const state = openProductShellThread(createProductShellState(), "thread-sketch");
-  const reuse = openProductShellBrowserAtUrl(state, "https://a.test");
+  const opened = openProductShellBrowserAtUrl(state, "https://a.test");
+  assert.deepEqual(opened.command?.payload, {
+    threadId: "thread-sketch",
+    command: "open_browser",
+    data: { url: "https://a.test", disposition: "new_browser_pane" },
+  });
+  const reuse = openProductShellBrowserAtUrl(state, "https://a.test", { newPane: false });
   assert.deepEqual(reuse.command?.payload, {
     threadId: "thread-sketch",
     command: "open_browser",
     data: { url: "https://a.test" },
-  });
-  const newPane = openProductShellBrowserAtUrl(state, "https://a.test", { newPane: true });
-  assert.deepEqual(newPane.command?.payload, {
-    threadId: "thread-sketch",
-    command: "open_browser",
-    data: { url: "https://a.test", disposition: "new_browser_pane" },
   });
 });
 
