@@ -149,7 +149,7 @@ function postOrBufferBackendEvent(event: BackendEventEnvelope): void {
 
 function isImmediateDuringCommandEvent(event: BackendEventEnvelope): boolean {
   return event.kind === "agentSessionBlock.upserted" &&
-    (event.payload as { block?: { kind?: unknown } }).block?.kind === "user_message";
+    (event.payload as { block?: { kind?: unknown } })?.block?.kind === "user_message";
 }
 
 function flushBufferedBackendEvents(): void {
