@@ -1,5 +1,3 @@
-![Tide](assets/icon.png)
-
 # Tide
 
 ### Open-source Codex app alternative.
