@@ -24,7 +24,7 @@ import type { ProviderUpdateAdvisory } from "../../../../application/domains/pro
 import {
   isProviderCliAgentId,
   sessionRefKindForAgent,
-} from "../../../../../shared/contracts/agent-descriptors.ts";
+} from "../../../../../shared/agent-descriptors.ts";
 import { createClaudeStreamJsonClient } from "../structured/claude-stream-json-client.ts";
 import { createCodexAppServerClient } from "../structured/codex-app-server-client.ts";
 import { createAcpClient } from "../structured/acp-client.ts";

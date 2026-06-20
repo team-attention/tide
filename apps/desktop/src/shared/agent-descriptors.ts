@@ -6,7 +6,7 @@
 // table; nothing else may hardcode an agent-id list or a `=== "claude"` branch.
 //
 // See docs_v2/implementation/codebase-issues-and-remediation-plan.md (Phase 1).
-import type { AgentId, ProviderCliAgentId, ProviderSessionRefDto } from "./agent.ts";
+import type { AgentId, ProviderCliAgentId, ProviderSessionRefDto } from "./contracts/agent.ts";
 
 export interface AgentPermissionMode {
   id: string;

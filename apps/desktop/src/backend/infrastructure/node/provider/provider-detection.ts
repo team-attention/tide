@@ -1,5 +1,5 @@
 import { executableForAgent } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
-import { PROVIDER_CLI_AGENT_IDS } from "../../../../shared/contracts/index.ts";
+import { PROVIDER_CLI_AGENT_IDS } from "../../../../shared/agent-descriptors.ts";
 import type {
   OpencodeEnvironmentDto,
   OpencodeVendorDto,

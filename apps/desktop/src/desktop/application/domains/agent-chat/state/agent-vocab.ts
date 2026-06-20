@@ -3,7 +3,7 @@ import {
   AGENT_DESCRIPTORS,
   agentDescriptor,
   type AgentPermissionConfig,
-} from "../../../../../shared/contracts/agent-descriptors.ts";
+} from "../../../../../shared/agent-descriptors.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
 // Codex models, read from the installed codex binary (matches the Codex app

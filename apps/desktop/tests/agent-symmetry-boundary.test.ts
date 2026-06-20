@@ -19,7 +19,7 @@ import {
   agentDescriptor,
   isProviderCliAgentId,
   sessionRefKindForAgent,
-} from "../src/shared/contracts/agent-descriptors.ts";
+} from "../src/shared/agent-descriptors.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
