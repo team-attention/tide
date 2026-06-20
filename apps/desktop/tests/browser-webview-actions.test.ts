@@ -9,6 +9,9 @@ import {
   executeBrowserWebViewAction,
   isWebViewSettled,
   readBrowserWebViewSnapshot,
+  safeGetWebViewURL,
+  safeInvokeWebView,
+  safeLoadWebViewURL,
   type BrowserWebViewAction,
   type BrowserWebViewElement,
   type BrowserWebViewInputEvent,
@@ -248,6 +251,23 @@ test("readBrowserWebViewSnapshot is text-only and NEVER calls capturePage (no lo
   assert.equal(snapshot.bodyTextPreview, "hello");
 });
 
+test("readBrowserWebViewSnapshot tolerates pre-dom-ready getURL throws", async () => {
+  const webview = {
+    executeJavaScript: () => {
+      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
+    },
+    getURL: () => {
+      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
+    },
+  } as unknown as BrowserWebViewElement;
+
+  const snapshot = await readBrowserWebViewSnapshot(webview);
+
+  assert.equal(snapshot.url, undefined);
+  assert.equal(snapshot.pageTitle, undefined);
+  assert.equal(snapshot.bodyTextPreview, undefined);
+});
+
 test("captureBrowserWebViewScreenshot is the single on-demand pixel-capture path", async () => {
   const { webview, calls } = snapshotWebView();
   const screenshot = await captureBrowserWebViewScreenshot(webview);
@@ -279,4 +299,25 @@ test("isWebViewSettled returns true only when the guest finished loading", () =>
   assert.equal(isWebViewSettled(loaded), true);
   assert.equal(isWebViewSettled(loading), false);
   assert.equal(isWebViewSettled(missing), false);
+});
+
+test("safe webview wrappers swallow pre-dom-ready guest API throws", () => {
+  let loadCalls = 0;
+  const webview = {
+    getURL: () => {
+      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
+    },
+    loadURL: () => {
+      loadCalls += 1;
+      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
+    },
+    reload: () => {
+      throw new Error("The WebView must be attached to the DOM and the dom-ready event emitted");
+    },
+  } as unknown as BrowserWebViewElement;
+
+  assert.doesNotThrow(() => safeLoadWebViewURL(webview, "https://example.test/"));
+  assert.doesNotThrow(() => safeInvokeWebView(webview, "reload"));
+  assert.equal(safeGetWebViewURL(webview), undefined);
+  assert.equal(loadCalls, 1);
 });

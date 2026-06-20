@@ -102,6 +102,33 @@ async function safeExecuteJavaScript(
   }
 }
 
+export function safeGetWebViewURL(webview: BrowserWebViewElement): string | undefined {
+  try {
+    return webview.getURL?.();
+  } catch {
+    return undefined;
+  }
+}
+
+export function safeLoadWebViewURL(webview: BrowserWebViewElement, url: string): void {
+  try {
+    void webview.loadURL?.(url)?.catch(() => undefined);
+  } catch {
+    // Electron guest methods throw synchronously before dom-ready.
+  }
+}
+
+export function safeInvokeWebView(
+  webview: BrowserWebViewElement,
+  method: "goBack" | "goForward" | "reload",
+): void {
+  try {
+    webview[method]?.();
+  } catch {
+    // Ignore pre-dom-ready guest API throws from toolbar clicks.
+  }
+}
+
 // True only when the guest has finished its current load. `<webview>.isLoading()`
 // is NOT a safe probe: like the other guest methods it throws *synchronously*
 // ("must be attached to the DOM and the dom-ready event emitted") until the guest
@@ -139,7 +166,7 @@ export async function readBrowserWebViewSnapshot(
       ? (rawSnapshot as Record<string, unknown>)
       : {};
   return {
-    url: stringRecordField(snapshot, "url") ?? webview.getURL?.(),
+    url: stringRecordField(snapshot, "url") ?? safeGetWebViewURL(webview),
     pageTitle: stringRecordField(snapshot, "pageTitle"),
     bodyTextPreview: stringRecordField(snapshot, "bodyTextPreview"),
   };
