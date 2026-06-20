@@ -4,7 +4,7 @@
 
 # Tide
 
-### Open-source Codex alternative.
+### Open-source Codex app alternative.
 
 **See what your agent sees. Open the code, edit it, comment on it, right alongside it.**
 <br/>Works with **opencode, Claude Code, Codex, and Gemini**. Local and open-source.
@@ -32,7 +32,7 @@ files, trying to coordinate work that should be happening in one place.
 
 **Don't just chat with AI. Work with agents on a shared workbench.**
 
-Tide is a free, open-source Codex alternative that supports **Codex, Claude
+Tide is a free, open-source Codex app alternative that supports **Codex, Claude
 Code, Gemini, and opencode**.
 
 *(Prefer a terminal-first workflow? [Tide Terminal](apps/terminal/) keeps the live terminal at the center and wraps it with the same shared workbench model.)*
