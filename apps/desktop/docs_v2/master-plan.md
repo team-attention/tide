@@ -973,7 +973,6 @@ Possible values:
 - Claude Code.
 - Gemini CLI.
 - opencode.
-- opencode.
 
 Binding rules:
 

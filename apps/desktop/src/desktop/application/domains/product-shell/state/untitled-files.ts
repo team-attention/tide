@@ -67,10 +67,10 @@ export function newProductShellUntitledFile(state: ProductShellState): ProductSh
     untitledFiles: [...state.untitledFiles, file],
     untitledSequence: sequence,
     workbenchOpen: true,
-    workbenchOpenByThreadId:
-      state.activeThreadId === null
-        ? state.workbenchOpenByThreadId
-        : { ...state.workbenchOpenByThreadId, [state.activeThreadId]: true },
+    workbenchOpenByThreadId: {
+      ...state.workbenchOpenByThreadId,
+      [state.activeThreadId]: true,
+    },
     draftActiveWorkbenchPaneId: id,
   };
 }

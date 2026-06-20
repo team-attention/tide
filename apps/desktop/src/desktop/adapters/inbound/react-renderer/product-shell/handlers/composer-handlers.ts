@@ -211,23 +211,21 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
       // and run Provider Readiness so a not-installed / not-signed-in agent surfaces its
       // install / sign-in card immediately (not only on Send). Spec: provider-cli-setup-handoff.md.
       if (surfaceKind === "agent_menu") {
-        setShellState((state) => {
-          const selected = selectProductShellChoiceSurfaceRow(state, surfaceKind, rowId);
-          if (selected.command !== null) dispatchBackendCommand(selected.command);
-          const ensured = ensureComposerDraftThreadActive(selected.state);
-          if (ensured.command !== null) dispatchBackendCommand(ensured.command);
-          const threadId = ensured.state.draftThreadId;
-          if (threadId !== null) {
-            dispatchBackendCommand({
-              kind: "provider.checkReadiness",
-              payload: {
-                threadId,
-                agentId: ensured.state.agentChat.composer.startOptions.agentBinding.agentId,
-              },
-            });
-          }
-          return ensured.state;
-        });
+        const selected = selectProductShellChoiceSurfaceRow(shellState, surfaceKind, rowId);
+        const ensured = ensureComposerDraftThreadActive(selected.state);
+        const threadId = ensured.state.draftThreadId;
+        setShellState(ensured.state);
+        if (selected.command !== null) dispatchBackendCommand(selected.command);
+        if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+        if (threadId !== null) {
+          dispatchBackendCommand({
+            kind: "provider.checkReadiness",
+            payload: {
+              threadId,
+              agentId: ensured.state.agentChat.composer.startOptions.agentBinding.agentId,
+            },
+          });
+        }
         return;
       }
       setShellState((state) => {

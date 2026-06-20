@@ -22,13 +22,11 @@ import type { ProductShellHandlerContext } from "./context.ts";
 export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onOpenFile" | "onEditorPickerFilter" | "onEditorPickerSelect" | "onEditorPickerCancel" | "onEditorDraftChange" | "onEditorCursorChange" | "onEditorSave" | "onEditorGoToDefinition" | "onEditorGoToReferences" | "onEditorCodeIntel" | "onFileTreeEntryOpen" | "onCreateFile" | "onFileTreeToggle"> {
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
 
-  const ensureDraftForFilePane = (state: typeof shellState): typeof shellState => {
+  const ensureDraftForFilePane = (state: typeof shellState): ReturnType<typeof ensureComposerDraftThreadActive> => {
     if (state.activeThreadId !== null) {
-      return state;
+      return { state, command: null };
     }
-    const ensured = ensureComposerDraftThreadActive(state);
-    dispatchBackendCommand(ensured.command);
-    return ensured.state;
+    return ensureComposerDraftThreadActive(state);
   };
 
   const fileTreeEntryKind = (
@@ -40,12 +38,21 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
     )?.kind;
 
   return {
-    onOpenFile: (path) =>
+    onOpenFile: (path) => {
+      if (shellState.activeThreadId === null) {
+        const ensured = ensureDraftForFilePane(shellState);
+        const result = openProductShellFileInEditor(ensured.state, path);
+        setShellState(result.state);
+        if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+        dispatchBackendCommand(result.command);
+        return;
+      }
       setShellState((state) => {
-        const result = openProductShellFileInEditor(ensureDraftForFilePane(state), path);
+        const result = openProductShellFileInEditor(state, path);
         dispatchBackendCommand(result.command);
         return result.state;
-      }),
+      });
+    },
     onEditorPickerFilter: (filter) =>
       setShellState((state) => setProductShellEditorPickerFilter(state, filter)),
     onEditorPickerSelect: (relativePath) =>
@@ -116,22 +123,36 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
       }
       return result.payload;
     },
-    onFileTreeEntryOpen: (entryId) =>
+    onFileTreeEntryOpen: (entryId) => {
+      if (shellState.activeThreadId === null && fileTreeEntryKind(shellState, entryId) === "file") {
+        const ensured = ensureDraftForFilePane(shellState);
+        const result = selectProductShellFileTreeEntry(ensured.state, entryId);
+        setShellState(result.state);
+        if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+        dispatchBackendCommand(result.command);
+        return;
+      }
       setShellState((state) => {
-        const activeState =
-          state.activeThreadId === null && fileTreeEntryKind(state, entryId) === "file"
-            ? ensureDraftForFilePane(state)
-            : state;
-        const result = selectProductShellFileTreeEntry(activeState, entryId);
+        const result = selectProductShellFileTreeEntry(state, entryId);
         dispatchBackendCommand(result.command);
         return result.state;
-      }),
-    onCreateFile: (relativePath) =>
+      });
+    },
+    onCreateFile: (relativePath) => {
+      if (shellState.activeThreadId === null) {
+        const ensured = ensureDraftForFilePane(shellState);
+        const result = newProductShellFile(ensured.state, relativePath);
+        setShellState(result.state);
+        if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+        dispatchBackendCommand(result.command);
+        return;
+      }
       setShellState((state) => {
-        const result = newProductShellFile(ensureDraftForFilePane(state), relativePath);
+        const result = newProductShellFile(state, relativePath);
         dispatchBackendCommand(result.command);
         return result.state;
-      }),
+      });
+    },
     onFileTreeToggle: () =>
       setShellState((state) => {
         const result = toggleProductShellFileTreeWithRefresh(state);

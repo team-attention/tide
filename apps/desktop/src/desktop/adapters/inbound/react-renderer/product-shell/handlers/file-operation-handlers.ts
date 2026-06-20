@@ -68,18 +68,15 @@ export function createFileOperationHandlers(
   };
 
   return {
-    onNewUntitledFile: () =>
-      setShellState((state) => {
-        const activeState =
-          state.activeThreadId === null
-            ? (() => {
-                const ensured = ensureComposerDraftThreadActive(state);
-                dispatchBackendCommand(ensured.command);
-                return ensured.state;
-              })()
-            : state;
-        return newProductShellUntitledFile(activeState);
-      }),
+    onNewUntitledFile: () => {
+      if (ctx.shellState.activeThreadId === null) {
+        const ensured = ensureComposerDraftThreadActive(ctx.shellState);
+        setShellState(newProductShellUntitledFile(ensured.state));
+        if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+        return;
+      }
+      setShellState((state) => newProductShellUntitledFile(state));
+    },
 
     onUntitledSaveAs: (paneId, relativePath) => {
       const file = ctx.shellState.untitledFiles.find((candidate) => candidate.id === paneId);
