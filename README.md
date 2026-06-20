@@ -7,7 +7,7 @@
 [![Release](https://img.shields.io/github/v/release/team-attention/tide?style=flat-square)](https://github.com/team-attention/tide/releases/latest)
 [![Stars](https://img.shields.io/github/stars/team-attention/tide?style=social)](https://github.com/team-attention/tide/stargazers)
 
-**[Download for macOS](https://github.com/team-attention/tide/releases/latest)** · **[Watch the demo](https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad)**
+**[Download for macOS](https://github.com/team-attention/tide/releases/latest)**
 
 <img src="assets/tide-readme.png" alt="Tide app screenshot" width="100%">
 
