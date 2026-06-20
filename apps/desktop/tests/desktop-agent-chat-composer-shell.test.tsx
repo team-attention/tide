@@ -1771,7 +1771,7 @@ test("claude_model_menu_lists_fable_5", () => {
   assert.match(renderShell(claudeModelMenu), /Fable 5/);
 });
 
-test("openai_api_readiness_mentions_provider_account_not_hidden_pty", () => {
+test("openai_api_readiness_mentions_provider_account_setup", () => {
   const openAiState = selectComposerAgent(createAgentChatShellState(), "openai_api").state;
   const blocked = applyAgentChatBackendEvent(openAiState, {
     kind: "providerReadiness.changed",
@@ -1791,13 +1791,14 @@ test("openai_api_readiness_mentions_provider_account_not_hidden_pty", () => {
     },
   });
   const html = renderShell(blocked);
+  const text = visibleText(html);
 
   assert.match(html, /Provider Account required/);
   assert.match(html, /Open Provider Account setup/);
   assert.match(html, /preserve draft/);
-  assert.doesNotMatch(html, /hidden PTY/i);
-  assert.doesNotMatch(html, /Directory Trust/);
-  assert.doesNotMatch(html, /provider CLI hooks/i);
+  assert.doesNotMatch(text, /PTY/i);
+  assert.doesNotMatch(text, /Directory Trust/);
+  assert.doesNotMatch(text, /provider CLI hooks/i);
 });
 
 test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
@@ -2165,6 +2166,10 @@ test("prompt_choice_surface_row_emits_prompt_answer", () => {
 
 function renderShell(state: AgentChatShellState): string {
   return renderToStaticMarkup(<AgentChatShell viewModel={createAgentChatShellViewModel(state)} />);
+}
+
+function visibleText(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function backendEvent<TKind extends BackendEventKind>(

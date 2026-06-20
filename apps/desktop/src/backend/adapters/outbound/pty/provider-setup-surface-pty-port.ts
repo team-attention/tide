@@ -1,9 +1,8 @@
-import type { ProviderLaunchPlan } from "../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   ProviderSetupSurfaceStartInput,
   ProviderSetupSurfaceTerminalPort,
 } from "../../../application/ports/outbound/provider-setup-surface-terminal-port.ts";
-import type { PtyProcessLauncher } from "./pty-process.ts";
+import type { PtyLaunchPlan, PtyProcessLauncher } from "./pty-process.ts";
 
 export interface CreatePtyProviderSetupSurfaceTerminalPortInput {
   launcher: PtyProcessLauncher;
@@ -42,7 +41,7 @@ class PtyProviderSetupSurfaceTerminalPort implements ProviderSetupSurfaceTermina
   }
 }
 
-function setupLaunchPlan(input: ProviderSetupSurfaceStartInput): ProviderLaunchPlan {
+function setupLaunchPlan(input: ProviderSetupSurfaceStartInput): PtyLaunchPlan {
   return {
     command: input.command,
     args: [...input.args],
@@ -52,12 +51,6 @@ function setupLaunchPlan(input: ProviderSetupSurfaceStartInput): ProviderLaunchP
       COLORTERM: "truecolor",
     },
     cwd: input.cwd,
-    expectedSignalSources: [
-      {
-        kind: "pty_transcript",
-        description: "Visible Provider Setup Surface terminal output.",
-      },
-    ],
   };
 }
 

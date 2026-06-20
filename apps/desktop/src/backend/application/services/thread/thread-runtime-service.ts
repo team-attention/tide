@@ -561,7 +561,7 @@ async hydrateThread(
     }
 
     // A pending prompt is ONLY answerable while the runtime that asked it is
-    // alive: the answer is replayed as keystrokes on that runtime's hidden PTY.
+    // alive: the answer is delivered back through that runtime's structured client.
     // After an app restart (runtime gone, prompt not persisted) or a mid-session
     // runtime death, a leftover waiting state is STALE — resurrecting a permission
     // card for a dead process is a lie (answering writes to nothing). On an

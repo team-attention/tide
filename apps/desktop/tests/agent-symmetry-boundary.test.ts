@@ -19,7 +19,7 @@ import {
   agentDescriptor,
   isProviderCliAgentId,
   sessionRefKindForAgent,
-} from "../src/shared/contracts/agent-descriptors.ts";
+} from "../src/shared/agent-descriptors.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -44,6 +44,34 @@ test("every provider-CLI agent id has a descriptor and a session-ref kind", () =
     assert.ok(sessionRefKindForAgent(id).length > 0, `${id} needs a sessionRefKind`);
     assert.ok(descriptor.permission.options.length > 0, `${id} needs permission modes`);
   }
+});
+
+test("provider-CLI permission descriptors are self-owned", () => {
+  for (const id of EXPECTED_PROVIDER_CLI_IDS) {
+    const descriptor = agentDescriptor(id);
+    assert.ok(descriptor !== undefined, `missing descriptor for ${id}`);
+    assert.ok(
+      descriptor.permission.options.some((option) => option.value === descriptor.permission.default),
+      `${id} default permission must be one of its options`,
+    );
+    for (const option of descriptor.permission.options) {
+      assert.ok(
+        option.id.startsWith(`${id}-`),
+        `${id} permission option ${option.id} must use the ${id}- prefix`,
+      );
+    }
+  }
+});
+
+test("desktop agent vocabulary derives identity and permissions from shared descriptors", () => {
+  const source = read("src/desktop/application/domains/agent-chat/state/agent-vocab.ts");
+  assert.match(source, /AGENT_DESCRIPTORS/);
+  assert.match(source, /agentDescriptor\(agentId\)\?\.displayName/);
+  assert.doesNotMatch(
+    source,
+    /export const PERMISSION_OPTIONS:[\s\S]*\{\s*codex:/,
+    "desktop agent vocab must not re-grow a hand-maintained permission table",
+  );
 });
 
 test("PROVIDER_CLI_AGENT_IDS is derived from the descriptor table and matches the canonical list", () => {

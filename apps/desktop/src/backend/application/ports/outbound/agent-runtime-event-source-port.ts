@@ -26,6 +26,6 @@ export interface AgentRuntimeEventSource {
   // Discover provider In-Session Commands for the slash/options menu, if any.
   queryCommands?(prefix: string): Promise<InSessionCommand[]>;
 
-  // Stop the runtime and release the hidden PTY.
+  // Stop the runtime and release its provider process.
   stop(): Promise<void>;
 }

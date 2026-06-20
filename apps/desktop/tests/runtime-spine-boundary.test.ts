@@ -93,32 +93,32 @@ test("infra_live_backend_has_zero_provider_branches", () => {
   }
 });
 
-// The runtime port is provider-neutral: submit-key and startup auto-responses
-// are declared on the launch plan by each Agent Integration, never hardcoded by
-// agent id in the port.
-test("runtime_port_has_no_hardcoded_provider_key_sequences", () => {
+// The runtime port is provider-neutral: provider adapters declare structured
+// transports, and the runtime port never hardcodes old TUI control paths by
+// agent id.
+test("runtime_port_has_no_hardcoded_provider_tui_control_paths", () => {
   const source = read(
     "src/backend/adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts",
   );
   assert.equal(
     source.includes('agentId === "claude" ? "\\x1b[13u"'),
     false,
-    "the claude submit key belongs on the claude launch plan (submitKeySequence)",
+    "claude runs through stream-json, not a terminal submit-key path",
   );
   assert.equal(
     source.includes("CODEX_HOOK_TRUST_PROMPT"),
     false,
-    "the codex hook-trust auto-answer belongs on the codex launch plan (autoRespondPrompts)",
+    "codex runs through app-server, not hook-trust auto-answer text",
   );
 
   // claude moved to the structured stream-json transport: there is no TUI to
-  // submit into, so its plan declares a transport instead of a submit key.
+  // submit into, so its plan declares a structured transport.
   const claudeAdapter = read(
     "src/backend/adapters/outbound/agent-integrations/claude/claude-agent-integration.ts",
   );
   assert.ok(claudeAdapter.includes('transport: "claude_stream_json"'));
   // codex moved to the structured app-server transport: no TUI boxes to
-  // auto-answer, so its plan declares a transport instead of auto-responders.
+  // auto-answer, so its plan declares a structured transport.
   const codexAdapter = read(
     "src/backend/adapters/outbound/agent-integrations/codex/codex-agent-integration.ts",
   );

@@ -15,12 +15,10 @@ import type {
 import type { ProviderCliAgentId } from "../src/backend/application/domains/thread/thread.ts";
 
 const fakeCapabilities = {
-  supportsHiddenPty: false,
   supportsResume: false,
   supportsTideMcp: false,
   supportsHooks: false,
   supportsReadableHistory: false,
-  requiresTerminalKeyProtocol: false,
   supportsTurnSteer: false,
 };
 

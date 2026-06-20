@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import type { ProviderLaunchPlan } from "../../../application/ports/outbound/agent-integration-port.ts";
 import type {
+  PtyLaunchPlan,
   PtyProcessHandle,
   PtyProcessLauncher,
   PtyProcessSpawnInput,
@@ -82,7 +82,7 @@ class ChildProcessPtyHandle implements PtyProcessHandle {
 }
 
 function spawnProcess(
-  plan: ProviderLaunchPlan,
+  plan: PtyLaunchPlan,
   emulateTerminalQueries = true,
 ): ChildProcessWithoutNullStreams {
   const env = {

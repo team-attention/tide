@@ -1,4 +1,3 @@
-import type { PromptState } from "../thread/thread.ts";
 import type {
   ProviderReadinessBlockerKind,
   ProviderReadinessBlockerScope,
@@ -8,28 +7,14 @@ import type {
   AgentBinding,
   ProviderCliAgentId,
   ProviderSessionRef,
-  ThreadId,
   ThreadScope,
 } from "../thread/thread.ts";
 
-export type ProviderSignalSourceKind =
-  | "pty_transcript"
-  | "provider_hook"
-  | "provider_history"
-  | "tide_mcp";
-
-export interface ProviderSignalSource {
-  kind: ProviderSignalSourceKind;
-  description: string;
-}
-
 export interface AgentIntegrationCapabilities {
-  supportsHiddenPty: boolean;
   supportsResume: boolean;
   supportsTideMcp: boolean;
   supportsHooks: boolean;
   supportsReadableHistory: boolean;
-  requiresTerminalKeyProtocol: boolean;
   // The provider protocol can inject new user input INTO an already-running turn
   // (mid-turn steer), instead of forcing the input to wait for the turn to end.
   // Evidence-based: ONLY codex declares this — its app-server exposes turn/steer
@@ -43,20 +28,13 @@ export interface ProviderLaunchPlan {
   args: string[];
   env: Record<string, string>;
   cwd: string;
-  // How Tide talks to the spawned process. "hidden_pty" (default) wraps the
-  // interactive TUI in a pseudo-terminal and infers everything from scrapes,
-  // hooks, and history files. Structured transports speak the provider's own
-  // machine protocol over plain stdio — events, permissions, and turn ends are
-  // native protocol messages (see docs_v2/specs/structured-agent-runtime.md).
-  transport?: "hidden_pty" | "claude_stream_json" | "codex_app_server" | "acp";
+  // How Tide talks to the spawned process. Provider runtimes are structured-only:
+  // claude stream-json, codex app-server, or ACP. Visible setup/workbench terminals
+  // use the PTY port's own launch plan instead of this agent-runtime contract.
+  transport: "claude_stream_json" | "codex_app_server" | "acp";
   // Structured-transport session parameters that ride the protocol instead of
   // argv (codex thread/start approvalPolicy/sandbox/model; gemini session/new).
   protocolParams?: Record<string, unknown>;
-  // Signal sources the spawned process exposes. Consumed by the live PTY ports
-  // (workbench terminal + provider setup surface). The structured runtimes ignore
-  // it. (The PTY-era scrape fields — inputTiming/submitKeySequence/autoRespondPrompts
-  // — were deleted with the scrape transport; see structured-agent-runtime.md.)
-  expectedSignalSources: ProviderSignalSource[];
   // The provider session this launch will run as, when the adapter can assign or
   // derive it at plan time (claude/gemini mint a session id and pass it via
   // `--session-id`). Recorded as the thread's binding before the first history
@@ -188,14 +166,6 @@ export interface SessionConfigUpdateInput {
 export type SessionConfigUpdatePlan =
   | { kind: "live"; protocolParams: Record<string, unknown> }
   | { kind: "restart" };
-
-export interface AgentPromptSignalInput {
-  threadId: ThreadId;
-  source: "pty_transcript" | "provider_hook" | "provider_history";
-  eventName?: string;
-  payload?: unknown;
-  text?: string;
-}
 
 // A user-facing notice surfaced when a turn ended WITHOUT a usable answer (rate
 // limit / out of credits / empty output / error), so the UI shows why instead of a

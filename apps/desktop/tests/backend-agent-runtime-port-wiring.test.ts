@@ -19,7 +19,6 @@ import type {
   AgentIntegrationPort,
   AgentIntegrationPreflightInput,
   AgentIntegrationPreflightResult,
-  AgentPromptSignalInput,
   AgentResumePlanInput,
   AgentStartPlanInput,
   AgentTurnOutcome,
@@ -136,7 +135,6 @@ import type {
   AgentRuntimeResumeInput,
   TerminalInput,
 } from "../src/backend/application/domains/agent-runtime/agent-runtime.ts";
-import type { PromptState } from "../src/backend/application/domains/thread/thread.ts";
 import type { AgentRuntimePort } from "../src/backend/application/ports/outbound/agent-runtime-port.ts";
 import type { ProviderReadinessPort } from "../src/backend/application/ports/outbound/provider-readiness-port.ts";
 import type { PtyTranscriptPort } from "../src/backend/application/ports/outbound/pty-transcript-port.ts";
@@ -240,7 +238,6 @@ test("python_pty_process_launcher_round_trips_terminal_input_with_real_pty", { s
       args: [],
       env: { TERM: "xterm-256color", COLORTERM: "truecolor" },
       cwd: repoRoot,
-      expectedSignalSources: [{ kind: "pty_transcript", description: "test" }],
     },
     onOutput: (chunk) => {
       output += chunk.body;
@@ -281,7 +278,6 @@ test("python_pty_process_launcher_sets_terminal_window_size_for_provider_tuis", 
       ],
       env: { TERM: "xterm-256color", COLORTERM: "truecolor" },
       cwd: repoRoot,
-      expectedSignalSources: [{ kind: "pty_transcript", description: "test" }],
     },
     onOutput: (chunk) => {
       output += chunk.body;
@@ -334,7 +330,6 @@ test("python_pty_process_launcher_replies_to_basic_terminal_queries", { skip: SK
       ],
       env: { TERM: "xterm-256color", COLORTERM: "truecolor" },
       cwd: repoRoot,
-      expectedSignalSources: [{ kind: "pty_transcript", description: "test" }],
     },
     onOutput: (chunk) => {
       output += chunk.body;
@@ -1267,9 +1262,8 @@ test("agent_runtime_wiring_stays_out_of_desktop_and_shared_contracts", () => {
 function fakeIntegration(
   agentId: "codex" | "claude" | "gemini",
   plan: ProviderLaunchPlan,
-  promptDetector?: (input: AgentPromptSignalInput) => PromptState | null,
 ) {
-  return new FakeAgentIntegration(agentId, plan, promptDetector);
+  return new FakeAgentIntegration(agentId, plan);
 }
 
 class FakeAgentIntegration implements AgentIntegrationPort {
@@ -1278,17 +1272,14 @@ class FakeAgentIntegration implements AgentIntegrationPort {
   resumeInputs: AgentResumePlanInput[] = [];
   private readonly agentId: "codex" | "claude" | "gemini";
   private readonly plan: ProviderLaunchPlan;
-  private readonly promptDetector?: (input: AgentPromptSignalInput) => PromptState | null;
   readinessGate: RuntimeReadinessGate = { kind: "immediate" };
 
   constructor(
     agentId: "codex" | "claude" | "gemini",
     plan: ProviderLaunchPlan,
-    promptDetector?: (input: AgentPromptSignalInput) => PromptState | null,
   ) {
     this.agentId = agentId;
     this.plan = plan;
-    this.promptDetector = promptDetector;
   }
 
   async preflight(input: AgentIntegrationPreflightInput): Promise<AgentIntegrationPreflightResult> {
@@ -1298,12 +1289,10 @@ class FakeAgentIntegration implements AgentIntegrationPort {
       ready: true,
       blockers: [],
       capabilities: {
-        supportsHiddenPty: true,
         supportsResume: true,
         supportsTideMcp: true,
         supportsHooks: true,
         supportsReadableHistory: true,
-        requiresTerminalKeyProtocol: this.agentId === "claude",
         supportsTurnSteer: this.agentId === "codex",
       },
       launchPlan: this.plan,
@@ -1323,10 +1312,6 @@ class FakeAgentIntegration implements AgentIntegrationPort {
         ? ["resume", input.providerSessionRef.value]
         : ["--conversation", input.providerSessionRef.value],
     };
-  }
-
-  detectPromptState(input: AgentPromptSignalInput) {
-    return this.promptDetector?.(input) ?? null;
   }
 
   turnEndFromHook(): AgentTurnOutcome | null {
@@ -1470,7 +1455,12 @@ function startPlan(agentId: "codex" | "claude" | "gemini"): ProviderLaunchPlan {
     args: [],
     env: { TERM: "xterm-256color", COLORTERM: "truecolor" },
     cwd: "/repo",
-    expectedSignalSources: [{ kind: "pty_transcript", description: "test" }],
+    transport:
+      agentId === "gemini"
+        ? "acp"
+        : agentId === "claude"
+          ? "claude_stream_json"
+          : "codex_app_server",
   };
 }
 

@@ -1,8 +1,13 @@
-import type { ProviderLaunchPlan } from "../../../application/ports/outbound/agent-integration-port.ts";
-
-// The hidden-PTY process contract. Used by the workbench terminal and the
+// The PTY process contract. Used by the workbench terminal and the
 // provider setup surface (auth/login) — the only PTY consumers left after the
 // agent runtimes moved to structured protocols. (Agents no longer spawn PTYs.)
+
+export interface PtyLaunchPlan {
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string;
+}
 
 export interface PtyProcessHandle {
   runtimeId: string;
@@ -24,7 +29,7 @@ export interface PtyProcessExit {
 
 export interface PtyProcessSpawnInput {
   runtimeId: string;
-  plan: ProviderLaunchPlan;
+  plan: PtyLaunchPlan;
   // Hidden PTY consumers have no frontend terminal emulator, so the bridge can
   // answer common terminal capability queries. Visible Workbench terminals use
   // xterm.js, which must own those replies to avoid duplicate CPR bytes in stdin.

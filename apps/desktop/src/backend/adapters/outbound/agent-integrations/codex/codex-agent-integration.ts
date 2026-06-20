@@ -8,7 +8,6 @@ import type {
   AgentStartPlanInput,
   ProviderLaunchPlan,
   ProviderSetupSurfaceAction,
-  ProviderSignalSource,
   SessionConfigUpdateInput,
   SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
@@ -49,35 +48,14 @@ export interface CreateCodexAgentIntegrationInput {
 }
 
 const codexCapabilities: AgentIntegrationCapabilities = {
-  supportsHiddenPty: true,
   supportsResume: true,
   supportsTideMcp: true,
   supportsHooks: true,
   supportsReadableHistory: true,
-  requiresTerminalKeyProtocol: false,
   // codex app-server exposes turn/steer — new input is injected into the active
   // turn (expectedTurnId precondition) instead of queued until it ends.
   supportsTurnSteer: true,
 };
-
-const expectedSignalSources: ProviderSignalSource[] = [
-  {
-    kind: "pty_transcript",
-    description: "Captured hidden PTY input and output.",
-  },
-  {
-    kind: "provider_hook",
-    description: "Codex UserPromptSubmit, PermissionRequest, and Stop hooks.",
-  },
-  {
-    kind: "provider_history",
-    description: "Codex rollout JSONL under provider-owned session history.",
-  },
-  {
-    kind: "tide_mcp",
-    description: "Tide MCP Tool Surface attached to the same Codex session.",
-  },
-];
 
 export function createCodexAgentIntegration(
   input: CreateCodexAgentIntegrationInput,
@@ -295,7 +273,6 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       cwd: input.cwd,
       transport: "codex_app_server",
       protocolParams: codexThreadStartParams(input.launchOptions),
-      expectedSignalSources: expectedSignalSources.map((source) => ({ ...source })),
     };
   }
 }

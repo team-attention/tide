@@ -6,7 +6,7 @@
 // table; nothing else may hardcode an agent-id list or a `=== "claude"` branch.
 //
 // See docs_v2/implementation/codebase-issues-and-remediation-plan.md (Phase 1).
-import type { AgentId, ProviderCliAgentId, ProviderSessionRefDto } from "./agent.ts";
+import type { AgentId, ProviderCliAgentId, ProviderSessionRefDto } from "./contracts/agent.ts";
 
 export interface AgentPermissionMode {
   id: string;
@@ -108,13 +108,12 @@ export const AGENT_DESCRIPTORS: Record<AgentId, AgentDescriptor> = {
     isProviderCli: true,
     sessionRefKind: "opencode_session",
     permission: {
-      default: "default",
+      default: "build",
       options: [
-        { id: "gemini-ask", value: "default", label: "Ask permissions", detail: "Approve tools manually" },
-        { id: "gemini-edit", value: "auto_edit", label: "Auto edits", detail: "Auto-approve edits only" },
-        { id: "gemini-plan", value: "plan", label: "Plan mode", detail: "Read-only planning" },
-        { id: "gemini-yolo", value: "yolo", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
+        { id: "opencode-build", value: "build", label: "Build", detail: "Runs tools per opencode config" },
+        { id: "opencode-plan", value: "plan", label: "Plan", detail: "Read-only, no edits" },
       ],
+      legacyValueMap: { default: "build", auto_edit: "build", yolo: "build" },
     },
   },
   openai_api: {

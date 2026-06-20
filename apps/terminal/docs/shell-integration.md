@@ -80,4 +80,3 @@ end
 - bash and fish integration are documented opt-ins, not automatic startup-file
   rewrites.
 - nushell and other shells do not yet have bundled snippets.
-

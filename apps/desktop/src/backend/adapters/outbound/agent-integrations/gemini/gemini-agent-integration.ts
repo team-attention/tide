@@ -8,7 +8,6 @@ import type {
   AgentResumePlanInput,
   AgentStartPlanInput,
   ProviderLaunchPlan,
-  ProviderSignalSource,
   SessionConfigUpdateInput,
   SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
@@ -47,32 +46,13 @@ export interface CreateGeminiAgentIntegrationInput {
 }
 
 const geminiCapabilities: AgentIntegrationCapabilities = {
-  supportsHiddenPty: true,
   supportsResume: true,
   supportsTideMcp: true,
   supportsHooks: true,
   supportsReadableHistory: true,
-  requiresTerminalKeyProtocol: true,
   // ACP has session/cancel but no mid-turn input injection — follow-up queues.
   supportsTurnSteer: false,
 };
-
-const expectedSignalSources: ProviderSignalSource[] = [
-  {
-    kind: "pty_transcript",
-    description: "Captured hidden PTY input and output.",
-  },
-  {
-    kind: "provider_hook",
-    description:
-      "Gemini SessionStart, BeforeAgent, Notification, and AfterAgent hooks (Tide system settings).",
-  },
-  {
-    kind: "provider_history",
-    description:
-      "Gemini session JSONL (user/gemini records) under ~/.gemini/tmp/<cwd>/chats.",
-  },
-];
 
 export function createGeminiAgentIntegration(
   input: CreateGeminiAgentIntegrationInput,
@@ -236,7 +216,6 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
             }
           : {}),
       },
-      expectedSignalSources: expectedSignalSources.map((source) => ({ ...source })),
     };
   }
 }

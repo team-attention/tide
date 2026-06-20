@@ -46,7 +46,6 @@ class PtyWorkbenchTerminalPort implements WorkbenchTerminalPort {
         // showed as boxes (no UTF-8 locale). xterm.js emulates xterm-256color.
         env: this.resolveEnvironment(input.cwd, terminalEnv),
         cwd: input.cwd,
-        expectedSignalSources: [],
       },
       emulateTerminalQueries: false,
       onOutput: input.onOutput,

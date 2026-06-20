@@ -51,7 +51,6 @@ function fakeProviderPlan(questions: unknown[], receivedFile: string): ProviderL
     env: { TIDE_FAKE_OUT: receivedFile },
     cwd: tmpdir(),
     transport: "claude_stream_json",
-    expectedSignalSources: [],
   };
 }
 
@@ -88,7 +87,6 @@ function fakeAckPlan(): ProviderLaunchPlan {
     env: {},
     cwd: tmpdir(),
     transport: "claude_stream_json",
-    expectedSignalSources: [],
   };
 }
 
@@ -466,7 +464,6 @@ test("AskUserQuestion: a cancel right after the question pairs it with a withdra
       env: { TIDE_FAKE_OUT: receivedFile },
       cwd: tmpdir(),
       transport: "claude_stream_json",
-      expectedSignalSources: [],
     },
     threadId: "thread-1",
     runtimeId: "rt-1",
@@ -655,7 +652,6 @@ function fakeBashPermissionPlan(receivedFile: string): ProviderLaunchPlan {
     env: { TIDE_FAKE_OUT: receivedFile },
     cwd: tmpdir(),
     transport: "claude_stream_json",
-    expectedSignalSources: [],
   };
 }
 
