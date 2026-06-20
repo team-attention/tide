@@ -136,11 +136,20 @@ async function handleParentMessage(message: unknown): Promise<void> {
 }
 
 function postOrBufferBackendEvent(event: BackendEventEnvelope): void {
-  if (activeParentCommandCount > 0 && event.requestId === undefined) {
+  if (
+    activeParentCommandCount > 0 &&
+    event.requestId === undefined &&
+    !isImmediateDuringCommandEvent(event)
+  ) {
     bufferedBackendEvents.push(event);
     return;
   }
   postBackendEvent(event);
+}
+
+function isImmediateDuringCommandEvent(event: BackendEventEnvelope): boolean {
+  return event.kind === "agentSessionBlock.upserted" &&
+    (event.payload as { block?: { kind?: unknown } })?.block?.kind === "user_message";
 }
 
 function flushBufferedBackendEvents(): void {

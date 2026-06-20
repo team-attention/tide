@@ -807,6 +807,141 @@ test("starting_ready_thread_records_local_user_message_block_before_runtime_outp
   assert.equal(result.thread.cachedBlocks.at(-1)?.blockId, result.submittedBlock?.blockId);
 });
 
+test("starting_ready_thread_pushes_local_user_message_before_runtime_start_resolves", async () => {
+  let releaseStart: (() => void) | undefined;
+  class SlowStartRuntimePort extends FakeAgentRuntimePort {
+    override async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
+      this.events.push("start");
+      this.starts.push(input);
+      await new Promise<void>((resolve) => {
+        releaseStart = resolve;
+      });
+      return {
+        runtimeId: `runtime-start-${this.starts.length}`,
+        threadId: input.threadId,
+        agentId: input.agentBinding.agentId,
+      };
+    }
+  }
+
+  const fakes = createFakes();
+  const runtime = new SlowStartRuntimePort();
+  const asyncEvents: Array<{ event: ThreadRuntimeAsyncEvent; runtimeEvents: string[] }> = [];
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    agentRuntimePort: runtime,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+    onAsyncEvent: (event) => {
+      asyncEvents.push({ event, runtimeEvents: [...runtime.events] });
+    },
+  });
+
+  const started = service.startThread({
+    initialMessage: "Show me before startup finishes",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "project-1", cwd: "/repo" },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const blockEvent = asyncEvents.find(
+    (entry): entry is { event: Extract<ThreadRuntimeAsyncEvent, { kind: "agent_session_block_upserted" }>; runtimeEvents: string[] } =>
+      entry.event.kind === "agent_session_block_upserted",
+  );
+  assert.equal(blockEvent?.event.block.kind, "user_message");
+  assert.equal(blockEvent?.event.block.body, "Show me before startup finishes");
+  assert.deepEqual(blockEvent?.runtimeEvents, []);
+  assert.equal(runtime.events[0], "start");
+  assert.equal(typeof releaseStart, "function");
+
+  releaseStart?.();
+  const result = await started;
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.status, "started");
+});
+
+test("starting_ready_thread_marks_thread_failed_when_runtime_start_rejects", async () => {
+  class FailingStartRuntimePort extends FakeAgentRuntimePort {
+    override async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
+      this.events.push("start");
+      this.starts.push(input);
+      throw new Error("runtime start exploded");
+    }
+  }
+
+  const fakes = createFakes();
+  const runtime = new FailingStartRuntimePort();
+  const asyncEvents: ThreadRuntimeAsyncEvent[] = [];
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    agentRuntimePort: runtime,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+    onAsyncEvent: (event) => {
+      asyncEvents.push(event);
+    },
+  });
+
+  await assert.rejects(
+    service.startThread({
+      initialMessage: "Show the failed start",
+      agentBinding: { agentId: "codex" },
+      scope: { kind: "project", projectId: "project-1", cwd: "/repo" },
+    }),
+    /runtime start exploded/,
+  );
+
+  const hydrated = await service.hydrateThread({ threadId: "thread-1" });
+  assert.equal(hydrated.ok, true);
+  assert.equal(hydrated.ok && hydrated.runtimeState, "failed");
+  assert.equal(hydrated.ok && hydrated.thread.lifecycleState, "failed");
+  assert.equal(hydrated.ok && hydrated.thread.lastKnownState, "failed");
+  assert.equal(hydrated.ok && hydrated.thread.cachedBlocks[0]?.body, "Show the failed start");
+  assert.equal(asyncEvents[0]?.kind, "agent_session_block_upserted");
+});
+
+test("starting_ready_thread_marks_thread_failed_when_initial_write_rejects", async () => {
+  class FailingWriteRuntimePort extends FakeAgentRuntimePort {
+    override async writeInput(
+      handle: AgentRuntimeHandle,
+      input: TerminalInput,
+    ): Promise<void> {
+      this.events.push("writeInput");
+      this.writes.push({ handle, input });
+      throw new Error("initial write exploded");
+    }
+  }
+
+  const fakes = createFakes();
+  const runtime = new FailingWriteRuntimePort();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    agentRuntimePort: runtime,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+
+  await assert.rejects(
+    service.startThread({
+      initialMessage: "Show the failed write",
+      agentBinding: {
+        agentId: "openai",
+        runtimeSource: { kind: "tide_api", provider: "openai" },
+      },
+      scope: { kind: "project", projectId: "project-1", cwd: "/repo" },
+    }),
+    /initial write exploded/,
+  );
+
+  const hydrated = await service.hydrateThread({ threadId: "thread-1" });
+  assert.equal(hydrated.ok, true);
+  assert.equal(hydrated.ok && hydrated.runtimeState, "failed");
+  assert.equal(hydrated.ok && hydrated.thread.lifecycleState, "failed");
+  assert.equal(hydrated.ok && hydrated.thread.lastKnownState, "failed");
+  assert.equal(hydrated.ok && hydrated.thread.cachedBlocks[0]?.body, "Show the failed write");
+  assert.deepEqual(runtime.events, ["start", "writeInput"]);
+});
+
 test("starting_thread_preserves_launch_options_on_thread_snapshot", async () => {
   // Spec: docs_v2/specs/thread-launch-options-contract.md
   const fakes = createFakes();

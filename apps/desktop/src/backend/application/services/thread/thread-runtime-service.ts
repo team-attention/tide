@@ -91,7 +91,7 @@ import { boundedDiffText, unifiedContentDiff } from "../support/diff-text.ts";
 import { ThreadStore } from "./thread-store.ts";
 import { promptAnswerValue } from "./prompt-answer-value.ts";
 import { ThreadArchiveService } from "./thread-archive-service.ts";
-
+import { markThreadFailed, markThreadStarting } from "./thread-state-transitions.ts";
 import { normalizeThreadSeed, snapshotThread, threadRoot } from "./thread-snapshot.ts";
 
 import {
@@ -687,11 +687,12 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
       };
     }
 
-    thread.runtimeState = "starting";
-    thread.runtimeStartedAt = this.clock();
-    thread.lifecycleState = "running";
-    thread.lastKnownState = "running";
-    thread.updatedAt = this.clock();
+    const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
+    this.emitAsyncEvent({
+      kind: "agent_session_block_upserted",
+      thread: snapshotThread(thread),
+      block: submittedBlock,
+    });
 
     // Provider CLIs receive the first message as the launch-time initial prompt
     // (positional/flag), which reliably starts a turn. Tide API Agents have no
@@ -699,27 +700,33 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
     const deliverPromptViaLaunch =
       thread.agentBinding.runtimeSource?.kind === "provider_cli";
     const attachmentsForRuntime = messageAttachments.length > 0 ? messageAttachments : undefined;
-    const handle = await this.agentRuntimePort.start({
-      threadId: thread.threadId,
-      agentBinding: cloneAgentBinding(thread.agentBinding),
-      scope: cloneScope(thread.scope),
-      launchOptions: thread.launchOptions,
-      initialPrompt: deliverPromptViaLaunch ? message : undefined,
-      initialAttachments: deliverPromptViaLaunch ? attachmentsForRuntime : undefined,
-    });
-    const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
-
-    thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
-    thread.runtimeState = "running";
-    thread.updatedAt = this.clock();
-
-    if (!deliverPromptViaLaunch) {
-      await this.agentRuntimePort.writeInput(handle, {
-        kind: "composer_input",
-        value: message,
-        submittedAt: this.clock(),
-        attachments: attachmentsForRuntime,
+    markThreadStarting(thread, this.clock);
+    let handle: AgentRuntimeHandle;
+    try {
+      handle = await this.agentRuntimePort.start({
+        threadId: thread.threadId,
+        agentBinding: cloneAgentBinding(thread.agentBinding),
+        scope: cloneScope(thread.scope),
+        launchOptions: thread.launchOptions,
+        initialPrompt: deliverPromptViaLaunch ? message : undefined,
+        initialAttachments: deliverPromptViaLaunch ? attachmentsForRuntime : undefined,
       });
+
+      thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
+      thread.runtimeState = "running";
+      thread.updatedAt = this.clock();
+
+      if (!deliverPromptViaLaunch) {
+        await this.agentRuntimePort.writeInput(handle, {
+          kind: "composer_input",
+          value: message,
+          submittedAt: this.clock(),
+          attachments: attachmentsForRuntime,
+        });
+      }
+    } catch (error) {
+      markThreadFailed(thread, this.clock);
+      throw error;
     }
 
     return {
@@ -1522,11 +1529,7 @@ private async replayPendingInputIfProviderReady(
     }
 
     try {
-      thread.runtimeState = "starting";
-    thread.runtimeStartedAt = this.clock();
-      thread.lifecycleState = "running";
-      thread.lastKnownState = "running";
-      thread.updatedAt = this.clock();
+      markThreadStarting(thread, this.clock);
       const { handle, deliveredViaLaunch } = await this.startOrResumeRuntimeForPendingInput(
         thread,
         pendingInput.launchOptions,
@@ -1569,16 +1572,13 @@ private async replayPendingInputIfProviderReady(
         blocks: cloneBlocks(thread.cachedBlocks),
       });
     } catch (error) {
-      thread.runtimeState = "failed";
-      thread.lifecycleState = "failed";
-      thread.lastKnownState = "failed";
+      markThreadFailed(thread, this.clock);
       pane.status = "failed";
       pane.transcriptPreview = boundedTranscriptPreview(
         `${pane.transcriptPreview ?? ""}\n${errorMessage(error)}\n`,
       );
       pane.revision = this.idGenerator();
       pane.updatedAt = this.clock();
-      thread.updatedAt = this.clock();
       this.emitAsyncEvent({
         kind: "workbench_changed",
         thread: snapshotThread(thread),
