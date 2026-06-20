@@ -537,6 +537,32 @@ test("live_backend_provider_state_readers_use_local_provider_files", () => {
   });
 });
 
+test("live_backend_codex_state_reader_uses_effective_codex_home", () => {
+  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-provider-state-"));
+  const codexHome = fs.mkdtempSync(path.join(tmpdir(), "tide-effective-codex-home-"));
+  const cwd = "/repo";
+  ensureProviderBootstrapArtifacts({
+    homeDir: home,
+    tideCommand: "/Applications/Tide.app/Contents/MacOS/Tide",
+  });
+  writeFile(
+    path.join(codexHome, "auth.json"),
+    JSON.stringify({ auth_mode: "chatgpt", tokens: { id_token: "token" } }),
+  );
+  writeFile(
+    path.join(codexHome, "config.toml"),
+    `[projects."${cwd}"]\ntrust_level = "trusted"\n`,
+  );
+
+  assert.deepEqual(readCodexProviderStateFromHome(home, cwd, codexHome), {
+    authenticated: true,
+    onboardingComplete: true,
+    trustedCwds: [cwd],
+    hookBootstrapReady: true,
+    codexHome,
+  });
+});
+
 test("live_backend_codex_bootstrap_ready_uses_generated_artifacts_without_hook_trust", () => {
   const home = fs.mkdtempSync(path.join(tmpdir(), "tide-provider-state-"));
   const cwd = "/repo";
@@ -588,16 +614,6 @@ function writeProviderFiles(home: string, cwd: string): void {
   );
   writeFile(path.join(home, ".claude", "settings.json"), "{}");
   writeFile(path.join(home, ".gemini", "oauth_creds.json"), "{}");
-}
-
-function appendCodexOverlayHookTrust(
-  artifacts: ReturnType<typeof providerBootstrapArtifactsForHome>,
-): void {
-  fs.appendFileSync(
-    path.join(artifacts.codexHome, "config.toml"),
-    `\n[hooks.state."${artifacts.codexHooksPath}:permission_request:0:0"]\ntrusted_hash = "sha256:permission"\n\n[hooks.state."${artifacts.codexHooksPath}:user_prompt_submit:0:0"]\ntrusted_hash = "sha256:prompt"\n\n[hooks.state."${artifacts.codexHooksPath}:stop:0:0"]\ntrusted_hash = "sha256:stop"\n`,
-    "utf8",
-  );
 }
 
 test("codex_provider_history_reader_derives_provider_session_ref_from_rollout_path", () => {
@@ -742,12 +758,12 @@ test("provider_history_readers_return_recent_codex_and_claude_session_refs_once"
   );
 });
 
-test("provider_history_reader_finds_codex_rollouts_written_under_tide_overlay_home", () => {
+test("provider_history_reader_finds_codex_rollouts_written_under_effective_codex_home", () => {
   // Spec: docs_v2/specs/backend-agent-runtime-port-wiring.md
-  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-provider-ref-overlay-"));
-  const artifacts = providerBootstrapArtifactsForHome({ homeDir: home });
-  const overlayRolloutPath = path.join(
-    artifacts.codexHome,
+  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-provider-ref-home-"));
+  const codexHome = fs.mkdtempSync(path.join(tmpdir(), "tide-effective-codex-home-"));
+  const rolloutPath = path.join(
+    codexHome,
     "sessions",
     "2026",
     "05",
@@ -755,11 +771,11 @@ test("provider_history_reader_finds_codex_rollouts_written_under_tide_overlay_ho
     "rollout-2026-05-30T10-11-12-019e7000-0000-7000-a000-000000000001.jsonl",
   );
   writeFile(
-    overlayRolloutPath,
+    rolloutPath,
     [
       JSON.stringify({
         type: "event_msg",
-        payload: { type: "user_message", message: "Overlay Codex Thread" },
+        payload: { type: "user_message", message: "Effective Codex Home Thread" },
       }),
     ].join("\n"),
   );
@@ -767,16 +783,17 @@ test("provider_history_reader_finds_codex_rollouts_written_under_tide_overlay_ho
   assert.deepEqual(
     readCodexProviderSessionRefsFromHome({
       homeDir: home,
+      codexHome,
       sinceMs: Date.now() - 10_000,
       seenKeys: new Set<string>(),
-      expectedUserMessage: "Overlay Codex Thread",
+      expectedUserMessage: "Effective Codex Home Thread",
     }),
     [
       {
         agentId: "codex",
         kind: "codex_rollout",
         value: "019e7000-0000-7000-a000-000000000001",
-        transcriptPath: overlayRolloutPath,
+        transcriptPath: rolloutPath,
       },
     ],
   );

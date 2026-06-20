@@ -19,8 +19,9 @@ import { arrayOfStrings, recordField, stringField } from "../live/live-backend-j
 export function readCodexProviderStateFromHome(
   homeDir: string,
   cwd: string,
+  codexHome?: string,
 ): CodexProviderState {
-  const realCodexHome = join(homeDir, ".codex");
+  const realCodexHome = codexHome ?? join(homeDir, ".codex");
   const bootstrapArtifacts = providerBootstrapArtifactsForHome({ homeDir });
   const auth = readJsonFile(join(realCodexHome, "auth.json"));
   const configPath = join(realCodexHome, "config.toml");
@@ -31,7 +32,7 @@ export function readCodexProviderStateFromHome(
     onboardingComplete: config !== undefined,
     trustedCwds: config === undefined ? [] : codexTrustedCwds(config),
     hookBootstrapReady: isMcpBootstrapReady(bootstrapArtifacts),
-    codexHome: bootstrapArtifacts.codexHome,
+    codexHome: realCodexHome,
   };
 }
 

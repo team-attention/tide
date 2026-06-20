@@ -39,8 +39,8 @@ export interface CreateGeminiAgentIntegrationInput {
   readProviderState: GeminiProviderStateReader;
   defaultCwd?: string;
   // The Tide MCP Tool Surface, attached to the ACP session via session/new
-  // params.mcpServers (the same surface claude/codex get). gemini loads it only
-  // in a trusted folder — Tide forces trust via GEMINI_CLI_TRUST_WORKSPACE.
+  // params.mcpServers (the same surface claude/codex get). Gemini loads MCP
+  // servers only in a trusted folder, so Tide adds Gemini's bridge env below.
   tideMcp?: GeminiTideMcpConfig;
   // Mints the per-runtime session id. Injectable for tests.
   mintSessionId?: () => string;
@@ -211,10 +211,8 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
       command: input.executablePath,
       args,
       env: {
-        // Workspace trust is a Tide product decision (a thread only starts in a
-        // Tide-opened project). ACP surfaces no trust prompt and an untrusted
-        // cwd SILENTLY skips MCP servers and locks privileged modes
-        // (source-verified) — this override is gemini's supported escape hatch.
+        // Tide bridge env: ACP exposes no trust prompt, and an untrusted cwd can
+        // silently skip MCP servers. Tide owns the workspace trust decision.
         GEMINI_CLI_TRUST_WORKSPACE: "true",
       },
       cwd: input.cwd,

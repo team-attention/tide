@@ -110,8 +110,9 @@ dropped; gemini's hook `prompt_response` is deliberately ignored).
 Tide's Trust button (`provider.trustWorkspace`) writes the provider's own trust
 store for BOTH Tide's spelling of the cwd and its canonical kernel path
 (`realpathSync.native`), then re-checks readiness and auto-replays the queued
-first message. gemini needs no store write (`--skip-trust` is its supported
-equivalent — same policy, Tide owns the trust decision).
+first message. Provider runtime environment should match the user's terminal
+shell snapshot plus explicit Tide bridge additions required for provider
+protocols and MCP.
 
 ## 3. How to verify (no human in the loop)
 

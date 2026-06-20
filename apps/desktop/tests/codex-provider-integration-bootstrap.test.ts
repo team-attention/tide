@@ -87,9 +87,7 @@ test("codex_preflight_requires_hook_bootstrap_before_ready_launch", async () => 
   assert.equal(result.ready, false);
   assert.equal(result.blockers[0]?.kind, "hook_bootstrap_required");
   assert.equal(result.blockers[0]?.scope, "integration");
-  assert.deepEqual(result.blockers[0]?.setup?.env, {
-    CODEX_HOME: "/tmp/tide-codex-home",
-  });
+  assert.equal(result.blockers[0]?.setup?.env, undefined);
   assert.equal(result.launchPlan, undefined);
 });
 
@@ -103,6 +101,7 @@ test("codex_ready_preflight_returns_app_server_plan_with_tide_mcp_config", async
   assert.equal(result.launchPlan?.transport, "codex_app_server");
   assert.equal(result.launchPlan?.command, "/usr/local/bin/codex");
   assert.equal(result.launchPlan?.cwd, "/repo");
+  assert.deepEqual(result.launchPlan?.env, {});
   assert.equal(result.launchPlan?.args[0], "app-server");
   // Tide MCP rides the global `-c` config overrides (no TUI, no hooks).
   assert.ok(result.launchPlan?.args.includes("-c"));
@@ -278,6 +277,18 @@ test("codex_launch_plan_uses_app_server_not_one_shot_exec", async () => {
   assert.equal(args.includes("--json"), false);
 });
 
+test("codex_launch_plan_does_not_disable_codex_plugins", async () => {
+  const integration = codexIntegration();
+
+  const result = await integration.preflight(basePreflightInput);
+  const args = result.launchPlan?.args ?? [];
+
+  assert.equal(
+    args.some((arg) => arg.startsWith("plugins.")),
+    false,
+  );
+});
+
 test("provider_specific_agent_integrations_stay_under_backend_adapters", () => {
   assert.deepEqual(
     findSourceMentions(["src/desktop", "src/shared/contracts"], [
@@ -364,13 +375,6 @@ function sourceFiles(root: string): string[] {
   return files;
 }
 
-// D17: the overlay CODEX_HOME mirrors the full real home (minus Tide-owned
-// entries) so Codex's version-suffixed sqlite state DBs are available and it
-// does not refuse to start with "its local database appears to be damaged".
-// D17: a stale REAL state DB left in the overlay by an older build (where the DB
-// wasn't mirrored) must be replaced with a symlink — otherwise a real DB file
-// next to symlinked -wal/-shm siblings is the inconsistent state Codex calls
-// "damaged".
 test("codex_web_search_calls_render_as_tool_calls", () => {
   // Captured live: a research turn ran 36 web_search_call response_items with
   // NOTHING rendered (the reader only knew function_call/custom_tool_call), so

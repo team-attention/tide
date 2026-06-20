@@ -9,8 +9,8 @@ import { join } from "node:path";
 //
 // - tide-mcp-stdio: a tiny wrapper that runs `<tide> backend-entrypoint mcp`
 //   under ELECTRON_RUN_AS_NODE. claude attaches it via --mcp-config; codex
-//   attaches it via `-c mcp_servers.tide.*` argv (so codex needs no config
-//   overlay and runs against its real ~/.codex).
+//   attaches it via `-c mcp_servers.tide.*` argv (so codex needs no generated
+//   config overlay and keeps provider-native Codex home behavior).
 // - claude mcp.json + settings.json (settings only pre-allows the tide MCP
 //   server; no hooks).
 
@@ -29,9 +29,8 @@ export interface ProviderBootstrapArtifacts {
   tideCommand: string;
   tideMcpCommandPath: string;
   tideMcpEntrypoint: string;
-  // Codex runs against its REAL home (~/.codex) — MCP rides `-c` argv, so no
-  // Tide overlay is needed. Kept on the artifacts so the adapter can set
-  // CODEX_HOME explicitly.
+  // Default Codex home path. The runtime does not inject CODEX_HOME; if the
+  // user's shell sets it, the shell environment snapshot wins.
   codexHome: string;
   claudeMcpConfigPath: string;
   claudeSettingsPath: string;

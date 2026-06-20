@@ -8,16 +8,14 @@ import type { ProviderTrustPort } from "../../../application/ports/outbound/prov
 // next launch. Mirrors the readers in live-backend.ts (claude .claude.json,
 // codex config.toml).
 //
-// codexOverlayHome is Tide's overlaid CODEX_HOME (the one codex actually launches
-// against). Its config.toml is a bootstrap-time SNAPSHOT of the real config's trust,
-// so a trust written only to the real ~/.codex/config.toml is invisible to the running
-// codex — it would still prompt for directory trust in the hidden PTY (and then its MCP
-// surface never connects, hanging the turn). So codex trust is written to BOTH the real
-// config (readiness reads it; persists for the next bootstrap) and the overlay config
-// (the running session reads it). See docs_v2/specs/scratch-execution-context.md.
+// Codex trust is written to the same effective CODEX_HOME that the spawned CLI
+// sees from the user's terminal shell environment. If CODEX_HOME is unset, that
+// is the provider default ~/.codex.
+type CodexHomeResolver = string | ((cwd: string) => string | undefined);
+
 export function createNodeProviderTrustPort(
   homeDir?: string,
-  codexOverlayHome?: string,
+  codexHome?: CodexHomeResolver,
 ): ProviderTrustPort {
   const home = homeDir ?? homedir();
   return {
@@ -34,7 +32,7 @@ export function createNodeProviderTrustPort(
             trustClaude(home, cwd);
             break;
           case "codex":
-            trustCodex(home, cwd, codexOverlayHome);
+            trustCodex(home, cwd, codexHome);
             break;
           default:
             return;
@@ -64,15 +62,10 @@ function trustClaude(home: string, cwd: string): void {
   writeJson(path, state);
 }
 
-
-function trustCodex(home: string, cwd: string, overlayHome?: string): void {
-  // Real config: readiness reads it, and it persists across bootstraps.
-  writeCodexTrust(join(home, ".codex", "config.toml"), cwd);
-  // Overlay config (CODEX_HOME the running codex uses): without this the live session
-  // doesn't see the trust and prompts for it in the hidden PTY.
-  if (overlayHome !== undefined) {
-    writeCodexTrust(join(overlayHome, "config.toml"), cwd);
-  }
+function trustCodex(home: string, cwd: string, codexHome?: CodexHomeResolver): void {
+  const resolvedHome =
+    typeof codexHome === "function" ? codexHome(cwd) : codexHome;
+  writeCodexTrust(join(resolvedHome ?? join(home, ".codex"), "config.toml"), cwd);
 }
 
 function writeCodexTrust(path: string, cwd: string): void {

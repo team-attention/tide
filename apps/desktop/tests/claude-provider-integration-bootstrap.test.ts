@@ -80,6 +80,7 @@ test("claude_ready_preflight_returns_structured_stream_json_plan", async () => {
   assert.equal(result.launchPlan?.transport, "claude_stream_json");
   assert.equal(result.launchPlan?.command, "/usr/local/bin/claude");
   assert.equal(result.launchPlan?.cwd, "/repo");
+  assert.deepEqual(result.launchPlan?.env, {});
   const args = result.launchPlan?.args ?? [];
   const joined = args.join(" ");
   assert.ok(joined.includes("--print"));
