@@ -212,7 +212,7 @@ export class WorkbenchRuntime {
         onExit: (exit) =>
           this.completeProviderSetupSurface(thread.threadId, pane.paneId, exit),
       });
-      this.workbenchTerminalHandles.set(pane.paneId, handle);
+      this.retainRunningTerminalHandle(pane, handle);
     } catch (error) {
       pane.status = "failed";
       pane.transcriptPreview = boundedTranscriptPreview(
@@ -259,7 +259,7 @@ export class WorkbenchRuntime {
         onExit: (exit) =>
           this.completeWorkbenchTerminal(thread.threadId, pane.paneId, exit),
       });
-      this.workbenchTerminalHandles.set(pane.paneId, handle);
+      this.retainRunningTerminalHandle(pane, handle);
     } catch (error) {
       pane.status = "failed";
       pane.transcriptPreview = boundedTranscriptPreview(
@@ -288,6 +288,13 @@ export class WorkbenchRuntime {
       startedAt: input.startedAt,
     };
     input.thread.workbench.panes.push(pane);
+    input.thread.workbench.activePaneId = pane.paneId;
+    input.thread.workbench.focusOwner = "composer";
+    input.thread.updatedAt = input.startedAt;
+    this.emitAsyncEvent({
+      kind: "workbench_changed",
+      thread: snapshotThread(input.thread),
+    });
 
     let stdout = "";
     let stderr = "";
@@ -385,8 +392,8 @@ export class WorkbenchRuntime {
               finish({ exitCode: null, signal: "unavailable" });
               return;
             }
-            if (settled) {
-              await handle.stop();
+            if (pane.status !== "running") {
+              this.stopDetachedTerminalHandle(handle);
               return;
             }
             this.workbenchTerminalHandles.set(pane.paneId, handle);
@@ -411,6 +418,21 @@ export class WorkbenchRuntime {
         clearTimeout(timeout);
       }
     }
+  }
+
+  private retainRunningTerminalHandle(
+    pane: TerminalPaneState,
+    handle: WorkbenchTerminalHandle,
+  ): void {
+    if (pane.status === "running") {
+      this.workbenchTerminalHandles.set(pane.paneId, handle);
+      return;
+    }
+    this.stopDetachedTerminalHandle(handle);
+  }
+
+  private stopDetachedTerminalHandle(handle: WorkbenchTerminalHandle): void {
+    void Promise.resolve(handle.stop()).catch(() => {});
   }
 
   private appendWorkbenchTerminalOutput(

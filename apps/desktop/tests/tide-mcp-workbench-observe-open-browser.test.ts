@@ -28,6 +28,7 @@ import {
 } from "../src/backend/application/services/thread/thread-runtime-service.ts";
 import type {
   WorkbenchTerminalHandle,
+  WorkbenchTerminalOutput,
   WorkbenchTerminalPort,
   WorkbenchTerminalStartInput,
 } from "../src/backend/application/ports/outbound/workbench-terminal-port.ts";
@@ -1130,7 +1131,46 @@ test("running_terminal_command_creates_completed_terminal_pane", async () => {
   assert.equal(result.ok && result.thread.workbench.panes[0]?.terminalRole, "command_result");
   assert.equal(result.ok && result.thread.workbench.focusOwner, "composer");
   assert.equal(fakes.workbenchTerminal.starts.length, 1);
+  assert.equal(fakes.workbenchTerminal.handles[0]?.stops.length, 1);
   assert.deepEqual(fakes.runtime.events, []);
+});
+
+test("running_terminal_command_activates_running_pane_before_exit", async () => {
+  // Spec: docs_v2/specs/tide-mcp-terminal-command-tool.md
+  const fakes = createFakes();
+  const service = serviceWithActiveThread(
+    "thread-run-command-active",
+    "runtime-run-command-active",
+    fakes,
+  );
+
+  const pending = service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-run-command-active", agentId: "codex" },
+    toolName: "tide_run_terminal_command",
+    input: { command: "npm", args: ["run", "test:v2"] },
+  });
+  await waitForWorkbenchTerminalStart(fakes.workbenchTerminal);
+
+  const observed = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-run-command-active", agentId: "codex" },
+    toolName: "tide_observe_workbench",
+  });
+  assert.equal(observed.ok, true);
+  const pane = observed.ok ? observed.output.panes[0] : undefined;
+  assert.equal(pane?.kind, "terminal");
+  assert.equal(pane?.terminalRole, "command_result");
+  assert.equal(pane?.status, "running");
+  assert.equal(observed.ok && observed.output.activePaneId, pane?.paneId);
+  assert.equal(observed.ok && observed.output.focusOwner, "composer");
+
+  fakes.workbenchTerminal.emitOutput(0, {
+    source: "stdout",
+    body: "all tests passed\n",
+  });
+  await fakes.workbenchTerminal.emitExit(0, { exitCode: 0, signal: null });
+  const result = await pending;
+  assert.equal(result.ok && result.output.status, "completed");
+  assert.match(result.ok ? result.output.stdout : "", /all tests passed/);
 });
 
 test("opening_terminal_from_mcp_creates_running_terminal_pane", async () => {
@@ -1753,7 +1793,11 @@ class FakeWorkspaceCommandPort implements WorkspaceCommandPort {
 
 class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
   readonly starts: WorkbenchTerminalStartInput[] = [];
-  readonly handles: WorkbenchTerminalHandle[] = [];
+  readonly handles: Array<{
+    runtimeId: string;
+    writes: string[];
+    stops: string[];
+  }> = [];
   private readonly results: FakeCommandResult[];
 
   constructor(results: FakeCommandResult[]) {
@@ -1762,12 +1806,21 @@ class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
 
   async start(input: WorkbenchTerminalStartInput): Promise<WorkbenchTerminalHandle> {
     this.starts.push(input);
-    const handle: WorkbenchTerminalHandle = {
-      terminalRuntimeId: `terminal-${this.starts.length}`,
-      write: () => {},
-      stop: () => {},
+    const handleState = {
+      runtimeId: `terminal-${this.starts.length}`,
+      writes: [] as string[],
+      stops: [] as string[],
     };
-    this.handles.push(handle);
+    this.handles.push(handleState);
+    const handle: WorkbenchTerminalHandle = {
+      terminalRuntimeId: handleState.runtimeId,
+      write: (data) => {
+        handleState.writes.push(data);
+      },
+      stop: () => {
+        handleState.stops.push(handleState.runtimeId);
+      },
+    };
     const result = this.results.shift();
     if (result !== undefined) {
       if (result.stdout.length > 0) {
@@ -1783,6 +1836,29 @@ class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
     }
     return handle;
   }
+
+  emitOutput(index: number, output: WorkbenchTerminalOutput): void {
+    this.starts[index]?.onOutput?.(output);
+  }
+
+  async emitExit(
+    index: number,
+    exit: { exitCode: number | null; signal: string | null },
+  ): Promise<void> {
+    await this.starts[index]?.onExit?.(exit);
+  }
+}
+
+async function waitForWorkbenchTerminalStart(
+  workbenchTerminal: FakeWorkbenchTerminalPort,
+): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (workbenchTerminal.starts.length > 0) {
+      return;
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error("Expected workbench terminal to start.");
 }
 
 function fixedClock(): string {

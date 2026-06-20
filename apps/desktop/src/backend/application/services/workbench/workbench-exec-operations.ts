@@ -328,9 +328,6 @@ export class WorkbenchExecOperations {
       byteLimit: commandByteLimit(input?.byteLimit),
       startedAt,
     });
-    thread.workbench.activePaneId = run.pane.paneId;
-    thread.workbench.focusOwner = "composer";
-    thread.updatedAt = this.clock();
 
     return {
       ok: true,

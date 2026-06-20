@@ -44,6 +44,7 @@ import type {
   WorkspaceCommandPort,
 } from "../src/backend/application/ports/outbound/workspace-command-port.ts";
 import type {
+  WorkbenchTerminalExit,
   WorkbenchTerminalHandle,
   WorkbenchTerminalOutput,
   WorkbenchTerminalPort,
@@ -2726,6 +2727,45 @@ test("provider_setup_surface_output_updates_terminal_pane_preview", async () => 
   assert.match(pane.transcriptPreview ?? "", /done/);
 });
 
+test("provider_setup_surface_exit_during_start_detaches_terminal_handle", async () => {
+  // Spec: docs_v2/specs/provider-setup-surface-terminal-lifecycle.md
+  const fakes = createFakes();
+  fakes.workbenchTerminal.exitOnStart = { exitCode: 0, signal: null };
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-setup-fast-exit")],
+  });
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-setup-fast-exit",
+    command: "open_provider_setup_surface",
+    data: {
+      setup: {
+        command: "/usr/local/bin/codex",
+        args: [],
+        cwd: "/repo",
+        expectedCompletion: "process_exit",
+      },
+    },
+  });
+  assert.equal(opened.ok, true);
+  const pane = opened.thread.workbench.panes[0];
+  assert.equal(pane?.kind, "terminal");
+  assert.equal(pane?.kind === "terminal" && pane.status, "completed");
+  assert.equal(fakes.workbenchTerminal.handles[0]?.stops.length, 1);
+
+  const closed = await service.handleWorkbenchCommand({
+    threadId: "thread-setup-fast-exit",
+    command: "close_pane",
+    targetPaneId: pane?.paneId,
+  });
+
+  assert.equal(closed.ok, true);
+  assert.equal(fakes.workbenchTerminal.handles[0]?.stops.length, 1);
+});
+
 test("provider_setup_surface_exit_retries_readiness_and_replays_pending_input_when_ready", async () => {
   // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
   const fakes = createFakes({
@@ -4041,6 +4081,7 @@ class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
   starts: WorkbenchTerminalStartInput[] = [];
   handles: Array<{ runtimeId: string; writes: string[]; stops: string[] }> = [];
   outputsOnStart: WorkbenchTerminalOutput[] = [];
+  exitOnStart: WorkbenchTerminalExit | undefined;
 
   async start(input: WorkbenchTerminalStartInput): Promise<WorkbenchTerminalHandle> {
     this.starts.push(input);
@@ -4052,6 +4093,9 @@ class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
     this.handles.push(handleState);
     for (const output of this.outputsOnStart) {
       input.onOutput?.(output);
+    }
+    if (this.exitOnStart !== undefined) {
+      await input.onExit?.(this.exitOnStart);
     }
     return {
       terminalRuntimeId: handleState.runtimeId,
