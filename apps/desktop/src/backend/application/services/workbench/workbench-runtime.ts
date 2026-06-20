@@ -4,12 +4,6 @@ import type {
   TerminalPaneState,
 } from "../../domains/workbench/workbench.ts";
 import type {
-  ProviderSetupSurfaceExit,
-  ProviderSetupSurfaceHandle,
-  ProviderSetupSurfaceOutput,
-  ProviderSetupSurfaceTerminalPort,
-} from "../../ports/outbound/provider-setup-surface-terminal-port.ts";
-import type {
   WorkbenchTerminalExit,
   WorkbenchTerminalHandle,
   WorkbenchTerminalOutput,
@@ -34,10 +28,34 @@ export interface WorkbenchTerminalOpenInput {
   env?: Record<string, string>;
 }
 
+export interface WorkbenchTerminalCommandRunInput {
+  thread: ThreadRecord;
+  command: string;
+  args: string[];
+  cwd: string;
+  timeoutMs: number;
+  byteLimit: number;
+  startedAt: string;
+}
+
+export interface WorkbenchTerminalCommandRun {
+  pane: TerminalPaneState;
+  command: string;
+  args: string[];
+  cwd: string;
+  status: "completed" | "failed";
+  exitCode: number | null;
+  signal: string | null;
+  stdout: string;
+  stderr: string;
+  transcript: string;
+  truncated: boolean;
+  timedOut: boolean;
+}
+
 export interface WorkbenchRuntimeDeps {
   store: ThreadStore;
   workbenchTerminalPort?: WorkbenchTerminalPort;
-  providerSetupSurfaceTerminalPort?: ProviderSetupSurfaceTerminalPort;
   clock: () => string;
   idGenerator: () => string;
   emitAsyncEvent: (event: ThreadRuntimeAsyncEvent) => void;
@@ -57,7 +75,6 @@ export interface WorkbenchRuntimeDeps {
 export class WorkbenchRuntime {
   private readonly store: ThreadStore;
   private readonly workbenchTerminalPort?: WorkbenchTerminalPort;
-  private readonly providerSetupSurfaceTerminalPort?: ProviderSetupSurfaceTerminalPort;
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
   private readonly emitAsyncEvent: (event: ThreadRuntimeAsyncEvent) => void;
@@ -66,10 +83,6 @@ export class WorkbenchRuntime {
     pane: TerminalPaneState,
   ) => Promise<void>;
 
-  private readonly providerSetupSurfaceHandles = new Map<
-    string,
-    ProviderSetupSurfaceHandle
-  >();
   private readonly workbenchTerminalHandles = new Map<
     string,
     WorkbenchTerminalHandle
@@ -78,7 +91,6 @@ export class WorkbenchRuntime {
   constructor(deps: WorkbenchRuntimeDeps) {
     this.store = deps.store;
     this.workbenchTerminalPort = deps.workbenchTerminalPort;
-    this.providerSetupSurfaceTerminalPort = deps.providerSetupSurfaceTerminalPort;
     this.clock = deps.clock;
     this.idGenerator = deps.idGenerator;
     this.emitAsyncEvent = deps.emitAsyncEvent;
@@ -171,13 +183,13 @@ export class WorkbenchRuntime {
     pane: TerminalPaneState,
   ): Promise<void> {
     if (
-      this.providerSetupSurfaceTerminalPort === undefined ||
+      this.workbenchTerminalPort === undefined ||
       pane.command === undefined ||
       pane.cwd === undefined
     ) {
       return;
     }
-    if (this.providerSetupSurfaceHandles.has(pane.paneId)) {
+    if (this.workbenchTerminalHandles.has(pane.paneId)) {
       pane.status = "running";
       return;
     }
@@ -188,7 +200,7 @@ export class WorkbenchRuntime {
     pane.updatedAt = this.clock();
 
     try {
-      const handle = await this.providerSetupSurfaceTerminalPort.start({
+      const handle = await this.workbenchTerminalPort.start({
         threadId: thread.threadId,
         paneId: pane.paneId,
         command: pane.command,
@@ -200,7 +212,7 @@ export class WorkbenchRuntime {
         onExit: (exit) =>
           this.completeProviderSetupSurface(thread.threadId, pane.paneId, exit),
       });
-      this.providerSetupSurfaceHandles.set(pane.paneId, handle);
+      this.retainRunningTerminalHandle(pane, handle);
     } catch (error) {
       pane.status = "failed";
       pane.transcriptPreview = boundedTranscriptPreview(
@@ -247,7 +259,7 @@ export class WorkbenchRuntime {
         onExit: (exit) =>
           this.completeWorkbenchTerminal(thread.threadId, pane.paneId, exit),
       });
-      this.workbenchTerminalHandles.set(pane.paneId, handle);
+      this.retainRunningTerminalHandle(pane, handle);
     } catch (error) {
       pane.status = "failed";
       pane.transcriptPreview = boundedTranscriptPreview(
@@ -256,6 +268,171 @@ export class WorkbenchRuntime {
       pane.revision = this.idGenerator();
       pane.updatedAt = this.clock();
     }
+  }
+
+  async runTerminalCommand(
+    input: WorkbenchTerminalCommandRunInput,
+  ): Promise<WorkbenchTerminalCommandRun> {
+    const pane: TerminalPaneState = {
+      paneId: this.idGenerator(),
+      kind: "terminal",
+      terminalRole: "command_result",
+      title: `Command: ${commandName(input.command)}`,
+      revision: this.idGenerator(),
+      updatedAt: input.startedAt,
+      command: input.command,
+      args: [...input.args],
+      cwd: input.cwd,
+      status: "running",
+      transcriptPreview: commandTranscriptPrefix(input),
+      startedAt: input.startedAt,
+    };
+    input.thread.workbench.panes.push(pane);
+    input.thread.workbench.activePaneId = pane.paneId;
+    input.thread.workbench.focusOwner = "composer";
+    input.thread.updatedAt = input.startedAt;
+    this.emitAsyncEvent({
+      kind: "workbench_changed",
+      thread: snapshotThread(input.thread),
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let transcript = commandTranscriptPrefix(input);
+    let truncated = false;
+    let timedOut = false;
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let handle: WorkbenchTerminalHandle | undefined;
+
+    const appendOutput = (output: WorkbenchTerminalOutput): void => {
+      if (output.source === "stdout") {
+        const next = appendBounded(stdout, output.body, input.byteLimit);
+        stdout = next.value;
+        truncated ||= next.truncated;
+      } else {
+        const next = appendBounded(stderr, output.body, input.byteLimit);
+        stderr = next.value;
+        truncated ||= next.truncated;
+      }
+      const nextTranscript = appendBounded(transcript, output.body, input.byteLimit);
+      transcript = nextTranscript.value;
+      truncated ||= nextTranscript.truncated;
+      this.appendWorkbenchTerminalOutput(
+        input.thread.threadId,
+        pane.paneId,
+        output,
+      );
+    };
+
+    const complete = (exit: WorkbenchTerminalExit): WorkbenchTerminalCommandRun => {
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
+      settled = true;
+      this.workbenchTerminalHandles.delete(pane.paneId);
+      const completedAt = this.clock();
+      const exitText = `[exit ${exit.exitCode ?? exit.signal ?? "unknown"}]\n`;
+      const finalTranscript = appendBounded(transcript, exitText, input.byteLimit);
+      transcript = finalTranscript.value;
+      truncated ||= finalTranscript.truncated;
+      const status = commandResultStatus(exit, timedOut);
+
+      pane.status = status;
+      pane.transcriptPreview = boundedTranscriptPreview(
+        `${pane.transcriptPreview ?? ""}${exitText}`,
+      );
+      pane.exitCode = exit.exitCode;
+      pane.signal = exit.signal;
+      pane.timedOut = timedOut;
+      pane.completedAt = completedAt;
+      pane.revision = this.idGenerator();
+      pane.updatedAt = completedAt;
+      input.thread.updatedAt = completedAt;
+      this.emitAsyncEvent({
+        kind: "workbench_changed",
+        thread: snapshotThread(input.thread),
+      });
+
+      return {
+        pane,
+        command: input.command,
+        args: [...input.args],
+        cwd: input.cwd,
+        status,
+        exitCode: exit.exitCode,
+        signal: exit.signal,
+        stdout,
+        stderr,
+        transcript,
+        truncated,
+        timedOut,
+      };
+    };
+
+    try {
+      const result = await new Promise<WorkbenchTerminalCommandRun>((resolve) => {
+        const finish = (exit: WorkbenchTerminalExit): void => {
+          if (!settled) {
+            resolve(complete(exit));
+          }
+        };
+        void (async () => {
+          try {
+            handle = await this.workbenchTerminalPort?.start({
+              threadId: input.thread.threadId,
+              paneId: pane.paneId,
+              command: input.command,
+              args: input.args,
+              cwd: input.cwd,
+              onOutput: appendOutput,
+              onExit: finish,
+            });
+            if (handle === undefined) {
+              finish({ exitCode: null, signal: "unavailable" });
+              return;
+            }
+            if (pane.status !== "running") {
+              this.stopDetachedTerminalHandle(handle);
+              return;
+            }
+            this.workbenchTerminalHandles.set(pane.paneId, handle);
+            timeout = setTimeout(() => {
+              timedOut = true;
+              void Promise.resolve(handle?.stop()).finally(() => {
+                finish({ exitCode: null, signal: "SIGTERM" });
+              });
+            }, input.timeoutMs);
+          } catch (error) {
+            appendOutput({
+              source: "stderr",
+              body: `${errorMessage(error)}\n`,
+            });
+            finish({ exitCode: null, signal: null });
+          }
+        })();
+      });
+      return result;
+    } finally {
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
+    }
+  }
+
+  private retainRunningTerminalHandle(
+    pane: TerminalPaneState,
+    handle: WorkbenchTerminalHandle,
+  ): void {
+    if (pane.status === "running") {
+      this.workbenchTerminalHandles.set(pane.paneId, handle);
+      return;
+    }
+    this.stopDetachedTerminalHandle(handle);
+  }
+
+  private stopDetachedTerminalHandle(handle: WorkbenchTerminalHandle): void {
+    void Promise.resolve(handle.stop()).catch(() => {});
   }
 
   private appendWorkbenchTerminalOutput(
@@ -327,7 +504,7 @@ export class WorkbenchRuntime {
   private appendProviderSetupSurfaceOutput(
     threadId: ThreadId,
     paneId: string,
-    output: ProviderSetupSurfaceOutput,
+    output: WorkbenchTerminalOutput,
   ): void {
     const thread = this.store.get(threadId);
     const pane = thread?.workbench.panes.find(
@@ -344,6 +521,13 @@ export class WorkbenchRuntime {
     pane.revision = this.idGenerator();
     pane.updatedAt = this.clock();
     this.emitAsyncEvent({
+      kind: "workbench_terminal_output",
+      threadId,
+      paneId,
+      source: output.source,
+      chunk: output.body,
+    });
+    this.emitAsyncEvent({
       kind: "workbench_changed",
       thread: snapshotThread(thread),
     });
@@ -352,7 +536,7 @@ export class WorkbenchRuntime {
   private async completeProviderSetupSurface(
     threadId: ThreadId,
     paneId: string,
-    exit: ProviderSetupSurfaceExit,
+    exit: WorkbenchTerminalExit,
   ): Promise<void> {
     const thread = this.store.get(threadId);
     const pane = thread?.workbench.panes.find(
@@ -363,7 +547,7 @@ export class WorkbenchRuntime {
       return;
     }
 
-    this.providerSetupSurfaceHandles.delete(paneId);
+    this.workbenchTerminalHandles.delete(paneId);
     pane.status = exit.exitCode === 0 ? "completed" : "failed";
     pane.transcriptPreview = boundedTranscriptPreview(
       `${pane.transcriptPreview ?? ""}\n[setup exited ${exit.exitCode ?? exit.signal ?? "unknown"}]\n`,
@@ -383,10 +567,6 @@ export class WorkbenchRuntime {
 
   // Handle accessors for the workbench-command path (terminal input / resize),
   // which interleaves handle use with pane-status checks the caller owns.
-  setupSurfaceHandle(paneId: string): ProviderSetupSurfaceHandle | undefined {
-    return this.providerSetupSurfaceHandles.get(paneId);
-  }
-
   terminalHandle(paneId: string): WorkbenchTerminalHandle | undefined {
     return this.workbenchTerminalHandles.get(paneId);
   }
@@ -398,15 +578,43 @@ export class WorkbenchRuntime {
       return;
     }
 
-    const setupHandle = this.providerSetupSurfaceHandles.get(pane.paneId);
-    if (setupHandle !== undefined) {
-      await setupHandle.stop();
-      this.providerSetupSurfaceHandles.delete(pane.paneId);
-    }
     const terminalHandle = this.workbenchTerminalHandles.get(pane.paneId);
     if (terminalHandle !== undefined) {
       await terminalHandle.stop();
       this.workbenchTerminalHandles.delete(pane.paneId);
     }
   }
+}
+
+function commandResultStatus(
+  exit: WorkbenchTerminalExit,
+  timedOut: boolean,
+): "completed" | "failed" {
+  if (exit.exitCode === 0 && exit.signal === null && !timedOut) {
+    return "completed";
+  }
+  return "failed";
+}
+
+function commandTranscriptPrefix(input: {
+  command: string;
+  args: string[];
+  cwd: string;
+}): string {
+  return `$ cd ${input.cwd}\n$ ${[input.command, ...input.args].join(" ")}\n`;
+}
+
+function appendBounded(
+  current: string,
+  chunk: string,
+  byteLimit: number,
+): { value: string; truncated: boolean } {
+  const next = `${current}${chunk}`;
+  if (next.length <= byteLimit) {
+    return { value: next, truncated: false };
+  }
+  return {
+    value: next.slice(0, byteLimit),
+    truncated: true,
+  };
 }

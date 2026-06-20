@@ -149,8 +149,6 @@ import { createWorkspaceCodeIntelligenceRouter } from "../../../adapters/outboun
 
 import { createPythonPtyProcessLauncher } from "../../../adapters/outbound/pty/python-pty-process-launcher.ts";
 
-import { createPtyProviderSetupSurfaceTerminalPort } from "../../../adapters/outbound/pty/provider-setup-surface-pty-port.ts";
-
 import { createPtyWorkbenchTerminalPort } from "../../../adapters/outbound/pty/workbench-terminal-pty-port.ts";
 
 import { createNodeWorkspaceCommandPort } from "../../../adapters/outbound/workspace-command/node-workspace-command-port.ts";
@@ -373,19 +371,13 @@ export function createLiveBackendContractMessageAdapter(
         readAccount: openAiAccountReader,
       }),
     }),
-    providerSetupSurfaceTerminalPort: createPtyProviderSetupSurfaceTerminalPort({
-      launcher: ptyLauncher,
-    }),
     workbenchTerminalPort: createPtyWorkbenchTerminalPort({
       launcher: ptyLauncher,
       resolveRuntimeEnvironment: ({ cwd, planEnv }) =>
         resolveAugmentedEnvironment({ currentEnv: { ...env, ...planEnv }, cwd }),
     }),
     ptyTranscriptPort: createMemoryPtyTranscriptPort(),
-    workspaceCommandPort: createNodeWorkspaceCommandPort({
-      resolveRuntimeEnvironment: ({ cwd, planEnv }) =>
-        resolveAugmentedEnvironment({ currentEnv: { ...env, ...planEnv }, cwd }),
-    }),
+    workspaceCommandPort: createNodeWorkspaceCommandPort(),
     workspaceFilePort: createNodeWorkspaceFilePort(),
     composerAttachmentStorePort: createNodeComposerAttachmentStorePort(join(appDataRoot, "attachments")),
     providerTrustPort: createNodeProviderTrustPort(homeDir, effectiveCodexHome),

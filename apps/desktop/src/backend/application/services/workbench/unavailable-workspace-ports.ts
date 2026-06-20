@@ -68,15 +68,6 @@ export function createUnavailableWorkspaceCommandPort(): WorkspaceCommandPort {
         },
       };
     },
-    async run() {
-      return {
-        ok: false,
-        error: {
-          code: "workspace_command_unavailable",
-          message: "Workspace command access is not configured.",
-        },
-      };
-    },
   };
 }
 

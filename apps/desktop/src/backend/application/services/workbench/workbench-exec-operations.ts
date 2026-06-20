@@ -5,16 +5,11 @@ import type {
   WorkbenchPaneSnapshotRef,
 } from "../../domains/workbench/workbench.ts";
 import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
-import type {
-  WorkspaceCommandPort,
-  WorkspaceCommandRun,
-} from "../../ports/outbound/workspace-command-port.ts";
+import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
 import { arrayOfStrings } from "../support/record-helpers.ts";
 import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
-  boundedTranscriptPreview,
   commandByteLimit,
-  commandName,
   commandTimeoutMs,
   optionalString,
 } from "../support/service-value-helpers.ts";
@@ -324,7 +319,8 @@ export class WorkbenchExecOperations {
     }
 
     const startedAt = this.clock();
-    const result = await this.workspaceCommandPort.run({
+    const run = await this.workbenchRuntime.runTerminalCommand({
+      thread,
       command,
       args,
       cwd: resolvedCwd.cwd.cwd,
@@ -332,45 +328,17 @@ export class WorkbenchExecOperations {
       byteLimit: commandByteLimit(input?.byteLimit),
       startedAt,
     });
-    if (!result.ok) {
-      return failure(result.error.code, result.error.message);
-    }
-
-    const run = result.run;
-    const status = commandRunStatus(run);
-    const pane: TerminalPaneState = {
-      paneId: this.idGenerator(),
-      kind: "terminal",
-      terminalRole: "command_result",
-      title: `Command: ${commandName(run.command)}`,
-      revision: this.idGenerator(),
-      updatedAt: run.completedAt,
-      command: run.command,
-      args: [...run.args],
-      cwd: run.cwd,
-      status,
-      transcriptPreview: boundedTranscriptPreview(run.transcript),
-      exitCode: run.exitCode,
-      signal: run.signal,
-      timedOut: run.timedOut,
-      startedAt: run.startedAt,
-      completedAt: run.completedAt,
-    };
-    thread.workbench.panes.push(pane);
-    thread.workbench.activePaneId = pane.paneId;
-    thread.workbench.focusOwner = "composer";
-    thread.updatedAt = run.completedAt;
 
     return {
       ok: true,
       value: {
         kind: "run_terminal_command",
         threadId: thread.threadId,
-        pane: terminalPaneRef(pane) as WorkbenchPaneSnapshotRef & { kind: "terminal" },
+        pane: terminalPaneRef(run.pane) as WorkbenchPaneSnapshotRef & { kind: "terminal" },
         command: run.command,
         args: [...run.args],
         cwd: run.cwd,
-        status,
+        status: run.status,
         exitCode: run.exitCode,
         signal: run.signal,
         stdout: run.stdout,
@@ -435,11 +403,4 @@ export class WorkbenchExecOperations {
       },
     };
   }
-}
-
-function commandRunStatus(run: WorkspaceCommandRun): "completed" | "failed" {
-  if (run.exitCode === 0 && run.signal === null && !run.timedOut) {
-    return "completed";
-  }
-  return "failed";
 }

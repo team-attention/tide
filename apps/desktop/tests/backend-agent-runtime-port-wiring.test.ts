@@ -10,10 +10,6 @@ import { fileURLToPath } from "node:url";
 import {
   createAgentIntegrationAgentRuntimePort,
   createAgentIntegrationProviderReadinessPort,
-  type PtyProcessHandle,
-  type PtyProcessLauncher,
-  type PtyProcessOutput,
-  type PtyProcessSpawnInput,
 } from "../src/backend/adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts";
 import type {
   AgentIntegrationPort,
@@ -127,7 +123,6 @@ import {
   providerBootstrapArtifactsForHome,
 } from "../src/backend/infrastructure/node/provider/provider-bootstrap-artifacts.ts";
 import { createPythonPtyProcessLauncher } from "../src/backend/adapters/outbound/pty/python-pty-process-launcher.ts";
-import { createPtyProviderSetupSurfaceTerminalPort } from "../src/backend/adapters/outbound/pty/provider-setup-surface-pty-port.ts";
 import { SKIP_REAL_PTY_IN_CI } from "./pty-ci-gate.ts";
 import type {
   AgentRuntimeHandle,
@@ -354,71 +349,32 @@ test("python_pty_process_launcher_replies_to_basic_terminal_queries", { skip: SK
   assert.match(output, /\\x1b\[\?0u/);
 });
 
-test("provider_setup_surface_pty_port_uses_pty_launcher_and_forwards_output", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-terminal-lifecycle.md
-  const launcher = new FakePtyProcessLauncher();
-  const port = createPtyProviderSetupSurfaceTerminalPort({
-    launcher,
-    idGenerator: () => "setup-runtime-1",
-  });
-  const outputs: PtyProcessOutput[] = [];
-
-  const handle = await port.start({
-    threadId: "thread-setup",
-    paneId: "pane-setup",
-    command: "/bin/echo",
-    args: ["hello"],
-    env: { TIDE_SETUP_TEST: "1" },
-    cwd: repoRoot,
-    onOutput: (output) => outputs.push(output),
-  });
-  launcher.starts[0].onOutput?.({ source: "stdout", body: "hello\n" });
-  await handle.stop();
-
-  assert.equal(handle.surfaceRuntimeId, "setup-runtime-1");
-  assert.equal(launcher.starts[0].runtimeId, "setup-runtime-1");
-  assert.equal(launcher.starts[0].plan.command, "/bin/echo");
-  assert.deepEqual(launcher.starts[0].plan.args, ["hello"]);
-  assert.equal(launcher.starts[0].plan.env.TIDE_SETUP_TEST, "1");
-  assert.equal(launcher.starts[0].plan.cwd, repoRoot);
-  assert.deepEqual(outputs, [{ source: "stdout", body: "hello\n" }]);
-  assert.equal(launcher.handles[0].stopped, true);
-});
-
-test("provider_setup_surface_pty_port_forwards_terminal_input_and_exit", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
-  const launcher = new FakePtyProcessLauncher();
-  const port = createPtyProviderSetupSurfaceTerminalPort({
-    launcher,
-    idGenerator: () => "setup-runtime-input",
-  });
-  const exits: { exitCode: number | null; signal: string | null }[] = [];
-
-  const handle = await port.start({
-    threadId: "thread-setup",
-    paneId: "pane-setup",
-    command: "/bin/cat",
-    args: [],
-    cwd: repoRoot,
-    onExit: (exit) => exits.push(exit),
-  });
-  await handle.write("\u001b[B\r");
-  launcher.emitExit(0, { exitCode: 0, signal: null });
-
-  assert.deepEqual(launcher.handles[0].writes, ["\u001b[B\r"]);
-  assert.deepEqual(exits, [{ exitCode: 0, signal: null }]);
-});
-
-test("live_backend_uses_pty_port_for_provider_setup_surface", () => {
+test("live_backend_routes_provider_setup_surfaces_through_workbench_terminal_port", () => {
   // Spec: docs_v2/specs/provider-setup-surface-terminal-lifecycle.md
   const source = fs.readFileSync(
     path.join(repoRoot, "src/backend/infrastructure/node/live/live-backend.ts"),
     "utf8",
   );
 
-  assert.match(source, /createPtyProviderSetupSurfaceTerminalPort/);
-  assert.match(source, /providerSetupSurfaceTerminalPort/);
-  assert.match(source, /launcher: ptyLauncher/);
+  assert.doesNotMatch(source, /createPtyProviderSetupSurfaceTerminalPort/);
+  assert.doesNotMatch(source, /providerSetupSurfaceTerminalPort/);
+  assert.match(source, /workbenchTerminalPort: createPtyWorkbenchTerminalPort/);
+  assert.match(source, /resolveRuntimeEnvironment: \(\{ cwd, planEnv \}\) =>/);
+});
+
+test("terminal_command_tool_uses_workbench_terminal_runtime_not_workspace_command_spawn", () => {
+  const workspaceCommandSource = fs.readFileSync(
+    path.join(repoRoot, "src/backend/adapters/outbound/workspace-command/node-workspace-command-port.ts"),
+    "utf8",
+  );
+  const workbenchExecSource = fs.readFileSync(
+    path.join(repoRoot, "src/backend/application/services/workbench/workbench-exec-operations.ts"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(workspaceCommandSource, /node:child_process|spawn\(/);
+  assert.doesNotMatch(workbenchExecSource, /workspaceCommandPort\.run/);
+  assert.match(workbenchExecSource, /workbenchRuntime\.runTerminalCommand/);
 });
 
 test("live_agent_session_projection_emits_prompt_changed_for_prompt_state", () => {
@@ -1462,44 +1418,6 @@ function startPlan(agentId: "codex" | "claude" | "gemini"): ProviderLaunchPlan {
           ? "claude_stream_json"
           : "codex_app_server",
   };
-}
-
-class FakePtyProcessLauncher implements PtyProcessLauncher {
-  starts: PtyProcessSpawnInput[] = [];
-  handles: FakePtyProcessHandle[] = [];
-
-  async spawn(input: PtyProcessSpawnInput): Promise<PtyProcessHandle> {
-    this.starts.push(input);
-    const handle = new FakePtyProcessHandle(input.runtimeId);
-    this.handles.push(handle);
-    return handle;
-  }
-
-  emitOutput(index: number, output: PtyProcessOutput): void {
-    this.starts[index].onOutput?.(output);
-  }
-
-  emitExit(index: number, exit: { exitCode: number | null; signal: string | null }): void {
-    this.starts[index].onExit?.(exit);
-  }
-}
-
-class FakePtyProcessHandle implements PtyProcessHandle {
-  readonly runtimeId: string;
-  writes: string[] = [];
-  stopped = false;
-
-  constructor(runtimeId: string) {
-    this.runtimeId = runtimeId;
-  }
-
-  async write(data: string): Promise<void> {
-    this.writes.push(data);
-  }
-
-  async stop(): Promise<void> {
-    this.stopped = true;
-  }
 }
 
 function sequentialIdGenerator(prefix: string): () => string {
