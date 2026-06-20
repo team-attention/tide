@@ -706,6 +706,8 @@ test("backend_entrypoint_buffers_unscoped_backend_events_emitted_during_command_
   assert.match(source, /activeParentCommandCount/);
   assert.match(source, /bufferedBackendEvents/);
   assert.match(source, /event\.requestId === undefined/);
+  assert.match(source, /isImmediateDuringCommandEvent/);
+  assert.match(source, /user_message/);
   assert.match(source, /flushBufferedBackendEvents\(\)/);
 });
 

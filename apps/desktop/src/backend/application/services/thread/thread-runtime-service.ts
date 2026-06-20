@@ -687,11 +687,12 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
       };
     }
 
-    thread.runtimeState = "starting";
-    thread.runtimeStartedAt = this.clock();
-    thread.lifecycleState = "running";
-    thread.lastKnownState = "running";
-    thread.updatedAt = this.clock();
+    const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
+    this.emitAsyncEvent({
+      kind: "agent_session_block_upserted",
+      thread: snapshotThread(thread),
+      block: submittedBlock,
+    });
 
     // Provider CLIs receive the first message as the launch-time initial prompt
     // (positional/flag), which reliably starts a turn. Tide API Agents have no
@@ -699,6 +700,11 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
     const deliverPromptViaLaunch =
       thread.agentBinding.runtimeSource?.kind === "provider_cli";
     const attachmentsForRuntime = messageAttachments.length > 0 ? messageAttachments : undefined;
+    thread.runtimeState = "starting";
+    thread.runtimeStartedAt = this.clock();
+    thread.lifecycleState = "running";
+    thread.lastKnownState = "running";
+    thread.updatedAt = this.clock();
     const handle = await this.agentRuntimePort.start({
       threadId: thread.threadId,
       agentBinding: cloneAgentBinding(thread.agentBinding),
@@ -707,7 +713,6 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
       initialPrompt: deliverPromptViaLaunch ? message : undefined,
       initialAttachments: deliverPromptViaLaunch ? attachmentsForRuntime : undefined,
     });
-    const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
 
     thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
     thread.runtimeState = "running";
