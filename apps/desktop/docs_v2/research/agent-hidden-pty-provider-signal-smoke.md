@@ -1,5 +1,9 @@
 # Research: Hidden PTY Provider Signal Smoke
 
+> Historical note: Antigravity evidence in this file is retained only as research
+> context. Antigravity is not part of the current Tide v2 provider-CLI product path;
+> active implementation guidance lives in `docs_v2/specs/`.
+
 ## Purpose
 
 This document defines the evidence gate for Agent Integrations in Tide v2.

@@ -37,9 +37,10 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
    active tab never shrinks (the current filename stays legible); inactive tabs give up
    width first, collapsing toward icon-only with a filename tooltip. The close button is
    collapsed-until-revealed so inactive tabs spend their width on the title.
-5. **Composer-screen Launcher + adoption** — the Workbench + Launcher are available
-   on the New Thread / start page (no thread yet); panes opened there are *adopted*
-   by the Thread that the first send creates.
+5. **Composer-screen Launcher + Draft Thread** — the Workbench + Launcher are
+   available on the New Thread / start page. The first real pane action lazily
+   creates the Composer Draft Thread; panes opened there already belong to that
+   thread and carry into the Thread when the first send starts it in place.
 6. **Agent pane/layout control** — new Tide MCP tools let the agent focus a pane,
    close a pane, and switch Stacked/Split; `tide_observe_workbench` reports the
    current layout mode.
@@ -62,11 +63,11 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
 - Agent (MCP) surface: `src/backend/application/services/tide-mcp/tide-mcp-tool-handler.ts`
   + tool-name registry `TIDE_MCP_WORKBENCH_TOOL_NAMES` in
   `src/backend/application/domains/workbench/workbench.ts`. No focus/close/layout tools.
-- Composer → thread create: `state/composer-bridge.ts:194-232` (`submitProductShellComposerDraft`)
-  — on a brand-new thread it sets `activeThreadId` and **drops** `startPageFile` +
-  `workbenchOpen:false` ("opens clean"). Start-page editor is thread-independent via
-  `START_FILE_PANE_ID` (`state/types.ts`, `state/view-model.ts`) using
-  `workspace.readFile` / `workspace.writeFile`.
+- Composer Draft Thread: `ensureComposerDraftThreadActive` creates a backend Draft
+  Thread lazily and makes it `activeThreadId` while `agentChat.thread` stays null, so
+  the chat remains the Start Composer and Workbench/FileTree/Editor/Terminal operate
+  through the normal active-thread path. `submitProductShellComposerDraft` starts
+  that same id in place.
 - Chat link click: `agent-chat/transcript/transcript.tsx:100-109` routes
   `data-open-browser-link` → `onOpenBrowserPane(url)` (no modifier read today).
 
@@ -81,14 +82,11 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
 - **The split *tree* stays renderer-local.** `workbenchLayoutTree` remains a
   renderer concern reconciled from the visible pane set (manual drag arrangement).
   The agent does not arrange exact splits in this pass (Out Of Scope).
-- **Composer-screen Workbench uses a renderer-held *draft Workbench*, adopted on
-  send (replay).** No phantom Thread, no eager agent spawn (consistent with the
-  rejected approach noted in `start-page-editor`). Draft Browser Panes render live
-  (renderer-owned `<webview>`); the existing single start-page Editor is shown as a
-  pane; Terminal/Diff draft entries are *pending intents*. On `thread.start`, the
-  renderer replays each draft as an `open_*` Workbench command against the new
-  Thread (FIFO after `thread.start`), then clears the draft and keeps the Workbench
-  open. Adoption is best-effort and ordered; a failed replay is dropped, never fatal.
+- **Composer-screen Workbench uses a backend Draft Thread.** No renderer-held draft
+  Workbench and no replay queue: the first real pane action sends
+  `thread.createDraft`, switches the active workbench context to that draft, then
+  sends the normal `workbench.command`. `thread.start` reuses the draft id, so live
+  panes (Browser/Editor/Terminal/Diff) carry forward without adoption glue.
 - **Launcher is a PLACEHOLDER, resolved in-slot on open (v1 parity).** This corrects
   the initial implementation (which kept the Launcher and spawned a new pane beside
   it). Per v1 `apps/terminal/docs/specs/dock-placeholder.md` + `dock_service`
@@ -102,10 +100,10 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
 ## Out Of Scope
 
 - Agent-driven exact split-tree arrangement / ratios (manual drag only).
-- Multiple thread-independent **Editor** panes pre-thread (the existing single
-  start-page editor is reused; multi-editor pre-thread is deferred).
-- Pre-thread live **Terminal**/**Diff** (no execution context before a Thread; shown
-  as pending intents, materialized on adoption).
+- Renderer-local thread-independent **Editor** panes pre-thread. Files open by
+  creating the Composer Draft Thread first.
+- Renderer-local pre-thread **Terminal**/**Diff** pending intents. Terminal/Diff
+  open by creating the Composer Draft Thread first.
 - Persistence of the draft Workbench across app restarts.
 - Renaming the on-disk `tabs` value in already-persisted Thread metadata (none persists
   layoutMode today; new field defaults to `stacked`).

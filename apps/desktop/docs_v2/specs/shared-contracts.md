@@ -248,7 +248,7 @@ export type ThreadId = string;
 export type ProjectId = string;
 export type WorkbenchPaneId = string;
 
-export type AgentId = "codex" | "claude" | "antigravity";
+export type AgentId = "codex" | "claude" | "gemini" | "opencode";
 
 export interface AgentBindingDto {
   agentId: AgentId;
@@ -259,7 +259,8 @@ export interface ProviderSessionRefDto {
   kind:
     | "codex_rollout"
     | "claude_transcript"
-    | "antigravity_conversation"
+    | "gemini_session"
+    | "opencode_session"
     | "provider_native";
   value: string;
   transcriptPath?: string;

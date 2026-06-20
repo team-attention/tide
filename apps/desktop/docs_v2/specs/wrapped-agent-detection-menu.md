@@ -9,8 +9,8 @@ v2 treats provider CLIs as **locally-detected Wrapped Agents** (like v1), NOT bu
   install.
 - **No bundling.** Tide uses the user's installed CLI (version follows the system).
 
-This replaces the current behavior where Antigravity was deleted from the menu and
-gemini was spawned raw (no wrapping).
+This replaces the old behavior where provider availability and wrapping diverged
+between agents.
 
 ## Decisions
 
@@ -19,16 +19,13 @@ gemini was spawned raw (no wrapping).
    `availableAgents: ProviderCliAgentId[]` once (resolveExecutable per agent) and expose
    it so the renderer can disable absent rows. Surface it on the `thread.listed`
    response (the renderer's startup command) — no new event channel needed.
-2. **Menu shows all four** provider CLIs always: codex, claude, gemini, antigravity.
+2. **Menu shows all four** provider CLIs always: codex, claude, gemini, opencode.
    Row `disabled = !availableAgents.includes(agentId)`. Selecting a disabled row is a
-   no-op. Antigravity is re-added (disabled unless its CLI resolves) — note it also
-   can't authenticate when spawned, a separate runtime limitation.
+   no-op.
 3. **Wrapping when present.** A detected agent is launched WRAPPED:
-   - claude/codex/antigravity already bootstrap MCP + hooks (provider-bootstrap-artifacts).
-   - **gemini must too**: write `~/.gemini/settings.json` hooks (Claude-compatible:
-     PreInvocation/PostToolUse→agent-running, Stop→agent-idle) + Tide MCP server entry,
-     so gemini's turn-end comes from the runtime-keyed hook and the Tide tool surface is
-     attached — same as the others. (Current gemini runs raw `--yolo`, unwrapped.)
+   - codex and claude use their provider-native bootstrap/hook paths.
+   - gemini and opencode run through ACP over stdio with Tide MCP attached through the
+     provider integration.
 4. **Availability is provider-CLI scoped**, independent per agent; one absent agent never
    disables another.
 
@@ -40,23 +37,23 @@ gemini was spawned raw (no wrapping).
 
 ## Renderer
 
-- `agentChatChoiceSurface` agent_menu rows: render all four, `disabled` per availability.
+- `agentChatChoiceSurface` agent_menu rows: render all four provider CLIs, `disabled`
+  per availability.
 - `composerAgentIdForRow` / selection: ignore selection of a disabled row.
 
-## Wrapping (gemini bootstrap)
+## Wrapping
 
-- Extend `provider-bootstrap-artifacts` with a gemini settings path; write hooks + MCP
-  into `~/.gemini/settings.json` (merge, don't clobber the user's settings).
-- gemini adapter: prefer turn-end from the Stop hook (last_assistant_message if present)
-  via the uniform `turnEndFromHook`, falling back to the session-JSONL
-  `turnEndFromHistory` already implemented.
+- codex/claude keep their existing provider bootstrap paths.
+- gemini/opencode use ACP structured runtime plumbing.
+- opencode vendor/model catalog and auth state are discovered separately so startup
+  availability is not blocked by slower opencode subprocesses.
 
 ## Tests / Verification
 
 - Unit: detection maps installed→available; menu rows disabled when absent; disabled row
   selection is a no-op.
-- Judge: `scripts/v2-provider-smoke.mjs --agent gemini` stays green; gemini wrapped run
-  still answers + settles; Tide MCP tool callable from gemini.
+- Judge: provider smoke stays green for available provider CLIs; Tide MCP remains
+  callable from wrapped agents.
 
 ## Out of scope (now)
 

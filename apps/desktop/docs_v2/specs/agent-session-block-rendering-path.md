@@ -122,16 +122,9 @@ blocks.
     input).
   - user `tool_result` → `tool_result` (paired by `tool_use_id`; body = bounded
     output).
-- **antigravity** transcript entries (`<brain>/<id>/.system_generated/logs/transcript.jsonl`):
-  - a `PLANNER_RESPONSE` (`source: MODEL`) carries `tool_calls: [{ name, args }]`
-    → each becomes a `tool_call` (title = provider tool name such as
-    `run_command`/`list_dir`; body = the args, bounded), and its `content`
-    (when a non-empty string) becomes an agent message block.
-  - the following typed `MODEL` entry (e.g. `LIST_DIRECTORY`, `VIEW_FILE`,
-    `ERROR_MESSAGE`) is the result → `tool_result` (title = the preceding call's
-    tool name; body = `content`, bounded), paired by step order.
-  - `CONVERSATION_HISTORY`, `SYSTEM_MESSAGE`, and `thinking` are transport/meta
-    and are not rendered.
+- Additional provider-native parsers must map tool calls/results into the same
+  `tool_call` / `tool_result` block pair without adding provider-specific renderer
+  surfaces.
 
 Provider-native tool names and argument/output text are preserved (per D3). The
 body is bounded; it is never guessed into a structured Tide tool block (those
@@ -166,7 +159,7 @@ dir). Path extraction is best-effort from provider-native arguments:
 
 - claude `Edit`/`Write`/`MultiEdit` → `file_path` from the JSON args.
 - codex `apply_patch` → `*** Update/Add/Delete File: <path>` lines.
-- antigravity edit tools → `AbsolutePath`/`file_path`/`path` from the JSON args.
+- ACP/provider-native edit tools → provider-specific path fields when available.
 
 Paths are display-only (no diff stats are invented — those require git evidence
 the transcript does not carry).
@@ -192,7 +185,7 @@ Raw Agent Frame fields:
 |-------|---------|
 | `frameId` | Tide id for the observed frame. |
 | `threadId` | Owning Thread. |
-| `agentId` | Codex, Claude, or Antigravity. |
+| `agentId` | Provider CLI agent id. |
 | `source` | Evidence source such as PTY Transcript, Provider Signal, provider history, structured batch, stdout, or stderr. |
 | `sourceRef` | Provider session id, transcript path, rollout path, log path, PTY offset, or stream offset. |
 | `sequence` | Monotonic order in one Thread observation stream. |
@@ -401,7 +394,6 @@ This slice adds the following executable expectations before implementation:
 | UC-5 | D12 | Rebuilding a codex rollout with `function_call`/`function_call_output` emits ordered `tool_call` + `tool_result` blocks with provider-native tool name and bounded body. |
 | UC-5 | D12 | Rebuilding a claude transcript with `tool_use`/`tool_result` emits paired `tool_call` + `tool_result` blocks. |
 | UC-1 | D13 | A `tool` role block renders as a tool log entry (tool name label + monospace body), not as a user/agent message turn. |
-| UC-5 | D12 | An antigravity transcript with a `PLANNER_RESPONSE` tool_call followed by a typed result entry emits a `tool_call` + `tool_result` pair with the provider-native tool name. |
 
 Future slices keep these documented but do not implement them here:
 

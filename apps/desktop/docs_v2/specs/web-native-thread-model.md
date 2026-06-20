@@ -29,8 +29,7 @@ is a thin view over it.
 5. **Send clears the composer draft.** A submitted draft is cleared on send (every
    path), so re-clicking can't resend the same message.
 6. **No guessed bindings.** A run binds to the exact session its own process owns
-   (codex: pid→rollout, done; claude: same pid→transcript; antigravity already
-   deterministic via hook conversationId).
+   (codex rollout, claude transcript, gemini/opencode structured session refs).
 
 ## Concrete deltas
 

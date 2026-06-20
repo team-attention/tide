@@ -78,7 +78,7 @@ Observed 2026-06-07 with codex-cli 0.136.0 (gpt-5.5) driving Tide v2:
   NATIVE approval flow, so behavior matches using the coding agent in a plain terminal.
   - codex: `-c mcp_servers.tide.default_tools_approval_mode="approve"`.
   - claude: settings.json `permissions.allow: ["mcp__tide"]`.
-  - antigravity: OPEN — verify whether it prompts for MCP tools and find its config.
+  - gemini/opencode: ACP/provider integration owns MCP tool attachment and approval.
   Without this, codex's hidden-PTY per-tool approval prompt is invisible and the turn
   hangs "Working" forever (the agent waits for an answer before sending tools/call).
 

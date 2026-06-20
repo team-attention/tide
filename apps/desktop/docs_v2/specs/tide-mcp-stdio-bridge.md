@@ -22,7 +22,7 @@ Out of scope:
 - `docs_v2/implementation/electron-node-architecture-decisions.md` says Backend owns Tide MCP Tool Surface handling and has an inbound `tide-mcp-server` adapter.
 - `docs_v2/implementation/concrete-design-backlog.md` chooses Tide-owned MCP tools attached to the same provider CLI session.
 - `docs_v2/specs/tide-mcp-workbench-observe-open-browser.md` says the MCP server should be a Backend inbound adapter.
-- `src/backend/infrastructure/node/provider/provider-bootstrap-artifacts.ts` owns provider MCP config generation for Claude and Antigravity and Codex launch options for Tide MCP.
+- `src/backend/infrastructure/node/provider/provider-bootstrap-artifacts.ts` owns provider MCP bootstrap artifacts where a provider needs generated config; provider integrations own their launch-time Tide MCP attachment.
 - `src/backend/adapters/inbound/tide-mcp-tool-surface/tide-mcp-tool-surface-adapter.ts` currently exposes an in-process adapter only.
 - `src/backend/infrastructure/node/entrypoints/backend-entrypoint.ts` is the Backend entrypoint shared by Electron `MessagePort` mode and the MCP stdio mode.
 - `crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs` is the v1 reference for a line-delimited JSON-RPC MCP stdio bridge.

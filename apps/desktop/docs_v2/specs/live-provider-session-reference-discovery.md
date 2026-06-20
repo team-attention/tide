@@ -10,7 +10,8 @@ It covers:
 - persisting the same provider session reference into `thread.json`.
 - using Codex rollout evidence to derive `codex_rollout` references.
 - using Claude transcript evidence to derive `claude_transcript` references.
-- using Antigravity transcript evidence to derive `antigravity_conversation` references.
+- using Gemini ACP/session evidence to derive `gemini_session` references.
+- using opencode ACP session evidence to derive `opencode_session` references.
 - keeping follow-up resume available without starting a new Raw Agent Session.
 
 ## Evidence
@@ -20,10 +21,11 @@ It covers:
 - `docs_v2/specs/backend-agent-runtime-port-wiring.md` defines follow-up resume through `AgentRuntimePort.resume` using a provider session reference.
 - `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` records that Codex rollout files under `~/.codex/sessions/...` contain a provider session id, and that `codex resume --no-alt-screen <session-id>` resumes the same Raw Agent Session.
 - `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` records that Claude transcript files under `~/.claude/projects/.../<session-id>.jsonl` contain the provider session id, and that `claude --resume <session-id>` resumes the same Raw Agent Session.
-- `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` records that Antigravity hook and transcript evidence includes `conversationId` and `transcriptPath`, and that `agy --conversation <conversation-id>` resumes the same Raw Agent Session.
 - `src/backend/application/services/thread-runtime-service.ts` resumes a Thread only when `thread.agentBinding.providerSessionRef` exists.
 - `src/backend/application/services/thread-persistence-service.ts` can attach `providerSessionRef` to persisted Thread metadata.
-- `src/backend/infrastructure/node/live/live-backend.ts` currently projects Antigravity transcript frames into Agent Session Blocks and attaches Antigravity references, but it does not attach Codex rollout or Claude transcript references.
+- Structured provider runtimes attach provider session references from their
+  protocol/session metadata, while history-backed providers attach refs from
+  correlated provider history.
 
 ## Decisions
 
@@ -67,19 +69,8 @@ For Claude, the transcript filename identifies the Claude session id, but the tr
 }
 ```
 
-For Antigravity, the transcript path under provider-owned history contains the conversation id.
-
-The live Backend projector derives:
-
-```ts
-{
-  agentId: "antigravity",
-  kind: "antigravity_conversation",
-  value: conversationId,
-  transcriptPath,
-  observedAt
-}
-```
+For Gemini and opencode, the structured ACP session supplies the provider session id.
+The live Backend records `gemini_session` or `opencode_session` refs respectively.
 
 ### D4. Hook payload identity may attach before history polling
 
@@ -146,8 +137,7 @@ This keeps the live event stream and same-process `thread.hydrate` result aligne
 | Codex rollout history becomes visible output | `codex_provider_history_reader_projects_agent_message_frame` proves a correlated Codex rollout can produce an agent message frame. |
 | Claude transcript history becomes visible output | `claude_provider_history_reader_projects_agent_message_frame` proves a correlated Claude transcript can produce an agent message frame. |
 | Projected block updates Thread cache | `recording_agent_session_block_upserts_cached_block_for_hydrate` proves a projected Agent Session Block is returned by later `thread.hydrate`. |
-| Antigravity path becomes ref | `antigravity_provider_history_reader_derives_provider_session_ref_from_transcript_path` proves the transcript path maps to `antigravity_conversation`. |
-| Live projector persists ref | `live_backend_projector_persists_antigravity_provider_session_ref` proves live Antigravity history projection attaches the ref to service and `thread.json`. |
+| Structured session becomes ref | Provider integration tests prove Gemini/opencode sessions become `gemini_session` / `opencode_session` refs. |
 
 ## Implementation Notes
 

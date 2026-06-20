@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  COMPOSER_LAUNCHER_PANE_ID,
   createProductShellState,
   closeProductShellWorkbenchPane,
   newProductShellFile,
@@ -16,7 +17,6 @@ import type {
   ProductShellFileTreeEntryView,
   ProductShellState,
 } from "../src/desktop/application/domains/product-shell/state/types.ts";
-import { startFilePaneId } from "../src/desktop/application/domains/product-shell/state/types.ts";
 
 const SRC: ProductShellFileTreeEntryView = { id: "src", name: "src", relativePath: "src", depth: 0, kind: "folder" };
 const README: ProductShellFileTreeEntryView = { id: "readme.md", name: "readme.md", relativePath: "readme.md", depth: 0, kind: "file" };
@@ -89,13 +89,10 @@ function startPageState(): ProductShellState {
   };
 }
 
-test("new_file_on_start_page_reads_with_create_under_the_composer_cwd", () => {
+test("new_file_on_start_page_is_a_no-op_until_the_draft_thread_exists", () => {
   const result = newProductShellFile(startPageState(), "scratch/new.txt");
-  assert.equal(result.command?.kind, "workspace.readFile");
-  if (result.command?.kind === "workspace.readFile") {
-    assert.deepEqual(result.command.payload, { cwd: "/repo/tide", path: "scratch/new.txt", create: true });
-  }
-  assert.equal(result.state.workbenchOpen, true, "the workbench column opens");
+  assert.equal(result.command, null);
+  assert.equal(result.state.workbenchOpen, false);
 });
 
 test("new_file_in_a_thread_opens_an_editor_with_create_true", () => {
@@ -205,25 +202,16 @@ test("closing_workbench_pane_clears_editor_picker", () => {
 
 test("closing_start_page_workbench_pane_clears_editor_picker", () => {
   const start = startPageState();
-  const paneId = startFilePaneId("README.md");
   const state: ProductShellState = {
     ...start,
     workbenchOpen: true,
     editorPickerFilter: "",
-    draftActiveWorkbenchPaneId: paneId,
-    startPageFiles: [
-      {
-        cwd: "/repo",
-        relativePath: "README.md",
-        content: "# README",
-        truncated: false,
-      },
-    ],
+    draftActiveWorkbenchPaneId: COMPOSER_LAUNCHER_PANE_ID,
   };
 
-  const result = closeProductShellWorkbenchPane(state, paneId);
+  const result = closeProductShellWorkbenchPane(state, COMPOSER_LAUNCHER_PANE_ID);
 
   assert.equal(result.state.editorPickerFilter, null);
   assert.equal(result.command, null);
-  assert.equal(result.state.startPageFiles.length, 0);
+  assert.equal(result.state.workbenchOpen, false);
 });

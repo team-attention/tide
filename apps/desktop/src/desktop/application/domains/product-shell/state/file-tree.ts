@@ -146,39 +146,11 @@ export function selectProductShellFileTreeEntry(
     };
   }
 
-  // Start page: no thread yet, so there is no thread-bound workbench to open an
-  // Editor Pane in. Read the file thread-independently; the view-model renders it
-  // as a read/write editor pane in the Workbench column (spec:
-  // start-page-file-viewer). Open the workbench now so the column animates in
-  // immediately instead of after the read round-trip.
+  // Start page: opening a file must go through the Composer Draft Thread so the
+  // editor is a backend-owned Workbench pane. React handlers create that draft
+  // before re-entering this reducer; direct reducer calls stay side-effect free.
   if (state.activeThreadId === null) {
-    const scope = state.agentChat.composer.startOptions.scope;
-    if (scope?.kind !== "project" || scope.cwd.length === 0) {
-      return { state, command: null };
-    }
-    // Already open as a tab → just focus it (don't re-read, which would discard an
-    // unsaved draft). A new file reads in and opens its OWN tab (the fileLoaded
-    // reducer appends it), rather than replacing the current editor.
-    const alreadyOpen = state.startPageFiles.some(
-      (file) => file.cwd === scope.cwd && file.relativePath === entry.relativePath,
-    );
-    if (alreadyOpen) {
-      return {
-        state: {
-          ...state,
-          workbenchOpen: true,
-          draftActiveWorkbenchPaneId: startFilePaneId(entry.relativePath),
-        },
-        command: null,
-      };
-    }
-    return {
-      state: { ...state, workbenchOpen: true },
-      command: {
-        kind: "workspace.readFile",
-        payload: { cwd: scope.cwd, path: entry.relativePath },
-      },
-    };
+    return { state, command: null };
   }
 
   return {
@@ -201,10 +173,10 @@ export function selectProductShellFileTreeEntry(
 
 // An entry is visible only when every ancestor folder on its path is expanded.
 // New File: create a blank file at `relativePath` under the current folder and open it
-// for editing (spec: workbench-new-file.md). Mirrors selectProductShellFileTreeEntry's
-// open paths but carries `create: true` so the backend touches the file if missing
-// (an existing file is opened, never clobbered). Works on the start page (composer
-// cwd, thread-independent) and inside a thread (open_editor resolves the thread cwd).
+// for editing (spec: workbench-new-file.md). Carries `create: true` so the backend
+// touches the file if missing (an existing file is opened, never clobbered). On the
+// composer page, handlers first create the Composer Draft Thread; the reducer itself
+// only opens files against an active thread.
 export function newProductShellFile(
   state: ProductShellState,
   relativePath: string,
@@ -217,25 +189,7 @@ export function newProductShellFile(
   }
 
   if (state.activeThreadId === null) {
-    const scope = state.agentChat.composer.startOptions.scope;
-    if (scope?.kind !== "project" || scope.cwd.length === 0) {
-      return { state, command: null };
-    }
-    // Already open as a tab → just focus it (don't re-create/read, which would discard
-    // an unsaved draft).
-    const alreadyOpen = state.startPageFiles.some(
-      (file) => file.cwd === scope.cwd && file.relativePath === path,
-    );
-    if (alreadyOpen) {
-      return {
-        state: { ...state, workbenchOpen: true, draftActiveWorkbenchPaneId: startFilePaneId(path) },
-        command: null,
-      };
-    }
-    return {
-      state: { ...state, workbenchOpen: true },
-      command: { kind: "workspace.readFile", payload: { cwd: scope.cwd, path, create: true } },
-    };
+    return { state, command: null };
   }
 
   return {
@@ -466,10 +420,9 @@ function pathMatchesChange(candidate: string, changed: string): boolean {
   return candidate === changed || candidate.startsWith(`${changed}/`);
 }
 
-// After a path is deleted/renamed/moved, drop start-page editor tabs that pointed at
-// it (or a descendant) and report the thread editor pane ids the handler should close
-// (thread panes are backend-owned, closed via a command). Keeps a stale tab from
-// saving over a now-moved/-gone path.
+// After a path is deleted/renamed/moved, close affected thread editor panes
+// (backend-owned, closed via command). Also drains any legacy startPageFiles from
+// older snapshots so stale local tabs cannot save over a moved/gone path.
 export function reconcileProductShellAfterPathChange(
   state: ProductShellState,
   changedPaths: string[],

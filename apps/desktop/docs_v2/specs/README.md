@@ -10,7 +10,7 @@ Each spec must be narrow enough to test and implement as one slice.
 |-------|------|--------|
 | 1 | [Shared Contracts](shared-contracts.md) | Drafted |
 | 2 | [Backend Thread and Agent Runtime Lifecycle](backend-thread-agent-runtime-lifecycle.md) | Drafted |
-| 3 | [Provider Integration Bootstrap](provider-integration-bootstrap.md) | Drafted |
+| 3 | [Provider Integration Bootstrap](provider-integration-bootstrap.md) | Archived |
 | 4 | [Agent Session Block Rendering Path](agent-session-block-rendering-path.md) | Drafted |
 | 5 | [Desktop Agent Chat and Composer Shell](desktop-agent-chat-composer-shell.md) | Drafted |
 | 6 | [Backend/Desktop Process Connection](backend-desktop-process-connection.md) | Drafted |
@@ -30,7 +30,7 @@ Each spec must be narrow enough to test and implement as one slice.
 | [Provider Setup Surface Terminal Lifecycle](provider-setup-surface-terminal-lifecycle.md) | Drafted | Start and stop the visible Provider Setup Surface process through Backend-owned Workbench Terminal Pane state. |
 | [Provider Setup Surface Input And Retry](provider-setup-surface-input-and-retry.md) | Drafted | Route setup terminal bytes and replay preserved pending input after setup readiness succeeds. |
 | [Provider Signal Prompt Ingress](provider-signal-prompt-ingress.md) | Drafted | Record provider-observed Prompt State in Backend and emit Desktop prompt events. |
-| [Provider Bootstrap Artifacts](provider-bootstrap-artifacts.md) | Drafted | Generate and verify Tide-owned provider hook, MCP, and plugin bootstrap files for live Provider CLI Agents. |
+| [Provider Bootstrap Artifacts](provider-bootstrap-artifacts.md) | Drafted | Generate and verify Tide-owned provider bootstrap files for live Provider CLI Agents. |
 | [Provider Signal Spool Ingress](provider-signal-spool-ingress.md) | Drafted | Read runtime-scoped provider hook spool records and route supported Prompt State into Backend events. |
 | [Direct API Agent Runtime](tide-api-agent-runtime.md) | Removed | Historical note: the direct API Agent runtime path was removed; Provider CLI Agents are canonical. |
 | [Direct API Agent Tool Calls](tide-api-agent-tool-calls.md) | Removed | Historical note: Tide MCP tools are exposed through provider CLI MCP, not a direct API Agent runtime. |

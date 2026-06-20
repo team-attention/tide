@@ -62,8 +62,8 @@ export class LspClient {
   private buffer = Buffer.alloc(0);
   private alive = true;
   private disposed = false;
-  // Backend teardown must never leak rust-analyzer/gopls orphans (memory note
-  // v2-agy-process-leak): the shared exit hook kills every live client, and the
+  // Backend teardown must never leak rust-analyzer/gopls orphans: the shared exit
+  // hook kills every live client, and the
   // TIDE_RUNTIME_ID env tag lets reap-orphaned-agents collect survivors of a
   // HARD kill (where no exit handler runs) at the next backend startup.
   killNow(): void {

@@ -1,5 +1,4 @@
 import type { ProductShellBackgroundBrowserPane, ProductShellEditorDraft, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellPinnedItemView, ProductShellProject, ProductShellProjectGroupView, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellViewModel } from "./types.ts";
-import { startFilePaneId } from "./types.ts";
 import { finalizeThreadList, isExternalSessionThread, pinnedItemRefKey } from "./thread-list.ts";
 import { worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 import { reconcileTree } from "./workbench-split-tree.ts";
@@ -8,7 +7,7 @@ import type { AgentChatBlock, AgentChatShellState, AgentChatThreadSummary } from
 import { createAppChromeViewModel } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { cloneProductShellFileTree, fileTreePathHasCollapsedAncestor } from "./file-tree.ts";
-import { appendUntitledPanes, composerWorkbenchAppChrome, startFileEditorDraft, untitledEditorDraft } from "./workbench-pane-view.ts";
+import { appendUntitledPanes, composerWorkbenchAppChrome, untitledEditorDraft } from "./workbench-pane-view.ts";
 import { agentBindingForShellAgent, cloneLaunchOptions } from "./start.ts";
 import { shellTimestamp } from "./create.ts";
 import { createSelectorFor } from "./create-selector.ts";
@@ -135,7 +134,6 @@ export const selectWorkbenchViewModel = shellSelector(
   [
     (state: ProductShellState) => state.appChrome,
     (state: ProductShellState) => state.activeThreadId,
-    (state: ProductShellState) => state.startPageFiles,
     (state: ProductShellState) => state.editorDrafts,
     (state: ProductShellState) => state.workbenchLayoutTree,
     (state: ProductShellState) => state.workbenchLayoutMode,
@@ -148,7 +146,6 @@ export const selectWorkbenchViewModel = shellSelector(
   (
     appChrome,
     activeThreadId,
-    startPageFiles,
     editorDrafts,
     workbenchLayoutTree,
     workbenchLayoutMode,
@@ -158,19 +155,16 @@ export const selectWorkbenchViewModel = shellSelector(
     draftActiveWorkbenchPaneId,
     untitledFiles,
   ): ProductShellWorkbenchViewModel => {
-    const startFiles = activeThreadId === null ? startPageFiles : [];
     // Untitled files show only in the context (thread/start) they were created in.
     const untitledForView = untitledFiles.filter((file) => file.threadId === activeThreadId);
     // Composer (New Thread) page before a Draft Thread exists: derive only the
-    // synthetic Launcher plus start-page editor / untitled tabs. Browser/Changes/
-    // Terminal/Editor launcher actions create a backend Draft Thread and then render
-    // through the normal active-thread appChrome path.
+    // synthetic Launcher. Browser/Changes/Terminal/Editor actions create a backend
+    // Draft Thread and then render through the normal active-thread appChrome path.
     const appChromeForView =
       activeThreadId !== null
         ? appendUntitledPanes(appChrome, untitledForView, draftActiveWorkbenchPaneId)
         : composerWorkbenchAppChrome(
             appChrome,
-            startFiles,
             untitledForView,
             draftActiveWorkbenchPaneId,
           );
@@ -191,13 +185,10 @@ export const selectWorkbenchViewModel = shellSelector(
       ),
       editorPicker: createEditorPickerView({ editorPickerFilter, fileTree } as ProductShellState),
       editorDrafts:
-        startFiles.length === 0 && untitledForView.length === 0
+        untitledForView.length === 0
           ? editorDrafts
           : {
               ...editorDrafts,
-              ...Object.fromEntries(
-                startFiles.map((file) => [startFilePaneId(file.relativePath), startFileEditorDraft(file)]),
-              ),
               ...Object.fromEntries(
                 untitledForView.map((file) => [file.id, untitledEditorDraft(file)]),
               ),

@@ -6,7 +6,7 @@ export interface ProductShellBrowserCaptureResult {
   captureId: string;
   screenshot?: ProductShellBrowserScreenshot;
 }
-import { COMPOSER_LAUNCHER_PANE_ID, isStartFilePaneId, isUntitledPaneId, startFilePaneId } from "./types.ts";
+import { COMPOSER_LAUNCHER_PANE_ID, isUntitledPaneId } from "./types.ts";
 import { removeProductShellUntitledFile } from "./untitled-files.ts";
 import { applyDrop, reconcileTree, setRatioAtPath } from "./workbench-split-tree.ts";
 import type { DropZone } from "./workbench-split-tree.ts";
@@ -414,27 +414,17 @@ export function closeProductShellWorkbenchPane(
       command: null,
     };
   }
-  // Composer (New Thread) page before a Draft Thread exists: no backend panes yet.
-  // Closing a start-page editor tab removes just that file. The Workbench stays open
-  // while any start-page editor tab remains.
+  // Composer (New Thread) page before a Draft Thread exists: no backend panes yet,
+  // only the synthetic launcher. Files/Browser/Terminal/Diff create a Draft Thread
+  // before they become panes.
   if (state.activeThreadId === null) {
-    const startPageFiles = isStartFilePaneId(paneId)
-      ? state.startPageFiles.filter((file) => startFilePaneId(file.relativePath) !== paneId)
-      : state.startPageFiles;
-    const anyDraftRemains = startPageFiles.length > 0;
-    const fallbackPaneId =
-      startPageFiles.length > 0
-        ? startFilePaneId(startPageFiles[startPageFiles.length - 1].relativePath)
-        : COMPOSER_LAUNCHER_PANE_ID;
-    const draftActiveWorkbenchPaneId =
-      state.draftActiveWorkbenchPaneId === paneId ? fallbackPaneId : state.draftActiveWorkbenchPaneId;
     return {
       state: {
         ...state,
         editorPickerFilter: null,
-        startPageFiles,
-        draftActiveWorkbenchPaneId,
-        workbenchOpen: anyDraftRemains ? state.workbenchOpen : false,
+        draftActiveWorkbenchPaneId:
+          state.draftActiveWorkbenchPaneId === paneId ? COMPOSER_LAUNCHER_PANE_ID : state.draftActiveWorkbenchPaneId,
+        workbenchOpen: false,
       },
       command: null,
     };

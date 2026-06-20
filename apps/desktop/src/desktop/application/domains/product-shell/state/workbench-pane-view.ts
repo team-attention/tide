@@ -1,52 +1,16 @@
 import type {
   ProductShellEditorDraft,
-  ProductShellStartPageFile,
   ProductShellState,
   ProductShellUntitledFile,
 } from "./types.ts";
-import { COMPOSER_LAUNCHER_PANE_ID, isUntitledPaneId, startFilePaneId } from "./types.ts";
+import { COMPOSER_LAUNCHER_PANE_ID, isUntitledPaneId } from "./types.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { shellTimestamp } from "./create.ts";
 // Renderer-derived Workbench panes for the composer (New Thread) page and untitled
-// files — split out of view-model.ts (file-size ratchet). The start-page editor,
-// untitled tabs, and the composer Launcher are renderer-local panes the view-model
-// assembles before a backend Draft Thread exists. Spec:
+// files — split out of view-model.ts (file-size ratchet). The composer Launcher is
+// the only pre-Draft pane. Files, Browser, Terminal, and Diff first create the
+// Composer Draft Thread and then render as backend-owned Workbench panes. Spec:
 // workbench-dock-parity / workbench-filetree-file-operations.
-
-// A start (New Thread) page open file, as a Workbench editor pane. There is no
-// thread/backend pane before a thread exists, so each pane is derived from a
-// startPageFiles entry each render under a per-file id; the editor's draft/save/
-// close handlers special-case start-file panes. A truncated read stays read-only.
-function startFileEditorPane(file: ProductShellStartPageFile): AppChromeWorkbenchPaneRef {
-  const name = file.relativePath.slice(file.relativePath.lastIndexOf("/") + 1);
-  const paneId = startFilePaneId(file.relativePath);
-  return {
-    paneId,
-    kind: "editor",
-    title: name,
-    // Stable: the editor is value-controlled, so the revision only identifies the
-    // pane; it never drives a remount here.
-    revision: paneId,
-    updatedAt: shellTimestamp,
-    relativePath: file.relativePath,
-    filePath: `${file.cwd.replace(/\/+$/, "")}/${file.relativePath}`,
-    bodyText: file.content,
-    truncated: file.truncated,
-    navigationTarget: file.navigationTarget,
-    references: file.references,
-  };
-}
-
-export function startFileEditorDraft(file: ProductShellStartPageFile): ProductShellEditorDraft {
-  const paneId = startFilePaneId(file.relativePath);
-  return {
-    paneId,
-    baseRevision: paneId,
-    content: file.draft ?? file.content,
-    dirty: file.dirty ?? false,
-    cursorOffset: 0,
-  };
-}
 
 // A VSCode-style untitled (blank, not-yet-saved) file as a Workbench editor pane.
 // No backing file yet, so the saved base is empty and there is no filePath (code
@@ -97,14 +61,12 @@ export function appendUntitledPanes(
   return { ...appChrome, workbenchPanes: panes, activeWorkbenchPaneId };
 }
 
-// Build the composer (New Thread) page Workbench view when no Draft Thread is active yet
-// (no backend pane opened): a synthetic Launcher first, then the start-page editor and
-// any untitled tabs. Once the user opens a backend pane the Composer's Draft Thread
-// becomes the active thread and the view-model renders it through the normal active-thread
-// path instead. See docs_v2/specs/composer-draft-thread.md.
+// Build the composer (New Thread) page Workbench view when no Draft Thread is active yet:
+// a synthetic Launcher only. Once the user opens any real pane, the Composer's Draft
+// Thread becomes the active thread and the view-model renders it through the normal
+// active-thread path instead. See docs_v2/specs/composer-draft-thread.md.
 export function composerWorkbenchAppChrome(
   appChrome: ProductShellState["appChrome"],
-  startFiles: ProductShellStartPageFile[],
   untitled: ProductShellUntitledFile[],
   draftActivePaneId: string | null,
 ): ProductShellState["appChrome"] {
@@ -115,10 +77,9 @@ export function composerWorkbenchAppChrome(
   // into the chosen pane rather than persisting beside it.
   const showLauncher =
     draftActivePaneId === COMPOSER_LAUNCHER_PANE_ID ||
-    (startFiles.length === 0 && untitled.length === 0);
+    untitled.length === 0;
   const panes: AppChromeWorkbenchPaneRef[] = [
     ...(showLauncher ? [composerLauncherPane()] : []),
-    ...startFiles.map(startFileEditorPane),
     ...untitled.map(untitledEditorPane),
   ];
   const activeWorkbenchPaneId =

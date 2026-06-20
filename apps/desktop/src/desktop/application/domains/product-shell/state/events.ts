@@ -1,5 +1,4 @@
-import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellStartPageFile, ProductShellState } from "./types.ts";
-import { startFilePaneId } from "./types.ts";
+import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellState } from "./types.ts";
 import { applyAgentChatBackendEvent, setAvailableProviderAgents, setOpencodeEnvironment, setOpencodeModelCatalog, setOpencodeVendors, setProviderModelCatalog, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
@@ -225,9 +224,11 @@ export function applyProductShellBackendEvent(
       // A string (incl. "") means the picker is open; null/undefined means closed. Use a
       // typeof check rather than `!== null` so a missing value never reads as "open".
       const pickerOpen = typeof nextState.editorPickerFilter === "string";
+      const untitledOpen =
+        threadId !== null && nextState.untitledFiles.some((file) => file.threadId === threadId);
       const nextWorkbenchOpen = hasNewRealPane
         ? true
-        : hasOpenPane || pickerOpen
+        : hasOpenPane || pickerOpen || untitledOpen
           ? nextState.workbenchOpen
           : false;
       return {
@@ -275,90 +276,13 @@ export function applyProductShellBackendEvent(
         ...nextState,
         fileTree: nextTree,
         expandedFolderPaths: sameRoot ? nextState.expandedFolderPaths : [],
-        // A tree for a DIFFERENT directory closes the previous project's open files;
-        // re-listing the same directory (toggle) leaves them open.
-        startPageFiles: nextState.startPageFiles.filter((file) => file.cwd === payload.cwd),
       };
     }
     case "workspace.fileLoaded": {
-      // The start-page editor's file content. Ignored once a thread is active
-      // (the thread's own workbench owns file display there). Opens the Workbench
-      // column so the file shows as an editor pane on the right — the view-model
-      // synthesizes that pane from startPageFile.
-      if (state.activeThreadId !== null) {
-        return nextState;
-      }
-      const payload = event.payload as {
-        cwd?: string;
-        relativePath?: string;
-        content?: string;
-        truncated?: boolean;
-      };
-      if (typeof payload.cwd !== "string" || typeof payload.relativePath !== "string") {
-        return nextState;
-      }
-      // A cross-file go-to-definition opened this file; carry its target in so the
-      // editor scrolls to the definition once the content is here.
-      const pending = nextState.startPagePendingNavigation;
-      const navigationTarget =
-        pending !== null && pending.relativePath === payload.relativePath ? pending.target : undefined;
-      // Open the file as its OWN editor tab: replace it if already open (fresh read),
-      // else append. The loaded file becomes the active tab.
-      const loadedFile: ProductShellStartPageFile = {
-        cwd: payload.cwd,
-        relativePath: payload.relativePath,
-        content: typeof payload.content === "string" ? payload.content : "",
-        truncated: payload.truncated === true,
-        navigationTarget,
-      };
-      const loadedIndex = nextState.startPageFiles.findIndex(
-        (file) => file.cwd === loadedFile.cwd && file.relativePath === loadedFile.relativePath,
-      );
-      const startPageFiles =
-        loadedIndex >= 0
-          ? nextState.startPageFiles.map((file, index) => (index === loadedIndex ? loadedFile : file))
-          : [...nextState.startPageFiles, loadedFile];
-      return {
-        ...nextState,
-        workbenchOpen: true,
-        startPagePendingNavigation:
-          navigationTarget !== undefined ? null : nextState.startPagePendingNavigation,
-        startPageFiles,
-        draftActiveWorkbenchPaneId: startFilePaneId(loadedFile.relativePath),
-      };
+      return nextState;
     }
     case "workspace.fileSaved": {
-      // The start-page editor's save landed on disk: re-base the editor to the
-      // saved content and drop the dirty draft. Ignored once a thread is active.
-      if (state.activeThreadId !== null) {
-        return nextState;
-      }
-      const payload = event.payload as {
-        cwd?: string;
-        relativePath?: string;
-        content?: string;
-        truncated?: boolean;
-      };
-      const savedIndex = nextState.startPageFiles.findIndex(
-        (file) => file.cwd === payload.cwd && file.relativePath === payload.relativePath,
-      );
-      if (savedIndex < 0) {
-        return nextState;
-      }
-      return {
-        ...nextState,
-        startPageFiles: nextState.startPageFiles.map((file, index) =>
-          index === savedIndex
-            ? {
-                ...file,
-                content: typeof payload.content === "string" ? payload.content : file.content,
-                truncated: payload.truncated === true,
-                draft: undefined,
-                dirty: false,
-              }
-            : file,
-        ),
-      };
+      return nextState;
     }
     case "workspace.contentSearchResults": {
       const payload = event.payload as Partial<ProductShellContentSearch>;

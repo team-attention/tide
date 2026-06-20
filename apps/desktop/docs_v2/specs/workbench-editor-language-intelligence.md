@@ -116,8 +116,7 @@ Bring the Editor Pane to VS Code/Warp-level language intelligence:
   editor simply shows no intelligence for that file; no spawn retry storms
   (failed spawn is remembered per server for the backend lifetime).
 - Paths outside the Thread root are rejected (existing `resolveInsideRoot`).
-- LSP child processes are reaped on backend shutdown and runtime teardown
-  (no orphans — see v2-agy-process-leak).
+- LSP child processes are reaped on backend shutdown and runtime teardown.
 
 ## Tests
 

@@ -25,7 +25,7 @@ output streaming.
 - `docs_v2/README.md` says Tide v2 is a free, open-source Codex App alternative for local coding-agent work.
 - `docs_v2/master-plan.md` sets the baseline UI as `Left Rail | Agent Chat | Workbench`, with Composer anchored at the bottom of Agent Chat.
 - `docs_v2/master-plan.md` says the Left Rail starts with New thread, Search, and Sidebar options, and Thread Rows show one small Agent Icon.
-- `docs_v2/master-plan.md` says Codex, Claude, and Antigravity need polished Agent Icons, not ad hoc text fallback.
+- `docs_v2/master-plan.md` says provider CLI agents need polished Agent Icons, not ad hoc text fallback.
 - `docs_v2/implementation/concrete-design-backlog.md` selects Thread-first layout and minimal Thread-scoped App Chrome.
 - `docs_v2/designs/README.md` records Figma node `1472:52` as the canonical design board and node `1268:2` as the canonical 8-color palette.
 - `docs_v2/specs/desktop-workbench-pane-content-rendering.md` covers bounded
@@ -76,7 +76,8 @@ Agent Icons are small identity marks with deterministic palettes derived from th
 
 - Codex: light beige on dark.
 - Claude: beige on deep dark.
-- Antigravity: muted shadow on beige-tinted dark.
+- Gemini: green-blue accent on dark.
+- opencode: amber/neutral accent on dark.
 
 They are not large logos and not text-only fallback.
 
@@ -297,7 +298,7 @@ This slice consumes existing Desktop view models and fixture Left Rail data. Com
 | Composer uses compact icon chrome | `composer_uses_icon_chrome_for_options_model_voice_and_send` verifies Composer options, permission, model, voice, and send are compact controls. |
 | Palette uses Tide icon key colors | `visual_foundation_css_uses_tide_icon_key_colors_without_pure_black_shell` scans CSS tokens. |
 | Surfaces stay flat and product-native | `visual_foundation_css_avoids_decorative_glow_and_heavy_cards` scans CSS for matte surfaces instead of glow fields and heavy card shadows. |
-| Icons use deterministic palettes | `agent_icons_use_deterministic_identity_palette` renders Codex, Claude, and Antigravity Agent Icons. |
+| Icons use deterministic palettes | `agent_icons_use_deterministic_identity_palette` renders Codex, Claude, Gemini, and opencode Agent Icons. |
 | Renderer mounts Product Shell | `renderer_entry_mounts_product_shell_not_bare_agent_chat` verifies the renderer entry imports and renders Product Shell. |
 | Opening a Thread updates shell state | `opening_thread_from_left_ui_marks_it_active_and_hydrates_follow_up_composer` verifies fixture Product Shell state changes for a Thread Row. |
 | Opening a Backend Thread hydrates through Backend | `product_shell_thread_selection_emits_thread_hydrate_when_backend_transport_exists` verifies a Thread Row click emits `thread.hydrate` instead of using local preview when command transport exists. |
@@ -312,7 +313,7 @@ This slice consumes existing Desktop view models and fixture Left Rail data. Com
 | Choice Surfaces stay Composer-adjacent | `prompt_choice_surface_renders_above_composer_with_canonical_spacing` verifies Prompt State choices render above Composer with a gap. |
 | Thread archive confirm is transient | `thread_archive_intent_replaces_actions_with_one_confirm_pill` verifies a Thread Row renders one Confirm pill and no pin/archive actions while confirmation is pending. |
 | Left Rail context menus match Figma states | `left_ui_context_menus_match_figma_items_and_keep_rows_highlighted` verifies Thread and Project menus render the canonical items and keep their rows highlighted. |
-| Backend thread events preserve selected Agent state | `product_shell_thread_started_preserves_antigravity_model_label` verifies an Antigravity `thread.start` followed by Backend `thread.started` stays on Antigravity and does not fall back to Codex/GPT Composer chrome. |
+| Backend thread events preserve selected Agent state | `product_shell_thread_started_preserves_gemini_model_label` verifies a non-Codex `thread.start` followed by Backend `thread.started` preserves the selected Agent and does not fall back to Codex/GPT Composer chrome. |
 
 ## Implementation Notes
 

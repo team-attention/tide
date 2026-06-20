@@ -17,10 +17,10 @@ is always available at every boundary — using anything else is the bug.
 
 | # | Resource | Bound by | Rule |
 |---|----------|----------|------|
-| 1 | **Agent process** (one provider CLI in a hidden PTY) | env `TIDE_THREAD_ID`/`TIDE_RUNTIME_ID` at spawn | One process per thread. Reaped when the backend dies (PTY parent-death watchdog) + swept on startup. |
-| 2 | **Provider session** (its own rollout/transcript in `~/.codex` `~/.claude` `~/.gemini`) | the agent's **hook**, which fires carrying `session_id`+`transcript_path`, tagged with this runtime's env id → recorded as the thread's `providerSessionRef` | Read **ONLY** the bound session's file. Never discover by "most recent file" or "file containing the prompt" — concurrent same-provider sessions then cross-bind. |
+| 1 | **Agent process** (one provider CLI runtime) | env `TIDE_THREAD_ID`/`TIDE_RUNTIME_ID` at spawn | One process per thread. Reaped when the backend dies + swept on startup. |
+| 2 | **Provider session** (its own rollout/transcript/structured session) | provider integration session ref → recorded as the thread's `providerSessionRef` | Read **ONLY** the bound session. Never discover by "most recent file" or "file containing the prompt" — concurrent same-provider sessions then cross-bind. |
 | 3 | **Workbench** (its own Browser / Editor / Diff / FileTree panes) | the env `TIDE_THREAD_ID` carried into the Tide MCP session | The agent's MCP tools (`tide_open_browser`, `tide_open_editor`, `tide_observe_workspace`…) observe/operate **only this thread's** workbench. Cross-thread pane access is rejected (v1 inv. 19/20). Panes run offscreen/in background when the thread isn't the one on screen (v1 inv. 16). |
-| 4 | **Lifecycle + blocks** (running/idle, `runtimeStartedAt`, turn-end, agent session blocks) | `threadId` on every signal/frame | Attributed + applied by thread id. Turn-end = the provider's own end signal (codex `codex-stop`, claude `agent-idle` hook; antigravity has none → the terminal `PLANNER_RESPONSE` in its transcript). |
+| 4 | **Lifecycle + blocks** (running/idle, `runtimeStartedAt`, turn-end, agent session blocks) | `threadId` on every signal/frame | Attributed + applied by thread id. Turn-end = the provider integration's own end signal or structured runtime completion. |
 
 ## User focus is ORTHOGONAL view state
 

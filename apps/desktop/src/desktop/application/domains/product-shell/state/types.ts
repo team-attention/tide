@@ -91,6 +91,10 @@ export type ProductShellPinnedItemRef =
   | { kind: "thread"; threadId: string }
   | { kind: "project"; projectId: string };
 
+// Legacy pre-Draft start-page file shape. Current Product Shell no longer creates
+// these from user actions; files open through the Composer Draft Thread so the
+// editor is a backend-owned Workbench pane. The field remains to tolerate older
+// persisted/test snapshots while reducers drain it as no-op state.
 export interface ProductShellStartPageFile {
   cwd: string;
   relativePath: string;
@@ -110,17 +114,11 @@ export interface ProductShellStartPageFile {
   references?: AppChromeEditorReferenceList;
 }
 
-// The synthetic Workbench editor pane id base for the start (New Thread) page's
-// open files. There is no thread/backend pane to host an editor before a thread
-// exists, so the view-model derives one read/write editor pane PER open file from
-// `startPageFiles`, each under a per-path id (`start-file:<relativePath>`), and the
-// editor draft/save/close handlers special-case start-file panes (keyed on a null
-// activeThreadId). The bare base is kept for back-compat / prefix checks.
-// See docs_v2/specs/start-page-file-viewer.md.
+// Legacy synthetic start-file pane id base. Kept only for migration/back-compat
+// cleanup of old snapshots; current user paths create a Composer Draft Thread
+// before opening an editor.
 export const START_FILE_PANE_ID = "start-file";
 
-// A start-page editor pane id is per-file (so opening a second file is a new tab,
-// not a replace; reopening the same file focuses the existing tab).
 export function startFilePaneId(relativePath: string): string {
   return `${START_FILE_PANE_ID}:${relativePath}`;
 }
@@ -130,10 +128,9 @@ export function isStartFilePaneId(paneId: string): boolean {
 }
 
 // A VSCode-style untitled (blank, not-yet-on-disk) file — opened immediately by
-// "New File", named only on save (Save As). Renderer-owned like a start-page file,
-// but available inside a thread too (bound by `threadId`); it never enters the
-// backend Workbench snapshot, so it is never clobbered. `scopeCwd` is the absolute
-// root it will be written under. Spec: workbench-filetree-file-operations.
+// "New File", named only on save (Save As). The transient buffer is renderer-owned,
+// but it is bound to a thread (including the Composer Draft Thread) so saving
+// reopens through backend `open_editor`. Spec: workbench-filetree-file-operations.
 export interface ProductShellUntitledFile {
   // Synthetic, stable pane/sequence id: `untitled:<n>`.
   id: string;
@@ -141,7 +138,8 @@ export interface ProductShellUntitledFile {
   // The live buffer (starts ""). `dirty` is true once anything is typed.
   draft: string;
   dirty: boolean;
-  // The context the untitled belongs to: a thread id, or null for the start page.
+  // The context the untitled belongs to. Current paths set this to a real thread id;
+  // null is tolerated only for old snapshots.
   threadId: string | null;
   // Absolute workspace root the file is saved under on Save As.
   scopeCwd: string;
@@ -254,14 +252,11 @@ export interface ProductShellState {
   agentChatByThreadId: Record<string, AgentChatShellState>;
   appChrome: AppChromeState;
   fileTree: ProductShellFileTreeView | null;
-  // The start (New Thread) page's open editor file — a thread-independent
-  // read/write of one file under the composer-selected project (spec:
-  // start-page-file-viewer). Null when nothing is open.
-  // Open files on the start (New Thread) page, one editor tab each (no thread yet).
+  // Legacy pre-Draft start-page editor files. Current UI keeps this empty and opens
+  // files through the Composer Draft Thread instead.
   startPageFiles: ProductShellStartPageFile[];
-  // A cross-file go-to-definition target awaiting its file load: set when the
-  // definition is in a DIFFERENT file (we dispatch workspace.readFile first), and
-  // consumed by workspace.fileLoaded to scroll the newly-opened file to it.
+  // Legacy pre-Draft start-page navigation. Current code intelligence is thread
+  // Workbench scoped.
   startPagePendingNavigation: { relativePath: string; target: AppChromeEditorNavigationTarget } | null;
   // Latest project content-search (Cmd+Shift+F) results for the active thread.
   contentSearch: ProductShellContentSearch | null;
@@ -284,8 +279,7 @@ export interface ProductShellState {
   // docs_v2/specs/composer-draft-thread.md.
   draftThreadId: string | null;
   // VSCode-style untitled files (blank, named on save), one editor tab each. Shown
-  // in the context (thread/start) they were created in. Spec:
-  // workbench-filetree-file-operations.
+  // in the thread context they were created in. Spec: workbench-filetree-file-operations.
   untitledFiles: ProductShellUntitledFile[];
   // Monotonic sequence for naming Untitled-1, Untitled-2, … (never reused in a session).
   untitledSequence: number;
@@ -306,7 +300,8 @@ export type ProductShellBackendCommand =
   | { kind: "thread.hydrate"; payload: { threadId: string } }
   | {
       kind: "workspace.readFile";
-      // `create`: New File — touch a missing file before reading (spec: workbench-new-file.md).
+      // Legacy thread-independent query. Product Shell editors now use
+      // workbench.command/open_editor.
       payload: { cwd: string; path: string; byteLimit?: number; create?: boolean };
     }
   | {
@@ -314,7 +309,8 @@ export type ProductShellBackendCommand =
       payload: { cwd: string; path: string; byteLimit?: number };
     }
   | {
-      // Start-page editor save (thread-independent write under the composer cwd).
+      // Legacy thread-independent write. Product Shell editors now use
+      // workbench.command/save_editor_file.
       kind: "workspace.writeFile";
       payload: { cwd: string; path: string; content: string; byteLimit?: number };
     }

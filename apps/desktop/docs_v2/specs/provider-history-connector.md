@@ -8,9 +8,9 @@ history loop and one generic signal loop, with **zero `agentId === …` branches
 
 ## Evidence (as-is, 2026-06-10)
 
-- `live-backend.ts` holds four ~100-line per-provider history emitters
-  (`emitCodexHistory` / `emitClaudeHistory` / `emitAntigravityHistory` /
-  `emitGeminiHistory`) that are ~90% identical, dispatched by hardcoded
+- `live-backend.ts` held per-provider history emitters
+  (`emitCodexHistory` / `emitClaudeHistory` / `emitGeminiHistory` / provider peers)
+  that were mostly identical, dispatched by hardcoded
   `if (runtime.agentId === …)` in `trackRuntime` and `ingestOutput`.
 - gemini has **no frame reader**: its whole answer arrives as the turn-end
   `finalMessage` — the documented "(gemini is one-shot)" exception to the
@@ -50,7 +50,8 @@ history loop and one generic signal loop, with **zero `agentId === …` branches
      launch plan; the runtime port reports it with `onRuntimeStarted` and it is
      recorded before the first poll. The connector resolves the on-disk path from
      the uuid (never from recency).
-   - codex/antigravity: ref arrives from the runtime-keyed hook payload (as-is).
+   - codex: ref arrives from the runtime-keyed hook payload (as-is).
+   - opencode: ref arrives from the structured ACP session.
    - `findRecentGeminiSessionPath` + claim-sets are deleted.
 4. **gemini becomes a full streaming provider.** A real gemini frame reader
    parses the session JSONL (user/gemini records, `thoughts` → reasoning,
@@ -73,8 +74,8 @@ history loop and one generic signal loop, with **zero `agentId === …` branches
 
 ## Invariants
 
-1. `live-backend.ts` contains no `agentId === "codex" | "claude" | "gemini" |
-   "antigravity"` comparisons and no per-provider reader/binder symbols.
+1. `live-backend.ts` contains no provider-specific reader/binder symbols in the
+   generic runtime spine.
 2. A thread's `providerSessionRef` is only ever set from (a) a launch-plan
    assignment or (b) a runtime-keyed hook payload — never from file recency.
 3. Every provider's content renders only via history frames (single content

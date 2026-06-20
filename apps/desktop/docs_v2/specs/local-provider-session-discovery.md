@@ -6,8 +6,8 @@ Surface coding-agent sessions that already exist in the user's local provider
 history — created by the provider CLIs **outside** Tide — as Threads in the Tide
 thread list, scoped to the registered Project whose cwd they belong to.
 
-Covers Codex (rollout JSONL), Claude Code (transcript JSONL), and Antigravity
-(conversation cache + brain transcript). Discovered sessions are **adopted** as
+Currently covers Codex (rollout JSONL) and Claude Code (transcript JSONL).
+Discovered sessions are **adopted** as
 read-only Threads that open, render their conversation (via the existing
 provider-history rebuild), and resume through the provider's native resume.
 
@@ -24,12 +24,9 @@ provider-history rebuild), and resume through the provider's native resume.
     directory name encodes the cwd.
   - **Codex**: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`; the first line is
     `{"type":"session_meta","payload":{"cwd":"/Users/you/Workspace/tide",…}}`.
-  - **Antigravity**: `~/.gemini/antigravity-cli/cache/last_conversations.json`
-    maps `cwd → conversationId` (one — the most recent — per cwd). Transcript at
-    `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript.jsonl`.
 - Conversation rebuild already exists: `rebuildCodexConversation`,
-  `rebuildClaudeConversation`, `rebuildAntigravityConversation`, driven by a
-  Thread's `providerSessionRef.transcriptPath`.
+  `rebuildClaudeConversation`, driven by a Thread's
+  `providerSessionRef.transcriptPath`.
 - `ThreadSeed` / `threadSeedFromStorageRecord` define the adopted-thread shape;
   `restoreThreads` adds seeds to the in-memory thread map and lists them.
 
@@ -51,21 +48,17 @@ provider-history rebuild), and resume through the provider's native resume.
 - Adopted threads are **not persisted** by discovery; they are re-derived each
   startup from provider history (the durable source of truth). Lifecycle =
   `open`, runtimeState = `not_started`, lastKnownState = `idle`.
-- **Antigravity** slice-1 scope: the single conversation named in
-  `last_conversations.json` for the cwd (best-effort). Multi-session antigravity
-  discovery is out of scope.
-
 ## Out Of Scope
 
 - Live updates when a new external session appears while Tide is running.
-- Antigravity multi-session discovery.
+- Gemini/opencode external-session discovery.
 - Persisting edits (pin/rename) to adopted threads.
 
 ## Domain Model
 
 `DiscoveredSession`:
 ```
-agentId: "codex" | "claude" | "antigravity"
+agentId: "codex" | "claude"
 sessionId: string
 transcriptPath: string
 cwd: string
@@ -86,7 +79,6 @@ through the existing `restoreThreads` path, emitted to Desktop as the normal
 3. For each cwd, discover provider sessions:
    - Claude: scan the encoded project dir for `*.jsonl`.
    - Codex: scan recent rollouts, keep those whose `session_meta.cwd === cwd`.
-   - Antigravity: `last_conversations.json[cwd]` → brain transcript.
 4. Map each `DiscoveredSession` to an adopted `ThreadSeed` (deterministic id,
    provider ref, derived title, mtime timestamps, project scope).
 5. Drop seeds that collide with a persisted thread (by ref value or threadId).
