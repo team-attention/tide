@@ -46,6 +46,14 @@ mod tests {
         }
     }
 
+    fn meta_ctrl() -> Modifiers {
+        Modifiers {
+            meta: true,
+            ctrl: true,
+            ..Default::default()
+        }
+    }
+
     // ── Focus management tests ──────────────────
 
     #[test]
@@ -177,6 +185,51 @@ mod tests {
         let action = router.process(event, &panes);
 
         assert_eq!(action, Action::GlobalAction(GlobalAction::SplitHorizontal));
+    }
+
+    #[test]
+    fn meta_f_triggers_find() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('f'),
+            modifiers: meta(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::Find));
+    }
+
+    #[test]
+    fn meta_ctrl_f_triggers_fullscreen() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('f'),
+            modifiers: meta_ctrl(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::ToggleFullscreen));
+    }
+
+    #[test]
+    fn meta_shift_f_triggers_fullscreen_without_find_overlap() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('f'),
+            modifiers: meta_shift(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::ToggleFullscreen));
     }
 
     #[test]

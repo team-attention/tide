@@ -15,6 +15,9 @@ use objc2::runtime::{AnyClass, AnyObject, Bool};
 use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
 use objc2_foundation::{CGFloat, MainThreadMarker, NSObject, NSPoint, NSRect, NSSize, NSString};
 
+const WK_NAVIGATION_TYPE_LINK_ACTIVATED: isize = 0;
+const NS_EVENT_MODIFIER_FLAG_COMMAND: usize = 1 << 20;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct WebViewTarget {
     tide_window_id: TideWindowId,
@@ -79,6 +82,34 @@ pub(crate) fn queue_new_tab_url_for_window(tide_window_id: TideWindowId, url: St
 
 pub(crate) fn browser_content_pinch_zoom_enabled() -> bool {
     true
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BrowserLinkNavigationAction {
+    Allow,
+    LoadInCurrentWebView,
+    OpenNewBrowserPane,
+}
+
+fn classify_browser_link_navigation_action(
+    navigation_type: isize,
+    modifier_flags: usize,
+    target_frame_present: bool,
+    url: Option<&str>,
+) -> BrowserLinkNavigationAction {
+    if navigation_type != WK_NAVIGATION_TYPE_LINK_ACTIVATED {
+        return BrowserLinkNavigationAction::Allow;
+    }
+
+    if modifier_flags & NS_EVENT_MODIFIER_FLAG_COMMAND != 0 {
+        return BrowserLinkNavigationAction::OpenNewBrowserPane;
+    }
+
+    if !target_frame_present && url.is_some_and(|url| !is_browser_auth_popup_url(url)) {
+        return BrowserLinkNavigationAction::LoadInCurrentWebView;
+    }
+
+    BrowserLinkNavigationAction::Allow
 }
 
 /// Retained native objects for a Browser Auth Popup `WKWebView`.
@@ -156,13 +187,6 @@ unsafe fn absolute_url_string_from_request(request: &AnyObject) -> Option<String
     }
 }
 
-unsafe fn absolute_url_string_from_navigation_action(
-    navigation_action: &AnyObject,
-) -> Option<String> {
-    let request: Retained<AnyObject> = msg_send_id![navigation_action, request];
-    absolute_url_string_from_request(&request)
-}
-
 /// Global wake callback for triggering redraws from delegate callbacks.
 /// Set once at startup via `set_webview_waker`.
 static WEBVIEW_WAKER: Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>> = Mutex::new(None);
@@ -228,11 +252,11 @@ declare_class!(
             unsafe { msg_send_id![super(this), init] }
         }
 
-        /// Handle window.open() / target=_blank — open in a new Browser Pane.
-        /// Handle popups: window.open() opens a new Browser Pane (UC-7 BR-19),
-        /// but target=_blank link clicks load in the same webview to avoid
-        /// breaking normal navigation.
-        /// WKNavigationType: linkActivated=0, other=-1
+        /// Handle window.open() / target=_blank.
+        ///
+        /// The NavigationDelegate handles plain target=_blank link clicks before
+        /// WebKit asks for a new webview, so this UI delegate is the fallback and
+        /// the popup/auth path.
         #[method_id(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:)]
         fn create_webview(
             &self,
@@ -254,17 +278,11 @@ declare_class!(
                             self.ivars().tide_window_id,
                             self.ivars().pane_id,
                         );
-                    } else if nav_type == 0 {
-                        // linkActivated (0) = user clicked a link with target=_blank
-                        // → load in same webview (normal navigation)
-                        let ns_url_cls = AnyClass::get("NSURL").expect("NSURL");
-                        let ns_url_str = NSString::from_str(&url_str);
-                        let ns_url: Retained<AnyObject> =
-                            msg_send_id![ns_url_cls, URLWithString: &*ns_url_str];
-                        let req_cls = AnyClass::get("NSURLRequest").expect("NSURLRequest");
-                        let req: Retained<AnyObject> =
-                            msg_send_id![req_cls, requestWithURL: &*ns_url];
-                        let _: () = msg_send![webview, loadRequest: &*req];
+                    } else if nav_type == WK_NAVIGATION_TYPE_LINK_ACTIVATED {
+                        // Fallback for plain target=_blank links if WebKit reaches
+                        // createWebView without the NavigationDelegate consuming it.
+                        let _: Option<Retained<AnyObject>> =
+                            msg_send_id![webview, loadRequest: &*request];
                     } else {
                         // window.open() or other JS-initiated → new tab (UC-7 BR-19)
                         queue_new_tab_url_for_window(self.ivars().tide_window_id, url_str);
@@ -509,36 +527,46 @@ declare_class!(
             unsafe { msg_send_id![super(this), init] }
         }
 
-        /// Handle navigation action — intercept Cmd+click to open in new tab.
+        /// Handle navigation action — plain links navigate in the current webview;
+        /// Cmd+click opens a new Browser Pane.
         /// WKNavigationActionPolicy: .cancel = 0, .allow = 1
         #[method(webView:decidePolicyForNavigationAction:decisionHandler:)]
         fn decide_policy_for_action(
             &self,
-            _webview: &AnyObject,
+            webview: &AnyObject,
             navigation_action: &AnyObject,
             decision_handler: &block2::Block<dyn Fn(i64)>,
         ) {
             unsafe {
-                let navigation_url = absolute_url_string_from_navigation_action(navigation_action);
-
-                // Check modifier flags for Cmd key (NSEventModifierFlagCommand = 1 << 20)
+                let request: Retained<AnyObject> = msg_send_id![navigation_action, request];
+                let navigation_url = absolute_url_string_from_request(&request);
                 let modifier_flags: usize = msg_send![navigation_action, modifierFlags];
-                let cmd_held = modifier_flags & (1 << 20) != 0;
-
-                // WKNavigationType: linkActivated = 0
                 let nav_type: isize = msg_send![navigation_action, navigationType];
-                let is_link_click = nav_type == 0;
+                let target_frame: Option<Retained<AnyObject>> =
+                    msg_send_id![navigation_action, targetFrame];
 
-                if cmd_held && is_link_click {
-                    // Cmd+click on a link: queue URL for new tab, cancel navigation
-                    if let Some(url_str) = navigation_url {
-                        queue_new_tab_url_for_window(self.ivars().tide_window_id, url_str);
+                match classify_browser_link_navigation_action(
+                    nav_type,
+                    modifier_flags,
+                    target_frame.is_some(),
+                    navigation_url.as_deref(),
+                ) {
+                    BrowserLinkNavigationAction::OpenNewBrowserPane => {
+                        if let Some(url_str) = navigation_url {
+                            queue_new_tab_url_for_window(self.ivars().tide_window_id, url_str);
+                            wake_event_loop();
+                        }
+                        decision_handler.call((0,)); // .cancel — don't navigate current webview
                     }
-                    decision_handler.call((0,)); // .cancel — don't navigate current webview
-                    return;
+                    BrowserLinkNavigationAction::LoadInCurrentWebView => {
+                        let _: Option<Retained<AnyObject>> =
+                            msg_send_id![webview, loadRequest: &*request];
+                        decision_handler.call((0,)); // .cancel original new-window navigation
+                    }
+                    BrowserLinkNavigationAction::Allow => {
+                        decision_handler.call((1,)); // .allow
+                    }
                 }
-
-                decision_handler.call((1,)); // .allow
             }
         }
 
@@ -2334,6 +2362,71 @@ mod tests {
     static PERMISSION_DECISION: AtomicIsize = AtomicIsize::new(-1);
     static CERTIFICATE_DISPOSITION: AtomicIsize = AtomicIsize::new(-1);
     static CERTIFICATE_CREDENTIAL_WAS_NULL: AtomicBool = AtomicBool::new(false);
+
+    #[test]
+    fn plain_target_blank_link_loads_in_current_webview() {
+        assert_eq!(
+            classify_browser_link_navigation_action(
+                WK_NAVIGATION_TYPE_LINK_ACTIVATED,
+                0,
+                false,
+                Some("https://example.com/next"),
+            ),
+            BrowserLinkNavigationAction::LoadInCurrentWebView,
+        );
+    }
+
+    #[test]
+    fn normal_same_frame_link_uses_webkit_default_navigation() {
+        assert_eq!(
+            classify_browser_link_navigation_action(
+                WK_NAVIGATION_TYPE_LINK_ACTIVATED,
+                0,
+                true,
+                Some("https://example.com/next"),
+            ),
+            BrowserLinkNavigationAction::Allow,
+        );
+    }
+
+    #[test]
+    fn command_link_opens_new_browser_pane() {
+        assert_eq!(
+            classify_browser_link_navigation_action(
+                WK_NAVIGATION_TYPE_LINK_ACTIVATED,
+                NS_EVENT_MODIFIER_FLAG_COMMAND,
+                true,
+                Some("https://example.com/next"),
+            ),
+            BrowserLinkNavigationAction::OpenNewBrowserPane,
+        );
+    }
+
+    #[test]
+    fn browser_auth_popup_target_blank_stays_on_native_popup_path() {
+        assert_eq!(
+            classify_browser_link_navigation_action(
+                WK_NAVIGATION_TYPE_LINK_ACTIVATED,
+                0,
+                false,
+                Some("https://accounts.google.com/gsi/select?ux_mode=popup&origin=https%3A%2F%2Fapp.example"),
+            ),
+            BrowserLinkNavigationAction::Allow,
+        );
+    }
+
+    #[test]
+    fn script_popup_stays_on_ui_delegate_path() {
+        assert_eq!(
+            classify_browser_link_navigation_action(
+                -1,
+                0,
+                false,
+                Some("https://example.com/popup")
+            ),
+            BrowserLinkNavigationAction::Allow,
+        );
+    }
 
     fn copied_permission_block_ptr() -> *mut std::ffi::c_void {
         let block = block2::StackBlock::new(|decision: isize| {

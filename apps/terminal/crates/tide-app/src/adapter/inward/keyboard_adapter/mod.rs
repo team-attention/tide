@@ -462,8 +462,9 @@ pub(crate) fn handle_key_down(
 
             // Search bar interception (before routing to pane)
             if let Some(search_pane_id) = ctx.search_focus() {
-                preview::handle_search_bar_key(ctx, search_pane_id, key, &modifiers);
-                return;
+                if preview::handle_search_bar_key(ctx, search_pane_id, key, &modifiers) {
+                    return;
+                }
             }
 
             // Fall through to normal routing

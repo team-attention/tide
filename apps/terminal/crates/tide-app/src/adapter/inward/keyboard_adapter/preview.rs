@@ -187,10 +187,11 @@ pub(super) fn handle_search_bar_key(
     search_pane_id: crate::tide_core::PaneId,
     key: Key,
     modifiers: &Modifiers,
-) {
+) -> bool {
     if matches!(key, Key::Char('f') | Key::Char('F'))
-        && (modifiers.meta || modifiers.ctrl)
-        && !(modifiers.meta && modifiers.ctrl)
+        && (modifiers.meta ^ modifiers.ctrl)
+        && !modifiers.shift
+        && !modifiers.alt
     {
         match ctx.pane_mut(search_pane_id) {
             Some(PaneKind::Terminal(pane)) => {
@@ -209,10 +210,11 @@ pub(super) fn handle_search_bar_key(
             None => {}
         }
         ctx.set_search_focus(None);
-        return;
+        ctx.request_redraw();
+        return true;
     }
 
-    match key {
+    let handled = match key {
         Key::Escape => {
             match ctx.pane_mut(search_pane_id) {
                 Some(PaneKind::Terminal(pane)) => {
@@ -231,6 +233,7 @@ pub(super) fn handle_search_bar_key(
                 None => {}
             }
             ctx.set_search_focus(None);
+            true
         }
         Key::Enter => {
             if crate::adapter::inward::search_adapter::search_bar_is_editor_replacement_focused(
@@ -253,6 +256,7 @@ pub(super) fn handle_search_bar_key(
             } else {
                 crate::adapter::inward::search_adapter::search_next_match(ctx, search_pane_id);
             }
+            true
         }
         Key::Tab => {
             crate::adapter::inward::search_adapter::search_bar_toggle_replace_field(
@@ -260,25 +264,38 @@ pub(super) fn handle_search_bar_key(
                 search_pane_id,
                 modifiers.shift,
             );
+            true
         }
         Key::Backspace => {
             crate::adapter::inward::search_adapter::search_bar_backspace(ctx, search_pane_id);
+            true
         }
         Key::Delete => {
             crate::adapter::inward::search_adapter::search_bar_delete(ctx, search_pane_id);
+            true
         }
         Key::Left => {
             crate::adapter::inward::search_adapter::search_bar_cursor_left(ctx, search_pane_id);
+            true
         }
         Key::Right => {
             crate::adapter::inward::search_adapter::search_bar_cursor_right(ctx, search_pane_id);
+            true
         }
         Key::Char(ch) => {
             if !modifiers.ctrl && !modifiers.meta {
                 crate::adapter::inward::search_adapter::search_bar_insert(ctx, search_pane_id, ch);
+                true
+            } else {
+                // Let global/app-level modified character shortcuts (for example
+                // fullscreen) continue through the normal router.
+                false
             }
         }
-        _ => {}
+        _ => true,
+    };
+    if handled {
+        ctx.request_redraw();
     }
-    ctx.request_redraw();
+    handled
 }
