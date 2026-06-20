@@ -22,6 +22,7 @@ export function resolveActiveWorkspaceCwd(state: ProductShellState): string | nu
     if (scope?.kind === "scratch" && scope.scratchCwd.length > 0) {
       return scope.scratchCwd;
     }
+    return state.fileTree?.root ?? null;
   }
   const thread = state.threads.find((candidate) => candidate.threadId === state.activeThreadId);
   if (thread !== undefined) {

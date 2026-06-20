@@ -17,6 +17,7 @@ import type { BranchDeleteTarget } from "../dialogs/branch-delete-dialog.tsx";
 export interface ProductShellHandlerContext {
   props: TideProductShellProps;
   shellState: ProductShellState;
+  getShellState: () => ProductShellState;
   setShellState: Dispatch<SetStateAction<ProductShellState>>;
   viewModel: ProductShellViewModel;
   dispatchBackendCommand: (command: ProductShellBackendCommand | null) => void;

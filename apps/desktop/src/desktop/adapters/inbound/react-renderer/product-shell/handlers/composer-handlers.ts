@@ -30,7 +30,7 @@ function selectedBranchForNewWorktree(state: ProductShellState): string {
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
 export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onAnswerPromptSteps" | "onSubmit" | "onInterrupt" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onChoiceSurfaceInputSubmit" | "onOpencodeConnectApiKey" | "onAddAttachment" | "onRemoveAttachment"> {
-  const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, startColumnResize } = ctx;
+  const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, startColumnResize } = ctx;
   return {
     onDraftChange: (draft) => setShellState((state) => updateProductShellComposerDraft(state, draft)),
     // The on-ramp panel's in-app API-key field → set the vendor key the canonical way
@@ -211,7 +211,7 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
       // and run Provider Readiness so a not-installed / not-signed-in agent surfaces its
       // install / sign-in card immediately (not only on Send). Spec: provider-cli-setup-handoff.md.
       if (surfaceKind === "agent_menu") {
-        const selected = selectProductShellChoiceSurfaceRow(shellState, surfaceKind, rowId);
+        const selected = selectProductShellChoiceSurfaceRow(getShellState(), surfaceKind, rowId);
         const ensured = ensureComposerDraftThreadActive(selected.state);
         const threadId = ensured.state.draftThreadId;
         setShellState(ensured.state);

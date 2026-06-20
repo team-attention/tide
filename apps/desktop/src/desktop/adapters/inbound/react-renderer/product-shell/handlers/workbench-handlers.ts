@@ -5,7 +5,7 @@ import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
 export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onBrowserSnapshot" | "onBrowserActionResult" | "onBrowserCaptureResult" | "onBackgroundBrowserSnapshot" | "onBackgroundBrowserActionResult" | "onBackgroundBrowserCaptureResult" | "onOpenBrowserPane" | "onOpenChanges" | "onGitChanges" | "onGitFileDiff" | "onLoadWorkbenchImage"> {
-  const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
+  const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onWorkbenchToggle: () =>
       setShellState((state) => {
@@ -17,11 +17,12 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
     // first creates the Composer Draft Thread, then opens the backend-owned Changes
     // pane against that thread so it carries into the started Thread.
     onOpenChanges: (cwd) => {
-      if (shellState.activeThreadId === null) {
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null) {
         if (cwd === undefined) {
           return;
         }
-        const ensured = ensureComposerDraftThreadActive(shellState);
+        const ensured = ensureComposerDraftThreadActive(currentState);
         const openDiffCommand = {
           kind: "workbench.command" as const,
           payload: { threadId: ensured.state.activeThreadId as string, command: "open_diff" as const },
@@ -101,13 +102,14 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         return result.state;
       }),
     onLauncherAction: (actionId) => {
-      if (shellState.activeThreadId === null) {
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null) {
         // Composer (New Thread): make the Draft Thread the active thread first (lazily),
         // then run the NORMAL launcher path against it — it now sees a thread, so
         // Terminal/Editor/Diff/Browser all open as real backend panes and their typing/
         // saving/snapshots route through the active thread like any started thread. The
         // create-draft command is dispatched before the open. See composer-draft-thread.md.
-        const ensured = ensureComposerDraftThreadActive(shellState);
+        const ensured = ensureComposerDraftThreadActive(currentState);
         const result = selectProductShellLauncherAction(ensured.state, actionId);
         setShellState(result.state);
         if (ensured.command !== null) dispatchBackendCommand(ensured.command);
@@ -187,8 +189,9 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         return result.state;
       }),
     onOpenBrowserPane: (url, options) => {
-      if (shellState.activeThreadId === null) {
-        const ensured = ensureComposerDraftThreadActive(shellState);
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null) {
+        const ensured = ensureComposerDraftThreadActive(currentState);
         const result = openProductShellBrowserAtUrl(ensured.state, url, options);
         setShellState(result.state);
         if (ensured.command !== null) dispatchBackendCommand(ensured.command);

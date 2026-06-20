@@ -20,7 +20,7 @@ import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
 export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onOpenFile" | "onEditorPickerFilter" | "onEditorPickerSelect" | "onEditorPickerCancel" | "onEditorDraftChange" | "onEditorCursorChange" | "onEditorSave" | "onEditorGoToDefinition" | "onEditorGoToReferences" | "onEditorCodeIntel" | "onFileTreeEntryOpen" | "onCreateFile" | "onFileTreeToggle"> {
-  const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
+  const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
 
   const ensureDraftForFilePane = (state: typeof shellState): ReturnType<typeof ensureComposerDraftThreadActive> => {
     if (state.activeThreadId !== null) {
@@ -39,8 +39,9 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
 
   return {
     onOpenFile: (path) => {
-      if (shellState.activeThreadId === null) {
-        const ensured = ensureDraftForFilePane(shellState);
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null) {
+        const ensured = ensureDraftForFilePane(currentState);
         const result = openProductShellFileInEditor(ensured.state, path);
         setShellState(result.state);
         if (ensured.command !== null) dispatchBackendCommand(ensured.command);
@@ -124,8 +125,9 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
       return result.payload;
     },
     onFileTreeEntryOpen: (entryId) => {
-      if (shellState.activeThreadId === null && fileTreeEntryKind(shellState, entryId) === "file") {
-        const ensured = ensureDraftForFilePane(shellState);
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null && fileTreeEntryKind(currentState, entryId) === "file") {
+        const ensured = ensureDraftForFilePane(currentState);
         const result = selectProductShellFileTreeEntry(ensured.state, entryId);
         setShellState(result.state);
         if (ensured.command !== null) dispatchBackendCommand(ensured.command);
@@ -139,8 +141,9 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
       });
     },
     onCreateFile: (relativePath) => {
-      if (shellState.activeThreadId === null) {
-        const ensured = ensureDraftForFilePane(shellState);
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null) {
+        const ensured = ensureDraftForFilePane(currentState);
         const result = newProductShellFile(ensured.state, relativePath);
         setShellState(result.state);
         if (ensured.command !== null) dispatchBackendCommand(ensured.command);

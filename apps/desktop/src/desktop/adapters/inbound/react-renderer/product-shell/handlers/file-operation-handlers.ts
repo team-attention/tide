@@ -49,7 +49,7 @@ export function createFileOperationHandlers(
   | "onFileTreeRefresh"
   | "onFileTreeNoticeClear"
 > {
-  const { props, setShellState, dispatchBackendCommand } = ctx;
+  const { props, getShellState, setShellState, dispatchBackendCommand } = ctx;
   const bridge = props.projectBridge;
 
   // After a mutation that changed paths: drop affected start-page tabs, close affected
@@ -69,8 +69,9 @@ export function createFileOperationHandlers(
 
   return {
     onNewUntitledFile: () => {
-      if (ctx.shellState.activeThreadId === null) {
-        const ensured = ensureComposerDraftThreadActive(ctx.shellState);
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null) {
+        const ensured = ensureComposerDraftThreadActive(currentState);
         setShellState(newProductShellUntitledFile(ensured.state));
         if (ensured.command !== null) dispatchBackendCommand(ensured.command);
         return;
