@@ -22,8 +22,6 @@ https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
 ---
 
-## The idea
-
 Let's stop pretending working in terminals is fun.
 
 AI agents changed how we build software, but the interface somehow moved
@@ -32,13 +30,10 @@ backward.
 We're watching logs scroll, juggling chats, terminals, diffs, browsers, and
 files, trying to coordinate work that should be happening in one place.
 
-Tide is an open-source Codex alternative built around a simple idea:
-
 **Don't just chat with AI. Work with agents on a shared workbench.**
 
-It supports **Codex, Claude Code, Gemini, and opencode**.
-
-Free, open source, and built for how agentic work should actually feel.
+Tide is a free, open-source Codex alternative that supports **Codex, Claude
+Code, Gemini, and opencode**.
 
 *(Prefer a terminal-first workflow? [Tide Terminal](apps/terminal/) keeps the live terminal at the center and wraps it with the same shared workbench model.)*
 
