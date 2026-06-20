@@ -31,6 +31,7 @@ export function createPersistentLiveBackendAdapter(input: {
   service: ThreadRuntimeService;
   persistence: ThreadPersistenceService;
   homeDir: string;
+  codexHome?: string;
   appDataRoot: string;
   flushPendingPersists: () => Promise<void>;
   emitBackendEvents: (events: BackendEventEnvelope[]) => void;
@@ -89,6 +90,7 @@ export function createPersistentLiveBackendAdapter(input: {
     try {
       const adopted = discoverAdoptedThreadSeeds({
         homeDir: input.homeDir,
+        codexHome: input.codexHome,
         appDataRoot: input.appDataRoot,
         persistedRecords,
       }).filter((seed) => !isInternalSessionTitle(seed.title));

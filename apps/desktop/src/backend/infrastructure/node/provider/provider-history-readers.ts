@@ -23,12 +23,13 @@ import {
 
 export function readCodexProviderSessionRefsFromHome(input: {
   homeDir: string;
+  codexHome?: string;
   sinceMs: number;
   seenKeys: Set<string>;
   expectedUserMessage?: string;
 }): DiscoveredProviderSessionRef[] {
   const providerSessionRefs: DiscoveredProviderSessionRef[] = [];
-  for (const rolloutPath of recentCodexRollouts(input.homeDir, input.sinceMs)) {
+  for (const rolloutPath of recentCodexRollouts(input.homeDir, input.sinceMs, input.codexHome)) {
     if (
       input.expectedUserMessage !== undefined &&
       !codexRolloutContainsUserMessage(rolloutPath, input.expectedUserMessage)

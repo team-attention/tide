@@ -85,6 +85,7 @@ test("opencode start plan carries the chosen config as ACP configOptions", async
   });
   assert.equal(plan.transport, "acp");
   assert.deepEqual(plan.args, ["acp"]);
+  assert.deepEqual(plan.env, {});
   const configOptions = (plan.protocolParams as { configOptions?: unknown }).configOptions;
   assert.deepEqual(configOptions, [
     { configId: "model", value: "openai/gpt-5.5" },

@@ -1,37 +1,22 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { isSymlink } from "../live/live-backend-fs.ts";
-import { providerBootstrapArtifactsForHome } from "./provider-bootstrap-artifacts.ts";
-
 // Scans each provider's history directory for recently-modified transcript/rollout
 // files (bounded by depth, entry count, recency, and a per-provider name match),
 // returning the most recent paths. Used to discover live/adopted provider sessions.
 // Extracted from live-backend.ts.
 
-export function recentCodexRollouts(homeDir: string, sinceMs: number): string[] {
-  const realSessionsDir = join(homeDir, ".codex", "sessions");
-  const overlaySessionsDir = join(
-    providerBootstrapArtifactsForHome({ homeDir }).codexHome,
-    "sessions",
-  );
-  const rolloutPaths = recentProviderFiles({
-    rootDir: realSessionsDir,
+export function recentCodexRollouts(
+  homeDir: string,
+  sinceMs: number,
+  codexHome?: string,
+): string[] {
+  return recentProviderFiles({
+    rootDir: join(codexHome ?? join(homeDir, ".codex"), "sessions"),
     sinceMs,
     maxDepth: 4,
     matches: (name) => /^rollout-.+\.jsonl$/.test(name),
   });
-  if (!isSymlink(overlaySessionsDir)) {
-    rolloutPaths.push(
-      ...recentProviderFiles({
-        rootDir: overlaySessionsDir,
-        sinceMs,
-        maxDepth: 4,
-        matches: (name) => /^rollout-.+\.jsonl$/.test(name),
-      }),
-    );
-  }
-  return [...new Set(rolloutPaths)];
 }
 
 export function recentClaudeTranscripts(homeDir: string, sinceMs: number): string[] {

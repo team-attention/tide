@@ -21,10 +21,9 @@
 //   {id, result:{outcome:{outcome:"selected", optionId}}}.
 // - cancel: notification session/cancel {sessionId} → prompt resolves with
 //   stopReason "cancelled" (pending permission must be answered "cancelled").
-// - trust: ACP surfaces NO trust prompt; an untrusted cwd silently skips MCP
-//   servers and locks privileged modes. Tide forces trust via the
-//   GEMINI_CLI_TRUST_WORKSPACE=true env override (source-verified) — workspace
-//   trust is a Tide product decision, same as the other providers.
+// - trust: ACP surfaces NO trust prompt; an untrusted cwd may skip MCP servers
+//   and lock privileged modes. Gemini launch plans therefore add its documented
+//   workspace-trust bridge env so Tide MCP can load.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 

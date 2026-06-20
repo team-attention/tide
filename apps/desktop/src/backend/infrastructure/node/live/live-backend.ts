@@ -242,10 +242,14 @@ export function createLiveBackendContractMessageAdapter(
     tidePane: env.TIDE_PANE,
     tideWindow: env.TIDE_WINDOW,
   });
+  const effectiveCodexHome = (cwd: string): string => {
+    const value = resolveAugmentedEnvironment({ currentEnv: { ...env }, cwd }).CODEX_HOME;
+    return value !== undefined && value.length > 0 ? value : join(homeDir, ".codex");
+  };
   const integrations = {
     codex: createCodexAgentIntegration({
       resolveExecutable: () => resolveExecutable("codex"),
-      readProviderState: ({ cwd }) => readCodexProviderStateFromHome(homeDir, cwd),
+      readProviderState: ({ cwd }) => readCodexProviderStateFromHome(homeDir, cwd, effectiveCodexHome(cwd)),
       tideMcp: {
         command: bootstrapArtifacts.tideMcpCommandPath,
         args: [],
@@ -372,7 +376,7 @@ export function createLiveBackendContractMessageAdapter(
     }),
     workspaceFilePort: createNodeWorkspaceFilePort(),
     composerAttachmentStorePort: createNodeComposerAttachmentStorePort(join(appDataRoot, "attachments")),
-    providerTrustPort: createNodeProviderTrustPort(homeDir, bootstrapArtifacts.codexHome),
+    providerTrustPort: createNodeProviderTrustPort(homeDir, effectiveCodexHome),
     ensureScratchDirectory: (threadId: string) => {
       const dir = join(appDataRoot, "scratch", threadId);
       mkdirSync(dir, { recursive: true });
@@ -454,6 +458,7 @@ export function createLiveBackendContractMessageAdapter(
     service,
     persistence,
     homeDir,
+    codexHome: effectiveCodexHome(process.cwd()),
     appDataRoot,
     emitBackendEvents,
   });
