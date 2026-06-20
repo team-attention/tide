@@ -3,7 +3,7 @@ import type { WorkbenchTabView } from "../../../../../application/domains/app-ch
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
 import { useEffect, useRef } from "react";
-import { FileText, GitCompare, Globe, LayoutGrid, Terminal, X } from "lucide-react";
+import { FileText, GitCompare, Globe, Image as ImageIcon, LayoutGrid, Terminal, X } from "lucide-react";
 import { createColumnResizeHandle, createTrafficControls } from "../chrome/chrome.tsx";
 import { createEditorPickerPane, createWorkbenchPaneContent } from "./pane-content.tsx";
 import { WorkbenchSplitView } from "./split-view.tsx";
@@ -43,6 +43,8 @@ export function createWorkbenchColumn(
         return <GitCompare size={tabIconSize} strokeWidth={1.85} />;
       case "launcher":
         return <LayoutGrid size={tabIconSize} strokeWidth={1.85} />;
+      case "image":
+        return <ImageIcon size={tabIconSize} strokeWidth={1.85} />;
       default:
         return <FileText size={tabIconSize} strokeWidth={1.85} />;
     }

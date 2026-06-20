@@ -12,10 +12,12 @@ import {
 import {
   applyProductShellBackendEvent,
   archiveProductShellWorktreeChats,
+  createProductShellViewModel,
   createProductShellState,
   deleteWorktreeAndRefocus,
   openProductShellLeftRailMenu,
   openProductShellThread,
+  setProductShellRegisteredProjects,
   setProductShellGitContext,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
@@ -157,6 +159,32 @@ test("deleting_a_worktree_archives_its_threads_and_drops_it_from_lists", () => {
   assert.deepEqual(
     result.state.gitWorktrees.map((worktree) => worktree.path),
     ["/Users/you/repo"],
+  );
+});
+
+test("deleting_a_registered_worktree_project_removes_left_rail_project", () => {
+  // UC-3: a visible registered worktree Project must disappear from the rail only
+  // after Main reports the worktree directory was actually removed.
+  const cwd = "/Users/you/repo.worktree/fix-login";
+  const stateWithThread = seedThreads([{ threadId: "wt1", cwd }]);
+  const withRegisteredWorktree = setProductShellRegisteredProjects(stateWithThread, [
+    { projectId: "repo", name: "repo", cwd: "/Users/you/repo" },
+    { projectId: cwd, name: "tide/fix-login", cwd },
+  ]);
+  const afterMainDelete = setProductShellRegisteredProjects(withRegisteredWorktree, [
+    { projectId: "repo", name: "repo", cwd: "/Users/you/repo" },
+  ]);
+
+  const result = deleteWorktreeAndRefocus(afterMainDelete, cwd);
+  const rail = createProductShellViewModel(result.state);
+
+  assert.deepEqual(
+    rail.projectGroups.map((project) => project.cwd),
+    ["/Users/you/repo"],
+  );
+  assert.deepEqual(
+    result.commands.map((command) => command.payload.threadId),
+    ["wt1"],
   );
 });
 

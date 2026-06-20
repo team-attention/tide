@@ -32,6 +32,12 @@ export interface GitChangesViewResult {
   files: { path: string; status: GitChangeStatus; additions?: number; deletions?: number }[];
 }
 
+export interface WorkbenchImageLoadResult {
+  mimeType: string;
+  dataBase64: string;
+  byteLength: number;
+}
+
 export interface ProjectRegistryBridge {
   openDirectory(): Promise<string | null>;
   listProjects(): Promise<ProjectRegistryEntry[]>;
@@ -170,8 +176,10 @@ export interface ProductShellHandlers {
   // The Changes pane self-fetches its data from its cwd (Main-process git).
   onGitChanges: (cwd: string) => Promise<GitChangesViewResult>;
   onGitFileDiff: (cwd: string, relPath: string) => Promise<string>;
+  onLoadWorkbenchImage: (cwd: string, relativePath: string) => Promise<WorkbenchImageLoadResult | null>;
   onEditorPickerFilter: (filter: string) => void;
   onEditorPickerSelect: (relativePath: string) => void;
+  onEditorPickerCancel: () => void;
   onLeftRailMenuOpen: (menu: ProductShellLeftRailMenu | null, rect?: MenuAnchorRect) => void;
   isSectionCollapsed: (title: string) => boolean;
   onToggleSection: (title: string) => void;

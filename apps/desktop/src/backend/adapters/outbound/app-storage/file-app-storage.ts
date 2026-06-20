@@ -97,14 +97,17 @@ class FileAppStorage implements AppStoragePort {
       throw error;
     }
 
-    const directories: string[] = [];
-    for (const entry of entries) {
-      const stat = await fs.stat(path.join(directoryPath, entry));
-      if (stat.isDirectory()) {
-        directories.push(entry);
-      }
-    }
-    return directories.sort();
+    const checked = await Promise.all(
+      entries.map(async (entry) => {
+        try {
+          const entryStat = await fs.stat(path.join(directoryPath, entry));
+          return entryStat.isDirectory() ? entry : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    return checked.filter((entry): entry is string => entry !== null).sort();
   }
 
   async exists(relativePath: string): Promise<boolean> {

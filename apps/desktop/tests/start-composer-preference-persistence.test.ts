@@ -42,12 +42,14 @@ test("an opencode Start Composer preference round-trips through storage", () => 
     model: "openai/gpt-5.5",
     permission: "build",
     reasoning: "high",
+    worktree: "new",
   });
   assert.deepEqual(loadPreferredStartComposer(), {
     agentId: "opencode",
     model: "openai/gpt-5.5",
     permission: "build",
     reasoning: "high",
+    worktree: "new",
   });
 });
 

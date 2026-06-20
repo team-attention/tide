@@ -89,6 +89,10 @@ export function useDeleteDialogs(input: {
     projectBridge
       .deleteWorktree(target.cwd, worktreeDeleteRequest({ keepBranch, branchMerged: target.branchMerged }))
       .then((result) => {
+        if (!result.worktreeRemoved) {
+          setWorktreeDeleting(false);
+          return;
+        }
         setShellState((state) => {
           // Update the registry from Main's authoritative entries, then archive the
           // Threads that lived in the deleted worktree and drop it from the Composer's

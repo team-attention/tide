@@ -4,6 +4,7 @@ export type WorkbenchPaneKind =
   | "browser"
   | "diff"
   | "editor"
+  | "image"
   | "terminal"
   | "launcher"
   | "changes";
@@ -182,6 +183,20 @@ export interface EditorPaneState {
   references?: WorkbenchEditorReferenceList;
 }
 
+export interface ImagePaneState {
+  paneId: WorkbenchPaneId;
+  kind: "image";
+  title: string;
+  root: string;
+  filePath: string;
+  relativePath: string;
+  revision: string;
+  updatedAt: string;
+  mimeType: string;
+  dataBase64: string;
+  byteLength: number;
+}
+
 export interface WorkbenchEditorNavigationTarget {
   line: number;
   character: number;
@@ -255,6 +270,7 @@ export type WorkbenchPaneState =
   | BrowserPaneState
   | TerminalPaneState
   | EditorPaneState
+  | ImagePaneState
   | DiffPaneState
   | LauncherPaneState
   | ChangesPaneState;
@@ -276,11 +292,14 @@ export interface BrowserPaneRef extends WorkbenchPaneRef {
 }
 
 export interface NonBrowserWorkbenchPaneRef extends WorkbenchPaneRef {
-  kind: "diff" | "editor" | "terminal" | "changes";
+  kind: "diff" | "editor" | "image" | "terminal" | "changes";
+  root?: string;
   filePath?: string;
   relativePath?: string;
   bodyText?: string;
   bodyTextPreview?: string;
+  dataBase64?: string;
+  mimeType?: string;
   byteLength?: number;
   truncated?: boolean;
   navigationTarget?: WorkbenchEditorNavigationTarget;

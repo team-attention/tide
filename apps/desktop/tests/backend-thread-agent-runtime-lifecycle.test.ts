@@ -23,6 +23,8 @@ import {
   type ComposerAttachmentStorePort,
   type ProviderTrustPort,
 } from "../src/backend/application/services/thread/thread-runtime-service.ts";
+import { createBackendContractMessageAdapter } from "../src/backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts";
+import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 import type { AgentSessionBlock } from "../src/backend/application/domains/agent-session/agent-session-block.ts";
 import type { AgentSessionBlockReference } from "../src/backend/application/domains/thread/thread.ts";
 import type {
@@ -35,6 +37,7 @@ import type {
   WorkspaceFileEditResult,
   WorkspaceFilePort,
   WorkspaceFileReadResult,
+  WorkspaceImageFileReadResult,
   WorkspaceFileWriteResult,
   WorkspaceFileTreeEntry,
   WorkspaceFileTreeResult,
@@ -3199,6 +3202,90 @@ test("opening_editor_from_workbench_command_reads_file_and_creates_editor_pane",
   assert.equal(opened.ok && opened.thread.workbench.focusOwner, "workbench");
 });
 
+test("open_editor_opens_image_pane_for_image_file", async () => {
+  // Spec: docs_v2/specs/workbench-open-polish-and-image-pane.md
+  const service = createThreadRuntimeService({
+    ...createFakes({
+      imageFiles: {
+        "assets/logo.png": {
+          mimeType: "image/png",
+          dataBase64: "iVBORw0KGgo=",
+          byteLength: 8,
+        },
+      },
+    }).ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-image-open", {
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+      }),
+    ],
+  });
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-image-open",
+    command: "open_editor",
+    data: { path: "assets/logo.png" },
+  });
+
+  assert.equal(opened.ok, true);
+  const pane = opened.ok ? opened.thread.workbench.panes[0] : undefined;
+  assert.equal(pane?.kind, "image");
+  assert.equal(pane?.kind === "image" && pane.root, "/repo/tide");
+  assert.equal(pane?.kind === "image" && pane.relativePath, "assets/logo.png");
+  assert.equal(pane?.kind === "image" && pane.mimeType, "image/png");
+  assert.equal(pane?.kind === "image" && pane.dataBase64, undefined);
+  assert.equal(opened.ok && opened.thread.workbench.activePaneId, "id-1");
+  assert.equal(opened.ok && opened.workbench.panes[0]?.kind, "image");
+  assert.equal(opened.ok && opened.workbench.panes[0]?.root, "/repo/tide");
+  assert.equal(opened.ok && opened.workbench.panes[0]?.dataBase64, undefined);
+});
+
+test("workspace_read_image_file_emits_bounded_image_payload_event", async () => {
+  // Spec: docs_v2/specs/workbench-open-polish-and-image-pane.md
+  const service = createThreadRuntimeService({
+    ...createFakes({
+      imageFiles: {
+        "assets/logo.png": {
+          mimeType: "image/png",
+          dataBase64: "iVBORw0KGgo=",
+          byteLength: 8,
+        },
+      },
+    }).ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+  });
+
+  const events = await adapter.handleMessage({
+    contractVersion: CONTRACT_VERSION,
+    requestId: "req-image",
+    kind: "workspace.readImageFile",
+    issuedAt: now,
+    payload: { cwd: "/repo/tide", path: "assets/logo.png" },
+  });
+
+  assert.deepEqual(events.map((event) => event.kind), [
+    "command.accepted",
+    "workspace.imageLoaded",
+    "command.completed",
+  ]);
+  const loaded = events.find((event) => event.kind === "workspace.imageLoaded");
+  assert.deepEqual(loaded?.payload, {
+    cwd: "/repo/tide",
+    relativePath: "assets/logo.png",
+    mimeType: "image/png",
+    dataBase64: "iVBORw0KGgo=",
+    byteLength: 8,
+  });
+});
+
 test("go_to_definition_opens_target_editor_pane_with_navigation_target", async () => {
   // Spec: docs_v2/specs/workbench-editor-code-navigation.md
   const fakes = createFakes({
@@ -3573,15 +3660,15 @@ test("browser_snapshot_with_stale_revision_does_not_mutate_browser_pane", async 
   assert.equal(browserPane?.kind === "browser" && browserPane.revision, "id-3");
 });
 
-test("opening_workbench_terminal_starts_thread_scoped_terminal_pane", async () => {
-  // Spec: docs_v2/specs/workbench-terminal-pane-session.md
+test("open_terminal_uses_non_login_shell_by_default", async () => {
+  // Spec: docs_v2/specs/workbench-open-polish-and-image-pane.md
   const fakes = createFakes();
   const service = createThreadRuntimeService({
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
     defaultWorkbenchTerminalCommand: "zsh",
-    defaultWorkbenchTerminalArgs: ["-l"],
+    defaultWorkbenchTerminalArgs: [],
     initialThreads: [
       threadSeed("thread-terminal", {
         scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
@@ -3596,13 +3683,49 @@ test("opening_workbench_terminal_starts_thread_scoped_terminal_pane", async () =
 
   assert.equal(opened.ok, true);
   assert.equal(fakes.workbenchTerminal.starts[0]?.command, "zsh");
-  assert.deepEqual(fakes.workbenchTerminal.starts[0]?.args, ["-l"]);
+  assert.deepEqual(fakes.workbenchTerminal.starts[0]?.args, []);
   assert.equal(fakes.workbenchTerminal.starts[0]?.cwd, "/repo/tide");
   assert.equal(opened.ok && opened.thread.workbench.panes[0]?.kind, "terminal");
   assert.equal(opened.ok && opened.thread.workbench.panes[0]?.terminalRole, "session");
   assert.equal(opened.ok && opened.thread.workbench.panes[0]?.title, "Terminal");
   assert.equal(opened.ok && opened.thread.workbench.panes[0]?.status, "running");
   assert.equal(opened.ok && opened.thread.workbench.focusOwner, "workbench");
+});
+
+test("closing_terminal_pane_removes_it_before_stop_settles", async () => {
+  // Spec: docs_v2/specs/workbench-open-polish-and-image-pane.md
+  const fakes = createFakes();
+  fakes.workbenchTerminal.holdStops = true;
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    defaultWorkbenchTerminalCommand: "zsh",
+    defaultWorkbenchTerminalArgs: [],
+    initialThreads: [
+      threadSeed("thread-terminal-close-fast", {
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+      }),
+    ],
+  });
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-terminal-close-fast",
+    command: "open_terminal",
+  });
+  const paneId = opened.ok ? opened.thread.workbench.panes[0]?.paneId : undefined;
+
+  const closed = await service.handleWorkbenchCommand({
+    threadId: "thread-terminal-close-fast",
+    command: "close_pane",
+    targetPaneId: paneId,
+  });
+
+  assert.equal(closed.ok, true);
+  assert.equal(fakes.workbenchTerminal.handles[0]?.stops.length, 1);
+  assert.equal(closed.ok && closed.thread.workbench.panes.length, 0);
+  assert.equal(fakes.workbenchTerminal.stopResolvers.length, 1);
+  fakes.workbenchTerminal.stopResolvers.forEach((resolve) => resolve());
 });
 
 test("opening_workbench_terminal_preserves_explicit_command_args", async () => {
@@ -3883,6 +4006,7 @@ function createFakes(options: {
   readiness?: ProviderReadinessResult;
   fileTreeEntries?: WorkspaceFileTreeEntry[];
   files?: Record<string, string>;
+  imageFiles?: Record<string, { mimeType: string; dataBase64: string; byteLength: number }>;
   definition?: WorkspaceCodeLocation;
   definitionError?: {
     code: "workspace_code_intelligence_unavailable" | "workspace_code_definition_not_found";
@@ -3904,6 +4028,7 @@ function createFakes(options: {
   const workspaceFiles = new FakeWorkspaceFilePort(
     options.fileTreeEntries ?? [],
     options.files ?? {},
+    options.imageFiles ?? {},
   );
   const codeIntelligence = new FakeWorkspaceCodeIntelligencePort(
     options.definition,
@@ -4082,6 +4207,8 @@ class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
   handles: Array<{ runtimeId: string; writes: string[]; stops: string[] }> = [];
   outputsOnStart: WorkbenchTerminalOutput[] = [];
   exitOnStart: WorkbenchTerminalExit | undefined;
+  holdStops = false;
+  stopResolvers: Array<() => void> = [];
 
   async start(input: WorkbenchTerminalStartInput): Promise<WorkbenchTerminalHandle> {
     this.starts.push(input);
@@ -4104,6 +4231,11 @@ class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
       },
       stop: () => {
         handleState.stops.push(handleState.runtimeId);
+        if (this.holdStops) {
+          return new Promise<void>((resolve) => {
+            this.stopResolvers.push(resolve);
+          });
+        }
       },
     };
   }
@@ -4230,10 +4362,16 @@ class FakeWorkspaceFilePort implements WorkspaceFilePort {
   readonly writeCalls: { root: string; path: string; content: string }[] = [];
   private readonly entries: WorkspaceFileTreeEntry[];
   private readonly files: Record<string, string>;
+  private readonly imageFiles: Record<string, { mimeType: string; dataBase64: string; byteLength: number }>;
 
-  constructor(entries: WorkspaceFileTreeEntry[], files: Record<string, string>) {
+  constructor(
+    entries: WorkspaceFileTreeEntry[],
+    files: Record<string, string>,
+    imageFiles: Record<string, { mimeType: string; dataBase64: string; byteLength: number }>,
+  ) {
     this.entries = entries;
     this.files = { ...files };
+    this.imageFiles = { ...imageFiles };
   }
 
   async readTextFile(input: {
@@ -4262,6 +4400,44 @@ class FakeWorkspaceFilePort implements WorkspaceFilePort {
       error: {
         code: "workspace_file_not_found",
         message: "Workspace file read target was not found in this fake.",
+      },
+    };
+  }
+
+  async readImageFile(input: {
+    root: string;
+    path: string;
+    byteLimit: number;
+  }): Promise<WorkspaceImageFileReadResult> {
+    const relativePath = relativePathFromRoot(input.root, input.path);
+    const image = this.imageFiles[relativePath];
+    if (image === undefined) {
+      return {
+        ok: false,
+        error: {
+          code: "workspace_file_not_image",
+          message: "Workspace image read target was not an image in this fake.",
+        },
+      };
+    }
+    if (image.byteLength > input.byteLimit) {
+      return {
+        ok: false,
+        error: {
+          code: "workspace_file_too_large",
+          message: "Image exceeds the bounded preview size.",
+        },
+      };
+    }
+    return {
+      ok: true,
+      file: {
+        root: input.root,
+        path: `${input.root}/${relativePath}`,
+        relativePath,
+        mimeType: image.mimeType,
+        dataBase64: image.dataBase64,
+        byteLength: image.byteLength,
       },
     };
   }

@@ -256,10 +256,12 @@ export interface GitChangesView {
   files: GitChangesResult["files"];
 }
 
+export const GIT_STATE_REFRESH_MS = 3000;
+
 // Git state for the top-bar branch BADGE only (the Changes view itself is a first-class
-// backend Workbench pane now — see the "open_diff" command + ChangesPanel). One fetch on
-// cwd change feeds the composer's branch+worktree pickers (gitContext → shell state) and
-// the badge (branch + uncommitted +/- → gitInfo).
+// backend Workbench pane now — see the "open_diff" command + ChangesPanel). The active
+// cwd is refreshed periodically so the badge cannot keep stale +/- counts after a commit
+// or external file change.
 export function useGitState(
   projectBridge: ProjectRegistryBridge | undefined,
   activeProjectCwd: string | null,
@@ -281,19 +283,46 @@ export function useGitState(
     setGitInfo(null);
     const cwd = activeProjectCwd;
     let cancelled = false;
-    Promise.all([projectBridge.gitContext(cwd), projectBridge.gitChanges(cwd)])
-      .then(([context, changes]) => {
-        if (cancelled) {
-          return;
-        }
-        setShellState((state) =>
-          setProductShellGitContext(state, { branches: context.branches, worktrees: context.worktrees }),
-        );
-        setGitInfo(context.isGitRepo ? { cwd, branch: context.currentBranch, files: changes.files } : null);
-      })
-      .catch(() => {});
+    let requestSerial = 0;
+    const refresh = () => {
+      const requestId = ++requestSerial;
+      Promise.all([projectBridge.gitContext(cwd), projectBridge.gitChanges(cwd)])
+        .then(([context, changes]) => {
+          if (cancelled || requestId !== requestSerial) {
+            return;
+          }
+          if (!context.isGitRepo || !changes.isGitRepo) {
+            setShellState((state) => setGitContextIfChanged(state, { branches: [], worktrees: [] }));
+            setGitInfo(null);
+            return;
+          }
+          setShellState((state) =>
+            setGitContextIfChanged(state, { branches: context.branches, worktrees: context.worktrees }),
+          );
+          setGitInfo({ cwd, branch: context.currentBranch, files: changes.files });
+        })
+        .catch(() => {
+          if (!cancelled && requestId === requestSerial) {
+            setShellState((state) => setGitContextIfChanged(state, { branches: [], worktrees: [] }));
+            setGitInfo(null);
+          }
+        });
+    };
+    refresh();
+    const intervalId = window.setInterval(refresh, GIT_STATE_REFRESH_MS);
+    const refreshOnFocus = () => refresh();
+    const refreshOnVisible = () => {
+      if (document.visibilityState !== "hidden") {
+        refresh();
+      }
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, [projectBridge, activeProjectCwd]);
   const gitBadge = useMemo(
@@ -310,4 +339,40 @@ export function useGitState(
     [gitInfo],
   );
   return { gitBadge };
+}
+
+function setGitContextIfChanged(
+  state: ProductShellState,
+  context: { branches: ProductShellState["gitBranches"]; worktrees: ProductShellState["gitWorktrees"] },
+): ProductShellState {
+  if (sameBranches(state.gitBranches, context.branches) && sameWorktrees(state.gitWorktrees, context.worktrees)) {
+    return state;
+  }
+  return setProductShellGitContext(state, context);
+}
+
+function sameBranches(
+  current: ProductShellState["gitBranches"],
+  next: ProductShellState["gitBranches"],
+): boolean {
+  return current.length === next.length && current.every((branch, index) => {
+    const candidate = next[index];
+    return candidate !== undefined
+      && branch.name === candidate.name
+      && branch.kind === candidate.kind
+      && branch.current === candidate.current;
+  });
+}
+
+function sameWorktrees(
+  current: ProductShellState["gitWorktrees"],
+  next: ProductShellState["gitWorktrees"],
+): boolean {
+  return current.length === next.length && current.every((worktree, index) => {
+    const candidate = next[index];
+    return candidate !== undefined
+      && worktree.path === candidate.path
+      && worktree.branch === candidate.branch
+      && worktree.current === candidate.current;
+  });
 }

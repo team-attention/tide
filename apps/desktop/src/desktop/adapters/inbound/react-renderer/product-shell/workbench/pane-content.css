@@ -68,8 +68,16 @@
   gap: 8px;
 }
 
-.editor-picker__search {
+.editor-picker__toolbar {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-picker__search {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -79,6 +87,25 @@
   border-radius: 9px;
   background: var(--tide-surface);
   color: var(--tide-muted);
+}
+
+.editor-picker__close {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--tide-line);
+  border-radius: 9px;
+  background: var(--tide-surface);
+  color: var(--tide-muted);
+  cursor: pointer;
+}
+
+.editor-picker__close:hover {
+  background: var(--tide-selection);
+  color: var(--tide-text);
 }
 
 .editor-picker__input {

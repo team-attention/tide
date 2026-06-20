@@ -56,6 +56,13 @@ export function fileByteLimit(value: unknown): number {
   return 64 * 1024;
 }
 
+export function imageByteLimit(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return Math.min(Math.floor(value), 16 * 1024 * 1024);
+  }
+  return 8 * 1024 * 1024;
+}
+
 export function commandByteLimit(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
     return Math.min(Math.floor(value), 512 * 1024);

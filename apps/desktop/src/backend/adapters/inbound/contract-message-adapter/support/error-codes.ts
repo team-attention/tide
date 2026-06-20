@@ -22,6 +22,7 @@ export function contractCodeFromServiceError(error: ServiceError): ContractError
     case "workspace_file_unavailable":
     case "workspace_file_not_found":
     case "workspace_file_outside_scope":
+    case "workspace_file_not_image":
     case "workspace_file_not_text":
     case "workspace_file_unreadable":
     case "workspace_file_too_large":

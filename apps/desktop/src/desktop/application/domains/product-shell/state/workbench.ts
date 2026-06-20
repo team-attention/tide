@@ -158,13 +158,14 @@ export function openProductShellWorkbenchLauncher(
       state: {
         ...state,
         workbenchOpen: true,
+        editorPickerFilter: null,
         draftActiveWorkbenchPaneId: COMPOSER_LAUNCHER_PANE_ID,
       },
       command: null,
     };
   }
   return {
-    state: { ...state, workbenchOpen: true },
+    state: { ...state, workbenchOpen: true, editorPickerFilter: null },
     command: {
       kind: "workbench.command",
       payload: {
@@ -469,7 +470,10 @@ export function closeProductShellWorkbenchPane(
 ): ProductShellUpdateResult {
   // Untitled (renderer-owned) panes close renderer-locally in BOTH contexts.
   if (isUntitledPaneId(paneId)) {
-    return { state: removeProductShellUntitledFile(state, paneId), command: null };
+    return {
+      state: { ...removeProductShellUntitledFile(state, paneId), editorPickerFilter: null },
+      command: null,
+    };
   }
   // Composer (New Thread) page: no backend panes — close is renderer-local. Closing
   // a start-page editor tab removes just that file; closing a draft browser removes
@@ -490,6 +494,7 @@ export function closeProductShellWorkbenchPane(
     return {
       state: {
         ...state,
+        editorPickerFilter: null,
         startPageFiles,
         draftWorkbenchPanes,
         draftActiveWorkbenchPaneId,
@@ -502,6 +507,7 @@ export function closeProductShellWorkbenchPane(
   return {
     state: {
       ...state,
+      editorPickerFilter: null,
       appChrome: result.state,
     },
     command: result.command,

@@ -2,6 +2,13 @@ import { defaultClock, defaultIdGenerator, requestIdFromUnknown } from "./suppor
 import { omitUndefinedProperties, toWorkbenchFileTreeDto, toWorkbenchPaneRefDto } from "./dto/workbench-dtos.ts";
 import { contractCodeFromServiceError, isRetryableServiceError } from "./support/error-codes.ts";
 import { toAgentSessionBlockDto, toPromptStateDto, toProviderReadinessDto, toThreadSummaryDto } from "./dto/thread-dtos.ts";
+import {
+  workspaceContentSearchResultsEvent,
+  workspaceFileLoadedEvent,
+  workspaceFileSavedEvent,
+  workspaceFileTreeLoadedEvent,
+  workspaceImageLoadedEvent,
+} from "./dto/workspace-query-dtos.ts";
 import type {
   AnswerPromptResult,
   ArchiveThreadResult,
@@ -360,17 +367,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           typedCommand,
           await this.service.workspaceQueries().readWorkspaceFileTree(typedCommand.payload),
           (result) => [
-            {
-              contractVersion: CONTRACT_VERSION,
-              eventId: this.nextEventId(),
-              requestId: typedCommand.requestId,
-              kind: "workspace.fileTreeLoaded",
-              emittedAt: this.clock(),
-              payload: {
-                cwd: result.cwd,
-                fileTree: toWorkbenchFileTreeDto(result.fileTree),
-              },
-            } satisfies BackendEventEnvelope<"workspace.fileTreeLoaded">,
+            workspaceFileTreeLoadedEvent(this.commandEventMeta(typedCommand), result),
             this.commandCompletedEvent(typedCommand, { handled: true }),
           ],
         );
@@ -381,20 +378,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           typedCommand,
           await this.service.workspaceQueries().searchWorkspaceContent(typedCommand.payload),
           (result) => [
-            {
-              contractVersion: CONTRACT_VERSION,
-              eventId: this.nextEventId(),
-              requestId: typedCommand.requestId,
-              kind: "workspace.contentSearchResults",
-              emittedAt: this.clock(),
-              payload: {
-                cwd: result.cwd,
-                query: result.query,
-                matches: result.matches.map((match) => ({ ...match })),
-                fileCount: result.fileCount,
-                truncated: result.truncated,
-              },
-            } satisfies BackendEventEnvelope<"workspace.contentSearchResults">,
+            workspaceContentSearchResultsEvent(this.commandEventMeta(typedCommand), result),
             this.commandCompletedEvent(typedCommand, { handled: true }),
           ],
         );
@@ -405,19 +389,18 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           typedCommand,
           await this.service.workspaceQueries().readWorkspaceFile(typedCommand.payload),
           (result) => [
-            {
-              contractVersion: CONTRACT_VERSION,
-              eventId: this.nextEventId(),
-              requestId: typedCommand.requestId,
-              kind: "workspace.fileLoaded",
-              emittedAt: this.clock(),
-              payload: {
-                cwd: result.cwd,
-                relativePath: result.relativePath,
-                content: result.content,
-                truncated: result.truncated,
-              },
-            } satisfies BackendEventEnvelope<"workspace.fileLoaded">,
+            workspaceFileLoadedEvent(this.commandEventMeta(typedCommand), result),
+            this.commandCompletedEvent(typedCommand, { handled: true }),
+          ],
+        );
+      }
+      case "workspace.readImageFile": {
+        const typedCommand = command as BackendCommandEnvelope<"workspace.readImageFile">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.workspaceQueries().readWorkspaceImageFile(typedCommand.payload),
+          (result) => [
+            workspaceImageLoadedEvent(this.commandEventMeta(typedCommand), result),
             this.commandCompletedEvent(typedCommand, { handled: true }),
           ],
         );
@@ -428,19 +411,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           typedCommand,
           await this.service.workspaceQueries().writeWorkspaceFile(typedCommand.payload),
           (result) => [
-            {
-              contractVersion: CONTRACT_VERSION,
-              eventId: this.nextEventId(),
-              requestId: typedCommand.requestId,
-              kind: "workspace.fileSaved",
-              emittedAt: this.clock(),
-              payload: {
-                cwd: result.cwd,
-                relativePath: result.relativePath,
-                content: result.content,
-                truncated: result.truncated,
-              },
-            } satisfies BackendEventEnvelope<"workspace.fileSaved">,
+            workspaceFileSavedEvent(this.commandEventMeta(typedCommand), result),
             this.commandCompletedEvent(typedCommand, { handled: true }),
           ],
         );
@@ -874,6 +845,18 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       emittedAt: this.clock(),
       result,
     });
+  }
+
+  private commandEventMeta(command: BackendCommandEnvelope): {
+    eventId: string;
+    requestId: string;
+    emittedAt: string;
+  } {
+    return {
+      eventId: this.nextEventId(),
+      requestId: command.requestId,
+      emittedAt: this.clock(),
+    };
   }
 
   private agentSessionBlockUpsertedEvent(

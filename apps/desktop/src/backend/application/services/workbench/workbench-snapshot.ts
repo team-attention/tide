@@ -3,6 +3,7 @@ import type {
   BrowserPaneState,
   DiffPaneState,
   EditorPaneState,
+  ImagePaneState,
   LauncherPaneState,
   TerminalPaneState,
   WorkbenchLayoutMode,
@@ -124,6 +125,18 @@ export function editorPaneRef(pane: EditorPaneState): WorkbenchPaneSnapshotRef {
   };
 }
 
+export function imagePaneRef(pane: ImagePaneState): WorkbenchPaneSnapshotRef {
+  return {
+    ...workbenchPaneRef(pane),
+    kind: "image",
+    root: pane.root,
+    filePath: pane.filePath,
+    relativePath: pane.relativePath,
+    mimeType: pane.mimeType,
+    byteLength: pane.byteLength,
+  };
+}
+
 export function diffPaneRef(pane: DiffPaneState): WorkbenchPaneSnapshotRef {
   return {
     ...workbenchPaneRef(pane),
@@ -153,6 +166,9 @@ export function workbenchSnapshotPaneRef(
   }
   if (pane.kind === "editor") {
     return editorPaneRef(pane);
+  }
+  if (pane.kind === "image") {
+    return imagePaneRef(pane);
   }
   if (pane.kind === "diff") {
     return diffPaneRef(pane);

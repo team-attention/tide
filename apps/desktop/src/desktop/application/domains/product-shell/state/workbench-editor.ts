@@ -35,6 +35,14 @@ export function setProductShellEditorPickerFilter(
   return { ...state, editorPickerFilter: filter };
 }
 
+export function closeProductShellEditorPicker(
+  state: ProductShellState,
+): ProductShellState {
+  return state.editorPickerFilter === null
+    ? state
+    : { ...state, editorPickerFilter: null };
+}
+
 // Pick a file from the in-pane editor picker: open it in an Editor Pane (which
 // consumes the launcher) and close the picker.
 export function selectProductShellEditorPickerFile(

@@ -12,6 +12,8 @@ In scope:
 - A **delete affordance in two places**: (1) the Left Rail worktree **Thread row**
   context menu, and (2) the Composer **Worktree menu** (a trash control on each
   existing worktree row).
+- Any legacy Left Rail **Project row** delete affordance for a visible worktree
+  Project routes through the same confirm dialog and cleanup path.
 - **Worktree + branch deleted together by default**, with a "Keep branch"
   checkbox to remove only the directory.
 - **Safety**: a branch with unmerged commits requires an explicit force
@@ -117,7 +119,13 @@ branchMergedArgs(repoCwd: string, branch: string): string[];              // mer
 1. Open the Worktree menu; each existing worktree row shows a trash control.
 2. Clicking it opens the same dialog (UC-1 from step 2).
 
-### UC-3: Keep branch
+### UC-3: Delete from a visible worktree Project row
+1. Open the Project context menu for a worktree Project, when one is visible.
+2. "Delete worktree" opens the same dialog as Thread-row deletion.
+3. Confirm removes the directory, updates the registry, archives Threads in that
+   cwd, and removes the worktree from the Left Rail immediately.
+
+### UC-4: Keep branch
 1. Tick "Keep branch X" → only `git worktree remove --force` runs; the branch and
    its commits stay. No unmerged warning applies.
 
@@ -140,6 +148,7 @@ branchMergedArgs(repoCwd: string, branch: string): string[];              // mer
 | D2 | dialog default deletes branch; checkbox keeps it | `worktree_delete_dialog_defaults_to_deleting_branch` (renderer state) |
 | D4 | running worktree blocks delete | `worktree_delete_blocked_while_a_thread_runs` (renderer state) |
 | D1 | worktree thread row exposes delete | `worktree_thread_row_offers_delete_worktree` (view model) |
+| UC-3 | deleting a registered worktree project drops its registry entry and threads from the rail | `deleting_a_registered_worktree_project_removes_left_rail_project` |
 
 ## Implementation Notes
 

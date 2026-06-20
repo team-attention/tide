@@ -119,25 +119,11 @@ export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<Produc
     },
     onProjectDeleteWorktree: (projectId) => {
       const cwd = projectCwdById(shellState, projectId);
-      const bridge = props.projectBridge;
       setShellState((state) => openProductShellLeftRailMenu(state, null));
-      if (cwd === undefined || bridge === undefined) {
+      if (cwd === undefined) {
         return;
       }
-      const threadsHere = shellState.threads.filter(
-        (thread) => thread.scope.kind === "project" && thread.scope.cwd === cwd,
-      ).length;
-      const message =
-        threadsHere > 0
-          ? `Delete this worktree? ${threadsHere} thread${threadsHere === 1 ? "" : "s"} run in it — they'll become unavailable (their history is kept).`
-          : "Delete this worktree directory? The branch is kept.";
-      if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(message)) {
-        return;
-      }
-      bridge
-        .removeWorktree(cwd)
-        .then((result) => setShellState((state) => setProductShellRegisteredProjects(state, result.entries)))
-        .catch(() => {});
+      openWorktreeDeleteByCwd(cwd);
     },
     onProjectPinToggle: (projectId) =>
       setShellState((state) => toggleProductShellProjectPin(state, projectId)),

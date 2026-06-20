@@ -134,3 +134,21 @@ renders a `kind:"changes"` pane purely from `pane.cwd`, so a draft pane with
 
 - The Changes panel renders a file-list collapse toggle when there are files.
 - (resize drag + horizontal scroll are CSS/pointer behavior — live-verified.)
+
+## Git badge freshness
+
+> Slice: a committed or externally changed worktree made the top-bar git badge stale:
+> the badge could still show `+N −N` while the Changes pane, refreshed on open, correctly
+> showed a clean working tree.
+
+### Decision
+
+The top-bar git badge is a live summary of the same uncommitted working-tree data used by
+the Changes pane. While an active Project/worktree cwd is selected, the renderer refreshes
+that git context periodically and on focus/visibility return. A failed refresh clears the
+badge instead of preserving old `+N −N` counts, because a missing badge is less misleading
+than a false dirty signal.
+
+### Tests
+
+- `git_badge_refreshes_after_working_tree_becomes_clean`

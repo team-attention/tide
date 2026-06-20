@@ -7,7 +7,9 @@ import test from "node:test";
 
 import {
   createProductShellState,
+  closeProductShellWorkbenchPane,
   newProductShellFile,
+  openProductShellWorkbenchLauncher,
   selectProductShellFileTreeEntry,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import type {
@@ -147,4 +149,80 @@ test("new_file_on_start_page_is_a_no-op_without_a_concrete_project_cwd", () => {
   };
   const result = newProductShellFile(noCwd, "x.txt");
   assert.equal(result.command, null, "no concrete cwd → nothing to create");
+});
+
+// ---- Workbench picker polish (spec: workbench-open-polish-and-image-pane.md) ----
+
+function pickerThreadState(): ProductShellState {
+  const base = stateWithTree([SRC, README], []);
+  return {
+    ...base,
+    workbenchOpen: true,
+    editorPickerFilter: "",
+    appChrome: {
+      ...base.appChrome,
+      thread: {
+        threadId: "t1",
+        title: "Thread",
+        agentBinding: { agentId: "codex" },
+      },
+      activeWorkbenchPaneId: "launcher-1",
+      workbenchPanes: [
+        {
+          paneId: "launcher-1",
+          kind: "launcher",
+          title: "Launcher",
+          revision: "rev",
+          updatedAt: "2026-05-28T00:00:00.000Z",
+          actions: [],
+        },
+      ],
+    },
+  };
+}
+
+test("new_workbench_pane_clears_editor_picker", () => {
+  const result = openProductShellWorkbenchLauncher(pickerThreadState());
+
+  assert.equal(result.state.editorPickerFilter, null);
+  assert.equal(result.command?.kind, "workbench.command");
+  if (result.command?.kind === "workbench.command") {
+    assert.equal(result.command.payload.command, "open_launcher");
+  }
+});
+
+test("closing_workbench_pane_clears_editor_picker", () => {
+  const result = closeProductShellWorkbenchPane(pickerThreadState(), "launcher-1");
+
+  assert.equal(result.state.editorPickerFilter, null);
+  assert.equal(result.command?.kind, "workbench.command");
+  if (result.command?.kind === "workbench.command") {
+    assert.equal(result.command.payload.command, "close_pane");
+    assert.equal(result.command.payload.targetPaneId, "launcher-1");
+  }
+});
+
+test("closing_start_page_workbench_pane_clears_editor_picker", () => {
+  const start = startPageState();
+  const state: ProductShellState = {
+    ...start,
+    workbenchOpen: true,
+    editorPickerFilter: "",
+    draftActiveWorkbenchPaneId: "draft-browser-1",
+    draftWorkbenchPanes: [
+      {
+        paneId: "draft-browser-1",
+        kind: "browser",
+        title: "Browser",
+        revision: "rev",
+        updatedAt: "2026-05-28T00:00:00.000Z",
+        url: "https://example.com",
+      },
+    ],
+  };
+
+  const result = closeProductShellWorkbenchPane(state, "draft-browser-1");
+
+  assert.equal(result.state.editorPickerFilter, null);
+  assert.equal(result.command, null);
 });

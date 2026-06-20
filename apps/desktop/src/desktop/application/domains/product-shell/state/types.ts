@@ -329,6 +329,10 @@ export type ProductShellBackendCommand =
       payload: { cwd: string; path: string; byteLimit?: number; create?: boolean };
     }
   | {
+      kind: "workspace.readImageFile";
+      payload: { cwd: string; path: string; byteLimit?: number };
+    }
+  | {
       // Start-page editor save (thread-independent write under the composer cwd).
       kind: "workspace.writeFile";
       payload: { cwd: string; path: string; content: string; byteLimit?: number };

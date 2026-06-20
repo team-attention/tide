@@ -126,6 +126,7 @@ export interface PreferredStartComposer {
   model?: string;
   permission?: string;
   reasoning?: string;
+  worktree?: string;
 }
 
 let preferredStartComposer: PreferredStartComposer | null = null;
@@ -141,6 +142,7 @@ export function createStartAgentChatState(scope?: AgentChatThreadScope): AgentCh
   // one the user actually picked. If we fell back (their last agent is hidden or not
   // installed), use the resolved agent's own defaults instead of another agent's.
   const carryPref = pref?.agentId === agentId;
+  const worktree = carryPref ? preferredWorktreeForScope(pref?.worktree, scope) : "current folder";
   return createAgentChatShellState({
     startOptions: {
       agentBinding: agentBindingForShellAgent(agentId),
@@ -148,12 +150,22 @@ export function createStartAgentChatState(scope?: AgentChatThreadScope): AgentCh
       launchOptions: {
         model: carryPref ? pref?.model ?? defaultModelValueForAgent(agentId) : defaultModelValueForAgent(agentId),
         permission: carryPref ? pref?.permission ?? defaultPermissionForAgent(agentId) : defaultPermissionForAgent(agentId),
-        worktree: "current folder",
+        worktree,
         branch: "main",
         ...(carryPref && pref?.reasoning !== undefined ? { reasoning: pref.reasoning } : {}),
       },
     },
   });
+}
+
+function preferredWorktreeForScope(
+  value: string | undefined,
+  scope: AgentChatThreadScope | undefined,
+): string {
+  if (value !== "new") {
+    return "current folder";
+  }
+  return scope?.kind === "project" ? "new" : "current folder";
 }
 
 // Capture the Start Composer preference to remember from the current shell state —
@@ -185,7 +197,18 @@ export function preferredStartComposerFromState(
     model: typeof launch.model === "string" ? launch.model : undefined,
     permission: typeof launch.permission === "string" ? launch.permission : undefined,
     reasoning: typeof launch.reasoning === "string" ? launch.reasoning : undefined,
+    worktree: preferredWorktreeForPersistence(launch.worktree),
   };
+}
+
+function preferredWorktreeForPersistence(value: unknown): "current folder" | "new" | undefined {
+  if (value === "new") {
+    return "new";
+  }
+  if (typeof value === "string") {
+    return "current folder";
+  }
+  return undefined;
 }
 
 // The five real agent identities the Start Composer can launch. Single source of

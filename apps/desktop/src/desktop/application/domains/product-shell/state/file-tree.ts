@@ -491,7 +491,7 @@ export function reconcileProductShellAfterPathChange(
       : state.draftActiveWorkbenchPaneId;
 
   const threadEditorPaneIdsToClose = state.appChrome.workbenchPanes
-    .filter((pane) => pane.kind === "editor" && affected(pane.relativePath))
+    .filter((pane) => (pane.kind === "editor" || pane.kind === "image") && affected(pane.relativePath))
     .map((pane) => pane.paneId);
 
   return {

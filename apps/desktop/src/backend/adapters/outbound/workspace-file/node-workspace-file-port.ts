@@ -11,11 +11,13 @@ import type {
   WorkspaceFileSearchResult,
   WorkspaceFileTreeEntry,
   WorkspaceFileTreeResult,
+  WorkspaceImageFileReadResult,
   WorkspaceFileWriteResult,
 } from "../../../application/ports/outbound/workspace-file-port.ts";
 
 const DEFAULT_TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
 const MAX_EDIT_BYTES = 1024 * 1024;
+const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
 const MAX_TREE_DEPTH = 12;
 const MAX_TREE_ENTRIES = 4000;
 // Heavy vendor/build/VCS directories are hidden from the FileTree entirely —
@@ -55,6 +57,31 @@ const IGNORED_DIRECTORIES = new Set([
 
 export function createNodeWorkspaceFilePort(): WorkspaceFilePort {
   return new NodeWorkspaceFilePort();
+}
+
+export function imageMimeTypeForPath(filePath: string): string | undefined {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".apng":
+      return "image/apng";
+    case ".avif":
+      return "image/avif";
+    case ".bmp":
+      return "image/bmp";
+    case ".gif":
+      return "image/gif";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".png":
+      return "image/png";
+    case ".svg":
+      return "image/svg+xml";
+    case ".webp":
+      return "image/webp";
+    default:
+      return undefined;
+  }
 }
 
 class NodeWorkspaceFilePort implements WorkspaceFilePort {
@@ -335,6 +362,85 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
         content: DEFAULT_TEXT_DECODER.decode(buffer),
         byteLength: fileStat.size,
         truncated: fileStat.size > bytesToRead,
+      },
+    };
+  }
+
+  async readImageFile(input: {
+    root: string;
+    path: string;
+    byteLimit: number;
+  }): Promise<WorkspaceImageFileReadResult> {
+    const resolved = resolveInsideRoot(input.root, input.path);
+    if (!resolved.ok) {
+      return resolved;
+    }
+    const mimeType = imageMimeTypeForPath(resolved.path);
+    if (mimeType === undefined) {
+      return {
+        ok: false,
+        error: {
+          code: "workspace_file_not_image",
+          message: "File is not a supported image type.",
+        },
+      };
+    }
+
+    let fileStat;
+    try {
+      fileStat = await stat(resolved.path);
+    } catch {
+      return {
+        ok: false,
+        error: {
+          code: "workspace_file_not_found",
+          message: "File was not found.",
+        },
+      };
+    }
+
+    if (!fileStat.isFile()) {
+      return {
+        ok: false,
+        error: {
+          code: "workspace_file_unreadable",
+          message: "Path is not a regular file.",
+        },
+      };
+    }
+
+    const byteLimit = Math.max(0, Math.min(input.byteLimit, MAX_IMAGE_BYTES));
+    if (fileStat.size > byteLimit) {
+      return {
+        ok: false,
+        error: {
+          code: "workspace_file_too_large",
+          message: "Image exceeds the bounded preview size.",
+        },
+      };
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = await readFile(resolved.path);
+    } catch {
+      return {
+        ok: false,
+        error: {
+          code: "workspace_file_unreadable",
+          message: "Failed to read the image file.",
+        },
+      };
+    }
+    return {
+      ok: true,
+      file: {
+        root: resolved.root,
+        path: resolved.path,
+        relativePath: resolved.relativePath,
+        mimeType,
+        dataBase64: buffer.toString("base64"),
+        byteLength: fileStat.size,
       },
     };
   }
