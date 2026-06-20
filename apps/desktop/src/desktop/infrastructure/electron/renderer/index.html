@@ -25,6 +25,12 @@
         } catch (e) {
           /* default light */
         }
+        try {
+          var isMac = navigator.userAgent.indexOf("Macintosh") !== -1;
+          document.documentElement.setAttribute("data-platform", isMac ? "mac" : "other");
+        } catch (e) {
+          document.documentElement.setAttribute("data-platform", "other");
+        }
       })();
     </script>
     <style>
@@ -110,8 +116,12 @@
       }
 
       .tide-boot-traffic {
-        display: inline-flex;
+        display: none;
         gap: 8px;
+      }
+
+      [data-platform="mac"] .tide-boot-traffic {
+        display: inline-flex;
       }
 
       .tide-boot-traffic-dot {
