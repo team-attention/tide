@@ -1,7 +1,6 @@
 import type { AgentRuntimePort } from "../../ports/outbound/agent-runtime-port.ts";
 import type { ProviderReadinessPort } from "../../ports/outbound/provider-readiness-port.ts";
 import type { PtyTranscriptPort } from "../../ports/outbound/pty-transcript-port.ts";
-import type { ProviderSetupSurfaceTerminalPort } from "../../ports/outbound/provider-setup-surface-terminal-port.ts";
 import type { WorkbenchTerminalPort } from "../../ports/outbound/workbench-terminal-port.ts";
 import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
 import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port.ts";
@@ -27,7 +26,6 @@ export interface CreateThreadRuntimeServiceInput {
   agentRuntimePort: AgentRuntimePort;
   providerReadinessPort: ProviderReadinessPort;
   ptyTranscriptPort: PtyTranscriptPort;
-  providerSetupSurfaceTerminalPort?: ProviderSetupSurfaceTerminalPort;
   workbenchTerminalPort?: WorkbenchTerminalPort;
   workspaceCommandPort?: WorkspaceCommandPort;
   workspaceFilePort?: WorkspaceFilePort;

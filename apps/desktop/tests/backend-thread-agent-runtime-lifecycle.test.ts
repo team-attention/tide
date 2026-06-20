@@ -13,10 +13,6 @@ import {
   type ProviderReadinessPort,
   type ProviderReadinessCheckInput,
   type ProviderReadinessResult,
-  type ProviderSetupSurfaceHandle,
-  type ProviderSetupSurfaceOutput,
-  type ProviderSetupSurfaceStartInput,
-  type ProviderSetupSurfaceTerminalPort,
   type PromptState,
   type PtyTranscriptPort,
   type RawAgentFrame,
@@ -46,7 +42,6 @@ import type {
 import type {
   WorkspaceCommandCwdResult,
   WorkspaceCommandPort,
-  WorkspaceCommandRunResult,
 } from "../src/backend/application/ports/outbound/workspace-command-port.ts";
 import type {
   WorkbenchTerminalHandle,
@@ -2648,12 +2643,12 @@ test("workbench_command_open_provider_setup_surface_starts_setup_terminal_proces
   assert.equal(opened.ok, true);
   assert.equal(opened.thread.pendingInput?.value, "Preserve while setup runs");
   assert.equal(opened.thread.workbench.panes[0]?.status, "running");
-  assert.equal(fakes.setupSurface.starts[0]?.command, "/usr/local/bin/codex");
-  assert.deepEqual(fakes.setupSurface.starts[0]?.args, ["--no-alt-screen"]);
-  assert.deepEqual(fakes.setupSurface.starts[0]?.env, {
+  assert.equal(fakes.workbenchTerminal.starts[0]?.command, "/usr/local/bin/codex");
+  assert.deepEqual(fakes.workbenchTerminal.starts[0]?.args, ["--no-alt-screen"]);
+  assert.deepEqual(fakes.workbenchTerminal.starts[0]?.env, {
     CODEX_HOME: "/tmp/tide-codex-home",
   });
-  assert.equal(fakes.setupSurface.starts[0]?.cwd, "/repo");
+  assert.equal(fakes.workbenchTerminal.starts[0]?.cwd, "/repo");
   assert.deepEqual(fakes.runtime.events, []);
 });
 
@@ -2689,14 +2684,14 @@ test("provider_setup_surface_input_writes_terminal_bytes_to_running_setup_proces
   });
 
   assert.equal(written.ok, true);
-  assert.deepEqual(fakes.setupSurface.writes, ["\u001b[B\r"]);
+  assert.deepEqual(fakes.workbenchTerminal.handles[0]?.writes, ["\u001b[B\r"]);
   assert.deepEqual(fakes.runtime.events, []);
 });
 
 test("provider_setup_surface_output_updates_terminal_pane_preview", async () => {
   // Spec: docs_v2/specs/provider-setup-surface-terminal-lifecycle.md
   const fakes = createFakes();
-  fakes.setupSurface.outputsOnStart = [
+  fakes.workbenchTerminal.outputsOnStart = [
     { source: "stdout", body: "Provider setup running\n" },
     { source: "stderr", body: `${"x".repeat(8200)}done\n` },
   ];
@@ -2779,7 +2774,7 @@ test("provider_setup_surface_exit_retries_readiness_and_replays_pending_input_wh
   });
   assert.equal(opened.ok, true);
 
-  await fakes.setupSurface.emitExit(0, { exitCode: 0, signal: null });
+  await fakes.workbenchTerminal.emitExit(0, { exitCode: 0, signal: null });
   const hydrated = await service.hydrateThread({ threadId: started.thread.threadId });
 
   assert.equal(hydrated.ok, true);
@@ -2851,7 +2846,7 @@ test("provider_setup_surface_exit_pushes_async_events_for_replay", async () => {
   assert.equal(opened.ok, true);
   asyncEvents.length = 0;
 
-  await fakes.setupSurface.emitExit(0, { exitCode: 0, signal: null });
+  await fakes.workbenchTerminal.emitExit(0, { exitCode: 0, signal: null });
 
   assert.deepEqual(
     asyncEvents.map((event) => event.kind),
@@ -2926,7 +2921,7 @@ test("provider_setup_surface_exit_keeps_pending_input_when_readiness_is_still_bl
   });
   assert.equal(opened.ok, true);
 
-  await fakes.setupSurface.emitExit(0, { exitCode: 0, signal: null });
+  await fakes.workbenchTerminal.emitExit(0, { exitCode: 0, signal: null });
   const hydrated = await service.hydrateThread({ threadId: started.thread.threadId });
 
   assert.equal(hydrated.ok, true);
@@ -2989,7 +2984,7 @@ test("provider_setup_surface_exit_pushes_async_readiness_when_still_blocked", as
   assert.equal(opened.ok, true);
   asyncEvents.length = 0;
 
-  await fakes.setupSurface.emitExit(0, { exitCode: 0, signal: null });
+  await fakes.workbenchTerminal.emitExit(0, { exitCode: 0, signal: null });
 
   assert.deepEqual(
     asyncEvents.map((event) => event.kind),
@@ -3046,7 +3041,7 @@ test("closing_running_provider_setup_surface_stops_setup_process", async () => {
   });
 
   assert.equal(closed.ok, true);
-  assert.equal(fakes.setupSurface.stops.length, 1);
+  assert.equal(fakes.workbenchTerminal.handles[0]?.stops.length, 1);
   assert.equal(
     closed.thread.workbench.panes.some((pane) => pane.paneId === paneId),
     false,
@@ -3625,7 +3620,6 @@ test("workbench_terminal_input_writes_to_visible_terminal_handle", async () => {
 
   assert.equal(written.ok, true);
   assert.deepEqual(fakes.runtime.events, []);
-  assert.deepEqual(fakes.setupSurface.writes, []);
   assert.deepEqual(fakes.workbenchTerminal.handles[0]?.writes, ["pwd\r"]);
 });
 
@@ -3865,7 +3859,6 @@ function createFakes(options: {
     },
   );
   const transcript = new FakePtyTranscriptPort();
-  const setupSurface = new FakeProviderSetupSurfaceTerminalPort();
   const workspaceCommand = new FakeWorkspaceCommandPort();
   const workbenchTerminal = new FakeWorkbenchTerminalPort();
   const workspaceFiles = new FakeWorkspaceFilePort(
@@ -3884,7 +3877,6 @@ function createFakes(options: {
     runtime,
     readiness,
     transcript,
-    setupSurface,
     workspaceCommand,
     workbenchTerminal,
     workspaceFiles,
@@ -3895,7 +3887,6 @@ function createFakes(options: {
       agentRuntimePort: runtime,
       providerReadinessPort: readiness,
       ptyTranscriptPort: transcript,
-      providerSetupSurfaceTerminalPort: setupSurface,
       workbenchTerminalPort: workbenchTerminal,
       workspaceCommandPort: workspaceCommand,
       workspaceFilePort: workspaceFiles,
@@ -4022,34 +4013,6 @@ class FakePtyTranscriptPort implements PtyTranscriptPort {
   }
 }
 
-class FakeProviderSetupSurfaceTerminalPort implements ProviderSetupSurfaceTerminalPort {
-  starts: ProviderSetupSurfaceStartInput[] = [];
-  stops: string[] = [];
-  writes: string[] = [];
-  outputsOnStart: ProviderSetupSurfaceOutput[] = [];
-
-  async start(input: ProviderSetupSurfaceStartInput): Promise<ProviderSetupSurfaceHandle> {
-    this.starts.push(input);
-    for (const output of this.outputsOnStart) {
-      input.onOutput?.(output);
-    }
-    const runtimeId = `setup-runtime-${this.starts.length}`;
-    return {
-      surfaceRuntimeId: runtimeId,
-      write: (data) => {
-        this.writes.push(data);
-      },
-      stop: () => {
-        this.stops.push(runtimeId);
-      },
-    };
-  }
-
-  async emitExit(index: number, exit: { exitCode: number | null; signal: string | null }): Promise<void> {
-    await this.starts[index].onExit?.(exit);
-  }
-}
-
 class FakeWorkspaceCommandPort implements WorkspaceCommandPort {
   async resolveCwd(input: { root: string; cwd?: string }): Promise<WorkspaceCommandCwdResult> {
     const cwd = input.cwd ?? input.root;
@@ -4072,20 +4035,12 @@ class FakeWorkspaceCommandPort implements WorkspaceCommandPort {
     };
   }
 
-  async run(): Promise<WorkspaceCommandRunResult> {
-    return {
-      ok: false,
-      error: {
-        code: "workspace_command_unavailable",
-        message: "Workspace command run is not configured in this fake.",
-      },
-    };
-  }
 }
 
 class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
   starts: WorkbenchTerminalStartInput[] = [];
   handles: Array<{ runtimeId: string; writes: string[]; stops: string[] }> = [];
+  outputsOnStart: WorkbenchTerminalOutput[] = [];
 
   async start(input: WorkbenchTerminalStartInput): Promise<WorkbenchTerminalHandle> {
     this.starts.push(input);
@@ -4095,6 +4050,9 @@ class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
       stops: [] as string[],
     };
     this.handles.push(handleState);
+    for (const output of this.outputsOnStart) {
+      input.onOutput?.(output);
+    }
     return {
       terminalRuntimeId: handleState.runtimeId,
       write: (data) => {
@@ -4108,6 +4066,10 @@ class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
 
   emitOutput(index: number, output: WorkbenchTerminalOutput): void {
     this.starts[index]?.onOutput?.(output);
+  }
+
+  async emitExit(index: number, exit: { exitCode: number | null; signal: string | null }): Promise<void> {
+    await this.starts[index]?.onExit?.(exit);
   }
 }
 

@@ -37,10 +37,7 @@ import type {
   WorkspaceCodeLocation,
   WorkspaceCodeReferencesResult,
 } from "../src/backend/application/ports/outbound/workspace-code-intelligence-port.ts";
-import type {
-  WorkspaceCommandPort,
-  WorkspaceCommandRunResult,
-} from "../src/backend/application/ports/outbound/workspace-command-port.ts";
+import type { WorkspaceCommandPort } from "../src/backend/application/ports/outbound/workspace-command-port.ts";
 import type {
   WorkspaceFileEditResult,
   WorkspaceFilePort,
@@ -1132,7 +1129,7 @@ test("running_terminal_command_creates_completed_terminal_pane", async () => {
   assert.equal(result.ok && result.thread.workbench.panes[0]?.kind, "terminal");
   assert.equal(result.ok && result.thread.workbench.panes[0]?.terminalRole, "command_result");
   assert.equal(result.ok && result.thread.workbench.focusOwner, "composer");
-  assert.equal(fakes.commands.runs.length, 1);
+  assert.equal(fakes.workbenchTerminal.starts.length, 1);
   assert.deepEqual(fakes.runtime.events, []);
 });
 
@@ -1215,7 +1212,7 @@ test("running_terminal_command_outside_thread_root_is_rejected", async () => {
 
   assert.equal(result.ok, false);
   assert.equal(!result.ok && result.error.code, "workspace_command_outside_scope");
-  assert.equal(fakes.commands.runs.length, 0);
+  assert.equal(fakes.workbenchTerminal.starts.length, 0);
   const observed = await service.handleTideMcpToolCall({
     session: { runtimeId: "runtime-run-command-outside", agentId: "codex" },
     toolName: "tide_observe_workbench",
@@ -1358,8 +1355,8 @@ function createFakes(options: {
   );
   const transcript = new FakePtyTranscriptPort();
   const workspaceFiles = new FakeWorkspaceFilePort(options.files ?? {});
-  const commands = new FakeWorkspaceCommandPort(options.commands ?? []);
-  const workbenchTerminal = new FakeWorkbenchTerminalPort();
+  const commands = new FakeWorkspaceCommandPort();
+  const workbenchTerminal = new FakeWorkbenchTerminalPort(options.commands ?? []);
   const codeIntelligence = new FakeWorkspaceCodeIntelligencePort(
     options.definition,
     options.definitionError,
@@ -1729,19 +1726,6 @@ interface FakeCommandResult {
 }
 
 class FakeWorkspaceCommandPort implements WorkspaceCommandPort {
-  private readonly results: FakeCommandResult[];
-  readonly runs: {
-    command: string;
-    args: string[];
-    cwd: string;
-    timeoutMs: number;
-    byteLimit: number;
-  }[] = [];
-
-  constructor(results: FakeCommandResult[]) {
-    this.results = results;
-  }
-
   async resolveCwd(input: {
     root: string;
     cwd?: string;
@@ -1765,62 +1749,16 @@ class FakeWorkspaceCommandPort implements WorkspaceCommandPort {
       },
     };
   }
-
-  async run(input: {
-    command: string;
-    args: string[];
-    cwd: string;
-    timeoutMs: number;
-    byteLimit: number;
-    startedAt: string;
-  }): Promise<WorkspaceCommandRunResult> {
-    this.runs.push({
-      command: input.command,
-      args: [...input.args],
-      cwd: input.cwd,
-      timeoutMs: input.timeoutMs,
-      byteLimit: input.byteLimit,
-    });
-    const result = this.results.shift() ?? {
-      command: input.command,
-      args: input.args,
-      exitCode: 0,
-      stdout: "",
-      stderr: "",
-    };
-    const transcript = commandTranscript({
-      command: input.command,
-      args: input.args,
-      cwd: input.cwd,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-      signal: result.signal ?? null,
-    });
-
-    return {
-      ok: true,
-      run: {
-        command: input.command,
-        args: [...input.args],
-        cwd: input.cwd,
-        exitCode: result.exitCode,
-        signal: result.signal ?? null,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        transcript: transcript.slice(0, input.byteLimit),
-        truncated: transcript.length > input.byteLimit,
-        timedOut: result.timedOut ?? false,
-        startedAt: input.startedAt,
-        completedAt: now,
-      },
-    };
-  }
 }
 
 class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
   readonly starts: WorkbenchTerminalStartInput[] = [];
   readonly handles: WorkbenchTerminalHandle[] = [];
+  private readonly results: FakeCommandResult[];
+
+  constructor(results: FakeCommandResult[]) {
+    this.results = results;
+  }
 
   async start(input: WorkbenchTerminalStartInput): Promise<WorkbenchTerminalHandle> {
     this.starts.push(input);
@@ -1830,22 +1768,21 @@ class FakeWorkbenchTerminalPort implements WorkbenchTerminalPort {
       stop: () => {},
     };
     this.handles.push(handle);
+    const result = this.results.shift();
+    if (result !== undefined) {
+      if (result.stdout.length > 0) {
+        input.onOutput?.({ source: "stdout", body: result.stdout });
+      }
+      if (result.stderr.length > 0) {
+        input.onOutput?.({ source: "stderr", body: result.stderr });
+      }
+      await input.onExit?.({
+        exitCode: result.exitCode,
+        signal: result.signal ?? null,
+      });
+    }
     return handle;
   }
-}
-
-function commandTranscript(input: {
-  command: string;
-  args: string[];
-  cwd: string;
-  stdout: string;
-  stderr: string;
-  exitCode: number | null;
-  signal: string | null;
-}): string {
-  const prompt = `$ cd ${input.cwd}\n$ ${[input.command, ...input.args].join(" ")}\n`;
-  const exit = `[exit ${input.exitCode ?? input.signal ?? "unknown"}]\n`;
-  return `${prompt}${input.stdout}${input.stderr}${exit}`;
 }
 
 function fixedClock(): string {

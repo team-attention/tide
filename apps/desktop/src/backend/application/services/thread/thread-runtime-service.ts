@@ -174,14 +174,6 @@ import type {
 
 import type { ProviderReadinessPort } from "../../ports/outbound/provider-readiness-port.ts";
 
-import type {
-  ProviderSetupSurfaceExit,
-  ProviderSetupSurfaceHandle,
-  ProviderSetupSurfaceOutput,
-  ProviderSetupSurfaceStartInput,
-  ProviderSetupSurfaceTerminalPort,
-} from "../../ports/outbound/provider-setup-surface-terminal-port.ts";
-
 import type { PtyTranscriptPort } from "../../ports/outbound/pty-transcript-port.ts";
 
 import type {
@@ -191,11 +183,7 @@ import type {
 
 import type { ProviderTrustPort } from "../../ports/outbound/provider-trust-port.ts";
 
-import type {
-  WorkspaceCommandErrorCode,
-  WorkspaceCommandPort,
-  WorkspaceCommandRun,
-} from "../../ports/outbound/workspace-command-port.ts";
+import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
 
 import type {
   WorkspaceFileErrorCode,
@@ -229,10 +217,6 @@ export type {
   ProviderReadinessCheckInput,
   ProviderReadinessPort,
   ProviderReadinessResult,
-  ProviderSetupSurfaceHandle,
-  ProviderSetupSurfaceOutput,
-  ProviderSetupSurfaceStartInput,
-  ProviderSetupSurfaceTerminalPort,
   PtyTranscriptPort,
   WorkspaceCommandPort,
   WorkspaceCodeIntelligencePort,
@@ -370,7 +354,6 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   agentRuntimePort: AgentRuntimePort;
   providerReadinessPort: ProviderReadinessPort;
   ptyTranscriptPort: PtyTranscriptPort;
-  providerSetupSurfaceTerminalPort?: ProviderSetupSurfaceTerminalPort;
   workbenchTerminalPort?: WorkbenchTerminalPort;
   workspaceCommandPort: WorkspaceCommandPort;
   workspaceFilePort: WorkspaceFilePort;
@@ -402,7 +385,6 @@ constructor(input: CreateThreadRuntimeServiceInput) {
     this.agentRuntimePort = input.agentRuntimePort;
     this.providerReadinessPort = input.providerReadinessPort;
     this.ptyTranscriptPort = input.ptyTranscriptPort;
-    this.providerSetupSurfaceTerminalPort = input.providerSetupSurfaceTerminalPort;
     this.workbenchTerminalPort = input.workbenchTerminalPort;
     this.workspaceCommandPort = input.workspaceCommandPort ?? createUnavailableWorkspaceCommandPort();
     this.workspaceFilePort = input.workspaceFilePort ?? createUnavailableWorkspaceFilePort();
@@ -421,7 +403,6 @@ constructor(input: CreateThreadRuntimeServiceInput) {
     this.workbenchRuntime = new WorkbenchRuntime({
       store: this.threads,
       workbenchTerminalPort: this.workbenchTerminalPort,
-      providerSetupSurfaceTerminalPort: this.providerSetupSurfaceTerminalPort,
       clock: this.clock,
       idGenerator: this.idGenerator,
       emitAsyncEvent: (event) => this.emitAsyncEvent(event),

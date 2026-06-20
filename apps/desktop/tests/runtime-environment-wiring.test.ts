@@ -32,54 +32,18 @@ test("agent_runtime_port_applies_cwd_runtime_environment_to_all_structured_spawn
   await assertRuntimeEnvironmentApplied("opencode", "acp");
 });
 
-test("workspace_command_port_applies_cwd_runtime_environment_to_commands", async () => {
-  const cwd = fs.mkdtempSync(path.join(tmpdir(), "tide-command-env-"));
-  const envFile = path.join(cwd, "env.json");
-  const resolverCalls: Array<{ cwd: string; planEnv: Record<string, string> }> = [];
-  const port = createNodeWorkspaceCommandPort({
-    resolveRuntimeEnvironment: (input) => {
-      resolverCalls.push(input);
-      return {
-        ...process.env,
-        PROJECT_ENV: "from-cwd-shell",
-        COMMAND_ONLY: "visible-to-command",
-      };
-    },
-  });
+test("workspace_command_port_only_resolves_cwd_inside_the_thread_root", async () => {
+  const root = fs.mkdtempSync(path.join(tmpdir(), "tide-command-cwd-"));
+  const port = createNodeWorkspaceCommandPort();
 
-  const result = await port.run({
-    command: process.execPath,
-    args: [
-      "-e",
-      [
-        "const fs = require('node:fs');",
-        "fs.writeFileSync(process.argv[1], JSON.stringify({",
-        "  cwd: process.cwd(),",
-        "  projectEnv: process.env.PROJECT_ENV,",
-        "  commandOnly: process.env.COMMAND_ONLY,",
-        "  explicit: process.env.EXPLICIT_COMMAND_ENV",
-        "}));",
-      ].join("\n"),
-      envFile,
-    ],
-    cwd,
-    env: { EXPLICIT_COMMAND_ENV: "plan-wins" },
-    timeoutMs: 5000,
-    byteLimit: 64_000,
-    startedAt: new Date(0).toISOString(),
-  });
+  const inside = await port.resolveCwd({ root, cwd: "." });
+  const outside = await port.resolveCwd({ root, cwd: "../outside" });
 
-  assert.equal(result.ok, true);
-  assert.equal(result.ok && result.run.exitCode, 0);
-  assert.equal(resolverCalls.length, 1);
-  assert.equal(resolverCalls[0].cwd, cwd);
-  assert.deepEqual(resolverCalls[0].planEnv, { EXPLICIT_COMMAND_ENV: "plan-wins" });
-  const captured = JSON.parse(fs.readFileSync(envFile, "utf8")) as Record<string, string>;
-  assert.equal(captured.cwd, fs.realpathSync(cwd));
-  assert.equal(captured.projectEnv, "from-cwd-shell");
-  assert.equal(captured.commandOnly, "visible-to-command");
-  assert.equal(captured.explicit, "plan-wins");
-  fs.rmSync(cwd, { recursive: true, force: true });
+  assert.equal(inside.ok, true);
+  assert.equal(inside.ok && inside.cwd.cwd, path.resolve(root));
+  assert.equal(outside.ok, false);
+  assert.equal(!outside.ok && outside.error.code, "workspace_command_outside_scope");
+  fs.rmSync(root, { recursive: true, force: true });
 });
 
 test("workbench_terminal_port_applies_cwd_runtime_environment_without_overriding_terminal_plan_env", async () => {

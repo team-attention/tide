@@ -456,20 +456,6 @@ export class WorkbenchCommandHandler {
             "Terminal Pane target was not found.",
           );
         }
-        const setupHandle = this.workbenchRuntime.setupSurfaceHandle(pane.paneId);
-        if (setupHandle !== undefined && pane.status === "running") {
-          await setupHandle.write(bytes);
-          pane.updatedAt = this.clock();
-          thread.workbench.activePaneId = pane.paneId;
-          thread.workbench.focusOwner = "workbench";
-          thread.updatedAt = this.clock();
-          return {
-            ok: true,
-            handled: true,
-            thread: snapshotThread(thread),
-            workbench: snapshotWorkbench(thread.workbench),
-          };
-        }
         const terminalHandle = this.workbenchRuntime.terminalHandle(pane.paneId);
         if (terminalHandle === undefined || pane.status !== "running") {
           return failure(
