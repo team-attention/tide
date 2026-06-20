@@ -4,7 +4,7 @@
 
 # Tide Terminal
 
-**A native macOS Workspace where humans and coding agents share Terminal, Editor, Diff, and Browser Panes.**
+**A native macOS terminal-first workspace where humans and coding agents share the same task surfaces.**
 
 [![Release](https://img.shields.io/github/v/release/team-attention/tide?style=flat-square&color=blue)](https://github.com/team-attention/tide/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](../../LICENSE)
@@ -13,13 +13,39 @@
 
 </div>
 
-Tide Terminal is a native macOS (Rust + WGPU) Integrated Task Environment for agent-led software work, the original Tide. Run Claude Code, Codex, Gemini, or Antigravity in Terminal Panes, split larger tasks into Workspaces, inspect code and diffs beside the task, and give Wrapped Agents a human-visible Browser Pane for previews, docs, and verification.
+<img src="../../assets/tide-terminal.png" alt="Tide Terminal screenshot" width="100%">
 
-Through the Agent Gateway and Tide MCP Runtime, Wrapped Agents can inspect Workspace structure and Pane geometry, operate Browser Panes through Tide Terminal's Browser Pane Runtime, capture Terminal or Editor Pane content on request, and manage Context Artifacts. Browser Pane operations are the default path for Wrapped Agents using the Tide MCP Runtime; external browser runtimes remain explicit fallbacks.
+Tide Terminal is the terminal-first member of the Tide family: a native macOS
+(Rust + WGPU) workspace for agent-led software work.
 
-> Prefer a terminal-first workflow? This is Tide Terminal: the native macOS path
-> where the Terminal stays the live source of truth and the workbench stays
-> shared with your agent.
+Fine, some of us still need a terminal.
+
+Not a terminal-shaped chat box. A real place to run the command, split the
+view, keep the agent beside the logs, check the diff, open the browser preview,
+and keep going without losing the task.
+
+Yes, there are splits. Of course there are splits.
+
+AI agents changed how we build software, but terminal-only workflows still make
+humans and agents coordinate through pasted logs, screenshots, and vague
+descriptions. Tide Terminal keeps the Terminal as the live source of truth, then
+wraps it with shared Editor, Diff, Browser, Render, FileTree, and Context
+Artifact surfaces.
+
+Run Claude Code, Codex, Gemini, Antigravity, or opencode in Terminal Panes.
+Split larger tasks into Workspaces, inspect code and diffs beside the command
+that produced them, and give Wrapped Agents a human-visible Browser Pane for
+previews, docs, and verification.
+
+Through the Agent Gateway and Tide MCP Runtime, Wrapped Agents can inspect
+Workspace structure and Pane geometry, operate Browser Panes through Tide
+Terminal's Browser Pane Runtime, capture Terminal or Editor Pane content on
+request, and manage Context Artifacts. Browser Pane operations default to the
+shared Tide Browser Pane; external browser runtimes stay explicit fallbacks.
+
+> Want a chat-first Codex app alternative? Use **[Tide](../desktop/)**.
+> Want the terminal in front, with the workbench wrapped around it? This is
+> Tide Terminal.
 
 **Product demo**
 
@@ -37,19 +63,19 @@ the update-feed boundary, source builds, and maintainer release path, see
 
 ## Features
 
-### Use A Real Native Terminal Surface
+### Keep A Real Terminal
 
 Tide's Terminal Pane is PTY-backed with alacritty-based VT parsing, WGPU rendering, scrollback, search, OSC 8 hyperlinks, OSC 52 clipboard writes, OSC 9 notifications, mouse reporting, wheel forwarding, Kitty keyboard protocol support, configurable scrollback, built-in light/dark palettes, and a conservative `TERM=xterm-256color` strategy. The current capability boundary is documented in [Terminal capabilities](docs/terminal-capabilities.md).
 
-### Run Multiple Coding Agents
+### Run Agent CLIs Where Work Already Happens
 
 Launch Claude Code, Codex, Gemini, Antigravity, or opencode from Terminal Panes. Split agents side by side in the Stage, keep separate tasks in separate Workspaces, and when they are launched through Tide Terminal wrappers or auto-integration, see whether each Wrapped Agent is running, idle, or waiting for input.
 
-### Keep Each Task in a Workspace
+### Split The Work, Not The Task
 
 Each Workspace has its own Pane layout and focus state. Split the Stage, switch to stacked view when you need one focused surface, and move between Workspaces without losing task context.
 
-### Use the Dock as a Terminal Context Surface
+### Keep Context Attached To The Command
 
 Keep the Terminal in the Stage and open its supporting Panes in the Dock: inspect code in an Editor Pane, check a running app in a Browser Pane, compare a Diff Pane, or keep a Render Pane (Browser Pane render mode) beside the command that produced it. The Dock follows the focused Stage Terminal through the Associated Terminal relationship, so supporting context stays attached to the task that produced it.
 
@@ -57,7 +83,7 @@ Keep the Terminal in the Stage and open its supporting Panes in the Dock: inspec
 
 Open a Browser Pane for docs, local previews, and unauthenticated public pages. Agents use `tide_open_browser`, `tide_browser_observe`, and `tide_browser_action` to inspect and operate the existing Browser Pane, with Browser Automation Cursor state visible in the page. External browser runtimes stay explicit fallbacks.
 
-### Capture Context Without Leaving Tide Terminal
+### Capture Explicit Context
 
 Create Context Artifacts from Dock Pane selections and comments, then deliver them to the paired agent for the source Pane's Associated Terminal. Agents can explicitly list and read those artifacts through MCP instead of relying on hidden prompt context.
 
@@ -169,7 +195,8 @@ shared Workspace around the live Terminal.
 Terminals are still the substrate. The difference is that the surrounding
 Workspace is structured: Panes have identity, layout is inspectable, Browser
 Pane work is visible, context can be captured as Context Artifacts, and agents
-can use the same surfaces the human is using.
+can use the same surfaces the human is using instead of asking you to narrate
+the state back to them.
 
 ## Documentation
 
