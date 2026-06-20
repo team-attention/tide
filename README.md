@@ -34,6 +34,9 @@ Tide is a free, open-source Codex app alternative.
 
 It supports **Codex, Claude Code, Gemini, and opencode**.
 
+Well, there's [Tide Terminal](apps/terminal/) if you insist: a native macOS,
+terminal-centered agent workspace.
+
 Download Tide. Star the repo.
 
 ## Install
@@ -41,19 +44,6 @@ Download Tide. Star the repo.
 Download the latest `.dmg` from [Releases](https://github.com/team-attention/tide/releases/latest) and drag it to Applications. Signed and notarized for macOS.
 
 > Tide runs your locally-installed agent CLIs. On first launch it helps you connect the ones you have.
-
----
-
-## Products
-
-This monorepo contains two apps:
-
-| Product | Path | Stack | What it is |
-|---------|------|-------|------------|
-| **[Tide](apps/desktop/)** | [`apps/desktop/`](apps/desktop/) | Electron + Node + React | Desktop shared workbench for AI agents. |
-| **[Tide Terminal](apps/terminal/)** | [`apps/terminal/`](apps/terminal/) | Rust + WGPU (native macOS) | Native terminal-centered agent workspace. |
-
-Each app builds independently from its own directory. **Never build from the repo root.** Full details live in each product's README.
 
 ## License
 
