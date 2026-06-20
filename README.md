@@ -32,7 +32,7 @@ inside one task surface, so you and your agent can work from the same state.
 
 **Work with agents on a shared workbench.**
 
-It supports **Codex, Claude Code, Gemini, Antigravity, and opencode** through
+It supports **Codex, Claude Code, Gemini and opencode** through
 the CLIs you already run locally.
 
 There are two ways to use the same idea:
