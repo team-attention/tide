@@ -137,34 +137,50 @@ impl ClipboardSearchPort for App {
         }
     }
 
-    /// Handle GlobalAction::Find — open or focus a search bar.
+    /// Handle GlobalAction::Find — toggle the focused pane's search bar.
     fn handle_find(&mut self) {
         let target_id = match self.focus.focused {
             Some(id) => id,
             None => return,
         };
-        let has_search = match self.panes.get(&target_id) {
-            Some(PaneKind::Terminal(pane)) => pane.search.is_some(),
-            Some(PaneKind::Editor(pane)) => pane.search.is_some(),
-            Some(PaneKind::Browser(bp)) => bp.search.is_some(),
-            _ => false,
-        };
-        if has_search {
-            self.focus.search_focus = Some(target_id);
-        } else {
-            match self.panes.get_mut(&target_id) {
-                Some(PaneKind::Terminal(pane)) => {
+        match self.panes.get_mut(&target_id) {
+            Some(PaneKind::Terminal(pane)) => {
+                if pane.search.is_some() {
+                    pane.search = None;
+                    if self.focus.search_focus == Some(target_id) {
+                        self.focus.search_focus = None;
+                    }
+                } else {
                     pane.search = Some(SearchState::new());
+                    self.focus.search_focus = Some(target_id);
                 }
-                Some(PaneKind::Editor(pane)) => {
-                    pane.search = Some(SearchState::new());
-                }
-                Some(PaneKind::Browser(bp)) => {
-                    bp.search = Some(SearchState::new());
-                }
-                _ => {}
             }
-            self.focus.search_focus = Some(target_id);
+            Some(PaneKind::Editor(pane)) => {
+                if pane.search.is_some() {
+                    pane.search = None;
+                    if self.focus.search_focus == Some(target_id) {
+                        self.focus.search_focus = None;
+                    }
+                } else {
+                    pane.search = Some(SearchState::new());
+                    self.focus.search_focus = Some(target_id);
+                }
+            }
+            Some(PaneKind::Browser(bp)) => {
+                if bp.search.is_some() {
+                    if let Some(ref wv) = bp.webview {
+                        wv.clear_find();
+                    }
+                    bp.search = None;
+                    if self.focus.search_focus == Some(target_id) {
+                        self.focus.search_focus = None;
+                    }
+                } else {
+                    bp.search = Some(SearchState::new());
+                    self.focus.search_focus = Some(target_id);
+                }
+            }
+            _ => {}
         }
     }
 

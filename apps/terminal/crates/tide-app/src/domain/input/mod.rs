@@ -480,6 +480,10 @@ impl KeybindingMap {
                 GlobalAction::ToggleFullscreen,
             ),
             (
+                Hotkey::new(Key::Char('f'), true, false, true, false),
+                GlobalAction::ToggleFullscreen,
+            ),
+            (
                 Hotkey::new(Key::Char('f'), false, false, true, false),
                 GlobalAction::Find,
             ),
@@ -802,11 +806,17 @@ impl Router {
                     None // Ctrl+C → terminal SIGINT
                 }
             }
-            // Cmd+Ctrl+F -> toggle fullscreen, Cmd+F / Ctrl+F -> find
+            // Cmd+Ctrl+F / Cmd+Shift+F -> toggle fullscreen, Cmd+F / Ctrl+F -> find.
+            // Other shifted variants must not be treated as Find; they may be
+            // reserved by the platform or future app-level commands.
             Key::Char('f') | Key::Char('F') => {
-                if modifiers.meta && modifiers.ctrl {
+                if modifiers.meta
+                    && !modifiers.alt
+                    && ((modifiers.ctrl && !modifiers.shift)
+                        || (modifiers.shift && !modifiers.ctrl))
+                {
                     Some(GlobalAction::ToggleFullscreen)
-                } else if modifiers.meta || modifiers.ctrl {
+                } else if (modifiers.meta ^ modifiers.ctrl) && !modifiers.shift && !modifiers.alt {
                     Some(GlobalAction::Find)
                 } else {
                     None

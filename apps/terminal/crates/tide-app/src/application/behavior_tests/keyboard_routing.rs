@@ -1,6 +1,7 @@
 // Spec: docs/specs/input-routing.md — UC-1: ResolveKeystroke
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
+use crate::state::search::SearchState;
 use crate::state::*;
 use crate::tide_core::{Key, Modifiers};
 use crate::App;
@@ -28,6 +29,24 @@ fn cmd() -> Modifiers {
     Modifiers {
         meta: true,
         ctrl: false,
+        shift: false,
+        alt: false,
+    }
+}
+
+fn cmd_shift() -> Modifiers {
+    Modifiers {
+        meta: true,
+        ctrl: false,
+        shift: true,
+        alt: false,
+    }
+}
+
+fn cmd_ctrl() -> Modifiers {
+    Modifiers {
+        meta: true,
+        ctrl: true,
         shift: false,
         alt: false,
     }
@@ -141,6 +160,68 @@ fn global_action_keys_work_when_focus_area_is_file_tree() {
         cmd(),
         Some("e".to_string()),
     );
+}
+
+#[test]
+fn cmd_f_closes_focused_search_bar() {
+    let (mut app, id) = app_with_editor();
+    if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&id) {
+        pane.search = Some(SearchState::new());
+    }
+    app.focus.search_focus = Some(id);
+
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        Key::Char('f'),
+        cmd(),
+        None,
+    );
+
+    assert_eq!(app.focus.search_focus, None);
+    if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
+        assert!(pane.search.is_none());
+    }
+}
+
+#[test]
+fn cmd_shift_f_fullscreen_is_not_swallowed_by_search_bar() {
+    let (mut app, id) = app_with_editor();
+    if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&id) {
+        pane.search = Some(SearchState::new());
+    }
+    app.focus.search_focus = Some(id);
+
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        Key::Char('f'),
+        cmd_shift(),
+        None,
+    );
+
+    assert!(app.window.pending_fullscreen_toggle);
+    assert_eq!(app.focus.search_focus, Some(id));
+    if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
+        assert!(pane.search.is_some());
+    }
+}
+
+#[test]
+fn cmd_ctrl_f_fullscreen_is_not_swallowed_by_search_bar() {
+    let (mut app, id) = app_with_editor();
+    if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&id) {
+        pane.search = Some(SearchState::new());
+    }
+    app.focus.search_focus = Some(id);
+
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        Key::Char('f'),
+        cmd_ctrl(),
+        None,
+    );
+
+    assert!(app.window.pending_fullscreen_toggle);
+    assert_eq!(app.focus.search_focus, Some(id));
 }
 
 #[test]

@@ -69,13 +69,16 @@ fn find_opens_search_bar_on_focused_pane() {
 }
 
 #[test]
-fn find_again_reuses_existing_search_bar() {
-    // UC-4 BR-32: Find again reuses existing search bar
+fn find_again_closes_existing_search_bar() {
+    // UC-4 BR-32: Find again closes existing search bar
     let (mut app, id) = app_with_editor();
     app.handle_global_action(GlobalAction::Find);
     assert_eq!(app.focus.search_focus, Some(id));
     app.handle_global_action(GlobalAction::Find);
-    assert_eq!(app.focus.search_focus, Some(id));
+    assert_eq!(app.focus.search_focus, None);
+    if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
+        assert!(pane.search.is_none());
+    }
 }
 
 #[test]
