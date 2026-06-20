@@ -20,31 +20,24 @@ Let's stop pretending working in terminals is fun.
 AI agents changed how we build software, but the interface somehow moved
 backward.
 
-We're watching logs scroll, juggling chats, terminals, diffs, browsers, and
-files, trying to coordinate work that should already be happening in one
-place.
-
-Tide is a free, open-source workbench for agent-led software work. It keeps
-the conversation, commands, code, diffs, browser previews, and shared context
-inside one task surface, so you and your agent can work from the same state.
+We chat with an agent, then leave to open a browser, edit a file, inspect a
+diff, run a command, and paste the result back. The work spreads everywhere,
+and the "collaboration" never really grows past chat.
 
 **Don't just chat with AI.**
 
 **Work with agents on a shared workbench.**
 
-It supports **Codex, Claude Code, Gemini and opencode** through
-the CLIs you already run locally.
+Tide is a free, open-source workbench for agent-led software work. It keeps
+the conversation, commands, code, diffs, browser previews, and shared context
+inside one task surface, so you and your agent can work from the same state.
 
-There are two ways to use the same idea:
-
-- **[Tide](apps/desktop/)**: the chat-first Codex app alternative. Agent Chat
-  stays central, and the Workbench opens when a Thread needs browser, diff,
-  editor, terminal, file, or context-artifact surfaces.
-- **[Tide Terminal](apps/terminal/)**: the terminal-first native macOS
-  workspace. The Terminal stays the live source of truth, with shared panes and
-  agent context around it.
+It supports **Codex, Claude Code, Gemini, and opencode** through the CLIs you
+already run locally.
 
 Download Tide. Star the repo.
+
+In case you just really like terminals and all of those splitted panes, we also have [Tide Terminal](apps/terminal/)
 
 ## Install
 
