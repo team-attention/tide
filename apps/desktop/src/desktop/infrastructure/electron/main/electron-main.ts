@@ -66,13 +66,30 @@ ipcMain.handle("tide:open-directory", async () => {
 
 ipcMain.handle("tide:list-projects", async () => readProjectRegistry());
 
+function sameProjectCwd(left: string, right: string): boolean {
+  const normalizeCwd = (value: string): string => {
+    const normalized = value.replace(/[\\/]+/g, "/").replace(/\/+$/, "");
+    return process.platform === "darwin" || process.platform === "win32"
+      ? normalized.toLowerCase()
+      : normalized;
+  };
+  return normalizeCwd(left) === normalizeCwd(right);
+}
+
+function removeProjectRegistryCwd(
+  entries: { projectId: string; name: string; cwd: string }[],
+  cwd: string,
+): { projectId: string; name: string; cwd: string }[] {
+  return entries.filter((entry) => !sameProjectCwd(entry.cwd, cwd));
+}
+
 ipcMain.handle("tide:register-project", async (_event, cwd: unknown) => {
   const current = await readProjectRegistry();
   if (typeof cwd !== "string" || cwd.length === 0) {
     return current;
   }
   // Dedupe by cwd; projectId/name derive from the folder basename.
-  if (!current.some((entry) => entry.cwd === cwd)) {
+  if (!current.some((entry) => sameProjectCwd(entry.cwd, cwd))) {
     const name = basename(cwd) || cwd;
     current.push({ projectId: name, name, cwd });
     await writeProjectRegistry(current);
@@ -86,7 +103,7 @@ ipcMain.handle("tide:unregister-project", async (_event, cwd: unknown) => {
   if (typeof cwd !== "string") {
     return current;
   }
-  const next = current.filter((entry) => entry.cwd !== cwd);
+  const next = removeProjectRegistryCwd(current, cwd);
   if (next.length !== current.length) {
     await writeProjectRegistry(next);
   }
@@ -171,17 +188,19 @@ ipcMain.handle("tide:remove-worktree", async (_event, cwd: unknown) => {
     return { entries: current };
   }
   const repoRoot = worktreeRepoRootForCwd(cwd);
+  let removed = false;
   if (repoRoot !== null) {
-    await new Promise<void>((resolve) => {
-      execFile(
-        "git",
-        ["-C", repoRoot, "worktree", "remove", "--force", cwd],
-        { maxBuffer: 4 * 1024 * 1024 },
-        () => resolve(),
-      );
-    });
+    removed = (await execGitArgs(worktreeRemoveArgs(repoRoot, cwd))).ok;
+  } else {
+    removed = true;
   }
-  const entries = current.filter((entry) => entry.cwd !== cwd);
+  if (!removed && !existsSync(cwd)) {
+    removed = true;
+  }
+  if (!removed) {
+    return { entries: current };
+  }
+  const entries = removeProjectRegistryCwd(current, cwd);
   await writeProjectRegistry(entries);
   return { entries };
 });
@@ -444,7 +463,7 @@ ipcMain.handle("tide:delete-worktree", async (_event, cwd: unknown, options: unk
   if (removed.ok && deleteBranch && branch !== null) {
     branchDeleted = (await execGitArgs(branchDeleteArgs(repoRoot, branch, force))).ok;
   }
-  const entries = removed.ok ? current.filter((entry) => entry.cwd !== cwd) : current;
+  const entries = removed.ok ? removeProjectRegistryCwd(current, cwd) : current;
   if (removed.ok) {
     await writeProjectRegistry(entries);
   }

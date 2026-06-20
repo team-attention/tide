@@ -1,0 +1,58 @@
+/* Styles for the adjacent image-pane component module (spec: colocated-component-styles). */
+
+.workbench-pane-content--image {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 34px;
+  background: var(--tide-bg);
+}
+
+.workbench-image__stage {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  background:
+    linear-gradient(45deg, color-mix(in srgb, var(--tide-surface) 70%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, var(--tide-surface) 70%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--tide-surface) 70%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--tide-surface) 70%, transparent) 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+}
+
+.workbench-image__media {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.workbench-image__empty {
+  color: var(--tide-muted);
+  font-size: 13px;
+}
+
+.workbench-image__meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  border-top: 1px solid var(--tide-line);
+  color: var(--tide-muted);
+  font: 12px/1.2 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.workbench-image__meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

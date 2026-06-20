@@ -2,6 +2,7 @@ export type WorkspaceFileErrorCode =
   | "workspace_file_unavailable"
   | "workspace_file_not_found"
   | "workspace_file_outside_scope"
+  | "workspace_file_not_image"
   | "workspace_file_not_text"
   | "workspace_file_unreadable"
   | "workspace_file_too_large"
@@ -23,6 +24,19 @@ export interface WorkspaceFileRead {
 
 export type WorkspaceFileReadResult =
   | { ok: true; file: WorkspaceFileRead }
+  | { ok: false; error: WorkspaceFileError };
+
+export interface WorkspaceImageFileRead {
+  root: string;
+  path: string;
+  relativePath: string;
+  mimeType: string;
+  dataBase64: string;
+  byteLength: number;
+}
+
+export type WorkspaceImageFileReadResult =
+  | { ok: true; file: WorkspaceImageFileRead }
   | { ok: false; error: WorkspaceFileError };
 
 export interface WorkspaceFileEdit {
@@ -112,6 +126,12 @@ export interface WorkspaceFilePort {
     // dirs) before reading. Never clobbers an existing file (spec: workbench-new-file.md).
     create?: boolean;
   }): Promise<WorkspaceFileReadResult>;
+
+  readImageFile(input: {
+    root: string;
+    path: string;
+    byteLimit: number;
+  }): Promise<WorkspaceImageFileReadResult>;
 
   // Project-wide content search (gitignore-filtered). Returns matching lines
   // across files under `root` for a plain-text (case-insensitive) query.

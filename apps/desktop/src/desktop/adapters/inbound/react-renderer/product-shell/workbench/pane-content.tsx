@@ -1,10 +1,11 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { fileIconFor } from "../../support/file-icons.ts";
 import { WorkbenchBrowserPane } from "./browser-pane.tsx";
 import { WorkbenchEditorPane } from "./editor-pane.tsx";
+import { WorkbenchImagePane } from "./image-pane.tsx";
 import { WorkbenchDiffPane } from "./diff-pane.tsx";
 import { WorkbenchTerminalPane } from "./terminal-pane.tsx";
 import { WorkbenchLauncherPane } from "./launcher-pane.tsx";
@@ -21,21 +22,32 @@ export function createEditorPickerPane(
 ): ReactElement {
   return (
     <div className="workbench-pane-content editor-picker">
-      <label className="editor-picker__search">
-        <Search size={14} strokeWidth={1.9} aria-hidden />
-        <input
-          className="editor-picker__input"
-          type="search"
-          aria-label="Filter files to open"
-          placeholder="Filter files…"
-          autoFocus
-          spellCheck={false}
-          value={editorPicker.filter}
-          onChange={(event: { currentTarget: { value: string } }) =>
-            handlers.onEditorPickerFilter(event.currentTarget.value)
-          }
-        />
-      </label>
+      <div className="editor-picker__toolbar">
+        <label className="editor-picker__search">
+          <Search size={14} strokeWidth={1.9} aria-hidden />
+          <input
+            className="editor-picker__input"
+            type="search"
+            aria-label="Filter files to open"
+            placeholder="Filter files…"
+            autoFocus
+            spellCheck={false}
+            value={editorPicker.filter}
+            onChange={(event: { currentTarget: { value: string } }) =>
+              handlers.onEditorPickerFilter(event.currentTarget.value)
+            }
+          />
+        </label>
+        <button
+          className="editor-picker__close"
+          type="button"
+          title="Close picker"
+          aria-label="Close picker"
+          onClick={handlers.onEditorPickerCancel}
+        >
+          <X size={14} strokeWidth={2.1} aria-hidden />
+        </button>
+      </div>
       <div className="editor-picker__list" role="listbox" aria-label="Files">
         {editorPicker.files.length === 0 ? (
           <p className="editor-picker__empty">
@@ -98,6 +110,8 @@ function WorkbenchPaneContent(props: {
       return <WorkbenchBrowserPane key={pane.paneId} pane={pane} handlers={handlers} />;
     case "editor":
       return <WorkbenchEditorPane pane={pane} draft={editorDraft} handlers={handlers} />;
+    case "image":
+      return <WorkbenchImagePane pane={pane} handlers={handlers} />;
     case "diff":
       return <WorkbenchDiffPane pane={pane} />;
     case "terminal":

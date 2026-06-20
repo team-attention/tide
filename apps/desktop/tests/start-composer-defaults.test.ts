@@ -54,6 +54,87 @@ test("a new thread defaults to the remembered agent and model", () => {
   }
 });
 
+test("a new thread defaults to the remembered worktree environment", () => {
+  setPreferredStartComposer({
+    agentId: "codex",
+    model: "gpt-5.5",
+    permission: "default",
+    worktree: "new",
+  });
+  try {
+    const registered = setProductShellRegisteredProjects(
+      createProductShellState({ includeFixtureData: false }),
+      [{ projectId: "repo", name: "repo", cwd: "/repo" }],
+    );
+    const state = startNewProductShellThread(registered, "repo");
+    const launch = state.agentChat.composer.startOptions.launchOptions;
+    assert.equal(launch?.worktree, "new");
+    assert.equal(launch?.branch, "main");
+    assert.equal(launch?.newWorktreeName, undefined);
+  } finally {
+    setPreferredStartComposer(null);
+  }
+});
+
+test("a new thread defaults to the remembered local environment", () => {
+  setPreferredStartComposer({
+    agentId: "codex",
+    model: "gpt-5.5",
+    permission: "default",
+    worktree: "current folder",
+  });
+  try {
+    const registered = setProductShellRegisteredProjects(
+      createProductShellState({ includeFixtureData: false }),
+      [{ projectId: "repo", name: "repo", cwd: "/repo" }],
+    );
+    const state = startNewProductShellThread(registered, "repo");
+    assert.equal(state.agentChat.composer.startOptions.launchOptions?.worktree, "current folder");
+    assert.equal(state.agentChat.composer.startOptions.launchOptions?.branch, "main");
+  } finally {
+    setPreferredStartComposer(null);
+  }
+});
+
+test("remembered_new_worktree_falls_back_to_local_without_project_scope", () => {
+  setPreferredStartComposer({
+    agentId: "codex",
+    model: "gpt-5.5",
+    permission: "default",
+    worktree: "new",
+  });
+  try {
+    const state = startNewProductShellThread(createProductShellState({ includeFixtureData: false }));
+    assert.equal(state.agentChat.composer.startOptions.scope?.kind, "scratch");
+    assert.equal(state.agentChat.composer.startOptions.launchOptions?.worktree, "current folder");
+    assert.equal(state.agentChat.composer.startOptions.launchOptions?.branch, "main");
+  } finally {
+    setPreferredStartComposer(null);
+  }
+});
+
+test("existing_worktree_paths_are_not_restored_as_global_start_defaults", () => {
+  // Spec: docs_v2/specs/worktree-start-experience.md D7. Existing worktree paths
+  // are repo-scoped, so persisting/restoring them globally can start a Thread in
+  // the wrong repository.
+  setPreferredStartComposer({
+    agentId: "codex",
+    model: "gpt-5.5",
+    permission: "default",
+    worktree: "/repo-a.worktree/fix-login",
+  });
+  try {
+    const registered = setProductShellRegisteredProjects(
+      createProductShellState({ includeFixtureData: false }),
+      [{ projectId: "repo-b", name: "repo-b", cwd: "/repo-b" }],
+    );
+    const state = startNewProductShellThread(registered, "repo-b");
+    assert.equal(state.agentChat.composer.startOptions.launchOptions?.worktree, "current folder");
+  } finally {
+    setPreferredStartComposer(null);
+  }
+});
+
 test("with no remembered preference a new thread falls back to codex/gpt-5.5", () => {
   setPreferredStartComposer(null);
   const state = startNewProductShellThread(createProductShellState({ includeFixtureData: false }));
@@ -70,13 +151,25 @@ test("preferredStartComposerFromState captures an opencode Start Composer pick",
     permission: "build",
     reasoning: "high",
     worktree: "current folder",
+    branch: undefined,
   });
   assert.deepEqual(preferredStartComposerFromState(state), {
     agentId: "opencode",
     model: "openai/gpt-5.5",
     permission: "build",
     reasoning: "high",
+    worktree: "current folder",
   });
+  setPreferredStartComposer(null);
+});
+
+test("preferredStartComposerFromState normalizes an existing worktree path to Local", () => {
+  const state = startComposerStateWith("codex", {
+    model: "gpt-5.5",
+    permission: "default",
+    worktree: "/repo.worktree/fix-login",
+  });
+  assert.equal(preferredStartComposerFromState(state)?.worktree, "current folder");
   setPreferredStartComposer(null);
 });
 

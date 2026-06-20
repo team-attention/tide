@@ -7,6 +7,8 @@
   flex-direction: column;
   gap: 20px;
   padding: 6px 14px;
+  opacity: 0;
+  animation: tide-rail-skeleton-appear 0.12s ease 0.18s forwards;
 }
 
 .rail-skeleton__group {
@@ -54,9 +56,20 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .rail-skeleton {
+    animation: none;
+    opacity: 1;
+  }
+
   .rail-skeleton__heading,
   .rail-skeleton__dot,
   .rail-skeleton__label {
     animation: none;
+  }
+}
+
+@keyframes tide-rail-skeleton-appear {
+  to {
+    opacity: 1;
   }
 }

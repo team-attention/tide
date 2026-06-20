@@ -93,10 +93,40 @@ function editorState(bodyText: string, relativePath: string) {
   );
 }
 
-async function mountShell(state: ReturnType<typeof editorState>) {
+function imageState() {
+  return applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        activePaneId: "pane-image",
+        panes: [
+          {
+            paneId: "pane-image",
+            kind: "image",
+            title: "logo.png",
+            revision: "pane-image:rev",
+            updatedAt: "2026-05-28T00:00:00.000Z",
+            root: "/repo",
+            filePath: "/repo/assets/logo.png",
+            relativePath: "assets/logo.png",
+            mimeType: "image/png",
+            byteLength: 8,
+          },
+        ],
+      },
+    },
+  );
+}
+
+async function mountShell(
+  state: ReturnType<typeof createProductShellState>,
+  props: Partial<Parameters<typeof TideProductShell>[0]> = {},
+) {
   const root = createRoot(dom.window.document.getElementById("root"));
   await act(async () => {
-    root.render(<TideProductShell initialState={state} />);
+    root.render(<TideProductShell initialState={state} {...props} />);
   });
   // Let CodeMirror's mount effect run.
   await new Promise((resolve) => setTimeout(resolve, 30));
@@ -259,6 +289,47 @@ test("html_editor_pane_renders_a_browser_preview_by_default_and_toggles_to_code"
       "source editor appears after toggling to Code",
     );
     assert.equal(dom.window.document.querySelector(".workbench-html-webview"), null);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("workbench_image_pane_fetches_and_renders_data_url_image", async () => {
+  // Spec: docs_v2/specs/workbench-open-polish-and-image-pane.md
+  const commands: unknown[] = [];
+  const root = await mountShell(imageState(), {
+    onBackendCommand(command) {
+      commands.push(command);
+      return [
+        {
+          kind: "workspace.imageLoaded",
+          payload: {
+            cwd: "/repo",
+            relativePath: "assets/logo.png",
+            mimeType: "image/png",
+            dataBase64: "iVBORw0KGgo=",
+            byteLength: 8,
+          },
+        },
+      ];
+    },
+  });
+  try {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    assert.deepEqual(commands, [
+      {
+        kind: "workspace.readImageFile",
+        payload: { cwd: "/repo", path: "assets/logo.png" },
+      },
+    ]);
+    const image = dom.window.document.querySelector(".workbench-image__media") as HTMLImageElement | null;
+    assert.ok(image, "image pane should render an img element");
+    assert.equal(image.getAttribute("src"), "data:image/png;base64,iVBORw0KGgo=");
+    assert.equal(dom.window.document.querySelector(".workbench-editor-cm .cm-editor"), null);
   } finally {
     await act(async () => {
       root.unmount();

@@ -2,12 +2,14 @@ import type { ThreadRecord } from "../../domains/thread/thread.ts";
 import type {
   DiffPaneState,
   EditorPaneState,
+  ImagePaneState,
   WorkbenchPaneSnapshotRef,
 } from "../../domains/workbench/workbench.ts";
 import type {
   WorkspaceFileEdit,
   WorkspaceFilePort,
   WorkspaceFileRead,
+  WorkspaceImageFileRead,
   WorkspaceFileWrite,
 } from "../../ports/outbound/workspace-file-port.ts";
 import { boundedDiffText, unifiedContentDiff } from "../support/diff-text.ts";
@@ -16,6 +18,7 @@ import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
   expectedOccurrences,
   fileByteLimit,
+  imageByteLimit,
   optionalString,
   titleFromRelativePath,
 } from "../support/service-value-helpers.ts";
@@ -25,7 +28,7 @@ import type {
   TideOpenFileOutput,
   TideReadFileOutput,
 } from "../tide-mcp/tide-mcp-output.ts";
-import { diffPaneRef, editorPaneRef } from "./workbench-snapshot.ts";
+import { diffPaneRef, editorPaneRef, imagePaneRef } from "./workbench-snapshot.ts";
 
 // File/editor operations for the Workbench: read a file, open it in an Editor
 // pane, apply an edit and render the Diff pane, and refresh editor panes after
@@ -76,6 +79,16 @@ export class WorkbenchFileOperations {
     thread: ThreadRecord,
     input: Record<string, unknown> | undefined,
   ): Promise<ServiceResult<{ value: TideOpenFileOutput }>> {
+    if (input?.create !== true) {
+      const image = await this.readThreadImageFile(thread, input);
+      if (image.ok) {
+        return { ok: true, value: this.openImagePaneOutput(thread, image.value) };
+      }
+      if (image.error.code !== "workspace_file_not_image") {
+        return image;
+      }
+    }
+
     const file = await this.readThreadFile(thread, input);
     if (!file.ok) {
       return file;
@@ -130,6 +143,59 @@ export class WorkbenchFileOperations {
         truncated: file.value.truncated,
         visibleSideEffect,
       },
+    };
+  }
+
+  private openImagePaneOutput(
+    thread: ThreadRecord,
+    file: WorkspaceImageFileRead,
+  ): TideOpenFileOutput {
+    const existingPane = thread.workbench.panes.find(
+      (pane): pane is ImagePaneState =>
+        pane.kind === "image" && pane.filePath === file.path,
+    );
+    const visibleSideEffect = existingPane === undefined ? "created" : "revealed";
+    const pane =
+      existingPane ??
+      ({
+        paneId: this.idGenerator(),
+        kind: "image",
+        title: titleFromRelativePath(file.relativePath),
+        root: file.root,
+        filePath: file.path,
+        relativePath: file.relativePath,
+        revision: this.idGenerator(),
+        updatedAt: this.clock(),
+        mimeType: file.mimeType,
+        dataBase64: file.dataBase64,
+        byteLength: file.byteLength,
+      } satisfies ImagePaneState);
+
+    pane.title = titleFromRelativePath(file.relativePath);
+    pane.root = file.root;
+    pane.relativePath = file.relativePath;
+    pane.mimeType = file.mimeType;
+    pane.dataBase64 = file.dataBase64;
+    pane.byteLength = file.byteLength;
+    pane.revision = this.idGenerator();
+    pane.updatedAt = this.clock();
+
+    if (existingPane === undefined) {
+      thread.workbench.panes.push(pane);
+    }
+    thread.workbench.activePaneId = pane.paneId;
+    thread.workbench.focusOwner = "composer";
+
+    return {
+      kind: "open_file",
+      threadId: thread.threadId,
+      pane: imagePaneRef(pane) as WorkbenchPaneSnapshotRef & { kind: "image" },
+      root: file.root,
+      path: file.path,
+      relativePath: file.relativePath,
+      byteLength: file.byteLength,
+      truncated: false,
+      visibleSideEffect,
     };
   }
 
@@ -232,6 +298,35 @@ export class WorkbenchFileOperations {
       // New File in a thread: open_editor carries `create:true` to touch a missing file
       // before opening it (spec: workbench-new-file.md).
       create: input?.create === true,
+    });
+    if (!read.ok) {
+      return failure(read.error.code, read.error.message);
+    }
+
+    return { ok: true, value: read.file };
+  }
+
+  async readThreadImageFile(
+    thread: ThreadRecord,
+    input: Record<string, unknown> | undefined,
+  ): Promise<ServiceResult<{ value: WorkspaceImageFileRead }>> {
+    const root = threadRoot(thread);
+    if (root === undefined) {
+      return failure(
+        "workspace_file_unavailable",
+        "Thread does not have an Execution Context root for file tools.",
+      );
+    }
+
+    const filePath = optionalString(input?.path);
+    if (filePath === undefined) {
+      return failure("workspace_file_unreadable", "File path is required.");
+    }
+
+    const read = await this.workspaceFilePort.readImageFile({
+      root,
+      path: filePath,
+      byteLimit: imageByteLimit(input?.byteLimit),
     });
     if (!read.ok) {
       return failure(read.error.code, read.error.message);

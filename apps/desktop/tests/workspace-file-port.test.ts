@@ -202,6 +202,59 @@ test("readTextFile without create still reports a missing file as not found", as
   }
 });
 
+test("readImageFile_returns_base64_for_supported_image", async () => {
+  // Spec: docs_v2/specs/workbench-open-polish-and-image-pane.md
+  const root = fixtureRoot({});
+  fs.mkdirSync(path.join(root, "assets"), { recursive: true });
+  const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  fs.writeFileSync(path.join(root, "assets", "logo.png"), bytes);
+  const port = createNodeWorkspaceFilePort();
+
+  const result = await port.readImageFile({
+    root,
+    path: "assets/logo.png",
+    byteLimit: 4096,
+  });
+
+  assert.ok(result.ok);
+  if (result.ok) {
+    assert.equal(result.file.relativePath, "assets/logo.png");
+    assert.equal(result.file.mimeType, "image/png");
+    assert.equal(result.file.dataBase64, bytes.toString("base64"));
+    assert.equal(result.file.byteLength, bytes.length);
+  }
+});
+
+test("readImageFile_returns_unreadable_when_image_bytes_cannot_be_read", async (t) => {
+  // Spec: docs_v2/specs/workbench-open-polish-and-image-pane.md
+  const root = fixtureRoot({});
+  fs.mkdirSync(path.join(root, "assets"), { recursive: true });
+  const imagePath = path.join(root, "assets", "locked.png");
+  fs.writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  try {
+    fs.chmodSync(imagePath, 0o000);
+  } catch {
+    t.skip("chmod is unavailable in this environment");
+    return;
+  }
+  const port = createNodeWorkspaceFilePort();
+
+  try {
+    const result = await port.readImageFile({
+      root,
+      path: "assets/locked.png",
+      byteLimit: 4096,
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.code, "workspace_file_unreadable");
+    }
+  } finally {
+    fs.chmodSync(imagePath, 0o600);
+  }
+});
+
 test("readTextFile remaps repo absolute links into the active default worktree", async () => {
   const repoRoot = fixtureRoot({ "src/app.ts": "main copy" });
   const worktreeRoot = `${repoRoot}.worktree/feature-x`;

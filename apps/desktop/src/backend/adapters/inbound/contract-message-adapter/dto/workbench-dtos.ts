@@ -56,7 +56,7 @@ export function toWorkbenchPaneRefDto(
     revision: pane.revision,
     updatedAt: pane.updatedAt,
   };
-  if (pane.kind === "editor" || pane.kind === "diff") {
+  if (pane.kind === "editor" || pane.kind === "diff" || pane.kind === "image") {
     if (pane.filePath !== undefined) {
       dto.filePath = pane.filePath;
     }
@@ -65,6 +65,17 @@ export function toWorkbenchPaneRefDto(
     }
     if (pane.truncated !== undefined) {
       dto.truncated = pane.truncated;
+    }
+  }
+  if (pane.kind === "image") {
+    if (pane.root !== undefined) {
+      dto.root = pane.root;
+    }
+    if (pane.mimeType !== undefined) {
+      dto.mimeType = pane.mimeType;
+    }
+    if (pane.byteLength !== undefined) {
+      dto.byteLength = pane.byteLength;
     }
   }
   if (pane.kind === "editor") {

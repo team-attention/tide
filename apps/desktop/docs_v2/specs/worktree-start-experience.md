@@ -20,6 +20,9 @@ In scope:
   <path> [<base-ref>]`.
 - **Sidebar grouping default**: worktree Threads nest flat under their parent
   repo's Project group (with a branch badge), not as separate top-level Projects.
+- **Recent environment choice**: the Start Composer remembers whether the user last
+  chose Local or New worktree, so New Thread keeps the recent Worktree/Local option
+  instead of always resetting to Local.
 
 ## Evidence
 
@@ -100,6 +103,19 @@ the flat top-level view.
 
 If the resolved path or branch already exists, append `-<4 hex>` (e.g.
 `fix-login-bug-a3f9`) so a repeated message/name never fails creation.
+
+### D7. Worktree/Local mode is part of the Start Composer preference
+
+The renderer-local Start Composer preference stores only the environment mode:
+`current folder` (Local) or `new` (New worktree). It must not persist an existing
+worktree absolute path, because that path is scoped to the repo where it was
+chosen and would incorrectly re-scope a new Thread started from another Project.
+It also does not persist the selected base branch, because branch names are
+repo-scoped and must be chosen from the current Project's git context.
+The optional typed new-worktree name is not persisted: each new Thread should
+resolve its own name from the typed form or first message. If the restored scope
+is Scratch or otherwise cannot create/use a worktree, the restored worktree option
+falls back to `current folder` (Local).
 
 ## Out Of Scope
 
@@ -206,6 +222,10 @@ launchOptions.newWorktree = { name?: string; baseBranch?: string };
 | D5   | grouping default-on | `worktree_threads_group_under_repo_by_default` |
 | D4   | base branch arg | `worktree_create_git_args_include_base_branch` (pure arg helper) |
 | D6   | collision suffix | `resolve_worktree_name_appends_hash_suffix_on_collision` |
+| D7   | new Start Composer restores recent New-worktree mode | `a_new_thread_defaults_to_the_remembered_worktree_environment` |
+| D7   | Local stays selected when it is the recent environment | `a_new_thread_defaults_to_the_remembered_local_environment` |
+| D7   | Scratch cannot restore pending new-worktree intent | `remembered_new_worktree_falls_back_to_local_without_project_scope` |
+| D7   | existing worktree paths are normalized to Local before persistence/restore | `existing_worktree_paths_are_not_restored_as_global_start_defaults` |
 
 ## Implementation Notes
 

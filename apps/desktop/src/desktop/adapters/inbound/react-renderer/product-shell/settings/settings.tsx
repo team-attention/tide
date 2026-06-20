@@ -105,6 +105,7 @@ export function loadPreferredStartComposer(): PreferredStartComposer | null {
       model: typeof parsed.model === "string" ? parsed.model : undefined,
       permission: typeof parsed.permission === "string" ? parsed.permission : undefined,
       reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : undefined,
+      worktree: typeof parsed.worktree === "string" ? parsed.worktree : undefined,
     };
   } catch {
     return null;

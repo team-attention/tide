@@ -20,6 +20,7 @@ export type AppChromeWorkbenchPaneKind =
   | "browser"
   | "diff"
   | "editor"
+  | "image"
   | "terminal"
   | "launcher"
   | "changes";
@@ -49,10 +50,13 @@ export interface AppChromeWorkbenchPaneRef {
   pendingCapture?: { captureId: string; requestedAt: string };
   pendingAction?: AppChromeBrowserPaneAction;
   lastAction?: AppChromeBrowserPaneActionResult;
+  root?: string;
   filePath?: string;
   relativePath?: string;
   bodyText?: string;
   bodyTextPreview?: string;
+  dataBase64?: string;
+  mimeType?: string;
   byteLength?: number;
   truncated?: boolean;
   navigationTarget?: AppChromeEditorNavigationTarget;
@@ -516,6 +520,8 @@ function workbenchPaneTitle(pane: AppChromeWorkbenchPaneRef): string {
       return "Terminal";
     case "editor":
       return "Editor";
+    case "image":
+      return "Image";
     case "diff":
       return "Diff";
     case "launcher":

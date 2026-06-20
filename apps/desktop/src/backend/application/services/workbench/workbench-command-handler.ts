@@ -370,7 +370,7 @@ export class WorkbenchCommandHandler {
           args,
           cwd: resolvedCwd.cwd.cwd,
         });
-        await this.workbenchRuntime.ensureWorkbenchTerminalRunning(thread, pane);
+        void this.workbenchRuntime.ensureWorkbenchTerminalRunning(thread, pane).catch(() => undefined);
         thread.workbench.activePaneId = pane.paneId;
         removeLauncherPane(thread, launcherToReplace);
         thread.workbench.focusOwner = "workbench";
@@ -519,7 +519,7 @@ export class WorkbenchCommandHandler {
         // PTY teardown is the command handler's job (it owns the runtime); pane
         // removal + active reassignment is the shared helper.
         if (pane.kind === "terminal") {
-          await this.workbenchRuntime.stopTerminalPane(pane);
+          void this.workbenchRuntime.stopTerminalPane(pane);
         }
         closeWorkbenchPaneState(thread.workbench, pane.paneId, this.clock);
         thread.updatedAt = this.clock();

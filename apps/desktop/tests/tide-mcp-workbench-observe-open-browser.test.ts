@@ -41,6 +41,7 @@ import type {
 import type { WorkspaceCommandPort } from "../src/backend/application/ports/outbound/workspace-command-port.ts";
 import type {
   WorkspaceFileEditResult,
+  WorkspaceImageFileReadResult,
   WorkspaceFilePort,
   WorkspaceFileReadResult,
   WorkspaceFileTreeResult,
@@ -1546,6 +1547,16 @@ class FakeWorkspaceFilePort implements WorkspaceFilePort {
         content: preview,
         byteLength: content.length,
         truncated: preview.length < content.length,
+      },
+    };
+  }
+
+  async readImageFile(): Promise<WorkspaceImageFileReadResult> {
+    return {
+      ok: false,
+      error: {
+        code: "workspace_file_not_image",
+        message: "Workspace image read target was not an image in this fake.",
       },
     };
   }

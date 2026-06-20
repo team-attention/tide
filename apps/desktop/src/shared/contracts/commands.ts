@@ -30,6 +30,7 @@ export type BackendCommandKind =
   | "workspace.searchContent"
   | "workspace.codeIntel"
   | "workspace.readFile"
+  | "workspace.readImageFile"
   | "workspace.writeFile";
 
 export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
@@ -56,6 +57,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "workspace.searchContent",
   "workspace.codeIntel",
   "workspace.readFile",
+  "workspace.readImageFile",
   "workspace.writeFile",
 ];
 
@@ -185,6 +187,13 @@ export interface BackendCommandPayloadByKind {
     // dirs) first, then read it — an existing file is never clobbered (spec:
     // workbench-new-file.md).
     create?: boolean;
+  };
+  // Read one image file under `cwd` as bounded base64, for Workbench Image Pane
+  // display. Answered by a workspace.imageLoaded event with the same requestId.
+  "workspace.readImageFile": {
+    cwd: string;
+    path: string;
+    byteLimit?: number;
   };
   // Write one text file under `cwd`, NOT tied to a thread — the start (New
   // Thread) page's editor save (spec: start-page-file-viewer). The thread-bound

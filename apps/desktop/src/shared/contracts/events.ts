@@ -56,6 +56,7 @@ export type BackendEventKind =
   | "workspace.contentSearchResults"
   | "workspace.codeIntelResult"
   | "workspace.fileLoaded"
+  | "workspace.imageLoaded"
   | "workspace.fileSaved";
 
 export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
@@ -88,6 +89,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "workspace.contentSearchResults",
   "workspace.codeIntelResult",
   "workspace.fileLoaded",
+  "workspace.imageLoaded",
   "workspace.fileSaved",
 ];
 
@@ -259,6 +261,15 @@ export interface BackendEventPayloadByKind {
     relativePath: string;
     content: string;
     truncated: boolean;
+  };
+  // A bounded base64 image read for Workbench Image Pane display (same requestId
+  // as the workspace.readImageFile command).
+  "workspace.imageLoaded": {
+    cwd: string;
+    relativePath: string;
+    mimeType: string;
+    dataBase64: string;
+    byteLength: number;
   };
   // A thread-independent file write completed for the start page's editor (same
   // requestId as the workspace.writeFile command). Carries the now-on-disk

@@ -15,6 +15,7 @@ import {
   fileTreeExpandedPaths,
   fileTreeMaxDepth,
   fileTreeMaxEntries,
+  imageByteLimit,
 } from "../support/service-value-helpers.ts";
 import { cloneFileTreeView } from "../thread/thread-runtime-clone.ts";
 
@@ -50,6 +51,20 @@ export interface ReadWorkspaceFileResult {
   relativePath: string;
   content: string;
   truncated: boolean;
+}
+
+export interface ReadWorkspaceImageFileInput {
+  cwd: string;
+  path: string;
+  byteLimit?: number;
+}
+
+export interface ReadWorkspaceImageFileResult {
+  cwd: string;
+  relativePath: string;
+  mimeType: string;
+  dataBase64: string;
+  byteLength: number;
 }
 
 export interface WriteWorkspaceFileInput {
@@ -186,6 +201,27 @@ export class WorkspaceQueryHandler {
       relativePath: read.file.relativePath,
       content: read.file.content,
       truncated: read.file.truncated,
+    };
+  }
+
+  async readWorkspaceImageFile(
+    input: ReadWorkspaceImageFileInput,
+  ): Promise<ServiceResult<ReadWorkspaceImageFileResult>> {
+    const read = await this.workspaceFilePort.readImageFile({
+      root: input.cwd,
+      path: input.path,
+      byteLimit: imageByteLimit(input.byteLimit),
+    });
+    if (!read.ok) {
+      return failure(read.error.code, read.error.message);
+    }
+    return {
+      ok: true,
+      cwd: input.cwd,
+      relativePath: read.file.relativePath,
+      mimeType: read.file.mimeType,
+      dataBase64: read.file.dataBase64,
+      byteLength: read.file.byteLength,
     };
   }
 

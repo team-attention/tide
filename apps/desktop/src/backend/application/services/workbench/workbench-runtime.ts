@@ -220,6 +220,10 @@ export class WorkbenchRuntime {
       );
       pane.revision = this.idGenerator();
       pane.updatedAt = this.clock();
+      this.emitAsyncEvent({
+        kind: "workbench_changed",
+        thread: snapshotThread(thread),
+      });
     }
   }
 
@@ -267,6 +271,10 @@ export class WorkbenchRuntime {
       );
       pane.revision = this.idGenerator();
       pane.updatedAt = this.clock();
+      this.emitAsyncEvent({
+        kind: "workbench_changed",
+        thread: snapshotThread(thread),
+      });
     }
   }
 
@@ -580,8 +588,13 @@ export class WorkbenchRuntime {
 
     const terminalHandle = this.workbenchTerminalHandles.get(pane.paneId);
     if (terminalHandle !== undefined) {
-      await terminalHandle.stop();
       this.workbenchTerminalHandles.delete(pane.paneId);
+      try {
+        await terminalHandle.stop();
+      } catch {
+        // Pane close is UI-first; a process that already exited should not keep a
+        // removed pane alive or reject the close command.
+      }
     }
   }
 }

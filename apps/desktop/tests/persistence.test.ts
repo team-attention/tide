@@ -348,6 +348,22 @@ test("listing_thread_metadata_skips_a_record_whose_read_throws", async () => {
   );
 });
 
+test("file_app_storage_listDirectories_skips_entries_whose_stat_fails", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "tide-storage-list-"));
+  await fs.mkdir(path.join(root, "threads", "good-thread"), { recursive: true });
+  try {
+    await fs.symlink("missing-thread", path.join(root, "threads", "broken-thread"));
+  } catch {
+    t.skip("symlinks are unavailable in this environment");
+    return;
+  }
+  const storage = createFileAppStorage({ appDataRoot: root });
+
+  const listed = await storage.listDirectories("threads");
+
+  assert.deepEqual(listed, ["good-thread"]);
+});
+
 async function createService() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "tide-persistence-"));
   const storage = createFileAppStorage({ appDataRoot: root });

@@ -81,7 +81,7 @@ export interface TideReadFileOutput {
 export interface TideOpenFileOutput {
   kind: "open_file";
   threadId: ThreadId;
-  pane: WorkbenchPaneSnapshotRef & { kind: "editor" };
+  pane: WorkbenchPaneSnapshotRef & { kind: "editor" | "image" };
   root: string;
   path: string;
   relativePath: string;

@@ -399,7 +399,7 @@ export function createLiveBackendContractMessageAdapter(
     // workbench-editor-language-intelligence).
     workspaceCodeIntelligencePort: createWorkspaceCodeIntelligenceRouter(),
     defaultWorkbenchTerminalCommand: env.SHELL ?? "sh",
-    defaultWorkbenchTerminalArgs: env.SHELL === undefined ? [] : ["-l"],
+    defaultWorkbenchTerminalArgs: [],
     onAsyncEvent: (event) => {
       emitBackendEvents(backendEventsFromThreadRuntimeAsyncEvent(event));
     },

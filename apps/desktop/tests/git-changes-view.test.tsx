@@ -4,13 +4,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
-import { act } from "react";
+import { act, useEffect, useState } from "react";
+import type { ReactElement } from "react";
 
 import { ChangesPanel } from "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/changes-panel.tsx";
-import type { GitChangesViewResult } from "../src/desktop/adapters/inbound/react-renderer/product-shell/support/types.ts";
+import { GIT_STATE_REFRESH_MS, useGitState } from "../src/desktop/adapters/inbound/react-renderer/product-shell/support/use-shell-effects.ts";
+import type { GitChangesViewResult, ProjectRegistryBridge } from "../src/desktop/adapters/inbound/react-renderer/product-shell/support/types.ts";
 import { createProductShellState } from "../src/desktop/application/domains/product-shell/state/create.ts";
 import { openProductShellDraftChanges } from "../src/desktop/application/domains/product-shell/state/workbench.ts";
 import { selectWorkbenchViewModel } from "../src/desktop/application/domains/product-shell/state/view-model.ts";
+import type { ProductShellState } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>");
 (globalThis as unknown as { window: unknown }).window = dom.window;
@@ -77,6 +80,83 @@ test("changes_pane_renders_a_resizable_collapsible_file_list", async () => {
   // GitHub-style file tree controls: a collapse toggle + a resize divider.
   assert.match(html, /Hide file list/);
   assert.match(html, /Resize file list/);
+});
+
+test("git_badge_refreshes_after_working_tree_becomes_clean", async () => {
+  const { createRoot } = await import("react-dom/client");
+  const originalSetInterval = dom.window.setInterval;
+  const originalClearInterval = dom.window.clearInterval;
+  let refresh: (() => void) | null = null;
+  dom.window.setInterval = ((handler: TimerHandler, timeout?: number) => {
+    assert.equal(timeout, GIT_STATE_REFRESH_MS);
+    refresh = typeof handler === "function" ? () => handler() : null;
+    return 1;
+  }) as typeof dom.window.setInterval;
+  dom.window.clearInterval = (() => undefined) as typeof dom.window.clearInterval;
+
+  let clean = false;
+  let latestBadge:
+    | { branch: string | null; additions: number; deletions: number; fileCount: number; cwd: string }
+    | null = null;
+  const bridge = {
+    gitContext: () =>
+      Promise.resolve({
+        isGitRepo: true,
+        currentBranch: "tide/wt-0217f",
+        branches: [],
+        worktrees: [],
+      }),
+    gitChanges: () =>
+      Promise.resolve({
+        isGitRepo: true,
+        files: clean
+          ? []
+          : [{ path: "README.md", status: "modified" as const, additions: 11, deletions: 9 }],
+      }),
+  } as Partial<ProjectRegistryBridge> as ProjectRegistryBridge;
+
+  function Harness(): ReactElement {
+    const [, setShellState] = useState<ProductShellState>(() =>
+      createProductShellState({ includeFixtureData: false }),
+    );
+    const { gitBadge } = useGitState(bridge, "/repo", setShellState);
+    useEffect(() => {
+      latestBadge = gitBadge;
+    }, [gitBadge]);
+    return <div>{gitBadge?.branch ?? ""}</div>;
+  }
+
+  const container = dom.window.document.createElement("div");
+  dom.window.document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(<Harness />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    assert.equal(latestBadge?.additions, 11);
+    assert.equal(latestBadge?.deletions, 9);
+
+    clean = true;
+    assert.notEqual(refresh, null);
+    await act(async () => {
+      refresh?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    assert.equal(latestBadge?.fileCount, 0);
+    assert.equal(latestBadge?.additions, 0);
+    assert.equal(latestBadge?.deletions, 0);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.setInterval = originalSetInterval;
+    dom.window.clearInterval = originalClearInterval;
+  }
 });
 
 // --- Composer (pre-thread) draft Changes pane. Spec: git-changes-view (Composer
