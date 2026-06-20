@@ -120,6 +120,32 @@ test("a stranded thread renders without the skeleton after the late hydrate land
   assert.equal(reopened.state.agentChat.blocks.length, 1);
 });
 
+test("reselecting the active thread does not replace its ready chat with a hydrate skeleton", () => {
+  const opened = openProductShellThreadFromLeftRail(seed(["x"]), "x", {
+    backendTransportAvailable: true,
+  });
+  const ready = applyProductShellBackendEvent(opened.state, {
+    kind: "thread.hydrated",
+    payload: {
+      thread: threadSummary("x"),
+      blocks: [block("b1", "x")],
+      runtimeState: "idle",
+    },
+  });
+  assert.equal(ready.activeThreadId, "x");
+  assert.equal(ready.agentChat.hydrating, false);
+  assert.equal(ready.agentChat.blocks.length, 1);
+
+  const reselected = openProductShellThreadFromLeftRail(ready, "x", {
+    backendTransportAvailable: true,
+  });
+
+  assert.equal(reselected.state.activeThreadId, "x");
+  assert.equal(reselected.state.agentChat.hydrating, false);
+  assert.equal(reselected.state.agentChat.blocks.length, 1);
+  assert.equal(reselected.command?.kind, "thread.hydrate");
+});
+
 test("non-hydrate background events for an unknown thread are still ignored (scope unchanged)", () => {
   // The fix is scoped to hydrate/started seeding. A stray per-thread DATA event for a
   // thread we hold no state for must NOT fabricate an entry (that was the prior contract).

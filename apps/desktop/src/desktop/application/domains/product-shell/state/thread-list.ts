@@ -487,6 +487,10 @@ export function openProductShellThread(
   state: ProductShellState,
   threadId: string,
 ): ProductShellState {
+  if (state.activeThreadId === threadId) {
+    return state;
+  }
+
   const thread = state.threads.find((candidate) => candidate.threadId === threadId);
   if (!thread) {
     return state;
@@ -514,6 +518,19 @@ export function openProductShellThreadFromLeftRail(
   threadId: string,
   input: { backendTransportAvailable: boolean },
 ): ProductShellUpdateResult {
+  if (state.activeThreadId === threadId) {
+    return {
+      state: {
+        ...state,
+        leftRailMenu: null,
+        archiveConfirmThreadId: null,
+      },
+      command: input.backendTransportAvailable
+        ? { kind: "thread.hydrate", payload: { threadId } }
+        : null,
+    };
+  }
+
   if (!input.backendTransportAvailable) {
     return { state: openProductShellThread(state, threadId), command: null };
   }

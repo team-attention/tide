@@ -5,6 +5,9 @@ import {
   executeBrowserWebViewAction,
   isWebViewSettled,
   readBrowserWebViewSnapshot,
+  safeGetWebViewURL,
+  safeInvokeWebView,
+  safeLoadWebViewURL,
   type BrowserWebViewElement,
 } from "./browser-webview-actions.ts";
 import { BrowserAgentOverlay } from "./browser-agent-overlay.tsx";
@@ -291,21 +294,39 @@ export function WorkbenchBrowserPane(props: {
     if (target === requestedUrlRef.current) {
       return; // already handled (initial src, or a prior navigation/echo)
     }
-    let current = "";
-    try {
-      current = typeof webview.getURL === "function" ? webview.getURL() : "";
-    } catch {
-      return; // not dom-ready yet — the initial src load is in flight
+    const current = safeGetWebViewURL(webview);
+    if (current === undefined) {
+      const loadWhenReady = () => {
+        requestedUrlRef.current = target;
+        safeLoadWebViewURL(webview, target);
+      };
+      webview.addEventListener("dom-ready", loadWhenReady, { once: true });
+      return () => webview.removeEventListener("dom-ready", loadWhenReady);
     }
     requestedUrlRef.current = target;
     if (target === current) {
       return; // snapshot echo: the webview is already here
     }
-    void webview.loadURL(target).catch(() => undefined);
+    safeLoadWebViewURL(webview, target);
   }, [webviewElement, props.pane.url, props.pane.paneId]);
-  const goBack = () => webviewRef.current?.goBack?.();
-  const goForward = () => webviewRef.current?.goForward?.();
-  const reload = () => webviewRef.current?.reload?.();
+  const goBack = () => {
+    const webview = webviewRef.current;
+    if (webview !== null) {
+      safeInvokeWebView(webview, "goBack");
+    }
+  };
+  const goForward = () => {
+    const webview = webviewRef.current;
+    if (webview !== null) {
+      safeInvokeWebView(webview, "goForward");
+    }
+  };
+  const reload = () => {
+    const webview = webviewRef.current;
+    if (webview !== null) {
+      safeInvokeWebView(webview, "reload");
+    }
+  };
   const navigate = () => {
     const url = normalizeBrowserUrl(address);
     if (url.length === 0) {
@@ -314,7 +335,7 @@ export function WorkbenchBrowserPane(props: {
     setAddress(url);
     const webview = webviewRef.current;
     if (webview?.loadURL !== undefined) {
-      void webview.loadURL(url).catch(() => undefined);
+      safeLoadWebViewURL(webview, url);
     }
     // Report the navigation so the backend pane reflects it; did-finish-load
     // will follow up with the resolved title/body snapshot.
