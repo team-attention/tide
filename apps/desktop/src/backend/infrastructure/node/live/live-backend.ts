@@ -109,18 +109,6 @@ import {
 
 import type { StructuredProviderEvent } from "../../../adapters/outbound/agent-runtime/structured/structured-runtime-events.ts";
 
-import {
-  createAgentRuntimeRouterPort,
-  createProviderReadinessRouterPort,
-} from "../../../adapters/outbound/agent-runtime/runtime-ports/agent-runtime-router-port.ts";
-
-import {
-  createEnvironmentOpenAiProviderAccountReader,
-  createOpenAiApiAgentRuntimePort,
-  createOpenAiProviderAccountReadinessPort,
-  createOpenAiResponsesClient,
-} from "../../../adapters/outbound/agent-runtime/runtime-ports/openai-api-agent-runtime-port.ts";
-
 import { createFileAppStorage } from "../../../adapters/outbound/app-storage/file-app-storage.ts";
 
 import {
@@ -184,7 +172,6 @@ import {
   createThreadRuntimeService,
   type PtyTranscriptPort,
   type RawAgentFrame,
-  type TideMcpToolName,
   type ThreadRuntimeAsyncEvent,
   type ThreadRuntimeService,
 } from "../../../application/services/thread/thread-runtime-service.ts";
@@ -305,7 +292,6 @@ export function createLiveBackendContractMessageAdapter(
 
   let service: ThreadRuntimeService;
   const ptyLauncher = createPythonPtyProcessLauncher();
-  const openAiAccountReader = createEnvironmentOpenAiProviderAccountReader(env);
   const projector = createLiveAgentSessionEventProjector({
     service: () => service,
     persistence,
@@ -327,49 +313,11 @@ export function createLiveBackendContractMessageAdapter(
       void projector.ingestStructuredProviderEvent(providerEvent);
     },
   });
-  const tideApiRuntimePort = createOpenAiApiAgentRuntimePort({
-    readAccount: openAiAccountReader,
-    client: createOpenAiResponsesClient(),
-    listTools: () => service.listTideMcpTools(),
-    executeTool: async (toolCall) => {
-      const result = await service.handleTideMcpToolCall({
-        session: toolCall.session,
-        toolName: toolCall.toolName as TideMcpToolName,
-        input: toolCall.input,
-      });
-      if (!result.ok) {
-        return {
-          ok: false,
-          error: {
-            code: result.error.code,
-            message: result.error.message,
-          },
-        };
-      }
-      return {
-        ok: true,
-        output: result.output,
-      };
-    },
-    toolInstructions:
-      "Use Tide tools when you need current Thread, Workbench, or Browser Pane state. Do not guess Tide UI state when a Tide tool can observe it.",
-    onRawFrame: (frame) => {
-      return projector.ingestStructuredFrame(frame);
-    },
-  });
   service = createThreadRuntimeService({
-    agentRuntimePort: createAgentRuntimeRouterPort({
-      providerCliRuntime: providerCliRuntimePort,
-      tideApiRuntime: tideApiRuntimePort,
-    }),
-    providerReadinessPort: createProviderReadinessRouterPort({
-      providerCliReadiness: createAgentIntegrationProviderReadinessPort({
-        integrations,
-        updateChecker: agentUpdateChecker,
-      }),
-      tideApiReadiness: createOpenAiProviderAccountReadinessPort({
-        readAccount: openAiAccountReader,
-      }),
+    agentRuntimePort: providerCliRuntimePort,
+    providerReadinessPort: createAgentIntegrationProviderReadinessPort({
+      integrations,
+      updateChecker: agentUpdateChecker,
     }),
     workbenchTerminalPort: createPtyWorkbenchTerminalPort({
       launcher: ptyLauncher,

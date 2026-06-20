@@ -20,8 +20,8 @@ In scope:
 Out of scope (already handled / separate):
 - Tide's own first-party MCP tools — pre-approved in provider config, never prompt
   ([[v2-agent-turn-handoff-readiness]] / agent-turn-handoff-readiness.md).
-- claude/antigravity hook-delivered prompts (already flow through `detectPromptState`
-  via `provider_hook` + the agent-needs-input hooks).
+- Provider hook/protocol-delivered prompts (already flow through `detectPromptState`
+  or structured runtime prompt events).
 - TUI pickers (model/slash) — tui-scrape-native-menus.md.
 
 ## Evidence

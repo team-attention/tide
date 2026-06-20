@@ -103,7 +103,7 @@ Tests provide fake Agent Runtime, Provider Readiness, and PTY Transcript ports. 
 
 ## Out Of Scope
 
-- Codex, Claude, or Antigravity launch/resume flags.
+- Provider-specific launch/resume flags.
 - Hook payload examples per provider.
 - Agent Integration bootstrap and readiness implementation.
 - Electron utilityProcess lifecycle.

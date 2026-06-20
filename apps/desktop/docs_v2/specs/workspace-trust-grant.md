@@ -3,8 +3,8 @@
 ## Scope
 
 Turn the `directory_trust_required` Provider Readiness blocker into a one-click
-in-app "Trust this folder" action (Claude-style), for all three provider CLIs
-(codex, claude, antigravity). On confirm, Tide writes the provider's own trust
+in-app "Trust this folder" action for provider CLIs that expose provider-owned
+workspace trust. On confirm, Tide writes the provider's own trust
 record for the Execution Context cwd, re-checks Provider Readiness, and — if the
 provider is now ready — proceeds with any pending Composer input. No terminal drop.
 
@@ -20,13 +20,12 @@ In scope:
 
 ## Evidence
 
-- All three integrations emit `kind: "directory_trust_required"` when the cwd is
-  absent from `providerState.trustedCwds`
-  (`{codex,claude,antigravity}-agent-integration.ts`).
+- Provider integrations that require directory trust emit
+  `kind: "directory_trust_required"` when the cwd is absent from
+  `providerState.trustedCwds`.
 - Trust is read from disk per provider (`live-backend.ts`):
   - claude `~/.claude.json` → `projects[cwd].hasTrustDialogAccepted === true`.
   - codex `~/.codex/config.toml` → `[projects."<cwd>"]` with `trust_level = "trusted"`.
-  - antigravity `~/.gemini/antigravity-cli/settings.json` → `trustedWorkspaces[]`.
 - Readiness blockers surface today as a `provider_readiness` composer choice
   surface; the trust blocker currently only offers "Open provider setup"
   (a provider-native terminal), `agent-chat-shell-state.ts:507`.

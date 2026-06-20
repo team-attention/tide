@@ -6,8 +6,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applyProductShellBackendEvent,
   createProductShellState,
   editProductShellWorkbenchEditorPane,
+  ensureComposerDraftThreadActive,
   newProductShellUntitledFile,
   productShellUntitledSaved,
   removeProductShellUntitledFile,
@@ -16,38 +18,55 @@ import {
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import type { ProductShellState } from "../src/desktop/application/domains/product-shell/state/types.ts";
 
-function startStateWithRoot(root = "/repo/tide"): ProductShellState {
+function draftStateWithRoot(root = "/repo/tide"): ProductShellState {
   const base = createProductShellState({ includeFixtureData: false });
-  // resolveActiveWorkspaceCwd falls back to the loaded file-tree root when the
-  // composer has no project scope, so this gives New File a cwd to save under.
-  return { ...base, activeThreadId: null, fileTree: { root, cwdLabel: "tide", entries: [] } };
+  const scoped: ProductShellState = {
+    ...base,
+    activeThreadId: null,
+    agentChat: {
+      ...base.agentChat,
+      composer: {
+        ...base.agentChat.composer,
+        startOptions: {
+          ...base.agentChat.composer.startOptions,
+          scope: { kind: "project", projectId: "tide", cwd: root },
+        },
+      },
+    },
+  };
+  return ensureComposerDraftThreadActive(scoped).state;
 }
 
-test("new untitled file opens a blank, focused buffer bound to the context", () => {
-  const next = newProductShellUntitledFile(startStateWithRoot());
+test("new untitled file opens a blank, focused buffer bound to the draft thread", () => {
+  const draft = draftStateWithRoot();
+  const next = newProductShellUntitledFile(draft);
   assert.equal(next.untitledFiles.length, 1);
   const file = next.untitledFiles[0];
   assert.equal(file.id, "untitled:1");
   assert.equal(file.title, "Untitled-1");
   assert.equal(file.draft, "");
   assert.equal(file.dirty, false);
-  assert.equal(file.threadId, null);
+  assert.equal(file.threadId, draft.draftThreadId);
   assert.equal(file.scopeCwd, "/repo/tide");
   assert.equal(next.workbenchOpen, true);
   assert.equal(next.draftActiveWorkbenchPaneId, "untitled:1");
   assert.equal(next.untitledSequence, 1);
 });
 
-test("new untitled is a no-op when there is no workspace directory", () => {
+test("new untitled is a no-op before a draft/thread exists", () => {
   const base = createProductShellState({ includeFixtureData: false });
-  const input: ProductShellState = { ...base, activeThreadId: null, fileTree: null };
+  const input: ProductShellState = {
+    ...base,
+    activeThreadId: null,
+    fileTree: { root: "/repo/tide", cwdLabel: "tide", entries: [] },
+  };
   const next = newProductShellUntitledFile(input);
   assert.equal(next.untitledFiles.length, 0);
   assert.equal(next, input, "state is returned unchanged");
 });
 
 test("editing an untitled buffer marks it dirty; saving opens the Save As bar", () => {
-  const opened = newProductShellUntitledFile(startStateWithRoot());
+  const opened = newProductShellUntitledFile(draftStateWithRoot());
   const typed = editProductShellWorkbenchEditorPane(opened, "untitled:1", "hello");
   assert.equal(typed.untitledFiles[0].draft, "hello");
   assert.equal(typed.untitledFiles[0].dirty, true);
@@ -57,20 +76,21 @@ test("editing an untitled buffer marks it dirty; saving opens the Save As bar", 
   assert.equal(saved.state.untitledSaveAsPaneId, "untitled:1");
 });
 
-test("untitledSaved (start page) drops the untitled and reads the now-real file", () => {
-  const opened = editProductShellWorkbenchEditorPane(
-    newProductShellUntitledFile(startStateWithRoot()),
-    "untitled:1",
-    "x",
+test("empty draft workbench events do not close a visible untitled pane", () => {
+  const opened = newProductShellUntitledFile(draftStateWithRoot());
+  const draftId = opened.draftThreadId as string;
+
+  const afterEmptyWorkbench = applyProductShellBackendEvent(opened, {
+    kind: "workbench.changed",
+    payload: { threadId: draftId, panes: [] },
+  } as Parameters<typeof applyProductShellBackendEvent>[1]);
+
+  assert.equal(afterEmptyWorkbench.workbenchOpen, true);
+  assert.equal(afterEmptyWorkbench.workbenchOpenByThreadId[draftId], true);
+  const pane = selectWorkbenchViewModel(afterEmptyWorkbench).appChrome.openWorkbenchPanes.find(
+    (candidate) => candidate.paneId === "untitled:1",
   );
-  const result = productShellUntitledSaved(opened, "untitled:1", "notes/todo.md");
-  assert.equal(result.state.untitledFiles.length, 0, "untitled tab is gone");
-  assert.equal(result.command?.kind, "workspace.readFile");
-  assert.deepEqual(result.command?.kind === "workspace.readFile" ? result.command.payload : null, {
-    cwd: "/repo/tide",
-    path: "notes/todo.md",
-  });
-  assert.equal(result.state.draftActiveWorkbenchPaneId, "start-file:notes/todo.md");
+  assert.equal(pane?.kind, "editor");
 });
 
 test("untitledSaved (thread) drops the untitled and opens it as a thread editor", () => {
@@ -93,20 +113,20 @@ test("untitledSaved (thread) drops the untitled and opens it as a thread editor"
 });
 
 test("closing an untitled tab discards it and clears the active override", () => {
-  const opened = newProductShellUntitledFile(startStateWithRoot());
+  const opened = newProductShellUntitledFile(draftStateWithRoot());
   const closed = removeProductShellUntitledFile(opened, "untitled:1");
   assert.equal(closed.untitledFiles.length, 0);
   assert.equal(closed.draftActiveWorkbenchPaneId, null);
 });
 
 test("the view-model derives an editor pane for the untitled, only in its context", () => {
-  const opened = newProductShellUntitledFile(startStateWithRoot());
+  const opened = newProductShellUntitledFile(draftStateWithRoot());
   const panes = selectWorkbenchViewModel(opened).appChrome.openWorkbenchPanes;
   const untitledPane = panes.find((pane) => pane.paneId === "untitled:1");
-  assert.ok(untitledPane !== undefined, "untitled pane is shown on the start page");
+  assert.ok(untitledPane !== undefined, "untitled pane is shown on its draft thread");
   assert.equal(untitledPane?.kind, "editor");
 
-  // The same untitled bound to a thread must NOT show on the start page.
+  // The same untitled bound to a different thread must NOT show on this draft.
   const wrongContext: ProductShellState = {
     ...opened,
     untitledFiles: opened.untitledFiles.map((file) => ({ ...file, threadId: "other" })),

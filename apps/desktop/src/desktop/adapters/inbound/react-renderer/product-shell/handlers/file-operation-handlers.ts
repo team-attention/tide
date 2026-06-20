@@ -6,6 +6,7 @@ import {
   closeProductShellFileTreeDelete,
   closeProductShellFileTreeMenu,
   closeProductShellWorkbenchPane,
+  ensureComposerDraftThreadActive,
   newProductShellUntitledFile,
   normalizeRelativeInput,
   openProductShellFileTreeDelete,
@@ -48,7 +49,7 @@ export function createFileOperationHandlers(
   | "onFileTreeRefresh"
   | "onFileTreeNoticeClear"
 > {
-  const { props, setShellState, dispatchBackendCommand } = ctx;
+  const { props, getShellState, setShellState, dispatchBackendCommand } = ctx;
   const bridge = props.projectBridge;
 
   // After a mutation that changed paths: drop affected start-page tabs, close affected
@@ -67,7 +68,16 @@ export function createFileOperationHandlers(
   };
 
   return {
-    onNewUntitledFile: () => setShellState((state) => newProductShellUntitledFile(state)),
+    onNewUntitledFile: () => {
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null) {
+        const ensured = ensureComposerDraftThreadActive(currentState);
+        setShellState(newProductShellUntitledFile(ensured.state));
+        if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+        return;
+      }
+      setShellState((state) => newProductShellUntitledFile(state));
+    },
 
     onUntitledSaveAs: (paneId, relativePath) => {
       const file = ctx.shellState.untitledFiles.find((candidate) => candidate.id === paneId);

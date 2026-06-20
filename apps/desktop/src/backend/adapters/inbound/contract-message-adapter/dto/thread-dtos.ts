@@ -53,22 +53,12 @@ function toAgentBindingDto(binding: ThreadSnapshot["agentBinding"]): AgentBindin
 function toAgentRuntimeSourceDto(
   source: AgentRuntimeSourceDto,
 ): AgentRuntimeSourceDto {
-  if (source.kind === "provider_cli") {
-    return { kind: "provider_cli", integrationId: source.integrationId };
-  }
-  const dto: AgentRuntimeSourceDto = { kind: "tide_api", provider: source.provider };
-  if (source.accountId !== undefined) {
-    dto.accountId = source.accountId;
-  }
-  return dto;
+  return { kind: "provider_cli", integrationId: source.integrationId };
 }
 
 function defaultRuntimeSourceForAgent(
   agentId: ThreadSnapshot["agentBinding"]["agentId"],
 ): AgentRuntimeSourceDto {
-  if (agentId === "openai_api") {
-    return { kind: "tide_api", provider: "openai" };
-  }
   return { kind: "provider_cli", integrationId: agentId };
 }
 

@@ -8,21 +8,14 @@ import type {
 } from "../workbench/workbench.ts";
 
 export type ProviderCliAgentId = "codex" | "claude" | "gemini" | "opencode";
-export type TideApiAgentId = "openai_api";
-export type AgentId = ProviderCliAgentId | TideApiAgentId;
+export type AgentId = ProviderCliAgentId;
 export type ThreadId = string;
 export type ProjectId = string;
 
-export type AgentRuntimeSource =
-  | {
-      kind: "provider_cli";
-      integrationId: ProviderCliAgentId;
-    }
-  | {
-      kind: "tide_api";
-      provider: "openai";
-      accountId?: string;
-    };
+export interface AgentRuntimeSource {
+  kind: "provider_cli";
+  integrationId: ProviderCliAgentId;
+}
 
 export interface ProviderSessionRef {
   kind:

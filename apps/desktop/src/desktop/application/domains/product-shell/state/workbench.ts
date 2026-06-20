@@ -1,4 +1,4 @@
-import type { ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserScreenshot, ProductShellBrowserSnapshot, ProductShellDraftPane, ProductShellState, ProductShellUpdateResult } from "./types.ts";
+import type { ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserScreenshot, ProductShellBrowserSnapshot, ProductShellState, ProductShellUpdateResult } from "./types.ts";
 
 // The renderer host's reply to an observe-time pixel-capture pull (pendingCapture). The
 // screenshot is omitted when the guest could not be captured (observe then degrades server-side).
@@ -6,7 +6,7 @@ export interface ProductShellBrowserCaptureResult {
   captureId: string;
   screenshot?: ProductShellBrowserScreenshot;
 }
-import { COMPOSER_LAUNCHER_PANE_ID, isStartFilePaneId, isUntitledPaneId, startFilePaneId } from "./types.ts";
+import { COMPOSER_LAUNCHER_PANE_ID, isUntitledPaneId } from "./types.ts";
 import { removeProductShellUntitledFile } from "./untitled-files.ts";
 import { applyDrop, reconcileTree, setRatioAtPath } from "./workbench-split-tree.ts";
 import type { DropZone } from "./workbench-split-tree.ts";
@@ -176,72 +176,13 @@ export function openProductShellWorkbenchLauncher(
   };
 }
 
-// Open a new draft Browser Pane on the composer (New Thread) page (no thread yet).
-// Renderer-local; adopted by the Thread the first send creates.
-export function openProductShellDraftBrowser(
-  state: ProductShellState,
-  url?: string,
-): ProductShellState {
-  const pane: ProductShellDraftPane = {
-    paneId: draftPaneId(),
-    kind: "browser",
-    title: url === undefined || url.length === 0 ? "Browser" : url,
-    url,
-  };
-  return {
-    ...state,
-    workbenchOpen: true,
-    draftWorkbenchPanes: [...state.draftWorkbenchPanes, pane],
-    draftActiveWorkbenchPaneId: pane.paneId,
-  };
-}
-
-// Open the read-only git Changes pane on the composer (New Thread) page (no thread yet).
-// Renderer-local + SINGLETON, mirroring the backend Changes pane: reveal the existing
-// draft Changes pane or create one. ChangesPanel self-fetches its file list + diffs from
-// `cwd`. Spec: git-changes-view (Composer pre-thread Changes).
-export function openProductShellDraftChanges(
-  state: ProductShellState,
-  cwd: string,
-): ProductShellState {
-  const existing = state.draftWorkbenchPanes.find((pane) => pane.kind === "changes");
-  if (existing !== undefined) {
-    return { ...state, workbenchOpen: true, draftActiveWorkbenchPaneId: existing.paneId };
-  }
-  const pane: ProductShellDraftPane = {
-    paneId: draftPaneId(),
-    kind: "changes",
-    title: "Changes",
-    cwd,
-  };
-  return {
-    ...state,
-    workbenchOpen: true,
-    draftWorkbenchPanes: [...state.draftWorkbenchPanes, pane],
-    draftActiveWorkbenchPaneId: pane.paneId,
-  };
-}
-
-function draftPaneId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `draft-${crypto.randomUUID()}`;
-  }
-  return `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 export function selectProductShellLauncherAction(
   state: ProductShellState,
   actionId: string,
 ): ProductShellUpdateResult {
   if (state.activeThreadId === null) {
-    // Composer (New Thread) page launcher: Browser opens a live renderer-owned draft pane
-    // (adopted on send). Terminal/Editor/Diff need a backend thread to host their
-    // PTY/files, so they route to the Composer's Draft Thread — handled by the handler
-    // (selectComposerDraftLauncherAction), which can emit the create + open commands
-    // together. See docs_v2/specs/composer-draft-thread.md.
-    if (actionId === "open_browser") {
-      return { state: openProductShellDraftBrowser(state), command: null };
-    }
+    // Composer launcher actions are dispatched through handlers that first create
+    // the backend Draft Thread, then re-enter this reducer with activeThreadId set.
     return { state, command: null };
   }
   const launcher = state.appChrome.workbenchPanes.find(
@@ -418,10 +359,8 @@ export function openProductShellBrowserAtUrl(
   if (url.length === 0) {
     return { state, command: null };
   }
-  // Composer (New Thread) page: there is no backend thread yet, so a link opens a
-  // fresh renderer-owned draft Browser Pane.
   if (state.activeThreadId === null) {
-    return { state: openProductShellDraftBrowser(state, url), command: null };
+    return { state, command: null };
   }
   // Chat/session links default to a fresh Browser Pane so they never replace the page
   // you're already reading. Callers that explicitly want reuse can pass newPane: false.
@@ -475,30 +414,17 @@ export function closeProductShellWorkbenchPane(
       command: null,
     };
   }
-  // Composer (New Thread) page: no backend panes — close is renderer-local. Closing
-  // a start-page editor tab removes just that file; closing a draft browser removes
-  // it. The Workbench stays open while any draft pane (or editor tab) remains.
+  // Composer (New Thread) page before a Draft Thread exists: no backend panes yet,
+  // only the synthetic launcher. Files/Browser/Terminal/Diff create a Draft Thread
+  // before they become panes.
   if (state.activeThreadId === null) {
-    const startPageFiles = isStartFilePaneId(paneId)
-      ? state.startPageFiles.filter((file) => startFilePaneId(file.relativePath) !== paneId)
-      : state.startPageFiles;
-    const draftWorkbenchPanes = state.draftWorkbenchPanes.filter((pane) => pane.paneId !== paneId);
-    const anyDraftRemains = draftWorkbenchPanes.length > 0 || startPageFiles.length > 0;
-    const fallbackPaneId =
-      draftWorkbenchPanes[draftWorkbenchPanes.length - 1]?.paneId ??
-      (startPageFiles.length > 0
-        ? startFilePaneId(startPageFiles[startPageFiles.length - 1].relativePath)
-        : COMPOSER_LAUNCHER_PANE_ID);
-    const draftActiveWorkbenchPaneId =
-      state.draftActiveWorkbenchPaneId === paneId ? fallbackPaneId : state.draftActiveWorkbenchPaneId;
     return {
       state: {
         ...state,
         editorPickerFilter: null,
-        startPageFiles,
-        draftWorkbenchPanes,
-        draftActiveWorkbenchPaneId,
-        workbenchOpen: anyDraftRemains ? state.workbenchOpen : false,
+        draftActiveWorkbenchPaneId:
+          state.draftActiveWorkbenchPaneId === paneId ? COMPOSER_LAUNCHER_PANE_ID : state.draftActiveWorkbenchPaneId,
+        workbenchOpen: false,
       },
       command: null,
     };
@@ -565,37 +491,6 @@ export function updateProductShellBrowserSnapshot(
   paneId: string,
   snapshot: ProductShellBrowserSnapshot,
 ): ProductShellUpdateResult {
-  // Composer (New Thread) page draft browser: there is no backend pane — fold the
-  // navigated url/title into the draft so adoption (on send) seeds the right page.
-  if (state.activeThreadId === null) {
-    const draft = state.draftWorkbenchPanes.find(
-      (candidate) => candidate.paneId === paneId,
-    );
-    if (draft === undefined || snapshot.url === undefined) {
-      return { state, command: null };
-    }
-    return {
-      state: {
-        ...state,
-        draftWorkbenchPanes: state.draftWorkbenchPanes.map((candidate) =>
-          candidate.paneId === paneId
-            ? {
-                ...candidate,
-                url: snapshot.url,
-                // `??` alone keeps an empty-string pageTitle (about:blank reports
-                // "") — pick the first NON-empty of pageTitle/url so a titleless
-                // page shows its URL instead of going blank.
-                title:
-                  [snapshot.pageTitle, snapshot.url, candidate.title].find(
-                    (value) => typeof value === "string" && value.trim().length > 0,
-                  ) ?? candidate.title,
-              }
-            : candidate,
-        ),
-      },
-      command: null,
-    };
-  }
   const pane = state.appChrome.workbenchPanes.find(
     (candidate) => candidate.paneId === paneId && candidate.kind === "browser",
   );

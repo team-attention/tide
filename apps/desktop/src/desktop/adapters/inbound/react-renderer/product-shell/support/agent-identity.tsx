@@ -28,8 +28,7 @@ function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
   if (
     agentId === "claude" ||
     agentId === "gemini" ||
-    agentId === "opencode" ||
-    agentId === "openai_api"
+    agentId === "opencode"
   ) {
     return agentId;
   }

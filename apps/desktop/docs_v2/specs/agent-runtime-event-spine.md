@@ -1,7 +1,7 @@
 # Spec: Agent Runtime Event Spine
 
 Master runtime spec. This is the structural backbone that every provider
-(Codex CLI, Claude Code, Antigravity CLI) and every seamless-terminal feature
+(Codex CLI, Claude Code, Gemini, opencode) and every seamless-terminal feature
 (turn lifecycle, streaming, in-session commands, directory trust, questions,
 queuing, message edit, interrupt/steering) rides on.
 
@@ -52,11 +52,10 @@ As-is, observed in the current code (2026-06-06):
   decision of *whether a turn ended* arrives from infrastructure, not from the
   provider adapter.
 - The Agent Integration adapters
-  (`codex|claude|antigravity-agent-integration.ts`, ~400 lines each) are clean:
+  (provider-specific agent integrations) are clean:
   they build launch/resume plans and `detectPromptState`, but they do **not**
   own the live event stream or turn lifecycle. That ownership leaked upward.
-- Memory `v2-agy-never-finishes`: antigravity emits no usable turn-end → "Working"
-  forever. Memory `v2-concurrency-hang-binding`: concurrent spawns mis-bind
+- Memory `v2-concurrency-hang-binding`: concurrent spawns mis-bind
   rollout↔thread and some produce zero output. Both are symptoms of lifecycle
   detection that is not owned per-runtime by the provider adapter.
 - Existing typed surfaces already align with this direction: `RawAgentFrame`
@@ -109,8 +108,7 @@ scraped in the wrong layer.
 - Changing provider launch/resume command shaping (already in adapters).
 - Changing the Agent Session Block schema or reader contract.
 - Persistence format changes beyond storing Last Known State already supported.
-- Tide API Agent (OpenAI) runtime — it implements the same port with a trivial
-  source, but its mapping is not detailed here.
+- Direct API Agent runtimes; they are not part of the current v2 runtime path.
 
 ## Domain Model
 
@@ -278,7 +276,7 @@ Architecture boundary additions:
 
 Provider smoke (after fake path green), per provider:
 
-- `codex|claude|antigravity_emits_turn_started_and_single_turn_ended`.
+- `codex|claude|gemini|opencode_emits_turn_started_and_single_turn_ended`.
 
 ## Implementation Notes
 
@@ -291,11 +289,10 @@ Migration is additive-then-subtractive to avoid a big-bang rewrite:
   codex integration, moving `codexRolloutTurnEnded` + history polling out of
   `live-backend.ts`. Switch codex onto the spine. Delete the infra codex
   detection. Keep the rollout tail as a *private* detail of the codex source.
-- **Slice 3 (claude + antigravity):** same move for the other two. This is where
-  antigravity "forever Working" and concurrent-binding bugs get fixed by
-  per-runtime sources.
+- **Slice 3 (remaining providers):** same move for the other provider adapters.
+  Concurrent-binding bugs get fixed by per-runtime sources.
 - **Slice 4 (controls):** interrupt, queuing flush, and prompt round-trip all
-  expressed uniformly on the spine for all three providers.
+  expressed uniformly on the spine for provider CLIs.
 
 `thread-runtime-service.ts` (4536 lines) and `live-backend.ts` (3221 lines)
 should shrink as provider lifecycle moves into adapters. Splitting those god-files

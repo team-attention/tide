@@ -531,7 +531,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     setShellState,
     dispatchBackendCommand,
   });
-  const handlerContext: ProductShellHandlerContext = { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, branchDelete, setBranchDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, confirmBranchDelete, startColumnResize };
+  const handlerContext: ProductShellHandlerContext = { props, shellState, getShellState: store.getState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, branchDelete, setBranchDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, confirmBranchDelete, startColumnResize };
   const handlers: ProductShellHandlers = {
     ...createRailHandlers(handlerContext),
     ...createComposerHandlers(handlerContext),

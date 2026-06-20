@@ -58,6 +58,6 @@ Elevation:
 3. Pencil files may be used only as historical reference unless explicitly promoted again.
 4. Never invent UI text or shortcut labels during design transfer. Use the Figma frame as the current source.
 5. If a Figma frame is adjusted away from legacy Pencil, record whether the change is a Codex-reference polish or a product decision.
-6. The Composer Agent chip is visually singular, but design annotations must distinguish Provider CLI Agents from Tide API Agents when model, permission, or setup behavior depends on source.
+6. The Composer Agent chip is visually singular, but design annotations must distinguish the selected Provider CLI Agent when model, permission, or setup behavior depends on source.
 7. Composer shell states, source-aware menus, Prompt State surfaces, and Provider Readiness composer behavior live in the canonical Composer state map. Other frames may reference that map, but should not duplicate Composer drawings.
 8. New Thread Start screens show only the Start Composer launch context and title. Do not add fake cue, prompt queue, or recent task rows below the Composer.

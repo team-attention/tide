@@ -3,7 +3,7 @@
 ## Scope
 
 Let the user attach images to a Composer message by paste (clipboard) and see a
-preview before sending, for all three provider CLIs (codex, claude, antigravity).
+preview before sending, for provider CLI agents (codex, claude, gemini, opencode).
 On send, Tide materializes each image to a file inside the Thread workspace and
 references its absolute path in the message text so the Agent can read it.
 
@@ -22,7 +22,7 @@ In scope:
   cannot serve follow-up turns.
 - `claude --help` has `--file file_id:relative_path` (startup download), not a
   per-turn image input.
-- All three are agentic coding tools whose own file-read surface renders images;
+- Provider CLI agents are coding tools whose own file-read surface renders images;
   the one mechanism that works uniformly for initial + follow-up across providers
   is to write the image to a real file and tell the Agent its absolute path in the
   message text. (`thread-runtime-service.ts:984-1011` initial via launch

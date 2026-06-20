@@ -48,7 +48,7 @@ While working in a thread whose cwd is a git repo/worktree, the user can:
   the Changes overlay; selecting a file shows its diff; editing files + Refresh updates it;
   a clean repo shows the branch with no count and "Working tree clean".
 
-## Composer (pre-thread) Changes — draft pane
+## Composer (pre-send) Changes — Draft Thread Workbench pane
 
 > Slice (added 0.1.55+): the badge opens the Changes view on the **New Thread / composer
 > page** too (`activeThreadId === null`), not only inside a thread.
@@ -63,45 +63,38 @@ looked actionable but did nothing pre-thread.
 
 ### Decision
 
-Open Changes pre-thread the **same way the composer Browser does** — a renderer-local
-**draft pane** (no backend, no thread). The data layer is already thread-independent
-(`onGitChanges(cwd)` / `onGitFileDiff(cwd, path)` take a cwd) and `pane-content` already
-renders a `kind:"changes"` pane purely from `pane.cwd`, so a draft pane with
-`kind:"changes"` + the composer's `activeProjectCwd` renders the identical `ChangesPanel`.
-**No backend change.**
+Open Changes pre-send the same way every Composer Workbench launcher action works now:
+first create/activate the Composer Draft Thread, then issue the normal backend
+`workbench.command(threadId=draft, command="open_diff")`. The pane is owned by the Draft
+Thread Workbench before send and remains on that same Thread when send starts it in place.
 
 ### Domain / Contracts
 
-- `ProductShellDraftPane.kind`: `"browser"` → `"browser" | "changes"`; add `cwd?: string`.
-- `useGitState`'s `gitBadge` gains `cwd: string` (it already fetches per cwd).
 - `ProductShellHandlers.onOpenChanges`: `() => void` → `(cwd?: string) => void`.
+- `useGitState`'s `gitBadge` gains `cwd: string` (it already fetches per cwd).
+- No `initialWorkbenchPanes` adoption: panes opened before send already belong to the
+  Draft Thread.
 
 ### Flow
 
 1. Badge click → `onOpenChanges(gitBadge.cwd)`.
 2. `onOpenChanges`: `activeThreadId !== null` → unchanged backend `open_diff`. Else, with a
-   cwd → `openProductShellDraftChanges(state, cwd)`.
-3. `openProductShellDraftChanges`: **singleton** — reveal/activate the existing draft
-   `changes` pane, or create one (`kind:"changes"`, `cwd`); set `workbenchOpen: true`.
-4. `composerWorkbenchAppChrome` maps a draft pane by kind: a `changes` draft →
-   `{ kind:"changes", cwd }` ref → `ChangesPanel`.
+   cwd → `ensureComposerDraftThreadActive(state)` + `thread.createDraft`.
+3. Dispatch `workbench.command { threadId: draftThreadId, command: "open_diff" }`.
+4. Backend creates/reveals the singleton `changes` pane in the Draft Thread Workbench.
 
 ### Invariants
 
-- At most one draft `changes` pane (singleton), mirroring the backend pane.
-- A draft `changes` pane is **not adopted on send**: `composer-bridge` seeds only
-  `kind:"browser"` drafts into `thread.start`. A started thread owns its own backend
-  Changes pane (re-openable via the badge); the draft is dropped, never mis-adopted as an
-  empty Browser Pane.
+- At most one `changes` pane per Draft/started Thread (backend singleton).
+- A pre-send `changes` pane is not adopted or re-created on send. It already belongs to
+  the Draft Thread, and send starts that Thread in place.
 - Inside a thread the path is unchanged (backend `open_diff` singleton).
 
 ### Tests (`tests/git-changes-view.test.tsx`)
 
-- composer + `onOpenChanges(cwd)` → one draft `changes` pane, `workbenchOpen`, active.
-- idempotent: two calls → still one draft `changes` pane.
-- view-model: a draft `changes` pane → `AppChromeWorkbenchPaneRef` `kind:"changes"` + cwd.
+- composer + `onOpenChanges(cwd)` → `thread.createDraft` + backend `open_diff` for that
+  draft thread.
 - in-thread `onOpenChanges()` still dispatches backend `open_diff` (no regression).
-- adoption: a draft `changes` pane is excluded from `initialWorkbenchPanes` on send.
 
 ## Changes panel layout — resizable + collapsible file list
 

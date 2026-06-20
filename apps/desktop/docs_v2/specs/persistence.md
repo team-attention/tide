@@ -27,7 +27,9 @@ It does not define provider history formats, provider auth storage, provider onb
 - `docs_v2/master-plan.md` says opening an old Thread can rebuild Agent Session from provider-owned history without starting a new turn.
 - `docs_v2/implementation/electron-node-architecture-decisions.md` says Tide stores Thread metadata, Agent Binding, Execution Context metadata, provider-native session reference, Last Known State, optional Agent Session Cache metadata, and app settings.
 - `docs_v2/implementation/concrete-design-backlog.md` selects provider-owned history plus Tide metadata as the best persistence option.
-- `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` says Codex rollout path, Claude transcript path, and Antigravity conversation/transcript path are provider-owned history references Tide can store.
+- Provider integrations expose provider-owned history/session references Tide can
+  store, including Codex rollout paths, Claude transcripts, Gemini sessions, and
+  opencode sessions.
 
 ## Decisions
 
@@ -162,7 +164,8 @@ interface ProviderSessionRefRecord {
   kind:
     | "codex_rollout"
     | "claude_transcript"
-    | "antigravity_conversation"
+    | "gemini_session"
+    | "opencode_session"
     | "provider_native";
   value: string;
   transcriptPath?: string;

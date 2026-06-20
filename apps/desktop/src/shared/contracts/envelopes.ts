@@ -375,12 +375,6 @@ function validateAgentBinding(binding: JsonObject): ContractValidationResult<voi
   }
 
   if (binding.runtimeSource === undefined) {
-    if (binding.agentId === "openai_api") {
-      return contractValidationFailure(
-        "invalid_command",
-        "OpenAI API Agent Binding requires tide_api runtimeSource.",
-      );
-    }
     return { ok: true, value: undefined };
   }
 
@@ -408,16 +402,6 @@ function validateAgentBinding(binding: JsonObject): ContractValidationResult<voi
     return { ok: true, value: undefined };
   }
 
-  if (runtimeSource.kind === "tide_api") {
-    if (binding.agentId !== "openai_api" || runtimeSource.provider !== "openai") {
-      return contractValidationFailure(
-        "invalid_command",
-        "tide_api runtimeSource requires OpenAI API agentId and provider.",
-      );
-    }
-    return { ok: true, value: undefined };
-  }
-
   return contractValidationFailure(
     "invalid_command",
     "Unknown Agent Binding runtimeSource.",
@@ -425,7 +409,7 @@ function validateAgentBinding(binding: JsonObject): ContractValidationResult<voi
 }
 
 function isKnownAgentId(value: string): boolean {
-  return isProviderCliAgentId(value) || value === "openai_api";
+  return isProviderCliAgentId(value);
 }
 
 function isProviderCliAgentId(value: string): boolean {

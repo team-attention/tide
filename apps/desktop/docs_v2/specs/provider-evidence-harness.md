@@ -2,7 +2,10 @@
 
 ## Scope
 
-This spec defines a repeatable local harness for collecting evidence from Codex CLI, Claude Code, and Antigravity CLI before implementing provider-specific Agent Integrations.
+This spec defines a repeatable local harness for collecting evidence from provider
+CLIs before implementing or changing provider-specific Agent Integrations. Current
+active providers are codex, claude, gemini, and opencode; Antigravity notes in older
+research are historical.
 
 It covers:
 
@@ -36,7 +39,8 @@ It is not a runtime path, product feature, fallback path, or provider adapter.
 
 The harness runs provider CLIs inside a PTY.
 
-It does not use Codex `exec --json`, Claude print mode, Antigravity print mode, app-server, Remote Control, or provider batch APIs as live evidence for the v2 runtime path.
+It does not use provider batch APIs as live evidence for the v2 runtime path unless
+the active provider integration explicitly uses that structured protocol.
 
 ### D3. Evidence is raw first
 
@@ -112,14 +116,15 @@ Initial roots:
 |-------|-------|
 | Codex | `~/.codex/sessions`, `~/.codex/config.toml`, `~/.codex/history.jsonl` |
 | Claude | `~/.claude/projects`, `~/.claude.json` |
-| Antigravity | `~/.gemini/antigravity-cli` |
+| Gemini | `~/.gemini` |
+| opencode | `~/.local/share/opencode` |
 
 ## Contracts
 
 Harness command:
 
 ```text
-python3 scripts/provider-evidence-harness.py --agent <codex|claude|agy> --scenario <observe|message|manual|resume|permission>
+python3 scripts/provider-evidence-harness.py --agent <codex|claude|gemini|opencode> --scenario <observe|message|manual|resume|permission>
 ```
 
 Key options:
@@ -235,18 +240,15 @@ Output folder:
 - Keep Codex roots narrowed to session, trust config, and prompt history files. Scanning the full `~/.codex` tree can hit the bounded directory cap before new rollout files are observed.
 - Set `TERM=xterm-256color` and `COLORTERM=truecolor` explicitly to match previous smoke conditions. Caller environments such as `TERM=dumb` must not leak into provider TUI evidence unless explicitly overridden with `--env`.
 - Set PTY window size explicitly; provider TUIs may not render useful readiness output when the PTY has no row/column size.
-- Use CSI-u Enter for Claude by default, plain Enter for Codex and Antigravity unless overridden.
-- Resume commands are provider-native: Codex uses `codex resume --no-alt-screen <session-id>`, Claude uses `claude --resume <session-id>`, and Antigravity uses `agy --conversation <conversation-id>`.
-- The generic permission scenario currently automates Codex and Claude Code. AGY permission evidence is covered by explicit plugin-bootstrap research until the harness gains an AGY bootstrap scenario.
+- Use provider-specific submit key sequences captured from evidence.
+- Resume commands are provider-native; keep each provider's command in its adapter
+  evidence rather than assuming one shared syntax.
+- The generic permission scenario currently automates Codex and Claude Code.
 - Codex permission capture writes run-local capture hooks, passes them through inline `-c hooks.UserPromptSubmit=...`, `-c hooks.PermissionRequest=...`, and `-c hooks.Stop=...`, enables `features.hooks=true`, configures `PermissionRequest` with `matcher: Bash`, and launches Codex with `--dangerously-bypass-hook-trust --ask-for-approval untrusted`.
 - Codex permission capture can use `--codex-temp-home` to copy only `auth.json` and `config.toml` into a temporary `CODEX_HOME`. This allows hook-trust research without persisting test hook trust into the user's real provider home.
 - Codex permission capture passes the permission prompt as the CLI initial prompt argument rather than typing it into the Composer over PTY. PTY typing remains the evidence path for normal `message` and `resume` scenarios.
 - Claude permission capture writes a run-local `settings.json`, passes it with `claude --settings <path>`, and configures `UserPromptSubmit`, `PermissionRequest`, `Notification`, and `Stop` hooks.
-- Antigravity permission capture is not folded into the generic permission scenario yet. Separate user-approved research proved runtime hook firing through a global plugin with root `hooks.json`, while workspace `.agents/plugins` validation alone did not prove runtime loading for installed `agy 1.0.2`.
-- Antigravity passive capture hooks must not emit stdout. In local research, emitting `{}` from `PreToolUse` caused AGY to deny the tool call; removing stdout allowed AGY to surface its native Bash permission prompt while still appending `PreToolUse` evidence.
-- Antigravity plugin bootstrap is a Provider Readiness concern, not a hidden harness side effect. AGY remains a required v2 Agent Integration, so production work needs a focused AGY bootstrap/readiness spec before implementing its Provider Signal adapter.
 - Allow a short pre-submit wait after writing prompt text so provider TUIs can settle their Composer state before the submit key is sent.
 - Respond to terminal capability queries such as cursor position, primary device attributes, color queries, and keyboard protocol queries. These are terminal-emulator responses, not provider setup answers.
-- Launch Antigravity as `agy` by default. `--prompt-interactive` requires a prompt argument and is only used when a scenario explicitly needs that provider mode.
 - During process cleanup, prefer process-group signaling but fall back to signaling the child process directly when the host denies `killpg`.
 - Use custom command mode for local validation without launching real providers.

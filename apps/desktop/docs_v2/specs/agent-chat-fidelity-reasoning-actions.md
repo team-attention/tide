@@ -29,9 +29,9 @@ It does not cover any provider-specific reasoning UI.
   (`reasoning`), added to both the shared contract DTO and the backend domain.
 - Reasoning is **provider-neutral** in the UI but **provider-adapted** at the
   source: codex `agent_reasoning` event_msg + `reasoning` response_item summary;
-  claude extended-thinking content items (`type: "thinking"`). Antigravity has no
-  cheap reasoning channel yet and is intentionally not wired (acceptable
-  per-provider adaptation — empty reasoning simply does not render).
+  claude extended-thinking content items (`type: "thinking"`), and structured
+  provider protocol fields where available. Missing provider reasoning simply does
+  not render.
 - Empty/encrypted reasoning (no readable text) is dropped, never shown as a
   hollow disclosure.
 - Reasoning is expanded while streaming (watch it think) and collapsed once the
@@ -110,7 +110,6 @@ It does not cover any provider-specific reasoning UI.
 
 ## Out Of Scope — Future
 
-- Antigravity reasoning + usage channels (server-first; no cheap transcript
-  field yet).
+- Provider reasoning + usage channels not yet exposed by an integration.
 - Live per-token streaming of the usage chip during a turn (currently updates
   on each history poll, which is frequent enough).

@@ -1,9 +1,9 @@
 import type { ProductShellState, ProductShellUntitledFile, ProductShellUpdateResult } from "./types.ts";
-import { startFilePaneId, untitledPaneId } from "./types.ts";
+import { untitledPaneId } from "./types.ts";
 // VSCode-style untitled files: "New File" opens a blank buffer immediately and the
-// name is chosen on save (Save As). Renderer-owned, like start-page files, but bound
-// to the active thread (or the start page) and shown only in that context. The view-
-// model derives an editable editor pane per untitled. Spec:
+// name is chosen on save (Save As). The buffer is renderer-owned until it has a
+// path, but it must be bound to a real thread (including the Composer Draft Thread)
+// so saved files reopen through the backend Workbench. Spec:
 // workbench-filetree-file-operations.
 
 // The absolute workspace root the active context writes into: the project cwd of the
@@ -12,9 +12,15 @@ import { startFilePaneId, untitledPaneId } from "./types.ts";
 // scratch composer) — New File is a no-op then.
 export function resolveActiveWorkspaceCwd(state: ProductShellState): string | null {
   if (state.activeThreadId === null) {
+    return state.fileTree?.root ?? null;
+  }
+  if (state.activeThreadId === state.draftThreadId && state.agentChat.thread === null) {
     const scope = state.agentChat.composer.startOptions.scope;
     if (scope?.kind === "project" && scope.cwd.length > 0) {
       return scope.cwd;
+    }
+    if (scope?.kind === "scratch" && scope.scratchCwd.length > 0) {
+      return scope.scratchCwd;
     }
     return state.fileTree?.root ?? null;
   }
@@ -40,6 +46,9 @@ export function untitledFileForPane(
 // Open a new blank untitled file bound to the active context, focus it, and open the
 // Workbench. No-op when there is no workspace directory to eventually save into.
 export function newProductShellUntitledFile(state: ProductShellState): ProductShellState {
+  if (state.activeThreadId === null) {
+    return state;
+  }
   const scopeCwd = resolveActiveWorkspaceCwd(state);
   if (scopeCwd === null) {
     return state;
@@ -59,6 +68,10 @@ export function newProductShellUntitledFile(state: ProductShellState): ProductSh
     untitledFiles: [...state.untitledFiles, file],
     untitledSequence: sequence,
     workbenchOpen: true,
+    workbenchOpenByThreadId: {
+      ...state.workbenchOpenByThreadId,
+      [state.activeThreadId]: true,
+    },
     draftActiveWorkbenchPaneId: id,
   };
 }
@@ -101,8 +114,8 @@ export function cancelProductShellUntitledSaveAs(state: ProductShellState): Prod
 }
 
 // After the file is created on disk (handler did window.tide.fsCreateFile), drop the
-// untitled and open the now-real file through the existing open path (start-page read
-// or thread open_editor). Tree refresh is dispatched separately by the handler.
+// untitled and open the now-real file through the thread Workbench. Tree refresh is
+// dispatched separately by the handler.
 export function productShellUntitledSaved(
   state: ProductShellState,
   paneId: string,
@@ -120,16 +133,7 @@ export function productShellUntitledSaved(
   };
 
   if (file.threadId === null) {
-    return {
-      state: {
-        ...cleared,
-        draftActiveWorkbenchPaneId: startFilePaneId(savedRelativePath),
-      },
-      command: {
-        kind: "workspace.readFile",
-        payload: { cwd: file.scopeCwd, path: savedRelativePath },
-      },
-    };
+    return { state: { ...cleared, draftActiveWorkbenchPaneId: null }, command: null };
   }
   return {
     state: { ...cleared, draftActiveWorkbenchPaneId: null },

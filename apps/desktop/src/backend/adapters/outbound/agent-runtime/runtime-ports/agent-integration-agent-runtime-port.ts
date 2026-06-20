@@ -110,10 +110,10 @@ export function createAgentIntegrationProviderReadinessPort(
           ready: false,
           blockers: [
             {
-              kind: "provider_account_required",
-              message: "OpenAI Provider Account setup is required before starting this Tide API Agent.",
+              kind: "unknown",
+              message: "Unknown provider CLI agent.",
               scope: "provider",
-              action: "open_provider",
+              action: "none",
             },
           ],
         };
@@ -183,7 +183,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
 
   async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
     if (!isProviderCliAgentId(input.agentBinding.agentId)) {
-      throw new Error("Tide API Agents do not start through the Provider CLI runtime port.");
+      throw new Error("Unknown provider CLI agent.");
     }
 
     traceAgentRuntime(`start ${input.agentBinding.agentId} thread=${input.threadId}`);
@@ -213,7 +213,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
 
   async resume(input: AgentRuntimeResumeInput): Promise<AgentRuntimeHandle> {
     if (!isProviderCliAgentId(input.agentBinding.agentId)) {
-      throw new Error("Tide API Agents do not resume through the Provider CLI runtime port.");
+      throw new Error("Unknown provider CLI agent.");
     }
 
     const providerSessionRef = input.agentBinding.providerSessionRef;

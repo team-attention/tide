@@ -434,34 +434,6 @@ test("starting_a_thread_with_incomplete_provider_readiness_preserves_pending_inp
   assert.deepEqual(fakes.runtime.events, []);
 });
 
-test("thread_start_seeds_adopted_composer_panes_into_the_workbench", async () => {
-  // Spec: docs_v2/specs/workbench-dock-parity.md — composer-screen panes are adopted
-  // by the new Thread (seeded at start, race-free; they ride along in thread.started).
-  const fakes = createFakes();
-  const service = createThreadRuntimeService({
-    ...fakes.ports,
-    clock: fixedClock,
-    idGenerator: sequentialIdGenerator("thread"),
-  });
-
-  const result = await service.startThread({
-    initialMessage: "open the repo with this page",
-    agentBinding: { agentId: "codex" },
-    scope: { kind: "scratch", scratchCwd: "/tmp/tide-seed" },
-    initialWorkbenchPanes: [{ kind: "browser", url: "https://seeded.test", title: "Seeded" }],
-  });
-
-  assert.equal(result.ok, true);
-  const browser = result.ok
-    ? result.thread.workbench.panes.find((pane) => pane.kind === "browser")
-    : undefined;
-  assert.equal(browser?.kind, "browser");
-  assert.equal(
-    browser !== undefined && browser.kind === "browser" ? browser.url : undefined,
-    "https://seeded.test",
-  );
-});
-
 test("granting_trust_replays_the_held_first_message_via_launch_not_typed_input", async () => {
   // Regression: after trust, the held first message must be delivered as the launch
   // prompt (like a normal start) so the provider CLI reliably begins a turn — not
@@ -546,7 +518,7 @@ test("scratch_thread_materializes_a_real_tide_owned_cwd_and_auto_trusts_it", asy
   );
 });
 
-test("starting_a_thread_with_ready_provider_starts_runtime_then_writes_terminal_input", async () => {
+test("starting_a_thread_with_ready_provider_starts_runtime_with_launch_prompt", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({
     ...fakes.ports,
@@ -566,9 +538,9 @@ test("starting_a_thread_with_ready_provider_starts_runtime_then_writes_terminal_
   // The turn's start time is recorded so the Working indicator can show elapsed
   // since the turn started, even after the thread is reopened.
   assert.equal(result.thread.runtimeStartedAt, now);
-  assert.deepEqual(fakes.runtime.events, ["start", "writeInput"]);
-  assert.equal(fakes.runtime.writes[0].input.kind, "composer_input");
-  assert.equal(fakes.runtime.writes[0].input.value, "Implement the backend lifecycle");
+  assert.deepEqual(fakes.runtime.events, ["start"]);
+  assert.equal(fakes.runtime.starts[0].initialPrompt, "Implement the backend lifecycle");
+  assert.equal(fakes.runtime.writes.length, 0);
 });
 
 // --- UC-1: Materialize Composer Attachments ---
@@ -617,12 +589,12 @@ test("appends_attachment_path_references_to_the_message_text", async () => {
 
   // The folded "[Attached image: <app-data path>]" lines drive the transcript
   // thumbnail; the agent also gets each attachment natively (codex localImage).
-  const value = fakes.runtime.writes[0]?.input.value ?? "";
+  const value = fakes.runtime.starts[0]?.initialPrompt ?? "";
   assert.match(value, /^Compare these\n\n/);
   assert.match(value, /\[Attached image: \/app-data\/attachments\/[^/]+\/0-a\.png\]/);
   assert.match(value, /\[Attached image: \/app-data\/attachments\/[^/]+\/1-b\.png\]/);
   // ...and the native image refs ride alongside the text.
-  assert.equal(fakes.runtime.writes[0]?.input.attachments?.length, 2);
+  assert.equal(fakes.runtime.starts[0]?.initialAttachments?.length, 2);
 });
 
 test("sends_attachment_paths_when_the_message_text_is_empty", async () => {
@@ -897,48 +869,6 @@ test("starting_ready_thread_marks_thread_failed_when_runtime_start_rejects", asy
   assert.equal(hydrated.ok && hydrated.thread.lastKnownState, "failed");
   assert.equal(hydrated.ok && hydrated.thread.cachedBlocks[0]?.body, "Show the failed start");
   assert.equal(asyncEvents[0]?.kind, "agent_session_block_upserted");
-});
-
-test("starting_ready_thread_marks_thread_failed_when_initial_write_rejects", async () => {
-  class FailingWriteRuntimePort extends FakeAgentRuntimePort {
-    override async writeInput(
-      handle: AgentRuntimeHandle,
-      input: TerminalInput,
-    ): Promise<void> {
-      this.events.push("writeInput");
-      this.writes.push({ handle, input });
-      throw new Error("initial write exploded");
-    }
-  }
-
-  const fakes = createFakes();
-  const runtime = new FailingWriteRuntimePort();
-  const service = createThreadRuntimeService({
-    ...fakes.ports,
-    agentRuntimePort: runtime,
-    clock: fixedClock,
-    idGenerator: sequentialIdGenerator("thread"),
-  });
-
-  await assert.rejects(
-    service.startThread({
-      initialMessage: "Show the failed write",
-      agentBinding: {
-        agentId: "openai",
-        runtimeSource: { kind: "tide_api", provider: "openai" },
-      },
-      scope: { kind: "project", projectId: "project-1", cwd: "/repo" },
-    }),
-    /initial write exploded/,
-  );
-
-  const hydrated = await service.hydrateThread({ threadId: "thread-1" });
-  assert.equal(hydrated.ok, true);
-  assert.equal(hydrated.ok && hydrated.runtimeState, "failed");
-  assert.equal(hydrated.ok && hydrated.thread.lifecycleState, "failed");
-  assert.equal(hydrated.ok && hydrated.thread.lastKnownState, "failed");
-  assert.equal(hydrated.ok && hydrated.thread.cachedBlocks[0]?.body, "Show the failed write");
-  assert.deepEqual(runtime.events, ["start", "writeInput"]);
 });
 
 test("starting_thread_preserves_launch_options_on_thread_snapshot", async () => {
@@ -2321,23 +2251,22 @@ test("mcp_tool_calls_are_counted_by_the_service_without_creating_a_second_runtim
   assert.deepEqual(fakes.runtime.events, []);
 });
 
-test("mcp_tool_calls_accept_tide_api_agent_runtime_session", async () => {
-  // Spec: docs_v2/specs/tide-api-agent-tool-calls.md
+test("mcp_tool_calls_accept_provider_cli_runtime_session", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
     initialThreads: [
-      threadSeed("thread-openai-mcp", {
+      threadSeed("thread-opencode-mcp", {
         agentBinding: {
-          agentId: "openai_api",
-          runtimeSource: { kind: "tide_api", provider: "openai" },
+          agentId: "opencode",
+          runtimeSource: { kind: "provider_cli", integrationId: "opencode" },
         },
         activeRuntimeHandle: {
-          runtimeId: "runtime-openai",
-          threadId: "thread-openai-mcp",
-          agentId: "openai_api",
+          runtimeId: "runtime-opencode",
+          threadId: "thread-opencode-mcp",
+          agentId: "opencode",
         },
         runtimeState: "running",
       }),
@@ -2345,14 +2274,14 @@ test("mcp_tool_calls_accept_tide_api_agent_runtime_session", async () => {
   });
 
   const result = await service.handleTideMcpToolCall({
-    session: { runtimeId: "runtime-openai", agentId: "openai_api" },
+    session: { runtimeId: "runtime-opencode", agentId: "opencode" },
     toolName: "tide_observe_thread",
     input: { detail: "compact" },
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.output.kind, "observe_thread");
-  assert.equal(result.output.agentId, "openai_api");
+  assert.equal(result.output.agentId, "opencode");
   assert.equal(result.mcpToolCallCount, 1);
   assert.deepEqual(fakes.runtime.events, []);
 });
@@ -2477,7 +2406,8 @@ test("sending_starts_an_existing_draft_in_place_keeping_its_workbench", async ()
   assert.equal(started.ok && started.thread.lifecycleState, "running");
   // Exactly one agent spawn; no duplicate PTYs.
   assert.equal(fakes.runtime.starts.length, 1);
-  assert.deepEqual(fakes.runtime.events, ["start", "writeInput"]);
+  assert.deepEqual(fakes.runtime.events, ["start"]);
+  assert.equal(fakes.runtime.starts[0]?.initialPrompt, "go");
   assert.equal(fakes.workbenchTerminal.starts.length, 1);
   // The terminal opened pre-send rides into the started thread's workbench.
   const terminalPanes = started.ok ? started.thread.workbench.panes.filter((p) => p.kind === "terminal") : [];
@@ -2824,12 +2754,12 @@ test("provider_setup_surface_exit_retries_readiness_and_replays_pending_input_wh
   assert.equal(hydrated.thread.pendingInput, undefined);
   assert.equal(hydrated.runtimeState, "running");
   assert.equal(hydrated.thread.cachedBlocks.at(-1)?.body, "Run after setup");
-  assert.deepEqual(fakes.runtime.events, ["start", "writeInput"]);
+  assert.deepEqual(fakes.runtime.events, ["start"]);
   assert.deepEqual(fakes.runtime.starts[0]?.launchOptions, {
     model: "GPT-5.5 High",
     permission: "workspace-write",
   });
-  assert.equal(fakes.runtime.writes[0]?.input.value, "Run after setup");
+  assert.equal(fakes.runtime.starts[0]?.initialPrompt, "Run after setup");
   assert.deepEqual(fakes.readiness.checks.map((check) => check.launchOptions), [
     { model: "GPT-5.5 High", permission: "workspace-write" },
     { model: "GPT-5.5 High", permission: "workspace-write" },

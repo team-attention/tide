@@ -1,11 +1,11 @@
-import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureComposerDraftThreadActive, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellDraftChanges, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserCaptureResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserCaptureResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureComposerDraftThreadActive, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserCaptureResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserCaptureResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
 export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onBrowserSnapshot" | "onBrowserActionResult" | "onBrowserCaptureResult" | "onBackgroundBrowserSnapshot" | "onBackgroundBrowserActionResult" | "onBackgroundBrowserCaptureResult" | "onOpenBrowserPane" | "onOpenChanges" | "onGitChanges" | "onGitFileDiff" | "onLoadWorkbenchImage"> {
-  const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
+  const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onWorkbenchToggle: () =>
       setShellState((state) => {
@@ -13,22 +13,36 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         dispatchBackendCommand(result.command);
         return result.state;
       }),
-    // Open the read-only git Changes pane. Inside a thread it's a first-class singleton
-    // backend pane (the backend creates/reveals it + makes it active). On the composer
-    // (New Thread) page there's no thread to own a backend pane, so open a renderer-local
-    // draft Changes pane from the badge's cwd — same pattern as the composer draft Browser.
-    // Spec: git-changes-view (Composer pre-thread Changes).
-    onOpenChanges: (cwd) =>
+    // Open the read-only git Changes pane. On the composer (New Thread) page this
+    // first creates the Composer Draft Thread, then opens the backend-owned Changes
+    // pane against that thread so it carries into the started Thread.
+    onOpenChanges: (cwd) => {
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null) {
+        if (cwd === undefined) {
+          return;
+        }
+        const ensured = ensureComposerDraftThreadActive(currentState);
+        const openDiffCommand = {
+          kind: "workbench.command" as const,
+          payload: { threadId: ensured.state.activeThreadId as string, command: "open_diff" as const },
+        };
+        setShellState({ ...ensured.state, workbenchOpen: true });
+        if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+        dispatchBackendCommand(openDiffCommand);
+        return;
+      }
       setShellState((state) => {
         if (state.activeThreadId === null) {
-          return cwd === undefined ? state : openProductShellDraftChanges(state, cwd);
+          return state;
         }
         dispatchBackendCommand({
           kind: "workbench.command",
           payload: { threadId: state.activeThreadId, command: "open_diff" },
         });
         return state.workbenchOpen ? state : { ...state, workbenchOpen: true };
-      }),
+      });
+    },
     onGitChanges: async (cwd) => {
       const bridge = props.projectBridge;
       if (bridge === undefined) {
@@ -87,24 +101,27 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         dispatchBackendCommand(result.command);
         return result.state;
       }),
-    onLauncherAction: (actionId) =>
-      setShellState((state) => {
+    onLauncherAction: (actionId) => {
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null) {
         // Composer (New Thread): make the Draft Thread the active thread first (lazily),
         // then run the NORMAL launcher path against it — it now sees a thread, so
         // Terminal/Editor/Diff/Browser all open as real backend panes and their typing/
         // saving/snapshots route through the active thread like any started thread. The
         // create-draft command is dispatched before the open. See composer-draft-thread.md.
-        if (state.activeThreadId === null) {
-          const ensured = ensureComposerDraftThreadActive(state);
-          if (ensured.command !== null) dispatchBackendCommand(ensured.command);
-          const result = selectProductShellLauncherAction(ensured.state, actionId);
-          dispatchBackendCommand(result.command);
-          return result.state;
-        }
+        const ensured = ensureComposerDraftThreadActive(currentState);
+        const result = selectProductShellLauncherAction(ensured.state, actionId);
+        setShellState(result.state);
+        if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+        dispatchBackendCommand(result.command);
+        return;
+      }
+      setShellState((state) => {
         const result = selectProductShellLauncherAction(state, actionId);
         dispatchBackendCommand(result.command);
         return result.state;
-      }),
+      });
+    },
     onFocusWorkbenchPane: (paneId) =>
       setShellState((state) => {
         const result = focusProductShellWorkbenchPane(state, paneId);
@@ -171,11 +188,21 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         dispatchBackendCommand(result.command);
         return result.state;
       }),
-    onOpenBrowserPane: (url, options) =>
+    onOpenBrowserPane: (url, options) => {
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null) {
+        const ensured = ensureComposerDraftThreadActive(currentState);
+        const result = openProductShellBrowserAtUrl(ensured.state, url, options);
+        setShellState(result.state);
+        if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+        dispatchBackendCommand(result.command);
+        return;
+      }
       setShellState((state) => {
         const result = openProductShellBrowserAtUrl(state, url, options);
         dispatchBackendCommand(result.command);
         return result.state;
-      }),
+      });
+    },
   };
 }

@@ -5,16 +5,6 @@ import type { WorkbenchPaneId } from "./ids.ts";
 // it). Mirrors the v1 Tide Terminal "Terminal Context Surface" presentation.
 export type WorkbenchLayoutModeDto = "stacked" | "split";
 
-// A pane to seed into a NEW Thread's Workbench at thread.start — a pane the user
-// opened on the composer (New Thread) screen, adopted by the Thread the first send
-// creates. browser carries an optional url; editor a workspace-relative path.
-export interface WorkbenchSeedPaneDto {
-  kind: "browser" | "editor";
-  url?: string;
-  path?: string;
-  title?: string;
-}
-
 export interface BaseWorkbenchPaneRefDto {
   paneId: WorkbenchPaneId;
   kind: "browser" | "diff" | "editor" | "image" | "terminal" | "launcher" | "changes";

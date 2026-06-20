@@ -15,9 +15,8 @@ import { InPaneFindBar, useInPaneFindState, usePaneFindIntent } from "../../supp
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 // Language-intelligence extensions: spec workbench-editor-language-intelligence.
 
-// Document offset → 0-based {line, character}. The thread-less start-page editor
-// has no tracked cursor in shell state, so go-to-definition/references carry the
-// live position from the view itself.
+// Document offset → 0-based {line, character}. Go-to-definition/references carry
+// the live position from the view; the reducer sends it to the thread Workbench.
 function offsetToPosition(view: EditorView, offset: number): { line: number; character: number } {
   const line = view.state.doc.lineAt(offset);
   return { line: line.number - 1, character: offset - line.from };

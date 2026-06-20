@@ -8,11 +8,10 @@ launchOptions = model/permission/branch/worktree) and owns a live backend Workbe
 but whose **agent runtime has not started yet**. "Send" *starts* the existing Draft
 Thread (deferred agent spawn) rather than creating a new thread.
 
-All Workbench panes — Browser, Editor, Terminal, Changes/Diff — operate uniformly on
-the Draft Thread through the normal per-thread `workbench.command` path. The renderer's
-ad-hoc pre-thread pane structures (synthetic launcher with disabled actions, draft
-browser panes, start-file editors, untitled editors, draft Changes pane) collapse into
-one concept.
+All Workbench launcher panes — Browser, Editor, Terminal, Changes/Diff — operate uniformly
+on the Draft Thread through the normal per-thread `workbench.command` path. The renderer's
+ad-hoc pre-thread Browser/Changes structures collapse into the Draft Thread Workbench
+instead of being adopted later at send time.
 
 This replaces the inconsistency where Browser/Editor/Changes each had a separate
 renderer-only pre-thread hack while Terminal/Diff were simply disabled — because the
@@ -28,9 +27,10 @@ visible Terminal Pane needs a backend PTY owner and there was no thread to host 
   already-legal state.
 - Composer context (agentId / model / permission / worktree / branch / cwd) already lives
   in renderer Start state (`product-shell/state/start.ts`).
-- Pre-thread pane hacks today: `composerWorkbenchAppChrome` (`workbench-pane-view.ts`)
-  renders a synthetic launcher + draft browser/changes panes + start-file + untitled
-  editors; `composerLauncherPane` hard-codes Editor/Terminal/Diff `enabled:false`;
+- Pre-thread pane hacks before this spec: `composerWorkbenchAppChrome`
+  (`workbench-pane-view.ts`) rendered a synthetic launcher + draft browser/changes panes
+  + start-file + untitled editors; `composerLauncherPane` hard-coded
+  Editor/Terminal/Diff `enabled:false`;
   `selectProductShellLauncherAction` (`workbench.ts:225`) no-ops every action except
   `open_browser` when `activeThreadId === null`.
 - `activeThreadId === null` is the "composer mode" signal in **42 sites across 11
@@ -126,8 +126,9 @@ FileTree, Editor, Terminal, Browser — and every interaction handler (terminal 
 editor save, browser snapshot) then operate on the draft through the NORMAL active-thread path,
 with zero per-pane special-casing. The chat stays the start Composer because it renders on
 `composer.mode` (`= agentChat.thread ? "follow_up" : "start"`), which is independent of
-`activeThreadId`; the draft never sets `agentChat.thread`. The launcher handler just calls
-`ensureComposerDraftThreadActive` then the normal `selectProductShellLauncherAction`.
+`activeThreadId`; the draft never sets `agentChat.thread`. The launcher/browser/changes
+handlers call `ensureComposerDraftThreadActive`, dispatch `thread.createDraft`, then send
+the normal backend Workbench command against that draft thread.
 
 **Anti-pattern (do NOT do this):** a parallel renderer structure — a separate
 `draftThreadBackendPanes` field + custom launcher/event routing with `activeThreadId` left null —

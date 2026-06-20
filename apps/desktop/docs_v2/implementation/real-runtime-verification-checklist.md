@@ -2,12 +2,12 @@
 
 The headless work (specs, types, reducer, provider turn-end adapters, message-edit
 full stack) is built and unit/integration-tested (547 tests, typecheck clean,
-`npm run build` green). What unit tests cannot prove is the **seamless across 3
+`npm run build` green). What unit tests cannot prove is the **seamless across 4
 real agents in the running app** requirement. This checklist makes that
 verification systematic instead of ad-hoc.
 
-It must be run by a human with provider auth (`codex login`, `claude` login,
-antigravity login) in their environment — Claude Code cannot authenticate or drive
+It must be run by a human with provider auth/setup (`codex login`, `claude` login,
+Gemini setup, opencode auth) in their environment — Claude Code cannot authenticate or drive
 the painted Electron window headlessly.
 
 ## How to run
@@ -16,12 +16,12 @@ the painted Electron window headlessly.
 cd apps/desktop && npm run dev      # HMR dev, or `npm start` for a built launch
 ```
 
-Run the full matrix for **each** agent: Codex CLI, Claude Code, Antigravity CLI.
+Run the full matrix for **each** agent: Codex CLI, Claude Code, Gemini CLI, opencode.
 Pick a trusted project dir for the thread (directory-trust is verified in step 0).
 
 ## Per-agent matrix
 
-Repeat every row for codex, claude, antigravity. Mark ✅/❌ and capture the app
+Repeat every row for codex, claude, gemini, and opencode. Mark ✅/❌ and capture the app
 log on any ❌.
 
 | # | Feature | Steps | Pass criteria |
@@ -54,8 +54,8 @@ Specifically confirm the structural turn-end redesign holds live:
 
 - Codex: a turn that produces NO visible output still settles to idle (rollout
   `task_complete`/`turn_aborted` or `codex-stop` hook).
-- Antigravity: a turn settles to idle (it emits no turn-end hook — the transcript
-  PLANNER_RESPONSE rule must fire). This was the "forever Working" bug.
+- Gemini: structured runtime events settle the turn.
+- opencode: ACP/runtime events settle the turn.
 - Claude: `agent-idle` hook settles the turn.
 
 ## Headless (auth-safe) verification — the UI half, already proven

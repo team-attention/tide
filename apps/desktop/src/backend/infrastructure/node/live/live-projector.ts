@@ -278,17 +278,6 @@ export function createLiveAgentSessionEventProjector(input: {
   };
 
   return {
-    async ingestStructuredFrame(frameInput: {
-      threadId: string;
-      agentId: "openai_api";
-      source: "structured_batch";
-      sourceRef?: string;
-      payloadKind: "json";
-      payload: Record<string, unknown>;
-      body: string;
-    }): Promise<void> {
-      return serializeIngest(frameInput.threadId, () => appendFrameAndEmit(frameInput));
-    },
     // Normalized protocol events from a STRUCTURED provider runtime (the
     // runtime-event spine realized): content records flow through the same
     // frame→block reader as everything else; prompts/turn-ends/session-refs hit

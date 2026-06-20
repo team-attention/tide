@@ -36,8 +36,8 @@ It does not define final visual polish, App Chrome details, Workbench Tab Strip 
 - `src/shared/contracts/commands.ts` defines `thread.start`, `composer.sendInput`, `prompt.answer`, `agentRuntime.stop`, and `workbench.command` command payloads.
 - `src/shared/contracts/events.ts` defines `thread.hydrated`, `thread.started`, `agentRuntime.stateChanged`, `providerReadiness.changed`, `prompt.changed`, and Agent Session Block stream events.
 - `src/shared/contracts/thread.ts` currently defines `ThreadSummaryDto` with Agent Binding and scope but no Worktree Option or Branch Option fields.
-- `src/shared/contracts/agent.ts` defines source-aware Agent Binding DTOs for Provider CLI Agents and the `openai_api` Tide API Agent.
-- `docs_v2/specs/composer-agent-runtime-source.md` defines the Agent Runtime Source split used by the Composer Agent chip and Model Chip.
+- `src/shared/contracts/agent.ts` defines Agent Binding DTOs for the four Provider CLI Agents.
+- `docs_v2/specs/composer-agent-runtime-source.md` defines the Provider CLI-only Agent Runtime Source used by the Composer Agent chip and Model Chip.
 - `src/desktop/application/domains/agent-chat/agent-chat.ts` keeps Follow-up Composer execution context tied to Thread data and does not fabricate Worktree or Branch fields when the Shared Contract omits them.
 - `src/desktop/adapters/inbound/react-renderer/agent-chat/contract-adapter.ts` currently casts Composer shell commands to a type derived from all `BackendCommandKind` values, including commands the shell cannot emit.
 - Existing v2 TypeScript tests under `tests/*.test.ts` use `node:test`, and `package.json` routes `npm run test:v2` through that suite.
@@ -130,13 +130,13 @@ The first Composer shell can emit only `thread.start`, `composer.sendInput`, and
 
 The React contract adapter must expose exactly those command drafts and must not type-cast them as the full `BackendCommandKind` union.
 
-### D15. Agent chip is visually singular but source-aware
+### D15. Agent chip is visually singular and provider-aware
 
 The Composer shows one Agent chip.
 
-Provider CLI Agents and Tide API Agents can appear in the same Agent menu, but the selected Agent Binding must carry Agent Runtime Source metadata as specified in [Composer Agent Runtime Source](composer-agent-runtime-source.md).
-
-The first shell may continue to implement only the existing `codex | claude | antigravity` contract values until Shared Contracts add source-aware Agent Binding.
+The Agent menu contains the four Provider CLI Agents: Codex, Claude, Gemini, and opencode.
+The selected Agent Binding carries provider CLI source metadata as specified in
+[Composer Agent Runtime Source](composer-agent-runtime-source.md).
 
 ### D16. New Thread Start is Composer-first
 
@@ -322,11 +322,10 @@ Desktop consumes BackendEvents:
 | Desktop application boundary holds | `desktop_application_shell_state_does_not_import_react_backend_or_shared_contracts` keeps React and Shared Contracts in the adapter/test layer. |
 | Follow-up context does not fabricate missing fields | `follow_up_shell_does_not_fabricate_worktree_or_branch_when_thread_contract_omits_them` shows no placeholder Worktree or Branch values when `ThreadSummaryDto` omits those fields. |
 | Command adapter stays narrow | `composer_shell_command_adapter_does_not_claim_unsupported_backend_command_kinds` ensures the adapter exposes only `thread.start`, `composer.sendInput`, and `prompt.answer` command drafts. |
-| Agent chip stays singular | `agent_chip_renders_one_visible_value_for_provider_cli_and_tide_api_sources` verifies Provider CLI and Tide API selections share the same Agent chip surface. |
-| Model source follows Agent Runtime Source | `model_chip_routes_menu_data_by_agent_runtime_source` verifies Codex CLI model choices come from Agent Integration metadata while OpenAI API model choices come from Provider Account model metadata. |
-| Permission menu follows selected Agent | `permission_menu_renders_only_the_selected_agent_provider_values` verifies Codex, Claude, and Antigravity Permission menus do not mix provider-native values. |
+| Agent chip stays singular | `agent_chip_renders_one_visible_value_for_provider_cli_sources` verifies Provider CLI selections share the same Agent chip surface. |
+| Model source follows selected provider CLI | `model_chip_routes_menu_data_by_provider_cli_agent` verifies model choices come from selected Agent Integration metadata. |
+| Permission menu follows selected Agent | `permission_menu_renders_only_the_selected_agent_provider_values` verifies Codex, Claude, Gemini, and opencode Permission menus do not mix provider-native values. |
 | Composer menu is transient | `composer_options_and_command_prefix_render_as_transient_choice_surfaces` verifies the Composer menu and `/` suggestions render above Composer through Choice Surface, not as static documentation blocks. |
-| API readiness names Provider Account | `openai_api_readiness_mentions_provider_account_not_hidden_pty` verifies OpenAI API setup copy does not mention hidden PTY, Directory Trust, or provider CLI hooks. |
 
 ## Implementation Notes
 

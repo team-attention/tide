@@ -8,8 +8,7 @@ opencode) so that, to the user, they all behave like one uniform chat. The share
 flow lives in one place; each agent's quirks are isolated in its adapter.
 
 > Update (2026-06-12, branch `v2-remediation-impl`): the four shipped provider-CLI
-> agents are **codex / claude / gemini / opencode** (opencode is a coming-soon
-> placeholder). Antigravity has been fully removed from every layer (it was wired but
+> agents are **codex / claude / gemini / opencode**. Antigravity has been fully removed from every layer (it was wired but
 > could not authenticate when spawned). All declarative agent knowledge
 > (id list, display name, monogram, session-ref kind, permission modes) now lives in
 > one registry — `shared/contracts/agent-descriptors.ts` — and the runtime port,
@@ -51,14 +50,14 @@ structure it describes is enforced by `tests/file-size-ratchet.test.ts`.
 
 Each adapter implements `AgentIntegrationPort`:
 
-| Concern | Port method | claude | codex | gemini | antigravity |
+| Concern | Port method | claude | codex | gemini | opencode |
 |---|---|---|---|---|---|
-| Launch | `buildStartPlan` | `--session-id` minted, prompt argv | readiness-gated handoff | `--session-id` minted, `-i` prompt | `-i` prompt |
-| Binding | plan ref / `sessionRefFromHookPayload` | minted id + hook confirm | hook rollout_path | minted id + hook confirm | hook conversationId |
-| Content | `history().readFrames` | transcript JSONL | rollout JSONL | session JSONL | transcript JSONL |
-| Turn end | `turnEndFromHook` / `turnEndFromHistory` | Stop hook | rollout task_complete | AfterAgent hook | terminal PLANNER_RESPONSE |
-| Prompts | `detectPromptState` | hook (permission) + PTY scrape (question box) | PTY scrape (boxes) + hook | Notification hook → PTY box | PreToolUse hook |
-| TUI keys | plan `submitKeySequence` / `autoRespondPrompts` | CSI-u Enter | hook-trust auto-answer | default | default |
+| Launch | `buildStartPlan` | structured/PTY plan with session id | readiness-gated handoff | ACP over stdio | ACP over stdio |
+| Binding | plan ref / provider session ref | claude transcript | codex rollout | gemini session | opencode session |
+| Content | `history().readFrames` / structured runtime events | transcript JSONL | rollout JSONL | ACP events + session history | ACP events + session history |
+| Turn end | runtime settle signal | Stop hook / idle | rollout task_complete | ACP session turn end | ACP session turn end |
+| Prompts | `detectPromptState` / structured permission request | hook + PTY scrape | PTY scrape + hook | ACP permission | ACP permission |
+| TUI keys | plan `submitKeySequence` / `autoRespondPrompts` | CSI-u Enter | hook-trust auto-answer | protocol-owned | protocol-owned |
 
 The shared loop (`emitProviderHistory`) per poll: resolve binding → bounded tail
 read → `connector.readFrames` → frame→block pipeline → `turnEndFromHistory`
@@ -73,8 +72,8 @@ carries — never by "most recent file":
   `--session-id <uuid>`; the on-disk file is located BY that id
   (`locateClaudeTranscriptFile` / `locateGeminiSessionFile`), and every
   runtime-keyed hook payload confirms `session_id` + `transcript_path`.
-- codex/antigravity: the runtime-keyed hook payload carries the rollout /
-  conversation path.
+- codex: the runtime-keyed hook payload carries the rollout path.
+- gemini/opencode: ACP session ids are recorded as provider session refs.
 - `recordProviderSessionRef` lets the hook REFINE the same session's paths and
   refuses a different session outright — concurrent threads cannot swap.
 - Paths are never guessed from Tide's cwd spelling (symlinks `/var` →
@@ -117,9 +116,9 @@ protocols and MCP.
 ## 3. How to verify (no human in the loop)
 
 - `npm test` — behavior tests incl. boundary tests; `npm run typecheck`.
-- `node scripts/v2-provider-smoke.mjs --agent <claude|codex|gemini>` — real
+- `node scripts/v2-provider-smoke.mjs --agent <claude|codex|gemini|opencode>` — real
   backend + real CLI: answer renders once, turn settles.
-- `node scripts/v2-provider-permission-flow.mjs --agent <claude|codex|gemini>` —
+- `node scripts/v2-provider-permission-flow.mjs --agent <claude|codex|gemini|opencode>` —
   forces approval prompts, auto-answers them, asserts: prompt surfaces, no
   double-surface, settles with an answer. (claude question flow:
   `TIDE_MESSAGE="Use the AskUserQuestion tool …"`.)
@@ -127,7 +126,7 @@ protocols and MCP.
   paths: `notinstalled`, `notauth`, `trust` (blocked → Trust → live answer),
   `concurrency` (two same-provider threads, answers never cross), `followup`
   (second turn into the live TUI).
-- `node scripts/pw-provider-e2e.cjs <claude|codex|gemini>` — the REAL built
+- `node scripts/pw-provider-e2e.cjs <claude|codex|gemini|opencode>` — the REAL built
   Electron app driven by Playwright like a human: agent chip, permission mode
   menu, send, the rendered Prompt Card's real Allow/Submit buttons, answer
   rendered once, follow-up turn, and the approved tool's side effect on disk.
@@ -139,10 +138,9 @@ All of the above pass as of this snapshot.
 
 ## 4. Remaining known gaps
 
-1. **antigravity** is wired but hidden (cannot auth when spawned; upstream).
-2. The provider-signal spool and history polling still run on 0.5s/1s timers
+1. The provider-signal spool and history polling still run on 0.5s/1s timers
    inside the shared loop; the full push-based `AgentRuntimeEventSource`
    (agent-runtime-event-spine.md) remains the north star. Provider knowledge is
    already adapter-owned, so the cutover is now mechanical, not architectural.
-3. `parseProviderUsage` (context meter) still branches by agentId internally —
+2. `parseProviderUsage` (context meter) still branches by agentId internally —
    registry-shaped, not a control-flow leak.

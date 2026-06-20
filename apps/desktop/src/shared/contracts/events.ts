@@ -254,8 +254,8 @@ export interface BackendEventPayloadByKind {
     fileCount: number;
     truncated: boolean;
   };
-  // A thread-independent file read for the start page's viewer (same requestId
-  // as the workspace.readFile command).
+  // A legacy thread-independent file read (same requestId as the workspace.readFile
+  // command).
   "workspace.fileLoaded": {
     cwd: string;
     relativePath: string;
@@ -271,9 +271,8 @@ export interface BackendEventPayloadByKind {
     dataBase64: string;
     byteLength: number;
   };
-  // A thread-independent file write completed for the start page's editor (same
-  // requestId as the workspace.writeFile command). Carries the now-on-disk
-  // content so the editor clears its dirty state.
+  // A legacy thread-independent file write completed (same requestId as the
+  // workspace.writeFile command).
   "workspace.fileSaved": {
     cwd: string;
     relativePath: string;

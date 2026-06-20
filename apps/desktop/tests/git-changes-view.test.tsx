@@ -11,8 +11,6 @@ import { ChangesPanel } from "../src/desktop/adapters/inbound/react-renderer/pro
 import { GIT_STATE_REFRESH_MS, useGitState } from "../src/desktop/adapters/inbound/react-renderer/product-shell/support/use-shell-effects.ts";
 import type { GitChangesViewResult, ProjectRegistryBridge } from "../src/desktop/adapters/inbound/react-renderer/product-shell/support/types.ts";
 import { createProductShellState } from "../src/desktop/application/domains/product-shell/state/create.ts";
-import { openProductShellDraftChanges } from "../src/desktop/application/domains/product-shell/state/workbench.ts";
-import { selectWorkbenchViewModel } from "../src/desktop/application/domains/product-shell/state/view-model.ts";
 import type { ProductShellState } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>");
@@ -157,36 +155,4 @@ test("git_badge_refreshes_after_working_tree_becomes_clean", async () => {
     dom.window.setInterval = originalSetInterval;
     dom.window.clearInterval = originalClearInterval;
   }
-});
-
-// --- Composer (pre-thread) draft Changes pane. Spec: git-changes-view (Composer
-// pre-thread Changes). The badge opens the Changes view on the New Thread page too,
-// where there is no thread to own a backend pane. ---
-
-test("composer_badge_opens_a_singleton_draft_changes_pane", () => {
-  const state0 = createProductShellState({ includeFixtureData: false });
-  assert.equal(state0.activeThreadId, null); // the New Thread / composer page
-  const state1 = openProductShellDraftChanges(state0, "/repo");
-  const changes1 = state1.draftWorkbenchPanes.filter((pane) => pane.kind === "changes");
-  assert.equal(changes1.length, 1);
-  assert.equal(changes1[0]?.cwd, "/repo");
-  assert.equal(state1.workbenchOpen, true);
-  assert.equal(state1.draftActiveWorkbenchPaneId, changes1[0]?.paneId);
-  // Singleton: clicking the badge again reveals the same pane, never a second one.
-  const state2 = openProductShellDraftChanges(state1, "/repo");
-  assert.equal(state2.draftWorkbenchPanes.filter((pane) => pane.kind === "changes").length, 1);
-  assert.equal(state2.draftActiveWorkbenchPaneId, changes1[0]?.paneId);
-});
-
-test("composer_draft_changes_pane_renders_as_a_changes_pane_carrying_its_cwd", () => {
-  const state = openProductShellDraftChanges(
-    createProductShellState({ includeFixtureData: false }),
-    "/repo",
-  );
-  const workbench = selectWorkbenchViewModel(state);
-  const pane = workbench.appChrome.openWorkbenchPanes.find((candidate) => candidate.kind === "changes");
-  assert.ok(pane, "expected a changes pane in the composer workbench view-model");
-  assert.equal(pane?.cwd, "/repo");
-  // It's the active pane (the badge click reveals it).
-  assert.equal(workbench.appChrome.activeWorkbenchPane?.kind, "changes");
 });

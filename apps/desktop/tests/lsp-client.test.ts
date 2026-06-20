@@ -479,8 +479,7 @@ test("lsp_port_dispose_kills_the_server_child", async () => {
 
   await port.dispose?.();
 
-  // No orphans (memory note v2-agy-process-leak): the child must be gone
-  // within 2s of dispose.
+  // No orphans: the child must be gone within 2s of dispose.
   const deadline = Date.now() + 2_000;
   let gone = false;
   while (Date.now() < deadline) {

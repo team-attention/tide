@@ -170,7 +170,8 @@ export interface ProductShellHandlers {
   onLauncherAction: (actionId: string) => void;
   // Open the read-only git Changes view (working-tree diff). Wired to the launcher's
   // Diff action + the top-bar branch badge. Inside a thread it opens the backend singleton
-  // pane; on the composer (no thread) `cwd` opens a renderer-local draft Changes pane.
+  // pane; on the composer, `cwd` lets the handler first create the Draft Thread, then open
+  // the backend singleton on that draft.
   // Spec: git-changes-view.
   onOpenChanges: (cwd?: string) => void;
   // The Changes pane self-fetches its data from its cwd (Main-process git).
@@ -259,9 +260,8 @@ export interface ProductShellHandlers {
   onEditorDraftChange: (paneId: string, content: string) => void;
   onEditorCursorChange: (paneId: string, cursorOffset: number) => void;
   onEditorSave: (paneId: string) => void;
-  // `position` (0-based line/character) is supplied by the editor for the
-  // thread-less start-page editor, whose cursor isn't tracked in shell state;
-  // thread panes ignore it and resolve from their tracked cursor.
+  // `position` (0-based line/character) is supplied by the editor as a fallback;
+  // thread panes normally resolve from their tracked cursor.
   onEditorGoToDefinition: (paneId: string, position?: { line: number; character: number }) => void;
   onEditorGoToReferences: (paneId: string, position?: { line: number; character: number }) => void;
   // Editor language-intelligence query (workspace.codeIntel round-trip). The

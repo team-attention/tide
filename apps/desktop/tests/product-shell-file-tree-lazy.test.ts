@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  COMPOSER_LAUNCHER_PANE_ID,
   createProductShellState,
   closeProductShellWorkbenchPane,
   newProductShellFile,
@@ -88,13 +89,10 @@ function startPageState(): ProductShellState {
   };
 }
 
-test("new_file_on_start_page_reads_with_create_under_the_composer_cwd", () => {
+test("new_file_on_start_page_is_a_no-op_until_the_draft_thread_exists", () => {
   const result = newProductShellFile(startPageState(), "scratch/new.txt");
-  assert.equal(result.command?.kind, "workspace.readFile");
-  if (result.command?.kind === "workspace.readFile") {
-    assert.deepEqual(result.command.payload, { cwd: "/repo/tide", path: "scratch/new.txt", create: true });
-  }
-  assert.equal(result.state.workbenchOpen, true, "the workbench column opens");
+  assert.equal(result.command, null);
+  assert.equal(result.state.workbenchOpen, false);
 });
 
 test("new_file_in_a_thread_opens_an_editor_with_create_true", () => {
@@ -208,21 +206,12 @@ test("closing_start_page_workbench_pane_clears_editor_picker", () => {
     ...start,
     workbenchOpen: true,
     editorPickerFilter: "",
-    draftActiveWorkbenchPaneId: "draft-browser-1",
-    draftWorkbenchPanes: [
-      {
-        paneId: "draft-browser-1",
-        kind: "browser",
-        title: "Browser",
-        revision: "rev",
-        updatedAt: "2026-05-28T00:00:00.000Z",
-        url: "https://example.com",
-      },
-    ],
+    draftActiveWorkbenchPaneId: COMPOSER_LAUNCHER_PANE_ID,
   };
 
-  const result = closeProductShellWorkbenchPane(state, "draft-browser-1");
+  const result = closeProductShellWorkbenchPane(state, COMPOSER_LAUNCHER_PANE_ID);
 
   assert.equal(result.state.editorPickerFilter, null);
   assert.equal(result.command, null);
+  assert.equal(result.state.workbenchOpen, false);
 });

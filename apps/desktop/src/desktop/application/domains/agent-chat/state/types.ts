@@ -165,18 +165,12 @@ export interface AgentChatAgentBinding {
 
 export type AgentChatProviderCliAgentId = "codex" | "claude" | "gemini" | "opencode";
 
-export type AgentChatAgentId = AgentChatProviderCliAgentId | "openai_api";
+export type AgentChatAgentId = AgentChatProviderCliAgentId;
 
-export type AgentChatAgentRuntimeSource =
-  | {
-      kind: "provider_cli";
-      integrationId: AgentChatProviderCliAgentId;
-    }
-  | {
-      kind: "tide_api";
-      provider: "openai";
-      accountId?: string;
-    };
+export interface AgentChatAgentRuntimeSource {
+  kind: "provider_cli";
+  integrationId: AgentChatProviderCliAgentId;
+}
 
 export type AgentChatComposerSurfaceKind =
   | "agent_menu"
@@ -342,9 +336,6 @@ export type AgentChatBackendCommand =
         scope?: AgentChatThreadScope;
         launchOptions?: Record<string, unknown>;
         attachments?: AgentChatComposerMessageAttachment[];
-        // Panes the user opened on the composer (New Thread) screen, adopted by the
-        // Thread this send creates (seeded into its Workbench at start — race-free).
-        initialWorkbenchPanes?: Array<{ kind: "browser" | "editor"; url?: string; path?: string; title?: string }>;
       };
     }
   | {

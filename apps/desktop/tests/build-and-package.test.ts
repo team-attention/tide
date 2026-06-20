@@ -137,13 +137,13 @@ test("verification_loop_script_is_declared_and_writes_reports", () => {
   assert.match(verifyScript, /selectAffectedTests/);
 });
 
-test("provider_smoke_supports_fake_openai_output_verification", () => {
+test("provider_smoke_is_limited_to_provider_cli_agents", () => {
   const smokeScript = fs.readFileSync(path.join(repoRoot, "scripts/v2-provider-smoke.mjs"), "utf8");
 
-  assert.match(smokeScript, /--fake-openai/);
-  assert.match(smokeScript, /startFakeOpenAiServer/);
-  assert.match(smokeScript, /OPENAI_BASE_URL/);
-  assert.match(smokeScript, /options\.agent === "openai_api"/);
+  assert.match(smokeScript, /codex\|claude\|gemini\|opencode/);
+  assert.doesNotMatch(smokeScript, /--fake-openai/);
+  assert.doesNotMatch(smokeScript, /openai_api/);
+  assert.doesNotMatch(smokeScript, /OPENAI_BASE_URL/);
   assert.match(smokeScript, /Hydrated Agent Session did not include the live token/);
 });
 
@@ -178,18 +178,17 @@ test("electron_runtime_smoke_script_is_opt_in", () => {
   assert.match(smokeScript, /--agent/);
 });
 
-test("electron_runtime_smoke_supports_fake_openai_output_verification", () => {
+test("electron_runtime_smoke_is_limited_to_provider_cli_agents", () => {
   const smokeScript = fs.readFileSync(
     path.join(repoRoot, "scripts/v2-electron-runtime-smoke.mjs"),
     "utf8",
   );
 
-  assert.match(smokeScript, /--fake-openai/);
-  assert.match(smokeScript, /startFakeOpenAiServer/);
-  assert.match(smokeScript, /OPENAI_BASE_URL/);
-  assert.match(smokeScript, /TIDE_ELECTRON_SMOKE_FAKE_OPENAI/);
+  assert.match(smokeScript, /codex\|claude\|gemini\|opencode/);
+  assert.doesNotMatch(smokeScript, /--fake-openai/);
+  assert.doesNotMatch(smokeScript, /openai_api/);
+  assert.doesNotMatch(smokeScript, /OPENAI_BASE_URL/);
   assert.match(smokeScript, /pushedAgentOutputFound/);
-  assert.match(smokeScript, /Electron smoke did not receive the token through a pushed Agent output block/);
 });
 
 test("electron_runtime_smoke_can_expect_provider_not_ready_and_open_setup_surface", () => {

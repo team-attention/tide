@@ -90,7 +90,8 @@ Architecture boundary tests enforce:
 
 ### D8. Fake provider and fake PTY come before real provider smoke
 
-The scaffold includes fake provider and fake PTY harnesses so lifecycle, contract, and rendering tests do not require Codex, Claude, or Antigravity during normal test runs.
+The scaffold includes fake provider and fake PTY harnesses so lifecycle, contract,
+and rendering tests do not require real provider CLIs during normal test runs.
 
 Real provider smoke tests are opt-in and documented separately.
 
@@ -308,7 +309,7 @@ and exercises the real preload/Main/Backend transport.
 ### UC-5: Developer smokes the Electron runtime path
 
 1. Developer runs `npm run build`.
-2. Developer runs `npm run test:smoke:electron -- --agent antigravity`.
+2. Developer runs `npm run test:smoke:electron -- --agent codex`.
 3. The smoke launches the built Electron Main.
 4. The Renderer uses `window.tide.sendBackendCommand`.
 5. Main IPC brokers the command to the Backend utilityProcess.

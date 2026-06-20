@@ -16,11 +16,8 @@ import {
   addProductShellComposerContextChip,
   applyProductShellBackendEvent,
   applyProductShellPromptState,
-  applyStartPageEditorDefinition,
-  applyStartPageEditorReferences,
   createProductShellState,
   createProductShellViewModel,
-  startFilePaneId,
   quickOpenFilesFromState,
   closeProductShellWorkbenchPane,
   editProductShellWorkbenchEditorPane,
@@ -44,7 +41,7 @@ import {
   selectWorkbenchViewModel,
   setProductShellWorkbenchLayout,
   openProductShellBrowserAtUrl,
-  openProductShellDraftBrowser,
+  ensureComposerDraftThreadActive,
   setProductShellComposerActiveSurface,
   setProductShellComposerFolderScope,
   setProductShellRegisteredProjects,
@@ -674,14 +671,10 @@ test("an_existing_pane_update_does_not_reopen_a_workbench_the_user_closed", () =
   );
 });
 
-// Quick Open must search EVERY loaded file: folders are collapsed by default,
-// and the rendered FileTree view hides collapsed descendants — deriving the
-// search list from that view left Cmd+P blind to all nested files.
-// Spec: start-page-file-viewer — the START page tree must behave like a real
-// tree: folders expand (no thread required) and files open as a real, EDITABLE
-// Workbench editor pane (read via workspace.readFile, saved via
-// workspace.writeFile), not an overlay over the chat.
-test("start_page_file_opens_as_an_editable_workbench_editor_pane", () => {
+// The START page tree may expand folders before any thread exists, but opening a
+// file must first create the Composer Draft Thread and then use the normal backend
+// Workbench editor path. No renderer-local start-page editor panes.
+test("start_page_file_tree_file_open_routes_through_the_composer_draft_thread", () => {
   const scoped = setProductShellComposerFolderScope(createProductShellState(), "/repo/tide");
   const state = applyProductShellBackendEvent(scoped, {
     kind: "workspace.fileTreeLoaded",
@@ -698,152 +691,39 @@ test("start_page_file_opens_as_an_editable_workbench_editor_pane", () => {
   });
   assert.equal(state.activeThreadId, null);
 
-  // Folder toggle works WITHOUT a thread (this froze the start-page tree at
-  // its top level).
+  // Folder toggle works WITHOUT a thread.
   const expanded = selectProductShellFileTreeEntry(state, "d-src");
   assert.equal(expanded.command, null);
   assert.ok(expanded.state.expandedFolderPaths.includes("src"));
 
-  // A file click reads the file thread-independently AND opens the workbench so
-  // the editor column animates in immediately (not as a chat overlay).
-  const opened = selectProductShellFileTreeEntry(expanded.state, "f-app");
-  assert.deepEqual(opened.command, {
-    kind: "workspace.readFile",
-    payload: { cwd: "/repo/tide", path: "src/app.ts" },
+  // Direct reducer use on the start page is a no-op; the React handler creates the
+  // draft first, then re-enters this reducer.
+  const noDraft = selectProductShellFileTreeEntry(expanded.state, "f-app");
+  assert.equal(noDraft.command, null);
+  assert.equal(noDraft.state.startPageFiles.length, 0);
+
+  const draft = ensureComposerDraftThreadActive(expanded.state);
+  const draftId = draft.state.draftThreadId as string;
+  const opened = selectProductShellFileTreeEntry(draft.state, "f-app");
+  assert.equal(opened.command?.kind, "workbench.command");
+  assert.equal(opened.command?.kind === "workbench.command" ? opened.command.payload.threadId : null, draftId);
+  assert.equal(opened.command?.kind === "workbench.command" ? opened.command.payload.command : null, "open_editor");
+  assert.deepEqual(opened.command?.kind === "workbench.command" ? opened.command.payload.data : null, {
+    path: "src/app.ts",
   });
   assert.equal(opened.state.workbenchOpen, true);
-
-  // The loaded content lands in start-page state and the view-model synthesizes a
-  // real editor pane (kind "editor") for the Workbench column — no overlay.
-  const loaded = applyProductShellBackendEvent(opened.state, {
-    kind: "workspace.fileLoaded",
-    payload: { cwd: "/repo/tide", relativePath: "src/app.ts", content: "export {};", truncated: false },
-  });
-  assert.equal(loaded.workbenchOpen, true);
-  const loadedVm = createProductShellViewModel(loaded);
-  const appPaneId = startFilePaneId("src/app.ts");
-  const pane = loadedVm.appChrome.activeWorkbenchPane;
-  assert.equal(pane?.paneId, appPaneId);
-  assert.equal(pane?.kind, "editor");
-  assert.equal(pane?.relativePath, "src/app.ts");
-  assert.equal(pane?.bodyText, "export {};");
-  assert.equal(loadedVm.editorDrafts[appPaneId]?.content, "export {};");
-  assert.equal(loadedVm.editorDrafts[appPaneId]?.dirty, false);
-
-  // Opening a SECOND, different file opens its OWN editor tab (does NOT replace the
-  // first) — two editor panes, the new one active.
-  const twoFiles = applyProductShellBackendEvent(loaded, {
-    kind: "workspace.fileLoaded",
-    payload: { cwd: "/repo/tide", relativePath: "src/two.ts", content: "export const two = 2;", truncated: false },
-  });
-  const twoVm = createProductShellViewModel(twoFiles);
-  const editorTabs = twoVm.appChrome.workbenchTabStrip.visibleTabs.filter((tab) => tab.kind === "editor");
-  assert.equal(editorTabs.length, 2);
-  assert.equal(twoVm.appChrome.activeWorkbenchPane?.paneId, startFilePaneId("src/two.ts"));
-
-  // Reopening the FIRST file from the tree just focuses its existing tab (no re-read,
-  // still two files).
-  const refocus = selectProductShellFileTreeEntry(twoFiles, "f-app");
-  assert.equal(refocus.command, null);
-  assert.equal(refocus.state.startPageFiles.length, 2);
-  assert.equal(refocus.state.draftActiveWorkbenchPaneId, appPaneId);
-
-  // Editing the synthetic pane marks it dirty without any thread…
-  const edited = editProductShellWorkbenchEditorPane(loaded, appPaneId, "export const x = 1;");
-  assert.equal(edited.startPageFiles[0]?.draft, "export const x = 1;");
-  assert.equal(edited.startPageFiles[0]?.dirty, true);
-  assert.equal(createProductShellViewModel(edited).editorDrafts[appPaneId]?.dirty, true);
-
-  // …and saving writes the buffer thread-independently under the composer cwd.
-  const saved = saveProductShellWorkbenchEditorPane(edited, appPaneId);
-  assert.deepEqual(saved.command, {
-    kind: "workspace.writeFile",
-    payload: { cwd: "/repo/tide", path: "src/app.ts", content: "export const x = 1;" },
-  });
-
-  // The fileSaved event re-bases the editor: new on-disk content, no longer dirty.
-  const settled = applyProductShellBackendEvent(edited, {
-    kind: "workspace.fileSaved",
-    payload: { cwd: "/repo/tide", relativePath: "src/app.ts", content: "export const x = 1;", truncated: false },
-  });
-  assert.equal(settled.startPageFiles[0]?.content, "export const x = 1;");
-  assert.equal(settled.startPageFiles[0]?.dirty, false);
-  assert.equal(settled.startPageFiles[0]?.draft, undefined);
-
-  // A SAME-directory tree reload (FileTree toggle) keeps the open file…
-  const sameTree = applyProductShellBackendEvent(loaded, {
-    kind: "workspace.fileTreeLoaded",
-    payload: { cwd: "/repo/tide", fileTree: { cwdLabel: "tide", entries: [] } },
-  });
-  assert.equal(sameTree.startPageFiles.length, 1);
-
-  // …a composer scope chip switch to ANOTHER directory closes it…
-  const otherTree = applyProductShellBackendEvent(sameTree, {
-    kind: "workspace.fileTreeLoaded",
-    payload: { cwd: "/repo/other", fileTree: { cwdLabel: "other", entries: [] } },
-  });
-  assert.equal(otherTree.startPageFiles.length, 0);
-
-  // …and closing the pane drops the file and collapses the empty workbench.
-  const closed = closeProductShellWorkbenchPane(loaded, appPaneId);
-  assert.equal(closed.state.startPageFiles.length, 0);
-  assert.equal(closed.state.workbenchOpen, false);
-  assert.equal(closed.command, null);
 });
 
-// Spec: start-page-file-viewer — go-to-definition/references work on the
-// thread-less start-page editor too (thread-independent workspace.codeIntel).
-test("start_page_editor_go_to_definition_and_references_apply_thread_independently", () => {
+test("workspace_file_loaded_no_longer_synthesizes_a_start_page_editor", () => {
   const scoped = setProductShellComposerFolderScope(createProductShellState(), "/repo/tide");
   const loaded = applyProductShellBackendEvent(scoped, {
     kind: "workspace.fileLoaded",
-    payload: { cwd: "/repo/tide", relativePath: "src/app.ts", content: "export const x = 1;\nconsole.log(x);", truncated: false },
+    payload: { cwd: "/repo/tide", relativePath: "src/app.ts", content: "export {};", truncated: false },
   });
 
-  const appPaneId = startFilePaneId("src/app.ts");
-
-  // Same-file definition scrolls in place: navigationTarget set, no backend round-trip.
-  const sameFile = applyStartPageEditorDefinition(loaded, appPaneId, { relativePath: "src/app.ts", line: 0, character: 13, length: 1, label: "x" });
-  assert.equal(sameFile.command, null);
-  assert.deepEqual(sameFile.state.startPageFiles[0]?.navigationTarget, {
-    line: 0, character: 13, length: 1, label: "x", sourcePaneId: appPaneId,
-  });
-  // …and it surfaces on the synthetic editor pane the workbench renders.
-  assert.deepEqual(
-    createProductShellViewModel(sameFile.state).appChrome.activeWorkbenchPane?.navigationTarget,
-    sameFile.state.startPageFiles[0]?.navigationTarget,
-  );
-
-  // Cross-file definition opens the other file in its OWN tab, then applies the
-  // target on load (the first file stays open).
-  const crossFile = applyStartPageEditorDefinition(loaded, appPaneId, { relativePath: "src/util.ts", line: 4, character: 2, label: "helper" });
-  assert.deepEqual(crossFile.command, {
-    kind: "workspace.readFile",
-    payload: { cwd: "/repo/tide", path: "src/util.ts" },
-  });
-  assert.equal(crossFile.state.startPagePendingNavigation?.relativePath, "src/util.ts");
-  const crossLoaded = applyProductShellBackendEvent(crossFile.state, {
-    kind: "workspace.fileLoaded",
-    payload: { cwd: "/repo/tide", relativePath: "src/util.ts", content: "export const helper = () => {};", truncated: false },
-  });
-  assert.equal(crossLoaded.startPageFiles.length, 2);
-  const utilFile = crossLoaded.startPageFiles.find((file) => file.relativePath === "src/util.ts");
-  assert.equal(utilFile?.navigationTarget?.line, 4);
-  assert.equal(utilFile?.navigationTarget?.label, "helper");
-  assert.equal(crossLoaded.startPagePendingNavigation, null);
-
-  // References populate the editor's references panel on the synthetic pane.
-  const withRefs = applyStartPageEditorReferences(loaded, appPaneId, {
-    items: [
-      { relativePath: "src/app.ts", line: 1, character: 12 },
-      { relativePath: "src/other.ts", line: 3, character: 0, label: "x" },
-    ],
-    truncated: false,
-  });
-  const refs = createProductShellViewModel(withRefs).appChrome.activeWorkbenchPane?.references;
-  assert.equal(refs?.items.length, 2);
-  assert.equal(refs?.items[1]?.relativePath, "src/other.ts");
-  assert.equal(refs?.truncated, false);
+  assert.equal(loaded.startPageFiles.length, 0);
+  assert.equal(loaded.workbenchOpen, false);
+  assert.equal(createProductShellViewModel(loaded).appChrome.activeWorkbenchPane?.kind, "launcher");
 });
 
 test("quick_open_files_include_collapsed_folder_descendants", () => {
@@ -2675,10 +2555,10 @@ test("chat_link_open_browser_defaults_to_new_pane_disposition", () => {
   });
 });
 
-test("composer_launcher_is_a_placeholder_resolved_into_the_browser_on_open", () => {
-  // Spec: docs_v2/specs/workbench-dock-parity.md (T7/T8) — composer-screen launcher
-  // is a PLACEHOLDER: empty shows the Launcher; picking Browser RESOLVES it (the
-  // Launcher is replaced by the Browser Pane, not kept beside it). v1 parity.
+test("composer_browser_launcher_action_routes_through_the_draft_thread", () => {
+  // Spec: docs_v2/specs/composer-draft-thread.md — the composer Launcher is a
+  // placeholder until a Draft Thread exists. Browser then opens as a backend
+  // Thread-owned Workbench pane, not as renderer-local adoption state.
   const state = createProductShellState({ includeFixtureData: false });
   assert.equal(state.activeThreadId, null);
 
@@ -2686,31 +2566,15 @@ test("composer_launcher_is_a_placeholder_resolved_into_the_browser_on_open", () 
   const empty = selectWorkbenchViewModel(state).appChrome.openWorkbenchPanes;
   assert.equal(empty[0]?.kind, "launcher");
 
-  // Picking Browser adds a live draft pane (renderer-local, no backend command)...
-  const opened = selectProductShellLauncherAction(state, "open_browser");
-  assert.equal(opened.command, null);
-  assert.equal(opened.state.draftWorkbenchPanes.length, 1);
-  assert.equal(opened.state.draftWorkbenchPanes[0]?.kind, "browser");
-  // ...and the Launcher placeholder is RESOLVED (gone): only the Browser shows.
-  const panes = selectWorkbenchViewModel(opened.state).appChrome.openWorkbenchPanes;
-  assert.equal(panes.length, 1);
-  assert.equal(panes[0]?.kind, "browser");
-});
+  const inert = selectProductShellLauncherAction(state, "open_browser");
+  assert.equal(inert.command, null);
+  assert.equal(inert.state.activeThreadId, null);
 
-test("composer_draft_browsers_are_adopted_by_the_new_thread_on_send", () => {
-  // Spec: docs_v2/specs/workbench-dock-parity.md (T7) — adoption on send.
-  let state = openProductShellDraftBrowser(createProductShellState(), "https://adopt.test");
-  state = updateProductShellComposerDraft(state, "start with this page open");
-  const result = submitProductShellComposerDraft(state);
-  assert.equal(result.command?.kind, "thread.start");
-  const seeded =
-    result.command?.kind === "thread.start" ? result.command.payload.initialWorkbenchPanes : undefined;
-  assert.equal(seeded?.length, 1);
-  assert.equal(seeded?.[0]?.kind, "browser");
-  assert.equal(seeded?.[0]?.url, "https://adopt.test");
-  // The drafts are handed off and the Workbench stays open for the adopted pane.
-  assert.equal(result.state.draftWorkbenchPanes.length, 0);
-  assert.equal(result.state.workbenchOpen, true);
+  const draft = ensureComposerDraftThreadActive(state);
+  const opened = selectProductShellLauncherAction(draft.state, "open_browser");
+  assert.equal(opened.command?.kind, "workbench.command");
+  assert.equal(opened.command?.payload.threadId, draft.state.draftThreadId);
+  assert.equal(opened.command?.payload.command, "open_browser");
 });
 
 test("product_shell_launcher_editor_action_opens_in_pane_file_picker", () => {

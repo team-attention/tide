@@ -4,7 +4,6 @@ import type { ThreadId, WorkbenchPaneId } from "./ids.ts";
 import type { PromptStepAnswerDto } from "./prompt.ts";
 import type { JsonObject } from "./json.ts";
 import type { ThreadScopeDto } from "./thread.ts";
-import type { WorkbenchSeedPaneDto } from "./workbench.ts";
 
 export type BackendCommandKind =
   | "thread.list"
@@ -99,8 +98,6 @@ export interface BackendCommandPayloadByKind {
     scope?: ThreadScopeDto;
     launchOptions?: JsonObject;
     attachments?: ComposerAttachment[];
-    // Composer-screen panes adopted by the new Thread (seeded at start).
-    initialWorkbenchPanes?: WorkbenchSeedPaneDto[];
   };
   "thread.archive": { threadId: ThreadId; archived: boolean };
   "thread.setPinned": { threadId: ThreadId; pinned: boolean };
@@ -176,16 +173,16 @@ export interface BackendCommandPayloadByKind {
     maxResults?: number;
     maxFiles?: number;
   };
-  // Read one text file under `cwd`, NOT tied to a thread — the start (New
-  // Thread) page's file viewer (spec: start-page-file-viewer). Answered by a
-  // workspace.fileLoaded event.
+  // Legacy thread-independent text read under `cwd`. Product Shell editors now
+  // open through workbench.command/open_editor on a thread Workbench. Answered by
+  // a workspace.fileLoaded event.
   "workspace.readFile": {
     cwd: string;
     path: string;
     byteLimit?: number;
-    // New File: when true and the file is missing, create an empty file (and parent
-    // dirs) first, then read it — an existing file is never clobbered (spec:
-    // workbench-new-file.md).
+    // Legacy New File path: when true and the file is missing, create an empty
+    // file (and parent dirs) first, then read it. Thread Workbench new-file now
+    // uses open_editor { create: true }.
     create?: boolean;
   };
   // Read one image file under `cwd` as bounded base64, for Workbench Image Pane
@@ -195,10 +192,9 @@ export interface BackendCommandPayloadByKind {
     path: string;
     byteLimit?: number;
   };
-  // Write one text file under `cwd`, NOT tied to a thread — the start (New
-  // Thread) page's editor save (spec: start-page-file-viewer). The thread-bound
-  // editor uses workbench.command/save_editor_file instead. Answered by a
-  // workspace.fileSaved event.
+  // Legacy thread-independent text write under `cwd`. Product Shell editors now
+  // save through workbench.command/save_editor_file. Answered by a workspace.fileSaved
+  // event.
   "workspace.writeFile": {
     cwd: string;
     path: string;

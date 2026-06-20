@@ -241,20 +241,6 @@ export function submitProductShellComposerDraft(
   // Thread in place (activeThreadId already equals it), to add it to the rail + clear drafts.
   const startedThread = command?.kind === "thread.start" ? agentChatState.thread : null;
   if (startedThread !== null && (startedFromDraft || state.activeThreadId !== startedThread.threadId)) {
-    // Adopt the panes the user opened on the composer (New Thread) screen: hand the
-    // draft Browser Panes to the new Thread so it OWNS them (seeded via thread.start,
-    // race-free). The start-page editor still belongs to the New Thread page and is
-    // dropped (its unsaved draft must not be silently lost by a re-open).
-    // Only Browser drafts are adopted by the new Thread. A composer git Changes draft is
-    // renderer-only (no URL); the started thread owns its own backend Changes pane via the
-    // badge, so the draft is dropped rather than mis-adopted as an empty Browser Pane.
-    const initialWorkbenchPanes = state.draftWorkbenchPanes
-      .filter((pane) => pane.kind === "browser")
-      .map((pane) => ({
-        kind: "browser" as const,
-        url: pane.url,
-        title: pane.title,
-      }));
     const shellThread = toProductShellThreadFromSummary(startedThread);
     const threads = [shellThread, ...state.threads];
     nextState = {
@@ -264,18 +250,12 @@ export function submitProductShellComposerDraft(
       projects: projectsFromThreads(threads),
       startPageFiles: [],
       startPagePendingNavigation: null,
-      // The drafts are handed off; keep the Workbench open if we adopted Browser panes OR
-      // a Draft Thread was started in place (it carries its Terminal/Editor/Diff panes).
-      draftWorkbenchPanes: [],
       draftActiveWorkbenchPaneId: null,
       // Start-page untitled buffers don't carry into the started thread.
       untitledFiles: [],
       untitledSaveAsPaneId: null,
-      workbenchOpen: initialWorkbenchPanes.length > 0 || state.draftThreadId !== null,
+      workbenchOpen: state.draftThreadId !== null,
     };
-    if (command !== null && command.kind === "thread.start" && initialWorkbenchPanes.length > 0) {
-      command = { ...command, payload: { ...command.payload, initialWorkbenchPanes } };
-    }
   }
 
   return { state: nextState, command };

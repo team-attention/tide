@@ -18,7 +18,7 @@ Selection has three axes, but they are **not** three equal menus for every agent
 
 | axis | meaning | who exposes it |
 |------|---------|----------------|
-| **Agent** | which runtime/CLI drives the thread | always: claude / codex / gemini / opencode (+ openai_api) |
+| **Agent** | which runtime/CLI drives the thread | always: claude / codex / gemini / opencode |
 | **Vendor** | which model provider serves the model | **explicit only for opencode** (a multi-vendor router: openai/anthropic/qwen/kimi/…). For claude/codex/gemini the agent *is* the vendor (claude=anthropic, gemini=google, codex=openai) — implicit, never a menu. |
 | **Model (+effort)** | the concrete model and its reasoning effort | every agent; effort only where the model supports it |
 
@@ -37,7 +37,6 @@ Grounded in the integrations + live ACP probes. This is the "명확한 형태" f
 | **codex** | openai (implicit) | curated + "Custom id…" (free-form) | free-form `--model` | `turn/start` low–xhigh | 3 approval modes | model + effort live (`turn/start`); permission → restart |
 | **gemini** | google (implicit) | **provider-reported** (ACP `models.availableModels` + `currentModelId`) | `modelId` | none | 4 modes (ACP `session/set_mode`, live) | permission live; model **also live** (`session/set_model` verified `{}`) — Tide currently restarts → upgrade |
 | **opencode** | **explicit (multi-vendor)** | **provider-reported** (ACP `configOptions` model + `opencode models`) | `provider/model` | **per-model** (ACP effort configOption, live) | Build / Plan (ACP) | model + effort + permission all live (`set_config_option`) |
-| openai_api | openai (Tide-native) | curated | model id | n/a | Tide tool policy | restart |
 
 All of this is already produced/applied by existing code (`buildStartPlan`,
 `buildSessionConfigUpdate` → `applySessionConfig` → `applyConfig`). The new work is **uniform

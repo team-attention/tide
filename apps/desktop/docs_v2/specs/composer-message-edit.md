@@ -11,13 +11,14 @@ This spec covers the provider-agnostic, headlessly-verifiable slice:
   user can queue a follow-up (`pendingInput`). Before it flushes, the user can fix
   a typo or rewrite it. Editing replaces the queued value in place; the runtime has
   not seen it yet, so this needs no provider rewind and works identically for
-  Codex, Claude, and Antigravity.
+  provider CLI agents.
 
 Out of scope (separate, evidence-gated slice):
 
 - **Edit an already-sent message** (rewind/fork the provider session to before that
   message and re-run). This is provider-native: Claude exposes `--fork-session`,
-  Codex/Antigravity rewind support is unproven. Record as a decision point; do not
+  Codex/Gemini/opencode rewind support is provider-specific and unproven. Record
+  as a decision point; do not
   fake a cross-provider rewind.
 
 ## Evidence

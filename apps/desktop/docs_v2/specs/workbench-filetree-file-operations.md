@@ -13,17 +13,16 @@ Turn the read-only FileTree into a real file manager and replace the awkward
 5. **Move via drag-and-drop** — drag a file/folder row onto a folder (or the root)
    to move it there.
 
-All operations work both inside a thread and on the start (New Thread) page (which
-shows the composer project's tree), since both already expose an absolute root.
+All operations work inside a thread and on the start (New Thread) page. On the start
+page, any operation that creates a visible editor pane first creates the Composer
+Draft Thread, then uses the same thread Workbench path as a started Thread.
 
 ## Evidence
 - FileTree (`file-tree/file-tree.tsx`) is read-only: folder rows toggle, file rows
   open. No context menu, toolbar, or inline inputs.
-- New File today lives ONLY in the Workbench launcher (`workbench/launcher-pane.tsx`)
-  as an inline input where the user types the whole relative path; it routes to
-  `newProductShellFile(path)` → `workspace.readFile {create:true}` (start) /
-  `open_editor {create:true}` (thread). The user finds this UX bad and wants
-  blank-then-name-on-save.
+- New File used to live ONLY in the Workbench launcher
+  (`workbench/launcher-pane.tsx`) as an inline input where the user typed the whole
+  relative path. The user finds this UX bad and wants blank-then-name-on-save.
 - The backend `WorkspaceFilePort` (`node-workspace-file-port.ts`) has list / read /
   search / replace / write only. There is **no create-folder, rename, move, or
   delete**, and the backend utility process has **no Electron `shell`** (so it cannot
@@ -33,13 +32,13 @@ shows the composer project's tree), since both already expose an absolute root.
   `tide:create-worktree`, `tide:remove-worktree`, `tide:git-changes`,
   `tide:git-file-diff`, etc. (`electron-main.ts` + `preload/index.ts`). `shell` (incl.
   `shell.trashItem`) lives in main.
-- The renderer already knows the absolute root in both contexts: start page =
-  `composer.startOptions.scope.cwd`; thread = `thread.scope.cwd`; and the loaded
-  tree carries `fileTree.root`. (`thread-list.ts` normalizes/compares these.)
-- Start-page editors are renderer-owned, editable, drafted panes derived from
-  `startPageFiles` under synthetic `start-file:<rel>` pane ids
-  (`types.ts`, `workbench-editor.ts`, `view-model.ts`). This is the precedent for a
-  renderer-owned untitled pane.
+- The renderer already knows the absolute root in both contexts: Composer Draft
+  Thread = `composer.startOptions.scope.cwd`; started Thread = `thread.scope.cwd`;
+  and the loaded tree carries `fileTree.root`. (`thread-list.ts`
+  normalizes/compares these.)
+- The old renderer-owned `startPageFiles` editor path is superseded. Untitled files
+  remain renderer-owned only until named, but are bound to a real thread id
+  (including the Composer Draft Thread).
 - Context-menu popover precedent: `left-rail/context-menu.tsx` (fixed popover +
   transparent backdrop). Confirm-dialog precedent: `dialogs/worktree-delete-dialog.tsx`.
   HTML5 DnD precedent: left-rail manual ordering.
@@ -71,7 +70,7 @@ shows the composer project's tree), since both already expose an absolute root.
 
 ## Domain Model
 - `ProductShellUntitledFile` (renderer state): `{ id: "untitled:<n>", title: "Untitled-<n>",
-  draft: string, threadId: string | null, scopeCwd: string }`. Lives in
+  draft: string, threadId: string, scopeCwd: string }`. Lives in
   `state.untitledFiles`. Derived to an editable editor pane `untitled:<n>` by the
   view-model, shown only when `threadId === activeThreadId`.
 - `ProductShellTreeEdit` (renderer state): `{ kind: "new-folder" | "rename",
@@ -97,14 +96,14 @@ commands (same category as `tide:create-worktree`).
 
 ## Flow
 **New File (untitled):** toolbar / context-menu / launcher → `onNewUntitledFile()` →
-`newProductShellUntitledFile` appends an untitled bound to the active thread (or null)
+if no Thread is active, `ensureComposerDraftThreadActive` creates the Composer Draft
+Thread. `newProductShellUntitledFile` appends an untitled bound to that active thread
 and the current scope cwd, opens the Workbench, focuses its pane. Typing updates
 `draft` (`onEditorDraftChange` handles `untitled:` ids). Cmd+S on an untitled pane →
 reducer returns `{ needsSaveAs: untitledId }`; the editor pane shows an inline
 "Save as: [path]" bar. Confirm → handler `window.tide.fsCreateFile(scopeCwd, path,
-draft)`; on ok → open the now-real file via the existing open path
-(`workspace.readFile` start / `open_editor` thread) + drop the untitled + refresh tree;
-on `file_exists` → keep the bar + toast.
+draft)`; on ok → open the now-real file through `workbench.command open_editor`,
+drop the untitled, and refresh the tree; on `file_exists` → keep the bar + toast.
 
 **New Folder / Rename:** context-menu / toolbar → `beginProductShellTreeEdit({kind,
 parentPath / targetPath})` renders the inline input. Confirm → handler calls
@@ -118,17 +117,18 @@ close affected tabs + refresh tree; on error toast.
 folder rows + the tree root; drop → `fsMove(root, fromRel, targetDir + "/" + base)`
 guarded by `isInvalidMove` (into self/descendant) → refresh + reconcile tabs.
 
-After every mutation the tree is refreshed through the EXISTING refresh path
-(`refresh_file_tree` thread / `workspace.readFileTree` start) so the backend stays the
-source of truth for tree contents.
+After every mutation the tree is refreshed through the existing refresh path
+(`refresh_file_tree` when a thread/draft exists, `workspace.readFileTree` only for
+the Start page's tree listing) so the backend stays the source of truth for tree
+contents.
 
 ## Invariants
 - No structural op escapes the root (`resolveInsideRoot` on every path).
 - Create/rename/move never silently overwrite an existing path.
 - `readTextFile` / existing open paths are unchanged; reopening a just-created file
   reads exactly the written content.
-- An untitled pane shows only in the context (thread/start) it was created in and
-  never enters the backend workbench snapshot (so it is never clobbered).
+- An untitled pane shows only in the thread context it was created in and never
+  enters the backend workbench snapshot (so it is never clobbered).
 - Trash is recoverable (OS Trash), never `rm -rf`.
 - A mutation to a path with an open editor tab closes that tab (no save against a
   moved/deleted path).
@@ -143,8 +143,9 @@ source of truth for tree contents.
   thread active.
 - Tree-edit reducers: begin new-folder/rename sets `fileTreeEdit`; confirm empty =
   no-op; cancel clears.
-- Tab reconciliation reducer: deleting/renaming/moving an open file removes its
-  start-file / yields its pane id to close; folder rename reconciles descendants.
+- Tab reconciliation reducer: deleting/renaming/moving an open file yields affected
+  thread pane ids to close; folder rename reconciles descendants. Legacy
+  `startPageFiles` snapshots are drained defensively.
 - View-model: untitled file → one editable `untitled:` editor pane in the right
   context; absent in the wrong context.
 - (light integration, temp dir) main fs handlers: create-file/folder, move, collision

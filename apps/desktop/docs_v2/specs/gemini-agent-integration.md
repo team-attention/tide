@@ -1,11 +1,7 @@
 # Spec: Gemini CLI Agent Integration
 
-Add the **Gemini CLI** (`gemini`, v0.40.1, bundled in Tide Terminal resources) as a
-first-class Tide agent at the SAME hierarchy as codex / claude / antigravity — a new
-`ProviderCliAgentId`. It exists because Antigravity (`agy`) cannot authenticate when
-spawned programmatically (only in an interactive/IDE session), while `gemini`
-authenticates and responds when spawned headless. Gemini is Google's working,
-integration-friendly CLI (the gemini→agy product transition keeps `gemini` usable).
+Add the **Gemini CLI** (`gemini`) as a first-class Tide provider-CLI agent at the
+same hierarchy as codex, claude, and opencode.
 
 ## Scope
 
@@ -22,7 +18,7 @@ resume across app restarts beyond session_id capture.
 ## Evidence (verified 2026-06-09, spawned from a non-interactive context)
 
 - `gemini -p "reply exactly: PONG"` → prints `PONG` and exits 0. **Authenticates when
-  spawned** (auth in `~/.gemini/oauth_creds.json`), unlike `agy`.
+  spawned** (auth in `~/.gemini/oauth_creds.json`).
 - `gemini -p "<prompt>" -o json` → clean structured stdout:
   `{ "session_id": "<uuid>", "response": "<final answer>", "stats": {...} }`.
   `response` IS the final answer. No PTY scraping, no transcript race.
@@ -39,8 +35,8 @@ resume across app restarts beyond session_id capture.
 1. **Runtime transport = one-shot `gemini -p -o json` per turn (not hidden PTY).**
    This is the cleanest, most reliable shape and the reason gemini is viable: send the
    prompt, read the structured `response` from stdout, process exit = turn end. No
-   PTY-scrape, no hook spool, no transcript-binding race (the failure modes that broke
-   claude/agy). Follow-up turns resume via `--resume <session_id>` captured from the
+   PTY-scrape, no hook spool, no transcript-binding race. Follow-up turns resume via
+   `--resume <session_id>` captured from the
    prior run's JSON.
 
 2. **Turn outcome is uniform.** A gemini turn produces
@@ -59,7 +55,7 @@ resume across app restarts beyond session_id capture.
 
 ## Domain Model / Contracts
 
-- `ProviderCliAgentId = "codex" | "claude" | "antigravity" | "gemini"` in BOTH
+- `ProviderCliAgentId = "codex" | "claude" | "gemini" | "opencode"` in BOTH
   `src/shared/contracts/agent.ts` and `src/backend/application/domains/thread/thread.ts`.
 - Update `isProviderCliAgentId` guard (`src/shared/contracts/envelopes.ts`).
 - Adapter: `src/backend/adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts`
@@ -91,8 +87,7 @@ Composer send
 - `gemini-agent-integration-bootstrap.test.ts`: preflight blockers (not installed / not
   authed / untrusted), launch plan args (`-p`, `-o json`, `--resume`, approval-mode).
 - Pure parse test: `{session_id,response}` JSON → `AgentTurnOutcome`.
-- Judge: `scripts/v2-provider-smoke.mjs --agent gemini` → answer block + settle (gemini
-  works headless, so this is objectively verifiable, unlike agy).
+- Judge: `scripts/v2-provider-smoke.mjs --agent gemini` → answer block + settle.
 
 ## Implementation Notes
 

@@ -31,7 +31,7 @@ The Workbench command writes raw terminal bytes to the visible setup process. De
 
 ### D2. Retry uses preserved launch options
 
-When setup exits and the Pane expects `retry_preflight`, Backend re-runs Provider Readiness with the pending input's preserved launch options. This keeps choices such as Antigravity Agent and provider-native model/permission values intact.
+When setup exits and the Pane expects `retry_preflight`, Backend re-runs Provider Readiness with the pending input's preserved launch options. This keeps the selected provider CLI agent and provider-native model/permission values intact.
 
 ### D3. Replay starts or resumes the selected Agent Runtime
 
