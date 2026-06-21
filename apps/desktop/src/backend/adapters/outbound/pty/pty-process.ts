@@ -1,5 +1,5 @@
 // The PTY process contract. Used by the workbench terminal and the
-// provider setup surface (auth/login) — the only PTY consumers left after the
+// provider readiness terminal (auth/login) — the only PTY consumers left after the
 // agent runtimes moved to structured protocols. (Agents no longer spawn PTYs.)
 
 export interface PtyLaunchPlan {

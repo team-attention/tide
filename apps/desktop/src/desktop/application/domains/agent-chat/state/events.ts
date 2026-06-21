@@ -158,7 +158,7 @@ export function applyAgentChatBackendEvent(
       return {
         ...state,
         providerReadiness: payload.readiness,
-        // The readiness re-check came back; the trust/setup action is done.
+        // The readiness re-check came back; the trust/readiness action is done.
         providerReadinessActionPending: false,
       };
     }

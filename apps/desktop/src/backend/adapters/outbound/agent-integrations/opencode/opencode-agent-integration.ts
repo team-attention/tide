@@ -10,7 +10,7 @@ import type {
   SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { ThreadScope } from "../../../../application/domains/thread/thread.ts";
-import { npmInstallSetupAction } from "../shared/provider-cli-commands.ts";
+import { npmInstallReadinessTerminalAction } from "../shared/provider-cli-commands.ts";
 
 // opencode (sst) runs as an ACP agent over stdio (`opencode acp`) — the SAME
 // Agent Client Protocol gemini speaks, verified live: initialize →
@@ -90,7 +90,7 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
             kind: "not_installed",
             scope: "provider",
             message: "opencode executable was not found.",
-            setup: npmInstallSetupAction({ npmPath, agentId: "opencode", cwd }),
+            terminalAction: npmInstallReadinessTerminalAction({ npmPath, agentId: "opencode", cwd }),
           },
         ],
         capabilities: opencodeCapabilities,
@@ -109,10 +109,10 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
             message:
               "opencode has no vendor signed in yet — run `opencode auth login` to add one " +
               "(OpenAI, Anthropic, Qwen, Kimi, …).",
-            // The Provider Setup Surface drives opencode's own `auth login` flow in a
+            // The provider readiness terminal drives opencode's own `auth login` flow in a
             // terminal (vendor pick → OAuth or API key); Tide does not reimplement it.
             // This is also the "+ add vendor" path for a multi-vendor router.
-            setup: {
+            terminalAction: {
               command: executablePath,
               args: ["auth", "login"],
               cwd,

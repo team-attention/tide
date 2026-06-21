@@ -10,7 +10,6 @@ import type {
 import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
 import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
 import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port.ts";
-import { arrayOfStrings } from "../support/record-helpers.ts";
 import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
   fileByteLimit,
@@ -33,8 +32,8 @@ import {
   browserPaneSnapshotFromData,
   editorPanePositionFromData,
   editorPaneSaveFromData,
-  providerSetupSurfaceActionFromData,
-  providerSetupSurfaceInputFromData,
+  terminalInputFromData,
+  workbenchTerminalCommandFromData,
   workbenchLayoutModeFromValue,
 } from "./workbench-command-data.ts";
 import { BrowserCaptureCoordinator } from "./browser-capture-coordinator.ts";
@@ -344,33 +343,64 @@ export class WorkbenchCommandHandler {
         };
       }
       case "open_terminal": {
-        const root = threadRoot(thread);
-        if (root === undefined) {
-          return failure(
-            "workspace_command_unavailable",
-            "Thread does not have an Execution Context root for Terminal Pane.",
-          );
+        const terminalInput = workbenchTerminalCommandFromData(input.data);
+        const terminalRole = terminalInput.terminalRole ?? "session";
+        const isProviderReadiness = terminalRole === "provider_readiness";
+        let command: string;
+        let args: string[];
+        let env: Record<string, string> | undefined;
+        let cwd: string;
+        if (isProviderReadiness) {
+          if (
+            terminalInput.command === undefined ||
+            terminalInput.cwd === undefined ||
+            terminalInput.expectedCompletion === undefined
+          ) {
+            return failure(
+              "invalid_workbench_command",
+              "Provider readiness terminal command requires command, cwd, and expectedCompletion.",
+            );
+          }
+          command = terminalInput.command;
+          args = terminalInput.args ?? [];
+          env = terminalInput.env;
+          cwd = terminalInput.cwd;
+        } else {
+          const root = threadRoot(thread);
+          if (root === undefined) {
+            return failure(
+              "workspace_command_unavailable",
+              "Thread does not have an Execution Context root for Terminal Pane.",
+            );
+          }
+          const resolvedCwd = await this.workspaceCommandPort.resolveCwd({
+            root,
+            cwd: terminalInput.cwd,
+          });
+          if (!resolvedCwd.ok) {
+            return failure(resolvedCwd.error.code, resolvedCwd.error.message);
+          }
+          command = terminalInput.command ?? this.defaultWorkbenchTerminalCommand;
+          args = terminalInput.args ?? [...this.defaultWorkbenchTerminalArgs];
+          env = terminalInput.env;
+          cwd = resolvedCwd.cwd.cwd;
         }
-        const resolvedCwd = await this.workspaceCommandPort.resolveCwd({
-          root,
-          cwd: optionalString(input.data?.cwd),
-        });
-        if (!resolvedCwd.ok) {
-          return failure(resolvedCwd.error.code, resolvedCwd.error.message);
-        }
-        const command = optionalString(input.data?.command) ?? this.defaultWorkbenchTerminalCommand;
-        const args =
-          input.data?.args === undefined
-            ? [...this.defaultWorkbenchTerminalArgs]
-            : arrayOfStrings(input.data.args);
         // Resolve the Launcher placeholder in place (the Terminal takes its slot).
         const launcherToReplace = activeLauncherPaneId(thread);
         const pane = this.workbenchRuntime.openWorkbenchTerminal(thread, {
           command,
           args,
-          cwd: resolvedCwd.cwd.cwd,
+          env,
+          cwd,
+          title: terminalInput.title,
+          terminalRole,
+          expectedCompletion: terminalInput.expectedCompletion,
         });
-        void this.workbenchRuntime.ensureWorkbenchTerminalRunning(thread, pane).catch(() => undefined);
+        if (isProviderReadiness) {
+          await this.workbenchRuntime.ensureWorkbenchTerminalRunning(thread, pane);
+        } else {
+          void this.workbenchRuntime.ensureWorkbenchTerminalRunning(thread, pane).catch(() => undefined);
+        }
         thread.workbench.activePaneId = pane.paneId;
         removeLauncherPane(thread, launcherToReplace);
         thread.workbench.focusOwner = "workbench";
@@ -421,28 +451,8 @@ export class WorkbenchCommandHandler {
           workbench: snapshotWorkbench(thread.workbench),
         };
       }
-      case "open_provider_setup_surface": {
-        const setup = providerSetupSurfaceActionFromData(input.data);
-        if (setup === undefined) {
-          return failure(
-            "invalid_workbench_command",
-            "Provider Setup Surface command requires setup data.",
-          );
-        }
-        const pane = this.workbenchRuntime.openProviderSetupSurface(thread, setup);
-        await this.workbenchRuntime.ensureProviderSetupSurfaceRunning(thread, pane);
-        thread.workbench.activePaneId = pane.paneId;
-        thread.workbench.focusOwner = "workbench";
-        thread.updatedAt = this.clock();
-        return {
-          ok: true,
-          handled: true,
-          thread: snapshotThread(thread),
-          workbench: snapshotWorkbench(thread.workbench),
-        };
-      }
       case "write_terminal_input": {
-        const bytes = providerSetupSurfaceInputFromData(input.data);
+        const bytes = terminalInputFromData(input.data);
         if (bytes === undefined) {
           return failure(
             "invalid_workbench_command",

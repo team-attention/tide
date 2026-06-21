@@ -210,9 +210,9 @@ test("modelChipSurface opens opencode_connect when not usable, model_menu when u
   resetOnrampState();
 });
 
-// ---- desktop: connect actions drive opencode's own auth login via the Setup Surface ----
+// ---- desktop: connect actions drive opencode's own auth login via the readiness terminal ----
 
-test("connect-vendor dispatches the Setup Surface `auth login -p <id>`", () => {
+test("connect-vendor dispatches the readiness terminal `auth login -p <id>`", () => {
   resetOnrampState();
   setOpencodeVendors([{ id: "openai", label: "OpenAI", connected: false, popular: true }]);
   setOpencodeEnvironment({ version: "1.17.1", executablePath: "/bin/opencode" });
@@ -220,11 +220,12 @@ test("connect-vendor dispatches the Setup Surface `auth login -p <id>`", () => {
   const result = selectAgentChatChoiceSurfaceRow(opened, "opencode_connect", "connect-vendor:openai", "thread-1");
   assert.equal(result.command?.kind, "workbench.command");
   if (result.command?.kind === "workbench.command") {
-    assert.equal(result.command.payload.command, "open_provider_setup_surface");
+    assert.equal(result.command.payload.command, "open_terminal");
     assert.equal(result.command.payload.threadId, "thread-1");
-    assert.equal(result.command.payload.data.setup.command, "/bin/opencode");
-    assert.deepEqual(result.command.payload.data.setup.args, ["auth", "login", "-p", "openai"]);
-    assert.equal(result.command.payload.data.setup.expectedCompletion, "retry_preflight");
+    assert.equal(result.command.payload.data.command, "/bin/opencode");
+    assert.deepEqual(result.command.payload.data.args, ["auth", "login", "-p", "openai"]);
+    assert.equal(result.command.payload.data.terminalRole, "provider_readiness");
+    assert.equal(result.command.payload.data.expectedCompletion, "retry_preflight");
   }
   assert.equal(result.state.composer.activeSurface, null);
   resetOnrampState();
@@ -236,7 +237,7 @@ test("all-providers dispatches `auth login` with no -p", () => {
   const opened = setComposerActiveSurface(opencodeStartState(), "opencode_connect").state;
   const result = selectAgentChatChoiceSurfaceRow(opened, "opencode_connect", "all-providers", "thread-1");
   assert.equal(
-    result.command?.kind === "workbench.command" && result.command.payload.data.setup.args.join(" "),
+    result.command?.kind === "workbench.command" && result.command.payload.data.args.join(" "),
     "auth login",
   );
   resetOnrampState();

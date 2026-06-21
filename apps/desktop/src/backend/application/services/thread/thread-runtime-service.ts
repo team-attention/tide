@@ -128,7 +128,6 @@ import {
   numberFromData,
   optionalRawString,
   optionalString,
-  setupLaunchPreview,
   titleFromMessage,
   titleFromRelativePath,
 } from "../support/service-value-helpers.ts";
@@ -159,9 +158,6 @@ import {
   browserPaneSnapshotFromData,
   editorPanePositionFromData,
   editorPaneSaveFromData,
-  providerSetupSurfaceActionFromData,
-  providerSetupSurfaceInputFromData,
-  type ProviderSetupSurfaceActionInput,
 } from "../workbench/workbench-command-data.ts";
 
 import type { AgentRuntimePort } from "../../ports/outbound/agent-runtime-port.ts";
@@ -405,7 +401,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       clock: this.clock,
       idGenerator: this.idGenerator,
       emitAsyncEvent: (event) => this.emitAsyncEvent(event),
-      onProviderSetupReady: (thread, pane) =>
+      onProviderReadinessTerminalComplete: (thread, pane) =>
         this.replayPendingInputIfProviderReady(thread, pane),
     });
     // Draft Thread lifecycle (spec: composer-draft-thread). Discard kills visible-terminal
@@ -1226,7 +1222,7 @@ async trustWorkspace(
     if (thread === undefined) {
       return failure("thread_not_found", "Thread was not found.");
     }
-    // Reflect the selected agent on the (Draft) Thread so a Setup Surface completion
+    // Reflect the selected agent on the (Draft) Thread so a readiness terminal completion
     // (retry_preflight) re-checks the chosen provider and Send starts on it. Replace the binding
     // WHOLE — not just agentId — so a stale runtimeSource / providerSessionRef from a previously
     // selected agent can't mismatch the chosen one (Gemini review): a mismatched runtimeSource
@@ -1456,14 +1452,14 @@ private async replayPendingInputIfProviderReady(
     thread: ThreadRecord,
     pane: TerminalPaneState,
   ): Promise<void> {
-    // A Setup Surface just completed — refresh the cached agent-CLI versions BEFORE
+    // A readiness terminal just completed — refresh the cached agent-CLI versions BEFORE
     // re-checking readiness so a just-updated CLI reports its new version (otherwise the
     // "Update <Agent>" advisory reads a stale cache and lingers). Spec: version-management.
     await this.providerReadinessPort.refreshUpdateAdvisories?.();
 
     const pendingInput = thread.pendingInput;
     if (pendingInput === undefined) {
-      // Proactive onboarding (Composer slot select, no input yet): a Setup Surface just
+      // Proactive onboarding (Composer slot select, no input yet): a readiness terminal just
       // completed, so re-check and surface the next gate — or clear the card — even with
       // nothing to replay. Without this the readiness card stays stale after install.
       const readiness = await this.providerReadinessPort.check({

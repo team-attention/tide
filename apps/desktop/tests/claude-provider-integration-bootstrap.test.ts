@@ -37,9 +37,9 @@ test("claude_preflight_reports_not_installed_when_claude_executable_is_missing",
   assert.equal(result.blockers[0]?.kind, "not_installed");
   // The install handoff: npm i -g the CLI's package, re-running preflight on exit
   // (npm unresolved in this test ⇒ "npm" fallback). Spec: provider-cli-setup-handoff.md
-  assert.equal(result.blockers[0]?.setup?.command, "npm");
-  assert.deepEqual(result.blockers[0]?.setup?.args, ["install", "-g", "@anthropic-ai/claude-code"]);
-  assert.equal(result.blockers[0]?.setup?.expectedCompletion, "retry_preflight");
+  assert.equal(result.blockers[0]?.terminalAction?.command, "npm");
+  assert.deepEqual(result.blockers[0]?.terminalAction?.args, ["install", "-g", "@anthropic-ai/claude-code"]);
+  assert.equal(result.blockers[0]?.terminalAction?.expectedCompletion, "retry_preflight");
   assert.equal(result.launchPlan, undefined);
 });
 
@@ -65,8 +65,8 @@ test("claude_preflight_reports_auth_onboarding_directory_trust_and_hook_bootstra
       ["hook_bootstrap_required", "integration"],
     ],
   );
-  assert.equal(result.blockers[2]?.setup?.command, "/usr/local/bin/claude");
-  assert.equal(result.blockers[2]?.setup?.cwd, "/repo");
+  assert.equal(result.blockers[2]?.terminalAction?.command, "/usr/local/bin/claude");
+  assert.equal(result.blockers[2]?.terminalAction?.cwd, "/repo");
   assert.equal(result.launchPlan, undefined);
 });
 

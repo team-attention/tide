@@ -21,7 +21,7 @@ export function createProviderReadiness(
       onRowSelect,
       surface: {
         surfaceKind: "provider_readiness",
-        title: "Provider setup required",
+        title: "Provider readiness required",
         sourceLabel: "Provider Readiness",
         rows: viewModel.providerReadinessBlockers.flatMap((blocker) => [
           {
@@ -50,12 +50,12 @@ export function createProviderReadiness(
                     },
               ]
             : []),
-          ...(blocker.setup
+          ...(blocker.terminalAction
             ? [
                 {
-                  rowId: `${blocker.kind}:setup`,
-                  label: setupRowLabel(blocker.kind, agentLabel),
-                  detail: setupRowDetail(blocker.kind),
+                  rowId: `${blocker.kind}:terminal`,
+                  label: readinessTerminalRowLabel(blocker.kind, agentLabel),
+                  detail: readinessTerminalRowDetail(blocker.kind),
                   icon: "+",
                 },
               ]
@@ -78,12 +78,12 @@ export function createProviderReadiness(
 
 // The non-blocking agent-CLI update advisory is no longer a choice-surface card —
 // it renders as a compact `↑ Update <Agent>` chip in the composer toolbar
-// (composer.tsx), which fires the same `update_available:setup` Setup Surface
+// (composer.tsx), which fires the same `update_available:terminal` readiness terminal
 // handoff on click. Spec: version-management.md (Lane 2), D2.
 
-// Actionable label for a Provider Setup Surface row, so the user reads exactly what clicking does
+// Actionable label for a provider readiness terminal row, so the user reads exactly what clicking does.
 // ("Install Codex" / "Sign in to Codex") instead of a generic prompt. Spec: provider-cli-setup-handoff.
-function setupRowLabel(kind: string, agentLabel: string): string {
+function readinessTerminalRowLabel(kind: string, agentLabel: string): string {
   switch (kind) {
     case "not_installed":
       return `Install ${agentLabel}`;
@@ -98,13 +98,13 @@ function setupRowLabel(kind: string, agentLabel: string): string {
   }
 }
 
-function setupRowDetail(kind: string): string {
+function readinessTerminalRowDetail(kind: string): string {
   switch (kind) {
     case "not_installed":
       return "installs the CLI in a terminal, then continues — your draft is kept";
     case "not_authenticated":
       return "opens its sign-in in a terminal, then continues — your draft is kept";
     default:
-      return "opens the provider's own setup; your draft is kept";
+      return "opens the provider's own flow; your draft is kept";
   }
 }

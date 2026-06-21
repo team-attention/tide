@@ -1,5 +1,9 @@
 # Spec: Provider Setup Surface Terminal Lifecycle
 
+Status: Superseded by
+`docs_v2/specs/thread-workbench-agent-model-cleanup.md`. Active code should use
+the normal Workbench Terminal Pane lifecycle with provider-readiness metadata.
+
 ## Scope
 
 This spec turns the Provider Setup Surface Terminal Pane from metadata-only Workbench state into a Backend-owned visible setup process.

@@ -6,7 +6,7 @@ import { Check, ExternalLink, KeyRound } from "lucide-react";
 // Stateful so it can host the per-vendor method sheet + the in-app API-key field
 // without leaking a sensitive key into the global store. The API-key path is the
 // canonical one: the field value is handed to onConnectApiKey, which the backend PUTs to
-// opencode's own server. The browser/OAuth path reuses the row-select → Setup Surface
+// opencode's own server. The browser/OAuth path reuses the row-select → readiness terminal
 // terminal (opencode opens the browser). The grid actions still route via onRowSelect.
 
 export function OpencodeConnectPanel(props: {
@@ -81,7 +81,7 @@ export function OpencodeConnectPanel(props: {
               type="button"
               className="oc-method"
               onClick={() => {
-                // opencode's own browser/SSO flow, in the embedded Setup Surface.
+                // opencode's own browser/SSO flow, in the embedded readiness terminal.
                 select(`connect-vendor:${sheetVendor.id}`);
                 closeSheet();
               }}

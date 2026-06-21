@@ -147,14 +147,14 @@ test("provider_smoke_is_limited_to_provider_cli_agents", () => {
   assert.match(smokeScript, /Hydrated Agent Session did not include the live token/);
 });
 
-test("provider_smoke_can_expect_provider_not_ready_and_open_setup_surface", () => {
+test("provider_smoke_can_expect_provider_not_ready_and_open_readiness_terminal", () => {
   const smokeScript = fs.readFileSync(path.join(repoRoot, "scripts/v2-provider-smoke.mjs"), "utf8");
 
   assert.match(smokeScript, /--expect-provider-not-ready/);
-  assert.match(smokeScript, /--open-setup-surface/);
-  assert.match(smokeScript, /openProviderSetupSurfaceSmoke/);
+  assert.match(smokeScript, /--open-readiness-terminal/);
+  assert.match(smokeScript, /openProviderReadinessTerminalSmoke/);
   assert.match(smokeScript, /workbench\.command/);
-  assert.match(smokeScript, /open_provider_setup_surface/);
+  assert.match(smokeScript, /open_terminal/);
   assert.match(smokeScript, /close_pane/);
 });
 
@@ -191,7 +191,7 @@ test("electron_runtime_smoke_is_limited_to_provider_cli_agents", () => {
   assert.match(smokeScript, /pushedAgentOutputFound/);
 });
 
-test("electron_runtime_smoke_can_expect_provider_not_ready_and_open_setup_surface", () => {
+test("electron_runtime_smoke_can_expect_provider_not_ready_and_open_readiness_terminal", () => {
   const smokeScript = fs.readFileSync(
     path.join(repoRoot, "scripts/v2-electron-runtime-smoke.mjs"),
     "utf8",
@@ -199,11 +199,11 @@ test("electron_runtime_smoke_can_expect_provider_not_ready_and_open_setup_surfac
   const main = readMainProcessSource();
 
   assert.match(smokeScript, /--expect-provider-not-ready/);
-  assert.match(smokeScript, /--open-setup-surface/);
+  assert.match(smokeScript, /--open-readiness-terminal/);
   assert.match(smokeScript, /electron-smoke-provider-not-ready/);
-  assert.match(main, /TIDE_ELECTRON_SMOKE_OPEN_SETUP_SURFACE/);
-  assert.match(main, /open_provider_setup_surface/);
-  assert.match(main, /setupSurface/);
+  assert.match(main, /TIDE_ELECTRON_SMOKE_OPEN_READINESS_TERMINAL/);
+  assert.match(main, /open_terminal/);
+  assert.match(main, /readinessTerminal/);
 });
 
 test("electron_vite_config_maps_main_preload_renderer_and_backend_paths", () => {

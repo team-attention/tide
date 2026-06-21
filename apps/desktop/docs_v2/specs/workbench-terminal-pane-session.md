@@ -9,7 +9,7 @@ It covers:
 
 - `workbench.command` `open_terminal`.
 - A Backend-owned Workbench Terminal process port separate from Agent Runtime
-  and Provider Setup Surface ownership.
+  ownership.
 - Routing `write_terminal_input` to a running Workbench Terminal Pane.
 - Bounded transcript preview updates through `workbench.changed` events.
 
@@ -18,18 +18,19 @@ It does not cover:
 - Full terminal grid rendering, scrollback search, alternate-screen replay, or
   xterm.js integration.
 - Agent Runtime PTY rendering.
+- A separate Provider Setup Surface command path; provider readiness handoffs
+  use this same Workbench Terminal Pane lifecycle with readiness metadata.
 - Shell command autocomplete.
 
 ## Evidence
 
-- `docs_v2/implementation/electron-node-architecture-decisions.md` says
-  Terminal Pane should be explicit and visible, separate from the hidden PTY
-  used to run the Agent Runtime.
+- Terminal Pane should be explicit and visible, separate from the structured
+  Agent Runtime that powers the Thread conversation.
 - `docs_v2/specs/tide-mcp-terminal-command-tool.md` already uses Terminal Pane
   state for bounded non-interactive command evidence, but that path does not
   give the user an interactive shell surface.
 - `src/backend/application/services/thread-runtime-service.ts` currently routes
-  `write_terminal_input` only to Provider Setup Surface handles.
+  `write_terminal_input` to visible Workbench Terminal handles.
 - `src/backend/adapters/outbound/pty/python-pty-process-launcher.ts` already
   provides a PTY-capable process launcher that can back visible terminal
   sessions without coupling them to Agent Runtime.
@@ -39,8 +40,8 @@ It does not cover:
 ### D1. Workbench Terminal has its own outward port
 
 The Backend service uses `WorkbenchTerminalPort` for visible Terminal Pane
-sessions. Provider Setup Surface keeps its own port because setup readiness has
-different lifecycle behavior.
+sessions. Provider readiness handoffs are represented as Terminal Panes with
+`terminalRole: "provider_readiness"` and `expectedCompletion` metadata.
 
 ### D2. Default open uses the Thread root and default shell
 
@@ -91,7 +92,7 @@ streaming bytes never re-render the shell.
 ## Invariants
 
 1. Workbench Terminal input never writes to the Agent Runtime.
-2. Provider Setup Surface input keeps its existing readiness-specific behavior.
+2. Provider readiness terminal input writes to the matching Workbench Terminal handle.
 3. `open_terminal` cannot escape the Thread root.
 4. Closing a running Workbench Terminal Pane stops its terminal handle.
 

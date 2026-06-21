@@ -1,5 +1,10 @@
 # Spec: Provider Setup Surface Workbench Command
 
+Status: Superseded by
+`docs_v2/specs/thread-workbench-agent-model-cleanup.md`. Active code should use
+`open_terminal` with `terminalRole: "provider_readiness"` instead of
+`open_provider_setup_surface`.
+
 ## Scope
 
 This spec connects Provider Readiness setup actions to a visible Workbench Terminal Pane.

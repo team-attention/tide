@@ -65,16 +65,16 @@ test("opencode preflight reports not_installed and not_authenticated", async () 
   assert.equal(missing.ready, false);
   assert.equal(missing.blockers[0]?.kind, "not_installed");
   // Install handoff (npm unresolved here ⇒ "npm" fallback). Spec: provider-cli-setup-handoff.md
-  assert.equal(missing.blockers[0]?.setup?.command, "npm");
-  assert.deepEqual(missing.blockers[0]?.setup?.args, ["install", "-g", "opencode-ai"]);
-  assert.equal(missing.blockers[0]?.setup?.expectedCompletion, "retry_preflight");
+  assert.equal(missing.blockers[0]?.terminalAction?.command, "npm");
+  assert.deepEqual(missing.blockers[0]?.terminalAction?.args, ["install", "-g", "opencode-ai"]);
+  assert.equal(missing.blockers[0]?.terminalAction?.expectedCompletion, "retry_preflight");
 
   const signedOut = await opencodeIntegration({ authenticated: false }).preflight({ agentId: "opencode" });
   assert.equal(signedOut.ready, false);
   assert.equal(signedOut.blockers[0]?.kind, "not_authenticated");
-  // P3: the Setup Surface drives opencode's own `auth login` (vendor pick → OAuth/key)
+  // P3: the readiness terminal drives opencode's own `auth login` (vendor pick → OAuth/key)
   // — Tide wraps the provider flow, it does not reimplement auth.
-  assert.deepEqual(signedOut.blockers[0]?.setup?.args, ["auth", "login"]);
+  assert.deepEqual(signedOut.blockers[0]?.terminalAction?.args, ["auth", "login"]);
 });
 
 test("opencode start plan carries the chosen config as ACP configOptions", async () => {

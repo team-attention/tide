@@ -60,7 +60,7 @@ try {
     timeoutMs: options.timeoutMs,
     expectPushedAgentOutput: false,
     expectProviderNotReady: options.expectProviderNotReady,
-    openSetupSurface: options.openSetupSurface,
+    openReadinessTerminal: options.openReadinessTerminal,
   });
 
   if (result.status !== 0) {
@@ -72,16 +72,16 @@ try {
       exitCode = 1;
     } else if (smokeResult.ok === false) {
       if (options.expectProviderNotReady && smokeResult.phase === "provider-not-ready") {
-        if (options.openSetupSurface && smokeResult.setupSurface?.opened !== true) {
+        if (options.openReadinessTerminal && smokeResult.readinessTerminal?.opened !== true) {
           console.error(JSON.stringify(smokeResult, null, 2));
-          throw new Error("Electron smoke did not open the Provider Setup Surface.");
+          throw new Error("Electron smoke did not open the Provider readiness terminal.");
         }
         console.log(JSON.stringify({
           phase: "electron-smoke-provider-not-ready",
           appDataRoot,
           threadId: smokeResult.threadId,
           readiness: smokeResult.readiness,
-          setupSurface: smokeResult.setupSurface,
+          readinessTerminal: smokeResult.readinessTerminal,
         }));
       } else {
         console.error(JSON.stringify(smokeResult, null, 2));
@@ -153,7 +153,7 @@ function runElectronSmoke(input) {
         TIDE_ELECTRON_SMOKE_TOKEN: input.token,
         TIDE_ELECTRON_SMOKE_TIMEOUT_MS: String(input.timeoutMs),
         TIDE_ELECTRON_SMOKE_EXPECT_PUSHED_AGENT_OUTPUT: input.expectPushedAgentOutput ? "1" : "0",
-        TIDE_ELECTRON_SMOKE_OPEN_SETUP_SURFACE: input.openSetupSurface ? "1" : "0",
+        TIDE_ELECTRON_SMOKE_OPEN_READINESS_TERMINAL: input.openReadinessTerminal ? "1" : "0",
         TIDE_BACKEND_COMMAND_TIMEOUT_MS: String(input.timeoutMs + 10000),
         TIDE_BACKEND_TRACE: "1",
       },
@@ -199,7 +199,7 @@ function parseArgs(args) {
     appDataRoot: process.env.TIDE_ELECTRON_SMOKE_APP_DATA_ROOT,
     message: process.env.TIDE_ELECTRON_SMOKE_MESSAGE,
     expectProviderNotReady: process.env.TIDE_ELECTRON_SMOKE_EXPECT_PROVIDER_NOT_READY === "1",
-    openSetupSurface: process.env.TIDE_ELECTRON_SMOKE_OPEN_SETUP_SURFACE === "1",
+    openReadinessTerminal: process.env.TIDE_ELECTRON_SMOKE_OPEN_READINESS_TERMINAL === "1",
     help: false,
   };
 
@@ -225,8 +225,8 @@ function parseArgs(args) {
       case "--expect-provider-not-ready":
         parsed.expectProviderNotReady = true;
         break;
-      case "--open-setup-surface":
-        parsed.openSetupSurface = true;
+      case "--open-readiness-terminal":
+        parsed.openReadinessTerminal = true;
         break;
       default:
         throw new Error(`Unknown Electron smoke argument: ${arg}`);
@@ -265,12 +265,12 @@ Options:
   --app-data-root /tmp/tide-electron-smoke
   --message "Prompt text"
   --expect-provider-not-ready
-  --open-setup-surface
+  --open-readiness-terminal
 
 The smoke requires npm run build first. It launches the built Electron app,
 uses the Renderer preload surface window.tide, sends a Product Shell
 thread.start command through Main IPC to the Backend utilityProcess, hydrates
 the Thread, and verifies the selected Agent produced an output block.
-Use --expect-provider-not-ready --open-setup-surface to verify a Provider
-Readiness blocker and setup Pane path without treating the blocker as failure.`);
+Use --expect-provider-not-ready --open-readiness-terminal to verify a Provider
+Readiness blocker and readiness terminal path without treating the blocker as failure.`);
 }

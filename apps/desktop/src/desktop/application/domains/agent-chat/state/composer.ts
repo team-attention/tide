@@ -1,4 +1,4 @@
-import type { AgentChatAgentId, AgentChatComposerAttachment, AgentChatComposerMessageAttachment, AgentChatComposerSurfaceKind, AgentChatContextChip, AgentChatPromptStepAnswer, AgentChatProviderSetupSurfaceAction, AgentChatShellState, AgentChatShellUpdateResult, AgentChatStartOptions, AgentChatThreadSummary } from "./types.ts";
+import type { AgentChatAgentId, AgentChatComposerAttachment, AgentChatComposerMessageAttachment, AgentChatComposerSurfaceKind, AgentChatContextChip, AgentChatPromptStepAnswer, AgentChatProviderReadinessTerminalAction, AgentChatShellState, AgentChatShellUpdateResult, AgentChatStartOptions, AgentChatThreadSummary } from "./types.ts";
 import { defaultModelValueForAgent, defaultPermissionForAgent, runtimeSourceForAgent } from "./agent-vocab.ts";
 import { cloneStringRecord, launchOptionsForState } from "./launch-options.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
@@ -472,17 +472,17 @@ function composerSurfaceForDraft(draft: string): AgentChatComposerSurfaceKind | 
   return activeComposerTrigger(draft) === null ? null : "command_suggestions";
 }
 
-export function providerSetupCommandPayload(
-  setup: AgentChatProviderSetupSurfaceAction,
-): AgentChatProviderSetupSurfaceAction {
-  const payload: AgentChatProviderSetupSurfaceAction = {
-    command: setup.command,
-    args: [...setup.args],
-    cwd: setup.cwd,
-    expectedCompletion: setup.expectedCompletion,
+export function providerReadinessTerminalActionPayload(
+  action: AgentChatProviderReadinessTerminalAction,
+): AgentChatProviderReadinessTerminalAction {
+  const payload: AgentChatProviderReadinessTerminalAction = {
+    command: action.command,
+    args: [...(action.args ?? [])],
+    cwd: action.cwd,
+    expectedCompletion: action.expectedCompletion,
   };
-  if (setup.env !== undefined) {
-    payload.env = cloneStringRecord(setup.env);
+  if (action.env !== undefined) {
+    payload.env = cloneStringRecord(action.env);
   }
   return payload;
 }

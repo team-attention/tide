@@ -94,7 +94,7 @@ export function terminalPaneRole(
     return pane.terminalRole;
   }
   if (pane.expectedCompletion !== undefined) {
-    return "provider_setup";
+    return "provider_readiness";
   }
   if (pane.completedAt !== undefined || pane.timedOut !== undefined) {
     return "command_result";

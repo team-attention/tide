@@ -9,14 +9,14 @@ import type {
   AgentResumePlanInput,
   AgentStartPlanInput,
   ProviderLaunchPlan,
-  ProviderSetupSurfaceAction,
+  ProviderReadinessTerminalAction,
   SessionConfigUpdateInput,
   SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   ThreadScope,
 } from "../../../../application/domains/thread/thread.ts";
-import { npmInstallSetupAction } from "../shared/provider-cli-commands.ts";
+import { npmInstallReadinessTerminalAction } from "../shared/provider-cli-commands.ts";
 
 export interface ClaudeProviderState {
   authenticated: boolean;
@@ -102,7 +102,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
             kind: "not_installed",
             scope: "provider",
             message: "Claude Code executable was not found.",
-            setup: npmInstallSetupAction({ npmPath, agentId: "claude", cwd }),
+            terminalAction: npmInstallReadinessTerminalAction({ npmPath, agentId: "claude", cwd }),
           },
         ],
         capabilities: claudeCapabilities,
@@ -114,7 +114,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       executablePath,
       launchOptions: input.launchOptions,
     });
-    const setup = claudeSetupAction(executablePath, cwd);
+    const terminalAction = claudeReadinessTerminalAction(executablePath, cwd);
     const blockers: AgentIntegrationReadinessBlocker[] = [];
 
     if (!providerState.authenticated) {
@@ -123,7 +123,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
         scope: "provider",
         message:
           "Claude Code authentication is required before starting a Thread.",
-        setup,
+        terminalAction,
       });
     }
     if (!providerState.onboardingComplete) {
@@ -132,7 +132,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
         scope: "provider",
         message:
           "Claude Code onboarding must be completed before starting a Thread.",
-        setup,
+        terminalAction,
       });
     }
     if (!providerState.trustedCwds.includes(cwd)) {
@@ -141,15 +141,15 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
         scope: "execution_context",
         message:
           "Claude Code workspace trust is required for this Execution Context.",
-        setup,
+        terminalAction,
       });
     }
     if (!providerState.hookBootstrapReady) {
       blockers.push({
         kind: "hook_bootstrap_required",
         scope: "integration",
-        message: "Tide Claude Code MCP bootstrap setup is required.",
-        setup,
+        message: "Tide Claude Code MCP bootstrap is required.",
+        terminalAction,
       });
     }
 
@@ -317,10 +317,10 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
   }
 }
 
-function claudeSetupAction(
+function claudeReadinessTerminalAction(
   executablePath: string,
   cwd: string,
-): ProviderSetupSurfaceAction {
+): ProviderReadinessTerminalAction {
   return {
     command: executablePath,
     args: [],

@@ -14,11 +14,10 @@ import {
   boundedTranscriptPreview,
   commandName,
   errorMessage,
-  setupLaunchPreview,
+  terminalLaunchPreview,
 } from "../support/service-value-helpers.ts";
 import { snapshotThread } from "../thread/thread-snapshot.ts";
 import type { ThreadRuntimeAsyncEvent } from "../thread/thread-runtime-events.ts";
-import type { ProviderSetupSurfaceActionInput } from "./workbench-command-data.ts";
 import type { ThreadStore } from "../thread/thread-store.ts";
 
 export interface WorkbenchTerminalOpenInput {
@@ -26,6 +25,9 @@ export interface WorkbenchTerminalOpenInput {
   args: string[];
   cwd: string;
   env?: Record<string, string>;
+  title?: string;
+  terminalRole?: TerminalPaneState["terminalRole"];
+  expectedCompletion?: TerminalPaneState["expectedCompletion"];
 }
 
 export interface WorkbenchTerminalCommandRunInput {
@@ -59,26 +61,27 @@ export interface WorkbenchRuntimeDeps {
   clock: () => string;
   idGenerator: () => string;
   emitAsyncEvent: (event: ThreadRuntimeAsyncEvent) => void;
-  // Setup surface completion with retry_preflight triggers pending-input replay.
+  // Provider readiness terminal completion with retry_preflight triggers
+  // pending-input replay.
   // Injected so this collaborator never calls back into the lifecycle facade.
-  onProviderSetupReady: (
+  onProviderReadinessTerminalComplete: (
     thread: ThreadRecord,
     pane: TerminalPaneState,
   ) => Promise<void>;
 }
 
-// Owns the Workbench Terminal + Provider Setup Surface pane lifecycle:
+// Owns visible Workbench Terminal pane lifecycle:
 // creating the panes, starting/stopping their PTY-backed processes, streaming
 // output, and recording completion. Shared by the workbench-command and Tide MCP
 // paths. Extracted from thread-runtime-service.ts behind one lifecycle callback
-// (onProviderSetupReady). See docs_v2/specs/thread-runtime-service-decomposition.md.
+// for readiness retry. See docs_v2/specs/thread-runtime-service-decomposition.md.
 export class WorkbenchRuntime {
   private readonly store: ThreadStore;
   private readonly workbenchTerminalPort?: WorkbenchTerminalPort;
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
   private readonly emitAsyncEvent: (event: ThreadRuntimeAsyncEvent) => void;
-  private readonly onProviderSetupReady: (
+  private readonly onProviderReadinessTerminalComplete: (
     thread: ThreadRecord,
     pane: TerminalPaneState,
   ) => Promise<void>;
@@ -94,65 +97,29 @@ export class WorkbenchRuntime {
     this.clock = deps.clock;
     this.idGenerator = deps.idGenerator;
     this.emitAsyncEvent = deps.emitAsyncEvent;
-    this.onProviderSetupReady = deps.onProviderSetupReady;
-  }
-
-  openProviderSetupSurface(
-    thread: ThreadRecord,
-    setup: ProviderSetupSurfaceActionInput,
-  ): TerminalPaneState {
-    const existing = thread.workbench.panes.find(
-      (pane): pane is TerminalPaneState =>
-        pane.kind === "terminal" &&
-        pane.command === setup.command &&
-        shallowRecordEqual(pane.env, setup.env) &&
-        pane.cwd === setup.cwd,
-    );
-    if (existing !== undefined) {
-      existing.terminalRole = "provider_setup";
-      existing.status = "ready";
-      existing.args = [...setup.args];
-      existing.env = cloneEnv(setup.env);
-      existing.expectedCompletion = setup.expectedCompletion;
-      existing.revision = this.idGenerator();
-      existing.updatedAt = this.clock();
-      return existing;
-    }
-
-    const pane: TerminalPaneState = {
-      paneId: this.idGenerator(),
-      kind: "terminal",
-      terminalRole: "provider_setup",
-      title: `Provider setup: ${commandName(setup.command)}`,
-      revision: this.idGenerator(),
-      updatedAt: this.clock(),
-      command: setup.command,
-      args: [...setup.args],
-      env: cloneEnv(setup.env),
-      cwd: setup.cwd,
-      status: "ready",
-      expectedCompletion: setup.expectedCompletion,
-    };
-    thread.workbench.panes.push(pane);
-    return pane;
+    this.onProviderReadinessTerminalComplete = deps.onProviderReadinessTerminalComplete;
   }
 
   openWorkbenchTerminal(
     thread: ThreadRecord,
     input: WorkbenchTerminalOpenInput,
   ): TerminalPaneState {
+    const terminalRole = input.terminalRole ?? "session";
+    const title = input.title ?? defaultTerminalTitle(terminalRole, input.command);
     const existing = thread.workbench.panes.find(
       (pane): pane is TerminalPaneState =>
         pane.kind === "terminal" &&
-        pane.expectedCompletion === undefined &&
+        terminalPaneStoredRole(pane) === terminalRole &&
         pane.command === input.command &&
+        shallowRecordEqual(pane.env, input.env) &&
         pane.cwd === input.cwd,
     );
     if (existing !== undefined) {
-      existing.terminalRole = "session";
-      existing.title = "Terminal";
+      existing.terminalRole = terminalRole;
+      existing.title = title;
       existing.args = [...input.args];
       existing.env = cloneEnv(input.env);
+      existing.expectedCompletion = input.expectedCompletion;
       existing.status = this.workbenchTerminalHandles.has(existing.paneId)
         ? "running"
         : "ready";
@@ -164,8 +131,8 @@ export class WorkbenchRuntime {
     const pane: TerminalPaneState = {
       paneId: this.idGenerator(),
       kind: "terminal",
-      terminalRole: "session",
-      title: "Terminal",
+      terminalRole,
+      title,
       revision: this.idGenerator(),
       updatedAt: this.clock(),
       command: input.command,
@@ -173,58 +140,10 @@ export class WorkbenchRuntime {
       env: cloneEnv(input.env),
       cwd: input.cwd,
       status: "ready",
+      expectedCompletion: input.expectedCompletion,
     };
     thread.workbench.panes.push(pane);
     return pane;
-  }
-
-  async ensureProviderSetupSurfaceRunning(
-    thread: ThreadRecord,
-    pane: TerminalPaneState,
-  ): Promise<void> {
-    if (
-      this.workbenchTerminalPort === undefined ||
-      pane.command === undefined ||
-      pane.cwd === undefined
-    ) {
-      return;
-    }
-    if (this.workbenchTerminalHandles.has(pane.paneId)) {
-      pane.status = "running";
-      return;
-    }
-
-    pane.status = "running";
-    pane.transcriptPreview = setupLaunchPreview(pane.command, pane.args ?? [], pane.cwd);
-    pane.revision = this.idGenerator();
-    pane.updatedAt = this.clock();
-
-    try {
-      const handle = await this.workbenchTerminalPort.start({
-        threadId: thread.threadId,
-        paneId: pane.paneId,
-        command: pane.command,
-        args: pane.args ?? [],
-        env: cloneEnv(pane.env),
-        cwd: pane.cwd,
-        onOutput: (output) =>
-          this.appendProviderSetupSurfaceOutput(thread.threadId, pane.paneId, output),
-        onExit: (exit) =>
-          this.completeProviderSetupSurface(thread.threadId, pane.paneId, exit),
-      });
-      this.retainRunningTerminalHandle(pane, handle);
-    } catch (error) {
-      pane.status = "failed";
-      pane.transcriptPreview = boundedTranscriptPreview(
-        `${pane.transcriptPreview ?? ""}\n${errorMessage(error)}`,
-      );
-      pane.revision = this.idGenerator();
-      pane.updatedAt = this.clock();
-      this.emitAsyncEvent({
-        kind: "workbench_changed",
-        thread: snapshotThread(thread),
-      });
-    }
   }
 
   async ensureWorkbenchTerminalRunning(
@@ -244,9 +163,10 @@ export class WorkbenchRuntime {
     }
 
     pane.status = "running";
-    // The PTY spawns the shell directly in `cwd`; don't seed a synthetic
-    // `$ cd ...\n$ <shell>` banner — the live xterm should show only real output.
-    pane.transcriptPreview = "";
+    pane.transcriptPreview =
+      terminalPaneStoredRole(pane) === "provider_readiness"
+        ? terminalLaunchPreview(pane.command, pane.args ?? [], pane.cwd)
+        : "";
     pane.revision = this.idGenerator();
     pane.updatedAt = this.clock();
 
@@ -494,8 +414,10 @@ export class WorkbenchRuntime {
 
     this.workbenchTerminalHandles.delete(paneId);
     pane.status = exit.exitCode === 0 ? "completed" : "failed";
+    const exitLabel =
+      terminalPaneStoredRole(pane) === "provider_readiness" ? "readiness terminal" : "terminal";
     pane.transcriptPreview = boundedTranscriptPreview(
-      `${pane.transcriptPreview ?? ""}\n[terminal exited ${exit.exitCode ?? exit.signal ?? "unknown"}]\n`,
+      `${pane.transcriptPreview ?? ""}\n[${exitLabel} exited ${exit.exitCode ?? exit.signal ?? "unknown"}]\n`,
     );
     pane.exitCode = exit.exitCode;
     pane.signal = exit.signal;
@@ -507,69 +429,12 @@ export class WorkbenchRuntime {
       kind: "workbench_changed",
       thread: snapshotThread(thread),
     });
-  }
 
-  private appendProviderSetupSurfaceOutput(
-    threadId: ThreadId,
-    paneId: string,
-    output: WorkbenchTerminalOutput,
-  ): void {
-    const thread = this.store.get(threadId);
-    const pane = thread?.workbench.panes.find(
-      (candidate): candidate is TerminalPaneState =>
-        candidate.kind === "terminal" && candidate.paneId === paneId,
-    );
-    if (thread === undefined || pane === undefined) {
-      return;
-    }
-
-    pane.transcriptPreview = boundedTranscriptPreview(
-      `${pane.transcriptPreview ?? ""}${output.body}`,
-    );
-    pane.revision = this.idGenerator();
-    pane.updatedAt = this.clock();
-    this.emitAsyncEvent({
-      kind: "workbench_terminal_output",
-      threadId,
-      paneId,
-      source: output.source,
-      chunk: output.body,
-    });
-    this.emitAsyncEvent({
-      kind: "workbench_changed",
-      thread: snapshotThread(thread),
-    });
-  }
-
-  private async completeProviderSetupSurface(
-    threadId: ThreadId,
-    paneId: string,
-    exit: WorkbenchTerminalExit,
-  ): Promise<void> {
-    const thread = this.store.get(threadId);
-    const pane = thread?.workbench.panes.find(
-      (candidate): candidate is TerminalPaneState =>
-        candidate.kind === "terminal" && candidate.paneId === paneId,
-    );
-    if (thread === undefined || pane === undefined) {
-      return;
-    }
-
-    this.workbenchTerminalHandles.delete(paneId);
-    pane.status = exit.exitCode === 0 ? "completed" : "failed";
-    pane.transcriptPreview = boundedTranscriptPreview(
-      `${pane.transcriptPreview ?? ""}\n[setup exited ${exit.exitCode ?? exit.signal ?? "unknown"}]\n`,
-    );
-    pane.revision = this.idGenerator();
-    pane.updatedAt = this.clock();
-    thread.updatedAt = this.clock();
-    this.emitAsyncEvent({
-      kind: "workbench_changed",
-      thread: snapshotThread(thread),
-    });
-
-    if (pane.expectedCompletion === "retry_preflight") {
-      await this.onProviderSetupReady(thread, pane);
+    if (
+      terminalPaneStoredRole(pane) === "provider_readiness" &&
+      pane.expectedCompletion === "retry_preflight"
+    ) {
+      await this.onProviderReadinessTerminalComplete(thread, pane);
     }
   }
 
@@ -597,6 +462,28 @@ export class WorkbenchRuntime {
       }
     }
   }
+}
+
+function defaultTerminalTitle(
+  role: NonNullable<TerminalPaneState["terminalRole"]>,
+  command: string,
+): string {
+  if (role === "provider_readiness") {
+    return `Provider readiness: ${commandName(command)}`;
+  }
+  if (role === "command_result") {
+    return `Command: ${commandName(command)}`;
+  }
+  return "Terminal";
+}
+
+function terminalPaneStoredRole(
+  pane: TerminalPaneState,
+): NonNullable<TerminalPaneState["terminalRole"]> {
+  if (pane.terminalRole !== undefined) {
+    return pane.terminalRole;
+  }
+  return pane.expectedCompletion === undefined ? "session" : "provider_readiness";
 }
 
 function commandResultStatus(

@@ -1,5 +1,5 @@
 import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatProjectOption, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope } from "./types.ts";
-import { activeComposerTrigger, providerSetupCommandPayload, selectComposerAgent, setComposerActiveSurface } from "./composer.ts";
+import { activeComposerTrigger, providerReadinessTerminalActionPayload, selectComposerAgent, setComposerActiveSurface } from "./composer.ts";
 import { CODEX_MODELS, PERMISSION_OPTIONS, REASONING_LEVELS, cliModelOptionsForAgent, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, isAgentAvailable, isAgentAvailabilityKnown, isAgentComingSoon, normalizePermissionValue, permissionConfigForAgent, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { branchMenuRows, defaultBranchName, worktreeForBranch, worktreeMenuRows } from "./branch-environment-menu-rows.ts";
 import { launchOptionsForState, setComposerNewWorktreeIntent, updateComposerLaunchOptions, updateComposerScope } from "./launch-options.ts";
@@ -36,13 +36,13 @@ export function selectAgentChatChoiceSurfaceRow(
   }
 
   if (surfaceKind === "provider_readiness") {
-    // The non-blocking update nudge: run the in-place CLI update through the same
-    // Provider Setup Surface terminal handoff used for install (npm install -g
-    // <pkg>@latest, retry_preflight). Spec: version-management.md (Lane 2).
-    if (rowId === "update_available:setup") {
-      const setup = state.providerReadiness?.update?.setup;
+    // The non-blocking update nudge: run the in-place CLI update through a
+    // provider-readiness Terminal Pane (npm install -g <pkg>@latest,
+    // retry_preflight). Spec: version-management.md (Lane 2).
+    if (rowId === "update_available:terminal") {
+      const terminalAction = state.providerReadiness?.update?.terminalAction;
       const threadId = state.thread?.threadId ?? activeThreadId;
-      if (setup === undefined || threadId === undefined) {
+      if (terminalAction === undefined || threadId === undefined) {
         return { state, command: null };
       }
       return {
@@ -51,11 +51,8 @@ export function selectAgentChatChoiceSurfaceRow(
           kind: "workbench.command",
           payload: {
             threadId,
-            command: "open_provider_setup_surface",
-            data: {
-              blockerKind: "update_available",
-              setup: providerSetupCommandPayload(setup),
-            },
+            command: "open_terminal",
+            data: providerReadinessTerminalCommandData("update_available", terminalAction),
           },
         },
       };
@@ -77,13 +74,13 @@ export function selectAgentChatChoiceSurfaceRow(
       };
     }
     const blocker = state.providerReadiness?.blockers.find(
-      (candidate) => `${candidate.kind}:setup` === rowId,
+      (candidate) => `${candidate.kind}:terminal` === rowId,
     );
     // Readiness can block before the agent-chat thread is hydrated, so fall back
-    // to the active thread id the shell provides — otherwise "Open provider
-    // setup" is a dead row.
+    // to the active thread id the shell provides — otherwise the provider action
+    // row is dead.
     const threadId = state.thread?.threadId ?? activeThreadId;
-    if (blocker?.setup === undefined || threadId === undefined) {
+    if (blocker?.terminalAction === undefined || threadId === undefined) {
       return { state, command: null };
     }
     return {
@@ -92,11 +89,8 @@ export function selectAgentChatChoiceSurfaceRow(
         kind: "workbench.command",
         payload: {
           threadId,
-          command: "open_provider_setup_surface",
-          data: {
-            blockerKind: blocker.kind,
-            setup: providerSetupCommandPayload(blocker.setup),
-          },
+          command: "open_terminal",
+          data: providerReadinessTerminalCommandData(blocker.kind, blocker.terminalAction),
         },
       },
     };
@@ -145,10 +139,10 @@ export function selectAgentChatChoiceSurfaceRow(
           command: updated.command,
         };
       }
-      // connect-vendor:<id> / all-providers → drive opencode's OWN `auth login` in the
-      // Provider Setup Surface (the same verbatim-command path the readiness blocker
-      // uses). opencode shows the right method (browser/key) per vendor; Tide stores
-      // no credentials. Needs a thread to host the surface (active or current).
+      // connect-vendor:<id> / all-providers → drive opencode's OWN `auth login`
+      // in a provider-readiness Terminal Pane. opencode shows the right method
+      // (browser/key) per vendor; Tide stores no credentials. Needs a thread to
+      // host the terminal (active or current).
       const vendorId = rowId.startsWith("connect-vendor:")
         ? rowId.slice("connect-vendor:".length)
         : undefined;
@@ -169,16 +163,16 @@ export function selectAgentChatChoiceSurfaceRow(
           kind: "workbench.command",
           payload: {
             threadId,
-            command: "open_provider_setup_surface",
-            data: {
-              blockerKind: "not_authenticated",
-              setup: {
+            command: "open_terminal",
+            data: providerReadinessTerminalCommandData(
+              "not_authenticated",
+              {
                 command: environment.executablePath,
                 args: vendorId !== undefined ? ["auth", "login", "-p", vendorId] : ["auth", "login"],
                 cwd,
                 expectedCompletion: "retry_preflight",
               },
-            },
+            ),
           },
         },
       };
@@ -227,6 +221,28 @@ export function selectAgentChatChoiceSurfaceRow(
     case "composer_options":
       return setComposerActiveSurface(state, null);
   }
+}
+
+function providerReadinessTerminalCommandData(
+  blockerKind: string,
+  action: Parameters<typeof providerReadinessTerminalActionPayload>[0],
+) {
+  const payload = providerReadinessTerminalActionPayload(action);
+  const data = {
+    blockerKind,
+    command: payload.command,
+    args: payload.args,
+    cwd: payload.cwd,
+    terminalRole: "provider_readiness" as const,
+    expectedCompletion: payload.expectedCompletion,
+  };
+  if (payload.env === undefined) {
+    return data;
+  }
+  return {
+    ...data,
+    env: payload.env,
+  };
 }
 
 export function createActiveComposerSurface(

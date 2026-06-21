@@ -25,15 +25,15 @@ const repo = require("path").resolve(__dirname, "..");
   while (Date.now() < deadline) {
     if (await page.locator('[data-working="true"]').count()) sawWorking = true;
     const agent = await page.locator('[data-block-role="agent"]').count();
-    const setup = await page.locator("text=/provider setup|Trust|not ready/i").count();
+    const readinessCount = await page.locator("text=/provider readiness|Trust|not ready/i").count();
     const txt = await page.locator('[data-block-role="agent"]').last().innerText().catch(()=> "");
-    if (Math.round((deadline-Date.now())/1000)%10===0) console.log(`agent=${agent} working=${sawWorking} setup=${setup}`);
+    if (Math.round((deadline-Date.now())/1000)%10===0) console.log(`agent=${agent} working=${sawWorking} readiness=${readinessCount}`);
     if (txt.includes("TIDE_START_OK")) { answered = true; break; }
     if (await page.locator('[data-block-role="agent"]').count() > 0 && !(await page.locator('[data-working="true"]').count())) break;
     await page.waitForTimeout(2500);
   }
-  const setup = await page.locator("text=/provider setup|Trust|not ready/i").count();
-  console.log("answered:", answered, "| sawWorking:", sawWorking, "| setupSurface:", setup);
+  const readinessCount = await page.locator("text=/provider readiness|Trust|not ready/i").count();
+  console.log("answered:", answered, "| sawWorking:", sawWorking, "| readinessTerminal:", readinessCount);
   console.log("errors:", JSON.stringify(errs.slice(0,5)));
   await page.screenshot({ path: "/tmp/pw-live-start.png" });
   await app.close();

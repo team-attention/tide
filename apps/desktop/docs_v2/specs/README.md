@@ -26,9 +26,10 @@ Each spec must be narrow enough to test and implement as one slice.
 | [Navigable Source Structure](navigable-source-structure.md) | Implemented | Whole-app decomposition: feature/concern directories, ordered CSS area files, size ratchet; navigation guide in implementation/source-map.md. |
 | [Provider Evidence Harness](provider-evidence-harness.md) | Drafted | Repeatably collect provider PTY, readiness, prompt, and history-reference evidence before implementing real Agent Integrations. |
 | [Composer Agent Runtime Source](composer-agent-runtime-source.md) | Implemented | Keep one visible Composer Agent chip over the four Provider CLI Agents and source-specific Model Chip behavior. |
-| [Provider Setup Surface Workbench Command](provider-setup-surface-workbench-command.md) | Drafted | Connect Provider Readiness setup actions to Thread-scoped Workbench Terminal Panes. |
-| [Provider Setup Surface Terminal Lifecycle](provider-setup-surface-terminal-lifecycle.md) | Drafted | Start and stop the visible Provider Setup Surface process through Backend-owned Workbench Terminal Pane state. |
-| [Provider Setup Surface Input And Retry](provider-setup-surface-input-and-retry.md) | Drafted | Route setup terminal bytes and replay preserved pending input after setup readiness succeeds. |
+| [Thread Workbench Agent Model Cleanup](thread-workbench-agent-model-cleanup.md) | Drafted | Collapse provider readiness handoffs onto normal `open_terminal` Workbench Terminal Panes with readiness metadata. |
+| [Provider Setup Surface Workbench Command](provider-setup-surface-workbench-command.md) | Superseded | Historical setup-surface command slice. New work should use `open_terminal` with provider-readiness terminal metadata. |
+| [Provider Setup Surface Terminal Lifecycle](provider-setup-surface-terminal-lifecycle.md) | Superseded | Historical setup-surface lifecycle slice. New work should use normal Workbench Terminal Pane lifecycle plus retry-preflight metadata. |
+| [Provider Setup Surface Input And Retry](provider-setup-surface-input-and-retry.md) | Superseded | Historical setup-surface input/retry slice. New work should route bytes to the Terminal Pane handle and retry readiness from terminal completion metadata. |
 | [Provider Signal Prompt Ingress](provider-signal-prompt-ingress.md) | Drafted | Record provider-observed Prompt State in Backend and emit Desktop prompt events. |
 | [Provider Bootstrap Artifacts](provider-bootstrap-artifacts.md) | Drafted | Generate and verify Tide-owned provider bootstrap files for live Provider CLI Agents. |
 | [Provider Signal Spool Ingress](provider-signal-spool-ingress.md) | Drafted | Read runtime-scoped provider hook spool records and route supported Prompt State into Backend events. |

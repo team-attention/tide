@@ -73,9 +73,9 @@ const PROMPT =
     const eventBlocks = await page.locator('[data-block-role="event"]').count();
     const agentBlocks = page.locator('[data-block-role="agent"]');
     const n = await agentBlocks.count();
-    const setup = await page.locator('text=/provider setup|not ready|readiness|Trust/i').count();
+    const readinessCount = await page.locator('text=/provider readiness|not ready|readiness|Trust/i').count();
     if (Math.round((deadline - Date.now()) / 1000) % 10 === 0) {
-      console.log(`blocks user=${userBlocks} event=${eventBlocks} agent=${n} setupSurface=${setup}`);
+      console.log(`blocks user=${userBlocks} event=${eventBlocks} agent=${n} readinessTerminal=${readinessCount}`);
     }
     if (n > 0) {
       agentText = (await agentBlocks.last().innerText()).trim();

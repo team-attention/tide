@@ -1096,8 +1096,8 @@ test("provider_readiness_blocker_preserves_the_composer_draft_and_marks_shell_bl
   assert.match(renderShell(blocked), /Directory Trust is required/);
 });
 
-test("provider_readiness_setup_row_emits_workbench_command_and_preserves_draft", () => {
-  // Spec: docs_v2/specs/provider-setup-surface-workbench-command.md
+test("provider_readiness_terminal_row_emits_workbench_command_and_preserves_draft", () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const withThread = applyBackendEventToAgentChatShell(
     updateComposerDraft(createAgentChatShellState(), "Keep this draft").state,
     backendEvent("thread.hydrated", {
@@ -1116,7 +1116,7 @@ test("provider_readiness_setup_row_emits_workbench_command_and_preserves_draft",
   const selected = selectAgentChatChoiceSurfaceRow(
     blocked,
     "provider_readiness",
-    "directory_trust_required:setup",
+    "directory_trust_required:terminal",
   );
   const command = selected.command ? toBackendCommandDraft(selected.command) : null;
 
@@ -1124,15 +1124,14 @@ test("provider_readiness_setup_row_emits_workbench_command_and_preserves_draft",
   assert.equal(command?.kind, "workbench.command");
   assert.deepEqual(command?.payload, {
     threadId: "thread-shell",
-    command: "open_provider_setup_surface",
+    command: "open_terminal",
     data: {
       blockerKind: "directory_trust_required",
-      setup: {
         command: "/usr/local/bin/codex",
         args: [],
         cwd: "/repo",
         expectedCompletion: "retry_preflight",
-      },
+        terminalRole: "provider_readiness",
     },
   });
 });
@@ -1775,7 +1774,7 @@ test("claude_model_menu_lists_fable_5", () => {
   assert.match(renderShell(claudeModelMenu), /Fable 5/);
 });
 
-test("provider_cli_readiness_mentions_setup_without_dropping_draft", () => {
+test("provider_cli_readiness_mentions_readiness_action_without_dropping_draft", () => {
   const codexState = selectComposerAgent(createAgentChatShellState(), "codex").state;
   const blocked = applyAgentChatBackendEvent(codexState, {
     kind: "providerReadiness.changed",
@@ -2014,10 +2013,10 @@ test("environment_menu_lists_start_modes_not_all_worktrees", () => {
   assert.match(html, /feature\/x/);
 });
 
-test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {
-  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
+test("open_provider_readiness_row_dispatches_the_readiness_terminal_command", () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   // Regression: the readiness surface rows were rendered without onRowSelect, so
-  // "Open provider setup" was a dead click. Selecting it must emit the command.
+  // "Open provider readiness" was a dead click. Selecting it must emit the command.
   const blocked = applyBackendEventToAgentChatShell(
     applyBackendEventToAgentChatShell(
       createAgentChatShellState(),
@@ -2032,7 +2031,7 @@ test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {
             kind: "directory_trust_required",
             scope: "execution_context",
             message: "Codex Directory Trust is required for this Execution Context.",
-            setup: {
+            terminalAction: {
               command: "codex",
               args: ["--no-alt-screen"],
               cwd: "/Users/you/Workspace/tide",
@@ -2043,22 +2042,22 @@ test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {
       },
     }),
   );
-  // The rendered surface wires onRowSelect (no longer a dead row). The setup row now reads an
+  // The rendered surface wires onRowSelect (no longer a dead row). The terminal action row now reads an
   // actionable, agent-named label (directory-trust → the terminal fallback). Spec: provider-cli-setup-handoff.
   assert.match(renderShell(blocked), /Set up Codex CLI in a terminal/);
 
   const result = selectAgentChatChoiceSurfaceRow(
     blocked,
     "provider_readiness",
-    "directory_trust_required:setup",
+    "directory_trust_required:terminal",
     "thread-shell",
   );
   assert.equal(result.command?.kind, "workbench.command");
-  assert.equal(result.command?.payload.command, "open_provider_setup_surface");
+  assert.equal(result.command?.payload.command, "open_terminal");
 });
 
-test("provider readiness setup rows read actionable, agent-named labels", () => {
-  // Spec: provider-cli-setup-handoff.md — the setup row says exactly what clicking does
+test("provider readiness terminal action rows read actionable, agent-named labels", () => {
+  // Spec: provider-cli-setup-handoff.md — the terminal action row says exactly what clicking does
   // (Install / Sign in to <Agent>) instead of a generic prompt.
   const renderWith = (kind: string, message: string): string =>
     renderShell(
@@ -2076,7 +2075,7 @@ test("provider readiness setup rows read actionable, agent-named labels", () => 
                 kind,
                 scope: "provider",
                 message,
-                setup: { command: "npm", args: ["install", "-g", "@openai/codex"], cwd: "/repo", expectedCompletion: "retry_preflight" },
+                terminalAction: { command: "npm", args: ["install", "-g", "@openai/codex"], cwd: "/repo", expectedCompletion: "retry_preflight" },
               },
             ],
           },
@@ -2225,7 +2224,7 @@ const providerReadiness: ProviderReadinessDto = {
       scope: "execution_context",
       message: "Directory Trust is required.",
       action: "open_terminal",
-      setup: {
+      terminalAction: {
         command: "/usr/local/bin/codex",
         args: [],
         cwd: "/repo",

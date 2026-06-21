@@ -9,7 +9,7 @@ export function commandName(command: string): string {
   return parts.at(-1) || trimmed || "provider";
 }
 
-export function setupLaunchPreview(command: string, args: string[], cwd: string): string {
+export function terminalLaunchPreview(command: string, args: string[], cwd: string): string {
   return `$ cd ${cwd}\n$ ${[command, ...args].join(" ")}\n`;
 }
 
@@ -24,7 +24,7 @@ export function boundedBrowserTextPreview(value: string): string {
 }
 
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Provider Setup Surface failed.";
+  return error instanceof Error ? error.message : "Provider readiness terminal failed.";
 }
 
 export function optionalString(value: unknown): string | undefined {

@@ -43,7 +43,7 @@ const PINNED_MAX: Record<string, number> = {
   // cachedBlocks so a re-hydrate mid-turn doesn't drop them, recordAgentSessionBlock evicts the
   // finalized id, recordTurnComplete clears the tail at settle, and a recordStreamingBlock facade
   // delegate (impl in ThreadCrudService) records deltas. Spec: hydrate-live-streaming-tail.md.
-  // +4: refreshUpdateAdvisories() before the post-Setup-Surface readiness re-check so a
+  // +4: refreshUpdateAdvisories() before the post-readiness-terminal readiness re-check so a
   // just-updated CLI clears the "Update <Agent>" advisory (version-management Lane 2).
   "backend/application/services/thread/thread-runtime-service.ts": 1709,
   // The inbound command switch (already at the 800 cap) gained the
