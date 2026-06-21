@@ -46,7 +46,7 @@ const advisoryChecker: AgentCliUpdateChecker = {
   advisoryFor: (_agentId, cwd) => ({
     currentVersion: "1.0.0",
     latestVersion: "1.2.0",
-    setup: { command: "npm", args: ["install", "-g", "x@latest"], cwd, expectedCompletion: "retry_preflight" },
+    terminalAction: { command: "npm", args: ["install", "-g", "x@latest"], cwd, expectedCompletion: "retry_preflight" },
   }),
 };
 
@@ -123,7 +123,7 @@ test("readiness port: a ready agent still carries a non-blocking update advisory
   assert.deepEqual(result.blockers, []);
   assert.equal(result.update?.currentVersion, "1.0.0");
   assert.equal(result.update?.latestVersion, "1.2.0");
-  assert.equal(result.update?.setup.args.at(-1), "x@latest");
+  assert.equal(result.update?.terminalAction.args.at(-1), "x@latest");
 });
 
 test("readiness port: the advisory rides alongside blockers without changing them", async () => {
@@ -159,7 +159,7 @@ test("update checker: advisory only after refresh, only when installed < latest"
     agentIds: ["claude", "codex"],
     readInstalledVersion: async (id) => (id === "claude" ? "1.0.0" : "2.0.0"),
     readLatestVersion: async (id) => (id === "claude" ? "1.2.0" : "2.0.0"),
-    buildUpdateSetup: (id, cwd) => ({
+    buildUpdateTerminalAction: (id, cwd) => ({
       command: "npm",
       args: ["install", "-g", `${id}@latest`],
       cwd,
@@ -176,13 +176,13 @@ test("update checker: advisory only after refresh, only when installed < latest"
   const advisory = checker.advisoryFor("claude", "/work");
   assert.equal(advisory?.currentVersion, "1.0.0");
   assert.equal(advisory?.latestVersion, "1.2.0");
-  assert.equal(advisory?.setup.cwd, "/work");
+  assert.equal(advisory?.terminalAction.cwd, "/work");
   assert.equal(checker.advisoryFor("codex", "."), undefined);
 });
 
 test("readiness port: refreshUpdateAdvisories clears a stale advisory after an in-place update", async () => {
   // The bug: after an in-place CLI update completes, readiness re-checks but reads a
-  // stale version cache, so the "Update <Agent>" chip lingers. The Setup Surface
+  // stale version cache, so the "Update <Agent>" chip lingers. The readiness terminal
   // completion path awaits port.refreshUpdateAdvisories() before re-checking, which
   // re-reads the (now newer) installed version and drops the advisory.
   let installedClaude = "1.0.0";
@@ -190,7 +190,7 @@ test("readiness port: refreshUpdateAdvisories clears a stale advisory after an i
     agentIds: ["claude"],
     readInstalledVersion: async () => installedClaude,
     readLatestVersion: async () => "1.2.0",
-    buildUpdateSetup: (id, cwd) => ({
+    buildUpdateTerminalAction: (id, cwd) => ({
       command: "npm",
       args: ["install", "-g", `${id}@latest`],
       cwd,
@@ -235,7 +235,7 @@ test("update checker: not installed or unknown latest yields no advisory", async
     agentIds: ["claude", "codex"],
     readInstalledVersion: async (id) => (id === "claude" ? undefined : "1.0.0"),
     readLatestVersion: async (id) => (id === "claude" ? "9.9.9" : undefined),
-    buildUpdateSetup: (id, cwd) => ({ command: "npm", args: [`${id}@latest`], cwd, expectedCompletion: "retry_preflight" }),
+    buildUpdateTerminalAction: (id, cwd) => ({ command: "npm", args: [`${id}@latest`], cwd, expectedCompletion: "retry_preflight" }),
   });
   const changed = await checker.refresh();
   assert.deepEqual(changed, []);

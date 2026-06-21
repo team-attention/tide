@@ -207,7 +207,7 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
         }
         return;
       }
-      // Selecting an agent slot: select it, ensure a Draft Thread to host any Setup Surface,
+      // Selecting an agent slot: select it, ensure a Draft Thread to host any readiness terminal,
       // and run Provider Readiness so a not-installed / not-signed-in agent surfaces its
       // install / sign-in card immediately (not only on Send). Spec: provider-cli-setup-handoff.md.
       if (surfaceKind === "agent_menu") {

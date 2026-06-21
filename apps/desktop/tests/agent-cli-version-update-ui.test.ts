@@ -10,9 +10,9 @@ import type { AgentChatShellState } from "../src/desktop/application/domains/age
 
 // Spec: version-management.md (Lane 2). The renderer nudge is a non-blocking
 // affordance: it surfaces whenever readiness carries an `update`, even when the
-// agent is ready, and a click runs the in-place CLI update Setup Surface.
+// agent is ready, and a click runs the in-place CLI update readiness terminal.
 
-const advisorySetup = {
+const advisoryTerminalAction = {
   command: "npm",
   args: ["install", "-g", "@anthropic-ai/claude-code@latest"],
   cwd: ".",
@@ -21,7 +21,7 @@ const advisorySetup = {
 
 function stateWithReadiness(
   ready: boolean,
-  update?: { currentVersion: string; latestVersion: string; setup: typeof advisorySetup },
+  update?: { currentVersion: string; latestVersion: string; terminalAction: typeof advisoryTerminalAction },
 ): AgentChatShellState {
   return {
     ...createAgentChatShellState(),
@@ -31,7 +31,7 @@ function stateWithReadiness(
 
 test("view model exposes the update advisory even when the agent is ready", () => {
   const vm = createAgentChatShellViewModel(
-    stateWithReadiness(true, { currentVersion: "1.0.0", latestVersion: "1.2.0", setup: advisorySetup }),
+    stateWithReadiness(true, { currentVersion: "1.0.0", latestVersion: "1.2.0", terminalAction: advisoryTerminalAction }),
   );
   // Ready ⇒ no blocking readiness card, but the nudge advisory is still present.
   assert.equal(vm.providerReadinessBlockers.length, 0);
@@ -45,36 +45,37 @@ test("view model has no advisory when readiness carries no update", () => {
   assert.equal(vm.providerUpdateAdvisory, undefined);
 });
 
-test("selecting the update row dispatches the in-place update Setup Surface", () => {
+test("selecting the update row dispatches the in-place update readiness terminal", () => {
   const state = stateWithReadiness(true, {
     currentVersion: "1.0.0",
     latestVersion: "1.2.0",
-    setup: advisorySetup,
+    terminalAction: advisoryTerminalAction,
   });
   const result = selectAgentChatChoiceSurfaceRow(
     state,
     "provider_readiness",
-    "update_available:setup",
+    "update_available:terminal",
     "thread-1",
   );
   assert.equal(result.command?.kind, "workbench.command");
   const payload = result.command?.payload as {
     threadId: string;
     command: string;
-    data: { blockerKind: string; setup: { args: string[] } };
+    data: { blockerKind: string; args: string[]; terminalRole: string };
   };
-  assert.equal(payload.command, "open_provider_setup_surface");
+  assert.equal(payload.command, "open_terminal");
   assert.equal(payload.threadId, "thread-1");
-  assert.equal(payload.data.setup.args.at(-1), "@anthropic-ai/claude-code@latest");
+  assert.equal(payload.data.args.at(-1), "@anthropic-ai/claude-code@latest");
+  assert.equal(payload.data.terminalRole, "provider_readiness");
 });
 
-test("the update row is a no-op without a thread to host the Setup Surface", () => {
+test("the update row is a no-op without a thread to host the readiness terminal", () => {
   const state = stateWithReadiness(true, {
     currentVersion: "1.0.0",
     latestVersion: "1.2.0",
-    setup: advisorySetup,
+    terminalAction: advisoryTerminalAction,
   });
   // No active thread id passed and no thread on state ⇒ nothing to host the terminal.
-  const result = selectAgentChatChoiceSurfaceRow(state, "provider_readiness", "update_available:setup");
+  const result = selectAgentChatChoiceSurfaceRow(state, "provider_readiness", "update_available:terminal");
   assert.equal(result.command, null);
 });

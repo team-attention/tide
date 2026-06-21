@@ -15,7 +15,7 @@ export type {
   ProviderLaunchPlan,
   ProviderReadinessBlockerKind,
   ProviderReadinessBlockerScope,
-  ProviderSetupSurfaceAction,
+  ProviderReadinessTerminalAction,
   RuntimeReadinessGate,
   SessionConfigUpdateInput,
   SessionConfigUpdatePlan,

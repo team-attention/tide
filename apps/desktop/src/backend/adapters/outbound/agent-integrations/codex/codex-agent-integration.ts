@@ -7,14 +7,14 @@ import type {
   AgentResumePlanInput,
   AgentStartPlanInput,
   ProviderLaunchPlan,
-  ProviderSetupSurfaceAction,
+  ProviderReadinessTerminalAction,
   SessionConfigUpdateInput,
   SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   ThreadScope,
 } from "../../../../application/domains/thread/thread.ts";
-import { npmInstallSetupAction } from "../shared/provider-cli-commands.ts";
+import { npmInstallReadinessTerminalAction } from "../shared/provider-cli-commands.ts";
 
 export interface CodexProviderState {
   authenticated: boolean;
@@ -91,7 +91,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
             kind: "not_installed",
             scope: "provider",
             message: "Codex CLI executable was not found.",
-            setup: npmInstallSetupAction({ npmPath, agentId: "codex", cwd }),
+            terminalAction: npmInstallReadinessTerminalAction({ npmPath, agentId: "codex", cwd }),
           },
         ],
         capabilities: codexCapabilities,
@@ -103,8 +103,8 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       executablePath,
       launchOptions: input.launchOptions,
     });
-    const setup = codexSetupAction(executablePath, cwd);
-    const hookSetup = codexSetupAction(executablePath, cwd);
+    const terminalAction = codexReadinessTerminalAction(executablePath, cwd);
+    const hookTerminalAction = codexReadinessTerminalAction(executablePath, cwd);
     const blockers: AgentIntegrationReadinessBlocker[] = [];
 
     if (!providerState.authenticated) {
@@ -112,7 +112,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
         kind: "not_authenticated" as const,
         scope: "provider" as const,
         message: "Codex authentication is required before starting a Thread.",
-        setup,
+        terminalAction,
       });
     }
     if (!providerState.onboardingComplete) {
@@ -120,7 +120,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
         kind: "onboarding_required" as const,
         scope: "provider" as const,
         message: "Codex onboarding must be completed before starting a Thread.",
-        setup,
+        terminalAction,
       });
     }
     if (!providerState.trustedCwds.includes(cwd)) {
@@ -128,15 +128,15 @@ class CodexAgentIntegration implements AgentIntegrationPort {
         kind: "directory_trust_required" as const,
         scope: "execution_context" as const,
         message: "Codex Directory Trust is required for this Execution Context.",
-        setup,
+        terminalAction,
       });
     }
     if (!providerState.hookBootstrapReady) {
       blockers.push({
         kind: "hook_bootstrap_required" as const,
         scope: "integration" as const,
-        message: "Tide Codex MCP bootstrap setup is required.",
-        setup: hookSetup,
+        message: "Tide Codex MCP bootstrap is required.",
+        terminalAction: hookTerminalAction,
       });
     }
 
@@ -284,10 +284,10 @@ class CodexAgentIntegration implements AgentIntegrationPort {
 // v2 highlights codex's own default. promptId is the content signature so the same box
 // re-rendered across PTY chunks dedupes to one surfaced prompt.
 
-function codexSetupAction(
+function codexReadinessTerminalAction(
   executablePath: string,
   cwd: string,
-): ProviderSetupSurfaceAction {
+): ProviderReadinessTerminalAction {
   return {
     command: executablePath,
     args: ["--no-alt-screen"],

@@ -195,8 +195,8 @@ export function createComposer(
           <span className="composer-shell__toolbar-spacer" />
           {/* Non-blocking agent-CLI update advisory (spec: version-management.md, Lane 2 / D2):
               a quiet pill, not a card. Present even when the agent is ready and on the start
-              composer. One click runs the same Setup Surface terminal update as install
-              (update_available:setup); the vX → vY detail lives in the tooltip. */}
+              composer. One click runs the same readiness terminal update as install
+              (update_available:terminal); the vX → vY detail lives in the tooltip. */}
           {viewModel.providerUpdateAdvisory ? (
             <button
               type="button"
@@ -204,7 +204,7 @@ export function createComposer(
               title={`v${viewModel.providerUpdateAdvisory.currentVersion} → v${viewModel.providerUpdateAdvisory.latestVersion} — updates the CLI in a terminal, your draft is kept`}
               aria-label={`Update ${viewModel.providerUpdateAdvisory.agentLabel}`}
               onClick={() =>
-                handlers.onChoiceSurfaceRowSelect?.("provider_readiness", "update_available:setup")
+                handlers.onChoiceSurfaceRowSelect?.("provider_readiness", "update_available:terminal")
               }
             >
               <ArrowUp size={14} strokeWidth={2} className="composer-shell__chip-icon" aria-hidden />

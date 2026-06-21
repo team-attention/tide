@@ -112,8 +112,8 @@ try {
       readiness: providerReadiness.payload.readiness,
     });
 
-    if (options.openSetupSurface) {
-      await openProviderSetupSurfaceSmoke({
+    if (options.openReadinessTerminal) {
+      await openProviderReadinessTerminalSmoke({
         adapter,
         threadId,
         readiness: providerReadiness.payload.readiness,
@@ -220,7 +220,7 @@ function parseArgs(args) {
     appDataRoot: process.env.TIDE_PROVIDER_SMOKE_APP_DATA_ROOT,
     message: process.env.TIDE_PROVIDER_SMOKE_MESSAGE,
     expectProviderNotReady: process.env.TIDE_PROVIDER_SMOKE_EXPECT_PROVIDER_NOT_READY === "1",
-    openSetupSurface: process.env.TIDE_PROVIDER_SMOKE_OPEN_SETUP_SURFACE === "1",
+    openReadinessTerminal: process.env.TIDE_PROVIDER_SMOKE_OPEN_READINESS_TERMINAL === "1",
     help: false,
   };
 
@@ -246,8 +246,8 @@ function parseArgs(args) {
       case "--expect-provider-not-ready":
         parsed.expectProviderNotReady = true;
         break;
-      case "--open-setup-surface":
-        parsed.openSetupSurface = true;
+      case "--open-readiness-terminal":
+        parsed.openReadinessTerminal = true;
         break;
       default:
         throw new Error(`Unknown provider smoke argument: ${arg}`);
@@ -325,32 +325,39 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function openProviderSetupSurfaceSmoke(input) {
-  const setup = input.readiness.blockers.find((blocker) => blocker.setup)?.setup;
-  if (setup === undefined) {
-    throw new Error("Provider readiness did not include a setup action.");
+async function openProviderReadinessTerminalSmoke(input) {
+  const terminalAction = input.readiness.blockers.find((blocker) => blocker.terminalAction)?.terminalAction;
+  if (terminalAction === undefined) {
+    throw new Error("Provider readiness did not include a terminal action.");
   }
 
   const openEvents = await input.adapter.handleMessage({
     contractVersion: CONTRACT_VERSION,
-    requestId: `provider-smoke-open-setup-${input.token}`,
+    requestId: `provider-smoke-open-readiness-terminal-${input.token}`,
     kind: "workbench.command",
     issuedAt: new Date().toISOString(),
     payload: {
       threadId: input.threadId,
-      command: "open_provider_setup_surface",
-      data: { setup },
+      command: "open_terminal",
+      data: {
+        command: terminalAction.command,
+        args: terminalAction.args,
+        env: terminalAction.env,
+        cwd: terminalAction.cwd,
+        terminalRole: "provider_readiness",
+        expectedCompletion: terminalAction.expectedCompletion,
+      },
     },
   });
   openEvents.forEach(input.applyEvent);
   const workbenchChanged = openEvents.find((event) => event.kind === "workbench.changed");
   const pane = workbenchChanged?.payload.panes.find((candidate) => candidate.kind === "terminal");
   if (pane === undefined) {
-    throw new Error("Provider setup surface did not open a Terminal Pane.");
+    throw new Error("Provider readiness terminal did not open a Terminal Pane.");
   }
 
   input.log({
-    phase: "provider-setup-surface-opened",
+    phase: "provider-readiness-terminal-opened",
     threadId: input.threadId,
     paneId: pane.paneId,
     title: pane.title,
@@ -361,7 +368,7 @@ async function openProviderSetupSurfaceSmoke(input) {
 
   const closeEvents = await input.adapter.handleMessage({
     contractVersion: CONTRACT_VERSION,
-    requestId: `provider-smoke-close-setup-${input.token}`,
+    requestId: `provider-smoke-close-readiness-terminal-${input.token}`,
     kind: "workbench.command",
     issuedAt: new Date().toISOString(),
     payload: {
@@ -376,7 +383,7 @@ async function openProviderSetupSurfaceSmoke(input) {
     (candidate) => candidate.paneId === pane.paneId,
   );
   input.log({
-    phase: "provider-setup-surface-closed",
+    phase: "provider-readiness-terminal-closed",
     threadId: input.threadId,
     paneId: pane.paneId,
     visible: closedPane?.visible,
@@ -393,12 +400,12 @@ Options:
   --app-data-root /tmp/tide-provider-smoke
   --message "Prompt text"
   --expect-provider-not-ready
-  --open-setup-surface
+  --open-readiness-terminal
 
 The smoke uses Product Shell start state, sends it through the live Backend
 adapter, waits for provider-owned Agent Session output, hydrates the Thread,
 and verifies the selected Agent remains active in the Composer chrome.
-Use --expect-provider-not-ready --open-setup-surface to verify a Provider
-Readiness setup action opens and closes a Workbench Terminal Pane without
-auto-accepting provider-native setup prompts.`);
+Use --expect-provider-not-ready --open-readiness-terminal to verify a Provider
+Readiness terminal action opens and closes a Workbench Terminal Pane without
+auto-accepting provider-native prompts.`);
 }

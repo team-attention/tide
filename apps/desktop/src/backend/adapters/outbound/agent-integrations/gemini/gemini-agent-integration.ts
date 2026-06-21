@@ -12,7 +12,7 @@ import type {
   SessionConfigUpdatePlan,
 } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { ThreadScope } from "../../../../application/domains/thread/thread.ts";
-import { npmInstallSetupAction } from "../shared/provider-cli-commands.ts";
+import { npmInstallReadinessTerminalAction } from "../shared/provider-cli-commands.ts";
 
 export interface GeminiProviderState {
   authenticated: boolean;
@@ -90,7 +90,7 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
             kind: "not_installed",
             scope: "provider",
             message: "Gemini CLI executable was not found.",
-            setup: npmInstallSetupAction({ npmPath, agentId: "gemini", cwd }),
+            terminalAction: npmInstallReadinessTerminalAction({ npmPath, agentId: "gemini", cwd }),
           },
         ],
         capabilities: geminiCapabilities,
@@ -108,9 +108,9 @@ class GeminiAgentIntegration implements AgentIntegrationPort {
             scope: "provider",
             message:
               "Gemini CLI sign-in is required before starting a Thread (run `gemini` and sign in).",
-            // Same setup affordance as claude/codex: open the CLI in a Tide
+            // Same terminal affordance as claude/codex: open the CLI in a Tide
             // terminal so the user can sign in, then retry preflight.
-            setup: {
+            terminalAction: {
               command: executablePath,
               args: [],
               cwd,

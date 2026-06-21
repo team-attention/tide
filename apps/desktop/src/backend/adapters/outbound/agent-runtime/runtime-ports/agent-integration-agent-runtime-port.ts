@@ -126,7 +126,7 @@ export function createAgentIntegrationProviderReadinessPort(
         launchOptions: checkInput.launchOptions,
       });
 
-      // A Provider Setup Surface terminal needs a working directory; the update
+      // A provider readiness terminal action needs a working directory; the update
       // is a global npm install, so the exact dir does not matter — use the
       // thread's cwd when scoped, else the backend default.
       const cwd =
@@ -142,8 +142,8 @@ export function createAgentIntegrationProviderReadinessPort(
           kind: blocker.kind,
           message: blocker.message,
           scope: blocker.scope,
-          setup: blocker.setup,
-          action: blocker.setup === undefined ? "none" : "open_terminal",
+          terminalAction: blocker.terminalAction,
+          action: blocker.terminalAction === undefined ? "none" : "open_terminal",
         })),
         // Surface the runtime capabilities the service routes on (mid-turn steer).
         capabilities: { supportsTurnSteer: result.capabilities.supportsTurnSteer },

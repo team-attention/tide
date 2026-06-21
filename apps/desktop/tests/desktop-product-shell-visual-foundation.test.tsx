@@ -1959,46 +1959,46 @@ test("workbench_diff_pane_renders_structured_unified_diff_lines", () => {
   assert.doesNotMatch(html, /aria-label="Diff preview"/);
 });
 
-test("provider_setup_terminal_pane_renders_dark_xterm_surface", () => {
-  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
-  // The terminal (incl. provider setup) is a dark xterm surface: input and the
-  // setup transcript live inside the live terminal, not in metadata chrome.
+test("provider_readiness_terminal_pane_renders_dark_xterm_surface", () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
+  // The terminal (incl. provider readiness) is a dark xterm surface: input and the
+  // readiness transcript live inside the live terminal, not in metadata chrome.
   const state = applyProductShellBackendEvent(
     openProductShellThread(createProductShellState(), "thread-workbench"),
     {
       kind: "workbench.changed",
       payload: {
         threadId: "thread-workbench",
-        activePaneId: "pane-provider-setup",
-        panes: [providerSetupTerminalPane()],
+        activePaneId: "pane-provider-readiness",
+        panes: [providerReadinessTerminalPane()],
       },
     },
   );
   const html = renderProductShell(state);
 
   assert.match(html, /data-pane-kind="terminal"/);
-  assert.match(html, /data-terminal-xterm="pane-provider-setup"/);
+  assert.match(html, /data-terminal-xterm="pane-provider-readiness"/);
   // No metadata/preview/input chrome leaks into the terminal surface anymore.
-  assert.doesNotMatch(html, /aria-label="Provider Setup Surface input"/);
+  assert.doesNotMatch(html, /aria-label="Provider readiness terminal input"/);
   assert.doesNotMatch(html, /workbench-terminal__meta/);
 });
 
-test("product_shell_setup_terminal_input_emits_workbench_command", () => {
-  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
+test("product_shell_provider_readiness_terminal_input_emits_workbench_command", () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const state = applyProductShellBackendEvent(
     openProductShellThread(createProductShellState(), "thread-workbench"),
     {
       kind: "workbench.changed",
       payload: {
         threadId: "thread-workbench",
-        activePaneId: "pane-provider-setup",
-        panes: [providerSetupTerminalPane()],
+        activePaneId: "pane-provider-readiness",
+        panes: [providerReadinessTerminalPane()],
       },
     },
   );
   const result = writeProductShellTerminalInput(
     state,
-    "pane-provider-setup",
+    "pane-provider-readiness",
     "trust\r",
   );
 
@@ -2007,7 +2007,7 @@ test("product_shell_setup_terminal_input_emits_workbench_command", () => {
     payload: {
       threadId: "thread-workbench",
       command: "write_terminal_input",
-      targetPaneId: "pane-provider-setup",
+      targetPaneId: "pane-provider-readiness",
       data: { bytes: "trust\r" },
     },
   });
@@ -3083,18 +3083,19 @@ function renderProductShell(state = createProductShellState()): string {
   return renderToStaticMarkup(<TideProductShell initialState={state} />);
 }
 
-function providerSetupTerminalPane() {
+function providerReadinessTerminalPane() {
   return {
-    paneId: "pane-provider-setup",
+    paneId: "pane-provider-readiness",
     kind: "terminal",
-    title: "Provider setup: codex",
-    revision: "pane-provider-setup:rev",
+    title: "Provider readiness: codex",
+    revision: "pane-provider-readiness:rev",
     updatedAt: "2026-05-28T00:00:00.000Z",
     status: "running",
     command: "/Users/you/.local/bin/codex",
     cwd: "/Users/you/Workspace/tide",
+    terminalRole: "provider_readiness",
     expectedCompletion: "retry_preflight",
-    transcriptPreview: "Welcome to Codex setup\nSelect trust and press Enter",
+    transcriptPreview: "Welcome to Codex readiness\nSelect trust and press Enter",
   };
 }
 

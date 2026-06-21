@@ -61,10 +61,10 @@ console.log("seeded; workspace:", ${JSON.stringify(work)});
   while (Date.now() < deadline) {
     if (await page.locator(".agent-session-tools__summary").count()) sawTools = true;
     if (await page.locator('[data-working="true"]').count()) sawWorking = true;
-    const setup = await page.locator("text=/provider setup|not ready|Trust|permission/i").count();
+    const readinessCount = await page.locator("text=/provider readiness|not ready|Trust|permission/i").count();
     const agentBlocks = await page.locator('[data-block-role="agent"]').count();
     if (Math.round((deadline - Date.now()) / 1000) % 10 === 0) {
-      console.log(`tools=${sawTools} working=${sawWorking} agent=${agentBlocks} setup/prompt=${setup}`);
+      console.log(`tools=${sawTools} working=${sawWorking} agent=${agentBlocks} readiness/prompt=${readinessCount}`);
     }
     // Done when an agent answer block exists AND we are no longer working.
     if (agentBlocks > 0 && !(await page.locator('[data-working="true"]').count())) {

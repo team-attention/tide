@@ -2469,8 +2469,8 @@ test("discardDraftThread_refuses_to_discard_a_started_thread", async () => {
   assert.equal(!result.ok && result.error.code, "thread_not_draft");
 });
 
-test("workbench_command_open_provider_setup_surface_creates_terminal_pane", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-workbench-command.md
+test("workbench_command_open_terminal_creates_terminal_pane", async () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const fakes = createFakes({
     readiness: {
       ready: false,
@@ -2479,7 +2479,7 @@ test("workbench_command_open_provider_setup_surface_creates_terminal_pane", asyn
         {
           kind: "directory_trust_required",
           message: "Directory Trust is required.",
-          setup: {
+          terminalAction: {
             command: "/usr/local/bin/codex",
             args: [],
             cwd: "/repo",
@@ -2503,15 +2503,14 @@ test("workbench_command_open_provider_setup_surface_creates_terminal_pane", asyn
 
   const opened = await service.handleWorkbenchCommand({
     threadId: started.thread.threadId,
-    command: "open_provider_setup_surface",
+    command: "open_terminal",
     data: {
       blockerKind: "directory_trust_required",
-      setup: {
         command: "/usr/local/bin/codex",
         args: [],
         cwd: "/repo",
         expectedCompletion: "retry_preflight",
-      },
+        terminalRole: "provider_readiness",
     },
   });
 
@@ -2519,16 +2518,16 @@ test("workbench_command_open_provider_setup_surface_creates_terminal_pane", asyn
   assert.equal(opened.thread.pendingInput?.value, "Preserve this draft");
   assert.equal(opened.thread.workbench.panes.length, 1);
   assert.equal(opened.thread.workbench.panes[0]?.kind, "terminal");
-  assert.equal(opened.thread.workbench.panes[0]?.terminalRole, "provider_setup");
-  assert.equal(opened.thread.workbench.panes[0]?.title, "Provider setup: codex");
+  assert.equal(opened.thread.workbench.panes[0]?.terminalRole, "provider_readiness");
+  assert.equal(opened.thread.workbench.panes[0]?.title, "Provider readiness: codex");
   assert.equal(opened.thread.workbench.panes[0]?.command, "/usr/local/bin/codex");
   assert.equal(opened.thread.workbench.panes[0]?.cwd, "/repo");
   assert.equal(opened.thread.workbench.focusOwner, "workbench");
   assert.deepEqual(fakes.runtime.events, []);
 });
 
-test("workbench_command_open_provider_setup_surface_starts_setup_terminal_process", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-terminal-lifecycle.md
+test("workbench_command_open_terminal_starts_provider_readiness_terminal_process", async () => {
+  // Spec: docs_v2/specs/workbench-terminal-pane-session.md
   const fakes = createFakes({
     readiness: {
       ready: false,
@@ -2537,7 +2536,7 @@ test("workbench_command_open_provider_setup_surface_starts_setup_terminal_proces
         {
           kind: "directory_trust_required",
           message: "Directory Trust is required.",
-          setup: {
+          terminalAction: {
             command: "/usr/local/bin/codex",
             args: ["--no-alt-screen"],
             env: { CODEX_HOME: "/tmp/tide-codex-home" },
@@ -2554,7 +2553,7 @@ test("workbench_command_open_provider_setup_surface_starts_setup_terminal_proces
     idGenerator: sequentialIdGenerator("id"),
   });
   const started = await service.startThread({
-    initialMessage: "Preserve while setup runs",
+    initialMessage: "Preserve while readiness runs",
     agentBinding: { agentId: "codex" },
     scope: { kind: "project", projectId: "tide", cwd: "/repo" },
   });
@@ -2562,20 +2561,19 @@ test("workbench_command_open_provider_setup_surface_starts_setup_terminal_proces
 
   const opened = await service.handleWorkbenchCommand({
     threadId: started.thread.threadId,
-    command: "open_provider_setup_surface",
+    command: "open_terminal",
     data: {
-      setup: {
         command: "/usr/local/bin/codex",
         args: ["--no-alt-screen"],
         env: { CODEX_HOME: "/tmp/tide-codex-home" },
         cwd: "/repo",
         expectedCompletion: "retry_preflight",
-      },
+        terminalRole: "provider_readiness",
     },
   });
 
   assert.equal(opened.ok, true);
-  assert.equal(opened.thread.pendingInput?.value, "Preserve while setup runs");
+  assert.equal(opened.thread.pendingInput?.value, "Preserve while readiness runs");
   assert.equal(opened.thread.workbench.panes[0]?.status, "running");
   assert.equal(fakes.workbenchTerminal.starts[0]?.command, "/usr/local/bin/codex");
   assert.deepEqual(fakes.workbenchTerminal.starts[0]?.args, ["--no-alt-screen"]);
@@ -2586,32 +2584,31 @@ test("workbench_command_open_provider_setup_surface_starts_setup_terminal_proces
   assert.deepEqual(fakes.runtime.events, []);
 });
 
-test("provider_setup_surface_input_writes_terminal_bytes_to_running_setup_process", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
+test("provider_readiness_terminal_input_writes_terminal_bytes_to_running_readiness_terminal_process", async () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const fakes = createFakes();
   const service = createThreadRuntimeService({
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
-    initialThreads: [threadSeed("thread-setup-input")],
+    initialThreads: [threadSeed("thread-readiness-input")],
   });
   const opened = await service.handleWorkbenchCommand({
-    threadId: "thread-setup-input",
-    command: "open_provider_setup_surface",
+    threadId: "thread-readiness-input",
+    command: "open_terminal",
     data: {
-      setup: {
         command: "/usr/local/bin/codex",
         args: [],
         cwd: "/repo",
         expectedCompletion: "retry_preflight",
-      },
+        terminalRole: "provider_readiness",
     },
   });
   assert.equal(opened.ok, true);
   const paneId = opened.thread.workbench.panes[0]?.paneId;
 
   const written = await service.handleWorkbenchCommand({
-    threadId: "thread-setup-input",
+    threadId: "thread-readiness-input",
     command: "write_terminal_input",
     targetPaneId: paneId,
     data: { input: "\u001b[B\r" },
@@ -2622,30 +2619,29 @@ test("provider_setup_surface_input_writes_terminal_bytes_to_running_setup_proces
   assert.deepEqual(fakes.runtime.events, []);
 });
 
-test("provider_setup_surface_output_updates_terminal_pane_preview", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-terminal-lifecycle.md
+test("provider_readiness_terminal_output_updates_terminal_pane_preview", async () => {
+  // Spec: docs_v2/specs/workbench-terminal-pane-session.md
   const fakes = createFakes();
   fakes.workbenchTerminal.outputsOnStart = [
-    { source: "stdout", body: "Provider setup running\n" },
+    { source: "stdout", body: "Provider readiness running\n" },
     { source: "stderr", body: `${"x".repeat(8200)}done\n` },
   ];
   const service = createThreadRuntimeService({
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
-    initialThreads: [threadSeed("thread-setup-preview")],
+    initialThreads: [threadSeed("thread-readiness-preview")],
   });
 
   const opened = await service.handleWorkbenchCommand({
-    threadId: "thread-setup-preview",
-    command: "open_provider_setup_surface",
+    threadId: "thread-readiness-preview",
+    command: "open_terminal",
     data: {
-      setup: {
         command: "/usr/local/bin/codex",
         args: [],
         cwd: "/repo",
         expectedCompletion: "retry_preflight",
-      },
+        terminalRole: "provider_readiness",
     },
   });
 
@@ -2653,34 +2649,33 @@ test("provider_setup_surface_output_updates_terminal_pane_preview", async () => 
   const pane = opened.thread.workbench.panes[0];
   assert.equal(pane?.kind, "terminal");
   if (pane?.kind !== "terminal") {
-    throw new Error("Expected Provider Setup Surface terminal pane.");
+    throw new Error("Expected Provider readiness terminal pane.");
   }
   assert.equal(pane.status, "running");
   assert.ok((pane.transcriptPreview?.length ?? 0) <= 8000);
   assert.match(pane.transcriptPreview ?? "", /done/);
 });
 
-test("provider_setup_surface_exit_during_start_detaches_terminal_handle", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-terminal-lifecycle.md
+test("provider_readiness_terminal_exit_during_start_detaches_terminal_handle", async () => {
+  // Spec: docs_v2/specs/workbench-terminal-pane-session.md
   const fakes = createFakes();
   fakes.workbenchTerminal.exitOnStart = { exitCode: 0, signal: null };
   const service = createThreadRuntimeService({
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
-    initialThreads: [threadSeed("thread-setup-fast-exit")],
+    initialThreads: [threadSeed("thread-readiness-fast-exit")],
   });
 
   const opened = await service.handleWorkbenchCommand({
-    threadId: "thread-setup-fast-exit",
-    command: "open_provider_setup_surface",
+    threadId: "thread-readiness-fast-exit",
+    command: "open_terminal",
     data: {
-      setup: {
         command: "/usr/local/bin/codex",
         args: [],
         cwd: "/repo",
         expectedCompletion: "process_exit",
-      },
+        terminalRole: "provider_readiness",
     },
   });
   assert.equal(opened.ok, true);
@@ -2690,7 +2685,7 @@ test("provider_setup_surface_exit_during_start_detaches_terminal_handle", async 
   assert.equal(fakes.workbenchTerminal.handles[0]?.stops.length, 1);
 
   const closed = await service.handleWorkbenchCommand({
-    threadId: "thread-setup-fast-exit",
+    threadId: "thread-readiness-fast-exit",
     command: "close_pane",
     targetPaneId: pane?.paneId,
   });
@@ -2699,8 +2694,8 @@ test("provider_setup_surface_exit_during_start_detaches_terminal_handle", async 
   assert.equal(fakes.workbenchTerminal.handles[0]?.stops.length, 1);
 });
 
-test("provider_setup_surface_exit_retries_readiness_and_replays_pending_input_when_ready", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
+test("provider_readiness_terminal_exit_retries_readiness_and_replays_pending_input_when_ready", async () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const fakes = createFakes({
     readiness: {
       ready: false,
@@ -2709,7 +2704,7 @@ test("provider_setup_surface_exit_retries_readiness_and_replays_pending_input_wh
         {
           kind: "directory_trust_required",
           message: "Directory Trust is required.",
-          setup: {
+          terminalAction: {
             command: "/usr/local/bin/codex",
             args: [],
             cwd: "/repo",
@@ -2725,7 +2720,7 @@ test("provider_setup_surface_exit_retries_readiness_and_replays_pending_input_wh
     idGenerator: sequentialIdGenerator("id"),
   });
   const started = await service.startThread({
-    initialMessage: "Run after setup",
+    initialMessage: "Run after readiness",
     agentBinding: { agentId: "codex" },
     scope: { kind: "project", projectId: "tide", cwd: "/repo" },
     launchOptions: { model: "GPT-5.5 High", permission: "workspace-write" },
@@ -2735,14 +2730,13 @@ test("provider_setup_surface_exit_retries_readiness_and_replays_pending_input_wh
   fakes.readiness.setResult({ ready: true, agentId: "codex", blockers: [] });
   const opened = await service.handleWorkbenchCommand({
     threadId: started.thread.threadId,
-    command: "open_provider_setup_surface",
+    command: "open_terminal",
     data: {
-      setup: {
         command: "/usr/local/bin/codex",
         args: [],
         cwd: "/repo",
         expectedCompletion: "retry_preflight",
-      },
+        terminalRole: "provider_readiness",
     },
   });
   assert.equal(opened.ok, true);
@@ -2753,21 +2747,21 @@ test("provider_setup_surface_exit_retries_readiness_and_replays_pending_input_wh
   assert.equal(hydrated.ok, true);
   assert.equal(hydrated.thread.pendingInput, undefined);
   assert.equal(hydrated.runtimeState, "running");
-  assert.equal(hydrated.thread.cachedBlocks.at(-1)?.body, "Run after setup");
+  assert.equal(hydrated.thread.cachedBlocks.at(-1)?.body, "Run after readiness");
   assert.deepEqual(fakes.runtime.events, ["start"]);
   assert.deepEqual(fakes.runtime.starts[0]?.launchOptions, {
     model: "GPT-5.5 High",
     permission: "workspace-write",
   });
-  assert.equal(fakes.runtime.starts[0]?.initialPrompt, "Run after setup");
+  assert.equal(fakes.runtime.starts[0]?.initialPrompt, "Run after readiness");
   assert.deepEqual(fakes.readiness.checks.map((check) => check.launchOptions), [
     { model: "GPT-5.5 High", permission: "workspace-write" },
     { model: "GPT-5.5 High", permission: "workspace-write" },
   ]);
 });
 
-test("provider_setup_surface_exit_pushes_async_events_for_replay", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
+test("provider_readiness_terminal_exit_pushes_async_events_for_replay", async () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const fakes = createFakes({
     readiness: {
       ready: false,
@@ -2776,7 +2770,7 @@ test("provider_setup_surface_exit_pushes_async_events_for_replay", async () => {
         {
           kind: "directory_trust_required",
           message: "Directory Trust is required.",
-          setup: {
+          terminalAction: {
             command: "/usr/local/bin/codex",
             args: [],
             cwd: "/repo",
@@ -2796,7 +2790,7 @@ test("provider_setup_surface_exit_pushes_async_events_for_replay", async () => {
     },
   });
   const started = await service.startThread({
-    initialMessage: "Run after setup",
+    initialMessage: "Run after readiness",
     agentBinding: { agentId: "codex" },
     scope: { kind: "project", projectId: "tide", cwd: "/repo" },
     launchOptions: { model: "GPT-5.5 High", permission: "workspace-write" },
@@ -2806,14 +2800,13 @@ test("provider_setup_surface_exit_pushes_async_events_for_replay", async () => {
   fakes.readiness.setResult({ ready: true, agentId: "codex", blockers: [] });
   const opened = await service.handleWorkbenchCommand({
     threadId: started.thread.threadId,
-    command: "open_provider_setup_surface",
+    command: "open_terminal",
     data: {
-      setup: {
         command: "/usr/local/bin/codex",
         args: [],
         cwd: "/repo",
         expectedCompletion: "retry_preflight",
-      },
+        terminalRole: "provider_readiness",
     },
   });
   assert.equal(opened.ok, true);
@@ -2838,7 +2831,7 @@ test("provider_setup_surface_exit_pushes_async_events_for_replay", async () => {
     (event): event is Extract<ThreadRuntimeAsyncEvent, { kind: "thread_hydrated" }> =>
       event.kind === "thread_hydrated",
   );
-  assert.equal(blockEvent?.block.body, "Run after setup");
+  assert.equal(blockEvent?.block.body, "Run after readiness");
   assert.equal(hydratedEvent?.thread.pendingInput, undefined);
   assert.equal(hydratedEvent?.runtimeState, "running");
   assert.equal(hydratedEvent?.thread.agentBinding.agentId, "codex");
@@ -2848,8 +2841,8 @@ test("provider_setup_surface_exit_pushes_async_events_for_replay", async () => {
   });
 });
 
-test("provider_setup_surface_exit_keeps_pending_input_when_readiness_is_still_blocked", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
+test("provider_readiness_terminal_exit_keeps_pending_input_when_readiness_is_still_blocked", async () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const fakes = createFakes({
     readiness: {
       ready: false,
@@ -2858,7 +2851,7 @@ test("provider_setup_surface_exit_keeps_pending_input_when_readiness_is_still_bl
         {
           kind: "directory_trust_required",
           message: "Directory Trust is still required.",
-          setup: {
+          terminalAction: {
             command: "/usr/local/bin/codex",
             args: [],
             cwd: "/repo",
@@ -2882,14 +2875,13 @@ test("provider_setup_surface_exit_keeps_pending_input_when_readiness_is_still_bl
   assert.equal(started.ok, true);
   const opened = await service.handleWorkbenchCommand({
     threadId: started.thread.threadId,
-    command: "open_provider_setup_surface",
+    command: "open_terminal",
     data: {
-      setup: {
         command: "/usr/local/bin/codex",
         args: [],
         cwd: "/repo",
         expectedCompletion: "retry_preflight",
-      },
+        terminalRole: "provider_readiness",
     },
   });
   assert.equal(opened.ok, true);
@@ -2906,8 +2898,8 @@ test("provider_setup_surface_exit_keeps_pending_input_when_readiness_is_still_bl
   assert.deepEqual(fakes.runtime.events, []);
 });
 
-test("provider_setup_surface_exit_pushes_async_readiness_when_still_blocked", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
+test("provider_readiness_terminal_exit_pushes_async_readiness_when_still_blocked", async () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const fakes = createFakes({
     readiness: {
       ready: false,
@@ -2916,7 +2908,7 @@ test("provider_setup_surface_exit_pushes_async_readiness_when_still_blocked", as
         {
           kind: "directory_trust_required",
           message: "Directory Trust is still required.",
-          setup: {
+          terminalAction: {
             command: "/usr/local/bin/codex",
             args: [],
             cwd: "/repo",
@@ -2944,14 +2936,13 @@ test("provider_setup_surface_exit_pushes_async_readiness_when_still_blocked", as
   assert.equal(started.ok, true);
   const opened = await service.handleWorkbenchCommand({
     threadId: started.thread.threadId,
-    command: "open_provider_setup_surface",
+    command: "open_terminal",
     data: {
-      setup: {
         command: "/usr/local/bin/codex",
         args: [],
         cwd: "/repo",
         expectedCompletion: "retry_preflight",
-      },
+        terminalRole: "provider_readiness",
     },
   });
   assert.equal(opened.ok, true);
@@ -2981,26 +2972,25 @@ test("provider_setup_surface_exit_pushes_async_readiness_when_still_blocked", as
   assert.deepEqual(fakes.runtime.events, []);
 });
 
-test("closing_running_provider_setup_surface_stops_setup_process", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-terminal-lifecycle.md
+test("closing_running_provider_readiness_terminal_stops_readiness_terminal_process", async () => {
+  // Spec: docs_v2/specs/workbench-terminal-pane-session.md
   const fakes = createFakes();
   const service = createThreadRuntimeService({
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
-    initialThreads: [threadSeed("thread-close-setup")],
+    initialThreads: [threadSeed("thread-close-readiness")],
   });
 
   const opened = await service.handleWorkbenchCommand({
-    threadId: "thread-close-setup",
-    command: "open_provider_setup_surface",
+    threadId: "thread-close-readiness",
+    command: "open_terminal",
     data: {
-      setup: {
         command: "/usr/local/bin/codex",
         args: [],
         cwd: "/repo",
         expectedCompletion: "retry_preflight",
-      },
+        terminalRole: "provider_readiness",
     },
   });
   assert.equal(opened.ok, true);
@@ -3008,7 +2998,7 @@ test("closing_running_provider_setup_surface_stops_setup_process", async () => {
   assert.equal(typeof paneId, "string");
 
   const closed = await service.handleWorkbenchCommand({
-    threadId: "thread-close-setup",
+    threadId: "thread-close-readiness",
     command: "close_pane",
     targetPaneId: paneId,
   });
@@ -3022,7 +3012,7 @@ test("closing_running_provider_setup_surface_stops_setup_process", async () => {
 });
 
 test("workbench_command_focus_and_close_pane_updates_backend_workbench_state", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-workbench-command.md
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const service = createThreadRuntimeService({
     ...createFakes().ports,
     clock: fixedClock,

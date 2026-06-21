@@ -3,12 +3,12 @@ import test from "node:test";
 
 import {
   installPackageForAgent,
-  npmInstallSetupAction,
+  npmInstallReadinessTerminalAction,
 } from "../src/backend/adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
 
 // Spec: docs_v2/specs/provider-cli-setup-handoff.md
 // The install counterpart of executableForAgent: which npm package provides each
-// provider CLI, and the Setup Surface action that installs a missing one.
+// provider CLI, and the readiness terminal action that installs a missing one.
 
 test("installPackageForAgent maps every provider CLI to its npm package", () => {
   assert.equal(installPackageForAgent("claude"), "@anthropic-ai/claude-code");
@@ -17,8 +17,8 @@ test("installPackageForAgent maps every provider CLI to its npm package", () => 
   assert.equal(installPackageForAgent("opencode"), "opencode-ai");
 });
 
-test("npmInstallSetupAction builds a global npm install that re-runs preflight", () => {
-  const action = npmInstallSetupAction({
+test("npmInstallReadinessTerminalAction builds a global npm install that re-runs preflight", () => {
+  const action = npmInstallReadinessTerminalAction({
     npmPath: "/usr/local/bin/npm",
     agentId: "codex",
     cwd: "/repo",

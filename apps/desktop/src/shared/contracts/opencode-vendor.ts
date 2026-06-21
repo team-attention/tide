@@ -35,7 +35,7 @@ export interface OpencodeEnvironmentDto {
   // "newer than tested" note. Absent ⇒ no note.
   testedWith?: string;
   // The resolved opencode executable path. Lets the desktop launch the existing
-  // Provider Setup Surface (`auth login -p <id>`) through the same verbatim-command
+  // provider readiness terminal (`auth login -p <id>`) through the same verbatim-command
   // path the readiness blocker uses, without re-resolving the login-shell PATH.
   executablePath?: string;
 }

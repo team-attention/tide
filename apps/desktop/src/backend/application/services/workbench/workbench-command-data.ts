@@ -1,6 +1,5 @@
 import {
   arrayOfStrings,
-  recordField,
   recordOfStrings,
   stringField,
 } from "../support/record-helpers.ts";
@@ -12,6 +11,7 @@ import {
 } from "../support/service-value-helpers.ts";
 import type {
   BrowserPaneScreenshot,
+  TerminalPaneState,
   WorkbenchLayoutMode,
 } from "../../domains/workbench/workbench.ts";
 
@@ -26,38 +26,39 @@ export function workbenchLayoutModeFromValue(value: unknown): WorkbenchLayoutMod
   return value === "stacked" || value === "split" ? value : undefined;
 }
 
-export interface ProviderSetupSurfaceActionInput {
-  command: string;
-  args: string[];
+export type WorkbenchTerminalExpectedCompletion =
+  NonNullable<TerminalPaneState["expectedCompletion"]>;
+
+export interface WorkbenchTerminalCommandInput {
+  command?: string;
+  args?: string[];
   env?: Record<string, string>;
-  cwd: string;
-  expectedCompletion: "process_exit" | "retry_preflight";
+  cwd?: string;
+  title?: string;
+  terminalRole?: TerminalPaneState["terminalRole"];
+  expectedCompletion?: WorkbenchTerminalExpectedCompletion;
 }
 
-export function providerSetupSurfaceActionFromData(
+export function workbenchTerminalCommandFromData(
   data: Record<string, unknown> | undefined,
-): ProviderSetupSurfaceActionInput | undefined {
-  const setup = recordField(data, "setup");
-  const command = stringField(setup, "command");
-  const cwd = stringField(setup, "cwd");
-  const expectedCompletion = stringField(setup, "expectedCompletion");
-  if (
-    command === undefined ||
-    cwd === undefined ||
-    (expectedCompletion !== "process_exit" && expectedCompletion !== "retry_preflight")
-  ) {
-    return undefined;
-  }
+): WorkbenchTerminalCommandInput {
+  const terminalRole = stringField(data, "terminalRole");
+  const expectedCompletion = stringField(data, "expectedCompletion");
   return {
-    command,
-    args: arrayOfStrings(setup?.args),
-    env: recordOfStrings(setup?.env),
-    cwd,
-    expectedCompletion,
+    command: stringField(data, "command"),
+    args: data?.args === undefined ? undefined : arrayOfStrings(data.args),
+    env: recordOfStrings(data?.env),
+    cwd: stringField(data, "cwd"),
+    title: stringField(data, "title"),
+    terminalRole: terminalRole === "provider_readiness" ? terminalRole : undefined,
+    expectedCompletion:
+      expectedCompletion === "process_exit" || expectedCompletion === "retry_preflight"
+        ? expectedCompletion
+        : undefined,
   };
 }
 
-export function providerSetupSurfaceInputFromData(
+export function terminalInputFromData(
   data: Record<string, unknown> | undefined,
 ): string | undefined {
   const input = data?.input ?? data?.bytes;

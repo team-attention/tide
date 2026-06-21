@@ -537,13 +537,13 @@ test("agent_runtime_resume_contract_events_resume_without_input_write", async ()
   assert.equal(fakes.runtime.writes.length, 0);
 });
 
-test("workbench_command_open_provider_setup_surface_emits_workbench_changed", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-workbench-command.md
+test("workbench_command_open_terminal_emits_workbench_changed", async () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const service = createThreadRuntimeService({
     ...createFakes().ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
-    initialThreads: [threadSeed("thread-setup-surface")],
+    initialThreads: [threadSeed("thread-readiness-surface")],
   });
   const adapter = createBackendContractMessageAdapter({
     service,
@@ -553,15 +553,14 @@ test("workbench_command_open_provider_setup_surface_emits_workbench_changed", as
 
   const events = await adapter.handleMessage(
     commandEnvelope("workbench.command", {
-      threadId: "thread-setup-surface",
-      command: "open_provider_setup_surface",
+      threadId: "thread-readiness-surface",
+      command: "open_terminal",
       data: {
-        setup: {
           command: "/usr/local/bin/codex",
           args: [],
           cwd: "/repo",
           expectedCompletion: "retry_preflight",
-        },
+          terminalRole: "provider_readiness",
       },
     }),
   );
@@ -573,7 +572,7 @@ test("workbench_command_open_provider_setup_surface_emits_workbench_changed", as
   assertBackendEventsAreContractEnvelopes(events);
   assert.equal(events[1].payload.activePaneId, "id-1");
   assert.equal(events[1].payload.panes[0]?.kind, "terminal");
-  assert.equal(events[1].payload.panes[0]?.title, "Provider setup: codex");
+  assert.equal(events[1].payload.panes[0]?.title, "Provider readiness: codex");
   assert.equal(events[1].payload.panes[0]?.command, "/usr/local/bin/codex");
   assert.equal(events[2].payload.result?.handled, true);
 });
@@ -736,20 +735,20 @@ test("live_backend_wires_file_storage_restore_and_thread_event_persistence", () 
   assert.match(restore, /persistThreadEvents/);
 });
 
-test("live_backend_projects_provider_setup_async_events_to_backend_events", async () => {
-  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
+test("live_backend_projects_provider_readiness_async_events_to_backend_events", async () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const service = createThreadRuntimeService({
     ...createFakes().ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
     initialThreads: [
-      threadSeed("thread-provider-setup-async", {
+      threadSeed("thread-provider-readiness-async", {
         launchOptions: { model: "GPT-5.5 High", permission: "workspace-write" },
       }),
     ],
   });
   const hydrated = await service.hydrateThread({
-    threadId: "thread-provider-setup-async",
+    threadId: "thread-provider-readiness-async",
   });
   assert.equal(hydrated.ok, true);
   if (!hydrated.ok) {
@@ -760,7 +759,7 @@ test("live_backend_projects_provider_setup_async_events_to_backend_events", asyn
     kind: "user_message",
     role: "user" as const,
     status: "complete" as const,
-    body: "Run after setup",
+    body: "Run after readiness",
     updatedAt: now,
   };
   const asyncEvents: ThreadRuntimeAsyncEvent[] = [
@@ -823,7 +822,7 @@ test("live_backend_projects_provider_setup_async_events_to_backend_events", asyn
       event.kind === "thread.hydrated",
   );
   assert.equal(readinessEvent?.payload.readiness.blockers[0]?.kind, "directory_trust_required");
-  assert.equal(blockEvent?.payload.block.body, "Run after setup");
+  assert.equal(blockEvent?.payload.block.body, "Run after readiness");
   assert.equal(threadEvent?.payload.thread.launchOptions?.model, "GPT-5.5 High");
 });
 

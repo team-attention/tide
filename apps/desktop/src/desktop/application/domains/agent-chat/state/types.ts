@@ -293,7 +293,7 @@ export interface AgentChatProviderReadiness {
 export interface AgentChatProviderUpdateAdvisory {
   currentVersion: string;
   latestVersion: string;
-  setup: AgentChatProviderSetupSurfaceAction;
+  terminalAction: AgentChatProviderReadinessTerminalAction;
 }
 
 export interface AgentChatProviderReadinessBlocker {
@@ -301,10 +301,10 @@ export interface AgentChatProviderReadinessBlocker {
   message: string;
   scope?: string;
   action?: string;
-  setup?: AgentChatProviderSetupSurfaceAction;
+  terminalAction?: AgentChatProviderReadinessTerminalAction;
 }
 
-export interface AgentChatProviderSetupSurfaceAction {
+export interface AgentChatProviderReadinessTerminalAction {
   command: string;
   args: string[];
   env?: Record<string, string>;
@@ -378,10 +378,15 @@ export type AgentChatBackendCommand =
       kind: "workbench.command";
       payload: {
         threadId: string;
-        command: "open_provider_setup_surface";
+        command: "open_terminal";
         data: {
           blockerKind: string;
-          setup: AgentChatProviderSetupSurfaceAction;
+          command: string;
+          args: string[];
+          env?: Record<string, string>;
+          cwd: string;
+          terminalRole?: "provider_readiness";
+          expectedCompletion?: "process_exit" | "retry_preflight";
         };
       };
     }
@@ -401,7 +406,7 @@ export interface AgentChatShellViewModel {
   runtimeState: AgentRuntimeStateName;
   thread: AgentChatThreadView | null;
   providerReadinessBlockers: AgentChatProviderReadinessBlocker[];
-  // Display label of the agent the readiness card is for (e.g. "Codex"), so its setup rows can
+  // Display label of the agent the readiness card is for (e.g. "Codex"), so its terminal rows can
   // read "Install Codex" / "Sign in to Codex" instead of a generic prompt. Absent when ready.
   providerReadinessAgentLabel?: string;
   // True while a Provider Readiness action (e.g. trust grant) is in flight.

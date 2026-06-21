@@ -24,7 +24,7 @@ export function createNodeProviderTrustPort(
       // the cwd its process resolves via getcwd() — the canonical on-disk path.
       // Tide may hold a different spelling (macOS /var -> /private/var, case-
       // insensitive FS casing), so trust BOTH spellings or the provider can still
-      // block on a trust dialog/setup gate. realpathSync.native returns the true
+      // block on a trust dialog/readiness gate. realpathSync.native returns the true
       // kernel path (plain realpathSync does not fix casing on macOS).
       for (const cwd of cwdSpellings(input.cwd)) {
         switch (input.agentId) {

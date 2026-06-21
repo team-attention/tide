@@ -13,7 +13,7 @@ export async function runElectronRuntimeSmoke(mainWindow: BrowserWindow): Promis
   const token = process.env.TIDE_ELECTRON_SMOKE_TOKEN ?? "";
   const expectPushedAgentOutput =
     process.env.TIDE_ELECTRON_SMOKE_EXPECT_PUSHED_AGENT_OUTPUT === "1";
-  const openSetupSurface = process.env.TIDE_ELECTRON_SMOKE_OPEN_SETUP_SURFACE === "1";
+  const openReadinessTerminal = process.env.TIDE_ELECTRON_SMOKE_OPEN_READINESS_TERMINAL === "1";
 
   try {
     const result = await mainWindow.webContents.executeJavaScript(
@@ -23,7 +23,7 @@ export async function runElectronRuntimeSmoke(mainWindow: BrowserWindow): Promis
         pollMs,
         token,
         expectPushedAgentOutput,
-        openSetupSurface,
+        openReadinessTerminal,
       }),
       true,
     );
@@ -43,14 +43,14 @@ function electronRuntimeSmokeScript(input: {
   pollMs: number;
   token: string;
   expectPushedAgentOutput: boolean;
-  openSetupSurface: boolean;
+  openReadinessTerminal: boolean;
 }): string {
   return `
     (async () => {
       const command = JSON.parse(${JSON.stringify(input.commandJson)});
       const token = ${JSON.stringify(input.token)};
       const expectPushedAgentOutput = ${JSON.stringify(input.expectPushedAgentOutput)};
-      const openSetupSurface = ${JSON.stringify(input.openSetupSurface)};
+      const openReadinessTerminal = ${JSON.stringify(input.openReadinessTerminal)};
       if (window.tide === undefined) {
         throw new Error("window.tide is unavailable.");
       }
@@ -62,9 +62,9 @@ function electronRuntimeSmokeScript(input: {
       const startEvents = await window.tide.sendBackendCommand(command);
       const readiness = startEvents.find((event) => event.kind === "providerReadiness.changed");
       if (readiness !== undefined) {
-        let setupSurface = undefined;
-        if (openSetupSurface) {
-          setupSurface = await openProviderSetupSurface(readiness);
+        let readinessTerminal = undefined;
+        if (openReadinessTerminal) {
+          readinessTerminal = await openProviderReadinessTerminal(readiness);
         }
         unsubscribe();
         return {
@@ -72,7 +72,7 @@ function electronRuntimeSmokeScript(input: {
           phase: "provider-not-ready",
           threadId: readiness.payload.threadId,
           readiness: readiness.payload.readiness,
-          setupSurface,
+          readinessTerminal,
           startEventKinds: eventKinds(startEvents),
           pushedCount: pushedEvents.length,
           pushedEventKinds: eventKinds(pushedEvents),
@@ -143,25 +143,32 @@ function electronRuntimeSmokeScript(input: {
         return events.map((event) => event.kind);
       }
 
-      async function openProviderSetupSurface(readinessEvent) {
-        const setup = (readinessEvent.payload.readiness.blockers ?? [])
-          .find((blocker) => blocker.setup)?.setup;
-        if (setup === undefined) {
-          return { opened: false, error: "missing_setup_action" };
+      async function openProviderReadinessTerminal(readinessEvent) {
+        const terminalAction = (readinessEvent.payload.readiness.blockers ?? [])
+          .find((blocker) => blocker.terminalAction)?.terminalAction;
+        if (terminalAction === undefined) {
+          return { opened: false, error: "missing_terminal_action" };
         }
 
-        const setupEvents = await window.tide.sendBackendCommand({
+        const terminalEvents = await window.tide.sendBackendCommand({
           contractVersion: command.contractVersion,
-          requestId: command.requestId + "-open-setup-" + Date.now(),
+          requestId: command.requestId + "-open-readiness-terminal-" + Date.now(),
           kind: "workbench.command",
           issuedAt: new Date().toISOString(),
           payload: {
             threadId: readinessEvent.payload.threadId,
-            command: "open_provider_setup_surface",
-            data: { setup },
+            command: "open_terminal",
+            data: {
+              command: terminalAction.command,
+              args: terminalAction.args,
+              env: terminalAction.env,
+              cwd: terminalAction.cwd,
+              terminalRole: "provider_readiness",
+              expectedCompletion: terminalAction.expectedCompletion,
+            },
           },
         });
-        const workbenchChanged = setupEvents
+        const workbenchChanged = terminalEvents
           .find((event) => event.kind === "workbench.changed");
         const pane = workbenchChanged?.payload.panes
           ?.find((candidate) => candidate.kind === "terminal");
@@ -172,7 +179,7 @@ function electronRuntimeSmokeScript(input: {
           status: pane?.status,
           command: pane?.command,
           expectedCompletion: pane?.expectedCompletion,
-          eventKinds: eventKinds(setupEvents),
+          eventKinds: eventKinds(terminalEvents),
         };
       }
 

@@ -14,7 +14,7 @@ export type ProviderReadinessBlockerScope =
   | "execution_context"
   | "integration";
 
-export interface ProviderSetupSurfaceAction {
+export interface ProviderReadinessTerminalAction {
   command: string;
   args: string[];
   env?: Record<string, string>;
@@ -27,7 +27,7 @@ export interface ProviderReadinessBlocker {
   message: string;
   scope?: ProviderReadinessBlockerScope;
   action?: "open_terminal" | "open_provider" | "retry" | "none";
-  setup?: ProviderSetupSurfaceAction;
+  terminalAction?: ProviderReadinessTerminalAction;
 }
 
 // A focused, backend-only summary of the provider's runtime capabilities,
@@ -54,8 +54,8 @@ export interface ProviderUpdateAdvisory {
   currentVersion: string;
   latestVersion: string;
   // Updates the CLI in place (npm install -g <pkg>@latest, retry_preflight) —
-  // the same Setup Surface handoff used to install a missing CLI.
-  setup: ProviderSetupSurfaceAction;
+  // the same readiness terminal handoff used to install a missing CLI.
+  terminalAction: ProviderReadinessTerminalAction;
 }
 
 export interface ProviderReadinessCheckInput {

@@ -1,12 +1,12 @@
 import type { ProviderCliAgentId } from "../../../application/domains/thread/thread.ts";
-import type { ProviderSetupSurfaceAction } from "../../../application/domains/provider-readiness/provider-readiness.ts";
+import type { ProviderReadinessTerminalAction } from "../../../application/domains/provider-readiness/provider-readiness.ts";
 import type { AgentCliUpdateChecker } from "../../../adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts";
 import { semverLess } from "../../../adapters/outbound/agent-integrations/shared/semver-compare.ts";
 import {
   executableForAgent,
   installPackageForAgent,
   latestPublishedVersion,
-  npmUpdateSetupAction,
+  npmUpdateReadinessTerminalAction,
   providerVersionForExecutable,
 } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
 
@@ -28,8 +28,8 @@ export interface AgentUpdateCheckerDeps {
   // Latest published version (`npm view <pkg> version`), or undefined on failure.
   // Network I/O, so asynchronous — refresh awaits all agents in parallel.
   readLatestVersion: (agentId: ProviderCliAgentId) => Promise<string | undefined>;
-  // The in-place update Setup Surface action (npm install -g <pkg>@latest).
-  buildUpdateSetup: (agentId: ProviderCliAgentId, cwd: string) => ProviderSetupSurfaceAction;
+  // The in-place update readiness terminal action (npm install -g <pkg>@latest).
+  buildUpdateTerminalAction: (agentId: ProviderCliAgentId, cwd: string) => ProviderReadinessTerminalAction;
 }
 
 export interface RefreshableAgentCliUpdateChecker extends AgentCliUpdateChecker {
@@ -60,7 +60,7 @@ export function createAgentUpdateChecker(
       return {
         currentVersion: current,
         latestVersion: newest,
-        setup: deps.buildUpdateSetup(agentId, cwd),
+        terminalAction: deps.buildUpdateTerminalAction(agentId, cwd),
       };
     },
     async refresh() {
@@ -105,7 +105,7 @@ export function createLiveAgentUpdateChecker(input: {
       return exe === undefined ? Promise.resolve(undefined) : providerVersionForExecutable(exe);
     },
     readLatestVersion: (agentId) => latestPublishedVersion(installPackageForAgent(agentId), npmPath),
-    buildUpdateSetup: (agentId, cwd) => npmUpdateSetupAction({ npmPath, agentId, cwd }),
+    buildUpdateTerminalAction: (agentId, cwd) => npmUpdateReadinessTerminalAction({ npmPath, agentId, cwd }),
   });
   // Populate off the startup critical path; the advisory then surfaces on the next
   // readiness check (agent select / thread open). Refresh periodically to stay fresh.

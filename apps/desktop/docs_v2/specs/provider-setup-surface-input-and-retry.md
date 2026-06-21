@@ -1,5 +1,10 @@
 # Spec: Provider Setup Surface Input And Retry
 
+Status: Superseded by
+`docs_v2/specs/thread-workbench-agent-model-cleanup.md`. Active code should use
+normal Workbench Terminal Pane input and provider-readiness completion metadata
+for retry-preflight behavior.
+
 ## Scope
 
 This spec completes the first usable Provider Setup Surface loop after the setup process has been launched.

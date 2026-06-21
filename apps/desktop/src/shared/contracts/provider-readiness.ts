@@ -14,10 +14,10 @@ export interface ProviderReadinessDto {
 export interface ProviderUpdateAdvisoryDto {
   currentVersion: string;
   latestVersion: string;
-  // The Setup Surface action that updates the CLI in place (npm install -g
+  // The readiness terminal action that updates the CLI in place (npm install -g
   // <pkg>@latest, re-running preflight on exit) — the same terminal handoff used
   // to install a missing CLI.
-  setup: ProviderSetupSurfaceActionDto;
+  terminalAction: ProviderReadinessTerminalActionDto;
 }
 
 export interface ProviderReadinessBlockerDto {
@@ -32,10 +32,10 @@ export interface ProviderReadinessBlockerDto {
   message: string;
   scope?: "provider" | "execution_context" | "integration";
   action?: "open_terminal" | "open_provider" | "retry" | "none";
-  setup?: ProviderSetupSurfaceActionDto;
+  terminalAction?: ProviderReadinessTerminalActionDto;
 }
 
-export interface ProviderSetupSurfaceActionDto {
+export interface ProviderReadinessTerminalActionDto {
   command: string;
   args: string[];
   env?: Record<string, string>;

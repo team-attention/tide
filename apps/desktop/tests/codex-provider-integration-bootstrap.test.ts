@@ -43,9 +43,9 @@ test("codex_preflight_reports_not_installed_when_codex_executable_is_missing", a
   assert.equal(result.ready, false);
   assert.equal(result.blockers[0]?.kind, "not_installed");
   // Install handoff (npm unresolved here ⇒ "npm" fallback). Spec: provider-cli-setup-handoff.md
-  assert.equal(result.blockers[0]?.setup?.command, "npm");
-  assert.deepEqual(result.blockers[0]?.setup?.args, ["install", "-g", "@openai/codex"]);
-  assert.equal(result.blockers[0]?.setup?.expectedCompletion, "retry_preflight");
+  assert.equal(result.blockers[0]?.terminalAction?.command, "npm");
+  assert.deepEqual(result.blockers[0]?.terminalAction?.args, ["install", "-g", "@openai/codex"]);
+  assert.equal(result.blockers[0]?.terminalAction?.expectedCompletion, "retry_preflight");
   assert.equal(result.launchPlan, undefined);
 });
 
@@ -59,7 +59,7 @@ test("codex_preflight_reports_not_authenticated_before_launch_plan", async () =>
   assert.equal(result.ready, false);
   assert.equal(result.blockers[0]?.kind, "not_authenticated");
   assert.equal(result.blockers[0]?.scope, "provider");
-  assert.equal(result.blockers[0]?.setup?.env, undefined);
+  assert.equal(result.blockers[0]?.terminalAction?.env, undefined);
   assert.equal(result.launchPlan, undefined);
 });
 
@@ -73,8 +73,8 @@ test("codex_directory_trust_is_checked_against_the_selected_execution_context", 
   assert.equal(result.ready, false);
   assert.equal(result.blockers[0]?.kind, "directory_trust_required");
   assert.equal(result.blockers[0]?.scope, "execution_context");
-  assert.equal(result.blockers[0]?.setup?.cwd, "/repo");
-  assert.equal(result.blockers[0]?.setup?.env, undefined);
+  assert.equal(result.blockers[0]?.terminalAction?.cwd, "/repo");
+  assert.equal(result.blockers[0]?.terminalAction?.env, undefined);
 });
 
 test("codex_preflight_requires_hook_bootstrap_before_ready_launch", async () => {
@@ -87,7 +87,7 @@ test("codex_preflight_requires_hook_bootstrap_before_ready_launch", async () => 
   assert.equal(result.ready, false);
   assert.equal(result.blockers[0]?.kind, "hook_bootstrap_required");
   assert.equal(result.blockers[0]?.scope, "integration");
-  assert.equal(result.blockers[0]?.setup?.env, undefined);
+  assert.equal(result.blockers[0]?.terminalAction?.env, undefined);
   assert.equal(result.launchPlan, undefined);
 });
 

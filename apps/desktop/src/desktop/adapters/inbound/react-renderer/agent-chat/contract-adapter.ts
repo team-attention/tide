@@ -87,42 +87,35 @@ export function toBackendCommandDraft(
         kind: "prompt.answer",
         payload: command.payload,
       };
-    case "workbench.command":
-      const setup = command.payload.data.setup;
-      const setupPayload: JsonObject = {
-        command: setup.command,
-        args: [...setup.args],
-        cwd: setup.cwd,
-        expectedCompletion: setup.expectedCompletion,
+    case "workbench.command": {
+      const dataPayload: JsonObject = {
+        blockerKind: command.payload.data.blockerKind,
+        command: command.payload.data.command,
+        args: [...command.payload.data.args],
+        cwd: command.payload.data.cwd,
       };
-      if (setup.env !== undefined) {
-        setupPayload.env = cloneStringRecord(setup.env);
+      if (command.payload.data.terminalRole !== undefined) {
+        dataPayload.terminalRole = command.payload.data.terminalRole;
+      }
+      if (command.payload.data.expectedCompletion !== undefined) {
+        dataPayload.expectedCompletion = command.payload.data.expectedCompletion;
+      }
+      if (command.payload.data.env !== undefined) {
+        dataPayload.env = { ...command.payload.data.env };
       }
       return {
         kind: "workbench.command",
         payload: {
           threadId: command.payload.threadId,
           command: command.payload.command,
-          data: {
-            blockerKind: command.payload.data.blockerKind,
-            setup: setupPayload,
-          },
+          data: dataPayload,
         },
       };
+    }
     case "provider.opencodeConnectApiKey":
       return {
         kind: "provider.opencodeConnectApiKey",
         payload: command.payload,
       };
   }
-}
-
-function cloneStringRecord(
-  value: Record<string, string>,
-): JsonObject {
-  const clone: JsonObject = {};
-  for (const [key, entry] of Object.entries(value)) {
-    clone[key] = entry;
-  }
-  return clone;
 }

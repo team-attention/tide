@@ -125,7 +125,7 @@ export interface BackendEventPayloadByKind {
     // opencode's vendor tiles (curated popular set + any connected-but-uncurated vendor) with
     // connected-state from `opencode auth list` — drives the "Connect a model" on-ramp grid.
     opencodeVendors?: OpencodeVendorDto[];
-    // opencode version + tested-with + resolved executable path (for the Setup Surface auth login).
+    // opencode version + tested-with + resolved executable path (for the readiness terminal auth login).
     opencodeEnvironment?: OpencodeEnvironmentDto;
   };
   "thread.hydrated": {

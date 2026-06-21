@@ -483,7 +483,7 @@ test("thread_start_rejects_openai_api_and_tide_api_runtime_source", () => {
   assert.equal(rejectedTideApi.error.code, "invalid_command");
 });
 
-test("Provider Readiness setup actions can carry provider setup env", () => {
+test("Provider Readiness terminal actions can carry provider readiness env", () => {
   const readiness: ProviderReadinessDto = {
     agentId: "codex",
     ready: false,
@@ -493,7 +493,7 @@ test("Provider Readiness setup actions can carry provider setup env", () => {
         scope: "execution_context",
         message: "Codex Directory Trust is required.",
         action: "open_terminal",
-        setup: {
+        terminalAction: {
           command: "codex",
           args: ["--no-alt-screen"],
           env: { CODEX_HOME: "/tmp/tide-codex-home" },
@@ -506,7 +506,7 @@ test("Provider Readiness setup actions can carry provider setup env", () => {
 
   const roundTripped = JSON.parse(JSON.stringify(readiness));
 
-  assert.deepEqual(roundTripped.blockers[0].setup, {
+  assert.deepEqual(roundTripped.blockers[0].terminalAction, {
     command: "codex",
     args: ["--no-alt-screen"],
     env: { CODEX_HOME: "/tmp/tide-codex-home" },
@@ -557,18 +557,19 @@ test("Browser Pane refs preserve revision and browser metadata", () => {
   assert.equal(roundTripped.lastAction.text, "tide");
 });
 
-test("Terminal Workbench Pane refs preserve Provider Setup Surface metadata", () => {
+test("Terminal Workbench Pane refs preserve Provider readiness terminal metadata", () => {
   const pane: WorkbenchPaneRefDto = {
-    paneId: "pane-provider-setup",
+    paneId: "pane-provider-readiness",
     kind: "terminal",
-    title: "Provider setup: codex",
-    revision: "rev-setup",
+    title: "Provider readiness: codex",
+    revision: "rev-readiness",
     updatedAt: issuedAt,
     command: "/usr/local/bin/codex",
     args: [],
     env: { CODEX_HOME: "/tmp/tide-codex-home" },
     cwd: "/repo",
     status: "ready",
+    terminalRole: "provider_readiness",
     expectedCompletion: "retry_preflight",
   };
 
@@ -579,6 +580,8 @@ test("Terminal Workbench Pane refs preserve Provider Setup Surface metadata", ()
   assert.deepEqual(roundTripped.env, { CODEX_HOME: "/tmp/tide-codex-home" });
   assert.equal(roundTripped.cwd, "/repo");
   assert.equal(roundTripped.status, "ready");
+  assert.equal(roundTripped.terminalRole, "provider_readiness");
+  assert.equal(roundTripped.expectedCompletion, "retry_preflight");
 });
 
 test("workbench_launcher_pane_contract_round_trips", () => {

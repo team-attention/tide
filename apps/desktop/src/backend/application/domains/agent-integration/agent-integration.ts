@@ -1,7 +1,7 @@
 import type {
   ProviderReadinessBlockerKind,
   ProviderReadinessBlockerScope,
-  ProviderSetupSurfaceAction,
+  ProviderReadinessTerminalAction,
 } from "../provider-readiness/provider-readiness.ts";
 import type {
   AgentBinding,
@@ -29,7 +29,7 @@ export interface ProviderLaunchPlan {
   env: Record<string, string>;
   cwd: string;
   // How Tide talks to the spawned process. Provider runtimes are structured-only:
-  // claude stream-json, codex app-server, or ACP. Visible setup/workbench terminals
+  // claude stream-json, codex app-server, or ACP. Visible readiness/workbench terminals
   // use the PTY port's own launch plan instead of this agent-runtime contract.
   transport: "claude_stream_json" | "codex_app_server" | "acp";
   // Structured-transport session parameters that ride the protocol instead of
@@ -102,13 +102,13 @@ export interface AgentIntegrationReadinessBlocker {
   kind: ProviderReadinessBlockerKind;
   scope: ProviderReadinessBlockerScope;
   message: string;
-  setup?: ProviderSetupSurfaceAction;
+  terminalAction?: ProviderReadinessTerminalAction;
 }
 
 export type {
   ProviderReadinessBlockerKind,
   ProviderReadinessBlockerScope,
-  ProviderSetupSurfaceAction,
+  ProviderReadinessTerminalAction,
 } from "../provider-readiness/provider-readiness.ts";
 
 export interface AgentIntegrationPreflightInput {

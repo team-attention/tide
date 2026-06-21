@@ -349,15 +349,13 @@ test("python_pty_process_launcher_replies_to_basic_terminal_queries", { skip: SK
   assert.match(output, /\\x1b\[\?0u/);
 });
 
-test("live_backend_routes_provider_setup_surfaces_through_workbench_terminal_port", () => {
-  // Spec: docs_v2/specs/provider-setup-surface-terminal-lifecycle.md
+test("live_backend_routes_provider_readiness_terminals_through_workbench_terminal_port", () => {
+  // Spec: docs_v2/specs/thread-workbench-agent-model-cleanup.md
   const source = fs.readFileSync(
     path.join(repoRoot, "src/backend/infrastructure/node/live/live-backend.ts"),
     "utf8",
   );
 
-  assert.doesNotMatch(source, /createPtyProviderSetupSurfaceTerminalPort/);
-  assert.doesNotMatch(source, /providerSetupSurfaceTerminalPort/);
   assert.match(source, /workbenchTerminalPort: createPtyWorkbenchTerminalPort/);
   assert.match(source, /resolveRuntimeEnvironment: \(\{ cwd, planEnv \}\) =>/);
 });
