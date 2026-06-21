@@ -91,7 +91,7 @@ export function toBackendCommandDraft(
       const dataPayload: JsonObject = {
         blockerKind: command.payload.data.blockerKind,
         command: command.payload.data.command,
-        args: [...command.payload.data.args],
+        args: [...(command.payload.data.args ?? [])],
         cwd: command.payload.data.cwd,
       };
       if (command.payload.data.terminalRole !== undefined) {

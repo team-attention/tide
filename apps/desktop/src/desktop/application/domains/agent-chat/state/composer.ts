@@ -477,7 +477,7 @@ export function providerReadinessTerminalActionPayload(
 ): AgentChatProviderReadinessTerminalAction {
   const payload: AgentChatProviderReadinessTerminalAction = {
     command: action.command,
-    args: [...action.args],
+    args: [...(action.args ?? [])],
     cwd: action.cwd,
     expectedCompletion: action.expectedCompletion,
   };
