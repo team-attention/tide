@@ -31,6 +31,7 @@ import {
   applyProductShellBackendEvent,
   createProductShellState,
   createProductShellViewModel,
+  markProductShellThreadsUnread,
   quickOpenFilesFromState,
   selectCompletedThreads,
   discardProductShellDraftThread,
@@ -270,7 +271,9 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     const nowRunning = new Set(
       shellState.threads.filter((thread) => thread.running === true).map((thread) => thread.threadId),
     );
-    for (const thread of selectCompletedThreads(prevRunningRef.current, shellState.threads)) {
+    const completedThreads = selectCompletedThreads(prevRunningRef.current, shellState.threads);
+    const unreadThreadIds: string[] = [];
+    for (const thread of completedThreads) {
       window.tide?.notify?.({
         kind: "agent_finished",
         threadId: thread.threadId,
@@ -278,6 +281,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         body: thread.title,
         isActiveThread: thread.threadId === shellState.activeThreadId,
       });
+      if (thread.threadId !== shellState.activeThreadId) {
+        unreadThreadIds.push(thread.threadId);
+      }
+    }
+    if (unreadThreadIds.length > 0) {
+      setShellState((state) => markProductShellThreadsUnread(state, unreadThreadIds));
     }
     prevRunningRef.current = nowRunning;
   }, [shellState.threads, shellState.activeThreadId]);

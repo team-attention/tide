@@ -355,9 +355,17 @@ function applyProductShellThreadListEvent(
   event: AgentChatBackendEvent,
 ): ProductShellState {
   const payload = event.payload as { threads?: AgentChatThreadSummary[] };
+  const unreadThreadIds = new Set(
+    state.threads
+      .filter((thread) => thread.unread === true && thread.threadId !== state.activeThreadId)
+      .map((thread) => thread.threadId),
+  );
   const threads = (payload.threads ?? [])
     .filter((thread) => !thread.archived)
-    .map(toProductShellThreadFromSummary);
+    .map(toProductShellThreadFromSummary)
+    .map((thread) =>
+      unreadThreadIds.has(thread.threadId) ? { ...thread, unread: true } : thread,
+    );
   const activeThreadIsListed =
     state.activeThreadId !== null &&
     threads.some((thread) => thread.threadId === state.activeThreadId);

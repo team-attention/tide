@@ -379,7 +379,7 @@ function buildThreadListViewModel(
       threads: groupThreads.map((thread) =>
         toThreadView(thread, state, options.activeThreadHydrating === true),
       ),
-      attention: groupThreads.some((thread) => thread.attention === true),
+      attention: groupThreads.some((thread) => thread.attention === true || thread.unread === true),
       running: groupThreads.some((thread) => thread.running === true),
     };
   };
