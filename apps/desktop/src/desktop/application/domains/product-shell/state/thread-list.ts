@@ -3,7 +3,7 @@ import { formatRelativeThreadTime, previewBlocksForThread, projectsFromThreads, 
 import type { ProductShellThreadListViewModel } from "./view-model.ts";
 import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatBlock, AgentChatBranchOption, AgentChatShellState, AgentChatThreadSummary, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
-import { agentBindingForShellAgent, cloneLaunchOptions, createStartAgentChatState, normalizeAgentId, preserveActiveAgentChat, refocusStartComposerIfActiveDropped } from "./start.ts";
+import { activeSurfaceThreadId, agentBindingForShellAgent, cloneLaunchOptions, createStartAgentChatState, normalizeAgentId, preserveActiveAgentChat, refocusStartComposerIfActiveDropped } from "./start.ts";
 import { applyAppChromeBackendEvent, createAppChromeState } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
@@ -487,8 +487,10 @@ export function openProductShellThread(
   state: ProductShellState,
   threadId: string,
 ): ProductShellState {
-  if (state.activeThreadId === threadId) {
-    return state;
+  // Already showing this thread (by what the surface DISPLAYS, not just activeThreadId,
+  // which a thread.listed can transiently null) → keep the live chat, only re-assert focus.
+  if (activeSurfaceThreadId(state) === threadId) {
+    return state.activeThreadId === threadId ? state : { ...state, activeThreadId: threadId };
   }
 
   const thread = state.threads.find((candidate) => candidate.threadId === threadId);
@@ -518,10 +520,14 @@ export function openProductShellThreadFromLeftRail(
   threadId: string,
   input: { backendTransportAvailable: boolean },
 ): ProductShellUpdateResult {
-  if (state.activeThreadId === threadId) {
+  // Already showing this thread (by what the surface DISPLAYS, not just activeThreadId,
+  // which a thread.listed can transiently null) → keep the live chat instead of rebuilding
+  // it into a skeleton, and re-assert focus (activeThreadId may have been nulled).
+  if (activeSurfaceThreadId(state) === threadId) {
     return {
       state: {
         ...state,
+        activeThreadId: threadId,
         leftRailMenu: null,
         archiveConfirmThreadId: null,
         renamingThreadId: null,

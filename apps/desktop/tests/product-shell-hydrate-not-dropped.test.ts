@@ -153,6 +153,33 @@ test("an approval card for the displayed thread reaches the visible surface in t
   assert.equal(carded.agentChat.promptState?.promptId, "p2", "the card shows on the displayed surface");
 });
 
+test("re-clicking the displayed thread during the activeThreadId-null window keeps it ready and re-asserts focus", () => {
+  // The surface shows Y (ready), then a thread.listed transiently nulls activeThreadId
+  // while Y is still on screen. Re-clicking Y must NOT rebuild it into a skeleton — it
+  // keeps the live chat and re-asserts focus (the open guard keys off the displayed
+  // thread, not activeThreadId).
+  const opened = openProductShellThreadFromLeftRail(seed(["x", "y"]), "y", {
+    backendTransportAvailable: true,
+  });
+  const ready = applyProductShellBackendEvent(opened.state, {
+    kind: "thread.hydrated",
+    payload: { thread: threadSummary("y"), blocks: [block("b1", "y")], runtimeState: "running" },
+  });
+  const nulled = applyProductShellBackendEvent(ready, {
+    kind: "thread.listed",
+    payload: { threads: [threadSummary("x")] },
+  });
+  assert.equal(nulled.activeThreadId, null);
+  assert.equal(nulled.agentChat.thread?.threadId, "y");
+
+  const reclicked = openProductShellThreadFromLeftRail(nulled, "y", {
+    backendTransportAvailable: true,
+  });
+  assert.equal(reclicked.state.activeThreadId, "y", "focus is re-asserted");
+  assert.equal(reclicked.state.agentChat.hydrating, false, "no skeleton flash");
+  assert.equal(reclicked.state.agentChat.blocks.length, 1, "live transcript kept");
+});
+
 test("reselecting the active thread does not replace its ready chat with a hydrate skeleton", () => {
   const opened = openProductShellThreadFromLeftRail(seed(["x"]), "x", {
     backendTransportAvailable: true,

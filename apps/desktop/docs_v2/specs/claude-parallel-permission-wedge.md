@@ -145,6 +145,9 @@ Used consistently in the three surface-identity decisions:
   skeleton).
 
 `src/desktop/application/domains/product-shell/state/start.ts` exports `activeSurfaceThreadId`;
-`events.ts` imports it. The open early-guards (`activeThreadId === threadId`) still key off
-`activeThreadId` — reopening the exact same displayed thread during a null window is a rare
-edge and recovers on the next list, so it is intentionally left out of scope.
+`events.ts` and `thread-list.ts` import it. The open early-guards in `openProductShellThread`
+/ `openProductShellThreadFromLeftRail` (which short-circuit re-opening the thread already on
+screen, to avoid rebuilding it into a skeleton) also key off `activeSurfaceThreadId` and
+re-assert `activeThreadId` in the returned state — so re-clicking the displayed thread during
+the null window keeps the live chat instead of flashing a skeleton. All four surface-identity
+decisions now agree on what "the thread on screen" means.
