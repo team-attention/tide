@@ -43,6 +43,10 @@ export {
 
 export const CODEX_ACCEPT_TOKEN = "structured:accept";
 export const CODEX_DECLINE_TOKEN = "structured:decline";
+// "Allow for this session": codex's native session-scoped approval — the same command/files
+// are not re-prompted for the rest of the session (decision: "acceptForSession").
+// See docs_v2/specs/codex-permission-allow-for-session.md.
+export const CODEX_ACCEPT_FOR_SESSION_TOKEN = "structured:accept_for_session";
 
 export interface CreateCodexAppServerClientInput extends StructuredClientCallbacks {
   plan: ProviderLaunchPlan;
@@ -303,7 +307,14 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     this.pendingApprovals.delete(promptId);
-    const decision = input.value === CODEX_DECLINE_TOKEN ? "decline" : "accept";
+    // codex v2 decision enum: accept / acceptForSession (don't re-prompt this session) /
+    // decline. "Allow for this session" sends acceptForSession; everything else maps as before.
+    const decision =
+      input.value === CODEX_DECLINE_TOKEN
+        ? "decline"
+        : input.value === CODEX_ACCEPT_FOR_SESSION_TOKEN
+          ? "acceptForSession"
+          : "accept";
     this.writeLine({ id: serverRequestId, result: { decision } });
   }
 
@@ -550,8 +561,17 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       kind: "approval",
       message,
       ...(detail !== undefined ? { detail } : {}),
+      // Order: Allow / Allow for this session / Deny. Both v2 approval types codex sends
+      // (commandExecution + fileChange) support the session-scoped decision, so the choice is
+      // always offered. It rides the existing `kind: "allow_always"` styling slot.
       choices: [
         { choiceId: "allow", label: "Allow", providerValue: CODEX_ACCEPT_TOKEN },
+        {
+          choiceId: "allow_session",
+          label: "Allow for this session",
+          providerValue: CODEX_ACCEPT_FOR_SESSION_TOKEN,
+          kind: "allow_always",
+        },
         { choiceId: "deny", label: "Deny", providerValue: CODEX_DECLINE_TOKEN },
       ],
       defaultChoiceId: "allow",
