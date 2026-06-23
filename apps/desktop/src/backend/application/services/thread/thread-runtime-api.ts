@@ -13,7 +13,7 @@ import type { AgentRuntimeState } from "../../domains/agent-runtime/agent-runtim
 import type { ProviderReadinessResult } from "../../domains/provider-readiness/provider-readiness.ts";
 import type { AgentSessionBlock } from "../../domains/agent-session/agent-session-block.ts";
 import type { RawAgentFrame, RawAgentFramePayloadKind, RawAgentFrameSource } from "../../domains/agent-session/raw-agent-frame.ts";
-import type { ArchiveThreadInput, ArchiveThreadResult, ListThreadsInput, ListThreadsResult, RenameThreadInput, RenameThreadResult, RestoreThreadsInput, RestoreThreadsResult, SetThreadPinnedInput, SetThreadPinnedResult } from "./thread-crud-service.ts";
+import type { ArchiveThreadInput, ArchiveThreadResult, ListThreadsInput, ListThreadsResult, RenameThreadInput, RenameThreadResult, RestoreThreadsInput, RestoreThreadsResult, SetThreadGoalInput, SetThreadGoalResult, SetThreadPinnedInput, SetThreadPinnedResult } from "./thread-crud-service.ts";
 import type { ServiceResult } from "../support/service-result.ts";
 import type { WorkbenchCommandInput, WorkbenchCommandResult } from "../workbench/workbench-command-handler.ts";
 import type { WorkspaceQueryHandler } from "../workbench/workspace-query-handler.ts";
@@ -313,6 +313,7 @@ export interface ThreadRuntimeService {
   archiveThread(input: ArchiveThreadInput): Promise<ServiceResult<ArchiveThreadResult>>;
   setThreadPinned(input: SetThreadPinnedInput): Promise<ServiceResult<SetThreadPinnedResult>>;
   renameThread(input: RenameThreadInput): Promise<ServiceResult<RenameThreadResult>>;
+  setThreadGoal(input: SetThreadGoalInput): Promise<ServiceResult<SetThreadGoalResult>>;
   hydrateThread(input: HydrateThreadInput): Promise<ServiceResult<HydrateThreadResult>>;
   // Internal, NON-CLONING read for hot-path callers (the live projector + persist)
   // that only READ thread/binding/blocks and never mutate them. hydrateThread deep-

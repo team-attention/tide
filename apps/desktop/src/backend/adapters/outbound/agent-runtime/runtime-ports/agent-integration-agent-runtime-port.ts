@@ -253,6 +253,10 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     if (runtime === undefined) {
       throw new Error("Agent Runtime handle was not found.");
     }
+    if (input.kind === "goal_set") {
+      await runtime.client.write({ kind: "goal_set", objective: input.value });
+      return;
+    }
     if (input.kind === "composer_input") {
       await runtime.client.write({
         kind: "composer_input",

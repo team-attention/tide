@@ -45,6 +45,7 @@ export function normalizeThreadSeed(seed: ThreadSeed): ThreadRecord {
     runtimeState: seed.runtimeState,
     lastKnownState: seed.lastKnownState,
     pinned: seed.pinned ?? false,
+    goal: seed.goal,
     createdAt: seed.createdAt,
     updatedAt: seed.updatedAt,
     cachedBlocks: cloneBlocks(seed.cachedBlocks ?? []),
@@ -81,6 +82,7 @@ export function snapshotThread(
     live: thread.activeRuntimeHandle !== undefined,
     runtimeStartedAt: thread.runtimeStartedAt,
     pinned: thread.pinned ?? false,
+    goal: thread.goal,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     cachedBlocks: options?.shareBlocks

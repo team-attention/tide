@@ -22,6 +22,9 @@ export type AgentChatBackendCommandDraft = {
   kind: "thread.setLaunchOptions";
   payload: BackendCommandPayloadByKind["thread.setLaunchOptions"];
 } | {
+  kind: "thread.setGoal";
+  payload: BackendCommandPayloadByKind["thread.setGoal"];
+} | {
   kind: "agentRuntime.stop";
   payload: BackendCommandPayloadByKind["agentRuntime.stop"];
 } | {
@@ -71,6 +74,11 @@ export function toBackendCommandDraft(
       return {
         kind: "thread.setLaunchOptions",
         payload: command.payload as BackendCommandPayloadByKind["thread.setLaunchOptions"],
+      };
+    case "thread.setGoal":
+      return {
+        kind: "thread.setGoal",
+        payload: command.payload,
       };
     case "agentRuntime.stop":
       return {

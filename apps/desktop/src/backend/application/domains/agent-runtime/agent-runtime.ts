@@ -18,7 +18,10 @@ export interface AgentRuntimeHandle {
 }
 
 export interface TerminalInput {
-  kind: "composer_input" | "prompt_answer";
+  // "goal_set" pushes the thread goal to the provider's native goal mechanism;
+  // `value` carries the objective (empty ⇒ clear). See
+  // docs_v2/specs/thread-goal-and-checklist-panel.md.
+  kind: "composer_input" | "prompt_answer" | "goal_set";
   value: string;
   submittedAt: string;
   promptId?: string;

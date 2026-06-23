@@ -1,0 +1,109 @@
+/* Pinned thread goal + agent-owned checklist panel. Imported by styles/index.css. */
+
+.goal-checklist-panel {
+  width: min(760px, calc(100% - 32px));
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  margin: 0 auto;
+  padding: 9px 10px;
+  border: 1px solid var(--tide-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tide-surface) 94%, var(--tide-text) 6%);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.goal-checklist-panel__goal-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.goal-checklist-panel__goal-icon {
+  color: var(--tide-muted);
+}
+
+.goal-checklist-panel__goal-text,
+.goal-checklist-panel__goal-input,
+.goal-checklist-panel__progress {
+  min-width: 0;
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.goal-checklist-panel__goal-text {
+  overflow: hidden;
+  padding: 0;
+  color: var(--tide-text);
+  background: transparent;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.goal-checklist-panel__goal-text--empty {
+  color: var(--tide-muted);
+}
+
+.goal-checklist-panel__goal-input {
+  width: 100%;
+  padding: 0 7px;
+  color: var(--tide-text);
+  background: var(--tide-bg);
+  outline: 1px solid var(--tide-accent);
+}
+
+.goal-checklist-panel__progress {
+  padding: 0 8px;
+  color: var(--tide-muted);
+  background: var(--tide-bg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.goal-checklist-panel__progress:hover {
+  color: var(--tide-text);
+}
+
+.goal-checklist-panel__list {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 23px;
+  list-style: none;
+}
+
+.goal-checklist-panel__item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  color: var(--tide-muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.goal-checklist-panel__item--in_progress {
+  color: var(--tide-text);
+}
+
+.goal-checklist-panel__item--done {
+  color: color-mix(in srgb, var(--tide-muted) 82%, var(--tide-text) 18%);
+}
+
+.goal-checklist-panel__item-icon {
+  margin-top: 1px;
+  color: currentColor;
+}
+
+.goal-checklist-panel__item-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

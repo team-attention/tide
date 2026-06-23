@@ -361,7 +361,8 @@ function threadIdFromBackendEvent(event: AgentChatBackendEvent): string | undefi
       return typeof payload.block?.threadId === "string" ? payload.block.threadId : undefined;
     }
     case "thread.started":
-    case "thread.hydrated": {
+    case "thread.hydrated":
+    case "thread.goalSet": {
       const payload = event.payload as { thread?: { threadId?: unknown } };
       return typeof payload.thread?.threadId === "string" ? payload.thread.threadId : undefined;
     }

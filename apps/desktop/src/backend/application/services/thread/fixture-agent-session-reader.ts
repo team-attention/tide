@@ -93,6 +93,8 @@ function blocksFromFrame(
       return [promptBlockFromFrame(input.thread.threadId, frame, payload, "choice_prompt")];
     case "workbench_reference":
       return [workbenchReferenceBlockFromFrame(input.thread.threadId, frame, payload)];
+    case "plan":
+      return [planBlockFromFrame(input.thread.threadId, frame, payload)];
     case "provider_signal":
       // A consumed control signal (a hook payload that did not resolve into a
       // renderable prompt). It is runtime transport, not agent output, so it is
@@ -384,6 +386,66 @@ function promptBlockFromFrame(
     createdAt: frame.observedAt,
     updatedAt: frame.observedAt,
   };
+}
+
+// The agent's live checklist/plan. Every provider re-emits the WHOLE list on each
+// change (claude TodoWrite replaces todos[], codex turn/plan/updated resends plan[],
+// ACP plan resends entries[]), and the adapter keys it with a stable blockId
+// (plan:<runtimeId>), so this upserts ONE block in place rather than appending.
+// Entries are normalized to { text, status } in data.entries; rendered by the
+// pinned Goal & Checklist panel, not as a transcript turn.
+function planBlockFromFrame(
+  threadId: ThreadId,
+  frame: RawAgentFrame,
+  payload: Record<string, unknown>,
+): AgentSessionBlock {
+  const entries = planEntries(payload.entries);
+
+  return {
+    blockId: stringField(payload.blockId) ?? `plan:${threadId}`,
+    threadId,
+    agentId: frame.agentId,
+    kind: "plan",
+    role: "system",
+    sourceFrameIds: [frame.frameId],
+    status: blockStatus(payload.status, "complete"),
+    title: stringField(payload.title),
+    data: { entries },
+    rawFallback: rawText(frame),
+    createdAt: frame.observedAt,
+    updatedAt: frame.observedAt,
+  };
+}
+
+type PlanEntryStatus = "pending" | "in_progress" | "done";
+
+function planEntries(value: unknown): Array<{ text: string; status: PlanEntryStatus }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const entries: Array<{ text: string; status: PlanEntryStatus }> = [];
+  for (const item of value) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const fields = item as Record<string, unknown>;
+    const text = stringField(fields.text);
+    if (text === undefined || text.trim().length === 0) {
+      continue;
+    }
+    entries.push({ text, status: planEntryStatus(fields.status) });
+  }
+  return entries;
+}
+
+// Adapters normalize provider statuses to these three before the reader sees them;
+// anything unrecognized falls back to pending (surfaced, never dropped).
+function planEntryStatus(value: unknown): PlanEntryStatus {
+  const status = stringField(value);
+  if (status === "in_progress" || status === "done") {
+    return status;
+  }
+  return "pending";
 }
 
 function workbenchReferenceBlockFromFrame(

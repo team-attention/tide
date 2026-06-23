@@ -39,6 +39,7 @@ import { usageWithRememberedRateLimits, type StructuredUsagePayload } from "./st
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import { acpOptionKind, buildAcpPermissionDetail } from "./acp-permission.ts";
 import { planActivityFromEntries, planActivityFromTodoToolOutput } from "./plan-activity.ts";
+import { acpPlanContentRecord, withGoalPreamble } from "./structured-plan-goal.ts";
 
 export const GEMINI_OPTION_PREFIX = "structured:gemini-option:";
 
@@ -99,15 +100,11 @@ class AcpClient implements StructuredRuntimeClient {
     this.onEvent({ kind: "runtime_notice", level: "info", message }),
   );
   private sessionId?: string;
-  // A mid-thread mode change that arrived before session/new (or session/load)
-  // resolved; applied right after the session is adopted.
   private pendingModeId?: string;
-  // opencode config-option changes (model/effort/mode) that arrived before the
-  // session was adopted; applied right after, mirroring pendingModeId.
   private pendingConfigOptions?: Array<{ configId: string; value: string }>;
   private turnOpen = false;
   private recordIndex = 0;
-  // streaming accumulation: one growing block per message/thought run
+  private goalObjective = "";
   private messageBuffer = "";
   private messageBlockId?: string;
   private thoughtBuffer = "";
@@ -348,14 +345,16 @@ class AcpClient implements StructuredRuntimeClient {
   }
 
   async write(input: StructuredRuntimeWrite): Promise<void> {
+    if (input.kind === "goal_set") {
+      this.goalObjective = input.objective.trim();
+      return;
+    }
     if (input.kind === "composer_input") {
-      // ACP turns are sequential: a prompt while one is open queues and runs
-      // when the open session/prompt resolves.
+      const value = withGoalPreamble(this.goalObjective, input.value);
       if (this.turnOpen || this.sessionId === undefined) {
-        this.queuedPrompts.push({ text: input.value, attachments: input.attachments });
-        return;
+        return void this.queuedPrompts.push({ text: value, attachments: input.attachments });
       }
-      this.startTurn(input.value, input.attachments);
+      this.startTurn(value, input.attachments);
       return;
     }
     const promptId = input.promptId ?? "";
@@ -607,6 +606,7 @@ class AcpClient implements StructuredRuntimeClient {
     if (kind === "plan") {
       const plan = planActivityFromEntries(update.entries); // step progress (Slice B′)
       if (plan !== undefined) this.onEvent({ kind: "live_activity", ...plan });
+      this.onEvent({ kind: "content_record", ...acpPlanContentRecord(this.runtimeId, update.entries) });
       return;
     }
   }

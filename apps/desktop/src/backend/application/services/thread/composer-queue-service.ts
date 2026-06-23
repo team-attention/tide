@@ -175,6 +175,18 @@ async sendComposerInput(
     // provider-native resume with the new options (covered by the spinner).
     await this.consumePendingRuntimeRestart(thread);
     const handle = await this.activeOrResumedHandle(thread);
+    // Re-assert the thread goal on the (possibly freshly (re)started) runtime right
+    // before this turn so it steers it — covers cold start after an app restart,
+    // where the runtime's in-memory goal is empty. Idempotent: codex
+    // thread/goal/set; claude/ACP just refresh their send-time preamble. Skipped
+    // when no goal is set. See docs_v2/specs/thread-goal-and-checklist-panel.md.
+    if (thread.goal !== undefined && thread.goal.length > 0) {
+      await this.agentRuntimePort.writeInput(handle, {
+        kind: "goal_set",
+        value: thread.goal,
+        submittedAt: this.clock(),
+      });
+    }
     const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
     thread.runtimeState = "running";
     thread.runtimeStartedAt = this.clock();

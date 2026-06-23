@@ -1,4 +1,4 @@
-import type { AgentChatBlock, AgentChatBlockView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageView, LaunchOptionFeedback, LiveTurnActivityView } from "./types.ts";
+import type { AgentChatBlock, AgentChatBlockView, AgentChatChecklistEntry, AgentChatChecklistStatus, AgentChatChecklistView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageRateLimitView, AgentChatUsageView, LaunchOptionFeedback, LiveTurnActivityView } from "./types.ts";
 import { codexModelLabel, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, modelLabelForAgent, permissionLabelForValue, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { createActiveComposerSurface } from "./choice-surfaces.ts";
 import { isOpencodeUsable } from "./opencode-onramp.ts";
@@ -18,6 +18,7 @@ export function createAgentChatShellViewModel(
           title: state.thread.title,
           agentLabel: formatAgentLabel(state.thread.agentBinding.agentId),
           runtimeStartedAt: state.thread.runtimeStartedAt,
+          goal: state.thread.goal,
         }
       : null,
     providerReadinessBlockers:
@@ -40,6 +41,7 @@ export function createAgentChatShellViewModel(
       : undefined,
     prompt: state.promptState,
     blocks: state.blocks.map(toBlockView),
+    checklist: deriveChecklist(state.blocks),
     composer: {
       mode: state.thread ? "follow_up" : "start",
       draft: state.composer.draft,
@@ -147,13 +149,13 @@ function usageView(usage: AgentChatUsage | null): AgentChatUsageView | null {
     usage.totalTokens !== undefined ? `${formatTokenCount(usage.totalTokens)} tokens` : undefined;
   const contextPercentLabel =
     usage.contextUsedPercent !== undefined ? `${usage.contextUsedPercent}%` : undefined;
-  const rateLimitLabels = (usage.rateLimits ?? [])
-    .map(rateLimitLabel)
-    .filter((label): label is string => label !== undefined);
+  const rateLimits = (usage.rateLimits ?? [])
+    .map(rateLimitView)
+    .filter((view): view is AgentChatUsageRateLimitView => view !== undefined);
   if (
     tokensLabel === undefined &&
     contextPercentLabel === undefined &&
-    rateLimitLabels.length === 0
+    rateLimits.length === 0
   ) {
     return null;
   }
@@ -163,7 +165,7 @@ function usageView(usage: AgentChatUsage | null): AgentChatUsageView | null {
     ...(usage.contextUsedPercent !== undefined
       ? { contextUsedPercent: usage.contextUsedPercent }
       : {}),
-    ...(rateLimitLabels.length > 0 ? { rateLimitLabels } : {}),
+    ...(rateLimits.length > 0 ? { rateLimits } : {}),
   };
 }
 
@@ -179,16 +181,23 @@ function formatTokenCount(tokens: number): string {
   return `${thousands.toFixed(1)}k`;
 }
 
-function rateLimitLabel(
+// Maps a provider quota window to its REMAINING-framed view row. Dropped when
+// the provider gave no usage percent (we cannot state how much is left).
+function rateLimitView(
   limit: NonNullable<AgentChatUsage["rateLimits"]>[number],
-): string | undefined {
+): AgentChatUsageRateLimitView | undefined {
   const label = limit.label ?? rateLimitWindowLabel(limit.windowMinutes);
-  const percent =
-    limit.usedPercent !== undefined ? `${formatUsagePercent(limit.usedPercent)}%` : undefined;
-  if (label === undefined || percent === undefined) {
+  if (label === undefined || limit.usedPercent === undefined) {
     return undefined;
   }
-  return `${label} limit ${percent}`;
+  const remainingPercent = clampPercent(Math.round(100 - limit.usedPercent));
+  const resetLabel = formatResetLabel(limit.resetsAt, limit.windowMinutes);
+  return {
+    label,
+    remainingPercent,
+    remainingLabel: `${remainingPercent}%`,
+    ...(resetLabel !== undefined ? { resetLabel } : {}),
+  };
 }
 
 function rateLimitWindowLabel(windowMinutes: number | undefined): string | undefined {
@@ -207,8 +216,29 @@ function rateLimitWindowLabel(windowMinutes: number | undefined): string | undef
   return `${windowMinutes}m`;
 }
 
-function formatUsagePercent(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+// When a quota window resets, formatted for the host locale. Sub-day windows
+// (<= 1 day, e.g. the 5h window) show a clock time; weekly/longer windows show a
+// calendar date — matching the Codex account menu. The time/date choice is
+// driven by windowMinutes (deterministic); only the rendered string is locale
+// dependent. Undefined when the provider gave no reset timestamp.
+function formatResetLabel(
+  resetsAt: number | undefined,
+  windowMinutes: number | undefined,
+): string | undefined {
+  // Guard non-finite timestamps (NaN/Infinity from a malformed provider field):
+  // an Invalid Date would otherwise render as the literal "Invalid Date".
+  if (resetsAt === undefined || !Number.isFinite(resetsAt)) {
+    return undefined;
+  }
+  const date = new Date(resetsAt * 1000);
+  if (windowMinutes !== undefined && windowMinutes <= 1440) {
+    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 // The Model chip opens the opencode on-ramp instead of the model menu when opencode
@@ -293,6 +323,58 @@ function deriveChatState(state: AgentChatShellState): AgentChatState {
     return "hydrating";
   }
   return "ready";
+}
+
+// The agent's live checklist = the latest "plan" block's entries. Providers re-emit
+// the whole list to one stable block, so the last plan block is the current state.
+// Returns null when there is no plan block or it has no entries (panel hides the
+// checklist then). See docs_v2/specs/thread-goal-and-checklist-panel.md.
+function deriveChecklist(blocks: AgentChatBlock[]): AgentChatChecklistView | null {
+  let planBlock: AgentChatBlock | undefined;
+  for (const block of blocks) {
+    if (block.kind === "plan") {
+      planBlock = block;
+    }
+  }
+  if (planBlock === undefined) {
+    return null;
+  }
+  const entries = checklistEntries(planBlock.data);
+  if (entries.length === 0) {
+    return null;
+  }
+  const doneCount = entries.filter((entry) => entry.status === "done").length;
+  const title = typeof planBlock.data?.title === "string" ? planBlock.data.title : undefined;
+  return {
+    entries,
+    doneCount,
+    totalCount: entries.length,
+    ...(title !== undefined ? { title } : {}),
+  };
+}
+
+function checklistEntries(data: Record<string, unknown> | undefined): AgentChatChecklistEntry[] {
+  const raw = data?.entries;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const entries: AgentChatChecklistEntry[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== "object") {
+      continue;
+    }
+    const fields = item as Record<string, unknown>;
+    const text = typeof fields.text === "string" ? fields.text : undefined;
+    if (text === undefined || text.trim().length === 0) {
+      continue;
+    }
+    entries.push({ text, status: checklistStatus(fields.status) });
+  }
+  return entries;
+}
+
+function checklistStatus(value: unknown): AgentChatChecklistStatus {
+  return value === "in_progress" || value === "done" ? value : "pending";
 }
 
 function toBlockView(block: AgentChatBlock): AgentChatBlockView {

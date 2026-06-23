@@ -224,6 +224,9 @@ export interface AgentChatThreadSummary {
   updatedAt: string;
   pinned: boolean;
   archived: boolean;
+  // The user-set thread goal (objective). Shown in the Goal & Checklist panel.
+  // Absent ⇒ unset. See docs_v2/specs/thread-goal-and-checklist-panel.md.
+  goal?: string;
   lastKnownState: string;
   // True while a runtime for this thread is hydrated/alive in the backend process
   // now (regardless of running/waiting) — the multitask switcher's live set. Absent
@@ -349,6 +352,10 @@ export interface AgentChatBlock {
   status: "pending" | "streaming" | "complete" | "failed" | "needs_input";
   title?: string;
   body?: string;
+  // Structured block payload carried verbatim from the backend DTO. The Goal &
+  // Checklist panel reads `data.entries` off the "plan" block. Absent for blocks
+  // that carry no structured data.
+  data?: Record<string, unknown>;
   rawFallback?: string;
   updatedAt: string;
 }
@@ -381,6 +388,11 @@ export type AgentChatBackendCommand =
   | {
       kind: "thread.setLaunchOptions";
       payload: { threadId: string; launchOptions: Record<string, unknown> };
+    }
+  | {
+      // Set or clear (empty string) the thread goal from the Goal & Checklist panel.
+      kind: "thread.setGoal";
+      payload: { threadId: string; goal: string };
     }
   | {
       kind: "agentRuntime.stop";
@@ -447,6 +459,9 @@ export interface AgentChatShellViewModel {
   };
   prompt: AgentChatPromptState | null;
   blocks: AgentChatBlockView[];
+  // The agent's live checklist for the active thread, or null when there is none.
+  // Rendered together with the goal in the pinned Goal & Checklist panel.
+  checklist: AgentChatChecklistView | null;
   composer: AgentChatComposerView;
   workbenchOpen: boolean;
   queuedInputs: string[];
@@ -471,8 +486,23 @@ export interface AgentChatUsageView {
   contextPercentLabel?: string;
   // 0–100, for the meter bar fill.
   contextUsedPercent?: number;
-  // Pre-formatted provider quota windows, e.g. "5h limit 58%".
-  rateLimitLabels?: string[];
+  // Provider quota windows for the active thread, framed as REMAINING (Codex
+  // account-menu style). Drives both the compact chip summary and the popover
+  // rows (label · remaining% · reset). See usage-remaining-popover.md.
+  rateLimits?: AgentChatUsageRateLimitView[];
+}
+
+export interface AgentChatUsageRateLimitView {
+  // "5h", "Weekly", "Daily", "<n>h", "<n>m" — provider label or derived from window.
+  label: string;
+  // 0–100 (= clamp(100 − usedPercent)); source of truth for the bar fill.
+  remainingPercent: number;
+  // Pre-formatted remaining percent, e.g. "42%".
+  remainingLabel: string;
+  // When the window resets, in the host locale: a clock time ("8:31 PM") for
+  // sub-day windows, a calendar date ("Jun 28") for weekly/longer. Omitted when
+  // the provider gave no reset timestamp.
+  resetLabel?: string;
 }
 
 export interface AgentChatThreadView {
@@ -480,6 +510,25 @@ export interface AgentChatThreadView {
   title: string;
   agentLabel: string;
   runtimeStartedAt?: string;
+  // The user-set goal, shown (and editable) in the Goal & Checklist panel.
+  goal?: string;
+}
+
+export type AgentChatChecklistStatus = "pending" | "in_progress" | "done";
+
+export interface AgentChatChecklistEntry {
+  text: string;
+  status: AgentChatChecklistStatus;
+}
+
+// The agent's live checklist for the active thread (derived from the latest "plan"
+// block). Rendered by the pinned Goal & Checklist panel.
+export interface AgentChatChecklistView {
+  entries: AgentChatChecklistEntry[];
+  doneCount: number;
+  totalCount: number;
+  // codex's optional plan explanation; absent for claude/ACP.
+  title?: string;
 }
 
 export interface AgentChatBlockView {

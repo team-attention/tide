@@ -39,6 +39,7 @@ export type BackendEventKind =
   | "thread.archived"
   | "thread.pinChanged"
   | "thread.renamed"
+  | "thread.goalSet"
   | "thread.launchOptionsChanged"
   | "agentRuntime.stateChanged"
   | "agentRuntime.usageChanged"
@@ -73,6 +74,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "thread.archived",
   "thread.pinChanged",
   "thread.renamed",
+  "thread.goalSet",
   "thread.launchOptionsChanged",
   "agentRuntime.stateChanged",
   "agentRuntime.usageChanged",
@@ -156,6 +158,11 @@ export interface BackendEventPayloadByKind {
     thread: ThreadSummaryDto;
   };
   "thread.renamed": {
+    thread: ThreadSummaryDto;
+  };
+  // The thread's goal was set or cleared (thread.setGoal). Persisted like
+  // rename/pin so it survives restart. See thread-goal-and-checklist-panel.md.
+  "thread.goalSet": {
     thread: ThreadSummaryDto;
   };
   // The thread's Launch Options changed mid-thread (model/permission/reasoning).

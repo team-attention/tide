@@ -38,6 +38,7 @@ import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/a
 import { claudeUsage } from "./claude-usage.ts";
 import { usageWithRememberedRateLimits, type StructuredUsagePayload } from "./structured-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
+import { claudeTodoWritePlanContentRecord, withGoalPreamble } from "./structured-plan-goal.ts";
 import {
   STRUCTURED_ALLOW_ALWAYS_TOKEN,
   STRUCTURED_ALLOW_TOKEN,
@@ -46,6 +47,7 @@ import {
   bounded,
   isRecord,
   stringField,
+  toolResultText,
 } from "./claude-stream-json-shared.ts";
 import { buildPermissionPrompt } from "./claude-permission-prompt.ts";
 import type { AskUserQuestionContext, PendingPermission } from "./claude-ask-user-question.ts";
@@ -103,9 +105,7 @@ export function claudeUserContent(
   return content.length > 0 ? content : [{ type: "text", text }];
 }
 
-export function createClaudeStreamJsonClient(
-  input: CreateClaudeStreamJsonClientInput,
-): StructuredRuntimeClient {
+export function createClaudeStreamJsonClient(input: CreateClaudeStreamJsonClientInput): StructuredRuntimeClient {
   return new ClaudeStreamJsonClient(input);
 }
 
@@ -139,6 +139,12 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   // cfg-* request_id -> resolver for a mid-thread applyConfig control_response ack.
   private readonly pendingConfigAcks = new Map<string, (ok: boolean) => void>();
   private lastRateLimits?: AgentRuntimeRateLimitDto[];
+  // The thread goal. claude has no clean native goal API over stream-json (the TUI
+  // `/goal` command is not interpreted here), so the goal STEERS by being prepended
+  // as a short preamble on each composer send while set. Pushed via goal_set and
+  // re-applied on runtime restart. Empty ⇒ no goal. See
+  // specs/thread-goal-and-checklist-panel.md.
+  private goalObjective = "";
 
   constructor(input: CreateClaudeStreamJsonClientInput) {
     this.onEvent = input.onEvent;
@@ -215,12 +221,16 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   }
 
   async write(input: StructuredRuntimeWrite): Promise<void> {
+    if (input.kind === "goal_set") {
+      this.goalObjective = input.objective.trim();
+      return;
+    }
     if (input.kind === "composer_input") {
       this.writeLine({
         type: "user",
         message: {
           role: "user",
-          content: claudeUserContent(input.value, input.attachments),
+          content: claudeUserContent(withGoalPreamble(this.goalObjective, input.value), input.attachments),
         },
       });
       // Follow-up turn — restart so the count reflects THIS turn's subagents.
@@ -689,6 +699,11 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
         return;
       }
       if (item.type === "tool_use" && typeof item.id === "string") {
+        if (item.name === "TodoWrite") {
+          const record = claudeTodoWritePlanContentRecord(this.runtimeId, item.input);
+          this.emitRecord(record.sourceRef, record.payload, record.body);
+          return;
+        }
         const argumentsText = JSON.stringify(item.input ?? {});
         this.emitRecord(`${blockId}:${item.id}`, {
           type: "tool_call",
@@ -776,21 +791,6 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       }),
     });
   }
-}
-
-function toolResultText(content: unknown): string {
-  if (typeof content === "string") {
-    return content;
-  }
-  if (Array.isArray(content)) {
-    return content
-      .map((item) =>
-        isRecord(item) && item.type === "text" && typeof item.text === "string" ? item.text : "",
-      )
-      .join("\n")
-      .trim();
-  }
-  return "";
 }
 
 // Usage/rate-limit parsing moved to claude-usage.ts to keep this client under the

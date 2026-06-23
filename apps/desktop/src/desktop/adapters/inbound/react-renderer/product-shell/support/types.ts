@@ -150,6 +150,8 @@ export interface ProductShellHandlers {
   onAnswerPromptSteps: (stepAnswers: AgentChatPromptStepAnswer[]) => void;
   onSubmit: () => void;
   onInterrupt: () => void;
+  // Set or clear (empty string) the active thread's goal from the Goal & Checklist panel.
+  onSetGoal: (goal: string) => void;
   onEditQueued: (index: number) => void;
   onRemoveQueued: (index: number) => void;
   onResend: (text: string) => void;

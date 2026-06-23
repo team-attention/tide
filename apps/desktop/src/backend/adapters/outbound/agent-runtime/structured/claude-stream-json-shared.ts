@@ -27,6 +27,21 @@ export function bounded(text: string): string {
   return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
 }
 
+export function toolResultText(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content
+    .map((item) =>
+      isRecord(item) && item.type === "text" && typeof item.text === "string" ? item.text : "",
+    )
+    .join("\n")
+    .trim();
+}
+
 // claude's can_use_tool request carries `permission_suggestions`: a PermissionUpdate[] the CLI
 // computed for "don't ask again". This slice surfaces ONLY the pure-`addRules` variant
 // (persistent allow-rules, e.g. Bash(npm test *) at localSettings) as an Allow-always choice;

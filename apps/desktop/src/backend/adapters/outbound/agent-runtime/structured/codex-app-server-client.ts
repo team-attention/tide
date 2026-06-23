@@ -31,14 +31,16 @@ import type {
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
-import { rateLimitsFromProviderRecord } from "../../../../application/domains/agent-runtime/rate-limit-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import { codexPlanActivityFromItem } from "./plan-activity.ts";
+import { bounded, codexRateLimitsFromUsage, isRecord, numberField, stringField } from "./codex-app-server-shared.ts";
 import {
   codexToolCallRecordFromItem,
   codexToolItemId,
   isCodexVisibleToolItem,
 } from "./codex-tool-call-record.ts";
+import { codexPlanContentRecord } from "./structured-plan-goal.ts";
+export { codexRateLimitsFromUsage } from "./codex-app-server-shared.ts";
 export {
   codexToolCallRecordFromItem,
   type CodexToolCallRecord,
@@ -105,6 +107,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   // (codex-cli 0.136 bindings: TurnStartParams). Re-sent on every turn/start;
   // idempotent. See mid-thread-launch-option-changes.md.
   private turnOverrides: Record<string, unknown> = {};
+  private goalObjective = "";
   private lastUsage?: {
     inputTokens?: number;
     outputTokens?: number;
@@ -237,6 +240,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       },
     });
     this.ready = true;
+    if (this.goalObjective.length > 0) this.applyGoal();
     for (const queued of this.queuedWrites.splice(0)) {
       this.startTurn(queued);
     }
@@ -298,6 +302,11 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   }
 
   async write(input: StructuredRuntimeWrite): Promise<void> {
+    if (input.kind === "goal_set") {
+      this.goalObjective = input.objective.trim();
+      this.applyGoal();
+      return;
+    }
     if (input.kind === "composer_input") {
       if (!this.ready) {
         this.queuedWrites.push(input.value);
@@ -325,11 +334,18 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     this.writeLine({ id: serverRequestId, result: { decision } });
   }
 
-  // Mid-thread Launch Options change. The integration maps to TurnStartParams
-  // override keys (model/effort); they ride every subsequent turn/start.
+  private applyGoal(): void {
+    if (this.codexThreadId === undefined) {
+      return;
+    }
+    if (this.goalObjective.length === 0) {
+      this.request("thread/goal/clear", { threadId: this.codexThreadId }, () => undefined);
+      return;
+    }
+    this.request("thread/goal/set", { threadId: this.codexThreadId, objective: this.goalObjective }, () => undefined);
+  }
+
   async applyConfig(protocolParams: Record<string, unknown>): Promise<boolean> {
-    // codex turn/start overrides are applied at the next turn (no live ack to wait
-    // on); treat as accepted. Routing unchanged by the claude bypass fix.
     this.turnOverrides = { ...this.turnOverrides, ...protocolParams };
     return true;
   }
@@ -499,6 +515,11 @@ class CodexAppServerClient implements StructuredRuntimeClient {
           ...(this.lastRateLimits !== undefined ? { rateLimits: this.lastRateLimits } : {}),
         };
       }
+      return;
+    }
+    if (method === "turn/plan/updated") {
+      const record = codexPlanContentRecord(this.runtimeId, params);
+      this.emitRecord(record.sourceRef, record.payload, record.body);
       return;
     }
     if (method === "turn/completed") {
@@ -769,28 +790,4 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       });
     }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stringField(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function numberField(record: Record<string, unknown>, key: string): number | undefined {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-export function codexRateLimitsFromUsage(
-  usage: Record<string, unknown> | undefined,
-): AgentRuntimeRateLimitDto[] {
-  return usage !== undefined ? rateLimitsFromProviderRecord(usage) : [];
-}
-
-function bounded(text: string): string {
-  return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
 }
