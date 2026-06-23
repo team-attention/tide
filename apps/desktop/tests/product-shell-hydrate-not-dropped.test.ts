@@ -180,6 +180,29 @@ test("re-clicking the displayed thread during the activeThreadId-null window kee
   assert.equal(reclicked.state.agentChat.blocks.length, 1, "live transcript kept");
 });
 
+test("opening a thread seeded only by a background data event shows a skeleton, not a blank chat", () => {
+  // Y's per-thread entry exists ONLY because a background prompt.changed seeded it — a stub
+  // with thread === null and no transcript. Opening Y must show the loading skeleton and
+  // dispatch a hydrate, not restore the stub as if it were ready (which would flash a blank /
+  // Start-Composer chat until the hydrate round-trip arrives). The card returns via hydrate.
+  const viewingX = openProductShellThread(seed(["x", "y"]), "x");
+  const seededByData = applyProductShellBackendEvent(viewingX, {
+    kind: "prompt.changed",
+    payload: { threadId: "y", prompt: approvalPrompt("y", "p2") },
+  });
+  const stub = seededByData.agentChatByThreadId.y;
+  assert.ok(stub, "Y was seeded by the background data event");
+  assert.equal(stub?.thread, null, "the seed is a stub that was never hydrated");
+  assert.equal(stub?.promptState?.promptId, "p2", "the card is held in the stub");
+
+  const opened = openProductShellThreadFromLeftRail(seededByData, "y", {
+    backendTransportAvailable: true,
+  });
+  assert.equal(opened.state.activeThreadId, "y");
+  assert.equal(opened.state.agentChat.hydrating, true, "skeleton shown, not the blank stub");
+  assert.equal(opened.command?.kind, "thread.hydrate", "hydrate dispatched to fill the real view");
+});
+
 test("reselecting the active thread does not replace its ready chat with a hydrate skeleton", () => {
   const opened = openProductShellThreadFromLeftRail(seed(["x"]), "x", {
     backendTransportAvailable: true,

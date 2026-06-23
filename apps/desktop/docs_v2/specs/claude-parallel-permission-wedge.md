@@ -151,3 +151,12 @@ screen, to avoid rebuilding it into a skeleton) also key off `activeSurfaceThrea
 re-assert `activeThreadId` in the returned state — so re-clicking the displayed thread during
 the null window keeps the live chat instead of flashing a skeleton. All four surface-identity
 decisions now agree on what "the thread on screen" means.
+
+One consequence of folding unconditionally: a thread the renderer has never opened can get a
+per-thread entry seeded purely from a background data event (`prompt.changed` /
+`agentRuntime.stateChanged`) via `createStartAgentChatState()` — a stub with
+`agentChat.thread === null`, holding the live card but no transcript/header. On open such a
+stub must NOT be restored as if it were fully loaded (it would skip the skeleton and flash a
+blank chat). `restorablePreservedChat` treats a `thread === null` entry as absent, so the open
+shows the loading skeleton and `thread.hydrated` (which carries the card too) fills the real
+view. A genuinely-opened thread's entry has `thread !== null` and restores instantly as before.

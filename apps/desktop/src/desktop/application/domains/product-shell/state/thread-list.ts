@@ -483,6 +483,19 @@ export function deleteWorktreeAndRefocus(
   };
 }
 
+// A background entry seeded ONLY by a data event (prompt.changed / agentRuntime.stateChanged)
+// is a stub: agentChat.thread === null, holding the live card/state but no transcript or
+// thread header. Restoring it on open would render it as fully-loaded — skipping the loading
+// skeleton and flashing a blank/Start-Composer chat until the hydrate round-trip arrives.
+// Treat such a stub as "no preserved state" so the skeleton shows; thread.hydrated (which
+// carries the card too) then fills the real view. A genuinely-opened thread's entry has
+// thread !== null and restores instantly as before.
+function restorablePreservedChat(
+  entry: AgentChatShellState | undefined,
+): AgentChatShellState | undefined {
+  return entry?.thread != null ? entry : undefined;
+}
+
 export function openProductShellThread(
   state: ProductShellState,
   threadId: string,
@@ -507,7 +520,7 @@ export function openProductShellThread(
       thread,
       previewBlocksForThread(thread),
       "idle",
-      agentChatByThreadId[threadId],
+      restorablePreservedChat(agentChatByThreadId[threadId]),
     ),
     fileTree: null,
     expandedFolderPaths: [],
@@ -553,6 +566,9 @@ export function openProductShellThreadFromLeftRail(
   // its blocker / blocks / draft survive the switch instead of being rebuilt blank.
   const agentChatByThreadId = preserveActiveAgentChat(state, threadId);
   const stateWithMap = { ...state, agentChatByThreadId };
+  // Restore real preserved content instantly; a data-event-only stub (thread === null) is
+  // treated as absent so the skeleton shows instead of a blank chat. See restorablePreservedChat.
+  const preserved = restorablePreservedChat(agentChatByThreadId[threadId]);
   const optimistic =
     thread === undefined
       ? { ...stateWithMap, activeThreadId: threadId }
@@ -561,10 +577,10 @@ export function openProductShellThreadFromLeftRail(
           thread,
           [],
           thread.running ? "running" : "idle",
-          agentChatByThreadId[threadId],
+          preserved,
           // Awaiting the real hydrate below → show the loading skeleton (unless we
           // restored preserved content, which renders instantly).
-          agentChatByThreadId[threadId] === undefined,
+          preserved === undefined,
         );
   return {
     state: {
