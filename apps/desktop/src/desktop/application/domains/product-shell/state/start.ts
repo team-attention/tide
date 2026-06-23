@@ -132,8 +132,11 @@ function defaultStartScope(state: ProductShellState): AgentChatThreadScope {
   // project so the composer's Project chip isn't a worktree dir (spec:
   // project-open-folder-registry D6). Only fall back to a worktree (or Scratch) when
   // there is no real project to start in.
+  // The Boolean(cwd) guard keeps the pure check total: a malformed project (no cwd
+  // — e.g. corrupted persisted data) is treated as not-a-real-project rather than
+  // crashing worktreeRepoRootForCwd's string .replace().
   const isRealProject = (project: { cwd: string }): boolean =>
-    worktreeRepoRootForCwd(project.cwd) === null;
+    Boolean(project.cwd) && worktreeRepoRootForCwd(project.cwd) === null;
   const project =
     state.projects.find(isRealProject) ??
     state.registeredProjects.find(isRealProject) ??

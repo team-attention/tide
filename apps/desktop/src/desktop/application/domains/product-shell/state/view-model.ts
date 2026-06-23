@@ -509,8 +509,11 @@ export function agentChatWithProjects(state: ProductShellState): AgentChatShellS
     // D6). The Left Rail keeps using the unfiltered displayedProjects, so its worktree
     // grouping is unchanged. A worktree that is the active scope is re-added by
     // projectOptionsForState, so a worktree Thread keeps its own folder selectable.
+    // Boolean(cwd) drops malformed projects (no cwd) instead of letting them reach
+    // worktreeRepoRootForCwd's string .replace() — a garbage project can't scope a
+    // Thread, so excluding it from the menu is also the right behavior.
     availableProjects: displayedProjects(state)
-      .filter((project) => worktreeRepoRootForCwd(project.cwd) === null)
+      .filter((project) => Boolean(project.cwd) && worktreeRepoRootForCwd(project.cwd) === null)
       .map((project) => ({
         projectId: project.projectId,
         name: project.name,

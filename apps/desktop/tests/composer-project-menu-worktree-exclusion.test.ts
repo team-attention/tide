@@ -44,6 +44,19 @@ test("composer_project_list_also_drops_thread_derived_worktrees", () => {
   assert.deepEqual(cwds, ["/repo"]);
 });
 
+test("composer_project_list_drops_malformed_projects_without_a_cwd", () => {
+  // Defense-in-depth: persisted/backend data could carry a project with no cwd. The
+  // filter must drop it (it can't scope a Thread) rather than crash the string check.
+  const state = stateWithProjects([
+    { projectId: "repo", name: "repo", cwd: "/repo" },
+    { projectId: "bad", name: "bad" } as ProductShellState["registeredProjects"][number],
+  ]);
+
+  const cwds = (agentChatWithProjects(state).availableProjects ?? []).map((p) => p.cwd);
+
+  assert.deepEqual(cwds, ["/repo"]);
+});
+
 test("composer_project_list_keeps_real_projects", () => {
   // Non-worktree projects are untouched by the filter.
   const state = stateWithProjects([
