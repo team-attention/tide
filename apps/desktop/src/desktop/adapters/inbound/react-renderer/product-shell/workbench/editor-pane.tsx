@@ -1,6 +1,6 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
-import type { ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { fileIconFor } from "../../support/file-icons.ts";
 import { WorkbenchMarkdownView } from "./markdown-view.tsx";
 import { WorkbenchHtmlView } from "./html-view.tsx";
@@ -27,12 +27,45 @@ export function WorkbenchEditorPane(props: {
   pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;
   draft: ProductShellViewModel["editorDrafts"][string] | undefined;
   handlers: ProductShellHandlers;
+  gitDiffTarget?: { cwd: string; relativePath: string; changeKey: string };
 }): ReactElement {
   const readOnly = props.pane.truncated === true;
   const value = props.draft?.content ?? props.pane.bodyText ?? props.pane.bodyTextPreview ?? "";
   const language = inferEditorLanguage(props.pane.relativePath ?? props.pane.filePath);
   const isMarkdown = language === "markdown";
   const isHtml = language === "html";
+  const [gitDiffState, setGitDiffState] = useState<{ targetId: string; text: string } | null>(null);
+  const gitDiffTarget = props.gitDiffTarget;
+  const gitDiffTargetId =
+    gitDiffTarget === undefined ? undefined : `${gitDiffTarget.cwd}\0${gitDiffTarget.relativePath}`;
+  const gitDiffText =
+    gitDiffTargetId !== undefined && gitDiffState?.targetId === gitDiffTargetId
+      ? gitDiffState.text
+      : undefined;
+  useEffect(() => {
+    const target = gitDiffTarget;
+    if (target === undefined) {
+      setGitDiffState(null);
+      return undefined;
+    }
+    const targetId = `${target.cwd}\0${target.relativePath}`;
+    let cancelled = false;
+    setGitDiffState((current) => current?.targetId === targetId ? current : null);
+    void props.handlers.onGitFileDiff(target.cwd, target.relativePath)
+      .then((diffText) => {
+        if (!cancelled) {
+          setGitDiffState({ targetId, text: diffText });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setGitDiffState((current) => current?.targetId === targetId ? current : null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gitDiffTarget?.changeKey, gitDiffTargetId, props.handlers]);
   // The file-path breadcrumb. For markdown/html it rides INSIDE the view's header row
   // (alongside the Preview/Code toggle) so the controls sit in the path bar — one row,
   // like the Browser Pane's address bar. For code it stays a standalone path bar.
@@ -51,6 +84,7 @@ export function WorkbenchEditorPane(props: {
           revision={props.pane.revision}
           relativePath={props.pane.relativePath ?? props.pane.filePath}
           breadcrumb={breadcrumb}
+          gitDiffText={gitDiffText}
           handlers={props.handlers}
         />
       ) : isHtml ? (
@@ -63,6 +97,7 @@ export function WorkbenchEditorPane(props: {
           filePath={props.pane.filePath}
           relativePath={props.pane.relativePath ?? props.pane.filePath}
           breadcrumb={breadcrumb}
+          gitDiffText={gitDiffText}
           handlers={props.handlers}
         />
       ) : (
@@ -76,6 +111,7 @@ export function WorkbenchEditorPane(props: {
               dirty={props.draft?.dirty === true}
               language={language}
               revision={props.pane.revision}
+              gitDiffText={gitDiffText}
               navigationTarget={props.pane.navigationTarget}
               relativePath={props.pane.relativePath ?? props.pane.filePath}
               handlers={props.handlers}

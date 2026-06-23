@@ -32,6 +32,13 @@ export interface GitChangesViewResult {
   files: { path: string; status: GitChangeStatus; additions?: number; deletions?: number }[];
 }
 
+export interface GitChangesView {
+  cwd: string;
+  branch: string | null;
+  revision: number;
+  files: GitChangesResult["files"];
+}
+
 export interface WorkbenchImageLoadResult {
   mimeType: string;
   dataBase64: string;

@@ -55,6 +55,7 @@ export function WorkbenchMarkdownView(props: {
   dirty: boolean;
   revision: string;
   relativePath?: string;
+  gitDiffText?: string;
   // The file-path breadcrumb, rendered INLINE in the markdown header row so the
   // Preview/Edit/Pick controls sit in the path bar (one row) instead of a separate
   // floating toolbar — mirroring the Browser Pane's address-bar row.
@@ -395,6 +396,7 @@ export function WorkbenchMarkdownView(props: {
           dirty={props.dirty}
           language="markdown"
           revision={props.revision}
+          gitDiffText={props.gitDiffText}
           navigationTarget={undefined}
           handlers={props.handlers}
         />

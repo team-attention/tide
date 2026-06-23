@@ -104,6 +104,32 @@
   cursor: pointer;
 }
 
+/* Working-tree diff evidence in the live editor. The full review remains the
+   Changes pane; these lines are subtle orientation marks while editing. */
+
+.workbench-editor-cm .cm-tide-git-line {
+  background-image: linear-gradient(
+    90deg,
+    var(--tide-git-line-color) 0 3px,
+    transparent 3px
+  );
+}
+
+.workbench-editor-cm .cm-tide-git-line--added {
+  --tide-git-line-color: var(--tide-diff-add);
+  background-color: color-mix(in srgb, var(--tide-diff-add) 9%, transparent);
+}
+
+.workbench-editor-cm .cm-tide-git-line--changed {
+  --tide-git-line-color: var(--tide-diff-add);
+  background-color: color-mix(in srgb, var(--tide-diff-add) 11%, var(--tide-diff-del) 5%, transparent);
+}
+
+.workbench-editor-cm .cm-tide-git-line--deleted {
+  --tide-git-line-color: var(--tide-diff-del);
+  background-color: color-mix(in srgb, var(--tide-diff-del) 8%, transparent);
+}
+
 /* CodeMirror's default tooltip chrome is unthemed white — restyle every editor
    tooltip (hover, signature help, autocomplete) as an app panel. */
 

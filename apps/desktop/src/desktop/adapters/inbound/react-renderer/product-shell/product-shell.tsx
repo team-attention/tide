@@ -691,9 +691,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           ) : null}
           <AgentChatColumnView handlers={stableHandlers} gitBadge={git.gitBadge} />
           {workbenchPresence.mounted ? (
-            <WorkbenchColumnView handlers={stableHandlers} />
+            <WorkbenchColumnView handlers={stableHandlers} gitChanges={git.gitChanges} />
           ) : null}
-          {fileTreePresence.mounted ? <FileTreeColumnView handlers={stableHandlers} /> : null}
+          {fileTreePresence.mounted ? (
+            <FileTreeColumnView handlers={stableHandlers} gitChanges={git.gitChanges} />
+          ) : null}
         </div>
         {/* Workbench + FileTree toggles live in a single fixed cluster at the window's
             top-right, so they never jump between column headers as panels open/close. */}

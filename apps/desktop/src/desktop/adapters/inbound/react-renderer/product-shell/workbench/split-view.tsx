@@ -1,5 +1,5 @@
 import type { DropZone, ProductShellWorkbenchViewModel, SplitDirection, WorkbenchSplitNode } from "../../../../../application/domains/product-shell/product-shell.ts";
-import type { ProductShellHandlers } from "../support/types.ts";
+import type { GitChangesView, ProductShellHandlers } from "../support/types.ts";
 import { useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import { X } from "lucide-react";
@@ -75,8 +75,9 @@ export function WorkbenchSplitView(props: {
   viewModel: ProductShellWorkbenchViewModel;
   handlers: ProductShellHandlers;
   paneIcon: (kind: string) => ReactElement;
+  gitChanges: GitChangesView | null;
 }): ReactElement {
-  const { tree, viewModel, handlers, paneIcon } = props;
+  const { tree, viewModel, handlers, paneIcon, gitChanges } = props;
   const cornerPaneId = topRightLeafPaneId(tree);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dropRef = useRef<SplitDropState | null>(null);
@@ -240,7 +241,7 @@ export function WorkbenchSplitView(props: {
           <span className="workbench-split__pane-grip" aria-hidden />
         </div>
         <div className="workbench-split__pane-body">
-          {createWorkbenchPaneContent(pane, handlers, viewModel.editorDrafts[pane.paneId])}
+          {createWorkbenchPaneContent(pane, handlers, viewModel.editorDrafts[pane.paneId], gitChanges)}
         </div>
       </section>
     );

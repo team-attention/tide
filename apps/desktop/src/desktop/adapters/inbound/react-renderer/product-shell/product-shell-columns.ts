@@ -7,7 +7,7 @@ import {
   selectWorkbenchViewModel,
 } from "../../../../application/domains/product-shell/product-shell.ts";
 import { useProductShellSlice } from "./store-context.ts";
-import type { MenuAnchorRect, ProductShellHandlers } from "./support/types.ts";
+import type { GitChangesView, MenuAnchorRect, ProductShellHandlers } from "./support/types.ts";
 import { createLeftRail } from "./left-rail/left-rail.tsx";
 import { createAgentChatColumn } from "./chat-column/chat-column.tsx";
 import { createWorkbenchColumn } from "./workbench/workbench.tsx";
@@ -49,13 +49,15 @@ export const AgentChatColumnView = memo(function AgentChatColumnView(props: {
 
 export const WorkbenchColumnView = memo(function WorkbenchColumnView(props: {
   handlers: ProductShellHandlers;
+  gitChanges: GitChangesView | null;
 }): ReactElement {
   const viewModel = useProductShellSlice(selectWorkbenchViewModel);
-  return createWorkbenchColumn(viewModel, props.handlers);
+  return createWorkbenchColumn(viewModel, props.handlers, props.gitChanges);
 });
 
 export const FileTreeColumnView = memo(function FileTreeColumnView(props: {
   handlers: ProductShellHandlers;
+  gitChanges: GitChangesView | null;
 }): ReactElement {
   const fileTree = useProductShellSlice(selectFileTreeViewModel);
   // Transient FileTree state (inline edit / context menu / error notice) is read as
@@ -63,5 +65,5 @@ export const FileTreeColumnView = memo(function FileTreeColumnView(props: {
   const fileTreeEdit = useProductShellSlice((state) => state.fileTreeEdit);
   const fileTreeMenu = useProductShellSlice((state) => state.fileTreeMenu);
   const fileTreeNotice = useProductShellSlice((state) => state.fileTreeNotice);
-  return createFileTreeColumn({ fileTree, fileTreeEdit, fileTreeMenu, fileTreeNotice }, props.handlers);
+  return createFileTreeColumn({ fileTree, fileTreeEdit, fileTreeMenu, fileTreeNotice, gitChanges: props.gitChanges }, props.handlers);
 });

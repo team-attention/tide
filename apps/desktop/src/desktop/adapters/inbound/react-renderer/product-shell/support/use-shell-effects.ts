@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, t
 import { setProductShellGitContext, toggleProductShellWorkbenchFullscreen } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellBackendCommand, ProductShellState, ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import { activeComposerTrigger } from "../../../../../application/domains/agent-chat/agent-chat.ts";
-import type { GitChangesResult, ProductShellHandlers, ProjectRegistryBridge } from "./types.ts";
+import type { GitChangesView, ProductShellHandlers, ProjectRegistryBridge } from "./types.ts";
 
 // Measures the rightmost mounted column — the one the fixed top-right chrome cluster
 // floats over — so the chrome can decide inline vs collapsed controls. A grid-track
@@ -277,12 +277,6 @@ export function useProductShellEscape(
   });
 }
 
-export interface GitChangesView {
-  cwd: string;
-  branch: string | null;
-  files: GitChangesResult["files"];
-}
-
 export const GIT_STATE_REFRESH_MS = 3000;
 
 // Git state for the top-bar branch BADGE only (the Changes view itself is a first-class
@@ -297,6 +291,7 @@ export function useGitState(
   // Memoized badge (branch + summed +/- + file count) for the chat header; stable across
   // chat-token renders so the memoized chat column doesn't re-render on every token.
   gitBadge: { branch: string | null; additions: number; deletions: number; fileCount: number; cwd: string } | null;
+  gitChanges: GitChangesView | null;
 } {
   const [gitInfo, setGitInfo] = useState<GitChangesView | null>(null);
   useEffect(() => {
@@ -326,7 +321,7 @@ export function useGitState(
           setShellState((state) =>
             setGitContextIfChanged(state, { branches: context.branches, worktrees: context.worktrees }),
           );
-          setGitInfo({ cwd, branch: context.currentBranch, files: changes.files });
+          setGitInfo({ cwd, branch: context.currentBranch, revision: requestId, files: changes.files });
         })
         .catch(() => {
           if (!cancelled && requestId === requestSerial) {
@@ -365,7 +360,7 @@ export function useGitState(
           },
     [gitInfo],
   );
-  return { gitBadge };
+  return { gitBadge, gitChanges: gitInfo };
 }
 
 function setGitContextIfChanged(

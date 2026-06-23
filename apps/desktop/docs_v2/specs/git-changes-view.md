@@ -145,3 +145,50 @@ than a false dirty signal.
 ### Tests
 
 - `git_badge_refreshes_after_working_tree_becomes_clean`
+
+## Inline diff indicators in FileTree and Editor
+
+> Slice: the user wants Codex-App-style working-tree awareness in the everyday
+> inspection surfaces, not only inside the dedicated Changes pane.
+
+### Scope
+
+- Show active git working-tree file status in the right-side FileTree.
+- Show deleted tracked files as synthetic, non-editable FileTree rows so removals are
+  visible even though the file no longer exists on disk.
+- Show the active Editor Pane's current-file diff as subtle line decorations in
+  CodeMirror.
+
+### Decisions
+
+- Reuse the existing renderer-side git polling (`useGitState`) and Main-process
+  `gitChanges`/`gitFileDiff` bridge. Do not add a Backend or Shared Contract field
+  for this renderer-local inspection layer.
+- FileTree rows show compact status badges: `M`, `A`, `D`, `R`, `U`.
+- Folder rows show an aggregate changed-descendant count when their subtree contains
+  changed files.
+- Deleted synthetic rows open the existing Changes pane instead of trying to open a
+  missing Editor file.
+- Editor inline markers are read-only diff evidence. They do not replace the full
+  Changes pane and do not implement accept/revert/stage controls.
+
+### Invariants
+
+- Inline indicators are hidden when the git data cwd does not match the rendered
+  FileTree root.
+- FileTree filtering includes synthetic deleted rows.
+- FileTree git rows preserve the tree's parent-before-child pre-order.
+- Deleted files remain visible even when their deleted parent folders are absent
+  from the filesystem-backed FileTree payload.
+- Editor line markers refresh when the active file's git status or diff changes.
+- Editor line markers keep the current file's previous diff visible while a
+  refresh for the same file is in flight.
+- Editor line markers never block editing or saving.
+
+### Tests
+
+- `file_tree_renders_git_status_badges_and_deleted_rows`
+- `file_tree_git_entries_preserve_tree_order_and_missing_deleted_folders`
+- `parse_unified_diff_line_markers_maps_added_changed_and_deleted_lines`
+- `workbench_editor_pane_renders_git_diff_line_decorations`
+- `workbench_editor_pane_keeps_existing_git_diff_while_refreshing`
