@@ -51,6 +51,12 @@ export interface AgentChatCommandOption {
   source?: "project" | "user" | "builtin";
 }
 
+export interface AgentChatFileMentionOption {
+  name: string;
+  relativePath: string;
+  cwd?: string;
+}
+
 export interface AgentChatShellState {
   thread: AgentChatThreadSummary | null;
   runtimeState: AgentRuntimeStateName;
@@ -76,6 +82,9 @@ export interface AgentChatShellState {
   // Real provider slash-commands/skills for the active cwd+agent, injected by
   // the product shell (discovered from provider files). Empty until provided.
   availableCommands?: AgentChatCommandOption[];
+  // Real files for the active cwd, injected by the product shell for Composer
+  // @ mentions. Empty until the bounded file tree has been loaded.
+  availableFileMentions?: AgentChatFileMentionOption[];
   // Composer inputs submitted during a live turn: held (queued) FIFO and shown as
   // a stack of "queued" rows until the turn ends and the backend flushes the head
   // as a real block (then the next runs). Empty when nothing is queued.

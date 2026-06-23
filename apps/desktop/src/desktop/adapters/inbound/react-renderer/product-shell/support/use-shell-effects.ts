@@ -5,6 +5,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { setProductShellGitContext, toggleProductShellWorkbenchFullscreen } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellBackendCommand, ProductShellState, ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { activeComposerTrigger } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import type { GitChangesResult, ProductShellHandlers, ProjectRegistryBridge } from "./types.ts";
 
 // Measures the rightmost mounted column — the one the fixed top-right chrome cluster
@@ -68,6 +69,32 @@ export function useGlobalSearchShortcuts(params: {
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThreadId]);
+}
+
+// Composer @ file mentions use the same bounded full-tree read as Quick Open, but
+// only when the @ surface is actually active. Cache request cwd in the hook so
+// typing more query characters does not re-walk the same tree.
+export function useComposerFileMentionRefresh(params: {
+  draft: string;
+  cwd: string | null;
+  dispatchBackendCommand: (command: ProductShellBackendCommand | null) => void;
+}): void {
+  const requestedCwdRef = useRef<string | null>(null);
+  const trigger = activeComposerTrigger(params.draft);
+  useEffect(() => {
+    if (trigger?.trigger !== "@" || params.cwd === null) {
+      requestedCwdRef.current = null;
+      return;
+    }
+    if (requestedCwdRef.current === params.cwd) {
+      return;
+    }
+    requestedCwdRef.current = params.cwd;
+    params.dispatchBackendCommand({
+      kind: "workspace.readFileTree",
+      payload: { cwd: params.cwd, maxDepth: 12, maxEntries: 5000 },
+    });
+  }, [params.cwd, params.dispatchBackendCommand, trigger?.trigger]);
 }
 
 // A Browser Pane link asked to open elsewhere: Main denies the stray popup window and

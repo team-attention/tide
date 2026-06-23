@@ -97,6 +97,7 @@ export function createProductShellState(
     gitBranches: [],
     gitWorktrees: [],
     providerCommands: [],
+    composerFileMentions: null,
     pinnedProjectIds: [],
     pinnedItemOrder: input.pinnedItemOrder ?? [],
     projectOrder: input.projectOrder ?? [],

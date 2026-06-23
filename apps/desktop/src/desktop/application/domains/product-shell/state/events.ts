@@ -260,20 +260,32 @@ export function applyProductShellBackendEvent(
       };
     }
     case "workspace.fileTreeLoaded": {
-      // Start-page file tree for the composer-selected directory. Only applies while
-      // no thread is active (the New Thread page); once a thread opens, that thread's
-      // own tree takes over.
-      if (state.activeThreadId !== null) {
+      const payload = event.payload as { cwd?: string; fileTree?: unknown };
+      if (typeof payload.cwd !== "string" || payload.cwd !== activeWorkspaceFileTreeCwd(nextState)) {
         return nextState;
       }
-      const payload = event.payload as { cwd?: string; fileTree?: unknown };
       const nextTree = productShellFileTreeFromPayload(payload.fileTree);
+      const composerFileMentions =
+        nextTree !== null
+          ? {
+              cwd: payload.cwd,
+              entries: nextTree.entries.filter((entry) => entry.kind === "file"),
+              truncated: nextTree.truncated,
+            }
+          : nextState.composerFileMentions;
+      // Start-page file tree for the composer-selected directory. Only applies while
+      // no thread is active (the New Thread page); once a thread opens, that thread's
+      // own tree takes over. The Composer @ mention cache is still updated above.
+      if (state.activeThreadId !== null) {
+        return { ...nextState, composerFileMentions };
+      }
       // Keep the expanded set when re-listing the SAME directory (a lazy expand
       // round-trip); reset it only when a different project's tree loads.
       const sameRoot =
         nextTree?.root !== undefined && nextTree.root === nextState.fileTree?.root;
       return {
         ...nextState,
+        composerFileMentions,
         fileTree: nextTree,
         expandedFolderPaths: sameRoot ? nextState.expandedFolderPaths : [],
       };
@@ -299,6 +311,14 @@ export function applyProductShellBackendEvent(
     default:
       return nextState;
   }
+}
+
+function activeWorkspaceFileTreeCwd(state: ProductShellState): string | null {
+  const scope = state.agentChat.thread?.scope ?? state.agentChat.composer.startOptions.scope;
+  if (scope?.kind !== "project" || scope.cwd.length === 0) {
+    return null;
+  }
+  return scope.cwd;
 }
 
 function shouldApplyBackendEventToActiveSurfaces(

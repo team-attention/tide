@@ -216,6 +216,18 @@ export function selectAgentChatChoiceSurfaceRow(
           command: null,
         };
       }
+      if (rowId.startsWith("file:")) {
+        const relativePath = rowId.slice("file:".length);
+        const active = activeComposerTrigger(state.composer.draft);
+        const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : "";
+        return {
+          state: {
+            ...state,
+            composer: { ...state.composer, draft: `${prefix}@${relativePath} `, activeSurface: null },
+          },
+          command: null,
+        };
+      }
       return setComposerActiveSurface(state, null);
     }
     case "composer_options":
@@ -357,6 +369,14 @@ export function createActiveComposerSurface(
       const active = activeComposerTrigger(state.composer.draft);
       const trigger = active?.trigger ?? "/";
       const query = (active?.query ?? "").trim().toLowerCase();
+      if (trigger === "@") {
+        return {
+          surfaceKind,
+          title: "Files",
+          sourceLabel: "Execution Context",
+          rows: fileMentionRows(state, query),
+        };
+      }
       // The menu mirrors the agent's FULL real command set (the same list the
       // provider CLI itself exposes), on the Start Composer and in a thread alike —
       // no Tide-curated subset. Dedupe by name (some agents, e.g. gemini, report a
@@ -389,6 +409,58 @@ export function createActiveComposerSurface(
       };
     }
   }
+}
+
+function fileMentionRows(
+  state: AgentChatShellState,
+  query: string,
+): AgentChatChoiceSurfaceRowView[] {
+  const seen = new Set<string>();
+  const matches = (state.availableFileMentions ?? [])
+    .filter((file) => {
+      const relativePath = file.relativePath.toLowerCase();
+      const name = file.name.toLowerCase();
+      return query.length === 0 || relativePath.includes(query) || name.includes(query);
+    })
+    .filter((file) => {
+      const key = file.relativePath.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => fileMentionRank(a, query) - fileMentionRank(b, query) || a.relativePath.localeCompare(b.relativePath))
+    .slice(0, 60);
+
+  if (matches.length === 0) {
+    return [row("no-files", "No files found", "for this directory", undefined, "file", false, false, true)];
+  }
+
+  return matches.map((file) =>
+    row(`file:${file.relativePath}`, file.name, file.relativePath, undefined, "file"),
+  );
+}
+
+function fileMentionRank(
+  file: { name: string; relativePath: string },
+  query: string,
+): number {
+  if (query.length === 0) {
+    return file.relativePath.split("/").length;
+  }
+  const name = file.name.toLowerCase();
+  const relativePath = file.relativePath.toLowerCase();
+  if (name === query || relativePath === query) {
+    return 0;
+  }
+  if (name.startsWith(query)) {
+    return 1;
+  }
+  if (relativePath.startsWith(query)) {
+    return 2;
+  }
+  return 3 + file.relativePath.split("/").length;
 }
 
 function permissionRowsForAgent(agentId: string, currentValue: string): AgentChatChoiceSurfaceRowView[] {

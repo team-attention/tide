@@ -1766,6 +1766,26 @@ test("picking_a_command_mid_message_splices_in_place_and_keeps_the_prefix", () =
   assert.equal(picked.composer.activeSurface, null);
 });
 
+test("at_file_menu_filters_files_and_splices_a_file_mention", () => {
+  const state = {
+    ...updateComposerDraft(createAgentChatShellState(), "inspect @app").state,
+    availableFileMentions: [
+      { name: "app.ts", relativePath: "src/app.ts" },
+      { name: "README.md", relativePath: "README.md" },
+    ],
+  };
+
+  assert.equal(state.composer.activeSurface, "command_suggestions");
+  const html = renderShell(state);
+  assert.match(html, /Files/);
+  assert.match(html, /src\/app\.ts/);
+  assert.doesNotMatch(html, /README\.md/);
+
+  const picked = selectAgentChatChoiceSurfaceRow(state, "command_suggestions", "file:src/app.ts").state;
+  assert.equal(picked.composer.draft, "inspect @src/app.ts ");
+  assert.equal(picked.composer.activeSurface, null);
+});
+
 test("claude_model_menu_lists_fable_5", () => {
   const claudeModelMenu = setComposerActiveSurface(
     selectComposerAgent(createAgentChatShellState(), "claude").state,

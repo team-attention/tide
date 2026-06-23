@@ -223,6 +223,8 @@ export interface ProductShellState {
   gitWorktrees: AgentChatWorktreeOption[];
   // Real provider slash-commands/skills for the active cwd+agent (Main IPC).
   providerCommands: AgentChatCommandOption[];
+  // Most recent bounded file tree loaded for Composer @ mentions.
+  composerFileMentions: ProductShellComposerFileMentions | null;
   // Pinned projects (shown as shortcuts in the Pinned section) and the project
   // currently being inline-renamed.
   pinnedProjectIds: string[];
@@ -658,6 +660,12 @@ export interface ProductShellFileTreeEntryView {
   kind: "folder" | "file";
   active?: boolean;
   expanded?: boolean;
+}
+
+export interface ProductShellComposerFileMentions {
+  cwd: string;
+  entries: ProductShellFileTreeEntryView[];
+  truncated?: boolean;
 }
 
 export interface ProductShellContentSearchMatch {
