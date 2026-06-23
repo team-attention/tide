@@ -21,4 +21,18 @@ export interface AgentRuntimeUsageDto {
   contextUsedPercent?: number;
   // The provider-native model label, when known (e.g. "gpt-5.5", "sonnet-4.6").
   model?: string;
+  // Provider-native account or plan rate-limit windows. For Codex, primary is
+  // the 5h window and secondary is the weekly window.
+  rateLimits?: AgentRuntimeRateLimitDto[];
+}
+
+export interface AgentRuntimeRateLimitDto {
+  // Optional provider label. When absent, the UI derives one from windowMinutes.
+  label?: string;
+  // Percent of this quota window used, as reported by the provider.
+  usedPercent?: number;
+  // Window size in minutes, when reported (300 => 5h, 10080 => weekly).
+  windowMinutes?: number;
+  // Provider reset time as Unix seconds, when reported.
+  resetsAt?: number;
 }

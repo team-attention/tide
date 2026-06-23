@@ -52,18 +52,26 @@ export function applyAgentChatBackendEvent(
           contextWindow?: number;
           contextUsedPercent?: number;
           model?: string;
+          rateLimits?: Array<{
+            label?: string;
+            usedPercent?: number;
+            windowMinutes?: number;
+            resetsAt?: number;
+          }>;
         };
       };
       if (payload.usage === undefined) {
         return state;
       }
+      const previous: NonNullable<AgentChatShellState["usage"]> = state.usage ?? {};
       return {
         ...state,
         usage: {
-          totalTokens: payload.usage.totalTokens,
-          contextWindow: payload.usage.contextWindow,
-          contextUsedPercent: payload.usage.contextUsedPercent,
-          model: payload.usage.model,
+          totalTokens: payload.usage.totalTokens ?? previous.totalTokens,
+          contextWindow: payload.usage.contextWindow ?? previous.contextWindow,
+          contextUsedPercent: payload.usage.contextUsedPercent ?? previous.contextUsedPercent,
+          model: payload.usage.model ?? previous.model,
+          rateLimits: payload.usage.rateLimits ?? previous.rateLimits,
         },
       };
     }

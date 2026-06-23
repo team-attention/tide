@@ -32,6 +32,9 @@ import type {
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
+import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
+import { claudeUsage } from "./claude-usage.ts";
+import { usageWithRememberedRateLimits, type StructuredUsagePayload } from "./structured-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import {
   STRUCTURED_ALLOW_ALWAYS_TOKEN,
@@ -127,6 +130,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   // cfg-* request_id -> resolver for a mid-thread applyConfig control_response ack.
   private readonly pendingConfigAcks = new Map<string, (ok: boolean) => void>();
+  private lastRateLimits?: AgentRuntimeRateLimitDto[];
 
   constructor(input: CreateClaudeStreamJsonClientInput) {
     this.onEvent = input.onEvent;
@@ -533,11 +537,27 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       this.onEvent({
         kind: "turn_completed",
         ...(isError && !aborted && resultText !== undefined ? { notice: resultText } : {}),
-        usage: claudeUsage(message),
+        usage: this.withLastRateLimits(claudeUsage(message)),
       });
       return;
     }
-    // rate_limit_event, keep_alive: ignored.
+    if (type === "rate_limit_event") {
+      const usage = this.withLastRateLimits(claudeUsage(message));
+      if (usage !== undefined) {
+        this.onEvent({ kind: "usage", usage });
+      }
+      return;
+    }
+    // keep_alive: ignored.
+  }
+
+  // Carry the most recent rate-limit windows forward onto later usage events that omit
+  // them (claude reports them once per turn, not on every event).
+  private withLastRateLimits(usage: StructuredUsagePayload | undefined): StructuredUsagePayload | undefined {
+    if (usage?.rateLimits !== undefined && usage.rateLimits.length > 0) {
+      this.lastRateLimits = usage.rateLimits;
+    }
+    return usageWithRememberedRateLimits(usage, this.lastRateLimits);
   }
 
   // --- Live streaming (requires --include-partial-messages) ---
@@ -750,35 +770,6 @@ function toolResultText(content: unknown): string {
   return "";
 }
 
-function claudeUsage(message: Record<string, unknown>):
-  | { inputTokens?: number; outputTokens?: number; contextWindow?: number; totalTokens?: number }
-  | undefined {
-  // modelUsage carries per-model contextWindow (evidence: 01-trivial-turn.jsonl
-  // line 13) — the context meter's ground truth in this transport.
-  const modelUsage = isRecord(message.modelUsage) ? message.modelUsage : undefined;
-  if (modelUsage !== undefined) {
-    for (const value of Object.values(modelUsage)) {
-      if (!isRecord(value)) {
-        continue;
-      }
-      const inputTokens = numberField(value, "inputTokens");
-      const cacheRead = numberField(value, "cacheReadInputTokens") ?? 0;
-      const outputTokens = numberField(value, "outputTokens");
-      return {
-        inputTokens: inputTokens !== undefined ? inputTokens + cacheRead : undefined,
-        outputTokens,
-        contextWindow: numberField(value, "contextWindow"),
-        totalTokens:
-          inputTokens !== undefined && outputTokens !== undefined
-            ? inputTokens + cacheRead + outputTokens
-            : undefined,
-      };
-    }
-  }
-  return undefined;
-}
-
-function numberField(record: Record<string, unknown>, key: string): number | undefined {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
+// Usage/rate-limit parsing moved to claude-usage.ts to keep this client under the
+// file-size ratchet; re-exported here so callers/tests keep their import path.
+export { claudeUsage };

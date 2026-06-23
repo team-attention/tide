@@ -16,6 +16,10 @@ test("parses codex token_count into tokens, context window, and percent", () => 
           total_token_usage: { input_tokens: 60000, output_tokens: 4000, total_tokens: 64000 },
           model_context_window: 256000,
         },
+        rate_limits: {
+          primary: { used_percent: 58.0, window_minutes: 300, resets_at: 1781973894 },
+          secondary: { used_percent: 68.0, window_minutes: 10080, resets_at: 1782378364 },
+        },
       },
     }),
   ].join("\n");
@@ -24,6 +28,10 @@ test("parses codex token_count into tokens, context window, and percent", () => 
   assert.equal(usage?.contextWindow, 256000);
   assert.equal(usage?.contextUsedPercent, 25);
   assert.equal(usage?.model, "gpt-5.5");
+  assert.deepEqual(usage?.rateLimits, [
+    { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
+    { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
+  ]);
 });
 
 test("codex usage takes the LAST token_count (cumulative latest)", () => {
@@ -55,6 +63,23 @@ test("parses claude assistant usage into total tokens (no context window)", () =
   assert.equal(usage?.contextWindow, undefined);
   assert.equal(usage?.contextUsedPercent, undefined);
   assert.equal(usage?.model, "claude-sonnet-4-6");
+});
+
+test("parses claude rate_limit_event into provider rate limits", () => {
+  const transcript = [
+    JSON.stringify({
+      type: "rate_limit_event",
+      rateLimits: [
+        { label: "5h", usedPercent: 42, windowMinutes: 300, resetsAt: 1781973894 },
+        { label: "Weekly", usedPercent: 61, windowMinutes: 10080, resetsAt: 1782378364 },
+      ],
+    }),
+  ].join("\n");
+  const usage = parseProviderUsage(transcript, "claude");
+  assert.deepEqual(usage?.rateLimits, [
+    { label: "5h", usedPercent: 42, windowMinutes: 300, resetsAt: 1781973894 },
+    { label: "Weekly", usedPercent: 61, windowMinutes: 10080, resetsAt: 1782378364 },
+  ]);
 });
 
 test("returns undefined when there is no usage in the transcript", () => {

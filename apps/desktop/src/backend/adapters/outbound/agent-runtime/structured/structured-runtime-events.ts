@@ -9,6 +9,7 @@
 // docs_v2/specs/structured-agent-runtime.md). Do not extend from memory.
 import type { ComposerAttachmentRef, PromptState, PromptStepAnswer } from "../../../../application/domains/thread/thread.ts";
 import type { DiscoveredProviderSessionRef } from "../../../../application/ports/outbound/agent-integration-port.ts";
+import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
 
 export type StructuredProviderEvent =
   // The provider announced (or confirmed) its session identity.
@@ -57,6 +58,18 @@ export type StructuredProviderEvent =
       models: Array<{ value: string; label: string; vendor?: string }>;
       currentModel?: string;
     }
+  // The provider reported usage/quota outside turn completion. Some protocols can
+  // emit rate-limit state after the result message, so this must be separate.
+  | {
+      kind: "usage";
+      usage: {
+        inputTokens?: number;
+        outputTokens?: number;
+        contextWindow?: number;
+        totalTokens?: number;
+        rateLimits?: AgentRuntimeRateLimitDto[];
+      };
+    }
   // A non-blocking, out-of-band notice from the runtime process (currently an
   // "update available" banner the CLI printed to stderr). Surfaced as a native
   // OS notification, never a transcript block.
@@ -65,7 +78,13 @@ export type StructuredProviderEvent =
   | {
       kind: "turn_completed";
       notice?: string;
-      usage?: { inputTokens?: number; outputTokens?: number; contextWindow?: number; totalTokens?: number };
+      usage?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        contextWindow?: number;
+        totalTokens?: number;
+        rateLimits?: AgentRuntimeRateLimitDto[];
+      };
     }
   // The runtime process exited (crash or normal end-of-session).
   | { kind: "runtime_exited"; exitCode: number | null };

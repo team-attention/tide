@@ -113,6 +113,14 @@ export interface AgentChatUsage {
   contextWindow?: number;
   contextUsedPercent?: number;
   model?: string;
+  rateLimits?: AgentChatUsageRateLimit[];
+}
+
+export interface AgentChatUsageRateLimit {
+  label?: string;
+  usedPercent?: number;
+  windowMinutes?: number;
+  resetsAt?: number;
 }
 
 export interface AgentChatComposerState {
@@ -443,6 +451,8 @@ export interface AgentChatUsageView {
   contextPercentLabel?: string;
   // 0–100, for the meter bar fill.
   contextUsedPercent?: number;
+  // Pre-formatted provider quota windows, e.g. "5h limit 58%".
+  rateLimitLabels?: string[];
 }
 
 export interface AgentChatThreadView {

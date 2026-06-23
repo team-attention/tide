@@ -34,6 +34,9 @@ import type {
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
+import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
+import { acpUsageFromRecord } from "./acp-usage.ts";
+import { usageWithRememberedRateLimits, type StructuredUsagePayload } from "./structured-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import { acpOptionKind, buildAcpPermissionDetail } from "./acp-permission.ts";
 
@@ -112,6 +115,7 @@ class AcpClient implements StructuredRuntimeClient {
   private readonly pendingResponses = new Map<number, (message: Record<string, unknown>) => void>();
   private readonly pendingPermissions = new Map<string, number | string>();
   private readonly queuedPrompts: AcpQueuedPrompt[] = [];
+  private lastRateLimits?: AgentRuntimeRateLimitDto[];
 
   constructor(input: CreateAcpClientInput) {
     this.onEvent = input.onEvent;
@@ -324,11 +328,7 @@ class AcpClient implements StructuredRuntimeClient {
       this.flushStreams();
       const result = isRecord(response.result) ? response.result : {};
       const stopReason = stringField(result, "stopReason");
-      const meta = isRecord(result._meta) ? result._meta : {};
-      const quota = isRecord(meta.quota) ? meta.quota : undefined;
-      const tokenCount = quota !== undefined && isRecord(quota.token_count) ? quota.token_count : undefined;
-      const inputTokens = tokenCount !== undefined ? numberField(tokenCount, "input_tokens") : undefined;
-      const outputTokens = tokenCount !== undefined ? numberField(tokenCount, "output_tokens") : undefined;
+      const usage = this.withLastRateLimits(acpUsageFromRecord(result));
       let notice: string | undefined;
       if (response.error !== undefined) {
         const error = isRecord(response.error) ? response.error : {};
@@ -341,15 +341,7 @@ class AcpClient implements StructuredRuntimeClient {
       this.onEvent({
         kind: "turn_completed",
         ...(notice !== undefined ? { notice } : {}),
-        ...(inputTokens !== undefined && outputTokens !== undefined
-          ? {
-              usage: {
-                inputTokens,
-                outputTokens,
-                totalTokens: inputTokens + outputTokens,
-              },
-            }
-          : {}),
+        ...(usage !== undefined ? { usage } : {}),
       });
       this.flushQueuedPrompt();
     });
@@ -487,6 +479,13 @@ class AcpClient implements StructuredRuntimeClient {
 
   private handleSessionUpdate(update: Record<string, unknown>): void {
     const kind = stringField(update, "sessionUpdate");
+    if (kind === "usage_update" || kind === "usage" || kind === "quota_update") {
+      const usage = this.withLastRateLimits(acpUsageFromRecord(update));
+      if (usage !== undefined) {
+        this.onEvent({ kind: "usage", usage });
+      }
+      return;
+    }
     if (kind === "agent_message_chunk") {
       const content = isRecord(update.content) ? update.content : {};
       const text = stringField(content, "text") ?? "";
@@ -604,6 +603,15 @@ class AcpClient implements StructuredRuntimeClient {
       return;
     }
     // plan / current_mode_update: later slices.
+  }
+
+  // Carry the most recent rate-limit windows forward onto later usage events that omit
+  // them (the CLI reports them once per turn, not on every update).
+  private withLastRateLimits(usage: StructuredUsagePayload | undefined): StructuredUsagePayload | undefined {
+    if (usage?.rateLimits !== undefined && usage.rateLimits.length > 0) {
+      this.lastRateLimits = usage.rateLimits;
+    }
+    return usageWithRememberedRateLimits(usage, this.lastRateLimits);
   }
 
   private flushStreams(): void {
@@ -756,14 +764,13 @@ export function parseAcpModelCatalog(result: Record<string, unknown>): AcpModelC
   return undefined;
 }
 
+// Token + quota parsing moved to acp-usage.ts to keep this client under the file-size
+// ratchet; re-exported here so callers/tests keep their import path.
+export { acpUsageFromRecord };
+
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function numberField(record: Record<string, unknown>, key: string): number | undefined {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function bounded(text: string): string {
