@@ -15,7 +15,6 @@ import type {
   EditPendingInputResult,
   HydrateThreadResult,
   ListThreadsResult,
-  RenameThreadResult,
   ResumeAgentRuntimeResult,
   SendComposerInputResult,
   SetThreadPinnedResult,
@@ -237,7 +236,18 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           typedCommand,
           await this.service.renameThread(typedCommand.payload),
           (result) => [
-            this.threadRenamedEvent(typedCommand, result),
+            this.threadSummaryChangedEvent(typedCommand, result, "thread.renamed"),
+            this.commandCompletedEvent(typedCommand),
+          ],
+        );
+      }
+      case "thread.setGoal": {
+        const typedCommand = command as BackendCommandEnvelope<"thread.setGoal">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.setThreadGoal(typedCommand.payload),
+          (result) => [
+            this.threadSummaryChangedEvent(typedCommand, result, "thread.goalSet"),
             this.commandCompletedEvent(typedCommand),
           ],
         );
@@ -580,15 +590,16 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     };
   }
 
-  private threadRenamedEvent(
+  private threadSummaryChangedEvent(
     command: BackendCommandEnvelope,
-    result: RenameThreadResult,
-  ): BackendEventEnvelope<"thread.renamed"> {
+    result: { thread: ThreadSnapshot },
+    kind: "thread.renamed" | "thread.goalSet",
+  ): BackendEventEnvelope<"thread.renamed" | "thread.goalSet"> {
     return {
       contractVersion: CONTRACT_VERSION,
       eventId: this.nextEventId(),
       requestId: command.requestId,
-      kind: "thread.renamed",
+      kind,
       emittedAt: this.clock(),
       payload: {
         thread: toThreadSummaryDto(result.thread),

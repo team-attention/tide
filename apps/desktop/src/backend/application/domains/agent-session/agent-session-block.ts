@@ -53,6 +53,12 @@ export type AgentSessionBlockKind =
   | "choice_prompt"
   | "command_picker"
   | "model_picker"
+  // A live agent checklist / plan: the to-do list a coding agent maintains and
+  // checks off as it works (claude TodoWrite, codex turn/plan/updated, ACP plan).
+  // One stable block per runtime, upserted in place; entries live in data.entries.
+  // Rendered by the pinned Goal & Checklist panel, NOT as a transcript turn.
+  // See specs/thread-goal-and-checklist-panel.md.
+  | "plan"
   | "raw_block";
 
 export interface AgentSessionBlock {

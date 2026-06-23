@@ -7,6 +7,8 @@ export interface AgentChatShellProps {
   onDraftChange?: (draft: string) => void;
   onSubmit?: () => void;
   onInterrupt?: () => void;
+  // Set or clear (empty string) the thread goal from the Goal & Checklist panel.
+  onSetGoal?: (goal: string) => void;
   // Edit the queued (not-yet-sent) message: pull it back into the Composer.
   onEditQueued?: (index: number) => void;
   onRemoveQueued?: (index: number) => void;

@@ -129,6 +129,23 @@ export function applyAgentChatBackendEvent(
         launchOptionFeedback: feedback,
       };
     }
+    case "thread.goalSet": {
+      // Backend confirmation that the goal was set/cleared. Reflect it on the active
+      // thread so the Goal & Checklist panel updates. Only for the thread on screen.
+      const payload = event.payload as { thread?: AgentChatThreadSummary };
+      const summary = payload.thread;
+      if (
+        summary === undefined ||
+        state.thread === null ||
+        state.thread.threadId !== summary.threadId
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        thread: { ...state.thread, goal: summary.goal },
+      };
+    }
     case "agentRuntime.stateChanged": {
       const payload = event.payload as {
         state: AgentRuntimeStateName;

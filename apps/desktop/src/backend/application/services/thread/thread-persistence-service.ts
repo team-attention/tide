@@ -16,6 +16,9 @@ export interface ThreadStorageRecord {
   title: string;
   pinned: boolean;
   archived: boolean;
+  // The user-set thread goal. Absent on older records ⇒ unset. See
+  // docs_v2/specs/thread-goal-and-checklist-panel.md.
+  goal?: string;
   createdAt: string;
   updatedAt: string;
   agentBinding: AgentBinding;

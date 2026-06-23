@@ -188,6 +188,10 @@ export interface ThreadRecord {
   // (the React indicator alone would reset to 0 on every open).
   runtimeStartedAt?: string;
   pinned?: boolean;
+  // The user-set thread goal (objective). Tide-owned, persisted; pushed to the
+  // provider's native goal mechanism on set and runtime (re)start. Absent ⇒ unset.
+  // See docs_v2/specs/thread-goal-and-checklist-panel.md.
+  goal?: string;
   createdAt: string;
   updatedAt: string;
   cachedBlocks: AgentSessionBlockReference[];
@@ -242,6 +246,7 @@ export interface ThreadSnapshot {
   lastKnownState: LastKnownState;
   runtimeStartedAt?: string;
   pinned?: boolean;
+  goal?: string;
   createdAt: string;
   updatedAt: string;
   // True while an Agent Runtime for this thread is hydrated/alive in THIS process
@@ -270,6 +275,7 @@ export interface ThreadSeed {
   runtimeState: AgentRuntimeState;
   lastKnownState: LastKnownState;
   pinned?: boolean;
+  goal?: string;
   createdAt: string;
   updatedAt: string;
   cachedBlocks?: AgentSessionBlockReference[];

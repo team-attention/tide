@@ -20,6 +20,7 @@
 @import "../agent-chat/transcript/reasoning.css";
 @import "../agent-chat/transcript/agent-turn.css";
 @import "../support/markdown.css";
+@import "../agent-chat/goal-checklist/goal-checklist-panel.css";
 @import "../agent-chat/composer/composer.css";
 @import "../agent-chat/start-surface/start-surface.css";
 @import "../agent-chat/composer/usage-meter.css";

@@ -25,6 +25,9 @@ export function toThreadSummaryDto(thread: ThreadSnapshot): ThreadSummaryDto {
   if (thread.runtimeStartedAt !== undefined) {
     summary.runtimeStartedAt = thread.runtimeStartedAt;
   }
+  if (thread.goal !== undefined) {
+    summary.goal = thread.goal;
+  }
   return summary;
 }
 

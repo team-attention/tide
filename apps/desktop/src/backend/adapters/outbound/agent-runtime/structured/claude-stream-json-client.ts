@@ -36,6 +36,7 @@ import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/a
 import { claudeUsage } from "./claude-usage.ts";
 import { usageWithRememberedRateLimits, type StructuredUsagePayload } from "./structured-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
+import { claudeTodoWritePlanContentRecord, withGoalPreamble } from "./structured-plan-goal.ts";
 import {
   STRUCTURED_ALLOW_ALWAYS_TOKEN,
   STRUCTURED_ALLOW_TOKEN,
@@ -131,6 +132,12 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   // cfg-* request_id -> resolver for a mid-thread applyConfig control_response ack.
   private readonly pendingConfigAcks = new Map<string, (ok: boolean) => void>();
   private lastRateLimits?: AgentRuntimeRateLimitDto[];
+  // The thread goal. claude has no clean native goal API over stream-json (the TUI
+  // `/goal` command is not interpreted here), so the goal STEERS by being prepended
+  // as a short preamble on each composer send while set. Pushed via goal_set and
+  // re-applied on runtime restart. Empty ⇒ no goal. See
+  // specs/thread-goal-and-checklist-panel.md.
+  private goalObjective = "";
 
   constructor(input: CreateClaudeStreamJsonClientInput) {
     this.onEvent = input.onEvent;
@@ -198,12 +205,16 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   }
 
   async write(input: StructuredRuntimeWrite): Promise<void> {
+    if (input.kind === "goal_set") {
+      this.goalObjective = input.objective.trim();
+      return;
+    }
     if (input.kind === "composer_input") {
       this.writeLine({
         type: "user",
         message: {
           role: "user",
-          content: claudeUserContent(input.value, input.attachments),
+          content: claudeUserContent(withGoalPreamble(this.goalObjective, input.value), input.attachments),
         },
       });
       return;
@@ -666,6 +677,11 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
         return;
       }
       if (item.type === "tool_use" && typeof item.id === "string") {
+        if (item.name === "TodoWrite") {
+          const record = claudeTodoWritePlanContentRecord(this.runtimeId, item.input);
+          this.emitRecord(record.sourceRef, record.payload, record.body);
+          return;
+        }
         const argumentsText = JSON.stringify(item.input ?? {});
         this.emitRecord(`${blockId}:${item.id}`, {
           type: "tool_call",

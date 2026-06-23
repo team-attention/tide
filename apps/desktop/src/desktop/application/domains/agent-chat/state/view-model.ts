@@ -1,4 +1,4 @@
-import type { AgentChatBlock, AgentChatBlockView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageRateLimitView, AgentChatUsageView, LaunchOptionFeedback } from "./types.ts";
+import type { AgentChatBlock, AgentChatBlockView, AgentChatChecklistEntry, AgentChatChecklistStatus, AgentChatChecklistView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageRateLimitView, AgentChatUsageView, LaunchOptionFeedback } from "./types.ts";
 import { codexModelLabel, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, modelLabelForAgent, permissionLabelForValue, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { createActiveComposerSurface } from "./choice-surfaces.ts";
 import { isOpencodeUsable } from "./opencode-onramp.ts";
@@ -17,6 +17,7 @@ export function createAgentChatShellViewModel(
           title: state.thread.title,
           agentLabel: formatAgentLabel(state.thread.agentBinding.agentId),
           runtimeStartedAt: state.thread.runtimeStartedAt,
+          goal: state.thread.goal,
         }
       : null,
     providerReadinessBlockers:
@@ -39,6 +40,7 @@ export function createAgentChatShellViewModel(
       : undefined,
     prompt: state.promptState,
     blocks: state.blocks.map(toBlockView),
+    checklist: deriveChecklist(state.blocks),
     composer: {
       mode: state.thread ? "follow_up" : "start",
       draft: state.composer.draft,
@@ -261,6 +263,58 @@ function deriveChatState(state: AgentChatShellState): AgentChatState {
     return "hydrating";
   }
   return "ready";
+}
+
+// The agent's live checklist = the latest "plan" block's entries. Providers re-emit
+// the whole list to one stable block, so the last plan block is the current state.
+// Returns null when there is no plan block or it has no entries (panel hides the
+// checklist then). See docs_v2/specs/thread-goal-and-checklist-panel.md.
+function deriveChecklist(blocks: AgentChatBlock[]): AgentChatChecklistView | null {
+  let planBlock: AgentChatBlock | undefined;
+  for (const block of blocks) {
+    if (block.kind === "plan") {
+      planBlock = block;
+    }
+  }
+  if (planBlock === undefined) {
+    return null;
+  }
+  const entries = checklistEntries(planBlock.data);
+  if (entries.length === 0) {
+    return null;
+  }
+  const doneCount = entries.filter((entry) => entry.status === "done").length;
+  const title = typeof planBlock.data?.title === "string" ? planBlock.data.title : undefined;
+  return {
+    entries,
+    doneCount,
+    totalCount: entries.length,
+    ...(title !== undefined ? { title } : {}),
+  };
+}
+
+function checklistEntries(data: Record<string, unknown> | undefined): AgentChatChecklistEntry[] {
+  const raw = data?.entries;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const entries: AgentChatChecklistEntry[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== "object") {
+      continue;
+    }
+    const fields = item as Record<string, unknown>;
+    const text = typeof fields.text === "string" ? fields.text : undefined;
+    if (text === undefined || text.trim().length === 0) {
+      continue;
+    }
+    entries.push({ text, status: checklistStatus(fields.status) });
+  }
+  return entries;
+}
+
+function checklistStatus(value: unknown): AgentChatChecklistStatus {
+  return value === "in_progress" || value === "done" ? value : "pending";
 }
 
 function toBlockView(block: AgentChatBlock): AgentChatBlockView {

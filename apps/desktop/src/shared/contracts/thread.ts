@@ -12,6 +12,11 @@ export interface ThreadSummaryDto {
   updatedAt: string;
   pinned: boolean;
   archived: boolean;
+  // The user-set thread goal (objective). Tide-owned metadata, persisted across
+  // restart, and pushed to the provider's native goal mechanism where one exists
+  // (codex thread/goal/set, claude /goal). Empty/absent ⇒ no goal set.
+  // See specs/thread-goal-and-checklist-panel.md.
+  goal?: string;
   lastKnownState: LastKnownStateDto;
   // True while an Agent Runtime for this thread is hydrated/alive in the backend
   // process right now (an in-process runtime handle exists), regardless of state
