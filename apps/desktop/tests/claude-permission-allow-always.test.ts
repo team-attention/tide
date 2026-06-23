@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { createClaudeStreamJsonClient } from "../src/backend/adapters/outbound/agent-runtime/structured/claude-stream-json-client.ts";
 import {
   addRulesOnlySuggestions,
+  allowAlwaysRuleLabels,
   buildAllowAlwaysLabel,
 } from "../src/backend/adapters/outbound/agent-runtime/structured/claude-stream-json-shared.ts";
 import type { StructuredProviderEvent } from "../src/backend/adapters/outbound/agent-runtime/structured/structured-runtime-events.ts";
@@ -59,6 +60,24 @@ const BASH_NPM_TEST = {
     {
       type: "addRules",
       rules: [{ toolName: "Bash", ruleContent: "npm test *" }],
+      behavior: "allow",
+      destination: "localSettings",
+    },
+  ],
+};
+// Several addRules at once (e.g. a `git reset *` + `git cherry-pick *` command): the label
+// collapses to "(+N more)", so the choice description must spell out every rule.
+const BASH_MULTI_RULE = {
+  subtype: "can_use_tool",
+  tool_name: "Bash",
+  input: { command: "git reset --hard HEAD && git cherry-pick abc", description: "Reset and cherry-pick" },
+  permission_suggestions: [
+    {
+      type: "addRules",
+      rules: [
+        { toolName: "Bash", ruleContent: "git reset *" },
+        { toolName: "Bash", ruleContent: "git cherry-pick *" },
+      ],
       behavior: "allow",
       destination: "localSettings",
     },
@@ -148,7 +167,31 @@ test("addRules suggestion surfaces an Allow always choice with the CLI rule + sc
     assert.equal(always?.kind, "allow_always");
     assert.equal(always?.providerValue, "structured:allow_always");
     assert.equal(always?.label, "Always allow Bash(npm test *) · this project");
+    // A single rule is fully shown in the label already — no redundant secondary line.
+    assert.equal(always?.description, undefined);
     assert.equal(prompt.defaultChoiceId, "allow");
+  } finally {
+    await client.stop();
+  }
+});
+
+// T1b — multiple rules: label collapses to "(+1 more)" but the choice description lists every
+// rule (rendered as the option's secondary line) so the user can see what they're persisting.
+test("multiple addRules surface every rule in the Allow always description", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-perm-aa-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = createClaudeStreamJsonClient({
+    plan: fakePermissionPlan(receivedFile, BASH_MULTI_RULE),
+    threadId: "t",
+    runtimeId: "r",
+    onEvent,
+  });
+  try {
+    const prompt = await waitFor(() => events[0], "permission prompt");
+    const always = prompt.choices?.find((choice) => choice.choiceId === "allow_always");
+    assert.equal(always?.label, "Always allow Bash(git reset *) (+1 more) · this project");
+    assert.equal(always?.description, "Bash(git reset *), Bash(git cherry-pick *)");
   } finally {
     await client.stop();
   }
@@ -272,6 +315,32 @@ test("addRulesOnlySuggestions gates, buildAllowAlwaysLabel formats rule + scope"
       { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "a *" }, { toolName: "Bash", ruleContent: "b *" }], destination: "session" },
     ]),
     "Always allow Bash(a *) (+1 more) · this session",
+  );
+
+  // allowAlwaysRuleLabels extracts every rule (across entries), formatting bare toolName
+  // when there's no ruleContent — this is what the multi-rule choice description joins.
+  assert.deepEqual(
+    allowAlwaysRuleLabels([
+      { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "a *" }, { toolName: "Read" }] },
+      { type: "addRules", rules: [{ toolName: "WebFetch", ruleContent: "domain:x.com" }] },
+    ]),
+    ["Bash(a *)", "Read", "WebFetch(domain:x.com)"],
+  );
+
+  // overlapping suggestions ⇒ deduped (no repeated rule in the description, no inflated count)
+  assert.deepEqual(
+    allowAlwaysRuleLabels([
+      { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "a *" }] },
+      { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "a *" }] },
+    ]),
+    ["Bash(a *)"],
+  );
+  assert.equal(
+    buildAllowAlwaysLabel([
+      { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "a *" }] },
+      { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "a *" }] },
+    ]),
+    "Always allow Bash(a *)",
   );
 
   // rule without ruleContent ⇒ bare toolName
