@@ -196,7 +196,7 @@ import type {
   WorkbenchTerminalPort,
 } from "../../ports/outbound/workbench-terminal-port.ts";
 
-import { worktreeRepoRootForCwd } from "../../../../shared/worktree/path.ts";
+import { autoTrustDefaultWorktreeFromTrustedRepo } from "./worktree-trust.ts";
 
 const DEFAULT_WORKBENCH_TERMINAL_COMMAND = "sh";
 const DEFAULT_WORKBENCH_TERMINAL_ARGS: string[] = [];
@@ -629,7 +629,11 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
     await this.materializeScratchScope(thread);
     // Tide default worktrees inherit trust from their parent repo only when that
     // parent already passes directory trust for this provider.
-    await this.autoTrustDefaultWorktreeFromTrustedRepo(thread);
+    await autoTrustDefaultWorktreeFromTrustedRepo({
+      thread,
+      providerReadinessPort: this.providerReadinessPort,
+      providerTrustPort: this.providerTrustPort,
+    });
 
     // Materialize any pasted images and fold their paths into the message so the
     // Agent can read them. Done before readiness so a deferred (not-ready) send
@@ -1168,38 +1172,6 @@ async stopAgentRuntime(
         cwd: realCwd,
       });
     }
-  }
-
-  private async autoTrustDefaultWorktreeFromTrustedRepo(
-    thread: ThreadRecord,
-  ): Promise<void> {
-    if (this.providerTrustPort === undefined || thread.scope?.kind !== "project") {
-      return;
-    }
-    const repoCwd = worktreeRepoRootForCwd(thread.scope.cwd);
-    if (repoCwd === null) {
-      return;
-    }
-
-    const repoReadiness = await this.providerReadinessPort.check({
-      agentId: thread.agentBinding.agentId,
-      scope: { kind: "project", projectId: repoCwd, cwd: repoCwd },
-      launchOptions: thread.launchOptions,
-    });
-    if (
-      repoReadiness.blockers.some((blocker) =>
-        blocker.kind === "directory_trust_required" ||
-        blocker.kind === "not_installed" ||
-        blocker.kind === "unknown"
-      )
-    ) {
-      return;
-    }
-
-    await this.providerTrustPort.trust({
-      agentId: thread.agentBinding.agentId,
-      cwd: thread.scope.cwd,
-    });
   }
 
 async trustWorkspace(

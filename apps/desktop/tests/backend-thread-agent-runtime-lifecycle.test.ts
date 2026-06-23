@@ -593,6 +593,100 @@ test("default_worktree_thread_keeps_trust_prompt_when_parent_repo_is_untrusted",
   assert.deepEqual(fakes.providerTrust.calls, []);
 });
 
+test("default_worktree_thread_auto_trust_supports_windows_style_paths", async () => {
+  // Spec: docs_v2/specs/worktree-start-experience.md D8
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+
+  const result = await service.startThread({
+    initialMessage: "run in windows worktree",
+    agentBinding: { agentId: "codex" },
+    scope: {
+      kind: "project",
+      projectId: "feature",
+      cwd: "C:\\repo.worktree\\feature",
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(fakes.providerTrust.calls, [
+    { agentId: "codex", cwd: "C:\\repo.worktree\\feature" },
+  ]);
+  assert.equal(
+    fakes.readiness.checks[0]?.scope?.kind === "project"
+      ? fakes.readiness.checks[0].scope.cwd
+      : "",
+    "C:\\repo",
+  );
+});
+
+test("default_worktree_trust_inheritance_failures_do_not_block_thread_start", async () => {
+  // Spec: docs_v2/specs/worktree-start-experience.md D8
+  const fakes = createFakes();
+  const originalCheck = fakes.readiness.check.bind(fakes.readiness);
+  let checks = 0;
+  fakes.readiness.check = async (input) => {
+    checks += 1;
+    if (checks === 1) {
+      throw new Error("transient parent readiness failure");
+    }
+    return originalCheck(input);
+  };
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+
+  const result = await service.startThread({
+    initialMessage: "run despite inherited trust failure",
+    agentBinding: { agentId: "codex" },
+    scope: {
+      kind: "project",
+      projectId: "feature",
+      cwd: "/repo.worktree/feature",
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.status, "started");
+  assert.deepEqual(fakes.providerTrust.calls, []);
+});
+
+test("default_worktree_trust_write_failures_do_not_block_thread_start", async () => {
+  // Spec: docs_v2/specs/worktree-start-experience.md D8
+  const fakes = createFakes();
+  fakes.providerTrust.trust = async (input) => {
+    fakes.providerTrust.calls.push(input);
+    throw new Error("transient trust write failure");
+  };
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+
+  const result = await service.startThread({
+    initialMessage: "run despite trust write failure",
+    agentBinding: { agentId: "codex" },
+    scope: {
+      kind: "project",
+      projectId: "feature",
+      cwd: "/repo.worktree/feature",
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.status, "started");
+  assert.deepEqual(fakes.providerTrust.calls, [
+    { agentId: "codex", cwd: "/repo.worktree/feature" },
+  ]);
+});
+
 test("starting_a_thread_with_ready_provider_starts_runtime_with_launch_prompt", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({
