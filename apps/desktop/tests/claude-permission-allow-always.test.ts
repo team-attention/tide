@@ -327,6 +327,22 @@ test("addRulesOnlySuggestions gates, buildAllowAlwaysLabel formats rule + scope"
     ["Bash(a *)", "Read", "WebFetch(domain:x.com)"],
   );
 
+  // overlapping suggestions ⇒ deduped (no repeated rule in the description, no inflated count)
+  assert.deepEqual(
+    allowAlwaysRuleLabels([
+      { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "a *" }] },
+      { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "a *" }] },
+    ]),
+    ["Bash(a *)"],
+  );
+  assert.equal(
+    buildAllowAlwaysLabel([
+      { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "a *" }] },
+      { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "a *" }] },
+    ]),
+    "Always allow Bash(a *)",
+  );
+
   // rule without ruleContent ⇒ bare toolName
   assert.equal(
     buildAllowAlwaysLabel([{ type: "addRules", rules: [{ toolName: "Read" }], destination: "projectSettings" }]),

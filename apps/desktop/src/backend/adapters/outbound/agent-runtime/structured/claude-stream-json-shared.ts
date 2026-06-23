@@ -45,8 +45,10 @@ export function addRulesOnlySuggestions(suggestions: unknown): unknown[] | undef
 }
 
 // Every rule label ("Bash(npm test *)") the CLI's addRules suggestions would persist, in
-// order. Mirrors the CLI's `toolName(ruleContent)` formatting (bare toolName when there is no
-// ruleContent). Both the Allow-always label and its full-list description build from this.
+// order and deduplicated (overlapping suggestions would otherwise repeat a rule in the
+// description and inflate the label's "(+N more)" count). Mirrors the CLI's
+// `toolName(ruleContent)` formatting (bare toolName when there is no ruleContent). Both the
+// Allow-always label and its full-list description build from this.
 export function allowAlwaysRuleLabels(suggestions: readonly unknown[]): string[] {
   const ruleLabels: string[] = [];
   for (const entry of suggestions) {
@@ -69,7 +71,7 @@ export function allowAlwaysRuleLabels(suggestions: readonly unknown[]): string[]
       ruleLabels.push(ruleContent !== undefined ? `${toolName}(${ruleContent})` : toolName);
     }
   }
-  return ruleLabels;
+  return Array.from(new Set(ruleLabels));
 }
 
 // The Allow-always choice label, built from the CLI's own rule(s):
