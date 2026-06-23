@@ -207,7 +207,11 @@ export function selectAgentChatChoiceSurfaceRow(
         // Replace only the in-progress trigger token, preserving any text typed
         // before it (e.g. "explain /go" + pick "/goal" → "explain /goal ").
         const active = activeComposerTrigger(state.composer.draft);
-        const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : "";
+        // This row only renders while its trigger is active (the surface is rebuilt from
+        // the same draft and the selection is gated on row presence), so `active` is set
+        // in practice. Fall back to the full draft rather than an empty prefix anyway, so
+        // a future ungated surface could never wipe the user's text on insert.
+        const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : state.composer.draft;
         return {
           state: {
             ...state,
@@ -219,7 +223,11 @@ export function selectAgentChatChoiceSurfaceRow(
       if (rowId.startsWith("file:")) {
         const relativePath = rowId.slice("file:".length);
         const active = activeComposerTrigger(state.composer.draft);
-        const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : "";
+        // This row only renders while its trigger is active (the surface is rebuilt from
+        // the same draft and the selection is gated on row presence), so `active` is set
+        // in practice. Fall back to the full draft rather than an empty prefix anyway, so
+        // a future ungated surface could never wipe the user's text on insert.
+        const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : state.composer.draft;
         return {
           state: {
             ...state,
