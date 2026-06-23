@@ -12,6 +12,7 @@ import type { ThreadRuntimeService } from "../../../application/services/thread/
 import { CONTRACT_VERSION } from "../../../../shared/contracts/index.ts";
 import type { BackendEventEnvelope, ProviderCliAgentId } from "../../../../shared/contracts/index.ts";
 import { toAgentSessionBlockDto } from "../../../adapters/inbound/contract-message-adapter/dto/thread-dtos.ts";
+import { runtimeUsageFromStructuredUsage, type StructuredRuntimeUsageInput } from "./live-runtime-usage.ts";
 // Extracted from live-backend.ts (spec: navigable-source-structure).
 
 export function createLiveAgentSessionEventProjector(input: {
@@ -400,6 +401,14 @@ export function createLiveAgentSessionEventProjector(input: {
         });
         return;
       }
+      if (event.kind === "usage") {
+        emitStructuredUsage({
+          threadId: eventInput.threadId,
+          usage: event.usage,
+          onEvent: input.onEvent,
+        });
+        return;
+      }
       if (event.kind === "prompt_withdrawn") {
         // The provider RETRACTED a pending interaction (e.g. a question + its cancel in
         // one chunk). Clear that exact prompt NOW — deterministically, not by waiting for
@@ -468,11 +477,11 @@ export function createLiveAgentSessionEventProjector(input: {
 // modelUsage; codex thread/tokenUsage/updated; gemini _meta.quota).
 function emitStructuredUsage(input: {
   threadId: string;
-  usage: { inputTokens?: number; outputTokens?: number; contextWindow?: number; totalTokens?: number };
+  usage: StructuredRuntimeUsageInput;
   onEvent?: (event: BackendEventEnvelope) => void;
 }): void {
-  const total = input.usage.totalTokens;
-  if (total === undefined) {
+  const usage = runtimeUsageFromStructuredUsage(input.usage);
+  if (usage === undefined) {
     return;
   }
   input.onEvent?.({
@@ -482,12 +491,7 @@ function emitStructuredUsage(input: {
     emittedAt: new Date().toISOString(),
     payload: {
       threadId: input.threadId,
-      usage: {
-        totalTokens: total,
-        ...(input.usage.contextWindow !== undefined
-          ? { contextWindow: input.usage.contextWindow }
-          : {}),
-      },
+      usage,
     },
   });
 }

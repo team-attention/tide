@@ -9,11 +9,12 @@ export function createUsageMeter(usage: NonNullable<AgentChatShellViewModel["usa
   const text = [
     usage.contextPercentLabel ? `${usage.contextPercentLabel} context` : undefined,
     usage.tokensLabel,
+    ...(usage.rateLimitLabels ?? []),
   ]
     .filter((value): value is string => value !== undefined)
     .join(" · ");
   return (
-    <div className="agent-usage" aria-label="Context usage">
+    <div className="agent-usage" aria-label="Usage">
       {usage.contextUsedPercent !== undefined ? (
         <span className="agent-usage__bar" aria-hidden>
           <span

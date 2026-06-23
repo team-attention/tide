@@ -5,11 +5,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  codexRateLimitsFromUsage,
   codexToolCallRecordFromItem,
   codexTurnInput,
 } from "../src/backend/adapters/outbound/agent-runtime/structured/codex-app-server-client.ts";
-import { acpPromptBlocks } from "../src/backend/adapters/outbound/agent-runtime/structured/acp-client.ts";
-import { claudeUserContent } from "../src/backend/adapters/outbound/agent-runtime/structured/claude-stream-json-client.ts";
+import {
+  acpPromptBlocks,
+  acpUsageFromRecord,
+} from "../src/backend/adapters/outbound/agent-runtime/structured/acp-client.ts";
+import {
+  claudeUsage,
+  claudeUserContent,
+} from "../src/backend/adapters/outbound/agent-runtime/structured/claude-stream-json-client.ts";
+import { rateLimitsFromProviderRecord } from "../src/backend/application/domains/agent-runtime/rate-limit-usage.ts";
 
 // A 1x1 PNG.
 const PNG_B64 =
@@ -30,6 +38,81 @@ test("codex turn input carries a NATIVE localImage item per attachment (not just
 test("codex turn input with no attachments is exactly the text item (no regression)", () => {
   assert.deepEqual(codexTurnInput("hi"), [{ type: "text", text: "hi" }]);
   assert.deepEqual(codexTurnInput("hi", []), [{ type: "text", text: "hi" }]);
+});
+
+test("codex app-server token usage parses 5h and weekly rate limits", () => {
+  assert.deepEqual(
+    codexRateLimitsFromUsage({
+      rateLimits: {
+        primary: { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
+        secondary: { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
+      },
+    }),
+    [
+      { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
+      { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
+    ],
+  );
+});
+
+test("provider rate-limit parser accepts common provider quota shapes", () => {
+  assert.deepEqual(
+    rateLimitsFromProviderRecord({
+      quota: {
+        limits: [
+          { name: "5h", percent_used: "12.5", window: "5h", reset_at: "1781973894000" },
+          { name: "weekly", used: 34, limit: 100, window: "1w" },
+        ],
+      },
+    }),
+    [
+      { label: "5h", usedPercent: 12.5, windowMinutes: 300, resetsAt: 1781973894 },
+      { label: "weekly", usedPercent: 34, windowMinutes: 10080 },
+    ],
+  );
+});
+
+test("claude rate_limit_event usage parses provider limits", () => {
+  assert.deepEqual(
+    claudeUsage({
+      type: "rate_limit_event",
+      rate_limits: {
+        primary: { used_percent: 44, window_minutes: 300 },
+        secondary: { used_percent: 72, window_minutes: 10080 },
+      },
+    }),
+    {
+      rateLimits: [
+        { usedPercent: 44, windowMinutes: 300 },
+        { usedPercent: 72, windowMinutes: 10080 },
+      ],
+    },
+  );
+});
+
+test("ACP usage parses quota token_count plus provider limits", () => {
+  assert.deepEqual(
+    acpUsageFromRecord({
+      stopReason: "end_turn",
+      _meta: {
+        quota: {
+          token_count: { input_tokens: 1200, output_tokens: 300 },
+          rateLimits: {
+            primary: { usedPercent: 40, windowMinutes: 300 },
+            secondary: { usedPercent: 55, windowMinutes: 10080 },
+          },
+        },
+      },
+    }),
+    {
+      inputTokens: 1200,
+      outputTokens: 300,
+      rateLimits: [
+        { usedPercent: 40, windowMinutes: 300 },
+        { usedPercent: 55, windowMinutes: 10080 },
+      ],
+    },
+  );
 });
 
 test("codex app-server item started surfaces a pending MCP tool row", () => {

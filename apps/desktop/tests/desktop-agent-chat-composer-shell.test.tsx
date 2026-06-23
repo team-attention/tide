@@ -446,6 +446,99 @@ test("a_ready_thread_with_no_messages_keeps_the_centered_empty_state", () => {
   assert.doesNotMatch(html, /agent-session--has-turns/);
 });
 
+test("usage_changed_renders_context_usage_above_the_composer", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const withUsage = applyBackendEventToAgentChatShell(
+    hydrated,
+    backendEvent("agentRuntime.usageChanged", {
+      threadId: "thread-shell",
+      usage: {
+        totalTokens: 64000,
+        contextWindow: 256000,
+        contextUsedPercent: 25,
+      },
+    }),
+  );
+
+  assert.deepEqual(createAgentChatShellViewModel(withUsage).usage, {
+    tokensLabel: "64k tokens",
+    contextPercentLabel: "25%",
+    contextUsedPercent: 25,
+  });
+  const html = renderShell(withUsage);
+  assert.match(html, /class="agent-usage"/);
+  assert.match(html, /style="width:25%"/);
+  assert.match(visibleText(html), /25% context · 64k tokens/);
+});
+
+test("usage_changed_renders_codex_rate_limit_windows", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const withUsage = applyBackendEventToAgentChatShell(
+    hydrated,
+    backendEvent("agentRuntime.usageChanged", {
+      threadId: "thread-shell",
+      usage: {
+        rateLimits: [
+          { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
+          { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
+        ],
+      },
+    }),
+  );
+
+  assert.deepEqual(createAgentChatShellViewModel(withUsage).usage, {
+    rateLimitLabels: ["5h limit 58%", "Weekly limit 68%"],
+  });
+  assert.match(visibleText(renderShell(withUsage)), /5h limit 58% · Weekly limit 68%/);
+});
+
+test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const withTokens = applyBackendEventToAgentChatShell(
+    hydrated,
+    backendEvent("agentRuntime.usageChanged", {
+      threadId: "thread-shell",
+      usage: {
+        totalTokens: 64000,
+        contextWindow: 256000,
+        contextUsedPercent: 25,
+      },
+    }),
+  );
+  const withLimits = applyBackendEventToAgentChatShell(
+    withTokens,
+    backendEvent("agentRuntime.usageChanged", {
+      threadId: "thread-shell",
+      usage: {
+        rateLimits: [
+          { usedPercent: 58, windowMinutes: 300 },
+          { usedPercent: 68, windowMinutes: 10080 },
+        ],
+      },
+    }),
+  );
+
+  assert.deepEqual(createAgentChatShellViewModel(withLimits).usage, {
+    tokensLabel: "64k tokens",
+    contextPercentLabel: "25%",
+    contextUsedPercent: 25,
+    rateLimitLabels: ["5h limit 58%", "Weekly limit 68%"],
+  });
+  assert.match(
+    visibleText(renderShell(withLimits)),
+    /25% context · 64k tokens · 5h limit 58% · Weekly limit 68%/,
+  );
+});
+
 test("new_thread_start_screen_renders_start_composer_without_fake_cues", () => {
   const state = createAgentChatShellState({
     startOptions: {

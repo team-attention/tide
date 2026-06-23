@@ -1,5 +1,9 @@
-import type { AgentRuntimeUsageDto } from "../../../../shared/contracts/agent-runtime.ts";
+import type {
+  AgentRuntimeRateLimitDto,
+  AgentRuntimeUsageDto,
+} from "../../../../shared/contracts/agent-runtime.ts";
 import type { AgentId } from "../../../application/domains/thread/thread.ts";
+import { rateLimitsFromProviderRecord } from "../../../application/domains/agent-runtime/rate-limit-usage.ts";
 import {
   numberField,
   parseJsonObject,
@@ -32,6 +36,7 @@ function parseCodexUsage(text: string): AgentRuntimeUsageDto | undefined {
   let totalTokens: number | undefined;
   let contextWindow: number | undefined;
   let model: string | undefined;
+  let rateLimits: AgentRuntimeRateLimitDto[] | undefined;
   for (const line of text.split(/\r?\n/)) {
     const record = parseJsonObject(line);
     if (record === undefined) {
@@ -61,8 +66,12 @@ function parseCodexUsage(text: string): AgentRuntimeUsageDto | undefined {
     if (window !== undefined) {
       contextWindow = window;
     }
+    const parsedRateLimits = rateLimitsFromProviderRecord(payload);
+    if (parsedRateLimits.length > 0) {
+      rateLimits = parsedRateLimits;
+    }
   }
-  return finalizeUsage({ totalTokens, contextWindow, model });
+  return finalizeUsage({ totalTokens, contextWindow, model, rateLimits });
 }
 
 // claude transcript: the latest assistant message carries `message.usage` with
@@ -71,9 +80,17 @@ function parseCodexUsage(text: string): AgentRuntimeUsageDto | undefined {
 function parseClaudeUsage(text: string): AgentRuntimeUsageDto | undefined {
   let totalTokens: number | undefined;
   let model: string | undefined;
+  let rateLimits: AgentRuntimeRateLimitDto[] | undefined;
   for (const line of text.split(/\r?\n/)) {
     const record = parseJsonObject(line);
-    if (record === undefined || record.type !== "assistant") {
+    if (record === undefined) {
+      continue;
+    }
+    const parsedRateLimits = rateLimitsFromProviderRecord(record);
+    if (parsedRateLimits.length > 0) {
+      rateLimits = parsedRateLimits;
+    }
+    if (record.type !== "assistant") {
       continue;
     }
     const message = recordField(record, "message");
@@ -98,16 +115,22 @@ function parseClaudeUsage(text: string): AgentRuntimeUsageDto | undefined {
       totalTokens = sum;
     }
   }
-  return finalizeUsage({ totalTokens, contextWindow: undefined, model });
+  return finalizeUsage({ totalTokens, contextWindow: undefined, model, rateLimits });
 }
 
 function finalizeUsage(input: {
   totalTokens?: number;
   contextWindow?: number;
   model?: string;
+  rateLimits?: AgentRuntimeRateLimitDto[];
 }): AgentRuntimeUsageDto | undefined {
-  const { totalTokens, contextWindow, model } = input;
-  if (totalTokens === undefined && contextWindow === undefined && model === undefined) {
+  const { totalTokens, contextWindow, model, rateLimits } = input;
+  if (
+    totalTokens === undefined &&
+    contextWindow === undefined &&
+    model === undefined &&
+    (rateLimits === undefined || rateLimits.length === 0)
+  ) {
     return undefined;
   }
   const usage: AgentRuntimeUsageDto = {};
@@ -119,6 +142,9 @@ function finalizeUsage(input: {
   }
   if (model !== undefined) {
     usage.model = model;
+  }
+  if (rateLimits !== undefined && rateLimits.length > 0) {
+    usage.rateLimits = rateLimits;
   }
   if (totalTokens !== undefined && contextWindow !== undefined && contextWindow > 0) {
     usage.contextUsedPercent = Math.min(100, Math.round((totalTokens / contextWindow) * 100));

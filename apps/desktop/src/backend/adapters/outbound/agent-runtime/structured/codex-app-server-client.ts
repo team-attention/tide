@@ -30,6 +30,8 @@ import type {
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
+import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
+import { rateLimitsFromProviderRecord } from "../../../../application/domains/agent-runtime/rate-limit-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import {
   codexToolCallRecordFromItem,
@@ -107,7 +109,9 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     outputTokens?: number;
     contextWindow?: number;
     totalTokens?: number;
+    rateLimits?: AgentRuntimeRateLimitDto[];
   };
+  private lastRateLimits?: AgentRuntimeRateLimitDto[];
   // our request id -> what to do with the result
   private readonly pendingResponses = new Map<number, (result: Record<string, unknown>) => void>();
   // promptId -> the SERVER's request id awaiting a decision result
@@ -476,12 +480,19 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     if (method === "thread/tokenUsage/updated") {
       const usage = isRecord(params.tokenUsage) ? params.tokenUsage : undefined;
       const total = usage !== undefined && isRecord(usage.total) ? usage.total : undefined;
-      if (total !== undefined) {
+      if (usage !== undefined) {
+        const rateLimits = codexRateLimitsFromUsage(usage);
+        if (rateLimits.length > 0) {
+          this.lastRateLimits = rateLimits;
+        }
         this.lastUsage = {
-          inputTokens: numberField(total, "inputTokens"),
-          outputTokens: numberField(total, "outputTokens"),
-          totalTokens: numberField(total, "totalTokens"),
-          contextWindow: usage !== undefined ? numberField(usage, "modelContextWindow") : undefined,
+          ...(total !== undefined ? { inputTokens: numberField(total, "inputTokens") } : {}),
+          ...(total !== undefined ? { outputTokens: numberField(total, "outputTokens") } : {}),
+          ...(total !== undefined ? { totalTokens: numberField(total, "totalTokens") } : {}),
+          ...(numberField(usage, "modelContextWindow") !== undefined
+            ? { contextWindow: numberField(usage, "modelContextWindow") }
+            : {}),
+          ...(this.lastRateLimits !== undefined ? { rateLimits: this.lastRateLimits } : {}),
         };
       }
       return;
@@ -752,6 +763,12 @@ function stringField(record: Record<string, unknown>, key: string): string | und
 function numberField(record: Record<string, unknown>, key: string): number | undefined {
   const value = record[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+export function codexRateLimitsFromUsage(
+  usage: Record<string, unknown> | undefined,
+): AgentRuntimeRateLimitDto[] {
+  return usage !== undefined ? rateLimitsFromProviderRecord(usage) : [];
 }
 
 function bounded(text: string): string {

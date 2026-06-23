@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createLiveAgentSessionEventProjector } from "../src/backend/infrastructure/node/live/live-backend.ts";
+import type { BackendEventEnvelope } from "../src/shared/contracts/index.ts";
 
 const THREAD = "thread-coalesce";
 const AGENT = "claude" as const;
@@ -42,6 +43,7 @@ function contentRecordEvent(blockId: string, body: string) {
 // real write (its blocks.length === 0 short-circuit would otherwise hide the count).
 function createCountingFixture() {
   let writes = 0;
+  const events: BackendEventEnvelope[] = [];
   const block = {
     blockId: "b1",
     threadId: THREAD,
@@ -110,10 +112,11 @@ function createCountingFixture() {
     // deno-lint-ignore no-explicit-any
     service: () => service as never,
     persistence: persistence as never,
+    onEvent: (event) => events.push(event),
     homeDir: "/tmp",
     integrations: {} as never,
   });
-  return { projector, writes: () => writes };
+  return { projector, writes: () => writes, events: () => events };
 }
 
 test("streaming content_records are coalesced into a single flushed write", async () => {
@@ -147,6 +150,72 @@ test("turn_completed flushes the conversation immediately (durable settled state
   // No pending timer remains to fire a redundant write afterward.
   await projector.flushPendingPersists();
   assert.equal(writes(), 1, "nothing left pending after a turn-end flush");
+});
+
+test("turn_completed emits structured usage with context percent", async () => {
+  const { projector, events } = createCountingFixture();
+
+  await projector.ingestStructuredProviderEvent({
+    threadId: THREAD,
+    agentId: AGENT,
+    runtimeId: RUNTIME,
+    event: {
+      kind: "turn_completed" as const,
+      usage: {
+        inputTokens: 60000,
+        outputTokens: 4000,
+        contextWindow: 256000,
+        rateLimits: [
+          { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
+          { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
+        ],
+      },
+    },
+  });
+
+  const usageEvent = events().find((event) => event.kind === "agentRuntime.usageChanged");
+  assert.deepEqual(usageEvent?.payload, {
+    threadId: THREAD,
+    usage: {
+      totalTokens: 64000,
+      contextWindow: 256000,
+      contextUsedPercent: 25,
+      rateLimits: [
+        { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
+        { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
+      ],
+    },
+  });
+});
+
+test("standalone structured usage event emits rate-limit-only updates", async () => {
+  const { projector, events } = createCountingFixture();
+
+  await projector.ingestStructuredProviderEvent({
+    threadId: THREAD,
+    agentId: AGENT,
+    runtimeId: RUNTIME,
+    event: {
+      kind: "usage" as const,
+      usage: {
+        rateLimits: [
+          { usedPercent: 44, windowMinutes: 300 },
+          { usedPercent: 72, windowMinutes: 10080 },
+        ],
+      },
+    },
+  });
+
+  const usageEvent = events().find((event) => event.kind === "agentRuntime.usageChanged");
+  assert.deepEqual(usageEvent?.payload, {
+    threadId: THREAD,
+    usage: {
+      rateLimits: [
+        { usedPercent: 44, windowMinutes: 300 },
+        { usedPercent: 72, windowMinutes: 10080 },
+      ],
+    },
+  });
 });
 
 test("content_delta (live streaming tokens) never persists", async () => {

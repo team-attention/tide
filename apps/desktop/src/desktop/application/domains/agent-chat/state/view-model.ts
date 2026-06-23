@@ -87,13 +87,23 @@ function usageView(usage: AgentChatUsage | null): AgentChatUsageView | null {
     usage.totalTokens !== undefined ? `${formatTokenCount(usage.totalTokens)} tokens` : undefined;
   const contextPercentLabel =
     usage.contextUsedPercent !== undefined ? `${usage.contextUsedPercent}%` : undefined;
-  if (tokensLabel === undefined && contextPercentLabel === undefined) {
+  const rateLimitLabels = (usage.rateLimits ?? [])
+    .map(rateLimitLabel)
+    .filter((label): label is string => label !== undefined);
+  if (
+    tokensLabel === undefined &&
+    contextPercentLabel === undefined &&
+    rateLimitLabels.length === 0
+  ) {
     return null;
   }
   return {
-    tokensLabel,
-    contextPercentLabel,
-    contextUsedPercent: usage.contextUsedPercent,
+    ...(tokensLabel !== undefined ? { tokensLabel } : {}),
+    ...(contextPercentLabel !== undefined ? { contextPercentLabel } : {}),
+    ...(usage.contextUsedPercent !== undefined
+      ? { contextUsedPercent: usage.contextUsedPercent }
+      : {}),
+    ...(rateLimitLabels.length > 0 ? { rateLimitLabels } : {}),
   };
 }
 
@@ -103,7 +113,42 @@ function formatTokenCount(tokens: number): string {
     return String(tokens);
   }
   const thousands = tokens / 1000;
-  return `${thousands.toFixed(thousands < 100 ? 1 : 0)}k`;
+  if (thousands >= 100 || Number.isInteger(thousands)) {
+    return `${Math.round(thousands)}k`;
+  }
+  return `${thousands.toFixed(1)}k`;
+}
+
+function rateLimitLabel(
+  limit: NonNullable<AgentChatUsage["rateLimits"]>[number],
+): string | undefined {
+  const label = limit.label ?? rateLimitWindowLabel(limit.windowMinutes);
+  const percent =
+    limit.usedPercent !== undefined ? `${formatUsagePercent(limit.usedPercent)}%` : undefined;
+  if (label === undefined || percent === undefined) {
+    return undefined;
+  }
+  return `${label} limit ${percent}`;
+}
+
+function rateLimitWindowLabel(windowMinutes: number | undefined): string | undefined {
+  if (windowMinutes === undefined) {
+    return undefined;
+  }
+  if (windowMinutes === 10080) {
+    return "Weekly";
+  }
+  if (windowMinutes === 1440) {
+    return "Daily";
+  }
+  if (windowMinutes % 60 === 0) {
+    return `${windowMinutes / 60}h`;
+  }
+  return `${windowMinutes}m`;
+}
+
+function formatUsagePercent(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
 }
 
 // The Model chip opens the opencode on-ramp instead of the model menu when opencode
