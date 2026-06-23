@@ -36,8 +36,13 @@ renderer's hydrate/loading UX. See `persistence.md` and `agent-session-rendering
 ### D1. The first list blocks on metadata only
 
 Restore seeds Thread metadata (`threadSeedFromStorageRecord`) and nothing else before
-answering `thread.list`. Boot latency is bounded by reading the per-Thread `thread.json`
-records, which are read concurrently (`listThreadMetadata` uses `Promise.all`).
+answering `thread.list`. Boot latency is bounded by a single read of the enriched Thread
+index (`threads/index.json`), whose entries embed the full record — `listThreadMetadata`
+answers from that index without touching `threads/*/thread.json`. The concurrent
+per-Thread `thread.json` scan (`listThreadMetadataFromFiles`, `Promise.all`) is now only
+the legacy/corrupt-index fallback, which rewrites the enriched index once. See
+`thread-list-first-paint-snapshot.md` for the index shape and the synchronous first-paint
+snapshot built on top of it.
 
 ### D2. Conversation blocks are rebuilt lazily on open
 

@@ -28,8 +28,9 @@ test("creating_thread_metadata_writes_thread_json_and_updates_index", async () =
 
   assert.equal(saved.ok, true);
   assert.equal((threadJson as ThreadStorageRecord).threadId, "thread-persist");
+  // The index entry carries the full record (and only the record — no duplicated flat fields).
   assert.deepEqual(
-    (indexJson as { threads: { threadId: string }[] }).threads.map((thread) => thread.threadId),
+    (indexJson as { threads: { record?: ThreadStorageRecord }[] }).threads.map((thread) => thread.record?.threadId),
     ["thread-persist"],
   );
 });
@@ -281,23 +282,45 @@ test("thread_index_rebuilds_from_thread_json_files", async () => {
 
   assert.equal(rebuilt.ok, true);
   assert.deepEqual(
-    (indexJson as { threads: { threadId: string }[] }).threads.map((thread) => thread.threadId),
+    (indexJson as { threads: { record?: ThreadStorageRecord }[] }).threads.map((thread) => thread.record?.threadId),
     ["thread-one", "thread-two"],
   );
 });
 
-test("listing_thread_metadata_reads_thread_json_records", async () => {
-  // Spec: docs_v2/specs/live-backend-persistence-bootstrap.md
-  const { service } = await createService();
-  await service.saveThreadMetadata(threadRecord("thread-older", {
-    title: "Older",
-    updatedAt: now,
-  }));
-  await service.saveThreadMetadata(threadRecord("thread-newer", {
+test("listing_thread_metadata_uses_enriched_index_without_thread_json_reads", async () => {
+  const newer = threadRecord("thread-newer", {
     title: "Newer",
     updatedAt: later,
     scope: { kind: "scratch", scratchCwd: "/tmp/scratch" },
-  }));
+    executionContext: { cwd: "/tmp/scratch" },
+  });
+  const older = threadRecord("thread-older", {
+    title: "Older",
+    updatedAt: now,
+  });
+  const storage: AppStoragePort = {
+    listDirectories: async () => {
+      throw new Error("index fast path must not scan directories");
+    },
+    readJson: async (relativePath: string) => {
+      if (relativePath === "threads/index.json") {
+        return threadIndex([older, newer]);
+      }
+      throw new Error(`index fast path must not read ${relativePath}`);
+    },
+    writeJsonAtomic: async () => {},
+    readJsonl: async () => [],
+    writeJsonlAtomic: async () => {},
+    writeTextAtomic: async () => {},
+    appendText: async () => {},
+    exists: async () => false,
+    remove: async () => {},
+  };
+  const service = createThreadPersistenceService({
+    storage,
+    clock: () => now,
+    readerVersion: "reader-v1",
+  });
 
   const listed = await service.listThreadMetadata();
 
@@ -307,8 +330,45 @@ test("listing_thread_metadata_reads_thread_json_records", async () => {
     ["thread-newer", "thread-older"],
   );
   assert.equal(listed.ok && listed.value[0]?.scope.kind, "scratch");
+});
+
+test("listing_thread_metadata_rebuilds_legacy_index_once", async () => {
+  // Spec: docs_v2/specs/live-backend-persistence-bootstrap.md
+  const { service, storage } = await createService();
+  const older = threadRecord("thread-older", {
+    title: "Older",
+    updatedAt: now,
+  });
+  const newer = threadRecord("thread-newer", {
+    title: "Newer",
+    updatedAt: later,
+    scope: { kind: "scratch", scratchCwd: "/tmp/scratch" },
+    executionContext: { cwd: "/tmp/scratch" },
+  });
+  await service.saveThreadMetadata(older);
+  await service.saveThreadMetadata(newer);
+  await storage.writeJsonAtomic("threads/index.json", {
+    storageVersion: 1,
+    threads: [legacyIndexEntry(older), legacyIndexEntry(newer)],
+  });
+
+  const listed = await service.listThreadMetadata();
+  const rebuiltIndex = await storage.readJson("threads/index.json");
+
+  assert.equal(listed.ok, true);
+  assert.deepEqual(
+    listed.ok && listed.value.map((thread) => thread.threadId),
+    ["thread-newer", "thread-older"],
+  );
+  assert.equal(listed.ok && listed.value[0]?.scope.kind, "scratch");
   assert.equal(listed.ok && listed.value[1]?.scope.kind, "project");
   assert.equal(listed.ok && listed.value[1]?.scope.kind === "project" && listed.value[1].scope.cwd, "/repo/tide");
+  assert.deepEqual(
+    (rebuiltIndex as { threads: { record?: ThreadStorageRecord }[] }).threads.map(
+      (thread) => thread.record?.threadId,
+    ),
+    ["thread-newer", "thread-older"].sort(),
+  );
 });
 
 test("listing_thread_metadata_skips_a_record_whose_read_throws", async () => {
@@ -392,6 +452,29 @@ function threadRecord(
     executionContext: { cwd: "/repo/tide" },
     lastKnownState: "idle",
     ...overrides,
+  };
+}
+
+function threadIndex(records: ThreadStorageRecord[]) {
+  return {
+    storageVersion: 1,
+    threads: records.map((record) => ({ record })),
+  };
+}
+
+// A pre-feature index entry: flat fields and NO embedded record. Used to prove the read
+// path rejects a record-less index and rebuilds an enriched one from thread.json.
+function legacyIndexEntry(record: ThreadStorageRecord) {
+  return {
+    threadId: record.threadId,
+    title: record.title,
+    pinned: record.pinned,
+    archived: record.archived,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    agentId: record.agentBinding.agentId,
+    scopeKind: record.scope.kind,
+    lastKnownState: record.lastKnownState,
   };
 }
 

@@ -76,15 +76,11 @@ export interface ThreadIndexRecord {
 }
 
 export interface ThreadIndexEntry {
-  threadId: ThreadId;
-  title: string;
-  pinned: boolean;
-  archived: boolean;
-  createdAt: string;
-  updatedAt: string;
-  agentId: AgentId;
-  scopeKind: ThreadScope["kind"];
-  lastKnownState: LastKnownState;
+  // The full thread record, so the rail restores from a single index read with no
+  // thread.json scan. Pre-feature indexes store flat fields and no record;
+  // recordsFromThreadIndex returns null when any entry lacks a valid record here, which
+  // makes listThreadMetadata fall back to a one-time scan + rewrite of the index.
+  record: ThreadStorageRecord;
 }
 
 export interface AgentSessionCacheRow {
@@ -204,10 +200,22 @@ class FileBackedThreadPersistenceService implements ThreadPersistenceService {
   }
 
   async listThreadMetadata(): Promise<PersistenceResult<ThreadStorageRecord[]>> {
+    const indexed = await this.listThreadMetadataFromIndex();
+    if (indexed !== null) {
+      return { ok: true, value: indexed };
+    }
+
+    return this.listThreadMetadataFromFiles({ rewriteIndex: true });
+  }
+
+  private async listThreadMetadataFromFiles(
+    options: { rewriteIndex: boolean },
+  ): Promise<PersistenceResult<ThreadStorageRecord[]>> {
     const threadIds = await this.storage.listDirectories("threads");
     // Read every thread.json concurrently. A cold boot with hundreds of threads
     // would otherwise serialize hundreds of file reads behind one another, and this
-    // list gates the Left Rail skeleton — see live-backend restore (metadata-first).
+    // is now only the legacy/corrupt-index fallback on the boot path — see
+    // live-backend restore (metadata-first).
     // A single corrupt/unreadable record must not fail the whole list (which would
     // block the rail): map a thrown read error to a skippable thread_not_found result.
     const loaded = await Promise.all(
@@ -235,6 +243,9 @@ class FileBackedThreadPersistenceService implements ThreadPersistenceService {
     }
 
     records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    if (options.rewriteIndex) {
+      await this.storage.writeJsonAtomic(threadIndexPath(), createThreadIndex(records));
+    }
     return { ok: true, value: records };
   }
 
@@ -433,21 +444,12 @@ class FileBackedThreadPersistenceService implements ThreadPersistenceService {
   }
 
   async rebuildThreadIndex(): Promise<PersistenceResult<ThreadIndexRecord>> {
-    const threadIds = await this.storage.listDirectories("threads");
-    const records: ThreadStorageRecord[] = [];
-
-    for (const threadId of threadIds) {
-      const loaded = await this.loadThreadMetadata(threadId);
-      if (!loaded.ok) {
-        if (loaded.error.code === "thread_not_found") {
-          continue;
-        }
-        return loaded;
-      }
-      records.push(loaded.value);
+    const listed = await this.listThreadMetadataFromFiles({ rewriteIndex: false });
+    if (!listed.ok) {
+      return listed;
     }
 
-    const index = createThreadIndex(records);
+    const index = createThreadIndex(listed.value);
     await this.storage.writeJsonAtomic(threadIndexPath(), index);
     return { ok: true, value: index };
   }
@@ -516,29 +518,54 @@ class FileBackedThreadPersistenceService implements ThreadPersistenceService {
 
   private async upsertThreadIndex(record: ThreadStorageRecord): Promise<void> {
     const existing = await this.readThreadIndex();
-    const others = existing.threads.filter(
+    const existingRecords =
+      existing === undefined ? [] : recordsFromThreadIndex(existing);
+    if (existingRecords === null) {
+      await this.rebuildThreadIndex();
+      return;
+    }
+    if (existing === undefined) {
+      const threadIds = await this.storage.listDirectories("threads");
+      if (threadIds.some((threadId) => threadId !== record.threadId)) {
+        await this.rebuildThreadIndex();
+        return;
+      }
+    }
+    const others = existingRecords.filter(
       (thread) => thread.threadId !== record.threadId,
     );
-    const index = createThreadIndex([...others.map(indexEntryToRecord), record]);
+    const index = createThreadIndex([...others, record]);
     await this.storage.writeJsonAtomic(threadIndexPath(), index);
   }
 
-  private async readThreadIndex(): Promise<ThreadIndexRecord> {
-    const value = await this.storage.readJson(threadIndexPath());
+  private async readThreadIndex(): Promise<ThreadIndexRecord | undefined> {
+    let value: unknown | undefined;
+    try {
+      value = await this.storage.readJson(threadIndexPath());
+    } catch {
+      return undefined;
+    }
     if (value === undefined) {
-      return {
-        storageVersion: THREAD_STORAGE_VERSION,
-        threads: [],
-      };
+      return undefined;
     }
     const index = value as ThreadIndexRecord;
-    if (index.storageVersion !== THREAD_STORAGE_VERSION) {
-      return {
-        storageVersion: THREAD_STORAGE_VERSION,
-        threads: [],
-      };
+    if (index.storageVersion !== THREAD_STORAGE_VERSION || !Array.isArray(index.threads)) {
+      return undefined;
     }
     return index;
+  }
+
+  private async listThreadMetadataFromIndex(): Promise<ThreadStorageRecord[] | null> {
+    const index = await this.readThreadIndex();
+    if (index === undefined) {
+      return null;
+    }
+    const records = recordsFromThreadIndex(index);
+    if (records === null) {
+      return null;
+    }
+    records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return records;
   }
 }
 
@@ -597,42 +624,68 @@ function createThreadIndex(records: ThreadStorageRecord[]): ThreadIndexRecord {
   return {
     storageVersion: THREAD_STORAGE_VERSION,
     threads: records
-      .map(threadIndexEntry)
-      .sort((left, right) => left.threadId.localeCompare(right.threadId)),
+      .slice()
+      .sort((left, right) => left.threadId.localeCompare(right.threadId))
+      .map(threadIndexEntry),
   };
 }
 
 function threadIndexEntry(record: ThreadStorageRecord): ThreadIndexEntry {
-  return {
-    threadId: record.threadId,
-    title: record.title,
-    pinned: record.pinned,
-    archived: record.archived,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    agentId: record.agentBinding.agentId,
-    scopeKind: record.scope.kind,
-    lastKnownState: record.lastKnownState,
-  };
+  return { record };
 }
 
-function indexEntryToRecord(entry: ThreadIndexEntry): ThreadStorageRecord {
-  return {
-    storageVersion: THREAD_STORAGE_VERSION,
-    threadId: entry.threadId,
-    title: entry.title,
-    pinned: entry.pinned,
-    archived: entry.archived,
-    createdAt: entry.createdAt,
-    updatedAt: entry.updatedAt,
-    agentBinding: { agentId: entry.agentId },
-    scope:
-      entry.scopeKind === "project"
-        ? { kind: "project", projectId: "", cwd: "" }
-        : { kind: "scratch", scratchCwd: "" },
-    executionContext: { cwd: "" },
-    lastKnownState: entry.lastKnownState,
-  };
+function recordsFromThreadIndex(
+  index: ThreadIndexRecord,
+): ThreadStorageRecord[] | null {
+  const records: ThreadStorageRecord[] = [];
+  for (const entry of index.threads) {
+    const record = entry.record;
+    if (!isThreadStorageRecord(record)) {
+      return null;
+    }
+    records.push(record);
+  }
+  return records;
+}
+
+function isThreadStorageRecord(value: unknown): value is ThreadStorageRecord {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Partial<ThreadStorageRecord>;
+  if (
+    record.storageVersion !== THREAD_STORAGE_VERSION ||
+    typeof record.threadId !== "string" ||
+    typeof record.title !== "string" ||
+    typeof record.pinned !== "boolean" ||
+    typeof record.archived !== "boolean" ||
+    typeof record.createdAt !== "string" ||
+    typeof record.updatedAt !== "string" ||
+    typeof record.agentBinding !== "object" ||
+    record.agentBinding === null ||
+    typeof record.scope !== "object" ||
+    record.scope === null ||
+    typeof record.executionContext !== "object" ||
+    record.executionContext === null ||
+    typeof record.lastKnownState !== "string"
+  ) {
+    return false;
+  }
+  if (typeof record.agentBinding.agentId !== "string") {
+    return false;
+  }
+  if (record.scope.kind === "project") {
+    return (
+      typeof record.scope.projectId === "string" &&
+      typeof record.scope.cwd === "string" &&
+      typeof record.executionContext.cwd === "string"
+    );
+  }
+  return (
+    record.scope.kind === "scratch" &&
+    typeof record.scope.scratchCwd === "string" &&
+    typeof record.executionContext.cwd === "string"
+  );
 }
 
 function threadRecordPath(threadId: ThreadId): string {
