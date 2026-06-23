@@ -179,7 +179,7 @@
   height: 6px;
   flex: 0 0 auto;
   border-radius: 999px;
-  background: var(--tide-action);
+  background: var(--tide-warn);
 }
 
 /* Live "agent is running" dot — shown for every thread (incl. background) so

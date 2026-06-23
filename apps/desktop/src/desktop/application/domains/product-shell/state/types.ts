@@ -20,6 +20,9 @@ export interface ProductShellThread {
   workbenchPanes: AppChromeWorkbenchPaneRef[];
   pinned?: boolean;
   attention?: boolean;
+  // Local renderer-only acknowledgement state: a background thread finished and
+  // notified the user, but the user has not opened that thread since.
+  unread?: boolean;
   // True while this thread's agent runtime is actively running — shown as a live
   // rail indicator for every thread (incl. background ones), independent of focus.
   running?: boolean;
@@ -527,8 +530,8 @@ export interface ProductShellProjectGroupView {
   // True when the inline "new worktree" name input is open for this project.
   creatingWorktree: boolean;
   threads: ProductShellThreadView[];
-  // True when a child thread needs attention (waiting for input/approval) — used
-  // to bubble the indicator to the project row when it is collapsed.
+  // True when a child thread needs attention (waiting for input/approval) or has
+  // unread completed output — used to bubble the indicator when collapsed.
   attention: boolean;
   // True when a child thread's agent is actively running — bubbled to a collapsed
   // project row so background activity is visible without expanding.
