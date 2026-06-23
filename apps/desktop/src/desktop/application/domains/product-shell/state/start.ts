@@ -1,4 +1,5 @@
 import type { ProductShellAgentIdentity, ProductShellState } from "./types.ts";
+import { worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 import { createAppChromeState } from "../../app-chrome/app-chrome-state.ts";
 import { createAgentChatShellState, defaultModelValueForAgent, defaultPermissionForAgent, resolveStartAgentId } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatAgentBinding, AgentChatShellState, AgentChatThreadScope } from "../../agent-chat/agent-chat.ts";
@@ -126,7 +127,21 @@ export function preserveActiveAgentChat(
 function defaultStartScope(state: ProductShellState): AgentChatThreadScope {
   // Prefer a thread-derived project (recently used); else a registered one (added
   // but not yet started in), so a brand-new project scopes a default New Thread too.
-  const project = state.projects[0] ?? state.registeredProjects[0];
+  // Worktree directories (`<repo>.worktree/<branch>`) register as Projects for the
+  // Left Rail but are never the default start target — a new Thread defaults to a real
+  // project so the composer's Project chip isn't a worktree dir (spec:
+  // project-open-folder-registry D6). Only fall back to a worktree (or Scratch) when
+  // there is no real project to start in.
+  // The Boolean(cwd) guard keeps the pure check total: a malformed project (no cwd
+  // — e.g. corrupted persisted data) is treated as not-a-real-project rather than
+  // crashing worktreeRepoRootForCwd's string .replace().
+  const isRealProject = (project: { cwd: string }): boolean =>
+    Boolean(project.cwd) && worktreeRepoRootForCwd(project.cwd) === null;
+  const project =
+    state.projects.find(isRealProject) ??
+    state.registeredProjects.find(isRealProject) ??
+    state.projects[0] ??
+    state.registeredProjects[0];
   return project !== undefined
     ? { kind: "project", projectId: project.projectId, cwd: project.cwd }
     : { kind: "scratch", scratchCwd: "Scratch" };

@@ -224,6 +224,39 @@ test("preferredStartComposerFromState rejects an unknown agent", () => {
   setPreferredStartComposer(null);
 });
 
+test("a new thread defaults to a real project, never a worktree directory", () => {
+  // Spec: project-open-folder-registry D6 / Inv-5. A worktree registers as a Project
+  // (for the Left Rail) but must not be the default start scope, or the composer's
+  // Project chip would read a worktree dir. The real repo project is preferred even
+  // when the worktree is listed first.
+  setPreferredStartComposer(null);
+  const registered = setProductShellRegisteredProjects(
+    createProductShellState({ includeFixtureData: false }),
+    [
+      { projectId: "wt", name: "feature", cwd: "/repo.worktree/feature" },
+      { projectId: "repo", name: "repo", cwd: "/repo" },
+    ],
+  );
+  const state = startNewProductShellThread(registered);
+  const scope = state.agentChat.composer.startOptions.scope;
+  assert.equal(scope?.kind, "project");
+  assert.equal(scope?.kind === "project" ? scope.cwd : null, "/repo");
+});
+
+test("a new thread falls back to a worktree only when there is no real project", () => {
+  // Conservative fallback: if every registered Project is a worktree, the new Thread
+  // still starts in a folder the user has (not Scratch).
+  setPreferredStartComposer(null);
+  const registered = setProductShellRegisteredProjects(
+    createProductShellState({ includeFixtureData: false }),
+    [{ projectId: "wt", name: "feature", cwd: "/repo.worktree/feature" }],
+  );
+  const state = startNewProductShellThread(registered);
+  const scope = state.agentChat.composer.startOptions.scope;
+  assert.equal(scope?.kind, "project");
+  assert.equal(scope?.kind === "project" ? scope.cwd : null, "/repo.worktree/feature");
+});
+
 test("starting in a freshly-added (threadless) project scopes the composer to its directory", () => {
   setPreferredStartComposer(null);
   // A registered project with no threads yet (added via the folder picker) lives in
