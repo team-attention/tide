@@ -5,7 +5,7 @@ import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { applyProductShellThreadArchivedEvent, applyProductShellThreadEvent, applyProductShellThreadLaunchOptionsChangedEvent, applyProductShellThreadPinChangedEvent, applyProductShellThreadRenamedEvent, toProductShellThreadFromSummary } from "./thread-list.ts";
 import { setProductShellProviderCommands } from "./composer-bridge.ts";
-import { createStartAgentChatState } from "./start.ts";
+import { activeSurfaceThreadId, createStartAgentChatState } from "./start.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
 import { reconcileEditorDrafts } from "./workbench-editor.ts";
 import { projectsFromThreads } from "./view-model.ts";
@@ -40,11 +40,13 @@ export function applyProductShellBackendEvent(
   // card and no way out. Folding unconditionally records the card, so re-viewing the
   // thread always shows it. See claude-parallel-permission-wedge.md.
   //
-  // The active thread's own entry is captured into the map at switch time via
-  // preserveActiveAgentChat, so excluding the active id here never double-folds it.
+  // The displayed thread's own entry is captured into the map at switch time via
+  // preserveActiveAgentChat (and its live events land on agentChat above), so excluding the
+  // surface thread id here never double-folds it.
   const eventThreadId = threadIdFromBackendEvent(event);
+  const surfaceThreadId = activeSurfaceThreadId(state);
   const foldsIntoBackgroundThread =
-    eventThreadId !== undefined && eventThreadId !== state.activeThreadId;
+    eventThreadId !== undefined && eventThreadId !== surfaceThreadId;
   const agentChatByThreadId = foldsIntoBackgroundThread
     ? {
         ...state.agentChatByThreadId,
@@ -308,19 +310,19 @@ function shouldApplyBackendEventToActiveSurfaces(
   if (event.kind === "thread.listed") {
     return true;
   }
-  // The active chat shows exactly the active thread (focus is user-owned). Apply an
-  // event to it only when the event is FOR the active thread — regardless of where
-  // it came from. A late command response for a thread the user already left, or a
-  // background broadcast, never touches the current chat. No active thread (New
-  // Thread composer) → nothing applies.
-  if (state.activeThreadId === null) {
+  // The active chat shows exactly the displayed thread (focus is user-owned). Apply an
+  // event to it only when the event is FOR that thread — regardless of where it came from.
+  // A late command response for a thread the user already left, or a background broadcast,
+  // never touches the current chat. No displayed thread (New Thread composer) → nothing.
+  const surfaceThreadId = activeSurfaceThreadId(state);
+  if (surfaceThreadId === undefined) {
     return false;
   }
   const eventThreadId = threadIdFromBackendEvent(event);
   if (eventThreadId === undefined) {
     return true;
   }
-  return eventThreadId === state.activeThreadId;
+  return eventThreadId === surfaceThreadId;
 }
 
 function threadIdFromBackendEvent(event: AgentChatBackendEvent): string | undefined {

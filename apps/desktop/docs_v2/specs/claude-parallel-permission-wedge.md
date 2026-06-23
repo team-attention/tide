@@ -126,8 +126,25 @@ re-viewing the thread always surfaces it.
   (promoted card) and `agentRuntime.stateChanged` for a thread with no prior entry are
   recorded, including in the `activeThreadId === null` window.
 
-Residual (smaller, separate): while a thread is the visually-shown surface but
-`activeThreadId` is transiently null, events fold to the map yet the on-screen `agentChat`
-working copy is not re-synced until the next open/switch. The card is recoverable by
-re-viewing the thread; eliminating the transient entirely (active surface as a pure
-projection of `agentChatByThreadId[activeThreadId]`) is a follow-up.
+Follow-up (done — surface identity keys off the displayed thread): the unconditional fold
+records the card in the background map, but while a thread is the visually-shown surface
+AND `activeThreadId` is transiently null (a thread.listed momentarily omitted it; nulling it
+does not reset `agentChat`), an event for that thread used to land in the map yet NOT on the
+on-screen `agentChat` until the next open. The visible card was then stale until a re-click.
+
+Fix: identify the surface by what it DISPLAYS, not the bookkeeping field —
+`activeSurfaceThreadId(state) = state.activeThreadId ?? state.agentChat.thread?.threadId`.
+Used consistently in the three surface-identity decisions:
+
+- `shouldApplyBackendEventToActiveSurfaces` — an event applies to the visible chat when it
+  is for the displayed thread (so a card reaches the screen during the null window).
+- the background-fold exclusion — the displayed thread's events go to `agentChat`, not the
+  map (no double-fold).
+- `preserveActiveAgentChat` — switch-away captures the displayed thread's live state under
+  its own id even when `activeThreadId` was null (else it is lost and re-opens to a
+  skeleton).
+
+`src/desktop/application/domains/product-shell/state/start.ts` exports `activeSurfaceThreadId`;
+`events.ts` imports it. The open early-guards (`activeThreadId === threadId`) still key off
+`activeThreadId` — reopening the exact same displayed thread during a null window is a rare
+edge and recovers on the next list, so it is intentionally left out of scope.

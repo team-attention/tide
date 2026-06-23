@@ -90,6 +90,17 @@ export function refocusStartComposerIfActiveDropped(
   return activeDropped ? startNewProductShellThread(next) : next;
 }
 
+// The thread the active chat surface actually DISPLAYS. Normally this is activeThreadId,
+// but a thread.listed can transiently null activeThreadId while the chat still shows a
+// thread (the listed set momentarily omitted it during a restore/refresh; nulling it does
+// not reset agentChat). Anything that means "the thread on screen" must key off what the
+// surface DISPLAYS, not the bookkeeping field — else a thread's live state is stranded or
+// dropped while activeThreadId is null. The Start Composer shows no thread
+// (agentChat.thread === null) → undefined.
+export function activeSurfaceThreadId(state: ProductShellState): string | undefined {
+  return state.activeThreadId ?? state.agentChat.thread?.threadId ?? undefined;
+}
+
 // Stash the currently active thread's agent-chat state into the per-thread map so it
 // is preserved when we switch away (and can be restored intact on return). Lives here
 // (not in thread-list) so start.ts has no back-import into thread-list — keeping the
@@ -98,10 +109,14 @@ export function preserveActiveAgentChat(
   state: ProductShellState,
   nextThreadId: string,
 ): Record<string, AgentChatShellState> {
-  if (state.activeThreadId === null || state.activeThreadId === nextThreadId) {
+  // Preserve under the thread the chat actually DISPLAYS (see activeSurfaceThreadId): the
+  // live surface state must be captured on switch-away even when activeThreadId was
+  // transiently nulled, otherwise it is lost and the thread re-opens to a skeleton.
+  const surfaceThreadId = activeSurfaceThreadId(state);
+  if (surfaceThreadId === undefined || surfaceThreadId === nextThreadId) {
     return state.agentChatByThreadId;
   }
-  return { ...state.agentChatByThreadId, [state.activeThreadId]: state.agentChat };
+  return { ...state.agentChatByThreadId, [surfaceThreadId]: state.agentChat };
 }
 
 // A new Thread with no chosen Project scopes to the user's first REAL project (a
