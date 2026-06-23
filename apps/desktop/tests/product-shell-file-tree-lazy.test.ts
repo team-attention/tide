@@ -7,11 +7,14 @@ import test from "node:test";
 
 import {
   COMPOSER_LAUNCHER_PANE_ID,
+  applyProductShellBackendEvent,
+  createProductShellViewModel,
   createProductShellState,
   closeProductShellWorkbenchPane,
   newProductShellFile,
   openProductShellWorkbenchLauncher,
   selectProductShellFileTreeEntry,
+  updateProductShellComposerDraft,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import type {
   ProductShellFileTreeEntryView,
@@ -147,6 +150,65 @@ test("new_file_on_start_page_is_a_no-op_without_a_concrete_project_cwd", () => {
   };
   const result = newProductShellFile(noCwd, "x.txt");
   assert.equal(result.command, null, "no concrete cwd → nothing to create");
+});
+
+test("workspace_file_tree_loaded_populates_composer_file_mentions", () => {
+  const loaded = applyProductShellBackendEvent(startPageState(), {
+    kind: "workspace.fileTreeLoaded",
+    payload: {
+      cwd: "/repo/tide",
+      fileTree: {
+        cwdLabel: "tide",
+        entries: [
+          { id: "src", name: "src", relativePath: "src", depth: 0, kind: "folder" },
+          { id: "src/app.ts", name: "app.ts", relativePath: "src/app.ts", depth: 1, kind: "file" },
+        ],
+      },
+    },
+  });
+
+  assert.deepEqual(
+    loaded.composerFileMentions?.entries.map((entry) => entry.relativePath),
+    ["src/app.ts"],
+  );
+
+  const drafted = updateProductShellComposerDraft(loaded, "@app");
+  const rows = createProductShellViewModel(drafted).agentChat.composer.activeSurface?.rows ?? [];
+  assert.ok(rows.some((row) => row.rowId === "file:src/app.ts"));
+});
+
+test("stale_workspace_file_tree_loaded_does_not_replace_composer_file_mentions", () => {
+  const loaded = applyProductShellBackendEvent(startPageState(), {
+    kind: "workspace.fileTreeLoaded",
+    payload: {
+      cwd: "/repo/tide",
+      fileTree: {
+        cwdLabel: "tide",
+        entries: [
+          { id: "src/app.ts", name: "app.ts", relativePath: "src/app.ts", depth: 1, kind: "file" },
+        ],
+      },
+    },
+  });
+
+  const stale = applyProductShellBackendEvent(loaded, {
+    kind: "workspace.fileTreeLoaded",
+    payload: {
+      cwd: "/repo/old",
+      fileTree: {
+        cwdLabel: "old",
+        entries: [
+          { id: "old.ts", name: "old.ts", relativePath: "old.ts", depth: 0, kind: "file" },
+        ],
+      },
+    },
+  });
+
+  assert.deepEqual(
+    stale.composerFileMentions?.entries.map((entry) => entry.relativePath),
+    ["src/app.ts"],
+  );
+  assert.equal(stale.fileTree?.cwdLabel, "tide");
 });
 
 // ---- Workbench picker polish (spec: workbench-open-polish-and-image-pane.md) ----

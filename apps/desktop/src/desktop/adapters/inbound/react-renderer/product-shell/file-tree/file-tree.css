@@ -129,6 +129,59 @@ button.file-tree-row:hover {
   color: var(--tide-muted);
 }
 
+.file-tree-row__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-tree-row__git-count,
+.file-tree-row__git-status {
+  flex: 0 0 auto;
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font: 650 10px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.file-tree-row__git-count {
+  padding: 0 5px;
+  background: color-mix(in srgb, var(--tide-selection) 76%, var(--tide-action) 5%);
+  color: var(--tide-muted);
+}
+
+.file-tree-row__git-status--modified,
+.file-tree-row__git-status--renamed {
+  background: color-mix(in srgb, var(--tide-action) 12%, transparent);
+  color: var(--tide-action);
+}
+
+.file-tree-row__git-status--added,
+.file-tree-row__git-status--untracked {
+  background: color-mix(in srgb, var(--tide-diff-add) 14%, transparent);
+  color: var(--tide-diff-add);
+}
+
+.file-tree-row__git-status--deleted {
+  background: rgba(var(--tide-danger-rgb), 0.12);
+  color: var(--tide-danger);
+}
+
+.file-tree-row--git-deleted {
+  color: var(--tide-muted);
+}
+
+.file-tree-row--git-deleted .file-tree-row__name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, var(--tide-danger) 58%, transparent);
+}
+
 .file-tree-row--active {
   background: color-mix(in srgb, var(--tide-selection) 84%, var(--tide-action) 5%);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tide-action) 24%, var(--tide-line));

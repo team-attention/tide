@@ -1,6 +1,6 @@
 import type { ProductShellWorkbenchViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { WorkbenchTabView } from "../../../../../application/domains/app-chrome/app-chrome-state.ts";
-import type { ProductShellHandlers } from "../support/types.ts";
+import type { GitChangesView, ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
 import { useEffect, useRef } from "react";
 import { FileText, GitCompare, Globe, Image as ImageIcon, LayoutGrid, Terminal, X } from "lucide-react";
@@ -13,6 +13,7 @@ import { WorkbenchLauncherPane, emptyWorkbenchLauncherPane } from "./launcher-pa
 export function createWorkbenchColumn(
   viewModel: ProductShellWorkbenchViewModel,
   handlers: ProductShellHandlers,
+  gitChanges: GitChangesView | null,
 ): ReactElement {
   const tabs = viewModel.appChrome.workbenchTabStrip.visibleTabs;
   const activeTab = tabs.find((tab) => tab.active) ?? tabs[0];
@@ -81,6 +82,7 @@ export function createWorkbenchColumn(
           viewModel={viewModel}
           handlers={handlers}
           paneIcon={workbenchTabIcon}
+          gitChanges={gitChanges}
         />
       ) : activeTab && activePane ? (
         <section
@@ -88,7 +90,7 @@ export function createWorkbenchColumn(
           data-pane-id={activeTab.paneId}
           data-pane-kind={activeTab.kind}
         >
-          {createWorkbenchPaneContent(activePane, handlers, viewModel.editorDrafts[activePane.paneId])}
+          {createWorkbenchPaneContent(activePane, handlers, viewModel.editorDrafts[activePane.paneId], gitChanges)}
         </section>
       ) : (
         <section className="workbench-column__pane" data-pane-kind="launcher">

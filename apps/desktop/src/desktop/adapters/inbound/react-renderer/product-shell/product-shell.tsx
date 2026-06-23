@@ -14,7 +14,7 @@ import { createProductShellFileDialogs } from "./product-shell-file-dialogs.tsx"
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
-import { useActivateThreadFromMain, useCloseIntentFromMenu, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useProductShellEscape, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
+import { useActivateThreadFromMain, useCloseIntentFromMenu, useComposerFileMentionRefresh, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useProductShellEscape, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
 import { useMultitaskNavigation } from "./multitask/use-multitask-navigation.tsx";
 import { RailPeek } from "./left-rail/rail-peek.tsx";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
@@ -207,6 +207,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // The active Project cwd (a thread's, or the start composer's) drives git state.
   const activeScope = shellState.agentChat.thread?.scope ?? shellState.agentChat.composer.startOptions.scope;
   const activeProjectCwd = activeScope?.kind === "project" ? activeScope.cwd : null;
+  const activeComposerFileMentionCwd = activeProjectCwd;
   // Git for the active repo/worktree: branches+worktrees (composer pickers, → shell state)
   // and uncommitted changes (top-bar badge + Changes view), fetched together. See useGitState.
   const git = useGitState(props.projectBridge, activeProjectCwd, setShellState);
@@ -507,6 +508,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectCwd, activeAgentId]);
+  useComposerFileMentionRefresh({
+    draft: shellState.agentChat.composer.draft,
+    cwd: activeComposerFileMentionCwd,
+    dispatchBackendCommand,
+  });
   // Worktree + branch delete dialogs (state + git orchestration) live in a hook so
   // the shell stays a thin composition root. Placed after dispatchBackendCommand
   // (which it needs) and before the handlers that consume it. See useDeleteDialogs.
@@ -685,9 +691,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           ) : null}
           <AgentChatColumnView handlers={stableHandlers} gitBadge={git.gitBadge} />
           {workbenchPresence.mounted ? (
-            <WorkbenchColumnView handlers={stableHandlers} />
+            <WorkbenchColumnView handlers={stableHandlers} gitChanges={git.gitChanges} />
           ) : null}
-          {fileTreePresence.mounted ? <FileTreeColumnView handlers={stableHandlers} /> : null}
+          {fileTreePresence.mounted ? (
+            <FileTreeColumnView handlers={stableHandlers} gitChanges={git.gitChanges} />
+          ) : null}
         </div>
         {/* Workbench + FileTree toggles live in a single fixed cluster at the window's
             top-right, so they never jump between column headers as panels open/close. */}

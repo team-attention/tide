@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
+import type { ProjectRegistryBridge } from "../src/desktop/adapters/inbound/react-renderer/product-shell/support/types.ts";
 
 const dom = new JSDOM("<!doctype html><html><body><div id=\"root\"></div></body></html>", {
   pretendToBeVisual: true,
@@ -50,6 +51,9 @@ const { editProductShellWorkbenchEditorPane, goToProductShellEditorDefinition } 
 );
 const { inferEditorLanguage, editorLanguageExtensions } = await import(
   "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/editor-pane.tsx"
+);
+const { parseUnifiedDiffLineMarkers } = await import(
+  "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/git-diff-lines.ts"
 );
 const {
   deriveEditorRoot,
@@ -179,6 +183,154 @@ test("workbench_editor_pane_mounts_codemirror_with_file_content_and_line_numbers
     await act(async () => {
       root.unmount();
     });
+  }
+});
+
+test("parse_unified_diff_line_markers_maps_added_changed_and_deleted_lines", () => {
+  assert.deepEqual(
+    parseUnifiedDiffLineMarkers(
+      [
+        "--- a/src/app.ts",
+        "+++ b/src/app.ts",
+        "@@ -1,5 +1,6 @@",
+        " const before = 1;",
+        "-const oldValue = 2;",
+        "+const newValue = 2;",
+        "+const addedValue = 3;",
+        " const middle = 4;",
+        "-const removedOnly = 5;",
+        " const after = 6;",
+      ].join("\n"),
+    ),
+    [
+      { line: 2, kind: "changed" },
+      { line: 3, kind: "added" },
+      { line: 5, kind: "deleted" },
+    ],
+  );
+});
+
+test("workbench_editor_pane_renders_git_diff_line_decorations", async () => {
+  const code = "const before = 1;\nconst newValue = 2;\nconst addedValue = 3;\n";
+  const bridge = {
+    listProjects: () => Promise.resolve([]),
+    listCommands: () => Promise.resolve([]),
+    gitContext: () =>
+      Promise.resolve({
+        isGitRepo: true,
+        currentBranch: "main",
+        branches: [],
+        worktrees: [],
+      }),
+    gitChanges: () =>
+      Promise.resolve({
+        isGitRepo: true,
+        files: [{ path: "src/app.ts", status: "modified" as const, additions: 2, deletions: 1 }],
+      }),
+    gitFileDiff: () =>
+      Promise.resolve(
+        [
+          "--- a/src/app.ts",
+          "+++ b/src/app.ts",
+          "@@ -1,2 +1,3 @@",
+          " const before = 1;",
+          "-const oldValue = 2;",
+          "+const newValue = 2;",
+          "+const addedValue = 3;",
+        ].join("\n"),
+      ),
+  } as Partial<ProjectRegistryBridge> as ProjectRegistryBridge;
+  const root = await mountShell(editorState(code, "src/app.ts"), { projectBridge: bridge });
+  try {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    assert.ok(
+      dom.window.document.querySelector(".cm-tide-git-line--changed"),
+      "changed git diff line should render",
+    );
+    assert.ok(
+      dom.window.document.querySelector(".cm-tide-git-line--added"),
+      "added git diff line should render",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("workbench_editor_pane_keeps_existing_git_diff_while_refreshing", async () => {
+  const originalSetInterval = dom.window.setInterval;
+  const originalClearInterval = dom.window.clearInterval;
+  let refresh: (() => void) | null = null;
+  dom.window.setInterval = ((handler: TimerHandler) => {
+    refresh = typeof handler === "function" ? () => handler() : null;
+    return 1;
+  }) as typeof dom.window.setInterval;
+  dom.window.clearInterval = (() => undefined) as typeof dom.window.clearInterval;
+  let diffCalls = 0;
+  const bridge = {
+    listProjects: () => Promise.resolve([]),
+    listCommands: () => Promise.resolve([]),
+    gitContext: () =>
+      Promise.resolve({
+        isGitRepo: true,
+        currentBranch: "main",
+        branches: [],
+        worktrees: [],
+      }),
+    gitChanges: () =>
+      Promise.resolve({
+        isGitRepo: true,
+        files: [{ path: "src/app.ts", status: "modified" as const, additions: 1, deletions: 1 }],
+      }),
+    gitFileDiff: () => {
+      diffCalls += 1;
+      if (diffCalls > 1) {
+        return new Promise<string>(() => undefined);
+      }
+      return Promise.resolve(
+        [
+          "--- a/src/app.ts",
+          "+++ b/src/app.ts",
+          "@@ -1,1 +1,1 @@",
+          "-const value = 1;",
+          "+const value = 2;",
+        ].join("\n"),
+      );
+    },
+  } as Partial<ProjectRegistryBridge> as ProjectRegistryBridge;
+  const root = await mountShell(editorState("const value = 2;\n", "src/app.ts"), { projectBridge: bridge });
+  try {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    assert.ok(dom.window.document.querySelector(".cm-tide-git-line--changed"));
+    assert.notEqual(refresh, null);
+
+    await act(async () => {
+      refresh?.();
+      await Promise.resolve();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    assert.equal(diffCalls, 2);
+    assert.ok(
+      dom.window.document.querySelector(".cm-tide-git-line--changed"),
+      "existing marker should remain while refreshed diff is pending",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.setInterval = originalSetInterval;
+    dom.window.clearInterval = originalClearInterval;
   }
 });
 

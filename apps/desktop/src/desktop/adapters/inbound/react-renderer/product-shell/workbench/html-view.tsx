@@ -37,6 +37,7 @@ export function WorkbenchHtmlView(props: {
   revision: string;
   filePath?: string;
   relativePath?: string;
+  gitDiffText?: string;
   // The file-path breadcrumb, rendered INLINE in the header row next to the
   // Preview/Code toggle (one row), like the Browser Pane's address bar.
   breadcrumb?: ReactElement;
@@ -163,6 +164,7 @@ export function WorkbenchHtmlView(props: {
           dirty={props.dirty}
           language="html"
           revision={props.revision}
+          gitDiffText={props.gitDiffText}
           navigationTarget={undefined}
           relativePath={props.relativePath}
           handlers={props.handlers}

@@ -10,6 +10,7 @@ import { SearchQuery } from "@codemirror/search";
 import { editorLanguageExtensions } from "./editor-pane.tsx";
 import { codeIntelligenceExtensions } from "./code-intel-extensions.ts";
 import type { CodeIntelContext } from "./code-intel-extensions.ts";
+import { createGitDiffLineDecorations, parseUnifiedDiffLineMarkers } from "./git-diff-lines.ts";
 import { CornerDownRight } from "lucide-react";
 import { InPaneFindBar, useInPaneFindState, usePaneFindIntent } from "../../support/in-pane-find.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
@@ -32,6 +33,7 @@ export function WorkbenchCodeEditor(props: {
   dirty: boolean;
   language: string;
   revision: string;
+  gitDiffText?: string;
   navigationTarget?: NonNullable<
     ProductShellViewModel["appChrome"]["activeWorkbenchPane"]
   >["navigationTarget"];
@@ -138,6 +140,10 @@ export function WorkbenchCodeEditor(props: {
     });
     return codeIntelligenceExtensions(getContext);
   }, []);
+  const gitDiffExtensions = useMemo(
+    () => createGitDiffLineDecorations(parseUnifiedDiffLineMarkers(props.gitDiffText ?? "")),
+    [props.gitDiffText],
+  );
 
   // CodeMirror reconfigures — and re-parses the WHOLE document's grammar —
   // whenever `extensions`, `basicSetup`, `onChange`, or `onUpdate` change
@@ -173,10 +179,11 @@ export function WorkbenchCodeEditor(props: {
         },
       ]),
       EditorView.lineWrapping,
+      gitDiffExtensions,
       ...codeIntelExtensions,
       ...editorLanguageExtensions(props.language),
     ],
-    [props.language, codeIntelExtensions],
+    [props.language, codeIntelExtensions, gitDiffExtensions],
   );
   const onEditorChange = useCallback((next: string) => {
     propsRef.current.handlers.onEditorDraftChange(propsRef.current.paneId, next);

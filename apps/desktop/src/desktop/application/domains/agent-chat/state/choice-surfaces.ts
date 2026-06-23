@@ -200,27 +200,38 @@ export function selectAgentChatChoiceSurfaceRow(
       return branch ? selectComposerBranch(state, branch) : { state, command: null };
     }
     case "command_suggestions": {
-      // Selecting a command/skill row (rowId "command:/name" or "command:$name")
-      // inserts the token into the draft and closes the surface.
+      // Selecting a command/skill row ("command:/name" or "command:$name") or a file
+      // row ("file:<relativePath>") splices the token into the draft and closes.
       if (rowId.startsWith("command:")) {
-        const token = rowId.slice("command:".length);
-        // Replace only the in-progress trigger token, preserving any text typed
-        // before it (e.g. "explain /go" + pick "/goal" → "explain /goal ").
-        const active = activeComposerTrigger(state.composer.draft);
-        const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : "";
-        return {
-          state: {
-            ...state,
-            composer: { ...state.composer, draft: `${prefix}${token} `, activeSurface: null },
-          },
-          command: null,
-        };
+        return spliceComposerTriggerToken(state, rowId.slice("command:".length));
+      }
+      if (rowId.startsWith("file:")) {
+        return spliceComposerTriggerToken(state, `@${rowId.slice("file:".length)}`);
       }
       return setComposerActiveSurface(state, null);
     }
     case "composer_options":
       return setComposerActiveSurface(state, null);
   }
+}
+
+// Splice a picked command/file token into the draft, replacing the in-progress trigger
+// token while preserving any text typed before it (e.g. "explain /go" + "/goal" →
+// "explain /goal "). The row only renders while its trigger is active, but fall back to
+// the full draft rather than an empty prefix so an insert can never wipe the draft.
+function spliceComposerTriggerToken(
+  state: AgentChatShellState,
+  token: string,
+): AgentChatShellUpdateResult {
+  const active = activeComposerTrigger(state.composer.draft);
+  const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : state.composer.draft;
+  return {
+    state: {
+      ...state,
+      composer: { ...state.composer, draft: `${prefix}${token} `, activeSurface: null },
+    },
+    command: null,
+  };
 }
 
 function providerReadinessTerminalCommandData(
@@ -357,6 +368,14 @@ export function createActiveComposerSurface(
       const active = activeComposerTrigger(state.composer.draft);
       const trigger = active?.trigger ?? "/";
       const query = (active?.query ?? "").trim().toLowerCase();
+      if (trigger === "@") {
+        return {
+          surfaceKind,
+          title: "Files",
+          sourceLabel: "Execution Context",
+          rows: fileMentionRows(state, query),
+        };
+      }
       // The menu mirrors the agent's FULL real command set (the same list the
       // provider CLI itself exposes), on the Start Composer and in a thread alike —
       // no Tide-curated subset. Dedupe by name (some agents, e.g. gemini, report a
@@ -389,6 +408,58 @@ export function createActiveComposerSurface(
       };
     }
   }
+}
+
+function fileMentionRows(
+  state: AgentChatShellState,
+  query: string,
+): AgentChatChoiceSurfaceRowView[] {
+  const seen = new Set<string>();
+  const matches = (state.availableFileMentions ?? [])
+    .filter((file) => {
+      const relativePath = file.relativePath.toLowerCase();
+      const name = file.name.toLowerCase();
+      return query.length === 0 || relativePath.includes(query) || name.includes(query);
+    })
+    .filter((file) => {
+      const key = file.relativePath.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => fileMentionRank(a, query) - fileMentionRank(b, query) || a.relativePath.localeCompare(b.relativePath))
+    .slice(0, 60);
+
+  if (matches.length === 0) {
+    return [row("no-files", "No files found", "for this directory", undefined, "file", false, false, true)];
+  }
+
+  return matches.map((file) =>
+    row(`file:${file.relativePath}`, file.name, file.relativePath, undefined, "file"),
+  );
+}
+
+function fileMentionRank(
+  file: { name: string; relativePath: string },
+  query: string,
+): number {
+  if (query.length === 0) {
+    return file.relativePath.split("/").length;
+  }
+  const name = file.name.toLowerCase();
+  const relativePath = file.relativePath.toLowerCase();
+  if (name === query || relativePath === query) {
+    return 0;
+  }
+  if (name.startsWith(query)) {
+    return 1;
+  }
+  if (relativePath.startsWith(query)) {
+    return 2;
+  }
+  return 3 + file.relativePath.split("/").length;
 }
 
 function permissionRowsForAgent(agentId: string, currentValue: string): AgentChatChoiceSurfaceRowView[] {

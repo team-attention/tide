@@ -3,9 +3,11 @@ import type { CSSProperties, DragEvent, ReactElement } from "react";
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellFileTreeMenu, ProductShellTreeEdit } from "../../../../../application/domains/product-shell/product-shell.ts";
 import { relativeBaseName } from "../../../../../application/domains/product-shell/product-shell.ts";
-import type { ProductShellHandlers } from "../support/types.ts";
+import type { GitChangeStatus, GitChangesView, ProductShellHandlers } from "../support/types.ts";
 import { createColumnResizeHandle } from "../chrome/chrome.tsx";
 import { createFileTreeContextMenuOverlay } from "./file-tree-context-menu.tsx";
+import type { FileTreeRenderEntry } from "./git-status.ts";
+import { createGitAwareEntries, gitStatusLabel, gitStatusTitle } from "./git-status.ts";
 import { ChevronRight, FilePlus, Folder, FolderOpen, FolderPlus, Search, X } from "lucide-react";
 import { fileIconFor } from "../../support/file-icons.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure); file
@@ -19,14 +21,13 @@ export interface FileTreeColumnViewModel {
   fileTreeEdit: ProductShellTreeEdit | null;
   fileTreeMenu: ProductShellFileTreeMenu | null;
   fileTreeNotice: string | null;
+  gitChanges: GitChangesView | null;
 }
 
-type FileTreeEntryView = ProductShellViewModel["fileTree"]["entries"][number];
-
 export function filterFileTreeEntries(
-  entries: FileTreeEntryView[],
+  entries: FileTreeRenderEntry[],
   filterDraft: string,
-): FileTreeEntryView[] {
+): FileTreeRenderEntry[] {
   const normalizedFilter = filterDraft.trim().toLowerCase();
   if (normalizedFilter.length === 0) {
     return entries;
@@ -110,26 +111,62 @@ const FileTreeRow = memo(function FileTreeRow(props: {
   expanded: boolean | undefined;
   relativePath: string;
   isDragOver: boolean;
+  gitStatus: GitChangeStatus | undefined;
+  gitDescendantCount: number | undefined;
+  syntheticDeleted: boolean | undefined;
+  gitRoot: string | undefined;
   handlers: ProductShellHandlers;
   setDragOverPath: (path: string | null) => void;
 }): ReactElement {
-  const { id, name, kind, depth, active, expanded, relativePath, isDragOver, handlers, setDragOverPath } = props;
+  const {
+    id,
+    name,
+    kind,
+    depth,
+    active,
+    expanded,
+    relativePath,
+    isDragOver,
+    gitStatus,
+    gitDescendantCount,
+    syntheticDeleted,
+    gitRoot,
+    handlers,
+    setDragOverPath,
+  } = props;
   const isFolder = kind === "folder";
   const RowIcon = isFolder ? (expanded === false ? Folder : FolderOpen) : fileIconFor(name);
+  const openRow = () => {
+    if (syntheticDeleted === true) {
+      handlers.onOpenChanges(gitRoot);
+      return;
+    }
+    handlers.onFileTreeEntryOpen(id);
+  };
   return (
     <button
       type="button"
-      className={`file-tree-row${active ? " file-tree-row--active" : ""}`}
+      className={[
+        "file-tree-row",
+        active ? "file-tree-row--active" : "",
+        syntheticDeleted === true ? "file-tree-row--git-deleted" : "",
+      ].filter(Boolean).join(" ")}
       data-depth={depth}
       data-file-kind={kind}
       data-expanded={isFolder ? String(expanded ?? true) : undefined}
       data-drag-over={isFolder && isDragOver ? "true" : undefined}
+      data-git-status={gitStatus}
       aria-expanded={isFolder ? (expanded ?? true) : undefined}
       style={{ "--file-tree-depth": depth } as CSSProperties}
-      draggable
-      onClick={() => handlers.onFileTreeEntryOpen(id)}
+      draggable={syntheticDeleted !== true}
+      title={syntheticDeleted === true ? `Open ${relativePath} in Changes` : relativePath}
+      onClick={openRow}
       onContextMenu={(event) => {
         event.preventDefault();
+        if (syntheticDeleted === true) {
+          handlers.onOpenChanges(gitRoot);
+          return;
+        }
         handlers.onFileTreeMenuOpen({
           x: event.clientX,
           y: event.clientY,
@@ -138,11 +175,15 @@ const FileTreeRow = memo(function FileTreeRow(props: {
         });
       }}
       onDragStart={(event: DragEvent) => {
+        if (syntheticDeleted === true) {
+          event.preventDefault();
+          return;
+        }
         event.dataTransfer.setData("text/tide-path", relativePath);
         event.dataTransfer.effectAllowed = "move";
       }}
       onDragOver={
-        isFolder
+        isFolder && syntheticDeleted !== true
           ? (event: DragEvent) => {
               event.preventDefault();
               event.dataTransfer.dropEffect = "move";
@@ -151,7 +192,7 @@ const FileTreeRow = memo(function FileTreeRow(props: {
           : undefined
       }
       onDragLeave={
-        isFolder
+        isFolder && syntheticDeleted !== true
           ? () => {
               // Only clear OUR highlight: dragging A→B fires A's dragleave after B's
               // dragover, so an unguarded clear would wipe B's just-set highlight.
@@ -162,7 +203,7 @@ const FileTreeRow = memo(function FileTreeRow(props: {
           : undefined
       }
       onDrop={
-        isFolder
+        isFolder && syntheticDeleted !== true
           ? (event: DragEvent) => {
               event.preventDefault();
               event.stopPropagation();
@@ -188,7 +229,21 @@ const FileTreeRow = memo(function FileTreeRow(props: {
         <span className="file-tree-row__chevron-spacer" aria-hidden />
       )}
       <RowIcon size={14} strokeWidth={1.8} aria-hidden />
-      <span>{name}</span>
+      <span className="file-tree-row__name">{name}</span>
+      {gitDescendantCount !== undefined && gitDescendantCount > 0 ? (
+        <span className="file-tree-row__git-count" title={`${gitDescendantCount} changed files`}>
+          {gitDescendantCount}
+        </span>
+      ) : null}
+      {gitStatus !== undefined ? (
+        <span
+          className={`file-tree-row__git-status file-tree-row__git-status--${gitStatus}`}
+          title={gitStatusTitle(gitStatus)}
+          aria-label={gitStatusTitle(gitStatus)}
+        >
+          {gitStatusLabel(gitStatus)}
+        </span>
+      ) : null}
     </button>
   );
 });
@@ -243,7 +298,7 @@ function FileTreeColumn(props: {
   handlers: ProductShellHandlers;
 }): ReactElement {
   const { viewModel, handlers } = props;
-  const { fileTree, fileTreeEdit, fileTreeMenu, fileTreeNotice } = viewModel;
+  const { fileTree, fileTreeEdit, fileTreeMenu, fileTreeNotice, gitChanges } = viewModel;
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [filterDraft, setFilterDraft] = useState("");
 
@@ -252,9 +307,13 @@ function FileTreeColumn(props: {
   const newFolderParent =
     fileTreeEdit?.kind === "new-folder" ? fileTreeEdit.parentPath : undefined;
   const filterActive = filterDraft.trim().length > 0;
+  const gitAwareEntries = useMemo(
+    () => createGitAwareEntries(fileTree.entries, fileTree.root, gitChanges),
+    [fileTree.entries, fileTree.root, gitChanges],
+  );
   const entriesForView = useMemo(
-    () => filterFileTreeEntries(fileTree.entries, filterDraft),
-    [fileTree.entries, filterDraft],
+    () => filterFileTreeEntries(gitAwareEntries, filterDraft),
+    [gitAwareEntries, filterDraft],
   );
 
   return (
@@ -376,6 +435,10 @@ function FileTreeColumn(props: {
                             expanded={entry.kind === "folder" ? entry.expanded : undefined}
                             relativePath={entry.relativePath}
                             isDragOver={dragOverPath === entry.relativePath}
+                            gitStatus={entry.gitStatus}
+                            gitDescendantCount={entry.gitDescendantCount}
+                            syntheticDeleted={entry.syntheticDeleted}
+                            gitRoot={fileTree.root}
                             handlers={handlers}
                             setDragOverPath={setDragOverPath}
                           />,

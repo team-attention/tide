@@ -1,5 +1,5 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
-import type { ProductShellHandlers } from "../support/types.ts";
+import type { GitChangesView, ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
 import { Search, X } from "lucide-react";
 import { fileIconFor } from "../../support/file-icons.ts";
@@ -81,6 +81,7 @@ export function createWorkbenchPaneContent(
   pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>,
   handlers: ProductShellHandlers,
   editorDraft: ProductShellViewModel["editorDrafts"][string] | undefined,
+  gitChanges: GitChangesView | null,
 ): ReactElement {
   // Isolate each pane behind an error boundary: a throw in one pane's render/effect (e.g. a
   // <webview> guest method called before dom-ready) shows an inline fallback for THAT pane
@@ -91,7 +92,7 @@ export function createWorkbenchPaneContent(
   // descendants, so a thrown function-call result would escape past it to the parent.
   return (
     <ErrorBoundary resetKey={pane.paneId} label={`the ${pane.kind} pane`}>
-      <WorkbenchPaneContent pane={pane} handlers={handlers} editorDraft={editorDraft} />
+      <WorkbenchPaneContent pane={pane} handlers={handlers} editorDraft={editorDraft} gitChanges={gitChanges} />
     </ErrorBoundary>
   );
 }
@@ -100,8 +101,9 @@ function WorkbenchPaneContent(props: {
   pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;
   handlers: ProductShellHandlers;
   editorDraft: ProductShellViewModel["editorDrafts"][string] | undefined;
+  gitChanges: GitChangesView | null;
 }): ReactElement {
-  const { pane, handlers, editorDraft } = props;
+  const { pane, handlers, editorDraft, gitChanges } = props;
   switch (pane.kind) {
     case "browser":
       // Key by paneId so a different/new browser pane fully remounts (fresh
@@ -109,7 +111,14 @@ function WorkbenchPaneContent(props: {
       // which left the old page showing after close-and-reopen.
       return <WorkbenchBrowserPane key={pane.paneId} pane={pane} handlers={handlers} />;
     case "editor":
-      return <WorkbenchEditorPane pane={pane} draft={editorDraft} handlers={handlers} />;
+      return (
+        <WorkbenchEditorPane
+          pane={pane}
+          draft={editorDraft}
+          handlers={handlers}
+          gitDiffTarget={gitDiffTargetForPane(pane, gitChanges)}
+        />
+      );
     case "image":
       return <WorkbenchImagePane pane={pane} handlers={handlers} />;
     case "diff":
@@ -137,4 +146,32 @@ function WorkbenchPaneContent(props: {
         </div>
       );
   }
+}
+
+function gitDiffTargetForPane(
+  pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>,
+  gitChanges: GitChangesView | null,
+): { cwd: string; relativePath: string; changeKey: string } | undefined {
+  if (pane.kind !== "editor" || gitChanges === null || typeof pane.relativePath !== "string") {
+    return undefined;
+  }
+  if (pane.root !== undefined && pane.root !== gitChanges.cwd) {
+    return undefined;
+  }
+  const change = gitChanges.files.find((file) => file.path === pane.relativePath);
+  if (change === undefined || change.status === "deleted") {
+    return undefined;
+  }
+  return {
+    cwd: gitChanges.cwd,
+    relativePath: pane.relativePath,
+    changeKey: [
+      gitChanges.revision,
+      gitChanges.cwd,
+      pane.relativePath,
+      change.status,
+      change.additions ?? 0,
+      change.deletions ?? 0,
+    ].join(":"),
+  };
 }

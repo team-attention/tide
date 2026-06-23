@@ -107,8 +107,9 @@ export const selectAgentChatViewModel = shellSelector(
     (state: ProductShellState) => state.gitBranches,
     (state: ProductShellState) => state.gitWorktrees,
     (state: ProductShellState) => state.providerCommands,
+    (state: ProductShellState) => state.composerFileMentions,
   ],
-  (agentChat, registeredProjects, projects, gitBranches, gitWorktrees, providerCommands) =>
+  (agentChat, registeredProjects, projects, gitBranches, gitWorktrees, providerCommands, composerFileMentions) =>
     createAgentChatShellViewModel(
       agentChatWithProjects({
         agentChat,
@@ -117,6 +118,7 @@ export const selectAgentChatViewModel = shellSelector(
         gitBranches,
         gitWorktrees,
         providerCommands,
+        composerFileMentions,
       } as ProductShellState),
     ),
 );
@@ -508,7 +510,23 @@ export function agentChatWithProjects(state: ProductShellState): AgentChatShellS
     availableBranches: state.gitBranches,
     availableWorktrees: state.gitWorktrees,
     availableCommands: state.providerCommands,
+    availableFileMentions: fileMentionsForActiveScope(state),
   };
+}
+
+function fileMentionsForActiveScope(state: ProductShellState) {
+  const scope = state.agentChat.thread?.scope ?? state.agentChat.composer.startOptions.scope;
+  const cwd = scope?.kind === "project" ? scope.cwd : undefined;
+  if (cwd === undefined || state.composerFileMentions?.cwd !== cwd) {
+    return [];
+  }
+  return state.composerFileMentions.entries
+    .filter((entry) => entry.kind === "file")
+    .map((entry) => ({
+      name: entry.name,
+      relativePath: entry.relativePath,
+      cwd,
+    }));
 }
 
 // Sort threads for the Left Rail list. "recent"/"created" newest-first by the

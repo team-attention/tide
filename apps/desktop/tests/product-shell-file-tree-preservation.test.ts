@@ -58,6 +58,19 @@ function started(threadId: string, cwd: string) {
 // composer does on send) so the following thread.started lands on the active thread.
 function startPageWithLoadedTree(cwd: string, threadId: string) {
   let state = createProductShellState({ includeFixtureData: false });
+  state = {
+    ...state,
+    agentChat: {
+      ...state.agentChat,
+      composer: {
+        ...state.agentChat.composer,
+        startOptions: {
+          ...state.agentChat.composer.startOptions,
+          scope: { kind: "project", projectId: "tide", cwd },
+        },
+      },
+    },
+  };
   state = applyProductShellBackendEvent(state, fileTreeLoaded(cwd));
   assert.notEqual(state.fileTree, null, "precondition: the start-page tree is loaded");
   return { ...state, activeThreadId: threadId };
