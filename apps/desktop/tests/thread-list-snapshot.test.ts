@@ -1,7 +1,9 @@
 // Spec: docs_v2/specs/thread-list-first-paint-snapshot.md
 // The first-paint snapshot reads threads/index.json in Main OUTSIDE any try/catch around
-// the mapping, so a malformed record must be rejected by validation (→ null → skeleton),
-// never reach the mapper and throw. These cover the parse/validate contract directly.
+// the mapping, so a malformed record must be rejected by validation, never reach the mapper
+// and throw. Validation is PER-RECORD: a bad record is SKIPPED (the rest still paint) — only
+// an index that is structurally unusable or whose entries ALL fail falls back to null
+// (→ skeleton). These cover the parse/validate contract directly.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -77,6 +79,44 @@ test("rejects a non-object, wrong storageVersion, or non-array threads", () => {
   assert.equal(snapshotFromIndexJson("nope"), null);
   assert.equal(snapshotFromIndexJson({ storageVersion: 2, threads: [] }), null);
   assert.equal(snapshotFromIndexJson({ storageVersion: 1, threads: "nope" }), null);
+});
+
+test("skips an unvalidatable record but still maps the valid ones", () => {
+  // Regression: one record with a since-removed agentId (e.g. legacy "antigravity") used to
+  // discard the WHOLE snapshot → null → skeleton on every boot. It must now be skipped while
+  // the valid threads paint.
+  const snapshot = snapshotFromIndexJson(
+    index(
+      record({ threadId: "good" }),
+      record({ threadId: "legacy", agentBinding: { agentId: "antigravity" } }),
+      record({ threadId: "also-good" }),
+    ),
+  );
+  assert.deepEqual(
+    snapshot?.threads.map((t) => t.threadId).sort(),
+    ["also-good", "good"],
+  );
+});
+
+test("skips a record with a malformed providerSessionRef while keeping the rest", () => {
+  const snapshot = snapshotFromIndexJson(
+    index(
+      record({ threadId: "good" }),
+      record({ threadId: "bad", agentBinding: { agentId: "codex", providerSessionRef: null } }),
+    ),
+  );
+  assert.deepEqual(snapshot?.threads.map((t) => t.threadId), ["good"]);
+});
+
+test("falls back to null when entries exist but none validate", () => {
+  assert.equal(
+    snapshotFromIndexJson(index(record({ agentBinding: { agentId: "antigravity" } }))),
+    null,
+  );
+});
+
+test("maps an index with zero threads to an empty snapshot (not skeleton)", () => {
+  assert.deepEqual(snapshotFromIndexJson({ storageVersion: 1, threads: [] }), { threads: [] });
 });
 
 test("sorts threads by updatedAt descending", () => {

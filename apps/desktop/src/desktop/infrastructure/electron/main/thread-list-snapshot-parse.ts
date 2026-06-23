@@ -45,10 +45,18 @@ export interface InitialThreadListSnapshot {
   threads: ThreadSummaryDto[];
 }
 
-// Validate a parsed threads/index.json and map it to the first-paint snapshot. Returns
-// null for any missing/legacy/malformed shape (a record-less entry, a malformed/null
-// providerSessionRef, etc.) so the renderer falls back to the skeleton instead of Main
-// throwing on bad input.
+// Validate a parsed threads/index.json and map it to the first-paint snapshot. The
+// validation is PER-RECORD and resilient: a single malformed/legacy entry (a record-less
+// entry, a malformed/null providerSessionRef, a since-removed agentId, etc.) is SKIPPED, not
+// fatal — the remaining valid threads still paint the rail instantly. (Previously one bad
+// record discarded the whole snapshot → null → the rail fell back to the skeleton and waited
+// for the backend's authoritative thread.listed; with hundreds of accumulated threads a
+// single legacy record made this happen on every boot.) The backend's thread.listed remains
+// authoritative and reconciles any skipped/changed thread a beat later.
+//
+// Returns null only when the snapshot is unusable as a whole: a non-object, the wrong
+// storageVersion, a non-array threads, or an index that had entries but none validated (so we
+// show the skeleton rather than a misleading empty rail).
 export function snapshotFromIndexJson(parsed: unknown): InitialThreadListSnapshot | null {
   if (typeof parsed !== "object" || parsed === null) {
     return null;
@@ -61,13 +69,17 @@ export function snapshotFromIndexJson(parsed: unknown): InitialThreadListSnapsho
   const records: IndexedThreadStorageRecord[] = [];
   for (const entry of index.threads) {
     if (typeof entry !== "object" || entry === null || !("record" in entry)) {
-      return null;
+      continue;
     }
     const record = (entry as { record?: unknown }).record;
     if (!isThreadStorageRecord(record)) {
-      return null;
+      continue;
     }
     records.push(record);
+  }
+
+  if (index.threads.length > 0 && records.length === 0) {
+    return null;
   }
 
   records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));

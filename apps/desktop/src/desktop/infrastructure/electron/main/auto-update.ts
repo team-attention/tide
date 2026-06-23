@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   mapAutoUpdaterEvent,
   shouldRunAutoUpdater,
+  shouldRunScheduledCheck,
   type AppUpdateStatus,
 } from "./auto-update-status.ts";
 // App self-update bridge (spec: version-management.md, Lane 1). The thin Electron
@@ -18,9 +19,16 @@ import {
 // namespace, and `autoUpdater` is the configured singleton off it.
 const { autoUpdater } = electronUpdater;
 
-// First check shortly after launch (let the window settle), then periodically.
+// First check shortly after launch (let the window settle), then on a short periodic poll.
+// The interval is the BACKSTOP; the primary trigger is returning focus to Tide (see the
+// browser-window-focus handler below), which surfaces a freshly published build within
+// seconds. A 6h poll meant a release that landed while the app was open went unnoticed for
+// hours — far too slow for an active release cadence. The feed fetch is tiny (~6KB), so a
+// short poll is cheap.
 const FIRST_CHECK_DELAY_MS = 10_000;
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const CHECK_INTERVAL_MS = 30 * 60 * 1000;
+// Don't re-check more than this often across the periodic poll + focus triggers combined.
+const MIN_CHECK_GAP_MS = 2 * 60 * 1000;
 
 // Append-only breadcrumb for the self-update RELAUNCH — a packaged-only path no unit
 // test can exercise. The OLD instance logs at apply time; EVERY instance logs the
@@ -126,10 +134,23 @@ export function registerAutoUpdate(getWindow: () => BrowserWindow | undefined): 
     push(mapAutoUpdaterEvent({ kind: "error", message: error?.message ?? String(error) }));
   });
 
-  setTimeout(() => {
+  // All automatic triggers go through one throttled runner so the periodic poll and the
+  // focus handler can't pile up redundant checks (e.g. focus + the launch timer at startup).
+  let lastCheckAt = 0;
+  const runCheck = (): void => {
+    const now = Date.now();
+    if (!shouldRunScheduledCheck({ lastCheckAt, now, minGapMs: MIN_CHECK_GAP_MS })) {
+      return;
+    }
+    lastCheckAt = now;
     void autoUpdater.checkForUpdates().catch(() => undefined);
-  }, FIRST_CHECK_DELAY_MS);
-  setInterval(() => {
-    void autoUpdater.checkForUpdates().catch(() => undefined);
-  }, CHECK_INTERVAL_MS).unref?.();
+  };
+
+  setTimeout(runCheck, FIRST_CHECK_DELAY_MS);
+  setInterval(runCheck, CHECK_INTERVAL_MS).unref?.();
+  // The primary trigger: a new build often lands while Tide is open, so re-check whenever
+  // the user returns to the app. Throttled by runCheck so rapid focus changes don't hammer
+  // the feed. This is what makes "is there a new version?" resolve in seconds instead of
+  // waiting for the periodic poll.
+  app.on("browser-window-focus", runCheck);
 }

@@ -93,3 +93,21 @@ truth — the snapshot only removes the skeleton window.
   dispatches `thread.list` on mount.
 - Live: a warm launch shows populated rail rows with no skeleton flash; a deleted/missing
   index falls back to the skeleton then fills from the backend.
+
+## Follow-up (2026-06-23): per-record resilience in the snapshot parser
+
+Reported: the rail skeleton still lingered on every launch despite this snapshot path.
+
+Cause: `snapshotFromIndexJson` was **all-or-nothing** — one record failing validation
+discarded the WHOLE snapshot (`return null`) and fell back to the skeleton + slow
+authoritative `thread.listed`. On a real ~430-thread store, 18 records carried a
+since-removed `agentId` (`"antigravity"`, not in the contract's `ProviderCliAgentId`),
+so the parser returned null on **every** boot. With threads accumulating over time, a
+single legacy/unknown record permanently defeats the first-paint optimization.
+
+Fix: validation is now **per-record** — a malformed/legacy/unknown record is SKIPPED
+and the remaining valid threads still paint. The snapshot falls back to null (skeleton)
+only when the index is structurally unusable or had entries but NONE validated (so we
+never paint a misleading empty rail). The authoritative `thread.listed` still reconciles
+any skipped thread a beat later. Verified against the real index: null → a 416-thread
+snapshot (18 skipped) in ~7ms. Tested in `tests/thread-list-snapshot.test.ts`.

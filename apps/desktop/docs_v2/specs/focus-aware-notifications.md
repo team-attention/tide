@@ -139,3 +139,24 @@ bring the window forward and activate the originating thread.
   (subscribe-once, latest-via-ref, mirroring `useOpenBrowserPaneFromMain`).
 - `preload/index.ts` + `renderer-entry.tsx`: add `notify` + `onActivateThread`.
 ```
+
+## Follow-up (2026-06-23): no attention notification for restored state at boot
+
+Reported: on a cold launch a thread already waiting for input (restored from the
+previous session) correctly shows in the rail, but ALSO fires an OS notification.
+That notification reflects restored *state*, not a live event — wrong.
+
+Cause: the renderer's attention effect tracked notified threads in a Set seeded
+**empty**, so on the first render every restored `attention` thread looked "new"
+and notified. (The completion path was already boot-safe — it keys off a "was
+running" membership empty at boot.)
+
+Fix: extract the attention rule to a pure `reconcileAttentionNotifications`
+(`state/attention-notifications.ts`) and make it symmetric with
+`selectCompletedThreads`: a notification fires ONLY when a **previously-known**
+thread transitions into attention. A thread's *first appearance* already waiting —
+boot restore, the async backend `thread.listed`, or the post-boot adopted-session
+discovery push — is absorbed silently (its waiting state reflects the past, not a
+live event). A thread that leaves attention and returns is a genuine transition and
+notifies again. The renderer effect is now a thin wrapper over the pure function.
+Tested in `tests/focus-aware-notifications.test.ts`.

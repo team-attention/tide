@@ -296,3 +296,21 @@ wanted.
   it, downloads, and applies on the "Update & Restart" click.
 - Check cadence default (app on launch + every 6h; agent latest probe on startup
   + every 6h). Tunable; no behavior fork.
+
+## Follow-up (2026-06-23): faster app-update detection (Lane 1)
+
+Reported: "checking for a new app version takes forever."
+
+Cause: not the network — the GitHub feed fetch (`releases.atom` + `latest-mac.yml`)
+measures ~2.4s. The running app only re-checked on a **6h** interval (`CHECK_INTERVAL_MS`)
+with no manual "check now" affordance, so a build published while Tide was open went
+unnoticed for hours — far too slow for an active release cadence.
+
+Fix (`auto-update.ts`): shorten the periodic poll to **30 min** (backstop) and add the
+primary trigger — **re-check whenever the user returns focus to Tide**
+(`app.on("browser-window-focus", …)`), so a freshly published build surfaces within
+seconds. All automatic triggers run through one throttled runner (a pure
+`shouldRunScheduledCheck`, min gap 2 min) so the launch timer + focus events can't pile
+up redundant checks. User-initiated checks (the error-retry button) still bypass the
+throttle. Inert outside packaged builds (gated by `shouldRunAutoUpdater`). Tested in
+`tests/app-update-status.test.ts`.
