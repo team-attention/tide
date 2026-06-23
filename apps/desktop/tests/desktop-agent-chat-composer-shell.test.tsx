@@ -586,6 +586,26 @@ test("usage_changed_drops_rate_limit_windows_without_a_usage_percent", () => {
   assert.equal(view?.rateLimits?.[0].label, "5h");
 });
 
+test("usage_changed_omits_reset_label_for_a_non_finite_timestamp", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const withUsage = applyBackendEventToAgentChatShell(
+    hydrated,
+    backendEvent("agentRuntime.usageChanged", {
+      threadId: "thread-shell",
+      // A malformed reset timestamp must not render as the literal "Invalid Date".
+      usage: { rateLimits: [{ usedPercent: 58, windowMinutes: 300, resetsAt: Number.NaN }] },
+    }),
+  );
+
+  const view = createAgentChatShellViewModel(withUsage).usage;
+  assert.equal(view?.rateLimits?.length, 1);
+  assert.equal(view?.rateLimits?.[0].resetLabel, undefined);
+  assert.equal(view?.rateLimits?.[0].remainingLabel, "42%");
+});
+
 test("new_thread_start_screen_renders_start_composer_without_fake_cues", () => {
   const state = createAgentChatShellState({
     startOptions: {

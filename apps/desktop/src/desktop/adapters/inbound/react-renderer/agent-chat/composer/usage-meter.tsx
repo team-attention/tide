@@ -81,8 +81,8 @@ function UsagePopover({ rateLimits }: { rateLimits: NonNullable<Usage["rateLimit
   return (
     <div className="agent-usage__popover" role="dialog" aria-label="Usage remaining">
       <div className="agent-usage__popover-title">Usage remaining</div>
-      {rateLimits.map((limit) => (
-        <div className="agent-usage__row" key={limit.label}>
+      {rateLimits.map((limit, index) => (
+        <div className="agent-usage__row" key={`${limit.label}-${index}`}>
           <span className="agent-usage__row-label">{limit.label}</span>
           <span className="agent-usage__row-value">{limit.remainingLabel}</span>
           {limit.resetLabel ? (

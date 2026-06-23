@@ -167,7 +167,9 @@ function formatResetLabel(
   resetsAt: number | undefined,
   windowMinutes: number | undefined,
 ): string | undefined {
-  if (resetsAt === undefined) {
+  // Guard non-finite timestamps (NaN/Infinity from a malformed provider field):
+  // an Invalid Date would otherwise render as the literal "Invalid Date".
+  if (resetsAt === undefined || !Number.isFinite(resetsAt)) {
     return undefined;
   }
   const date = new Date(resetsAt * 1000);
