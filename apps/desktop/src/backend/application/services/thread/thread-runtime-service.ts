@@ -196,6 +196,8 @@ import type {
   WorkbenchTerminalPort,
 } from "../../ports/outbound/workbench-terminal-port.ts";
 
+import { autoTrustDefaultWorktreeFromTrustedRepo } from "./worktree-trust.ts";
+
 const DEFAULT_WORKBENCH_TERMINAL_COMMAND = "sh";
 const DEFAULT_WORKBENCH_TERMINAL_ARGS: string[] = [];
 
@@ -625,6 +627,13 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
     // it before readiness/attachments so the agent proceeds without a trust prompt.
     // See docs_v2/specs/scratch-execution-context.md.
     await this.materializeScratchScope(thread);
+    // Tide default worktrees inherit trust from their parent repo only when that
+    // parent already passes directory trust for this provider.
+    await autoTrustDefaultWorktreeFromTrustedRepo({
+      thread,
+      providerReadinessPort: this.providerReadinessPort,
+      providerTrustPort: this.providerTrustPort,
+    });
 
     // Materialize any pasted images and fold their paths into the message so the
     // Agent can read them. Done before readiness so a deferred (not-ready) send
