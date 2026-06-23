@@ -7,7 +7,7 @@ import type { GitChangeStatus, GitChangesView, ProductShellHandlers } from "../s
 import { createColumnResizeHandle } from "../chrome/chrome.tsx";
 import { createFileTreeContextMenuOverlay } from "./file-tree-context-menu.tsx";
 import type { FileTreeRenderEntry } from "./git-status.ts";
-import { createGitAwareEntries, gitStatusLabel, gitStatusTitle } from "./git-status.ts";
+import { createGitAwareEntries, gitStatusTitle } from "./git-status.ts";
 import { ChevronRight, FilePlus, Folder, FolderOpen, FolderPlus, Search, X } from "lucide-react";
 import { fileIconFor } from "../../support/file-icons.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure); file
@@ -113,6 +113,7 @@ const FileTreeRow = memo(function FileTreeRow(props: {
   isDragOver: boolean;
   gitStatus: GitChangeStatus | undefined;
   gitDescendantCount: number | undefined;
+  gitDescendantStatus: GitChangeStatus | undefined;
   syntheticDeleted: boolean | undefined;
   gitRoot: string | undefined;
   handlers: ProductShellHandlers;
@@ -129,12 +130,24 @@ const FileTreeRow = memo(function FileTreeRow(props: {
     isDragOver,
     gitStatus,
     gitDescendantCount,
+    gitDescendantStatus,
     syntheticDeleted,
     gitRoot,
     handlers,
     setDragOverPath,
   } = props;
   const isFolder = kind === "folder";
+  // Files carry their own status; folders inherit the dominant status of their
+  // changed descendants. Either way the row is colored, never numbered.
+  const gitStatusForRow = gitStatus ?? gitDescendantStatus;
+  const hasDescendantCount =
+    isFolder && gitDescendantCount !== undefined && gitDescendantCount > 0;
+  const gitStatusHint =
+    gitStatusForRow === undefined
+      ? undefined
+      : hasDescendantCount
+        ? `${gitDescendantCount} changed files`
+        : gitStatusTitle(gitStatusForRow);
   const RowIcon = isFolder ? (expanded === false ? Folder : FolderOpen) : fileIconFor(name);
   const openRow = () => {
     if (syntheticDeleted === true) {
@@ -155,7 +168,7 @@ const FileTreeRow = memo(function FileTreeRow(props: {
       data-file-kind={kind}
       data-expanded={isFolder ? String(expanded ?? true) : undefined}
       data-drag-over={isFolder && isDragOver ? "true" : undefined}
-      data-git-status={gitStatus}
+      data-git-status={gitStatusForRow}
       aria-expanded={isFolder ? (expanded ?? true) : undefined}
       style={{ "--file-tree-depth": depth } as CSSProperties}
       draggable={syntheticDeleted !== true}
@@ -230,19 +243,13 @@ const FileTreeRow = memo(function FileTreeRow(props: {
       )}
       <RowIcon size={14} strokeWidth={1.8} aria-hidden />
       <span className="file-tree-row__name">{name}</span>
-      {gitDescendantCount !== undefined && gitDescendantCount > 0 ? (
-        <span className="file-tree-row__git-count" title={`${gitDescendantCount} changed files`}>
-          {gitDescendantCount}
-        </span>
-      ) : null}
-      {gitStatus !== undefined ? (
+      {gitStatusForRow !== undefined ? (
         <span
-          className={`file-tree-row__git-status file-tree-row__git-status--${gitStatus}`}
-          title={gitStatusTitle(gitStatus)}
-          aria-label={gitStatusTitle(gitStatus)}
-        >
-          {gitStatusLabel(gitStatus)}
-        </span>
+          className={`file-tree-row__git-dot file-tree-row__git-dot--${gitStatusForRow}`}
+          title={gitStatusHint}
+          aria-label={gitStatusHint}
+          role="img"
+        />
       ) : null}
     </button>
   );
@@ -437,6 +444,7 @@ function FileTreeColumn(props: {
                             isDragOver={dragOverPath === entry.relativePath}
                             gitStatus={entry.gitStatus}
                             gitDescendantCount={entry.gitDescendantCount}
+                            gitDescendantStatus={entry.gitDescendantStatus}
                             syntheticDeleted={entry.syntheticDeleted}
                             gitRoot={fileTree.root}
                             handlers={handlers}
