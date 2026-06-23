@@ -77,7 +77,7 @@ test("thread.hydrated for a non-active thread with no prior entry is recorded, n
   assert.equal(storedY.blocks.length, 1);
 });
 
-test("a stranded thread renders without the skeleton after the late hydrate lands", () => {
+test("a stranded thread un-skeletons on the visible surface when the late hydrate lands", () => {
   // Open Y from the rail → optimistic skeleton (hydrating) awaiting the backend.
   const opened = openProductShellThreadFromLeftRail(seed(["x", "y"]), "y", {
     backendTransportAvailable: true,
@@ -86,16 +86,18 @@ test("a stranded thread renders without the skeleton after the late hydrate land
   assert.equal(opened.state.agentChat.hydrating, true);
   assert.equal(opened.command?.kind, "thread.hydrate");
 
-  // Focus is dragged off Y WITHOUT preserving it (a thread.listed that no longer lists Y,
-  // e.g. it got archived) — this is the window that used to drop the response.
+  // A thread.listed transiently omits Y → activeThreadId is nulled, but the chat STILL
+  // displays Y (nulling the bookkeeping field does not reset agentChat). This is the
+  // window that used to strand the late hydrate response.
   const refocused = applyProductShellBackendEvent(opened.state, {
     kind: "thread.listed",
     payload: { threads: [threadSummary("x")] },
   });
   assert.equal(refocused.activeThreadId, null);
-  assert.equal(refocused.agentChatByThreadId.y, undefined);
+  assert.equal(refocused.agentChat.thread?.threadId, "y", "the surface still displays Y");
 
-  // The delayed hydrate for Y finally arrives.
+  // The delayed hydrate for Y finally arrives → it lands on the DISPLAYED surface itself,
+  // clearing the skeleton in place (no re-open needed) instead of being stranded.
   const hydrated = applyProductShellBackendEvent(refocused, {
     kind: "thread.hydrated",
     payload: {
@@ -104,20 +106,101 @@ test("a stranded thread renders without the skeleton after the late hydrate land
       runtimeState: "waiting_for_approval",
     },
   });
-  assert.equal(hydrated.agentChatByThreadId.y?.hydrating, false);
+  assert.equal(hydrated.agentChat.hydrating, false);
+  assert.equal(hydrated.agentChat.blocks.length, 1);
 
-  // Re-list Y and re-open it from the rail: the restored state is NOT hydrating, so the
-  // chat shows the transcript (+ its pending approval) instead of an endless skeleton.
+  // And the ready surface survives a real switch away and back: leaving Y preserves it
+  // under its own id (even though activeThreadId was null), so returning restores the
+  // transcript instead of rebuilding a skeleton.
   const relisted = applyProductShellBackendEvent(hydrated, {
     kind: "thread.listed",
     payload: { threads: [threadSummary("x"), threadSummary("y")] },
   });
-  const reopened = openProductShellThreadFromLeftRail(relisted, "y", {
+  const onX = openProductShellThreadFromLeftRail(relisted, "x", {
     backendTransportAvailable: true,
   });
-  assert.equal(reopened.state.activeThreadId, "y");
-  assert.equal(reopened.state.agentChat.hydrating, false);
-  assert.equal(reopened.state.agentChat.blocks.length, 1);
+  assert.equal(onX.state.agentChatByThreadId.y?.blocks.length, 1, "Y preserved on switch-away");
+  const backToY = openProductShellThreadFromLeftRail(onX.state, "y", {
+    backendTransportAvailable: true,
+  });
+  assert.equal(backToY.state.activeThreadId, "y");
+  assert.equal(backToY.state.agentChat.hydrating, false);
+  assert.equal(backToY.state.agentChat.blocks.length, 1);
+});
+
+test("an approval card for the displayed thread reaches the visible surface in the activeThreadId-null window", () => {
+  // The live wedge in miniature: the user is viewing the thread, activeThreadId is
+  // transiently null (a thread.listed momentarily omitted it), and the promoted second
+  // parallel-permission card arrives. It must land on the VISIBLE chat, not just the map.
+  const opened = openProductShellThreadFromLeftRail(seed(["x", "y"]), "y", {
+    backendTransportAvailable: true,
+  });
+  const ready = applyProductShellBackendEvent(opened.state, {
+    kind: "thread.hydrated",
+    payload: { thread: threadSummary("y"), blocks: [block("b1", "y")], runtimeState: "running" },
+  });
+  const nulled = applyProductShellBackendEvent(ready, {
+    kind: "thread.listed",
+    payload: { threads: [threadSummary("x")] },
+  });
+  assert.equal(nulled.activeThreadId, null);
+  assert.equal(nulled.agentChat.thread?.threadId, "y", "the surface still displays Y");
+
+  const carded = applyProductShellBackendEvent(nulled, {
+    kind: "prompt.changed",
+    payload: { threadId: "y", prompt: approvalPrompt("y", "p2") },
+  });
+  assert.equal(carded.agentChat.promptState?.promptId, "p2", "the card shows on the displayed surface");
+});
+
+test("re-clicking the displayed thread during the activeThreadId-null window keeps it ready and re-asserts focus", () => {
+  // The surface shows Y (ready), then a thread.listed transiently nulls activeThreadId
+  // while Y is still on screen. Re-clicking Y must NOT rebuild it into a skeleton — it
+  // keeps the live chat and re-asserts focus (the open guard keys off the displayed
+  // thread, not activeThreadId).
+  const opened = openProductShellThreadFromLeftRail(seed(["x", "y"]), "y", {
+    backendTransportAvailable: true,
+  });
+  const ready = applyProductShellBackendEvent(opened.state, {
+    kind: "thread.hydrated",
+    payload: { thread: threadSummary("y"), blocks: [block("b1", "y")], runtimeState: "running" },
+  });
+  const nulled = applyProductShellBackendEvent(ready, {
+    kind: "thread.listed",
+    payload: { threads: [threadSummary("x")] },
+  });
+  assert.equal(nulled.activeThreadId, null);
+  assert.equal(nulled.agentChat.thread?.threadId, "y");
+
+  const reclicked = openProductShellThreadFromLeftRail(nulled, "y", {
+    backendTransportAvailable: true,
+  });
+  assert.equal(reclicked.state.activeThreadId, "y", "focus is re-asserted");
+  assert.equal(reclicked.state.agentChat.hydrating, false, "no skeleton flash");
+  assert.equal(reclicked.state.agentChat.blocks.length, 1, "live transcript kept");
+});
+
+test("opening a thread seeded only by a background data event shows a skeleton, not a blank chat", () => {
+  // Y's per-thread entry exists ONLY because a background prompt.changed seeded it — a stub
+  // with thread === null and no transcript. Opening Y must show the loading skeleton and
+  // dispatch a hydrate, not restore the stub as if it were ready (which would flash a blank /
+  // Start-Composer chat until the hydrate round-trip arrives). The card returns via hydrate.
+  const viewingX = openProductShellThread(seed(["x", "y"]), "x");
+  const seededByData = applyProductShellBackendEvent(viewingX, {
+    kind: "prompt.changed",
+    payload: { threadId: "y", prompt: approvalPrompt("y", "p2") },
+  });
+  const stub = seededByData.agentChatByThreadId.y;
+  assert.ok(stub, "Y was seeded by the background data event");
+  assert.equal(stub?.thread, null, "the seed is a stub that was never hydrated");
+  assert.equal(stub?.promptState?.promptId, "p2", "the card is held in the stub");
+
+  const opened = openProductShellThreadFromLeftRail(seededByData, "y", {
+    backendTransportAvailable: true,
+  });
+  assert.equal(opened.state.activeThreadId, "y");
+  assert.equal(opened.state.agentChat.hydrating, true, "skeleton shown, not the blank stub");
+  assert.equal(opened.command?.kind, "thread.hydrate", "hydrate dispatched to fill the real view");
 });
 
 test("reselecting the active thread does not replace its ready chat with a hydrate skeleton", () => {
@@ -158,15 +241,82 @@ test("reselecting the active thread does not replace its ready chat with a hydra
   assert.equal(reselected.command?.kind, "thread.hydrate");
 });
 
-test("non-hydrate background events for an unknown thread are still ignored (scope unchanged)", () => {
-  // The fix is scoped to hydrate/started seeding. A stray per-thread DATA event for a
-  // thread we hold no state for must NOT fabricate an entry (that was the prior contract).
+test("a background per-thread DATA event for a thread with no prior entry is recorded, not dropped", () => {
+  // ROOT FIX: the backend is authoritative for EVERY thread, so a per-thread event for a
+  // non-active thread is ALWAYS folded (seeding a fresh entry) — never dropped just because
+  // the renderer happens not to hold an entry yet. (The prior contract ignored it, which is
+  // exactly how a promoted parallel-permission card got lost and wedged a thread.)
   const viewingX = openProductShellThread(seed(["x", "y"]), "x");
+  assert.equal(viewingX.agentChatByThreadId.y, undefined);
 
   const next = applyProductShellBackendEvent(viewingX, {
     kind: "agentRuntime.stateChanged",
     payload: { threadId: "y", state: "running" },
   });
 
-  assert.equal(next.agentChatByThreadId.y, undefined);
+  // Focus is unchanged (a data event never moves focus)…
+  assert.equal(next.activeThreadId, "x");
+  // …and Y's authoritative runtime state is now recorded in the per-thread map.
+  assert.ok(next.agentChatByThreadId.y, "Y's state event must be recorded into the per-thread map");
+  assert.equal(next.agentChatByThreadId.y?.runtimeState, "running");
+});
+
+function approvalPrompt(threadId: string, promptId: string) {
+  return {
+    promptId,
+    threadId,
+    agentId: "claude",
+    kind: "approval" as const,
+    message: "Bash: ls -la 2026/06/23/",
+    choices: [
+      { choiceId: "allow", label: "Allow", providerValue: "__allow__" },
+      { choiceId: "deny", label: "Deny", providerValue: "__deny__" },
+    ],
+    defaultChoiceId: "allow",
+    source: "provider_hook" as const,
+  };
+}
+
+test("a promoted parallel-permission card for a background thread is recorded (no wedge)", () => {
+  // claude fires N can_use_tool permissions in parallel and blocks the turn until EVERY one
+  // is answered. Tide shows one card + queues the rest; answering the visible card promotes
+  // the next. If the promote's prompt.changed lands while this thread is NOT the active
+  // surface, it used to be dropped — the second card never surfaced and the thread wedged
+  // "running" with no card. It must now be recorded so re-viewing the thread shows it.
+  const viewingX = openProductShellThread(seed(["x", "y"]), "x");
+  assert.equal(viewingX.agentChatByThreadId.y, undefined);
+
+  const next = applyProductShellBackendEvent(viewingX, {
+    kind: "prompt.changed",
+    payload: { threadId: "y", prompt: approvalPrompt("y", "p2") },
+  });
+
+  assert.equal(next.activeThreadId, "x", "a data event never moves focus");
+  assert.equal(
+    next.agentChatByThreadId.y?.promptState?.promptId,
+    "p2",
+    "the promoted card must be recorded for Y, not dropped",
+  );
+});
+
+test("a promoted card is recorded even in the activeThreadId === null window", () => {
+  // The exact window that produced the live wedge: a thread.listed transiently nulled the
+  // focused thread, so the promote's prompt.changed matched neither the active surface NOR
+  // an existing entry. It must still be recorded for the thread.
+  const noFocus = applyProductShellBackendEvent(seed(["x", "y"]), {
+    kind: "thread.listed",
+    payload: { threads: [] },
+  });
+  assert.equal(noFocus.activeThreadId, null);
+
+  const recorded = applyProductShellBackendEvent(noFocus, {
+    kind: "prompt.changed",
+    payload: { threadId: "y", prompt: approvalPrompt("y", "p2") },
+  });
+
+  assert.equal(
+    recorded.agentChatByThreadId.y?.promptState?.promptId,
+    "p2",
+    "card recorded even with no active thread",
+  );
 });

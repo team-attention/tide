@@ -5,7 +5,7 @@ import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { applyProductShellThreadArchivedEvent, applyProductShellThreadEvent, applyProductShellThreadLaunchOptionsChangedEvent, applyProductShellThreadPinChangedEvent, applyProductShellThreadRenamedEvent, toProductShellThreadFromSummary } from "./thread-list.ts";
 import { setProductShellProviderCommands } from "./composer-bridge.ts";
-import { createStartAgentChatState } from "./start.ts";
+import { activeSurfaceThreadId, createStartAgentChatState } from "./start.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
 import { reconcileEditorDrafts } from "./workbench-editor.ts";
 import { projectsFromThreads } from "./view-model.ts";
@@ -23,30 +23,30 @@ export function applyProductShellBackendEvent(
   const appChrome = applyToActiveSurfaces
     ? applyAppChromeBackendEvent(state.appChrome, event)
     : state.appChrome;
-  // AUTHORITATIVE PER-THREAD STATE: a per-thread event for a NON-active thread that we
-  // already hold chat state for is folded into that thread's stored entry — so its
-  // running/waiting/prompt/blocks stay current while it sits in the background. Without
-  // this, a background thread's prompt.changed/stateChanged/block events were dropped
-  // (active-surface only) and recovery leaned on a hydrate race at switch time, which
-  // broke under concurrency (a sibling thread's AskUserQuestion never surfaced; the chat
-  // stayed "Working"). Switching is now a pure projection of an already-current entry.
-  // (The active thread's own entry is captured into the map at switch time via
-  // preserveActiveAgentChat, so we never double-fold it here.)
+  // AUTHORITATIVE PER-THREAD STATE: a per-thread event for a NON-active thread is ALWAYS
+  // folded into that thread's stored entry — seeding a fresh entry when none is held yet.
+  // The backend is authoritative for EVERY thread, so the renderer must never drop a
+  // thread's prompt.changed / agentRuntime.stateChanged / block / hydrate events just
+  // because that thread is not the surface on screen. Which thread is being viewed is a
+  // pure VIEW concern and must never gate authoritative-state retention.
+  //
+  // This used to fold ONLY when an entry already existed OR the event was a
+  // hydrate/started "seed", so a per-thread DATA event for a thread we held no entry for
+  // was silently dropped. That stranded two real cases the moment focus had moved (a
+  // notification jumped away, a thread.listed transiently nulled activeThreadId, the user
+  // switched): (1) a late hydrate response landed nowhere → endless loading skeleton;
+  // (2) the promoted card of a batched parallel-permission turn (claude blocks until
+  // EVERY can_use_tool is answered) never surfaced → the thread wedged "running" with no
+  // card and no way out. Folding unconditionally records the card, so re-viewing the
+  // thread always shows it. See claude-parallel-permission-wedge.md.
+  //
+  // The displayed thread's own entry is captured into the map at switch time via
+  // preserveActiveAgentChat (and its live events land on agentChat above), so excluding the
+  // surface thread id here never double-folds it.
   const eventThreadId = threadIdFromBackendEvent(event);
-  // thread.hydrated / thread.started carry a thread's AUTHORITATIVE chat state (its
-  // blocks + a CLEARED `hydrating`). They must reach that thread's stored entry even
-  // when it is not the active surface at apply time. A hydrate is dispatched on open
-  // but its response resolves a round-trip later; if focus moved in that window (a
-  // notification jumped to another thread, a thread.listed nulled activeThreadId, …)
-  // the response matched neither the active surface NOR an existing background entry,
-  // so it was dropped — and `hydrating` was never cleared, stranding the thread on the
-  // loading skeleton until an app restart. Seed a fresh entry for these events so the
-  // hydrate is recorded no matter where focus is.
-  const seedsThreadState = event.kind === "thread.hydrated" || event.kind === "thread.started";
+  const surfaceThreadId = activeSurfaceThreadId(state);
   const foldsIntoBackgroundThread =
-    eventThreadId !== undefined &&
-    eventThreadId !== state.activeThreadId &&
-    (state.agentChatByThreadId[eventThreadId] !== undefined || seedsThreadState);
+    eventThreadId !== undefined && eventThreadId !== surfaceThreadId;
   const agentChatByThreadId = foldsIntoBackgroundThread
     ? {
         ...state.agentChatByThreadId,
@@ -330,19 +330,19 @@ function shouldApplyBackendEventToActiveSurfaces(
   if (event.kind === "thread.listed") {
     return true;
   }
-  // The active chat shows exactly the active thread (focus is user-owned). Apply an
-  // event to it only when the event is FOR the active thread — regardless of where
-  // it came from. A late command response for a thread the user already left, or a
-  // background broadcast, never touches the current chat. No active thread (New
-  // Thread composer) → nothing applies.
-  if (state.activeThreadId === null) {
+  // The active chat shows exactly the displayed thread (focus is user-owned). Apply an
+  // event to it only when the event is FOR that thread — regardless of where it came from.
+  // A late command response for a thread the user already left, or a background broadcast,
+  // never touches the current chat. No displayed thread (New Thread composer) → nothing.
+  const surfaceThreadId = activeSurfaceThreadId(state);
+  if (surfaceThreadId === undefined) {
     return false;
   }
   const eventThreadId = threadIdFromBackendEvent(event);
   if (eventThreadId === undefined) {
     return true;
   }
-  return eventThreadId === state.activeThreadId;
+  return eventThreadId === surfaceThreadId;
 }
 
 function threadIdFromBackendEvent(event: AgentChatBackendEvent): string | undefined {
