@@ -4,6 +4,7 @@
    optional thin context-window meter. */
 
 .agent-usage {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -14,6 +15,34 @@
   line-height: 16px;
   letter-spacing: 0;
   user-select: none;
+}
+
+/* The chip text is a button when the provider reports quota windows: clicking it
+   opens the "Usage remaining" popover. Styled to read as the same quiet chip. */
+.agent-usage__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.agent-usage__trigger:hover,
+.agent-usage__trigger[aria-expanded="true"] {
+  background: var(--tide-line);
+  color: var(--tide-text);
+}
+
+.agent-usage__chevron {
+  flex: 0 0 auto;
+  opacity: 0.7;
 }
 
 .agent-usage__bar {
@@ -35,4 +64,62 @@
 .agent-usage__text {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* "Usage remaining" popover, anchored above the chip (the chip sits just above
+   the Composer, so it opens upward and right-aligned). Codex account-menu style:
+   one row per quota window — label · remaining % · reset time. */
+.agent-usage__popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 200px;
+  padding: 8px;
+  border: 1px solid var(--tide-line);
+  border-radius: 10px;
+  background: var(--tide-surface);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  color: var(--tide-text);
+  cursor: default;
+}
+
+.agent-usage__popover-title {
+  margin: 2px 6px 6px;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agent-usage__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-usage__row:hover {
+  background: var(--tide-line);
+}
+
+.agent-usage__row-label {
+  font-weight: 600;
+}
+
+.agent-usage__row-value {
+  justify-self: end;
+  color: var(--tide-text);
+}
+
+.agent-usage__row-reset {
+  justify-self: end;
+  min-width: 56px;
+  text-align: right;
+  color: var(--tide-muted);
 }

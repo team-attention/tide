@@ -8,7 +8,7 @@ import { ArrowUp, Check, ChevronDown, Plus, ShieldCheck, Square, X } from "lucid
 import { chipAnchorFromEvent, contextChipIcon, createContextChip } from "./context-chips.tsx";
 import { createProviderReadiness } from "../readiness/readiness.ts";
 import { PromptCard } from "../prompt-card/prompt-card.tsx";
-import { createUsageMeter } from "./usage-meter.tsx";
+import { UsageMeter } from "./usage-meter.tsx";
 import { createQueuedSteerStack } from "./steer-queue.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
@@ -342,7 +342,7 @@ export function createComposerStack(
           onAnswerSteps={(stepAnswers) => handlers.onAnswerPromptSteps?.(stepAnswers)}
         />
       ) : null}
-      {viewModel.usage ? createUsageMeter(viewModel.usage) : null}
+      {viewModel.usage ? <UsageMeter usage={viewModel.usage} /> : null}
       {/* Messages queued behind a live turn dock here, atop the Composer (Codex-style
           "steer"): a FIFO stack, each visible as pending and editable before it runs.
           "Live" includes waiting on a prompt — the queue must not jump to the transcript
