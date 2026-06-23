@@ -14,6 +14,9 @@ export function createThreadRow(
   // they belong to as a subtitle.
   showScope = false,
 ): ReactElement {
+  const needsAttention = thread.attention === true;
+  const hasUnread = thread.unread === true;
+  const showAttention = needsAttention || hasUnread;
   return (
     <div key={thread.threadId} className="thread-row-wrap">
       <div
@@ -32,7 +35,7 @@ export function createThreadRow(
         data-scoped={showScope ? "true" : undefined}
         data-hydrating={thread.hydrating ? "true" : undefined}
         data-running={thread.running ? "true" : undefined}
-        data-attention={thread.attention ? "true" : undefined}
+        data-attention={showAttention ? "true" : undefined}
         onMouseLeave={thread.archiveConfirming ? handlers.onLeftRailTransientClear : undefined}
         // Right-click anywhere on the row opens the same Thread context menu as
         // the ⋯ overflow button (Pin / Archive / Delete worktree).
@@ -120,8 +123,14 @@ export function createThreadRow(
                 {`⌥${thread.pinNumber}`}
               </span>
             ) : null,
-            thread.attention ? <span key="attention" className="thread-row__attention" /> : null,
-            thread.running && !thread.attention ? (
+            showAttention ? (
+              <span
+                key="attention"
+                className="thread-row__attention"
+                aria-label={needsAttention ? "Thread needs attention" : "Thread has unread updates"}
+              />
+            ) : null,
+            thread.running && !showAttention ? (
               <span key="running" className="thread-row__running" aria-label="Agent is running" />
             ) : null,
             <span key="time" className="thread-row__time">

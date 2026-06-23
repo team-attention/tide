@@ -124,11 +124,11 @@ export function createProjectGroup(
             ) : (
               <span className="project-row__title">{project.name}</span>
             )}
-            {/* When collapsed, bubble a child thread's attention to the project row. */}
+            {/* When collapsed, bubble a child thread's attention or unread marker to the project row. */}
             {!project.expanded && project.attention ? (
               <span
                 className="project-row__attention"
-                aria-label="A thread in this project needs attention"
+                aria-label="A thread in this project needs attention or has unread updates"
               />
             ) : null}
             {/* Likewise bubble live running activity so background work is visible. */}

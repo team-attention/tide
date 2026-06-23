@@ -120,6 +120,29 @@ export function selectCompletedThreads(
   );
 }
 
+export function markProductShellThreadsUnread(
+  state: ProductShellState,
+  threadIds: Iterable<string>,
+): ProductShellState {
+  const ids = new Set(threadIds);
+  if (ids.size === 0) {
+    return state;
+  }
+  let changed = false;
+  const threads = state.threads.map((thread) => {
+    if (
+      !ids.has(thread.threadId) ||
+      thread.threadId === state.activeThreadId ||
+      thread.unread === true
+    ) {
+      return thread;
+    }
+    changed = true;
+    return { ...thread, unread: true };
+  });
+  return changed ? { ...state, threads } : state;
+}
+
 // Archives every thread in a project (optimistically drops them; the backend
 // thread.archived events confirm). Returns one thread.archive command per thread.
 export function archiveProductShellProjectChats(
@@ -496,27 +519,47 @@ function restorablePreservedChat(
   return entry?.thread != null ? entry : undefined;
 }
 
+// Clears the renderer-only unread marker when the user opens/focuses a thread.
+function acknowledgeProductShellThread(
+  state: ProductShellState,
+  threadId: string,
+): ProductShellState {
+  const target = state.threads.find((thread) => thread.threadId === threadId);
+  if (target?.unread !== true) {
+    return state;
+  }
+  return {
+    ...state,
+    threads: state.threads.map((thread) =>
+      thread.threadId === threadId ? { ...thread, unread: undefined } : thread,
+    ),
+  };
+}
+
 export function openProductShellThread(
   state: ProductShellState,
   threadId: string,
 ): ProductShellState {
   // Already showing this thread (by what the surface DISPLAYS, not just activeThreadId,
   // which a thread.listed can transiently null) → keep the live chat, only re-assert focus.
+  // Also clear any unread marker since the user is now looking at it.
   if (activeSurfaceThreadId(state) === threadId) {
-    return state.activeThreadId === threadId ? state : { ...state, activeThreadId: threadId };
+    const ack = acknowledgeProductShellThread(state, threadId);
+    return state.activeThreadId === threadId ? ack : { ...ack, activeThreadId: threadId };
   }
 
-  const thread = state.threads.find((candidate) => candidate.threadId === threadId);
+  const acknowledged = acknowledgeProductShellThread(state, threadId);
+  const thread = acknowledged.threads.find((candidate) => candidate.threadId === threadId);
   if (!thread) {
-    return state;
+    return acknowledged;
   }
 
-  const agentChatByThreadId = preserveActiveAgentChat(state, threadId);
+  const agentChatByThreadId = preserveActiveAgentChat(acknowledged, threadId);
   return {
     // Drop the previous thread's file tree so the new thread never flashes stale
     // files; the refresh_file_tree dispatched on switch repopulates it.
     ...hydrateProductShellThread(
-      { ...state, agentChatByThreadId },
+      { ...acknowledged, agentChatByThreadId },
       thread,
       previewBlocksForThread(thread),
       "idle",
@@ -533,13 +576,14 @@ export function openProductShellThreadFromLeftRail(
   threadId: string,
   input: { backendTransportAvailable: boolean },
 ): ProductShellUpdateResult {
+  const acknowledged = acknowledgeProductShellThread(state, threadId);
   // Already showing this thread (by what the surface DISPLAYS, not just activeThreadId,
   // which a thread.listed can transiently null) → keep the live chat instead of rebuilding
   // it into a skeleton, and re-assert focus (activeThreadId may have been nulled).
   if (activeSurfaceThreadId(state) === threadId) {
     return {
       state: {
-        ...state,
+        ...acknowledged,
         activeThreadId: threadId,
         leftRailMenu: null,
         archiveConfirmThreadId: null,
@@ -552,7 +596,7 @@ export function openProductShellThreadFromLeftRail(
   }
 
   if (!input.backendTransportAvailable) {
-    return { state: openProductShellThread(state, threadId), command: null };
+    return { state: openProductShellThread(acknowledged, threadId), command: null };
   }
 
   // Web pattern: a click switches focus instantly (locally), then refreshes from
@@ -561,11 +605,11 @@ export function openProductShellThreadFromLeftRail(
   // running state right away (no fake "local preview" block, and keep the Working
   // indicator if it's running) with an empty body until thread.hydrated fills the
   // real blocks.
-  const thread = state.threads.find((candidate) => candidate.threadId === threadId);
+  const thread = acknowledged.threads.find((candidate) => candidate.threadId === threadId);
   // Preserve the thread we are leaving and restore the target's preserved state, so
   // its blocker / blocks / draft survive the switch instead of being rebuilt blank.
-  const agentChatByThreadId = preserveActiveAgentChat(state, threadId);
-  const stateWithMap = { ...state, agentChatByThreadId };
+  const agentChatByThreadId = preserveActiveAgentChat(acknowledged, threadId);
+  const stateWithMap = { ...acknowledged, agentChatByThreadId };
   // Restore real preserved content instantly; a data-event-only stub (thread === null) is
   // treated as absent so the skeleton shows instead of a blank chat. See restorablePreservedChat.
   const preserved = restorablePreservedChat(agentChatByThreadId[threadId]);
@@ -698,6 +742,9 @@ export function applyProductShellThreadEvent(
     return state;
   }
 
+  const existingThread = state.threads.find(
+    (candidate) => candidate.threadId === threadSummary.threadId,
+  );
   const shellThread: ProductShellThread = {
     threadId: threadSummary.threadId,
     title: threadSummary.title,
@@ -713,10 +760,11 @@ export function applyProductShellThreadEvent(
     running: threadSummary.lastKnownState === "running",
     live: threadSummary.live,
     runtimeStartedAt: threadSummary.runtimeStartedAt,
+    unread:
+      existingThread?.unread === true && threadSummary.threadId !== state.activeThreadId
+        ? true
+        : undefined,
   };
-  const existingThread = state.threads.find(
-    (candidate) => candidate.threadId === threadSummary.threadId,
-  );
   const threads = existingThread
     ? state.threads.map((thread) =>
         thread.threadId === threadSummary.threadId ? { ...thread, ...shellThread } : thread,

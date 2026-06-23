@@ -18,6 +18,7 @@ import {
   applyProductShellPromptState,
   createProductShellState,
   createProductShellViewModel,
+  markProductShellThreadsUnread,
   quickOpenFilesFromState,
   closeProductShellWorkbenchPane,
   editProductShellWorkbenchEditorPane,
@@ -3174,8 +3175,8 @@ test("collapsed_project_bubbles_a_waiting_thread_attention", () => {
           {
             threadId: "t-wait",
             title: "Needs input",
-            agentBinding: { agentId: "claude", runtimeSource: { kind: "provider_cli", integrationId: "claude" } },
-            scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+            agentBinding: { agentId: "claude" as const, runtimeSource: { kind: "provider_cli" as const, integrationId: "claude" } },
+            scope: { kind: "project" as const, projectId: "tide", cwd: "/repo/tide" },
             createdAt: "2026-05-29T00:00:00.000Z",
             updatedAt: "2026-05-29T00:01:00.000Z",
             archived: false,
@@ -3191,6 +3192,79 @@ test("collapsed_project_bubbles_a_waiting_thread_attention", () => {
 
   // Collapsed: the project row shows the attention dot.
   const collapsed = toggleProductShellProject(listed, "tide");
+  const html = renderProductShell(collapsed);
+  assert.match(html, /data-project-row="tide"[\s\S]*?project-row__attention/);
+});
+
+test("completed_background_thread_stays_marked_unread_until_opened", () => {
+  const summary = (threadId: string, title: string, updatedAt: string) => ({
+    threadId,
+    title,
+    agentBinding: { agentId: "claude" as const, runtimeSource: { kind: "provider_cli" as const, integrationId: "claude" } },
+    scope: { kind: "project" as const, projectId: "tide", cwd: "/repo/tide" },
+    createdAt: "2026-05-29T00:00:00.000Z",
+    updatedAt,
+    pinned: false,
+    archived: false,
+    lastKnownState: "idle" as const,
+  });
+  const listed = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    {
+      kind: "thread.listed",
+      payload: {
+        threads: [
+          summary("t-unread", "Finished in background", "2026-05-29T00:02:00.000Z"),
+          summary("t-active", "Current thread", "2026-05-29T00:01:00.000Z"),
+        ],
+      },
+    },
+  );
+  const onActive = openProductShellThreadFromLeftRail(listed, "t-active", {
+    backendTransportAvailable: false,
+  }).state;
+  const unread = markProductShellThreadsUnread(onActive, ["t-unread"]);
+
+  assert.equal(unread.threads.find((thread) => thread.threadId === "t-unread")?.unread, true);
+  const unreadRow = extractByDataAttribute(renderProductShell(unread), "data-thread-row", "t-unread");
+  assert.match(unreadRow, /data-attention="true"/);
+  assert.match(unreadRow, /Thread has unread updates/);
+
+  const opened = openProductShellThreadFromLeftRail(unread, "t-unread", {
+    backendTransportAvailable: false,
+  }).state;
+  assert.equal(opened.threads.find((thread) => thread.threadId === "t-unread")?.unread, undefined);
+  const openedRow = extractByDataAttribute(renderProductShell(opened), "data-thread-row", "t-unread");
+  assert.doesNotMatch(openedRow, /data-attention="true"/);
+});
+
+test("collapsed_project_bubbles_an_unread_completed_thread", () => {
+  const listed = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    {
+      kind: "thread.listed",
+      payload: {
+        threads: [
+          {
+            threadId: "t-unread",
+            title: "Finished in background",
+            agentBinding: { agentId: "claude", runtimeSource: { kind: "provider_cli", integrationId: "claude" } },
+            scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+            createdAt: "2026-05-29T00:00:00.000Z",
+            updatedAt: "2026-05-29T00:01:00.000Z",
+            pinned: false,
+            archived: false,
+            lastKnownState: "idle" as const,
+          },
+        ],
+      },
+    },
+  );
+  const unread = markProductShellThreadsUnread(listed, ["t-unread"]);
+  const view = createProductShellViewModel(unread);
+  assert.equal(view.projectGroups.find((project) => project.projectId === "tide")?.attention, true);
+
+  const collapsed = toggleProductShellProject(unread, "tide");
   const html = renderProductShell(collapsed);
   assert.match(html, /data-project-row="tide"[\s\S]*?project-row__attention/);
 });

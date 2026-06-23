@@ -66,6 +66,17 @@ const PINNED_MAX: Record<string, number> = {
   // +25: pushThreadListedEvents builder — a no-requestId thread.listed refresh pushed when the
   // background adopted-session discovery finds external sessions (thread-list-metadata-first-restore).
   "backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts": 919,
+  // +unread-thread-notifications: acknowledgeProductShellThread (clears the renderer-only
+  // unread marker on open/focus) + markProductShellThreadsUnread (sets it when a background
+  // thread finishes off-focus), threaded through openProductShellThread /
+  // openProductShellThreadFromLeftRail / applyProductShellThreadEvent. This file was at 787
+  // (under cap) on main; the unread state tipped it over. The thread-list split is the real fix.
+  "desktop/application/domains/product-shell/state/thread-list.ts": 836,
+  // +unread-thread-notifications: the completed-thread effect now also marks off-focus
+  // finished threads unread (markProductShellThreadsUnread) alongside the existing notify
+  // call. This file sat at 798 (2 under cap) on main; the feature tipped it over. Splitting
+  // the product-shell container is the real fix (Phase-3 backlog).
+  "desktop/adapters/inbound/react-renderer/product-shell/product-shell.tsx": 808,
   // live-backend (the composition root) dropped under the 800 cap once its persistence +
   // metadata-first restore collaborator was extracted to live-backend-restore.ts
   // (thread-list-metadata-first-restore), so it no longer needs a pinned ceiling.
