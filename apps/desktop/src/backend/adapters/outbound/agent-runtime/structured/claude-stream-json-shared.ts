@@ -44,18 +44,14 @@ export function addRulesOnlySuggestions(suggestions: unknown): unknown[] | undef
   return suggestions;
 }
 
-// The Allow-always choice label, built from the CLI's own rule(s):
-// "Always allow Bash(npm test *) · this project". Mirrors the CLI's `toolName(ruleContent)`
-// formatting and appends a read-only scope hint derived from the suggestion `destination`.
-export function buildAllowAlwaysLabel(suggestions: readonly unknown[]): string {
+// Every rule label ("Bash(npm test *)") the CLI's addRules suggestions would persist, in
+// order. Mirrors the CLI's `toolName(ruleContent)` formatting (bare toolName when there is no
+// ruleContent). Both the Allow-always label and its full-list description build from this.
+export function allowAlwaysRuleLabels(suggestions: readonly unknown[]): string[] {
   const ruleLabels: string[] = [];
-  let destination: string | undefined;
   for (const entry of suggestions) {
     if (!isRecord(entry)) {
       continue;
-    }
-    if (destination === undefined) {
-      destination = stringField(entry, "destination");
     }
     const rules = entry.rules;
     if (!Array.isArray(rules)) {
@@ -73,6 +69,25 @@ export function buildAllowAlwaysLabel(suggestions: readonly unknown[]): string {
       ruleLabels.push(ruleContent !== undefined ? `${toolName}(${ruleContent})` : toolName);
     }
   }
+  return ruleLabels;
+}
+
+// The Allow-always choice label, built from the CLI's own rule(s):
+// "Always allow Bash(npm test *) · this project". When several rules would be persisted the
+// label shows the first and collapses the rest into "(+N more)"; the choice's `description`
+// (see buildPermissionPrompt) lists all of them so the user can see exactly what they allow.
+// Appends a read-only scope hint derived from the suggestion `destination`.
+export function buildAllowAlwaysLabel(suggestions: readonly unknown[]): string {
+  let destination: string | undefined;
+  for (const entry of suggestions) {
+    if (isRecord(entry)) {
+      destination = stringField(entry, "destination");
+      if (destination !== undefined) {
+        break;
+      }
+    }
+  }
+  const ruleLabels = allowAlwaysRuleLabels(suggestions);
   const head = ruleLabels[0] ?? "this action";
   const more = ruleLabels.length > 1 ? ` (+${ruleLabels.length - 1} more)` : "";
   return `Always allow ${head}${more}${allowAlwaysScopeSuffix(destination)}`;

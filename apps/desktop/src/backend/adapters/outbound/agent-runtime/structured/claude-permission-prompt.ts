@@ -8,6 +8,7 @@ import {
   STRUCTURED_ALLOW_ALWAYS_TOKEN,
   STRUCTURED_ALLOW_TOKEN,
   STRUCTURED_DENY_TOKEN,
+  allowAlwaysRuleLabels,
   bounded,
   buildAllowAlwaysLabel,
   stringField,
@@ -45,11 +46,16 @@ export function buildPermissionPrompt(args: PermissionPromptArgs): PromptState {
     { choiceId: "allow", label: "Allow", providerValue: STRUCTURED_ALLOW_TOKEN },
   ];
   if (ruleUpdates !== undefined) {
+    // When more than one rule would be persisted, the label collapses the rest into
+    // "(+N more)" — list every rule in the choice's description (rendered as the option's
+    // secondary line) so the user can see exactly what allowing this persists.
+    const ruleLabels = allowAlwaysRuleLabels(ruleUpdates);
     choices.push({
       choiceId: "allow_always",
       label: buildAllowAlwaysLabel(ruleUpdates),
       providerValue: STRUCTURED_ALLOW_ALWAYS_TOKEN,
       kind: "allow_always",
+      ...(ruleLabels.length > 1 ? { description: ruleLabels.join(", ") } : {}),
     });
   }
   choices.push({ choiceId: "deny", label: "Deny", providerValue: STRUCTURED_DENY_TOKEN });
