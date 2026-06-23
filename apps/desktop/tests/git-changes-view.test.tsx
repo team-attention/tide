@@ -123,14 +123,18 @@ test("file_tree_renders_git_status_badges_and_deleted_rows", () => {
     ),
   );
 
+  // Status is conveyed by COLOR (tinted name + a colored dot), not letter/number badges.
   assert.match(html, /data-git-status="modified"/);
-  assert.match(html, /file-tree-row__git-status--modified[\s\S]*?>M</);
+  assert.match(html, /file-tree-row__git-dot--modified/);
   assert.match(html, /data-git-status="untracked"/);
-  assert.match(html, /file-tree-row__git-status--untracked[\s\S]*?>U</);
+  assert.match(html, /file-tree-row__git-dot--untracked/);
   assert.match(html, /src\/deleted\.ts/);
   assert.match(html, /file-tree-row--git-deleted/);
-  assert.match(html, /file-tree-row__git-status--deleted[\s\S]*?>D</);
-  assert.match(html, /2 changed files/);
+  assert.match(html, /file-tree-row__git-dot--deleted/);
+  // No more number/letter badges in the tree.
+  assert.doesNotMatch(html, /file-tree-row__git-count/);
+  // The descendant count survives only as the folder dot's hover hint.
+  assert.match(html, /title="2 changed files"/);
 });
 
 test("file_tree_git_entries_preserve_tree_order_and_missing_deleted_folders", () => {

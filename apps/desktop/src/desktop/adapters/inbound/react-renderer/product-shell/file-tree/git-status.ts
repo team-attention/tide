@@ -6,24 +6,9 @@ type FileTreeEntryView = ProductShellViewModel["fileTree"]["entries"][number];
 export type FileTreeRenderEntry = FileTreeEntryView & {
   gitStatus?: GitChangeStatus;
   gitDescendantCount?: number;
+  gitDescendantStatus?: GitChangeStatus;
   syntheticDeleted?: boolean;
 };
-
-export function gitStatusLabel(status: GitChangeStatus): string {
-  switch (status) {
-    case "added":
-      return "A";
-    case "deleted":
-      return "D";
-    case "renamed":
-      return "R";
-    case "untracked":
-      return "U";
-    case "modified":
-    default:
-      return "M";
-  }
-}
 
 export function gitStatusTitle(status: GitChangeStatus): string {
   switch (status) {
@@ -73,6 +58,35 @@ function hasCollapsedExistingAncestor(
 function changedDescendantCount(relativePath: string, changedPaths: string[]): number {
   const prefix = `${relativePath}/`;
   return changedPaths.filter((path) => path.startsWith(prefix)).length;
+}
+
+// A folder is tinted by the most prominent change among its descendants: in-place
+// edits (modified/renamed) read as "work in progress" and win over additions,
+// which win over pure deletions. Buckets collapse to the three status colors.
+function dominantDescendantStatus(
+  relativePath: string,
+  files: GitChangesView["files"],
+): GitChangeStatus | undefined {
+  const prefix = `${relativePath}/`;
+  let hasAdded = false;
+  let hasDeleted = false;
+  for (const file of files) {
+    if (!file.path.startsWith(prefix)) {
+      continue;
+    }
+    if (file.status === "modified" || file.status === "renamed") {
+      return "modified";
+    }
+    if (file.status === "added" || file.status === "untracked") {
+      hasAdded = true;
+    } else if (file.status === "deleted") {
+      hasDeleted = true;
+    }
+  }
+  if (hasAdded) {
+    return "added";
+  }
+  return hasDeleted ? "deleted" : undefined;
 }
 
 function createDeletedSyntheticEntries(
@@ -171,7 +185,14 @@ export function createGitAwareEntries(
       return gitStatus === undefined ? entry : { ...entry, gitStatus };
     }
     const gitDescendantCount = changedDescendantCount(entry.relativePath, changedPaths);
-    return gitDescendantCount === 0 ? entry : { ...entry, gitDescendantCount };
+    if (gitDescendantCount === 0) {
+      return entry;
+    }
+    return {
+      ...entry,
+      gitDescendantCount,
+      gitDescendantStatus: dominantDescendantStatus(entry.relativePath, files),
+    };
   });
   const synthetic = createDeletedSyntheticEntries(files, entriesByPath, changedPaths);
   return flattenTreeEntries([...rendered, ...synthetic]);
