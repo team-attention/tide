@@ -200,47 +200,38 @@ export function selectAgentChatChoiceSurfaceRow(
       return branch ? selectComposerBranch(state, branch) : { state, command: null };
     }
     case "command_suggestions": {
-      // Selecting a command/skill row (rowId "command:/name" or "command:$name")
-      // inserts the token into the draft and closes the surface.
+      // Selecting a command/skill row ("command:/name" or "command:$name") or a file
+      // row ("file:<relativePath>") splices the token into the draft and closes.
       if (rowId.startsWith("command:")) {
-        const token = rowId.slice("command:".length);
-        // Replace only the in-progress trigger token, preserving any text typed
-        // before it (e.g. "explain /go" + pick "/goal" → "explain /goal ").
-        const active = activeComposerTrigger(state.composer.draft);
-        // This row only renders while its trigger is active (the surface is rebuilt from
-        // the same draft and the selection is gated on row presence), so `active` is set
-        // in practice. Fall back to the full draft rather than an empty prefix anyway, so
-        // a future ungated surface could never wipe the user's text on insert.
-        const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : state.composer.draft;
-        return {
-          state: {
-            ...state,
-            composer: { ...state.composer, draft: `${prefix}${token} `, activeSurface: null },
-          },
-          command: null,
-        };
+        return spliceComposerTriggerToken(state, rowId.slice("command:".length));
       }
       if (rowId.startsWith("file:")) {
-        const relativePath = rowId.slice("file:".length);
-        const active = activeComposerTrigger(state.composer.draft);
-        // This row only renders while its trigger is active (the surface is rebuilt from
-        // the same draft and the selection is gated on row presence), so `active` is set
-        // in practice. Fall back to the full draft rather than an empty prefix anyway, so
-        // a future ungated surface could never wipe the user's text on insert.
-        const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : state.composer.draft;
-        return {
-          state: {
-            ...state,
-            composer: { ...state.composer, draft: `${prefix}@${relativePath} `, activeSurface: null },
-          },
-          command: null,
-        };
+        return spliceComposerTriggerToken(state, `@${rowId.slice("file:".length)}`);
       }
       return setComposerActiveSurface(state, null);
     }
     case "composer_options":
       return setComposerActiveSurface(state, null);
   }
+}
+
+// Splice a picked command/file token into the draft, replacing the in-progress trigger
+// token while preserving any text typed before it (e.g. "explain /go" + "/goal" →
+// "explain /goal "). The row only renders while its trigger is active, but fall back to
+// the full draft rather than an empty prefix so an insert can never wipe the draft.
+function spliceComposerTriggerToken(
+  state: AgentChatShellState,
+  token: string,
+): AgentChatShellUpdateResult {
+  const active = activeComposerTrigger(state.composer.draft);
+  const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : state.composer.draft;
+  return {
+    state: {
+      ...state,
+      composer: { ...state.composer, draft: `${prefix}${token} `, activeSurface: null },
+    },
+    command: null,
+  };
 }
 
 function providerReadinessTerminalCommandData(
