@@ -55,44 +55,57 @@ function hasCollapsedExistingAncestor(
   return false;
 }
 
-function changedDescendantCount(relativePath: string, changedPaths: string[]): number {
-  const prefix = `${relativePath}/`;
-  return changedPaths.filter((path) => path.startsWith(prefix)).length;
-}
-
 // A folder is tinted by the most prominent change among its descendants: in-place
 // edits (modified/renamed) read as "work in progress" and win over additions,
-// which win over pure deletions. Buckets collapse to the three status colors.
-function dominantDescendantStatus(
-  relativePath: string,
-  files: GitChangesView["files"],
-): GitChangeStatus | undefined {
-  const prefix = `${relativePath}/`;
-  let hasAdded = false;
-  let hasDeleted = false;
-  for (const file of files) {
-    if (!file.path.startsWith(prefix)) {
-      continue;
-    }
-    if (file.status === "modified" || file.status === "renamed") {
-      return "modified";
-    }
-    if (file.status === "added" || file.status === "untracked") {
-      hasAdded = true;
-    } else if (file.status === "deleted") {
-      hasDeleted = true;
-    }
+// which win over pure deletions. The five raw statuses collapse to these three
+// color buckets.
+type FolderStat = { count: number; status: GitChangeStatus };
+
+function statusBucket(status: GitChangeStatus): GitChangeStatus {
+  if (status === "modified" || status === "renamed") {
+    return "modified";
   }
-  if (hasAdded) {
+  if (status === "added" || status === "untracked") {
     return "added";
   }
-  return hasDeleted ? "deleted" : undefined;
+  return "deleted";
+}
+
+function bucketRank(bucket: GitChangeStatus): number {
+  return bucket === "modified" ? 3 : bucket === "added" ? 2 : 1;
+}
+
+// Single pass over the changed files: fold each file into every ancestor folder's
+// stats (count + dominant bucket). O(files × path-depth) total, then O(1) per
+// folder lookup — vs. a per-folder linear scan, which is quadratic on large repos.
+function computeFolderStats(files: GitChangesView["files"]): Map<string, FolderStat> {
+  const stats = new Map<string, FolderStat>();
+  for (const file of files) {
+    const bucket = statusBucket(file.status);
+    const rank = bucketRank(bucket);
+    let path = file.path;
+    let slash = path.lastIndexOf("/");
+    while (slash !== -1) {
+      path = path.slice(0, slash);
+      const existing = stats.get(path);
+      if (existing === undefined) {
+        stats.set(path, { count: 1, status: bucket });
+      } else {
+        existing.count += 1;
+        if (rank > bucketRank(existing.status)) {
+          existing.status = bucket;
+        }
+      }
+      slash = path.lastIndexOf("/");
+    }
+  }
+  return stats;
 }
 
 function createDeletedSyntheticEntries(
   files: GitChangesView["files"],
   entriesByPath: ReadonlyMap<string, FileTreeEntryView>,
-  changedPaths: string[],
+  folderStats: ReadonlyMap<string, FolderStat>,
 ): FileTreeRenderEntry[] {
   const syntheticByPath = new Map<string, FileTreeRenderEntry>();
   const ensureSyntheticFolder = (relativePath: string) => {
@@ -108,7 +121,7 @@ function createDeletedSyntheticEntries(
       kind: "folder",
       expanded: true,
       gitStatus: "deleted",
-      gitDescendantCount: changedDescendantCount(relativePath, changedPaths),
+      gitDescendantCount: folderStats.get(relativePath)?.count ?? 0,
       syntheticDeleted: true,
     });
   };
@@ -177,23 +190,18 @@ export function createGitAwareEntries(
 
   const files = gitChanges.files;
   const statusByPath = new Map(files.map((file) => [file.path, file.status]));
-  const changedPaths = files.map((file) => file.path);
+  const folderStats = computeFolderStats(files);
   const entriesByPath = new Map(entries.map((entry) => [entry.relativePath, entry]));
   const rendered: FileTreeRenderEntry[] = entries.map((entry) => {
     if (entry.kind === "file") {
       const gitStatus = statusByPath.get(entry.relativePath);
       return gitStatus === undefined ? entry : { ...entry, gitStatus };
     }
-    const gitDescendantCount = changedDescendantCount(entry.relativePath, changedPaths);
-    if (gitDescendantCount === 0) {
-      return entry;
-    }
-    return {
-      ...entry,
-      gitDescendantCount,
-      gitDescendantStatus: dominantDescendantStatus(entry.relativePath, files),
-    };
+    const stat = folderStats.get(entry.relativePath);
+    return stat === undefined
+      ? entry
+      : { ...entry, gitDescendantCount: stat.count, gitDescendantStatus: stat.status };
   });
-  const synthetic = createDeletedSyntheticEntries(files, entriesByPath, changedPaths);
+  const synthetic = createDeletedSyntheticEntries(files, entriesByPath, folderStats);
   return flattenTreeEntries([...rendered, ...synthetic]);
 }
