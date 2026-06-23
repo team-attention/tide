@@ -571,6 +571,17 @@ export function WorkbenchBrowserPane(props: {
           "data-browser-pane-webview": props.pane.paneId,
           src: initialSrcRef.current,
           partition: "persist:tide-workbench-browser",
+          // allowpopups is REQUIRED for target=_blank / window.open links (e.g. Google
+          // results with newwindow=1) to navigate. Without it Electron silently suppresses
+          // the popup BEFORE setWindowOpenHandler ever fires — a plain click does nothing
+          // (no URL change, no spinner). With it, the app's main-process handler intercepts
+          // the URL (it always returns action:"deny", so no real popup window spawns) and
+          // routes it over IPC: foreground-tab → reuse this pane in place; background-tab /
+          // new-window (Cmd/Ctrl/Shift+click) → a new Browser Pane. See web-contents-created
+          // in electron-main.ts. String form ("true") because Electron only checks attribute
+          // presence (hasAttribute) and string attrs render reliably on this custom tag (as
+          // src/partition already do).
+          allowpopups: "true",
         })}
         {props.pane.agentDriving === true ? (
           <BrowserAgentOverlay
@@ -763,5 +774,10 @@ function BackgroundBrowserWebView(props: {
     "data-browser-pane-webview": paneId,
     src: url ?? "about:blank",
     partition: "persist:tide-workbench-browser",
+    // Same as the foreground pane: allowpopups lets target=_blank / window.open links route
+    // through the main-process handler (which denies the real popup and forwards the URL over
+    // IPC) instead of being silently suppressed — so an agent driving a background page can
+    // follow such links too. See the WorkbenchBrowserPane webview above.
+    allowpopups: "true",
   });
 }
