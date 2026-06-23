@@ -50,6 +50,25 @@ thread-derived sources.
 Scratch stays the no-Project scope. The Worktree menu is untouched (still the
 git execution choice within the chosen Project).
 
+### D6. Worktree directories are not offered in the Composer Project menu
+A Tide-created worktree (cwd `<repo>.worktree/<branch>`) IS registered as a
+Project (so the Left Rail can group it under its repo), but it must NOT appear as
+a "start here" target in the Composer Project menu: a new Thread starts in a real
+Project, and worktrees are created via the dedicated worktree flow — never by
+picking a worktree directory as a Project. The composer's injected project list
+(`agentChatWithProjects` → `availableProjects`) therefore filters out cwds the
+default worktree rule recognizes (`worktreeRepoRootForCwd(cwd) !== null`). The
+Left Rail's own project list (`displayedProjects`) is unfiltered, so worktree
+grouping there is unchanged. When the active Thread's scope already is a worktree,
+the menu still re-adds that scope as the current selection (existing
+`projectOptionsForState` behavior), so a worktree Thread keeps its own folder
+selectable.
+
+The same rule applies to the **default start scope**: a brand-new Thread with no
+chosen Project (`defaultStartScope`) prefers a real project and skips worktree
+cwds, so the Start Composer's Project chip is never a worktree directory. It falls
+back to a worktree (or Scratch) only when no real project exists.
+
 ## Contracts (Main IPC, preload surface)
 
 ```ts
@@ -77,6 +96,9 @@ registerProject(cwd: string): Promise<ProjectRegistryEntry[]>; // add + persist,
 2. Registry entries are deduped by cwd.
 3. A registered Project appears in Projects even with no Threads.
 4. Scratch threads never create a registry entry.
+5. A worktree-rule cwd (`<repo>.worktree/<branch>`) never appears in the Composer
+   Project menu, even though it still appears (grouped) in the Left Rail — unless
+   it is the active Thread's current scope, which stays selectable as "current".
 
 ## Tests
 | Use Case | Rule | Expectation |
@@ -85,6 +107,8 @@ registerProject(cwd: string): Promise<ProjectRegistryEntry[]>; // add + persist,
 | UC-1 | D3 | A registered project with no threads still appears in the Projects list. |
 | UC-2 | D1 | Setting the registry on product-shell state lists those projects. |
 | D2 | — | The Composer Project menu shows a single "Open folder" action (no create/use-existing rows). |
+| D6 | Inv-5 | A registered worktree project (`<repo>.worktree/<branch>`) is excluded from the composer's `availableProjects` while the repo project remains. |
+| D6 | Inv-5 | When the active Thread's scope is a worktree, the Project menu still lists that worktree as the current selection. |
 
 ## Implementation Notes
 - Main: `tide:open-directory`, `tide:list-projects`, `tide:register-project`.

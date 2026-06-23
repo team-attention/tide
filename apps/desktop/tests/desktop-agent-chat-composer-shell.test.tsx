@@ -2021,6 +2021,30 @@ test("project_menu_lists_real_injected_projects_not_a_hardcoded_set", () => {
   assert.doesNotMatch(html, /row-icon" aria-hidden="true">folder</);
 });
 
+test("project_menu_keeps_the_active_worktree_scope_selectable_as_current", () => {
+  // Spec: project-open-folder-registry D6 / Inv-5. Worktree dirs are filtered out of
+  // the injected availableProjects, but when the active scope IS a worktree the menu
+  // re-adds it (projectOptionsForState) so a worktree Thread keeps its folder current.
+  const base: AgentChatShellState = {
+    ...createAgentChatShellState({
+      startOptions: {
+        agentBinding: { agentId: "codex" },
+        scope: { kind: "project", projectId: "feature", cwd: "/Users/you/Workspace/tide.worktree/feature" },
+      },
+    }),
+    // The product-shell filter already dropped the worktree from availableProjects.
+    availableProjects: [{ projectId: "tide", name: "tide", cwd: "/Users/you/Workspace/tide" }],
+  };
+  const html = renderShell(setComposerActiveSurface(base, "project_menu").state);
+
+  assert.match(html, /data-choice-surface="project_menu"/);
+  // The active worktree scope is re-added and marked as the current selection.
+  assert.match(html, /feature/);
+  assert.match(html, /current/);
+  // A real (non-worktree) project still lists.
+  assert.match(html, /tide/);
+});
+
 test("branch_menu_lists_real_git_branches_not_placeholders", () => {
   // Spec: docs_v2/specs/git-backed-worktree-branch-menus.md UC-1
   const base: AgentChatShellState = {

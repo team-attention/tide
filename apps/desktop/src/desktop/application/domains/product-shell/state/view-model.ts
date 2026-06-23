@@ -502,11 +502,20 @@ function displayedProjects(state: ProductShellState): ProductShellProject[] {
 export function agentChatWithProjects(state: ProductShellState): AgentChatShellState {
   return {
     ...state.agentChat,
-    availableProjects: displayedProjects(state).map((project) => ({
-      projectId: project.projectId,
-      name: project.name,
-      cwd: project.cwd,
-    })),
+    // A Tide worktree (cwd `<repo>.worktree/<branch>`) registers as a Project so the
+    // Left Rail can group it under its repo, but it must NOT be offered as a "start
+    // here" target in the composer — new Threads start in a real Project, worktrees
+    // are created via the dedicated worktree flow (spec: project-open-folder-registry
+    // D6). The Left Rail keeps using the unfiltered displayedProjects, so its worktree
+    // grouping is unchanged. A worktree that is the active scope is re-added by
+    // projectOptionsForState, so a worktree Thread keeps its own folder selectable.
+    availableProjects: displayedProjects(state)
+      .filter((project) => worktreeRepoRootForCwd(project.cwd) === null)
+      .map((project) => ({
+        projectId: project.projectId,
+        name: project.name,
+        cwd: project.cwd,
+      })),
     availableBranches: state.gitBranches,
     availableWorktrees: state.gitWorktrees,
     availableCommands: state.providerCommands,
