@@ -34,6 +34,8 @@ import {
   markProductShellThreadsUnread,
   quickOpenFilesFromState,
   selectCompletedThreads,
+  reconcileAttentionNotifications,
+  initialAttentionNotificationState,
   discardProductShellDraftThread,
   setProductShellComposerFolderScope,
   setProductShellComposerNewWorktreeIntent,
@@ -242,28 +244,26 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     };
   }, [props.projectBridge, activeProjectCwd, activeAgentId]);
 
-  // Ask Main for a native OS notification when a thread newly needs attention (waiting
-  // for input/approval), so the user is pulled back even when Tide is in the background.
-  // Main applies the window-focus gate (suppress only the thread on screen) + delivery.
-  // Re-notifies if a thread returns to attention after resolving.
-  const notifiedAttentionRef = useRef<Set<string>>(new Set());
+  // Native OS notification when a thread NEWLY needs attention (boot-safe: restored state only
+  // seeds, never fires on launch — reconcileAttentionNotifications); Main gates on window focus.
+  const attentionNotificationRef = useRef(initialAttentionNotificationState);
   // Update-available notices already shown (dedupe across threads/runtimes).
   const notifiedUpdatesRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const waiting = shellState.threads.filter((thread) => thread.attention === true);
-    const current = new Set(waiting.map((thread) => thread.threadId));
-    for (const thread of waiting) {
-      if (!notifiedAttentionRef.current.has(thread.threadId)) {
-        window.tide?.notify?.({
-          kind: "needs_attention",
-          threadId: thread.threadId,
-          title: "Tide — a thread needs your input",
-          body: thread.title,
-          isActiveThread: thread.threadId === shellState.activeThreadId,
-        });
-      }
+    const { notifications, next } = reconcileAttentionNotifications(attentionNotificationRef.current, {
+      threads: shellState.threads,
+      activeThreadId: shellState.activeThreadId,
+    });
+    attentionNotificationRef.current = next;
+    for (const notification of notifications) {
+      window.tide?.notify?.({
+        kind: "needs_attention",
+        threadId: notification.threadId,
+        title: "Tide — a thread needs your input",
+        body: notification.title,
+        isActiveThread: notification.isActiveThread,
+      });
     }
-    notifiedAttentionRef.current = current;
   }, [shellState.threads, shellState.activeThreadId]);
 
   // Notify when a thread finishes a turn, so agent work doesn't need babysitting to know

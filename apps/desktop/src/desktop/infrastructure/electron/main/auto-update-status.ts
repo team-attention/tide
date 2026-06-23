@@ -63,3 +63,15 @@ export function shouldRunAutoUpdater(input: {
 }): boolean {
   return input.isPackaged && !input.isDev;
 }
+
+// Throttle automatic checks. The app re-checks for updates on a short periodic poll AND
+// whenever the user returns focus to Tide (a new build often lands while it is open). The
+// focus event can fire rapidly, so allow a check only when at least minGapMs has elapsed
+// since the last one. Explicit user-initiated checks (the error-retry button) bypass this.
+export function shouldRunScheduledCheck(input: {
+  lastCheckAt: number;
+  now: number;
+  minGapMs: number;
+}): boolean {
+  return input.now - input.lastCheckAt >= input.minGapMs;
+}

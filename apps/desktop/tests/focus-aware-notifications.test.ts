@@ -14,7 +14,11 @@ import {
   shouldEmitNotification,
 } from "../src/desktop/infrastructure/electron/main/notification-policy.ts";
 import type { ProductShellThread } from "../src/desktop/application/domains/product-shell/product-shell.ts";
-import { selectCompletedThreads } from "../src/desktop/application/domains/product-shell/product-shell.ts";
+import {
+  selectCompletedThreads,
+  reconcileAttentionNotifications,
+  initialAttentionNotificationState,
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 
 const thread = (over: Partial<ProductShellThread> & { threadId: string }): ProductShellThread =>
   ({
@@ -66,6 +70,52 @@ test("isNotificationRequest accepts well-formed requests and rejects malformed o
     isNotificationRequest({ kind: "bogus", threadId: "t1", title: "x", body: "y", isActiveThread: true }),
     false,
   );
+});
+
+test("reconcileAttentionNotifications never notifies for state restored at boot", () => {
+  // First observation of a loaded list with two already-waiting threads (restored from the
+  // previous session). Nothing happened live → no notifications, just record the known set.
+  const { notifications, next } = reconcileAttentionNotifications(initialAttentionNotificationState, {
+    threads: [
+      thread({ threadId: "a", attention: true }),
+      thread({ threadId: "b", attention: true }),
+      thread({ threadId: "c" }),
+    ],
+    activeThreadId: null,
+  });
+  assert.deepEqual(notifications, []);
+  assert.deepEqual([...next.knownThreadIds].sort(), ["a", "b", "c"]);
+  assert.deepEqual([...next.attentionThreadIds].sort(), ["a", "b"]);
+});
+
+test("reconcileAttentionNotifications notifies when a known thread newly enters attention", () => {
+  const seeded = { knownThreadIds: new Set(["a", "b"]), attentionThreadIds: new Set(["a"]) };
+  const { notifications } = reconcileAttentionNotifications(seeded, {
+    threads: [
+      thread({ threadId: "a", attention: true }), // already waiting → no re-notify
+      thread({ threadId: "b", attention: true, title: "Build" }), // known, newly waiting → notify
+    ],
+    activeThreadId: "b",
+  });
+  assert.deepEqual(notifications, [{ threadId: "b", title: "Build", isActiveThread: true }]);
+});
+
+test("reconcileAttentionNotifications absorbs a thread that first appears already in attention", () => {
+  // A thread that surfaces for the FIRST time already waiting — boot restore, or the post-boot
+  // adopted-session discovery push — reflects past state, not a live event, so it must not notify.
+  const first = reconcileAttentionNotifications(
+    { knownThreadIds: new Set(["x"]), attentionThreadIds: new Set() },
+    { threads: [thread({ threadId: "x" }), thread({ threadId: "y", attention: true })], activeThreadId: null },
+  );
+  assert.deepEqual(first.notifications, []); // y is new → absorbed, not announced
+  assert.deepEqual([...first.next.knownThreadIds].sort(), ["x", "y"]);
+
+  // ...but a later genuine transition of an already-known thread does notify.
+  const later = reconcileAttentionNotifications(first.next, {
+    threads: [thread({ threadId: "x", attention: true }), thread({ threadId: "y", attention: true })],
+    activeThreadId: null,
+  });
+  assert.deepEqual(later.notifications.map((n) => n.threadId), ["x"]);
 });
 
 test("selectCompletedThreads surfaces running→idle threads regardless of which is active", () => {
