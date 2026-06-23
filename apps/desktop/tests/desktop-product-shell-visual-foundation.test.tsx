@@ -3248,8 +3248,8 @@ test("collapsed_project_bubbles_an_unread_completed_thread", () => {
           {
             threadId: "t-unread",
             title: "Finished in background",
-            agentBinding: { agentId: "claude", runtimeSource: { kind: "provider_cli", integrationId: "claude" } },
-            scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+            agentBinding: { agentId: "claude" as const, runtimeSource: { kind: "provider_cli" as const, integrationId: "claude" } },
+            scope: { kind: "project" as const, projectId: "tide", cwd: "/repo/tide" },
             createdAt: "2026-05-29T00:00:00.000Z",
             updatedAt: "2026-05-29T00:01:00.000Z",
             pinned: false,

@@ -127,6 +127,7 @@ export function createThreadRow(
               <span
                 key="attention"
                 className="thread-row__attention"
+                role="img"
                 aria-label={needsAttention ? "Thread needs attention" : "Thread has unread updates"}
               />
             ) : null,
