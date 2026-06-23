@@ -19,6 +19,7 @@ export function createAgentSession(
   onResend?: (text: string) => void,
   onQuote?: (text: string) => void,
   onOpenBrowserPane?: (url: string, options?: { newPane?: boolean }) => void,
+  liveActivitySummary?: string,
 ): ReactElement {
   // Show the live "Working…" indicator whenever the runtime is genuinely active,
   // and hide it ONLY while the agent's answer is actively streaming — that block
@@ -145,7 +146,12 @@ export function createAgentSession(
             ? createAgentSessionEmptyPlaceholder()
             : null
         : groupSessionItems(blocks).map(renderSessionItem)}
-      {working ? <AgentWorkingIndicator runtimeStartedAt={runtimeStartedAt} /> : null}
+      {working ? (
+        <AgentWorkingIndicator
+          runtimeStartedAt={runtimeStartedAt}
+          liveActivitySummary={liveActivitySummary}
+        />
+      ) : null}
       {/* An optimistic just-sent message (idle send) still shows in the transcript
           until its real block arrives. Messages QUEUED behind a live turn — including
           while it waits on a prompt — dock to the Composer "steer" stack instead, so

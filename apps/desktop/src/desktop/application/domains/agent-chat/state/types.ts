@@ -92,6 +92,16 @@ export interface AgentChatShellState {
   // Last-known context/token usage for this thread's runtime (from the provider
   // transcript). Drives the quiet usage chip in the thread header.
   usage: AgentChatUsage | null;
+  // Live in-flight-turn progress not carried by the chat stream
+  // (agentRuntime.activityChanged): Claude Task fan-out counts (Slice B) and/or
+  // codex/ACP plan progress (Slice B′). Folded into the Working indicator by the
+  // view-model; cleared at turn end.
+  liveActivityEnrichment?: {
+    nestedAgents?: number;
+    nestedToolCalls?: number;
+    planTotal?: number;
+    planCompleted?: number;
+  };
   // Transient feedback for a mid-thread launch-option change, keyed by option key
   // (model | permission | reasoning). Renderer-only (never from a backend thread
   // summary, which would clobber it); thread-scoped; reset on thread switch.
@@ -441,7 +451,17 @@ export interface AgentChatShellViewModel {
   workbenchOpen: boolean;
   queuedInputs: string[];
   usage: AgentChatUsageView | null;
+  // Live activity for the in-flight turn, surfaced in the Working indicator so a
+  // long tool/agent fan-out reads as alive (not hung). Present only while running.
+  // See docs_v2/specs/live-turn-activity-visibility.md.
+  liveActivity?: LiveTurnActivityView;
   errorMessage?: string;
+}
+
+export interface LiveTurnActivityView {
+  // Pre-formatted one-line detail for the Working indicator, e.g. "3 agents running",
+  // "WebSearch", "5 tools running". Present only when there is something to show.
+  summaryLabel: string;
 }
 
 export interface AgentChatUsageView {

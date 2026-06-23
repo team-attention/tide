@@ -33,6 +33,7 @@ import type {
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
 import { rateLimitsFromProviderRecord } from "../../../../application/domains/agent-runtime/rate-limit-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
+import { codexPlanActivityFromItem } from "./plan-activity.ts";
 import {
   codexToolCallRecordFromItem,
   codexToolItemId,
@@ -600,6 +601,9 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     if (item === undefined) {
       return;
     }
+    if (this.emitPlanActivity(item)) {
+      return;
+    }
     const itemType = stringField(item, "type") ?? stringField(item, "itemType");
     const itemId = isCodexVisibleToolItem(item)
       ? codexToolItemId(item, String(this.recordIndex))
@@ -677,7 +681,20 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     if (item === undefined) {
       return;
     }
+    if (this.emitPlanActivity(item)) {
+      return;
+    }
     this.emitToolCallItem(item, "pending");
+  }
+
+  // codex `update_plan` item → live plan step progress (Slice B′). The app-server can
+  // report this either as a native plan item or as a function_call named update_plan
+  // with JSON arguments (verified in live rollout logs).
+  private emitPlanActivity(item: Record<string, unknown>): boolean {
+    const plan = codexPlanActivityFromItem(item);
+    if (plan === undefined) return false;
+    this.onEvent({ kind: "live_activity", ...plan });
+    return true;
   }
 
   private emitToolCallItem(item: Record<string, unknown>, status: "pending" | "complete"): void {
