@@ -70,6 +70,17 @@ export type StructuredProviderEvent =
         rateLimits?: AgentRuntimeRateLimitDto[];
       };
     }
+  // Live in-flight-turn progress the provider stream renders elsewhere (or not at
+  // all): a Claude `Task` fan-out's nested subagent counts (Slice B, from the
+  // on-disk side-channel watcher) and/or codex/ACP plan step progress (Slice B′).
+  // Surfaced in the Working indicator. See live-turn-activity-visibility.md.
+  | {
+      kind: "live_activity";
+      nestedAgents?: number;
+      nestedToolCalls?: number;
+      planTotal?: number;
+      planCompleted?: number;
+    }
   // A non-blocking, out-of-band notice from the runtime process (currently an
   // "update available" banner the CLI printed to stderr). Surfaced as a native
   // OS notification, never a transcript block.

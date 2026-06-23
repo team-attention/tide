@@ -26,6 +26,21 @@ export interface AgentRuntimeUsageDto {
   rateLimits?: AgentRuntimeRateLimitDto[];
 }
 
+// Live activity of the in-flight turn that the provider stream does NOT carry —
+// today, the count of a Claude `Task` fan-out's nested subagents (derived from the
+// on-disk `subagents/*.jsonl` side-channel). Surfaced in the Working indicator so a
+// long fan-out reads as alive. All fields are a running snapshot; cleared at turn end.
+// See docs_v2/specs/live-turn-activity-visibility.md (Slice B).
+export interface LiveTurnActivityDto {
+  // Distinct subagents spawned in the current turn's fan-out (Claude, Slice B).
+  nestedAgents?: number;
+  // Total tool calls across those subagents.
+  nestedToolCalls?: number;
+  // Plan/todo step progress reported mid-turn (codex/ACP, Slice B′).
+  planTotal?: number;
+  planCompleted?: number;
+}
+
 export interface AgentRuntimeRateLimitDto {
   // Optional provider label. When absent, the UI derives one from windowMinutes.
   label?: string;

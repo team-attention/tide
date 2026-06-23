@@ -26,7 +26,6 @@
 //   workspace-trust bridge env so Tide MCP can load.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
-
 import type { ComposerAttachmentRef, PromptChoice, PromptState, ProviderCliAgentId } from "../../../../application/domains/thread/thread.ts";
 import type { DiscoveredProviderSessionRef, ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
@@ -39,6 +38,7 @@ import { acpUsageFromRecord } from "./acp-usage.ts";
 import { usageWithRememberedRateLimits, type StructuredUsagePayload } from "./structured-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import { acpOptionKind, buildAcpPermissionDetail } from "./acp-permission.ts";
+import { planActivityFromEntries, planActivityFromTodoToolOutput } from "./plan-activity.ts";
 import { acpPlanContentRecord, withGoalPreamble } from "./structured-plan-goal.ts";
 
 export const GEMINI_OPTION_PREFIX = "structured:gemini-option:";
@@ -568,6 +568,8 @@ class AcpClient implements StructuredRuntimeClient {
       }
       if (status === "completed" || status === "failed") {
         const output = acpToolOutput(update.content);
+        const plan = planActivityFromTodoToolOutput(title, output);
+        if (plan !== undefined) this.onEvent({ kind: "live_activity", ...plan });
         this.onEvent({
           kind: "content_record",
           sourceRef: `${blockId}:result`,
@@ -602,6 +604,8 @@ class AcpClient implements StructuredRuntimeClient {
       return;
     }
     if (kind === "plan") {
+      const plan = planActivityFromEntries(update.entries); // step progress (Slice B′)
+      if (plan !== undefined) this.onEvent({ kind: "live_activity", ...plan });
       this.onEvent({ kind: "content_record", ...acpPlanContentRecord(this.runtimeId, update.entries) });
       return;
     }

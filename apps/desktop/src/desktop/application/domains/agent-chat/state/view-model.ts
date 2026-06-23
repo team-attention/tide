@@ -1,4 +1,4 @@
-import type { AgentChatBlock, AgentChatBlockView, AgentChatChecklistEntry, AgentChatChecklistStatus, AgentChatChecklistView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageRateLimitView, AgentChatUsageView, LaunchOptionFeedback } from "./types.ts";
+import type { AgentChatBlock, AgentChatBlockView, AgentChatChecklistEntry, AgentChatChecklistStatus, AgentChatChecklistView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageRateLimitView, AgentChatUsageView, LaunchOptionFeedback, LiveTurnActivityView } from "./types.ts";
 import { codexModelLabel, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, modelLabelForAgent, permissionLabelForValue, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { createActiveComposerSurface } from "./choice-surfaces.ts";
 import { isOpencodeUsable } from "./opencode-onramp.ts";
@@ -8,8 +8,9 @@ import { environmentContextValue, launchOptionsForState } from "./launch-options
 export function createAgentChatShellViewModel(
   state: AgentChatShellState,
 ): AgentChatShellViewModel {
+  const chatState = deriveChatState(state);
   return {
-    chatState: deriveChatState(state),
+    chatState,
     runtimeState: state.runtimeState,
     thread: state.thread
       ? {
@@ -75,8 +76,67 @@ export function createAgentChatShellViewModel(
     workbenchOpen: state.workbenchOpen,
     queuedInputs: state.queuedInputs,
     usage: usageView(state.usage),
+    liveActivity: liveTurnActivityView(state, chatState),
     errorMessage: state.errorMessage,
   };
+}
+
+// The "spawn a subagent" tool names that read as agents (Claude `Task`/`Agent`).
+const AGENT_TOOL_TITLES = new Set(["task", "agent"]);
+
+// Summarize the running turn's in-flight tool/agent activity for the Working
+// indicator, so a long fan-out reads as alive rather than hung. Uses block status
+// (pending/streaming) — the live signal codex and ACP stream as tools run. Claude
+// marks tool_call `complete` on arrival and streams nothing during a Task fan-out,
+// so its running-agent count is owned by the subagents watcher (Slice B), not here.
+// Returns undefined when not running or nothing is in flight (the indicator then
+// shows just the elapsed timer). See live-turn-activity-visibility.md.
+function liveTurnActivityView(
+  state: AgentChatShellState,
+  chatState: AgentChatState,
+): LiveTurnActivityView | undefined {
+  if (chatState !== "running") {
+    return undefined;
+  }
+  // Slice B: Claude `Task` fan-out subagent counts (from the subagents watcher) are
+  // the richest signal for the case that streams nothing — they win when present.
+  const nestedAgents = state.liveActivityEnrichment?.nestedAgents ?? 0;
+  if (nestedAgents > 0) {
+    const agentsLabel = `${nestedAgents} ${nestedAgents === 1 ? "agent" : "agents"}`;
+    const calls = state.liveActivityEnrichment?.nestedToolCalls ?? 0;
+    return {
+      summaryLabel:
+        calls > 0
+          ? `${agentsLabel} · ${calls} tool ${calls === 1 ? "call" : "calls"}`
+          : `${agentsLabel} running`,
+    };
+  }
+  // Slice B′: codex/ACP plan step progress, for turns that report a plan.
+  const planTotal = state.liveActivityEnrichment?.planTotal ?? 0;
+  if (planTotal > 0) {
+    const done = state.liveActivityEnrichment?.planCompleted ?? 0;
+    return { summaryLabel: `${done}/${planTotal} steps` };
+  }
+  const inFlight = state.blocks.filter(
+    (block) =>
+      block.role === "tool" && (block.status === "pending" || block.status === "streaming"),
+  );
+  if (inFlight.length === 0) {
+    return undefined;
+  }
+  const agentCount = inFlight.filter((block) =>
+    AGENT_TOOL_TITLES.has((block.title ?? "").trim().toLowerCase()),
+  ).length;
+  if (agentCount > 0) {
+    return { summaryLabel: `${agentCount} ${agentCount === 1 ? "agent" : "agents"} running` };
+  }
+  if (inFlight.length === 1) {
+    const label = inFlight[0].title?.trim();
+    if (label !== undefined && label.length > 0) {
+      return { summaryLabel: label };
+    }
+  }
+  return { summaryLabel: `${inFlight.length} tools running` };
 }
 
 // Formats raw usage into ready-to-render labels. Returns null when there is

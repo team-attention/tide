@@ -80,6 +80,11 @@ const PINNED_MAX: Record<string, number> = {
   // live-backend (the composition root) dropped under the 800 cap once its persistence +
   // metadata-first restore collaborator was extracted to live-backend-restore.ts
   // (thread-list-metadata-first-restore), so it no longer needs a pinned ceiling.
+  // +live-turn-activity Slice B′: the ACP `session/update` router gained a `plan`
+  // branch (codex/ACP plan step progress in the Working indicator). This multi-provider
+  // protocol client (gemini + opencode) sat at 798 on main; the feature tipped it over.
+  // Extracting the session-update routing is the real fix (Phase-3 backlog).
+  "backend/adapters/outbound/agent-runtime/structured/acp-client.ts": 804,
 };
 
 function listSourceFiles(dir: string): string[] {

@@ -112,6 +112,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
         props.onResend,
         props.onQuote,
         props.onOpenBrowserPane,
+        viewModel.liveActivity?.summaryLabel,
       ),
     [
       viewModel.blocks,
@@ -123,6 +124,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       props.onResend,
       props.onQuote,
       props.onOpenBrowserPane,
+      viewModel.liveActivity?.summaryLabel,
     ],
   );
   const transcriptMatchCount = useDomTextFind({

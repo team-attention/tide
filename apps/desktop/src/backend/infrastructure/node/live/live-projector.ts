@@ -12,6 +12,7 @@ import type { ThreadRuntimeService } from "../../../application/services/thread/
 import { CONTRACT_VERSION } from "../../../../shared/contracts/index.ts";
 import type { BackendEventEnvelope, ProviderCliAgentId } from "../../../../shared/contracts/index.ts";
 import { toAgentSessionBlockDto } from "../../../adapters/inbound/contract-message-adapter/dto/thread-dtos.ts";
+import { planActivityFromToolResultPayload } from "../../../adapters/outbound/agent-runtime/structured/plan-activity.ts";
 import { runtimeUsageFromStructuredUsage, type StructuredRuntimeUsageInput } from "./live-runtime-usage.ts";
 // Extracted from live-backend.ts (spec: navigable-source-structure).
 
@@ -303,6 +304,8 @@ export function createLiveAgentSessionEventProjector(input: {
         return;
       }
       if (event.kind === "content_record") {
+        const activity = planActivityFromToolResultPayload(event.payload);
+        if (activity !== undefined) emitStructuredActivity({ threadId: eventInput.threadId, activity, onEvent: input.onEvent });
         await appendFrameAndEmit({
           threadId: eventInput.threadId,
           agentId: eventInput.agentId,
@@ -409,6 +412,15 @@ export function createLiveAgentSessionEventProjector(input: {
         });
         return;
       }
+      if (event.kind === "live_activity") {
+        const { nestedAgents, nestedToolCalls, planTotal, planCompleted } = event;
+        emitStructuredActivity({
+          threadId: eventInput.threadId,
+          activity: { nestedAgents, nestedToolCalls, planTotal, planCompleted },
+          onEvent: input.onEvent,
+        });
+        return;
+      }
       if (event.kind === "prompt_withdrawn") {
         // The provider RETRACTED a pending interaction (e.g. a question + its cancel in
         // one chunk). Clear that exact prompt NOW — deterministically, not by waiting for
@@ -430,6 +442,8 @@ export function createLiveAgentSessionEventProjector(input: {
             onEvent: input.onEvent,
           });
         }
+        // Fan-out over — clear the live-activity count so it doesn't linger (Slice B).
+        emitStructuredActivity({ threadId: eventInput.threadId, activity: {}, onEvent: input.onEvent });
         const nextBlocks = new Map(
           (blocksByThread.get(eventInput.threadId) ?? []).map((block) => [
             block.blockId,
@@ -493,6 +507,21 @@ function emitStructuredUsage(input: {
       threadId: input.threadId,
       usage,
     },
+  });
+}
+
+// Live fan-out activity (Claude subagent counts); an all-undefined activity clears it.
+function emitStructuredActivity(input: {
+  threadId: string;
+  activity: { nestedAgents?: number; nestedToolCalls?: number; planTotal?: number; planCompleted?: number };
+  onEvent?: (event: BackendEventEnvelope) => void;
+}): void {
+  input.onEvent?.({
+    contractVersion: CONTRACT_VERSION,
+    eventId: nextEventId(),
+    kind: "agentRuntime.activityChanged",
+    emittedAt: new Date().toISOString(),
+    payload: { threadId: input.threadId, activity: input.activity },
   });
 }
 

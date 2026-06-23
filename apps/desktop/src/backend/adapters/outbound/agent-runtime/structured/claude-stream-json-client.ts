@@ -25,6 +25,8 @@ import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 
+import { createNodeSubagentActivityWatcher, type SubagentActivityWatcher } from "./subagent-activity-watcher.ts";
+
 import type { ComposerAttachmentRef } from "../../../../application/domains/thread/thread.ts";
 import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
@@ -45,6 +47,7 @@ import {
   bounded,
   isRecord,
   stringField,
+  toolResultText,
 } from "./claude-stream-json-shared.ts";
 import { buildPermissionPrompt } from "./claude-permission-prompt.ts";
 import type { AskUserQuestionContext, PendingPermission } from "./claude-ask-user-question.ts";
@@ -62,6 +65,9 @@ export interface CreateClaudeStreamJsonClientInput extends StructuredClientCallb
   runtimeId: string;
   initialPrompt?: string;
   initialAttachments?: ComposerAttachmentRef[];
+  // Resolves a session id to its `subagents/` dir, enabling the live Task fan-out
+  // watcher. Absent ⇒ no watcher. Spec: live-turn-activity-visibility.md (Slice B).
+  locateSubagentsDir?: (sessionId: string) => string | undefined;
 }
 
 // Build a claude user-message content array: the text plus a NATIVE inline image
@@ -99,9 +105,7 @@ export function claudeUserContent(
   return content.length > 0 ? content : [{ type: "text", text }];
 }
 
-export function createClaudeStreamJsonClient(
-  input: CreateClaudeStreamJsonClientInput,
-): StructuredRuntimeClient {
+export function createClaudeStreamJsonClient(input: CreateClaudeStreamJsonClientInput): StructuredRuntimeClient {
   return new ClaudeStreamJsonClient(input);
 }
 
@@ -115,6 +119,9 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   private initialPrompt?: string;
   private initSeen = false;
   private exited = false;
+  // Minted session id (from init), used to locate this session's `subagents/` dir.
+  private sessionId?: string;
+  private readonly subagentWatcher?: SubagentActivityWatcher;
   private readonly scanUpdate = createUpdateNoticeScanner((message) =>
     this.onEvent({ kind: "runtime_notice", level: "info", message }),
   );
@@ -144,6 +151,14 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     this.threadId = input.threadId;
     this.runtimeId = input.runtimeId;
     this.initialPrompt = input.initialPrompt;
+    if (input.locateSubagentsDir !== undefined) {
+      const locate = input.locateSubagentsDir;
+      this.subagentWatcher = createNodeSubagentActivityWatcher({
+        resolveDir: () => (this.sessionId !== undefined ? locate(this.sessionId) : undefined),
+        emit: ({ nestedAgents, nestedToolCalls }) =>
+          this.onEvent({ kind: "live_activity", nestedAgents, nestedToolCalls }),
+      });
+    }
     this.child = spawn(input.plan.command, input.plan.args, {
       cwd: input.plan.cwd,
       // Inherit the backend's env (login-shell PATH, HOME for auth state) and
@@ -197,6 +212,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
         },
       });
       this.initialPrompt = undefined;
+      this.subagentWatcher?.start(Date.now()); // watch this turn's Task fan-out.
     }
   }
 
@@ -217,6 +233,8 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
           content: claudeUserContent(withGoalPreamble(this.goalObjective, input.value), input.attachments),
         },
       });
+      // Follow-up turn — restart so the count reflects THIS turn's subagents.
+      this.subagentWatcher?.start(Date.now());
       return;
     }
     const promptId = input.promptId ?? "";
@@ -405,6 +423,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   }
 
   async interrupt(): Promise<void> {
+    this.subagentWatcher?.stop();
     // Clean-deny any pending permission BEFORE aborting, so an open AskUserQuestion /
     // permission resolves as "user interrupted" instead of a stream-closed error.
     this.denyPendingPermissions("The user interrupted this tool use.");
@@ -419,6 +438,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
 
   async stop(): Promise<void> {
     this.exited = true;
+    this.subagentWatcher?.stop();
     // Settle any in-flight applyConfig acks (the process is going away) so a
     // pending setLaunchOptions resolves to a restart rather than waiting the timeout.
     for (const resolve of this.pendingConfigAcks.values()) {
@@ -485,6 +505,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     if (type === "system" && message.subtype === "init") {
       const sessionId = typeof message.session_id === "string" ? message.session_id : undefined;
       if (sessionId !== undefined) {
+        this.sessionId = sessionId; // lets the subagent watcher locate the dir.
         this.onEvent({
           kind: "session_ref",
           ref: { agentId: this.agentId, kind: "claude_transcript", value: sessionId },
@@ -538,6 +559,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       return;
     }
     if (type === "result") {
+      this.subagentWatcher?.stop(); // turn ended — the projector emits the clear.
       const isError = message.is_error === true;
       const resultText = typeof message.result === "string" ? message.result : undefined;
       // A user interrupt yields result(error_during_execution) with
@@ -769,21 +791,6 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       }),
     });
   }
-}
-
-function toolResultText(content: unknown): string {
-  if (typeof content === "string") {
-    return content;
-  }
-  if (Array.isArray(content)) {
-    return content
-      .map((item) =>
-        isRecord(item) && item.type === "text" && typeof item.text === "string" ? item.text : "",
-      )
-      .join("\n")
-      .trim();
-  }
-  return "";
 }
 
 // Usage/rate-limit parsing moved to claude-usage.ts to keep this client under the

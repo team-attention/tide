@@ -312,6 +312,15 @@ export function createLiveBackendContractMessageAdapter(
     onProviderEvent: (providerEvent) => {
       void projector.ingestStructuredProviderEvent(providerEvent);
     },
+    // Locate a Claude session's `subagents/` dir so the runtime can watch a `Task`
+    // fan-out's live activity. Mirrors the transcript scan: <project>/<id>.jsonl →
+    // <project>/<id>/subagents. See live-turn-activity-visibility.md (Slice B).
+    locateSubagentsDir: (sessionId) => {
+      const transcript = locateClaudeTranscriptFile(homeDir, sessionId);
+      return transcript === undefined
+        ? undefined
+        : join(dirname(transcript), basename(transcript, ".jsonl"), "subagents");
+    },
   });
   service = createThreadRuntimeService({
     agentRuntimePort: providerCliRuntimePort,

@@ -15,6 +15,9 @@ export function applyAgentChatBackendEvent(
         prompt?: AgentChatPromptState | null;
         workbenchPanes?: unknown[];
       };
+      const sameThread = state.thread?.threadId === payload.thread.threadId;
+      const runtimeState = payload.runtimeState ?? state.runtimeState;
+      const runtimeActive = runtimeState === "running" || runtimeState === "starting";
       return {
         ...state,
         thread: payload.thread,
@@ -24,7 +27,7 @@ export function applyAgentChatBackendEvent(
         hydrating: false,
         providerReadiness: payload.providerReadiness ?? state.providerReadiness,
         providerReadinessActionPending: false,
-        runtimeState: payload.runtimeState ?? state.runtimeState,
+        runtimeState,
         // Hydrate is the source of truth for the pending prompt: a thread opened
         // while waiting on an approval/question must show its card (it surfaced
         // as prompt.changed before this thread was on screen). `undefined` =
@@ -36,6 +39,8 @@ export function applyAgentChatBackendEvent(
         // Usage is per-thread; a fresh hydrate clears the previous thread's chip
         // until a usageChanged for this thread arrives.
         usage: null,
+        liveActivityEnrichment:
+          sameThread && runtimeActive ? state.liveActivityEnrichment : undefined,
         // Launch-option chip feedback is per-thread and transient — a fresh hydrate
         // (thread switch) must not carry the previous thread's badges.
         launchOptionFeedback: {},
@@ -75,6 +80,27 @@ export function applyAgentChatBackendEvent(
         },
       };
     }
+    case "agentRuntime.activityChanged": {
+      const payload = event.payload as {
+        activity?: {
+          nestedAgents?: number;
+          nestedToolCalls?: number;
+          planTotal?: number;
+          planCompleted?: number;
+        };
+      } | undefined;
+      const activity = payload?.activity ?? {};
+      // An all-undefined activity is the turn-end clear.
+      const empty =
+        activity.nestedAgents === undefined &&
+        activity.nestedToolCalls === undefined &&
+        activity.planTotal === undefined &&
+        activity.planCompleted === undefined;
+      return {
+        ...state,
+        liveActivityEnrichment: empty ? undefined : { ...activity },
+      };
+    }
     case "thread.started": {
       const payload = event.payload as {
         thread: AgentChatThreadSummary;
@@ -85,6 +111,7 @@ export function applyAgentChatBackendEvent(
         thread: payload.thread,
         runtimeState: payload.runtimeState,
         queuedInputs: [],
+        liveActivityEnrichment: undefined,
         launchOptionFeedback: {},
       };
     }
@@ -176,6 +203,10 @@ export function applyAgentChatBackendEvent(
         // change has now been applied (the restart respawns at turn start), and an
         // "applied" flash has long faded. Clear the chip feedback on this edge only.
         launchOptionFeedback: turnStarting ? {} : state.launchOptionFeedback,
+        // Live-activity counts belong to the in-flight turn only — drop them the
+        // moment the runtime leaves an active state (belt-and-suspenders alongside
+        // the turn-end clear event). Slice B.
+        liveActivityEnrichment: isActive ? state.liveActivityEnrichment : undefined,
       };
     }
     case "providerReadiness.changed": {

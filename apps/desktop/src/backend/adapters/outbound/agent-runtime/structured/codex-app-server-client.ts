@@ -31,14 +31,16 @@ import type {
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
-import { rateLimitsFromProviderRecord } from "../../../../application/domains/agent-runtime/rate-limit-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
+import { codexPlanActivityFromItem } from "./plan-activity.ts";
+import { bounded, codexRateLimitsFromUsage, isRecord, numberField, stringField } from "./codex-app-server-shared.ts";
 import {
   codexToolCallRecordFromItem,
   codexToolItemId,
   isCodexVisibleToolItem,
 } from "./codex-tool-call-record.ts";
 import { codexPlanContentRecord } from "./structured-plan-goal.ts";
+export { codexRateLimitsFromUsage } from "./codex-app-server-shared.ts";
 export {
   codexToolCallRecordFromItem,
   type CodexToolCallRecord,
@@ -620,6 +622,9 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     if (item === undefined) {
       return;
     }
+    if (this.emitPlanActivity(item)) {
+      return;
+    }
     const itemType = stringField(item, "type") ?? stringField(item, "itemType");
     const itemId = isCodexVisibleToolItem(item)
       ? codexToolItemId(item, String(this.recordIndex))
@@ -697,7 +702,20 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     if (item === undefined) {
       return;
     }
+    if (this.emitPlanActivity(item)) {
+      return;
+    }
     this.emitToolCallItem(item, "pending");
+  }
+
+  // codex `update_plan` item → live plan step progress (Slice B′). The app-server can
+  // report this either as a native plan item or as a function_call named update_plan
+  // with JSON arguments (verified in live rollout logs).
+  private emitPlanActivity(item: Record<string, unknown>): boolean {
+    const plan = codexPlanActivityFromItem(item);
+    if (plan === undefined) return false;
+    this.onEvent({ kind: "live_activity", ...plan });
+    return true;
   }
 
   private emitToolCallItem(item: Record<string, unknown>, status: "pending" | "complete"): void {
@@ -772,28 +790,4 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       });
     }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stringField(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function numberField(record: Record<string, unknown>, key: string): number | undefined {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-export function codexRateLimitsFromUsage(
-  usage: Record<string, unknown> | undefined,
-): AgentRuntimeRateLimitDto[] {
-  return usage !== undefined ? rateLimitsFromProviderRecord(usage) : [];
-}
-
-function bounded(text: string): string {
-  return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
 }

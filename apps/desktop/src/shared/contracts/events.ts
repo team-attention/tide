@@ -1,4 +1,4 @@
-import type { AgentRuntimeStateDto, AgentRuntimeUsageDto } from "./agent-runtime.ts";
+import type { AgentRuntimeStateDto, AgentRuntimeUsageDto, LiveTurnActivityDto } from "./agent-runtime.ts";
 import type { AgentSessionBlockDto } from "./agent-session-block.ts";
 import type {
   WorkspaceCodeCompletionDto,
@@ -43,6 +43,7 @@ export type BackendEventKind =
   | "thread.launchOptionsChanged"
   | "agentRuntime.stateChanged"
   | "agentRuntime.usageChanged"
+  | "agentRuntime.activityChanged"
   | "agentRuntime.commandsChanged"
   | "agentRuntime.modelCatalogChanged"
   | "agentRuntime.noticePosted"
@@ -77,6 +78,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "thread.launchOptionsChanged",
   "agentRuntime.stateChanged",
   "agentRuntime.usageChanged",
+  "agentRuntime.activityChanged",
   "agentRuntime.commandsChanged",
   "agentRuntime.modelCatalogChanged",
   "agentRuntime.noticePosted",
@@ -187,6 +189,13 @@ export interface BackendEventPayloadByKind {
   "agentRuntime.usageChanged": {
     threadId: ThreadId;
     usage: AgentRuntimeUsageDto;
+  };
+  // Live in-flight-turn activity not carried by the provider stream (Claude Task
+  // fan-out subagent counts). Emitted while running; an all-undefined activity
+  // clears it at turn end. See live-turn-activity-visibility.md (Slice B).
+  "agentRuntime.activityChanged": {
+    threadId: ThreadId;
+    activity: LiveTurnActivityDto;
   };
   // The agent's available slash-commands (trigger "/") and skills (trigger "$"),
   // captured from the provider protocol at session start. Per agent.

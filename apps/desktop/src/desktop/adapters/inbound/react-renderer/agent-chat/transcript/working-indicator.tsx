@@ -6,8 +6,12 @@ import type { ReactElement } from "react";
 // progress (like "Working… 12s") rather than a static spinner.
 export function AgentWorkingIndicator({
   runtimeStartedAt,
+  liveActivitySummary,
 }: {
   runtimeStartedAt?: string;
+  // A pre-formatted one-line activity hint (e.g. "3 agents running", "WebSearch"),
+  // appended after the elapsed timer so a long fan-out reads as alive.
+  liveActivitySummary?: string;
 }): ReactElement {
   // Base elapsed on when the turn actually started (from the backend), so the timer
   // is correct even after reopening a running thread. Fall back to mount time only
@@ -27,6 +31,9 @@ export function AgentWorkingIndicator({
     return () => clearInterval(timer);
   }, []);
   const seconds = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
+  const elapsed = seconds > 0 ? `Working… ${seconds}s` : "Working…";
+  const detail = liveActivitySummary?.trim();
+  const text = detail ? `${elapsed} · ${detail}` : elapsed;
   return (
     <article
       className="agent-session-turn agent-session-turn--agent agent-session-turn--working"
@@ -39,9 +46,7 @@ export function AgentWorkingIndicator({
         <span className="agent-session-working__dot" />
         <span className="agent-session-working__dot" />
         <span className="agent-session-working__dot" />
-        <span className="agent-session-working__text">
-          {seconds > 0 ? `Working… ${seconds}s` : "Working…"}
-        </span>
+        <span className="agent-session-working__text">{text}</span>
       </span>
     </article>
   );

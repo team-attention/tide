@@ -65,6 +65,10 @@ export interface CreateAgentIntegrationRuntimePortInput {
   }) => Promise<void> | void;
   clock?: () => string;
   idGenerator?: () => string;
+  // Resolves a Claude session id to its on-disk `subagents/` dir, enabling the live
+  // `Task` fan-out activity watcher. Infra-injected (needs the home dir); absent in
+  // tests/probes. See live-turn-activity-visibility.md (Slice B).
+  locateSubagentsDir?: (sessionId: string) => string | undefined;
 }
 
 // A synchronous source of "a newer CLI is published" advisories, consulted while
@@ -166,6 +170,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   private readonly idGenerator: () => string;
   private readonly resolveRuntimeEnvironment?: CreateAgentIntegrationRuntimePortInput["resolveRuntimeEnvironment"];
   private readonly onProviderEvent?: CreateAgentIntegrationRuntimePortInput["onProviderEvent"];
+  private readonly locateSubagentsDir?: CreateAgentIntegrationRuntimePortInput["locateSubagentsDir"];
   private readonly runtimes = new Map<string, StructuredRuntimeState>();
   // Probed real command sets per (agentId:cwd) — see discoverCommands.
   private readonly commandCache = new Map<string, DiscoveredCommand[]>();
@@ -179,6 +184,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
     this.resolveRuntimeEnvironment = input.resolveRuntimeEnvironment;
     this.onProviderEvent = input.onProviderEvent;
+    this.locateSubagentsDir = input.locateSubagentsDir;
   }
 
   async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
@@ -528,6 +534,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           runtimeId: input.runtimeId,
           initialPrompt: input.initialPrompt,
           initialAttachments: input.initialAttachments,
+          locateSubagentsDir: this.locateSubagentsDir,
           onEvent: input.onEvent,
         });
       case "codex_app_server":
