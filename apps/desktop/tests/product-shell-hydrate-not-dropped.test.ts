@@ -158,15 +158,82 @@ test("reselecting the active thread does not replace its ready chat with a hydra
   assert.equal(reselected.command?.kind, "thread.hydrate");
 });
 
-test("non-hydrate background events for an unknown thread are still ignored (scope unchanged)", () => {
-  // The fix is scoped to hydrate/started seeding. A stray per-thread DATA event for a
-  // thread we hold no state for must NOT fabricate an entry (that was the prior contract).
+test("a background per-thread DATA event for a thread with no prior entry is recorded, not dropped", () => {
+  // ROOT FIX: the backend is authoritative for EVERY thread, so a per-thread event for a
+  // non-active thread is ALWAYS folded (seeding a fresh entry) — never dropped just because
+  // the renderer happens not to hold an entry yet. (The prior contract ignored it, which is
+  // exactly how a promoted parallel-permission card got lost and wedged a thread.)
   const viewingX = openProductShellThread(seed(["x", "y"]), "x");
+  assert.equal(viewingX.agentChatByThreadId.y, undefined);
 
   const next = applyProductShellBackendEvent(viewingX, {
     kind: "agentRuntime.stateChanged",
     payload: { threadId: "y", state: "running" },
   });
 
-  assert.equal(next.agentChatByThreadId.y, undefined);
+  // Focus is unchanged (a data event never moves focus)…
+  assert.equal(next.activeThreadId, "x");
+  // …and Y's authoritative runtime state is now recorded in the per-thread map.
+  assert.ok(next.agentChatByThreadId.y, "Y's state event must be recorded into the per-thread map");
+  assert.equal(next.agentChatByThreadId.y?.runtimeState, "running");
+});
+
+function approvalPrompt(threadId: string, promptId: string) {
+  return {
+    promptId,
+    threadId,
+    agentId: "claude",
+    kind: "approval" as const,
+    message: "Bash: ls -la 2026/06/23/",
+    choices: [
+      { choiceId: "allow", label: "Allow", providerValue: "__allow__" },
+      { choiceId: "deny", label: "Deny", providerValue: "__deny__" },
+    ],
+    defaultChoiceId: "allow",
+    source: "provider_hook" as const,
+  };
+}
+
+test("a promoted parallel-permission card for a background thread is recorded (no wedge)", () => {
+  // claude fires N can_use_tool permissions in parallel and blocks the turn until EVERY one
+  // is answered. Tide shows one card + queues the rest; answering the visible card promotes
+  // the next. If the promote's prompt.changed lands while this thread is NOT the active
+  // surface, it used to be dropped — the second card never surfaced and the thread wedged
+  // "running" with no card. It must now be recorded so re-viewing the thread shows it.
+  const viewingX = openProductShellThread(seed(["x", "y"]), "x");
+  assert.equal(viewingX.agentChatByThreadId.y, undefined);
+
+  const next = applyProductShellBackendEvent(viewingX, {
+    kind: "prompt.changed",
+    payload: { threadId: "y", prompt: approvalPrompt("y", "p2") },
+  });
+
+  assert.equal(next.activeThreadId, "x", "a data event never moves focus");
+  assert.equal(
+    next.agentChatByThreadId.y?.promptState?.promptId,
+    "p2",
+    "the promoted card must be recorded for Y, not dropped",
+  );
+});
+
+test("a promoted card is recorded even in the activeThreadId === null window", () => {
+  // The exact window that produced the live wedge: a thread.listed transiently nulled the
+  // focused thread, so the promote's prompt.changed matched neither the active surface NOR
+  // an existing entry. It must still be recorded for the thread.
+  const noFocus = applyProductShellBackendEvent(seed(["x", "y"]), {
+    kind: "thread.listed",
+    payload: { threads: [] },
+  });
+  assert.equal(noFocus.activeThreadId, null);
+
+  const recorded = applyProductShellBackendEvent(noFocus, {
+    kind: "prompt.changed",
+    payload: { threadId: "y", prompt: approvalPrompt("y", "p2") },
+  });
+
+  assert.equal(
+    recorded.agentChatByThreadId.y?.promptState?.promptId,
+    "p2",
+    "card recorded even with no active thread",
+  );
 });

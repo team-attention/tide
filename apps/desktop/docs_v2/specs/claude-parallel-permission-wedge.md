@@ -92,3 +92,42 @@ Two compounding correctness bugs on the same path:
   the promote branch sets `thread.promptAnsweredPendingSettle = false`.
 - `src/backend/adapters/outbound/agent-runtime/structured/claude-stream-json-client.ts` —
   `write()` denies unless the value is exactly `STRUCTURED_ALLOW_TOKEN`.
+
+## Addendum — renderer-side drop of the promoted card (2026-06-23)
+
+The backend fix above is correct and unit-test-proven, yet a live wedge still reproduced
+on 0.1.85: the user answered the first of two parallel Bash permissions, the SECOND card
+never appeared, and the thread sat "running" with no card while the claude process stayed
+blocked. The backend held `promptState = p2` (`waiting_for_approval`); the renderer did
+not — a backend↔renderer desync.
+
+Root cause (renderer): `applyProductShellBackendEvent`
+(`src/desktop/application/domains/product-shell/state/events.ts`) keeps per-thread chat
+state in two places — the active thread's `agentChat` and a per-thread map
+`agentChatByThreadId`. A backend event is applied to `agentChat` only when it is FOR the
+active thread; for a non-active thread it was folded into the map **only when an entry was
+already held OR the event was a `thread.hydrated`/`thread.started` "seed"**. So a
+`prompt.changed` / `agentRuntime.stateChanged` for a thread with no held entry was
+**silently dropped**. The promote's `prompt.changed(p2)` hits exactly this hole whenever
+the thread is not the active surface at apply time — the user switched, a notification
+moved focus, or a `thread.listed` transiently nulled `activeThreadId` (it does so when the
+active thread is momentarily absent from the list). Recovery leaned on hydrate-on-open,
+itself gated by the same hole.
+
+Fix: fold EVERY per-thread event for a non-active thread into `agentChatByThreadId`,
+seeding a fresh entry when none exists (remove the `entry-exists || seeds` condition).
+The backend is authoritative for every thread; which thread is on screen is a pure VIEW
+concern and must never gate state retention. After the fix the card is always recorded, so
+re-viewing the thread always surfaces it.
+
+- `src/desktop/application/domains/product-shell/state/events.ts` — `foldsIntoBackgroundThread`
+  is now just `eventThreadId !== undefined && eventThreadId !== state.activeThreadId`.
+- Tests: `tests/product-shell-hydrate-not-dropped.test.ts` — a background `prompt.changed`
+  (promoted card) and `agentRuntime.stateChanged` for a thread with no prior entry are
+  recorded, including in the `activeThreadId === null` window.
+
+Residual (smaller, separate): while a thread is the visually-shown surface but
+`activeThreadId` is transiently null, events fold to the map yet the on-screen `agentChat`
+working copy is not re-synced until the next open/switch. The card is recoverable by
+re-viewing the thread; eliminating the transient entirely (active surface as a pure
+projection of `agentChatByThreadId[activeThreadId]`) is a follow-up.
