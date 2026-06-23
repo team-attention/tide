@@ -82,7 +82,9 @@ export function snapshotFromIndexJson(parsed: unknown): InitialThreadListSnapsho
     return null;
   }
 
-  records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  // Newest first. updatedAt is a validated ISO 8601 string, so direct lexicographic
+  // comparison is correct and avoids localeCompare's overhead on this startup-critical path.
+  records.sort((left, right) => (left.updatedAt < right.updatedAt ? 1 : left.updatedAt > right.updatedAt ? -1 : 0));
   return { threads: records.map(threadSummaryFromRecord) };
 }
 
