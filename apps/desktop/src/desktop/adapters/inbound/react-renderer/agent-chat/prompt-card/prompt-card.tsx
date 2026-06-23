@@ -152,9 +152,8 @@ function SinglePromptCard(props: {
       if ((event.metaKey || event.ctrlKey) && !event.altKey) {
         const digit = /^Digit([1-9])$/.exec(event.code);
         if (digit !== null) {
-          const ids = multiSelect
-            ? choices.map((choice) => choice.choiceId)
-            : [...choices.map((choice) => choice.choiceId), ...(hasChoices ? ["__other"] : [])];
+          const choiceIds = choices.map((choice) => choice.choiceId);
+          const ids = multiSelect ? choiceIds : [...choiceIds, ...(hasChoices ? ["__other"] : [])];
           const target = ids[Number(digit[1]) - 1];
           if (target !== undefined) {
             event.preventDefault();
@@ -203,7 +202,10 @@ function SinglePromptCard(props: {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [choices, hasChoices, multiSelect, otherActive, selectedId, selectedIds, otherText, props]);
+    // `notes` is read by submit() (it rides on an AskUserQuestion answer), so it must be a
+    // dependency — otherwise the ⌘Enter listener keeps a stale closure and a note typed
+    // before ⌘Enter is dropped. (`otherText` is here for the same reason.)
+  }, [choices, hasChoices, multiSelect, otherActive, selectedId, selectedIds, otherText, notes, props]);
   const kindLabel =
     props.prompt.kind === "approval"
       ? "Approval needed"
@@ -367,9 +369,8 @@ function WizardPromptCard(props: {
       if ((event.metaKey || event.ctrlKey) && !event.altKey) {
         const digit = /^Digit([1-9])$/.exec(event.code);
         if (digit !== null) {
-          const ids = multiSelect
-            ? choices.map((choice) => choice.choiceId)
-            : [...choices.map((choice) => choice.choiceId), ...(hasChoices ? ["__other"] : [])];
+          const choiceIds = choices.map((choice) => choice.choiceId);
+          const ids = multiSelect ? choiceIds : [...choiceIds, ...(hasChoices ? ["__other"] : [])];
           const picked = ids[Number(digit[1]) - 1];
           if (picked !== undefined) {
             event.preventDefault();

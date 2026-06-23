@@ -360,6 +360,32 @@ test("wizard: ⌘N selects within the current step and never advances", async ()
   }
 });
 
+// Set a controlled textarea's value the way React expects (native setter + input event),
+// so onChange fires and component state actually updates.
+async function typeInto(el: Element, value: string): Promise<void> {
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")?.set;
+  await act(async () => {
+    setter?.call(el, value);
+    el.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+}
+
+test("AUQ note typed before ⌘Enter rides along (no stale-closure drop)", async () => {
+  const { container, root, spies } = await mountWithSpies(singleAuqPrompt());
+  try {
+    // A listed option is selected by default → the note field is offered.
+    const note = container.querySelector(".prompt-card__note");
+    assert.ok(note !== null, "note field present");
+    await typeInto(note, "remember this");
+    // ⌘Enter must submit with the freshly typed note, not a stale "".
+    await pressMeta("Enter");
+    assert.equal(spies.onAnswerText.calls.length, 1);
+    assert.equal(spies.onAnswerText.calls[0]?.[1], "remember this");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 test("each shortcut-bearing option shows a ⌘N keycap", () => {
   // 2 choices + "Other…" → ⌘1, ⌘2, ⌘3.
   const markup = renderToStaticMarkup(
