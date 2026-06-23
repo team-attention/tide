@@ -1,4 +1,4 @@
-import type { AgentChatBlock, AgentChatBlockView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageView, LaunchOptionFeedback } from "./types.ts";
+import type { AgentChatBlock, AgentChatBlockView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageRateLimitView, AgentChatUsageView, LaunchOptionFeedback } from "./types.ts";
 import { codexModelLabel, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, modelLabelForAgent, permissionLabelForValue, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { createActiveComposerSurface } from "./choice-surfaces.ts";
 import { isOpencodeUsable } from "./opencode-onramp.ts";
@@ -87,13 +87,13 @@ function usageView(usage: AgentChatUsage | null): AgentChatUsageView | null {
     usage.totalTokens !== undefined ? `${formatTokenCount(usage.totalTokens)} tokens` : undefined;
   const contextPercentLabel =
     usage.contextUsedPercent !== undefined ? `${usage.contextUsedPercent}%` : undefined;
-  const rateLimitLabels = (usage.rateLimits ?? [])
-    .map(rateLimitLabel)
-    .filter((label): label is string => label !== undefined);
+  const rateLimits = (usage.rateLimits ?? [])
+    .map(rateLimitView)
+    .filter((view): view is AgentChatUsageRateLimitView => view !== undefined);
   if (
     tokensLabel === undefined &&
     contextPercentLabel === undefined &&
-    rateLimitLabels.length === 0
+    rateLimits.length === 0
   ) {
     return null;
   }
@@ -103,7 +103,7 @@ function usageView(usage: AgentChatUsage | null): AgentChatUsageView | null {
     ...(usage.contextUsedPercent !== undefined
       ? { contextUsedPercent: usage.contextUsedPercent }
       : {}),
-    ...(rateLimitLabels.length > 0 ? { rateLimitLabels } : {}),
+    ...(rateLimits.length > 0 ? { rateLimits } : {}),
   };
 }
 
@@ -119,16 +119,23 @@ function formatTokenCount(tokens: number): string {
   return `${thousands.toFixed(1)}k`;
 }
 
-function rateLimitLabel(
+// Maps a provider quota window to its REMAINING-framed view row. Dropped when
+// the provider gave no usage percent (we cannot state how much is left).
+function rateLimitView(
   limit: NonNullable<AgentChatUsage["rateLimits"]>[number],
-): string | undefined {
+): AgentChatUsageRateLimitView | undefined {
   const label = limit.label ?? rateLimitWindowLabel(limit.windowMinutes);
-  const percent =
-    limit.usedPercent !== undefined ? `${formatUsagePercent(limit.usedPercent)}%` : undefined;
-  if (label === undefined || percent === undefined) {
+  if (label === undefined || limit.usedPercent === undefined) {
     return undefined;
   }
-  return `${label} limit ${percent}`;
+  const remainingPercent = clampPercent(Math.round(100 - limit.usedPercent));
+  const resetLabel = formatResetLabel(limit.resetsAt, limit.windowMinutes);
+  return {
+    label,
+    remainingPercent,
+    remainingLabel: `${remainingPercent}%`,
+    ...(resetLabel !== undefined ? { resetLabel } : {}),
+  };
 }
 
 function rateLimitWindowLabel(windowMinutes: number | undefined): string | undefined {
@@ -147,8 +154,27 @@ function rateLimitWindowLabel(windowMinutes: number | undefined): string | undef
   return `${windowMinutes}m`;
 }
 
-function formatUsagePercent(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+// When a quota window resets, formatted for the host locale. Sub-day windows
+// (<= 1 day, e.g. the 5h window) show a clock time; weekly/longer windows show a
+// calendar date — matching the Codex account menu. The time/date choice is
+// driven by windowMinutes (deterministic); only the rendered string is locale
+// dependent. Undefined when the provider gave no reset timestamp.
+function formatResetLabel(
+  resetsAt: number | undefined,
+  windowMinutes: number | undefined,
+): string | undefined {
+  if (resetsAt === undefined) {
+    return undefined;
+  }
+  const date = new Date(resetsAt * 1000);
+  if (windowMinutes !== undefined && windowMinutes <= 1440) {
+    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 // The Model chip opens the opencode on-ramp instead of the model menu when opencode

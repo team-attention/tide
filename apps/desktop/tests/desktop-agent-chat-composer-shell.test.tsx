@@ -492,10 +492,28 @@ test("usage_changed_renders_codex_rate_limit_windows", () => {
     }),
   );
 
-  assert.deepEqual(createAgentChatShellViewModel(withUsage).usage, {
-    rateLimitLabels: ["5h limit 58%", "Weekly limit 68%"],
-  });
-  assert.match(visibleText(renderShell(withUsage)), /5h limit 58% · Weekly limit 68%/);
+  const view = createAgentChatShellViewModel(withUsage).usage;
+  assert.ok(view?.rateLimits);
+  assert.equal(view.rateLimits.length, 2);
+  const [fiveHour, weekly] = view.rateLimits;
+  // Framed as REMAINING (100 − used), rounded — Codex account-menu style.
+  assert.deepEqual(
+    { label: fiveHour.label, remainingPercent: fiveHour.remainingPercent, remainingLabel: fiveHour.remainingLabel },
+    { label: "5h", remainingPercent: 42, remainingLabel: "42%" },
+  );
+  // Sub-day window resets show a clock time (locale-formatted ⇒ has an H:MM colon).
+  assert.match(fiveHour.resetLabel ?? "", /\d{1,2}:\d{2}/);
+  assert.deepEqual(
+    { label: weekly.label, remainingPercent: weekly.remainingPercent, remainingLabel: weekly.remainingLabel },
+    { label: "Weekly", remainingPercent: 32, remainingLabel: "32%" },
+  );
+  // Weekly window resets show a calendar date (month name, no clock colon).
+  assert.match(weekly.resetLabel ?? "", /[A-Za-z]/);
+  assert.doesNotMatch(weekly.resetLabel ?? "", /:/);
+  // The chip summary uses the remaining framing and offers a popover.
+  const html = renderShell(withUsage);
+  assert.match(html, /aria-haspopup="dialog"/);
+  assert.match(visibleText(html), /5h 42% · Weekly 32%/);
 });
 
 test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", () => {
@@ -531,12 +549,41 @@ test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", (
     tokensLabel: "64k tokens",
     contextPercentLabel: "25%",
     contextUsedPercent: 25,
-    rateLimitLabels: ["5h limit 58%", "Weekly limit 68%"],
+    // No resetsAt in this payload ⇒ no resetLabel; remaining framing (100 − used).
+    rateLimits: [
+      { label: "5h", remainingPercent: 42, remainingLabel: "42%" },
+      { label: "Weekly", remainingPercent: 32, remainingLabel: "32%" },
+    ],
   });
   assert.match(
     visibleText(renderShell(withLimits)),
-    /25% context · 64k tokens · 5h limit 58% · Weekly limit 68%/,
+    /25% context · 64k tokens · 5h 42% · Weekly 32%/,
   );
+});
+
+test("usage_changed_drops_rate_limit_windows_without_a_usage_percent", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const withUsage = applyBackendEventToAgentChatShell(
+    hydrated,
+    backendEvent("agentRuntime.usageChanged", {
+      threadId: "thread-shell",
+      usage: {
+        totalTokens: 64000,
+        rateLimits: [
+          { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
+          // No usedPercent ⇒ cannot state how much is left ⇒ dropped from the view.
+          { windowMinutes: 10080, resetsAt: 1782378364 },
+        ],
+      },
+    }),
+  );
+
+  const view = createAgentChatShellViewModel(withUsage).usage;
+  assert.equal(view?.rateLimits?.length, 1);
+  assert.equal(view?.rateLimits?.[0].label, "5h");
 });
 
 test("new_thread_start_screen_renders_start_composer_without_fake_cues", () => {

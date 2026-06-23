@@ -451,8 +451,23 @@ export interface AgentChatUsageView {
   contextPercentLabel?: string;
   // 0–100, for the meter bar fill.
   contextUsedPercent?: number;
-  // Pre-formatted provider quota windows, e.g. "5h limit 58%".
-  rateLimitLabels?: string[];
+  // Provider quota windows for the active thread, framed as REMAINING (Codex
+  // account-menu style). Drives both the compact chip summary and the popover
+  // rows (label · remaining% · reset). See usage-remaining-popover.md.
+  rateLimits?: AgentChatUsageRateLimitView[];
+}
+
+export interface AgentChatUsageRateLimitView {
+  // "5h", "Weekly", "Daily", "<n>h", "<n>m" — provider label or derived from window.
+  label: string;
+  // 0–100 (= clamp(100 − usedPercent)); source of truth for the bar fill.
+  remainingPercent: number;
+  // Pre-formatted remaining percent, e.g. "42%".
+  remainingLabel: string;
+  // When the window resets, in the host locale: a clock time ("8:31 PM") for
+  // sub-day windows, a calendar date ("Jun 28") for weekly/longer. Omitted when
+  // the provider gave no reset timestamp.
+  resetLabel?: string;
 }
 
 export interface AgentChatThreadView {
