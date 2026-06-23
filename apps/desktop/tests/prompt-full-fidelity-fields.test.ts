@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildPermissionDetail } from "../src/backend/adapters/outbound/agent-runtime/structured/claude-stream-json-client.ts";
+import { buildPermissionDetail } from "../src/backend/adapters/outbound/agent-runtime/structured/claude-permission-prompt.ts";
 import { acpOptionKind, buildAcpPermissionDetail } from "../src/backend/adapters/outbound/agent-runtime/structured/acp-permission.ts";
 
 // Spec: docs_v2/specs/prompt-full-fidelity-fields.md — every provider's prompt now carries
