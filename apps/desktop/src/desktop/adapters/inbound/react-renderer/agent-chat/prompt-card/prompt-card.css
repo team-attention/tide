@@ -145,6 +145,17 @@
 
 .prompt-card__option-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 
+/* The ⌘N shortcut keycap on the right edge of an option, mirroring the ⌘↵ hint on
+   Submit. The option-text (flex 1) pushes it to the trailing edge. */
+.prompt-card__option-kbd {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 1px;
+  color: var(--tide-muted);
+  font-size: 11px;
+  opacity: 0.65;
+}
+
 .prompt-card__option-label { font-weight: 500; }
 
 /* Secondary line under an option label: the option's `description` (wraps freely) or a
