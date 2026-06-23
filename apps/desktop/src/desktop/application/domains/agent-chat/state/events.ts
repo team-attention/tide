@@ -88,8 +88,8 @@ export function applyAgentChatBackendEvent(
           planTotal?: number;
           planCompleted?: number;
         };
-      };
-      const activity = payload.activity ?? {};
+      } | undefined;
+      const activity = payload?.activity ?? {};
       // An all-undefined activity is the turn-end clear.
       const empty =
         activity.nestedAgents === undefined &&

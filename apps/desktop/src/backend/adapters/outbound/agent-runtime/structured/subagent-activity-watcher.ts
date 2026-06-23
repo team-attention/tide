@@ -5,7 +5,7 @@
 // for a human-facing indicator. All side effects (fs, clock, timer) are injected so
 // the poll logic is unit-testable. Spec: live-turn-activity-visibility.md (Slice B).
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -22,10 +22,10 @@ export interface SubagentActivityWatcherDeps {
   // The current session's `subagents/` dir, or undefined until it is known/created.
   resolveDir: () => string | undefined;
   // List `agent-*.jsonl` files in `dir` with their mtime (empty if the dir is absent).
-  listSubagentFiles: (dir: string) => SubagentFileEntry[];
-  readFileLines: (path: string) => string[];
+  listSubagentFiles: (dir: string) => SubagentFileEntry[] | Promise<SubagentFileEntry[]>;
+  readFileLines: (path: string) => string[] | Promise<string[]>;
   // Injected so tests can drive ticks deterministically; returns a disposer.
-  schedule: (callback: () => void, intervalMs: number) => () => void;
+  schedule: (callback: () => void | Promise<void>, intervalMs: number) => () => void;
 }
 
 export interface SubagentActivityWatcher {
@@ -48,16 +48,20 @@ export function createSubagentActivityWatcher(input: {
   let dispose: (() => void) | undefined;
   let turnStartMs = 0;
   let last: SubagentActivityCounts | undefined;
+  let generation = 0;
 
-  function poll(): void {
+  async function poll(currentGeneration = generation): Promise<void> {
     const dir = deps.resolveDir();
     if (dir === undefined) {
       return;
     }
-    const files = deps
-      .listSubagentFiles(dir)
-      .filter((file) => file.mtimeMs >= turnStartMs)
-      .map((file) => ({ lines: deps.readFileLines(file.path) }));
+    const liveFiles = (await deps.listSubagentFiles(dir)).filter((file) => file.mtimeMs >= turnStartMs);
+    const files = await Promise.all(
+      liveFiles.map(async (file) => ({ lines: await deps.readFileLines(file.path) })),
+    );
+    if (currentGeneration !== generation) {
+      return;
+    }
     const counts = parseSubagentActivity(files);
     // Only emit on change, and never emit a bare zero (no fan-out → leave the
     // indicator on its plain timer / Slice-A summary).
@@ -74,12 +78,14 @@ export function createSubagentActivityWatcher(input: {
   return {
     start(startMs: number): void {
       this.stop();
+      generation += 1;
       turnStartMs = startMs;
       last = undefined;
-      poll();
-      dispose = deps.schedule(poll, intervalMs);
+      void poll(generation);
+      dispose = deps.schedule(() => poll(generation), intervalMs);
     },
     stop(): void {
+      generation += 1;
       if (dispose !== undefined) {
         dispose();
         dispose = undefined;
@@ -113,10 +119,10 @@ export function createNodeSubagentActivityWatcher(input: {
   });
 }
 
-function listSubagentFilesFromDisk(dir: string): SubagentFileEntry[] {
+async function listSubagentFilesFromDisk(dir: string): Promise<SubagentFileEntry[]> {
   let names: string[];
   try {
-    names = readdirSync(dir).filter((name) => name.startsWith("agent-") && name.endsWith(".jsonl"));
+    names = (await fs.readdir(dir)).filter((name) => name.startsWith("agent-") && name.endsWith(".jsonl"));
   } catch {
     return [];
   }
@@ -124,7 +130,7 @@ function listSubagentFilesFromDisk(dir: string): SubagentFileEntry[] {
   for (const name of names) {
     const path = join(dir, name);
     try {
-      entries.push({ path, mtimeMs: statSync(path).mtimeMs });
+      entries.push({ path, mtimeMs: (await fs.stat(path)).mtimeMs });
     } catch {
       // raced deletion between readdir and stat — skip.
     }
@@ -132,9 +138,9 @@ function listSubagentFilesFromDisk(dir: string): SubagentFileEntry[] {
   return entries;
 }
 
-function readFileLinesFromDisk(path: string): string[] {
+async function readFileLinesFromDisk(path: string): Promise<string[]> {
   try {
-    return readFileSync(path, "utf8").split("\n");
+    return (await fs.readFile(path, "utf8")).split("\n");
   } catch {
     return [];
   }

@@ -151,6 +151,19 @@ test("B-reducer: activityChanged sets enrichment; an empty activity clears it", 
   assert.equal(cleared.liveActivityEnrichment, undefined);
 });
 
+test("B-reducer: activityChanged tolerates a missing payload", () => {
+  const base = {
+    ...createAgentChatShellState(),
+    runtimeState: "running" as const,
+    liveActivityEnrichment: { nestedAgents: 3, nestedToolCalls: 12 },
+  };
+  const cleared = applyAgentChatBackendEvent(base, {
+    kind: "agentRuntime.activityChanged",
+    payload: undefined,
+  });
+  assert.equal(cleared.liveActivityEnrichment, undefined);
+});
+
 test("B'-merge: codex/ACP plan progress reads as 'done/total steps'", () => {
   const state: AgentChatShellState = {
     ...createAgentChatShellState(),

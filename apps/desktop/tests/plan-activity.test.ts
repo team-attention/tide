@@ -59,3 +59,8 @@ test("B'5: opencode tool_result payload is counted as plan activity", () => {
   });
   assert.deepEqual(plan, { planTotal: 4, planCompleted: 2 });
 });
+
+test("B'6: tool_result payload parser tolerates nullish payloads", () => {
+  assert.equal(planActivityFromToolResultPayload(undefined), undefined);
+  assert.equal(planActivityFromToolResultPayload(null), undefined);
+});

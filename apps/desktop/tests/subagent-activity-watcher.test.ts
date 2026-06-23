@@ -19,7 +19,7 @@ function assistantToolUseLine(n: number): string {
 
 function makeHarness(initial: { files: Record<string, SubagentFileEntry & { lines: string[] }> }) {
   const store = initial.files;
-  let tickCb: (() => void) | undefined;
+  let tickCb: (() => void | Promise<void>) | undefined;
   const emissions: Array<{ nestedAgents: number; nestedToolCalls: number }> = [];
   const watcher = createSubagentActivityWatcher({
     emit: (c) => emissions.push(c),
@@ -35,10 +35,20 @@ function makeHarness(initial: { files: Record<string, SubagentFileEntry & { line
       },
     },
   });
-  return { watcher, emissions, store, tick: () => tickCb?.() };
+  return {
+    watcher,
+    emissions,
+    store,
+    flush: async () => {
+      await new Promise((resolve) => setImmediate(resolve));
+    },
+    tick: async () => {
+      await tickCb?.();
+    },
+  };
 }
 
-test("B2: emits nested counts for current-turn subagent files on start", () => {
+test("B2: emits nested counts for current-turn subagent files on start", async () => {
   const h = makeHarness({
     files: {
       a: { path: "/sub/agent-a.jsonl", mtimeMs: 1100, lines: [assistantToolUseLine(2)] },
@@ -46,10 +56,11 @@ test("B2: emits nested counts for current-turn subagent files on start", () => {
     },
   });
   h.watcher.start(1000);
+  await h.flush();
   assert.deepEqual(h.emissions, [{ nestedAgents: 2, nestedToolCalls: 5 }]);
 });
 
-test("B2b: pre-turn files (mtime < turnStart) are excluded", () => {
+test("B2b: pre-turn files (mtime < turnStart) are excluded", async () => {
   const h = makeHarness({
     files: {
       old: { path: "/sub/agent-old.jsonl", mtimeMs: 500, lines: [assistantToolUseLine(9)] },
@@ -57,34 +68,38 @@ test("B2b: pre-turn files (mtime < turnStart) are excluded", () => {
     },
   });
   h.watcher.start(1000);
+  await h.flush();
   assert.deepEqual(h.emissions, [{ nestedAgents: 1, nestedToolCalls: 1 }]);
 });
 
-test("B2c: re-emits only when counts change across polls", () => {
+test("B2c: re-emits only when counts change across polls", async () => {
   const h = makeHarness({
     files: { a: { path: "/sub/agent-a.jsonl", mtimeMs: 1100, lines: [assistantToolUseLine(1)] } },
   });
   h.watcher.start(1000);
-  h.tick(); // unchanged → no new emission
+  await h.flush();
+  await h.tick(); // unchanged → no new emission
   assert.equal(h.emissions.length, 1);
   h.store.a.lines = [assistantToolUseLine(4)];
-  h.tick(); // grew → emit
+  await h.tick(); // grew → emit
   assert.deepEqual(h.emissions[1], { nestedAgents: 1, nestedToolCalls: 4 });
 });
 
-test("B2d: stop halts polling", () => {
+test("B2d: stop halts polling", async () => {
   const h = makeHarness({
     files: { a: { path: "/sub/agent-a.jsonl", mtimeMs: 1100, lines: [assistantToolUseLine(1)] } },
   });
   h.watcher.start(1000);
+  await h.flush();
   h.watcher.stop();
   h.store.a.lines = [assistantToolUseLine(9)];
-  h.tick(); // disposed → no-op
+  await h.tick(); // disposed → no-op
   assert.equal(h.emissions.length, 1);
 });
 
-test("B2e: an empty fan-out never emits a bare zero", () => {
+test("B2e: an empty fan-out never emits a bare zero", async () => {
   const h = makeHarness({ files: {} });
   h.watcher.start(1000);
+  await h.flush();
   assert.equal(h.emissions.length, 0);
 });

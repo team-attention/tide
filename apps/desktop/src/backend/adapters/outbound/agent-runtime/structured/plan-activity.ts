@@ -51,8 +51,9 @@ export function planActivityFromTodoToolOutput(
 }
 
 export function planActivityFromToolResultPayload(
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown> | null | undefined,
 ): { planTotal: number; planCompleted: number } | undefined {
+  if (payload === null || payload === undefined) return undefined;
   if (stringField(payload, "type") !== "tool_result") return undefined;
   const output = stringField(payload, "output") ?? stringField(payload, "body");
   return output === undefined
