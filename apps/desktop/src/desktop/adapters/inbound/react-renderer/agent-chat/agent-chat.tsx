@@ -5,6 +5,7 @@ import { attachImageFile } from "./composer/attachments.ts";
 import { createNewThreadStartSurface } from "./start-surface/start-surface.tsx";
 import { createThreadHeader } from "./thread-header/thread-header.tsx";
 import { createComposerStack } from "./composer/composer.tsx";
+import { GoalChecklistPanel } from "./goal-checklist/goal-checklist-panel.tsx";
 import {
   InPaneFindBar,
   useDomTextFind,
@@ -359,6 +360,13 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       data-runtime-state={viewModel.runtimeState}
     >
       {props.showThreadHeader === false ? null : createThreadHeader(viewModel)}
+      {viewModel.thread === null ? null : (
+        <GoalChecklistPanel
+          goal={viewModel.thread.goal}
+          checklist={viewModel.checklist}
+          onSetGoal={props.onSetGoal}
+        />
+      )}
       <div className="agent-chat-shell__session-region">
         {transcriptFind.open ? (
           <InPaneFindBar

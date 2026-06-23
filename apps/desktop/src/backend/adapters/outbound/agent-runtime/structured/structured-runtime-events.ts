@@ -113,6 +113,11 @@ export interface StructuredRuntimeClient {
 
 export type StructuredRuntimeWrite =
   | { kind: "composer_input"; value: string; attachments?: ComposerAttachmentRef[] }
+  // Push the user's thread goal to the provider's native goal mechanism. Empty
+  // `objective` clears the goal. codex maps this to thread/goal/set|clear; claude
+  // sends `/goal <objective>`; ACP clients inject a goal preamble (no native goal).
+  // See specs/thread-goal-and-checklist-panel.md.
+  | { kind: "goal_set"; objective: string }
   | {
       kind: "prompt_answer";
       promptId?: string;

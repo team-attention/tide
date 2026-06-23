@@ -53,6 +53,15 @@ export interface RenameThreadResult {
   thread: ThreadSnapshot;
 }
 
+export interface SetThreadGoalInput {
+  threadId: ThreadId;
+  goal: string;
+}
+
+export interface SetThreadGoalResult {
+  thread: ThreadSnapshot;
+}
+
 export interface RestoreThreadsInput {
   threads: ThreadSeed[];
 }
@@ -197,6 +206,22 @@ export class ThreadCrudService {
       return failure("invalid_thread_title", "Thread title cannot be empty.");
     }
     thread.title = title;
+    thread.updatedAt = this.clock();
+    return { ok: true, thread: snapshotThread(thread) };
+  }
+
+  // Set or clear (empty string) the user's thread goal. Tide-owned metadata; the
+  // facade also pushes it to the live runtime's native goal mechanism. See
+  // docs_v2/specs/thread-goal-and-checklist-panel.md.
+  async setGoal(
+    input: SetThreadGoalInput,
+  ): Promise<ServiceResult<SetThreadGoalResult>> {
+    const thread = this.store.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+    const goal = input.goal.trim();
+    thread.goal = goal.length > 0 ? goal : undefined;
     thread.updatedAt = this.clock();
     return { ok: true, thread: snapshotThread(thread) };
   }

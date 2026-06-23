@@ -29,10 +29,19 @@ function selectedBranchForNewWorktree(state: ProductShellState): string {
 }
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
-export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onAnswerPromptSteps" | "onSubmit" | "onInterrupt" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onChoiceSurfaceInputSubmit" | "onOpencodeConnectApiKey" | "onAddAttachment" | "onRemoveAttachment"> {
+export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onAnswerPromptSteps" | "onSubmit" | "onInterrupt" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onChoiceSurfaceInputSubmit" | "onOpencodeConnectApiKey" | "onAddAttachment" | "onRemoveAttachment" | "onSetGoal"> {
   const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, startColumnResize } = ctx;
   return {
     onDraftChange: (draft) => setShellState((state) => updateProductShellComposerDraft(state, draft)),
+    // Set/clear the active thread's goal from the Goal & Checklist panel. The backend
+    // persists it and pushes it to the provider's native goal mechanism, then echoes
+    // thread.goalSet to update the panel. See thread-goal-and-checklist-panel.md.
+    onSetGoal: (goal) => {
+      const threadId = getShellState().agentChat.thread?.threadId;
+      if (threadId !== undefined) {
+        dispatchBackendCommand({ kind: "thread.setGoal", payload: { threadId, goal } });
+      }
+    },
     // The on-ramp panel's in-app API-key field → set the vendor key the canonical way
     // (backend PUTs it to opencode's own server, then re-lists so the panel updates).
     onOpencodeConnectApiKey: (vendorId, key) =>

@@ -263,6 +263,8 @@ import {
   type SetThreadPinnedResult,
   type RenameThreadInput,
   type RenameThreadResult,
+  type SetThreadGoalInput,
+  type SetThreadGoalResult,
   type RestoreThreadsInput,
   type RestoreThreadsResult,
 } from "./thread-crud-service.ts";
@@ -277,6 +279,8 @@ export type {
   SetThreadPinnedResult,
   RenameThreadInput,
   RenameThreadResult,
+  SetThreadGoalInput,
+  SetThreadGoalResult,
   RestoreThreadsInput,
   RestoreThreadsResult,
 };
@@ -528,6 +532,25 @@ renameThread(
     input: RenameThreadInput,
   ): Promise<ServiceResult<RenameThreadResult>> {
     return this.threadCrud.renameThread(input);
+  }
+
+  // Persist Tide metadata and push to the live provider runtime when present.
+  async setThreadGoal(
+    input: SetThreadGoalInput,
+  ): Promise<ServiceResult<SetThreadGoalResult>> {
+    const result = await this.threadCrud.setGoal(input);
+    if (!result.ok) {
+      return result;
+    }
+    const thread = this.threads.get(input.threadId);
+    if (thread?.activeRuntimeHandle !== undefined) {
+      await this.agentRuntimePort.writeInput(thread.activeRuntimeHandle, {
+        kind: "goal_set",
+        value: thread.goal ?? "",
+        submittedAt: this.clock(),
+      });
+    }
+    return result;
   }
 
 async hydrateThread(

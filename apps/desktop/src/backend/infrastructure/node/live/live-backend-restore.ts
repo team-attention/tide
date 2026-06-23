@@ -291,6 +291,8 @@ export function threadSeedFromStorageRecord(record: ThreadStorageRecord): Thread
     // unpinned in memory, and the next metadata event (e.g. opening it →
     // thread.hydrated) writes pinned=false back to disk, erasing the pin.
     pinned: record.pinned,
+    // Carry the persisted goal through restore so the panel shows it on boot.
+    goal: record.goal,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
@@ -330,6 +332,7 @@ export function threadStorageRecordFromThreadSummary(
     threadId: thread.threadId,
     title: thread.title,
     pinned: thread.pinned,
+    ...(thread.goal !== undefined ? { goal: thread.goal } : {}),
     archived: thread.archived,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,

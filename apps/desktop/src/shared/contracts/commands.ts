@@ -14,6 +14,7 @@ export type BackendCommandKind =
   | "thread.archive"
   | "thread.setPinned"
   | "thread.rename"
+  | "thread.setGoal"
   | "thread.setLaunchOptions"
   | "agentRuntime.resume"
   | "composer.sendInput"
@@ -41,6 +42,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "thread.archive",
   "thread.setPinned",
   "thread.rename",
+  "thread.setGoal",
   "thread.setLaunchOptions",
   "agentRuntime.resume",
   "composer.sendInput",
@@ -102,6 +104,11 @@ export interface BackendCommandPayloadByKind {
   "thread.archive": { threadId: ThreadId; archived: boolean };
   "thread.setPinned": { threadId: ThreadId; pinned: boolean };
   "thread.rename": { threadId: ThreadId; title: string };
+  // Set (or clear, with an empty string) the user's thread goal. Persisted as
+  // Tide metadata and pushed to the provider's native goal mechanism where one
+  // exists. Answered by a thread.goalSet event. See
+  // docs_v2/specs/thread-goal-and-checklist-panel.md.
+  "thread.setGoal": { threadId: ThreadId; goal: string };
   // Update an active Thread's Launch Options (model/permission/reasoning). The
   // backend persists the merged options and applies them to the live Agent
   // Runtime (protocol-native update, or a deferred restart at the next turn).

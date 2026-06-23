@@ -202,6 +202,12 @@ function groupSessionItems(blocks: AgentChatBlockView[]): SessionRenderItem[] {
   const items: SessionRenderItem[] = [];
   let group: { kind: "toolGroup"; key: string; blocks: AgentChatBlockView[] } | null = null;
   for (const block of blocks) {
+    // The "plan" block is the agent's live checklist; it is rendered by the pinned
+    // Goal & Checklist panel, never as a transcript turn. See
+    // docs_v2/specs/thread-goal-and-checklist-panel.md.
+    if (block.kind === "plan") {
+      continue;
+    }
     if (block.role === "tool") {
       if (group === null) {
         group = { kind: "toolGroup", key: `tools-${block.blockId}`, blocks: [block] };
