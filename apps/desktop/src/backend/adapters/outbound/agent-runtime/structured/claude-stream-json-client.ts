@@ -25,7 +25,7 @@ import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import type { ComposerAttachmentRef, PromptChoice, PromptDetail, PromptState } from "../../../../application/domains/thread/thread.ts";
+import type { ComposerAttachmentRef } from "../../../../application/domains/thread/thread.ts";
 import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   StructuredClientCallbacks,
@@ -33,7 +33,16 @@ import type {
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
-import { STRUCTURED_ALLOW_TOKEN, STRUCTURED_DENY_TOKEN, isRecord, stringField } from "./claude-stream-json-shared.ts";
+import {
+  STRUCTURED_ALLOW_ALWAYS_TOKEN,
+  STRUCTURED_ALLOW_TOKEN,
+  STRUCTURED_DENY_TOKEN,
+  addRulesOnlySuggestions,
+  bounded,
+  isRecord,
+  stringField,
+} from "./claude-stream-json-shared.ts";
+import { buildPermissionPrompt } from "./claude-permission-prompt.ts";
 import type { AskUserQuestionContext, PendingPermission } from "./claude-ask-user-question.ts";
 import { answerAskUserQuestion, surfaceAskUserQuestion, surfaceAskUserQuestionWizard } from "./claude-ask-user-question.ts";
 
@@ -220,6 +229,26 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     // claude-ask-user-question module.
     if (pending.askUserQuestion !== undefined) {
       answerAskUserQuestion(this.askUserQuestionContext(), pending, input);
+      return;
+    }
+    // "Allow always": allow this call AND echo the CLI's own addRules suggestions back as
+    // updatedPermissions so the CLI persists the rule (its settings store) and stops asking the
+    // same thing. See docs_v2/specs/claude-permission-allow-always.md.
+    if (input.value === STRUCTURED_ALLOW_ALWAYS_TOKEN) {
+      this.writeLine({
+        type: "control_response",
+        response: {
+          subtype: "success",
+          request_id: pending.requestId,
+          response: {
+            behavior: "allow",
+            updatedInput: pending.toolInput,
+            ...(pending.permissionRuleUpdates !== undefined
+              ? { updatedPermissions: pending.permissionRuleUpdates }
+              : {}),
+          },
+        },
+      });
       return;
     }
     // Allow ONLY on the explicit allow token. Anything else — the Skip button (value ""),
@@ -681,70 +710,29 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       }
     }
 
-    this.pendingPermissions.set(promptId, { requestId, toolInput });
+    // The CLI ships a "don't ask again" rule with each request (permission_suggestions). Surface
+    // it as an Allow-always choice ONLY for the pure-addRules case (persistent allow-rule); echo
+    // it back as updatedPermissions on allow so the CLI persists it. See
+    // docs_v2/specs/claude-permission-allow-always.md.
+    const ruleUpdates = addRulesOnlySuggestions(request.permission_suggestions);
+    this.pendingPermissions.set(promptId, {
+      requestId,
+      toolInput,
+      ...(ruleUpdates !== undefined ? { permissionRuleUpdates: ruleUpdates } : {}),
+    });
 
-    const target =
-      stringField(toolInput, "command") ??
-      stringField(toolInput, "url") ??
-      stringField(toolInput, "query") ??
-      stringField(toolInput, "path") ??
-      stringField(toolInput, "file_path") ??
-      stringField(toolInput, "pattern");
-    const message_ =
-      stringField(toolInput, "description") ??
-      (target !== undefined ? `${toolName}: ${target}` : `Claude Code permission required for ${toolName}.`);
-    // The structured input behind the headline: the Bash command, an Edit's before/after
-    // diff, or a Write's content — shown as the approval card's detail.
-    const detail = buildPermissionDetail(toolInput);
-
-    const choices: PromptChoice[] = [
-      { choiceId: "allow", label: "Allow", providerValue: STRUCTURED_ALLOW_TOKEN },
-      { choiceId: "deny", label: "Deny", providerValue: STRUCTURED_DENY_TOKEN },
-    ];
-    const promptState: PromptState = {
-      promptId,
-      threadId: this.threadId,
-      agentId: this.agentId,
-      kind: "approval",
-      message: message_,
-      ...(detail !== undefined ? { detail } : {}),
-      choices,
-      defaultChoiceId: "allow",
-      source: "provider_hook",
-    };
-    this.onEvent({ kind: "prompt", promptState });
+    this.onEvent({
+      kind: "prompt",
+      promptState: buildPermissionPrompt({
+        promptId,
+        threadId: this.threadId,
+        agentId: this.agentId,
+        toolName,
+        toolInput,
+        ruleUpdates,
+      }),
+    });
   }
-}
-
-// Build an approval-card detail from a claude permission request's tool input: the Bash
-// `command` (text), an Edit's `old_string`/`new_string` (a simple +/- diff), or a Write's
-// `content` (text). Returns undefined when there is nothing worth previewing beyond the
-// headline message.
-export function buildPermissionDetail(toolInput: Record<string, unknown>): PromptDetail | undefined {
-  const command = stringField(toolInput, "command");
-  if (command !== undefined) {
-    return { format: "text", body: bounded(command) };
-  }
-  const filePath = stringField(toolInput, "file_path") ?? stringField(toolInput, "path");
-  const locations = filePath !== undefined ? { locations: [filePath] } : {};
-  const oldString = stringField(toolInput, "old_string");
-  const newString = stringField(toolInput, "new_string");
-  if (oldString !== undefined && newString !== undefined) {
-    const body = [
-      ...oldString.split("\n").map((line) => `- ${line}`),
-      ...newString.split("\n").map((line) => `+ ${line}`),
-    ].join("\n");
-    return { format: "diff", body: bounded(body), ...locations };
-  }
-  const content = stringField(toolInput, "content");
-  if (content !== undefined) {
-    return { format: "text", body: bounded(content), ...locations };
-  }
-  return undefined;
-}
-
-function bounded(text: string): string {
-  return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
 }
 
 function toolResultText(content: unknown): string {

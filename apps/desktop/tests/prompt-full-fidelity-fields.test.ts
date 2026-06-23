@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildPermissionDetail } from "../src/backend/adapters/outbound/agent-runtime/structured/claude-stream-json-client.ts";
+import { buildPermissionDetail } from "../src/backend/adapters/outbound/agent-runtime/structured/claude-permission-prompt.ts";
 import { acpOptionKind, buildAcpPermissionDetail } from "../src/backend/adapters/outbound/agent-runtime/structured/acp-permission.ts";
 
 // Spec: docs_v2/specs/prompt-full-fidelity-fields.md — every provider's prompt now carries
@@ -23,6 +23,26 @@ test("claude buildPermissionDetail: an Edit's old/new strings become a +/- diff 
     format: "diff",
     body: "- x\n+ y",
     locations: ["a.ts"],
+  });
+});
+
+test("claude buildPermissionDetail: a pure addition/deletion (one side) still previews; CRLF is normalized", () => {
+  // pure deletion — only old_string
+  assert.deepEqual(buildPermissionDetail({ file_path: "a.ts", old_string: "gone" }), {
+    format: "diff",
+    body: "- gone",
+    locations: ["a.ts"],
+  });
+  // pure addition — only new_string
+  assert.deepEqual(buildPermissionDetail({ file_path: "a.ts", new_string: "added" }), {
+    format: "diff",
+    body: "+ added",
+    locations: ["a.ts"],
+  });
+  // CRLF content does not leave a stray \r on each line
+  assert.deepEqual(buildPermissionDetail({ old_string: "a\r\nb", new_string: "c\r\nd" }), {
+    format: "diff",
+    body: "- a\n- b\n+ c\n+ d",
   });
 });
 

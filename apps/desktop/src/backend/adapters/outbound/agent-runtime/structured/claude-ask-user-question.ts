@@ -19,6 +19,11 @@ export type AskUserQuestionAnnotations = Record<string, { notes?: string; previe
 export interface PendingPermission {
   requestId: string;
   toolInput: unknown;
+  // The CLI's addRules permission_suggestions for this request, kept verbatim to echo as
+  // `updatedPermissions` when the user picks Allow always. Set only when the suggestion set is
+  // purely addRules; undefined otherwise ⇒ no Allow-always choice was offered.
+  // See docs_v2/specs/claude-permission-allow-always.md.
+  permissionRuleUpdates?: unknown[];
   askUserQuestion?: {
     questions: unknown[];
     answers: Record<string, string>;
