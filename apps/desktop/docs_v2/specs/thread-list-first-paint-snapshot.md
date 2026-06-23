@@ -56,8 +56,11 @@ concurrently" bound — that scan is now only the legacy/corrupt fallback.
 ### D2. Main reads an index-only snapshot synchronously
 
 `readInitialThreadListSnapshot()` (`thread-list-snapshot.ts`) `readFileSync`s
-`threads/index.json`, validates each embedded `record`, sorts by `updatedAt` desc, and maps
-to `ThreadSummaryDto[]`. It NEVER scans `thread.json`. If the index is absent, legacy
+`threads/index.json` and delegates to a pure, electron-free
+`snapshotFromIndexJson` (`thread-list-snapshot-parse.ts`, unit-tested) that validates each
+embedded `record`, sorts by `updatedAt` desc, and maps to `ThreadSummaryDto[]`. It NEVER
+scans `thread.json`. A present-but-malformed `providerSessionRef` (including `null`) fails
+validation, so the record is dropped to the skeleton rather than crashing the mapper. If the index is absent, legacy
 (no `record`), or fails validation, it returns `null` and the renderer keeps the skeleton
 until the authoritative list arrives. The mapping is a faithful subset of the backend's
 `toThreadSummaryDto`: `live`/`queuedInputs`/`runtimeStartedAt` are omitted (correctly

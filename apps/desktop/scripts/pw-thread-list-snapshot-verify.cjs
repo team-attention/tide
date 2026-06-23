@@ -61,7 +61,7 @@ function check(label, cond) {
   const skeleton = await a.page.locator(".rail-skeleton").count();
   check("rail shows real thread rows", railRows > 0);
   check("rail has no skeleton", skeleton === 0);
-  await a.page.screenshot({ path: "/tmp/pw-snap-A-seeded.png" });
+  await a.page.screenshot({ path: path.join(os.tmpdir(), "pw-snap-A-seeded.png") });
   await a.app.close();
 
   // ---- (B) empty dataRoot → null snapshot / skeleton fallback ----
@@ -75,7 +75,7 @@ function check(label, cond) {
   await b.page.waitForTimeout(1500);
   const emptyRows = await b.page.locator(".thread-row__main").count();
   check("empty dataRoot settles with zero rows (no crash)", emptyRows === 0);
-  await b.page.screenshot({ path: "/tmp/pw-snap-B-empty.png" });
+  await b.page.screenshot({ path: path.join(os.tmpdir(), "pw-snap-B-empty.png") });
   await b.app.close();
 
   console.log(`\n${failures === 0 ? "ALL PASS" : `${failures} FAIL`} — seededRoot=${seededRoot}`);
