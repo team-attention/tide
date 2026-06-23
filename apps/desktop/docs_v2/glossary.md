@@ -23,11 +23,11 @@ Use implementation terms only when describing the current code boundary that bac
 | **Composer Options** | The searchable options menu opened from the Composer. Before a Thread starts, it contains Launch Options. After an Agent Runtime starts, it can also expose In-Session Commands and attach/context controls without making every option a permanent chip. |
 | **Composer Attachment** | An image the user attaches to the next Composer message via paste, shown as a preview chip. On send, Tide materializes it to a file in the Thread workspace and references its absolute path in the message text so the Agent can read it. |
 | **Workspace Trust** | The provider-owned record that an Execution Context cwd is trusted to run the Agent (claude `hasTrustDialogAccepted`, codex `trust_level`, provider-specific equivalents). Tide can grant it on the user's behalf from the directory-trust readiness blocker. |
-| **Agent** | The coding worker selected for a Thread. Current visible choices are Codex CLI, Claude Code, Gemini CLI, and opencode. |
+| **Agent** | The coding worker selected for a Thread. Current visible choices are Codex CLI, Claude Code, and opencode. |
 | **Agent Icon** | A compact visual identity shown in a Thread row to indicate which Agent owns or last ran that Thread. |
 | **Agent Binding** | The selected provider CLI Agent identity attached to a Thread. It controls default launch behavior, model source, readiness path, and sidebar identity. |
 | **Agent Runtime Source** | The source that powers a selected Agent. Current v2 supports Provider CLI source only. |
-| **Provider CLI Agent** | An Agent backed by a provider-native CLI, such as Codex CLI, Claude Code, Gemini CLI, or opencode. It uses an Agent Integration, structured provider runtime, Provider Signals, and provider-owned Raw Agent Session history. |
+| **Provider CLI Agent** | An Agent backed by a provider-native CLI, such as Codex CLI, Claude Code, or opencode. It uses an Agent Integration, structured provider runtime, Provider Signals, and provider-owned Raw Agent Session history. |
 | **Agent Integration** | The Tide connection layer for one Agent. It launches and resumes the provider CLI through its structured provider transport, sends user input, reads runtime output and provider signals, exposes confirmed supported features, and preserves the Raw Agent Session reference. |
 | **Agent Runtime** | The Backend-owned structured provider runtime that powers a Thread. It is not shown as a Terminal Pane and is not scraped from a hidden visible terminal. |
 | **Agent Runtime State** | Backend-owned operational state for a Thread's Agent Runtime, such as not started, starting, running, waiting for input, waiting for approval, idle, stopping, stopped, or failed. |

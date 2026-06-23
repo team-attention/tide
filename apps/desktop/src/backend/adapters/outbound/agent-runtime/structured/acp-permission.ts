@@ -53,7 +53,7 @@ export function buildAcpPermissionDetail(toolCall: Record<string, unknown>): Pro
       }
       // Only emit lines for a side that is actually present — a pure addition/deletion has
       // the other side undefined, and `"".split("\n")` would otherwise inject a spurious
-      // empty "- "/"+ " line (Gemini review). stringField already maps "" → undefined.
+      // empty "- "/"+ " line. stringField already maps "" → undefined.
       const body = [
         ...(oldText !== undefined ? oldText.split("\n").map((line) => `- ${line}`) : []),
         ...(newText !== undefined ? newText.split("\n").map((line) => `+ ${line}`) : []),

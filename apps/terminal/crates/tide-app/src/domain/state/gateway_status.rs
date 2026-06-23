@@ -44,7 +44,6 @@ pub(crate) struct AgentInfo {
 const KNOWN_AGENTS: &[(&str, &str, &str)] = &[
     ("claude", "claude", "Claude Code"), // path: .../claude/... or proc_name: claude
     ("codex", "codex", "Codex"),
-    ("gemini", "gemini", "Gemini"),
     ("aider", "aider", "Aider"),
     ("cursor-agent", "cursor-agent", "Cursor"),
     ("copilot", "copilot", "Copilot"),
@@ -56,7 +55,6 @@ pub(crate) fn agent_tool_name(agent_name: &str) -> Option<&'static str> {
         "Claude Code" => Some("claude-code"),
         "Cursor" => Some("cursor"),
         "Codex" => Some("codex"),
-        "Gemini" => Some("gemini"),
         "Aider" => Some("aider"),
         "Copilot" => Some("copilot"),
         _ => None,
@@ -67,7 +65,6 @@ pub(crate) fn wrapped_agent_display_name(agent_name: &str) -> Option<&'static st
     match agent_name {
         "claude" | "Claude Code" => Some("Claude Code"),
         "codex" | "Codex" => Some("Codex"),
-        "gemini" | "Gemini" => Some("Gemini"),
         "antigravity" | "Antigravity" => Some("Antigravity"),
         "opencode" => Some("opencode"),
         "aider" | "Aider" => Some("Aider"),

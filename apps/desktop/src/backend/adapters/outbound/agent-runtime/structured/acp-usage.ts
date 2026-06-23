@@ -2,7 +2,7 @@ import { rateLimitsFromProviderRecord } from "../../../../application/domains/ag
 import { isRecord } from "./claude-stream-json-shared.ts";
 import type { StructuredUsagePayload } from "./structured-usage.ts";
 
-// ACP turn/usage records (gemini/opencode) carry token + quota data either at the top
+// ACP turn/usage records carry token + quota data either at the top
 // level or nested under `_meta.quota`. We resolve the quota container, read token counts
 // from its `token_count`, and pull the 5h + weekly rate-limit windows from the whole
 // record — rateLimitsFromProviderRecord descends `_meta`/quota for the nested limits.

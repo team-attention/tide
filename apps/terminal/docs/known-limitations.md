@@ -132,7 +132,7 @@ Current limitations:
 - Live child processes are not checkpointed.
 - Scrollback restore is not a current claim.
 - Agent process resume is explicit relaunch only for `claude`, `codex`,
-  `gemini`, `agy`, and `opencode`; Tide does not invoke provider-native resume
+  `agy`, and `opencode`; Tide does not invoke provider-native resume
   automatically.
 - Context Artifacts are live Workspace state and are not persisted into restart
   session files in V1.

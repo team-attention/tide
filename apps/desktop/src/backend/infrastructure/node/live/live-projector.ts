@@ -201,8 +201,8 @@ export function createLiveAgentSessionEventProjector(input: {
       schedulePersist(args.threadId);
     };
 
-    // finalMessage is content ONLY for one-shot agents (gemini), whose single session
-    // read has no competing streaming reader. claude/codex return no finalMessage from
+    // finalMessage is content ONLY for one-shot agents whose single session read has
+    // no competing streaming reader. claude/codex return no finalMessage from
     // turn-end (their readers own the answer), so nothing is double-produced. The
     // body-hashed blockId makes repeated polls idempotent.
     if (args.outcome.finalMessage !== undefined) {
@@ -488,7 +488,7 @@ export function createLiveAgentSessionEventProjector(input: {
 }
 
 // Token usage reported natively by a structured protocol turn (claude result
-// modelUsage; codex thread/tokenUsage/updated; gemini _meta.quota).
+// modelUsage; codex thread/tokenUsage/updated; ACP _meta.quota).
 function emitStructuredUsage(input: {
   threadId: string;
   usage: StructuredRuntimeUsageInput;

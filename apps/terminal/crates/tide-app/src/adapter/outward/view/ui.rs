@@ -173,7 +173,7 @@ pub(crate) fn file_icon_kind(name: &str, is_dir: bool, expanded: bool) -> FileIc
 
     let lower = name.to_ascii_lowercase();
     match lower.as_str() {
-        "agents.md" | "claude.md" | "gemini.md" => FileIconKind::AgentInstruction,
+        "agents.md" | "claude.md" => FileIconKind::AgentInstruction,
         "readme.md" | "readme" => FileIconKind::Readme,
         "license" | "license.md" => FileIconKind::License,
         "cargo.toml" => FileIconKind::RustConfig,

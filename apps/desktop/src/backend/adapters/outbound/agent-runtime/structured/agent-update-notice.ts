@@ -1,4 +1,4 @@
-// Provider CLIs (claude / codex / gemini / opencode and their npm/brew wrappers)
+// Provider CLIs (claude / codex / opencode and their npm/brew wrappers)
 // print "a newer version is available" banners to STDERR — not into their machine
 // protocol. Tide runs them in structured mode, so those banners would otherwise
 // be swallowed. This is the ONE shared, conservative detector every structured

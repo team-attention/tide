@@ -147,7 +147,7 @@ export interface TrustWorkspaceResult {
 export interface CheckReadinessInput {
   threadId: ThreadId;
   // Provider-CLI only — the install/sign-in handoff is for the CLI agents
-  // (codex/claude/gemini/opencode). Narrowing here lets checkReadiness rebuild
+  // (codex/claude/opencode). Narrowing here lets checkReadiness rebuild
   // the full provider_cli runtimeSource without a cast.
   agentId: ProviderCliAgentId;
 }

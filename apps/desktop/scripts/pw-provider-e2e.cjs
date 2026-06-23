@@ -8,8 +8,8 @@
 // process, the real renderer, the real prompt-card component, real clicks.
 // Screenshots land in /tmp/pw-e2e-<agent>-*.png for eyeballing.
 //
-// Usage: node scripts/pw-provider-e2e.cjs <claude|gemini|codex>
-//   (claude/gemini by default in docs; codex also works but spends codex credits)
+// Usage: node scripts/pw-provider-e2e.cjs <claude|opencode|codex>
+//   (claude/opencode by default in docs; codex also works but spends codex credits)
 const { _electron } = require("playwright");
 const path = require("node:path");
 const os = require("node:os");
@@ -17,11 +17,11 @@ const fs = require("node:fs");
 
 const repo = path.resolve(__dirname, "..");
 const AGENT = process.argv[2] ?? "claude";
-const AGENT_LABELS = { claude: "Claude Code", codex: "Codex CLI", gemini: "Gemini CLI" };
+const AGENT_LABELS = { claude: "Claude Code", codex: "Codex CLI", opencode: "opencode" };
 const PROMPT_MODE_ROW = {
   claude: "Ask permissions",
   codex: "Ask for approval",
-  gemini: "Ask permissions",
+  opencode: "Build",
 };
 const stamp = Date.now();
 const TOKEN1 = `E2E_FIRST_${stamp}`;
@@ -31,7 +31,7 @@ const PROMPT2 = `Without using any tools, reply exactly ${TOKEN2}`;
 
 const agentLabel = AGENT_LABELS[AGENT];
 if (!agentLabel) {
-  console.error("Usage: node scripts/pw-provider-e2e.cjs <claude|gemini|codex>");
+  console.error("Usage: node scripts/pw-provider-e2e.cjs <claude|opencode|codex>");
   process.exit(2);
 }
 

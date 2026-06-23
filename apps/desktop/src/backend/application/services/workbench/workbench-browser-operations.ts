@@ -137,7 +137,7 @@ export async function observeBrowserOutput(
       }
     } catch {
       // An unexpected puller failure (IPC / coordinator) degrades to the cached screenshot or
-      // DOM text below — never fail the whole observe tool call (Gemini review).
+      // DOM text below — never fail the whole observe tool call.
     }
   }
   // Attach the screenshot only for mode=screenshot|both (default text → no image, back-compat +

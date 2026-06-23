@@ -282,7 +282,6 @@ export function createActiveComposerSurface(
         rows: [
           agentMenuRow("codex", "Codex CLI", binding.agentId),
           agentMenuRow("claude", "Claude Code", binding.agentId),
-          agentMenuRow("gemini", "Gemini CLI", binding.agentId),
           agentMenuRow("opencode", "opencode", binding.agentId),
         ],
       };
@@ -378,8 +377,8 @@ export function createActiveComposerSurface(
       }
       // The menu mirrors the agent's FULL real command set (the same list the
       // provider CLI itself exposes), on the Start Composer and in a thread alike —
-      // no Tide-curated subset. Dedupe by name (some agents, e.g. gemini, report a
-      // command once per subcommand). See live-provider-command-mirroring.md.
+      // no Tide-curated subset. Dedupe by name in case a provider reports a command
+      // once per subcommand. See live-provider-command-mirroring.md.
       const seenCommandNames = new Set<string>();
       const commands = (state.availableCommands ?? []).filter((command) => {
         if (command.trigger !== trigger) {
@@ -515,8 +514,6 @@ function composerAgentIdForRow(
       return "codex";
     case "claude":
       return "claude";
-    case "gemini":
-      return "gemini";
     case "opencode":
       return "opencode";
     default:

@@ -31,7 +31,7 @@ export interface AgentDescriptor {
   displayName: string;
   // Two-letter badge (Codex/Claude both start with C, so each gets a distinct code).
   monogram: string;
-  // True for provider-CLI agents (codex/claude/gemini/opencode).
+  // True for provider-CLI agents (codex/claude/opencode).
   isProviderCli: boolean;
   // The provider session reference kind, for provider-CLI agents only.
   sessionRefKind?: ProviderSessionRefDto["kind"];
@@ -82,22 +82,6 @@ export const AGENT_DESCRIPTORS: Record<AgentId, AgentDescriptor> = {
         { id: "claude-bypass", value: "bypassPermissions", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
       ],
       legacyValueMap: { dontAsk: "acceptEdits" },
-    },
-  },
-  gemini: {
-    id: "gemini",
-    displayName: "Gemini CLI",
-    monogram: "Ge",
-    isProviderCli: true,
-    sessionRefKind: "gemini_session",
-    permission: {
-      default: "default",
-      options: [
-        { id: "gemini-ask", value: "default", label: "Ask permissions", detail: "Approve tools manually" },
-        { id: "gemini-edit", value: "auto_edit", label: "Auto edits", detail: "Auto-approve edits only" },
-        { id: "gemini-plan", value: "plan", label: "Plan mode", detail: "Read-only planning" },
-        { id: "gemini-yolo", value: "yolo", label: "Bypass permissions", detail: "Skip all approvals", danger: true },
-      ],
     },
   },
   opencode: {

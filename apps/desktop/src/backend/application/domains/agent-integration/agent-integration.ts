@@ -18,7 +18,7 @@ export interface AgentIntegrationCapabilities {
   // The provider protocol can inject new user input INTO an already-running turn
   // (mid-turn steer), instead of forcing the input to wait for the turn to end.
   // Evidence-based: ONLY codex declares this — its app-server exposes turn/steer
-  // {threadId, input, expectedTurnId}. claude/gemini/opencode have no mid-turn
+  // {threadId, input, expectedTurnId}. claude/opencode have no mid-turn
   // injection primitive, so their follow-up input queues until the turn settles.
   supportsTurnSteer: boolean;
 }
@@ -33,10 +33,10 @@ export interface ProviderLaunchPlan {
   // use the PTY port's own launch plan instead of this agent-runtime contract.
   transport: "claude_stream_json" | "codex_app_server" | "acp";
   // Structured-transport session parameters that ride the protocol instead of
-  // argv (codex thread/start approvalPolicy/sandbox/model; gemini session/new).
+  // argv (codex thread/start approvalPolicy/sandbox/model; ACP session/new).
   protocolParams?: Record<string, unknown>;
   // The provider session this launch will run as, when the adapter can assign or
-  // derive it at plan time (claude/gemini mint a session id and pass it via
+  // derive it at plan time (claude mints a session id and passes it via
   // `--session-id`). Recorded as the thread's binding before the first history
   // poll, so binding is deterministic — never discovered by file recency.
   providerSessionRef?: DiscoveredProviderSessionRef;
@@ -86,7 +86,7 @@ export interface ProviderHistoryReadInput {
 // branching. See docs_v2/specs/provider-history-connector.md.
 export interface ProviderHistoryConnector {
   // Locate the on-disk session file for a launch-assigned ref that does not know
-  // its path yet (gemini's timestamped filename). Deterministic — resolves by the
+  // its path yet (timestamped filenames). Deterministic — resolves by the
   // assigned session id, never by recency. undefined until the file exists.
   resolveSessionRef?(
     assignedSessionRef: DiscoveredProviderSessionRef,
@@ -177,7 +177,7 @@ export interface AgentTurnNotice {
 
 // The normalized outcome of a finished turn, produced uniformly by every Agent
 // Integration from its own signals (claude/codex hook payload, codex rollout,
-// gemini session). The shared runtime applies it identically: ingest
+// provider session). The shared runtime applies it identically: ingest
 // `finalMessage` as the agent answer (deduped by content) and/or `notice` as an
 // error block, then settle the turn.
 export interface AgentTurnOutcome {

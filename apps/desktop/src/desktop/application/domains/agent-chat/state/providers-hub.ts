@@ -9,7 +9,7 @@ import { getOpencodeEnvironment, getOpencodeVendors } from "./opencode-onramp.ts
 
 // The data layer for the Settings "Providers & Models" hub: one row per provider-CLI
 // agent with its install status, model catalog (the same catalog the composer menu
-// renders — dynamic for opencode/gemini, curated for claude/codex), permission modes,
+// renders — dynamic for opencode, curated for claude/codex), permission modes,
 // and Tide-resolved default model. Pure + view-only so it is fully unit-testable; the
 // Settings section renders it. See cross-provider-model-catalog-and-hub.md (P4).
 
@@ -39,7 +39,7 @@ export interface ProvidersHubAgentView {
   version?: string;
 }
 
-const HUB_AGENTS = ["claude", "codex", "gemini", "opencode"] as const;
+const HUB_AGENTS = ["claude", "codex", "opencode"] as const;
 
 export function buildProvidersHubViewModel(): ProvidersHubAgentView[] {
   return HUB_AGENTS.map((agentId) => {

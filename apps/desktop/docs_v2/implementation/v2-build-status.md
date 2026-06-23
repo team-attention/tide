@@ -9,7 +9,7 @@ Current architecture:
 
 - Desktop app: Electron + React Product Shell.
 - Product flow: Thread rail -> Thread detail Agent Chat -> Thread-owned Workbench.
-- Agents: Codex, Claude, Gemini, and opencode provider CLI integrations.
+- Agents: Codex, Claude, and opencode provider CLI integrations.
 - Runtime: hidden provider runtime for Agent work; visible Workbench Terminal is an optional
   Thread-owned pane, not the default product surface.
 - MCP: provider CLI Agents operate their own Thread Workbench through Tide MCP.

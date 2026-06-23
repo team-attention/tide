@@ -360,7 +360,7 @@ export function WorkbenchBrowserPane(props: {
   // PNG-encodes on the recurring page-load storm. Spec:
   // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
   // Only the CURRENT pendingCapture needs de-duping (captureIds are unique + monotonic), so one
-  // last-id string is O(1) vs. a Set that would grow over the pane's lifetime (Gemini review).
+  // last-id string is O(1) vs. a Set that would grow over the pane's lifetime.
   const lastCapturedIdRef = useRef<string | null>(null);
   useEffect(() => {
     const webview = webviewElement;
@@ -710,7 +710,7 @@ function BackgroundBrowserWebView(props: {
   // while you watch another thread still gets FRESH pixels on tide_observe_browser. capturePage
   // only when the backend asks (pendingCapture) — never on the page-load storm. Spec:
   // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
-  // One last-id string (not a growing Set) — same O(1) de-dup as the active pane (Gemini review).
+  // One last-id string (not a growing Set) — same O(1) de-dup as the active pane.
   const lastCapturedIdRef = useRef<string | null>(null);
   useEffect(() => {
     const webview = webviewElement;

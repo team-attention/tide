@@ -1968,7 +1968,6 @@ fn workspace_agent_resume_policy_json() -> Value {
         "providers": [
             workspace_agent_resume_provider_policy_json("claude", "Claude Code", "claude"),
             workspace_agent_resume_provider_policy_json("codex", "Codex", "codex"),
-            workspace_agent_resume_provider_policy_json("gemini", "Gemini", "gemini"),
             workspace_agent_resume_provider_policy_json("agy", "Antigravity", "agy"),
             workspace_agent_resume_provider_policy_json("opencode", "opencode", "opencode"),
         ],
@@ -5083,12 +5082,6 @@ const INTEGRATION_TOOLS: &[IntegrationTool] = &[
         detection: IntegrationDetection::DirExists("~/.codex"),
         config_path: "~/.codex/config.toml",
         enable_method: EnableMethod::CliCommand("codex"),
-    },
-    IntegrationTool {
-        name: "gemini",
-        detection: IntegrationDetection::DirExists("~/.gemini"),
-        config_path: "~/.gemini/settings.json",
-        enable_method: EnableMethod::JsonMcpServers,
     },
     IntegrationTool {
         name: "cursor",

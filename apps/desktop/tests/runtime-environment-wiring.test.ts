@@ -28,7 +28,6 @@ import type { ProviderCliAgentId } from "../src/backend/application/domains/thre
 test("agent_runtime_port_applies_cwd_runtime_environment_to_all_structured_spawns", async () => {
   await assertRuntimeEnvironmentApplied("codex", "codex_app_server");
   await assertRuntimeEnvironmentApplied("claude", "claude_stream_json");
-  await assertRuntimeEnvironmentApplied("gemini", "acp");
   await assertRuntimeEnvironmentApplied("opencode", "acp");
 });
 
@@ -146,7 +145,6 @@ function integrationRegistry(plan: ProviderLaunchPlan): AgentIntegrationRegistry
   return {
     codex: fakeIntegration("codex", plan),
     claude: fakeIntegration("claude", plan),
-    gemini: fakeIntegration("gemini", plan),
     opencode: fakeIntegration("opencode", plan),
   };
 }

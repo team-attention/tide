@@ -5,27 +5,27 @@
 ### As-Is
 
 - `TideSettings.auto_integration` is persisted in `crates/tide-app/src/domain/state/settings.rs` and defaults to `true`.
-- `discover_agent_resources()` in `crates/tide-app/src/domain/terminal/mod.rs` discovers bundled resources for the fixed Wrapped Agent set: `claude`, `codex`, `gemini`, `agy` (Antigravity — see [docs/specs/antigravity-wrapped-agent.md](antigravity-wrapped-agent.md)), and `opencode` (see [docs/specs/opencode-wrapped-agent.md](opencode-wrapped-agent.md)).
+- `discover_agent_resources()` in `crates/tide-app/src/domain/terminal/mod.rs` discovers bundled resources for the fixed Wrapped Agent set: `claude`, `codex`, `agy` (Antigravity — see [docs/specs/antigravity-wrapped-agent.md](antigravity-wrapped-agent.md)), and `opencode` (see [docs/specs/opencode-wrapped-agent.md](opencode-wrapped-agent.md)).
 - Every new `Terminal` exports `TIDE_TERMINAL_SOCKET`, `TIDE_TERMINAL_PANE`, `TIDE_TERMINAL_WORKSPACE`, and `TIDE_TERMINAL_BIN`. When auto-integration is enabled, the PTY environment also injects `__TIDE_TERMINAL_WRAPPER_DIR` and `TIDE_TERMINAL_SHELL_INTEGRATION_DIR`. zsh additionally receives the `ZDOTDIR` path so Tide's shell integration can place bundled wrappers ahead of the real commands automatically. bash and fish use documented opt-in snippets from the same shell-integration directory.
-- The checked-in Claude and Gemini wrappers currently map their documented hook names into `tide notify` lifecycle events, but they do not yet forward the hook `stdin` JSON that already contains response text for `Notification` and `AfterAgent`.
+- The checked-in Claude, Antigravity, and opencode wrappers map provider-native hooks/plugins into `tide notify` lifecycle events.
 - The checked-in Codex wrapper still uses the official `UserPromptSubmit` hook, but its completed-turn path has to move off top-level `notify` and onto the documented `Stop` hook plus `transcript_path` so Tide can wait for main-thread completion.
 - The checked-in Codex-specific spec already requires a documented `UserPromptSubmit` hook so each new Codex turn can return the source `Pane` to `Running`, while wrapper launch only marks `Wrapped Agent Presence`.
 - The checked-in Codex wrapper must stay aligned with documented direct CLI hooks only; experimental remote launch paths are not part of the supported Wrapped Agent contract.
 
 ### To-Be
 
-- Keep auto-integration zero-config for the fixed Wrapped Agent set: `claude`, `codex`, `gemini`, `agy` (Antigravity), and `opencode`.
+- Keep auto-integration zero-config for the fixed Wrapped Agent set: `claude`, `codex`, `agy` (Antigravity), and `opencode`.
 - Keep the Codex wrapper aligned with the documented `UserPromptSubmit` and `Stop` hooks instead of treating Codex completion as an early top-level `notify`.
 - Let wrapper launch mark `Wrapped Agent Presence` without forcing `Running`, so Tide chrome can distinguish connected-idle from an active turn.
 - Preserve wrapper-managed connected-idle presence across Gateway PID refreshes and shell-idle-driven re-detection gaps when the wrapper has reported `agent-attached` but Tide has not rebound a concrete agent PID yet.
-- Forward documented hook `stdin` JSON from the checked-in Claude and Gemini wrappers so Tide can derive a `Notification Snippet` from official hook payload fields instead of guessing from shell output alone.
+- Forward documented hook `stdin` JSON where a checked-in wrapper has a provider hook payload so Tide can derive a `Notification Snippet` from official hook payload fields instead of guessing from shell output alone.
 - Continue to treat wrapper-managed lifecycle signals as the only source of Wrapped Agent attention.
 
 ### Approach
 
 1. Keep resource discovery and PTY environment injection as the only auto-integration boundary inside Tide.
 2. Treat `tide notify` as the primary wrapper signal path, with wrapped-agent OSC 9 fallback only where the checked-in wrapper actually implements it.
-3. Keep the supported Wrapped Agent list fixed to `claude`, `codex`, `gemini`, `agy` (Antigravity), and `opencode`.
+3. Keep the supported Wrapped Agent list fixed to `claude`, `codex`, `agy` (Antigravity), and `opencode`.
 4. Use the documented Codex `Stop` hook to forward turn-stop payload JSON into Tide's Codex-specific classifier, and use `transcript_path` to resolve the main-thread final assistant response.
 5. Let checked-in wrappers opt into `tide notify --payload-stdin` when their official hook docs guarantee JSON on `stdin`.
 6. Verify bundled wrapper contracts with behavior tests that read the checked-in wrapper resources instead of guessing external coding-agent configuration.
@@ -38,9 +38,10 @@ The wrapper scripts are the agent-specific translation layer. They own the hook,
 |-------|--------------------------|----------------------|---------------------------------------|
 | `claude` | launch-time `agent-attached`, `Notification` -> `agent-needs-input` with forwarded hook `stdin` JSON, `Stop` -> `agent-idle` with forwarded hook `stdin` JSON, `UserPromptSubmit` -> `agent-running`, `EXIT` -> `agent-detached`, plus OSC 9 fallback `tide:wrapped-agent:claude:<event>` | launch -> presence only, `Notification` -> `NeedsInput`, `Stop` -> `Idle`, `UserPromptSubmit` -> `Running`, `EXIT` -> clear presence | `crates/tide-app/resources/bin/claude`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs::run_notify`, `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs::cli_notify`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification`, `crates/tide-app/src/application/services/workspace_infra_service/mod.rs::refresh_workspace_agent_notification`, `crates/tide-app/src/application/services/workspace_service/mod.rs::activate_notification_target` |
 | `codex` | launch-time `agent-attached`, `PermissionRequest` -> `agent-needs-input` with forwarded hook `stdin` JSON, `UserPromptSubmit` -> `agent-running`, `Stop` -> `codex-stop` with forwarded hook stdin JSON including `transcript_path`, `EXIT` -> `agent-detached`, plus OSC 9 fallback `tide:wrapped-agent:codex:<event>` | launch -> presence only, `PermissionRequest` -> `NeedsInput`, `agent-running` -> `Running`, `Stop` payload -> `Idle`, `EXIT` -> clear presence | `crates/tide-app/resources/bin/codex`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs::run_notify`, `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs::cli_notify`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification` |
-| `gemini` | launch-time `agent-attached`, `BeforeAgent` -> `agent-running`, `AfterAgent` -> `agent-idle` with forwarded hook `stdin` JSON, `Notification` -> `agent-needs-input` with forwarded hook `stdin` JSON, `EXIT` -> `agent-detached`, plus OSC 9 fallback `tide:wrapped-agent:gemini:<event>` | launch -> presence only, `BeforeAgent` -> `Running`, `AfterAgent` -> `Idle`, `Notification` -> `NeedsInput`, `EXIT` -> clear presence | `crates/tide-app/resources/bin/gemini`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs::run_notify`, `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs::cli_notify`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification`, `crates/tide-app/src/application/services/workspace_infra_service/mod.rs::refresh_workspace_agent_notification`, `crates/tide-app/src/application/services/workspace_service/mod.rs::activate_notification_target` |
+| `agy` | launch-time `agent-attached`, Antigravity plugin hooks -> `agent-running` / `agent-idle` / `agent-needs-input`, `EXIT` -> `agent-detached`, plus OSC 9 fallback `tide:wrapped-agent:antigravity:<event>` | launch -> presence only, hook events -> `Running` / `Idle` / `NeedsInput`, `EXIT` -> clear presence | `crates/tide-app/resources/bin/agy`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs::run_notify`, `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs::cli_notify`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification` |
+| `opencode` | launch-time `agent-attached`, opencode plugin events -> `agent-running` / `agent-idle` / `agent-needs-input`, `EXIT` -> `agent-detached`, plus OSC 9 fallback `tide:wrapped-agent:opencode:<event>` | launch -> presence only, plugin events -> `Running` / `Idle` / `NeedsInput`, `EXIT` -> clear presence | `crates/tide-app/resources/bin/opencode`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs::run_notify`, `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs::cli_notify`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification` |
 
-The common routing rule is the same for all three agents: macOS notification routing consumes only the normalized `AgentStatus`, while chrome derives `AgentChromeState` from `AgentStatus` plus `Wrapped Agent Presence`.
+The common routing rule is the same for bundled wrappers: macOS notification routing consumes only the normalized `AgentStatus`, while chrome derives `AgentChromeState` from `AgentStatus` plus `Wrapped Agent Presence`.
 
 ## Bounded Contexts
 
@@ -48,7 +49,7 @@ The common routing rule is the same for all three agents: macOS notification rou
 |---------|------|
 | `terminal` | Discovers bundled wrapper resources and injects wrapper-related environment into each `Terminal` PTY |
 | `gateway` | Receives wrapper-managed lifecycle reports through `notify` and stores `AgentStatus` |
-| `wrapper` | Encodes the evidence-backed agent-specific launch contract for `claude`, `codex`, and `gemini` |
+| `wrapper` | Encodes the evidence-backed agent-specific launch contract for `claude`, `codex`, `agy`, and `opencode` |
 
 ## Use Cases
 
@@ -63,7 +64,7 @@ The common routing rule is the same for all three agents: macOS notification rou
   3. Tide caches those paths for later `Terminal` creation
 - **Postcondition**: Future `Terminal` spawns can opt into Tide-managed wrapper integration
 - **Business Rules**:
-  - BR-1: Auto-integration resource discovery is limited to the bundled `claude`, `codex`, and `gemini` wrapper set
+  - BR-1: Auto-integration resource discovery is limited to the bundled `claude`, `codex`, `agy`, and `opencode` wrapper set
   - BR-2: Missing resource directories leave wrapper injection disabled instead of guessing external locations
 
 ### UC-2: InjectWrapperEnvironment
@@ -123,7 +124,7 @@ The common routing rule is the same for all three agents: macOS notification rou
 ### UC-5: ForwardStructuredHookPayloads
 
 - **Actor**: Tide wrapper maintainer
-- **Trigger**: A checked-in Claude or Gemini wrapper hook needs Tide-visible response text
+- **Trigger**: A checked-in wrapper hook needs Tide-visible response text
 - **Precondition**: The official hook contract provides JSON on `stdin`
 - **Flow**:
   1. The wrapper calls `tide notify ... --payload-stdin`
@@ -132,12 +133,11 @@ The common routing rule is the same for all three agents: macOS notification rou
 - **Postcondition**: Tide can build a notification body from official wrapper payload fields without shell-side JSON parsing
 - **Business Rules**:
   - BR-13: Claude `Notification` and `Stop` hook commands forward their hook `stdin` JSON through `tide notify --payload-stdin`
-  - BR-14: Gemini `Notification` and `AfterAgent` hook commands forward their hook `stdin` JSON through `tide notify --payload-stdin`
   - BR-15: `tide notify --payload-stdin` must be additive to the existing explicit event and `PaneId` arguments
 
 ## Invariants
 
-1. Auto-integration stays limited to the bundled `claude`, `codex`, and `gemini` wrappers.
+1. Auto-integration stays limited to the bundled `claude`, `codex`, `agy`, and `opencode` wrappers.
 2. Tide does not guess coding-agent hook APIs or config keys beyond what the checked-in wrapper resources prove.
 3. PTY environment injection remains the only auto-integration path Tide owns directly.
 4. Wrapper payload forwarding uses only documented hook `stdin` JSON or checked-in official agent payloads.
@@ -160,7 +160,6 @@ The common routing rule is the same for all three agents: macOS notification rou
 | UC-2 | BR-16 | `spawn_config_injects_wrapper_and_zdotdir_when_auto_integration_on` |
 | UC-2 | BR-17 | `bundled_shell_integration_covers_zsh_bash_and_fish_wrapper_path_setup` |
 | UC-5 | BR-13 | `claude_wrapper_forwards_hook_stdin_payloads_for_notification_and_stop` |
-| UC-5 | BR-14 | `gemini_wrapper_forwards_hook_stdin_payloads_for_notification_and_after_agent` |
 
 ## Location
 

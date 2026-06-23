@@ -110,7 +110,6 @@ src/backend/
       agent-integrations/
         codex/
         claude/
-        gemini/
         opencode/
       pty/
       provider-history/
@@ -298,7 +297,7 @@ React Renderer
   -> backend/adapters/inbound/contract-message-adapter
   -> backend/application/services
   -> backend/application/ports/outbound/agent-integration-port
-  -> backend/adapters/outbound/agent-integrations/codex|claude|gemini|opencode
+  -> backend/adapters/outbound/agent-integrations/codex|claude|opencode
   -> hidden PTY provider CLI
 ```
 
@@ -386,7 +385,7 @@ Each Agent Integration must prove:
 
 ### Explanation
 
-Codex, Claude Code, Gemini, and opencode expose different CLIs/protocols, transcripts, and setup states. Tide should not invent one generic adapter contract and force providers into it before the provider facts are proven.
+Codex, Claude Code, and opencode expose different CLIs/protocols, transcripts, and setup states. Tide should not invent one generic adapter contract and force providers into it before the provider facts are proven.
 
 The stable product contract is:
 
@@ -536,7 +535,7 @@ Provider-owned state:
 
 ### Explanation
 
-The provider remains the source of truth for conversation history. Tide should not make a parallel conversation database that can diverge from Codex, Claude, Gemini, or opencode.
+The provider remains the source of truth for conversation history. Tide should not make a parallel conversation database that can diverge from Codex, Claude, or opencode.
 
 Tide needs enough metadata to open, sort, search, and resume Threads. It can also cache rendered Agent Session Blocks for fast open. That cache is derived state and can be rebuilt from provider-owned history when provider signals are available.
 

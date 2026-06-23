@@ -1,7 +1,6 @@
 import { join } from "node:path";
 
 import type { ClaudeProviderState } from "../../../adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
-import type { GeminiProviderState } from "../../../adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts";
 import type { CodexProviderState } from "../../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
 import {
   isClaudeBootstrapReady,
@@ -62,19 +61,6 @@ export function readOpencodeProviderStateFromHome(
   // authenticated == at least one credential present.
   const auth = readJsonFile(join(homeDir, ".local", "share", "opencode", "auth.json"));
   return { authenticated: auth !== undefined && Object.keys(auth).length > 0 };
-}
-
-export function readGeminiProviderStateFromHome(
-  homeDir: string,
-  _cwd: string,
-): GeminiProviderState {
-  // Gemini signs in via OAuth; the credential lives at ~/.gemini/oauth_creds.json
-  // (works when spawned).
-  const oauth = readJsonFile(join(homeDir, ".gemini", "oauth_creds.json"));
-  const accounts = readJsonFile(join(homeDir, ".gemini", "google_accounts.json"));
-  return {
-    authenticated: oauth !== undefined || accounts !== undefined,
-  };
 }
 
 function hasCodexAuth(value: Record<string, unknown> | undefined): boolean {

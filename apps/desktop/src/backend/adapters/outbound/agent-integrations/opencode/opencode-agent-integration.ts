@@ -12,8 +12,8 @@ import type {
 import type { ThreadScope } from "../../../../application/domains/thread/thread.ts";
 import { npmInstallReadinessTerminalAction } from "../shared/provider-cli-commands.ts";
 
-// opencode (sst) runs as an ACP agent over stdio (`opencode acp`) — the SAME
-// Agent Client Protocol gemini speaks, verified live: initialize →
+// opencode (sst) runs as an ACP agent over stdio (`opencode acp`), verified live:
+// initialize →
 // session/new → session/prompt with session/update {agent_thought_chunk,
 // agent_message_chunk, available_commands_update, usage_update} and
 // session/request_permission. So opencode reuses the shared ACP client; this

@@ -4,11 +4,10 @@
 
 Implemented, revised 2026-06-20.
 
-Backend runtime wiring supports the four Provider CLI Agents:
+Backend runtime wiring supports the three Provider CLI Agents:
 
 - `codex`
 - `claude`
-- `gemini`
 - `opencode`
 
 Direct Tide-owned API Agent runtime routing is removed.
@@ -35,7 +34,7 @@ It does not define any direct API Agent transport.
 
 Backend chooses the provider adapter from the Thread Agent Binding's `agentId`.
 
-The registry contains only Codex, Claude, Gemini, and opencode. Unknown Agent ids are
+The registry contains only Codex, Claude, and opencode. Unknown Agent ids are
 rejected instead of being routed to a generic runtime.
 
 ### D2. Provider Readiness uses selected provider preflight

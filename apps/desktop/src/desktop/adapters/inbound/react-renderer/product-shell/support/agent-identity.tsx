@@ -27,7 +27,6 @@ export function AgentIdentityIcon(props: { agentId: ProductShellAgentIdentity | 
 function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
   if (
     agentId === "claude" ||
-    agentId === "gemini" ||
     agentId === "opencode"
   ) {
     return agentId;

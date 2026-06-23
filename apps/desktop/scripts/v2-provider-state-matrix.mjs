@@ -10,8 +10,8 @@
 //   notauth       (fresh empty HOME)      — asserts not_authenticated blockers
 //   trust         (untrusted project cwd) — asserts directory_trust_required, then
 //                                           provider.trustWorkspace unblocks (live claude turn)
-//   concurrency   (two gemini threads)    — asserts answers never cross between threads
-//   followup      (gemini)                — asserts a second composer turn answers + settles
+//   concurrency   (two opencode threads)  — asserts answers never cross between threads
+//   followup      (opencode)              — asserts a second composer turn answers + settles
 
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,10 +23,9 @@ import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const caseName = args[args.indexOf("--case") + 1];
-// The live-turn cases (concurrency/followup) run against this agent; default
-// gemini for back-compat. opencode shares gemini's ACP path, so both work.
+// The live-turn cases (concurrency/followup) run against this agent.
 const agentArgIndex = args.indexOf("--agent");
-const agent = agentArgIndex >= 0 ? args[agentArgIndex + 1] : "gemini";
+const agent = agentArgIndex >= 0 ? args[agentArgIndex + 1] : "opencode";
 const log = (o) => console.log(JSON.stringify(o));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -124,7 +123,7 @@ async function notinstalled() {
   // readiness blocker instead of spawning anything or hanging.
   process.env.PATH = "/var/empty";
   const adapter = await makeAdapter();
-  for (const agentId of ["claude", "codex", "gemini", "opencode"]) {
+  for (const agentId of ["claude", "codex", "opencode"]) {
     const events = await adapter.handleMessage(
       startThreadCommand(agentId, "hello?"),
     );
@@ -156,7 +155,7 @@ async function notauth() {
   // applicable) instead of spawning a CLI that dies on a login screen.
   const freshHome = mkdtempSync(path.join(tmpdir(), "tide-matrix-home-"));
   const adapter = await makeAdapter({ HOME: freshHome });
-  for (const agentId of ["claude", "codex", "gemini", "opencode"]) {
+  for (const agentId of ["claude", "codex", "opencode"]) {
     const events = await adapter.handleMessage(
       startThreadCommand(agentId, "hello?"),
     );

@@ -32,7 +32,7 @@ descriptions. Tide Terminal keeps the Terminal as the live source of truth, then
 wraps it with shared Editor, Diff, Browser, Render, FileTree, and Context
 Artifact surfaces.
 
-Run Claude Code, Codex, Gemini, Antigravity, or opencode in Terminal Panes.
+Run Claude Code, Codex, Antigravity, or opencode in Terminal Panes.
 Split larger tasks into Workspaces, inspect code and diffs beside the command
 that produced them, and give Wrapped Agents a human-visible Browser Pane for
 previews, docs, and verification.
@@ -69,7 +69,7 @@ Tide's Terminal Pane is PTY-backed with alacritty-based VT parsing, WGPU renderi
 
 ### Run Agent CLIs Where Work Already Happens
 
-Launch Claude Code, Codex, Gemini, Antigravity, or opencode from Terminal Panes. Split agents side by side in the Stage, keep separate tasks in separate Workspaces, and when they are launched through Tide Terminal wrappers or auto-integration, see whether each Wrapped Agent is running, idle, or waiting for input.
+Launch Claude Code, Codex, Antigravity, or opencode from Terminal Panes. Split agents side by side in the Stage, keep separate tasks in separate Workspaces, and when they are launched through Tide Terminal wrappers or auto-integration, see whether each Wrapped Agent is running, idle, or waiting for input.
 
 ### Split The Work, Not The Task
 
@@ -111,7 +111,7 @@ Agents can create Render Panes (Browser Panes in render mode) with `tide_render_
 ## Quick Start
 
 1. Open Tide Terminal. It starts with one Workspace and one Terminal Pane.
-2. Run a coding agent inside the Terminal, such as Claude Code, Codex, Gemini, Antigravity, or opencode.
+2. Run a coding agent inside the Terminal, such as Claude Code, Codex, Antigravity, or opencode.
 3. Add another Terminal with `Cmd+T`, split the current FocusArea top/bottom with `Cmd+Shift+T`, or open a Browser Pane with `Cmd+Shift+B`.
 4. Open or focus the Dock with `Cmd+\`. If opening the Dock creates or focuses a Launcher, use the Launcher keys: `B` for a Browser Pane, `E` for a new Editor Pane, `O` to open a file, or `T` for a Terminal Pane.
 5. The Dock is tied to the focused Terminal Pane in the Stage. When you move between Terminal Panes, the Dock swaps to that Terminal's Terminal Context Surface.

@@ -9,7 +9,6 @@ Current active Provider CLI Agents:
 
 - codex
 - claude
-- gemini
 - opencode
 
 Antigravity-specific plugin/bootstrap work is archived and is not part of the
@@ -23,8 +22,8 @@ current product path.
   `CODEX_HOME` overlay.
 - Claude uses generated Tide MCP/settings paths from the Tide bootstrap root where
   its launch plan needs them.
-- Gemini and opencode use the shared structured ACP runtime path. Their provider
-  integration owns protocol-specific setup and model/permission config.
+- opencode uses the shared structured ACP runtime path. Its provider integration
+  owns protocol-specific setup and model/permission config.
 - opencode vendor auth stays provider-owned: Tide connects through opencode's own
   local server/config path and never creates a Tide API runtime.
 - Runtime launch plans receive `TIDE_THREAD_ID`, `TIDE_RUNTIME_ID`, and

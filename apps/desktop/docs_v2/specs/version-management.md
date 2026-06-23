@@ -9,7 +9,7 @@ Two coordinated update experiences under one epic:
   ready — Update & Restart" affordance. The restart happens only when the user
   clicks. No silent forced restart.
 - **Lane 2 — Agent CLI update.** For each installed Provider CLI (claude / codex
-  / gemini / opencode), detect the installed version vs the latest published npm
+  / opencode), detect the installed version vs the latest published npm
   version and surface a non-blocking inline nudge ("Update <Agent> — vX → vY")
   that runs the same Provider Setup Surface terminal handoff used for install.
 
@@ -41,8 +41,8 @@ own different plumbing because the apply mechanisms and process owners differ.
   `provider-cli-commands.ts`) resolves the executable via `which`; if missing it
   emits a `not_installed` blocker carrying `npmInstallSetupAction` (`npm install
   -g <pkg>`, `expectedCompletion: "retry_preflight"`). The npm package per agent
-  is known: `@openai/codex`, `@anthropic-ai/claude-code`, `@google/gemini-cli`,
-  `opencode-ai`. **Nothing reads the installed version or the latest version.**
+  is known: `@openai/codex`, `@anthropic-ai/claude-code`, `opencode-ai`.
+  **Nothing reads the installed version or the latest version.**
 - `ProviderReadinessBlockerKind` (contract `provider-readiness.ts` + domain
   `provider-readiness.ts`) has no `outdated`/`update_available` member. Blockers
   set `ready: false`; there is no non-blocking advisory channel.

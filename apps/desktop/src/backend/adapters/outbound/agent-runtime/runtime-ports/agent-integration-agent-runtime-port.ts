@@ -40,7 +40,7 @@ export type AgentIntegrationRegistry = Record<ProviderCliAgentId, AgentIntegrati
 const COMMAND_PROBE_TIMEOUT_MS = 8000;
 
 // A live structured-transport runtime: the provider's machine protocol over
-// plain stdio (claude stream-json / codex app-server / gemini ACP). There is no
+// plain stdio (claude stream-json / codex app-server / opencode ACP). There is no
 // PTY, no scrape, no hooks, no polling — the client pushes normalized
 // StructuredProviderEvents. See docs_v2/specs/structured-agent-runtime.md.
 interface StructuredRuntimeState {
@@ -480,7 +480,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     });
     this.runtimes.set(runtimeId, { client, threadId, agentId });
     traceAgentRuntime(`spawned ${agentId} runtime=${runtimeId} transport=${String(plan.transport)}`);
-    // A launch-assigned session ref (claude/gemini minted --session-id) binds the
+    // A launch-assigned session ref (claude minted --session-id) binds the
     // thread immediately; structured clients also emit session_ref from the
     // protocol's own session id.
     if (runtimePlanWithEnv.providerSessionRef !== undefined) {

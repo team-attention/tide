@@ -10,7 +10,7 @@ removed. Current remediation work should use these constraints:
 - Keep the product Thread-first.
 - Keep the visible Workbench Thread-owned.
 - Keep Agent Runtime hidden by default.
-- Keep selectable Agents to Codex, Claude, Gemini, and opencode provider CLIs.
+- Keep selectable Agents to Codex, Claude, and opencode provider CLIs.
 - Keep opencode vendor auth provider-owned.
 - Reject removed direct API-agent contract shapes at the boundary.
 

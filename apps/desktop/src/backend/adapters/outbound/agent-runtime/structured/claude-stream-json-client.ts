@@ -405,7 +405,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     for (const pending of this.pendingPermissions.values()) {
       // Best-effort: this runs on teardown, where stdin may already be ended/closed —
       // a raw write would throw ERR_STREAM_WRITE_AFTER_END and abort the rest of cleanup
-      // (e.g. killing the child). Swallow it (Gemini review).
+      // (e.g. killing the child). Swallow it.
       try {
         this.writeLine({
           type: "control_response",

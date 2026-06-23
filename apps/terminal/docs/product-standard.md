@@ -72,7 +72,7 @@ Required bar:
 - Wrapped agent state is visible in Pane chrome and Workspace rail: running,
   idle, needs input, detached, or errored.
 - Notifications are task-oriented, not just process noise.
-- Agent wrappers remain provider-neutral. Claude Code, Codex, Gemini, opencode,
+- Agent wrappers remain provider-neutral. Claude Code, Codex, opencode,
   and future CLIs should all speak the same Tide concepts.
 
 ### 4. Product Proof

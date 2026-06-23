@@ -5,7 +5,7 @@
 //
 // To exercise the not-installed path on a machine where every CLI is installed, the wrapper
 // temporarily renames ~/.local/bin/codex aside (restored via trap) so `which codex` fails and
-// codex alone appears not-installed; claude, gemini, opencode, and npm stay available. (The app
+// codex alone appears not-installed; claude, opencode, and npm stay available. (The app
 // re-derives the login-shell PATH at startup and hardcodes ~/.local/bin + /opt/homebrew/bin as
 // fallbacks, so pruning PATH cannot hide a CLI — removing the binary is the only lever.)
 const { _electron } = require("playwright");

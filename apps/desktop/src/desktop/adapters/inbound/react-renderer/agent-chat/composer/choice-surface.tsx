@@ -224,8 +224,6 @@ export function agentMonogramFor(agentId: string): string {
   switch (agentId) {
     case "claude":
       return "Cl";
-    case "gemini":
-      return "Ge";
     case "opencode":
       return "Oc";
     default:

@@ -49,7 +49,7 @@ const initialThreads: ProductShellThread[] = [
   {
     threadId: "thread-visual",
     title: "Desktop shell visual pass",
-    agentId: "gemini",
+    agentId: "opencode",
     time: "2h",
     scope: { kind: "project", projectId: "slice", cwd: "/Users/you/Workspace/slice" },
     workbenchPanes: [

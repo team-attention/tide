@@ -32,7 +32,7 @@ Tide is a free, open-source workbench for agent-led software work. It keeps
 the conversation, commands, code, diffs, browser previews, and shared context
 inside one task surface, so you and your agent can work from the same state.
 
-It supports **Codex, Claude Code, Gemini, and opencode** through the CLIs you
+It supports **Codex, Claude Code, and opencode** through the CLIs you
 already run locally.
 
 Download Tide. Star the repo.

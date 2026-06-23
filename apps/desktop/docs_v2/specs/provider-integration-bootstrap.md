@@ -9,7 +9,6 @@ Current Tide v2 provider integrations are:
 
 - codex
 - claude
-- gemini
 - opencode
 
 Current bootstrap/runtime guidance lives in:

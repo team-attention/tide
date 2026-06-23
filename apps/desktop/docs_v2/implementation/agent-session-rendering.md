@@ -79,7 +79,7 @@ Fields:
 |-------|---------|
 | `frame_id` | Stable Tide id for the observed frame. |
 | `thread_id` | Thread that owns the frame. |
-| `agent` | Provider identity: Codex CLI, Claude Code, Gemini CLI, or opencode. |
+| `agent` | Provider identity: Codex CLI, Claude Code, or opencode. |
 | `lane` | `structured_batch`, `interactive_pty`, `provider_log`, or `raw_output`. |
 | `source_ref` | Provider session id, log path, transcript offset, or stream offset. |
 | `sequence` | Monotonic order within the Raw Agent Session observation stream. |

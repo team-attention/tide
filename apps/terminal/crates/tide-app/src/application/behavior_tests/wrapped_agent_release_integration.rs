@@ -208,22 +208,15 @@ fn agent_wrappers_use_stable_hook_bearing_config_files() {
     // UC-2 BR-21, BR-22: Agent Wrapper hook-bearing config files and hook command strings stay stable across launches.
     let codex = include_str!("../../../resources/bin/codex");
     let claude = include_str!("../../../resources/bin/claude");
-    let gemini = include_str!("../../../resources/bin/gemini");
 
     assert!(codex.contains("HOOKS_FILE=\"$TIDE_TERMINAL_CODEX_HOME/hooks.json\""));
     assert!(claude.contains("HOOKS_FILE=\"$TIDE_TERMINAL_CLAUDE_CONFIG_DIR/hooks.json\""));
-    assert!(gemini.contains("DEFAULTS_FILE=\"$TIDE_TERMINAL_GEMINI_CONFIG_DIR/defaults.json\""));
 
     assert!(!claude.contains("HOOKS_FILE=\"$(mktemp"));
-    assert!(!gemini.contains("DEFAULTS_FILE=\"$(mktemp"));
-    assert!(!gemini.contains("CONTEXT_DIR=\"$(mktemp"));
 
     assert!(codex.contains("notify agent-running --pane \"$TIDE_TERMINAL_PANE\" --agent codex"));
     assert!(
         claude.contains("notify agent-running --pane \\\"$TIDE_TERMINAL_PANE\\\" --agent claude")
-    );
-    assert!(
-        gemini.contains("notify agent-running --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini")
     );
 }
 
@@ -233,7 +226,6 @@ fn agent_wrappers_forward_tide_window_to_mcp_server() {
     // UC-5 BR-11: Agent Wrapper MCP server configuration forwards Tide Window identity with Caller Pane identity.
     let codex = include_str!("../../../resources/bin/codex");
     let claude = include_str!("../../../resources/bin/claude");
-    let gemini = include_str!("../../../resources/bin/gemini");
 
     assert!(codex.contains(
         r#"mcp_servers.tide-terminal.env.TIDE_TERMINAL_SOCKET=\"$TIDE_TERMINAL_SOCKET\""#
@@ -244,9 +236,6 @@ fn agent_wrappers_forward_tide_window_to_mcp_server() {
         r#"mcp_servers.tide-terminal.env.TIDE_TERMINAL_WINDOW=\"$TIDE_TERMINAL_WINDOW\""#
     ));
     assert!(claude.contains(
-        "\"env\": { \"TIDE_TERMINAL_SOCKET\": \"$TIDE_TERMINAL_SOCKET\", \"TIDE_TERMINAL_PANE\": \"$TIDE_TERMINAL_PANE\", \"TIDE_TERMINAL_WINDOW\": \"$TIDE_TERMINAL_WINDOW\" }"
-    ));
-    assert!(gemini.contains(
         "\"env\": { \"TIDE_TERMINAL_SOCKET\": \"$TIDE_TERMINAL_SOCKET\", \"TIDE_TERMINAL_PANE\": \"$TIDE_TERMINAL_PANE\", \"TIDE_TERMINAL_WINDOW\": \"$TIDE_TERMINAL_WINDOW\" }"
     ));
 }
@@ -287,27 +276,6 @@ fn claude_wrapper_appends_tide_tool_discovery_context() {
     assert!(wrapper.contains("macOS `open`"));
 }
 
-#[test]
-fn gemini_wrapper_loads_tide_tool_discovery_context_from_stable_memory() {
-    // Spec: docs/specs/tide-mcp-runtime.md
-    // UC-5 BR-9: The Gemini Agent Wrapper injects Tide Tool Discovery Context through a stable Tide-owned GEMINI.md include directory without mutating the user's real Gemini home.
-    // UC-5 BR-10: Tide Tool Discovery Context tells Wrapped Agents to prefer Tide MCP tools before macOS default-app commands.
-    let wrapper = include_str!("../../../resources/bin/gemini");
-
-    assert!(wrapper.contains("CONTEXT_DIR=\"$TIDE_TERMINAL_GEMINI_CONFIG_DIR/context\""));
-    assert!(wrapper.contains("CONTEXT_FILE=\"$CONTEXT_DIR/GEMINI.md\""));
-    assert!(wrapper.contains("\"includeDirectories\": [\"$CONTEXT_DIR\"]"));
-    assert!(wrapper.contains("\"loadMemoryFromIncludeDirectories\": true"));
-    assert!(wrapper.contains("You are running inside Tide"));
-    assert!(wrapper.contains("Tide MCP tools"));
-    assert!(wrapper.contains("tide_open_browser"));
-    assert!(wrapper.contains("tide_open_editor"));
-    assert!(wrapper.contains("tide_observe_workspace"));
-    assert!(wrapper.contains("macOS `open`"));
-    assert!(!wrapper.contains("rm -rf \"$CONTEXT_DIR\""));
-}
-
-#[test]
 fn notify_client_accepts_payload_from_stdin() {
     // UC-2 BR-6: The notify client must accept payload JSON from stdin.
     let source = include_str!("../../adapter/inward/cli_adapter/notify.rs");

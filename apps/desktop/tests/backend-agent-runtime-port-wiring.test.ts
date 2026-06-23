@@ -42,9 +42,6 @@ import {
   createClaudeHistoryConnector,
   readClaudeHistoryFrames,
 } from "../src/backend/adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
-import {
-  createGeminiHistoryConnector,
-} from "../src/backend/adapters/outbound/agent-integrations/gemini/gemini-history-connector.ts";
 import type { ProviderHistoryFrame } from "../src/backend/application/ports/outbound/agent-integration-port.ts";
 
 // Test-side twins of the shared history loop: read the bound session file's tail
@@ -146,34 +143,34 @@ const now = "2026-05-29T00:00:00.000Z";
 test("provider_readiness_port_uses_selected_agent_integration_preflight", async () => {
   const codex = fakeIntegration("codex", startPlan("codex"));
   const claude = fakeIntegration("claude", startPlan("claude"));
-  const gemini = fakeIntegration("gemini", startPlan("gemini"));
+  const opencode = fakeIntegration("opencode", startPlan("opencode"));
   const readiness = createAgentIntegrationProviderReadinessPort({
-    integrations: { codex, claude, gemini },
+    integrations: { codex, claude, opencode },
   });
 
   const result = await readiness.check({
-    agentId: "gemini",
+    agentId: "opencode",
     scope: { kind: "project", projectId: "tide", cwd: "/repo" },
-    launchOptions: { model: "Gemini default", permission: "default" },
+    launchOptions: { model: "opencode default", permission: "build" },
   });
 
   assert.equal(result.ready, true);
-  assert.equal(result.agentId, "gemini");
-  assert.equal(gemini.preflightInputs.length, 1);
+  assert.equal(result.agentId, "opencode");
+  assert.equal(opencode.preflightInputs.length, 1);
   assert.equal(codex.preflightInputs.length, 0);
   assert.equal(claude.preflightInputs.length, 0);
-  assert.deepEqual(gemini.preflightInputs[0].launchOptions, {
-    model: "Gemini default",
-    permission: "default",
+  assert.deepEqual(opencode.preflightInputs[0].launchOptions, {
+    model: "opencode default",
+    permission: "build",
   });
 });
 
 test("provider_readiness_port_rejects_non_provider_cli_agent", async () => {
   const codex = fakeIntegration("codex", startPlan("codex"));
   const claude = fakeIntegration("claude", startPlan("claude"));
-  const gemini = fakeIntegration("gemini", startPlan("gemini"));
+  const opencode = fakeIntegration("opencode", startPlan("opencode"));
   const readiness = createAgentIntegrationProviderReadinessPort({
-    integrations: { codex, claude, gemini },
+    integrations: { codex, claude, opencode },
   });
 
   const result = await readiness.check({
@@ -194,7 +191,7 @@ test("provider_readiness_port_rejects_non_provider_cli_agent", async () => {
   ]);
   assert.equal(codex.preflightInputs.length, 0);
   assert.equal(claude.preflightInputs.length, 0);
-  assert.equal(gemini.preflightInputs.length, 0);
+  assert.equal(opencode.preflightInputs.length, 0);
 });
 
 // Spec: docs_v2/specs/mid-thread-launch-option-changes.md — a session-config
@@ -203,9 +200,9 @@ test("provider_readiness_port_rejects_non_provider_cli_agent", async () => {
 test("apply_session_config_without_a_live_runtime_requires_restart", async () => {
   const codex = fakeIntegration("codex", startPlan("codex"));
   const claude = fakeIntegration("claude", startPlan("claude"));
-  const gemini = fakeIntegration("gemini", startPlan("gemini"));
+  const opencode = fakeIntegration("opencode", startPlan("opencode"));
   const port = createAgentIntegrationAgentRuntimePort({
-    integrations: { codex, claude, gemini },
+    integrations: { codex, claude, opencode },
   });
 
   const result = await port.applySessionConfig(
@@ -562,7 +559,6 @@ function writeProviderFiles(home: string, cwd: string): void {
     }),
   );
   writeFile(path.join(home, ".claude", "settings.json"), "{}");
-  writeFile(path.join(home, ".gemini", "oauth_creds.json"), "{}");
 }
 
 test("codex_provider_history_reader_derives_provider_session_ref_from_rollout_path", () => {
@@ -1214,7 +1210,7 @@ test("agent_runtime_wiring_stays_out_of_desktop_and_shared_contracts", () => {
 });
 
 function fakeIntegration(
-  agentId: "codex" | "claude" | "gemini",
+  agentId: "codex" | "claude" | "opencode",
   plan: ProviderLaunchPlan,
 ) {
   return new FakeAgentIntegration(agentId, plan);
@@ -1224,12 +1220,12 @@ class FakeAgentIntegration implements AgentIntegrationPort {
   preflightInputs: AgentIntegrationPreflightInput[] = [];
   startInputs: AgentStartPlanInput[] = [];
   resumeInputs: AgentResumePlanInput[] = [];
-  private readonly agentId: "codex" | "claude" | "gemini";
+  private readonly agentId: "codex" | "claude" | "opencode";
   private readonly plan: ProviderLaunchPlan;
   readinessGate: RuntimeReadinessGate = { kind: "immediate" };
 
   constructor(
-    agentId: "codex" | "claude" | "gemini",
+    agentId: "codex" | "claude" | "opencode",
     plan: ProviderLaunchPlan,
   ) {
     this.agentId = agentId;
@@ -1288,9 +1284,6 @@ class FakeAgentIntegration implements AgentIntegrationPort {
     }
     if (this.agentId === "claude") {
       return createClaudeHistoryConnector();
-    }
-    if (this.agentId === "gemini") {
-      return createGeminiHistoryConnector({});
     }
     return {
       readFrames: () => [],
@@ -1378,7 +1371,7 @@ function readyProviderReadinessPort(): ProviderReadinessPort {
 function liveProviderThreadSeed(input: {
   threadId: string;
   runtimeId: string;
-  agentId: "codex" | "claude" | "gemini";
+  agentId: "codex" | "claude" | "opencode";
 }): ThreadSeed {
   return {
     threadId: input.threadId,
@@ -1402,15 +1395,15 @@ function liveProviderThreadSeed(input: {
   };
 }
 
-function startPlan(agentId: "codex" | "claude" | "gemini"): ProviderLaunchPlan {
+function startPlan(agentId: "codex" | "claude" | "opencode"): ProviderLaunchPlan {
   return {
     command:
-      agentId === "gemini" ? "gemini" : agentId === "claude" ? "claude" : "codex",
+      agentId === "opencode" ? "opencode" : agentId === "claude" ? "claude" : "codex",
     args: [],
     env: { TERM: "xterm-256color", COLORTERM: "truecolor" },
     cwd: "/repo",
     transport:
-      agentId === "gemini"
+      agentId === "opencode"
         ? "acp"
         : agentId === "claude"
           ? "claude_stream_json"

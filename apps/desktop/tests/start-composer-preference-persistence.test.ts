@@ -10,7 +10,7 @@ import {
 // Spec: docs_v2/specs/opencode-model-vendor-selection.md — the Start Composer
 // remembers the last-picked agent + model for EVERY offered agent (regression:
 // the persistence allowlist was hardcoded to codex/claude, silently
-// dropping opencode + gemini, so their model choice was never remembered).
+// dropping opencode, so its model choice was never remembered).
 
 // Prefs no longer live in localStorage — they are owned by Main and injected into the
 // renderer as window.tide.uiPrefs (the boot localStorage access stalled ~3.8s; see
@@ -53,14 +53,6 @@ test("an opencode Start Composer preference round-trips through storage", () => 
   });
 });
 
-test("a gemini Start Composer preference round-trips through storage", () => {
-  clearPrefs();
-  persistPreferredStartComposer({ agentId: "gemini", model: "gemini-3-pro-preview", permission: "default" });
-  const loaded = loadPreferredStartComposer();
-  assert.equal(loaded?.agentId, "gemini");
-  assert.equal(loaded?.model, "gemini-3-pro-preview");
-});
-
 test("an unknown persisted agent loads as null (no preference)", () => {
   clearPrefs();
   // A stored record for an agent the build no longer knows must load as null.
@@ -68,8 +60,8 @@ test("an unknown persisted agent loads as null (no preference)", () => {
   assert.equal(loadPreferredStartComposer(), null);
 });
 
-test("isProductShellAgentIdentity accepts the four provider CLI agents, rejects undefined/unknown", () => {
-  for (const id of ["codex", "claude", "gemini", "opencode"]) {
+test("isProductShellAgentIdentity accepts the provider CLI agents, rejects undefined/unknown", () => {
+  for (const id of ["codex", "claude", "opencode"]) {
     assert.equal(isProductShellAgentIdentity(id), true, `expected ${id} to be a valid agent`);
   }
   assert.equal(isProductShellAgentIdentity(undefined), false);

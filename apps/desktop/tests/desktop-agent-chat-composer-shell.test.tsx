@@ -1071,7 +1071,7 @@ test("model_change_on_an_active_thread_sends_thread_set_launch_options", () => {
 
 // Permission mode must take the SAME mid-thread path as model: a change on an
 // active thread sends thread.setLaunchOptions so the backend live-applies it
-// (claude set_permission_mode / gemini set_mode) or restarts-with-resume.
+// through provider-native controls or restarts-with-resume.
 test("permission_change_on_an_active_thread_sends_thread_set_launch_options", () => {
   const hydrated = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),
@@ -1657,17 +1657,6 @@ test("codex_reasoning_effort_row_sets_launch_option_and_updates_chip_label", () 
   assert.equal(view.composer.modelLabel, "GPT-5.5 · High");
 });
 
-test("selecting_gemini_updates_visible_model_and_permission_defaults_away_from_codex_gpt", () => {
-  const selected = selectComposerAgent(createAgentChatShellState(), "gemini").state;
-  const view = createAgentChatShellViewModel(selected);
-
-  assert.equal(selected.composer.startOptions.agentBinding.agentId, "gemini");
-  assert.equal(selected.composer.startOptions.agentBinding.runtimeSource?.kind, "provider_cli");
-  assert.equal(view.composer.modelLabel, "Default");
-  assert.equal(view.composer.permissionLabel, "Ask permissions");
-  assert.notEqual(view.composer.modelLabel, "GPT-5.5 High");
-});
-
 test("selecting_opencode_uses_provider_cli_model_and_permission_defaults", () => {
   const selected = selectComposerAgent(createAgentChatShellState(), "opencode").state;
   const view = createAgentChatShellViewModel(selected);
@@ -1697,10 +1686,10 @@ test("follow_up_composer_model_label_uses_active_thread_launch_options", () => {
       thread: {
         ...thread,
         agentBinding: {
-          agentId: "gemini",
-          runtimeSource: { kind: "provider_cli", integrationId: "gemini" },
+          agentId: "opencode",
+          runtimeSource: { kind: "provider_cli", integrationId: "opencode" },
         },
-        launchOptions: { model: "Gemini default", permission: "default" },
+        launchOptions: { model: "opencode default", permission: "build" },
       },
       blocks: [],
       runtimeState: "idle",
@@ -1710,7 +1699,7 @@ test("follow_up_composer_model_label_uses_active_thread_launch_options", () => {
 
   assert.equal(view.composer.mode, "follow_up");
   assert.equal(view.composer.modelLabel, "Default");
-  assert.equal(view.composer.permissionLabel, "Ask permissions");
+  assert.equal(view.composer.permissionLabel, "Build");
 });
 
 test("follow_up_composer_model_label_falls_back_to_active_agent_default", () => {
@@ -1728,8 +1717,8 @@ test("follow_up_composer_model_label_falls_back_to_active_agent_default", () => 
       thread: {
         ...thread,
         agentBinding: {
-          agentId: "gemini",
-          runtimeSource: { kind: "provider_cli", integrationId: "gemini" },
+          agentId: "opencode",
+          runtimeSource: { kind: "provider_cli", integrationId: "opencode" },
         },
       },
       blocks: [],
@@ -1752,12 +1741,6 @@ test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
       "permission_menu",
     ).state,
   );
-  const geminiHtml = renderShell(
-    setComposerActiveSurface(
-      selectComposerAgent(createAgentChatShellState(), "gemini").state,
-      "permission_menu",
-    ).state,
-  );
   const opencodeHtml = renderShell(
     setComposerActiveSurface(
       selectComposerAgent(createAgentChatShellState(), "opencode").state,
@@ -1774,10 +1757,6 @@ test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
   assert.match(claudeHtml, /Accept edits/);
   assert.match(claudeHtml, /Bypass permissions/);
   assert.doesNotMatch(claudeHtml, /Approve for me/);
-  // Gemini uses the same friendly shape (auto edits + bypass, no codex/claude values).
-  assert.match(geminiHtml, /Auto edits/);
-  assert.match(geminiHtml, /Bypass permissions/);
-  assert.doesNotMatch(geminiHtml, /Accept edits/);
   // opencode mirrors its own small mode set.
   assert.match(opencodeHtml, /Build/);
   assert.match(opencodeHtml, /Plan/);
@@ -1859,8 +1838,8 @@ test("slash_command_menu_mirrors_the_full_command_set_in_the_start_composer", ()
 });
 
 test("slash_command_menu_dedupes_repeated_command_names", () => {
-  // Some agents (e.g. gemini) report a command once per subcommand, yielding the
-  // same name many times. The menu shows each name once. See
+  // Some agents report a command once per subcommand, yielding the same name many
+  // times. The menu shows each name once. See
   // live-provider-command-mirroring.md.
   const commands = [
     { name: "memory", description: "memory add", trigger: "/" as const },
@@ -2026,10 +2005,10 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
 test("every provider-agent row binds; a not-installed row is an intentional no-op", () => {
   // Regression: every selectable agent row must actually bind its agent (the
   // opencode row was once rendered+enabled but composerAgentIdForRow lacked its
-  // case, so it was a SILENT no-op). All four provider-CLI agents bind — opencode
+  // case, so it was a SILENT no-op). All provider-CLI agents bind — opencode
   // is no longer coming-soon.
   setAvailableProviderAgents(null); // all detected
-  for (const agentId of ["codex", "claude", "gemini", "opencode"] as const) {
+  for (const agentId of ["codex", "claude", "opencode"] as const) {
     const opened = setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state;
     const selected = selectAgentChatChoiceSurfaceRow(opened, "agent_menu", agentId).state;
     assert.equal(

@@ -862,7 +862,7 @@ test("checkReadiness runs preflight for the chosen agent, rebinds the thread, an
       threadSeed("draft-1", {
         // Seed a STALE binding (a previously-selected claude, with its runtimeSource + session):
         // checkReadiness must replace it wholesale, not leave codex pointing at claude's source or
-        // try to resume claude's session (Gemini review).
+        // try to resume claude's session.
         agentBinding: {
           agentId: "claude",
           runtimeSource: { kind: "provider_cli", integrationId: "claude" },
@@ -882,7 +882,7 @@ test("checkReadiness runs preflight for the chosen agent, rebinds the thread, an
   assert.equal(fakes.readiness.checks.at(-1)?.agentId, "codex");
   assert.equal(result.providerReadiness.agentId, "codex");
   // The WHOLE binding is replaced — agentId AND runtimeSource — and the stale session cleared, so
-  // codex never inherits claude's runtimeSource/providerSessionRef (Gemini review).
+  // codex never inherits claude's runtimeSource/providerSessionRef.
   const binding = result.thread.agentBinding;
   assert.equal(binding.agentId, "codex");
   assert.equal(
@@ -1050,23 +1050,23 @@ test("starting_thread_preserves_launch_options_on_thread_snapshot", async () => 
   });
 
   const result = await service.startThread({
-    initialMessage: "Run with Gemini",
+    initialMessage: "Run with opencode",
     agentBinding: {
-      agentId: "gemini",
-      runtimeSource: { kind: "provider_cli", integrationId: "gemini" },
+      agentId: "opencode",
+      runtimeSource: { kind: "provider_cli", integrationId: "opencode" },
     },
     scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
-    launchOptions: { model: "Gemini default", permission: "default" },
+    launchOptions: { model: "opencode default", permission: "build" },
   });
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.thread.launchOptions, {
-    model: "Gemini default",
-    permission: "default",
+    model: "opencode default",
+    permission: "build",
   });
   assert.deepEqual(fakes.runtime.starts[0]?.launchOptions, {
-    model: "Gemini default",
-    permission: "default",
+    model: "opencode default",
+    permission: "build",
   });
 });
 
@@ -1935,19 +1935,19 @@ test("recording_provider_session_ref_attaches_it_to_thread_agent_binding", async
     initialThreads: [
       threadSeed("thread-provider-session", {
         agentBinding: {
-          agentId: "gemini",
-          runtimeSource: { kind: "provider_cli", integrationId: "gemini" },
+          agentId: "opencode",
+          runtimeSource: { kind: "provider_cli", integrationId: "opencode" },
         },
-        launchOptions: { model: "Gemini default", permission: "default" },
+        launchOptions: { model: "opencode default", permission: "build" },
       }),
     ],
   });
 
   const result = await service.recordProviderSessionRef({
     threadId: "thread-provider-session",
-    agentId: "gemini",
+    agentId: "opencode",
     providerSessionRef: {
-      kind: "gemini_session",
+      kind: "opencode_session",
       value: "conversation-1",
       transcriptPath: "/provider/chats/session-1.jsonl",
     },
@@ -1958,18 +1958,18 @@ test("recording_provider_session_ref_attaches_it_to_thread_agent_binding", async
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.thread.agentBinding.providerSessionRef, {
-    kind: "gemini_session",
+    kind: "opencode_session",
     value: "conversation-1",
     transcriptPath: "/provider/chats/session-1.jsonl",
   });
   assert.deepEqual(hydrated.thread.agentBinding.providerSessionRef, {
-    kind: "gemini_session",
+    kind: "opencode_session",
     value: "conversation-1",
     transcriptPath: "/provider/chats/session-1.jsonl",
   });
   assert.deepEqual(hydrated.thread.launchOptions, {
-    model: "Gemini default",
-    permission: "default",
+    model: "opencode default",
+    permission: "build",
   });
   assert.deepEqual(fakes.runtime.events, []);
 });
@@ -1986,9 +1986,9 @@ test("recording_provider_session_ref_rejects_mismatched_agent_binding", async ()
 
   const result = await service.recordProviderSessionRef({
     threadId: "thread-provider-session-lock",
-    agentId: "gemini",
+    agentId: "opencode",
     providerSessionRef: {
-      kind: "gemini_session",
+      kind: "opencode_session",
       value: "conversation-1",
     },
   });

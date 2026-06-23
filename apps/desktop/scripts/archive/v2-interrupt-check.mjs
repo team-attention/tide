@@ -4,7 +4,7 @@
 // re-emits session_ref (new process init); reuse does not. So across
 // start→interrupt→follow-up there must be exactly ONE session_ref, the thread
 // must settle to idle after Stop, and the follow-up must answer.
-//   node scripts/v2-interrupt-check.mjs --agent claude|codex|gemini
+//   node scripts/v2-interrupt-check.mjs --agent claude|codex|opencode
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -64,8 +64,8 @@ try {
   threadId = started.find((e) => e.kind === "thread.started")?.payload.thread.threadId;
   log({ phase: "started", agent, threadId });
 
-  // Wait until clearly running AND the provider session ref is bound (gemini
-  // binds async from session/new), so sessionBefore is reliable.
+  // Wait until clearly running AND the provider session ref is bound, so
+  // sessionBefore is reliable.
   let sessionBefore;
   for (let i = 0; i < 40; i += 1) {
     await sleep(500);

@@ -64,7 +64,7 @@ Wrapped Agents report lifecycle state through Tide's wrapper-managed paths. Tide
 
 - **Not a replacement editor.** Editor Panes are for task-local reading, focused edits, and context sharing.
 - **Not only a terminal app.** Terminal Panes are the substrate; the product is the shared Workspace around them.
-- **Not an LLM vendor.** Tide runs the agent CLIs you bring, including Claude Code, Codex, and Gemini.
+- **Not an LLM vendor.** Tide runs the agent CLIs you bring, including Claude Code, Codex, Antigravity, and opencode.
 - **Not a second hidden browser.** Browser Pane work is human-visible by default; external browser runtimes are explicit fallbacks.
 
 ## Direction

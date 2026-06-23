@@ -490,7 +490,7 @@ test("workbench_image_pane_fetches_and_renders_data_url_image", async () => {
 });
 
 test("fileUrlFromPath builds a file:// url, encoding spaces and normalizing Windows paths", async () => {
-  // Gemini review: Windows backslash + drive-letter paths must become file:///C:/…
+  // Review regression: Windows backslash + drive-letter paths must become file:///C:/…
   const { fileUrlFromPath } = await import(
     "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/html-view.tsx"
   );

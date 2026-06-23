@@ -2,8 +2,8 @@
 
 ## Status
 
-Implemented, revised 2026-06-20: Tide v2 supports the four provider CLI agents only:
-`codex`, `claude`, `gemini`, and `opencode`.
+Implemented, revised 2026-06-20: Tide v2 supports the three provider CLI agents only:
+`codex`, `claude`, and `opencode`.
 
 The earlier direct Tide-owned API Agent path was removed. API keys can still belong to a
 provider's own CLI setup path, such as opencode vendor auth, but Tide does not create a
@@ -26,7 +26,7 @@ It does not cover provider account storage or a Tide-owned direct API runtime.
 
 ## Decisions
 
-### D1. One visible Agent chip, four provider CLI agents
+### D1. One visible Agent chip, three provider CLI agents
 
 The Composer shows one Agent chip with these selectable identities:
 
@@ -34,7 +34,6 @@ The Composer shows one Agent chip with these selectable identities:
 |----------------|----------|----------------|
 | Codex CLI | `codex` | `provider_cli` |
 | Claude Code | `claude` | `provider_cli` |
-| Gemini CLI | `gemini` | `provider_cli` |
 | opencode | `opencode` | `provider_cli` |
 
 The Agent menu must not offer a Tide-owned OpenAI/API Agent.
@@ -44,7 +43,7 @@ The Agent menu must not offer a Tide-owned OpenAI/API Agent.
 Current Shared Contract shape:
 
 ```ts
-type ProviderCliAgentId = "codex" | "claude" | "gemini" | "opencode";
+type ProviderCliAgentId = "codex" | "claude" | "opencode";
 type AgentId = ProviderCliAgentId;
 
 interface AgentRuntimeSourceDto {
@@ -71,7 +70,6 @@ selected provider CLI integration:
 |-------|--------------|-------------------|
 | Codex | Codex launch/session config | Codex approval/sandbox policy |
 | Claude | Claude launch/session config | Claude permission mode |
-| Gemini | Gemini ACP/provider-reported model data | Gemini mode |
 | opencode | opencode vendor/model catalog | opencode mode/config |
 
 The UI must not normalize provider-native model ids into one cross-provider enum.
@@ -96,7 +94,7 @@ as edge cases.
 ### UC-1: Select Provider CLI Agent
 
 1. User opens the Agent chip.
-2. User chooses Codex, Claude, Gemini, or opencode.
+2. User chooses Codex, Claude, or opencode.
 3. Desktop stores a provider CLI Agent Binding.
 4. Model and Permission chips render data for that selected provider.
 5. Send creates/starts the Thread through Provider CLI readiness and runtime ports.
@@ -111,7 +109,7 @@ as edge cases.
 ## Invariants
 
 1. The Agent chip has one visible selected value.
-2. Only `codex`, `claude`, `gemini`, and `opencode` are valid Agent ids.
+2. Only `codex`, `claude`, and `opencode` are valid Agent ids.
 3. Runtime source is provider CLI only.
 4. A started Thread locks Agent Binding.
 5. Provider setup copy names the selected provider CLI path.

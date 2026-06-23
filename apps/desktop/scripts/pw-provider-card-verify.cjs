@@ -1,4 +1,4 @@
-// Live verification for prompt-full-fidelity-fields Slice 1, codex + gemini halves: drive a
+// Live verification for prompt-full-fidelity-fields Slice 1, codex + ACP halves: drive a
 // REAL turn for the given provider that requests approval/permission, then capture the
 // .prompt-card detail (command/diff + paths) and each option's native `kind` (ACP).
 // Usage: node pw-provider-card-verify.cjs "<agentLabel>" "<permissionLabel>" "<prompt>"

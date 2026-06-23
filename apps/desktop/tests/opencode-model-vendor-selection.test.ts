@@ -134,24 +134,24 @@ test("opencode is no longer coming-soon and its permission modes are Build/Plan"
   assert.equal(permission.default, "build");
 });
 
-test("parseAcpModelCatalog reads gemini availableModels and opencode configOptions", () => {
-  // gemini: ACP-standard models.availableModels + currentModelId
+test("parseAcpModelCatalog reads ACP availableModels and opencode configOptions", () => {
+  // ACP-standard models.availableModels + currentModelId
   assert.deepEqual(
     parseAcpModelCatalog({
       models: {
         availableModels: [
-          { modelId: "gemini-3-pro-preview", name: "gemini-3-pro-preview" },
-          { modelId: "gemini-2.5-flash", name: "gemini-2.5-flash" },
+          { modelId: "provider/model-a", name: "Model A" },
+          { modelId: "provider/model-b", name: "Model B" },
         ],
-        currentModelId: "gemini-3-pro-preview",
+        currentModelId: "provider/model-a",
       },
     }),
     {
       models: [
-        { value: "gemini-3-pro-preview", label: "gemini-3-pro-preview" },
-        { value: "gemini-2.5-flash", label: "gemini-2.5-flash" },
+        { value: "provider/model-a", label: "Model A" },
+        { value: "provider/model-b", label: "Model B" },
       ],
-      currentModel: "gemini-3-pro-preview",
+      currentModel: "provider/model-a",
     },
   );
   // opencode: configOptions model category, provider/model split into vendor + model
@@ -176,22 +176,11 @@ test("parseAcpModelCatalog reads gemini availableModels and opencode configOptio
   assert.equal(parseAcpModelCatalog({ sessionId: "x" }), undefined);
 });
 
-test("gemini model list uses the real -preview ids (drift regression)", () => {
-  // The static gemini list once held `gemini-3-pro` / `gemini-3-flash` — ids gemini
-  // does not accept. Every concrete id must carry the `-preview` suffix gemini
-  // reports, and the 2.5 models must be present.
-  const values = cliModelOptionsForAgent("gemini").map((option) => option.value);
-  assert.ok(values.includes("gemini-3-pro-preview"));
-  assert.ok(values.includes("gemini-3-flash-preview"));
-  assert.ok(values.includes("gemini-2.5-pro"));
-  assert.ok(!values.includes("gemini-3-pro"), "the drifted bare id must be gone");
-});
-
-test("buildProvidersHubViewModel lists all four agents with status + catalog", () => {
-  setAvailableProviderAgents(["claude", "codex", "gemini"]); // opencode not installed
+test("buildProvidersHubViewModel lists supported agents with status + catalog", () => {
+  setAvailableProviderAgents(["claude", "codex"]); // opencode not installed
   setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
   const hub = buildProvidersHubViewModel();
-  assert.deepEqual(hub.map((agent) => agent.agentId), ["claude", "codex", "gemini", "opencode"]);
+  assert.deepEqual(hub.map((agent) => agent.agentId), ["claude", "codex", "opencode"]);
 
   const opencode = hub.find((agent) => agent.agentId === "opencode");
   assert.equal(opencode?.installed, false);

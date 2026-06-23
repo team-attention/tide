@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Tide's per-machine bootstrap for the provider CLIs. Since the agents run on
-// their structured protocols (claude stream-json / codex app-server / gemini
+// their structured protocols (claude stream-json / codex app-server / opencode
 // ACP), the ONLY thing Tide must inject is its MCP Tool Surface — there are no
 // more hooks, signal spool, or config overlays. See
 // docs_v2/specs/structured-agent-runtime.md.

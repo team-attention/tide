@@ -8,7 +8,7 @@ export type PromptKindDto =
   | "choice"
   | "command_picker";
 
-// The semantic of an approval option, carried natively by ACP (gemini/opencode)
+// The semantic of an approval option, carried natively by ACP (opencode)
 // `options[].kind`. Drives default-option selection and allow/reject styling without
 // string-matching the optionId. claude/codex don't report it (left undefined).
 export type PromptChoiceKindDto =
