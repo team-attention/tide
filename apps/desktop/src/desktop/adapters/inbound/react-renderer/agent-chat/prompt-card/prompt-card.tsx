@@ -145,6 +145,31 @@ function SinglePromptCard(props: {
         submit();
         return;
       }
+      // ⌘/Ctrl+1..9 SELECTS the N-th visible option (highlight only — confirming
+      // still goes through ⌘Enter, so the user can keep typing after picking).
+      // Match the physical digit (event.code) and exclude Option, which is the
+      // multitask jump's modifier. See docs_v2/specs/prompt-card-number-key-selection.md.
+      if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+        const digit = /^Digit([1-9])$/.exec(event.code);
+        if (digit !== null) {
+          const choiceIds = choices.map((choice) => choice.choiceId);
+          const ids = multiSelect ? choiceIds : [...choiceIds, ...(hasChoices ? ["__other"] : [])];
+          const target = ids[Number(digit[1]) - 1];
+          if (target !== undefined) {
+            event.preventDefault();
+            if (target === "__other") {
+              setOtherActive(true);
+              setSelectedId(null);
+            } else if (multiSelect) {
+              toggleMulti(target);
+            } else {
+              setOtherActive(false);
+              setSelectedId(target);
+            }
+          }
+          return;
+        }
+      }
       // Arrows move options only when focus is NOT in a text field, so they don't
       // hijack the composer's or the Other field's cursor. (Multi-select toggles by
       // click instead, so single-option arrow navigation does not apply.)
@@ -177,7 +202,10 @@ function SinglePromptCard(props: {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [choices, hasChoices, multiSelect, otherActive, selectedId, selectedIds, otherText, props]);
+    // `notes` is read by submit() (it rides on an AskUserQuestion answer), so it must be a
+    // dependency — otherwise the ⌘Enter listener keeps a stale closure and a note typed
+    // before ⌘Enter is dropped. (`otherText` is here for the same reason.)
+  }, [choices, hasChoices, multiSelect, otherActive, selectedId, selectedIds, otherText, notes, props]);
   const kindLabel =
     props.prompt.kind === "approval"
       ? "Approval needed"
@@ -335,6 +363,36 @@ function WizardPromptCard(props: {
         goNext();
         return;
       }
+      // ⌘/Ctrl+1..9 selects the N-th option of the CURRENT step (highlight only —
+      // it never advances; ⌘Enter still does Next/Submit). See
+      // docs_v2/specs/prompt-card-number-key-selection.md.
+      if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+        const digit = /^Digit([1-9])$/.exec(event.code);
+        if (digit !== null) {
+          const choiceIds = choices.map((choice) => choice.choiceId);
+          const ids = multiSelect ? choiceIds : [...choiceIds, ...(hasChoices ? ["__other"] : [])];
+          const picked = ids[Number(digit[1]) - 1];
+          if (picked !== undefined) {
+            event.preventDefault();
+            if (picked === "__other") {
+              setCurrent((prev) => ({ ...prev, otherActive: true, selectedId: null }));
+            } else if (multiSelect) {
+              setCurrent((prev) => {
+                const next = new Set(prev.selectedIds);
+                if (next.has(picked)) {
+                  next.delete(picked);
+                } else {
+                  next.add(picked);
+                }
+                return { ...prev, selectedIds: next };
+              });
+            } else {
+              setCurrent((prev) => ({ ...prev, otherActive: false, selectedId: picked }));
+            }
+          }
+          return;
+        }
+      }
       const target = event.target as HTMLElement | null;
       const inEditable =
         target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
@@ -483,6 +541,10 @@ function renderOptions(input: {
     selected: boolean,
     onClick: () => void,
     kind?: AgentChatPromptChoice["kind"],
+    // 1-based ⌘N shortcut number for this option, when it has one (the first 9
+    // options). Shown as a keycap and selectable via ⌘/Ctrl+digit. See
+    // docs_v2/specs/prompt-card-number-key-selection.md.
+    numberHint?: number,
   ) => (
     <button
       key={key}
@@ -499,6 +561,9 @@ function renderOptions(input: {
         <span className="prompt-card__option-label">{label}</span>
         {secondary ? <span className="prompt-card__option-value">{secondary}</span> : null}
       </span>
+      {numberHint !== undefined ? (
+        <span className="prompt-card__option-kbd" aria-hidden>⌘{numberHint}</span>
+      ) : null}
     </button>
   );
   // The focused single-select option's preview (claude AskUserQuestion option.preview):
@@ -507,7 +572,7 @@ function renderOptions(input: {
   const preview = !input.multiSelect && !input.otherActive ? focused?.preview : undefined;
   return (
     <>
-      {input.choices.map((choice) =>
+      {input.choices.map((choice, index) =>
         option(
           choice.choiceId,
           choice.label,
@@ -519,10 +584,21 @@ function renderOptions(input: {
             ? () => input.onToggleMulti(choice.choiceId)
             : () => input.onPickChoice(choice.choiceId),
           choice.kind,
+          index < 9 ? index + 1 : undefined,
         ),
       )}
       {input.hasChoices && !input.multiSelect
-        ? option("__other", "Other…", undefined, input.otherActive, input.onPickOther)
+        ? option(
+            "__other",
+            "Other…",
+            undefined,
+            input.otherActive,
+            input.onPickOther,
+            undefined,
+            // "Other…" is the slot right after the listed choices, so it takes
+            // the next number — but only while that stays within ⌘1..⌘9.
+            input.choices.length < 9 ? input.choices.length + 1 : undefined,
+          )
         : null}
       {preview !== undefined && preview.length > 0 ? (
         <pre className="prompt-card__option-preview" aria-label="Option preview">{preview}</pre>

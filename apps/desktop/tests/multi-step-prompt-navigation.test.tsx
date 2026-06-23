@@ -224,6 +224,178 @@ test("wizard: a step dot jumps directly to that step", async () => {
   }
 });
 
+// --- ⌘N number-key selection (docs_v2/specs/prompt-card-number-key-selection.md) ---
+
+interface Spy {
+  calls: unknown[][];
+  fn: (...args: unknown[]) => void;
+}
+
+function spy(): Spy {
+  const calls: unknown[][] = [];
+  return { calls, fn: (...args: unknown[]) => void calls.push(args) };
+}
+
+interface PromptSpies {
+  onSelectChoice: Spy;
+  onAnswerText: Spy;
+}
+
+function multiSelectPrompt(): AgentChatPromptState {
+  return {
+    promptId: "p4",
+    threadId: "t1",
+    agentId: "claude",
+    kind: "choice",
+    message: "Pick several?",
+    multiSelect: true,
+    choices: [
+      { choiceId: "m-A", label: "MA", providerValue: "structured:option:MA" },
+      { choiceId: "m-B", label: "MB", providerValue: "structured:option:MB" },
+    ],
+    source: "provider_hook",
+  };
+}
+
+// Dispatch a ⌘+digit (or ⌘Enter) keydown on the window the prompt card listens on.
+async function pressMeta(code: string): Promise<void> {
+  await act(async () => {
+    dom.window.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", { code, key: code === "Enter" ? "Enter" : "", metaKey: true, bubbles: true }),
+    );
+  });
+}
+
+async function mountWithSpies(prompt: AgentChatPromptState) {
+  const { createRoot } = await import("react-dom/client");
+  const container = dom.window.document.createElement("div");
+  dom.window.document.body.appendChild(container);
+  const root = createRoot(container);
+  const onSelectChoice = spy();
+  const onAnswerText = spy();
+  await act(async () => {
+    root.render(
+      <PromptCard
+        prompt={prompt}
+        onSelectChoice={onSelectChoice.fn}
+        onAnswerText={onAnswerText.fn}
+        onAnswerSteps={() => {}}
+      />,
+    );
+  });
+  const spies: PromptSpies = { onSelectChoice, onAnswerText };
+  return { container, root, spies };
+}
+
+function optionByLabel(container: Element, label: string): Element {
+  const options = [...container.querySelectorAll(".prompt-card__option")];
+  const target = options.find(
+    (option) => option.querySelector(".prompt-card__option-label")?.textContent === label,
+  );
+  assert.ok(target !== undefined, `expected an option labeled "${label}"`);
+  return target;
+}
+
+test("⌘N selects the N-th option without submitting; ⌘Enter then confirms it", async () => {
+  const { container, root, spies } = await mountWithSpies(singlePrompt());
+  try {
+    // Default-selected is the first option (Approve). ⌘2 moves selection to the 2nd (Deny).
+    await pressMeta("Digit2");
+    assert.equal(optionByLabel(container, "Deny").getAttribute("data-selected"), "true");
+    assert.equal(optionByLabel(container, "Approve").getAttribute("data-selected"), "false");
+    // Select-only: nothing committed yet.
+    assert.equal(spies.onSelectChoice.calls.length, 0);
+
+    // ⌘Enter confirms the highlighted option.
+    await pressMeta("Enter");
+    assert.deepEqual(spies.onSelectChoice.calls, [["deny"]]);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("⌘N on the trailing number activates the 'Other…' field without submitting", async () => {
+  const { container, root, spies } = await mountWithSpies(singlePrompt());
+  try {
+    // 2 choices → "Other…" is option 3.
+    await pressMeta("Digit3");
+    assert.ok(container.querySelector(".prompt-card__other") !== null, "custom-reply field opened");
+    assert.equal(spies.onSelectChoice.calls.length, 0);
+    assert.equal(spies.onAnswerText.calls.length, 0);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("multi-select: ⌘1 toggles the first option on, then off, never submitting", async () => {
+  const { container, root, spies } = await mountWithSpies(multiSelectPrompt());
+  try {
+    await pressMeta("Digit1");
+    assert.equal(optionByLabel(container, "MA").getAttribute("data-selected"), "true");
+    await pressMeta("Digit1");
+    assert.equal(optionByLabel(container, "MA").getAttribute("data-selected"), "false");
+    assert.equal(spies.onAnswerText.calls.length, 0);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("wizard: ⌘N selects within the current step and never advances", async () => {
+  const captured: AgentChatPromptStepAnswer[][] = [];
+  const { container, root } = await mountWizard((steps) => captured.push(steps));
+  try {
+    // ⌘2 picks the 2nd option (B) of step 1 — still on "1 of 2", no submit.
+    await pressMeta("Digit2");
+    assert.equal(optionByLabel(container, "B").getAttribute("data-selected"), "true");
+    assert.match(container.textContent ?? "", /1 of 2/);
+    assert.equal(captured.length, 0);
+
+    // ⌘Enter still advances, carrying the ⌘2 pick into the answer set.
+    await pressMeta("Enter");
+    assert.match(container.textContent ?? "", /2 of 2/);
+    await pressMeta("Enter");
+    assert.deepEqual(captured[0]?.[0], { stepId: "q-0", value: "structured:option:B" });
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+// Set a controlled textarea's value the way React expects (native setter + input event),
+// so onChange fires and component state actually updates.
+async function typeInto(el: Element, value: string): Promise<void> {
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")?.set;
+  await act(async () => {
+    setter?.call(el, value);
+    el.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+}
+
+test("AUQ note typed before ⌘Enter rides along (no stale-closure drop)", async () => {
+  const { container, root, spies } = await mountWithSpies(singleAuqPrompt());
+  try {
+    // A listed option is selected by default → the note field is offered.
+    const note = container.querySelector(".prompt-card__note");
+    assert.ok(note !== null, "note field present");
+    await typeInto(note, "remember this");
+    // ⌘Enter must submit with the freshly typed note, not a stale "".
+    await pressMeta("Enter");
+    assert.equal(spies.onAnswerText.calls.length, 1);
+    assert.equal(spies.onAnswerText.calls[0]?.[1], "remember this");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("each shortcut-bearing option shows a ⌘N keycap", () => {
+  // 2 choices + "Other…" → ⌘1, ⌘2, ⌘3.
+  const markup = renderToStaticMarkup(
+    <PromptCard prompt={singlePrompt()} onSelectChoice={() => {}} onAnswerText={() => {}} onAnswerSteps={() => {}} />,
+  );
+  assert.ok(markup.includes("⌘1"), "first option keycap");
+  assert.ok(markup.includes("⌘2"), "second option keycap");
+  assert.ok(markup.includes("⌘3"), "Other… keycap");
+});
+
 test("single prompt (no steps) renders the plain card — no wizard chrome", () => {
   // Static render is enough: this is the codex/gemini/opencode + claude-permission path.
   const markup = renderToStaticMarkup(
