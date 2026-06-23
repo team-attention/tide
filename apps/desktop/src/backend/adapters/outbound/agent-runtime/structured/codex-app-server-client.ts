@@ -485,7 +485,10 @@ class CodexAppServerClient implements StructuredRuntimeClient {
         if (rateLimits.length > 0) {
           this.lastRateLimits = rateLimits;
         }
+        // Merge onto the prior usage so a rate-limit-only update (total absent) keeps
+        // the last-known token counts / context window instead of wiping them.
         this.lastUsage = {
+          ...this.lastUsage,
           ...(total !== undefined ? { inputTokens: numberField(total, "inputTokens") } : {}),
           ...(total !== undefined ? { outputTokens: numberField(total, "outputTokens") } : {}),
           ...(total !== undefined ? { totalTokens: numberField(total, "totalTokens") } : {}),

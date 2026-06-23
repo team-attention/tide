@@ -53,7 +53,10 @@ function rateLimitsFromUnknown(
   const parsed: RateLimitWindow[] = [];
   const direct = rateLimitWindowFromRecord(value);
   if (direct !== undefined) {
+    // A parsed window is a leaf (primitive fields only) — it never nests further
+    // windows, so skip the redundant recursive lookups on its own keys.
     parsed.push(direct);
+    return parsed;
   }
 
   for (const key of RATE_LIMIT_WINDOW_KEYS) {
