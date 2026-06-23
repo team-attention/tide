@@ -48,9 +48,7 @@ import {
   type ProductShellState,
 } from "../../../../application/domains/product-shell/product-shell.ts";
 
-import type {
-  AgentChatBackendEvent,
-} from "../../../../application/domains/agent-chat/agent-chat.ts";
+import type { AgentChatBackendEvent } from "../../../../application/domains/agent-chat/agent-chat.ts";
 
 import {
   loadThemePreference,
@@ -63,15 +61,21 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     // Apply the remembered agent/model BEFORE the first Start Composer is built,
     // so a fresh launch already shows the user's last choice.
     setPreferredStartComposer(loadPreferredStartComposer());
-    return (
-      props.initialState ??
-      createProductShellState({
-        includeFixtureData: false,
-        ...loadRailOrder(),
-        listSettings: loadListSettings(),
-        worktreeSettings: loadWorktreeSettings(),
-      })
-    );
+    if (props.initialState !== undefined) {
+      return props.initialState;
+    }
+    const baseState = createProductShellState({
+      includeFixtureData: false,
+      ...loadRailOrder(),
+      listSettings: loadListSettings(),
+      worktreeSettings: loadWorktreeSettings(),
+    });
+    return props.initialThreadList === undefined
+      ? baseState
+      : applyProductShellBackendEvent(baseState, {
+          kind: "thread.listed",
+          payload: { threads: props.initialThreadList },
+        });
   });
   // Theme preference (light/dark/auto). Renderer-local: the DOM + localStorage are
   // the source of truth (applied at boot by renderer-entry / index.html); this

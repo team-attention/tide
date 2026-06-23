@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   BackendCommandEnvelope,
   BackendEventEnvelope,
+  ThreadSummaryDto,
 } from "../../../../shared/contracts/index.ts";
 
 export interface ProjectRegistryEntry {
@@ -79,6 +80,22 @@ function readUiPrefsSync(): Record<string, string> {
   return {};
 }
 
+function readInitialThreadListSync(): { threads: ThreadSummaryDto[] } | null {
+  try {
+    const snapshot = ipcRenderer.sendSync("tide:get-initial-thread-list") as unknown;
+    if (
+      snapshot !== null &&
+      typeof snapshot === "object" &&
+      Array.isArray((snapshot as { threads?: unknown }).threads)
+    ) {
+      return snapshot as { threads: ThreadSummaryDto[] };
+    }
+  } catch {
+    // main handler not ready / failed — fall back to the normal async thread.list.
+  }
+  return null;
+}
+
 export interface TidePreloadSurface {
   contractVersion: 1;
   transport: "message_port";
@@ -127,6 +144,9 @@ export interface TidePreloadSurface {
   // legacy storage key. saveUiPref persists a change to the Main-owned file. See ui-prefs.ts.
   uiPrefs: Record<string, string>;
   saveUiPref(key: string, value: string): void;
+  // Last persisted thread list from Main's lightweight index. Used only for first
+  // paint; the backend's authoritative thread.listed still refreshes it immediately.
+  initialThreadList: { threads: ThreadSummaryDto[] } | null;
   // Native folder picker + persisted project registry (Main-owned).
   openDirectory(): Promise<string | null>;
   listProjects(): Promise<ProjectRegistryEntry[]>;
@@ -252,6 +272,7 @@ export const tidePreloadSurface: TidePreloadSurface = {
     void ipcRenderer.invoke("tide:app-update-download");
   },
   uiPrefs: readUiPrefsSync(),
+  initialThreadList: readInitialThreadListSync(),
   saveUiPref(key: string, value: string) {
     void ipcRenderer.invoke("tide:save-ui-pref", key, value);
   },

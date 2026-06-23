@@ -8,6 +8,7 @@ import { appRendererUrl, createMainWindow } from "./main-window.ts";
 import { registerNotificationBridge } from "./notifications.ts";
 import { registerAutoUpdate, logUpdateEvent } from "./auto-update.ts";
 import { readUiPrefs, saveUiPref } from "./ui-prefs.ts";
+import { readInitialThreadListSnapshot } from "./thread-list-snapshot.ts";
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from "electron";
 
 import { basename, dirname, join } from "node:path";
@@ -589,6 +590,12 @@ registerAutoUpdate(() => BrowserWindow.getAllWindows()[0]);
 // line). Main reads the small JSON file (Node fs, instant) and returns it. See ui-prefs.ts.
 ipcMain.on("tide:get-ui-prefs", (event) => {
   event.returnValue = readUiPrefs();
+});
+
+// First-paint thread list snapshot, read synchronously from the lightweight thread
+// index. If unavailable, the renderer falls back to the skeleton until thread.listed.
+ipcMain.on("tide:get-initial-thread-list", (event) => {
+  event.returnValue = readInitialThreadListSnapshot();
 });
 
 // Persist a renderer UI pref to the Main-owned prefs file (read back at the next boot). See ui-prefs.ts.

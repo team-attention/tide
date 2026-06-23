@@ -1,4 +1,4 @@
-import type { AgentChatBackendEvent, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerSurfaceKind, AgentChatPromptStepAnswer } from "../../../../../application/domains/agent-chat/agent-chat.ts";
+import type { AgentChatBackendEvent, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerSurfaceKind, AgentChatPromptStepAnswer, AgentChatThreadSummary } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import type { DropZone, ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserCaptureResult, ProductShellBrowserSnapshot, ProductShellFileTreeMenu, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
@@ -95,6 +95,7 @@ export type WorkspaceFsResult =
 
 export interface TideProductShellProps {
   initialState?: ProductShellState;
+  initialThreadList?: AgentChatThreadSummary[];
   onBackendCommand?: (
     command: ProductShellBackendCommand,
   ) => Promise<AgentChatBackendEvent[]> | AgentChatBackendEvent[] | void;

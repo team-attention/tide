@@ -12,6 +12,7 @@ import {
   sanitizeJsonValue,
   type BackendCommandEnvelope,
   type BackendEventEnvelope,
+  type ThreadSummaryDto,
 } from "../../../../shared/contracts/index.ts";
 // Inter (OFL-1.1, self-hosted) is the canonical Figma typeface; load the weights
 // the design uses (regular / medium / semibold) so the UI does not fall back to
@@ -42,6 +43,7 @@ export function createInitialRendererElement() {
         boundaries handle the workbench; this catches everything else (chat, rail, dialogs). */}
     <ErrorBoundary fallback={(error, reset) => <AppErrorFallback error={error} reset={reset} />}>
     <TideProductShell
+      initialThreadList={window.tide?.initialThreadList?.threads}
       onBackendCommand={dispatchBackendCommand}
       onBackendEvent={subscribeBackendEvents}
       projectBridge={
@@ -146,6 +148,7 @@ declare global {
       checkForAppUpdate(): void;
       getAppVersion(): Promise<string>;
       uiPrefs: Record<string, string>;
+      initialThreadList: { threads: ThreadSummaryDto[] } | null;
       saveUiPref(key: string, value: string): void;
       openDirectory(): Promise<string | null>;
       listProjects(): Promise<{ projectId: string; name: string; cwd: string }[]>;
