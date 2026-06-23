@@ -518,6 +518,81 @@ test("scratch_thread_materializes_a_real_tide_owned_cwd_and_auto_trusts_it", asy
   );
 });
 
+test("default_worktree_thread_auto_trusts_when_parent_repo_is_trusted", async () => {
+  // Spec: docs_v2/specs/worktree-start-experience.md D8
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+
+  const result = await service.startThread({
+    initialMessage: "run in worktree",
+    agentBinding: { agentId: "codex" },
+    scope: {
+      kind: "project",
+      projectId: "feature",
+      cwd: "/repo.worktree/feature",
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(fakes.providerTrust.calls, [
+    { agentId: "codex", cwd: "/repo.worktree/feature" },
+  ]);
+  assert.equal(fakes.readiness.checks[0]?.scope?.kind, "project");
+  assert.equal(
+    fakes.readiness.checks[0]?.scope?.kind === "project"
+      ? fakes.readiness.checks[0].scope.cwd
+      : "",
+    "/repo",
+  );
+  assert.equal(
+    fakes.readiness.checks[1]?.scope?.kind === "project"
+      ? fakes.readiness.checks[1].scope.cwd
+      : "",
+    "/repo.worktree/feature",
+  );
+});
+
+test("default_worktree_thread_keeps_trust_prompt_when_parent_repo_is_untrusted", async () => {
+  // Spec: docs_v2/specs/worktree-start-experience.md D8
+  const fakes = createFakes({
+    readiness: {
+      ready: false,
+      agentId: "codex",
+      blockers: [
+        {
+          kind: "directory_trust_required",
+          scope: "execution_context",
+          message: "trust required",
+          action: "open_terminal",
+        },
+      ],
+    },
+  });
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+
+  const result = await service.startThread({
+    initialMessage: "run in untrusted worktree",
+    agentBinding: { agentId: "codex" },
+    scope: {
+      kind: "project",
+      projectId: "feature",
+      cwd: "/repo.worktree/feature",
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.status, "provider_not_ready");
+  assert.deepEqual(fakes.providerTrust.calls, []);
+});
+
 test("starting_a_thread_with_ready_provider_starts_runtime_with_launch_prompt", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({

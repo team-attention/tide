@@ -23,6 +23,9 @@ In scope:
 - **Recent environment choice**: the Start Composer remembers whether the user last
   chose Local or New worktree, so New Thread keeps the recent Worktree/Local option
   instead of always resetting to Local.
+- **Trust inheritance for Tide default worktrees**: if the parent repo is already
+  trusted for the selected provider, the new default-path worktree is trusted before
+  provider readiness runs, so starting in the worktree does not ask again.
 
 ## Evidence
 
@@ -117,6 +120,15 @@ resolve its own name from the typed form or first message. If the restored scope
 is Scratch or otherwise cannot create/use a worktree, the restored worktree option
 falls back to `current folder` (Local).
 
+### D8. Default worktrees inherit trust from their parent repo
+
+When a Thread starts in a default-rule worktree path (`<repo>.worktree/<branch>`),
+the backend checks readiness for the parent repo path first. If that parent check
+does not include `directory_trust_required`, `not_installed`, or `unknown`, Tide
+writes provider trust for the worktree cwd before checking readiness for the actual
+Thread. This removes repeat trust prompts for Tide-created worktrees while keeping
+the prompt when the parent repo itself has not been trusted.
+
 ## Out Of Scope
 
 - Renaming a worktree's git branch/directory **after** creation (the deferred
@@ -180,7 +192,9 @@ launchOptions.newWorktree = { name?: string; baseBranch?: string };
    `createWorktree(repoCwd, "fix-the-login-redirect-bug", { baseBranch })`.
 4. Worktree `<repo>.worktree/fix-the-login-redirect-bug` + branch of the same name
    are created off the base; the Thread starts there.
-5. Left Rail: the Thread appears under the repo Project group with a branch badge.
+5. If the repo Project is already trusted for the selected provider, Tide trusts
+   the worktree cwd before provider readiness runs.
+6. Left Rail: the Thread appears under the repo Project group with a branch badge.
 
 ### UC-2: New worktree, blank name, Korean first message
 
@@ -218,6 +232,8 @@ launchOptions.newWorktree = { name?: string; baseBranch?: string };
 | —    | D2 mixed keeps ascii tokens | `slug_from_message_keeps_only_ascii_tokens` |
 | —    | D2 truncation/token cap | `slug_from_message_caps_length_and_token_count` |
 | UC-2 | D1 blank+korean → hash | `resolve_worktree_name_falls_back_to_hash_for_non_ascii_message` |
+| UC-1 | D8 trusted parent repo → worktree trusted | `default_worktree_thread_auto_trusts_when_parent_repo_is_trusted` |
+| UC-1 | D8 untrusted parent repo → prompt remains | `default_worktree_thread_keeps_trust_prompt_when_parent_repo_is_untrusted` |
 | UC-3 | D1 typed wins | `resolve_worktree_name_uses_typed_name_over_message` |
 | D5   | grouping default-on | `worktree_threads_group_under_repo_by_default` |
 | D4   | base branch arg | `worktree_create_git_args_include_base_branch` (pure arg helper) |
