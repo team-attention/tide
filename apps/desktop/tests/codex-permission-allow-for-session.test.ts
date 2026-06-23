@@ -180,3 +180,19 @@ test("codex fileChange approval also offers Allow for this session", async () =>
     await client.stop();
   }
 });
+
+// T6 — secure-by-default: Skip (empty answer) / unrecognized value DECLINES, never accepts.
+test("Skip (empty answer) on a codex approval DECLINES — never silently accepts", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-codex-afs-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = makeClient(fakeApprovalPlan(receivedFile, "item/commandExecution/requestApproval", COMMAND_APPROVAL), onEvent);
+  try {
+    const prompt = await waitFor(() => events[0], "approval prompt");
+    await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: "" });
+    const decision = await waitFor(() => decisionFromResponse(receivedFile), "decision response");
+    assert.equal(decision, "decline");
+  } finally {
+    await client.stop();
+  }
+});

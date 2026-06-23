@@ -79,10 +79,12 @@ export function buildPermissionDetail(toolInput: Record<string, unknown>): Promp
   const locations = filePath !== undefined ? { locations: [filePath] } : {};
   const oldString = stringField(toolInput, "old_string");
   const newString = stringField(toolInput, "new_string");
-  if (oldString !== undefined && newString !== undefined) {
+  // Render the diff if EITHER side is present (a pure addition/deletion still previews), and
+  // split on /\r?\n/ so CRLF content doesn't leave a stray \r on every line.
+  if (oldString !== undefined || newString !== undefined) {
     const body = [
-      ...oldString.split("\n").map((line) => `- ${line}`),
-      ...newString.split("\n").map((line) => `+ ${line}`),
+      ...(oldString !== undefined ? oldString.split(/\r?\n/).map((line) => `- ${line}`) : []),
+      ...(newString !== undefined ? newString.split(/\r?\n/).map((line) => `+ ${line}`) : []),
     ].join("\n");
     return { format: "diff", body: bounded(body), ...locations };
   }

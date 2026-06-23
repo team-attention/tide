@@ -26,6 +26,26 @@ test("claude buildPermissionDetail: an Edit's old/new strings become a +/- diff 
   });
 });
 
+test("claude buildPermissionDetail: a pure addition/deletion (one side) still previews; CRLF is normalized", () => {
+  // pure deletion — only old_string
+  assert.deepEqual(buildPermissionDetail({ file_path: "a.ts", old_string: "gone" }), {
+    format: "diff",
+    body: "- gone",
+    locations: ["a.ts"],
+  });
+  // pure addition — only new_string
+  assert.deepEqual(buildPermissionDetail({ file_path: "a.ts", new_string: "added" }), {
+    format: "diff",
+    body: "+ added",
+    locations: ["a.ts"],
+  });
+  // CRLF content does not leave a stray \r on each line
+  assert.deepEqual(buildPermissionDetail({ old_string: "a\r\nb", new_string: "c\r\nd" }), {
+    format: "diff",
+    body: "- a\n- b\n+ c\n+ d",
+  });
+});
+
 test("claude buildPermissionDetail: a Write's content becomes a text detail with the path", () => {
   assert.deepEqual(buildPermissionDetail({ path: "b.ts", content: "hello" }), {
     format: "text",

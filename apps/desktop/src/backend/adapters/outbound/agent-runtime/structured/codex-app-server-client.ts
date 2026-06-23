@@ -308,13 +308,15 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     }
     this.pendingApprovals.delete(promptId);
     // codex v2 decision enum: accept / acceptForSession (don't re-prompt this session) /
-    // decline. "Allow for this session" sends acceptForSession; everything else maps as before.
+    // decline. Secure-by-default: only an EXPLICIT allow token approves; the Skip button
+    // (value ""), a dismissed card, or any unrecognized answer DECLINES — never run a tool the
+    // user did not approve (mirrors the claude fix, claude-parallel-permission-wedge.md).
     const decision =
-      input.value === CODEX_DECLINE_TOKEN
-        ? "decline"
+      input.value === CODEX_ACCEPT_TOKEN
+        ? "accept"
         : input.value === CODEX_ACCEPT_FOR_SESSION_TOKEN
           ? "acceptForSession"
-          : "accept";
+          : "decline";
     this.writeLine({ id: serverRequestId, result: { decision } });
   }
 
