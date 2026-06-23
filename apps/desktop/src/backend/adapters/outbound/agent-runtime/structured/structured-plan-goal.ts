@@ -94,9 +94,10 @@ function todoWriteEntries(input: unknown): PlanEntry[] {
   const entries: PlanEntry[] = [];
   for (const todo of input.todos) {
     if (!isRecord(todo)) continue;
-    const text = typeof todo.content === "string" ? todo.content : undefined;
+    const text = stringField(todo, "content");
     if (text === undefined || text.trim().length === 0) continue;
-    const status = todo.status === "completed" ? "done" : todo.status === "in_progress" ? "in_progress" : "pending";
+    const raw = stringField(todo, "status");
+    const status = raw === "completed" ? "done" : raw === "in_progress" ? "in_progress" : "pending";
     entries.push({ text, status });
   }
   return entries;

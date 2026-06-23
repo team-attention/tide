@@ -18,6 +18,7 @@ export function GoalChecklistPanel(props: {
   const [draft, setDraft] = useState(goal ?? "");
   const [collapsed, setCollapsed] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const isCancellingRef = useRef(false);
 
   // Keep the draft in sync with backend-confirmed goal changes while not editing.
   useEffect(() => {
@@ -28,6 +29,7 @@ export function GoalChecklistPanel(props: {
 
   useEffect(() => {
     if (editing) {
+      isCancellingRef.current = false;
       inputRef.current?.focus();
       inputRef.current?.select();
     }
@@ -38,6 +40,9 @@ export function GoalChecklistPanel(props: {
   const hasChecklist = checklist !== null && checklist.entries.length > 0;
 
   const commit = (): void => {
+    if (isCancellingRef.current) {
+      return;
+    }
     const next = draft.trim();
     setEditing(false);
     if (next !== currentGoal) {
@@ -46,6 +51,7 @@ export function GoalChecklistPanel(props: {
   };
 
   const cancel = (): void => {
+    isCancellingRef.current = true;
     setEditing(false);
     setDraft(goal ?? "");
   };
