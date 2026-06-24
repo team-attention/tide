@@ -2979,7 +2979,7 @@ fn focused_idle_notification_uses_structured_snippet_and_suppresses_later_rerout
             "pane": agent_pane,
             "agent": "claude",
             "payload": {
-                "hook_event_name": "AfterAgent",
+                "hook_event_name": "Stop",
                 "message": "Summarized the repo layout and highlighted the gateway routing path."
             }
         }),
@@ -3043,7 +3043,7 @@ fn stale_idle_snippet_does_not_override_future_needs_input_generic_fallback() {
             "pane": source_pane,
             "agent": "claude",
             "payload": {
-                "hook_event_name": "AfterAgent",
+                "hook_event_name": "Stop",
                 "message": "Stale idle completion text that must not be reused."
             }
         }),
@@ -3443,7 +3443,7 @@ fn idle_wrapped_agent_states_queue_notifications_without_user_attention() {
                     "pane": source_pane,
                     "agent": "claude",
                     "payload": {
-                        "hook_event_name": "AfterAgent",
+                        "hook_event_name": "Stop",
                         "message": "The codebase is split into a Terminal domain, Workspace services, and renderer adapters."
                     }
                 }),
