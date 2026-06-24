@@ -1898,6 +1898,29 @@ test("slash_command_menu_offers_goal_when_provider_commands_are_empty", () => {
   assert.ok(!rows.some((entry) => entry.label === "No commands found"));
 });
 
+test("codex_slash_command_menu_keeps_compact_when_provider_commands_are_empty", () => {
+  const state = {
+    ...updateComposerDraft(createAgentChatShellState(), "/com").state,
+    availableCommands: [],
+  };
+
+  const rows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
+
+  assert.ok(rows.some((entry) => entry.label === "/compact"));
+  assert.ok(!rows.some((entry) => entry.label === "No commands found"));
+});
+
+test("slash_command_menu_omits_no_results_placeholder_for_empty_filtered_results", () => {
+  const state = {
+    ...updateComposerDraft(createAgentChatShellState(), "/zz").state,
+    availableCommands: [],
+  };
+
+  const rows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
+
+  assert.equal(rows.length, 0);
+});
+
 test("slash_command_menu_dedupes_repeated_command_names", () => {
   // Some agents report a command once per subcommand, yielding the same name many
   // times. The menu shows each name once. See

@@ -1,4 +1,4 @@
-import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatProjectOption, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope } from "./types.ts";
+import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatProjectOption, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope } from "./types.ts";
 import { activeComposerTrigger, providerReadinessTerminalActionPayload, selectComposerAgent, setComposerActiveSurface } from "./composer.ts";
 import { CODEX_MODELS, PERMISSION_OPTIONS, REASONING_LEVELS, cliModelOptionsForAgent, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, isAgentAvailable, isAgentAvailabilityKnown, isAgentComingSoon, normalizePermissionValue, permissionConfigForAgent, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { branchMenuRows, defaultBranchName, worktreeForBranch, worktreeMenuRows } from "./branch-environment-menu-rows.ts";
@@ -7,6 +7,10 @@ import { buildOpencodeConnectSurface, getOpencodeEnvironment, isOpencodeUsable }
 import { basenameOf } from "./path-labels.ts";
 import { row } from "./choice-row.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
+
+const CODEX_LOCAL_SLASH_COMMANDS: AgentChatCommandOption[] = [
+  { name: "compact", description: "Summarize the conversation to free context", trigger: "/", source: "builtin" },
+];
 
 export function selectAgentChatChoiceSurfaceRow(
   state: AgentChatShellState,
@@ -375,13 +379,12 @@ export function createActiveComposerSurface(
           rows: fileMentionRows(state, query),
         };
       }
-      // The menu mirrors the agent's FULL real command set (the same list the
-      // provider CLI itself exposes), on the Start Composer and in a thread alike —
-      // no Tide-curated subset. Dedupe by name in case a provider reports a command
-      // once per subcommand. See live-provider-command-mirroring.md.
+      // Mirror the agent's real command set, plus local fallbacks for known provider
+      // commands that the machine protocol does not expose (codex `/compact`).
       const seenCommandNames = new Set<string>();
       const availableCommands = state.availableCommands ?? [];
       const commands = [
+        ...(trigger === "/" && binding.agentId === "codex" ? CODEX_LOCAL_SLASH_COMMANDS : []),
         ...(trigger === "/" && !availableCommands.some((command) => command.trigger === "/" && command.name.toLowerCase() === "goal")
           ? [{ name: "goal", description: "Set the thread goal", trigger: "/" as const, source: "builtin" as const }]
           : []),
@@ -404,12 +407,9 @@ export function createActiveComposerSurface(
         surfaceKind,
         title: trigger === "$" ? "Skills" : "Commands",
         sourceLabel: agentLabel,
-        rows:
-          commands.length === 0
-            ? [row("no-commands", `No ${trigger === "$" ? "skills" : "commands"} found`, "for this directory", agentLabel)]
-            : commands.map((command) =>
-                row(`command:${command.trigger}${command.name}`, `${command.trigger}${command.name}`, command.description, agentLabel),
-              ),
+        rows: commands.map((command) =>
+          row(`command:${command.trigger}${command.name}`, `${command.trigger}${command.name}`, command.description, agentLabel),
+        ),
       };
     }
   }

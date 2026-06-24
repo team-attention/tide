@@ -90,14 +90,18 @@ the real backend probe → `commandsChanged`; never sends a turn.
    distinct names (not dupes); the menu dedupes by name defensively.
 3. **opencode ✅** — **3** commands (`/customize-opencode`, `/init`, `/review`) via
    ACP handshake (no prompt).
-4. **codex — faithful but empty here.** codex's app-server exposes `skills/list`
-   (the `$` skills trigger), NOT its built-in `/` slash commands (those are
-   TUI-only, never sent over the machine protocol). This repo has no `.codex/skills`
-   → empty `/`. We mirror what codex exposes; it exposes no programmatic slash
-   commands. (Handshake only — never disturbs Codex.app auth.)
+4. **codex — protocol slash list is empty.** codex's app-server exposes
+   `skills/list` (the `$` skills trigger), NOT its built-in `/` slash commands
+   (those are TUI-only, never sent over the machine protocol). Tide therefore
+   keeps a small Codex built-in fallback for slash-menu UX (for example
+   `/compact`) even when the protocol probe returns no slash commands. Handshake
+   remains read-only and never disturbs Codex.app auth.
 5. In-thread behavior unchanged (live `commands` event still authoritative).
 6. Offline / probe-timeout: `discoverCommands` resolves `[]` (8s), the instant
-   file-discovery list stands — no hang, no crash.
+   file-discovery list and local provider built-ins stand — no hang, no crash.
+7. Empty filtered menus render no disabled "No commands found" row. The transient
+   surface may be empty while the user is mid-query; it should not show a fake
+   command.
 
 Remaining polish: merge file-discovery descriptions into the claude set so
 `/check` etc. show their real description instead of the "Claude command"
