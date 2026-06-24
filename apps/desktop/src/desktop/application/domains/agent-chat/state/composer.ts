@@ -286,6 +286,14 @@ function formatContextChipForMessage(chip: AgentChatContextChip): string {
   return `${head}${note.length > 0 ? `\n${note}` : ""}\n\n${chip.text}`;
 }
 
+function parseGoalCommand(draft: string): { matched: boolean; objective: string } {
+  const match = draft.match(/^\/goal(?:\s+([\s\S]*))?$/i);
+  if (match === null) {
+    return { matched: false, objective: "" };
+  }
+  return { matched: true, objective: (match[1] ?? "").trim() };
+}
+
 export function submitComposer(
   state: AgentChatShellState,
 ): AgentChatShellUpdateResult {
@@ -311,12 +319,33 @@ export function submitComposer(
     return { state, command: null };
   }
 
+  const goalCommand =
+    attachments.length === 0 && chips.length === 0
+      ? parseGoalCommand(draft)
+      : { matched: false, objective: "" };
+  if (goalCommand.matched && goalCommand.objective.length === 0) {
+    return { state, command: null };
+  }
+
   const messageAttachments = attachmentsForMessage(attachments);
   // Clear the draft on send (every path) so re-clicking submit can't resend the
   // same message and spawn a duplicate thread / duplicate user row.
   const composerAfterSend = { ...state.composer, draft: "", attachments: [], contextChips: [] };
 
   if (state.thread) {
+    if (goalCommand.matched) {
+      return {
+        state: {
+          ...state,
+          thread: { ...state.thread, goal: goalCommand.objective },
+          composer: composerAfterSend,
+        },
+        command: {
+          kind: "thread.setGoal",
+          payload: { threadId: state.thread.threadId, goal: goalCommand.objective },
+        },
+      };
+    }
     // Optimistically show the sent message as a pending row (instant feedback, and
     // it hides the empty-thread placeholder). The backend's authoritative queue —
     // carried on the command's agentRuntime.stateChanged — then reconciles it: an
@@ -348,9 +377,10 @@ export function submitComposer(
   const startOptions = startOptionsWithExistingWorktreeScope(state.composer.startOptions);
   const newThreadId = generateThreadId();
   const nowIso = new Date().toISOString();
+  const initialMessage = goalCommand.matched ? goalCommand.objective : input;
   const optimisticThread: AgentChatThreadSummary = {
     threadId: newThreadId,
-    title: input.length > 0 ? input.slice(0, 80) : "New thread",
+    title: initialMessage.length > 0 ? initialMessage.slice(0, 80) : "New thread",
     agentBinding: startOptions.agentBinding,
     scope: startOptions.scope ?? { kind: "scratch", scratchCwd: "Scratch" },
     launchOptions: startOptions.launchOptions,
@@ -358,6 +388,7 @@ export function submitComposer(
     updatedAt: nowIso,
     pinned: false,
     archived: false,
+    ...(goalCommand.matched ? { goal: goalCommand.objective } : {}),
     lastKnownState: "running",
   };
 
@@ -373,7 +404,8 @@ export function submitComposer(
       kind: "thread.start",
       payload: {
         threadId: newThreadId,
-        initialMessage: input,
+        initialMessage,
+        ...(goalCommand.matched ? { goal: goalCommand.objective } : {}),
         agentBinding: startOptions.agentBinding,
         scope: startOptions.scope,
         launchOptions: startOptions.launchOptions,

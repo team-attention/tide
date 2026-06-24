@@ -38,12 +38,17 @@ they may land as two sub-slices (1A checklist, 1B goal).
   - **ACP** `plan` updates are NOT handled — `acp-client.ts:605` ("plan /
     current_mode_update: later slices"). Payload shape:
     `session/update { update:{ sessionUpdate:"plan", entries:[{content,priority,status}] } }`.
-- `ThreadSummaryDto` — `src/shared/contracts/thread.ts:5-28`. No `goal` field.
+- `ThreadSummaryDto` — `src/shared/contracts/thread.ts:5-28`. Carries optional
+  `goal`.
   Built by `toThreadSummaryDto()` in
   `src/backend/adapters/inbound/contract-message-adapter/dto/thread-dtos.ts:7-29`,
   from `ThreadRecord`/`ThreadSnapshot` in
   `src/backend/application/domains/thread/thread.ts`. Tide-owned thread metadata
   store = `thread-store.ts`; mutations via `ThreadCrudService`.
+- Composer `/goal <objective>` is Tide-owned UI grammar, not provider input.
+  The command must set Thread metadata and steer the provider before the first
+  turn starts; sending the literal `/goal ...` as `initialMessage` does not set
+  the Codex goal and leaves the panel empty.
 - Agent Chat shell mounts header + session-region + composer —
   `src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.tsx:354-400`.
   Pinned panel mounts as a sibling between header and session-region.
@@ -110,6 +115,12 @@ they may land as two sub-slices (1A checklist, 1B goal).
     used where available.
   Goal stays Tide-persisted regardless of provider so it survives restart and shows
   immediately.
+- **D7 — `/goal <objective>` is a Tide local command.** The composer always offers
+  `/goal` in the `/` command menu, including Codex when provider command discovery
+  returns no slash commands for the cwd. Submitting `/goal <objective>` strips the
+  slash command from the user message, stores `<objective>` as the thread goal,
+  and passes it to the runtime start/write path. Empty `/goal` is ignored until an
+  objective exists.
 - **D6 — Slice order.** **1A = checklist** is built first: it is native for ALL four
   providers (codex `turn/plan/updated`, claude `TodoWrite`, ACP `plan`), so it is
   the strongest fully-verified ground and is independent of the goal fallback
@@ -141,6 +152,9 @@ they may land as two sub-slices (1A checklist, 1B goal).
 - New inbound contract message `thread.setGoal { threadId: ThreadId; goal: string }`
   → updates thread metadata, echoes a thread-updated event. (Empty string clears
   the goal.)
+- `thread.start` accepts optional `goal?: string`. When present, the backend
+  persists it before readiness/runtime spawn and passes it as `initialGoal` so
+  provider-native goal state is set before the initial prompt.
 - Plan entries ride on the existing `AgentSessionBlockDto.data` (kind is already a
   free string in the DTO mirror — no DTO union change needed).
 - (D5-a only) goal context injection happens backend-side at send time; no new
@@ -158,9 +172,10 @@ they may land as two sub-slices (1A checklist, 1B goal).
    thread, renders items + `done/total`. Transcript skips `kind:"plan"`.
 
 **Goal (write path, D5-c):**
-1. User edits goal in panel → `thread.setGoal` → `ThreadCrudService` persists to
-   Tide metadata → thread-updated event → `ThreadSummaryDto.goal` updates → panel
-   reflects it immediately.
+1. User edits goal in panel or submits `/goal <objective>` → `thread.setGoal` /
+   `thread.start { goal }` → `ThreadCrudService` / `ThreadRuntimeService`
+   persists to Tide metadata → thread-updated event → `ThreadSummaryDto.goal`
+   updates → panel reflects it immediately.
 2. Backend also pushes to the provider's native mechanism via a new runtime write
    `{ kind:"goal_set"; objective: string }` (empty ⇒ `goal_clear`):
    - codex client → `thread/goal/set` (or `thread/goal/clear`).
@@ -173,8 +188,9 @@ they may land as two sub-slices (1A checklist, 1B goal).
 ## Invariants
 
 - At most one `kind:"plan"` block per runtime; updates upsert, never append.
-- A plan block with zero entries renders nothing (panel shows goal only / panel
-  hidden if both empty).
+- A plan block with zero entries renders nothing. The panel is not mounted when
+  there is no non-empty goal and no non-empty checklist; there is no persistent
+  "Set a goal for this thread" placeholder.
 - Plan blocks never appear as transcript turns.
 - Setting an empty goal clears it; `goal` absent on older payloads ⇒ treated as
   unset (no panel goal row).
@@ -190,6 +206,13 @@ they may land as two sub-slices (1A checklist, 1B goal).
   (once D6 wires them).
 - Adapter: claude `TodoWrite` does NOT also emit a `tool_call` record (D3).
 - Contract: `thread.setGoal` updates `ThreadSummaryDto.goal`; empty clears it.
+- Contract: `thread.start { goal }` persists `ThreadSummaryDto.goal` and passes
+  `initialGoal` to the runtime port.
+- Composer: `/goal <objective>` emits `thread.setGoal` for an existing thread and
+  `thread.start { goal:<objective> }` for a new thread; the literal slash command
+  is never queued/sent as provider input.
+- Command menu: `/goal` appears for Codex even when provider discovery returns no
+  slash commands.
 - Renderer: panel shows `done/total`, item statuses, editable goal; hidden when
   goal empty AND no plan entries; plan block absent from transcript.
 - (D5-a) Send path injects goal preamble only when goal set.

@@ -66,6 +66,7 @@ export interface HydrateThreadResult {
 export interface StartThreadInput {
   threadId?: ThreadId;
   initialMessage: string;
+  goal?: string;
   agentBinding: AgentBinding;
   scope?: ThreadScope;
   launchOptions?: Record<string, unknown>;

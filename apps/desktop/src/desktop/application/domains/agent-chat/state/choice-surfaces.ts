@@ -380,7 +380,13 @@ export function createActiveComposerSurface(
       // no Tide-curated subset. Dedupe by name in case a provider reports a command
       // once per subcommand. See live-provider-command-mirroring.md.
       const seenCommandNames = new Set<string>();
-      const commands = (state.availableCommands ?? []).filter((command) => {
+      const availableCommands = state.availableCommands ?? [];
+      const commands = [
+        ...(trigger === "/" && !availableCommands.some((command) => command.trigger === "/" && command.name.toLowerCase() === "goal")
+          ? [{ name: "goal", description: "Set the thread goal", trigger: "/" as const, source: "builtin" as const }]
+          : []),
+        ...availableCommands,
+      ].filter((command) => {
         if (command.trigger !== trigger) {
           return false;
         }
