@@ -1,7 +1,7 @@
 {
   "name": "tide-v2",
   "productName": "Tide",
-  "version": "0.1.88",
+  "version": "0.1.89",
   "description": "Tide v2 Electron app scaffold.",
   "main": "out/main/electron-main.js",
   "author": "Tide",
