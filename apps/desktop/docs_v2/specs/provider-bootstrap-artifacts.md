@@ -1,5 +1,12 @@
 # Spec: Provider Bootstrap Artifacts
 
+Status: **Subordinate**
+
+This spec documents the current Tide-owned bootstrap artifact helper. New
+resource-model work should use [Agent Resource Model](agent-resource-model.md)
+as the controlling spec and treat this document as the current implementation
+detail that will move behind the resource planner.
+
 ## Scope
 
 The live Backend creates and verifies Tide-owned bootstrap artifacts for active
