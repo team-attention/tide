@@ -18,7 +18,7 @@ import { createLiveBackendContractMessageAdapter } from "../src/backend/infrastr
 import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const providerCliAgents = new Set(["codex", "claude", "gemini", "opencode"]);
+const providerCliAgents = new Set(["codex", "claude", "opencode"]);
 const selectableAgents = providerCliAgents;
 
 const options = parseArgs(process.argv.slice(2));
@@ -283,8 +283,6 @@ function labelForAgent(agent) {
       return "Codex CLI";
     case "claude":
       return "Claude Code";
-    case "gemini":
-      return "Gemini CLI";
     case "opencode":
       return "opencode";
     default:
@@ -395,7 +393,7 @@ function printHelp() {
   console.log(`Usage: npm run test:smoke:providers -- --agent codex
 
 Options:
-  --agent codex|claude|gemini|opencode
+  --agent codex|claude|opencode
   --timeout-ms 75000
   --app-data-root /tmp/tide-provider-smoke
   --message "Prompt text"

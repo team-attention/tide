@@ -321,10 +321,6 @@ export function claudeProjectTranscriptsDir(homeDir: string, cwd: string): strin
   return join(homeDir, ".claude", "projects", claudeProjectDirName(cwd));
 }
 
-// Locates the on-disk gemini session file for a Tide-minted session id:
-// ~/.gemini/tmp/<project>/chats/session-<ts>-<uuid8>.jsonl whose header line
-// carries the full sessionId. Deterministic — keyed by the assigned id, never by
-// recency — so concurrent same-prompt threads can never swap sessions.
 // Locates the on-disk claude transcript for a Tide-minted session id:
 // ~/.claude/projects/<munged-cwd>/<session-id>.jsonl. Deterministic — keyed by
 // the assigned id (the filename IS the id), never by recency. The project dir is

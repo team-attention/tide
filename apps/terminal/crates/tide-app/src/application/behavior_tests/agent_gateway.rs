@@ -1692,27 +1692,6 @@ fn claude_wrapper_forwards_hook_stdin_payloads_for_notification_and_stop() {
     );
 }
 
-#[test]
-fn gemini_wrapper_forwards_hook_stdin_payloads_for_notification_and_after_agent() {
-    // Spec: docs/specs/agent-auto-integration.md
-    // UC-5 BR-14: Gemini Notification and AfterAgent hooks forward stdin JSON through tide notify.
-    let wrapper_path = format!("{}/resources/bin/gemini", env!("CARGO_MANIFEST_DIR"));
-    let wrapper = std::fs::read_to_string(&wrapper_path)
-        .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
-
-    assert!(wrapper.contains(
-        "notify agent-needs-input --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini --payload-stdin"
-    ));
-    assert!(wrapper.contains(
-        "notify agent-idle --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini --payload-stdin"
-    ));
-    assert!(wrapper.contains("tide_notify agent-attached"));
-    assert!(wrapper.contains("tide_notify agent-detached"));
-    assert!(wrapper
-        .contains("notify agent-running --pane \\\"\\$TIDE_TERMINAL_PANE\\\" --agent gemini"));
-}
-
-#[test]
 fn agent_attached_marks_presence_without_running_or_notification_routing() {
     // Spec: docs/specs/agent-notification-routing.md
     // UC-14 BR-39: Launch-time wrapper integration marks presence without forcing Running.
@@ -2905,46 +2884,6 @@ fn codex_stop_notification_uses_task_complete_last_agent_message_snippet() {
     ));
 }
 
-#[test]
-fn gemini_after_agent_notification_uses_prompt_response_snippet() {
-    // UC-6 BR-10, BR-11: Gemini idle completion notifications use prompt_response as the body.
-    let (mut app, pane_id) = app_with_terminal();
-    let focused_pane = app.layout.split(pane_id, SplitDirection::Horizontal);
-    let focused_terminal = TerminalPane::with_cwd(focused_pane, 80, 24, None, true).unwrap();
-    app.panes
-        .insert(focused_pane, PaneKind::Terminal(focused_terminal));
-    app.focus.focused = Some(focused_pane);
-    app.focus.stage_focused = Some(focused_pane);
-    app.window.is_focused = false;
-
-    app.handle_cli_command(
-        "notify",
-        json!({
-            "event": "agent-idle",
-            "pane": pane_id,
-            "agent": "gemini",
-            "payload": {
-                "hook_event_name": "AfterAgent",
-                "prompt": "Explain this codebase",
-                "prompt_response": "The codebase is split into a Terminal domain, Workspace services, and renderer adapters."
-            }
-        }),
-    )
-    .unwrap();
-
-    assert!(matches!(
-        app.pending_platform_commands.first(),
-        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id: body_pane_id, body, .. })
-            if *body_pane_id == pane_id && body == "The codebase is split into a Terminal domain, Workspace services, and renderer adapters."
-    ));
-    assert!(
-        !app.pending_platform_commands.iter().any(|command| matches!(
-            command,
-            crate::tide_platform::WindowCommand::RequestUserAttention
-        ))
-    );
-}
-
 #[cfg(target_os = "macos")]
 #[test]
 fn foreground_notification_presentation_uses_banner_and_sound() {
@@ -3038,11 +2977,10 @@ fn focused_idle_notification_uses_structured_snippet_and_suppresses_later_rerout
         json!({
             "event": "agent-idle",
             "pane": agent_pane,
-            "agent": "gemini",
+            "agent": "claude",
             "payload": {
-                "hook_event_name": "AfterAgent",
-                "prompt": "Summarize the repo",
-                "prompt_response": "Summarized the repo layout and highlighted the gateway routing path."
+                "hook_event_name": "Stop",
+                "message": "Summarized the repo layout and highlighted the gateway routing path."
             }
         }),
     )
@@ -3103,11 +3041,10 @@ fn stale_idle_snippet_does_not_override_future_needs_input_generic_fallback() {
         json!({
             "event": "agent-idle",
             "pane": source_pane,
-            "agent": "gemini",
+            "agent": "claude",
             "payload": {
-                "hook_event_name": "AfterAgent",
-                "prompt": "Summarize the repo",
-                "prompt_response": "Stale idle completion text that must not be reused."
+                "hook_event_name": "Stop",
+                "message": "Stale idle completion text that must not be reused."
             }
         }),
     )
@@ -3117,7 +3054,7 @@ fn stale_idle_snippet_does_not_override_future_needs_input_generic_fallback() {
 
     if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&source_pane) {
         terminal.backend.load_mock_screen_for_test(
-            "model: gemini-pro\nTip: Tide help text\n• Fresh visible fallback text from the terminal.\n",
+            "model: claude-sonnet\nTip: Tide help text\n• Fresh visible fallback text from the terminal.\n",
         );
     }
 
@@ -3126,7 +3063,7 @@ fn stale_idle_snippet_does_not_override_future_needs_input_generic_fallback() {
         json!({
             "event": "agent-needs-input",
             "pane": source_pane,
-            "agent": "gemini"
+            "agent": "claude"
         }),
     )
     .unwrap();
@@ -3135,7 +3072,7 @@ fn stale_idle_snippet_does_not_override_future_needs_input_generic_fallback() {
         app.pending_platform_commands.first(),
         Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, body, .. })
             if *pane_id == source_pane
-                && body == "Gemini needs your input"
+                && body == "Claude Code needs your input"
     ));
     assert!(
         app.pending_platform_commands
@@ -3487,34 +3424,33 @@ fn idle_wrapped_agent_states_queue_notifications_without_user_attention() {
     }
 
     {
-        let (mut gemini_app, source_pane) = app_with_terminal();
-        let focused_pane = gemini_app
+        let (mut claude_app, source_pane) = app_with_terminal();
+        let focused_pane = claude_app
             .layout
             .split(source_pane, SplitDirection::Horizontal);
         let focused_terminal = TerminalPane::with_cwd(focused_pane, 80, 24, None, true).unwrap();
-        gemini_app
+        claude_app
             .panes
             .insert(focused_pane, PaneKind::Terminal(focused_terminal));
-        gemini_app.focus.focused = Some(focused_pane);
-        gemini_app.focus.stage_focused = Some(focused_pane);
-        gemini_app.window.is_focused = false;
-        gemini_app
+        claude_app.focus.focused = Some(focused_pane);
+        claude_app.focus.stage_focused = Some(focused_pane);
+        claude_app.window.is_focused = false;
+        claude_app
             .handle_cli_command(
                 "notify",
                 json!({
                     "event": "agent-idle",
                     "pane": source_pane,
-                    "agent": "gemini",
+                    "agent": "claude",
                     "payload": {
-                        "hook_event_name": "AfterAgent",
-                        "prompt": "Explain this codebase",
-                        "prompt_response": "The codebase is split into a Terminal domain, Workspace services, and renderer adapters."
+                        "hook_event_name": "Stop",
+                        "message": "The codebase is split into a Terminal domain, Workspace services, and renderer adapters."
                     }
                 }),
             )
             .unwrap();
         assert_eq!(
-            gemini_app
+            claude_app
                 .gateway
                 .detected_agents
                 .get(&source_pane)
@@ -3523,10 +3459,10 @@ fn idle_wrapped_agent_states_queue_notifications_without_user_attention() {
             Some(crate::state::gateway_status::AgentStatus::Idle)
         );
         assert!(has_system_notification(
-            &gemini_app.pending_platform_commands
+            &claude_app.pending_platform_commands
         ));
-        assert!(!has_user_attention(&gemini_app.pending_platform_commands));
-        assert!(gemini_app.notified_panes.contains(&source_pane));
+        assert!(!has_user_attention(&claude_app.pending_platform_commands));
+        assert!(claude_app.notified_panes.contains(&source_pane));
     }
 }
 

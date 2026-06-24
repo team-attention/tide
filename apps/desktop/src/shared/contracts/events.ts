@@ -208,7 +208,7 @@ export interface BackendEventPayloadByKind {
     cwd?: string;
     commands: Array<{ name: string; description: string; trigger: "/" | "$" }>;
   };
-  // The agent self-reported its model catalog over the protocol (gemini ACP
+  // The agent self-reported its model catalog over the protocol (ACP
   // availableModels / opencode configOptions) — the live current model + the real
   // available list, so the composer menu reflects reality not a static guess.
   "agentRuntime.modelCatalogChanged": {

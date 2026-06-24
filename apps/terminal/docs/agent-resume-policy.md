@@ -17,7 +17,6 @@ agent process.
 | --- | --- | --- | --- |
 | Claude Code | `claude` | Restores Workspace layout and Terminal cwd only. | Tide does not invoke provider resume. Relaunch explicitly, then use provider-native resume only if the user or agent chooses it. |
 | Codex | `codex` | Restores Workspace layout and Terminal cwd only. | Tide does not invoke provider resume. Relaunch explicitly, then use provider-native resume only if the user or agent chooses it. |
-| Gemini | `gemini` | Restores Workspace layout and Terminal cwd only. | Tide does not invoke provider resume. Relaunch explicitly, then use provider-native resume only if the user or agent chooses it. |
 | Antigravity | `agy` | Restores Workspace layout and Terminal cwd only. | Tide does not invoke provider resume. Relaunch explicitly, then use provider-native resume only if the user or agent chooses it. |
 | opencode | `opencode` | Restores Workspace layout and Terminal cwd only. | Tide does not invoke provider resume. Relaunch explicitly, then use provider-native resume only if the user or agent chooses it. |
 

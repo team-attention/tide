@@ -7,7 +7,7 @@
 //   2. the same prompt never re-surfaces after it was answered (no double prompt),
 //   3. the turn finally settles with an answer instead of hanging "Working".
 //
-// Usage: node scripts/v2-provider-permission-flow.mjs --agent <claude|codex|gemini>
+// Usage: node scripts/v2-provider-permission-flow.mjs --agent <claude|codex|opencode>
 //        [--deny] [--timeout-ms 240000]
 
 import { mkdtempSync } from "node:fs";
@@ -48,15 +48,10 @@ const SCENARIOS = {
     message:
       "Run the shell command `touch /tmp/tide-perm-probe-codex.txt` (it needs approval), then reply exactly DONE.",
   },
-  gemini: {
-    permission: "default",
-    message:
-      "Run the shell command `touch /tmp/tide-perm-probe-gemini.txt` (it needs approval), then reply exactly DONE.",
-  },
-  // opencode shares the ACP runtime path with gemini, so its approval flow is the
+  // opencode uses the ACP runtime path, so its approval flow is the
   // same shape (server session/request_permission → selected optionId).
   opencode: {
-    permission: "default",
+    permission: "build",
     message:
       "Run the shell command `touch /tmp/tide-perm-probe-opencode.txt` (it needs approval), then reply exactly DONE.",
   },
@@ -64,7 +59,7 @@ const SCENARIOS = {
 
 const scenario = SCENARIOS[agent];
 if (scenario === undefined) {
-  console.error("Usage: node scripts/v2-provider-permission-flow.mjs --agent <claude|codex|gemini|opencode>");
+  console.error("Usage: node scripts/v2-provider-permission-flow.mjs --agent <claude|codex|opencode>");
   process.exit(2);
 }
 const message = process.env.TIDE_MESSAGE ?? scenario.message;

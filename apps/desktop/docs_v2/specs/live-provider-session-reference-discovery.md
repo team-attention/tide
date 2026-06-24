@@ -10,7 +10,6 @@ It covers:
 - persisting the same provider session reference into `thread.json`.
 - using Codex rollout evidence to derive `codex_rollout` references.
 - using Claude transcript evidence to derive `claude_transcript` references.
-- using Gemini ACP/session evidence to derive `gemini_session` references.
 - using opencode ACP session evidence to derive `opencode_session` references.
 - keeping follow-up resume available without starting a new Raw Agent Session.
 
@@ -69,8 +68,8 @@ For Claude, the transcript filename identifies the Claude session id, but the tr
 }
 ```
 
-For Gemini and opencode, the structured ACP session supplies the provider session id.
-The live Backend records `gemini_session` or `opencode_session` refs respectively.
+For opencode, the structured ACP session supplies the provider session id.
+The live Backend records `opencode_session` refs.
 
 ### D4. Hook payload identity may attach before history polling
 
@@ -137,7 +136,7 @@ This keeps the live event stream and same-process `thread.hydrate` result aligne
 | Codex rollout history becomes visible output | `codex_provider_history_reader_projects_agent_message_frame` proves a correlated Codex rollout can produce an agent message frame. |
 | Claude transcript history becomes visible output | `claude_provider_history_reader_projects_agent_message_frame` proves a correlated Claude transcript can produce an agent message frame. |
 | Projected block updates Thread cache | `recording_agent_session_block_upserts_cached_block_for_hydrate` proves a projected Agent Session Block is returned by later `thread.hydrate`. |
-| Structured session becomes ref | Provider integration tests prove Gemini/opencode sessions become `gemini_session` / `opencode_session` refs. |
+| Structured session becomes ref | Provider integration tests prove opencode sessions become `opencode_session` refs. |
 
 ## Implementation Notes
 

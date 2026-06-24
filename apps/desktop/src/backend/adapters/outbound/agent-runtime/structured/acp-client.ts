@@ -1,16 +1,15 @@
-// Shared ACP (Agent Client Protocol) runtime client. Used by every provider
-// that speaks ACP over stdio — gemini (`gemini --acp`) and opencode
-// (`opencode acp`). Identical protocol shape verified live for both.
+// Shared ACP (Agent Client Protocol) runtime client. Used by providers that
+// speak ACP over stdio, currently opencode (`opencode acp`).
 //
-// EVIDENCE-BASED (live transcripts /tmp/tide-proto-evidence/gemini/ + the
-// bundled @agentclientprotocol/sdk schemas inside gemini-cli 0.46):
+// EVIDENCE-BASED (live opencode transcripts + the bundled
+// @agentclientprotocol/sdk schemas):
 // - JSON-RPC 2.0, newline-delimited, over plain stdio. Bidirectional: the agent
 //   also sends REQUESTS (session/request_permission) the client must answer.
 // - initialize {protocolVersion:1, clientCapabilities, clientInfo} →
 //   {authMethods, agentCapabilities:{loadSession:true,...}}.
 // - session/new {cwd, mcpServers:[]} → {sessionId, modes, models}. The agent
 //   GENERATES the session id (randomUUID) — it cannot be minted by the client.
-//   Unauthenticated: error -32000 "Gemini API key is missing or not configured."
+//   Unauthenticated providers return a JSON-RPC error.
 // - session/prompt {sessionId, prompt:[{type:"text",text}]} stays UNRESOLVED for
 //   the whole turn; its result {stopReason, _meta:{quota}} IS the turn end.
 // - streaming: notifications session/update {update:{sessionUpdate:kind,...}}:
@@ -22,8 +21,7 @@
 // - cancel: notification session/cancel {sessionId} → prompt resolves with
 //   stopReason "cancelled" (pending permission must be answered "cancelled").
 // - trust: ACP surfaces NO trust prompt; an untrusted cwd may skip MCP servers
-//   and lock privileged modes. Gemini launch plans therefore add its documented
-//   workspace-trust bridge env so Tide MCP can load.
+//   and lock privileged modes.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 import type { ComposerAttachmentRef, PromptChoice, PromptState, ProviderCliAgentId } from "../../../../application/domains/thread/thread.ts";
@@ -41,7 +39,7 @@ import { acpOptionKind, buildAcpPermissionDetail } from "./acp-permission.ts";
 import { planActivityFromEntries, planActivityFromTodoToolOutput } from "./plan-activity.ts";
 import { acpPlanContentRecord, withGoalPreamble } from "./structured-plan-goal.ts";
 
-export const GEMINI_OPTION_PREFIX = "structured:gemini-option:";
+export const ACP_OPTION_PREFIX = "structured:acp-option:";
 
 export interface CreateAcpClientInput extends StructuredClientCallbacks {
   plan: ProviderLaunchPlan;
@@ -61,7 +59,7 @@ interface AcpQueuedPrompt {
 
 // Build the ACP session/prompt content blocks: the text plus a NATIVE image
 // ContentBlock per attachment ({type:"image", mimeType, data:<base64>} — the
-// ACP/MCP image content shape, confirmed in the opencode + gemini ACP bundles).
+// ACP/MCP image content shape.
 // ACP agents have no file-read tool, so the "[Attached image: <path>]" text alone
 // is invisible to them — this is what actually lets them see the image. The file
 // is read synchronously (a just-materialized small image on the send path).
@@ -131,7 +129,7 @@ class AcpClient implements StructuredRuntimeClient {
     this.child.stderr.setEncoding("utf8");
     this.child.stderr.on("data", (chunk: string) => {
       if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
-        process.stderr.write(`[tide-gemini-acp ${this.runtimeId}] ${chunk}`);
+        process.stderr.write(`[tide-acp ${this.runtimeId}] ${chunk}`);
       }
       this.scanUpdate(chunk);
     });
@@ -188,7 +186,7 @@ class AcpClient implements StructuredRuntimeClient {
       const error = isRecord(response.error) ? response.error : {};
       this.onEvent({
         kind: "turn_completed",
-        notice: stringField(error, "message") ?? "Gemini session could not be started.",
+        notice: stringField(error, "message") ?? "ACP session could not be started.",
       });
       return;
     }
@@ -202,7 +200,7 @@ class AcpClient implements StructuredRuntimeClient {
       kind: "session_ref",
       ref: { agentId: this.agentId, kind: this.sessionRefKind, value: sessionId },
     });
-    // The agent self-reports its model catalog at session/new (gemini availableModels
+    // The agent self-reports its model catalog at session/new (ACP availableModels
     // / opencode configOptions) — surface it so the menu is accurate + the current
     // model is reflected, not a drifted static guess.
     this.emitModelCatalog(result);
@@ -227,9 +225,8 @@ class AcpClient implements StructuredRuntimeClient {
     this.flushQueuedPrompt();
   }
 
-  // Mid-thread Launch Options change. gemini delivers the session mode (permission)
-  // as the ACP-standard modeId via session/set_mode; opencode delivers model / effort
-  // / mode as session/set_config_option entries. Both are valid at any time. See
+  // Mid-thread Launch Options change. opencode delivers model / effort / mode as
+  // session/set_config_option entries. See
   // mid-thread-launch-option-changes.md + opencode-model-vendor-selection.md.
   async applyConfig(protocolParams: Record<string, unknown>): Promise<boolean> {
     // ACP set_mode / set_config_option have no Tide-side failure signal today, so
@@ -291,8 +288,8 @@ class AcpClient implements StructuredRuntimeClient {
   }
 
   // Parse the agent's self-reported model catalog from the session/new result and
-  // emit it: gemini's ACP-standard `models.availableModels`/`currentModelId`, or
-  // opencode's `configOptions` model category (provider/model ids → vendor + model).
+  // emit it: ACP-standard `models.availableModels`/`currentModelId`, or opencode's
+  // `configOptions` model category (provider/model ids → vendor + model).
   private emitModelCatalog(result: Record<string, unknown>): void {
     const catalog = parseAcpModelCatalog(result);
     if (catalog !== undefined) {
@@ -329,11 +326,11 @@ class AcpClient implements StructuredRuntimeClient {
       let notice: string | undefined;
       if (response.error !== undefined) {
         const error = isRecord(response.error) ? response.error : {};
-        notice = stringField(error, "message") ?? "Gemini turn failed.";
+        notice = stringField(error, "message") ?? "ACP turn failed.";
       } else if (stopReason === "max_tokens") {
-        notice = "Gemini stopped: maximum tokens reached.";
+        notice = "ACP provider stopped: maximum tokens reached.";
       } else if (stopReason === "refusal") {
-        notice = "Gemini declined to continue this turn.";
+        notice = "ACP provider declined to continue this turn.";
       }
       this.onEvent({
         kind: "turn_completed",
@@ -363,8 +360,8 @@ class AcpClient implements StructuredRuntimeClient {
       return;
     }
     this.pendingPermissions.delete(promptId);
-    const optionId = input.value.startsWith(GEMINI_OPTION_PREFIX)
-      ? input.value.slice(GEMINI_OPTION_PREFIX.length)
+    const optionId = input.value.startsWith(ACP_OPTION_PREFIX)
+      ? input.value.slice(ACP_OPTION_PREFIX.length)
       : undefined;
     this.writeLine({
       jsonrpc: "2.0",
@@ -432,14 +429,14 @@ class AcpClient implements StructuredRuntimeClient {
       }
       if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
         process.stderr.write(
-          `[tide-gemini-acp ${this.runtimeId}] <- ${String(message.method ?? `response#${String(message.id)}`)}\n`,
+          `[tide-acp ${this.runtimeId}] <- ${String(message.method ?? `response#${String(message.id)}`)}\n`,
         );
       }
       try {
         this.handleMessage(message);
       } catch (error) {
         if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
-          process.stderr.write(`[tide-gemini-acp ${this.runtimeId}] handler error: ${String(error)}\n`);
+          process.stderr.write(`[tide-acp ${this.runtimeId}] handler error: ${String(error)}\n`);
         }
       }
     }
@@ -594,7 +591,7 @@ class AcpClient implements StructuredRuntimeClient {
         .filter((c): c is Record<string, unknown> => isRecord(c))
         .map((c) => ({
           name: stringField(c, "name") ?? "",
-          description: stringField(c, "description") ?? "Gemini command",
+          description: stringField(c, "description") ?? "ACP command",
           trigger: "/" as const,
         }))
         .filter((c) => c.name.length > 0);
@@ -647,7 +644,7 @@ class AcpClient implements StructuredRuntimeClient {
         return {
           choiceId: optionId,
           label: name,
-          providerValue: `${GEMINI_OPTION_PREFIX}${optionId}`,
+          providerValue: `${ACP_OPTION_PREFIX}${optionId}`,
           ...(kind !== undefined ? { kind } : {}),
         };
       })
@@ -655,11 +652,11 @@ class AcpClient implements StructuredRuntimeClient {
     if (choices.length === 0) {
       return;
     }
-    const promptId = `gemini-perm-${String(serverRequestId)}`;
+    const promptId = `acp-perm-${String(serverRequestId)}`;
     this.pendingPermissions.set(promptId, serverRequestId);
     // Order allow-once first so the card preselects it (the answer routes by optionId, so
     // display order is free). Prefer the native ACP option `kind`; fall back to the optionId
-    // convention (gemini's `proceed_once`/`proceed`) only when `kind` is absent.
+    // convention (`proceed_once`/`proceed`) only when `kind` is absent.
     const rank = (choice: PromptChoice): number => {
       if (choice.kind === "allow_once") return 0;
       if (choice.kind === "allow_always") return 1;
@@ -692,8 +689,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 // Parse opencode's `configOptions` launch/apply param (an array of {configId, value})
-// from an unknown protocolParams field. Returns undefined when absent so the gemini
-// modeId path is taken instead.
+// from an unknown protocolParams field. Returns undefined when absent.
 function parseConfigOptions(value: unknown): Array<{ configId: string; value: string }> | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -728,13 +724,13 @@ export interface AcpModelCatalog {
   currentModel?: string;
 }
 
-// Extract a model catalog from an ACP session/new result. gemini reports the
+// Extract a model catalog from an ACP session/new result. Some providers report
 // ACP-standard `models.availableModels`/`currentModelId`; opencode reports its
 // `configOptions` model category (provider/model ids split into vendor + model).
 export function parseAcpModelCatalog(result: Record<string, unknown>): AcpModelCatalog | undefined {
-  const geminiModels = isRecord(result.models) ? result.models : undefined;
-  if (geminiModels !== undefined && Array.isArray(geminiModels.availableModels)) {
-    const models = geminiModels.availableModels
+  const standardModels = isRecord(result.models) ? result.models : undefined;
+  if (standardModels !== undefined && Array.isArray(standardModels.availableModels)) {
+    const models = standardModels.availableModels
       .filter(isRecord)
       .map((entry) => {
         const value = stringField(entry, "modelId") ?? "";
@@ -742,7 +738,7 @@ export function parseAcpModelCatalog(result: Record<string, unknown>): AcpModelC
       })
       .filter((model) => model.value.length > 0);
     if (models.length > 0) {
-      return { models, currentModel: stringField(geminiModels, "currentModelId") };
+      return { models, currentModel: stringField(standardModels, "currentModelId") };
     }
   }
   if (Array.isArray(result.configOptions)) {

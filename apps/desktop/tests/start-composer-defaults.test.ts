@@ -144,7 +144,7 @@ test("with no remembered preference a new thread falls back to codex/gpt-5.5", (
 });
 
 test("preferredStartComposerFromState captures an opencode Start Composer pick", () => {
-  // Regression: the SAVE-side guard once dropped opencode (and gemini), so a picked
+  // Regression: the SAVE-side guard once dropped opencode, so a picked
   // opencode model was never persisted for the next New Thread.
   const state = startComposerStateWith("opencode", {
     model: "openai/gpt-5.5",
@@ -170,15 +170,6 @@ test("preferredStartComposerFromState normalizes an existing worktree path to Lo
     worktree: "/repo.worktree/fix-login",
   });
   assert.equal(preferredStartComposerFromState(state)?.worktree, "current folder");
-  setPreferredStartComposer(null);
-});
-
-test("preferredStartComposerFromState captures a gemini pick", () => {
-  const pref = preferredStartComposerFromState(
-    startComposerStateWith("gemini", { model: "gemini-3-pro-preview", permission: "default" }),
-  );
-  assert.equal(pref?.agentId, "gemini");
-  assert.equal(pref?.model, "gemini-3-pro-preview");
   setPreferredStartComposer(null);
 });
 

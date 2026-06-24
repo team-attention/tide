@@ -145,7 +145,7 @@ export function applyProductShellBackendEvent(
     }
     case "agentRuntime.commandsChanged": {
       // The provider protocol's real slash-commands/skills (claude init,
-      // codex skills/list, gemini available_commands_update) — authoritative and
+      // codex skills/list, ACP available_commands_update) — authoritative and
       // richer than the pre-turn file discovery, so they replace providerCommands.
       const commandsPayload = event.payload as {
         commands?: AgentChatCommandOption[];
@@ -156,7 +156,7 @@ export function applyProductShellBackendEvent(
       return setProductShellProviderCommands(nextState, commandsPayload.commands);
     }
     case "agentRuntime.modelCatalogChanged": {
-      // The agent self-reported its model catalog over the protocol (gemini ACP /
+      // The agent self-reported its model catalog over the protocol (ACP /
       // opencode configOptions) — cache it so the composer menu reflects the real
       // list. Module-level cache (read by cliModelOptionsForAgent); no view change.
       const catalogPayload = event.payload as {

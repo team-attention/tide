@@ -1126,7 +1126,7 @@ async stopAgentRuntime(
     // keep the runtime ALIVE and resumable — the next message reuses the same
     // session with no respawn. (Process teardown happens on app quit / a
     // duplicate-runtime reap, not here.) The interrupt makes the provider emit
-    // its turn-end (claude result / codex turn:interrupted / gemini cancelled),
+    // its turn-end (claude result / codex turn:interrupted / ACP cancelled),
     // which drives recordTurnComplete.
     if (thread.activeRuntimeHandle !== undefined) {
       await this.agentRuntimePort.interrupt(thread.activeRuntimeHandle);
@@ -1257,7 +1257,7 @@ async trustWorkspace(
     // Reflect the selected agent on the (Draft) Thread so a readiness terminal completion
     // (retry_preflight) re-checks the chosen provider and Send starts on it. Replace the binding
     // WHOLE — not just agentId — so a stale runtimeSource / providerSessionRef from a previously
-    // selected agent can't mismatch the chosen one (Gemini review): a mismatched runtimeSource
+    // selected agent can't mismatch the chosen one: a mismatched runtimeSource
     // would mis-route the launch, and a stale session ref would try to resume the wrong agent.
     // checkReadiness is provider-CLI only, so the source is always provider_cli; a fresh selection
     // carries no session to resume.

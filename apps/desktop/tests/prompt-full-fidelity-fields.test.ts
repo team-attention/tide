@@ -59,7 +59,7 @@ test("claude buildPermissionDetail: a tool with nothing previewable yields no de
   assert.equal(buildPermissionDetail({}), undefined);
 });
 
-// --- ACP option kind + permission detail (gemini / opencode) ---
+// --- ACP option kind + permission detail ---
 
 test("acpOptionKind: native allow/reject kinds pass through; anything else is undefined", () => {
   assert.equal(acpOptionKind({ kind: "allow_once" }), "allow_once");
@@ -97,7 +97,7 @@ test("acp buildAcpPermissionDetail: an empty toolCall yields no detail", () => {
   assert.equal(buildAcpPermissionDetail({}), undefined);
 });
 
-// Gemini review regressions: a pure addition (newText only) must not inject a spurious empty
+// Review regressions: a pure addition (newText only) must not inject a spurious empty
 // "- " line, and duplicate locations must be deduped (unique React keys for the chips).
 test("acp buildAcpPermissionDetail: a pure addition emits only + lines (no empty - line)", () => {
   assert.deepEqual(

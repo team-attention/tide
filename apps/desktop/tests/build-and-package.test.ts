@@ -140,7 +140,7 @@ test("verification_loop_script_is_declared_and_writes_reports", () => {
 test("provider_smoke_is_limited_to_provider_cli_agents", () => {
   const smokeScript = fs.readFileSync(path.join(repoRoot, "scripts/v2-provider-smoke.mjs"), "utf8");
 
-  assert.match(smokeScript, /codex\|claude\|gemini\|opencode/);
+  assert.match(smokeScript, /codex\|claude\|opencode/);
   assert.doesNotMatch(smokeScript, /--fake-openai/);
   assert.doesNotMatch(smokeScript, /openai_api/);
   assert.doesNotMatch(smokeScript, /OPENAI_BASE_URL/);
@@ -184,7 +184,7 @@ test("electron_runtime_smoke_is_limited_to_provider_cli_agents", () => {
     "utf8",
   );
 
-  assert.match(smokeScript, /codex\|claude\|gemini\|opencode/);
+  assert.match(smokeScript, /codex\|claude\|opencode/);
   assert.doesNotMatch(smokeScript, /--fake-openai/);
   assert.doesNotMatch(smokeScript, /openai_api/);
   assert.doesNotMatch(smokeScript, /OPENAI_BASE_URL/);

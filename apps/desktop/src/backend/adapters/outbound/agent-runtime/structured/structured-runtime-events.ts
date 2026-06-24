@@ -1,7 +1,7 @@
 // The normalized event stream a STRUCTURED provider runtime emits to the
 // projector. This is the runtime-event spine realized: with the structured
 // machine protocols (claude stream-json control protocol, codex app-server,
-// gemini ACP) these events are produced NATIVELY by the provider — never
+// opencode ACP) these events are produced NATIVELY by the provider — never
 // inferred from PTY scrapes, hook spools, or history-file polling.
 //
 // Every shape here is evidence-based: captured live from the real CLIs
@@ -43,14 +43,14 @@ export type StructuredProviderEvent =
   // The provider withdrew a pending interaction (e.g. interrupt cancelled it).
   | { kind: "prompt_withdrawn"; promptId: string }
   // The provider's available slash-commands / skills (claude init slash_commands
-  // + skills, codex skills/list, gemini available_commands_update). Surfaced in
+  // + skills, codex skills/list, ACP available_commands_update). Surfaced in
   // the composer "/" (commands) and "$" (skills) menus.
   | {
       kind: "commands";
       commands: Array<{ name: string; description: string; trigger: "/" | "$" }>;
     }
   // The provider self-reported its model catalog over the protocol — the ACP
-  // `session/new.models` (gemini availableModels/currentModelId) or opencode's
+  // `session/new.models` (availableModels/currentModelId) or opencode's
   // configOptions model category. Surfaces the live current model + the real
   // available list so the composer menu is accurate, not a drifted static guess.
   | {
@@ -114,7 +114,7 @@ export interface StructuredRuntimeClient {
   applyConfig?(protocolParams: Record<string, unknown>): Promise<boolean>;
   // Abort the in-flight turn via the provider's protocol interrupt, leaving the
   // process ALIVE and resumable (claude control_request:interrupt / codex
-  // turn/interrupt / gemini session/cancel). The provider emits its turn-end so
+  // turn/interrupt / ACP session/cancel). The provider emits its turn-end so
   // the thread settles; the next message reuses this same session.
   interrupt(): Promise<void>;
   // Tear the process down (thread teardown / duplicate-runtime reap).

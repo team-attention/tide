@@ -140,7 +140,7 @@ fn observing_workspace_reports_provider_neutral_surfaces_and_panes() {
         false
     );
     let providers = resume_policy["providers"].as_array().unwrap();
-    for provider in ["claude", "codex", "gemini", "agy", "opencode"] {
+    for provider in ["claude", "codex", "agy", "opencode"] {
         assert!(
             providers
                 .iter()
@@ -1360,7 +1360,7 @@ fn mcp_instructions_route_browsers_provider_neutrally() {
         .unwrap_or_default();
 
     assert!(instructions.contains("Tide MCP Runtime"));
-    assert!(instructions.contains("Codex, Claude, Gemini"));
+    assert!(instructions.contains("Codex, Claude"));
     assert!(instructions.contains("Browser Runtime Router"));
     assert!(instructions.contains("Tide Browser Pane Runtime"));
     assert!(instructions.contains("tide_observe_terminal"));

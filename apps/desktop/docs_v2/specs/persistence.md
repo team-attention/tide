@@ -28,7 +28,7 @@ It does not define provider history formats, provider auth storage, provider onb
 - `docs_v2/implementation/electron-node-architecture-decisions.md` says Tide stores Thread metadata, Agent Binding, Execution Context metadata, provider-native session reference, Last Known State, optional Agent Session Cache metadata, and app settings.
 - `docs_v2/implementation/concrete-design-backlog.md` selects provider-owned history plus Tide metadata as the best persistence option.
 - Provider integrations expose provider-owned history/session references Tide can
-  store, including Codex rollout paths, Claude transcripts, Gemini sessions, and
+  store, including Codex rollout paths, Claude transcripts, and
   opencode sessions.
 
 ## Decisions
@@ -164,7 +164,6 @@ interface ProviderSessionRefRecord {
   kind:
     | "codex_rollout"
     | "claude_transcript"
-    | "gemini_session"
     | "opencode_session"
     | "provider_native";
   value: string;

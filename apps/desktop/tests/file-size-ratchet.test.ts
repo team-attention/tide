@@ -32,7 +32,7 @@ const PINNED_MAX: Record<string, number> = {
   // for the Composer slot-select handoff) + the no-pending-input readiness re-emit in
   // replayPendingInputIfProviderReady (install/sign-in card refresh). Spec: provider-cli-setup-handoff.md.
   // +8: checkReadiness replaces the WHOLE agentBinding (runtimeSource + cleared session), not just
-  // agentId, so a switched agent can't inherit a stale source/session (Gemini review on PR #136).
+  // agentId, so a switched agent can't inherit a stale source/session (review regression on PR #136).
   // The full thread-runtime-service split is still the real fix.
   // +7: wiring the shared BrowserCaptureCoordinator into the MCP + workbench-command handlers
   // for the observe-time screenshot pull + the injectable pull timeout
@@ -77,14 +77,6 @@ const PINNED_MAX: Record<string, number> = {
   // call. This file sat at 798 (2 under cap) on main; the feature tipped it over. Splitting
   // the product-shell container is the real fix (Phase-3 backlog).
   "desktop/adapters/inbound/react-renderer/product-shell/product-shell.tsx": 808,
-  // live-backend (the composition root) dropped under the 800 cap once its persistence +
-  // metadata-first restore collaborator was extracted to live-backend-restore.ts
-  // (thread-list-metadata-first-restore), so it no longer needs a pinned ceiling.
-  // +live-turn-activity Slice B′: the ACP `session/update` router gained a `plan`
-  // branch (codex/ACP plan step progress in the Working indicator). This multi-provider
-  // protocol client (gemini + opencode) sat at 798 on main; the feature tipped it over.
-  // Extracting the session-update routing is the real fix (Phase-3 backlog).
-  "backend/adapters/outbound/agent-runtime/structured/acp-client.ts": 804,
 };
 
 function listSourceFiles(dir: string): string[] {

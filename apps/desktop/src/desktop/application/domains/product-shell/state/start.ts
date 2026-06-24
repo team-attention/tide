@@ -203,7 +203,7 @@ function preferredWorktreeForScope(
 // there's nothing to capture: a thread is focused (not the Start Composer), or the
 // agent isn't a known one — so a focused thread's agent or a garbage value is never
 // persisted. Pure on purpose: this is the persistence DECISION (where the
-// opencode/gemini drop bug lived), unit-tested without mounting the React effect
+// opencode drop bug lived), unit-tested without mounting the React effect
 // that calls it.
 export function preferredStartComposerFromState(
   state: ProductShellState,
@@ -243,12 +243,11 @@ function preferredWorktreeForPersistence(value: unknown): "current folder" | "ne
 
 // The four provider-CLI agent identities the Start Composer can launch. Single source of
 // truth for "is this a known agent" guards (preference persistence) so they can't
-// drift into a stale subset — the bug that silently dropped opencode/gemini from
+// drift into a stale subset — the bug that silently dropped opencode from
 // the remembered Start Composer default.
 const PRODUCT_SHELL_AGENT_IDENTITIES: ReadonlySet<string> = new Set<ProductShellAgentIdentity>([
   "codex",
   "claude",
-  "gemini",
   "opencode",
 ]);
 

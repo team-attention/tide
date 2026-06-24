@@ -33,7 +33,7 @@ TIDE_TERMINAL_SHELL_INTEGRATION_DIR
 ```
 
 `__TIDE_TERMINAL_WRAPPER_DIR` contains the bundled wrapper commands for
-`claude`, `codex`, `gemini`, `agy`, and `opencode`. The shell integration puts
+`claude`, `codex`, `agy`, and `opencode`. The shell integration puts
 that directory before the real commands in `PATH`.
 
 ## zsh

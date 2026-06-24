@@ -134,7 +134,7 @@ The React contract adapter must expose exactly those command drafts and must not
 
 The Composer shows one Agent chip.
 
-The Agent menu contains the four Provider CLI Agents: Codex, Claude, Gemini, and opencode.
+The Agent menu contains the three Provider CLI Agents: Codex, Claude, and opencode.
 The selected Agent Binding carries provider CLI source metadata as specified in
 [Composer Agent Runtime Source](composer-agent-runtime-source.md).
 
@@ -324,7 +324,7 @@ Desktop consumes BackendEvents:
 | Command adapter stays narrow | `composer_shell_command_adapter_does_not_claim_unsupported_backend_command_kinds` ensures the adapter exposes only `thread.start`, `composer.sendInput`, and `prompt.answer` command drafts. |
 | Agent chip stays singular | `agent_chip_renders_one_visible_value_for_provider_cli_sources` verifies Provider CLI selections share the same Agent chip surface. |
 | Model source follows selected provider CLI | `model_chip_routes_menu_data_by_provider_cli_agent` verifies model choices come from selected Agent Integration metadata. |
-| Permission menu follows selected Agent | `permission_menu_renders_only_the_selected_agent_provider_values` verifies Codex, Claude, Gemini, and opencode Permission menus do not mix provider-native values. |
+| Permission menu follows selected Agent | `permission_menu_renders_only_the_selected_agent_provider_values` verifies Codex, Claude, and opencode Permission menus do not mix provider-native values. |
 | Composer menu is transient | `composer_options_and_command_prefix_render_as_transient_choice_surfaces` verifies the Composer menu and `/` suggestions render above Composer through Choice Surface, not as static documentation blocks. |
 
 ## Implementation Notes

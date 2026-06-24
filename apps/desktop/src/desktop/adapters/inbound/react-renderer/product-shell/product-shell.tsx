@@ -90,9 +90,9 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // defaults to it.
   // The preference to remember is null while a thread is focused or the agent isn't a
   // known one. preferredStartComposerFromState holds that DECISION (the spot the
-  // opencode/gemini drop bug lived) so it's unit-tested directly; the serialized key
+  // opencode drop bug lived) so it's unit-tested directly; the serialized key
   // keeps the effect from re-persisting on every render. Persists for every real
-  // agent — opencode/gemini included — just like codex/claude.
+  // agent — opencode included — just like codex/claude.
   const startPreference = preferredStartComposerFromState(shellState);
   const startPreferenceKey = startPreference === null ? null : JSON.stringify(startPreference);
   useEffect(() => {
@@ -385,7 +385,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     // Draining `pendingBlocks` is a SIDE EFFECT and must happen OUTSIDE the setShellState
     // updater: React invokes updaters twice in Strict Mode / concurrent rendering, and a
     // splice inside would leave the second invocation with an empty batch → lost blocks
-    // (Gemini review). So we splice here, capture the batch, and the updater stays pure.
+    // So we splice here, capture the batch, and the updater stays pure.
     const foldEvents = (
       state: ProductShellState,
       batch: AgentChatBackendEvent[],

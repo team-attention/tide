@@ -13,7 +13,6 @@ import {
 test("installPackageForAgent maps every provider CLI to its npm package", () => {
   assert.equal(installPackageForAgent("claude"), "@anthropic-ai/claude-code");
   assert.equal(installPackageForAgent("codex"), "@openai/codex");
-  assert.equal(installPackageForAgent("gemini"), "@google/gemini-cli");
   assert.equal(installPackageForAgent("opencode"), "opencode-ai");
 });
 

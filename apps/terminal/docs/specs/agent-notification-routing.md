@@ -4,7 +4,7 @@
 
 ### As-Is
 
-- Tide already normalizes wrapper-managed lifecycle signals from `claude`, `codex`, and `gemini` into `AgentStatus`.
+- Tide already normalizes wrapper-managed lifecycle signals from supported wrappers into `AgentStatus`.
 - `Wrapped Agent Presence` already lets a connected direct wrapped-agent `Terminal` render `ConnectedIdle` when no lifecycle status is active.
 - `handle_terminal_notification()` and `cli_notify()` already own the shared normalization path for wrapper-managed lifecycle and OSC 9 fallback messages.
 - The notification path already stores a `Notification Snippet` and uses notification activation to jump to the source `Pane`.
@@ -13,7 +13,7 @@
 - `route_agent_notification()` currently returns before queuing a macOS notification when the source `Terminal` is the focused `Pane` in the focused Tide Window, so a completed foreground turn can stay unresolved until `PlatformEvent::Focused(false)` reroutes it while the user leaves Tide.
 - The Codex transcript helper currently only inspects `response_item` assistant messages, even though current local Codex transcripts also emit final-answer text through `event_msg.agent_message` and `event_msg.task_complete.last_agent_message`.
 - A real locally captured Codex `Stop` hook stdin payload uses `snake_case` keys such as `transcript_path` and `last_assistant_message`, but the checked-in parser still expects `kebab-case`, so notification routing falls through to the generic `Codex finished` body.
-- Existing behavior tests still assert some `agent-idle` notification deliveries and body paths, including the `agent-idle` notification coverage in `gemini_after_agent_notification_uses_prompt_response_snippet`.
+- Existing behavior tests still assert `agent-idle` notification deliveries and body paths.
 - The shared contract still needs an explicit boundary between `Idle` chrome or Workspace projection and actual alert delivery.
 
 ### To-Be
@@ -27,7 +27,7 @@
 - `NeedsInput` is the strongest routed alert state: it may queue macOS notifications and request user attention.
 - `NeedsInput` macOS notifications attach the default system sound when the platform notification API supports it.
 - `Running` remains visible-only and never routes attention.
-- The supported wrapped-agent set stays fixed to `claude`, `codex`, and `gemini`.
+- The supported wrapped-agent set stays fixed to `claude`, `codex`, `agy`, and `opencode`.
 - Codex completed-turn payloads always normalize to `Idle`; only structured Codex wait signals may produce `NeedsInput`.
 - Direct focus on the source wrapped-agent `Pane` in the active Tide window acknowledges unresolved `Idle` or `NeedsInput` attention immediately and clears duplicate suppression in the same step.
 - Notification routing, duplicate suppression, snippet reuse, and notification activation all consume the normalized common state after adapter-specific parsing.
@@ -146,7 +146,6 @@
 | UC-6 | BR-7 | existing | `codex_completed_turn_notification_uses_last_assistant_message_snippet` |
 | UC-6 | BR-7 | new | `codex_stop_notification_uses_event_msg_final_answer_snippet` |
 | UC-6 | BR-7 | new | `codex_stop_notification_uses_task_complete_last_agent_message_snippet` |
-| UC-6 | BR-7 | existing | `gemini_after_agent_notification_uses_prompt_response_snippet` |
 | UC-6 | BR-7 | updated | `wrapped_agent_notification_uses_generic_body_without_structured_snippet` |
 | UC-6 | BR-7 | updated | `focused_idle_notification_uses_structured_snippet_and_suppresses_later_reroute` |
 | UC-7 | BR-7 | existing | `macos_notification_activation_switches_to_target_workspace_and_focuses_target_pane` |
@@ -157,7 +156,7 @@
 
 ### UC-1: NormalizeWrappedAgentLifecycle
 
-- BR-1: The supported wrapped-agent set is fixed to `claude`, `codex`, and `gemini`.
+- BR-1: The supported wrapped-agent set is fixed to `claude`, `codex`, `agy`, and `opencode`.
 
 ### UC-2: ClassifyCodexCompletedTurns
 

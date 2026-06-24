@@ -3,7 +3,7 @@ import type { AppChromeBackendCommand, AppChromeEditorNavigationTarget, AppChrom
 import type { WorkbenchSplitNode } from "./workbench-split-tree.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
-export type ProductShellAgentIdentity = "codex" | "claude" | "gemini" | "opencode";
+export type ProductShellAgentIdentity = "codex" | "claude" | "opencode";
 
 export type ProductShellLeftRailMenu =
   | { kind: "thread"; threadId: string }

@@ -435,7 +435,7 @@ fn workspace_task_monitor_case() -> Result<CompatibilityCase, Box<dyn std::error
         && observed["task_monitor"]["agent_resume_policy"]["providers"]
             .as_array()
             .is_some_and(|providers| {
-                ["claude", "codex", "gemini", "agy", "opencode"]
+                ["claude", "codex", "agy", "opencode"]
                     .iter()
                     .all(|provider| {
                         providers

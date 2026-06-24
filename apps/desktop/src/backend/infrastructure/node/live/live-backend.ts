@@ -43,7 +43,6 @@ import {
 import {
   readClaudeProviderStateFromHome,
   readCodexProviderStateFromHome,
-  readGeminiProviderStateFromHome,
   readOpencodeProviderStateFromHome,
 } from "../provider/provider-state-readers.ts";
 
@@ -120,8 +119,6 @@ import {
   createCodexAgentIntegration,
   type CodexProviderState,
 } from "../../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
-
-import { createGeminiAgentIntegration } from "../../../adapters/outbound/agent-integrations/gemini/gemini-agent-integration.ts";
 
 import { createOpencodeAgentIntegration } from "../../../adapters/outbound/agent-integrations/opencode/opencode-agent-integration.ts";
 import { createProviderDetection } from "../provider/provider-detection.ts";
@@ -262,16 +259,6 @@ export function createLiveBackendContractMessageAdapter(
       tideContextPrompt: tideClaudeContextPrompt(),
       defaultCwd: process.cwd(),
       locateSessionFile: (sessionId) => locateClaudeTranscriptFile(homeDir, sessionId),
-    }),
-    gemini: createGeminiAgentIntegration({
-      resolveExecutable: () => resolveExecutable("gemini"),
-      readProviderState: ({ cwd }) => readGeminiProviderStateFromHome(homeDir, cwd),
-      defaultCwd: process.cwd(),
-      tideMcp: {
-        command: bootstrapArtifacts.tideMcpCommandPath,
-        args: [],
-        env: { TIDE_SOCKET: tideSocket },
-      },
     }),
     opencode: createOpencodeAgentIntegration({
       resolveExecutable: () => resolveExecutable("opencode"),
@@ -545,4 +532,3 @@ function createMemoryPtyTranscriptPort(): PtyTranscriptPort {
 export { createLiveAgentSessionEventProjector } from "./live-projector.ts";
 export { discoverAdoptedThreadSeeds, rebuildAdoptedConversation } from "./live-provider-discovery.ts";
 export { locateClaudeTranscriptFile } from "../../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
-export { locateGeminiSessionFile } from "../../../adapters/outbound/agent-integrations/gemini/gemini-history-connector.ts";

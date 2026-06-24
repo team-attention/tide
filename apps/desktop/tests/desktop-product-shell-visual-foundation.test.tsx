@@ -929,13 +929,13 @@ test("agent_icons_use_deterministic_identity_palette", () => {
     <div>
       <AgentIdentityIcon agentId="codex" />
       <AgentIdentityIcon agentId="claude" />
-      <AgentIdentityIcon agentId="gemini" />
+      <AgentIdentityIcon agentId="opencode" />
     </div>,
   );
 
   assert.match(html, /data-agent-icon="codex"/);
   assert.match(html, /data-agent-icon="claude"/);
-  assert.match(html, /data-agent-icon="gemini"/);
+  assert.match(html, /data-agent-icon="opencode"/);
 });
 
 test("renderer_entry_mounts_product_shell_not_bare_agent_chat", () => {
@@ -2038,7 +2038,7 @@ test("product_shell_ignores_thread_scoped_events_for_inactive_threads", () => {
         block: {
           blockId: "block-other-thread",
           threadId: "thread-other",
-          agentId: "gemini",
+          agentId: "opencode",
           kind: "agent_message",
           role: "agent",
           status: "complete",
@@ -2855,37 +2855,37 @@ test("product_shell_prompt_choice_row_emits_prompt_answer_command", () => {
   });
 });
 
-test("product_shell_gemini_selection_updates_model_before_thread_start", () => {
+test("product_shell_opencode_selection_updates_model_before_thread_start", () => {
   const withMenu = setProductShellComposerActiveSurface(createProductShellState(), "agent_menu");
-  const result = selectProductShellChoiceSurfaceRow(withMenu, "agent_menu", "gemini");
+  const result = selectProductShellChoiceSurfaceRow(withMenu, "agent_menu", "opencode");
   const view = createProductShellViewModel(result.state);
 
-  assert.equal(view.agentChat.composer.contextItems[0].value, "Gemini CLI");
+  assert.equal(view.agentChat.composer.contextItems[0].value, "opencode");
   assert.equal(view.agentChat.composer.modelLabel, "Default");
 });
 
-test("product_shell_gemini_selection_updates_start_command_launch_options", () => {
+test("product_shell_opencode_selection_updates_start_command_launch_options", () => {
   const withAgentMenu = setProductShellComposerActiveSurface(createProductShellState(), "agent_menu");
   const selected = selectProductShellChoiceSurfaceRow(
     withAgentMenu,
     "agent_menu",
-    "gemini",
+    "opencode",
   );
   const withDraft = updateProductShellComposerDraft(
     selected.state,
-    "Start a Gemini Thread",
+    "Start an opencode Thread",
   );
 
   const submitted = submitProductShellComposerDraft(withDraft);
 
   assert.equal(submitted.command?.kind, "thread.start");
   assert.equal(typeof submitted.command?.payload.threadId, "string");
-  assert.equal(submitted.command?.payload.initialMessage, "Start a Gemini Thread");
+  assert.equal(submitted.command?.payload.initialMessage, "Start an opencode Thread");
   assert.deepEqual(submitted.command?.payload.agentBinding, {
-    agentId: "gemini",
+    agentId: "opencode",
     runtimeSource: {
       kind: "provider_cli",
-      integrationId: "gemini",
+      integrationId: "opencode",
     },
   });
   assert.deepEqual(submitted.command?.payload.scope, {
@@ -2894,8 +2894,8 @@ test("product_shell_gemini_selection_updates_start_command_launch_options", () =
     cwd: "/Users/you/Workspace/tide",
   });
   assert.deepEqual(submitted.command?.payload.launchOptions, {
-    model: "Gemini default",
-    permission: "default",
+    model: "opencode default",
+    permission: "build",
     worktree: "current folder",
     branch: "main",
   });
@@ -2927,16 +2927,16 @@ test("product_shell_empty_composer_send_is_a_noop", () => {
   assert.equal(submitted.command, null);
 });
 
-test("product_shell_thread_started_preserves_gemini_model_label", () => {
+test("product_shell_thread_started_preserves_opencode_model_label", () => {
   const withAgentMenu = setProductShellComposerActiveSurface(createProductShellState(), "agent_menu");
   const selected = selectProductShellChoiceSurfaceRow(
     withAgentMenu,
     "agent_menu",
-    "gemini",
+    "opencode",
   );
   const withDraft = updateProductShellComposerDraft(
     selected.state,
-    "Start Gemini and keep its model source",
+    "Start opencode and keep its model source",
   );
   const submitted = submitProductShellComposerDraft(withDraft);
 
@@ -2951,12 +2951,12 @@ test("product_shell_thread_started_preserves_gemini_model_label", () => {
     payload: {
       thread: {
         threadId: newThreadId as string,
-        title: "Start Gemini and keep its model source",
+        title: "Start opencode and keep its model source",
         agentBinding: {
-          agentId: "gemini",
+          agentId: "opencode",
           runtimeSource: {
             kind: "provider_cli",
-            integrationId: "gemini",
+            integrationId: "opencode",
           },
         },
         scope: {
@@ -2965,8 +2965,8 @@ test("product_shell_thread_started_preserves_gemini_model_label", () => {
           cwd: "/Users/you/Workspace/tide",
         },
         launchOptions: {
-          model: "Gemini default",
-          permission: "default",
+          model: "opencode default",
+          permission: "build",
           worktree: "current folder",
           branch: "main",
         },
@@ -2986,13 +2986,13 @@ test("product_shell_thread_started_preserves_gemini_model_label", () => {
   const view = createProductShellViewModel(started);
 
   assert.equal(view.activeThreadId, newThreadId);
-  assert.equal(view.agentChat.thread?.agentLabel, "Gemini CLI");
+  assert.equal(view.agentChat.thread?.agentLabel, "opencode");
   assert.equal(view.agentChat.composer.mode, "follow_up");
   assert.equal(view.agentChat.composer.modelLabel, "Default");
-  assert.equal(view.agentChat.composer.permissionLabel, "Ask permissions");
+  assert.equal(view.agentChat.composer.permissionLabel, "Build");
   assert.notEqual(view.agentChat.composer.modelLabel, "GPT-5.5 High");
   assert.deepEqual(view.agentChat.composer.contextItems.map((item) => item.value), [
-    "Gemini CLI",
+    "opencode",
     "tide",
     "main",
     "Local",
@@ -3004,9 +3004,9 @@ test("product_shell_start_command_uses_contract_runtime_source_shape", () => {
   const selected = selectProductShellChoiceSurfaceRow(
     withAgentMenu,
     "agent_menu",
-    "gemini",
+    "opencode",
   );
-  const withDraft = updateProductShellComposerDraft(selected.state, "Run Gemini");
+  const withDraft = updateProductShellComposerDraft(selected.state, "Run opencode");
   const submitted = submitProductShellComposerDraft(withDraft);
 
   assert.equal(submitted.command?.kind, "thread.start");

@@ -119,7 +119,7 @@ export class DraftThreadService {
     }
     // Stop every terminal PTY in parallel, swallowing individual failures, so one
     // rejecting stop can't abort the loop and leak the draft (in memory) + the remaining
-    // PTYs (Gemini review). Removal from the store is then guaranteed.
+    // PTYs. Removal from the store is then guaranteed.
     await Promise.all(
       thread.workbench.panes
         .filter((pane): pane is TerminalPaneState => pane.kind === "terminal")

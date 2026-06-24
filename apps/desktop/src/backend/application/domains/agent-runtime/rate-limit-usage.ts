@@ -15,7 +15,7 @@ const RATE_LIMIT_CONTAINER_KEYS = [
   "usage",
   "tokenUsage",
   "token_usage",
-  // ACP (gemini/opencode) nests its quota under `_meta.quota` — descend it so the
+  // ACP nests its quota under `_meta.quota` — descend it so the
   // 5h + weekly windows at `_meta.quota.rateLimits` are found, not just top-level shapes.
   "_meta",
 ];

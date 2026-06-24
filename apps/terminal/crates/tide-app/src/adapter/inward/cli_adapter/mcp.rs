@@ -159,7 +159,7 @@ fn mcp_initialize(id: serde_json::Value) -> serde_json::Value {
 
 fn mcp_instructions() -> &'static str {
     concat!(
-        "Tide MCP Runtime: Codex, Claude, Gemini, and other Wrapped Agents use the same provider-neutral contract. ",
+        "Tide MCP Runtime: Codex, Claude, and other Wrapped Agents use the same provider-neutral contract. ",
         "You are running inside Tide Terminal, a terminal-centered task Workspace. ",
         "Tide structure: Stage is the primary live Terminal area. ",
         "Terminal Context Surface is the right-side support surface owned by the active Stage Terminal for related Panes. ",

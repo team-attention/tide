@@ -148,9 +148,9 @@ test("readiness port: the advisory rides alongside blockers without changing the
 
 test("readiness port: no checker means no advisory", async () => {
   const port = createAgentIntegrationProviderReadinessPort({
-    integrations: registryWith("gemini", fakeIntegration({ agentId: "gemini", ready: true, blockers: [] })),
+    integrations: registryWith("opencode", fakeIntegration({ agentId: "opencode", ready: true, blockers: [] })),
   });
-  const result = await port.check({ agentId: "gemini" });
+  const result = await port.check({ agentId: "opencode" });
   assert.equal(result.update, undefined);
 });
 

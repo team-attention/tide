@@ -14,12 +14,11 @@ export // Extracted from live-backend.ts (spec: navigable-source-structure).
 const providerCliCommands = {
   codex: "codex",
   claude: "claude",
-  gemini: "gemini",
   opencode: "opencode",
 } as const;
 
 export function executableForAgent(
-  agentId: "codex" | "claude" | "gemini" | "opencode",
+  agentId: "codex" | "claude" | "opencode",
 ): string {
   return providerCliCommands[agentId];
 }
@@ -30,12 +29,11 @@ export function executableForAgent(
 const providerInstallPackages = {
   codex: "@openai/codex",
   claude: "@anthropic-ai/claude-code",
-  gemini: "@google/gemini-cli",
   opencode: "opencode-ai",
 } as const;
 
 export function installPackageForAgent(
-  agentId: "codex" | "claude" | "gemini" | "opencode",
+  agentId: "codex" | "claude" | "opencode",
 ): string {
   return providerInstallPackages[agentId];
 }
@@ -46,7 +44,7 @@ export function installPackageForAgent(
 // to "npm" so a missing npm surfaces its own PATH error in the terminal, not silently.
 export function npmInstallReadinessTerminalAction(input: {
   npmPath: string;
-  agentId: "codex" | "claude" | "gemini" | "opencode";
+  agentId: "codex" | "claude" | "opencode";
   cwd: string;
 }): ProviderReadinessTerminalAction {
   return {
@@ -74,7 +72,7 @@ export function resolveExecutable(command: string): string | undefined {
 // update counterpart of npmInstallReadinessTerminalAction. Spec: version-management.md.
 export function npmUpdateReadinessTerminalAction(input: {
   npmPath: string;
-  agentId: "codex" | "claude" | "gemini" | "opencode";
+  agentId: "codex" | "claude" | "opencode";
   cwd: string;
 }): ProviderReadinessTerminalAction {
   return {

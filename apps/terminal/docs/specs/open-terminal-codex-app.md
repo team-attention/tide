@@ -23,7 +23,7 @@ Tide already has the important raw materials, but they are not composed into the
 4. Tide already positions `Terminal` as the substrate, not the final product, and says Tide is not an AI product because users bring their own agent. See [docs/vision.md](/Users/you/Workspace/tide/docs/vision.md:79) and [docs/vision.md](/Users/you/Workspace/tide/docs/vision.md:81).
 5. `Associated Terminal` already makes a `Terminal` the cwd context provider for non-terminal Panes. See [docs/glossary.md](/Users/you/Workspace/tide/docs/glossary.md:74).
 6. `Browser Pane`, `Diff`, `Editor`, `Terminal`, and `Launcher` are already the five `PaneKind`s. `FileTreeModel` is separate chrome state rather than a `PaneKind`. See [docs/glossary.md](/Users/you/Workspace/tide/docs/glossary.md:90) and [docs/glossary.md](/Users/you/Workspace/tide/docs/glossary.md:98).
-7. `Wrapped Agent` auto-integration already targets `claude`, `codex`, `gemini`, `agy` (Antigravity), and `opencode` through PTY environment injection and wrapper-managed lifecycle signals. See [docs/specs/agent-auto-integration.md](/Users/you/Workspace/tide/docs/specs/agent-auto-integration.md:17) and [docs/specs/agent-auto-integration.md](/Users/you/Workspace/tide/docs/specs/agent-auto-integration.md:27).
+7. `Wrapped Agent` auto-integration already targets `claude`, `codex`, `agy` (Antigravity), and `opencode` through PTY environment injection and wrapper-managed lifecycle signals. See [docs/specs/agent-auto-integration.md](/Users/you/Workspace/tide/docs/specs/agent-auto-integration.md:17) and [docs/specs/agent-auto-integration.md](/Users/you/Workspace/tide/docs/specs/agent-auto-integration.md:27).
 8. `Browser Pane UX` already scopes Browser Pane behavior around truthful URL state, modal layering, loading feedback, unsupported flow boundaries, and explicit external handoff. See [docs/specs/browser-pane-ux.md](/Users/you/Workspace/tide/docs/specs/browser-pane-ux.md:29).
 9. Current `Worktree UX` already identifies weak Workspace identity, missing fuzzy switching, disconnected `GitSwitcher`, and inactive Workspace metadata gaps. See [docs/specs/worktree-ux.md](/Users/you/Workspace/tide/docs/specs/worktree-ux.md:13).
 10. Current visual hierarchy is too implementation-shaped: the titlebar shows only `Tide` or `Tide . N`-style numbering, inactive Workspaces lack useful metadata, every normal `Pane` gets similar chrome weight, and the current Dock empty state renders as a small command hint rather than a meaningful context area. See [titlebar.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs:99), [titlebar.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs:552), [tab_bar.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs:159), and [tab_bar.rs](/Users/you/Workspace/tide/crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs:106).
@@ -32,7 +32,7 @@ The product gap is not that Tide lacks agent internals. The gap is that Tide doe
 
 ### To-Be
 
-Tide becomes an open-terminal Codex app: a native macOS task environment where each `Workspace` feels like a Codex thread, but the main session is a real `Terminal` that can host Claude Code, Codex CLI, Gemini CLI, another terminal-first coding-agent CLI, or a normal shell.
+Tide becomes an open-terminal Codex app: a native macOS task environment where each `Workspace` feels like a Codex thread, but the main session is a real `Terminal` that can host Claude Code, Codex CLI, Antigravity, opencode, another terminal-first coding-agent CLI, or a normal shell.
 
 The design target is:
 
@@ -147,7 +147,7 @@ The change should land as a sequence of product layers. Each layer is useful alo
 - **Trigger**: User runs a coding-agent CLI or shell command in a Stage Terminal
 - **Precondition**: A `Terminal` exists in the active Workspace
 - **Flow**:
-  1. User starts Claude Code, Codex CLI, Gemini CLI, another terminal-first coding-agent CLI, or a normal shell command.
+  1. User starts Claude Code, Codex CLI, Antigravity, opencode, another terminal-first coding-agent CLI, or a normal shell command.
   2. Tide keeps the PTY grid as the source-of-truth session and does not draw task metadata inside it.
   3. If the process is a `Wrapped Agent`, Tide derives `Wrapped Agent Presence` and `AgentChromeState`.
   4. If the process is not wrapped, Tide still allows the user and external MCP clients to observe and operate the Terminal normally.
@@ -380,5 +380,5 @@ The change should land as a sequence of product layers. Each layer is useful alo
 | Associated Terminal and comments | `crates/tide-app/src/domain/state/associations.rs`, `crates/tide-app/src/domain/state/context_artifact.rs`, `crates/tide-app/src/application/services/action_service/` |
 | Browser Pane verification | `crates/tide-app/src/domain/pane/browser.rs`, `crates/tide-app/src/adapter/outward/platform_adapter/macos/webview.rs`, `crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs` |
 | Diff review surface | `crates/tide-app/src/domain/pane/diff.rs`, `crates/tide-app/src/application/services/file_ops_service/`, `crates/tide-app/src/application/services/action_service/` |
-| Wrapped Agent neutrality | `crates/tide-app/resources/bin/claude`, `crates/tide-app/resources/bin/codex`, `crates/tide-app/resources/bin/gemini`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs` |
+| Wrapped Agent neutrality | `crates/tide-app/resources/bin/claude`, `crates/tide-app/resources/bin/codex`, `crates/tide-app/resources/bin/agy`, `crates/tide-app/resources/bin/opencode`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs` |
 | Behavior tests | `crates/tide-app/src/application/behavior_tests/open_terminal_codex_app.rs` |

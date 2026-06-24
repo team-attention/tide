@@ -164,7 +164,7 @@ platform plumbing), mirroring `backend/infrastructure/node/`:
 | Domain models (thread, agent-runtime, agent-session, …) | `application/domains/` |
 | Ports (interfaces the services need) | `application/ports/outbound/` |
 | Contract command routing (the dispatch switch) | `adapters/inbound/contract-message-adapter/contract-message-adapter.ts`; DTO mappers in `…/dto/`, error mapping in `…/error-codes.ts` |
-| Per-provider adapters (claude/codex/gemini/opencode) | `adapters/outbound/agent-integrations/<agent>/` |
+| Per-provider adapters (claude/codex/opencode) | `adapters/outbound/agent-integrations/<agent>/` |
 | Protocol clients (stream-json / app-server / ACP) | `adapters/outbound/agent-runtime/structured/` |
 | Live wiring (composition root) | `infrastructure/node/live/live-backend.ts` |
 | Streaming projection (provider events → blocks/persist) | `infrastructure/node/live/live-projector.ts` |

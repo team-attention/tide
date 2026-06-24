@@ -3,7 +3,7 @@
 // Back/Next, revises any earlier answer, and submits every answer together. A single
 // prompt (every permission/approval, a 1-question AskUserQuestion) keeps the plain
 // single card with Skip + Submit — the non-regression guard that also covers the other
-// providers' (codex/gemini/opencode) single-card question interface.
+// providers' (codex/opencode) single-card question interface.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
@@ -397,7 +397,7 @@ test("each shortcut-bearing option shows a ⌘N keycap", () => {
 });
 
 test("single prompt (no steps) renders the plain card — no wizard chrome", () => {
-  // Static render is enough: this is the codex/gemini/opencode + claude-permission path.
+  // Static render is enough: this is the codex/opencode + claude-permission path.
   const markup = renderToStaticMarkup(
     <PromptCard
       prompt={singlePrompt()}

@@ -1,5 +1,5 @@
 // Auth-safe: boots the real app, scopes a Start Composer to the repo-root project,
-// then for each agent (Gemini, Codex) switches the composer agent and types "/" to
+// then for each agent (opencode, Codex) switches the composer agent and types "/" to
 // verify the menu mirrors that agent's REAL command set (backend handshake probe →
 // commandsChanged). Discovery is handshake-only — never sends a turn (codex auth safe).
 const { _electron } = require("playwright");
@@ -53,7 +53,7 @@ if (!res.ok) { console.error("seed failed", res.error); process.exit(1); }
     return out;
   };
 
-  for (const label of ["opencode", "Gemini CLI", "Codex CLI"]) {
+  for (const label of ["opencode", "Codex CLI"]) {
     // Open the agent chip menu and pick the agent.
     await page.locator(".agent-chat-shell--start [data-context-kind='agent']").first().click().catch(() => {});
     await page.waitForTimeout(500);

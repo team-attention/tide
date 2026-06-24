@@ -590,8 +590,6 @@ function formatAgentLabel(agentId: string): string {
       return "Codex CLI";
     case "claude":
       return "Claude Code";
-    case "gemini":
-      return "Gemini CLI";
     default:
       return agentId;
   }

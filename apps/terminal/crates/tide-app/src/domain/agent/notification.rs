@@ -1,5 +1,5 @@
 // Wrapped-Agent notification interpretation: turning provider hook payloads
-// (codex / claude / gemini) into human-readable notification snippets and turn
+// (codex / claude) into human-readable notification snippets and turn
 // resolutions. This is Wrapped-Agent domain knowledge, not transport — the
 // gateway adapter just hands the payloads over.
 
@@ -23,9 +23,6 @@ pub(crate) fn wrapped_agent_notification_snippet_from_payload(
             .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
         "claude" => payload
             .and_then(claude_notification_snippet)
-            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
-        "gemini" => payload
-            .and_then(|value| gemini_notification_snippet(event, value))
             .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
         _ => None,
     }
@@ -81,16 +78,6 @@ fn claude_notification_snippet(payload: &Value) -> Option<String> {
         .and_then(|payload| payload.message)
 }
 
-fn gemini_notification_snippet(event: &str, payload: &Value) -> Option<String> {
-    serde_json::from_value::<GeminiHookPayload>(payload.clone())
-        .ok()
-        .and_then(|payload| match event {
-            "agent-idle" => payload.prompt_response.or(payload.message),
-            "agent-needs-input" => payload.message.or(payload.prompt_response),
-            _ => None,
-        })
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct CodexCompletedTurnPayload {
@@ -140,12 +127,6 @@ enum CodexTranscriptResolution {
 #[derive(Debug, Deserialize)]
 struct ClaudeHookPayload {
     message: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GeminiHookPayload {
-    message: Option<String>,
-    prompt_response: Option<String>,
 }
 
 pub(crate) fn resolve_codex_stop_payload(payload: Option<&Value>) -> CodexStopResolution {

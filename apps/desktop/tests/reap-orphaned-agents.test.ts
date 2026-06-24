@@ -8,9 +8,9 @@ import { reapOrphanedTideAgentProcesses } from "../src/backend/infrastructure/no
 
 const processList = [
   // Orphaned (ppid 1) Tide agent — a leftover from a dead session. Reap it.
-  "42001     1 /Users/me/.local/bin/gemini --prompt-interactive hi TIDE_RUNTIME_ID=runtime-abc TIDE_THREAD_ID=id-1",
+  "42001     1 /Users/me/.local/bin/opencode acp TIDE_RUNTIME_ID=runtime-abc TIDE_THREAD_ID=id-1",
   // Orphaned (ppid 1) python PTY bridge carrying the tag. Reap it.
-  "42002     1 python3 -c <bridge> gemini TIDE_RUNTIME_ID=runtime-xyz",
+  "42002     1 python3 -c <bridge> opencode TIDE_RUNTIME_ID=runtime-xyz",
   // LIVE Tide agent — still has a live parent (ppid != 1). Must NOT be touched.
   "42003 42002 /Users/me/.local/bin/claude TIDE_RUNTIME_ID=runtime-live",
   // Unrelated orphan without the tag. Must NOT be touched.

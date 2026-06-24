@@ -122,7 +122,7 @@ test("new_file_normalizes_a_leading_dot_slash_and_no-ops_on_empty", () => {
 });
 
 test("new_file_normalizes_windows_backslashes", () => {
-  // Gemini review: a Windows-style path must normalize \\ → / and strip the leading .\\.
+  // Review regression: a Windows-style path must normalize \\ → / and strip the leading .\\.
   const result = newProductShellFile(stateWithTree([], []), ".\\win\\path.ts");
   assert.equal(
     result.command?.kind === "workbench.command" &&

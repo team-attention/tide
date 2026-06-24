@@ -91,7 +91,7 @@ export function isAgentComingSoon(agentId: string): boolean {
 }
 
 // Provider-CLI agents offered in the composer menu.
-const OFFERED_PROVIDER_AGENTS = ["codex", "claude", "gemini", "opencode"] as const;
+const OFFERED_PROVIDER_AGENTS = ["codex", "claude", "opencode"] as const;
 
 // Pick the agent a new thread should default to. Honors the user's last choice only if
 // it is still offered AND detected locally — so a persisted hidden/uninstalled agent
@@ -117,13 +117,13 @@ interface CliModelOption {
   label: string;
   detail?: string;
   // Multi-vendor router models (opencode) carry their vendor for grouping in the
-  // model menu; single-vendor agents (claude/codex/gemini) leave it undefined.
+  // model menu; single-vendor agents (claude/codex) leave it undefined.
   vendor?: string;
 }
 
 // Provider-reported model catalogs, keyed by agent id. opencode ships its authed
-// list on thread.listed (`opencode models`); gemini/opencode also self-report over
-// ACP at session start (agentRuntime.modelCatalogChanged). When present, the catalog
+// list on thread.listed (`opencode models`) and can self-report over ACP at session
+// start (agentRuntime.modelCatalogChanged). When present, the catalog
 // drives the menu instead of the hand-curated static list. Module-level so it
 // survives New-Thread state resets, mirroring availableProviderAgents.
 const providerModelCatalogs = new Map<string, CliModelOption[]>();
@@ -161,24 +161,6 @@ export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
         { value: "claude-opus-4-7[1m]", label: "Opus 4.7 (1M context)", detail: "Legacy" },
         { value: "claude-opus-4-6", label: "Opus 4.6", detail: "Legacy" },
       ];
-    case "gemini": {
-      // Once a session is live, gemini self-reports its models over ACP and the
-      // catalog overrides the static list (the live current model + exact set). At
-      // compose time (no session) the curated list is used — corrected to the real
-      // `-preview` ids gemini requires (the prior `gemini-3-pro` etc. were DRIFTED).
-      const catalog = providerModelCatalogs.get("gemini");
-      if (catalog !== undefined) {
-        return [{ value: "Gemini default", label: "Default", detail: "gemini picks" }, ...catalog];
-      }
-      return [
-        { value: "Gemini default", label: "Default", detail: "gemini-3-flash-preview" },
-        { value: "gemini-3-pro-preview", label: "Gemini 3 Pro" },
-        { value: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
-        { value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
-        { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", detail: "Legacy" },
-        { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", detail: "Legacy" },
-      ];
-    }
     case "opencode": {
       // opencode is a multi-vendor router: the real model list is whatever the
       // user has authed (`opencode auth login`), enumerated by the backend and
@@ -210,7 +192,7 @@ export function runtimeSourceForBinding(binding: AgentChatAgentBinding): AgentCh
 
 export function runtimeSourceForAgent(agentId: string): AgentChatAgentRuntimeSource {
   const providerAgent =
-    agentId === "claude" || agentId === "gemini" || agentId === "opencode"
+    agentId === "claude" || agentId === "opencode"
       ? agentId
       : "codex";
   return {
@@ -223,8 +205,6 @@ export function defaultModelValueForAgent(agentId: string): string {
   switch (agentId) {
     case "claude":
       return "Claude default";
-    case "gemini":
-      return "Gemini default";
     case "opencode":
       return "opencode default";
     default:

@@ -380,11 +380,11 @@ test("product_shell_thread_start_command_reaches_backend_with_selected_agent_bin
   const selected = selectProductShellChoiceSurfaceRow(
     withAgentMenu,
     "agent_menu",
-    "gemini",
+    "opencode",
   );
   const withDraft = updateProductShellComposerDraft(
     selected.state,
-    "Run Gemini through the Backend",
+    "Run opencode through the Backend",
   );
   const submitted = submitProductShellComposerDraft(withDraft);
 
@@ -395,31 +395,31 @@ test("product_shell_thread_start_command_reaches_backend_with_selected_agent_bin
   );
 
   assertBackendEventsAreContractEnvelopes(events);
-  assert.equal(fakes.readiness.checks[0]?.agentId, "gemini");
+  assert.equal(fakes.readiness.checks[0]?.agentId, "opencode");
   assert.deepEqual(fakes.readiness.checks[0]?.launchOptions, {
-    model: "Gemini default",
-    permission: "default",
+    model: "opencode default",
+    permission: "build",
     worktree: "current folder",
     branch: "main",
   });
-  assert.equal(fakes.runtime.starts[0]?.agentBinding.agentId, "gemini");
+  assert.equal(fakes.runtime.starts[0]?.agentBinding.agentId, "opencode");
   assert.deepEqual(fakes.runtime.starts[0]?.agentBinding.runtimeSource, {
     kind: "provider_cli",
-    integrationId: "gemini",
+    integrationId: "opencode",
   });
   assert.deepEqual(fakes.runtime.starts[0]?.launchOptions, {
-    model: "Gemini default",
-    permission: "default",
+    model: "opencode default",
+    permission: "build",
     worktree: "current folder",
     branch: "main",
   });
   // Provider CLIs receive the first message as the launch-time initial prompt
   // (reliably starts a turn), not by typing it into the TUI after launch.
-  assert.equal(fakes.runtime.starts[0]?.initialPrompt, "Run Gemini through the Backend");
+  assert.equal(fakes.runtime.starts[0]?.initialPrompt, "Run opencode through the Backend");
   assert.equal(fakes.runtime.writes.length, 0);
   assert.equal(events[2].kind, "thread.started");
-  assert.equal(events[2].payload.thread.agentBinding.agentId, "gemini");
-  assert.equal(events[2].payload.thread.launchOptions?.model, "Gemini default");
+  assert.equal(events[2].payload.thread.agentBinding.agentId, "opencode");
+  assert.equal(events[2].payload.thread.launchOptions?.model, "opencode default");
 });
 
 test("thread_list_contract_events_return_backend_thread_summaries", async () => {
@@ -468,10 +468,10 @@ test("thread_hydrate_contract_omits_undefined_provider_session_ref_fields", asyn
     initialThreads: [
       threadSeed("thread-provider-ref", {
         agentBinding: {
-          agentId: "gemini",
-          runtimeSource: { kind: "provider_cli", integrationId: "gemini" },
+          agentId: "opencode",
+          runtimeSource: { kind: "provider_cli", integrationId: "opencode" },
           providerSessionRef: {
-            kind: "gemini_session",
+            kind: "opencode_session",
             value: "conversation-1",
             transcriptPath: undefined,
             logPath: undefined,
@@ -493,7 +493,7 @@ test("thread_hydrate_contract_omits_undefined_provider_session_ref_fields", asyn
   assertBackendEventsAreContractEnvelopes(events);
   const ref = events[1].payload.thread.agentBinding.providerSessionRef;
   assert.deepEqual(ref, {
-    kind: "gemini_session",
+    kind: "opencode_session",
     value: "conversation-1",
   });
 });

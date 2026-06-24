@@ -10,7 +10,7 @@ test("detects common provider/CLI update banners on stderr", () => {
   assert.ok(detectAgentUpdateNotice("A new release of codex is available: 0.136.0 -> 0.140.0"));
   assert.ok(detectAgentUpdateNotice("Update available! Run npm i -g @anthropic-ai/claude-code to update."));
   assert.ok(detectAgentUpdateNotice("npm notice New minor version of npm available! 10.1.0 -> 10.4.0"));
-  assert.ok(detectAgentUpdateNotice("gemini-cli is out of date; please update"));
+  assert.ok(detectAgentUpdateNotice("opencode is out of date; please update"));
 });
 
 test("ignores ordinary stderr noise (no false positives)", () => {

@@ -32,7 +32,7 @@ function read(rel: string): string {
 // compile-time union; this is its runtime twin, and the descriptor table + helpers
 // must agree with it. Adding an id to the type without updating this list (and a
 // descriptor) is the exact fan-out this guard prevents.
-const EXPECTED_PROVIDER_CLI_IDS = ["codex", "claude", "gemini", "opencode"] as const;
+const EXPECTED_PROVIDER_CLI_IDS = ["codex", "claude", "opencode"] as const;
 
 test("every provider-CLI agent id has a descriptor and a session-ref kind", () => {
   for (const id of EXPECTED_PROVIDER_CLI_IDS) {
@@ -146,15 +146,15 @@ test("infra detectAvailableAgents iterates the registry, not a hardcoded array",
   assert.match(source, /PROVIDER_CLI_AGENT_IDS\.filter/);
   assert.doesNotMatch(
     source,
-    /\["codex",\s*"claude",\s*"gemini",\s*"opencode"\]/,
+    /\["codex",\s*"claude",\s*"opencode"\]/,
     "detectAvailableAgents must use PROVIDER_CLI_AGENT_IDS, not a literal id array",
   );
 });
 
-// Audit 5.2 / A5: provider home-path knowledge (.claude/.codex/.gemini file
+// Audit 5.2 / A5: provider home-path knowledge (.claude/.codex file
 // layouts) belongs to the agent integrations. The live spine and entrypoints
 // may dispatch per provider, but must not hardcode provider path literals —
-// those moved to claude-history-connector / gemini-history-connector /
+// those moved to claude-history-connector /
 // agent-integrations/shared/provider-cli-commands.
 test("infrastructure live/entrypoints contain no quoted provider home-path literals", () => {
   const dirs = [
@@ -168,7 +168,7 @@ test("infrastructure live/entrypoints contain no quoted provider home-path liter
       const rel = `${dir}/${entry}`;
       const source = read(rel);
       for (const [index, line] of source.split("\n").entries()) {
-        if (/["'`]\.(claude|codex|gemini)\b/.test(line)) {
+        if (/["'`]\.(claude|codex)\b/.test(line)) {
           violations.push(`${rel}:${index + 1}: ${line.trim()}`);
         }
       }

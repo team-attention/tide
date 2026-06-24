@@ -1,4 +1,4 @@
-export type ProviderCliAgentId = "codex" | "claude" | "gemini" | "opencode";
+export type ProviderCliAgentId = "codex" | "claude" | "opencode";
 export type AgentId = ProviderCliAgentId;
 
 export interface AgentRuntimeSourceDto {
@@ -16,7 +16,6 @@ export interface ProviderSessionRefDto {
   kind:
     | "codex_rollout"
     | "claude_transcript"
-    | "gemini_session"
     | "opencode_session"
     | "provider_native";
   value: string;

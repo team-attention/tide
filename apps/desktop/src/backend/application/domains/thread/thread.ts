@@ -7,7 +7,7 @@ import type {
   WorkbenchState,
 } from "../workbench/workbench.ts";
 
-export type ProviderCliAgentId = "codex" | "claude" | "gemini" | "opencode";
+export type ProviderCliAgentId = "codex" | "claude" | "opencode";
 export type AgentId = ProviderCliAgentId;
 export type ThreadId = string;
 export type ProjectId = string;
@@ -21,7 +21,6 @@ export interface ProviderSessionRef {
   kind:
     | "codex_rollout"
     | "claude_transcript"
-    | "gemini_session"
     | "opencode_session"
     | "provider_native";
   value: string;
@@ -69,7 +68,7 @@ export type PromptKind =
   | "choice"
   | "command_picker";
 
-// Approval-option semantic carried natively by ACP (gemini/opencode); undefined for
+// Approval-option semantic carried natively by ACP (opencode); undefined for
 // claude/codex. Drives default selection + allow/reject styling without optionId matching.
 export type PromptChoiceKind =
   | "allow_once"
@@ -144,7 +143,7 @@ export interface PromptState {
 // format (codex localImage item / ACP image ContentBlock). The path also rides
 // the message text as "[Attached image: <path>]" — that text is what claude reads
 // (it has a file-read tool) and what the transcript renders as a thumbnail — but
-// codex/gemini/opencode have no file-read tool, so they need the native item.
+// codex/opencode have no file-read tool, so they need the native item.
 export interface ComposerAttachmentRef {
   path: string;
   mediaType: string;

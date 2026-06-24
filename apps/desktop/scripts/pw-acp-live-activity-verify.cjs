@@ -1,6 +1,6 @@
 // LIVE verification of Working-indicator live activity through the ACP client.
-// Launches the BUILT app, selects an ACP-backed provider (Gemini by default, or
-// ACP_AGENT=opencode), sends a prompt that asks for plan/tool activity, then polls
+// Launches the BUILT app, selects opencode's ACP-backed provider, sends a prompt
+// that asks for plan/tool activity, then polls
 // the Working indicator for "X/Y steps" and/or live tool labels.
 const { _electron } = require("playwright");
 const path = require("node:path");
@@ -9,14 +9,8 @@ const fs = require("node:fs");
 
 const repo = path.resolve(__dirname, "..");
 const requestedAgent = process.argv[2] ?? process.env.ACP_AGENT;
-const ACP_AGENT = requestedAgent === "opencode" ? "opencode" : "gemini";
+const ACP_AGENT = requestedAgent === undefined || requestedAgent === "opencode" ? "opencode" : requestedAgent;
 const provider = {
-  gemini: {
-    label: "Gemini CLI",
-    permission: "Bypass permissions",
-    dataPrefix: "tide-gemini-acp-liveact-",
-    shotPrefix: "pw-gemini-acp-liveact",
-  },
   opencode: {
     label: "opencode",
     permission: "Build",
@@ -24,6 +18,9 @@ const provider = {
     shotPrefix: "pw-opencode-acp-liveact",
   },
 }[ACP_AGENT];
+if (provider === undefined) {
+  throw new Error(`Unsupported ACP agent: ${ACP_AGENT}`);
+}
 
 const TOKEN = `TIDE_ACP_LIVE_ACTIVITY_${ACP_AGENT}_${Date.now()}`;
 const PROMPT = [
