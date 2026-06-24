@@ -1728,7 +1728,7 @@ test("follow_up_composer_model_label_falls_back_to_active_agent_default", () => 
   const view = createAgentChatShellViewModel(hydrated);
 
   assert.equal(view.composer.modelLabel, "Default");
-  assert.equal(view.composer.permissionLabel, "Ask permissions");
+  assert.equal(view.composer.permissionLabel, "Build");
 });
 
 test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
