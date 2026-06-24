@@ -46,6 +46,7 @@ import {
   type LastKnownStateDto,
   type OpencodeEnvironmentDto,
   type OpencodeVendorDto,
+  type ProviderCatalogSnapshotDto,
   type ProviderCliAgentId,
   type ProviderReadinessDto,
   type ProviderModelDto,
@@ -66,9 +67,7 @@ export interface CreateBackendContractMessageAdapterInput {
   // composer menu can enable available agents and show the rest disabled. Evaluated
   // per call so newly-installed CLIs are picked up without a restart.
   detectAvailableAgents?: () => ProviderCliAgentId[];
-  // opencode's authed model catalog (`opencode models`), surfaced on thread.listed so
-  // the composer model menu can offer the user's real vendor/model list. Evaluated
-  // per call (cached in the enumerator) so a new `opencode auth login` is picked up.
+  providerCatalog?: () => Promise<ProviderCatalogSnapshotDto>;
   enumerateOpencodeModels?: () => Promise<ProviderModelDto[]>;
   // opencode vendor tiles + connected-state (`opencode auth list`) and environment
   // (version + executable path), surfaced on thread.listed for the vendor on-ramp.
@@ -101,6 +100,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
   private readonly detectAvailableAgents?: () => ProviderCliAgentId[];
+  private readonly providerCatalog?: () => Promise<ProviderCatalogSnapshotDto>;
   private readonly enumerateOpencodeModels?: () => Promise<ProviderModelDto[]>;
   private readonly enumerateOpencodeVendors?: () => Promise<OpencodeVendorDto[]>;
   private readonly opencodeEnvironment?: () => Promise<OpencodeEnvironmentDto>;
@@ -115,6 +115,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     this.clock = input.clock ?? defaultClock;
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
     this.detectAvailableAgents = input.detectAvailableAgents;
+    this.providerCatalog = input.providerCatalog;
     this.enumerateOpencodeModels = input.enumerateOpencodeModels;
     this.enumerateOpencodeVendors = input.enumerateOpencodeVendors;
     this.opencodeEnvironment = input.opencodeEnvironment;
@@ -526,17 +527,18 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
   private async providerCatalogChangedEvent(
     command: BackendCommandEnvelope,
   ): Promise<BackendEventEnvelope<"providerCatalog.changed">> {
+    const payload = (await this.providerCatalog?.()) ?? {
+      opencodeModels: await this.enumerateOpencodeModels?.(),
+      opencodeVendors: await this.enumerateOpencodeVendors?.(),
+      opencodeEnvironment: await this.opencodeEnvironment?.(),
+    };
     return {
       contractVersion: CONTRACT_VERSION,
       eventId: this.nextEventId(),
       requestId: command.requestId,
       kind: "providerCatalog.changed",
       emittedAt: this.clock(),
-      payload: {
-        opencodeModels: await this.enumerateOpencodeModels?.(),
-        opencodeVendors: await this.enumerateOpencodeVendors?.(),
-        opencodeEnvironment: await this.opencodeEnvironment?.(),
-      },
+      payload,
     };
   }
 

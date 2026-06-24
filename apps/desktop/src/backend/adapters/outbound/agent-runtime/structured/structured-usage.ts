@@ -3,6 +3,7 @@ import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/a
 export interface StructuredUsagePayload {
   inputTokens?: number;
   outputTokens?: number;
+  contextTokens?: number;
   contextWindow?: number;
   totalTokens?: number;
   rateLimits?: AgentRuntimeRateLimitDto[];

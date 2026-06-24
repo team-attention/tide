@@ -26,6 +26,11 @@ export function acpUsageFromRecord(record: Record<string, unknown>): StructuredU
     tokenCount !== undefined
       ? numberField(tokenCount, "total_tokens") ?? numberField(tokenCount, "totalTokens")
       : numberField(record, "total_tokens") ?? numberField(record, "totalTokens");
+  const contextTokens =
+    totalTokens ??
+    (inputTokens !== undefined && outputTokens !== undefined
+      ? inputTokens + outputTokens
+      : undefined);
   const contextWindow =
     numberField(quota, "context_window") ??
     numberField(quota, "contextWindow") ??
@@ -45,6 +50,7 @@ export function acpUsageFromRecord(record: Record<string, unknown>): StructuredU
     ...(inputTokens !== undefined ? { inputTokens } : {}),
     ...(outputTokens !== undefined ? { outputTokens } : {}),
     ...(totalTokens !== undefined ? { totalTokens } : {}),
+    ...(contextTokens !== undefined ? { contextTokens } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(rateLimits.length > 0 ? { rateLimits } : {}),
   };

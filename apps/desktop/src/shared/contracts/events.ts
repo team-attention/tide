@@ -19,7 +19,7 @@ import type {
 import type { RequestId, ThreadId } from "./ids.ts";
 import type { ProviderCliAgentId } from "./agent.ts";
 import type { OpencodeEnvironmentDto, OpencodeVendorDto } from "./opencode-vendor.ts";
-import type { ProviderModelDto } from "./provider-model-catalog.ts";
+import type { ProviderCatalogAgentDto, ProviderModelDto } from "./provider-model-catalog.ts";
 import type { JsonObject } from "./json.ts";
 import type { PromptStateDto } from "./prompt.ts";
 import type { ProviderReadinessDto } from "./provider-readiness.ts";
@@ -123,6 +123,9 @@ export interface BackendEventPayloadByKind {
   // (`opencode models`/`auth list`/`--version`). Pushed once at startup (off the critical path)
   // and again after a vendor connect. See provider-cli-setup-handoff.md.
   "providerCatalog.changed": {
+    // Provider-wide snapshot for the Settings Providers & Models hub. This is pushed
+    // asynchronously after startup and after provider auth/catalog changes.
+    providers?: ProviderCatalogAgentDto[];
     // opencode's authed model catalog (enumerated via `opencode models`); a multi-vendor router,
     // so per-user, not hand-curated. Absent ⇒ not yet enumerated (composer uses "opencode default").
     opencodeModels?: ProviderModelDto[];

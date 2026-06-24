@@ -15,14 +15,16 @@ export function claudeUsage(message: Record<string, unknown>): StructuredUsagePa
       const inputTokens = numberField(value, "inputTokens");
       const cacheRead = numberField(value, "cacheReadInputTokens") ?? 0;
       const outputTokens = numberField(value, "outputTokens");
+      const totalTokens =
+        inputTokens !== undefined && outputTokens !== undefined
+          ? inputTokens + cacheRead + outputTokens
+          : undefined;
       return {
         ...(inputTokens !== undefined ? { inputTokens: inputTokens + cacheRead } : {}),
         ...(outputTokens !== undefined ? { outputTokens } : {}),
+        ...(totalTokens !== undefined ? { contextTokens: totalTokens, totalTokens } : {}),
         ...(numberField(value, "contextWindow") !== undefined
           ? { contextWindow: numberField(value, "contextWindow") }
-          : {}),
-        ...(inputTokens !== undefined && outputTokens !== undefined
-          ? { totalTokens: inputTokens + cacheRead + outputTokens }
           : {}),
         ...(rateLimits.length > 0 ? { rateLimits } : {}),
       };

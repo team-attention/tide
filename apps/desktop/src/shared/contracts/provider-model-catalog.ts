@@ -4,6 +4,7 @@
 // where it cannot (claude/codex curated lists). See
 // docs_v2/specs/cross-provider-model-catalog-and-hub.md.
 import type { ProviderCliAgentId } from "./agent.ts";
+import type { OpencodeEnvironmentDto, OpencodeVendorDto } from "./opencode-vendor.ts";
 
 export interface ProviderModelDto {
   // Provider-native model id: claude `--model` alias / codex
@@ -28,4 +29,25 @@ export interface ProviderModelCatalogDto {
   currentModel?: string;
   // Tide-resolved default (sentinel or concrete id).
   defaultModel: string;
+}
+
+// One row in the Settings Providers & Models hub's dynamic backend snapshot.
+// `source` describes the model catalog source; installed/authenticated are read
+// from provider-owned local state when available.
+export interface ProviderCatalogAgentDto {
+  agentId: ProviderCliAgentId;
+  installed: boolean;
+  authenticated?: boolean;
+  source: "dynamic" | "static";
+  models: ProviderModelDto[];
+  connectedVendors?: number;
+  totalVendors?: number;
+  version?: string;
+}
+
+export interface ProviderCatalogSnapshotDto {
+  providers: ProviderCatalogAgentDto[];
+  opencodeModels: ProviderModelDto[];
+  opencodeVendors: OpencodeVendorDto[];
+  opencodeEnvironment: OpencodeEnvironmentDto;
 }

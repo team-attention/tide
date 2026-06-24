@@ -107,6 +107,7 @@ test("ACP usage parses quota token_count plus provider limits", () => {
     {
       inputTokens: 1200,
       outputTokens: 300,
+      contextTokens: 1500,
       rateLimits: [
         { usedPercent: 40, windowMinutes: 300 },
         { usedPercent: 55, windowMinutes: 10080 },

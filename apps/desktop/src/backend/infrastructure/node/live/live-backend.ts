@@ -368,6 +368,17 @@ export function createLiveBackendContractMessageAdapter(
   const detection = createProviderDetection({
     hasIntegration: (agentId) => integrations[agentId] !== undefined,
     resolveExecutable,
+    readAuthenticated: (agentId) => {
+      const cwd = process.cwd();
+      switch (agentId) {
+        case "codex":
+          return readCodexProviderStateFromHome(homeDir, cwd, effectiveCodexHome(cwd)).authenticated;
+        case "claude":
+          return readClaudeProviderStateFromHome(homeDir, cwd).authenticated;
+        case "opencode":
+          return readOpencodeProviderStateFromHome(homeDir, cwd).authenticated;
+      }
+    },
   });
   // Deliver opencode's catalog OUT OF BAND so the agent menu (availableAgents on thread.listed)
   // is never blocked behind opencode's slower subprocesses: enumerate once OFF the startup
@@ -379,6 +390,7 @@ export function createLiveBackendContractMessageAdapter(
     // thread.list reply (and so the cold-boot rail skeleton) by ~2.5s. Off the loop, the
     // catalog simply arrives a moment later without blocking anything.
     void (async () => {
+      const catalog = await detection.providerCatalog();
       emitBackendEvents([
         {
           contractVersion: CONTRACT_VERSION,
@@ -386,9 +398,10 @@ export function createLiveBackendContractMessageAdapter(
           kind: "providerCatalog.changed",
           emittedAt: new Date().toISOString(),
           payload: {
-            opencodeModels: await detection.enumerateOpencodeModels(),
-            opencodeVendors: await detection.enumerateOpencodeVendors(),
-            opencodeEnvironment: await detection.opencodeEnvironment(),
+            providers: catalog.providers,
+            opencodeModels: catalog.opencodeModels,
+            opencodeVendors: catalog.opencodeVendors,
+            opencodeEnvironment: catalog.opencodeEnvironment,
           },
         },
       ]);

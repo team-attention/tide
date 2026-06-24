@@ -33,7 +33,7 @@ import type {
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import { codexPlanActivityFromItem } from "./plan-activity.ts";
-import { bounded, codexRateLimitsFromUsage, isRecord, numberField, stringField } from "./codex-app-server-shared.ts";
+import { bounded, codexStructuredUsageFromTokenUsage, isRecord, numberField, stringField } from "./codex-app-server-shared.ts";
 import {
   codexToolCallRecordFromItem,
   codexToolItemId,
@@ -112,6 +112,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private lastUsage?: {
     inputTokens?: number;
     outputTokens?: number;
+    contextTokens?: number;
     contextWindow?: number;
     totalTokens?: number;
     rateLimits?: AgentRuntimeRateLimitDto[];
@@ -498,24 +499,14 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     }
     if (method === "thread/tokenUsage/updated") {
       const usage = isRecord(params.tokenUsage) ? params.tokenUsage : undefined;
-      const total = usage !== undefined && isRecord(usage.total) ? usage.total : undefined;
       if (usage !== undefined) {
-        const rateLimits = codexRateLimitsFromUsage(usage);
-        if (rateLimits.length > 0) {
-          this.lastRateLimits = rateLimits;
+        const parsed = codexStructuredUsageFromTokenUsage(usage, this.lastRateLimits);
+        if (parsed.rateLimits !== undefined) {
+          this.lastRateLimits = parsed.rateLimits;
         }
         // Merge onto the prior usage so a rate-limit-only update (total absent) keeps
         // the last-known token counts / context window instead of wiping them.
-        this.lastUsage = {
-          ...this.lastUsage,
-          ...(total !== undefined ? { inputTokens: numberField(total, "inputTokens") } : {}),
-          ...(total !== undefined ? { outputTokens: numberField(total, "outputTokens") } : {}),
-          ...(total !== undefined ? { totalTokens: numberField(total, "totalTokens") } : {}),
-          ...(numberField(usage, "modelContextWindow") !== undefined
-            ? { contextWindow: numberField(usage, "modelContextWindow") }
-            : {}),
-          ...(this.lastRateLimits !== undefined ? { rateLimits: this.lastRateLimits } : {}),
-        };
+        this.lastUsage = { ...this.lastUsage, ...parsed.usage };
       }
       return;
     }

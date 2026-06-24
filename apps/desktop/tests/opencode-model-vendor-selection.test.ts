@@ -13,6 +13,7 @@ import {
   permissionConfigForAgent,
   setAvailableProviderAgents,
   setOpencodeModelCatalog,
+  setProviderCatalogAgents,
 } from "../src/desktop/application/domains/agent-chat/state/agent-vocab.ts";
 import { buildProvidersHubViewModel } from "../src/desktop/application/domains/agent-chat/state/providers-hub.ts";
 
@@ -177,6 +178,7 @@ test("parseAcpModelCatalog reads ACP availableModels and opencode configOptions"
 });
 
 test("buildProvidersHubViewModel lists supported agents with status + catalog", () => {
+  setProviderCatalogAgents(null);
   setAvailableProviderAgents(["claude", "codex"]); // opencode not installed
   setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
   const hub = buildProvidersHubViewModel();
@@ -193,8 +195,64 @@ test("buildProvidersHubViewModel lists supported agents with status + catalog", 
   assert.equal(claude?.multiVendor, false);
   assert.ok((claude?.models.length ?? 0) > 1);
 
+  const codex = hub.find((agent) => agent.agentId === "codex");
+  assert.equal(codex?.installed, true);
+  assert.equal(codex?.multiVendor, false);
+  assert.ok((codex?.models.length ?? 0) > 1);
+
   setAvailableProviderAgents(null);
   setOpencodeModelCatalog(null);
+  setProviderCatalogAgents(null);
+});
+
+test("buildProvidersHubViewModel prefers the dynamic provider catalog snapshot", () => {
+  setAvailableProviderAgents(["claude"]); // fallback would mark codex unavailable.
+  setProviderCatalogAgents([
+    {
+      agentId: "codex",
+      installed: true,
+      authenticated: true,
+      source: "static",
+      models: [{ value: "gpt-snapshot", label: "GPT Snapshot" }],
+    },
+    {
+      agentId: "claude",
+      installed: true,
+      authenticated: false,
+      source: "static",
+      models: [{ value: "claude-snapshot", label: "Claude Snapshot" }],
+    },
+    {
+      agentId: "opencode",
+      installed: true,
+      authenticated: true,
+      source: "dynamic",
+      models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+      connectedVendors: 1,
+      totalVendors: 7,
+      version: "1.2.3",
+    },
+  ]);
+
+  const hub = buildProvidersHubViewModel();
+  const codex = hub.find((agent) => agent.agentId === "codex");
+  assert.equal(codex?.installed, true);
+  assert.equal(codex?.authenticated, true);
+  assert.equal(codex?.status, "signed_in");
+  assert.deepEqual(codex?.models.map((model) => model.value), ["gpt-snapshot"]);
+
+  const claude = hub.find((agent) => agent.agentId === "claude");
+  assert.equal(claude?.status, "not_signed_in");
+
+  const opencode = hub.find((agent) => agent.agentId === "opencode");
+  assert.equal(opencode?.status, "signed_in");
+  assert.equal(opencode?.connectedVendors, 1);
+  assert.equal(opencode?.totalVendors, 7);
+  assert.equal(opencode?.version, "1.2.3");
+
+  setAvailableProviderAgents(null);
+  setOpencodeModelCatalog(null);
+  setProviderCatalogAgents(null);
 });
 
 test("cliModelOptionsForAgent('opencode') reflects the backend-enumerated catalog", () => {

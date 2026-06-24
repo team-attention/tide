@@ -4,18 +4,15 @@ import {
   agentDescriptor,
   type AgentPermissionConfig,
 } from "../../../../../shared/agent-descriptors.ts";
+import {
+  CLAUDE_PROVIDER_MODELS,
+  CODEX_PROVIDER_MODELS,
+} from "../../../../../shared/provider-model-catalogs.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
-// Codex models, read from the installed codex binary (matches the Codex app
-// picker). codex's --model is free-form, so "Custom model id..." stays too.
-export const CODEX_MODELS: CliModelOption[] = [
-  { value: "gpt-5.5", label: "GPT-5.5" },
-  { value: "gpt-5.4", label: "GPT-5.4" },
-  { value: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
-  { value: "gpt-5.3-codex", label: "GPT-5.3-Codex" },
-  { value: "gpt-5.3-codex-spark", label: "GPT-5.3-Codex-Spark" },
-  { value: "gpt-5.2", label: "GPT-5.2" },
-];
+// Codex models are curated in shared code because the CLI accepts free-form model
+// ids but does not expose a reliable enumeration command.
+export const CODEX_MODELS: CliModelOption[] = CODEX_PROVIDER_MODELS;
 
 export function codexModelLabel(model: string): string {
   return CODEX_MODELS.find((m) => m.value === model)?.label ?? model;
@@ -112,7 +109,7 @@ export function resolveStartAgentId(preferred: string | undefined): AgentChatAge
   return (firstAvailable ?? "codex") as AgentChatAgentId;
 }
 
-interface CliModelOption {
+export interface CliModelOption {
   value: string;
   label: string;
   detail?: string;
@@ -127,6 +124,18 @@ interface CliModelOption {
 // drives the menu instead of the hand-curated static list. Module-level so it
 // survives New-Thread state resets, mirroring availableProviderAgents.
 const providerModelCatalogs = new Map<string, CliModelOption[]>();
+const providerCatalogAgents = new Map<string, ProviderCatalogAgentSnapshot>();
+
+export interface ProviderCatalogAgentSnapshot {
+  agentId: string;
+  installed: boolean;
+  authenticated?: boolean;
+  source: "dynamic" | "static";
+  models: CliModelOption[];
+  connectedVendors?: number;
+  totalVendors?: number;
+  version?: string;
+}
 
 export function setProviderModelCatalog(agentId: string, models: CliModelOption[] | null): void {
   if (models !== null && models.length > 0) {
@@ -141,26 +150,36 @@ export function setOpencodeModelCatalog(models: CliModelOption[] | null): void {
   setProviderModelCatalog("opencode", models);
 }
 
+export function setProviderCatalogAgents(agents: readonly ProviderCatalogAgentSnapshot[] | null): void {
+  for (const agentId of providerCatalogAgents.keys()) {
+    providerModelCatalogs.delete(agentId);
+  }
+  providerCatalogAgents.clear();
+  if (agents === null) {
+    return;
+  }
+  for (const agent of agents) {
+    providerCatalogAgents.set(agent.agentId, agent);
+    setProviderModelCatalog(agent.agentId, agent.models);
+  }
+}
+
+export function providerCatalogAgent(agentId: string): ProviderCatalogAgentSnapshot | undefined {
+  return providerCatalogAgents.get(agentId);
+}
+
 // A maintained, provider-native model list per CLI agent (models change rarely).
 // Claude values are the real `--model` aliases (verified via `/model`); "Claude
 // default" passes no --model (uses the CLI's own default).
 export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
   switch (agentId) {
+    case "codex":
+      return CODEX_MODELS;
     case "claude":
       // Mirrors the Claude Code app's model list. "Claude default" passes no
       // --model (the CLI's own default, currently Opus 4.8); the rest pass an
       // explicit `--model` id.
-      return [
-        { value: "Claude default", label: "Default", detail: "Opus 4.8" },
-        { value: "claude-fable-5", label: "Fable 5" },
-        { value: "claude-opus-4-8", label: "Opus 4.8" },
-        { value: "claude-opus-4-8[1m]", label: "Opus 4.8 (1M context)" },
-        { value: "claude-sonnet-4-6", label: "Sonnet 4.6" },
-        { value: "claude-haiku-4-5", label: "Haiku 4.5" },
-        { value: "claude-opus-4-7", label: "Opus 4.7", detail: "Legacy" },
-        { value: "claude-opus-4-7[1m]", label: "Opus 4.7 (1M context)", detail: "Legacy" },
-        { value: "claude-opus-4-6", label: "Opus 4.6", detail: "Legacy" },
-      ];
+      return CLAUDE_PROVIDER_MODELS;
     case "opencode": {
       // opencode is a multi-vendor router: the real model list is whatever the
       // user has authed (`opencode auth login`), enumerated by the backend and

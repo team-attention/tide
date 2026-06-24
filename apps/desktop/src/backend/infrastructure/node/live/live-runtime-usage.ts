@@ -3,6 +3,9 @@ import type { AgentRuntimeUsageDto } from "../../../../shared/contracts/index.ts
 export interface StructuredRuntimeUsageInput {
   inputTokens?: number;
   outputTokens?: number;
+  // Provider-reported current context tokens. Distinct from totalTokens, which can
+  // be cumulative across a long session and must not drive the context meter.
+  contextTokens?: number;
   contextWindow?: number;
   totalTokens?: number;
   rateLimits?: AgentRuntimeUsageDto["rateLimits"];
@@ -20,7 +23,7 @@ export function runtimeUsageFromStructuredUsage(
     input.rateLimits !== undefined && input.rateLimits.length > 0
       ? input.rateLimits
       : undefined;
-  if (totalTokens === undefined && rateLimits === undefined) {
+  if (totalTokens === undefined && input.contextTokens === undefined && rateLimits === undefined) {
     return undefined;
   }
 
@@ -34,8 +37,8 @@ export function runtimeUsageFromStructuredUsage(
   if (rateLimits !== undefined) {
     usage.rateLimits = rateLimits;
   }
-  if (totalTokens !== undefined && input.contextWindow !== undefined && input.contextWindow > 0) {
-    usage.contextUsedPercent = Math.min(100, Math.round((totalTokens / input.contextWindow) * 100));
+  if (input.contextTokens !== undefined && input.contextWindow !== undefined && input.contextWindow > 0) {
+    usage.contextUsedPercent = Math.min(100, Math.round((input.contextTokens / input.contextWindow) * 100));
   }
   return usage;
 }

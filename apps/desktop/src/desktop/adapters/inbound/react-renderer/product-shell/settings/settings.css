@@ -186,6 +186,11 @@
   background: color-mix(in srgb, #1a8f4a 16%, transparent);
 }
 
+.settings-providers__status[data-authenticated="false"] {
+  color: color-mix(in srgb, var(--tide-text) 78%, #b06a00);
+  background: color-mix(in srgb, #d28a00 18%, transparent);
+}
+
 .settings-providers__summary {
   font-size: 11px;
   color: var(--tide-muted);

@@ -250,17 +250,31 @@ export function createSettingsModal(
                   ? `${agent.connectedVendors} vendor${agent.connectedVendors === 1 ? "" : "s"} signed in · ${concreteModels.length} models${
                       agent.version ? ` · v${agent.version}` : ""
                     }`
+                  : agent.authenticated === true
+                    ? `Signed in · ${concreteModels.length} models`
+                  : agent.authenticated === false
+                    ? `Sign in required · ${concreteModels.length} models`
                   : agent.multiVendor
                     ? `${vendors.size} vendor${vendors.size === 1 ? "" : "s"} · ${concreteModels.length} models`
                     : `${concreteModels.length} models`;
+              const statusLabel = !agent.installed
+                ? "Not installed"
+                : agent.authenticated === true
+                  ? "Signed in"
+                  : agent.authenticated === false
+                    ? "Not signed in"
+                    : "Installed";
               return (
                 <div key={agent.agentId} className="settings-providers__row" role="listitem">
                   <span className="settings-providers__name">{agent.label}</span>
                   <span
                     className="settings-providers__status"
                     data-installed={agent.installed ? "true" : "false"}
+                    data-authenticated={
+                      agent.authenticated === undefined ? "unknown" : String(agent.authenticated)
+                    }
                   >
-                    {agent.installed ? "Installed" : "Not installed"}
+                    {statusLabel}
                   </span>
                   <span className="settings-providers__summary">{summary}</span>
                 </div>

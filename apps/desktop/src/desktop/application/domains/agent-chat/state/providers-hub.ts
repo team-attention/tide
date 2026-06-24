@@ -4,6 +4,7 @@ import {
   formatAgentLabel,
   isAgentAvailable,
   permissionConfigForAgent,
+  providerCatalogAgent,
 } from "./agent-vocab.ts";
 import { getOpencodeEnvironment, getOpencodeVendors } from "./opencode-onramp.ts";
 
@@ -26,7 +27,8 @@ export interface ProvidersHubAgentView {
   // Installed locally (its CLI resolves). Drives the "Installed / Not installed"
   // status chip; not-installed agents still list their (static) models.
   installed: boolean;
-  status: "installed" | "not_installed";
+  authenticated?: boolean;
+  status: "installed" | "not_installed" | "signed_in" | "not_signed_in";
   models: ProvidersHubModelView[];
   permissionModes: Array<{ value: string; label: string }>;
   defaultModel: string;
@@ -37,25 +39,41 @@ export interface ProvidersHubAgentView {
   connectedVendors?: number;
   totalVendors?: number;
   version?: string;
+  source?: "dynamic" | "static";
 }
 
 const HUB_AGENTS = ["claude", "codex", "opencode"] as const;
 
 export function buildProvidersHubViewModel(): ProvidersHubAgentView[] {
   return HUB_AGENTS.map((agentId) => {
-    const models = cliModelOptionsForAgent(agentId).map((option) => ({
+    const snapshot = providerCatalogAgent(agentId);
+    const modelOptions =
+      snapshot !== undefined && snapshot.models.length > 0
+        ? snapshot.models
+        : cliModelOptionsForAgent(agentId);
+    const models = modelOptions.map((option) => ({
       value: option.value,
       label: option.label,
       vendor: option.vendor,
       detail: option.detail,
     }));
-    const installed = isAgentAvailable(agentId);
+    const installed = snapshot?.installed ?? isAgentAvailable(agentId);
+    const authenticated = snapshot?.authenticated;
     const vendors = agentId === "opencode" ? getOpencodeVendors() : [];
+    const status =
+      !installed
+        ? "not_installed"
+        : authenticated === true
+          ? "signed_in"
+          : authenticated === false
+            ? "not_signed_in"
+            : "installed";
     return {
       agentId,
       label: formatAgentLabel(agentId),
       installed,
-      status: installed ? "installed" : "not_installed",
+      ...(authenticated !== undefined ? { authenticated } : {}),
+      status,
       models,
       permissionModes: permissionConfigForAgent(agentId).options.map((option) => ({
         value: option.value,
@@ -65,11 +83,13 @@ export function buildProvidersHubViewModel(): ProvidersHubAgentView[] {
       multiVendor: models.some((model) => model.vendor !== undefined),
       ...(agentId === "opencode"
         ? {
-            connectedVendors: vendors.filter((vendor) => vendor.connected).length,
-            totalVendors: vendors.length,
-            version: getOpencodeEnvironment()?.version,
+            connectedVendors:
+              snapshot?.connectedVendors ?? vendors.filter((vendor) => vendor.connected).length,
+            totalVendors: snapshot?.totalVendors ?? vendors.length,
+            version: snapshot?.version ?? getOpencodeEnvironment()?.version,
           }
         : {}),
+      ...(snapshot?.source !== undefined ? { source: snapshot.source } : {}),
     };
   });
 }

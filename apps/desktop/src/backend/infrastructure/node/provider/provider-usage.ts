@@ -34,6 +34,7 @@ export function parseProviderUsage(
 // `session_meta`/`turn_context` line may carry the model label.
 function parseCodexUsage(text: string): AgentRuntimeUsageDto | undefined {
   let totalTokens: number | undefined;
+  let contextTokens: number | undefined;
   let contextWindow: number | undefined;
   let model: string | undefined;
   let rateLimits: AgentRuntimeRateLimitDto[] | undefined;
@@ -60,6 +61,14 @@ function parseCodexUsage(text: string): AgentRuntimeUsageDto | undefined {
     if (tokens !== undefined) {
       totalTokens = tokens;
     }
+    const last = recordField(info, "last_token_usage");
+    const lastTokens =
+      numberField(last ?? {}, "total_tokens") ??
+      numberField(info, "last_total_tokens") ??
+      numberField(payload, "last_total_tokens");
+    if (lastTokens !== undefined) {
+      contextTokens = lastTokens;
+    }
     const window =
       numberField(info, "model_context_window") ??
       numberField(payload, "model_context_window");
@@ -71,7 +80,7 @@ function parseCodexUsage(text: string): AgentRuntimeUsageDto | undefined {
       rateLimits = parsedRateLimits;
     }
   }
-  return finalizeUsage({ totalTokens, contextWindow, model, rateLimits });
+  return finalizeUsage({ totalTokens, contextTokens, contextWindow, model, rateLimits });
 }
 
 // claude transcript: the latest assistant message carries `message.usage` with
@@ -120,13 +129,15 @@ function parseClaudeUsage(text: string): AgentRuntimeUsageDto | undefined {
 
 function finalizeUsage(input: {
   totalTokens?: number;
+  contextTokens?: number;
   contextWindow?: number;
   model?: string;
   rateLimits?: AgentRuntimeRateLimitDto[];
 }): AgentRuntimeUsageDto | undefined {
-  const { totalTokens, contextWindow, model, rateLimits } = input;
+  const { totalTokens, contextTokens, contextWindow, model, rateLimits } = input;
   if (
     totalTokens === undefined &&
+    contextTokens === undefined &&
     contextWindow === undefined &&
     model === undefined &&
     (rateLimits === undefined || rateLimits.length === 0)
@@ -146,8 +157,8 @@ function finalizeUsage(input: {
   if (rateLimits !== undefined && rateLimits.length > 0) {
     usage.rateLimits = rateLimits;
   }
-  if (totalTokens !== undefined && contextWindow !== undefined && contextWindow > 0) {
-    usage.contextUsedPercent = Math.min(100, Math.round((totalTokens / contextWindow) * 100));
+  if (contextTokens !== undefined && contextWindow !== undefined && contextWindow > 0) {
+    usage.contextUsedPercent = Math.min(100, Math.round((contextTokens / contextWindow) * 100));
   }
   return usage;
 }

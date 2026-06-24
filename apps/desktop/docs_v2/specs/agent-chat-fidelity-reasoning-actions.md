@@ -97,10 +97,11 @@ It does not cover any provider-specific reasoning UI.
   `agentRuntime.usageChanged { threadId, usage }` (chosen over mutating existing
   event payloads so the 580 existing tests stay untouched).
 - backend: `provider-usage.ts` parses codex `token_count`
-  (`info.total_token_usage.total_tokens`, `model_context_window`) and claude
-  assistant `usage`; `live-backend` emits `usageChanged` on each codex/claude
-  history poll, de-duped by a per-thread usage signature so the chip doesn't
-  churn every tick.
+  (`info.total_token_usage.total_tokens`, `info.last_token_usage.total_tokens`,
+  `model_context_window`) and claude assistant `usage`; context percent is derived
+  from the provider's current/last context tokens, never cumulative session tokens.
+  `live-backend` emits `usageChanged` on each codex/claude history poll, de-duped
+  by a per-thread usage signature so the chip doesn't churn every tick.
 - state: `AgentChatShellState.usage`; gated to the active thread via
   `threadIdFromBackendEvent`; reset on hydrate (thread switch).
 - renderer: a quiet right-aligned `NN% context · NN.Nk tokens` chip with an

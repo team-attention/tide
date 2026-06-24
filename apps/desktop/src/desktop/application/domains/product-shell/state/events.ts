@@ -1,5 +1,5 @@
 import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellState } from "./types.ts";
-import { applyAgentChatBackendEvent, setAvailableProviderAgents, setOpencodeEnvironment, setOpencodeModelCatalog, setOpencodeVendors, setProviderModelCatalog, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
+import { applyAgentChatBackendEvent, setAvailableProviderAgents, setOpencodeEnvironment, setOpencodeModelCatalog, setOpencodeVendors, setProviderCatalogAgents, setProviderModelCatalog, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
@@ -78,10 +78,41 @@ export function applyProductShellBackendEvent(
       // router), the "Connect a model" on-ramp grid + connected-state, and version. Module-level
       // setters; returning a fresh nextState triggers the re-render that reads them.
       const catalog = event.payload as {
+        providers?: ReadonlyArray<{
+          agentId: "codex" | "claude" | "opencode";
+          installed: boolean;
+          authenticated?: boolean;
+          source: "dynamic" | "static";
+          models: ReadonlyArray<{ value: string; label: string; vendor?: string; detail?: string }>;
+          connectedVendors?: number;
+          totalVendors?: number;
+          version?: string;
+        }>;
         opencodeModels?: ReadonlyArray<{ value: string; label: string; vendor?: string; detail?: string }>;
         opencodeVendors?: ReadonlyArray<{ id: string; label: string; connected: boolean; method?: string; popular?: boolean; usable?: boolean }>;
         opencodeEnvironment?: { version?: string; testedWith?: string; executablePath?: string };
       };
+      setProviderCatalogAgents(
+        catalog.providers?.map((provider) => ({
+          agentId: provider.agentId,
+          installed: provider.installed,
+          ...(provider.authenticated !== undefined
+            ? { authenticated: provider.authenticated }
+            : {}),
+          source: provider.source,
+          models: provider.models.map((model) => ({
+            value: model.value,
+            label: model.label,
+            ...(model.vendor !== undefined ? { vendor: model.vendor } : {}),
+            ...(model.detail !== undefined ? { detail: model.detail } : {}),
+          })),
+          ...(provider.connectedVendors !== undefined
+            ? { connectedVendors: provider.connectedVendors }
+            : {}),
+          ...(provider.totalVendors !== undefined ? { totalVendors: provider.totalVendors } : {}),
+          ...(provider.version !== undefined ? { version: provider.version } : {}),
+        })) ?? null,
+      );
       setOpencodeModelCatalog(
         catalog.opencodeModels?.map((model) => ({
           value: model.value,

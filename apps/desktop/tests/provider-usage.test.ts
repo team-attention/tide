@@ -14,6 +14,7 @@ test("parses codex token_count into tokens, context window, and percent", () => 
         type: "token_count",
         info: {
           total_token_usage: { input_tokens: 60000, output_tokens: 4000, total_tokens: 64000 },
+          last_token_usage: { input_tokens: 60000, output_tokens: 4000, total_tokens: 64000 },
           model_context_window: 256000,
         },
         rate_limits: {
@@ -32,6 +33,26 @@ test("parses codex token_count into tokens, context window, and percent", () => 
     { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
     { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
   ]);
+});
+
+test("codex context percent uses last_token_usage, not cumulative session total", () => {
+  const rollout = [
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: { total_tokens: 501000 },
+          last_token_usage: { total_tokens: 128000 },
+          model_context_window: 256000,
+        },
+      },
+    }),
+  ].join("\n");
+  const usage = parseProviderUsage(rollout, "codex");
+  assert.equal(usage?.totalTokens, 501000);
+  assert.equal(usage?.contextWindow, 256000);
+  assert.equal(usage?.contextUsedPercent, 50);
 });
 
 test("codex usage takes the LAST token_count (cumulative latest)", () => {
