@@ -62,9 +62,15 @@ export function GoalChecklistPanel(props: {
   };
 
   return (
-    <section className="goal-checklist-panel" aria-label="Thread goal and checklist">
+    <section
+      className={`goal-checklist-panel${hasChecklist ? " goal-checklist-panel--with-checklist" : " goal-checklist-panel--goal-only"}`}
+      aria-label="Thread goal and checklist"
+    >
       <div className="goal-checklist-panel__goal-row">
-        <Target size={14} strokeWidth={2} className="goal-checklist-panel__goal-icon" aria-hidden />
+        <span className="goal-checklist-panel__goal-label">
+          <Target size={13} strokeWidth={2} className="goal-checklist-panel__goal-icon" aria-hidden />
+          <span>Goal</span>
+        </span>
         {editing ? (
           <input
             ref={inputRef}

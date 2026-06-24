@@ -50,6 +50,10 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   // switches (not remounted), so the count ref must be re-baselined when the thread
   // changes, or opening a thread whose composer holds chips would read as an "add".
   const threadId = viewModel.thread?.threadId;
+  const goalPanelVisible =
+    viewModel.thread !== null &&
+    (((viewModel.thread.goal ?? "").trim().length > 0) ||
+      (viewModel.checklist !== null && viewModel.checklist.entries.length > 0));
   const isNewThreadStart =
     viewModel.composer.mode === "start" &&
     viewModel.blocks.length === 0 &&
@@ -354,21 +358,29 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     );
   }
 
+  const shellClassName = [
+    "agent-chat-shell",
+    props.showThreadHeader === false ? "agent-chat-shell--embedded" : "",
+    goalPanelVisible ? "agent-chat-shell--with-goal-panel" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <main
       ref={shellRef}
-      className={`agent-chat-shell${props.showThreadHeader === false ? " agent-chat-shell--embedded" : ""}`}
+      className={shellClassName}
       data-chat-state={viewModel.chatState}
       data-runtime-state={viewModel.runtimeState}
     >
       {props.showThreadHeader === false ? null : createThreadHeader(viewModel)}
-      {viewModel.thread === null ? null : (
+      {goalPanelVisible && viewModel.thread !== null ? (
         <GoalChecklistPanel
           goal={viewModel.thread.goal}
           checklist={viewModel.checklist}
           onSetGoal={props.onSetGoal}
         />
-      )}
+      ) : null}
       <div className="agent-chat-shell__session-region">
         {transcriptFind.open ? (
           <InPaneFindBar

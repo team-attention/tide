@@ -33,8 +33,17 @@
   overflow: hidden;
 }
 
+.agent-chat-shell--with-goal-panel {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  row-gap: 12px;
+}
+
 .agent-chat-shell--embedded {
   grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.agent-chat-shell--embedded.agent-chat-shell--with-goal-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .agent-chat-shell--start {

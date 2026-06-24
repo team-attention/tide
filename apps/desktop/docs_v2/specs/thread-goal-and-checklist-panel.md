@@ -191,6 +191,9 @@ they may land as two sub-slices (1A checklist, 1B goal).
 - A plan block with zero entries renders nothing. The panel is not mounted when
   there is no non-empty goal and no non-empty checklist; there is no persistent
   "Set a goal for this thread" placeholder.
+- When the panel is mounted, the Agent Chat shell gives it its own auto-height
+  grid row. The transcript keeps the only flexible row; the panel never stretches
+  into a large gray block or overlaps the first turn/Working indicator.
 - Plan blocks never appear as transcript turns.
 - Setting an empty goal clears it; `goal` absent on older payloads ⇒ treated as
   unset (no panel goal row).
@@ -215,6 +218,9 @@ they may land as two sub-slices (1A checklist, 1B goal).
   slash commands.
 - Renderer: panel shows `done/total`, item statuses, editable goal; hidden when
   goal empty AND no plan entries; plan block absent from transcript.
+- Renderer: when a goal/checklist is visible, the shell uses the goal-panel grid
+  modifier so the panel is a compact metadata row above the transcript, not the
+  transcript's flexible row.
 - (D5-a) Send path injects goal preamble only when goal set.
 - Architecture boundary tests unchanged (no new cross-layer imports).
 

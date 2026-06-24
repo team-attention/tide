@@ -2367,7 +2367,44 @@ test("goal_checklist_panel_renders_only_when_a_goal_or_checklist_exists", () => 
   const html = renderShell(withGoal);
 
   assert.match(html, /goal-checklist-panel/);
+  assert.match(html, /agent-chat-shell--with-goal-panel/);
+  assert.match(html, /goal-checklist-panel--goal-only/);
   assert.match(html, /Ship the release/);
+});
+
+test("goal_checklist_panel_uses_a_compact_shell_row_for_checklists", () => {
+  const withChecklist = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", {
+      thread: { ...thread, goal: "Ship the release" },
+      blocks: [
+        {
+          blockId: "plan:runtime-1",
+          threadId: thread.threadId,
+          agentId: "codex",
+          kind: "plan",
+          role: "system",
+          status: "complete",
+          title: "Plan",
+          data: {
+            entries: [
+              { text: "Fix the grid", status: "done" },
+              { text: "Verify the renderer", status: "pending" },
+            ],
+          },
+          updatedAt: later,
+        },
+      ],
+      runtimeState: "idle",
+    }),
+  );
+
+  const html = renderShell(withChecklist);
+
+  assert.match(html, /agent-chat-shell--with-goal-panel/);
+  assert.match(html, /goal-checklist-panel--with-checklist/);
+  assert.match(html, /1\/2/);
+  assert.match(html, /Fix the grid/);
 });
 
 test("a_submitted_message_hides_the_empty_placeholder_even_before_its_block_arrives", () => {
