@@ -641,6 +641,7 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
         agentBinding: input.agentBinding,
         scope: input.scope,
         launchOptions: input.launchOptions,
+        goal: input.goal,
         lifecycleState: "creating",
         capturedAt,
       });
@@ -689,7 +690,6 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
         providerReadiness: readiness,
       };
     }
-
     const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
     this.emitAsyncEvent({
       kind: "agent_session_block_upserted",
@@ -710,9 +710,9 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
         scope: cloneScope(thread.scope),
         launchOptions: thread.launchOptions,
         initialPrompt: deliverPromptViaLaunch ? message : undefined,
+        initialGoal: thread.goal,
         initialAttachments: deliverPromptViaLaunch ? attachmentsForRuntime : undefined,
       });
-
       thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
       thread.runtimeState = "running";
       thread.updatedAt = this.clock();
@@ -1629,6 +1629,7 @@ private async startOrResumeRuntimeForPendingInput(
       scope: cloneScope(thread.scope),
       launchOptions,
       initialPrompt: deliverPromptViaLaunch ? promptValue : undefined,
+      initialGoal: thread.goal,
       initialAttachments: deliverPromptViaLaunch ? promptAttachments : undefined,
     });
     return { handle, deliveredViaLaunch: deliverPromptViaLaunch };

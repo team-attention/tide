@@ -214,6 +214,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       input.initialPrompt,
       undefined,
       input.initialAttachments,
+      input.initialGoal,
     );
   }
 
@@ -445,6 +446,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     initialPrompt?: string,
     resumeRef?: string,
     initialAttachments?: ComposerAttachmentRef[],
+    initialGoal?: string,
   ): AgentRuntimeHandle {
     // One live runtime per thread: tear down any existing one so a thread can
     // never double-run (two clients on one session tangle the turn).
@@ -475,6 +477,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       agentId,
       initialPrompt,
       initialAttachments,
+      initialGoal,
       resumeRef,
       onEvent: emit,
     });
@@ -523,6 +526,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     agentId: ProviderCliAgentId;
     initialPrompt?: string;
     initialAttachments?: ComposerAttachmentRef[];
+    initialGoal?: string;
     resumeRef?: string;
     onEvent: (event: StructuredProviderEvent) => void;
   }): StructuredRuntimeClient {
@@ -533,6 +537,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           threadId: input.threadId,
           runtimeId: input.runtimeId,
           initialPrompt: input.initialPrompt,
+          initialGoal: input.initialGoal,
           initialAttachments: input.initialAttachments,
           locateSubagentsDir: this.locateSubagentsDir,
           onEvent: input.onEvent,
@@ -543,6 +548,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           threadId: input.threadId,
           runtimeId: input.runtimeId,
           initialPrompt: input.initialPrompt,
+          initialGoal: input.initialGoal,
           initialAttachments: input.initialAttachments,
           resumeThreadId: input.resumeRef,
           onEvent: input.onEvent,
@@ -555,6 +561,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           agentId: input.agentId,
           sessionRefKind: sessionRefKindForAgent(input.agentId),
           initialPrompt: input.initialPrompt,
+          initialGoal: input.initialGoal,
           initialAttachments: input.initialAttachments,
           resumeSessionId: input.resumeRef,
           onEvent: input.onEvent,

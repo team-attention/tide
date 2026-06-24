@@ -41,15 +41,18 @@ export function newThreadRecord(input: {
   agentBinding: AgentBinding;
   scope?: ThreadScope;
   launchOptions?: Record<string, unknown>;
+  goal?: string;
   lifecycleState: ThreadLifecycleState;
   capturedAt: string;
 }): ThreadRecord {
+  const goal = input.goal?.trim();
   return {
     threadId: input.threadId,
     title: input.title,
     agentBinding: cloneAgentBinding(input.agentBinding),
     scope: cloneScope(input.scope),
     launchOptions: cloneLaunchOptions(input.launchOptions),
+    ...(goal !== undefined && goal.length > 0 ? { goal } : {}),
     lifecycleState: input.lifecycleState,
     runtimeState: "not_started",
     lastKnownState: "idle",
@@ -145,6 +148,10 @@ export class DraftThreadService {
     thread.agentBinding = cloneAgentBinding(input.agentBinding);
     if (input.scope !== undefined) {
       thread.scope = cloneScope(input.scope);
+    }
+    const goal = input.goal?.trim();
+    if (goal !== undefined) {
+      thread.goal = goal.length > 0 ? goal : undefined;
     }
     thread.launchOptions = cloneLaunchOptions(input.launchOptions);
     thread.lifecycleState = "creating";

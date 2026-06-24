@@ -64,6 +64,7 @@ export interface CreateClaudeStreamJsonClientInput extends StructuredClientCallb
   threadId: string;
   runtimeId: string;
   initialPrompt?: string;
+  initialGoal?: string;
   initialAttachments?: ComposerAttachmentRef[];
   // Resolves a session id to its `subagents/` dir, enabling the live Task fan-out
   // watcher. Absent ⇒ no watcher. Spec: live-turn-activity-visibility.md (Slice B).
@@ -150,6 +151,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     this.onEvent = input.onEvent;
     this.threadId = input.threadId;
     this.runtimeId = input.runtimeId;
+    this.goalObjective = input.initialGoal?.trim() ?? "";
     this.initialPrompt = input.initialPrompt;
     if (input.locateSubagentsDir !== undefined) {
       const locate = input.locateSubagentsDir;
@@ -208,7 +210,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
         type: "user",
         message: {
           role: "user",
-          content: claudeUserContent(input.initialPrompt, input.initialAttachments),
+          content: claudeUserContent(withGoalPreamble(this.goalObjective, input.initialPrompt), input.initialAttachments),
         },
       });
       this.initialPrompt = undefined;
@@ -216,9 +218,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     }
   }
 
-  get pid(): number | undefined {
-    return this.child.pid ?? undefined;
-  }
+  get pid(): number | undefined { return this.child.pid ?? undefined; }
 
   async write(input: StructuredRuntimeWrite): Promise<void> {
     if (input.kind === "goal_set") {

@@ -366,6 +366,7 @@ export type AgentChatBackendCommand =
       payload: {
         threadId?: string;
         initialMessage: string;
+        goal?: string;
         agentBinding: AgentChatAgentBinding;
         scope?: AgentChatThreadScope;
         launchOptions?: Record<string, unknown>;

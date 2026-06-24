@@ -96,6 +96,10 @@ export interface BackendCommandPayloadByKind {
     // backend binds to the same thread (startThread honors input.threadId).
     threadId?: ThreadId;
     initialMessage: string;
+    // Optional Tide-owned goal set through `/goal <objective>` on the Start
+    // Composer. Persisted before runtime spawn and passed to provider-native goal
+    // mechanisms where available.
+    goal?: string;
     agentBinding: AgentBindingDto;
     scope?: ThreadScopeDto;
     launchOptions?: JsonObject;

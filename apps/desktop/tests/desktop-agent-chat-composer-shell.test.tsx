@@ -97,6 +97,20 @@ test("sending_a_non_empty_start_composer_draft_emits_thread_start_with_launch_op
   });
 });
 
+test("start_composer_goal_command_sets_initial_goal_without_sending_the_slash_command", () => {
+  const state = updateComposerDraft(createAgentChatShellState(), "/goal Explain the repo").state;
+
+  const result = submitComposer(state);
+  const command = result.command ? toBackendCommandDraft(result.command) : null;
+
+  assert.equal(command?.kind, "thread.start");
+  assert.equal(command?.payload.initialMessage, "Explain the repo");
+  assert.equal(command?.payload.goal, "Explain the repo");
+  assert.equal(result.state.thread?.goal, "Explain the repo");
+  assert.equal(result.state.thread?.title, "Explain the repo");
+  assert.deepEqual(result.state.queuedInputs, []);
+});
+
 test("sending_an_empty_start_composer_draft_emits_no_command", () => {
   const state = updateComposerDraft(createAgentChatShellState(), "   ").state;
   const result = submitComposer(state);
@@ -653,6 +667,29 @@ test("follow_up_composer_emits_composer_send_input_for_the_active_thread", () =>
   // Follow-ups carry the current composer launch options so a changed model
   // (or reasoning/permission) applies, not just the thread's original.
   assert.ok("launchOptions" in (command?.payload ?? {}));
+});
+
+test("follow_up_goal_command_sets_thread_goal_without_queuing_provider_input", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", {
+      thread,
+      blocks: [],
+      runtimeState: "idle",
+    }),
+  );
+
+  const result = submitComposer(updateComposerDraft(hydrated, "/goal Explain the repo").state);
+  const command = result.command ? toBackendCommandDraft(result.command) : null;
+
+  assert.equal(command?.kind, "thread.setGoal");
+  assert.deepEqual(command?.payload, {
+    threadId: "thread-shell",
+    goal: "Explain the repo",
+  });
+  assert.equal(result.state.thread?.goal, "Explain the repo");
+  assert.deepEqual(result.state.queuedInputs, []);
+  assert.equal(result.state.composer.draft, "");
 });
 
 test("editing_the_queued_message_emits_edit_queued_input_command", () => {
@@ -1837,6 +1874,18 @@ test("slash_command_menu_mirrors_the_full_command_set_in_the_start_composer", ()
   assert.match(startedHtml, /\/goal/);
 });
 
+test("slash_command_menu_offers_goal_when_provider_commands_are_empty", () => {
+  const state = {
+    ...updateComposerDraft(createAgentChatShellState(), "/go").state,
+    availableCommands: [],
+  };
+
+  const rows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
+
+  assert.ok(rows.some((entry) => entry.label === "/goal"));
+  assert.ok(!rows.some((entry) => entry.label === "No commands found"));
+});
+
 test("slash_command_menu_dedupes_repeated_command_names", () => {
   // Some agents report a command once per subcommand, yielding the same name many
   // times. The menu shows each name once. See
@@ -2301,6 +2350,24 @@ test("a_loaded_thread_with_no_messages_shows_an_empty_placeholder", () => {
   const html = renderShell(empty);
   assert.match(html, /No messages here/);
   assert.doesNotMatch(html, /agent-session-skeleton/);
+  assert.doesNotMatch(html, /goal-checklist-panel/);
+  assert.doesNotMatch(html, /Set a goal for this thread/);
+});
+
+test("goal_checklist_panel_renders_only_when_a_goal_or_checklist_exists", () => {
+  const withGoal = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", {
+      thread: { ...thread, goal: "Ship the release" },
+      blocks: [],
+      runtimeState: "idle",
+    }),
+  );
+
+  const html = renderShell(withGoal);
+
+  assert.match(html, /goal-checklist-panel/);
+  assert.match(html, /Ship the release/);
 });
 
 test("a_submitted_message_hides_the_empty_placeholder_even_before_its_block_arrives", () => {

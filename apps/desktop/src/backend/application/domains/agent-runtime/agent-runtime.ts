@@ -41,6 +41,9 @@ export interface AgentRuntimeStartInput {
   // First user message, delivered to provider CLIs as the launch-time initial
   // prompt (see AgentStartPlanInput.initialPrompt).
   initialPrompt?: string;
+  // Tide-owned thread goal, applied to the provider before the first prompt where
+  // the structured protocol supports it.
+  initialGoal?: string;
   initialAttachments?: ComposerAttachmentRef[];
 }
 

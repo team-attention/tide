@@ -712,6 +712,28 @@ test("starting_a_thread_with_ready_provider_starts_runtime_with_launch_prompt", 
   assert.equal(fakes.runtime.writes.length, 0);
 });
 
+test("starting_a_thread_with_goal_persists_goal_and_passes_initial_goal_to_runtime", async () => {
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+
+  const result = await service.startThread({
+    initialMessage: "Explain the repo",
+    goal: "  Explain the repo  ",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "project-1", cwd: "/repo" },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, "started");
+  assert.equal(result.thread.goal, "Explain the repo");
+  assert.equal(fakes.runtime.starts[0].initialPrompt, "Explain the repo");
+  assert.equal(fakes.runtime.starts[0].initialGoal, "Explain the repo");
+});
+
 // --- UC-1: Materialize Composer Attachments ---
 // Spec: docs_v2/specs/composer-image-attachments.md
 

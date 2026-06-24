@@ -58,6 +58,7 @@ export interface CreateCodexAppServerClientInput extends StructuredClientCallbac
   threadId: string;
   runtimeId: string;
   initialPrompt?: string;
+  initialGoal?: string;
   initialAttachments?: ComposerAttachmentRef[];
   // thread/resume target (the rollout/thread id) when resuming.
   resumeThreadId?: string;
@@ -140,6 +141,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     this.tideThreadId = input.threadId;
     this.runtimeId = input.runtimeId;
     this.protocolParams = isRecord(input.plan.protocolParams) ? input.plan.protocolParams : {};
+    this.goalObjective = input.initialGoal?.trim() ?? "";
     this.child = spawn(input.plan.command, input.plan.args, {
       cwd: input.plan.cwd,
       env: { ...process.env, ...input.plan.env },

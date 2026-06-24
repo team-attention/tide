@@ -48,6 +48,7 @@ export interface CreateAcpClientInput extends StructuredClientCallbacks {
   agentId: ProviderCliAgentId;
   sessionRefKind: DiscoveredProviderSessionRef["kind"];
   initialPrompt?: string;
+  initialGoal?: string;
   initialAttachments?: ComposerAttachmentRef[];
   resumeSessionId?: string;
 }
@@ -119,6 +120,7 @@ class AcpClient implements StructuredRuntimeClient {
     this.agentId = input.agentId;
     this.sessionRefKind = input.sessionRefKind;
     this.protocolParams = isRecord(input.plan.protocolParams) ? input.plan.protocolParams : {};
+    this.goalObjective = input.initialGoal?.trim() ?? "";
     this.child = spawn(input.plan.command, input.plan.args, {
       cwd: input.plan.cwd,
       env: { ...process.env, ...input.plan.env },
@@ -148,9 +150,7 @@ class AcpClient implements StructuredRuntimeClient {
     this.bootstrap(input);
   }
 
-  get pid(): number | undefined {
-    return this.child.pid ?? undefined;
-  }
+  get pid(): number | undefined { return this.child.pid ?? undefined; }
 
   private bootstrap(input: CreateAcpClientInput): void {
     this.request("initialize", {
@@ -220,7 +220,7 @@ class AcpClient implements StructuredRuntimeClient {
     this.pendingConfigOptions = undefined;
     this.sendConfigOptions(sessionId, initialConfigOptions);
     if (initialPrompt !== undefined && initialPrompt.length > 0) {
-      this.queuedPrompts.push({ text: initialPrompt, attachments: initialAttachments });
+      this.queuedPrompts.push({ text: withGoalPreamble(this.goalObjective, initialPrompt), attachments: initialAttachments });
     }
     this.flushQueuedPrompt();
   }

@@ -7,12 +7,13 @@ import type {
 
 // The pinned panel at the top of the chat column: the thread goal (user-set,
 // editable) above the agent's live checklist (read-only, the latest "plan" block).
-// Mounted only for an active thread. See thread-goal-and-checklist-panel.md.
+// Mounted only when an active thread has a goal/checklist or an edit in progress.
+// See thread-goal-and-checklist-panel.md.
 export function GoalChecklistPanel(props: {
   goal?: string;
   checklist: AgentChatChecklistView | null;
   onSetGoal?: (goal: string) => void;
-}): ReactElement {
+}): ReactElement | null {
   const { goal, checklist, onSetGoal } = props;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(goal ?? "");
@@ -38,6 +39,10 @@ export function GoalChecklistPanel(props: {
   const currentGoal = (goal ?? "").trim();
   const hasGoal = currentGoal.length > 0;
   const hasChecklist = checklist !== null && checklist.entries.length > 0;
+
+  if (!editing && !hasGoal && !hasChecklist) {
+    return null;
+  }
 
   const commit = (): void => {
     if (isCancellingRef.current) {
