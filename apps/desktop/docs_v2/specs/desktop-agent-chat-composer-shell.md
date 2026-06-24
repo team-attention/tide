@@ -156,6 +156,14 @@ Typing `/`, `$`, `@`, `!`, or another selected-Agent-supported prefix may reveal
 
 Those suggestions are transient choices for the active input, not a separate always-visible Command Suggestions UI.
 
+### D19. Transcript scroll end clears the docked Composer
+
+The Follow-up Composer is docked at the bottom of Agent Chat and has a raised
+surface/shadow. The transcript scroll area must reserve a bottom scroll buffer
+for non-empty sessions so the last answer paragraph, table row, or tool summary
+can scroll fully above that docked Composer instead of appearing clipped behind
+it.
+
 ## Out Of Scope
 
 - Final typography, color, icon set, and animation.
@@ -301,6 +309,7 @@ Desktop consumes BackendEvents:
 13. Agent chip rendering stays visually singular even when its Agent Binding has different Agent Runtime Sources.
 14. Model Chip menu data comes from the selected Agent Runtime Source, not from a generic cross-agent model list.
 15. Empty Agent Chat does not show fake cue, prompt queue, recent task, or suggested task rows below Start Composer.
+16. A non-empty transcript has enough bottom scroll padding that its final content can clear the docked Composer and its shadow.
 
 ## Tests
 
@@ -326,6 +335,7 @@ Desktop consumes BackendEvents:
 | Model source follows selected provider CLI | `model_chip_routes_menu_data_by_provider_cli_agent` verifies model choices come from selected Agent Integration metadata. |
 | Permission menu follows selected Agent | `permission_menu_renders_only_the_selected_agent_provider_values` verifies Codex, Claude, and opencode Permission menus do not mix provider-native values. |
 | Composer menu is transient | `composer_options_and_command_prefix_render_as_transient_choice_surfaces` verifies the Composer menu and `/` suggestions render above Composer through Choice Surface, not as static documentation blocks. |
+| Transcript clears Composer | `transcript_has_bottom_scroll_buffer_for_the_docked_composer` verifies non-empty transcripts reserve bottom scroll padding. |
 
 ## Implementation Notes
 

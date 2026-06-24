@@ -460,6 +460,18 @@ test("a_ready_thread_with_no_messages_keeps_the_centered_empty_state", () => {
   assert.doesNotMatch(html, /agent-session--has-turns/);
 });
 
+test("transcript_has_bottom_scroll_buffer_for_the_docked_composer", () => {
+  // The docked Composer has a raised surface/shadow. Non-empty transcript content
+  // needs a real scroll buffer so the final paragraph/table row can clear it.
+  const css = readRepoFile(
+    "src/desktop/adapters/inbound/react-renderer/agent-chat/transcript/transcript.css",
+  );
+
+  assert.match(css, /--agent-session-bottom-buffer:\s*96px/);
+  assert.match(css, /\.agent-session\s*{[^}]*scroll-padding-bottom:\s*var\(--agent-session-bottom-buffer\)/s);
+  assert.match(css, /\.agent-session--has-turns\s*{[^}]*padding:\s*6px 0 var\(--agent-session-bottom-buffer\)/s);
+});
+
 test("usage_changed_renders_context_usage_above_the_composer", () => {
   const hydrated = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),

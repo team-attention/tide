@@ -1,6 +1,7 @@
 /* Styles for the adjacent transcript component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
 
 .agent-session {
+  --agent-session-bottom-buffer: 96px;
   min-width: 0;
   min-height: 0;
   /* Vertical scroll only — content wraps, so there is never a horizontal bar. */
@@ -15,6 +16,7 @@
   /* Center the content column so turns + composer share one column. */
   align-items: center;
   gap: 14px;
+  scroll-padding-bottom: var(--agent-session-bottom-buffer);
 }
 
 /* Any visible content — turns, the loading skeleton, an optimistic just-sent
@@ -23,7 +25,7 @@
 
 .agent-session--has-turns {
   justify-content: flex-start;
-  padding: 6px 0 12px;
+  padding: 6px 0 var(--agent-session-bottom-buffer);
 }
 
 /* Canonical (1338): default user and agent text is a flat transcript, not
