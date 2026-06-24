@@ -144,6 +144,29 @@ test("sending starts the Draft Thread in place (reuses its id) and clears the dr
   assert.equal(result.state.agentChat.thread?.threadId, draftId);
 });
 
+test("starting a closed Composer Draft Thread keeps the Workbench closed", () => {
+  const draft = ensureComposerDraftThreadActive({ ...composerState(), workbenchOpen: false });
+  const draftId = draft.state.draftThreadId as string;
+  const withGoal: ProductShellState = {
+    ...draft.state,
+    agentChat: {
+      ...draft.state.agentChat,
+      composer: { ...draft.state.agentChat.composer, draft: "/goal Explain the codebase" },
+    },
+  };
+
+  const result = submitProductShellComposerDraft(withGoal);
+
+  assert.equal(result.command?.kind, "thread.start");
+  assert.equal((result.command as { payload: { threadId: string; goal?: string } }).payload.threadId, draftId);
+  assert.equal((result.command as { payload: { goal?: string } }).payload.goal, "Explain the codebase");
+  assert.equal(result.state.activeThreadId, draftId);
+  assert.equal(result.state.draftThreadId, null);
+  // Regression: a draft binding is not the same thing as an open Workbench. Keeping
+  // this false prevents the visible open-then-close flash on Composer /goal starts.
+  assert.equal(result.state.workbenchOpen, false);
+});
+
 // --- Editor file picker vs. Workbench open state (the second reported bug) ---
 
 test("the Composer Draft Thread inherits the Composer's Workbench-open state", () => {

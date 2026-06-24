@@ -221,6 +221,8 @@ export function submitProductShellComposerDraft(
   // draft id too, so the rail + focus point at the same thread. See composer-draft-thread.md.
   const draftThreadId = state.draftThreadId;
   const startedFromDraft = draftThreadId !== null && command !== null && command.kind === "thread.start";
+  const draftWorkbenchOpen =
+    draftThreadId === null ? false : state.workbenchOpenByThreadId[draftThreadId] ?? state.workbenchOpen;
   if (draftThreadId !== null && command !== null && command.kind === "thread.start") {
     command = { ...command, payload: { ...command.payload, threadId: draftThreadId } };
     if (agentChatState.thread !== null && agentChatState.thread !== undefined) {
@@ -254,7 +256,7 @@ export function submitProductShellComposerDraft(
       // Start-page untitled buffers don't carry into the started thread.
       untitledFiles: [],
       untitledSaveAsPaneId: null,
-      workbenchOpen: state.draftThreadId !== null,
+      workbenchOpen: startedFromDraft ? draftWorkbenchOpen : false,
     };
   }
 

@@ -102,6 +102,10 @@ Add `createDraftThread` and `discardDraftThread` to the backend service + Deskto
 - Exactly one agent spawn per thread (no double-start when a draft is started).
 - Discarding a draft kills its visible-terminal PTYs (no orphan processes).
 - `agent-runtime` / `agent-integration` code is unchanged.
+- Starting a Draft Thread in place preserves the draft's recorded Workbench open/closed
+  intent. The existence of a draft binding alone must not force the Workbench open at
+  send time, because some Composer flows create a draft only to host readiness or setup
+  context while the visible Workbench remains closed.
 
 ## Tests
 
@@ -114,6 +118,9 @@ Add `createDraftThread` and `discardDraftThread` to the backend service + Deskto
 - renderer: composer mode derived from draft status (not `activeThreadId === null`);
   launcher enables Editor/Terminal/Diff; changing scope/agent chip discards + recreates the
   draft.
+- renderer: `starting_a_closed_composer_draft_thread_keeps_the_workbench_closed` verifies
+  that sending from a closed Draft Thread reuses the draft id without flashing the
+  Workbench open.
 - boundary: no new import from `agent-runtime` into the workbench/composer path.
 
 ## Implementation Notes

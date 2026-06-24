@@ -44,6 +44,7 @@ function ChoiceSurface(input: {
   const [inlineRowId, setInlineRowId] = useState<string | null>(null);
   const [inlineDraft, setInlineDraft] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const surfaceRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     setInlineRowId(null);
     setInlineDraft("");
@@ -53,8 +54,33 @@ function ChoiceSurface(input: {
       inputRef.current?.focus();
     }
   }, [inlineRowId]);
+  useEffect(() => {
+    if (inlineRowId !== null || typeof window === "undefined") {
+      return undefined;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      const surface = surfaceRef.current;
+      if (
+        surface === null ||
+        event.defaultPrevented ||
+        event.key !== "Tab" ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        !choiceSurfaceShouldHandleTab(surface, event)
+      ) {
+        return;
+      }
+      if (focusNextChoiceSurfaceTabTarget(surface, event.shiftKey ? -1 : 1)) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [inlineRowId, input.surface.surfaceKind]);
   return (
     <section
+      ref={surfaceRef}
       className="choice-surface"
       aria-label="Choice Surface"
       data-choice-surface={input.surface.surfaceKind}
@@ -157,6 +183,7 @@ function createChoiceRows(input: {
             className={`choice-surface__row${row.danger ? " choice-surface__row--danger" : ""}${
               row.disabled ? " choice-surface__row--disabled" : ""
             }`}
+            data-choice-tab-target={row.disabled ? undefined : "true"}
             data-selected={row.selected ? "true" : "false"}
             disabled={row.disabled === true}
             aria-disabled={row.disabled === true}
@@ -189,6 +216,7 @@ function createChoiceRows(input: {
             <button
               type="button"
               className="choice-surface__row-action"
+              data-choice-tab-target="true"
               aria-label={action.label}
               title={action.label}
               onClick={() => input.onRowSelect?.(input.surface.surfaceKind, action.rowId)}
@@ -200,6 +228,61 @@ function createChoiceRows(input: {
       })}
     </div>
   );
+}
+
+export function nextChoiceSurfaceTabIndex(
+  currentIndex: number,
+  total: number,
+  direction: 1 | -1,
+): number {
+  if (total <= 0) {
+    return -1;
+  }
+  if (currentIndex < 0 || currentIndex >= total) {
+    return direction > 0 ? 0 : total - 1;
+  }
+  return (currentIndex + direction + total) % total;
+}
+
+function focusNextChoiceSurfaceTabTarget(root: HTMLElement, direction: 1 | -1): boolean {
+  const targets = choiceSurfaceTabTargets(root);
+  const nextIndex = nextChoiceSurfaceTabIndex(
+    targets.findIndex((target) => target === root.ownerDocument.activeElement),
+    targets.length,
+    direction,
+  );
+  const target = targets[nextIndex];
+  if (target === undefined) {
+    return false;
+  }
+  target.focus();
+  return true;
+}
+
+function choiceSurfaceTabTargets(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>("[data-choice-tab-target='true']")).filter(
+    (target) => {
+      const button = target as HTMLButtonElement;
+      return button.disabled !== true && target.getAttribute("aria-disabled") !== "true";
+    },
+  );
+}
+
+function choiceSurfaceShouldHandleTab(root: HTMLElement, event: KeyboardEvent): boolean {
+  const view = root.ownerDocument.defaultView;
+  if (view === null) {
+    return false;
+  }
+  const active = root.ownerDocument.activeElement;
+  const activeNode = active instanceof view.Node ? active : null;
+  const eventNode = event.target instanceof view.Node ? event.target : null;
+  if ((activeNode !== null && root.contains(activeNode)) || (eventNode !== null && root.contains(eventNode))) {
+    return true;
+  }
+
+  const shell = root.closest(".agent-chat-shell");
+  const composer = shell?.querySelector(".composer-shell");
+  return activeNode !== null && composer?.contains(activeNode) === true;
 }
 
 function inlineCreateConfig(

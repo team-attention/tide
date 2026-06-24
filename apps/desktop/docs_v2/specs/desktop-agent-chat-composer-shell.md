@@ -164,6 +164,13 @@ for non-empty sessions so the last answer paragraph, table row, or tool summary
 can scroll fully above that docked Composer instead of appearing clipped behind
 it.
 
+### D20. Choice surfaces are tabbable menus
+
+When a Composer transient choice surface is open, Tab and Shift+Tab browse its
+selectable rows from the Composer input and from within the surface. This applies
+to slash command suggestions such as `/goal`; the menu is transient, but it must
+still be keyboard-reachable without arrow-key-only behavior.
+
 ## Out Of Scope
 
 - Final typography, color, icon set, and animation.
@@ -310,6 +317,7 @@ Desktop consumes BackendEvents:
 14. Model Chip menu data comes from the selected Agent Runtime Source, not from a generic cross-agent model list.
 15. Empty Agent Chat does not show fake cue, prompt queue, recent task, or suggested task rows below Start Composer.
 16. A non-empty transcript has enough bottom scroll padding that its final content can clear the docked Composer and its shadow.
+17. Composer choice surfaces expose selectable rows to Tab/Shift+Tab while open.
 
 ## Tests
 
@@ -336,6 +344,7 @@ Desktop consumes BackendEvents:
 | Permission menu follows selected Agent | `permission_menu_renders_only_the_selected_agent_provider_values` verifies Codex, Claude, and opencode Permission menus do not mix provider-native values. |
 | Composer menu is transient | `composer_options_and_command_prefix_render_as_transient_choice_surfaces` verifies the Composer menu and `/` suggestions render above Composer through Choice Surface, not as static documentation blocks. |
 | Transcript clears Composer | `transcript_has_bottom_scroll_buffer_for_the_docked_composer` verifies non-empty transcripts reserve bottom scroll padding. |
+| Choice surface is tabbable | `slash_command_choice_surface_tabs_from_the_composer_input_through_rows` verifies Tab enters a slash menu from the Composer input and cycles rows with Shift+Tab support. |
 
 ## Implementation Notes
 

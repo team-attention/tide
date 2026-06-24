@@ -204,6 +204,13 @@
   background: var(--tide-selection);
 }
 
+.choice-surface__row:not(.choice-surface__row--disabled):focus-visible,
+.choice-surface__row-action:focus-visible {
+  outline: 2px solid var(--tide-line-strong, var(--tide-muted));
+  outline-offset: -2px;
+  background: var(--tide-selection);
+}
+
 /* A not-yet-wired feature: greyed and non-interactive (no hover, no pointer). */
 
 .choice-surface__row--disabled {
