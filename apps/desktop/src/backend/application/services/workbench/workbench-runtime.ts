@@ -106,14 +106,17 @@ export class WorkbenchRuntime {
   ): TerminalPaneState {
     const terminalRole = input.terminalRole ?? "session";
     const title = input.title ?? defaultTerminalTitle(terminalRole, input.command);
-    const existing = thread.workbench.panes.find(
-      (pane): pane is TerminalPaneState =>
-        pane.kind === "terminal" &&
-        terminalPaneStoredRole(pane) === terminalRole &&
-        pane.command === input.command &&
-        shallowRecordEqual(pane.env, input.env) &&
-        pane.cwd === input.cwd,
-    );
+    const existing =
+      terminalRole === "session"
+        ? undefined
+        : thread.workbench.panes.find(
+            (pane): pane is TerminalPaneState =>
+              pane.kind === "terminal" &&
+              terminalPaneStoredRole(pane) === terminalRole &&
+              pane.command === input.command &&
+              shallowRecordEqual(pane.env ?? {}, input.env ?? {}) &&
+              pane.cwd === input.cwd,
+          );
     if (existing !== undefined) {
       existing.terminalRole = terminalRole;
       existing.title = title;

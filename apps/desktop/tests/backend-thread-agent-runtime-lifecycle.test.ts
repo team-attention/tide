@@ -3659,6 +3659,87 @@ test("opening_workbench_launcher_creates_or_reveals_single_launcher_pane", async
   assert.equal(revealed.ok && revealed.thread.workbench.panes[0]?.kind, "launcher");
 });
 
+test("opening_terminal_from_active_launcher_creates_a_new_terminal_pane", async () => {
+  // The launcher is a placeholder for a new pane. Choosing Terminal from it must
+  // not reveal an existing session terminal with the same shell/cwd.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    defaultWorkbenchTerminalCommand: "zsh",
+    defaultWorkbenchTerminalArgs: [],
+    initialThreads: [
+      threadSeed("thread-launcher-terminal", {
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+      }),
+    ],
+  });
+
+  const first = await service.handleWorkbenchCommand({
+    threadId: "thread-launcher-terminal",
+    command: "open_terminal",
+  });
+  const firstTerminalPane = first.ok
+    ? first.thread.workbench.panes.find((pane) => pane.kind === "terminal")
+    : undefined;
+  await service.handleWorkbenchCommand({
+    threadId: "thread-launcher-terminal",
+    command: "open_launcher",
+  });
+
+  const second = await service.handleWorkbenchCommand({
+    threadId: "thread-launcher-terminal",
+    command: "open_terminal",
+  });
+
+  assert.equal(second.ok, true);
+  const panes = second.ok ? second.thread.workbench.panes : [];
+  const terminalPanes = panes.filter((pane) => pane.kind === "terminal");
+  assert.equal(terminalPanes.length, 2);
+  assert.equal(panes.some((pane) => pane.kind === "launcher"), false);
+  assert.notEqual(terminalPanes[1]?.paneId, firstTerminalPane?.paneId);
+  assert.equal(
+    second.ok && second.thread.workbench.activePaneId,
+    terminalPanes[1]?.paneId,
+  );
+  assert.equal(fakes.workbenchTerminal.starts.length, 2);
+});
+
+test("opening_session_terminal_twice_creates_two_terminal_panes", async () => {
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    defaultWorkbenchTerminalCommand: "zsh",
+    defaultWorkbenchTerminalArgs: [],
+    initialThreads: [
+      threadSeed("thread-terminal-two", {
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+      }),
+    ],
+  });
+
+  const first = await service.handleWorkbenchCommand({
+    threadId: "thread-terminal-two",
+    command: "open_terminal",
+  });
+  const second = await service.handleWorkbenchCommand({
+    threadId: "thread-terminal-two",
+    command: "open_terminal",
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  const terminalPanes = second.ok
+    ? second.thread.workbench.panes.filter((pane) => pane.kind === "terminal")
+    : [];
+  assert.equal(terminalPanes.length, 2);
+  assert.notEqual(terminalPanes[0]?.paneId, terminalPanes[1]?.paneId);
+  assert.equal(fakes.workbenchTerminal.starts.length, 2);
+});
+
 test("opening_browser_from_workbench_command_creates_open_browser_pane", async () => {
   // Spec: docs_v2/specs/workbench-launcher-pane.md
   const service = createThreadRuntimeService({
