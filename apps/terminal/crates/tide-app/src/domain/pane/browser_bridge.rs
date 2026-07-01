@@ -145,7 +145,7 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
         (parent.getAttribute && parent.getAttribute("title"))
       );
       if (explicit) return explicit;
-      const text = normalizeText(parent.innerText || parent.textContent || "", 240);
+      const text = normalizeText(parent.innerText || parent.textContent || "", 1000);
       if (text && text.length <= 240) return text;
       parent = parent.parentElement;
       depth += 1;
@@ -234,6 +234,7 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
       return true;
     }};
     const interactableNodes = Array.from(document.querySelectorAll(interactableSelector));
+    const interactableSet = new Set(interactableNodes);
     let visibleInteractableCount = 0;
     for (const el of interactableNodes) {{
       if (pushElement(interactables, el, "i", "interactable", interactableLimit)) visibleInteractableCount += 1;
@@ -242,7 +243,7 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
     const regionNodes = Array.from(document.querySelectorAll(regionSelector));
     let visibleRegionCount = 0;
     for (const el of regionNodes) {{
-      if (interactableNodes.includes(el)) continue;
+      if (interactableSet.has(el)) continue;
       if (pushElement(regions, el, "r", "region", regionLimit)) visibleRegionCount += 1;
     }}
     return {{

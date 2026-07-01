@@ -427,8 +427,10 @@ fn browser_automation_cursor_is_injected_through_the_browser_bridge_dom_path() {
     assert!(bridge_source.contains("const associatedLabelText = (el) => {"));
     assert!(bridge_source
         .contains("textFromIds(el.getAttribute && el.getAttribute(\"aria-labelledby\"))"));
+    assert!(bridge_source.contains("normalizeText(parent.innerText || parent.textContent || \"\", 1000);"));
     assert!(bridge_source.contains("const stableElementRef = (el, prefix) => {"));
     assert!(bridge_source.contains("window.__tidePageMapRefCounter"));
+    assert!(bridge_source.contains("const interactableSet = new Set(interactableNodes);"));
     assert!(
         bridge_source.contains("\"summary\", \"[onclick]\", \"[tabindex]:not([tabindex='-1'])\"")
     );
