@@ -13,14 +13,14 @@ export function createProjectSection(
   projectGroups: ProductShellProjectGroupView[],
   handlers: ProductShellHandlers,
 ): ReactElement {
-  const collapsed = handlers.isSectionCollapsed("Projects");
+  const collapsed = handlers.isSectionCollapsed("Threads");
   return (
-    <section className="left-rail-section" aria-label="Projects">
+    <section className="left-rail-section" aria-label="Threads">
       {createSectionHeader(
-        "Projects",
+        "Threads",
         projectGroups.length,
         collapsed,
-        () => handlers.onToggleSection("Projects"),
+        () => handlers.onToggleSection("Threads"),
         { label: "Add project", onClick: handlers.onAddProject },
       )}
       {/* Kept mounted and height-animated (.collapsible grid-rows) so the section

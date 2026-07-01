@@ -93,43 +93,28 @@ test("product_shell_renders_left_ui_agent_chat_composer_and_app_chrome", () => {
   assert.match(html, /aria-label="Agent Chat Top Row"/);
 });
 
-test("left_ui_renders_project_grouped_thread_rows_with_agent_identity_icons", () => {
+test("left_ui_renders_project_grouped_thread_rows_with_codex_style_status_markers", () => {
   const html = renderProductShell();
 
   assert.match(html, /Pinned/);
-  assert.match(html, /Projects/);
-  assert.match(html, /Scratch/);
+  assert.match(html, /Threads/);
+  assert.match(html, /Chats/);
   assert.match(html, /data-left-row-kind="project"/);
   assert.match(html, /data-left-row-kind="thread"/);
-  // Thread rows carry the per-agent identity icon (Codex-app aesthetic), the
-  // same mark used in the composer agent chip.
-  assert.match(html, /class="thread-row__main"[^>]*>\s*<span class="agent-identity-icon/);
+  assert.match(html, /class="thread-row__main"[^>]*>\s*<span class="thread-row__leading/);
+  assert.doesNotMatch(html, /class="thread-row__main"[^>]*>\s*<span class="agent-identity-icon/);
   assert.doesNotMatch(html, /project-row__count/);
 });
 
-test("thread_rows_move_all_scope_status_and_worktree_context_to_hover_popovers", () => {
+test("thread_rows_keep_scope_status_and_worktree_context_out_of_default_markup", () => {
   const fixtureHtml = renderProductShell();
   const projectRow = extractByDataAttribute(fixtureHtml, "data-thread-row", "thread-workbench");
-  const scratchRow = extractByDataAttribute(fixtureHtml, "data-thread-row", "thread-sketch");
-  const attentionRow = extractByDataAttribute(fixtureHtml, "data-thread-row", "thread-visual");
-  const fixtureThreadRows = fixtureHtml.match(/data-thread-row=/g) ?? [];
-  const fixtureContextPopovers = fixtureHtml.match(/thread-row__context-popover/g) ?? [];
-
-  assert.equal(fixtureContextPopovers.length, fixtureThreadRows.length);
-  assert.equal(
-    (fixtureHtml.match(/class="thread-row__context-popover"[^>]*hidden/g) ?? []).length,
-    fixtureThreadRows.length,
-  );
-  assert.match(projectRow, /aria-describedby="thread-row-context-thread-workbench"/);
-  assert.match(projectRow, /thread-row__context-popover/);
-  assert.match(projectRow, /style="[^"]*left:\s*\d+px;[^"]*top:\s*\d+px;[^"]*width:\s*300px/);
-  assert.match(projectRow, />Project</);
-  assert.match(projectRow, />tide</);
-  assert.match(scratchRow, /aria-describedby="thread-row-context-thread-sketch"/);
-  assert.match(scratchRow, />Scope</);
-  assert.match(scratchRow, />Scratch</);
-  assert.match(attentionRow, />Status</);
-  assert.match(attentionRow, />Needs attention</);
+  assert.doesNotMatch(fixtureHtml, /thread-row__context-popover/);
+  assert.doesNotMatch(projectRow, /aria-describedby="thread-row-context-thread-workbench"/);
+  assert.match(projectRow, /aria-label="Thread menu"/);
+  assert.match(projectRow, /thread-row__leading/);
+  assert.doesNotMatch(projectRow, />Project</);
+  assert.doesNotMatch(projectRow, />Status</);
   assert.doesNotMatch(projectRow, /thread-row__label/);
   assert.doesNotMatch(projectRow, /thread-row__scope/);
 
@@ -141,7 +126,7 @@ test("thread_rows_move_all_scope_status_and_worktree_context_to_hover_popovers",
         threads: [
           {
             threadId: "thread-worktree",
-            title: "Worktree branch row",
+            title: "Branch row",
             agentBinding: {
               agentId: "codex",
               runtimeSource: { kind: "provider_cli", integrationId: "codex" },
@@ -168,16 +153,14 @@ test("thread_rows_move_all_scope_status_and_worktree_context_to_hover_popovers",
     "thread-worktree",
   );
 
-  assert.match(worktreeRow, /aria-describedby="thread-row-context-thread-worktree"/);
-  assert.match(worktreeRow, />Project</);
-  assert.match(worktreeRow, />tide</);
-  assert.match(worktreeRow, /thread-row__context-popover/);
-  assert.match(worktreeRow, />Worktree</);
-  assert.match(worktreeRow, />feature-login</);
-  assert.match(worktreeRow, />Branch</);
-  assert.match(worktreeRow, />tide\/feature-login</);
-  assert.match(worktreeRow, />Status</);
-  assert.match(worktreeRow, />Running</);
+  assert.doesNotMatch(worktreeRow, /aria-describedby="thread-row-context-thread-worktree"/);
+  assert.doesNotMatch(worktreeRow, /thread-row__context-popover/);
+  assert.doesNotMatch(worktreeRow, />Project</);
+  assert.doesNotMatch(worktreeRow, />feature-login</);
+  assert.doesNotMatch(worktreeRow, />Branch</);
+  assert.doesNotMatch(worktreeRow, />tide\/feature-login</);
+  assert.doesNotMatch(worktreeRow, />Status</);
+  assert.doesNotMatch(worktreeRow, />Running</);
   assert.doesNotMatch(worktreeRow, /thread-row__branch/);
   assert.doesNotMatch(worktreeRow, /thread-row__branch-name/);
 });
@@ -642,14 +625,13 @@ test("search_query_filters_threads_by_title_in_the_left_ui", () => {
   );
 });
 
-test("left_ui_search_is_a_nav_row_until_activated", () => {
+test("left_ui_search_is_a_stable_inline_field", () => {
   // Spec: docs_v2/specs/desktop-product-shell-visual-foundation.md
-  // Canonical Figma workbench frame (1223:2): the Left Rail "Search" entry is a
-  // nav row (icon + "Search"), like "New thread". The inline filter input
-  // belongs only to the FileTree. Activating Search reveals the inline input.
   const resting = renderProductShell();
-  assert.match(resting, /<span>Search<\/span>/);
-  assert.doesNotMatch(resting, /aria-label="Search threads"/);
+  assert.match(resting, /aria-label="Search threads"/);
+  assert.match(resting, /placeholder="Search threads"/);
+  assert.doesNotMatch(resting, /<span>Search<\/span>/);
+  assert.doesNotMatch(resting, /aria-label="List display settings"/);
 
   const activeState = toggleProductShellSearch(createProductShellState());
   assert.equal(activeState.searchActive, true);
@@ -936,30 +918,23 @@ test("thread_rows_use_list_style_selection_not_card_blocks", () => {
 
   assert.match(css, /\.thread-row--active\s*{[^}]*background:\s*color-mix\([^}]*var\(--tide-selection\)/s);
   assert.match(css, /\.thread-row--active\s*{[^}]*box-shadow:\s*none/s);
-  assert.match(css, /\.thread-row\[data-running="true"\],[^{]*{[^}]*background:\s*color-mix\([^}]*var\(--tide-success\)[^}]*transparent\);[^}]*box-shadow:\s*none/s);
-  assert.match(css, /\.thread-row\[data-attention="true"\],[^{]*{[^}]*background:\s*color-mix\([^}]*var\(--tide-warn\)[^}]*transparent\);[^}]*box-shadow:\s*none/s);
+  assert.match(css, /\.thread-row__leading--running\s*{[^}]*border-top-color:\s*var\(--tide-success\)/s);
+  assert.match(css, /\.thread-row__leading--attention\s*{[^}]*background:\s*var\(--tide-accent\)/s);
+  assert.match(css, /\.thread-row__action\s*{[^}]*width:\s*24px/s);
   assert.doesNotMatch(css, /\.thread-row--active\s*{[^}]*linear-gradient/s);
   assert.doesNotMatch(css, /\.thread-row(?:--active|\[data-[^\]]+\])?\s*{[^}]*inset 0 0 0 1px/s);
   assert.doesNotMatch(css, /tide-row-running-breathe/);
   assert.doesNotMatch(css, /\.thread-row--active\s*{[^}]*border-color/s);
   assert.doesNotMatch(css, /\.thread-row(?:--active|\[data-[^\]]+\])?\s*{[^}]*border-left/s);
-  assert.match(css, /\.thread-row__context-popover\s*{[^}]*position:\s*fixed/s);
-  assert.match(css, /\.thread-row__context-popover\s*{[^}]*z-index:\s*70/s);
-  assert.match(css, /\.thread-row__context-popover\s*{[^}]*pointer-events:\s*auto/s);
-  assert.match(css, /\.thread-row__context-popover\[hidden\]\s*{[^}]*display:\s*none/s);
-  assert.match(css, /\.thread-row__context-popover\s*{[^}]*box-shadow:\s*[\s\S]*0 18px 44px -22px/s);
-  assert.match(css, /\[data-theme="dark"\] \.thread-row__context-popover\s*{[^}]*box-shadow:\s*[\s\S]*0 18px 48px -18px/s);
-  assert.doesNotMatch(css, /\.thread-row__context-popover\s*{[^}]*box-shadow:\s*var\(--tide-shadow-popover\)/s);
-  assert.match(css, /\.thread-row__context-popover:hover \.thread-row__context-value\s*{[^}]*white-space:\s*normal/s);
-  assert.doesNotMatch(css, /\.thread-row__context-popover\s*{[^}]*right:\s*8px/s);
-  assert.doesNotMatch(css, /\.thread-row-wrap:hover \.thread-row__context-popover/s);
+  assert.doesNotMatch(css, /\.thread-row__context-popover/);
   assert.doesNotMatch(css, /\.thread-row--scoped\s*{[^}]*height:\s*36px/s);
   assert.doesNotMatch(css, /\.thread-row__scope\s*{/);
   assert.doesNotMatch(css, /\.thread-row__branch\s*{/);
-  assert.match(threadRowSource, /THREAD_ROW_CONTEXT_OPEN_EVENT/);
-  assert.match(threadRowSource, /document\.dispatchEvent\(\s*new CustomEvent\(THREAD_ROW_CONTEXT_OPEN_EVENT/s);
-  assert.match(threadRowSource, /document\.addEventListener\(THREAD_ROW_CONTEXT_OPEN_EVENT/);
-  assert.match(threadRowSource, /hiddenThreadRowContextPopoverStyle/);
+  assert.match(threadRowSource, /"Thread menu"/);
+  assert.doesNotMatch(threadRowSource, /THREAD_ROW_CONTEXT_OPEN_EVENT/);
+  assert.doesNotMatch(threadRowSource, /document\.dispatchEvent\(\s*new CustomEvent\(THREAD_ROW_CONTEXT_OPEN_EVENT/s);
+  assert.doesNotMatch(threadRowSource, /document\.addEventListener\(THREAD_ROW_CONTEXT_OPEN_EVENT/);
+  assert.doesNotMatch(threadRowSource, /hiddenThreadRowContextPopoverStyle/);
   assert.doesNotMatch(threadRowSource, /typeof window === "undefined"\s*\?\s*fallbackThreadRowContextAnchor/);
 });
 
