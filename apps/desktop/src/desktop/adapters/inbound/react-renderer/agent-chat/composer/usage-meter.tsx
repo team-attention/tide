@@ -53,7 +53,7 @@ export function UsageMeter({ usage }: { usage: Usage }): ReactElement {
     .join("; ");
 
   return (
-    <div className="agent-usage" aria-label={`Usage limits: ${summary}`} ref={rootRef}>
+    <div className="agent-usage" role="group" aria-label={`Usage limits: ${summary}`} ref={rootRef}>
       <div className="agent-usage__segments">
         {segments.map((segment) => (
           <UsageSegment segment={segment} key={segment.key} />
@@ -113,7 +113,7 @@ function UsagePopover({
           <span className="agent-usage__row-label">Session</span>
           <span className="agent-usage__row-value">{`${usage.contextRemainingLabel} left`}</span>
           <span className="agent-usage__row-reset">
-            {usage.contextDetailLabel ?? usage.tokensLabel ?? ""}
+            {usage.contextDetailLabel ?? ""}
           </span>
         </div>
       ) : null}
