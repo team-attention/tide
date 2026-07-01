@@ -38,9 +38,10 @@ export function classifyTopLevelNavigation(
 
 // A Browser Pane page can ask for two different "open elsewhere" semantics:
 // target=_blank/new tab, or a real popup window. OAuth-style popup sign-in flows
-// often rely on the latter via window.opener / window.close. Preserve only HTTPS
-// Electron "new-window" popups as native child windows; ordinary target=_blank,
-// Cmd-click, and non-HTTPS destinations keep routing through Browser Panes.
+// often rely on the latter via window.opener / window.close. Preserve only
+// HTTPS Electron "new-window" popups that carry auth-flow signals; ordinary
+// target=_blank, Cmd-click, generic HTTPS popups, and non-HTTPS destinations
+// keep routing through Browser Panes.
 export function shouldPreserveBrowserPopupWindow(
   targetUrl: string,
   disposition: string,
@@ -49,14 +50,12 @@ export function shouldPreserveBrowserPopupWindow(
     return false;
   }
 
-  let target: URL;
-  try {
-    target = new URL(targetUrl);
-  } catch {
+  const target = parseHttpsUrl(targetUrl);
+  if (target === undefined) {
     return false;
   }
 
-  return target.protocol === "https:";
+  return hasAuthPopupSignal(target);
 }
 
 // The target is the app's own document when it shares the dev-server origin
@@ -81,4 +80,119 @@ function isAppDocument(targetUrl: string, appUrl: string | undefined): boolean {
     return target.pathname === app.pathname;
   }
   return target.origin === app.origin;
+}
+
+function hasAuthPopupSignal(target: URL): boolean {
+  if (hasDirectAuthSignal(target)) {
+    return true;
+  }
+
+  for (const nestedUrl of authRedirectTargets(target)) {
+    if (hasDirectAuthSignal(nestedUrl)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasDirectAuthSignal(target: URL): boolean {
+  return (
+    hasAuthPathSignal(target.pathname) ||
+    hasOAuthParams(target.searchParams) ||
+    hasSamlParams(target.searchParams) ||
+    hasPopupAuthParams(target.searchParams)
+  );
+}
+
+function hasAuthPathSignal(pathname: string): boolean {
+  return /(?:^|[\/_.-])(?:oauth2?|oidc|saml|authorize|auth|signin|sign-in|login)(?:$|[\/_.-])/i
+    .test(pathname);
+}
+
+function hasOAuthParams(params: URLSearchParams): boolean {
+  return (
+    hasSearchParam(params, "client_id") &&
+    (
+      hasSearchParam(params, "response_type") ||
+      hasSearchParam(params, "redirect_uri") ||
+      hasSearchParam(params, "scope")
+    )
+  );
+}
+
+function hasSamlParams(params: URLSearchParams): boolean {
+  return hasSearchParam(params, "SAMLRequest") || hasSearchParam(params, "SAMLResponse");
+}
+
+function hasPopupAuthParams(params: URLSearchParams): boolean {
+  return (
+    searchParamEquals(params, "redirectToAuth", "true") ||
+    (
+      searchParamEquals(params, "callbackType", "popup") &&
+      (
+        hasSearchParam(params, "requestId") ||
+        hasSearchParam(params, "redirectToAuth")
+      )
+    )
+  );
+}
+
+function authRedirectTargets(target: URL): URL[] {
+  const redirectParamNames = [
+    "redirectUri",
+    "redirect_uri",
+    "redirectUrl",
+    "redirect_url",
+    "returnTo",
+    "return_to",
+    "continue",
+    "next",
+  ];
+  const urls: URL[] = [];
+  for (const name of redirectParamNames) {
+    for (const value of searchParamValues(target.searchParams, name)) {
+      const url = parseHttpsUrl(value);
+      if (url !== undefined) {
+        urls.push(url);
+      }
+    }
+  }
+  return urls;
+}
+
+function parseHttpsUrl(value: string): URL | undefined {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  return url.protocol === "https:" ? url : undefined;
+}
+
+function hasSearchParam(params: URLSearchParams, expectedName: string): boolean {
+  return searchParamValues(params, expectedName).length > 0;
+}
+
+function searchParamEquals(
+  params: URLSearchParams,
+  expectedName: string,
+  expectedValue: string,
+): boolean {
+  const normalizedExpectedValue = expectedValue.toLowerCase();
+  return searchParamValues(params, expectedName).some(
+    (value) => value.toLowerCase() === normalizedExpectedValue,
+  );
+}
+
+function searchParamValues(params: URLSearchParams, expectedName: string): string[] {
+  const normalizedExpectedName = expectedName.toLowerCase();
+  const values: string[] = [];
+  for (const [name, value] of params) {
+    if (name.toLowerCase() === normalizedExpectedName) {
+      values.push(value);
+    }
+  }
+  return values;
 }

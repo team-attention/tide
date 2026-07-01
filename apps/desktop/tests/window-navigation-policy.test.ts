@@ -66,10 +66,10 @@ test("with no known app URL, nothing is treated as the app document", () => {
   assert.equal(classifyTopLevelNavigation("file:///whatever", undefined), "block");
 });
 
-test("https new-window popups preserve a real child window for opener callbacks", () => {
+test("auth new-window popups preserve a real child window for opener callbacks", () => {
   assert.equal(
     shouldPreserveBrowserPopupWindow(
-      "https://app.notion.com/verifyNoPopupBlockerHtmlAndRedirect?redirectUri=https%3A%2F%2Fapp.notion.com%2Fgooglepopupredirect%3FcallbackType%3Dpopup",
+      "https://app.notion.com/verifyNoPopupBlockerHtmlAndRedirect?redirectUri=https%3A%2F%2Fapp.notion.com%2Fgooglepopupredirect%3FcallbackType%3Dpopup%26redirectToAuth%3Dtrue%26requestId%3Dabc",
       "new-window",
     ),
     true,
@@ -82,8 +82,29 @@ test("https new-window popups preserve a real child window for opener callbacks"
     true,
   );
   assert.equal(
-    shouldPreserveBrowserPopupWindow("https://example.com/popup", "new-window"),
+    shouldPreserveBrowserPopupWindow(
+      "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&response_type=code",
+      "new-window",
+    ),
     true,
+  );
+  assert.equal(
+    shouldPreserveBrowserPopupWindow(
+      "https://sso.example.com/saml/login?SAMLRequest=encoded-request&RelayState=state",
+      "new-window",
+    ),
+    true,
+  );
+});
+
+test("generic https new-window popups still route through Browser Panes", () => {
+  assert.equal(
+    shouldPreserveBrowserPopupWindow("https://example.com/popup", "new-window"),
+    false,
+  );
+  assert.equal(
+    shouldPreserveBrowserPopupWindow("https://example.com/settings?dialog=1", "new-window"),
+    false,
   );
 });
 

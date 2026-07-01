@@ -386,53 +386,6 @@ function codexThreadStartParams(
   return params;
 }
 
-function codexLaunchOptionArgs(
-  launchOptions: Record<string, unknown> | undefined,
-): string[] {
-  const args: string[] = [];
-  const model = stringValue(launchOptions?.model);
-  if (model !== undefined) {
-    args.push("--model", model);
-  }
-
-  // Reasoning effort maps to codex's `model_reasoning_effort` config override.
-  const reasoning = stringValue(launchOptions?.reasoning);
-  if (reasoning === "low" || reasoning === "medium" || reasoning === "high" || reasoning === "xhigh") {
-    args.push("-c", `model_reasoning_effort=${codexConfigString(reasoning)}`);
-  }
-
-  const permission = stringValue(launchOptions?.permission);
-  // Friendly approval modes (mirroring the Codex app) expand to a sandbox +
-  // approval-policy pair. Legacy raw values (workspace-write, on-request, …) from
-  // older threads still map directly to a single flag below.
-  if (permission === "ask-for-approval") {
-    args.push("--sandbox", "workspace-write", "--ask-for-approval", "on-request");
-  } else if (permission === "approve-for-me") {
-    args.push("--sandbox", "workspace-write", "--ask-for-approval", "on-failure");
-  } else if (permission === "full-access") {
-    args.push("--dangerously-bypass-approvals-and-sandbox");
-  } else if (
-    permission === "read-only" ||
-    permission === "workspace-write" ||
-    permission === "danger-full-access"
-  ) {
-    args.push("--sandbox", permission);
-  } else if (
-    permission === "untrusted" ||
-    permission === "on-request" ||
-    permission === "never" ||
-    permission === "on-failure"
-  ) {
-    args.push("--ask-for-approval", permission);
-  } else if (permission === "dangerously-bypass-approvals-and-sandbox") {
-    args.push("--dangerously-bypass-approvals-and-sandbox");
-  }
-
-  args.push(...codexPermissionConfigArgs(launchOptions));
-
-  return args;
-}
-
 function cwdFromScope(scope: ThreadScope | undefined, fallback: string): string {
   if (scope === undefined) {
     return fallback;
