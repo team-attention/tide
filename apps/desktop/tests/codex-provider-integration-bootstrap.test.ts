@@ -168,6 +168,38 @@ test("codex_launch_plan_applies_model_sandbox_and_approval_via_protocol_params",
   assert.equal(fullAccessPlan.protocolParams?.approvalPolicy, "never");
 });
 
+test("codex_launch_plan_enables_workspace_network_for_legacy_workspace_modes", async () => {
+  const integration = codexIntegration();
+
+  const approveForMePlan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: { permission: "approve-for-me" },
+  });
+  const legacyWorkspacePlan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: { permission: "workspace-write" },
+  });
+  const legacyApprovalPlan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: { permission: "on-failure" },
+  });
+  const askPlan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: { permission: "ask-for-approval" },
+  });
+
+  assert.equal(approveForMePlan.protocolParams?.sandbox, "danger-full-access");
+  assert.equal(approveForMePlan.protocolParams?.approvalPolicy, "on-failure");
+  assertWorkspaceNetworkNotConfigured(approveForMePlan.args);
+  assertWorkspaceNetworkEnabled(legacyWorkspacePlan.args);
+  assertWorkspaceNetworkEnabled(legacyApprovalPlan.args);
+  assertWorkspaceNetworkNotConfigured(askPlan.args);
+});
+
 test("codex_launch_plan_maps_reasoning_effort_to_config_override", async () => {
   const integration = codexIntegration();
 
@@ -346,6 +378,21 @@ function readyCodexState(
     codexHome: "/tmp/tide-codex-home",
     ...overrides,
   };
+}
+
+function assertWorkspaceNetworkEnabled(args: string[]): void {
+  const overrideIndex = args.findIndex(
+    (arg) => arg === "sandbox_workspace_write.network_access=true",
+  );
+  assert.ok(overrideIndex > 0, "expected workspace-write network override");
+  assert.equal(args[overrideIndex - 1], "-c");
+}
+
+function assertWorkspaceNetworkNotConfigured(args: string[]): void {
+  assert.equal(
+    args.includes("sandbox_workspace_write.network_access=true"),
+    false,
+  );
 }
 
 function findSourceMentions(relativeRoots: string[], patterns: RegExp[]): string[] {

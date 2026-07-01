@@ -97,11 +97,11 @@ export function useComposerFileMentionRefresh(params: {
   }, [params.cwd, params.dispatchBackendCommand, trigger?.trigger]);
 }
 
-// A Browser Pane link asked to open elsewhere: Main denies the stray popup window and
-// forwards the URL here. `newPane` (Cmd/Ctrl/middle-click, window.open) opens a new
-// Browser Pane; otherwise a plain target=_blank click navigates the active Browser
-// Pane in place. The handler reads the latest state via setShellState, so subscribing
-// once is safe.
+// A Browser Pane link asked to open elsewhere: Main denies ordinary popup windows and
+// forwards the URL here. `newPane` (Cmd/Ctrl/middle-click) opens a new Browser Pane;
+// otherwise a plain target=_blank click navigates the active Browser Pane in place. HTTPS
+// `new-window` popups may be preserved as native child windows by Main. The handler reads
+// the latest state via setShellState, so subscribing once is safe.
 export function useOpenBrowserPaneFromMain(
   onOpenBrowserPane: (url: string, options?: { newPane?: boolean }) => void,
 ): void {

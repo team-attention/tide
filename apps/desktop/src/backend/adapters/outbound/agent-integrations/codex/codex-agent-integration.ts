@@ -263,6 +263,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       ...(reasoning === "low" || reasoning === "medium" || reasoning === "high" || reasoning === "xhigh"
         ? ["-c", `model_reasoning_effort=${codexConfigString(reasoning)}`]
         : []),
+      ...codexPermissionConfigArgs(input.launchOptions),
       ...codexConfigArgs(tideMcp),
     ];
 
@@ -327,6 +328,25 @@ function codexConfigString(value: string): string {
   return JSON.stringify(value);
 }
 
+function codexPermissionConfigArgs(
+  launchOptions: Record<string, unknown> | undefined,
+): string[] {
+  const permission = stringValue(launchOptions?.permission);
+  if (!codexPermissionUsesWorkspaceNetwork(permission)) {
+    return [];
+  }
+  return ["-c", "sandbox_workspace_write.network_access=true"];
+}
+
+function codexPermissionUsesWorkspaceNetwork(permission: string | undefined): boolean {
+  return (
+    // Raw values persisted by older threads are normalized to "Approve for me"
+    // in the UI, so preserve that behavior in the provider launch plan too.
+    permission === "workspace-write" ||
+    permission === "on-failure"
+  );
+}
+
 // thread/start parameters for the app-server transport: the SAME approval/
 // sandbox expansion the TUI flags used, expressed as protocol values
 // (bindings: ThreadStartParams.approvalPolicy / sandbox / model).
@@ -368,51 +388,6 @@ function codexThreadStartParams(
     params.approvalPolicy = permission;
   }
   return params;
-}
-
-function codexLaunchOptionArgs(
-  launchOptions: Record<string, unknown> | undefined,
-): string[] {
-  const args: string[] = [];
-  const model = stringValue(launchOptions?.model);
-  if (model !== undefined) {
-    args.push("--model", model);
-  }
-
-  // Reasoning effort maps to codex's `model_reasoning_effort` config override.
-  const reasoning = stringValue(launchOptions?.reasoning);
-  if (reasoning === "low" || reasoning === "medium" || reasoning === "high" || reasoning === "xhigh") {
-    args.push("-c", `model_reasoning_effort=${codexConfigString(reasoning)}`);
-  }
-
-  const permission = stringValue(launchOptions?.permission);
-  // Friendly approval modes (mirroring the Codex app) expand to a sandbox +
-  // approval-policy pair. Legacy raw values (workspace-write, on-request, …) from
-  // older threads still map directly to a single flag below.
-  if (permission === "ask-for-approval") {
-    args.push("--sandbox", "workspace-write", "--ask-for-approval", "on-request");
-  } else if (permission === "approve-for-me") {
-    args.push("--sandbox", "danger-full-access", "--ask-for-approval", "on-failure");
-  } else if (permission === "full-access") {
-    args.push("--dangerously-bypass-approvals-and-sandbox");
-  } else if (
-    permission === "read-only" ||
-    permission === "workspace-write" ||
-    permission === "danger-full-access"
-  ) {
-    args.push("--sandbox", permission);
-  } else if (
-    permission === "untrusted" ||
-    permission === "on-request" ||
-    permission === "never" ||
-    permission === "on-failure"
-  ) {
-    args.push("--ask-for-approval", permission);
-  } else if (permission === "dangerously-bypass-approvals-and-sandbox") {
-    args.push("--dangerously-bypass-approvals-and-sandbox");
-  }
-
-  return args;
 }
 
 function cwdFromScope(scope: ThreadScope | undefined, fallback: string): string {

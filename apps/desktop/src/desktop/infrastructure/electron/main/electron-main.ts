@@ -9,7 +9,18 @@ import { registerNotificationBridge } from "./notifications.ts";
 import { registerAutoUpdate, logUpdateEvent } from "./auto-update.ts";
 import { readUiPrefs, saveUiPref } from "./ui-prefs.ts";
 import { readInitialThreadListSnapshot } from "./thread-list-snapshot.ts";
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  shell,
+  utilityProcess,
+  type BrowserWindowConstructorOptions,
+  type MenuItemConstructorOptions,
+  type UtilityProcess,
+} from "electron";
 
 import { basename, dirname, join } from "node:path";
 
@@ -36,7 +47,7 @@ import {
   worktreeRepoRootForCwd,
 } from "../../../../shared/worktree/path.ts";
 
-import { classifyTopLevelNavigation } from "./window-navigation-policy.ts";
+import { classifyTopLevelNavigation, shouldPreserveBrowserPopupWindow } from "./window-navigation-policy.ts";
 
 import {
   createFileInWorkspace,
@@ -699,12 +710,13 @@ void app.whenReady().then(() => {
 app.on("web-contents-created", (_event, contents) => {
   // A page inside a Browser Pane <webview> that opens a popup (target=_blank,
   // window.open, Cmd/Ctrl+click) would otherwise spawn a blank top-level
-  // BrowserWindow. Always deny the popup and forward the URL to the renderer over
+  // BrowserWindow. Deny ordinary popups and forward the URL to the renderer over
   // IPC, which drives the SAME backend open_browser path the agent and the address
-  // bar use — reliable, and it keeps backend pane state authoritative. The
-  // disposition picks reuse vs. new pane by the user's intent:
-  //   • Cmd/Ctrl+click & middle-click ("background-tab") and window.open / shift-click
-  //     ("new-window") explicitly want a new tab → open a NEW Browser Pane.
+  // bar use — reliable, and it keeps backend pane state authoritative. HTTPS
+  // popups with real window semantics are allowed below as child windows. The
+  // disposition picks native popup vs. pane routing by the browser semantics:
+  //   • HTTPS "new-window" popups keep a native child window so window.opener works.
+  //   • Cmd/Ctrl+click & middle-click ("background-tab") open a NEW Browser Pane.
   //   • A plain target=_blank ("foreground-tab"/other) → navigate the ACTIVE Browser
   //     Pane IN PLACE, the same as a normal link click.
   // We used to navigate the guest webContents directly with loadURL for the in-place
@@ -715,7 +727,6 @@ app.on("web-contents-created", (_event, contents) => {
   if (contents.getType() === "webview") {
     contents.setWindowOpenHandler(({ url, disposition }) => {
       if (/^https?:\/\//i.test(url)) {
-        const newPane = disposition === "background-tab" || disposition === "new-window";
         // Target the window that actually HOSTS this <webview> (via the guest's
         // hostWebContents), not getAllWindows()[0] — the first window isn't guaranteed
         // to be the host once a DevTools/dialog window exists. Fall back to the first
@@ -724,6 +735,26 @@ app.on("web-contents-created", (_event, contents) => {
         const targetWindow =
           (host !== null ? BrowserWindow.fromWebContents(host) : null) ??
           BrowserWindow.getAllWindows()[0];
+        if (shouldPreserveBrowserPopupWindow(url, disposition)) {
+          const popupOptions: BrowserWindowConstructorOptions = {
+            width: 520,
+            height: 720,
+            show: true,
+            autoHideMenuBar: true,
+            title: "Sign in",
+            webPreferences: {
+              nodeIntegration: false,
+              contextIsolation: true,
+              sandbox: true,
+              partition: "persist:tide-workbench-browser",
+            },
+          };
+          if (targetWindow !== undefined) {
+            popupOptions.parent = targetWindow;
+          }
+          return { action: "allow", overrideBrowserWindowOptions: popupOptions };
+        }
+        const newPane = disposition === "background-tab" || disposition === "new-window";
         targetWindow?.webContents.send("tide:open-browser-pane", url, newPane);
       }
       return { action: "deny" };

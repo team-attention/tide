@@ -575,12 +575,12 @@ export function WorkbenchBrowserPane(props: {
           // results with newwindow=1) to navigate. Without it Electron silently suppresses
           // the popup BEFORE setWindowOpenHandler ever fires — a plain click does nothing
           // (no URL change, no spinner). With it, the app's main-process handler intercepts
-          // the URL (it always returns action:"deny", so no real popup window spawns) and
-          // routes it over IPC: foreground-tab → reuse this pane in place; background-tab /
-          // new-window (Cmd/Ctrl/Shift+click) → a new Browser Pane. See web-contents-created
-          // in electron-main.ts. String form ("true") because Electron only checks attribute
-          // presence (hasAttribute) and string attrs render reliably on this custom tag (as
-          // src/partition already do).
+          // ordinary popup URLs and routes them over IPC: foreground-tab → reuse this pane
+          // in place; background-tab (Cmd/Ctrl-click) → a new Browser Pane. HTTPS new-window
+          // popups are preserved as native child windows so window.opener / window.close
+          // flows keep working. See web-contents-created in electron-main.ts. String form
+          // ("true") because Electron only checks attribute presence (hasAttribute) and
+          // string attrs render reliably on this custom tag (as src/partition already do).
           allowpopups: "true",
         })}
         {props.pane.agentDriving === true ? (
@@ -775,9 +775,9 @@ function BackgroundBrowserWebView(props: {
     src: url ?? "about:blank",
     partition: "persist:tide-workbench-browser",
     // Same as the foreground pane: allowpopups lets target=_blank / window.open links route
-    // through the main-process handler (which denies the real popup and forwards the URL over
-    // IPC) instead of being silently suppressed — so an agent driving a background page can
-    // follow such links too. See the WorkbenchBrowserPane webview above.
+    // through the main-process handler instead of being silently suppressed — so an agent
+    // driving a background page can follow such links too. See the WorkbenchBrowserPane
+    // webview above.
     allowpopups: "true",
   });
 }
