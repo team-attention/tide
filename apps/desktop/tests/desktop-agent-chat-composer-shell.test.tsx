@@ -472,7 +472,7 @@ test("transcript_has_bottom_scroll_buffer_for_the_docked_composer", () => {
   assert.match(css, /--agent-session-bottom-buffer:\s*96px/);
   assert.match(css, /\.agent-session\s*{[^}]*scroll-padding-bottom:\s*var\(--agent-session-bottom-buffer\)/s);
   assert.match(css, /\.agent-session--has-turns\s*{[^}]*padding:\s*6px 0 var\(--agent-session-bottom-buffer\)/s);
-  assert.match(css, /\.agent-session\[data-chat-state="running"\][\s\S]*data-block-status="streaming"[\s\S]*::after/);
+  assert.match(css, /\.agent-session\[data-chat-state="running"\][\s\S]*data-streaming-caret="active"[\s\S]*::after/);
 });
 
 test("usage_changed_renders_context_usage_above_the_composer", () => {
@@ -1444,8 +1444,43 @@ test("the_working_indicator_is_hidden_while_the_agent_answer_streams", () => {
     backendEvent("agentSessionBlock.upserted", { block: block("b1", "streaming", "Here is the ans") }),
   );
 
-  assert.ok(!renderShell(streaming).includes("agent-session-turn--working"));
-  assert.match(renderShell(streaming), /data-chat-state="running"/);
+  const html = renderShell(streaming);
+
+  assert.ok(!html.includes("agent-session-turn--working"));
+  assert.match(html, /data-chat-state="running"/);
+  assert.match(html, /data-block-id="b1"[^>]*data-streaming-caret="active"/);
+});
+
+test("stale_streaming_agent_blocks_do_not_keep_the_blinking_caret_after_interrupt", () => {
+  // Interrupt + queued follow-up can leave the interrupted answer's block status
+  // as streaming while the latest state has moved on to a fresh Working indicator.
+  // The caret belongs only to the currently active answer, not to any older
+  // streaming-status block still visible in the transcript.
+  const state = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", {
+      thread,
+      runtimeState: "running",
+      blocks: [
+        block("old-answer", "streaming", "Interrupted partial answer"),
+        {
+          blockId: "new-user-turn",
+          threadId: "thread-shell",
+          agentId: "codex",
+          kind: "user_message",
+          role: "user",
+          status: "complete",
+          body: "Use this updated direction.",
+          updatedAt: later,
+        },
+      ],
+    }),
+  );
+  const html = renderShell(state);
+
+  assert.ok(html.includes("agent-session-turn--working"));
+  assert.match(html, /data-block-id="old-answer"[^>]*data-block-status="streaming"/);
+  assert.doesNotMatch(html, /data-block-id="old-answer"[^>]*data-streaming-caret="active"/);
 });
 
 test("agent_session_filters_blocks_to_the_current_thread", () => {

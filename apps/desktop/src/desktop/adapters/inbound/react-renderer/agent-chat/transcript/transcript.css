@@ -388,10 +388,7 @@
 /* A still-streaming agent message shows a blinking caret after its text. */
 
 .agent-session[data-chat-state="running"]
-  .agent-session-turn--agent[data-block-status="streaming"]
-  .agent-session-turn__body::after,
-.agent-session[data-chat-state="running"]
-  .agent-session-turn--agent[data-block-status="pending"]
+  .agent-session-turn--agent[data-streaming-caret="active"]
   .agent-session-turn__body::after {
   content: "▍";
   margin-left: 1px;
