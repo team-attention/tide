@@ -105,14 +105,18 @@ function isKnownAuthProviderUrl(target: URL): boolean {
   if (hostname === "id.atlassian.com") {
     return path.startsWith("/login") || path.startsWith("/authorize");
   }
-  if (hostname.endsWith(".okta.com") || hostname.endsWith(".auth0.com")) {
+  if (isHostnameOrSubdomain(hostname, "okta.com") || isHostnameOrSubdomain(hostname, "auth0.com")) {
     return path.includes("/authorize") || path.includes("/login") || path.includes("/oauth2/");
   }
-  if (hostname.endsWith(".clerk.accounts.dev")) {
+  if (isHostnameOrSubdomain(hostname, "clerk.accounts.dev")) {
     return true;
   }
 
   return false;
+}
+
+function isHostnameOrSubdomain(hostname: string, domain: string): boolean {
+  return hostname === domain || hostname.endsWith(`.${domain}`);
 }
 
 function hasStrongAuthProtocolSignal(target: URL): boolean {

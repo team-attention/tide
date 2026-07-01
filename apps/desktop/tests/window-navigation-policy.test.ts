@@ -104,6 +104,42 @@ test("strong OAuth/OIDC/SAML popup URLs preserve a real popup window across prov
     ),
     true,
   );
+  assert.equal(
+    shouldPreserveAuthPopupWindow(
+      "https://okta.com/oauth2/v1/authorize?client_id=abc",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldPreserveAuthPopupWindow(
+      "https://subdomain.okta.com/oauth2/v1/authorize?client_id=abc",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldPreserveAuthPopupWindow(
+      "https://auth0.com/authorize?client_id=abc",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldPreserveAuthPopupWindow(
+      "https://tenant.auth0.com/authorize?client_id=abc",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldPreserveAuthPopupWindow(
+      "https://clerk.accounts.dev/sign-in",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldPreserveAuthPopupWindow(
+      "https://subdomain.clerk.accounts.dev/sign-in",
+    ),
+    true,
+  );
 });
 
 test("Notion popup-blocker verification preserves likely auth redirect targets, not just Google", () => {
