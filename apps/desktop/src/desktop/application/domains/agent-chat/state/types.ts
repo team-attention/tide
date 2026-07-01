@@ -90,7 +90,7 @@ export interface AgentChatShellState {
   // as a real block (then the next runs). Empty when nothing is queued.
   queuedInputs: string[];
   // Last-known context/token usage for this thread's runtime (from the provider
-  // transcript). Drives the visible usage/limit status above the composer.
+  // transcript). Rendered in Settings when reliable provider data exists.
   usage: AgentChatUsage | null;
   // Live in-flight-turn progress not carried by the chat stream
   // (agentRuntime.activityChanged): Claude Task fan-out counts (Slice B) and/or

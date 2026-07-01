@@ -104,10 +104,10 @@ test("worktree_delete_blocked_while_a_thread_runs", () => {
   assert.doesNotMatch(markup, /Keep branch/);
 });
 
-test("worktree_thread_row_keeps_delete_worktree_in_menu_not_as_direct_button", () => {
+test("worktree_thread_row_exposes_delete_worktree_as_direct_button", () => {
   const markup = renderThreadRow("/Users/you/repo.worktree/fix-login");
   assert.match(markup, /aria-label="Thread menu"/);
-  assert.doesNotMatch(markup, /aria-label="Delete worktree"/);
+  assert.match(markup, /aria-label="Delete worktree"/);
 });
 
 test("worktree_thread_menu_offers_archive_and_delete_worktree", () => {

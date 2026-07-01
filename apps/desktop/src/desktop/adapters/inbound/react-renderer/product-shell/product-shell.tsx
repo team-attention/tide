@@ -725,7 +725,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           />
         </ErrorBoundary>
         {viewModel.settingsOpen
-          ? createSettingsModal(viewModel.worktreeSettings, themePref, handlers)
+          ? createSettingsModal(viewModel.worktreeSettings, themePref, viewModel.usageByModel, handlers)
           : null}
         {quickOpenVisible ? (
           <QuickOpenPalette

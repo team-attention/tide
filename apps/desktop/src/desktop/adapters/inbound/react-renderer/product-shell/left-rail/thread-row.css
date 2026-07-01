@@ -65,10 +65,6 @@
   color: var(--tide-muted);
 }
 
-.thread-row__leading--pinned {
-  border: 0;
-}
-
 .thread-row__leading--running {
   border-color: color-mix(in srgb, var(--tide-muted) 28%, transparent);
   border-top-color: var(--tide-success);
@@ -81,10 +77,6 @@
   margin: 0 4px;
   border: 0;
   background: var(--tide-accent);
-}
-
-.thread-row__leading--live {
-  border-color: color-mix(in srgb, var(--tide-muted) 58%, transparent);
 }
 
 .thread-row__rename-input {
@@ -141,6 +133,7 @@
 .thread-row__actions {
   display: none;
   align-items: center;
+  gap: 2px;
   color: var(--tide-muted);
 }
 
@@ -167,6 +160,14 @@
 .thread-row--menu-open .thread-row__action {
   background: var(--tide-bg);
   color: var(--tide-action);
+}
+
+.thread-row__action--danger {
+  color: var(--tide-danger);
+}
+
+.thread-row__action--danger:hover {
+  color: var(--tide-danger);
 }
 
 .thread-row__confirm {

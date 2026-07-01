@@ -93,15 +93,20 @@ test("product_shell_renders_left_ui_agent_chat_composer_and_app_chrome", () => {
   assert.match(html, /aria-label="Agent Chat Top Row"/);
 });
 
-test("left_ui_renders_project_grouped_thread_rows_with_codex_style_status_markers", () => {
+test("left_ui_renders_project_grouped_thread_rows_without_default_status_markers", () => {
   const html = renderProductShell();
+  const idleRow = extractByDataAttribute(html, "data-thread-row", "thread-workbench");
+  const pinnedRow = extractByDataAttribute(html, "data-thread-row", "thread-master-plan");
+  const attentionRow = extractByDataAttribute(html, "data-thread-row", "thread-visual");
 
   assert.match(html, /Pinned/);
   assert.match(html, /Threads/);
   assert.match(html, /Chats/);
   assert.match(html, /data-left-row-kind="project"/);
   assert.match(html, /data-left-row-kind="thread"/);
-  assert.match(html, /class="thread-row__main"[^>]*>\s*<span class="thread-row__leading/);
+  assert.doesNotMatch(idleRow, /thread-row__leading/);
+  assert.doesNotMatch(pinnedRow, /thread-row__leading/);
+  assert.match(attentionRow, /thread-row__leading--attention/);
   assert.doesNotMatch(html, /class="thread-row__main"[^>]*>\s*<span class="agent-identity-icon/);
   assert.doesNotMatch(html, /project-row__count/);
 });
@@ -112,7 +117,7 @@ test("thread_rows_keep_scope_status_and_worktree_context_out_of_default_markup",
   assert.doesNotMatch(fixtureHtml, /thread-row__context-popover/);
   assert.doesNotMatch(projectRow, /aria-describedby="thread-row-context-thread-workbench"/);
   assert.match(projectRow, /aria-label="Thread menu"/);
-  assert.match(projectRow, /thread-row__leading/);
+  assert.doesNotMatch(projectRow, /thread-row__leading/);
   assert.doesNotMatch(projectRow, />Project</);
   assert.doesNotMatch(projectRow, />Status</);
   assert.doesNotMatch(projectRow, /thread-row__label/);

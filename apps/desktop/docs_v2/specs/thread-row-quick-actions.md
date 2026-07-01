@@ -26,6 +26,9 @@ the hover/focus context popover.
 - **Intended design:** `master-plan.md:120` — "Hover actions include pin and archive."
   Current state diverged from that intent (the user's screenshot shows Pin/unpin +
   Archive + Delete worktree all inside the `⋯` menu, so common actions cost an extra click).
+- **Left Rail visual foundation:** Thread Rows are one-line navigation rows and do
+  not render a default leading Thread icon. A leading status marker appears only
+  for active state that needs attention: running spinner or attention dot.
 
 ## Decisions
 
@@ -45,6 +48,9 @@ the hover/focus context popover.
 5. **Row context is not inline metadata.** Project/worktree/branch/status context is
    mounted as a hidden hover/focus popover for every thread row, then measured and
    shown as a fixed flyout when opened.
+6. **No inert leading status slot.** Running keeps the spinner and attention/unread
+   keeps the small dot, but idle, live-idle, and pinned rows render no placeholder
+   circle or leading pin marker.
 
 ### Open Questions
 
@@ -80,6 +86,7 @@ the hover/focus context popover.
 - Right-click always opens the full menu (unchanged behavior).
 - Quick-actions never overlap the `Ctrl`-held `^N` badge (precedence rule, Decision 4) —
   coordinate the right-slot rendering with `multitask-navigation` L2.
+- Idle/live-idle/pinned rows do not reserve a leading status slot.
 
 ## Tests
 
@@ -87,6 +94,8 @@ the hover/focus context popover.
   archive → `onThreadArchiveIntent` (enters confirm state).
 - pinned thread shows an Unpin affordance; unpinned shows Pin.
 - worktree thread renders Delete worktree; non-worktree does not.
+- idle/live-idle/pinned rows do not render `thread-row__leading`; running and
+  attention rows still do.
 - worktree/project context appears in the hidden hover/focus popover, not as inline
   row text.
 - right-side precedence (badge vs hover vs time) — covered jointly when multitask L2 lands.
@@ -94,8 +103,8 @@ the hover/focus context popover.
 ## Implementation Notes
 
 - **Files:** `left-rail/thread-row.tsx` (actions area: add pin + archive icon buttons,
-  delete-worktree only for worktree rows); area CSS for hover reveal + the
-  time/badge/actions precedence. `context-menu.tsx` unchanged.
+  delete-worktree only for worktree rows; leading status only for running/attention);
+  area CSS for hover reveal + the time/badge/actions precedence.
 - The **only** coupling is the row right-slot precedence
   with `multitask-navigation` L2 (number badge) — land the time↔actions↔badge slot logic
   once, shared.

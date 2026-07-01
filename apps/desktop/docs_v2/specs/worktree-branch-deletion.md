@@ -10,8 +10,8 @@ unreachable for grouped worktrees.
 
 In scope:
 - A **delete affordance in two places**: (1) the Left Rail worktree **Thread row**
-  context menu, and (2) the Composer **Worktree menu** (a trash control on each
-  existing worktree row).
+  quick action plus context menu, and (2) the Composer **Worktree menu** (a trash
+  control on each existing worktree row).
 - Any legacy Left Rail **Project row** delete affordance for a visible worktree
   Project routes through the same confirm dialog and cleanup path.
 - **Worktree + branch deleted together by default**, with a "Keep branch"
@@ -33,7 +33,9 @@ pruning stale worktrees automatically; renaming.
   `groupWorktreesByRepo` now default-on (`worktree-start-experience.md`), the
   worktree Project row is folded into its repo and no longer rendered top-level,
   so this entry is effectively unreachable.
-- Thread rows currently show only Pin/Archive in their context menu.
+- Thread rows expose Pin/Archive as direct quick actions. Worktree rows also need
+  a direct Delete worktree action that routes through the same safety dialog as
+  the full context menu item.
 - `worktreeRepoRootForCwd(cwd)` recovers the repo root from a
   `<repo>.worktree/<branch>` cwd; `tide:git-context` already returns each
   worktree's branch.
@@ -43,8 +45,9 @@ pruning stale worktrees automatically; renaming.
 ## Decisions
 
 ### D1. Two seamless entry points (user choice)
-- **Thread row**: a "Delete worktree (branch X)…" item in the worktree Thread
-  row's context menu (and the same target the row hover ⋯ opens).
+- **Thread row**: a direct trash quick action on worktree Thread rows, plus a
+  "Delete worktree (branch X)…" item in the full context menu. Both open the same
+  dialog target.
 - **Composer Worktree menu**: each existing-worktree row gets a trailing trash
   control. (The "current folder" / main worktree row has none.)
 
@@ -106,7 +109,8 @@ branchMergedArgs(repoCwd: string, branch: string): string[];              // mer
 ## Flow
 
 ### UC-1: Delete worktree + branch from a Thread row
-1. Right-click / ⋯ a worktree Thread row → "Delete worktree (branch X)…".
+1. Hover a worktree Thread row and click the trash action, or right-click / ⋯ and
+   choose "Delete worktree (branch X)…".
 2. Renderer calls `worktreeInfo(cwd)`; computes threads-here + anyRunning.
 3. If anyRunning → dialog blocks with "Stop the running agent first".
 4. Else dialog: branch name, threads-here count, **"Keep branch X"** checkbox
@@ -147,7 +151,7 @@ branchMergedArgs(repoCwd: string, branch: string): string[];              // mer
 | D3 | merged-check arg shape | `branch_merged_args_test_ancestor_of_head` |
 | D2 | dialog default deletes branch; checkbox keeps it | `worktree_delete_dialog_defaults_to_deleting_branch` (renderer state) |
 | D4 | running worktree blocks delete | `worktree_delete_blocked_while_a_thread_runs` (renderer state) |
-| D1 | worktree thread row exposes delete | `worktree_thread_row_offers_delete_worktree` (view model) |
+| D1 | worktree thread row exposes delete | `worktree_thread_row_exposes_delete_worktree_as_direct_button` (renderer) |
 | UC-3 | deleting a registered worktree project drops its registry entry and threads from the rail | `deleting_a_registered_worktree_project_removes_left_rail_project` |
 
 ## Implementation Notes
@@ -156,9 +160,9 @@ Slices:
 - **E1 — delete contract (pure + main)**: git-arg helpers + `tide:worktree-info`
   + `tide:delete-worktree` (merged-check, ordered remove-then-branch). Pure helpers
   unit-tested.
-- **E2 — sidebar dialog + thread-row menu**: a `WorktreeDeleteDialog` modal
-  (keep-branch checkbox, unmerged warning, running guard) + thread-row context-menu
-  item carrying the worktree cwd/branch.
+- **E2 — sidebar dialog + thread-row actions**: a `WorktreeDeleteDialog` modal
+  (keep-branch checkbox, unmerged warning, running guard) + thread-row quick action
+  and context-menu item carrying the worktree cwd/branch.
 - **E3 — composer worktree-menu trash**: trailing delete control on existing
   worktree rows opening the same dialog.
 

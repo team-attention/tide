@@ -1,11 +1,12 @@
 import { DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS, isProductShellAgentIdentity } from "../../../../../application/domains/product-shell/product-shell.ts";
-import type { PreferredStartComposer, ProductShellListSettings, ProductShellPinnedItemRef, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { PreferredStartComposer, ProductShellListSettings, ProductShellPinnedItemRef, ProductShellUsageModelView, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ChangeEvent, ReactElement } from "react";
 import { createIconButton } from "../chrome/chrome.tsx";
 import { getStoredPref, setStoredPref } from "../../support/ui-prefs-store.ts";
 import { buildProvidersHubViewModel } from "../../../../../application/domains/agent-chat/state/providers-hub.ts";
+import { UsageMeter } from "../../agent-chat/composer/usage-meter.tsx";
 import { X } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
@@ -159,6 +160,7 @@ const THEME_OPTIONS: { value: TideThemePreference; label: string; hint: string }
 export function createSettingsModal(
   worktree: ProductShellWorktreeSettings,
   theme: TideThemePreference,
+  usageByModel: ProductShellUsageModelView[],
   handlers: ProductShellHandlers,
 ): ReactElement {
   return (
@@ -272,6 +274,24 @@ export function createSettingsModal(
             The composer&apos;s <b>Connect a model</b> panel signs you in — it runs opencode&apos;s
             own <code>opencode auth login</code>, so terminal sign-ins carry over automatically.
           </span>
+        </section>
+        <section className="settings-modal__section">
+          <h3 className="settings-modal__section-title">Usage</h3>
+          <div className="settings-usage" role="list" aria-label="Model usage">
+            {usageByModel.length > 0 ? (
+              usageByModel.map((row) => (
+                <div key={row.key} className="settings-usage__row" role="listitem">
+                  <div className="settings-usage__identity">
+                    <span className="settings-usage__agent">{row.agentLabel}</span>
+                    <span className="settings-usage__model">{row.modelLabel}</span>
+                  </div>
+                  <UsageMeter usage={row.usage} compact popoverPlacement="below" />
+                </div>
+              ))
+            ) : (
+              <div className="settings-usage__empty">No provider usage reported yet.</div>
+            )}
+          </div>
         </section>
       </div>
     </div>

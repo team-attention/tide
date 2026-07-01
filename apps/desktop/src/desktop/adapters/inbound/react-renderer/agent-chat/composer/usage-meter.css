@@ -1,8 +1,6 @@
 /* Styles for the adjacent usage-meter component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
 
-/* Usage/limit status above the composer: visible by default, compact enough to
-   stay attached to the input, and segmented so context, 5h, and weekly windows
-   can be scanned independently. */
+/* Usage/limit status segments, reused by Settings model rows. */
 
 .agent-usage {
   position: relative;
@@ -22,11 +20,22 @@
   user-select: none;
 }
 
+.agent-usage--compact {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .agent-usage__segments {
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
   gap: 6px;
+}
+
+.agent-usage--compact .agent-usage__segments {
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
 }
 
 .agent-usage__segment {
@@ -38,6 +47,11 @@
   border: 1px solid color-mix(in srgb, var(--tide-line) 80%, transparent);
   border-radius: 7px;
   background: color-mix(in srgb, var(--tide-bg) 82%, var(--tide-surface));
+}
+
+.agent-usage--compact .agent-usage__segment {
+  padding: 5px 6px;
+  background: color-mix(in srgb, var(--tide-bg) 78%, var(--tide-surface));
 }
 
 .agent-usage__segment-head {
@@ -152,6 +166,11 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
   color: var(--tide-text);
   cursor: default;
+}
+
+.agent-usage[data-popover-placement="below"] .agent-usage__popover {
+  top: calc(100% + 6px);
+  bottom: auto;
 }
 
 .agent-usage__popover-title {
