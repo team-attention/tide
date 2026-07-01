@@ -140,7 +140,7 @@ function liveTurnActivityView(
 }
 
 // Formats raw usage into ready-to-render labels. Returns null when there is
-// nothing meaningful to show (no tokens and no context percent).
+// nothing meaningful to show (no tokens, no context percent, and no quota windows).
 function usageView(usage: AgentChatUsage | null): AgentChatUsageView | null {
   if (usage === null) {
     return null;
@@ -149,6 +149,14 @@ function usageView(usage: AgentChatUsage | null): AgentChatUsageView | null {
     usage.totalTokens !== undefined ? `${formatTokenCount(usage.totalTokens)} tokens` : undefined;
   const contextPercentLabel =
     usage.contextUsedPercent !== undefined ? `${usage.contextUsedPercent}%` : undefined;
+  const contextRemainingPercent =
+    usage.contextUsedPercent !== undefined
+      ? clampPercent(Math.round(100 - usage.contextUsedPercent))
+      : undefined;
+  const contextDetailLabel =
+    usage.totalTokens !== undefined && usage.contextWindow !== undefined
+      ? `${formatTokenCount(usage.totalTokens)} / ${formatTokenCount(usage.contextWindow)} tokens`
+      : tokensLabel;
   const rateLimits = (usage.rateLimits ?? [])
     .map(rateLimitView)
     .filter((view): view is AgentChatUsageRateLimitView => view !== undefined);
@@ -165,6 +173,13 @@ function usageView(usage: AgentChatUsage | null): AgentChatUsageView | null {
     ...(usage.contextUsedPercent !== undefined
       ? { contextUsedPercent: usage.contextUsedPercent }
       : {}),
+    ...(contextRemainingPercent !== undefined
+      ? {
+          contextRemainingPercent,
+          contextRemainingLabel: `${contextRemainingPercent}%`,
+        }
+      : {}),
+    ...(contextDetailLabel !== undefined ? { contextDetailLabel } : {}),
     ...(rateLimits.length > 0 ? { rateLimits } : {}),
   };
 }

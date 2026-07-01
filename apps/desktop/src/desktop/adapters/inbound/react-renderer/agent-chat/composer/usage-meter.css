@@ -1,34 +1,96 @@
 /* Styles for the adjacent usage-meter component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
 
-/* Context/token usage chip above the composer: quiet, right-aligned, with an
-   optional thin context-window meter. */
+/* Usage/limit status above the composer: visible by default, compact enough to
+   stay attached to the input, and segmented so context, 5h, and weekly windows
+   can be scanned independently. */
 
 .agent-usage {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin: -4px 2px -2px;
-  color: var(--tide-muted);
-  font-size: 11.5px;
-  line-height: 16px;
+  gap: 6px;
+  margin: -2px 0 -4px;
+  padding: 7px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tide-surface) 62%, var(--tide-bg));
+  color: var(--tide-text);
+  font-size: 12px;
+  line-height: 1.25;
   letter-spacing: 0;
   user-select: none;
 }
 
-/* The chip text is a button when the provider reports quota windows: clicking it
-   opens the "Usage remaining" popover. Styled to read as the same quiet chip. */
+.agent-usage__segments {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  gap: 6px;
+}
+
+.agent-usage__segment {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  padding: 6px 7px;
+  border: 1px solid color-mix(in srgb, var(--tide-line) 80%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--tide-bg) 82%, var(--tide-surface));
+}
+
+.agent-usage__segment-head {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agent-usage__segment-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-usage__segment-value {
+  flex: 0 0 auto;
+  color: var(--tide-text);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.agent-usage__segment-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Icon-only details button: the core numbers are already visible; this is for
+   the denser account-menu-style row view. */
 .agent-usage__trigger {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   margin: 0;
-  padding: 1px 4px;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
-  color: inherit;
+  color: var(--tide-muted);
   font: inherit;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
@@ -46,7 +108,7 @@
 }
 
 .agent-usage__bar {
-  width: 56px;
+  width: 100%;
   height: 4px;
   border-radius: 999px;
   background: var(--tide-line);
@@ -61,23 +123,31 @@
   transition: width 0.4s ease;
 }
 
-.agent-usage__text {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+.agent-usage__segment[data-usage-tone="ok"] .agent-usage__bar-fill {
+  background: var(--tide-success);
 }
 
-/* "Usage remaining" popover, anchored above the chip (the chip sits just above
-   the Composer, so it opens upward and right-aligned). Codex account-menu style:
+.agent-usage__segment[data-usage-tone="warn"] .agent-usage__bar-fill {
+  background: var(--tide-warn);
+}
+
+.agent-usage__segment[data-usage-tone="critical"] .agent-usage__bar-fill {
+  background: var(--tide-danger);
+}
+
+/* "Usage details" popover, anchored above the status strip (the strip sits just
+   above the Composer, so it opens upward and right-aligned). Account-menu style:
    one row per quota window — label · remaining % · reset time. */
 .agent-usage__popover {
   position: absolute;
   bottom: calc(100% + 6px);
   right: 0;
   z-index: 40;
-  min-width: 200px;
+  min-width: 260px;
+  max-width: min(420px, calc(100vw - 32px));
   padding: 8px;
   border: 1px solid var(--tide-line);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--tide-surface);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
   color: var(--tide-text);
@@ -90,12 +160,12 @@
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
 }
 
 .agent-usage__row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(70px, 1fr) auto minmax(92px, auto);
   align-items: baseline;
   gap: 12px;
   padding: 4px 6px;
@@ -119,7 +189,24 @@
 
 .agent-usage__row-reset {
   justify-self: end;
-  min-width: 56px;
+  min-width: 0;
   text-align: right;
   color: var(--tide-muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .agent-usage__segments {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .agent-usage__row {
+    grid-template-columns: minmax(62px, 1fr) auto;
+  }
+
+  .agent-usage__row-reset {
+    grid-column: 1 / -1;
+    justify-self: start;
+    text-align: left;
+  }
 }

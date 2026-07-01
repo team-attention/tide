@@ -90,7 +90,7 @@ export interface AgentChatShellState {
   // as a real block (then the next runs). Empty when nothing is queued.
   queuedInputs: string[];
   // Last-known context/token usage for this thread's runtime (from the provider
-  // transcript). Drives the quiet usage chip in the thread header.
+  // transcript). Drives the visible usage/limit status above the composer.
   usage: AgentChatUsage | null;
   // Live in-flight-turn progress not carried by the chat stream
   // (agentRuntime.activityChanged): Claude Task fan-out counts (Slice B) and/or
@@ -487,9 +487,15 @@ export interface AgentChatUsageView {
   contextPercentLabel?: string;
   // 0–100, for the meter bar fill.
   contextUsedPercent?: number;
+  // Remaining context percentage, framed the same way as provider quota windows.
+  contextRemainingPercent?: number;
+  // Pre-formatted remaining context percentage, e.g. "36%".
+  contextRemainingLabel?: string;
+  // Compact context detail, e.g. "82.4k / 256k tokens".
+  contextDetailLabel?: string;
   // Provider quota windows for the active thread, framed as REMAINING (Codex
-  // account-menu style). Drives both the compact chip summary and the popover
-  // rows (label · remaining% · reset). See usage-remaining-popover.md.
+  // account-menu style). Drives the visible segments and the popover rows
+  // (label · remaining% · reset). See usage-remaining-popover.md.
   rateLimits?: AgentChatUsageRateLimitView[];
 }
 

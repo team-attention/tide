@@ -325,7 +325,16 @@ function richTranscriptFixtureState() {
     kind: "agentRuntime.usageChanged",
     payload: {
       threadId: "thread-master-plan",
-      usage: { totalTokens: 82400, contextWindow: 256000, contextUsedPercent: 32, model: "gpt-5.5" },
+      usage: {
+        totalTokens: 82400,
+        contextWindow: 256000,
+        contextUsedPercent: 32,
+        model: "gpt-5.5",
+        rateLimits: [
+          { label: "5h", usedPercent: 18, windowMinutes: 300, resetsAt: 1782923460 },
+          { label: "Weekly", usedPercent: 71, windowMinutes: 10080, resetsAt: 1783286400 },
+        ],
+      },
     },
   });
   // Seed a couple of composer content chips so the "Add to chat" pills render.
