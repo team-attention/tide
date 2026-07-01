@@ -34,6 +34,11 @@ export type CodexProviderStateReader = (input: {
   launchOptions?: Record<string, unknown>;
 }) => Promise<CodexProviderState> | CodexProviderState;
 
+export type CodexWorkspaceWritableRootsResolver = (input: {
+  cwd: string;
+  launchOptions?: Record<string, unknown>;
+}) => Promise<string[]> | string[];
+
 export interface CodexTideMcpConfig {
   command: string;
   args: string[];
@@ -43,6 +48,7 @@ export interface CodexTideMcpConfig {
 export interface CreateCodexAgentIntegrationInput {
   resolveExecutable: CodexExecutableResolver;
   readProviderState: CodexProviderStateReader;
+  resolveWorkspaceWritableRoots?: CodexWorkspaceWritableRootsResolver;
   tideMcp?: CodexTideMcpConfig;
   defaultCwd?: string;
 }
@@ -66,12 +72,14 @@ export function createCodexAgentIntegration(
 class CodexAgentIntegration implements AgentIntegrationPort {
   private readonly resolveExecutable: CodexExecutableResolver;
   private readonly readProviderState: CodexProviderStateReader;
+  private readonly resolveWorkspaceWritableRoots?: CodexWorkspaceWritableRootsResolver;
   private readonly tideMcp?: CodexTideMcpConfig;
   private readonly defaultCwd: string;
 
   constructor(input: CreateCodexAgentIntegrationInput) {
     this.resolveExecutable = input.resolveExecutable;
     this.readProviderState = input.readProviderState;
+    this.resolveWorkspaceWritableRoots = input.resolveWorkspaceWritableRoots;
     this.tideMcp = cloneTideMcpConfig(input.tideMcp);
     this.defaultCwd = input.defaultCwd ?? ".";
   }
@@ -154,7 +162,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       ready: true,
       blockers: [],
       capabilities: codexCapabilities,
-      launchPlan: this.codexLaunchPlan({
+      launchPlan: await this.codexLaunchPlan({
         executablePath,
         cwd,
         resumeRef: undefined,
@@ -167,7 +175,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     const executablePath = (await this.resolveExecutable("codex")) ?? "codex";
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
 
-    return this.codexLaunchPlan({
+    return await this.codexLaunchPlan({
       executablePath,
       cwd,
       resumeRef: undefined,
@@ -181,7 +189,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     const executablePath = (await this.resolveExecutable("codex")) ?? "codex";
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
 
-    return this.codexLaunchPlan({
+    return await this.codexLaunchPlan({
       executablePath,
       cwd,
       resumeRef: input.providerSessionRef.value,
@@ -225,14 +233,14 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     return { kind: "live", protocolParams: params };
   }
 
-  private codexLaunchPlan(input: {
+  private async codexLaunchPlan(input: {
     executablePath: string;
     cwd: string;
     resumeRef?: string;
     launchOptions?: Record<string, unknown>;
     initialPrompt?: string;
     runtimeId?: string;
-  }): ProviderLaunchPlan {
+  }): Promise<ProviderLaunchPlan> {
     // codex spawns its MCP server with ONLY the config-declared env (it does not
     // inherit codex's own process env, unlike claude). So the Tide MCP bridge's
     // session identity (TIDE_RUNTIME_ID/TIDE_AGENT_ID) MUST be embedded in the
@@ -250,6 +258,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
             },
           };
     const env: Record<string, string> = {};
+    const workspaceWritableRoots = await this.codexWorkspaceWritableRoots(input.cwd, input.launchOptions);
     // STRUCTURED TRANSPORT: the app-server protocol over plain stdio — the same
     // protocol the Codex IDE extension speaks. Session parameters (cwd,
     // approvalPolicy, sandbox, model, reasoning effort) ride thread/start via
@@ -263,7 +272,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       ...(reasoning === "low" || reasoning === "medium" || reasoning === "high" || reasoning === "xhigh"
         ? ["-c", `model_reasoning_effort=${codexConfigString(reasoning)}`]
         : []),
-      ...codexPermissionConfigArgs(input.launchOptions),
+      ...codexPermissionConfigArgs(input.launchOptions, workspaceWritableRoots),
       ...codexConfigArgs(tideMcp),
     ];
 
@@ -275,6 +284,23 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       transport: "codex_app_server",
       protocolParams: codexThreadStartParams(input.launchOptions),
     };
+  }
+
+  private async codexWorkspaceWritableRoots(
+    cwd: string,
+    launchOptions: Record<string, unknown> | undefined,
+  ): Promise<string[]> {
+    if (this.resolveWorkspaceWritableRoots === undefined) {
+      return [];
+    }
+    try {
+      return dedupeStrings(
+        (await this.resolveWorkspaceWritableRoots({ cwd, launchOptions }))
+          .filter((root) => root.length > 0),
+      );
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -330,21 +356,41 @@ function codexConfigString(value: string): string {
 
 function codexPermissionConfigArgs(
   launchOptions: Record<string, unknown> | undefined,
+  workspaceWritableRoots: string[],
 ): string[] {
   const permission = stringValue(launchOptions?.permission);
-  if (!codexPermissionUsesWorkspaceNetwork(permission)) {
-    return [];
+  const config: string[] = [];
+  if (codexPermissionUsesWorkspaceNetwork(permission)) {
+    config.push("sandbox_workspace_write.network_access=true");
   }
-  return ["-c", "sandbox_workspace_write.network_access=true"];
+  if (codexPermissionUsesWorkspaceSandbox(permission) && workspaceWritableRoots.length > 0) {
+    config.push(
+      `sandbox_workspace_write.writable_roots=[${workspaceWritableRoots.map(codexConfigString).join(",")}]`,
+    );
+  }
+  return config.flatMap((entry) => ["-c", entry]);
 }
 
 function codexPermissionUsesWorkspaceNetwork(permission: string | undefined): boolean {
+  return codexPermissionUsesWorkspaceSandbox(permission);
+}
+
+function codexPermissionUsesWorkspaceSandbox(permission: string | undefined): boolean {
   return (
-    // Raw values persisted by older threads are normalized to "Approve for me"
-    // in the UI, so preserve that behavior in the provider launch plan too.
+    // Friendly "Ask for approval" expands to workspace-write + on-request in
+    // thread/start. Codex's workspace sandbox defaults network_access to false,
+    // so carry the same network override as legacy workspace modes or internet
+    // tools/MCP connectors fail as policy-denied DNS/network errors.
+    permission === "ask-for-approval" ||
+    // Raw values persisted by older threads are normalized by the UI; preserve
+    // compatible launch behavior in the provider plan too.
     permission === "workspace-write" ||
     permission === "on-failure"
   );
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
 }
 
 // thread/start parameters for the app-server transport: the SAME approval/

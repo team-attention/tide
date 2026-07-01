@@ -8,11 +8,12 @@ import {
   persistThreadEvents,
 } from "./live-backend-restore.ts";
 import { resolveAugmentedEnvironment } from "./resolve-shell-path.ts";
+import { worktreeRepoRootForCwd } from "../../../../shared/worktree/path.ts";
 export {
   threadSeedFromStorageRecord,
   threadStorageRecordFromThreadSummary,
 } from "./live-backend-restore.ts";
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 
 import { createHash } from "node:crypto";
 
@@ -30,7 +31,7 @@ import {
 
 import { tmpdir } from "node:os";
 
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath } from "node:path";
 
 import { fileURLToPath } from "node:url";
 
@@ -244,6 +245,7 @@ export function createLiveBackendContractMessageAdapter(
     codex: createCodexAgentIntegration({
       resolveExecutable: () => resolveExecutable("codex"),
       readProviderState: ({ cwd }) => readCodexProviderStateFromHome(homeDir, cwd, effectiveCodexHome(cwd)),
+      resolveWorkspaceWritableRoots: ({ cwd }) => resolveGitMetadataWritableRoots(cwd),
       tideMcp: {
         command: bootstrapArtifacts.tideMcpCommandPath,
         args: [],
@@ -515,6 +517,68 @@ export function backendEventsFromThreadRuntimeAsyncEvent(
 
 function liveClock(): string {
   return new Date().toISOString();
+}
+
+async function resolveGitMetadataWritableRoots(cwd: string): Promise<string[]> {
+  // Scope this sandbox widening to Tide's default worktree shape. Arbitrary git
+  // directories should keep the normal Codex sandbox until Tide records explicit
+  // worktree metadata for custom path patterns.
+  if (worktreeRepoRootForCwd(cwd) === null) {
+    return [];
+  }
+
+  const stdout = await execGitForWorkspaceRoots(cwd, [
+    "rev-parse",
+    "--git-dir",
+    "--git-common-dir",
+  ]);
+  if (stdout.length === 0) {
+    return [];
+  }
+
+  const roots = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => absolutePathFromGitOutput(cwd, line))
+    .map(realpathIfPossible)
+    .filter((root) => !pathContains(cwd, root));
+
+  return Array.from(new Set(roots));
+}
+
+function execGitForWorkspaceRoots(cwd: string, args: string[]): Promise<string> {
+  return new Promise((resolve) => {
+    execFile("git", ["-C", cwd, ...args], {
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024,
+      timeout: 2_000,
+    }, (error, stdout) => {
+      resolve(error === null ? stdout : "");
+    });
+  });
+}
+
+function absolutePathFromGitOutput(cwd: string, value: string): string {
+  return normalize(isAbsolute(value) ? value : resolvePath(cwd, value));
+}
+
+function realpathIfPossible(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+function pathContains(parent: string, child: string): boolean {
+  const normalizedParent = normalize(parent).replace(/\/+$/, "");
+  const normalizedChild = normalize(child).replace(/\/+$/, "");
+  const childRelativeToParent = relative(normalizedParent, normalizedChild);
+  return (
+    childRelativeToParent === "" ||
+    (!childRelativeToParent.startsWith("..") && !isAbsolute(childRelativeToParent))
+  );
 }
 
 

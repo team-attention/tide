@@ -197,7 +197,37 @@ test("codex_launch_plan_enables_workspace_network_for_legacy_workspace_modes", a
   assertWorkspaceNetworkNotConfigured(approveForMePlan.args);
   assertWorkspaceNetworkEnabled(legacyWorkspacePlan.args);
   assertWorkspaceNetworkEnabled(legacyApprovalPlan.args);
-  assertWorkspaceNetworkNotConfigured(askPlan.args);
+  assertWorkspaceNetworkEnabled(askPlan.args);
+});
+
+test("codex_launch_plan_adds_workspace_writable_roots_for_workspace_sandboxes", async () => {
+  const integration = codexIntegration({
+    workspaceWritableRoots: [
+      "/repo/.git/worktrees/feature",
+      "/repo/.git",
+      "/repo/.git",
+    ],
+  });
+
+  const askPlan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: { permission: "ask-for-approval" },
+  });
+  const approveForMePlan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: { permission: "approve-for-me" },
+  });
+
+  assertConfigOverride(
+    askPlan.args,
+    'sandbox_workspace_write.writable_roots=["/repo/.git/worktrees/feature","/repo/.git"]',
+  );
+  assert.equal(
+    approveForMePlan.args.some((arg) => arg.startsWith("sandbox_workspace_write.writable_roots=")),
+    false,
+  );
 });
 
 test("codex_launch_plan_maps_reasoning_effort_to_config_override", async () => {
@@ -349,6 +379,7 @@ test("provider_specific_agent_integrations_stay_under_backend_adapters", () => {
 function codexIntegration(options: {
   executablePath?: string;
   providerState?: CodexProviderState;
+  workspaceWritableRoots?: string[];
 } = {}) {
   const executablePath = Object.hasOwn(options, "executablePath")
     ? options.executablePath
@@ -357,6 +388,9 @@ function codexIntegration(options: {
   return createCodexAgentIntegration({
     resolveExecutable: async () => executablePath,
     readProviderState: async () => options.providerState ?? readyCodexState(),
+    resolveWorkspaceWritableRoots: options.workspaceWritableRoots === undefined
+      ? undefined
+      : () => options.workspaceWritableRoots ?? [],
     tideMcp: {
       command: "/tmp/tide-mcp-stdio",
       args: [],
@@ -381,11 +415,7 @@ function readyCodexState(
 }
 
 function assertWorkspaceNetworkEnabled(args: string[]): void {
-  const overrideIndex = args.findIndex(
-    (arg) => arg === "sandbox_workspace_write.network_access=true",
-  );
-  assert.ok(overrideIndex > 0, "expected workspace-write network override");
-  assert.equal(args[overrideIndex - 1], "-c");
+  assertConfigOverride(args, "sandbox_workspace_write.network_access=true");
 }
 
 function assertWorkspaceNetworkNotConfigured(args: string[]): void {
@@ -393,6 +423,12 @@ function assertWorkspaceNetworkNotConfigured(args: string[]): void {
     args.includes("sandbox_workspace_write.network_access=true"),
     false,
   );
+}
+
+function assertConfigOverride(args: string[], value: string): void {
+  const overrideIndex = args.findIndex((arg) => arg === value);
+  assert.ok(overrideIndex > 0, `expected config override: ${value}`);
+  assert.equal(args[overrideIndex - 1], "-c");
 }
 
 function findSourceMentions(relativeRoots: string[], patterns: RegExp[]): string[] {
