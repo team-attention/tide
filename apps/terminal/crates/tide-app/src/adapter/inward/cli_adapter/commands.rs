@@ -13,9 +13,10 @@ use crate::agent::notification::{
     CodexStopResolution,
 };
 use crate::pane::browser::{
-    BrowserAutomationCursor, BrowserPageElement, BrowserPageElementKind, BrowserPageMap,
-    BrowserPane, BrowserPaneScreenshot, BrowserReviewHistoryEntry, BrowserSelectionSnapshot,
-    BrowserSnapshot, BROWSER_PAGE_MAP_INTERACTABLE_LIMIT, BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES,
+    BrowserActionHistoryEntry, BrowserAutomationCursor, BrowserPageElement, BrowserPageElementKind,
+    BrowserPageMap, BrowserPane, BrowserPaneScreenshot, BrowserReviewHistoryEntry,
+    BrowserSelectionSnapshot, BrowserSnapshot, BROWSER_ACTION_HISTORY_LIMIT,
+    BROWSER_PAGE_MAP_INTERACTABLE_LIMIT, BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES,
     BROWSER_PAGE_MAP_REGION_LIMIT, BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES,
     BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES,
 };
@@ -659,6 +660,36 @@ fn browser_cursor_semantics_json() -> Value {
         "element_identity": false,
         "pointer_ownership": false,
         "human_consent": false,
+    })
+}
+
+fn browser_action_history_entry_json(entry: &BrowserActionHistoryEntry) -> Value {
+    json!({
+        "generation": entry.generation,
+        "action": entry.action.clone(),
+        "target_ref": entry.target_ref.clone(),
+        "target_label": entry.target_label.clone(),
+        "x": entry.x,
+        "y": entry.y,
+        "text_bytes": entry.text_bytes,
+        "key": entry.key.clone(),
+        "url": entry.url.clone(),
+        "dispatched": entry.dispatched,
+        "observe_after_action": entry.observe_after_action,
+    })
+}
+
+fn browser_action_history_json(browser: &BrowserPane) -> Value {
+    json!({
+        "entries": browser
+            .action_history()
+            .iter()
+            .map(browser_action_history_entry_json)
+            .collect::<Vec<_>>(),
+        "limits": {
+            "entry_limit": BROWSER_ACTION_HISTORY_LIMIT,
+            "typed_text_retained": false,
+        },
     })
 }
 
@@ -3390,6 +3421,7 @@ fn cli_browser_observe(
         "page_map": page_map,
         "selection": browser_selection_json(browser.page_selection.as_ref()),
         "automation_cursor": browser_automation_cursor_json(browser.automation_cursor()),
+        "action_history": browser_action_history_json(browser),
         "vision": vision_label,
         "screenshot": screenshot_json,
         "runtime": "tide_browser_pane",
@@ -3983,6 +4015,53 @@ fn cli_browser_action(
     if browser.automation_cursor().is_some() && cursor_motion_ms == 0 {
         browser.sync_automation_cursor_overlay();
     }
+    let history_coordinates = action_target
+        .as_ref()
+        .map(BrowserPageElement::center)
+        .or_else(|| match action {
+            "move" | "click" => {
+                let x = params.get("x").and_then(|value| value.as_f64())?;
+                let y = params.get("y").and_then(|value| value.as_f64())?;
+                Some((x, y))
+            }
+            _ => None,
+        });
+    browser.record_agent_action(BrowserActionHistoryEntry {
+        generation: browser.generation,
+        action: action.to_string(),
+        target_ref: browser_action_target_ref(&params).map(str::to_string),
+        target_label: action_target
+            .as_ref()
+            .and_then(|target| (!target.label.trim().is_empty()).then(|| target.label.clone())),
+        x: history_coordinates.map(|coordinates| coordinates.0),
+        y: history_coordinates.map(|coordinates| coordinates.1),
+        text_bytes: if action == "type" {
+            params
+                .get("text")
+                .and_then(|value| value.as_str())
+                .map(str::len)
+        } else {
+            None
+        },
+        key: if action == "press" {
+            params
+                .get("key")
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+        } else {
+            None
+        },
+        url: if action == "navigate" {
+            params
+                .get("url")
+                .and_then(|value| value.as_str())
+                .map(BrowserPane::normalize_navigation_url)
+        } else {
+            None
+        },
+        dispatched,
+        observe_after_action,
+    });
 
     Ok(json!({
         "pane_id": pane_id,

@@ -74,6 +74,8 @@ pages, use Tide Browser Pane Runtime first.
 
 Then observe the visible Browser Pane. Use `detail=compact` for routine loops
 and `detail=full` only when full snapshot text or geometry is needed.
+Read `action_history` when recovering from recent clicks, typing, or navigation;
+it records dispatch status and target refs without retaining typed text.
 
 ```json
 {

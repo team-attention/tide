@@ -564,6 +564,55 @@ fn browser_observe_compact_returns_browser_observation_summary() {
     assert_eq!(compact["page_map"]["regions"][0]["ref"], "r1");
 }
 
+#[test]
+fn browser_observe_returns_bounded_action_history_without_typed_text() {
+    // UC-12 BR-61: Browser observe returns bounded action history without retaining typed text.
+    let (mut app, browser_id, _terminal_id) = app_with_browser("https://example.com");
+    set_browser_page_map(&mut app, browser_id);
+    observe_browser(&mut app, browser_id);
+
+    app.handle_cli_command(
+        "browser-action",
+        json!({"pane_id": browser_id, "action": "type", "target_ref": "i2", "text": "secret-token"}),
+    )
+    .expect("target_ref type should be recorded");
+
+    let observed = observe_browser(&mut app, browser_id);
+    let entries = observed["action_history"]["entries"]
+        .as_array()
+        .expect("action history should be an array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["action"], "type");
+    assert_eq!(entries[0]["target_ref"], "i2");
+    assert_eq!(entries[0]["target_label"], "편하게 답변해주세요");
+    assert_eq!(
+        entries[0]["text_bytes"].as_u64(),
+        Some("secret-token".len() as u64)
+    );
+    assert!(entries[0].get("text").is_none());
+    assert_eq!(
+        observed["action_history"]["limits"]["typed_text_retained"],
+        false
+    );
+
+    for i in 0..10 {
+        app.handle_cli_command(
+            "browser-action",
+            json!({"pane_id": browser_id, "action": "move", "x": i as f64, "y": 0.0}),
+        )
+        .expect("move should be recorded without a fresh observe");
+    }
+
+    let bounded = observe_browser(&mut app, browser_id);
+    let bounded_entries = bounded["action_history"]["entries"]
+        .as_array()
+        .expect("bounded action history should be an array");
+    assert_eq!(bounded_entries.len(), 8);
+    assert_eq!(bounded_entries[0]["action"], "move");
+    assert_eq!(bounded_entries[0]["x"], 2.0);
+    assert_eq!(bounded["action_history"]["limits"]["entry_limit"], 8);
+}
+
 // --- UC-3: UseBrowserAutomationCursor ---
 
 #[test]
