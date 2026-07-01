@@ -109,9 +109,9 @@ export interface TidePreloadSurface {
   onFindIntent(listener: () => void): () => void;
   // A Browser Pane link asked to open elsewhere. Main denies ordinary popup windows
   // and forwards the URL so the renderer drives the backend open_browser path: `newPane`
-  // true (Cmd/Ctrl/middle-click, window.open) opens a new Browser Pane; false (a plain
-  // target=_blank click) navigates the active Browser Pane in place. Auth popups that
-  // need window.opener may be preserved as native child windows by Main.
+  // true (Cmd/Ctrl/middle-click) opens a new Browser Pane; false (a plain target=_blank
+  // click) navigates the active Browser Pane in place. HTTPS `new-window` popups may be
+  // preserved as native child windows by Main.
   onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
   // View-menu panel toggles (Cmd+B left rail / Cmd+E file tree / Cmd+J workbench),
   // routed from the application menu so they fire regardless of focus (webview/terminal).

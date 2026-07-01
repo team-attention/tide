@@ -108,10 +108,10 @@ declare global {
       onCloseIntent(listener: () => void): () => void;
       onFindIntent(listener: () => void): () => void;
       // A link inside a Browser Pane asked to open elsewhere — Main denies ordinary
-      // popup windows and hands the URL here. `newPane` true (Cmd/Ctrl/middle-click,
-      // window.open) opens a new Browser Pane; false (a plain target=_blank click)
-      // navigates the active Browser Pane in place. Auth popups that need window.opener
-      // may be preserved as native child windows by Main.
+      // popup windows and hands the URL here. `newPane` true (Cmd/Ctrl/middle-click)
+      // opens a new Browser Pane; false (a plain target=_blank click) navigates the
+      // active Browser Pane in place. HTTPS `new-window` popups may be preserved as
+      // native child windows by Main.
       onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
       // View-menu panel toggles (Cmd+B / Cmd+E / Cmd+J), routed from the app menu.
       onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;

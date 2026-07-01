@@ -576,11 +576,11 @@ export function WorkbenchBrowserPane(props: {
           // the popup BEFORE setWindowOpenHandler ever fires — a plain click does nothing
           // (no URL change, no spinner). With it, the app's main-process handler intercepts
           // ordinary popup URLs and routes them over IPC: foreground-tab → reuse this pane
-          // in place; background-tab / new-window (Cmd/Ctrl/Shift+click) → a new Browser Pane.
-          // Auth popups that require window.opener may be preserved as native child windows.
-          // See web-contents-created in electron-main.ts. String form ("true") because
-          // Electron only checks attribute presence (hasAttribute) and string attrs render
-          // reliably on this custom tag (as src/partition already do).
+          // in place; background-tab (Cmd/Ctrl-click) → a new Browser Pane. HTTPS new-window
+          // popups are preserved as native child windows so window.opener / window.close
+          // flows keep working. See web-contents-created in electron-main.ts. String form
+          // ("true") because Electron only checks attribute presence (hasAttribute) and
+          // string attrs render reliably on this custom tag (as src/partition already do).
           allowpopups: "true",
         })}
         {props.pane.agentDriving === true ? (

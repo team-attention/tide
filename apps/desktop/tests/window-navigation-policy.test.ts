@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   classifyTopLevelNavigation,
-  shouldPreserveAuthPopupWindow,
+  shouldPreserveBrowserPopupWindow,
 } from "../src/desktop/infrastructure/electron/main/window-navigation-policy.ts";
 
 const PACKAGED = "file:///Applications/Tide.app/Contents/Resources/app/out/renderer/index.html";
@@ -66,122 +66,53 @@ test("with no known app URL, nothing is treated as the app document", () => {
   assert.equal(classifyTopLevelNavigation("file:///whatever", undefined), "block");
 });
 
-test("Notion Google login popup URLs preserve a real popup window for opener callbacks", () => {
-  const redirectUri = encodeURIComponent(
-    "https://app.notion.com/googlepopupredirect?callbackType=popup&redirectToAuth=true&requestId=508a5d84-055b-4327-acab-b306932b4916",
-  );
-
+test("https new-window popups preserve a real child window for opener callbacks", () => {
   assert.equal(
-    shouldPreserveAuthPopupWindow(
-      `https://app.notion.com/verifyNoPopupBlockerHtmlAndRedirect?redirectUri=${redirectUri}`,
+    shouldPreserveBrowserPopupWindow(
+      "https://app.notion.com/verifyNoPopupBlockerHtmlAndRedirect?redirectUri=https%3A%2F%2Fapp.notion.com%2Fgooglepopupredirect%3FcallbackType%3Dpopup",
+      "new-window",
     ),
     true,
   );
   assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "https://app.notion.com/googlepopupredirect?callbackType=popup&requestId=508a5d84-055b-4327-acab-b306932b4916",
-    ),
-    true,
-  );
-});
-
-test("strong OAuth/OIDC/SAML popup URLs preserve a real popup window across providers", () => {
-  assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "https://auth.example.com/oauth2/v1/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&response_type=code&scope=openid",
+    shouldPreserveBrowserPopupWindow(
+      "https://auth.example.com/oauth2/v1/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&response_type=code",
+      "new-window",
     ),
     true,
   );
   assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&response_type=code",
-    ),
-    true,
-  );
-  assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "https://sso.example.com/saml/login?SAMLRequest=encoded-request&RelayState=state",
-    ),
-    true,
-  );
-  assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "https://okta.com/oauth2/v1/authorize?client_id=abc",
-    ),
-    true,
-  );
-  assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "https://subdomain.okta.com/oauth2/v1/authorize?client_id=abc",
-    ),
-    true,
-  );
-  assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "https://auth0.com/authorize?client_id=abc",
-    ),
-    true,
-  );
-  assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "https://tenant.auth0.com/authorize?client_id=abc",
-    ),
-    true,
-  );
-  assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "https://clerk.accounts.dev/sign-in",
-    ),
-    true,
-  );
-  assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "https://subdomain.clerk.accounts.dev/sign-in",
-    ),
+    shouldPreserveBrowserPopupWindow("https://example.com/popup", "new-window"),
     true,
   );
 });
 
-test("Notion popup-blocker verification preserves likely auth redirect targets, not just Google", () => {
-  const redirectUri = encodeURIComponent(
-    "https://auth.example.com/oauth2/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp.notion.com%2Fcallback&response_type=code",
-  );
-
+test("target-blank and background-tab links still route through Browser Panes", () => {
   assert.equal(
-    shouldPreserveAuthPopupWindow(
-      `https://app.notion.com/verifyNoPopupBlockerHtmlAndRedirect?redirectUri=${redirectUri}`,
-    ),
-    true,
+    shouldPreserveBrowserPopupWindow("https://example.com/popup", "foreground-tab"),
+    false,
+  );
+  assert.equal(
+    shouldPreserveBrowserPopupWindow("https://example.com/popup", "background-tab"),
+    false,
+  );
+  assert.equal(
+    shouldPreserveBrowserPopupWindow("https://example.com/popup", "default"),
+    false,
   );
 });
 
-test("regular popup links still route through Browser Panes instead of native windows", () => {
+test("non-https and malformed new-window popups do not become native child windows", () => {
   assert.equal(
-    shouldPreserveAuthPopupWindow("https://www.google.com/search?q=tide&newwindow=1"),
+    shouldPreserveBrowserPopupWindow("http://example.com/popup", "new-window"),
     false,
   );
   assert.equal(
-    shouldPreserveAuthPopupWindow("https://app.notion.com/help"),
+    shouldPreserveBrowserPopupWindow("about:blank", "new-window"),
     false,
   );
   assert.equal(
-    shouldPreserveAuthPopupWindow("https://example.com/login"),
-    false,
-  );
-  assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "http://auth.example.com/oauth2/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&response_type=code",
-    ),
-    false,
-  );
-  assert.equal(
-    shouldPreserveAuthPopupWindow(
-      "https://app.notion.com/verifyNoPopupBlockerHtmlAndRedirect?redirectUri=https%3A%2F%2Fevil.example%2Fgooglepopupredirect%3FcallbackType%3Dpopup",
-    ),
-    false,
-  );
-  assert.equal(
-    shouldPreserveAuthPopupWindow("not a url"),
+    shouldPreserveBrowserPopupWindow("not a url", "new-window"),
     false,
   );
 });

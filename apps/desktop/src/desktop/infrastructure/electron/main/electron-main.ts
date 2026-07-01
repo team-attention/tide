@@ -47,7 +47,7 @@ import {
   worktreeRepoRootForCwd,
 } from "../../../../shared/worktree/path.ts";
 
-import { classifyTopLevelNavigation, shouldPreserveAuthPopupWindow } from "./window-navigation-policy.ts";
+import { classifyTopLevelNavigation, shouldPreserveBrowserPopupWindow } from "./window-navigation-policy.ts";
 
 import {
   createFileInWorkspace,
@@ -712,11 +712,11 @@ app.on("web-contents-created", (_event, contents) => {
   // window.open, Cmd/Ctrl+click) would otherwise spawn a blank top-level
   // BrowserWindow. Deny ordinary popups and forward the URL to the renderer over
   // IPC, which drives the SAME backend open_browser path the agent and the address
-  // bar use — reliable, and it keeps backend pane state authoritative. Auth
-  // popups that require window.opener are allowed below as real child windows. The
-  // disposition picks reuse vs. new pane by the user's intent:
-  //   • Cmd/Ctrl+click & middle-click ("background-tab") and window.open / shift-click
-  //     ("new-window") explicitly want a new tab → open a NEW Browser Pane.
+  // bar use — reliable, and it keeps backend pane state authoritative. HTTPS
+  // popups with real window semantics are allowed below as child windows. The
+  // disposition picks native popup vs. pane routing by the browser semantics:
+  //   • HTTPS "new-window" popups keep a native child window so window.opener works.
+  //   • Cmd/Ctrl+click & middle-click ("background-tab") open a NEW Browser Pane.
   //   • A plain target=_blank ("foreground-tab"/other) → navigate the ACTIVE Browser
   //     Pane IN PLACE, the same as a normal link click.
   // We used to navigate the guest webContents directly with loadURL for the in-place
@@ -735,7 +735,7 @@ app.on("web-contents-created", (_event, contents) => {
         const targetWindow =
           (host !== null ? BrowserWindow.fromWebContents(host) : null) ??
           BrowserWindow.getAllWindows()[0];
-        if (shouldPreserveAuthPopupWindow(url)) {
+        if (shouldPreserveBrowserPopupWindow(url, disposition)) {
           const popupOptions: BrowserWindowConstructorOptions = {
             width: 520,
             height: 720,
