@@ -495,11 +495,14 @@ test("usage_changed_renders_context_usage_above_the_composer", () => {
     tokensLabel: "64k tokens",
     contextPercentLabel: "25%",
     contextUsedPercent: 25,
+    contextRemainingPercent: 75,
+    contextRemainingLabel: "75%",
+    contextDetailLabel: "64k / 256k tokens",
   });
   const html = renderShell(withUsage);
   assert.match(html, /class="agent-usage"/);
-  assert.match(html, /style="width:25%"/);
-  assert.match(visibleText(html), /25% context · 64k tokens/);
+  assert.match(html, /style="width:75%"/);
+  assert.match(visibleText(html), /Session\s*75% left\s*64k \/ 256k tokens/);
 });
 
 test("usage_changed_renders_codex_rate_limit_windows", () => {
@@ -538,10 +541,11 @@ test("usage_changed_renders_codex_rate_limit_windows", () => {
   // Weekly window resets show a calendar date (month name, no clock colon).
   assert.match(weekly.resetLabel ?? "", /[A-Za-z]/);
   assert.doesNotMatch(weekly.resetLabel ?? "", /:/);
-  // The chip summary uses the remaining framing and offers a popover.
+  // The visible status strip uses the remaining framing and offers a details popover.
   const html = renderShell(withUsage);
   assert.match(html, /aria-haspopup="dialog"/);
-  assert.match(visibleText(html), /5h 42% · Weekly 32%/);
+  assert.match(visibleText(html), /5h\s*42% left\s*resets/);
+  assert.match(visibleText(html), /Weekly\s*32% left\s*resets/);
 });
 
 test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", () => {
@@ -577,6 +581,9 @@ test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", (
     tokensLabel: "64k tokens",
     contextPercentLabel: "25%",
     contextUsedPercent: 25,
+    contextRemainingPercent: 75,
+    contextRemainingLabel: "75%",
+    contextDetailLabel: "64k / 256k tokens",
     // No resetsAt in this payload ⇒ no resetLabel; remaining framing (100 − used).
     rateLimits: [
       { label: "5h", remainingPercent: 42, remainingLabel: "42%" },
@@ -585,7 +592,7 @@ test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", (
   });
   assert.match(
     visibleText(renderShell(withLimits)),
-    /25% context · 64k tokens · 5h 42% · Weekly 32%/,
+    /Session\s*75% left\s*64k \/ 256k tokens\s*5h\s*42% left\s*reset unknown\s*Weekly\s*32% left\s*reset unknown/,
   );
 });
 

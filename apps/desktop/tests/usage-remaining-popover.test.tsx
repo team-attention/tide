@@ -1,7 +1,7 @@
-// Spec: docs_v2/specs/usage-remaining-popover.md — the quiet usage chip above the
-// Composer is clickable when the active thread's provider reports quota windows:
-// it opens a Codex-style "Usage remaining" popover listing each window as
-// remaining % + reset time. Outside-click and Escape close it.
+// Spec: docs_v2/specs/usage-remaining-popover.md — the usage strip above the
+// Composer shows session/context and provider quota windows inline. Its details
+// button opens a Codex-style popover listing each row as remaining % + reset time.
+// Outside-click and Escape close it.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
@@ -21,6 +21,9 @@ const dom = new JSDOM("<!doctype html><html><body></body></html>");
 const usage: AgentChatUsageView = {
   contextPercentLabel: "25%",
   contextUsedPercent: 25,
+  contextRemainingPercent: 75,
+  contextRemainingLabel: "75%",
+  contextDetailLabel: "64k / 256k tokens",
   tokensLabel: "64k tokens",
   rateLimits: [
     { label: "5h", remainingPercent: 100, remainingLabel: "100%", resetLabel: "8:31 PM" },
@@ -45,25 +48,32 @@ async function mount(): Promise<{ container: HTMLElement; unmount: () => Promise
   };
 }
 
-test("usage_chip_shows_remaining_summary_and_opens_popover_on_click", async () => {
+test("usage_strip_shows_session_and_limits_inline_and_opens_details_on_click", async () => {
   const { container, unmount } = await mount();
 
-  // Closed by default: compact remaining summary, no popover.
+  // Closed by default: session and quota windows are already visible.
   assert.equal(container.querySelector(".agent-usage__popover"), null);
+  const segments = [...container.querySelectorAll(".agent-usage__segment")];
+  assert.equal(segments.length, 3);
+  assert.match(segments[0].textContent ?? "", /Session.*75% left.*64k \/ 256k tokens/);
+  assert.match(segments[1].textContent ?? "", /5h.*100% left.*resets 8:31 PM|5h.*100% left.*resets 8:31 PM/);
+  assert.match(segments[2].textContent ?? "", /Weekly.*29% left.*resets Jun 28/);
+
   const trigger = container.querySelector<HTMLButtonElement>(".agent-usage__trigger");
-  assert.ok(trigger, "chip is a button when quota windows exist");
-  assert.match(trigger.textContent ?? "", /5h 100% · Weekly 29%/);
+  assert.ok(trigger, "details button is shown when quota details exist");
+  assert.equal(trigger.getAttribute("aria-label"), "Usage details");
   assert.equal(trigger.getAttribute("aria-expanded"), "false");
 
-  // Click → popover with one row per window (label · remaining % · reset).
+  // Click → popover with session plus one row per quota window.
   await act(async () => trigger.click());
   const popover = container.querySelector(".agent-usage__popover");
   assert.ok(popover, "popover opens on click");
-  assert.match(popover.textContent ?? "", /Usage remaining/);
+  assert.match(popover.textContent ?? "", /Usage details/);
   const rows = [...container.querySelectorAll(".agent-usage__row")];
-  assert.equal(rows.length, 2);
-  assert.match(rows[0].textContent ?? "", /5h.*100%.*8:31 PM|5h.*100%.*8:31 PM/);
-  assert.match(rows[1].textContent ?? "", /Weekly.*29%.*Jun 28/);
+  assert.equal(rows.length, 3);
+  assert.match(rows[0].textContent ?? "", /Session.*75% left.*64k \/ 256k tokens/);
+  assert.match(rows[1].textContent ?? "", /5h.*100% left.*resets 8:31 PM|5h.*100% left.*resets 8:31 PM/);
+  assert.match(rows[2].textContent ?? "", /Weekly.*29% left.*resets Jun 28/);
   assert.equal(trigger.getAttribute("aria-expanded"), "true");
 
   await unmount();

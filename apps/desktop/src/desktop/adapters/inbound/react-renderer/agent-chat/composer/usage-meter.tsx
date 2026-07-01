@@ -6,15 +6,23 @@ import { ChevronDown } from "lucide-react";
 // Popover detail: see usage-remaining-popover.md.
 
 type Usage = NonNullable<AgentChatShellViewModel["usage"]>;
+type RateLimit = NonNullable<Usage["rateLimits"]>[number];
 
-// A quiet context/token usage chip above the composer (Codex-app style): an
-// optional thin context-window meter, then the percent + token labels, then a
-// compact remaining summary of the provider's quota windows. When the active
-// thread's provider reports rate-limit windows, the chip is a button that opens
-// a "Usage remaining" popover (each window: remaining % + reset time).
+interface UsageSegmentView {
+  key: string;
+  label: string;
+  value: string;
+  detail?: string;
+  remainingPercent?: number;
+}
+
+// A visible usage/limit status strip above the composer. Context and provider
+// quota windows render as separate segments so "session", "5h", and "Weekly"
+// remaining values stay scannable without opening a menu.
 export function UsageMeter({ usage }: { usage: Usage }): ReactElement {
   const rateLimits = usage.rateLimits ?? [];
-  const hasWindows = rateLimits.length > 0;
+  const segments = usageSegments(usage, rateLimits);
+  const hasDetails = rateLimits.length > 0 || usage.contextDetailLabel !== undefined;
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -40,56 +48,128 @@ export function UsageMeter({ usage }: { usage: Usage }): ReactElement {
     };
   }, [open]);
 
-  const summary = [
-    usage.contextPercentLabel ? `${usage.contextPercentLabel} context` : undefined,
-    usage.tokensLabel,
-    ...rateLimits.map((limit) => `${limit.label} ${limit.remainingLabel}`),
-  ]
-    .filter((value): value is string => value !== undefined)
-    .join(" · ");
+  const summary = segments
+    .map((segment) => `${segment.label} ${segment.value}${segment.detail ? `, ${segment.detail}` : ""}`)
+    .join("; ");
 
   return (
-    <div className="agent-usage" aria-label="Usage" ref={rootRef}>
-      {usage.contextUsedPercent !== undefined ? (
-        <span className="agent-usage__bar" aria-hidden>
-          <span
-            className="agent-usage__bar-fill"
-            style={{ width: `${Math.max(2, Math.min(100, usage.contextUsedPercent))}%` }}
-          />
-        </span>
-      ) : null}
-      {hasWindows ? (
+    <div className="agent-usage" aria-label={`Usage limits: ${summary}`} ref={rootRef}>
+      <div className="agent-usage__segments">
+        {segments.map((segment) => (
+          <UsageSegment segment={segment} key={segment.key} />
+        ))}
+      </div>
+      {hasDetails ? (
         <button
           type="button"
           className="agent-usage__trigger"
+          title="Usage details"
+          aria-label="Usage details"
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
         >
-          <span className="agent-usage__text">{summary}</span>
           <ChevronDown size={12} aria-hidden className="agent-usage__chevron" />
         </button>
-      ) : (
-        <span className="agent-usage__text">{summary}</span>
-      )}
-      {open && hasWindows ? <UsagePopover rateLimits={rateLimits} /> : null}
+      ) : null}
+      {open && hasDetails ? <UsagePopover usage={usage} rateLimits={rateLimits} /> : null}
     </div>
   );
 }
 
-function UsagePopover({ rateLimits }: { rateLimits: NonNullable<Usage["rateLimits"]> }): ReactElement {
+function UsageSegment({ segment }: { segment: UsageSegmentView }): ReactElement {
+  const tone = usageTone(segment.remainingPercent);
   return (
-    <div className="agent-usage__popover" role="dialog" aria-label="Usage remaining">
-      <div className="agent-usage__popover-title">Usage remaining</div>
+    <div className="agent-usage__segment" data-usage-tone={tone}>
+      <div className="agent-usage__segment-head">
+        <span className="agent-usage__segment-label">{segment.label}</span>
+        <span className="agent-usage__segment-value">{segment.value}</span>
+      </div>
+      {segment.detail ? <div className="agent-usage__segment-detail">{segment.detail}</div> : null}
+      {segment.remainingPercent !== undefined ? (
+        <span className="agent-usage__bar" aria-hidden>
+          <span
+            className="agent-usage__bar-fill"
+            style={{ width: `${Math.max(2, Math.min(100, segment.remainingPercent))}%` }}
+          />
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function UsagePopover({
+  usage,
+  rateLimits,
+}: {
+  usage: Usage;
+  rateLimits: NonNullable<Usage["rateLimits"]>;
+}): ReactElement {
+  return (
+    <div className="agent-usage__popover" role="dialog" aria-label="Usage details">
+      <div className="agent-usage__popover-title">Usage details</div>
+      {usage.contextRemainingLabel ? (
+        <div className="agent-usage__row">
+          <span className="agent-usage__row-label">Session</span>
+          <span className="agent-usage__row-value">{`${usage.contextRemainingLabel} left`}</span>
+          <span className="agent-usage__row-reset">
+            {usage.contextDetailLabel ?? usage.tokensLabel ?? ""}
+          </span>
+        </div>
+      ) : null}
       {rateLimits.map((limit, index) => (
         <div className="agent-usage__row" key={`${limit.label}-${index}`}>
           <span className="agent-usage__row-label">{limit.label}</span>
-          <span className="agent-usage__row-value">{limit.remainingLabel}</span>
+          <span className="agent-usage__row-value">{`${limit.remainingLabel} left`}</span>
           {limit.resetLabel ? (
-            <span className="agent-usage__row-reset">{limit.resetLabel}</span>
+            <span className="agent-usage__row-reset">{`resets ${limit.resetLabel}`}</span>
           ) : null}
         </div>
       ))}
     </div>
   );
+}
+
+function usageSegments(usage: Usage, rateLimits: RateLimit[]): UsageSegmentView[] {
+  const segments: UsageSegmentView[] = [];
+  if (usage.contextRemainingLabel !== undefined) {
+    segments.push({
+      key: "session",
+      label: "Session",
+      value: `${usage.contextRemainingLabel} left`,
+      detail: usage.contextDetailLabel ?? (
+        usage.contextPercentLabel !== undefined ? `${usage.contextPercentLabel} used` : undefined
+      ),
+      remainingPercent: usage.contextRemainingPercent,
+    });
+  } else if (usage.tokensLabel !== undefined) {
+    segments.push({
+      key: "tokens",
+      label: "Tokens",
+      value: usage.tokensLabel,
+    });
+  }
+  for (const [index, limit] of rateLimits.entries()) {
+    segments.push({
+      key: `limit-${limit.label}-${index}`,
+      label: limit.label,
+      value: `${limit.remainingLabel} left`,
+      detail: limit.resetLabel ? `resets ${limit.resetLabel}` : "reset unknown",
+      remainingPercent: limit.remainingPercent,
+    });
+  }
+  return segments;
+}
+
+function usageTone(percent: number | undefined): "neutral" | "ok" | "warn" | "critical" {
+  if (percent === undefined) {
+    return "neutral";
+  }
+  if (percent <= 10) {
+    return "critical";
+  }
+  if (percent <= 25) {
+    return "warn";
+  }
+  return "ok";
 }
