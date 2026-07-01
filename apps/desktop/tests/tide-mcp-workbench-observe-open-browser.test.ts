@@ -26,6 +26,7 @@ import {
   type ThreadRuntimeAsyncEvent,
   type ThreadSeed,
 } from "../src/backend/application/services/thread/thread-runtime-service.ts";
+import { BROWSER_ACTION_PENDING_TTL_MS } from "../src/backend/application/services/workbench/workbench-browser-operations.ts";
 import type {
   WorkbenchTerminalHandle,
   WorkbenchTerminalOutput,
@@ -629,6 +630,62 @@ test("act_does_not_remint_revision_and_a_settled_acts_prior_revision_is_auto_ret
     input: { paneId, revision: revA, action: "click_at", x: 30, y: 40 },
   });
   assert.equal(retried.ok, true);
+});
+
+test("stale_pending_browser_action_is_failed_and_the_next_action_is_queued", async () => {
+  // Spec: docs_v2/specs/browser-pane-action-liveness.md (D4). If the Desktop renderer
+  // loses an action result entirely, the backend watchdog must not keep refusing later
+  // browser actions with "already has a pending action" forever.
+  let currentTimeMs = Date.parse(now);
+  const service = createThreadRuntimeService({
+    browserCapturePullTimeoutMs: 20,
+    ...createFakes().ports,
+    clock: () => new Date(currentTimeMs).toISOString(),
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-stale-pending", {
+        activeRuntimeHandle: runtimeHandle("thread-stale-pending", "runtime-stale-pending"),
+        runtimeState: "running",
+      }),
+    ],
+  });
+  const opened = await openBrowser(
+    service,
+    "runtime-stale-pending",
+    "https://example.test/pending",
+  );
+  const paneId = opened.output.pane.paneId;
+  const revision = opened.output.pane.revision;
+
+  const first = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-stale-pending", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: { paneId, revision, action: "click_at", x: 10, y: 20 },
+  });
+  assert.equal(first.ok, true);
+  const firstActionId =
+    first.ok && first.output.kind === "act_browser" ? first.output.action.actionId : "";
+
+  currentTimeMs += BROWSER_ACTION_PENDING_TTL_MS + 1;
+  const second = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-stale-pending", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: { paneId, revision, action: "click_at", x: 30, y: 40 },
+  });
+
+  assert.equal(second.ok, true);
+  assert.equal(
+    second.ok && second.output.kind === "act_browser" && second.output.pane.lastAction?.actionId,
+    firstActionId,
+  );
+  assert.equal(
+    second.ok && second.output.kind === "act_browser" && second.output.pane.lastAction?.status,
+    "failed",
+  );
+  assert.equal(
+    second.ok && second.output.kind === "act_browser" && second.output.pane.pendingAction?.x,
+    30,
+  );
 });
 
 test("navigation_advances_revision_and_the_stale_error_carries_the_current_one", async () => {

@@ -350,7 +350,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   {
     name: "tide_act_browser",
     description:
-      "Operate an open Tide Browser Pane like a human (hybrid). Coordinate computer-use actions move the cursor and drive the live page via real input events: move_to/click_at (x,y; click_at takes optional button and clickCount), scroll (x,y,deltaX,deltaY), key (keys like \"Enter\" or \"Cmd+A\"), and type (text into the focused element). Selector actions click/type_text (selector, text) are the reliability fallback. Coordinates are the Browser Pane's CSS pixels.",
+      "Operate an open Tide Browser Pane like a human (hybrid). Coordinate computer-use actions move the cursor and drive the live page via real input events: move_to/click_at (x,y; click_at takes optional button and clickCount), scroll (x,y,deltaX,deltaY), key (keys like \"Enter\" or \"Cmd+A\"), and type (text into the focused element). Selector actions click/type_text (selector, text) are the reliability fallback. Coordinates are screenshot pixels from the latest tide_observe_browser image; Tide converts them to webview CSS pixels.",
     inputSchema: {
       type: "object",
       properties: {

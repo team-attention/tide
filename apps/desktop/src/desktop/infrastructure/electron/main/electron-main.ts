@@ -9,6 +9,7 @@ import { registerNotificationBridge } from "./notifications.ts";
 import { registerAutoUpdate, logUpdateEvent } from "./auto-update.ts";
 import { readUiPrefs, saveUiPref } from "./ui-prefs.ts";
 import { readInitialThreadListSnapshot } from "./thread-list-snapshot.ts";
+import { registerProviderCommandIpc } from "./provider-command-ipc.ts";
 import {
   app,
   BrowserWindow,
@@ -26,14 +27,9 @@ import { basename, dirname, join } from "node:path";
 
 import { readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
 
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 
 import { execFile } from "node:child_process";
-
-import {
-  discoverProviderCommands,
-  type CommandFs,
-} from "./provider-command-discovery.ts";
 
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -516,47 +512,7 @@ ipcMain.handle("tide:delete-branch", async (_event, cwd: unknown, branch: unknow
   return { deleted, branch };
 });
 
-// Real provider slash-commands/skills for a cwd, read from the providers' files
-// (no provider spawn). See docs_v2/specs/provider-command-discovery.md.
-const commandDiscoveryFs: CommandFs = {
-  listFiles: (dir) => {
-    try {
-      return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name);
-    } catch {
-      return [];
-    }
-  },
-  listDirs: (dir) => {
-    try {
-      return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
-    } catch {
-      return [];
-    }
-  },
-  readText: (path) => {
-    try {
-      return readFileSync(path, "utf8");
-    } catch {
-      return undefined;
-    }
-  },
-};
-
-// Instant, offline first paint for the composer command menu: the cwd's command
-// + skill FILES (no provider spawn). The agent's REAL full command set replaces
-// this when the backend's handshake probe returns (provider.discoverCommands →
-// agentRuntime.commandsChanged). See docs_v2/specs/live-provider-command-mirroring.md.
-ipcMain.handle("tide:list-commands", (_event, cwd: unknown, agentId: unknown) => {
-  if (typeof cwd !== "string" || cwd.length === 0 || typeof agentId !== "string") {
-    return [];
-  }
-  return discoverProviderCommands({
-    cwd,
-    homeDir: app.getPath("home"),
-    agentId,
-    fs: commandDiscoveryFs,
-  });
-});
+registerProviderCommandIpc();
 
 ipcMain.handle("tide:backend-command", async (_event, command: BackendCommandEnvelope) => {
   const validatedCommand = validateBackendCommandEnvelope(command);

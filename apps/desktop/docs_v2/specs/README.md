@@ -36,6 +36,7 @@ Each spec must be narrow enough to test and implement as one slice.
 | [Provider Signal Spool Ingress](provider-signal-spool-ingress.md) | Drafted | Read runtime-scoped provider hook spool records and route supported Prompt State into Backend events. |
 | [Direct API Agent Runtime](tide-api-agent-runtime.md) | Removed | Historical note: the direct API Agent runtime path was removed; Provider CLI Agents are canonical. |
 | [Direct API Agent Tool Calls](tide-api-agent-tool-calls.md) | Removed | Historical note: Tide MCP tools are exposed through provider CLI MCP, not a direct API Agent runtime. |
+| [Agent Chat File Link Routing](agent-chat-file-link-routing.md) | Drafted | Route local file links in Agent Chat markdown into Workbench Editor Pane open commands. |
 | [Tide MCP File Workbench Tools](tide-mcp-file-workbench-tools.md) | Drafted | Let Agents read bounded file state and open visible Editor Panes through Tide-owned Workbench tools. |
 | [Tide MCP File Edit And Diff Tools](tide-mcp-file-edit-diff-tools.md) | Drafted | Let Agents apply exact file replacements and expose bounded Diff Panes through Tide-owned Workbench tools. |
 | [Tide MCP Open Terminal Tool](tide-mcp-open-terminal-tool.md) | Drafted | Let Agents open visible interactive Terminal Panes through Tide-owned Workbench tools. |

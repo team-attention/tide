@@ -13,19 +13,20 @@ const markdown = new MarkdownIt({
   breaks: true,
 });
 
-// Agents often link to repo files as [name](file:///abs/path). markdown-it blocks
-// file: links by default; allow them and render them as Workbench file-open links
-// (the same data-open-file the tool chips use) instead of navigating anchors.
+// Agents often link to repo files as [name](file:///abs/path) or Codex-style
+// [name](/abs/path:line). Render them as Workbench file-open links (the same
+// data-open-file the tool chips use) instead of navigating anchors.
 const defaultValidateLink = markdown.validateLink.bind(markdown);
 
 markdown.validateLink = (url: string) =>
-  url.startsWith("file://") || defaultValidateLink(url);
+  url.startsWith("file://") || isPosixAbsoluteHref(url) || defaultValidateLink(url);
 
 markdown.renderer.rules.link_open = (tokens, index, options, _env, self) => {
   const token = tokens[index];
   const href = token.attrGet("href");
-  if (href && href.startsWith("file://")) {
-    token.attrSet("data-open-file", decodeURIComponent(href.slice("file://".length)));
+  const fileLink = parseFileOpenHref(href);
+  if (fileLink !== null) {
+    token.attrSet("data-open-file", fileLink.path);
     token.attrSet("class", "md-file-link");
     token.attrSet("href", "#");
   } else if (href && (href.startsWith("http://") || href.startsWith("https://"))) {
@@ -37,6 +38,39 @@ markdown.renderer.rules.link_open = (tokens, index, options, _env, self) => {
   }
   return self.renderToken(tokens, index, options);
 };
+
+function parseFileOpenHref(href: string | null): { path: string } | null {
+  if (href === null || href.length === 0) {
+    return null;
+  }
+  const rawPath = href.startsWith("file://")
+    ? href.slice("file://".length)
+    : isPosixAbsoluteHref(href)
+      ? href
+      : null;
+  if (rawPath === null) {
+    return null;
+  }
+  const path = stripLineSuffix(safeDecodeUriComponent(rawPath));
+  return path.length > 0 ? { path } : null;
+}
+
+function isPosixAbsoluteHref(href: string): boolean {
+  return href.startsWith("/") && !href.startsWith("//");
+}
+
+function stripLineSuffix(path: string): string {
+  const match = path.match(/^(.*):[1-9]\d*(?::\d+)?$/);
+  return match?.[1] !== undefined && match[1].length > 0 ? match[1] : path;
+}
+
+function safeDecodeUriComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
 
 // Codex-style fenced code blocks: a header with the language label + a Copy
 // button, then the syntax-highlighted code. Copy is handled by event delegation

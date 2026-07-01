@@ -136,8 +136,9 @@ export interface BrowserPaneActionResult extends BrowserPaneActionRequest {
 
 // Pixel vision: a captured raster image of the rendered <webview> page, surfaced to the
 // Agent as an MCP image content block via tide_observe_browser mode=screenshot|both.
-// data is base64; coordinates the agent picks are viewport CSS px (devicePixelRatio
-// reports the pixel-to-CSS ratio). See docs_v2/specs/browser-pane-agent-computer-use.md.
+// data is base64; coordinates the agent picks are screenshot pixels, with
+// devicePixelRatio reporting the screenshot-pixel to CSS-pixel ratio. See
+// docs_v2/specs/browser-pane-agent-computer-use.md.
 export interface BrowserPaneScreenshot {
   data: string;
   mimeType: "image/png" | "image/jpeg";
