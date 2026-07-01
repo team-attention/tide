@@ -55,13 +55,19 @@ test("pinned_thread_row_shows_unpin_quick_action", () => {
   assert.doesNotMatch(markup, /aria-label="Pin"/);
 });
 
-test("pinned_worktree_thread_row_shows_repo_and_worktree_context", () => {
+test("pinned_worktree_thread_row_exposes_repo_and_worktree_in_hover_context", () => {
   const markup = renderRow(true, "/Users/you/repo.worktree/feature-x");
-  assert.match(markup, /repo \/ feature-x/);
+  assert.match(markup, /id="thread-row-context-t1"/);
+  assert.match(markup, /class="thread-row__context-popover"[^>]*hidden/);
+  assert.match(markup, />Project</);
+  assert.match(markup, />repo</);
+  assert.match(markup, />Worktree</);
+  assert.match(markup, />feature-x</);
   assert.match(markup, /title="\/Users\/you\/repo\.worktree\/feature-x"/);
+  assert.doesNotMatch(markup, /repo \/ feature-x/);
 });
 
-test("pinned_thread_row_scope_label_handles_windows_paths", () => {
+test("pinned_thread_row_scope_context_handles_windows_paths", () => {
   const markup = renderRow(true, "C:\\Users\\you\\repo");
   assert.match(markup, /p1 \/ repo/);
   assert.doesNotMatch(markup, /p1 \/ C:\\Users\\you\\repo/);
