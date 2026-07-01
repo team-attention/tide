@@ -7,6 +7,7 @@ import { activeSurfaceThreadId, agentBindingForShellAgent, cloneLaunchOptions, c
 import { applyAppChromeBackendEvent, createAppChromeState } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
+import { restorablePreservedChat } from "./preserved-agent-chat.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
 // External Sessions (agent sessions Tide did not start) are surfaced by backend
@@ -504,19 +505,6 @@ export function deleteWorktreeAndRefocus(
     state: refocusStartComposerIfActiveDropped(state, archived.state),
     commands: archived.commands,
   };
-}
-
-// A background entry seeded ONLY by a data event (prompt.changed / agentRuntime.stateChanged)
-// is a stub: agentChat.thread === null, holding the live card/state but no transcript or
-// thread header. Restoring it on open would render it as fully-loaded — skipping the loading
-// skeleton and flashing a blank/Start-Composer chat until the hydrate round-trip arrives.
-// Treat such a stub as "no preserved state" so the skeleton shows; thread.hydrated (which
-// carries the card too) then fills the real view. A genuinely-opened thread's entry has
-// thread !== null and restores instantly as before.
-function restorablePreservedChat(
-  entry: AgentChatShellState | undefined,
-): AgentChatShellState | undefined {
-  return entry?.thread != null ? entry : undefined;
 }
 
 // Clears the renderer-only unread marker when the user opens/focuses a thread.

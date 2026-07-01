@@ -8,7 +8,8 @@ import { environmentContextValue, launchOptionsForState } from "./launch-options
 export function createAgentChatShellViewModel(
   state: AgentChatShellState,
 ): AgentChatShellViewModel {
-  const chatState = deriveChatState(state);
+  const visibleBlocks = visibleBlocksForState(state);
+  const chatState = deriveChatState(state, visibleBlocks);
   return {
     chatState,
     runtimeState: state.runtimeState,
@@ -40,8 +41,8 @@ export function createAgentChatShellViewModel(
         }
       : undefined,
     prompt: state.promptState,
-    blocks: state.blocks.map(toBlockView),
-    checklist: deriveChecklist(state.blocks),
+    blocks: visibleBlocks.map(toBlockView),
+    checklist: deriveChecklist(visibleBlocks),
     composer: {
       mode: state.thread ? "follow_up" : "start",
       draft: state.composer.draft,
@@ -76,7 +77,7 @@ export function createAgentChatShellViewModel(
     workbenchOpen: state.workbenchOpen,
     queuedInputs: state.queuedInputs,
     usage: usageView(state.usage),
-    liveActivity: liveTurnActivityView(state, chatState),
+    liveActivity: liveTurnActivityView(state, chatState, visibleBlocks),
     errorMessage: state.errorMessage,
   };
 }
@@ -94,6 +95,7 @@ const AGENT_TOOL_TITLES = new Set(["task", "agent"]);
 function liveTurnActivityView(
   state: AgentChatShellState,
   chatState: AgentChatState,
+  blocks: AgentChatBlock[],
 ): LiveTurnActivityView | undefined {
   if (chatState !== "running") {
     return undefined;
@@ -117,7 +119,7 @@ function liveTurnActivityView(
     const done = state.liveActivityEnrichment?.planCompleted ?? 0;
     return { summaryLabel: `${done}/${planTotal} steps` };
   }
-  const inFlight = state.blocks.filter(
+  const inFlight = blocks.filter(
     (block) =>
       block.role === "tool" && (block.status === "pending" || block.status === "streaming"),
   );
@@ -291,7 +293,10 @@ function mostRecentFeedback(
     .sort((a, b) => b.at - a.at)[0];
 }
 
-function deriveChatState(state: AgentChatShellState): AgentChatState {
+function deriveChatState(
+  state: AgentChatShellState,
+  visibleBlocks: AgentChatBlock[],
+): AgentChatState {
   if (state.providerReadiness && !state.providerReadiness.ready) {
     return "provider_not_ready";
   }
@@ -319,10 +324,18 @@ function deriveChatState(state: AgentChatShellState): AgentChatState {
   // Still loading this thread's blocks from the backend (set on optimistic open,
   // cleared when the real hydrate returns). A preserved thread restored on switch-
   // back is not hydrating, so it renders instantly with no skeleton.
-  if (state.hydrating && state.blocks.length === 0) {
+  if (state.hydrating && visibleBlocks.length === 0) {
     return "hydrating";
   }
   return "ready";
+}
+
+function visibleBlocksForState(state: AgentChatShellState): AgentChatBlock[] {
+  const threadId = state.thread?.threadId;
+  if (threadId === undefined) {
+    return state.blocks;
+  }
+  return state.blocks.filter((block) => block?.threadId === threadId);
 }
 
 // The agent's live checklist = the latest "plan" block's entries. Providers re-emit

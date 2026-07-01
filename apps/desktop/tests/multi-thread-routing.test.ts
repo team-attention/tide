@@ -205,6 +205,41 @@ test("clicking another thread switches focus even while a thread is running", ()
   assert.equal((state.agentChat.thread as { threadId?: string } | null)?.threadId, "thread-b");
 });
 
+test("a stale interrupted block does not restore into another thread", () => {
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = applyProductShellBackendEvent(
+    state,
+    hydrated("thread-b", "codex", [
+      {
+        blockId: "a-stream",
+        threadId: "thread-a",
+        role: "agent",
+        kind: "agent_message",
+        status: "streaming",
+        body: "interrupted text",
+      },
+      {
+        blockId: "b-complete",
+        threadId: "thread-b",
+        role: "agent",
+        kind: "agent_message",
+        status: "complete",
+        body: "thread b text",
+      },
+    ]),
+    "broadcast",
+  );
+
+  state = clickThread(state, "thread-b");
+
+  assert.equal(state.agentChat.thread?.threadId, "thread-b");
+  assert.deepEqual(
+    state.agentChat.blocks.map((block: { body?: string }) => block.body),
+    ["thread b text"],
+  );
+});
+
 test("a background thread's running state shows in the rail without stealing focus", () => {
   let state = createProductShellState({ includeFixtureData: false });
   state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));

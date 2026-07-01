@@ -71,7 +71,7 @@ const PINNED_MAX: Record<string, number> = {
   // thread finishes off-focus), threaded through openProductShellThread /
   // openProductShellThreadFromLeftRail / applyProductShellThreadEvent. This file was at 787
   // (under cap) on main; the unread state tipped it over. The thread-list split is the real fix.
-  "desktop/application/domains/product-shell/state/thread-list.ts": 836,
+  "desktop/application/domains/product-shell/state/thread-list.ts": 824,
 };
 
 function listSourceFiles(dir: string): string[] {

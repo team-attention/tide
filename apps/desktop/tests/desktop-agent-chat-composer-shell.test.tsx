@@ -472,6 +472,7 @@ test("transcript_has_bottom_scroll_buffer_for_the_docked_composer", () => {
   assert.match(css, /--agent-session-bottom-buffer:\s*96px/);
   assert.match(css, /\.agent-session\s*{[^}]*scroll-padding-bottom:\s*var\(--agent-session-bottom-buffer\)/s);
   assert.match(css, /\.agent-session--has-turns\s*{[^}]*padding:\s*6px 0 var\(--agent-session-bottom-buffer\)/s);
+  assert.match(css, /\.agent-session\[data-chat-state="running"\][\s\S]*data-block-status="streaming"[\s\S]*::after/);
 });
 
 test("usage_changed_renders_context_usage_above_the_composer", () => {
@@ -1437,6 +1438,30 @@ test("the_working_indicator_is_hidden_while_the_agent_answer_streams", () => {
   );
 
   assert.ok(!renderShell(streaming).includes("agent-session-turn--working"));
+  assert.match(renderShell(streaming), /data-chat-state="running"/);
+});
+
+test("agent_session_filters_blocks_to_the_current_thread", () => {
+  // A stale streamed block from an interrupted turn must never follow the user
+  // into a different thread/session.
+  const state = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", {
+      thread,
+      runtimeState: "idle",
+      blocks: [
+        { ...block("leaked", "streaming", "wrong thread"), threadId: "other-thread" },
+        block("current", "complete", "right thread"),
+      ],
+    }),
+  );
+
+  const view = createAgentChatShellViewModel(state);
+  const html = renderShell(state);
+
+  assert.deepEqual(view.blocks.map((entry) => entry.body), ["right thread"]);
+  assert.match(html, /right thread/);
+  assert.doesNotMatch(html, /wrong thread/);
 });
 
 test("an attached image renders as a thumbnail, not the raw '[Attached image: path]'", () => {

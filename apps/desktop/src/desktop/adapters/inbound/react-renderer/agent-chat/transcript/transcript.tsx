@@ -51,6 +51,7 @@ export function createAgentSession(
       className={`agent-session${showsEmptyPlaceholder ? "" : " agent-session--has-turns"}`}
       aria-label="Agent Session"
       data-session-state={blocks.length === 0 ? "empty" : "turns"}
+      data-chat-state={chatState}
       // Event-delegated clicks: Copy a code block, or open a file chip.
       onClick={(event: { target: EventTarget | null; preventDefault: () => void; metaKey?: boolean; ctrlKey?: boolean }) => {
         const target = event.target instanceof Element ? event.target : null;

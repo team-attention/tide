@@ -1,6 +1,5 @@
 import type { ThreadRecord } from "../../domains/thread/thread.ts";
 import type {
-  TerminalPaneState,
   WorkbenchLayoutMode,
   WorkbenchPaneSnapshotRef,
 } from "../../domains/workbench/workbench.ts";
@@ -373,13 +372,6 @@ export class WorkbenchExecOperations {
     const command = optionalString(input?.command) ?? this.defaultWorkbenchTerminalCommand;
     const args =
       input?.args === undefined ? [...this.defaultWorkbenchTerminalArgs] : arrayOfStrings(input.args);
-    const existingPane = thread.workbench.panes.find(
-      (pane): pane is TerminalPaneState =>
-        pane.kind === "terminal" &&
-        pane.expectedCompletion === undefined &&
-        pane.command === command &&
-        pane.cwd === resolvedCwd.cwd.cwd,
-    );
     const pane = this.workbenchRuntime.openWorkbenchTerminal(thread, {
       command,
       args,
@@ -399,7 +391,7 @@ export class WorkbenchExecOperations {
         command,
         args,
         cwd: resolvedCwd.cwd.cwd,
-        visibleSideEffect: existingPane === undefined ? "created" : "revealed",
+        visibleSideEffect: "created",
       },
     };
   }

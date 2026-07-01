@@ -1260,6 +1260,37 @@ test("opening_terminal_from_mcp_creates_running_terminal_pane", async () => {
   assert.deepEqual(fakes.runtime.events, []);
 });
 
+test("opening_terminal_from_mcp_twice_creates_two_terminal_panes", async () => {
+  const fakes = createFakes();
+  const service = serviceWithActiveThread(
+    "thread-open-terminal-two",
+    "runtime-open-terminal-two",
+    fakes,
+  );
+
+  const first = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-open-terminal-two", agentId: "codex" },
+    toolName: "tide_open_terminal",
+    input: { command: "zsh", cwd: "tools" },
+  });
+  const second = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-open-terminal-two", agentId: "codex" },
+    toolName: "tide_open_terminal",
+    input: { command: "zsh", cwd: "tools" },
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.equal(first.ok && first.output.visibleSideEffect, "created");
+  assert.equal(second.ok && second.output.visibleSideEffect, "created");
+  assert.notEqual(
+    first.ok && first.output.pane.paneId,
+    second.ok && second.output.pane.paneId,
+  );
+  assert.equal(second.ok && second.thread.workbench.panes.length, 2);
+  assert.equal(fakes.workbenchTerminal.starts.length, 2);
+});
+
 test("running_terminal_command_with_nonzero_exit_returns_failed_result", async () => {
   // Spec: docs_v2/specs/tide-mcp-terminal-command-tool.md
   const fakes = createFakes({
