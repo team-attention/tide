@@ -37,7 +37,7 @@ already run locally.
 
 Download Tide. Star the repo.
 
-In case you just really like terminals and all of those splitted panes, we also have [Tide Terminal](apps/terminal/)
+If you just really like terminals and all of those split panes, we also have [Tide Terminal](apps/terminal/).
 
 ## Install
 
