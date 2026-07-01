@@ -75,6 +75,7 @@ export function createLeftRail(
               className="left-rail-search__clear"
               type="button"
               aria-label="Clear thread search"
+              onMouseDown={(event: { preventDefault: () => void }) => event.preventDefault()}
               onClick={() => handlers.onSearchQueryChange("")}
             >
               <X size={13} strokeWidth={2} aria-hidden />

@@ -138,7 +138,10 @@ function createThreadLeadingStatus(
   thread: ProductShellThreadView,
   showAttention: boolean,
 ): ReactElement {
-  if (thread.pinned === true) {
+  const isRunning = thread.running === true && !showAttention;
+  const isLive = thread.running !== true && !showAttention && thread.live === true;
+
+  if (thread.pinned === true && !isRunning && !showAttention && !isLive) {
     return (
       <span className="thread-row__leading thread-row__leading--pinned" aria-hidden>
         <Pin size={14} strokeWidth={1.8} />
@@ -147,9 +150,9 @@ function createThreadLeadingStatus(
   }
   const className = [
     "thread-row__leading",
-    thread.running && !showAttention ? "thread-row__leading--running" : "",
+    isRunning ? "thread-row__leading--running" : "",
     showAttention ? "thread-row__leading--attention" : "",
-    !thread.running && !showAttention && thread.live ? "thread-row__leading--live" : "",
+    isLive ? "thread-row__leading--live" : "",
   ]
     .filter(Boolean)
     .join(" ");

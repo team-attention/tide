@@ -628,10 +628,15 @@ test("search_query_filters_threads_by_title_in_the_left_ui", () => {
 test("left_ui_search_is_a_stable_inline_field", () => {
   // Spec: docs_v2/specs/desktop-product-shell-visual-foundation.md
   const resting = renderProductShell();
+  const leftRailSource = fs.readFileSync(
+    path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/product-shell/left-rail/left-rail.tsx"),
+    "utf8",
+  );
   assert.match(resting, /aria-label="Search threads"/);
   assert.match(resting, /placeholder="Search threads"/);
   assert.doesNotMatch(resting, /<span>Search<\/span>/);
   assert.doesNotMatch(resting, /aria-label="List display settings"/);
+  assert.match(leftRailSource, /aria-label="Clear thread search"[\s\S]*onMouseDown=\{\(event:[\s\S]*event\.preventDefault\(\)/);
 
   const activeState = toggleProductShellSearch(createProductShellState());
   assert.equal(activeState.searchActive, true);
