@@ -107,10 +107,11 @@ export interface TidePreloadSurface {
   // Cmd/Ctrl+F from the application menu, routed through the host renderer so
   // Browser Pane <webview> focus cannot swallow in-pane search.
   onFindIntent(listener: () => void): () => void;
-  // A Browser Pane link asked to open elsewhere. Main denies the stray popup window and
-  // forwards the URL so the renderer drives the backend open_browser path: `newPane`
+  // A Browser Pane link asked to open elsewhere. Main denies ordinary popup windows
+  // and forwards the URL so the renderer drives the backend open_browser path: `newPane`
   // true (Cmd/Ctrl/middle-click, window.open) opens a new Browser Pane; false (a plain
-  // target=_blank click) navigates the active Browser Pane in place.
+  // target=_blank click) navigates the active Browser Pane in place. Auth popups that
+  // need window.opener may be preserved as native child windows by Main.
   onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
   // View-menu panel toggles (Cmd+B left rail / Cmd+E file tree / Cmd+J workbench),
   // routed from the application menu so they fire regardless of focus (webview/terminal).

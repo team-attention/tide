@@ -36,6 +36,135 @@ export function classifyTopLevelNavigation(
   return "block";
 }
 
+// Some sign-in flows intentionally use a popup and then call back through
+// window.opener / window.close. If Tide turns those into independent Browser
+// Panes, the opener relationship is lost and the login can stall on the popup
+// blocker verification page. Keep this allowlist narrow: ordinary web popups
+// still route through Browser Panes.
+export function shouldPreserveAuthPopupWindow(targetUrl: string): boolean {
+  let target: URL;
+  try {
+    target = new URL(targetUrl);
+  } catch {
+    return false;
+  }
+
+  if (target.protocol !== "https:") {
+    return false;
+  }
+
+  if (isLikelyAuthPopupUrl(target)) {
+    return true;
+  }
+
+  if (target.hostname === "app.notion.com") {
+    if (isNotionGooglePopupRedirect(target)) {
+      return true;
+    }
+    if (target.pathname === "/verifyNoPopupBlockerHtmlAndRedirect") {
+      const redirectUri = target.searchParams.get("redirectUri");
+      return redirectUri !== null && isTrustedAuthPopupRedirectUrl(redirectUri);
+    }
+  }
+
+  return false;
+}
+
+function isLikelyAuthPopupUrl(target: URL): boolean {
+  return isKnownAuthProviderUrl(target) || hasStrongAuthProtocolSignal(target);
+}
+
+function isKnownAuthProviderUrl(target: URL): boolean {
+  const hostname = target.hostname;
+  const path = target.pathname.toLowerCase();
+
+  if (hostname === "accounts.google.com") {
+    return path.startsWith("/o/oauth2/") || path.startsWith("/signin/") || path.startsWith("/v3/signin/");
+  }
+  if (hostname === "login.microsoftonline.com") {
+    return true;
+  }
+  if (hostname === "login.live.com" || hostname === "account.live.com") {
+    return true;
+  }
+  if (hostname === "appleid.apple.com") {
+    return path.startsWith("/auth/");
+  }
+  if (hostname === "github.com") {
+    return path === "/login" || path.startsWith("/login/") || path.startsWith("/login/oauth/");
+  }
+  if (hostname === "gitlab.com") {
+    return path.startsWith("/oauth/authorize") || path.startsWith("/users/sign_in");
+  }
+  if (hostname === "bitbucket.org") {
+    return path.startsWith("/site/oauth2/authorize");
+  }
+  if (hostname === "slack.com") {
+    return path.startsWith("/oauth/") || path.startsWith("/openid/");
+  }
+  if (hostname === "id.atlassian.com") {
+    return path.startsWith("/login") || path.startsWith("/authorize");
+  }
+  if (hostname.endsWith(".okta.com") || hostname.endsWith(".auth0.com")) {
+    return path.includes("/authorize") || path.includes("/login") || path.includes("/oauth2/");
+  }
+  if (hostname.endsWith(".clerk.accounts.dev")) {
+    return true;
+  }
+
+  return false;
+}
+
+function hasStrongAuthProtocolSignal(target: URL): boolean {
+  const search = target.searchParams;
+  const path = target.pathname.toLowerCase();
+
+  if (search.has("SAMLRequest")) {
+    return true;
+  }
+
+  const hasClientId = search.has("client_id");
+  const hasRedirectUri = search.has("redirect_uri");
+  const hasOauthResponse =
+    search.has("response_type") ||
+    search.has("scope") ||
+    search.has("state") ||
+    search.get("display") === "popup";
+
+  if (hasClientId && hasRedirectUri && hasOauthResponse) {
+    return true;
+  }
+
+  const scope = search.get("scope")?.toLowerCase() ?? "";
+  if (hasClientId && scope.split(/\s+/).includes("openid")) {
+    return true;
+  }
+
+  return (
+    hasClientId &&
+    /(^|\/)(oauth2?|oidc|openid-connect|saml|sso)(\/|$)/.test(path) &&
+    /(^|\/)(authorize|auth|login|signin|sign-in)(\/|$)/.test(path)
+  );
+}
+
+function isTrustedAuthPopupRedirectUrl(targetUrl: string): boolean {
+  try {
+    const target = new URL(targetUrl);
+    return target.protocol === "https:" && (isNotionGooglePopupRedirect(target) || isLikelyAuthPopupUrl(target));
+  } catch {
+    return false;
+  }
+}
+
+function isNotionGooglePopupRedirect(target: URL): boolean {
+  return (
+    target.protocol === "https:" &&
+    target.hostname === "app.notion.com" &&
+    target.pathname === "/googlepopupredirect" &&
+    target.searchParams.get("callbackType") === "popup"
+  );
+}
+
 // The target is the app's own document when it shares the dev-server origin
 // (any path/HMR query is fine) or, when packaged, is the exact same file:// path
 // (so a stray `file:///etc/...` link can't quietly replace the app).
