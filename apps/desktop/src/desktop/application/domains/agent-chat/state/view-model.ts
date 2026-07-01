@@ -76,7 +76,7 @@ export function createAgentChatShellViewModel(
     },
     workbenchOpen: state.workbenchOpen,
     queuedInputs: state.queuedInputs,
-    usage: usageView(state.usage),
+    usage: createAgentChatUsageView(state.usage),
     liveActivity: liveTurnActivityView(state, chatState, visibleBlocks),
     errorMessage: state.errorMessage,
   };
@@ -143,7 +143,7 @@ function liveTurnActivityView(
 
 // Formats raw usage into ready-to-render labels. Returns null when there is
 // nothing meaningful to show (no tokens, no context percent, and no quota windows).
-function usageView(usage: AgentChatUsage | null): AgentChatUsageView | null {
+export function createAgentChatUsageView(usage: AgentChatUsage | null): AgentChatUsageView | null {
   if (usage === null) {
     return null;
   }

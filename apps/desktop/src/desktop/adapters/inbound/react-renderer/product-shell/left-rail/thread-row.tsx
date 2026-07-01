@@ -2,7 +2,7 @@ import type { ProductShellThreadView } from "../../../../../application/domains/
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
 import { createIconButton, menuAnchorFromEvent } from "../chrome/chrome.tsx";
-import { MoreHorizontal, Pin } from "lucide-react";
+import { Archive, MoreHorizontal, Pin, PinOff, Trash2 } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 interface ThreadRowProps {
@@ -21,6 +21,11 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
   const needsAttention = thread.attention === true;
   const hasUnread = thread.unread === true;
   const showAttention = needsAttention || hasUnread;
+  const worktreeBranch = handlers.threadWorktreeBranch(thread.threadId);
+  const threadMenu = {
+    kind: "thread" as const,
+    threadId: thread.threadId,
+  };
   return (
     <div className="thread-row-wrap">
       <div
@@ -44,7 +49,7 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
         onContextMenu={(event: { preventDefault: () => void; currentTarget: HTMLElement }) => {
           event.preventDefault();
           handlers.onLeftRailMenuOpen(
-            { kind: "thread", threadId: thread.threadId },
+            threadMenu,
             menuAnchorFromEvent(event),
           );
         }}
@@ -117,11 +122,35 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
             </span>,
             <span key="actions" className="thread-row__actions">
               {createIconButton(
+                thread.pinned ? "Unpin" : "Pin",
+                thread.pinned ? (
+                  <PinOff size={15} strokeWidth={1.9} />
+                ) : (
+                  <Pin size={15} strokeWidth={1.9} />
+                ),
+                () => handlers.onThreadPinToggle(thread.threadId),
+                "thread-row__action",
+              )}
+              {createIconButton(
+                "Archive",
+                <Archive size={15} strokeWidth={1.9} />,
+                () => handlers.onThreadArchiveIntent(thread.threadId),
+                "thread-row__action",
+              )}
+              {worktreeBranch != null
+                ? createIconButton(
+                    "Delete worktree",
+                    <Trash2 size={15} strokeWidth={1.9} />,
+                    () => handlers.onThreadDeleteWorktree(thread.threadId),
+                    "thread-row__action thread-row__action--danger",
+                  )
+                : null}
+              {createIconButton(
                 "Thread menu",
                 <MoreHorizontal size={15} strokeWidth={1.9} />,
                 (event) =>
                   handlers.onLeftRailMenuOpen(
-                    { kind: "thread", threadId: thread.threadId },
+                    threadMenu,
                     menuAnchorFromEvent(event),
                   ),
                 "thread-row__action",
@@ -137,22 +166,16 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
 function createThreadLeadingStatus(
   thread: ProductShellThreadView,
   showAttention: boolean,
-): ReactElement {
+): ReactElement | null {
   const isRunning = thread.running === true && !showAttention;
-  const isLive = thread.running !== true && !showAttention && thread.live === true;
 
-  if (thread.pinned === true && !isRunning && !showAttention && !isLive) {
-    return (
-      <span className="thread-row__leading thread-row__leading--pinned" aria-hidden>
-        <Pin size={14} strokeWidth={1.8} />
-      </span>
-    );
+  if (!isRunning && !showAttention) {
+    return null;
   }
   const className = [
     "thread-row__leading",
     isRunning ? "thread-row__leading--running" : "",
     showAttention ? "thread-row__leading--attention" : "",
-    isLive ? "thread-row__leading--live" : "",
   ]
     .filter(Boolean)
     .join(" ");

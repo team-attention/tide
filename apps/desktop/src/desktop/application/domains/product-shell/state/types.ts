@@ -1,4 +1,4 @@
-import type { AgentChatAgentBinding, AgentChatBackendCommand, AgentChatBranchOption, AgentChatCommandOption, AgentChatShellState, AgentChatShellViewModel, AgentChatThreadScope, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatAgentBinding, AgentChatBackendCommand, AgentChatBranchOption, AgentChatCommandOption, AgentChatShellState, AgentChatShellViewModel, AgentChatThreadScope, AgentChatUsageView, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
 import type { AppChromeBackendCommand, AppChromeEditorNavigationTarget, AppChromeEditorReferenceList, AppChromeState, AppChromeViewModel, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import type { WorkbenchSplitNode } from "./workbench-split-tree.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
@@ -519,6 +519,15 @@ export interface ProductShellThreadView extends ProductShellThread {
   worktreeBranch?: string;
 }
 
+export interface ProductShellUsageModelView {
+  key: string;
+  agentId: string;
+  agentLabel: string;
+  modelLabel: string;
+  threadTitle?: string;
+  usage: AgentChatUsageView;
+}
+
 export interface ProductShellProjectGroupView {
   projectId: string;
   name: string;
@@ -588,6 +597,7 @@ export interface ProductShellViewModel {
   // renderer uses projectGroups/scratchThreads; in "thread" mode it uses flatThreads.
   listSettings: ProductShellListSettings;
   worktreeSettings: ProductShellWorktreeSettings;
+  usageByModel: ProductShellUsageModelView[];
   settingsOpen: boolean;
   flatThreads: ProductShellThreadView[];
   // Threads with a live in-process runtime, in Left Rail render order — the set the

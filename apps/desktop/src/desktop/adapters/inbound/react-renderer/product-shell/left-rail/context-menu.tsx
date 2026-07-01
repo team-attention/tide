@@ -71,7 +71,7 @@ function createLeftRailContextMenu(
             icon: <Archive size={15} strokeWidth={1.9} />,
             onClick: () => handlers.onThreadArchiveIntent(menu.threadId),
           },
-          ...(handlers.threadWorktreeBranch(menu.threadId) !== null
+          ...(handlers.threadWorktreeBranch(menu.threadId) != null
             ? [
                 {
                   label: `Delete worktree (${handlers.threadWorktreeBranch(menu.threadId)})…`,

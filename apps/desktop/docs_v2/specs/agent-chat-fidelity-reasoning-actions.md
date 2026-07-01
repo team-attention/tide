@@ -1,4 +1,4 @@
-# Spec: Agent Chat Fidelity — Reasoning, Message Actions, Usage Meter
+# Spec: Agent Chat Fidelity — Reasoning, Message Actions, Usage Placement
 
 ## Scope
 
@@ -8,8 +8,9 @@ Codex/Claude apps by adding three provider-neutral transcript details:
 1. **Reasoning / thinking** renders as a quiet, collapsible disclosure that stays
    secondary to the answer (not a prominent card, not flattened into the answer).
 2. **Per-answer hover actions**: copy the answer, retry the prompt.
-3. **Context/token usage meter**: a quiet chip above the composer showing the
-   provider's last-known context %/token usage for the active thread.
+3. **Usage placement**: provider usage data is parsed and retained, but it is not
+   shown as an always-visible Composer chip. Usage belongs in Settings, grouped
+   by provider/model when Tide has reliable provider data.
 
 It does not cover any provider-specific reasoning UI.
 
@@ -90,7 +91,7 @@ It does not cover any provider-specific reasoning UI.
   `desktop/.../agent-chat-shell.ts`, `desktop/.../tide-product-shell.ts`,
   `desktop/renderer/tide-product-shell.css`, `desktop/renderer/dev-harness.ts`.
 
-## Usage Meter (implemented)
+## Usage Placement (implemented)
 
 - contract: `AgentRuntimeUsageDto { totalTokens?, contextWindow?,
   contextUsedPercent?, model? }` + a dedicated additive event
@@ -103,8 +104,9 @@ It does not cover any provider-specific reasoning UI.
   churn every tick.
 - state: `AgentChatShellState.usage`; gated to the active thread via
   `threadIdFromBackendEvent`; reset on hydrate (thread switch).
-- renderer: a quiet right-aligned `NN% context · NN.Nk tokens` chip with an
-  optional context-window meter bar, above the composer.
+- renderer: Settings shows the last-known reliable usage rows by provider/model,
+  including Session context plus provider quota windows such as `5h` and
+  `Weekly`. The Composer stack does not render a persistent usage strip.
 - tests: `tests/provider-usage.test.ts` (5), `tests/provider-reasoning.test.ts`
   (6). Full suite 591 green.
 

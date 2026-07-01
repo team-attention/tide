@@ -1,14 +1,22 @@
-// Spec: docs_v2/specs/usage-remaining-popover.md — the usage strip above the
-// Composer shows session/context and provider quota windows inline. Its details
-// button opens a Codex-style popover listing each row as remaining % + reset time.
-// Outside-click and Escape close it.
+// Spec: docs_v2/specs/usage-remaining-popover.md — Settings shows known
+// provider/model usage with session/context and quota windows inline. The shared
+// meter's details button opens a Codex-style popover listing each row as
+// remaining % + reset time. Outside-click and Escape close it.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 import { act } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import { UsageMeter } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/composer/usage-meter.tsx";
+import { TideProductShell } from "../src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.tsx";
+import {
+  applyProductShellBackendEvent,
+  createProductShellState,
+  setProductShellSettingsOpen,
+} from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import type { AgentChatUsageView } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
+import type { AgentChatThreadSummary } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>");
 (globalThis as unknown as { window: unknown }).window = dom.window;
@@ -48,7 +56,7 @@ async function mount(): Promise<{ container: HTMLElement; unmount: () => Promise
   };
 }
 
-test("usage_strip_shows_session_and_limits_inline_and_opens_details_on_click", async () => {
+test("usage_meter_shows_session_and_limits_inline_and_opens_details_on_click", async () => {
   const { container, unmount } = await mount();
 
   // Closed by default: session and quota windows are already visible.
@@ -95,4 +103,60 @@ test("usage_popover_closes_on_escape", async () => {
   assert.equal(container.querySelector(".agent-usage__popover"), null, "closed after Escape");
 
   await unmount();
+});
+
+test("settings_shows_model_usage_and_composer_stays_clear", () => {
+  const thread: AgentChatThreadSummary = {
+    threadId: "thread-usage",
+    title: "Usage source",
+    agentBinding: {
+      agentId: "codex",
+      runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+    },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    launchOptions: { model: "gpt-5.5" },
+    createdAt: "2026-06-11T00:00:00.000Z",
+    updatedAt: "2026-06-11T00:01:00.000Z",
+    pinned: false,
+    archived: false,
+    lastKnownState: "idle",
+  };
+  const listed = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    { kind: "thread.listed", payload: { threads: [thread] } },
+  );
+  const hydrated = applyProductShellBackendEvent(listed, {
+    kind: "thread.hydrated",
+    payload: { thread, blocks: [], runtimeState: "idle" },
+  });
+  const withUsage = applyProductShellBackendEvent(hydrated, {
+    kind: "agentRuntime.usageChanged",
+    payload: {
+      threadId: "thread-usage",
+      usage: {
+        totalTokens: 64000,
+        contextWindow: 256000,
+        contextUsedPercent: 25,
+        model: "gpt-5.5",
+        rateLimits: [
+          { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
+          { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
+        ],
+      },
+    },
+  });
+  const settingsOpen = setProductShellSettingsOpen(withUsage, true);
+  const html = renderToStaticMarkup(<TideProductShell initialState={settingsOpen} />);
+  const settingsStart = html.indexOf('aria-label="Settings"');
+  const settingsHtml = settingsStart >= 0 ? html.slice(settingsStart) : html;
+  const composerHtml = html.slice(0, settingsStart >= 0 ? settingsStart : html.length);
+
+  assert.match(settingsHtml, /Usage/);
+  assert.match(settingsHtml, /Codex/);
+  assert.match(settingsHtml, /GPT-5\.5/);
+  assert.match(settingsHtml, /Session/);
+  assert.match(settingsHtml, /5h/);
+  assert.match(settingsHtml, /Weekly/);
+  assert.match(settingsHtml, /class="agent-usage agent-usage--compact"/);
+  assert.doesNotMatch(composerHtml, /class="agent-usage/);
 });

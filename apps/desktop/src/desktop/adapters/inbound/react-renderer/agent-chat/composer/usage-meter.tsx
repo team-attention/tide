@@ -19,7 +19,15 @@ interface UsageSegmentView {
 // A visible usage/limit status strip above the composer. Context and provider
 // quota windows render as separate segments so "session", "5h", and "Weekly"
 // remaining values stay scannable without opening a menu.
-export function UsageMeter({ usage }: { usage: Usage }): ReactElement {
+export function UsageMeter({
+  usage,
+  compact = false,
+  popoverPlacement = "above",
+}: {
+  usage: Usage;
+  compact?: boolean;
+  popoverPlacement?: "above" | "below";
+}): ReactElement {
   const rateLimits = usage.rateLimits ?? [];
   const segments = usageSegments(usage, rateLimits);
   const hasDetails = rateLimits.length > 0 || usage.contextDetailLabel !== undefined;
@@ -53,7 +61,13 @@ export function UsageMeter({ usage }: { usage: Usage }): ReactElement {
     .join("; ");
 
   return (
-    <div className="agent-usage" role="group" aria-label={`Usage limits: ${summary}`} ref={rootRef}>
+    <div
+      className={`agent-usage${compact ? " agent-usage--compact" : ""}`}
+      data-popover-placement={popoverPlacement}
+      role="group"
+      aria-label={`Usage limits: ${summary}`}
+      ref={rootRef}
+    >
       <div className="agent-usage__segments">
         {segments.map((segment) => (
           <UsageSegment segment={segment} key={segment.key} />

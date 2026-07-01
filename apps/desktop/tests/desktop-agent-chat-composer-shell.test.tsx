@@ -475,7 +475,7 @@ test("transcript_has_bottom_scroll_buffer_for_the_docked_composer", () => {
   assert.match(css, /\.agent-session\[data-chat-state="running"\][\s\S]*data-block-status="streaming"[\s\S]*::after/);
 });
 
-test("usage_changed_renders_context_usage_above_the_composer", () => {
+test("usage_changed_updates_usage_view_but_does_not_render_composer_usage_strip", () => {
   const hydrated = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),
     backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
@@ -501,9 +501,8 @@ test("usage_changed_renders_context_usage_above_the_composer", () => {
     contextDetailLabel: "64k / 256k tokens",
   });
   const html = renderShell(withUsage);
-  assert.match(html, /class="agent-usage"/);
-  assert.match(html, /style="width:75%"/);
-  assert.match(visibleText(html), /Session\s*75% left\s*64k \/ 256k tokens/);
+  assert.doesNotMatch(html, /class="agent-usage/);
+  assert.doesNotMatch(visibleText(html), /Session\s*75% left\s*64k \/ 256k tokens/);
 });
 
 test("usage_changed_renders_codex_rate_limit_windows", () => {
@@ -542,11 +541,10 @@ test("usage_changed_renders_codex_rate_limit_windows", () => {
   // Weekly window resets show a calendar date (month name, no clock colon).
   assert.match(weekly.resetLabel ?? "", /[A-Za-z]/);
   assert.doesNotMatch(weekly.resetLabel ?? "", /:/);
-  // The visible status strip uses the remaining framing and offers a details popover.
   const html = renderShell(withUsage);
-  assert.match(html, /aria-haspopup="dialog"/);
-  assert.match(visibleText(html), /5h\s*42% left\s*resets/);
-  assert.match(visibleText(html), /Weekly\s*32% left\s*resets/);
+  assert.doesNotMatch(html, /class="agent-usage/);
+  assert.doesNotMatch(visibleText(html), /5h\s*42% left\s*resets/);
+  assert.doesNotMatch(visibleText(html), /Weekly\s*32% left\s*resets/);
 });
 
 test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", () => {
@@ -591,10 +589,7 @@ test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", (
       { label: "Weekly", remainingPercent: 32, remainingLabel: "32%" },
     ],
   });
-  assert.match(
-    visibleText(renderShell(withLimits)),
-    /Session\s*75% left\s*64k \/ 256k tokens\s*5h\s*42% left\s*reset unknown\s*Weekly\s*32% left\s*reset unknown/,
-  );
+  assert.doesNotMatch(renderShell(withLimits), /class="agent-usage/);
 });
 
 test("usage_changed_drops_rate_limit_windows_without_a_usage_percent", () => {

@@ -48,34 +48,33 @@ function renderRow(
   return renderToStaticMarkup(<TideProductShell initialState={seeded} />);
 }
 
-test("thread_row_uses_one_menu_action_instead_of_direct_pin_archive_buttons", () => {
+test("thread_row_exposes_direct_pin_archive_actions_plus_menu", () => {
   const markup = renderRow(false);
-  assert.match(markup, /aria-label="Thread menu"/);
-  assert.doesNotMatch(markup, /aria-label="Pin"/);
-  assert.doesNotMatch(markup, /aria-label="Archive"/);
-  assert.doesNotMatch(markup, /aria-label="Delete worktree"/);
-});
-
-test("pinned_thread_row_uses_pinned_leading_marker_not_unpin_button", () => {
-  const markup = renderRow(true);
-  assert.match(markup, /thread-row__leading--pinned/);
+  assert.match(markup, /aria-label="Pin"/);
+  assert.match(markup, /aria-label="Archive"/);
   assert.match(markup, /aria-label="Thread menu"/);
   assert.doesNotMatch(markup, /aria-label="Unpin"/);
-  assert.doesNotMatch(markup, /aria-label="Pin"/);
+  assert.doesNotMatch(markup, /aria-label="Delete worktree"/);
+  assert.doesNotMatch(markup, /thread-row__leading/);
 });
 
-test("pinned_thread_row_prioritizes_dynamic_status_over_pinned_marker", () => {
+test("pinned_thread_row_exposes_direct_unpin_without_leading_marker", () => {
+  const markup = renderRow(true);
+  assert.match(markup, /aria-label="Unpin"/);
+  assert.match(markup, /aria-label="Archive"/);
+  assert.match(markup, /aria-label="Thread menu"/);
+  assert.doesNotMatch(markup, /thread-row__leading/);
+});
+
+test("thread_row_leading_status_is_only_for_running_or_attention", () => {
   const running = renderRow(true, "/Users/you/repo", { lastKnownState: "running" });
   assert.match(running, /thread-row__leading--running/);
-  assert.doesNotMatch(running, /thread-row__leading--pinned/);
 
   const attention = renderRow(true, "/Users/you/repo", { lastKnownState: "waiting_for_input" });
   assert.match(attention, /thread-row__leading--attention/);
-  assert.doesNotMatch(attention, /thread-row__leading--pinned/);
 
   const live = renderRow(true, "/Users/you/repo", { live: true });
-  assert.match(live, /thread-row__leading--live/);
-  assert.doesNotMatch(live, /thread-row__leading--pinned/);
+  assert.doesNotMatch(live, /thread-row__leading/);
 });
 
 test("worktree_thread_row_does_not_render_hover_context_popover", () => {
@@ -96,10 +95,7 @@ test("thread_row_default_markup_does_not_surface_scope_paths", () => {
   assert.doesNotMatch(markup, /p1 \/ repo/);
 });
 
-test("delete_worktree_is_not_a_direct_row_action", () => {
+test("delete_worktree_is_direct_only_for_worktree_rows", () => {
   assert.doesNotMatch(renderRow(false), /aria-label="Delete worktree"/);
-  assert.doesNotMatch(
-    renderRow(false, "/Users/you/repo.worktree/feature-x"),
-    /aria-label="Delete worktree"/,
-  );
+  assert.match(renderRow(false, "/Users/you/repo.worktree/feature-x"), /aria-label="Delete worktree"/);
 });
