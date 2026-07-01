@@ -78,11 +78,7 @@ export function browserPaneReadiness(pane: BrowserPaneState): BrowserPaneReadine
   if (pane.screenshot !== undefined) {
     return "ready";
   }
-  if (
-    pane.url !== undefined ||
-    pane.pageTitle !== undefined ||
-    pane.bodyTextPreview !== undefined
-  ) {
+  if (pane.pageTitle !== undefined || pane.bodyTextPreview !== undefined) {
     return "ready";
   }
   return "unavailable";

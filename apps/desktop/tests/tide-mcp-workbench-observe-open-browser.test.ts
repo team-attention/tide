@@ -493,6 +493,39 @@ test("observing_browser_returns_backend_stored_webview_snapshot", async () => {
   assert.equal(observed.ok && observed.output.pane.bodyTextPreview, "Loaded page body");
 });
 
+test("observing_browser_with_only_url_evidence_reports_unavailable", async () => {
+  const service = serviceWithActiveThread(
+    "thread-browser-url-only",
+    "runtime-browser-url-only",
+  );
+  const opened = await openBrowser(
+    service,
+    "runtime-browser-url-only",
+    "https://example.test/url-only",
+  );
+  const snapshot = await service.handleWorkbenchCommand({
+    threadId: "thread-browser-url-only",
+    command: "update_browser_snapshot",
+    targetPaneId: opened.output.pane.paneId,
+    data: {
+      revision: opened.output.pane.revision,
+      url: "https://example.test/url-only",
+      loading: false,
+    },
+  });
+  assert.equal(snapshot.ok, true);
+
+  const observed = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-browser-url-only", agentId: "codex" },
+    toolName: "tide_observe_browser",
+    input: { paneId: opened.output.pane.paneId },
+  });
+
+  assert.equal(observed.ok, true);
+  assert.equal(observed.ok && observed.output.pane.loading, false);
+  assert.equal(observed.ok && observed.output.pane.readiness, "unavailable");
+});
+
 test("browser_action_tool_schedules_pending_click_for_desktop_webview", async () => {
   // Spec: docs_v2/specs/tide-mcp-browser-action-tool.md
   const events: ThreadRuntimeAsyncEvent[] = [];
