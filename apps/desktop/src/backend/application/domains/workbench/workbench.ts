@@ -58,6 +58,15 @@ export interface WorkbenchPaneRef {
   updatedAt: string;
 }
 
+export type BrowserPaneReadiness = "loading" | "ready" | "blank" | "unavailable";
+
+export interface BrowserPaneCapabilities {
+  canReadDom: boolean;
+  canCapturePixels: boolean;
+  canActForeground: boolean;
+  canActBackground: boolean;
+}
+
 export interface BrowserPaneState {
   paneId: WorkbenchPaneId;
   kind: "browser";
@@ -286,6 +295,8 @@ export interface BrowserPaneRef extends WorkbenchPaneRef {
   url?: string;
   pageTitle?: string;
   loading: boolean;
+  readiness: BrowserPaneReadiness;
+  capabilities: BrowserPaneCapabilities;
   bodyTextPreview?: string;
   agentDriving: boolean;
   agentCursor?: { x: number; y: number };

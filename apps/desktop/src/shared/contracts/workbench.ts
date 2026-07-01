@@ -13,12 +13,23 @@ export interface BaseWorkbenchPaneRefDto {
   updatedAt: string;
 }
 
+export type BrowserPaneReadinessDto = "loading" | "ready" | "blank" | "unavailable";
+
+export interface BrowserPaneCapabilitiesDto {
+  canReadDom: boolean;
+  canCapturePixels: boolean;
+  canActForeground: boolean;
+  canActBackground: boolean;
+}
+
 export interface BrowserPaneRefDto extends BaseWorkbenchPaneRefDto {
   kind: "browser";
   url?: string;
   pageTitle?: string;
   bodyTextPreview?: string;
   loading: boolean;
+  readiness?: BrowserPaneReadinessDto;
+  capabilities?: BrowserPaneCapabilitiesDto;
   // Backend-authoritative computer-use driving state (see
   // docs_v2/specs/browser-pane-agent-computer-use.md). agentDriving = the Agent is
   // operating this Pane via a computer-use turn; agentCursor = last pointer position

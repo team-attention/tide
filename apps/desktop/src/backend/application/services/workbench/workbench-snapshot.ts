@@ -1,5 +1,7 @@
 import type {
+  BrowserPaneCapabilities,
   BrowserPaneRef,
+  BrowserPaneReadiness,
   BrowserPaneState,
   DiffPaneState,
   EditorPaneState,
@@ -54,6 +56,8 @@ export function browserPaneRef(pane: BrowserPaneState): BrowserPaneRef {
     url: pane.url,
     pageTitle: pane.pageTitle,
     loading: pane.loading,
+    readiness: browserPaneReadiness(pane),
+    capabilities: browserPaneCapabilities(),
     bodyTextPreview: pane.bodyTextPreview,
     agentDriving: pane.agentDriving ?? false,
     agentCursor: pane.agentCursor === undefined ? undefined : { ...pane.agentCursor },
@@ -64,6 +68,28 @@ export function browserPaneRef(pane: BrowserPaneState): BrowserPaneRef {
     lastAction: pane.lastAction === undefined ? undefined : { ...pane.lastAction },
     stale: false,
     availableTools: [...TIDE_MCP_WORKBENCH_TOOL_NAMES],
+  };
+}
+
+export function browserPaneReadiness(pane: BrowserPaneState): BrowserPaneReadiness {
+  if (pane.loading) {
+    return "loading";
+  }
+  if (pane.screenshot !== undefined) {
+    return "ready";
+  }
+  if (pane.pageTitle !== undefined || pane.bodyTextPreview !== undefined) {
+    return "ready";
+  }
+  return "unavailable";
+}
+
+export function browserPaneCapabilities(): BrowserPaneCapabilities {
+  return {
+    canReadDom: true,
+    canCapturePixels: true,
+    canActForeground: true,
+    canActBackground: false,
   };
 }
 

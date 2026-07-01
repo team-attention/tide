@@ -44,6 +44,7 @@ export function WorkbenchBrowserPane(props: {
   }, []);
   const find = useInPaneFindState();
   const [browserMatchCount, setBrowserMatchCount] = useState(0);
+  const [settleVersion, setSettleVersion] = useState(0);
   const executedActionIdsRef = useRef<Set<string>>(new Set());
   // The webview `src` is PINNED to the pane's initial URL and never re-bound to
   // pane.url. A page load fires did-finish-load → snapshot, which writes the
@@ -329,6 +330,7 @@ export function WorkbenchBrowserPane(props: {
     // are pulled on demand at observe time (pendingCapture). Spec:
     // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
     const emitSnapshot = () => {
+      setSettleVersion((version) => version + 1);
       void readBrowserWebViewSnapshot(webview).then((snapshot) => {
         props.handlers.onBrowserSnapshot(paneId, {
           revision: snapshotRevisionRef.current,
@@ -385,7 +387,8 @@ export function WorkbenchBrowserPane(props: {
       webview === null ||
       props.pane.url === undefined ||
       action === undefined ||
-      executedActionIdsRef.current.has(action.actionId)
+      executedActionIdsRef.current.has(action.actionId) ||
+      !isWebViewSettled(webview)
     ) {
       return;
     }
@@ -422,6 +425,7 @@ export function WorkbenchBrowserPane(props: {
     props.pane.pendingAction?.actionId,
     props.pane.revision,
     props.pane.url,
+    settleVersion,
   ]);
   return (
     <div ref={rootRef} className="workbench-pane-content workbench-pane-content--browser">

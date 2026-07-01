@@ -13,6 +13,8 @@ export function toWorkbenchPaneRefDto(
       revision: pane.revision,
       updatedAt: pane.updatedAt,
       loading: pane.loading,
+      readiness: pane.readiness,
+      capabilities: { ...pane.capabilities },
       agentDriving: pane.agentDriving,
     };
     if (pane.agentCursor !== undefined) {
