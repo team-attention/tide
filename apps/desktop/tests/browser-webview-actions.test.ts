@@ -100,6 +100,50 @@ test("move_to sends a single mouseMove", async () => {
   assert.deepEqual(inputEvents.map((event) => event.type), ["mouseMove"]);
 });
 
+test("drag sends mouseDown, stepped mouseMove events, then mouseUp", async () => {
+  const { webview, inputEvents } = fakeWebView();
+  const result = await executeBrowserWebViewAction(
+    webview,
+    action({
+      kind: "drag",
+      x: 120,
+      y: 700,
+      toX: 120,
+      toY: 260,
+      durationMs: 0,
+      steps: 4,
+    }),
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(inputEvents.map((event) => event.type), [
+    "mouseMove",
+    "mouseDown",
+    "mouseMove",
+    "mouseMove",
+    "mouseMove",
+    "mouseMove",
+    "mouseUp",
+  ]);
+  const down = inputEvents[1];
+  assert.equal(down.type, "mouseDown");
+  if (down.type === "mouseDown") {
+    assert.equal(down.x, 120);
+    assert.equal(down.y, 700);
+  }
+  const lastMove = inputEvents[5];
+  assert.equal(lastMove.type, "mouseMove");
+  if (lastMove.type === "mouseMove") {
+    assert.equal(lastMove.x, 120);
+    assert.equal(lastMove.y, 260);
+  }
+  const up = inputEvents[6];
+  assert.equal(up.type, "mouseUp");
+  if (up.type === "mouseUp") {
+    assert.equal(up.x, 120);
+    assert.equal(up.y, 260);
+  }
+});
+
 test("scroll sends a mouseWheel carrying the deltas", async () => {
   const { webview, inputEvents } = fakeWebView();
   await executeBrowserWebViewAction(

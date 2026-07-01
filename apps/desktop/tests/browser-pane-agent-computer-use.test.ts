@@ -72,6 +72,7 @@ test("click_at schedules a pending click_at and starts agent driving with a curs
 test("move_to / scroll / key / type are accepted coordinate actions that start driving", () => {
   const cases: Record<string, unknown>[] = [
     { action: "move_to", x: 10, y: 20 },
+    { action: "drag", x: 10, y: 20, toX: 10, toY: 120 },
     { action: "scroll", x: 5, y: 6, deltaX: 0, deltaY: -120 },
     { action: "key", keys: "Enter" },
     { action: "type", text: "hello" },
@@ -87,6 +88,36 @@ test("move_to / scroll / key / type are accepted coordinate actions that start d
     assert.equal(result.ok, true, `${String(input.action)} should be accepted`);
     assert.equal(browserPaneOf(thread).agentDriving, true);
   }
+});
+
+test("drag carries start/end coordinates and moves the agent cursor to the end point", () => {
+  const thread = browserThread();
+  const result = actBrowserOutput(
+    thread,
+    {
+      paneId: "p1",
+      revision: "rev-1",
+      action: "drag",
+      x: 120,
+      y: 700,
+      toX: 120,
+      toY: 260,
+      durationMs: 500,
+      steps: 12,
+    },
+    idGen,
+    clock,
+  );
+  assert.equal(result.ok, true);
+  const pane = browserPaneOf(thread);
+  assert.equal(pane.pendingAction?.kind, "drag");
+  assert.equal(pane.pendingAction?.x, 120);
+  assert.equal(pane.pendingAction?.y, 700);
+  assert.equal(pane.pendingAction?.toX, 120);
+  assert.equal(pane.pendingAction?.toY, 260);
+  assert.equal(pane.pendingAction?.durationMs, 500);
+  assert.equal(pane.pendingAction?.steps, 12);
+  assert.deepEqual(pane.agentCursor, { x: 120, y: 260 });
 });
 
 test("scroll carries the wheel deltas onto the pending action", () => {
@@ -115,6 +146,19 @@ test("click_at requires numeric x and y", () => {
   assert.equal(!result.ok && result.error.code, "invalid_workbench_command");
   assert.equal(browserPaneOf(thread).pendingAction, undefined);
   assert.notEqual(browserPaneOf(thread).agentDriving, true);
+});
+
+test("drag requires numeric x, y, toX, and toY", () => {
+  const thread = browserThread();
+  const result = actBrowserOutput(
+    thread,
+    { paneId: "p1", revision: "rev-1", action: "drag", x: 1, y: 2, toX: 3 },
+    idGen,
+    clock,
+  );
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "invalid_workbench_command");
+  assert.equal(browserPaneOf(thread).pendingAction, undefined);
 });
 
 // --- UC: Selector path is the unchanged reliability fallback ---

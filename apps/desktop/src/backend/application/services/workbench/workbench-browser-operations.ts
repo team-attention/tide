@@ -101,11 +101,17 @@ export type BrowserScreenshotPuller = (
   pane: BrowserPaneState,
 ) => Promise<BrowserPaneScreenshot | undefined>;
 
+interface ObserveBrowserOutputResult {
+  value: TideObserveBrowserOutput;
+  stalePendingActionExpired: boolean;
+}
+
 export async function observeBrowserOutput(
   thread: ThreadRecord,
   input: Record<string, unknown> | undefined,
   pullScreenshot?: BrowserScreenshotPuller,
-): Promise<ServiceResult<{ value: TideObserveBrowserOutput }>> {
+  clock?: () => string,
+): Promise<ServiceResult<ObserveBrowserOutputResult>> {
   const paneId = optionalString(input?.paneId);
   if (paneId === undefined) {
     return failure("workbench_target_not_found", "Browser Pane target was not found.");
@@ -125,6 +131,13 @@ export async function observeBrowserOutput(
   const revision = optionalString(input?.revision);
   if (revision !== undefined && revision !== pane.revision) {
     return failure("workbench_stale_reference", "Browser Pane revision is stale.");
+  }
+
+  const observedAt = clock?.();
+  const stalePendingActionExpired =
+    observedAt !== undefined && expireStalePendingBrowserAction(pane, observedAt);
+  if (observedAt !== undefined && stalePendingActionExpired) {
+    thread.updatedAt = observedAt;
   }
 
   const mode = browserObserveModeFromInput(input?.mode);
@@ -159,13 +172,15 @@ export async function observeBrowserOutput(
       threadId: thread.threadId,
       pane: ref,
     },
+    stalePendingActionExpired,
   };
 }
 
 // Hybrid action model (docs_v2/specs/browser-pane-agent-computer-use.md): the selector
 // path ("click"/"type_text") is the unchanged reliability fallback and never starts
-// driving; the coordinate path ("move_to"/"click_at"/"scroll"/"key"/"type") is the
-// "human" computer-use path and starts agentDriving (+ agentCursor where it has a point).
+// driving; the coordinate path ("move_to"/"click_at"/"drag"/"scroll"/"key"/"type")
+// is the "human" computer-use path and starts agentDriving (+ agentCursor where it has
+// a point).
 export function actBrowserOutput(
   thread: ThreadRecord,
   input: Record<string, unknown> | undefined,
@@ -215,7 +230,7 @@ export function actBrowserOutput(
       // re-observe (which returns the result + a fresh revision) before driving again.
       return failure(
         "invalid_workbench_command",
-        "Browser Pane already has a pending action.",
+        pendingBrowserActionMessage(pane.pendingAction, requestedAt),
       );
     }
   }
@@ -359,6 +374,28 @@ function buildBrowserActionRequest(
         },
       };
     }
+    case "drag": {
+      const x = finiteNumberFromInput(input?.x);
+      const y = finiteNumberFromInput(input?.y);
+      const toX = finiteNumberFromInput(input?.toX);
+      const toY = finiteNumberFromInput(input?.toY);
+      if (x === undefined || y === undefined || toX === undefined || toY === undefined) {
+        return failure(
+          "invalid_workbench_command",
+          "Drag browser action requires numeric x, y, toX, and toY.",
+        );
+      }
+      const durationMs = boundedIntegerFromInput(input?.durationMs, 250, 0, 2000);
+      const steps = boundedIntegerFromInput(input?.steps, 8, 1, 60);
+      return {
+        ok: true,
+        value: {
+          action: { ...base, x, y, toX, toY, durationMs, steps },
+          setsDriving: true,
+          agentCursor: { x: toX, y: toY },
+        },
+      };
+    }
     case "scroll": {
       const x = finiteNumberFromInput(input?.x);
       const y = finiteNumberFromInput(input?.y);
@@ -399,6 +436,42 @@ function buildBrowserActionRequest(
       return { ok: true, value: { action: { ...base, text }, setsDriving: true } };
     }
   }
+}
+
+function boundedIntegerFromInput(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(Math.max(Math.round(value), min), max);
+}
+
+function pendingBrowserActionMessage(
+  action: BrowserPaneActionRequest,
+  now: string,
+): string {
+  const ageMs = browserActionAgeMs(action, now);
+  if (ageMs === undefined) {
+    return "Browser Pane already has a pending action; re-observe before sending another browser action.";
+  }
+  const remainingMs = Math.max(BROWSER_ACTION_PENDING_TTL_MS - ageMs, 0);
+  return `Browser Pane already has a pending action (${action.kind}, actionId ${action.actionId}, age ${ageMs}ms; retry after about ${remainingMs}ms or re-observe before sending another browser action).`;
+}
+
+function browserActionAgeMs(
+  action: BrowserPaneActionRequest,
+  now: string,
+): number | undefined {
+  const requestedAtMs = Date.parse(action.requestedAt);
+  const nowMs = Date.parse(now);
+  if (!Number.isFinite(requestedAtMs) || !Number.isFinite(nowMs)) {
+    return undefined;
+  }
+  return Math.max(nowMs - requestedAtMs, 0);
 }
 
 // User takeover (D5): clear computer-use driving state and any queued agent input so

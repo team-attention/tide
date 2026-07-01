@@ -528,8 +528,13 @@ test("Browser Pane refs preserve revision and browser metadata", () => {
     loading: false,
     pendingAction: {
       actionId: "action-1",
-      kind: "click",
-      selector: "button.primary",
+      kind: "drag",
+      x: 120,
+      y: 700,
+      toX: 120,
+      toY: 260,
+      durationMs: 250,
+      steps: 8,
       requestedAt: issuedAt,
     },
     lastAction: {
@@ -552,7 +557,8 @@ test("Browser Pane refs preserve revision and browser metadata", () => {
   assert.equal(roundTripped.bodyTextPreview, "Loaded local app");
   assert.equal(roundTripped.loading, false);
   assert.equal(roundTripped.pendingAction.actionId, "action-1");
-  assert.equal(roundTripped.pendingAction.kind, "click");
+  assert.equal(roundTripped.pendingAction.kind, "drag");
+  assert.equal(roundTripped.pendingAction.toY, 260);
   assert.equal(roundTripped.lastAction.status, "completed");
   assert.equal(roundTripped.lastAction.text, "tide");
 });

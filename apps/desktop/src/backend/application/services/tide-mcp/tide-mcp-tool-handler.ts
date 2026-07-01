@@ -207,10 +207,21 @@ export class TideMcpToolHandler {
           ok: true,
           value: openBrowserOutput(thread, input.input, this.idGenerator, this.clock),
         };
-      case "tide_observe_browser":
-        return observeBrowserOutput(thread, input.input, (pane) =>
-          this.pullBrowserScreenshot(thread, pane),
+      case "tide_observe_browser": {
+        const result = await observeBrowserOutput(
+          thread,
+          input.input,
+          (pane) => this.pullBrowserScreenshot(thread, pane),
+          this.clock,
         );
+        if (result.ok && result.stalePendingActionExpired) {
+          this.emitAsyncEvent({
+            kind: "workbench_changed",
+            thread: snapshotThread(thread),
+          });
+        }
+        return result;
+      }
       case "tide_act_browser":
         return actBrowserOutput(thread, input.input, this.idGenerator, this.clock);
       case "tide_read_file":
@@ -350,7 +361,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   {
     name: "tide_act_browser",
     description:
-      "Operate an open Tide Browser Pane like a human (hybrid). Coordinate computer-use actions move the cursor and drive the live page via real input events: move_to/click_at (x,y; click_at takes optional button and clickCount), scroll (x,y,deltaX,deltaY), key (keys like \"Enter\" or \"Cmd+A\"), and type (text into the focused element). Selector actions click/type_text (selector, text) are the reliability fallback. Coordinates are screenshot pixels from the latest tide_observe_browser image; Tide converts them to webview CSS pixels.",
+      "Operate an open Tide Browser Pane like a human (hybrid). Coordinate computer-use actions move the cursor and drive the live page via real input events: move_to/click_at (x,y; click_at takes optional button and clickCount), drag (x,y,toX,toY; useful for bottom sheets/sliders), scroll (x,y,deltaX,deltaY), key (keys like \"Enter\" or \"Cmd+A\"), and type (text into the focused element). Selector actions click/type_text (selector, text) are the reliability fallback. Coordinates are screenshot pixels from the latest tide_observe_browser image; Tide converts them to webview CSS pixels.",
     inputSchema: {
       type: "object",
       properties: {
@@ -358,12 +369,16 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
         revision: { type: "string" },
         action: {
           type: "string",
-          enum: ["click", "type_text", "move_to", "click_at", "scroll", "key", "type"],
+          enum: ["click", "type_text", "move_to", "click_at", "drag", "scroll", "key", "type"],
         },
         selector: { type: "string", description: "Required for click / type_text." },
         text: { type: "string", description: "Required for type_text and type." },
-        x: { type: "number", description: "Required for move_to / click_at / scroll." },
-        y: { type: "number", description: "Required for move_to / click_at / scroll." },
+        x: { type: "number", description: "Required for move_to / click_at / drag / scroll." },
+        y: { type: "number", description: "Required for move_to / click_at / drag / scroll." },
+        toX: { type: "number", description: "Required for drag." },
+        toY: { type: "number", description: "Required for drag." },
+        durationMs: { type: "number", description: "Optional for drag; clamped to 0-2000ms." },
+        steps: { type: "number", description: "Optional for drag; clamped to 1-60." },
         button: { type: "string", enum: ["left", "right", "middle"] },
         clickCount: { type: "number", enum: [1, 2] },
         deltaX: { type: "number", description: "Wheel delta for scroll." },

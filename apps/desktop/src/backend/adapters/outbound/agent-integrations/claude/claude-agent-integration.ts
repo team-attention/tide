@@ -396,7 +396,7 @@ export function tideClaudeContextPrompt(): string {
     'tools (MCP server name "tide") that control the Tide UI. Their exact names are:',
     "- mcp__tide__tide_open_browser — open/navigate a Tide Browser Pane (args: url, title, disposition)",
     "- mcp__tide__tide_observe_browser — read a Browser Pane's content (args: paneId, revision)",
-    "- mcp__tide__tide_act_browser — click or type in a Browser Pane (args: paneId, revision, action, selector, text)",
+    "- mcp__tide__tide_act_browser — click, drag, scroll, press keys, or type in a Browser Pane (args: paneId, revision, action, selector/text/x/y/toX/toY/deltaX/deltaY/keys)",
     "- mcp__tide__tide_observe_thread / mcp__tide__tide_observe_workbench — read current Thread/Workbench state",
     "- mcp__tide__tide_open_terminal / mcp__tide__tide_run_terminal_command — Terminal Pane",
     "- mcp__tide__tide_read_file / mcp__tide__tide_open_file / mcp__tide__tide_edit_file — files with Editor/Diff Panes",
