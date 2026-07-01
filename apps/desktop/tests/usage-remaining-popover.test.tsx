@@ -1,30 +1,19 @@
-// Spec: docs_v2/specs/usage-remaining-popover.md — Settings shows known
-// provider/model usage with session/context and quota windows inline. The shared
-// meter's details button opens a Codex-style popover listing each row as
-// remaining % + reset time. Outside-click and Escape close it.
+// Spec: docs_v2/specs/usage-remaining-popover.md
+
 import assert from "node:assert/strict";
 import test from "node:test";
-import { JSDOM } from "jsdom";
-import { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { UsageMeter } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/composer/usage-meter.tsx";
+import { SessionContextMeter } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/composer/usage-meter.tsx";
 import { TideProductShell } from "../src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.tsx";
 import {
   applyProductShellBackendEvent,
   createProductShellState,
+  openProductShellThread,
   setProductShellSettingsOpen,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import type { AgentChatUsageView } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
 import type { AgentChatThreadSummary } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
-
-const dom = new JSDOM("<!doctype html><html><body></body></html>");
-(globalThis as unknown as { window: unknown }).window = dom.window;
-(globalThis as unknown as { document: unknown }).document = dom.window.document;
-(globalThis as unknown as { MouseEvent: unknown }).MouseEvent = dom.window.MouseEvent;
-(globalThis as unknown as { KeyboardEvent: unknown }).KeyboardEvent = dom.window.KeyboardEvent;
-(globalThis as unknown as { Node: unknown }).Node = dom.window.Node;
-(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const usage: AgentChatUsageView = {
   contextPercentLabel: "25%",
@@ -34,78 +23,36 @@ const usage: AgentChatUsageView = {
   contextDetailLabel: "64k / 256k tokens",
   tokensLabel: "64k tokens",
   rateLimits: [
-    { label: "5h", remainingPercent: 100, remainingLabel: "100%", resetLabel: "8:31 PM" },
-    { label: "Weekly", remainingPercent: 29, remainingLabel: "29%", resetLabel: "Jun 28" },
+    {
+      label: "5h",
+      usedPercent: 58,
+      usedLabel: "58%",
+      remainingPercent: 42,
+      remainingLabel: "42%",
+      resetLabel: "8:31 PM",
+    },
+    {
+      label: "Weekly",
+      usedPercent: 68,
+      usedLabel: "68%",
+      remainingPercent: 32,
+      remainingLabel: "32%",
+      resetLabel: "Jun 28",
+    },
   ],
 };
 
-async function mount(): Promise<{ container: HTMLElement; unmount: () => Promise<void> }> {
-  const { createRoot } = await import("react-dom/client");
-  const container = dom.window.document.createElement("div");
-  dom.window.document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(<UsageMeter usage={usage} />);
-  });
-  return {
-    container,
-    unmount: async () => {
-      await act(async () => root.unmount());
-      container.remove();
-    },
-  };
-}
+test("session_context_meter_shows_only_current_session_context", () => {
+  const html = renderToStaticMarkup(<SessionContextMeter usage={usage} />);
+  const text = visibleText(html);
 
-test("usage_meter_shows_session_and_limits_inline_and_opens_details_on_click", async () => {
-  const { container, unmount } = await mount();
-
-  // Closed by default: session and quota windows are already visible.
-  assert.equal(container.querySelector(".agent-usage__popover"), null);
-  const segments = [...container.querySelectorAll(".agent-usage__segment")];
-  assert.equal(segments.length, 3);
-  assert.match(segments[0].textContent ?? "", /Session.*75% left.*64k \/ 256k tokens/);
-  assert.match(segments[1].textContent ?? "", /5h.*100% left.*resets 8:31 PM|5h.*100% left.*resets 8:31 PM/);
-  assert.match(segments[2].textContent ?? "", /Weekly.*29% left.*resets Jun 28/);
-
-  const trigger = container.querySelector<HTMLButtonElement>(".agent-usage__trigger");
-  assert.ok(trigger, "details button is shown when quota details exist");
-  assert.equal(trigger.getAttribute("aria-label"), "Usage details");
-  assert.equal(trigger.getAttribute("aria-expanded"), "false");
-
-  // Click → popover with session plus one row per quota window.
-  await act(async () => trigger.click());
-  const popover = container.querySelector(".agent-usage__popover");
-  assert.ok(popover, "popover opens on click");
-  assert.match(popover.textContent ?? "", /Usage details/);
-  const rows = [...container.querySelectorAll(".agent-usage__row")];
-  assert.equal(rows.length, 3);
-  assert.match(rows[0].textContent ?? "", /Session.*75% left.*64k \/ 256k tokens/);
-  assert.match(rows[1].textContent ?? "", /5h.*100% left.*resets 8:31 PM|5h.*100% left.*resets 8:31 PM/);
-  assert.match(rows[2].textContent ?? "", /Weekly.*29% left.*resets Jun 28/);
-  assert.equal(trigger.getAttribute("aria-expanded"), "true");
-
-  await unmount();
+  assert.match(html, /class="agent-usage"/);
+  assert.match(text, /Session context\s*75% left\s*64k \/ 256k tokens/);
+  assert.doesNotMatch(text, /5h/);
+  assert.doesNotMatch(text, /1 week|Weekly/);
 });
 
-test("usage_popover_closes_on_escape", async () => {
-  const { container, unmount } = await mount();
-  const trigger = container.querySelector<HTMLButtonElement>(".agent-usage__trigger");
-  assert.ok(trigger);
-
-  await act(async () => trigger.click());
-  assert.ok(container.querySelector(".agent-usage__popover"), "open before Escape");
-
-  await act(async () => {
-    dom.window.document.dispatchEvent(
-      new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-    );
-  });
-  assert.equal(container.querySelector(".agent-usage__popover"), null, "closed after Escape");
-
-  await unmount();
-});
-
-test("settings_shows_model_usage_and_composer_stays_clear", () => {
+test("settings_shows_provider_window_usage_and_reset_while_composer_shows_context", () => {
   const thread: AgentChatThreadSummary = {
     threadId: "thread-usage",
     title: "Usage source",
@@ -125,7 +72,8 @@ test("settings_shows_model_usage_and_composer_stays_clear", () => {
     createProductShellState({ includeFixtureData: false }),
     { kind: "thread.listed", payload: { threads: [thread] } },
   );
-  const hydrated = applyProductShellBackendEvent(listed, {
+  const opened = openProductShellThread(listed, "thread-usage");
+  const hydrated = applyProductShellBackendEvent(opened, {
     kind: "thread.hydrated",
     payload: { thread, blocks: [], runtimeState: "idle" },
   });
@@ -149,14 +97,75 @@ test("settings_shows_model_usage_and_composer_stays_clear", () => {
   const html = renderToStaticMarkup(<TideProductShell initialState={settingsOpen} />);
   const settingsStart = html.indexOf('aria-label="Settings"');
   const settingsHtml = settingsStart >= 0 ? html.slice(settingsStart) : html;
+  const usageStart = settingsHtml.indexOf('aria-label="Provider window usage"');
+  const usageHtml = usageStart >= 0 ? settingsHtml.slice(usageStart) : settingsHtml;
   const composerHtml = html.slice(0, settingsStart >= 0 ? settingsStart : html.length);
+  const settingsText = visibleText(usageHtml);
+  const composerText = visibleText(composerHtml);
 
-  assert.match(settingsHtml, /Usage/);
-  assert.match(settingsHtml, /Codex/);
-  assert.match(settingsHtml, /GPT-5\.5/);
-  assert.match(settingsHtml, /Session/);
-  assert.match(settingsHtml, /5h/);
-  assert.match(settingsHtml, /Weekly/);
-  assert.match(settingsHtml, /class="agent-usage agent-usage--compact"/);
-  assert.doesNotMatch(composerHtml, /class="agent-usage/);
+  assert.match(settingsText, /Codex/);
+  assert.match(settingsText, /GPT-5\.5/);
+  assert.match(settingsText, /5h window\s*58%/);
+  assert.match(settingsText, /1 week window\s*68%/);
+  assert.match(settingsText, /Resets/);
+  assert.doesNotMatch(settingsText, /Session context/);
+  assert.doesNotMatch(settingsText, /64k \/ 256k tokens/);
+
+  assert.match(composerHtml, /class="agent-usage"/);
+  assert.match(composerText, /Session context\s*75% left\s*64k \/ 256k tokens/);
+  assert.doesNotMatch(composerText, /5h window|1 week window/);
 });
+
+test("settings_omits_context_only_usage_rows", () => {
+  const thread: AgentChatThreadSummary = {
+    threadId: "thread-context-only",
+    title: "Context only",
+    agentBinding: {
+      agentId: "claude",
+      runtimeSource: { kind: "provider_cli", integrationId: "claude" },
+    },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    launchOptions: { model: "sonnet-4.6" },
+    createdAt: "2026-06-11T00:00:00.000Z",
+    updatedAt: "2026-06-11T00:01:00.000Z",
+    pinned: false,
+    archived: false,
+    lastKnownState: "idle",
+  };
+  const listed = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    { kind: "thread.listed", payload: { threads: [thread] } },
+  );
+  const hydrated = applyProductShellBackendEvent(listed, {
+    kind: "thread.hydrated",
+    payload: { thread, blocks: [], runtimeState: "idle" },
+  });
+  const withUsage = applyProductShellBackendEvent(hydrated, {
+    kind: "agentRuntime.usageChanged",
+    payload: {
+      threadId: "thread-context-only",
+      usage: {
+        totalTokens: 64000,
+        contextWindow: 256000,
+        contextUsedPercent: 25,
+        model: "sonnet-4.6",
+      },
+    },
+  });
+  const html = renderToStaticMarkup(
+    <TideProductShell initialState={setProductShellSettingsOpen(withUsage, true)} />,
+  );
+  const settingsStart = html.indexOf('aria-label="Settings"');
+  const settingsHtml = settingsStart >= 0 ? html.slice(settingsStart) : html;
+  const usageStart = settingsHtml.indexOf('aria-label="Provider window usage"');
+  const usageHtml = usageStart >= 0 ? settingsHtml.slice(usageStart) : settingsHtml;
+  const settingsText = visibleText(usageHtml);
+
+  assert.match(settingsText, /No provider window usage reported yet/);
+  assert.doesNotMatch(settingsText, /Claude Code/);
+  assert.doesNotMatch(settingsText, /64k \/ 256k tokens/);
+});
+
+function visibleText(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}

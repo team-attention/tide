@@ -9,6 +9,7 @@ import { chipAnchorFromEvent, contextChipIcon, createContextChip } from "./conte
 import { createProviderReadiness } from "../readiness/readiness.ts";
 import { PromptCard } from "../prompt-card/prompt-card.tsx";
 import { createQueuedSteerStack } from "./steer-queue.tsx";
+import { SessionContextMeter } from "./usage-meter.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // The composer has something sendable when there is text, a pasted image, OR a
@@ -356,6 +357,7 @@ export function createComposerStack(
             handlers.onRemoveQueued,
           )
         : null}
+      {viewModel.usage ? <SessionContextMeter usage={viewModel.usage} /> : null}
       {createComposer(viewModel, handlers)}
     </div>
   );

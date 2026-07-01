@@ -198,8 +198,8 @@ function formatTokenCount(tokens: number): string {
   return `${thousands.toFixed(1)}k`;
 }
 
-// Maps a provider quota window to its REMAINING-framed view row. Dropped when
-// the provider gave no usage percent (we cannot state how much is left).
+// Maps a provider quota window to a view row. Dropped when the provider gave no
+// usage percent, since neither used nor remaining can be stated.
 function rateLimitView(
   limit: NonNullable<AgentChatUsage["rateLimits"]>[number],
 ): AgentChatUsageRateLimitView | undefined {
@@ -207,10 +207,13 @@ function rateLimitView(
   if (label === undefined || limit.usedPercent === undefined) {
     return undefined;
   }
+  const usedPercent = clampPercent(Math.round(limit.usedPercent));
   const remainingPercent = clampPercent(Math.round(100 - limit.usedPercent));
   const resetLabel = formatResetLabel(limit.resetsAt, limit.windowMinutes);
   return {
     label,
+    usedPercent,
+    usedLabel: `${usedPercent}%`,
     remainingPercent,
     remainingLabel: `${remainingPercent}%`,
     ...(resetLabel !== undefined ? { resetLabel } : {}),
