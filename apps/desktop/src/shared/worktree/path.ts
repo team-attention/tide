@@ -84,6 +84,14 @@ export function branchDeleteArgs(repoCwd: string, branch: string, force: boolean
   return ["-C", repoCwd, "branch", force ? "-D" : "-d", branch];
 }
 
+// `git switch <branch>` for aligning a Local Start Composer branch chip with the
+// actual cwd checkout before the Agent Runtime starts. The caller pre-validates
+// that `branch` is local and shows any warnings; this helper only defines the
+// shell-free argv shape. See docs_v2/specs/worktree-start-experience.md.
+export function branchCheckoutArgs(repoCwd: string, branch: string): string[] {
+  return ["-C", repoCwd, "switch", branch];
+}
+
 // Tests whether `branch`'s commits are all reachable from the repo's HEAD (i.e.
 // merged). `merge-base --is-ancestor` exits 0 when merged, 1 when not.
 export function branchMergedArgs(repoCwd: string, branch: string): string[] {

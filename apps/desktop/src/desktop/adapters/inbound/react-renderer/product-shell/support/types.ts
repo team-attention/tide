@@ -77,6 +77,10 @@ export interface ProjectRegistryBridge {
   // dialog's unmerged warning; deleteBranch runs `git branch -d|-D`. See
   // docs_v2/specs/branch-deletion-from-picker.md.
   branchInfo(cwd: string, branch: string): Promise<{ exists: boolean; merged: boolean }>;
+  checkoutBranch?(
+    cwd: string,
+    branch: string,
+  ): Promise<{ checkedOut: boolean; currentBranch: string | null; error?: string }>;
   deleteBranch(
     cwd: string,
     branch: string,
@@ -149,6 +153,8 @@ export interface ProductShellHandlers {
   // Submit a multi-step prompt (wizard): one answer per step, all at once.
   onAnswerPromptSteps: (stepAnswers: AgentChatPromptStepAnswer[]) => void;
   onSubmit: () => void;
+  onBranchCheckoutConfirm: () => void;
+  onBranchCheckoutCancel: () => void;
   onInterrupt: () => void;
   // Set or clear (empty string) the active thread's goal from the Goal & Checklist panel.
   onSetGoal: (goal: string) => void;

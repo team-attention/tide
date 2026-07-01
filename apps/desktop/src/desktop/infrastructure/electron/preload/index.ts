@@ -183,6 +183,10 @@ export interface TidePreloadSurface {
     branchDeleted: boolean;
   }>;
   branchInfo(cwd: string, branch: string): Promise<{ exists: boolean; merged: boolean }>;
+  checkoutBranch(
+    cwd: string,
+    branch: string,
+  ): Promise<{ checkedOut: boolean; currentBranch: string | null; error?: string }>;
   deleteBranch(
     cwd: string,
     branch: string,
@@ -349,6 +353,13 @@ export const tidePreloadSurface: TidePreloadSurface = {
     return ipcRenderer.invoke("tide:branch-info", cwd, branch) as Promise<{
       exists: boolean;
       merged: boolean;
+    }>;
+  },
+  checkoutBranch(cwd, branch) {
+    return ipcRenderer.invoke("tide:checkout-branch", cwd, branch) as Promise<{
+      checkedOut: boolean;
+      currentBranch: string | null;
+      error?: string;
     }>;
   },
   deleteBranch(cwd, branch, options) {

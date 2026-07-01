@@ -1,4 +1,4 @@
-import { execGitArgs, readProjectRegistry, repoRootForWorktree, runGit, writeProjectRegistry } from "./project-registry.ts";
+import { checkoutBranchForStart, execGitArgs, readProjectRegistry, repoRootForWorktree, runGit, writeProjectRegistry } from "./project-registry.ts";
 import type { GitChangeFile, GitChanges, GitContext } from "./project-registry.ts";
 import { backendProcess, ensureBackendProcess, nextEventId, postBackendCommand } from "./backend-bridge.ts";
 import { maybeOfferMoveToApplications } from "./move-to-applications.ts";
@@ -484,6 +484,13 @@ ipcMain.handle("tide:branch-info", async (_event, cwd: unknown, branch: unknown)
   }
   return info;
 });
+
+// Switch the selected local folder to a local branch before starting a Local
+// Thread. Never force-switch: dirty-file conflicts or "checked out elsewhere"
+// failures keep the Composer draft intact in the renderer.
+ipcMain.handle("tide:checkout-branch", async (_event, cwd: unknown, branch: unknown) =>
+  checkoutBranchForStart(cwd, branch),
+);
 
 // Delete a local branch (`git branch -d`, or `-D` when the caller acknowledged
 // unmerged loss). The renderer only ever offers this for safe branches — local,
