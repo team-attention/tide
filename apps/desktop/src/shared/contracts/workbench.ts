@@ -39,6 +39,7 @@ export type BrowserPaneActionKindDto =
   | "type_text"
   | "move_to"
   | "click_at"
+  | "drag"
   | "scroll"
   | "key"
   | "type";
@@ -51,11 +52,16 @@ export interface BrowserPaneActionDto {
   // Selector path (reliability fallback): set for "click" / "type_text".
   selector?: string;
   text?: string;
-  // Coordinate computer-use path (screenshot-pixel space): "move_to"/"click_at"/"scroll"
-  // carry x/y; "scroll" adds deltaX/deltaY; "click_at" adds button/clickCount; "key"
-  // carries keys; "type" carries text (typed into the focused element).
+  // Coordinate computer-use path (screenshot-pixel space): "move_to"/"click_at"/"scroll"/
+  // "drag" carry x/y; "drag" adds toX/toY and optional durationMs/steps; "scroll" adds
+  // deltaX/deltaY; "click_at" adds button/clickCount; "key" carries keys; "type" carries
+  // text (typed into the focused element).
   x?: number;
   y?: number;
+  toX?: number;
+  toY?: number;
+  durationMs?: number;
+  steps?: number;
   button?: BrowserPaneButtonDto;
   clickCount?: number;
   deltaX?: number;

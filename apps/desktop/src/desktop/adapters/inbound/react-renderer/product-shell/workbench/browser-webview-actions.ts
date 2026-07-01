@@ -10,10 +10,10 @@ import type {
 //
 // Hybrid action model (D1): selector actions ("click"/"type_text") run through
 // executeJavaScript (the reliability fallback, unchanged); coordinate computer-use
-// actions ("move_to"/"click_at"/"scroll"/"key"/"type") drive the page through real
-// webview.sendInputEvent — the "human" path. Coordinate actions arrive in the screenshot
-// pixel space the Agent observed; this helper converts them to webview CSS pixels before
-// sending Electron input events.
+// actions ("move_to"/"click_at"/"drag"/"scroll"/"key"/"type") drive the page through
+// real webview.sendInputEvent — the "human" path. Coordinate actions arrive in the
+// screenshot pixel space the Agent observed; this helper converts them to webview CSS
+// pixels before sending Electron input events.
 
 export type BrowserWebViewInputEvent =
   | {
@@ -257,6 +257,7 @@ export async function executeBrowserWebViewAction(
       return executeSelectorAction(webview, action);
     case "move_to":
     case "click_at":
+    case "drag":
     case "scroll":
     case "key":
     case "type":
@@ -518,6 +519,49 @@ async function executeInputEventAction(
       const suffix = described.message.length > 0 ? ` (${described.message})` : "";
       return { ok: true, message: `Clicked at ${action.x},${action.y}${suffix}` };
     }
+    case "drag": {
+      if (
+        action.x === undefined ||
+        action.y === undefined ||
+        action.toX === undefined ||
+        action.toY === undefined
+      ) {
+        return invalidDragCoordinates();
+      }
+      const start = coordinateActionPoint(action.x, action.y);
+      const end = coordinateActionPoint(action.toX, action.toY);
+      const steps = boundedInteger(action.steps, 8, 1, 60);
+      const durationMs = boundedInteger(action.durationMs, 250, 0, 2000);
+      const perStepDelayMs = steps > 0 ? durationMs / steps : 0;
+      webview.sendInputEvent({ type: "mouseMove", x: start.x, y: start.y });
+      webview.sendInputEvent({
+        type: "mouseDown",
+        x: start.x,
+        y: start.y,
+        button: "left",
+        clickCount: 1,
+      });
+      for (let step = 1; step <= steps; step += 1) {
+        const t = step / steps;
+        const x = start.x + (end.x - start.x) * t;
+        const y = start.y + (end.y - start.y) * t;
+        webview.sendInputEvent({ type: "mouseMove", x, y, button: "left" });
+        if (perStepDelayMs > 0 && step < steps) {
+          await delay(perStepDelayMs);
+        }
+      }
+      webview.sendInputEvent({
+        type: "mouseUp",
+        x: end.x,
+        y: end.y,
+        button: "left",
+        clickCount: 1,
+      });
+      return {
+        ok: true,
+        message: `Dragged from ${action.x},${action.y} to ${action.toX},${action.toY}`,
+      };
+    }
     case "scroll": {
       if (action.x === undefined || action.y === undefined) {
         return invalidCoordinates();
@@ -558,6 +602,22 @@ async function executeInputEventAction(
 
 function invalidCoordinates(): BrowserWebViewActionExecution {
   return { ok: false, message: "Coordinate browser action requires numeric x and y." };
+}
+
+function invalidDragCoordinates(): BrowserWebViewActionExecution {
+  return { ok: false, message: "Drag browser action requires numeric x, y, toX, and toY." };
+}
+
+function boundedInteger(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(Math.max(Math.round(value), min), max);
 }
 
 function coordinateActionPoint(x: number, y: number): { x: number; y: number } {

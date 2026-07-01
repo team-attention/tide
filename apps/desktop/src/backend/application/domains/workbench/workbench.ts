@@ -104,6 +104,7 @@ export type BrowserPaneActionKind =
   | "type_text"
   | "move_to"
   | "click_at"
+  | "drag"
   | "scroll"
   | "key"
   | "type";
@@ -120,6 +121,10 @@ export interface BrowserPaneActionRequest {
   // docs_v2/specs/browser-pane-agent-computer-use.md.
   x?: number;
   y?: number;
+  toX?: number;
+  toY?: number;
+  durationMs?: number;
+  steps?: number;
   button?: BrowserPaneButton;
   clickCount?: number;
   deltaX?: number;

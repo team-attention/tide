@@ -91,9 +91,10 @@ test("tide_mcp_tool_surface_lists_bounded_workbench_tools", () => {
     idGenerator: sequentialIdGenerator("id"),
   });
   const adapter = createTideMcpToolSurfaceAdapter({ service });
+  const tools = adapter.listTools();
 
   assert.deepEqual(
-    adapter.listTools().map((tool) => tool.name),
+    tools.map((tool) => tool.name),
     [
       "tide_observe_thread",
       "tide_observe_workbench",
@@ -112,6 +113,11 @@ test("tide_mcp_tool_surface_lists_bounded_workbench_tools", () => {
       "tide_set_workbench_layout",
     ],
   );
+  const actBrowserTool = tools.find((tool) => tool.name === "tide_act_browser");
+  const actionProperty = actBrowserTool?.inputSchema.properties?.action as
+    | { enum?: string[] }
+    | undefined;
+  assert.ok(actionProperty?.enum?.includes("drag"));
 });
 
 // --- UC-2: Agent observes Workbench ---
@@ -484,6 +490,40 @@ test("browser_action_tool_schedules_pending_click_for_desktop_webview", async ()
   assert.equal(events.at(-1)?.kind, "workbench_changed");
 });
 
+test("browser_action_tool_schedules_pending_drag_for_bottom_sheet_controls", async () => {
+  const service = serviceWithActiveThread("thread-browser-drag", "runtime-browser-drag");
+  const opened = await openBrowser(
+    service,
+    "runtime-browser-drag",
+    "https://example.test/bottom-sheet",
+  );
+
+  const result = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-browser-drag", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: {
+      paneId: opened.output.pane.paneId,
+      revision: opened.output.pane.revision,
+      action: "drag",
+      x: 120,
+      y: 700,
+      toX: 120,
+      toY: 260,
+      durationMs: 400,
+      steps: 10,
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.output.kind, "act_browser");
+  assert.equal(result.ok && result.output.action.kind, "drag");
+  assert.equal(result.ok && result.output.action.toY, 260);
+  assert.equal(
+    result.ok && result.output.pane.pendingAction?.kind,
+    "drag",
+  );
+});
+
 test("browser_type_action_without_text_returns_structured_error", async () => {
   // Spec: docs_v2/specs/tide-mcp-browser-action-tool.md
   const service = serviceWithActiveThread("thread-browser-type", "runtime-browser-type");
@@ -686,6 +726,60 @@ test("stale_pending_browser_action_is_failed_and_the_next_action_is_queued", asy
     second.ok && second.output.kind === "act_browser" && second.output.pane.pendingAction?.x,
     30,
   );
+});
+
+test("observe_browser_clears_a_stale_pending_action_before_the_next_action", async () => {
+  let currentTimeMs = Date.parse(now);
+  const service = createThreadRuntimeService({
+    browserCapturePullTimeoutMs: 20,
+    ...createFakes().ports,
+    clock: () => new Date(currentTimeMs).toISOString(),
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-observe-stale-pending", {
+        activeRuntimeHandle: runtimeHandle(
+          "thread-observe-stale-pending",
+          "runtime-observe-stale-pending",
+        ),
+        runtimeState: "running",
+      }),
+    ],
+  });
+  const opened = await openBrowser(
+    service,
+    "runtime-observe-stale-pending",
+    "https://example.test/observe-pending",
+  );
+  const paneId = opened.output.pane.paneId;
+  const revision = opened.output.pane.revision;
+
+  const first = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-observe-stale-pending", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: { paneId, revision, action: "click_at", x: 10, y: 20 },
+  });
+  assert.equal(first.ok, true);
+  const firstActionId =
+    first.ok && first.output.kind === "act_browser" ? first.output.action.actionId : "";
+
+  currentTimeMs += BROWSER_ACTION_PENDING_TTL_MS + 1;
+  const observed = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-observe-stale-pending", agentId: "codex" },
+    toolName: "tide_observe_browser",
+    input: { paneId, revision, mode: "text" },
+  });
+
+  assert.equal(observed.ok, true);
+  assert.equal(observed.ok && observed.output.pane.pendingAction, undefined);
+  assert.equal(observed.ok && observed.output.pane.lastAction?.actionId, firstActionId);
+  assert.equal(observed.ok && observed.output.pane.lastAction?.status, "failed");
+
+  const second = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-observe-stale-pending", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: { paneId, revision, action: "click_at", x: 30, y: 40 },
+  });
+  assert.equal(second.ok, true);
 });
 
 test("navigation_advances_revision_and_the_stale_error_carries_the_current_one", async () => {

@@ -115,6 +115,7 @@ const BROWSER_ACTION_KINDS = [
   "type_text",
   "move_to",
   "click_at",
+  "drag",
   "scroll",
   "key",
   "type",
