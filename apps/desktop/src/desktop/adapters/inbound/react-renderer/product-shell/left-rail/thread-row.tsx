@@ -137,7 +137,7 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
                 () => handlers.onThreadArchiveIntent(thread.threadId),
                 "thread-row__action",
               )}
-              {worktreeBranch !== null
+              {worktreeBranch != null
                 ? createIconButton(
                     "Delete worktree",
                     <Trash2 size={15} strokeWidth={1.9} />,
