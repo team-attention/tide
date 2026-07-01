@@ -343,7 +343,12 @@ function codexThreadStartParams(
     params.sandbox = "workspace-write";
     params.approvalPolicy = "on-request";
   } else if (permission === "approve-for-me") {
-    params.sandbox = "workspace-write";
+    // Codex's macOS seatbelt workspace sandbox denies GUI process registration
+    // with LaunchServices/WindowServer, which makes Electron abort before app JS
+    // starts. Tide's automatic mode should match the user's terminal process
+    // environment while keeping Codex's on-failure approval policy distinct from
+    // the explicit "Full access" mode's never-ask behavior.
+    params.sandbox = "danger-full-access";
     params.approvalPolicy = "on-failure";
   } else if (permission === "full-access" || permission === "dangerously-bypass-approvals-and-sandbox") {
     params.sandbox = "danger-full-access";
@@ -387,7 +392,7 @@ function codexLaunchOptionArgs(
   if (permission === "ask-for-approval") {
     args.push("--sandbox", "workspace-write", "--ask-for-approval", "on-request");
   } else if (permission === "approve-for-me") {
-    args.push("--sandbox", "workspace-write", "--ask-for-approval", "on-failure");
+    args.push("--sandbox", "danger-full-access", "--ask-for-approval", "on-failure");
   } else if (permission === "full-access") {
     args.push("--dangerously-bypass-approvals-and-sandbox");
   } else if (

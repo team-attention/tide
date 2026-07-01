@@ -51,7 +51,7 @@ export const AGENT_DESCRIPTORS: Record<AgentId, AgentDescriptor> = {
       default: "approve-for-me",
       options: [
         { id: "codex-ask", value: "ask-for-approval", label: "Ask for approval", detail: "Edits & internet need approval" },
-        { id: "codex-auto", value: "approve-for-me", label: "Approve for me", detail: "Only unsafe actions ask" },
+        { id: "codex-auto", value: "approve-for-me", label: "Approve for me", detail: "Terminal-like files & internet" },
         { id: "codex-full", value: "full-access", label: "Full access", detail: "Unrestricted files & internet", danger: true },
       ],
       legacyValueMap: {
