@@ -76,6 +76,7 @@ export * from "./state/search.ts";
 export * from "./state/start.ts";
 export * from "./state/thread-list.ts";
 export * from "./state/attention-notifications.ts";
+export * from "./state/local-branch-checkout.ts";
 export * from "./state/workbench.ts";
 export * from "./state/workbench-editor.ts";
 export * from "./state/file-tree.ts";

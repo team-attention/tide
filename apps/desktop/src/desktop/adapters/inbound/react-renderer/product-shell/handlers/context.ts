@@ -4,6 +4,7 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import type {
+  LocalBranchCheckoutTarget,
   ProductShellBackendCommand,
   ProductShellState,
   ProductShellViewModel,
@@ -41,6 +42,9 @@ export interface ProductShellHandlerContext {
   setWorktreeDelete: Dispatch<SetStateAction<WorktreeDeleteTarget | null>>;
   branchDelete: BranchDeleteTarget | null;
   setBranchDelete: Dispatch<SetStateAction<BranchDeleteTarget | null>>;
+  branchCheckout: LocalBranchCheckoutTarget | null;
+  setBranchCheckout: Dispatch<SetStateAction<LocalBranchCheckoutTarget | null>>;
+  setBranchCheckoutBusy: Dispatch<SetStateAction<boolean>>;
   windowWidth: number;
   bodyRef: { current: HTMLDivElement | null };
   lastSubmitAtRef: { current: number };

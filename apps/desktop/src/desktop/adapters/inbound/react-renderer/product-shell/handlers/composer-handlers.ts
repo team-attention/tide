@@ -1,8 +1,8 @@
-import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, interruptProductShellRuntime, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft, ensureComposerDraftThreadActive, type ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, interruptProductShellRuntime, localBranchCheckoutRequest, planLocalBranchCheckout, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellGitContext, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft, ensureComposerDraftThreadActive, type LocalBranchCheckoutTarget, type ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { AgentChatThreadScope } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { resolveWorktreeName } from "../../../../../../shared/worktree/name.ts";
 import { makeWorktreeHash } from "../dialogs/worktree-name-input.tsx";
-import type { ProductShellHandlers } from "../support/types.ts";
+import type { GitContextResult, ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
 // The Execution Context cwd a Composer scope points at — used to detect a project/worktree
@@ -29,8 +29,104 @@ function selectedBranchForNewWorktree(state: ProductShellState): string {
 }
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
-export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onAnswerPromptSteps" | "onSubmit" | "onInterrupt" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onChoiceSurfaceInputSubmit" | "onOpencodeConnectApiKey" | "onAddAttachment" | "onRemoveAttachment" | "onSetGoal"> {
-  const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, startColumnResize } = ctx;
+export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onAnswerPromptSteps" | "onSubmit" | "onBranchCheckoutConfirm" | "onBranchCheckoutCancel" | "onInterrupt" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onChoiceSurfaceInputSubmit" | "onOpencodeConnectApiKey" | "onAddAttachment" | "onRemoveAttachment" | "onSetGoal"> {
+  const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, branchCheckout, setBranchCheckout, setBranchCheckoutBusy, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, startColumnResize } = ctx;
+  const submitDraftNow = (gitContext?: GitContextResult): void => {
+    setShellState((state) => {
+      const stateWithGit =
+        gitContext !== undefined && gitContext.isGitRepo
+          ? setProductShellGitContext(state, {
+              branches: gitContext.branches,
+              worktrees: gitContext.worktrees,
+            })
+          : state;
+      const result = submitProductShellComposerDraft(stateWithGit);
+      dispatchBackendCommand(result.command);
+      return result.state;
+    });
+  };
+
+  const showBranchCheckoutFailure = (
+    target: LocalBranchCheckoutTarget,
+    fallbackMessage: string,
+  ): void => {
+    setBranchCheckout({
+      ...target,
+      error: target.error ?? fallbackMessage,
+    });
+    setBranchCheckoutBusy(false);
+    lastSubmitAtRef.current = 0;
+  };
+
+  const submitAfterLocalBranchCheckout = (allowRunningCheckout = false): void => {
+    const bridge = props.projectBridge;
+    const request = localBranchCheckoutRequest(getShellState());
+    const checkoutBranch = bridge?.checkoutBranch;
+    if (bridge === undefined || typeof checkoutBranch !== "function" || request === null) {
+      submitDraftNow();
+      return;
+    }
+
+    bridge
+      .gitContext(request.cwd)
+      .then((context) => {
+        const plan = planLocalBranchCheckout({
+          state: getShellState(),
+          request,
+          gitContext: context,
+          allowRunningCheckout,
+        });
+        if (plan.kind === "none") {
+          setBranchCheckout(null);
+          setBranchCheckoutBusy(false);
+          submitDraftNow(context);
+          return;
+        }
+        if (plan.kind === "blocked") {
+          showBranchCheckoutFailure(plan.target, `Couldn't switch to ${plan.target.branch}.`);
+          return;
+        }
+        if (plan.kind === "warn_running") {
+          setBranchCheckout(plan.target);
+          setBranchCheckoutBusy(false);
+          lastSubmitAtRef.current = 0;
+          return;
+        }
+
+        if (branchCheckout !== null) {
+          setBranchCheckoutBusy(true);
+        }
+        checkoutBranch(plan.target.cwd, plan.target.branch)
+          .then((result) => {
+            if (!result.checkedOut) {
+              showBranchCheckoutFailure(
+                {
+                  ...plan.target,
+                  currentBranch: result.currentBranch ?? plan.target.currentBranch,
+                  error: result.error,
+                },
+                `Couldn't switch to ${plan.target.branch}.`,
+              );
+              return;
+            }
+            bridge
+              .gitContext(plan.target.cwd)
+              .catch(() => context)
+              .then((freshContext) => {
+                setBranchCheckout(null);
+                setBranchCheckoutBusy(false);
+                submitDraftNow(freshContext);
+              });
+          })
+          .catch(() => {
+            showBranchCheckoutFailure(plan.target, `Couldn't switch to ${plan.target.branch}.`);
+          });
+      })
+      .catch(() => {
+        submitDraftNow();
+      });
+  };
+
   return {
     onDraftChange: (draft) => setShellState((state) => updateProductShellComposerDraft(state, draft)),
     // Set/clear the active thread's goal from the Goal & Checklist panel. The backend
@@ -86,7 +182,8 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
       // Deferred "New worktree": create the worktree first (name derived from the
       // first message when not typed), then submit the draft scoped to it. The
       // worktree/branch name is decided once, here, so no live directory is moved.
-      const composer = shellState.agentChat.composer;
+      const currentState = getShellState();
+      const composer = currentState.agentChat.composer;
       const launch = composer.startOptions.launchOptions ?? {};
       const scope = composer.startOptions.scope;
       const bridge = props.projectBridge;
@@ -98,7 +195,7 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
           firstMessage: composer.draft,
           makeHash: makeWorktreeHash,
         });
-        const { baseDirPattern, copyFiles } = shellState.worktreeSettings;
+        const { baseDirPattern, copyFiles } = currentState.worktreeSettings;
         bridge
           .createWorktree(scope.cwd, name, { baseDirPattern, copyFiles, baseBranch })
           .then((result) => {
@@ -126,11 +223,13 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
         return;
       }
 
-      setShellState((state) => {
-        const result = submitProductShellComposerDraft(state);
-        dispatchBackendCommand(result.command);
-        return result.state;
-      });
+      submitAfterLocalBranchCheckout(false);
+    },
+    onBranchCheckoutConfirm: () => submitAfterLocalBranchCheckout(true),
+    onBranchCheckoutCancel: () => {
+      setBranchCheckout(null);
+      setBranchCheckoutBusy(false);
+      lastSubmitAtRef.current = 0;
     },
     onInterrupt: () =>
       setShellState((state) => {

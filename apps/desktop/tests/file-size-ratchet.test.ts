@@ -72,11 +72,6 @@ const PINNED_MAX: Record<string, number> = {
   // openProductShellThreadFromLeftRail / applyProductShellThreadEvent. This file was at 787
   // (under cap) on main; the unread state tipped it over. The thread-list split is the real fix.
   "desktop/application/domains/product-shell/state/thread-list.ts": 836,
-  // +unread-thread-notifications: the completed-thread effect now also marks off-focus
-  // finished threads unread (markProductShellThreadsUnread) alongside the existing notify
-  // call. This file sat at 798 (2 under cap) on main; the feature tipped it over. Splitting
-  // the product-shell container is the real fix (Phase-3 backlog).
-  "desktop/adapters/inbound/react-renderer/product-shell/product-shell.tsx": 808,
 };
 
 function listSourceFiles(dir: string): string[] {

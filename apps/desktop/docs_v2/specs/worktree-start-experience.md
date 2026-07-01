@@ -26,6 +26,11 @@ In scope:
 - **Trust inheritance for Tide default worktrees**: if the parent repo is already
   trusted for the selected provider, the new default-path worktree is trusted before
   provider readiness runs, so starting in the worktree does not ask again.
+- **Local branch alignment**: when the user starts a Thread with Worktree = Local
+  and Branch = a different local branch, Tide checks out that branch in the selected
+  folder before starting the Agent Runtime.
+- **Local checkout collision warning**: if another Thread is actively running in the
+  same local folder, Tide warns before switching the shared working tree branch.
 
 ## Evidence
 
@@ -49,6 +54,10 @@ In scope:
   (`agent-chat-shell-state.ts:2057-2065`, `tide-product-shell.ts:1436-1439`).
 - Thread title today = `titleFromMessage(firstMessage)` or manual rename
   (`service-value-helpers.ts`); no agent-metadata-derived title.
+- The current Composer submit path passes `launchOptions.branch` to `thread.start`
+  but does not switch the selected cwd first. The top-bar git badge is read from
+  the real cwd, so a Start Composer chip can say `main` while the Thread starts in
+  a folder still checked out to another branch.
 
 ## Decisions
 
@@ -129,6 +138,27 @@ writes provider trust for the worktree cwd before checking readiness for the act
 Thread. This removes repeat trust prompts for Tide-created worktrees while keeping
 the prompt when the parent repo itself has not been trusted.
 
+### D9. Local Branch is applied to the shared folder before Thread start
+
+For Worktree = `current folder`, the Branch option is not merely metadata. On send,
+Desktop reads the selected folder's fresh git context. If `currentBranch !==
+launchOptions.branch`, and the requested branch is a local branch, Tide runs
+`git switch <branch>` in that folder before dispatching `thread.start`. The Agent
+Runtime then receives a cwd whose actual checkout matches the Composer chip and the
+top-bar branch badge.
+
+If the selected branch is remote-only, missing, or git refuses the switch (dirty
+files, branch checked out in another worktree, etc.), Tide does not start the
+Thread. The Composer draft stays intact and the user sees the git failure.
+
+### D10. Switching a shared local folder warns when another Thread is running
+
+If the selected local folder has another Thread whose current turn is `running`,
+Desktop shows a confirmation before D9 switches the branch. Confirming means "switch
+this shared cwd, then start the new Thread"; cancelling leaves the draft and current
+branch unchanged. Idle or merely live historical sessions do not block, because they
+are not actively operating on the files.
+
 ## Out Of Scope
 
 - Renaming a worktree's git branch/directory **after** creation (the deferred
@@ -172,6 +202,11 @@ createWorktree(
   name: string,
   options?: { baseDirPattern?: string; copyFiles?: string[]; baseBranch?: string },
 ): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
+
+checkoutBranch(
+  cwd: string,
+  branch: string,
+): Promise<{ checkedOut: boolean; currentBranch: string | null; error?: string }>;
 ```
 
 Composer launch options (renderer-only, JSON-compatible):
@@ -211,6 +246,17 @@ launchOptions.newWorktree = { name?: string; baseBranch?: string };
 1. Worktree menu lists existing worktrees; selecting one sets
    `launchOptions.worktree = <path>` and scopes the Thread there (no creation).
 
+### UC-5: Local folder, selected branch differs from checkout
+
+1. Repo Project selected. Worktree menu = Local. Branch menu = `main`.
+2. The actual folder is checked out to `codex/left-rail-hover-context`.
+3. User sends.
+4. Desktop reads git context, sees `main` is a local branch and differs from the
+   current branch, runs `git switch main`, refreshes git context, then dispatches
+   `thread.start`.
+5. If another Thread is currently running in the same cwd, a warning appears before
+   step 4.
+
 ## Invariants
 
 1. The worktree branch/dir name is always git-safe ASCII derived per D1/D2 — never
@@ -221,6 +267,9 @@ launchOptions.newWorktree = { name?: string; baseBranch?: string };
    (name is fixed before creation).
 4. A worktree Thread's parent-group is its repo root (default grouping on).
 5. git is invoked read-only for menus; creation runs exactly one `git worktree add`.
+6. For Local starts, `launchOptions.branch` and the selected cwd's actual branch are
+   aligned before `thread.start` dispatches.
+7. Tide never force-switches a local folder. Git refusal keeps the draft intact.
 
 ## Tests
 
@@ -242,6 +291,10 @@ launchOptions.newWorktree = { name?: string; baseBranch?: string };
 | D7   | Local stays selected when it is the recent environment | `a_new_thread_defaults_to_the_remembered_local_environment` |
 | D7   | Scratch cannot restore pending new-worktree intent | `remembered_new_worktree_falls_back_to_local_without_project_scope` |
 | D7   | existing worktree paths are normalized to Local before persistence/restore | `existing_worktree_paths_are_not_restored_as_global_start_defaults` |
+| D9   | Local start plans a checkout when branch differs | `local_branch_checkout_plan_switches_current_folder_before_start` |
+| D9   | Remote-only branch blocks Local checkout | `local_branch_checkout_plan_blocks_remote_only_branch` |
+| D10  | Running same-cwd Thread requires confirmation | `local_branch_checkout_plan_warns_when_running_thread_shares_cwd` |
+| D9   | Main git args switch the selected branch | `branch_checkout_args_switch_to_branch` |
 
 ## Implementation Notes
 

@@ -7,10 +7,9 @@ import { createFileOperationHandlers } from "./handlers/file-operation-handlers.
 import { createChromeHandlers } from "./handlers/chrome-handlers.ts";
 import type { MenuAnchorRect, ProductShellHandlers, TideProductShellProps } from "./support/types.ts";
 import { createSettingsModal, loadListSettings, loadPreferredStartComposer, loadRailOrder, loadWorktreeSettings, persistPreferredStartComposer } from "./settings/settings.tsx";
-import { WorktreeDeleteDialog } from "./dialogs/worktree-delete-dialog.tsx";
-import { BranchDeleteDialog } from "./dialogs/branch-delete-dialog.tsx";
 import { useDeleteDialogs } from "./support/use-delete-dialogs.ts";
 import { createProductShellFileDialogs } from "./product-shell-file-dialogs.tsx";
+import { createProductShellGitDialogs } from "./product-shell-git-dialogs.tsx";
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
@@ -48,6 +47,7 @@ import {
   preferredStartComposerFromState,
   type PreferredStartComposer,
   type ProductShellBackendCommand,
+  type LocalBranchCheckoutTarget,
   type ProductShellState,
 } from "../../../../application/domains/product-shell/product-shell.ts";
 
@@ -550,7 +550,9 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     setShellState,
     dispatchBackendCommand,
   });
-  const handlerContext: ProductShellHandlerContext = { props, shellState, getShellState: store.getState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, branchDelete, setBranchDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, confirmBranchDelete, startColumnResize };
+  const [branchCheckout, setBranchCheckout] = useState<LocalBranchCheckoutTarget | null>(null);
+  const [branchCheckoutBusy, setBranchCheckoutBusy] = useState(false);
+  const handlerContext: ProductShellHandlerContext = { props, shellState, getShellState: store.getState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, branchDelete, setBranchDelete, branchCheckout, setBranchCheckout, setBranchCheckoutBusy, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, confirmBranchDelete, startColumnResize };
   const handlers: ProductShellHandlers = {
     ...createRailHandlers(handlerContext),
     ...createComposerHandlers(handlerContext),
@@ -641,7 +643,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Escape: exit Workbench fullscreen / close Settings / interrupt a running turn
   // (the interrupt yields to any open transient UI). Spec: esc-interrupts-run.md.
   useProductShellEscape(shellState, setShellState, viewModel, handlers,
-    quickOpenVisible || contentSearchVisible || worktreeCreate !== null || worktreeDelete !== null || branchDelete !== null);
+    quickOpenVisible || contentSearchVisible || worktreeCreate !== null || worktreeDelete !== null || branchDelete !== null || branchCheckout !== null);
 
   const quickOpenFiles = useMemo<QuickOpenFile[]>(
     () => quickOpenFilesFromState(shellState),
@@ -754,30 +756,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             onClose={() => setWorktreeCreate(null)}
           />
         ) : null}
-        {worktreeDelete !== null ? (
-          <WorktreeDeleteDialog
-            target={worktreeDelete}
-            deleting={worktreeDeleting}
-            onConfirm={confirmWorktreeDelete}
-            onClose={() => {
-              setWorktreeDelete(null);
-              setWorktreeDeleting(false);
-            }}
-          />
-        ) : null}
-        {branchDelete !== null ? (
-          <BranchDeleteDialog
-            target={branchDelete}
-            deleting={branchDeleting}
-            error={branchDeleteError}
-            onConfirm={confirmBranchDelete}
-            onClose={() => {
-              setBranchDelete(null);
-              setBranchDeleting(false);
-              setBranchDeleteError(null);
-            }}
-          />
-        ) : null}
+        {createProductShellGitDialogs({ worktreeDelete, worktreeDeleting, setWorktreeDelete, setWorktreeDeleting, branchDelete, branchDeleting, branchDeleteError, setBranchDelete, setBranchDeleting, setBranchDeleteError, branchCheckout, branchCheckoutBusy, confirmWorktreeDelete, confirmBranchDelete, handlers })}
         {createProductShellFileDialogs(shellState, handlers)}
         {/* The git Changes view is a docked Workbench pane (see WorkbenchColumnView),
             not an overlay. */}
