@@ -58,7 +58,7 @@ export const AGENT_DESCRIPTORS: Record<AgentId, AgentDescriptor> = {
         "read-only": "ask-for-approval",
         untrusted: "ask-for-approval",
         "on-request": "ask-for-approval",
-        "workspace-write": "approve-for-me",
+        "workspace-write": "ask-for-approval",
         "on-failure": "approve-for-me",
         "danger-full-access": "full-access",
         never: "full-access",
