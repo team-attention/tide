@@ -207,13 +207,21 @@ export class TideMcpToolHandler {
           ok: true,
           value: openBrowserOutput(thread, input.input, this.idGenerator, this.clock),
         };
-      case "tide_observe_browser":
-        return observeBrowserOutput(
+      case "tide_observe_browser": {
+        const result = await observeBrowserOutput(
           thread,
           input.input,
           (pane) => this.pullBrowserScreenshot(thread, pane),
           this.clock,
         );
+        if (result.ok && result.stalePendingActionExpired) {
+          this.emitAsyncEvent({
+            kind: "workbench_changed",
+            thread: snapshotThread(thread),
+          });
+        }
+        return result;
+      }
       case "tide_act_browser":
         return actBrowserOutput(thread, input.input, this.idGenerator, this.clock);
       case "tide_read_file":

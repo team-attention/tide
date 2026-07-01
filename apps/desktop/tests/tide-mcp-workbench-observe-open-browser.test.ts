@@ -730,6 +730,7 @@ test("stale_pending_browser_action_is_failed_and_the_next_action_is_queued", asy
 
 test("observe_browser_clears_a_stale_pending_action_before_the_next_action", async () => {
   let currentTimeMs = Date.parse(now);
+  const events: ThreadRuntimeAsyncEvent[] = [];
   const service = createThreadRuntimeService({
     browserCapturePullTimeoutMs: 20,
     ...createFakes().ports,
@@ -744,6 +745,7 @@ test("observe_browser_clears_a_stale_pending_action_before_the_next_action", asy
         runtimeState: "running",
       }),
     ],
+    onAsyncEvent: (event) => events.push(event),
   });
   const opened = await openBrowser(
     service,
@@ -763,6 +765,7 @@ test("observe_browser_clears_a_stale_pending_action_before_the_next_action", asy
     first.ok && first.output.kind === "act_browser" ? first.output.action.actionId : "";
 
   currentTimeMs += BROWSER_ACTION_PENDING_TTL_MS + 1;
+  events.length = 0;
   const observed = await service.handleTideMcpToolCall({
     session: { runtimeId: "runtime-observe-stale-pending", agentId: "codex" },
     toolName: "tide_observe_browser",
@@ -773,6 +776,13 @@ test("observe_browser_clears_a_stale_pending_action_before_the_next_action", asy
   assert.equal(observed.ok && observed.output.pane.pendingAction, undefined);
   assert.equal(observed.ok && observed.output.pane.lastAction?.actionId, firstActionId);
   assert.equal(observed.ok && observed.output.pane.lastAction?.status, "failed");
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.kind, "workbench_changed");
+  assert.equal(
+    events[0]?.thread.workbench.panes.find((pane) => pane.kind === "browser")?.lastAction
+      ?.actionId,
+    firstActionId,
+  );
 
   const second = await service.handleTideMcpToolCall({
     session: { runtimeId: "runtime-observe-stale-pending", agentId: "codex" },

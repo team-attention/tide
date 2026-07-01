@@ -546,7 +546,7 @@ async function executeInputEventAction(
         const x = start.x + (end.x - start.x) * t;
         const y = start.y + (end.y - start.y) * t;
         webview.sendInputEvent({ type: "mouseMove", x, y, button: "left" });
-        if (perStepDelayMs > 0 && step < steps) {
+        if (perStepDelayMs > 0) {
           await delay(perStepDelayMs);
         }
       }

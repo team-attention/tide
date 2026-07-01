@@ -101,12 +101,17 @@ export type BrowserScreenshotPuller = (
   pane: BrowserPaneState,
 ) => Promise<BrowserPaneScreenshot | undefined>;
 
+interface ObserveBrowserOutputResult {
+  value: TideObserveBrowserOutput;
+  stalePendingActionExpired: boolean;
+}
+
 export async function observeBrowserOutput(
   thread: ThreadRecord,
   input: Record<string, unknown> | undefined,
   pullScreenshot?: BrowserScreenshotPuller,
   clock?: () => string,
-): Promise<ServiceResult<{ value: TideObserveBrowserOutput }>> {
+): Promise<ServiceResult<ObserveBrowserOutputResult>> {
   const paneId = optionalString(input?.paneId);
   if (paneId === undefined) {
     return failure("workbench_target_not_found", "Browser Pane target was not found.");
@@ -129,7 +134,9 @@ export async function observeBrowserOutput(
   }
 
   const observedAt = clock?.();
-  if (observedAt !== undefined && expireStalePendingBrowserAction(pane, observedAt)) {
+  const stalePendingActionExpired =
+    observedAt !== undefined && expireStalePendingBrowserAction(pane, observedAt);
+  if (observedAt !== undefined && stalePendingActionExpired) {
     thread.updatedAt = observedAt;
   }
 
@@ -165,6 +172,7 @@ export async function observeBrowserOutput(
       threadId: thread.threadId,
       pane: ref,
     },
+    stalePendingActionExpired,
   };
 }
 
