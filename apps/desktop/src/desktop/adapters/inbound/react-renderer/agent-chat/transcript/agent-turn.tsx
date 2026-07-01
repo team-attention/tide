@@ -11,9 +11,17 @@ import { Check, Copy, CornerDownRight, RotateCcw } from "lucide-react";
 // transcript re-renders, but a turn whose content is unchanged is skipped by the
 // comparator instead of rebuilding its (markdown) subtree (perf E2). Keyed by
 // blockId at the call site; compared on the stable content fields.
+interface AgentSessionTurnProps {
+  block: AgentChatBlockView;
+  activeStreamingCaret?: boolean;
+}
+
 export const AgentSessionTurn = memo(
-  function AgentSessionTurn({ block }: { block: AgentChatBlockView }): ReactElement | null {
-    return createAgentSessionTurn(block);
+  function AgentSessionTurn({
+    block,
+    activeStreamingCaret = false,
+  }: AgentSessionTurnProps): ReactElement | null {
+    return createAgentSessionTurn(block, activeStreamingCaret);
   },
   (prev, next) =>
     prev.block.blockId === next.block.blockId &&
@@ -22,10 +30,14 @@ export const AgentSessionTurn = memo(
     prev.block.kind === next.block.kind &&
     prev.block.role === next.block.role &&
     prev.block.title === next.block.title &&
-    prev.block.rawFallback === next.block.rawFallback,
+    prev.block.rawFallback === next.block.rawFallback &&
+    prev.activeStreamingCaret === next.activeStreamingCaret,
 );
 
-function createAgentSessionTurn(block: AgentChatBlockView): ReactElement | null {
+function createAgentSessionTurn(
+  block: AgentChatBlockView,
+  activeStreamingCaret: boolean,
+): ReactElement | null {
   if (block.role === "tool") {
     return createToolLogTurn(block);
   }
@@ -39,6 +51,7 @@ function createAgentSessionTurn(block: AgentChatBlockView): ReactElement | null 
       data-block-kind={block.kind}
       data-block-status={block.status}
       data-block-role={role}
+      data-streaming-caret={activeStreamingCaret ? "active" : undefined}
     >
       {/* Codex-style: the user turn is a right-aligned bubble (no label needed),
           the agent answer is flat prose (the text is the hero), and structured

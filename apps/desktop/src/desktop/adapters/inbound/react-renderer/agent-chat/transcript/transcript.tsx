@@ -32,8 +32,13 @@ export function createAgentSession(
   // a follow-up sent then looked un-queued. Trust chatState for "is it running";
   // use the block only to dodge the redundant double-caret.
   const lastBlock = blocks[blocks.length - 1];
-  const lastIsStreamingAgent = lastBlock?.role === "agent" && lastBlock?.status === "streaming";
-  const working = chatState === "running" && !lastIsStreamingAgent;
+  const lastHasActiveAgentCaret =
+    !!lastBlock &&
+    lastBlock.role === "agent" &&
+    (lastBlock.status === "streaming" || lastBlock.status === "pending");
+  const activeCaretBlockId =
+    chatState === "running" && lastHasActiveAgentCaret ? lastBlock.blockId : undefined;
+  const working = chatState === "running" && activeCaretBlockId === undefined;
 
   // The transcript centers ONLY the short "No messages here" empty state. The
   // moment it shows anything else — real turns, the loading skeleton, an
@@ -146,7 +151,7 @@ export function createAgentSession(
             showsEmptyPlaceholder
             ? createAgentSessionEmptyPlaceholder()
             : null
-        : groupSessionItems(blocks).map(renderSessionItem)}
+        : groupSessionItems(blocks).map((item) => renderSessionItem(item, activeCaretBlockId))}
       {working ? (
         <AgentWorkingIndicator
           runtimeStartedAt={runtimeStartedAt}
@@ -230,12 +235,21 @@ function groupSessionItems(blocks: AgentChatBlockView[]): SessionRenderItem[] {
   return items;
 }
 
-function renderSessionItem(item: SessionRenderItem): ReactElement | null {
+function renderSessionItem(
+  item: SessionRenderItem,
+  activeCaretBlockId?: string,
+): ReactElement | null {
   if (item.kind === "toolGroup") {
     return <ToolActivityGroup key={item.key} blocks={item.blocks} />;
   }
   if (item.block.role === "reasoning" || item.block.kind === "reasoning") {
     return <ReasoningTurn key={item.block.blockId} block={item.block} />;
   }
-  return <AgentSessionTurn key={item.block.blockId} block={item.block} />;
+  return (
+    <AgentSessionTurn
+      key={item.block.blockId}
+      block={item.block}
+      activeStreamingCaret={item.block.blockId === activeCaretBlockId}
+    />
+  );
 }
