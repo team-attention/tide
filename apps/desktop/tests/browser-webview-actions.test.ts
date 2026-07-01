@@ -2,6 +2,7 @@
 // Slice 1b — coordinate computer-use actions drive the live <webview> through real
 // sendInputEvent; selector actions resolve a DOM target, then prefer real input events.
 import assert from "node:assert/strict";
+import process from "node:process";
 import test from "node:test";
 
 import {
@@ -18,7 +19,10 @@ import {
   type BrowserWebViewElement,
   type BrowserWebViewInputEvent,
 } from "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/browser-webview-actions.ts";
-import { runBrowserWebViewActionTransaction } from "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/browser-pane-helpers.ts";
+import {
+  promiseWithTimeout,
+  runBrowserWebViewActionTransaction,
+} from "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/browser-pane-helpers.ts";
 
 function fakeWebView(): {
   webview: BrowserWebViewElement;
@@ -234,6 +238,27 @@ test("browser action transaction reports failed when the action chain times out"
   );
   assert.equal(result.status, "failed");
   assert.match(result.message, /timed out/);
+});
+
+test("browser action timeout helper consumes late rejection after timeout", async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(reason);
+  };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const result = await promiseWithTimeout(
+      new Promise<string>((_resolve, reject) => {
+        setTimeout(() => reject(new Error("late browser action failure")), 20);
+      }),
+      1,
+    );
+    assert.equal(result, undefined);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
 });
 
 // --- Pixel vision: capturePage ---

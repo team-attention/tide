@@ -70,12 +70,22 @@ export async function runBrowserWebViewActionTransaction(
   }
 }
 
-function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | undefined> {
-  let timer: number | undefined;
-  const timeout = new Promise<undefined>((resolve) => {
-    timer = setTimeout(resolve, timeoutMs);
+export function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const guardedPromise = promise.catch((error: unknown) => {
+    if (timedOut) {
+      return undefined;
+    }
+    throw error;
   });
-  return Promise.race([promise, timeout]).finally(() => {
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      resolve(undefined);
+    }, timeoutMs);
+  });
+  return Promise.race([guardedPromise, timeout]).finally(() => {
     if (timer !== undefined) {
       clearTimeout(timer);
     }
