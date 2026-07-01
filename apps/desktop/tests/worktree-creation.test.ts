@@ -57,6 +57,12 @@ test("applies_configured_worktree_path_pattern", () => {
     }),
     "/Users/me/repo/.worktrees/feature-login",
   );
+  assert.equal(
+    computeWorktreePath("/Users/me/repo", "feature/login", {
+      baseDirPattern: "{repo_root}/.worktrees/{branch}/branches/{branch}",
+    }),
+    "/Users/me/repo/.worktrees/feature-login/branches/feature-login",
+  );
 });
 
 test("derives_repo_root_from_a_worktree_cwd", () => {

@@ -38,8 +38,8 @@ export function computeWorktreePath(
   const pattern = settings?.baseDirPattern;
   if (pattern !== undefined && pattern.length > 0) {
     return pattern
-      .replace("{repo_root}", repoRoot)
-      .replace("{branch}", sanitized);
+      .replaceAll("{repo_root}", repoRoot)
+      .replaceAll("{branch}", sanitized);
   }
   // Default mirrors v1: a `<repo>.worktree/` sibling dir, one subdir per branch.
   const trimmedRoot = repoRoot.replace(/\/+$/, "");
