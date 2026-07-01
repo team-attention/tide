@@ -34,7 +34,7 @@ export function createPinnedSection(
               : createRailDragItem(
                   `t:${item.thread.threadId}`,
                   handlers.onReorderPinnedItem,
-                  createThreadRow(item.thread, handlers, true),
+                  createThreadRow(item.thread, handlers),
                 ),
           )}
         </div>

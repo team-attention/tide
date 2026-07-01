@@ -1,28 +1,127 @@
 import type { ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
-import type { ReactElement } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type ReactElement } from "react";
 import { createIconButton, menuAnchorFromEvent } from "../chrome/chrome.tsx";
 import { AgentIdentityIcon } from "../support/agent-identity.tsx";
-import { pinnedThreadScopeLabel } from "./thread-section.tsx";
-import { Archive, GitBranch, Pin, PinOff, Trash2 } from "lucide-react";
+import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree/path.ts";
+import { Archive, Pin, PinOff, Trash2 } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
+
+interface ThreadRowContextItem {
+  kind: "scope" | "worktree" | "branch" | "status";
+  label: string;
+  value: string;
+  title?: string;
+}
+
+interface ThreadRowContextAnchor {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+interface ThreadRowProps {
+  thread: ProductShellThreadView;
+  handlers: ProductShellHandlers;
+}
+
+const THREAD_ROW_CONTEXT_OPEN_EVENT = "tide-thread-row-context-open";
 
 export function createThreadRow(
   thread: ProductShellThreadView,
   handlers: ProductShellHandlers,
-  // Pinned rows are pulled out of their project group, so show which project/dir
-  // they belong to as a subtitle.
-  showScope = false,
 ): ReactElement {
+  return <ThreadRow key={thread.threadId} thread={thread} handlers={handlers} />;
+}
+
+function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
   const needsAttention = thread.attention === true;
   const hasUnread = thread.unread === true;
   const showAttention = needsAttention || hasUnread;
+  const contextItems = createThreadRowContextItems(thread);
+  const contextPopoverId = `thread-row-context-${thread.threadId}`;
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [contextAnchor, setContextAnchor] = useState<ThreadRowContextAnchor | null>(null);
+  const cancelContextClose = () => {
+    if (closeTimerRef.current !== null) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+  const updateContextAnchor = () => {
+    cancelContextClose();
+    const rect = rowRef.current?.getBoundingClientRect();
+    if (rect === undefined) {
+      return;
+    }
+    if (typeof document !== "undefined") {
+      document.dispatchEvent(
+        new CustomEvent(THREAD_ROW_CONTEXT_OPEN_EVENT, {
+          detail: { threadId: thread.threadId },
+        }),
+      );
+    }
+    setContextAnchor({
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom,
+    });
+  };
+  const clearContextAnchor = () => {
+    cancelContextClose();
+    setContextAnchor(null);
+  };
+  const scheduleContextClose = () => {
+    cancelContextClose();
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      setContextAnchor(null);
+    }, 180);
+  };
+  const onContextBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    scheduleContextClose();
+  };
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return () => cancelContextClose();
+    }
+    const closeWhenAnotherRowOpens = (event: Event) => {
+      const openedThreadId = (event as CustomEvent<{ threadId?: string }>).detail?.threadId;
+      if (openedThreadId === thread.threadId) {
+        return;
+      }
+      if (closeTimerRef.current !== null) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+      setContextAnchor(null);
+    };
+    document.addEventListener(THREAD_ROW_CONTEXT_OPEN_EVENT, closeWhenAnotherRowOpens);
+    return () => {
+      document.removeEventListener(THREAD_ROW_CONTEXT_OPEN_EVENT, closeWhenAnotherRowOpens);
+      cancelContextClose();
+    };
+  }, [thread.threadId]);
+  const visibleContextAnchor =
+    contextAnchor ?? (typeof window === "undefined" ? fallbackThreadRowContextAnchor() : null);
   return (
-    <div key={thread.threadId} className="thread-row-wrap">
+    <div
+      className="thread-row-wrap"
+      onMouseEnter={updateContextAnchor}
+      onMouseLeave={scheduleContextClose}
+      onFocus={updateContextAnchor}
+      onBlur={onContextBlur}
+    >
       <div
+        ref={rowRef}
         className={[
           "thread-row",
-          showScope ? "thread-row--scoped" : "",
           thread.active && !thread.hydrating ? "thread-row--active" : "",
           thread.contextMenuOpen ? "thread-row--menu-open" : "",
           thread.archiveConfirming ? "thread-row--archive-confirming" : "",
@@ -32,7 +131,6 @@ export function createThreadRow(
         data-left-row-kind="thread"
         data-thread-row={thread.threadId}
         data-active={thread.active}
-        data-scoped={showScope ? "true" : undefined}
         data-hydrating={thread.hydrating ? "true" : undefined}
         data-running={thread.running ? "true" : undefined}
         data-attention={showAttention ? "true" : undefined}
@@ -76,31 +174,12 @@ export function createThreadRow(
             className="thread-row__main"
             type="button"
             aria-pressed={thread.active}
+            aria-describedby={contextPopoverId}
             onClick={() => handlers.onThreadSelect(thread.threadId)}
             onDoubleClick={() => handlers.onThreadRenameStart(thread.threadId)}
           >
             <AgentIdentityIcon agentId={thread.agentId} />
-            {showScope ? (
-              <span className="thread-row__label">
-                <span className="thread-row__title">{thread.title}</span>
-                <span
-                  className="thread-row__scope"
-                  title={thread.scope.kind === "project" ? thread.scope.cwd : undefined}
-                >
-                  {pinnedThreadScopeLabel(thread.scope)}
-                </span>
-              </span>
-            ) : thread.worktreeBranch !== undefined ? (
-              <span className="thread-row__title-row">
-                <span className="thread-row__title">{thread.title}</span>
-                <span className="thread-row__branch" title={`Worktree: ${thread.worktreeBranch}`}>
-                  <GitBranch size={11} strokeWidth={1.9} aria-hidden />
-                  <span className="thread-row__branch-name">{thread.worktreeBranch}</span>
-                </span>
-              </span>
-            ) : (
-              <span className="thread-row__title">{thread.title}</span>
-            )}
+            <span className="thread-row__title">{thread.title}</span>
           </button>
         )}
         {thread.archiveConfirming ? (
@@ -171,7 +250,162 @@ export function createThreadRow(
             </span>,
           ]
         )}
+        {visibleContextAnchor !== null ? (
+          <div
+            id={contextPopoverId}
+            className="thread-row__context-popover"
+            role="tooltip"
+            style={threadRowContextPopoverStyle(visibleContextAnchor, contextItems)}
+            onMouseEnter={cancelContextClose}
+            onMouseLeave={scheduleContextClose}
+          >
+            {contextItems.map((item) => (
+              <span key={item.kind} className="thread-row__context-row">
+                <span className="thread-row__context-kind">{item.label}</span>
+                <span className="thread-row__context-value" title={item.title ?? item.value}>
+                  {item.value}
+                </span>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
+}
+
+function threadRowContextPopoverStyle(
+  anchor: ThreadRowContextAnchor,
+  items: ThreadRowContextItem[],
+): CSSProperties {
+  const gap = 8;
+  const margin = 8;
+  const width = 300;
+  const viewportW = typeof window === "undefined" ? 1200 : window.innerWidth;
+  const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
+  const estimatedHeight = 18 + items.length * 18;
+  const openLeft = anchor.right + gap + width > viewportW - margin;
+  const left = openLeft
+    ? Math.max(margin, anchor.left - width - gap)
+    : Math.min(anchor.right + gap, viewportW - width - margin);
+  const top = Math.max(
+    margin,
+    Math.min(anchor.top - 2, viewportH - estimatedHeight - margin),
+  );
+  return {
+    left,
+    top,
+    width,
+  };
+}
+
+function fallbackThreadRowContextAnchor(): ThreadRowContextAnchor {
+  return {
+    left: 90,
+    right: 346,
+    top: 302,
+    bottom: 332,
+  };
+}
+
+function createThreadRowContextItems(thread: ProductShellThreadView): ThreadRowContextItem[] {
+  const items: ThreadRowContextItem[] = [createScopeContextItem(thread)];
+  const worktree = worktreeContextValue(thread);
+  if (worktree !== null) {
+    items.push(worktree);
+  }
+  const branch = launchOptionString(thread, "branch");
+  if (branch !== null) {
+    items.push({ kind: "branch", label: "Branch", value: branch });
+  }
+  const status = threadStatusContextValue(thread);
+  if (status !== null) {
+    items.push({ kind: "status", label: "Status", value: status });
+  }
+  return items;
+}
+
+function createScopeContextItem(thread: ProductShellThreadView): ThreadRowContextItem {
+  if (thread.scope.kind !== "project") {
+    return {
+      kind: "scope",
+      label: "Scope",
+      value: thread.scope.scratchCwd || "Scratch",
+    };
+  }
+  const worktreeRepoRoot = worktreeRepoRootForCwd(thread.scope.cwd);
+  if (worktreeRepoRoot !== null) {
+    return {
+      kind: "scope",
+      label: "Project",
+      value: basenameLabel(worktreeRepoRoot) ?? thread.scope.projectId,
+      title: worktreeRepoRoot,
+    };
+  }
+  const cwdLabel = basenameLabel(thread.scope.cwd);
+  return {
+    kind: "scope",
+    label: "Project",
+    value:
+      cwdLabel === null || cwdLabel === thread.scope.projectId
+        ? thread.scope.projectId
+        : `${thread.scope.projectId} / ${cwdLabel}`,
+    title: thread.scope.cwd,
+  };
+}
+
+function worktreeContextValue(thread: ProductShellThreadView): ThreadRowContextItem | null {
+  const scopedWorktree =
+    thread.scope.kind === "project" && worktreeRepoRootForCwd(thread.scope.cwd) !== null
+      ? (thread.worktreeBranch ?? basenameLabel(thread.scope.cwd))
+      : null;
+  if (scopedWorktree !== null && scopedWorktree.length > 0) {
+    return {
+      kind: "worktree",
+      label: "Worktree",
+      value: scopedWorktree,
+      title: thread.scope.kind === "project" ? thread.scope.cwd : undefined,
+    };
+  }
+  const launchWorktree = launchOptionString(thread, "worktree");
+  if (launchWorktree === null || launchWorktree === "current folder") {
+    return null;
+  }
+  if (launchWorktree === "new") {
+    return { kind: "worktree", label: "Worktree", value: "New worktree" };
+  }
+  return {
+    kind: "worktree",
+    label: "Worktree",
+    value: basenameLabel(launchWorktree) ?? launchWorktree,
+    title: launchWorktree,
+  };
+}
+
+function threadStatusContextValue(thread: ProductShellThreadView): string | null {
+  if (thread.running === true) {
+    return "Running";
+  }
+  if (thread.attention === true) {
+    return "Needs attention";
+  }
+  if (thread.unread === true) {
+    return "Unread";
+  }
+  if (thread.live === true) {
+    return "Live";
+  }
+  return null;
+}
+
+function launchOptionString(
+  thread: ProductShellThreadView,
+  key: "branch" | "worktree",
+): string | null {
+  const value = thread.launchOptions?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function basenameLabel(path: string): string | null {
+  return path.split(/[/\\]/).filter((seg: string) => seg.length > 0).pop() ?? null;
 }

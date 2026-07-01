@@ -514,8 +514,8 @@ export interface ProductShellThreadView extends ProductShellThread {
   // (spec: multitask-navigation L2). Shown only while Ctrl is held (CSS-gated).
   pinNumber?: number;
   // Set when this Thread's scope cwd is a `<repo>.worktree/<branch>` worktree:
-  // the branch (= worktree dir basename), shown as a badge so a worktree Thread
-  // is identifiable when nested under its parent repo's group.
+  // the branch (= worktree dir basename), shown in the row hover context so a
+  // worktree Thread is identifiable without making every row multi-line.
   worktreeBranch?: string;
 }
 

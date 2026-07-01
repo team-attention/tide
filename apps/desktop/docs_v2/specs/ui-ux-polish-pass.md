@@ -96,6 +96,49 @@ the codebase guide the fixes:
     flat keyed list, so newly mounted rows now play `tide-tree-row-in` on insert
     (also a quiet reveal on tree load); persistent rows don't replay.
 
+### Screenshot-backed visual correction (2026-07-01)
+
+12. **Left Rail thread rows looked like bordered selected chips.** The active row
+    and running/attention variants used inset 1px outlines, and the warm running
+    treatment read like a warning border. Keep row cards as a permitted surface,
+    but remove stroke-based selection and row-level running outline animation.
+    Active rows use a quiet fill plus stronger text; running/attention use
+    background-only tint plus a local dot, never an outline.
+
+13. **Workbench tabs looked like full-height slabs.** The active tab consumed the
+    whole 52px top row with a surface fill and strong underbar, making the label
+    feel heavy. Keep the 52px column header, but make each tab a compact 32px
+    chrome item with a soft active fill and no underline slab.
+
+14. **Thread rows carried too much inline context, then exposed context
+    inconsistently.** Pinned rows stacked a project/worktree subtitle under the
+    title, and worktree rows carried an inline branch pill. Moving only those
+    special cases into hover context made some rows inspectable and others not.
+    Keep every thread row one-line, and give every thread row the same
+    hover/focus context popover. The popover always includes Project/Scope and
+    adds Worktree, Branch, and Status rows only when the Thread state actually
+    provides those facts.
+
+15. **The hover context looked bound to the row area.** Rendering the popover as
+    an absolute child of the row kept it inside the rail width/scroll region, so
+    it read like an inline expansion. Treat it like the existing left-rail context
+    menu: measure the hovered row and render a fixed flyout beside the rail,
+    escaping the scroll clip and never using the row's width as the popover
+    width.
+
+16. **The hover context disappeared before it could be inspected.** Closing the
+    flyout immediately on row mouseleave and setting `pointer-events: none` made
+    it impossible to move the cursor onto the context surface to read a long
+    worktree/branch name. The flyout must be hoverable, keep itself open with a
+    short close grace while crossing the gap from row to flyout, and expand long
+    values on flyout hover.
+
+17. **The close grace should not make row-to-row switching feel stale.** The
+    grace only exists for crossing from row to its flyout. Moving into another
+    Thread row should immediately replace the old context with the new row's
+    context, so rows dispatch a local open signal that closes peer flyouts. The
+    flyout uses stronger shadow, not borders, to read as a separate surface.
+
 Verified: `scripts/pw-ui-polish-verify.cjs` 13/13 checks pass on the real built
 app; screenshots `/tmp/polish-*.png` eyeballed (composer grown, fullscreen aligned,
 settings modal, choice-surface, expanded file tree). typecheck clean; build green.
@@ -134,6 +177,14 @@ only CSS reacts to `.tide-fullscreen`.
 - Visual (screenshot instrument): collapse animates; start composer grows with a
   long draft; fullscreen toggle aligns with New Thread row.
 - Existing renderer test suite stays green.
+- CSS assertions: thread-row active/running/attention states use background-only
+  fills without 1px inset border shadows or row-level running outline animation;
+  stacked Workbench tabs are compact and avoid full-height active slabs; thread
+  rows always expose hover/focus context while keeping project/worktree/branch
+  facts out of the inline row; hover context renders as a fixed flyout rather
+  than a row-bound absolute child; the flyout is hoverable and reveals long values
+  instead of disappearing on row mouseleave; row-to-row hover immediately switches
+  the active flyout; popover depth comes from shadow rather than row borders.
 
 ## Implementation Notes
 

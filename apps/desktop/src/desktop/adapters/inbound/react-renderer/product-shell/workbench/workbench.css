@@ -95,30 +95,28 @@
   flex: 0 0 auto;
 }
 
-/* Stacked strip: full-height tabs so the active tab's highlight is a clean vertical
-   band and the under-bar sits on the header's bottom seam. */
+/* Stacked strip: tabs are compact chrome inside the 52px row, not full-height slabs. */
 .workbench-tabs .workbench-tab {
-  height: 52px;
-  padding: 0 10px;
-  box-shadow: inset 0 -2px 0 transparent;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 7px;
+  box-shadow: none;
 }
 
 .workbench-tabs .workbench-tab:not([data-active="true"]):hover {
-  background: var(--tide-surface);
+  background: color-mix(in srgb, var(--tide-selection) 58%, transparent);
   color: var(--tide-text);
 }
 
 .workbench-tabs .workbench-tab[data-active="true"] {
-  background: var(--tide-surface);
-  box-shadow: inset 0 -2px 0 var(--tide-action);
+  background: color-mix(in srgb, var(--tide-selection) 78%, transparent);
+  box-shadow: none;
 }
 
-/* The label fills the full 52px tab height so the tab's vertical padding is part of
-   the focus target — clicking anywhere up/down the tab focuses the pane, not just the
-   icon+text strip. (Scoped to the Stacked strip; the split chip uses whole-header
-   focus instead.) The icon+text stay centred via the label's own align-items. */
+/* Keep the label sized to the compact tab; the whole tab remains the click target. */
 .workbench-tabs .workbench-tab__label {
-  align-self: stretch;
+  align-self: center;
+  height: 100%;
 }
 
 .workbench-tab__label {
@@ -130,8 +128,8 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 13.5px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 520;
   cursor: pointer;
   padding: 0;
 }
@@ -144,6 +142,10 @@
 
 .workbench-tab[data-active="true"] .workbench-tab__icon {
   color: var(--tide-text);
+}
+
+.workbench-tab[data-active="true"] .workbench-tab__label {
+  font-weight: 590;
 }
 
 .workbench-tab__title {
