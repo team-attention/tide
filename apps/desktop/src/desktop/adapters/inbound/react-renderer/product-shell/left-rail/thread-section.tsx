@@ -24,8 +24,8 @@ export function createThreadSection(
         threads.length,
         collapsed,
         () => handlers.onToggleSection(title),
-        title === "Scratch"
-          ? { label: "New scratch thread", onClick: handlers.onNewScratchThread }
+        title === "Chats"
+          ? { label: "New chat", onClick: handlers.onNewScratchThread }
           : undefined,
       )}
       {/* Height-animated (.collapsible) so collapsing the section is smooth. */}

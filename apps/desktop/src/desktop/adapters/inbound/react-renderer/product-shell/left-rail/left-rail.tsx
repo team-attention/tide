@@ -3,8 +3,8 @@ import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
 import { createColumnResizeHandle, createIconButton, createTrafficControls } from "../chrome/chrome.tsx";
 import { createLeftRailContextMenuOverlay } from "./context-menu.tsx";
-import { MessageSquarePlus, PanelLeftClose, Search, Settings } from "lucide-react";
-import { createLeftNavRow, createListSettingsButton } from "./section-header.tsx";
+import { MessageSquarePlus, PanelLeftClose, Search, Settings, X } from "lucide-react";
+import { createLeftNavRow } from "./section-header.tsx";
 import { createRailSkeleton } from "./skeletons.tsx";
 import { createPinnedSection } from "./pinned-section.tsx";
 import { createThreadSection } from "./thread-section.tsx";
@@ -41,31 +41,46 @@ export function createLeftRail(
       </header>
       <nav className="left-rail__nav" aria-label="Left Rail actions">
         {createLeftNavRow("New thread", <MessageSquarePlus size={16} strokeWidth={1.9} />, handlers.onNewThread)}
-        <div className="left-rail__search-row">
-          {viewModel.searchActive ? (
-            <div className="left-rail-search">
-              <Search size={16} strokeWidth={1.9} aria-hidden />
-              <input
-                className="left-rail-search__input"
-                type="search"
-                aria-label="Search threads"
-                placeholder="Search"
-                autoFocus
-                value={viewModel.searchQuery}
-                onChange={(event: { currentTarget: { value: string } }) =>
-                  handlers.onSearchQueryChange(event.currentTarget.value)
+        <div className="left-rail-search">
+          <Search size={15} strokeWidth={1.9} aria-hidden />
+          <input
+            className="left-rail-search__input"
+            type="search"
+            aria-label="Search threads"
+            placeholder="Search threads"
+            value={viewModel.searchQuery}
+            onFocus={() => {
+              if (!viewModel.searchActive) {
+                handlers.onSearchToggle();
+              }
+            }}
+            onChange={(event: { currentTarget: { value: string } }) =>
+              handlers.onSearchQueryChange(event.currentTarget.value)
+            }
+            onKeyDown={(event: { key: string; currentTarget: { blur: () => void } }) => {
+              if (event.key === "Escape") {
+                if (viewModel.searchQuery.length > 0) {
+                  handlers.onSearchQueryChange("");
+                  return;
                 }
-                onKeyDown={(event: { key: string }) => {
-                  if (event.key === "Escape") {
-                    handlers.onSearchToggle();
-                  }
-                }}
-              />
-            </div>
-          ) : (
-            createLeftNavRow("Search", <Search size={16} strokeWidth={1.9} />, handlers.onSearchToggle)
-          )}
-          {createListSettingsButton(handlers)}
+                if (viewModel.searchActive) {
+                  handlers.onSearchToggle();
+                }
+                event.currentTarget.blur();
+              }
+            }}
+          />
+          {viewModel.searchQuery.length > 0 ? (
+            <button
+              className="left-rail-search__clear"
+              type="button"
+              aria-label="Clear thread search"
+              onMouseDown={(event: { preventDefault: () => void }) => event.preventDefault()}
+              onClick={() => handlers.onSearchQueryChange("")}
+            >
+              <X size={13} strokeWidth={2} aria-hidden />
+            </button>
+          ) : null}
         </div>
       </nav>
       <div className="left-rail__sections">
@@ -89,7 +104,7 @@ export function createLeftRail(
           <>
             {createPinnedSection(viewModel.pinnedItems, handlers)}
             {createProjectSection(viewModel.projectGroups, handlers)}
-            {createThreadSection("Scratch", viewModel.scratchThreads, handlers)}
+            {createThreadSection("Chats", viewModel.scratchThreads, handlers)}
           </>
         )}
       </div>

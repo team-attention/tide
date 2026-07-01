@@ -23,7 +23,7 @@ import { createFileTreeColumn } from "./file-tree/file-tree.tsx";
 export const LeftRailColumnView = memo(function LeftRailColumnView(props: {
   handlers: ProductShellHandlers;
   anchor: MenuAnchorRect | null;
-  // Section collapse (Pinned/Projects/Scratch) lives in component useState, not the
+  // Section collapse (Pinned/Threads/Chats) lives in component useState, not the
   // store, so — like `anchor` — it is threaded as a prop: toggling a section changes
   // this object's identity and re-renders this memo'd column (the store slice alone
   // would not). The value is read back through handlers.isSectionCollapsed.

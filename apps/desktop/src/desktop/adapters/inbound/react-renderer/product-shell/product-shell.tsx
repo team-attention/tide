@@ -112,7 +112,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Screen rect of the trigger that opened the left-rail context menu, so the
   // menu can anchor to it as a fixed popover (escaping the rail's scroll clip).
   const [menuAnchor, setMenuAnchor] = useState<MenuAnchorRect | null>(null);
-  // Collapsed left-rail sections (Pinned / Projects / Scratch), keyed by title.
+  // Collapsed left-rail sections (Pinned / Threads / Chats), keyed by title.
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [columnWidths, setColumnWidths] = useState({ left: 220, workbench: 480, fileTree: 280 });
   const [isResizing, setIsResizing] = useState(false);

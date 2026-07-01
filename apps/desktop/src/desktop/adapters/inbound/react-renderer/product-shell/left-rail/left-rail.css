@@ -62,17 +62,6 @@
   gap: 18px;
 }
 
-.left-rail__search-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.left-rail__search-row > :first-child {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 .left-rail__footer {
   flex: 0 0 auto;
   padding: 0 10px 6px;
@@ -80,17 +69,24 @@
 
 .left-rail-search {
   width: 100%;
-  height: 32px;
+  height: 30px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 0 8px;
   border-radius: 8px;
+  background: color-mix(in srgb, var(--tide-selection) 58%, transparent);
   color: var(--tide-muted);
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.left-rail-search:hover,
+.left-rail-search:focus-within {
+  background: var(--tide-selection);
 }
 
 .left-rail-search:focus-within {
-  background: var(--tide-selection);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tide-action) 18%, transparent);
 }
 
 .left-rail-search__input {
@@ -108,6 +104,25 @@
 
 .left-rail-search__input:focus {
   outline: none;
+}
+
+.left-rail-search__clear {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+}
+
+.left-rail-search__clear:hover {
+  background: color-mix(in srgb, var(--tide-muted) 14%, transparent);
+  color: var(--tide-text);
 }
 
 .left-rail-nav-row,
@@ -181,7 +196,7 @@
   background: var(--tide-selection);
 }
 
-/* + button on Projects/Scratch headers, revealed on section hover. */
+/* + button on Threads/Chats headers, revealed on section hover. */
 
 .left-rail-section__action {
   flex: 0 0 auto;

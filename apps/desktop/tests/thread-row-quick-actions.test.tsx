@@ -9,8 +9,14 @@ import {
   applyProductShellBackendEvent,
   createProductShellState,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
+import type { AgentChatThreadSummary } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
 
-function threadSummary(threadId: string, pinned: boolean, cwd = "/Users/you/repo") {
+function threadSummary(
+  threadId: string,
+  pinned: boolean,
+  cwd = "/Users/you/repo",
+  overrides: Partial<AgentChatThreadSummary> = {},
+): AgentChatThreadSummary {
   return {
     threadId,
     title: `Thread ${threadId}`,
@@ -24,61 +30,75 @@ function threadSummary(threadId: string, pinned: boolean, cwd = "/Users/you/repo
     pinned,
     archived: false,
     lastKnownState: "idle",
+    ...overrides,
   };
 }
 
 // Render the whole shell with a single thread — NO context menu open — so we can
 // assert the row's DIRECT (hover) quick-actions, not the right-click menu.
-function renderRow(pinned: boolean, cwd = "/Users/you/repo"): string {
+function renderRow(
+  pinned: boolean,
+  cwd = "/Users/you/repo",
+  overrides: Partial<AgentChatThreadSummary> = {},
+): string {
   const seeded = applyProductShellBackendEvent(
     createProductShellState({ includeFixtureData: false }),
-    { kind: "thread.listed", payload: { threads: [threadSummary("t1", pinned, cwd)] } },
+    { kind: "thread.listed", payload: { threads: [threadSummary("t1", pinned, cwd, overrides)] } },
   );
   return renderToStaticMarkup(<TideProductShell initialState={seeded} />);
 }
 
-test("thread_row_exposes_direct_pin_and_archive_without_opening_menu", () => {
-  // master-plan:120 — pin + archive are direct hover actions on the row, so they
-  // cost one click and are present in the row markup even with the menu closed.
+test("thread_row_uses_one_menu_action_instead_of_direct_pin_archive_buttons", () => {
   const markup = renderRow(false);
-  assert.match(markup, /aria-label="Pin"/);
-  assert.match(markup, /aria-label="Archive"/);
-  // The ⋯ overflow button is gone — three direct buttons fit, so the full menu is
-  // reachable on right-click only (no visible ⋯ on the row).
-  assert.doesNotMatch(markup, /aria-label="Thread menu"/);
+  assert.match(markup, /aria-label="Thread menu"/);
+  assert.doesNotMatch(markup, /aria-label="Pin"/);
+  assert.doesNotMatch(markup, /aria-label="Archive"/);
+  assert.doesNotMatch(markup, /aria-label="Delete worktree"/);
 });
 
-test("pinned_thread_row_shows_unpin_quick_action", () => {
-  // The pin quick-action reflects state: a pinned thread offers Unpin.
+test("pinned_thread_row_uses_pinned_leading_marker_not_unpin_button", () => {
   const markup = renderRow(true);
-  assert.match(markup, /aria-label="Unpin"/);
+  assert.match(markup, /thread-row__leading--pinned/);
+  assert.match(markup, /aria-label="Thread menu"/);
+  assert.doesNotMatch(markup, /aria-label="Unpin"/);
   assert.doesNotMatch(markup, /aria-label="Pin"/);
 });
 
-test("pinned_worktree_thread_row_exposes_repo_and_worktree_in_hover_context", () => {
+test("pinned_thread_row_prioritizes_dynamic_status_over_pinned_marker", () => {
+  const running = renderRow(true, "/Users/you/repo", { lastKnownState: "running" });
+  assert.match(running, /thread-row__leading--running/);
+  assert.doesNotMatch(running, /thread-row__leading--pinned/);
+
+  const attention = renderRow(true, "/Users/you/repo", { lastKnownState: "waiting_for_input" });
+  assert.match(attention, /thread-row__leading--attention/);
+  assert.doesNotMatch(attention, /thread-row__leading--pinned/);
+
+  const live = renderRow(true, "/Users/you/repo", { live: true });
+  assert.match(live, /thread-row__leading--live/);
+  assert.doesNotMatch(live, /thread-row__leading--pinned/);
+});
+
+test("worktree_thread_row_does_not_render_hover_context_popover", () => {
   const markup = renderRow(true, "/Users/you/repo.worktree/feature-x");
-  assert.match(markup, /id="thread-row-context-t1"/);
-  assert.match(markup, /class="thread-row__context-popover"[^>]*hidden/);
-  assert.match(markup, />Project</);
-  assert.match(markup, />repo</);
-  assert.match(markup, />Worktree</);
-  assert.match(markup, />feature-x</);
-  assert.match(markup, /title="\/Users\/you\/repo\.worktree\/feature-x"/);
+  assert.doesNotMatch(markup, /id="thread-row-context-t1"/);
+  assert.doesNotMatch(markup, /thread-row__context-popover/);
+  assert.doesNotMatch(markup, />Project</);
+  assert.doesNotMatch(markup, />Worktree</);
+  assert.doesNotMatch(markup, />feature-x</);
+  assert.doesNotMatch(markup, /title="\/Users\/you\/repo\.worktree\/feature-x"/);
   assert.doesNotMatch(markup, /repo \/ feature-x/);
 });
 
-test("pinned_thread_row_scope_context_handles_windows_paths", () => {
+test("thread_row_default_markup_does_not_surface_scope_paths", () => {
   const markup = renderRow(true, "C:\\Users\\you\\repo");
-  assert.match(markup, /p1 \/ repo/);
+  assert.match(markup, /aria-label="Thread menu"/);
   assert.doesNotMatch(markup, /p1 \/ C:\\Users\\you\\repo/);
+  assert.doesNotMatch(markup, /p1 \/ repo/);
 });
 
-test("delete_worktree_is_a_direct_action_for_worktree_threads_only", () => {
-  // A plain (non-worktree) thread shows only Pin + Archive — nothing to delete.
+test("delete_worktree_is_not_a_direct_row_action", () => {
   assert.doesNotMatch(renderRow(false), /aria-label="Delete worktree"/);
-  // A worktree thread (cwd under <repo>.worktree/<branch>) gets the third direct
-  // button: Delete worktree, which opens the confirm dialog (deletes dir + branch).
-  assert.match(
+  assert.doesNotMatch(
     renderRow(false, "/Users/you/repo.worktree/feature-x"),
     /aria-label="Delete worktree"/,
   );

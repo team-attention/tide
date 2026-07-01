@@ -59,6 +59,10 @@ function renderThreadContextMenu(cwd: string): string {
   return renderToStaticMarkup(<TideProductShell initialState={withMenu} />);
 }
 
+function renderThreadRow(cwd: string): string {
+  return renderToStaticMarkup(<TideProductShell initialState={seedThreads([{ threadId: "t1", cwd }])} />);
+}
+
 test("worktree_delete_dialog_defaults_to_deleting_branch_with_keep_optout", () => {
   // D2: default action deletes worktree + branch; a "Keep branch" checkbox opts out.
   const markup = render({
@@ -100,13 +104,10 @@ test("worktree_delete_blocked_while_a_thread_runs", () => {
   assert.doesNotMatch(markup, /Keep branch/);
 });
 
-test("worktree_thread_row_exposes_direct_delete_worktree_button", () => {
-  // The ⋯ overflow is gone — a worktree thread row carries Delete worktree as a
-  // direct hover button (opens the same confirm dialog). The full menu stays on
-  // right-click; the no-longer-present ⋯ trigger button must not appear.
-  const markup = renderThreadContextMenu("/Users/you/repo.worktree/fix-login");
-  assert.match(markup, /aria-label="Delete worktree"/);
-  assert.doesNotMatch(markup, /aria-label="Thread menu"/);
+test("worktree_thread_row_keeps_delete_worktree_in_menu_not_as_direct_button", () => {
+  const markup = renderThreadRow("/Users/you/repo.worktree/fix-login");
+  assert.match(markup, /aria-label="Thread menu"/);
+  assert.doesNotMatch(markup, /aria-label="Delete worktree"/);
 });
 
 test("worktree_thread_menu_offers_archive_and_delete_worktree", () => {
