@@ -116,6 +116,10 @@ test("thread_rows_move_all_scope_status_and_worktree_context_to_hover_popovers",
   const fixtureContextPopovers = fixtureHtml.match(/thread-row__context-popover/g) ?? [];
 
   assert.equal(fixtureContextPopovers.length, fixtureThreadRows.length);
+  assert.equal(
+    (fixtureHtml.match(/class="thread-row__context-popover"[^>]*hidden/g) ?? []).length,
+    fixtureThreadRows.length,
+  );
   assert.match(projectRow, /aria-describedby="thread-row-context-thread-workbench"/);
   assert.match(projectRow, /thread-row__context-popover/);
   assert.match(projectRow, /style="[^"]*left:\s*\d+px;[^"]*top:\s*\d+px;[^"]*width:\s*300px/);
@@ -942,6 +946,7 @@ test("thread_rows_use_list_style_selection_not_card_blocks", () => {
   assert.match(css, /\.thread-row__context-popover\s*{[^}]*position:\s*fixed/s);
   assert.match(css, /\.thread-row__context-popover\s*{[^}]*z-index:\s*70/s);
   assert.match(css, /\.thread-row__context-popover\s*{[^}]*pointer-events:\s*auto/s);
+  assert.match(css, /\.thread-row__context-popover\[hidden\]\s*{[^}]*display:\s*none/s);
   assert.match(css, /\.thread-row__context-popover\s*{[^}]*box-shadow:\s*[\s\S]*0 18px 44px -22px/s);
   assert.match(css, /\[data-theme="dark"\] \.thread-row__context-popover\s*{[^}]*box-shadow:\s*[\s\S]*0 18px 48px -18px/s);
   assert.doesNotMatch(css, /\.thread-row__context-popover\s*{[^}]*box-shadow:\s*var\(--tide-shadow-popover\)/s);
@@ -954,6 +959,8 @@ test("thread_rows_use_list_style_selection_not_card_blocks", () => {
   assert.match(threadRowSource, /THREAD_ROW_CONTEXT_OPEN_EVENT/);
   assert.match(threadRowSource, /document\.dispatchEvent\(\s*new CustomEvent\(THREAD_ROW_CONTEXT_OPEN_EVENT/s);
   assert.match(threadRowSource, /document\.addEventListener\(THREAD_ROW_CONTEXT_OPEN_EVENT/);
+  assert.match(threadRowSource, /hiddenThreadRowContextPopoverStyle/);
+  assert.doesNotMatch(threadRowSource, /typeof window === "undefined"\s*\?\s*fallbackThreadRowContextAnchor/);
 });
 
 test("workbench_tabs_use_compact_chrome_not_full_height_slabs", () => {

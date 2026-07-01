@@ -139,6 +139,13 @@ the codebase guide the fixes:
     context, so rows dispatch a local open signal that closes peer flyouts. The
     flyout uses stronger shadow, not borders, to read as a separate surface.
 
+18. **The hover context should have a stable initial DOM.** The popover belongs
+    to every row, but closed rows should render it hidden with deterministic
+    fallback positioning. Do not gate the popover's existence on `typeof window`
+    or viewport measurement; only the open state should swap to measured fixed
+    positioning. This keeps renderer tests, any future hydration path, and the
+    runtime DOM contract aligned.
+
 Verified: `scripts/pw-ui-polish-verify.cjs` 13/13 checks pass on the real built
 app; screenshots `/tmp/polish-*.png` eyeballed (composer grown, fullscreen aligned,
 settings modal, choice-surface, expanded file tree). typecheck clean; build green.
@@ -184,7 +191,8 @@ only CSS reacts to `.tide-fullscreen`.
   facts out of the inline row; hover context renders as a fixed flyout rather
   than a row-bound absolute child; the flyout is hoverable and reveals long values
   instead of disappearing on row mouseleave; row-to-row hover immediately switches
-  the active flyout; popover depth comes from shadow rather than row borders.
+  the active flyout; popover depth comes from shadow rather than row borders;
+  closed row popovers stay mounted but hidden with deterministic fallback style.
 
 ## Implementation Notes
 

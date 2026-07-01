@@ -108,8 +108,11 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
       cancelContextClose();
     };
   }, [thread.threadId]);
-  const visibleContextAnchor =
-    contextAnchor ?? (typeof window === "undefined" ? fallbackThreadRowContextAnchor() : null);
+  const contextOpen = contextAnchor !== null;
+  const contextPopoverStyle =
+    contextAnchor === null
+      ? hiddenThreadRowContextPopoverStyle()
+      : threadRowContextPopoverStyle(contextAnchor, contextItems);
   return (
     <div
       className="thread-row-wrap"
@@ -135,8 +138,8 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
         data-running={thread.running ? "true" : undefined}
         data-attention={showAttention ? "true" : undefined}
         onMouseLeave={thread.archiveConfirming ? handlers.onLeftRailTransientClear : undefined}
-        // Right-click anywhere on the row opens the same Thread context menu as
-        // the ⋯ overflow button (Pin / Archive / Delete worktree).
+        // Right-click anywhere on the row opens the full Thread context menu
+        // (Pin / Archive / Delete worktree).
         onContextMenu={(event: { preventDefault: () => void; currentTarget: HTMLElement }) => {
           event.preventDefault();
           handlers.onLeftRailMenuOpen(
@@ -250,25 +253,25 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
             </span>,
           ]
         )}
-        {visibleContextAnchor !== null ? (
-          <div
-            id={contextPopoverId}
-            className="thread-row__context-popover"
-            role="tooltip"
-            style={threadRowContextPopoverStyle(visibleContextAnchor, contextItems)}
-            onMouseEnter={cancelContextClose}
-            onMouseLeave={scheduleContextClose}
-          >
-            {contextItems.map((item) => (
-              <span key={item.kind} className="thread-row__context-row">
-                <span className="thread-row__context-kind">{item.label}</span>
-                <span className="thread-row__context-value" title={item.title ?? item.value}>
-                  {item.value}
-                </span>
+        <div
+          id={contextPopoverId}
+          className="thread-row__context-popover"
+          role="tooltip"
+          hidden={!contextOpen}
+          aria-hidden={contextOpen ? undefined : true}
+          style={contextPopoverStyle}
+          onMouseEnter={cancelContextClose}
+          onMouseLeave={scheduleContextClose}
+        >
+          {contextItems.map((item) => (
+            <span key={item.kind} className="thread-row__context-row">
+              <span className="thread-row__context-kind">{item.label}</span>
+              <span className="thread-row__context-value" title={item.title ?? item.value}>
+                {item.value}
               </span>
-            ))}
-          </div>
-        ) : null}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -299,12 +302,11 @@ function threadRowContextPopoverStyle(
   };
 }
 
-function fallbackThreadRowContextAnchor(): ThreadRowContextAnchor {
+function hiddenThreadRowContextPopoverStyle(): CSSProperties {
   return {
-    left: 90,
-    right: 346,
-    top: 302,
-    bottom: 332,
+    left: "0px",
+    top: "0px",
+    width: 300,
   };
 }
 

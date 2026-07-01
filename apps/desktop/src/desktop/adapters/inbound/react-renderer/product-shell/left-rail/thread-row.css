@@ -119,6 +119,10 @@
   user-select: text;
 }
 
+.thread-row__context-popover[hidden] {
+  display: none;
+}
+
 [data-theme="dark"] .thread-row__context-popover {
   box-shadow:
     0 18px 48px -18px rgb(0 0 0 / 76%),
