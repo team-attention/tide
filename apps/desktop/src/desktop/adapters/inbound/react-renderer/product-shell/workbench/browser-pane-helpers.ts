@@ -1,4 +1,11 @@
-import { isWebViewSettled, type BrowserWebViewElement } from "./browser-webview-actions.ts";
+import {
+  executeBrowserWebViewAction,
+  isWebViewSettled,
+  readBrowserWebViewSnapshot,
+  type BrowserWebViewAction,
+  type BrowserWebViewElement,
+  type BrowserWebViewSnapshot,
+} from "./browser-webview-actions.ts";
 
 export function safeWebviewExec(webview: BrowserWebViewElement, code: string): Promise<unknown> {
   try {
@@ -19,6 +26,60 @@ export async function waitForPostActionSettle(webview: BrowserWebViewElement): P
   while (!isWebViewSettled(webview) && Date.now() < deadline) {
     await wait(75);
   }
+}
+
+export const BROWSER_ACTION_TRANSACTION_TIMEOUT_MS = 5000;
+
+export interface BrowserWebViewActionTransactionResult {
+  status: "completed" | "failed";
+  message: string;
+  snapshot?: BrowserWebViewSnapshot;
+}
+
+export async function runBrowserWebViewActionTransaction(
+  webview: BrowserWebViewElement,
+  action: BrowserWebViewAction,
+  timeoutMs = BROWSER_ACTION_TRANSACTION_TIMEOUT_MS,
+): Promise<BrowserWebViewActionTransactionResult> {
+  try {
+    const completed = await promiseWithTimeout(
+      (async () => {
+        const actionResult = await executeBrowserWebViewAction(webview, action);
+        await waitForPostActionSettle(webview);
+        const snapshot = await readBrowserWebViewSnapshot(webview);
+        return {
+          status: actionResult.ok ? ("completed" as const) : ("failed" as const),
+          message: actionResult.message,
+          snapshot,
+        };
+      })(),
+      timeoutMs,
+    );
+    if (completed === undefined) {
+      return {
+        status: "failed",
+        message: "Browser action timed out before the renderer could report completion.",
+      };
+    }
+    return completed;
+  } catch (error: unknown) {
+    return {
+      status: "failed",
+      message: error instanceof Error ? error.message : "Browser action failed.",
+    };
+  }
+}
+
+function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | undefined> {
+  let timer: number | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  });
 }
 
 export const BROWSER_ELEMENT_PICKER_SCRIPT = `(() => {

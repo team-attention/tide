@@ -61,7 +61,8 @@ test("an http link in an agent message is marked for the in-app browser pane (no
           kind: "agent_message",
           role: "agent",
           status: "complete",
-          body: "See [Yahoo](https://finance.yahoo.com/) and the [file](file:///tmp/x.ts).",
+          body:
+            "See [Yahoo](https://finance.yahoo.com/), the [file](file:///tmp/x.ts), and [source](/Users/eatnug/Workspace/tide/apps/desktop/src/file.ts:42).",
           updatedAt: iso,
         },
       ],
@@ -82,6 +83,13 @@ test("an http link in an agent message is marked for the in-app browser pane (no
   assert.ok(markup.includes("md-ext-link"));
   // file:// still routes to the editor (unchanged), proving the two are distinct.
   assert.ok(markup.includes('data-open-file="/tmp/x.ts"'));
+  // Codex-style absolute path links strip the line suffix and route to the editor too.
+  assert.ok(
+    markup.includes(
+      'data-open-file="/Users/eatnug/Workspace/tide/apps/desktop/src/file.ts"',
+    ),
+  );
+  assert.ok(!markup.includes('data-open-file="/Users/eatnug/Workspace/tide/apps/desktop/src/file.ts:42"'));
 });
 
 test("session link click requests a new in-app browser pane", () => {
@@ -130,6 +138,45 @@ test("session link click requests a new in-app browser pane", () => {
     url: "https://example.com/page",
     options: { newPane: true },
   });
+});
+
+test("session file link click opens the workbench editor instead of navigating", () => {
+  const dom = new JSDOM('<a href="#" data-open-file="/repo/src/app.ts">file</a>');
+  const originalElement = (globalThis as unknown as { Element?: unknown }).Element;
+  (globalThis as unknown as { Element: unknown }).Element = dom.window.Element;
+  const anchor = dom.window.document.querySelector("a");
+  assert.ok(anchor !== null);
+  let opened: string | null = null;
+  let prevented = false;
+
+  try {
+    const session = createAgentSession(
+      [],
+      "ready",
+      [],
+      (path) => {
+        opened = path;
+      },
+    );
+    const onClick = (session.props as {
+      onClick: (event: { target: EventTarget | null; preventDefault: () => void }) => void;
+    }).onClick;
+    onClick({
+      target: anchor,
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
+  } finally {
+    if (originalElement === undefined) {
+      delete (globalThis as unknown as { Element?: unknown }).Element;
+    } else {
+      (globalThis as unknown as { Element: unknown }).Element = originalElement;
+    }
+  }
+
+  assert.equal(prevented, true);
+  assert.equal(opened, "/repo/src/app.ts");
 });
 
 test("openProductShellBrowserAtUrl opens the workbench + emits open_browser in a new pane by default", () => {

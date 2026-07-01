@@ -11,8 +11,9 @@ import type {
 // Hybrid action model (D1): selector actions ("click"/"type_text") run through
 // executeJavaScript (the reliability fallback, unchanged); coordinate computer-use
 // actions ("move_to"/"click_at"/"scroll"/"key"/"type") drive the page through real
-// webview.sendInputEvent — the "human" path. Coordinates are webview CSS pixels in this
-// slice; the screenshot-pixel/DPR contract arrives with the screenshot observe slice.
+// webview.sendInputEvent — the "human" path. Coordinate actions arrive in the screenshot
+// pixel space the Agent observed; this helper converts them to webview CSS pixels before
+// sending Electron input events.
 
 export type BrowserWebViewInputEvent =
   | {
@@ -71,6 +72,7 @@ interface BrowserActionTarget {
 // webview from stalling the snapshot pipeline — which otherwise leaves the pane
 // "pending"/agent-driving forever because onBrowserActionResult never fires.
 const CAPTURE_TIMEOUT_MS = 2000;
+const JAVASCRIPT_TIMEOUT_MS = 2000;
 
 function raceTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
   // Renderer-resolved setTimeout returns a DOM `number` here (not NodeJS.Timeout);
@@ -95,8 +97,14 @@ async function safeExecuteJavaScript(
   try {
     // `.catch()` is not enough: executeJavaScript throws synchronously (not a
     // rejected promise) before dom-ready, so a chained rejection handler never
-    // attaches. Catch the sync throw and the async rejection both.
-    return await webview.executeJavaScript?.(script);
+    // attaches. It can also return a promise that never resolves when the guest is
+    // not fully attached; bound that wait so Browser Pane action results cannot
+    // remain pending forever behind a hung text snapshot.
+    const promise = webview.executeJavaScript?.(script);
+    if (promise === undefined) {
+      return undefined;
+    }
+    return await raceTimeout(promise, JAVASCRIPT_TIMEOUT_MS);
   } catch {
     return undefined;
   }
@@ -492,7 +500,8 @@ async function executeInputEventAction(
       if (action.x === undefined || action.y === undefined) {
         return invalidCoordinates();
       }
-      webview.sendInputEvent({ type: "mouseMove", x: action.x, y: action.y });
+      const point = coordinateActionPoint(action.x, action.y);
+      webview.sendInputEvent({ type: "mouseMove", x: point.x, y: point.y });
       return { ok: true, message: `Moved to ${action.x},${action.y}` };
     }
     case "click_at": {
@@ -501,21 +510,23 @@ async function executeInputEventAction(
       }
       const button = action.button ?? "left";
       const clickCount = action.clickCount ?? 1;
-      const point = await describePoint(webview, action.x, action.y);
-      webview.sendInputEvent({ type: "mouseMove", x: action.x, y: action.y });
-      webview.sendInputEvent({ type: "mouseDown", x: action.x, y: action.y, button, clickCount });
-      webview.sendInputEvent({ type: "mouseUp", x: action.x, y: action.y, button, clickCount });
-      const suffix = point.message.length > 0 ? ` (${point.message})` : "";
+      const point = coordinateActionPoint(action.x, action.y);
+      const described = await describePoint(webview, point.x, point.y);
+      webview.sendInputEvent({ type: "mouseMove", x: point.x, y: point.y });
+      webview.sendInputEvent({ type: "mouseDown", x: point.x, y: point.y, button, clickCount });
+      webview.sendInputEvent({ type: "mouseUp", x: point.x, y: point.y, button, clickCount });
+      const suffix = described.message.length > 0 ? ` (${described.message})` : "";
       return { ok: true, message: `Clicked at ${action.x},${action.y}${suffix}` };
     }
     case "scroll": {
       if (action.x === undefined || action.y === undefined) {
         return invalidCoordinates();
       }
+      const point = coordinateActionPoint(action.x, action.y);
       webview.sendInputEvent({
         type: "mouseWheel",
-        x: action.x,
-        y: action.y,
+        x: point.x,
+        y: point.y,
         deltaX: action.deltaX ?? 0,
         deltaY: action.deltaY ?? 0,
         canScroll: true,
@@ -547,6 +558,17 @@ async function executeInputEventAction(
 
 function invalidCoordinates(): BrowserWebViewActionExecution {
   return { ok: false, message: "Coordinate browser action requires numeric x and y." };
+}
+
+function coordinateActionPoint(x: number, y: number): { x: number; y: number } {
+  const devicePixelRatio =
+    typeof globalThis !== "undefined" &&
+    typeof (globalThis as { devicePixelRatio?: number }).devicePixelRatio === "number" &&
+    Number.isFinite((globalThis as { devicePixelRatio: number }).devicePixelRatio) &&
+    (globalThis as { devicePixelRatio: number }).devicePixelRatio > 0
+      ? (globalThis as { devicePixelRatio: number }).devicePixelRatio
+      : 1;
+  return { x: x / devicePixelRatio, y: y / devicePixelRatio };
 }
 
 function replaceFocusedText(webview: BrowserWebViewElement, text: string): void {

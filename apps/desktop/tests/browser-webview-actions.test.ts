@@ -18,6 +18,7 @@ import {
   type BrowserWebViewElement,
   type BrowserWebViewInputEvent,
 } from "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/browser-webview-actions.ts";
+import { runBrowserWebViewActionTransaction } from "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/browser-pane-helpers.ts";
 
 function fakeWebView(): {
   webview: BrowserWebViewElement;
@@ -62,6 +63,30 @@ test("click_at sends mouseMove then mouseDown + mouseUp at the coordinates", asy
     assert.equal(down.x, 120);
     assert.equal(down.y, 240);
     assert.equal(down.button, "left");
+  }
+});
+
+test("coordinate actions convert screenshot pixels to CSS pixels by devicePixelRatio", async () => {
+  const previous = (globalThis as { devicePixelRatio?: number }).devicePixelRatio;
+  (globalThis as { devicePixelRatio?: number }).devicePixelRatio = 2;
+  try {
+    const { webview, inputEvents } = fakeWebView();
+    await executeBrowserWebViewAction(
+      webview,
+      action({ kind: "click_at", x: 120, y: 240, button: "left", clickCount: 1 }),
+    );
+    const down = inputEvents[1];
+    assert.equal(down.type, "mouseDown");
+    if (down.type === "mouseDown") {
+      assert.equal(down.x, 60);
+      assert.equal(down.y, 120);
+    }
+  } finally {
+    if (previous === undefined) {
+      delete (globalThis as { devicePixelRatio?: number }).devicePixelRatio;
+    } else {
+      (globalThis as { devicePixelRatio?: number }).devicePixelRatio = previous;
+    }
   }
 });
 
@@ -195,6 +220,20 @@ test("a coordinate action on a webview without sendInputEvent fails gracefully",
   } as unknown as BrowserWebViewElement;
   const result = await executeBrowserWebViewAction(webview, action({ kind: "click_at", x: 1, y: 2 }));
   assert.equal(result.ok, false);
+});
+
+test("browser action transaction reports failed when the action chain times out", async () => {
+  const webview = {
+    sendInputEvent: () => undefined,
+    isLoading: () => true,
+  } as unknown as BrowserWebViewElement;
+  const result = await runBrowserWebViewActionTransaction(
+    webview,
+    action({ kind: "move_to", x: 1, y: 2 }),
+    1,
+  );
+  assert.equal(result.status, "failed");
+  assert.match(result.message, /timed out/);
 });
 
 // --- Pixel vision: capturePage ---

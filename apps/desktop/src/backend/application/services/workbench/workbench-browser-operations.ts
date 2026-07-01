@@ -28,6 +28,8 @@ import type {
 // webview). Shared by the workbench-command and Tide MCP paths. Extracted from
 // thread-runtime-service.ts. See docs_v2/specs/thread-runtime-service-decomposition.md.
 
+export const BROWSER_ACTION_PENDING_TTL_MS = 15000;
+
 export function openBrowserOutput(
   thread: ThreadRecord,
   input: Record<string, unknown> | undefined,
@@ -180,7 +182,8 @@ export function actBrowserOutput(
     );
   }
 
-  const built = buildBrowserActionRequest(actionKind, input, idGenerator(), clock());
+  const requestedAt = clock();
+  const built = buildBrowserActionRequest(actionKind, input, idGenerator(), requestedAt);
   if (!built.ok) {
     return built;
   }
@@ -205,12 +208,16 @@ export function actBrowserOutput(
     );
   }
   if (pane.pendingAction !== undefined) {
-    // A real conflict: an action is already in flight. The agent must let it settle and
-    // re-observe (which returns the result + a fresh revision) before driving again.
-    return failure(
-      "invalid_workbench_command",
-      "Browser Pane already has a pending action.",
-    );
+    if (expireStalePendingBrowserAction(pane, requestedAt)) {
+      thread.updatedAt = requestedAt;
+    } else {
+      // A real conflict: an action is already in flight. The agent must let it settle and
+      // re-observe (which returns the result + a fresh revision) before driving again.
+      return failure(
+        "invalid_workbench_command",
+        "Browser Pane already has a pending action.",
+      );
+    }
   }
   if (
     revision !== pane.revision &&
@@ -254,6 +261,40 @@ export function actBrowserOutput(
       status: "pending",
     },
   };
+}
+
+function expireStalePendingBrowserAction(
+  pane: BrowserPaneState,
+  completedAt: string,
+): boolean {
+  const pending = pane.pendingAction;
+  if (pending === undefined || !isStaleBrowserAction(pending, completedAt)) {
+    return false;
+  }
+  pane.lastAction = {
+    ...pending,
+    status: "failed",
+    message:
+      "Browser action timed out before the renderer reported a result. Tide cleared the stale pending action so the next browser action can run.",
+    completedAt,
+  };
+  delete pane.pendingAction;
+  pane.agentDriving = false;
+  delete pane.agentCursor;
+  pane.updatedAt = completedAt;
+  return true;
+}
+
+function isStaleBrowserAction(
+  action: BrowserPaneActionRequest,
+  now: string,
+): boolean {
+  const requestedAtMs = Date.parse(action.requestedAt);
+  const nowMs = Date.parse(now);
+  if (!Number.isFinite(requestedAtMs) || !Number.isFinite(nowMs)) {
+    return false;
+  }
+  return nowMs - requestedAtMs >= BROWSER_ACTION_PENDING_TTL_MS;
 }
 
 interface BuiltBrowserAction {

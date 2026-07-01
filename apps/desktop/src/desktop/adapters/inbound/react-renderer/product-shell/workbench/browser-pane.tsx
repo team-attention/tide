@@ -2,7 +2,6 @@ import type { ProductShellViewModel } from "../../../../../application/domains/p
 import type { ProductShellHandlers } from "../support/types.ts";
 import {
   captureBrowserWebViewScreenshot,
-  executeBrowserWebViewAction,
   isWebViewSettled,
   readBrowserWebViewSnapshot,
   safeFindInWebView,
@@ -16,8 +15,8 @@ import { BrowserAgentOverlay } from "./browser-agent-overlay.tsx";
 import {
   BROWSER_ELEMENT_PICKER_SCRIPT,
   normalizeBrowserUrl,
+  runBrowserWebViewActionTransaction,
   safeWebviewExec,
-  waitForPostActionSettle,
 } from "./browser-pane-helpers.ts";
 import { createElement, useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
@@ -393,20 +392,18 @@ export function WorkbenchBrowserPane(props: {
     executedActionIdsRef.current.add(action.actionId);
     const paneId = props.pane.paneId;
     const revision = props.pane.revision;
-    void executeBrowserWebViewAction(webview, action)
-      .then(async (actionResult) => {
-        await waitForPostActionSettle(webview);
+    void runBrowserWebViewActionTransaction(webview, action)
+      .then((result) => {
         // Text-only: the post-action pixels (if the agent wants them) are pulled on its next
         // tide_observe_browser via pendingCapture, not captured here. Spec:
         // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
-        const snapshot = await readBrowserWebViewSnapshot(webview);
         props.handlers.onBrowserActionResult(paneId, {
           revision,
           actionId: action.actionId,
-          status: actionResult.ok ? "completed" : "failed",
-          message: actionResult.message,
+          status: result.status,
+          message: result.message,
           loading: false,
-          ...snapshot,
+          ...result.snapshot,
         });
       })
       .catch((error: unknown) => {
@@ -742,18 +739,16 @@ function BackgroundBrowserWebView(props: {
       return;
     }
     executedActionIdsRef.current.add(pendingAction.actionId);
-    void executeBrowserWebViewAction(webview, pendingAction)
-      .then(async (actionResult) => {
-        await waitForPostActionSettle(webview);
+    void runBrowserWebViewActionTransaction(webview, pendingAction)
+      .then((result) => {
         // Text-only: post-action pixels are pulled on the agent's next observe (pendingCapture).
-        const snapshot = await readBrowserWebViewSnapshot(webview);
         handlers.onBackgroundBrowserActionResult(threadId, paneId, {
           revision,
           actionId: pendingAction.actionId,
-          status: actionResult.ok ? "completed" : "failed",
-          message: actionResult.message,
+          status: result.status,
+          message: result.message,
           loading: false,
-          ...snapshot,
+          ...result.snapshot,
         });
       })
       .catch((error: unknown) => {
