@@ -263,6 +263,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       ...(reasoning === "low" || reasoning === "medium" || reasoning === "high" || reasoning === "xhigh"
         ? ["-c", `model_reasoning_effort=${codexConfigString(reasoning)}`]
         : []),
+      ...codexPermissionConfigArgs(input.launchOptions),
       ...codexConfigArgs(tideMcp),
     ];
 
@@ -325,6 +326,26 @@ function codexConfigArgs(tideMcp: CodexTideMcpConfig | undefined): string[] {
 
 function codexConfigString(value: string): string {
   return JSON.stringify(value);
+}
+
+function codexPermissionConfigArgs(
+  launchOptions: Record<string, unknown> | undefined,
+): string[] {
+  const permission = stringValue(launchOptions?.permission);
+  if (!codexPermissionUsesWorkspaceNetwork(permission)) {
+    return [];
+  }
+  return ["-c", "sandbox_workspace_write.network_access=true"];
+}
+
+function codexPermissionUsesWorkspaceNetwork(permission: string | undefined): boolean {
+  return (
+    permission === "approve-for-me" ||
+    // Raw values persisted by older threads are normalized to "Approve for me"
+    // in the UI, so preserve that behavior in the provider launch plan too.
+    permission === "workspace-write" ||
+    permission === "on-failure"
+  );
 }
 
 // thread/start parameters for the app-server transport: the SAME approval/
@@ -406,6 +427,8 @@ function codexLaunchOptionArgs(
   } else if (permission === "dangerously-bypass-approvals-and-sandbox") {
     args.push("--dangerously-bypass-approvals-and-sandbox");
   }
+
+  args.push(...codexPermissionConfigArgs(launchOptions));
 
   return args;
 }
