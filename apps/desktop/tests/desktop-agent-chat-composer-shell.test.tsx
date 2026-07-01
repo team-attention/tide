@@ -27,6 +27,8 @@ import {
   removeComposerContextChip,
   setComposerContextChipComment,
   setAvailableProviderAgents,
+  normalizePermissionValue,
+  permissionLabelForValue,
   type AgentChatShellState,
 } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
 import {
@@ -1811,6 +1813,11 @@ test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
   assert.match(opencodeHtml, /Plan/);
   assert.doesNotMatch(opencodeHtml, /Tide tool policy/);
   assert.doesNotMatch(opencodeHtml, /Bypass permissions/);
+});
+
+test("codex_legacy_workspace_write_permission_preserves_sandbox_semantics", () => {
+  assert.equal(normalizePermissionValue("codex", "workspace-write"), "ask-for-approval");
+  assert.equal(permissionLabelForValue("codex", "workspace-write"), "Ask for approval");
 });
 
 test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", () => {

@@ -140,12 +140,32 @@ test("codex_launch_plan_applies_model_sandbox_and_approval_via_protocol_params",
       permission: "ask-for-approval",
     },
   });
+  const autoPlan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: {
+      model: "gpt-5.5-high",
+      permission: "approve-for-me",
+    },
+  });
+  const fullAccessPlan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: {
+      model: "gpt-5.5-high",
+      permission: "full-access",
+    },
+  });
 
   // Session parameters ride thread/start (protocolParams), not argv.
   assert.equal(sandboxPlan.protocolParams?.model, "gpt-5.5-high");
   assert.equal(sandboxPlan.protocolParams?.sandbox, "workspace-write");
   assert.equal(approvalPlan.protocolParams?.sandbox, "workspace-write");
   assert.equal(approvalPlan.protocolParams?.approvalPolicy, "on-request");
+  assert.equal(autoPlan.protocolParams?.sandbox, "danger-full-access");
+  assert.equal(autoPlan.protocolParams?.approvalPolicy, "on-failure");
+  assert.equal(fullAccessPlan.protocolParams?.sandbox, "danger-full-access");
+  assert.equal(fullAccessPlan.protocolParams?.approvalPolicy, "never");
 });
 
 test("codex_launch_plan_maps_reasoning_effort_to_config_override", async () => {
