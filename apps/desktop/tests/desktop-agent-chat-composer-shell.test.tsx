@@ -475,7 +475,7 @@ test("transcript_has_bottom_scroll_buffer_for_the_docked_composer", () => {
   assert.match(css, /\.agent-session\[data-chat-state="running"\][\s\S]*data-streaming-caret="active"[\s\S]*::after/);
 });
 
-test("usage_changed_updates_usage_view_but_does_not_render_composer_usage_strip", () => {
+test("usage_changed_renders_session_context_above_the_composer", () => {
   const hydrated = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),
     backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
@@ -501,8 +501,8 @@ test("usage_changed_updates_usage_view_but_does_not_render_composer_usage_strip"
     contextDetailLabel: "64k / 256k tokens",
   });
   const html = renderShell(withUsage);
-  assert.doesNotMatch(html, /class="agent-usage/);
-  assert.doesNotMatch(visibleText(html), /Session\s*75% left\s*64k \/ 256k tokens/);
+  assert.match(html, /class="agent-usage"/);
+  assert.match(visibleText(html), /Session context\s*75% left\s*64k \/ 256k tokens/);
 });
 
 test("usage_changed_renders_codex_rate_limit_windows", () => {
@@ -529,14 +529,26 @@ test("usage_changed_renders_codex_rate_limit_windows", () => {
   const [fiveHour, weekly] = view.rateLimits;
   // Framed as REMAINING (100 − used), rounded — Codex account-menu style.
   assert.deepEqual(
-    { label: fiveHour.label, remainingPercent: fiveHour.remainingPercent, remainingLabel: fiveHour.remainingLabel },
-    { label: "5h", remainingPercent: 42, remainingLabel: "42%" },
+    {
+      label: fiveHour.label,
+      usedPercent: fiveHour.usedPercent,
+      usedLabel: fiveHour.usedLabel,
+      remainingPercent: fiveHour.remainingPercent,
+      remainingLabel: fiveHour.remainingLabel,
+    },
+    { label: "5h", usedPercent: 58, usedLabel: "58%", remainingPercent: 42, remainingLabel: "42%" },
   );
   // Sub-day window resets show a clock time (locale-formatted ⇒ has an H:MM colon).
   assert.match(fiveHour.resetLabel ?? "", /\d{1,2}:\d{2}/);
   assert.deepEqual(
-    { label: weekly.label, remainingPercent: weekly.remainingPercent, remainingLabel: weekly.remainingLabel },
-    { label: "Weekly", remainingPercent: 32, remainingLabel: "32%" },
+    {
+      label: weekly.label,
+      usedPercent: weekly.usedPercent,
+      usedLabel: weekly.usedLabel,
+      remainingPercent: weekly.remainingPercent,
+      remainingLabel: weekly.remainingLabel,
+    },
+    { label: "Weekly", usedPercent: 68, usedLabel: "68%", remainingPercent: 32, remainingLabel: "32%" },
   );
   // Weekly window resets show a calendar date (month name, no clock colon).
   assert.match(weekly.resetLabel ?? "", /[A-Za-z]/);
@@ -585,11 +597,27 @@ test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", (
     contextDetailLabel: "64k / 256k tokens",
     // No resetsAt in this payload ⇒ no resetLabel; remaining framing (100 − used).
     rateLimits: [
-      { label: "5h", remainingPercent: 42, remainingLabel: "42%" },
-      { label: "Weekly", remainingPercent: 32, remainingLabel: "32%" },
+      {
+        label: "5h",
+        usedPercent: 58,
+        usedLabel: "58%",
+        remainingPercent: 42,
+        remainingLabel: "42%",
+      },
+      {
+        label: "Weekly",
+        usedPercent: 68,
+        usedLabel: "68%",
+        remainingPercent: 32,
+        remainingLabel: "32%",
+      },
     ],
   });
-  assert.doesNotMatch(renderShell(withLimits), /class="agent-usage/);
+  const html = renderShell(withLimits);
+  assert.match(html, /class="agent-usage"/);
+  assert.match(visibleText(html), /Session context\s*75% left\s*64k \/ 256k tokens/);
+  assert.doesNotMatch(visibleText(html), /5h\s*42% left\s*resets/);
+  assert.doesNotMatch(visibleText(html), /Weekly\s*32% left\s*resets/);
 });
 
 test("usage_changed_drops_rate_limit_windows_without_a_usage_percent", () => {
@@ -634,6 +662,7 @@ test("usage_changed_omits_reset_label_for_a_non_finite_timestamp", () => {
   const view = createAgentChatShellViewModel(withUsage).usage;
   assert.equal(view?.rateLimits?.length, 1);
   assert.equal(view?.rateLimits?.[0].resetLabel, undefined);
+  assert.equal(view?.rateLimits?.[0].usedLabel, "58%");
   assert.equal(view?.rateLimits?.[0].remainingLabel, "42%");
 });
 

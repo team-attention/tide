@@ -1,18 +1,11 @@
 /* Styles for the adjacent usage-meter component module (spec: colocated-component-styles). Imported, in cascade order, by styles/index.css - components never import CSS themselves (node --test has no CSS loader). */
 
-/* Usage/limit status segments, reused by Settings model rows. */
+/* Current-session context status, docked just above the Composer. */
 
 .agent-usage {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-  margin: -2px 0 -4px;
-  padding: 7px;
-  border: 1px solid var(--tide-line);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--tide-surface) 62%, var(--tide-bg));
+  display: block;
+  margin: -4px 0 -8px;
   color: var(--tide-text);
   font-size: 12px;
   line-height: 1.25;
@@ -20,22 +13,10 @@
   user-select: none;
 }
 
-.agent-usage--compact {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
 .agent-usage__segments {
   min-width: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
-  gap: 6px;
-}
-
-.agent-usage--compact .agent-usage__segments {
-  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .agent-usage__segment {
@@ -43,15 +24,10 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 5px;
-  padding: 6px 7px;
+  padding: 7px 8px;
   border: 1px solid color-mix(in srgb, var(--tide-line) 80%, transparent);
   border-radius: 7px;
-  background: color-mix(in srgb, var(--tide-bg) 82%, var(--tide-surface));
-}
-
-.agent-usage--compact .agent-usage__segment {
-  padding: 5px 6px;
-  background: color-mix(in srgb, var(--tide-bg) 78%, var(--tide-surface));
+  background: color-mix(in srgb, var(--tide-surface) 64%, var(--tide-bg));
 }
 
 .agent-usage__segment-head {
@@ -91,36 +67,6 @@
   white-space: nowrap;
 }
 
-/* Icon-only details button: the core numbers are already visible; this is for
-   the denser account-menu-style row view. */
-.agent-usage__trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--tide-muted);
-  font: inherit;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.agent-usage__trigger:hover,
-.agent-usage__trigger[aria-expanded="true"] {
-  background: var(--tide-line);
-  color: var(--tide-text);
-}
-
-.agent-usage__chevron {
-  flex: 0 0 auto;
-  opacity: 0.7;
-}
-
 .agent-usage__bar {
   width: 100%;
   height: 4px;
@@ -147,85 +93,4 @@
 
 .agent-usage__segment[data-usage-tone="critical"] .agent-usage__bar-fill {
   background: var(--tide-danger);
-}
-
-/* "Usage details" popover, anchored above the status strip (the strip sits just
-   above the Composer, so it opens upward and right-aligned). Account-menu style:
-   one row per quota window — label · remaining % · reset time. */
-.agent-usage__popover {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
-  z-index: 40;
-  min-width: 260px;
-  max-width: min(420px, calc(100vw - 32px));
-  padding: 8px;
-  border: 1px solid var(--tide-line);
-  border-radius: 8px;
-  background: var(--tide-surface);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
-  color: var(--tide-text);
-  cursor: default;
-}
-
-.agent-usage[data-popover-placement="below"] .agent-usage__popover {
-  top: calc(100% + 6px);
-  bottom: auto;
-}
-
-.agent-usage__popover-title {
-  margin: 2px 6px 6px;
-  color: var(--tide-muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0;
-}
-
-.agent-usage__row {
-  display: grid;
-  grid-template-columns: minmax(70px, 1fr) auto minmax(92px, auto);
-  align-items: baseline;
-  gap: 12px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.agent-usage__row:hover {
-  background: var(--tide-line);
-}
-
-.agent-usage__row-label {
-  font-weight: 600;
-}
-
-.agent-usage__row-value {
-  justify-self: end;
-  color: var(--tide-text);
-}
-
-.agent-usage__row-reset {
-  justify-self: end;
-  min-width: 0;
-  text-align: right;
-  color: var(--tide-muted);
-  white-space: nowrap;
-}
-
-@media (max-width: 720px) {
-  .agent-usage__segments {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .agent-usage__row {
-    grid-template-columns: minmax(62px, 1fr) auto;
-  }
-
-  .agent-usage__row-reset {
-    grid-column: 1 / -1;
-    justify-self: start;
-    text-align: left;
-  }
 }

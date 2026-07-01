@@ -6,7 +6,6 @@ import type { ChangeEvent, ReactElement } from "react";
 import { createIconButton } from "../chrome/chrome.tsx";
 import { getStoredPref, setStoredPref } from "../../support/ui-prefs-store.ts";
 import { buildProvidersHubViewModel } from "../../../../../application/domains/agent-chat/state/providers-hub.ts";
-import { UsageMeter } from "../../agent-chat/composer/usage-meter.tsx";
 import { X } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
@@ -163,6 +162,7 @@ export function createSettingsModal(
   usageByModel: ProductShellUsageModelView[],
   handlers: ProductShellHandlers,
 ): ReactElement {
+  const usageWindowRows = usageByModel.filter((row) => (row.usage.rateLimits?.length ?? 0) > 0);
   return (
     <div className="settings-modal-backdrop" onMouseDown={handlers.onCloseSettings}>
       <div
@@ -277,23 +277,80 @@ export function createSettingsModal(
         </section>
         <section className="settings-modal__section">
           <h3 className="settings-modal__section-title">Usage</h3>
-          <div className="settings-usage" role="list" aria-label="Model usage">
-            {usageByModel.length > 0 ? (
-              usageByModel.map((row) => (
+          <div className="settings-usage" role="list" aria-label="Provider window usage">
+            {usageWindowRows.length > 0 ? (
+              usageWindowRows.map((row) => (
                 <div key={row.key} className="settings-usage__row" role="listitem">
                   <div className="settings-usage__identity">
                     <span className="settings-usage__agent">{row.agentLabel}</span>
                     <span className="settings-usage__model">{row.modelLabel}</span>
                   </div>
-                  <UsageMeter usage={row.usage} compact popoverPlacement="below" />
+                  <SettingsUsageWindows row={row} />
                 </div>
               ))
             ) : (
-              <div className="settings-usage__empty">No provider usage reported yet.</div>
+              <div className="settings-usage__empty">No provider window usage reported yet.</div>
             )}
           </div>
         </section>
       </div>
     </div>
   );
+}
+
+function SettingsUsageWindows({ row }: { row: ProductShellUsageModelView }): ReactElement {
+  const windows = row.usage.rateLimits ?? [];
+  return (
+    <div className="settings-usage__windows" aria-label={`${row.agentLabel} quota windows`}>
+      {windows.map((limit, index) => {
+        const usedPercent = limit.usedPercent;
+        return (
+          <div
+            key={`${limit.label}-${index}`}
+            className="settings-usage-window"
+            data-usage-tone={settingsUsageTone(usedPercent)}
+            aria-label={`${settingsWindowLabel(limit.label)} ${limit.usedLabel} used${
+              limit.resetLabel ? `, resets ${limit.resetLabel}` : ""
+            }`}
+          >
+            <div className="settings-usage-window__head">
+              <span className="settings-usage-window__name">{settingsWindowLabel(limit.label)}</span>
+              <span className="settings-usage-window__value">{limit.usedLabel}</span>
+            </div>
+            <span className="settings-usage-window__bar" aria-hidden>
+              <span
+                className="settings-usage-window__bar-fill"
+                style={{ width: `${Math.max(2, Math.min(100, usedPercent))}%` }}
+              />
+            </span>
+            <div className="settings-usage-window__meta">
+              <span>used</span>
+              <span>{limit.resetLabel ? `Resets ${limit.resetLabel}` : "Reset unknown"}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function settingsWindowLabel(label: string): string {
+  const normalized = label.trim().toLowerCase();
+  if (normalized === "weekly" || normalized === "1 week") {
+    return "1 week window";
+  }
+  if (normalized.endsWith("window")) {
+    return label;
+  }
+  return `${label} window`;
+}
+
+function settingsUsageTone(usedPercent: number): "ok" | "warn" | "critical" {
+  if (usedPercent >= 90) {
+    return "critical";
+  }
+  if (usedPercent >= 75) {
+    return "warn";
+  }
+  return "ok";
 }
