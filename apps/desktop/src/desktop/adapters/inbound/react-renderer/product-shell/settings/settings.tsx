@@ -162,7 +162,7 @@ export function createSettingsModal(
   usageByModel: ProductShellUsageModelView[],
   handlers: ProductShellHandlers,
 ): ReactElement {
-  const usageWindowRows = usageByModel.filter((row) => (row.usage.rateLimits?.length ?? 0) > 0);
+  const usageWindowRows = usageByModel.filter((row) => (row.usage?.rateLimits?.length ?? 0) > 0);
   return (
     <div className="settings-modal-backdrop" onMouseDown={handlers.onCloseSettings}>
       <div
@@ -299,7 +299,7 @@ export function createSettingsModal(
 }
 
 function SettingsUsageWindows({ row }: { row: ProductShellUsageModelView }): ReactElement {
-  const windows = row.usage.rateLimits ?? [];
+  const windows = row.usage?.rateLimits ?? [];
   return (
     <div className="settings-usage__windows" aria-label={`${row.agentLabel} quota windows`}>
       {windows.map((limit, index) => {
