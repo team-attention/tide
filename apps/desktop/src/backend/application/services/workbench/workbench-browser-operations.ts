@@ -54,7 +54,7 @@ export function openBrowserOutput(
       kind: "browser",
       title: requestedTitle ?? browserTitleFromUrl(requestedUrl),
       url: requestedUrl,
-      loading: false,
+      loading: requestedUrl !== undefined,
       revision: idGenerator(),
       updatedAt: capturedAt,
     };
@@ -75,6 +75,12 @@ export function openBrowserOutput(
     requestedTitle ?? browserTitleFromUrl(requestedUrl ?? reusablePane.url);
   if (requestedUrl !== undefined) {
     reusablePane.url = requestedUrl;
+  }
+  if (urlChanged) {
+    reusablePane.loading = true;
+    delete reusablePane.pageTitle;
+    delete reusablePane.bodyTextPreview;
+    delete reusablePane.screenshot;
   }
   reusablePane.revision = idGenerator();
   // Re-use / re-navigation invalidates the D5 act auto-retry window: clear priorRevision so
@@ -248,6 +254,12 @@ export function actBrowserOutput(
     return failure(
       "workbench_stale_reference",
       `Browser Pane revision is stale. The pane is now at revision "${pane.revision}"; if it has not navigated since you observed it, retry this action with that revision.`,
+    );
+  }
+  if (pane.loading === true) {
+    return failure(
+      "invalid_workbench_command",
+      "Browser Pane is still loading. Re-observe after it reports readiness:\"ready\" before acting.",
     );
   }
 

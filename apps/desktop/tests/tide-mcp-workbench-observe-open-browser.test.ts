@@ -310,12 +310,62 @@ test("opening_browser_creates_browser_pane_in_thread_workbench", async () => {
   assert.equal(opened.output.visibleSideEffect, "created");
   assert.equal(opened.output.pane.kind, "browser");
   assert.equal(opened.output.pane.url, "https://example.test/docs");
+  assert.equal(opened.output.pane.loading, true);
+  assert.equal(opened.output.pane.readiness, "loading");
+  assert.deepEqual(opened.output.pane.capabilities, {
+    canReadDom: true,
+    canCapturePixels: true,
+    canActForeground: true,
+    canActBackground: false,
+  });
   assert.equal(observed.ok, true);
   assert.equal(observed.ok && observed.output.panes.length, 1);
   assert.equal(
     observed.ok && observed.output.panes[0]?.paneId,
     opened.output.pane.paneId,
   );
+});
+
+test("opening_browser_navigation_marks_page_loading_and_clears_stale_preview", async () => {
+  // A newly requested URL is not visible evidence yet. Keep the pane loading until the
+  // renderer reports a load snapshot, and don't let the agent read stale DOM text from the
+  // previous page while the visible webview may still be blank.
+  const service = serviceWithActiveThread("thread-browser-loading", "runtime-browser-loading");
+  const opened = await openBrowser(
+    service,
+    "runtime-browser-loading",
+    "https://example.test/old",
+  );
+  const paneId = opened.output.pane.paneId;
+  const revision = opened.output.pane.revision;
+
+  const loaded = await service.handleWorkbenchCommand({
+    threadId: "thread-browser-loading",
+    command: "update_browser_snapshot",
+    targetPaneId: paneId,
+    data: {
+      revision,
+      url: "https://example.test/old",
+      pageTitle: "Old",
+      bodyTextPreview: "old body",
+      loading: false,
+    },
+  });
+  assert.equal(loaded.ok, true);
+
+  const navigated = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-browser-loading", agentId: "codex" },
+    toolName: "tide_open_browser",
+    input: { url: "https://example.test/new" },
+  });
+
+  assert.equal(navigated.ok, true);
+  assert.equal(navigated.ok && navigated.output.pane.url, "https://example.test/new");
+  assert.equal(navigated.ok && navigated.output.pane.loading, true);
+  assert.equal(navigated.ok && navigated.output.pane.readiness, "loading");
+  assert.equal(navigated.ok && navigated.output.pane.pageTitle, undefined);
+  assert.equal(navigated.ok && navigated.output.pane.bodyTextPreview, undefined);
+  assert.equal(navigated.ok && navigated.output.visibleSideEffect, "navigated");
 });
 
 test("mcp_mutating_workbench_tool_emits_workbench_changed_async_event", async () => {
@@ -464,6 +514,13 @@ test("browser_action_tool_schedules_pending_click_for_desktop_webview", async ()
     "runtime-browser-action",
     "https://example.test/action",
   );
+  await settleBrowser(
+    service,
+    "thread-browser-action",
+    opened.output.pane.paneId,
+    opened.output.pane.revision,
+    "https://example.test/action",
+  );
 
   const result = await service.handleTideMcpToolCall({
     session: { runtimeId: "runtime-browser-action", agentId: "codex" },
@@ -497,6 +554,13 @@ test("browser_action_tool_schedules_pending_drag_for_bottom_sheet_controls", asy
     "runtime-browser-drag",
     "https://example.test/bottom-sheet",
   );
+  await settleBrowser(
+    service,
+    "thread-browser-drag",
+    opened.output.pane.paneId,
+    opened.output.pane.revision,
+    "https://example.test/bottom-sheet",
+  );
 
   const result = await service.handleTideMcpToolCall({
     session: { runtimeId: "runtime-browser-drag", agentId: "codex" },
@@ -522,6 +586,34 @@ test("browser_action_tool_schedules_pending_drag_for_bottom_sheet_controls", asy
     result.ok && result.output.pane.pendingAction?.kind,
     "drag",
   );
+});
+
+test("browser_action_while_loading_returns_structured_not_ready_error", async () => {
+  const service = serviceWithActiveThread(
+    "thread-browser-loading-act",
+    "runtime-browser-loading-act",
+  );
+  const opened = await openBrowser(
+    service,
+    "runtime-browser-loading-act",
+    "https://example.test/loading-act",
+  );
+
+  const result = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-browser-loading-act", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: {
+      paneId: opened.output.pane.paneId,
+      revision: opened.output.pane.revision,
+      action: "click_at",
+      x: 10,
+      y: 20,
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "invalid_workbench_command");
+  assert.match(!result.ok ? result.error.message : "", /still loading/);
 });
 
 test("browser_type_action_without_text_returns_structured_error", async () => {
@@ -627,6 +719,13 @@ test("act_does_not_remint_revision_and_a_settled_acts_prior_revision_is_auto_ret
   const opened = await openBrowser(service, "runtime-rev-d5", "https://example.test/d5");
   const paneId = opened.output.pane.paneId;
   const revA = opened.output.pane.revision;
+  await settleBrowser(
+    service,
+    "thread-rev-d5",
+    paneId,
+    revA,
+    "https://example.test/d5",
+  );
 
   // Act with revA → succeeds. The act itself does NOT re-mint the revision (Part 1): the
   // returned pane still reports revA.
@@ -696,6 +795,13 @@ test("stale_pending_browser_action_is_failed_and_the_next_action_is_queued", asy
   );
   const paneId = opened.output.pane.paneId;
   const revision = opened.output.pane.revision;
+  await settleBrowser(
+    service,
+    "thread-stale-pending",
+    paneId,
+    revision,
+    "https://example.test/pending",
+  );
 
   const first = await service.handleTideMcpToolCall({
     session: { runtimeId: "runtime-stale-pending", agentId: "codex" },
@@ -754,6 +860,13 @@ test("observe_browser_clears_a_stale_pending_action_before_the_next_action", asy
   );
   const paneId = opened.output.pane.paneId;
   const revision = opened.output.pane.revision;
+  await settleBrowser(
+    service,
+    "thread-observe-stale-pending",
+    paneId,
+    revision,
+    "https://example.test/observe-pending",
+  );
 
   const first = await service.handleTideMcpToolCall({
     session: { runtimeId: "runtime-observe-stale-pending", agentId: "codex" },
@@ -841,6 +954,13 @@ test("browser_action_result_command_records_completion_and_snapshot", async () =
   const opened = await openBrowser(
     service,
     "runtime-browser-result",
+    "https://example.test/action",
+  );
+  await settleBrowser(
+    service,
+    "thread-browser-result",
+    opened.output.pane.paneId,
+    opened.output.pane.revision,
     "https://example.test/action",
   );
   const action = await service.handleTideMcpToolCall({
@@ -1535,6 +1655,30 @@ async function openBrowser(
 
   assert.equal(result.ok, true);
   assert.equal(result.ok && result.output.kind, "open_browser");
+  return result as Extract<typeof result, { ok: true }>;
+}
+
+async function settleBrowser(
+  service: ReturnType<typeof createThreadRuntimeService>,
+  threadId: string,
+  paneId: string,
+  revision: string,
+  url: string,
+) {
+  const result = await service.handleWorkbenchCommand({
+    threadId,
+    command: "update_browser_snapshot",
+    targetPaneId: paneId,
+    data: {
+      revision,
+      url,
+      pageTitle: "Ready",
+      bodyTextPreview: "Ready body",
+      loading: false,
+    },
+  });
+
+  assert.equal(result.ok, true);
   return result as Extract<typeof result, { ok: true }>;
 }
 
