@@ -87,14 +87,18 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
     const type = (el.getAttribute && el.getAttribute("type") || "").toLowerCase();
     if (tag === "button") return "button";
     if (tag === "a") return "link";
+    if (tag === "summary") return "button";
     if (tag === "textarea") return "textbox";
     if (tag === "input") {{
       if (type === "checkbox") return "checkbox";
       if (type === "radio") return "radio";
+      if (type === "range") return "slider";
+      if (type === "search") return "searchbox";
       if (type === "submit" || type === "button") return "button";
       return "textbox";
     }}
     if (tag === "select") return "combobox";
+    if (tag === "option") return "option";
     if (tag === "form") return "form";
     if (tag === "nav") return "navigation";
     if (tag === "main") return "main";
@@ -103,21 +107,70 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
     if (tag === "ul" || tag === "ol") return "list";
     return null;
   }};
+  const normalizeText = (value, limit = 160) => {{
+    if (value == null) return "";
+    return clampText(String(value).trim().replace(/\s+/g, " "), limit);
+  }};
+  const cssEscape = (value) => {{
+    if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(value);
+    return String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+  }};
+  const textFromIds = (ids) => {{
+    if (!ids) return "";
+    return normalizeText(
+      String(ids)
+        .split(/\s+/)
+        .map((id) => document.getElementById(id))
+        .filter(Boolean)
+        .map((node) => node.innerText || node.textContent || "")
+        .join(" ")
+    );
+  }};
+  const associatedLabelText = (el) => {{
+    const id = el.getAttribute && el.getAttribute("id");
+    if (id) {{
+      const labels = Array.from(document.querySelectorAll('label[for="' + cssEscape(id) + '"]'));
+      const text = normalizeText(labels.map((label) => label.innerText || label.textContent || "").join(" "));
+      if (text) return text;
+    }}
+    const wrappingLabel = el.closest && el.closest("label");
+    return normalizeText(wrappingLabel && (wrappingLabel.innerText || wrappingLabel.textContent || ""));
+  }};
+  const ancestorContextText = (el) => {{
+    let parent = el.parentElement;
+    let depth = 0;
+    while (parent && parent !== document.body && depth < 3) {{
+      const explicit = normalizeText(
+        (parent.getAttribute && parent.getAttribute("aria-label")) ||
+        (parent.getAttribute && parent.getAttribute("title"))
+      );
+      if (explicit) return explicit;
+      const text = normalizeText(parent.innerText || parent.textContent || "", 1000);
+      if (text && text.length <= 240) return text;
+      parent = parent.parentElement;
+      depth += 1;
+    }}
+    return "";
+  }};
   const elementLabel = (el) => {{
     const candidates = [
       el.getAttribute && el.getAttribute("aria-label"),
+      textFromIds(el.getAttribute && el.getAttribute("aria-labelledby")),
       el.getAttribute && el.getAttribute("title"),
       el.getAttribute && el.getAttribute("alt"),
+      associatedLabelText(el),
       el.getAttribute && el.getAttribute("placeholder"),
-      el.value,
       el.innerText,
       el.textContent,
+      el.value,
       el.getAttribute && el.getAttribute("data-action"),
       el.getAttribute && el.getAttribute("name"),
-      el.id
+      el.id,
+      ancestorContextText(el)
     ];
     for (const candidate of candidates) {{
-      if (candidate && String(candidate).trim()) return clampText(String(candidate).trim().replace(/\s+/g, " "), 160);
+      const normalized = normalizeText(candidate);
+      if (normalized) return normalized;
     }}
     return "";
   }};
@@ -140,19 +193,33 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
       rect
     }};
   }};
+  const stableElementRef = (el, prefix) => {{
+    if (!el) return prefix + "0";
+    const attr = "data-tide-page-map-" + prefix + "-ref";
+    const existing = el.getAttribute && el.getAttribute(attr);
+    if (existing) return existing;
+    const next = (window.__tidePageMapRefCounter || 0) + 1;
+    window.__tidePageMapRefCounter = next;
+    const ref = prefix + next;
+    if (el.setAttribute) el.setAttribute(attr, ref);
+    return ref;
+  }};
   const collectPageMap = () => {{
     const regionLimit = 30;
     const interactableLimit = 80;
     const interactableSelector = [
       "button", "input", "textarea", "select", "a[href]",
-      "[role='button']", "[role='link']", "[role='textbox']", "[role='combobox']",
-      "[role='checkbox']", "[role='radio']", "[role='tab']", "[role='menuitem']",
+      "summary", "[onclick]", "[tabindex]:not([tabindex='-1'])",
+      "[role='button']", "[role='link']", "[role='textbox']", "[role='searchbox']", "[role='combobox']",
+      "[role='checkbox']", "[role='radio']", "[role='switch']", "[role='slider']", "[role='spinbutton']",
+      "[role='tab']", "[role='menuitem']", "[role='option']", "[role='treeitem']",
       "[data-action]", "[contenteditable='true']"
     ].join(",");
     const regionSelector = [
       "main", "aside", "nav", "header", "footer", "section", "form", "dialog", "ul", "ol",
       "[role='main']", "[role='navigation']", "[role='complementary']", "[role='dialog']",
-      "[role='form']", "[role='search']", "[role='list']", "[role='listbox']",
+      "[role='form']", "[role='search']", "[role='list']", "[role='listbox']", "[role='region']",
+      "[role='application']",
       "[aria-label]", "[data-region]", "[data-panel]"
     ].join(",");
     const interactables = [];
@@ -160,25 +227,30 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
     let seen = new Set();
     const pushElement = (target, el, prefix, kind, limit) => {{
       if (!el || seen.has(el)) return false;
-      const payload = elementPayload(el, `${{prefix}}${{target.length + 1}}`, kind);
+      const payload = elementPayload(el, stableElementRef(el, prefix), kind);
       if (!payload) return false;
       seen.add(el);
       if (target.length < limit) target.push(payload);
       return true;
     }};
     const interactableNodes = Array.from(document.querySelectorAll(interactableSelector));
-    for (const el of interactableNodes) pushElement(interactables, el, "i", "interactable", interactableLimit);
+    const interactableSet = new Set(interactableNodes);
+    let visibleInteractableCount = 0;
+    for (const el of interactableNodes) {{
+      if (pushElement(interactables, el, "i", "interactable", interactableLimit)) visibleInteractableCount += 1;
+    }}
     seen = new Set();
     const regionNodes = Array.from(document.querySelectorAll(regionSelector));
+    let visibleRegionCount = 0;
     for (const el of regionNodes) {{
-      if (interactableNodes.includes(el)) continue;
-      pushElement(regions, el, "r", "region", regionLimit);
+      if (interactableSet.has(el)) continue;
+      if (pushElement(regions, el, "r", "region", regionLimit)) visibleRegionCount += 1;
     }}
     return {{
       regions,
       interactables,
-      truncated_regions: regionNodes.length > regionLimit,
-      truncated_interactables: interactableNodes.length > interactableLimit
+      truncated_regions: visibleRegionCount > regionLimit,
+      truncated_interactables: visibleInteractableCount > interactableLimit
     }};
   }};
   const postPageSnapshot = () => {{

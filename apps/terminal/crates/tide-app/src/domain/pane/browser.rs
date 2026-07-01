@@ -109,6 +109,7 @@ pub struct BrowserSnapshot {
 pub const BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES: usize = 128 * 1024;
 pub const BROWSER_SNAPSHOT_HISTORY_LIMIT: usize = 2;
 pub const BROWSER_REVIEW_HISTORY_LIMIT: usize = 6;
+pub const BROWSER_ACTION_HISTORY_LIMIT: usize = 8;
 pub const BROWSER_PAGE_MAP_REGION_LIMIT: usize = 30;
 pub const BROWSER_PAGE_MAP_INTERACTABLE_LIMIT: usize = 80;
 pub const BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES: usize = 160;
@@ -201,6 +202,23 @@ pub struct BrowserPageMap {
     pub interactables: Vec<BrowserPageElement>,
     pub truncated_regions: bool,
     pub truncated_interactables: bool,
+}
+
+/// One bounded agent Browser Pane action record, returned with later observations so
+/// agents can recover from short interaction loops without relying on hidden memory.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserActionHistoryEntry {
+    pub generation: u64,
+    pub action: String,
+    pub target_ref: Option<String>,
+    pub target_label: Option<String>,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub text_bytes: Option<usize>,
+    pub key: Option<String>,
+    pub url: Option<String>,
+    pub dispatched: bool,
+    pub observe_after_action: bool,
 }
 
 impl BrowserPageMap {
@@ -412,6 +430,8 @@ pub struct BrowserPane {
     snapshot_history: Vec<BrowserSnapshotHistoryEntry>,
     /// Bounded in-memory Browser review/comment history for visible collaboration loops.
     review_history: Vec<BrowserReviewHistoryEntry>,
+    /// Bounded in-memory agent Browser action history for observation feedback loops.
+    action_history: Vec<BrowserActionHistoryEntry>,
     /// Latest page selection snapshot captured from the WKWebView bridge.
     pub page_selection: Option<BrowserSelectionSnapshot>,
     /// Visible Browser Automation Cursor state for agent-driven Browser Pane actions.
@@ -490,6 +510,7 @@ impl BrowserPane {
             page_map: None,
             snapshot_history: Vec::new(),
             review_history: Vec::new(),
+            action_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
             agent_screenshot: None,
@@ -537,6 +558,7 @@ impl BrowserPane {
             page_map: None,
             snapshot_history: Vec::new(),
             review_history: Vec::new(),
+            action_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
             agent_screenshot: None,
@@ -584,6 +606,7 @@ impl BrowserPane {
             page_map: None,
             snapshot_history: Vec::new(),
             review_history: Vec::new(),
+            action_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
             agent_screenshot: None,
@@ -630,6 +653,7 @@ impl BrowserPane {
             page_map: None,
             snapshot_history: Vec::new(),
             review_history: Vec::new(),
+            action_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
             agent_screenshot: None,
@@ -863,6 +887,7 @@ impl BrowserPane {
         self.page_map = None;
         self.snapshot_history.clear();
         self.review_history.clear();
+        self.action_history.clear();
         self.search = None;
         self.agent_browser_control_mode = None;
         self.agent_observed_generation = None;
@@ -1307,6 +1332,18 @@ impl BrowserPane {
 
     pub fn mark_agent_action_requires_reobserve(&mut self) {
         self.agent_reobserve_required = true;
+    }
+
+    pub fn record_agent_action(&mut self, entry: BrowserActionHistoryEntry) {
+        self.action_history.push(entry);
+        if self.action_history.len() > BROWSER_ACTION_HISTORY_LIMIT {
+            let overflow = self.action_history.len() - BROWSER_ACTION_HISTORY_LIMIT;
+            self.action_history.drain(0..overflow);
+        }
+    }
+
+    pub fn action_history(&self) -> &[BrowserActionHistoryEntry] {
+        &self.action_history
     }
 
     pub fn mark_human_intervention(&mut self) {
