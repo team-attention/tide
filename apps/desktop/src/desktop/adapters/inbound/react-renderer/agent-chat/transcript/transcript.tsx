@@ -33,7 +33,8 @@ export function createAgentSession(
   // use the block only to dodge the redundant double-caret.
   const lastBlock = blocks[blocks.length - 1];
   const lastHasActiveAgentCaret =
-    lastBlock?.role === "agent" &&
+    !!lastBlock &&
+    lastBlock.role === "agent" &&
     (lastBlock.status === "streaming" || lastBlock.status === "pending");
   const activeCaretBlockId =
     chatState === "running" && lastHasActiveAgentCaret ? lastBlock.blockId : undefined;
