@@ -25,12 +25,17 @@ fallback rows.
 - **Composer surface**: current-session context only. It shows the active
   thread's context remaining and token detail when known.
 - **Settings surface**: simple usage-remaining rows grouped by provider/model.
-  It shows provider quota windows only.
+  It shows provider quota windows only, with the same framing as the Codex
+  account menu: window label, **remaining** percentage, and reset time/date.
 - **Scope**: provider/account quota snapshots from provider history at startup,
   plus live provider quota updates during turns. Thread/session usage is never a
   Settings source.
 - **Settings framing**: remaining %, i.e. `100 - provider usedPercent`, clamped
   to `[0, 100]`, rounded to an integer.
+- **Settings refresh**: opening Settings always asks the Backend to rescan recent
+  provider history and re-emit `providerUsage.changed`. This is not live polling,
+  but it prevents the modal from showing a stale startup snapshot when the Codex
+  account menu has fresher quota data.
 - **View-model compatibility**: rate-limit views still expose used % and
   remaining % for callers, but Settings renders `remainingLabel`.
 - **Reset format**: windows that reset within a day (`windowMinutes <= 1440`, e.g. 5h) show a clock time (`8:31 PM`); longer windows (Weekly/Monthly) show a calendar date (`Jun 28`). Uses the user's locale/timezone (`toLocaleTimeString` / `toLocaleDateString`).
@@ -76,6 +81,12 @@ Adds `providerUsage.changed`:
 }
 ```
 
+Adds `provider.refreshUsage`:
+
+```ts
+"provider.refreshUsage": {}
+```
+
 `agentRuntime.usageChanged` remains per Thread and continues to drive the
 composer/session context UI.
 
@@ -83,16 +94,18 @@ composer/session context UI.
 
 1. Backend startup scans recent Codex/Claude provider history for the latest
    usage record with quota windows, then emits `providerUsage.changed`.
-2. A live turn that reports quota windows emits both `agentRuntime.usageChanged`
+2. Opening Settings sends `provider.refreshUsage`; Backend rescans recent
+   provider history and returns `providerUsage.changed` before `command.completed`.
+3. A live turn that reports quota windows emits both `agentRuntime.usageChanged`
    for the Thread and `providerUsage.changed` for Settings.
-3. Product Shell stores `providerUsage.changed` snapshots in app-level state.
-4. `createAgentChatUsageView()` maps each window with a known `usedPercent` to an
+4. Product Shell stores `providerUsage.changed` snapshots in app-level state.
+5. `createAgentChatUsageView()` maps each window with a known `usedPercent` to an
    `AgentChatUsageRateLimitView` (used + remaining + reset label), preserving order.
-5. The Product Shell view model derives Settings rows from provider snapshots
+6. The Product Shell view model derives Settings rows from provider snapshots
    only and drops snapshots without quota windows.
-6. The composer stack renders `Session context 68% left`, with token detail when
+7. The composer stack renders `Session context 68% left`, with token detail when
    available, and its fill bar grows as the session consumes context.
-7. Settings renders window rows when reported, e.g. `5h 58% 8:31 PM`,
+8. Settings renders window rows when reported, e.g. `5h 58% 8:31 PM`,
    `Weekly 68% Jun 28`. If no account quota windows exist, it renders
    `No usage reported yet.`
 
@@ -101,6 +114,9 @@ composer/session context UI.
 - Composer never renders provider quota windows.
 - Settings never renders session context.
 - Settings is independent of the active Thread and thread list.
+- Every Settings open dispatches `provider.refreshUsage`; the modal may render
+  the last known rows immediately, then update when the Backend returns fresher
+  provider history.
 - `remainingPercent = clamp(0, 100, round(100 − usedPercent))`.
 - `usedPercent = clamp(0, 100, round(usedPercent))`.
 - A window without `usedPercent` produces no view row.
@@ -117,6 +133,9 @@ composer/session context UI.
   provider windows are present.
 - component/shell: thread-only session usage leaves Settings empty; account
   usage renders on New Thread without any listed/open thread.
+- component/shell: clicking Settings dispatches `provider.refreshUsage`.
+- backend contract: `provider.refreshUsage` returns `providerUsage.changed` with
+  rescanned provider history, followed by `command.completed`.
 
 ## Implementation Notes
 

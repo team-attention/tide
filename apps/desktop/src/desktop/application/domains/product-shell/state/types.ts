@@ -492,6 +492,12 @@ export type ProductShellBackendCommand =
       kind: "provider.checkReadiness";
       payload: { threadId: string; agentId: string };
     }
+  | {
+      // Re-read provider-local account/rate-limit history for Settings.
+      // Backend replies providerUsage.changed when it finds quota windows.
+      kind: "provider.refreshUsage";
+      payload: {};
+    }
   | AgentChatBackendCommand
   | AppChromeBackendCommand;
 

@@ -9,6 +9,7 @@ import {
   workspaceFileTreeLoadedEvent,
   workspaceImageLoadedEvent,
 } from "./dto/workspace-query-dtos.ts";
+import { providerCatalogChangedEvent, providerUsageChangedEvent } from "./dto/provider-dtos.ts";
 import type {
   AnswerPromptResult,
   ArchiveThreadResult,
@@ -47,6 +48,7 @@ import {
   type OpencodeEnvironmentDto,
   type OpencodeVendorDto,
   type ProviderCliAgentId,
+  type ProviderUsageSnapshotDto,
   type ProviderReadinessDto,
   type ProviderModelDto,
   type PromptStateDto,
@@ -57,7 +59,6 @@ import {
   sanitizeJsonValue,
   validateBackendCommandEnvelope,
 } from "../../../../shared/contracts/index.ts";
-
 export interface CreateBackendContractMessageAdapterInput {
   service: ThreadRuntimeService;
   clock?: () => string;
@@ -80,6 +81,7 @@ export interface CreateBackendContractMessageAdapterInput {
     agentId: string,
     cwd: string,
   ) => Promise<Array<{ name: string; description: string; trigger: "/" | "$" }>>;
+  refreshProviderUsage?: () => ProviderUsageSnapshotDto[] | Promise<ProviderUsageSnapshotDto[]>;
 }
 
 export interface BackendContractMessageAdapter {
@@ -109,6 +111,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     agentId: string,
     cwd: string,
   ) => Promise<Array<{ name: string; description: string; trigger: "/" | "$" }>>;
+  private readonly refreshProviderUsage?: () => ProviderUsageSnapshotDto[] | Promise<ProviderUsageSnapshotDto[]>;
 
   constructor(input: CreateBackendContractMessageAdapterInput) {
     this.service = input.service;
@@ -120,6 +123,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     this.opencodeEnvironment = input.opencodeEnvironment;
     this.connectOpencodeApiKey = input.connectOpencodeApiKey;
     this.discoverProviderCommands = input.discoverProviderCommands;
+    this.refreshProviderUsage = input.refreshProviderUsage;
   }
 
   async handleMessage(message: unknown): Promise<BackendEventEnvelope[]> {
@@ -332,7 +336,14 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         }
         // Re-list (threads/availableAgents) AND push the refreshed opencode catalog so the
         // now-connected vendor + its models surface (catalogs were invalidated by the connect).
-        const catalogEvent = await this.providerCatalogChangedEvent(typed);
+        const catalogEvent = providerCatalogChangedEvent({
+          eventId: this.nextEventId(),
+          requestId: typed.requestId,
+          emittedAt: this.clock(),
+          opencodeModels: await this.enumerateOpencodeModels?.(),
+          opencodeVendors: await this.enumerateOpencodeVendors?.(),
+          opencodeEnvironment: await this.opencodeEnvironment?.(),
+        });
         return this.handleServiceResult(typed, await this.service.listThreads({}), (result) =>
           [this.threadListedEvent(typed, result), catalogEvent, this.commandCompletedEvent(typed)]);
       }
@@ -350,6 +361,21 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
             payload: { agentId: typed.payload.agentId as ProviderCliAgentId, cwd: typed.payload.cwd, commands },
           } satisfies BackendEventEnvelope<"agentRuntime.commandsChanged">,
           this.commandCompletedEvent(typed, { handled: commands.length > 0 }),
+        ];
+      }
+      case "provider.refreshUsage": {
+        const typed = command as BackendCommandEnvelope<"provider.refreshUsage">;
+        const usages = (await this.refreshProviderUsage?.()) ?? [];
+        return [
+          ...(usages.length > 0
+            ? [providerUsageChangedEvent({
+                eventId: this.nextEventId(),
+                requestId: typed.requestId,
+                emittedAt: this.clock(),
+                usages,
+              })]
+            : []),
+          this.commandCompletedEvent(typed, { handled: usages.length > 0 }),
         ];
       }
       case "agentRuntime.resume": {
@@ -518,26 +544,6 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         },
       } satisfies BackendEventEnvelope<"thread.listed">,
     ];
-  }
-
-  // opencode's catalog (vendors/models/version), delivered separately from thread.listed so the
-  // agent menu (availableAgents) is never blocked behind opencode's subprocesses. Pushed at
-  // startup (live-backend) and after a vendor connect. Spec: provider-cli-setup-handoff.md.
-  private async providerCatalogChangedEvent(
-    command: BackendCommandEnvelope,
-  ): Promise<BackendEventEnvelope<"providerCatalog.changed">> {
-    return {
-      contractVersion: CONTRACT_VERSION,
-      eventId: this.nextEventId(),
-      requestId: command.requestId,
-      kind: "providerCatalog.changed",
-      emittedAt: this.clock(),
-      payload: {
-        opencodeModels: await this.enumerateOpencodeModels?.(),
-        opencodeVendors: await this.enumerateOpencodeVendors?.(),
-        opencodeEnvironment: await this.opencodeEnvironment?.(),
-      },
-    };
   }
 
   private threadArchivedEvent(

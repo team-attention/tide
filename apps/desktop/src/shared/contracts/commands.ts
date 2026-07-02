@@ -25,6 +25,7 @@ export type BackendCommandKind =
   | "provider.opencodeConnectApiKey"
   | "provider.discoverCommands"
   | "provider.checkReadiness"
+  | "provider.refreshUsage"
   | "workbench.command"
   | "workspace.readFileTree"
   | "workspace.searchContent"
@@ -53,6 +54,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "provider.opencodeConnectApiKey",
   "provider.discoverCommands",
   "provider.checkReadiness",
+  "provider.refreshUsage",
   "workbench.command",
   "workspace.readFileTree",
   "workspace.searchContent",
@@ -161,6 +163,9 @@ export interface BackendCommandPayloadByKind {
   // install/sign-in card surfaces immediately. Backend replies providerReadiness.changed.
   // See docs_v2/specs/provider-cli-setup-handoff.md.
   "provider.checkReadiness": { threadId: ThreadId; agentId: string };
+  // Re-read provider-local account/rate-limit history for Settings. Backend replies
+  // providerUsage.changed when it finds usage windows, then command.completed.
+  "provider.refreshUsage": {};
   "workbench.command": {
     threadId: ThreadId;
     command: string;

@@ -372,11 +372,13 @@ export function createLiveBackendContractMessageAdapter(
     hasIntegration: (agentId) => integrations[agentId] !== undefined,
     resolveExecutable,
   });
-  setImmediate(() => {
-    const usages = readProviderAccountUsageSnapshotsFromHome({
+  const refreshProviderUsage = () =>
+    readProviderAccountUsageSnapshotsFromHome({
       homeDir,
       codexHome: effectiveCodexHome(process.cwd()),
     });
+  setImmediate(() => {
+    const usages = refreshProviderUsage();
     if (usages.length === 0) {
       return;
     }
@@ -423,6 +425,7 @@ export function createLiveBackendContractMessageAdapter(
       // detection's methods === the adapter's thread.listed detection inputs.
       ...detection,
       discoverProviderCommands: (agentId, cwd) => providerCliRuntimePort.discoverCommands?.(agentId as ProviderCliAgentId, cwd) ?? Promise.resolve([]),
+      refreshProviderUsage,
     }),
     service,
     persistence,

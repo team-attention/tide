@@ -493,8 +493,8 @@ export interface AgentChatUsageView {
   contextRemainingLabel?: string;
   // Compact context detail, e.g. "82.4k / 256k tokens".
   contextDetailLabel?: string;
-  // Provider quota windows for the active thread. Settings renders used% + reset;
-  // remaining% is retained for callers that still want Codex account-menu framing.
+  // Provider quota windows for the active thread. Settings renders remaining% + reset,
+  // matching the Codex account menu; used% remains available for diagnostics.
   // See usage-remaining-popover.md.
   rateLimits?: AgentChatUsageRateLimitView[];
 }
@@ -502,8 +502,7 @@ export interface AgentChatUsageView {
 export interface AgentChatUsageRateLimitView {
   // "5h", "Weekly", "Daily", "<n>h", "<n>m" — provider label or derived from window.
   label: string;
-  // 0-100 (= provider reported usedPercent, rounded and clamped). Settings uses
-  // this for account/window usage rows.
+  // 0-100 (= provider reported usedPercent, rounded and clamped).
   usedPercent: number;
   // Pre-formatted used percent, e.g. "58%".
   usedLabel: string;

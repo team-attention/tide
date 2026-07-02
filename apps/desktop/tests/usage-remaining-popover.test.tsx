@@ -2,6 +2,8 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { JSDOM } from "jsdom";
+import { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { SessionContextMeter } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/composer/usage-meter.tsx";
@@ -12,8 +14,14 @@ import {
   openProductShellThread,
   setProductShellSettingsOpen,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
-import type { AgentChatUsageView } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
-import type { AgentChatThreadSummary } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
+import type { ProductShellBackendCommand } from "../src/desktop/application/domains/product-shell/product-shell.ts";
+import type { AgentChatBackendEvent, AgentChatThreadSummary, AgentChatUsageView } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
+
+class TestResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
 
 const usage: AgentChatUsageView = {
   contextPercentLabel: "25%",
@@ -223,6 +231,104 @@ test("settings_shows_account_usage_on_new_thread_without_thread_list", () => {
   assert.match(settingsText, /sonnet-4\.6/);
   assert.match(settingsText, /5h\s*60%/);
   assert.match(settingsText, /Weekly\s*35%/);
+});
+
+test("settings_open_dispatches_provider_usage_refresh", async () => {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>");
+  const globalObject = globalThis as unknown as {
+    window: unknown;
+    document: unknown;
+    HTMLElement: unknown;
+    Element: unknown;
+    MutationObserver: unknown;
+    ResizeObserver: unknown;
+    IS_REACT_ACT_ENVIRONMENT: boolean;
+  };
+  const original = {
+    window: globalObject.window,
+    document: globalObject.document,
+    HTMLElement: globalObject.HTMLElement,
+    Element: globalObject.Element,
+    MutationObserver: globalObject.MutationObserver,
+    ResizeObserver: globalObject.ResizeObserver,
+    actEnv: globalObject.IS_REACT_ACT_ENVIRONMENT,
+  };
+  (dom.window as unknown as { ResizeObserver: typeof TestResizeObserver }).ResizeObserver = TestResizeObserver;
+  globalObject.window = dom.window;
+  globalObject.document = dom.window.document;
+  globalObject.HTMLElement = dom.window.HTMLElement;
+  globalObject.Element = dom.window.Element;
+  globalObject.MutationObserver = dom.window.MutationObserver;
+  globalObject.ResizeObserver = TestResizeObserver;
+  globalObject.IS_REACT_ACT_ENVIRONMENT = true;
+
+  try {
+    const { createRoot } = await import("react-dom/client");
+    const container = dom.window.document.createElement("div");
+    dom.window.document.body.appendChild(container);
+    const root = createRoot(container);
+    const commands: ProductShellBackendCommand[] = [];
+
+    await act(async () => {
+      root.render(
+        <TideProductShell
+          initialState={createProductShellState({ includeFixtureData: false })}
+          onBackendCommand={(command) => {
+            commands.push(command);
+            if (command.kind !== "provider.refreshUsage") {
+              return undefined;
+            }
+            return [
+              {
+                kind: "providerUsage.changed",
+                payload: {
+                  usages: [
+                    {
+                      agentId: "codex",
+                      usage: {
+                        model: "gpt-5.5",
+                        rateLimits: [
+                          { usedPercent: 4, windowMinutes: 300, resetsAt: 1782991315 },
+                        ],
+                      },
+                      observedAt: "2026-06-11T00:02:00.000Z",
+                    },
+                  ],
+                },
+              } satisfies AgentChatBackendEvent,
+            ];
+          }}
+        />,
+      );
+    });
+
+    assert.deepEqual(commands, []);
+
+    const settingsButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.replace(/\s+/g, " ").trim() === "Settings",
+    );
+    assert.ok(settingsButton);
+
+    await act(async () => {
+      settingsButton.click();
+    });
+
+    assert.equal(commands.length, 1);
+    assert.equal(commands[0]?.kind, "provider.refreshUsage");
+    assert.match(visibleText(container.innerHTML), /5h\s*96%/);
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    globalObject.window = original.window;
+    globalObject.document = original.document;
+    globalObject.HTMLElement = original.HTMLElement;
+    globalObject.Element = original.Element;
+    globalObject.MutationObserver = original.MutationObserver;
+    globalObject.ResizeObserver = original.ResizeObserver;
+    globalObject.IS_REACT_ACT_ENVIRONMENT = original.actEnv;
+  }
 });
 
 test("settings_preserves_account_usage_when_provider_usage_update_is_empty_or_malformed", () => {

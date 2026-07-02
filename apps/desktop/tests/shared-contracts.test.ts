@@ -98,6 +98,40 @@ test("workspace_code_intel_contracts_round_trip", () => {
   assert.equal(validateBackendEventEnvelope(reparsed).ok, true);
 });
 
+test("provider_refresh_usage_contracts_round_trip", () => {
+  const command = {
+    contractVersion: CONTRACT_VERSION,
+    requestId: "req-provider-refresh-usage",
+    kind: "provider.refreshUsage",
+    issuedAt,
+    payload: {},
+  };
+  assert.equal(validateBackendCommandEnvelope(command).ok, true);
+
+  const event = {
+    contractVersion: CONTRACT_VERSION,
+    eventId: "evt-provider-usage",
+    requestId: command.requestId,
+    kind: "providerUsage.changed",
+    emittedAt,
+    payload: {
+      usages: [
+        {
+          agentId: "codex",
+          usage: {
+            model: "gpt-5.5",
+            rateLimits: [
+              { usedPercent: 4, windowMinutes: 300, resetsAt: 1782991315 },
+            ],
+          },
+          observedAt: emittedAt,
+        },
+      ],
+    },
+  };
+  assert.equal(validateBackendEventEnvelope(event).ok, true);
+});
+
 test("BackendCommandEnvelope rejects missing RequestId before Backend services", () => {
   const { requestId: _requestId, ...withoutRequestId } = commandEnvelope;
   const result = validateBackendCommandEnvelope(withoutRequestId);

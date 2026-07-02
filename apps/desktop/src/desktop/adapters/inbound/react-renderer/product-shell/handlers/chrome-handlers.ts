@@ -14,7 +14,10 @@ export function createChromeHandlers(ctx: ProductShellHandlerContext): Pick<Prod
       setShellState((state) => setProductShellSearchQuery(state, query)),
     onSearchToggle: () =>
       setShellState((state) => toggleProductShellSearch(state)),
-    onOpenSettings: () => setShellState((state) => setProductShellSettingsOpen(state, true)),
+    onOpenSettings: () => {
+      setShellState((state) => setProductShellSettingsOpen(state, true));
+      dispatchBackendCommand({ kind: "provider.refreshUsage", payload: {} });
+    },
     onCloseSettings: () => setShellState((state) => setProductShellSettingsOpen(state, false)),
     onWorktreeSettingsChange: (patch) =>
       setShellState((state) => {

@@ -159,6 +159,61 @@ test("renderer_command_reaches_backend_adapter_and_returns_backend_events", asyn
   assert.equal(received[1].payload.thread.threadId, "thread-process");
 });
 
+test("provider_refresh_usage_requeries_provider_history", async () => {
+  let refreshCount = 0;
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+    refreshProviderUsage: () => {
+      refreshCount += 1;
+      return [
+        {
+          agentId: "codex",
+          usage: {
+            model: "gpt-5.5",
+            rateLimits: [
+              { usedPercent: 4, windowMinutes: 300, resetsAt: 1782991315 },
+            ],
+          },
+          observedAt: later,
+        },
+      ];
+    },
+  });
+
+  const events = await adapter.handleMessage(
+    commandEnvelope("provider.refreshUsage", {}),
+  );
+
+  assert.equal(refreshCount, 1);
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ["command.accepted", "providerUsage.changed", "command.completed"],
+  );
+  assertBackendEventsAreContractEnvelopes(events);
+  assert.deepEqual(
+    events.map((event) => event.requestId),
+    [
+      "req-provider.refreshUsage",
+      "req-provider.refreshUsage",
+      "req-provider.refreshUsage",
+    ],
+  );
+  const usageEvent = events[1] as BackendEventEnvelope<"providerUsage.changed">;
+  assert.equal(usageEvent.payload.usages[0]?.agentId, "codex");
+  assert.deepEqual(usageEvent.payload.usages[0]?.usage.rateLimits?.[0], {
+    usedPercent: 4,
+    windowMinutes: 300,
+    resetsAt: 1782991315,
+  });
+});
+
 // Spec: workbench-editor-language-intelligence — a workspace.codeIntel query
 // round-trips to a requestId-correlated workspace.codeIntelResult event. With
 // no engine configured the result is a QUIET miss (ok:false + message), never
