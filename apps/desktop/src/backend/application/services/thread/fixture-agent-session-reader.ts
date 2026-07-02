@@ -169,6 +169,7 @@ function messageBlockFromFrame(
   const role = payload.role === "user" ? "user" : "agent";
   const body = typeof payload.body === "string" ? payload.body : rawText(frame);
   const status = blockStatus(payload.status, "complete");
+  const phase = role === "agent" ? agentMessagePhase(payload) : undefined;
 
   return {
     blockId: stringField(payload.blockId) ?? `block:${threadId}:${frame.frameId}`,
@@ -179,9 +180,17 @@ function messageBlockFromFrame(
     sourceFrameIds: [frame.frameId],
     status,
     body,
+    ...(phase !== undefined ? { data: { phase } } : {}),
     createdAt: frame.observedAt,
     updatedAt: frame.observedAt,
   };
+}
+
+function agentMessagePhase(
+  payload: Record<string, unknown>,
+): "commentary" | "final_answer" | undefined {
+  const phase = typeof payload.phase === "string" ? payload.phase : undefined;
+  return phase === "commentary" || phase === "final_answer" ? phase : undefined;
 }
 
 // Reasoning/thinking from a provider (codex summary text, etc.) becomes a

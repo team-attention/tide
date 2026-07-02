@@ -216,6 +216,12 @@ export class BrowserRuntimeHost {
       }
       return { action: "deny" };
     });
+    view.webContents.setWindowOpenHandler(({ url }) => {
+      if (isHttpUrl(url)) {
+        this.openPopupInBrowserPane(runtime, url);
+      }
+      return { action: "deny" };
+    });
     this.runtimes.set(key, runtime);
     const pendingStage = this.pendingStages.get(key);
     if (
@@ -346,6 +352,33 @@ export class BrowserRuntimeHost {
       runtime.threadId,
       runtime.paneId,
     );
+  }
+
+  private openPopupInBrowserPane(runtime: BrowserRuntime, url: string): void {
+    const window = this.hostWindowForRuntime(runtime);
+    if (window === null || window.isDestroyed()) {
+      return;
+    }
+    window.webContents.send("tide:open-browser-pane", url, true);
+  }
+
+  private hostWindowForRuntime(runtime: BrowserRuntime): BrowserWindow | null {
+    const pendingWindowId = this.pendingStages.get(runtime.key)?.windowId;
+    const pendingWindow =
+      pendingWindowId === undefined ? null : BrowserWindow.fromId(pendingWindowId);
+    if (isUsableHostWindow(pendingWindow, this.captureWindow)) {
+      return pendingWindow;
+    }
+
+    const attachedWindow =
+      runtime.attachedWindowId === null ? null : BrowserWindow.fromId(runtime.attachedWindowId);
+    if (isUsableHostWindow(attachedWindow, this.captureWindow)) {
+      return attachedWindow;
+    }
+
+    return BrowserWindow.getAllWindows().find((candidate) =>
+      isUsableHostWindow(candidate, this.captureWindow)
+    ) ?? null;
   }
 
   private attachToCaptureSurface(runtime: BrowserRuntime): void {
@@ -482,6 +515,22 @@ function roundedBounds(bounds: Rectangle): Rectangle {
 
 function validBounds(bounds: Rectangle): boolean {
   return bounds.width > 1 && bounds.height > 1;
+}
+
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+function isUsableHostWindow(
+  window: BrowserWindow | null | undefined,
+  captureWindow: BrowserWindow | null,
+): window is BrowserWindow {
+  return (
+    window !== null &&
+    window !== undefined &&
+    !window.isDestroyed() &&
+    (captureWindow === null || window.id !== captureWindow.id)
+  );
 }
 
 async function readDomSnapshot(webContents: WebContents): Promise<{

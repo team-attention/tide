@@ -4,7 +4,7 @@ import { backendProcess, ensureBackendProcess, nextEventId, postBackendCommand }
 import { maybeOfferMoveToApplications } from "./move-to-applications.ts";
 import { installApplicationMenu } from "./app-menu.ts";
 import { applyHostZoom } from "./zoom.ts";
-import { appRendererUrl, createMainWindow } from "./main-window.ts";
+import { createMainWindow } from "./main-window.ts";
 import { registerNotificationBridge } from "./notifications.ts";
 import { registerAutoUpdate, logUpdateEvent } from "./auto-update.ts";
 import { readUiPrefs, saveUiPref } from "./ui-prefs.ts";
@@ -20,7 +20,6 @@ import {
   Menu,
   shell,
   utilityProcess,
-  type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions,
   type UtilityProcess,
 } from "electron";
@@ -44,8 +43,6 @@ import {
   branchMergedArgs,
   worktreeRepoRootForCwd,
 } from "../../../../shared/worktree/path.ts";
-
-import { classifyTopLevelNavigation, shouldPreserveBrowserPopupWindow } from "./window-navigation-policy.ts";
 
 import {
   createFileInWorkspace,
@@ -671,86 +668,6 @@ void app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createMainWindow();
     }
-  });
-});
-
-app.on("web-contents-created", (_event, contents) => {
-  // A page inside embedded webview content that opens a popup (target=_blank,
-  // window.open, Cmd/Ctrl+click) would otherwise spawn a blank top-level
-  // BrowserWindow. Deny ordinary popups and forward the URL to the renderer over
-  // IPC, which drives the SAME backend open_browser path the agent and the address
-  // bar use — reliable, and it keeps backend pane state authoritative. HTTPS
-  // popups with real window semantics are allowed below as child windows. The
-  // disposition picks native popup vs. pane routing by the browser semantics:
-  //   • HTTPS "new-window" popups keep a native child window so window.opener works.
-  //   • Cmd/Ctrl+click & middle-click ("background-tab") open a NEW Browser Pane.
-  //   • A plain target=_blank ("foreground-tab"/other) → navigate the ACTIVE Browser
-  //     Pane IN PLACE, the same as a normal link click.
-  // We used to navigate the guest webContents directly with loadURL for the in-place
-  // case, but that silently dropped the navigation for some popup links (e.g. Google
-  // results with `newwindow=1`), so a plain click appeared to do nothing while
-  // Cmd/Ctrl+click — which already took the IPC branch — worked. Routing both through
-  // the backend fixes the plain click.
-  if (contents.getType() === "webview") {
-    contents.setWindowOpenHandler(({ url, disposition }) => {
-      if (/^https?:\/\//i.test(url)) {
-        // Target the window that actually HOSTS this <webview> (via the guest's
-        // hostWebContents), not getAllWindows()[0] — the first window isn't guaranteed
-        // to be the host once a DevTools/dialog window exists. Fall back to the first
-        // window if the host can't be resolved, so link routing never silently breaks.
-        const host = contents.hostWebContents;
-        const targetWindow =
-          (host !== null ? BrowserWindow.fromWebContents(host) : null) ??
-          BrowserWindow.getAllWindows()[0];
-        if (shouldPreserveBrowserPopupWindow(url, disposition)) {
-          const popupOptions: BrowserWindowConstructorOptions = {
-            width: 520,
-            height: 720,
-            show: true,
-            autoHideMenuBar: true,
-            title: "Sign in",
-            webPreferences: {
-              nodeIntegration: false,
-              contextIsolation: true,
-              sandbox: true,
-              partition: "persist:tide-workbench-browser",
-            },
-          };
-          if (targetWindow !== undefined) {
-            popupOptions.parent = targetWindow;
-          }
-          return { action: "allow", overrideBrowserWindowOptions: popupOptions };
-        }
-        const newPane = disposition === "background-tab" || disposition === "new-window";
-        targetWindow?.webContents.send("tide:open-browser-pane", url, newPane);
-      }
-      return { action: "deny" };
-    });
-    return;
-  }
-
-  // The MAIN host renderer (the React app). Its top-level webContents must never
-  // navigate off-app: a chat markdown link is a plain <a href>, and a default
-  // click would replace the whole app with the external page with no way back
-  // (the "window freezes on the linked site" bug). Off-app links open in the
-  // system browser; window.open / target=_blank never spawns a window.
-  const guard = (event: { preventDefault: () => void }, url: string): void => {
-    const verdict = classifyTopLevelNavigation(url, appRendererUrl());
-    if (verdict === "allow") {
-      return;
-    }
-    event.preventDefault();
-    if (verdict === "open_external") {
-      void shell.openExternal(url).catch(() => undefined);
-    }
-  };
-  contents.on("will-navigate", guard);
-  contents.on("will-redirect", guard);
-  contents.setWindowOpenHandler(({ url }) => {
-    if (classifyTopLevelNavigation(url, appRendererUrl()) === "open_external") {
-      void shell.openExternal(url).catch(() => undefined);
-    }
-    return { action: "deny" };
   });
 });
 

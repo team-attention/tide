@@ -1,4 +1,4 @@
-import type { AgentChatBlock, AgentChatBlockView, AgentChatChecklistEntry, AgentChatChecklistStatus, AgentChatChecklistView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageRateLimitView, AgentChatUsageView, LaunchOptionFeedback, LiveTurnActivityView } from "./types.ts";
+import type { AgentChatBlock, AgentChatBlockPhase, AgentChatBlockView, AgentChatChecklistEntry, AgentChatChecklistStatus, AgentChatChecklistView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageRateLimitView, AgentChatUsageView, LaunchOptionFeedback, LiveTurnActivityView } from "./types.ts";
 import { codexModelLabel, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, modelLabelForAgent, permissionLabelForValue, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { createActiveComposerSurface } from "./choice-surfaces.ts";
 import { isOpencodeUsable } from "./opencode-onramp.ts";
@@ -425,10 +425,22 @@ function toBlockView(block: AgentChatBlock): AgentChatBlockView {
     kind: block.kind,
     role: block.role,
     status: block.status,
+    phase: agentBlockPhase(block),
     title: block.title ?? formatBlockKind(block.kind),
     body,
     rawFallback: block.rawFallback,
   };
+}
+
+function agentBlockPhase(block: AgentChatBlock): AgentChatBlockPhase | undefined {
+  if (block.role !== "agent") {
+    return undefined;
+  }
+  const phase = block.data?.phase;
+  if (phase === "commentary" || phase === "final_answer") {
+    return phase;
+  }
+  return undefined;
 }
 
 function readOnlyThreadContextItems(

@@ -384,6 +384,8 @@ export interface AgentChatBlock {
   updatedAt: string;
 }
 
+export type AgentChatBlockPhase = "commentary" | "final_answer";
+
 export type AgentChatBackendCommand =
   | {
       kind: "thread.start";
@@ -575,6 +577,7 @@ export interface AgentChatBlockView {
   kind: string;
   role?: string;
   status: string;
+  phase?: AgentChatBlockPhase;
   title: string;
   body: string;
   rawFallback?: string;

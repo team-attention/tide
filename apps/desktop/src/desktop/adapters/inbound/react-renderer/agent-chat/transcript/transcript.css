@@ -48,6 +48,17 @@
   color: var(--tide-text);
 }
 
+.agent-session-turn--commentary {
+  padding-left: 12px;
+  border-left: 2px solid var(--tide-line-strong, var(--tide-line));
+  color: color-mix(in srgb, var(--tide-text) 78%, var(--tide-muted) 22%);
+}
+
+.agent-session-turn--commentary .agent-session-turn__label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* Codex-style: the user's message is a compact right-aligned bubble, clearly
    distinct from the agent's flat left-aligned prose. */
 

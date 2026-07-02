@@ -139,6 +139,7 @@ export function readCodexHistoryFrames(
         if (message === undefined) {
           continue;
         }
+        const phase = codexAgentMessagePhase(payload);
         pushFrame(
           index,
           {
@@ -148,6 +149,7 @@ export function readCodexHistoryFrames(
             blockId: `provider:${input.threadId}:${sessionId}:${index}`,
             body: message,
             sourceRuntimeId: input.runtimeId,
+            ...(phase !== undefined ? { phase } : {}),
           },
           message,
         );
@@ -202,6 +204,13 @@ export function readCodexHistoryFrames(
     }
   }
   return frames;
+}
+
+function codexAgentMessagePhase(
+  payload: Record<string, unknown>,
+): "commentary" | "final_answer" | undefined {
+  const phase = stringField(payload, "phase");
+  return phase === "commentary" || phase === "final_answer" ? phase : undefined;
 }
 
 // Extracts readable reasoning/thinking text from a codex rollout payload, whether

@@ -1612,6 +1612,31 @@ test("the_working_indicator_stays_up_mid_turn_after_a_completed_agent_block", ()
   assert.match(html, /Working…/);
 });
 
+test("commentary_agent_blocks_render_as_updates_while_the_turn_keeps_running", () => {
+  const running = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "running" }),
+  );
+  const withCommentary = applyBackendEventToAgentChatShell(
+    running,
+    backendEvent("agentSessionBlock.upserted", {
+      block: {
+        ...block("b1", "complete", "I am checking the logs."),
+        data: { phase: "commentary" },
+      },
+    }),
+  );
+  const view = createAgentChatShellViewModel(withCommentary);
+  const html = renderShell(withCommentary);
+
+  assert.equal(view.blocks[0]?.phase, "commentary");
+  assert.match(html, /agent-session-turn--commentary/);
+  assert.match(html, /data-block-phase="commentary"/);
+  assert.match(html, />Update</);
+  assert.doesNotMatch(html, /agent-turn-actions/);
+  assert.match(html, /Working…/);
+});
+
 test("the_working_indicator_is_hidden_while_the_agent_answer_streams", () => {
   // While the answer streams, the block shows its own blinking caret, so the
   // separate indicator stays hidden to avoid a redundant double-indicator.
