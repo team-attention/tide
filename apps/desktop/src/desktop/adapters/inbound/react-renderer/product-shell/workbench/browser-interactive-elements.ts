@@ -19,7 +19,7 @@ const BROWSER_INTERACTIVE_ELEMENT_CANDIDATES_SCRIPT = `(() => {
   if (root) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
     let visited = 0;
-    while (pointerCandidates.length < 120 && visited < 1500) {
+    while (pointerCandidates.length < 120 && visited < 500) {
       const element = walker.nextNode();
       if (!element) break;
       visited += 1;
@@ -37,8 +37,9 @@ const BROWSER_INTERACTIVE_ELEMENT_CANDIDATES_SCRIPT = `(() => {
       if (!(element instanceof HTMLElement) || seen.has(element)) return false;
       seen.add(element);
       const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return false;
       const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      return style.visibility !== "hidden" && style.display !== "none";
     })
     .slice(0, 80);
 })()`;
