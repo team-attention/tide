@@ -32,7 +32,7 @@ function read(rel: string): string {
 // compile-time union; this is its runtime twin, and the descriptor table + helpers
 // must agree with it. Adding an id to the type without updating this list (and a
 // descriptor) is the exact fan-out this guard prevents.
-const EXPECTED_PROVIDER_CLI_IDS = ["codex", "claude", "opencode"] as const;
+const EXPECTED_PROVIDER_CLI_IDS = ["codex", "claude", "opencode", "qwen"] as const;
 
 test("every provider-CLI agent id has a descriptor and a session-ref kind", () => {
   for (const id of EXPECTED_PROVIDER_CLI_IDS) {

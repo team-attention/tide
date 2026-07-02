@@ -190,7 +190,7 @@ export interface AgentChatAgentBinding {
   };
 }
 
-export type AgentChatProviderCliAgentId = "codex" | "claude" | "opencode";
+export type AgentChatProviderCliAgentId = "codex" | "claude" | "opencode" | "qwen";
 
 export type AgentChatAgentId = AgentChatProviderCliAgentId;
 

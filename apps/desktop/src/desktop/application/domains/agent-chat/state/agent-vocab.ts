@@ -1,7 +1,9 @@
 import type { AgentChatAgentBinding, AgentChatAgentId, AgentChatAgentRuntimeSource } from "./types.ts";
 import {
   AGENT_DESCRIPTORS,
+  PROVIDER_CLI_AGENT_IDS,
   agentDescriptor,
+  isProviderCliAgentId,
   type AgentPermissionConfig,
 } from "../../../../../shared/agent-descriptors.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
@@ -91,7 +93,7 @@ export function isAgentComingSoon(agentId: string): boolean {
 }
 
 // Provider-CLI agents offered in the composer menu.
-const OFFERED_PROVIDER_AGENTS = ["codex", "claude", "opencode"] as const;
+const OFFERED_PROVIDER_AGENTS = PROVIDER_CLI_AGENT_IDS;
 
 // Pick the agent a new thread should default to. Honors the user's last choice only if
 // it is still offered AND detected locally — so a persisted hidden/uninstalled agent
@@ -171,6 +173,11 @@ export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
       const catalog = providerModelCatalogs.get("opencode");
       return catalog === undefined ? [fallback] : [fallback, ...catalog];
     }
+    case "qwen": {
+      const fallback = { value: "Qwen default", label: "Default", detail: "qwen config" };
+      const catalog = providerModelCatalogs.get("qwen");
+      return catalog === undefined ? [fallback] : [fallback, ...catalog];
+    }
     default:
       return [];
   }
@@ -191,10 +198,7 @@ export function runtimeSourceForBinding(binding: AgentChatAgentBinding): AgentCh
 }
 
 export function runtimeSourceForAgent(agentId: string): AgentChatAgentRuntimeSource {
-  const providerAgent =
-    agentId === "claude" || agentId === "opencode"
-      ? agentId
-      : "codex";
+  const providerAgent = isProviderCliAgentId(agentId) ? agentId : "codex";
   return {
     kind: "provider_cli",
     integrationId: providerAgent,
@@ -207,6 +211,8 @@ export function defaultModelValueForAgent(agentId: string): string {
       return "Claude default";
     case "opencode":
       return "opencode default";
+    case "qwen":
+      return "Qwen default";
     default:
       return "gpt-5.5";
   }

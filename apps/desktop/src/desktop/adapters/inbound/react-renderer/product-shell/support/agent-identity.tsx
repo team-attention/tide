@@ -25,11 +25,8 @@ export function AgentIdentityIcon(props: { agentId: ProductShellAgentIdentity | 
 }
 
 function normalizeAgentId(agentId: string): ProductShellAgentIdentity {
-  if (
-    agentId === "claude" ||
-    agentId === "opencode"
-  ) {
-    return agentId;
+  if (agentDescriptor(agentId)?.isProviderCli === true) {
+    return agentId as ProductShellAgentIdentity;
   }
   return "codex";
 }

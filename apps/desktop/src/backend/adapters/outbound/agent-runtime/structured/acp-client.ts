@@ -229,10 +229,9 @@ class AcpClient implements StructuredRuntimeClient {
         // MERGE by configId: each change carries only its changed keys, so a later
         // pre-adoption change must not clobber an earlier one (e.g. model then effort).
         this.pendingConfigOptions = mergeConfigOptions(this.pendingConfigOptions, configOptions);
-        return;
+      } else {
+        this.sendConfigOptions(this.sessionId, configOptions);
       }
-      this.sendConfigOptions(this.sessionId, configOptions);
-      return;
     }
     const modeId = stringField(protocolParams, "modeId");
     if (modeId === undefined) {

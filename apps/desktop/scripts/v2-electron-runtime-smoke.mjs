@@ -19,7 +19,7 @@ import { CONTRACT_VERSION } from "../src/shared/contracts/index.ts";
 const require = createRequire(import.meta.url);
 const electronPath = require("electron");
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const selectableAgents = new Set(["codex", "claude", "opencode"]);
+const selectableAgents = new Set(["codex", "claude", "opencode", "qwen"]);
 
 const options = parseArgs(process.argv.slice(2));
 if (options.help) {
@@ -260,7 +260,7 @@ function printHelp() {
   console.log(`Usage: npm run test:smoke:electron -- --agent codex
 
 Options:
-  --agent codex|claude|opencode
+  --agent codex|claude|opencode|qwen
   --timeout-ms 75000
   --app-data-root /tmp/tide-electron-smoke
   --message "Prompt text"

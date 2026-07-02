@@ -1740,12 +1740,16 @@ test("composer_shell_command_adapter_only_claims_shell_owned_backend_command_kin
 test("agent_chip_renders_one_visible_value_for_provider_cli_sources", () => {
   const codexHtml = renderShell(createAgentChatShellState());
   const opencodeHtml = renderShell(selectComposerAgent(createAgentChatShellState(), "opencode").state);
+  const qwenHtml = renderShell(selectComposerAgent(createAgentChatShellState(), "qwen").state);
 
   assert.equal((codexHtml.match(/data-context-kind="agent"/g) ?? []).length, 1);
   assert.equal((opencodeHtml.match(/data-context-kind="agent"/g) ?? []).length, 1);
+  assert.equal((qwenHtml.match(/data-context-kind="agent"/g) ?? []).length, 1);
   assert.match(codexHtml, /Codex CLI/);
   assert.match(opencodeHtml, /opencode/);
+  assert.match(qwenHtml, /Qwen Code/);
   assert.match(opencodeHtml, /data-agent-runtime-source="provider_cli"/);
+  assert.match(qwenHtml, /data-agent-runtime-source="provider_cli"/);
 });
 
 test("model_chip_routes_menu_data_by_provider_cli_agent", () => {
@@ -1754,14 +1758,22 @@ test("model_chip_routes_menu_data_by_provider_cli_agent", () => {
     selectComposerAgent(createAgentChatShellState(), "opencode").state,
     "model_menu",
   ).state;
+  const qwenState = setComposerActiveSurface(
+    selectComposerAgent(createAgentChatShellState(), "qwen").state,
+    "model_menu",
+  ).state;
   const codexHtml = renderShell(codexState);
   const opencodeHtml = renderShell(opencodeState);
+  const qwenHtml = renderShell(qwenState);
 
   assert.match(codexHtml, /Model/);
   assert.match(codexHtml, /Codex Agent Integration/);
   assert.doesNotMatch(codexHtml, /OpenAI Provider Account/);
   assert.match(opencodeHtml, /opencode/);
   assert.match(opencodeHtml, /Add a vendor/);
+  assert.match(qwenHtml, /Qwen Code/);
+  assert.match(qwenHtml, /Default/);
+  assert.doesNotMatch(qwenHtml, /Add a vendor/);
 });
 
 test("codex_model_chip_renders_polished_label_but_stores_provider_native_value", () => {
@@ -1811,6 +1823,20 @@ test("selecting_opencode_uses_provider_cli_model_and_permission_defaults", () =>
   assert.equal(selected.composer.startOptions.launchOptions?.model, "opencode default");
   assert.equal(view.composer.modelLabel, "Default");
   assert.equal(view.composer.permissionLabel, "Build");
+});
+
+test("selecting_qwen_uses_provider_cli_model_and_permission_defaults", () => {
+  const selected = selectComposerAgent(createAgentChatShellState(), "qwen").state;
+  const view = createAgentChatShellViewModel(selected);
+
+  assert.equal(selected.composer.startOptions.agentBinding.agentId, "qwen");
+  assert.deepEqual(selected.composer.startOptions.agentBinding.runtimeSource, {
+    kind: "provider_cli",
+    integrationId: "qwen",
+  });
+  assert.equal(selected.composer.startOptions.launchOptions?.model, "Qwen default");
+  assert.equal(view.composer.modelLabel, "Default");
+  assert.equal(view.composer.permissionLabel, "Ask permissions");
 });
 
 test("follow_up_composer_model_label_uses_active_thread_launch_options", () => {
@@ -1889,6 +1915,12 @@ test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
       "permission_menu",
     ).state,
   );
+  const qwenHtml = renderShell(
+    setComposerActiveSurface(
+      selectComposerAgent(createAgentChatShellState(), "qwen").state,
+      "permission_menu",
+    ).state,
+  );
 
   // Codex mirrors the Codex app's 3 friendly approval modes (not raw CLI flags).
   assert.match(codexHtml, /Approve for me/);
@@ -1904,6 +1936,12 @@ test("permission_menu_renders_only_the_selected_agent_provider_values", () => {
   assert.match(opencodeHtml, /Plan/);
   assert.doesNotMatch(opencodeHtml, /Tide tool policy/);
   assert.doesNotMatch(opencodeHtml, /Bypass permissions/);
+  // Qwen mirrors Qwen Code's ACP mode ids.
+  assert.match(qwenHtml, /Ask permissions/);
+  assert.match(qwenHtml, /Auto edits/);
+  assert.match(qwenHtml, /YOLO mode/);
+  assert.doesNotMatch(qwenHtml, /Build/);
+  assert.doesNotMatch(qwenHtml, /Bypass permissions/);
 });
 
 test("codex_legacy_workspace_write_permission_preserves_sandbox_semantics", () => {
@@ -2190,7 +2228,7 @@ test("every provider-agent row binds; a not-installed row is an intentional no-o
   // case, so it was a SILENT no-op). All provider-CLI agents bind — opencode
   // is no longer coming-soon.
   setAvailableProviderAgents(null); // all detected
-  for (const agentId of ["codex", "claude", "opencode"] as const) {
+  for (const agentId of ["codex", "claude", "opencode", "qwen"] as const) {
     const opened = setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state;
     const selected = selectAgentChatChoiceSurfaceRow(opened, "agent_menu", agentId).state;
     assert.equal(
@@ -2202,18 +2240,29 @@ test("every provider-agent row binds; a not-installed row is an intentional no-o
   // A NOT-INSTALLED agent is now SELECTABLE: picking it binds the agent so the handler can
   // ensure a Draft Thread + run provider.checkReadiness to surface its install / sign-in card.
   // (Only coming-soon rows stay disabled.) Spec: provider-cli-setup-handoff.md.
-  setAvailableProviderAgents(["codex", "claude"]); // opencode undetected
+  setAvailableProviderAgents(["codex", "claude"]); // opencode/qwen undetected
   const base = setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state;
   const afterOpencode = selectAgentChatChoiceSurfaceRow(base, "agent_menu", "opencode").state;
+  const afterQwen = selectAgentChatChoiceSurfaceRow(base, "agent_menu", "qwen").state;
   assert.equal(
     afterOpencode.composer.startOptions.agentBinding.agentId,
     "opencode",
+    "selecting a not-installed agent should bind it so the install handoff can run",
+  );
+  assert.equal(
+    afterQwen.composer.startOptions.agentBinding.agentId,
+    "qwen",
     "selecting a not-installed agent should bind it so the install handoff can run",
   );
   // …and its row renders selectable (not greyed): only coming-soon rows are disabled.
   const undetectedRows = createAgentChatShellViewModel(base).composer.activeSurface?.rows ?? [];
   assert.equal(
     undetectedRows.find((entry) => entry.rowId === "opencode")?.disabled,
+    false,
+    "a not-installed agent row must be selectable so its install handoff can start",
+  );
+  assert.equal(
+    undetectedRows.find((entry) => entry.rowId === "qwen")?.disabled,
     false,
     "a not-installed agent row must be selectable so its install handoff can start",
   );

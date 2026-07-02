@@ -1,6 +1,7 @@
 import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 
+import type { ProviderCliAgentId } from "../../../../application/domains/thread/thread.ts";
 import type { ProviderReadinessTerminalAction } from "../../../../application/ports/outbound/agent-integration-port.ts";
 // Provider CLI executable knowledge (audit A5/5.2): owned by the agent
 // integrations, consumed by infrastructure when spawning runtimes.
@@ -15,10 +16,11 @@ const providerCliCommands = {
   codex: "codex",
   claude: "claude",
   opencode: "opencode",
+  qwen: "qwen",
 } as const;
 
 export function executableForAgent(
-  agentId: "codex" | "claude" | "opencode",
+  agentId: ProviderCliAgentId,
 ): string {
   return providerCliCommands[agentId];
 }
@@ -30,10 +32,11 @@ const providerInstallPackages = {
   codex: "@openai/codex",
   claude: "@anthropic-ai/claude-code",
   opencode: "opencode-ai",
+  qwen: "@qwen-code/qwen-code",
 } as const;
 
 export function installPackageForAgent(
-  agentId: "codex" | "claude" | "opencode",
+  agentId: ProviderCliAgentId,
 ): string {
   return providerInstallPackages[agentId];
 }
@@ -44,7 +47,7 @@ export function installPackageForAgent(
 // to "npm" so a missing npm surfaces its own PATH error in the terminal, not silently.
 export function npmInstallReadinessTerminalAction(input: {
   npmPath: string;
-  agentId: "codex" | "claude" | "opencode";
+  agentId: ProviderCliAgentId;
   cwd: string;
 }): ProviderReadinessTerminalAction {
   return {
@@ -72,7 +75,7 @@ export function resolveExecutable(command: string): string | undefined {
 // update counterpart of npmInstallReadinessTerminalAction. Spec: version-management.md.
 export function npmUpdateReadinessTerminalAction(input: {
   npmPath: string;
-  agentId: "codex" | "claude" | "opencode";
+  agentId: ProviderCliAgentId;
   cwd: string;
 }): ProviderReadinessTerminalAction {
   return {

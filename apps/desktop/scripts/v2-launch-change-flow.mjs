@@ -15,7 +15,7 @@
 //     matrix. One option per thread: a restart-required change sets
 //     pendingRuntimeRestart, which would contaminate a second option's `applied`.
 //
-//   --behavioral   (permission only; claude/opencode/codex)
+//   --behavioral   (permission only; claude/opencode/codex/qwen)
 //     Prove the change actually flips a RUNNING session's approval behavior: turn 1
 //     in a prompting mode MUST surface an approval prompt; flip permission to a
 //     bypass mode mid-thread; turn 2 doing the same tool MUST NOT prompt and the
@@ -23,7 +23,7 @@
 //
 // Usage:
 //   node --experimental-strip-types scripts/v2-launch-change-flow.mjs \
-//     --agent <claude|codex|opencode> [--option permission|model|reasoning]
+//     --agent <claude|codex|opencode|qwen> [--option permission|model|reasoning]
 //     [--behavioral] [--timeout-ms 120000]
 //
 // Run with TIDE_BACKEND_TRACE=1 to also see the `applySessionConfig <agent> keys=…`
@@ -57,8 +57,8 @@ const behavioral = argv.includes("--behavioral");
 const option = arg("--option", "permission");
 const timeoutMs = Number(arg("--timeout-ms", process.env.TIDE_TIMEOUT_MS ?? 120000));
 
-if (!["claude", "codex", "opencode"].includes(agent)) {
-  console.error("Usage: --agent <claude|codex|opencode> [--option permission|model|reasoning] [--behavioral]");
+if (!["claude", "codex", "opencode", "qwen"].includes(agent)) {
+  console.error("Usage: --agent <claude|codex|opencode|qwen> [--option permission|model|reasoning] [--behavioral]");
   process.exit(2);
 }
 
@@ -68,23 +68,27 @@ const EXPECTED = {
   claude: { permission: "live", model: "live", reasoning: "next_turn" },
   codex: { permission: "next_turn", model: "live", reasoning: "live" },
   opencode: { permission: "live", model: "live", reasoning: "live" },
+  qwen: { permission: "live", model: "live", reasoning: "live" },
 };
 // A baseline that differs from the target so the change registers as a changed key.
 const BASELINE_PERMISSION = {
   claude: "default",
   codex: "ask-for-approval",
   opencode: "build",
+  qwen: "default",
 };
 const TARGET = {
   claude: { permission: "acceptEdits", model: "claude-sonnet-4-6", reasoning: "high" },
   codex: { permission: "full-access", model: "gpt-5.1-codex-max", reasoning: "high" },
   opencode: { permission: "plan", model: "anthropic/claude-sonnet-4-6", reasoning: "high" },
+  qwen: { permission: "plan", model: "qwen3-coder-plus", reasoning: "high" },
 };
 // A bypass permission that auto-approves shell/edit tools, for the behavioral flip.
 const BYPASS_PERMISSION = {
   claude: "bypassPermissions",
   codex: "full-access",
   opencode: "build",
+  qwen: "yolo",
 };
 
 const appDataRoot = mkdtempSync(path.join(tmpdir(), `tide-launch-change-${agent}-`));

@@ -43,6 +43,7 @@ export interface ProviderSessionRefRecord {
     | "codex_rollout"
     | "claude_transcript"
     | "opencode_session"
+    | "qwen_session"
     | "provider_native";
   value: string;
   transcriptPath?: string;

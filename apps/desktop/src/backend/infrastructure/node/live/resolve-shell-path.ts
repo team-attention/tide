@@ -3,7 +3,7 @@ import os from "node:os";
 
 // A packaged macOS/Linux app launched from Finder/Dock does NOT inherit the
 // user's login-shell PATH — it only gets the minimal launchd PATH
-// (/usr/bin:/bin:/usr/sbin:/sbin). Provider CLIs (codex, claude, opencode) and their
+// (/usr/bin:/bin:/usr/sbin:/sbin). Provider CLIs (codex, claude, opencode, qwen) and their
 // helpers live in places like ~/.local/bin, /opt/homebrew/bin, or a provider's
 // own standalone bin, none of which are on that minimal PATH. `which <cli>` then
 // fails, the Agent Runtime never finds an executable, and no provider ever spawns.

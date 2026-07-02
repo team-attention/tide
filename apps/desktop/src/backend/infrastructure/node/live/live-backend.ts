@@ -45,6 +45,7 @@ import {
   readClaudeProviderStateFromHome,
   readCodexProviderStateFromHome,
   readOpencodeProviderStateFromHome,
+  readQwenProviderStateFromHome,
 } from "../provider/provider-state-readers.ts";
 
 import {
@@ -86,6 +87,7 @@ export {
 export {
   readClaudeProviderStateFromHome,
   readCodexProviderStateFromHome,
+  readQwenProviderStateFromHome,
 };
 
 import { createBackendContractMessageAdapter } from "../../../adapters/inbound/contract-message-adapter/contract-message-adapter.ts";
@@ -123,6 +125,7 @@ import {
 } from "../../../adapters/outbound/agent-integrations/codex/codex-agent-integration.ts";
 
 import { createOpencodeAgentIntegration } from "../../../adapters/outbound/agent-integrations/opencode/opencode-agent-integration.ts";
+import { createQwenAgentIntegration } from "../../../adapters/outbound/agent-integrations/qwen/qwen-agent-integration.ts";
 import { createProviderDetection } from "../provider/provider-detection.ts";
 
 import { codexRolloutTurnEnded as codexRolloutTurnEndedFromText } from "../../../adapters/outbound/agent-integrations/codex/codex-rollout-turn-detection.ts";
@@ -266,6 +269,16 @@ export function createLiveBackendContractMessageAdapter(
     opencode: createOpencodeAgentIntegration({
       resolveExecutable: () => resolveExecutable("opencode"),
       readProviderState: ({ cwd }) => readOpencodeProviderStateFromHome(homeDir, cwd),
+      defaultCwd: process.cwd(),
+      tideMcp: {
+        command: bootstrapArtifacts.tideMcpCommandPath,
+        args: [],
+        env: { TIDE_SOCKET: tideSocket },
+      },
+    }),
+    qwen: createQwenAgentIntegration({
+      resolveExecutable: () => resolveExecutable("qwen"),
+      readProviderState: ({ cwd }) => readQwenProviderStateFromHome(homeDir, cwd, env),
       defaultCwd: process.cwd(),
       tideMcp: {
         command: bootstrapArtifacts.tideMcpCommandPath,
