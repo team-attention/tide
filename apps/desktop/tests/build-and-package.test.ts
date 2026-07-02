@@ -92,6 +92,9 @@ test("desktop_release_workflow_publishes_to_the_dedicated_repo", () => {
   // (the default GITHUB_TOKEN can't write to another account/repo).
   assert.match(workflow, /--publish always/);
   assert.match(workflow, /DESKTOP_RELEASES_TOKEN/);
+  assert.match(workflow, /Validate release tag version/);
+  assert.match(workflow, /PACKAGE_VERSION/);
+  assert.match(workflow, /GITHUB_REF_NAME#tide-v/);
   // notarize: true in electron-builder.json relies on the Apple team id coming from env.
   assert.match(workflow, /APPLE_TEAM_ID:\s*"D86BXTY5VR"/);
   // The dmg ALSO lands on THIS monorepo's own release (canonical human download). This
