@@ -6,6 +6,7 @@ import { launchOptionsForState, setComposerNewWorktreeIntent, updateComposerLaun
 import { buildOpencodeConnectSurface, getOpencodeEnvironment, isOpencodeUsable } from "./opencode-onramp.ts";
 import { basenameOf } from "./path-labels.ts";
 import { row } from "./choice-row.ts";
+import { PROVIDER_CLI_AGENT_IDS, isProviderCliAgentId } from "../../../../../shared/agent-descriptors.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
 const CODEX_LOCAL_SLASH_COMMANDS: AgentChatCommandOption[] = [
@@ -283,11 +284,9 @@ export function createActiveComposerSurface(
         sourceLabel: "Agent Binding",
         // Provider-CLI agents are listed; ones whose CLI is not detected on the local
         // system are shown DISABLED (greyed), never removed.
-        rows: [
-          agentMenuRow("codex", "Codex CLI", binding.agentId),
-          agentMenuRow("claude", "Claude Code", binding.agentId),
-          agentMenuRow("opencode", "opencode", binding.agentId),
-        ],
+        rows: PROVIDER_CLI_AGENT_IDS.map((agentId) =>
+          agentMenuRow(agentId, formatAgentLabel(agentId), binding.agentId),
+        ),
       };
     case "model_menu":
       return {
@@ -515,16 +514,7 @@ function agentMenuRow(
 function composerAgentIdForRow(
   rowId: string,
 ): AgentChatAgentId | null {
-  switch (rowId) {
-    case "codex":
-      return "codex";
-    case "claude":
-      return "claude";
-    case "opencode":
-      return "opencode";
-    default:
-      return null;
-  }
+  return isProviderCliAgentId(rowId) ? rowId : null;
 }
 
 function modelForRow(rowId: string): string | undefined {

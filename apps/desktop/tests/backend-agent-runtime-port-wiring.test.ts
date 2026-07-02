@@ -127,6 +127,7 @@ import type {
   AgentRuntimeResumeInput,
   TerminalInput,
 } from "../src/backend/application/domains/agent-runtime/agent-runtime.ts";
+import type { ProviderCliAgentId } from "../src/backend/application/domains/thread/thread.ts";
 import type { AgentRuntimePort } from "../src/backend/application/ports/outbound/agent-runtime-port.ts";
 import type { ProviderReadinessPort } from "../src/backend/application/ports/outbound/provider-readiness-port.ts";
 import type { PtyTranscriptPort } from "../src/backend/application/ports/outbound/pty-transcript-port.ts";
@@ -144,8 +145,9 @@ test("provider_readiness_port_uses_selected_agent_integration_preflight", async 
   const codex = fakeIntegration("codex", startPlan("codex"));
   const claude = fakeIntegration("claude", startPlan("claude"));
   const opencode = fakeIntegration("opencode", startPlan("opencode"));
+  const qwen = fakeIntegration("qwen", startPlan("qwen"));
   const readiness = createAgentIntegrationProviderReadinessPort({
-    integrations: { codex, claude, opencode },
+    integrations: { codex, claude, opencode, qwen },
   });
 
   const result = await readiness.check({
@@ -169,8 +171,9 @@ test("provider_readiness_port_rejects_non_provider_cli_agent", async () => {
   const codex = fakeIntegration("codex", startPlan("codex"));
   const claude = fakeIntegration("claude", startPlan("claude"));
   const opencode = fakeIntegration("opencode", startPlan("opencode"));
+  const qwen = fakeIntegration("qwen", startPlan("qwen"));
   const readiness = createAgentIntegrationProviderReadinessPort({
-    integrations: { codex, claude, opencode },
+    integrations: { codex, claude, opencode, qwen },
   });
 
   const result = await readiness.check({
@@ -192,6 +195,7 @@ test("provider_readiness_port_rejects_non_provider_cli_agent", async () => {
   assert.equal(codex.preflightInputs.length, 0);
   assert.equal(claude.preflightInputs.length, 0);
   assert.equal(opencode.preflightInputs.length, 0);
+  assert.equal(qwen.preflightInputs.length, 0);
 });
 
 // Spec: docs_v2/specs/mid-thread-launch-option-changes.md — a session-config
@@ -201,8 +205,9 @@ test("apply_session_config_without_a_live_runtime_requires_restart", async () =>
   const codex = fakeIntegration("codex", startPlan("codex"));
   const claude = fakeIntegration("claude", startPlan("claude"));
   const opencode = fakeIntegration("opencode", startPlan("opencode"));
+  const qwen = fakeIntegration("qwen", startPlan("qwen"));
   const port = createAgentIntegrationAgentRuntimePort({
-    integrations: { codex, claude, opencode },
+    integrations: { codex, claude, opencode, qwen },
   });
 
   const result = await port.applySessionConfig(
@@ -1210,7 +1215,7 @@ test("agent_runtime_wiring_stays_out_of_desktop_and_shared_contracts", () => {
 });
 
 function fakeIntegration(
-  agentId: "codex" | "claude" | "opencode",
+  agentId: ProviderCliAgentId,
   plan: ProviderLaunchPlan,
 ) {
   return new FakeAgentIntegration(agentId, plan);
@@ -1220,12 +1225,12 @@ class FakeAgentIntegration implements AgentIntegrationPort {
   preflightInputs: AgentIntegrationPreflightInput[] = [];
   startInputs: AgentStartPlanInput[] = [];
   resumeInputs: AgentResumePlanInput[] = [];
-  private readonly agentId: "codex" | "claude" | "opencode";
+  private readonly agentId: ProviderCliAgentId;
   private readonly plan: ProviderLaunchPlan;
   readinessGate: RuntimeReadinessGate = { kind: "immediate" };
 
   constructor(
-    agentId: "codex" | "claude" | "opencode",
+    agentId: ProviderCliAgentId,
     plan: ProviderLaunchPlan,
   ) {
     this.agentId = agentId;
@@ -1371,7 +1376,7 @@ function readyProviderReadinessPort(): ProviderReadinessPort {
 function liveProviderThreadSeed(input: {
   threadId: string;
   runtimeId: string;
-  agentId: "codex" | "claude" | "opencode";
+  agentId: ProviderCliAgentId;
 }): ThreadSeed {
   return {
     threadId: input.threadId,
@@ -1395,15 +1400,15 @@ function liveProviderThreadSeed(input: {
   };
 }
 
-function startPlan(agentId: "codex" | "claude" | "opencode"): ProviderLaunchPlan {
+function startPlan(agentId: ProviderCliAgentId): ProviderLaunchPlan {
   return {
     command:
-      agentId === "opencode" ? "opencode" : agentId === "claude" ? "claude" : "codex",
-    args: [],
+      agentId === "opencode" ? "opencode" : agentId === "qwen" ? "qwen" : agentId === "claude" ? "claude" : "codex",
+    args: agentId === "qwen" ? ["--acp"] : [],
     env: { TERM: "xterm-256color", COLORTERM: "truecolor" },
     cwd: "/repo",
     transport:
-      agentId === "opencode"
+      agentId === "opencode" || agentId === "qwen"
         ? "acp"
         : agentId === "claude"
           ? "claude_stream_json"

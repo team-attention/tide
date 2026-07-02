@@ -1,6 +1,7 @@
 import type { AgentChatChoiceSurfaceView } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { useEffect, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react";
 import { Bot, Check, FileText, Folder, FolderPlus, GitBranch, Layers, PanelsTopLeft, Paperclip, Plus, Trash2, Wrench } from "lucide-react";
+import { agentDescriptor } from "../../../../../../shared/agent-descriptors.ts";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 export function createChoiceSurface(input: {
@@ -304,14 +305,7 @@ function inlineCreateConfig(
 // Two-letter provider monogram (Codex/Claude both start with C, hence distinct
 // 2-char codes). Mirrors agentMonogram() in tide-product-shell.
 export function agentMonogramFor(agentId: string): string {
-  switch (agentId) {
-    case "claude":
-      return "Cl";
-    case "opencode":
-      return "Oc";
-    default:
-      return "Co";
-  }
+  return agentDescriptor(agentId)?.monogram ?? "Co";
 }
 
 function choiceRowIcon(icon: string | undefined): ReactNode {

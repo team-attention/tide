@@ -6,6 +6,7 @@ import {
   permissionConfigForAgent,
 } from "./agent-vocab.ts";
 import { getOpencodeEnvironment, getOpencodeVendors } from "./opencode-onramp.ts";
+import { PROVIDER_CLI_AGENT_IDS } from "../../../../../shared/agent-descriptors.ts";
 
 // The data layer for the Settings "Providers & Models" hub: one row per provider-CLI
 // agent with its install status, model catalog (the same catalog the composer menu
@@ -39,7 +40,7 @@ export interface ProvidersHubAgentView {
   version?: string;
 }
 
-const HUB_AGENTS = ["claude", "codex", "opencode"] as const;
+const HUB_AGENTS = PROVIDER_CLI_AGENT_IDS;
 
 export function buildProvidersHubViewModel(): ProvidersHubAgentView[] {
   return HUB_AGENTS.map((agentId) => {

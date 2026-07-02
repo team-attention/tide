@@ -241,7 +241,7 @@ function preferredWorktreeForPersistence(value: unknown): "current folder" | "ne
   return undefined;
 }
 
-// The four provider-CLI agent identities the Start Composer can launch. Single source of
+// The provider-CLI agent identities the Start Composer can launch. Single source of
 // truth for "is this a known agent" guards (preference persistence) so they can't
 // drift into a stale subset — the bug that silently dropped opencode from
 // the remembered Start Composer default.
@@ -249,6 +249,7 @@ const PRODUCT_SHELL_AGENT_IDENTITIES: ReadonlySet<string> = new Set<ProductShell
   "codex",
   "claude",
   "opencode",
+  "qwen",
 ]);
 
 export function isProductShellAgentIdentity(

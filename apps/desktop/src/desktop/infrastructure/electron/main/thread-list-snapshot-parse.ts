@@ -134,7 +134,7 @@ function defaultRuntimeSourceForAgent(agentId: ProviderCliAgentId): AgentRuntime
 }
 
 function isProviderCliAgentId(value: string): value is ProviderCliAgentId {
-  return value === "codex" || value === "claude" || value === "opencode";
+  return value === "codex" || value === "claude" || value === "opencode" || value === "qwen";
 }
 
 function isThreadStorageRecord(value: unknown): value is IndexedThreadStorageRecord {

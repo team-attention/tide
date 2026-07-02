@@ -123,7 +123,7 @@ async function notinstalled() {
   // readiness blocker instead of spawning anything or hanging.
   process.env.PATH = "/var/empty";
   const adapter = await makeAdapter();
-  for (const agentId of ["claude", "codex", "opencode"]) {
+  for (const agentId of ["claude", "codex", "opencode", "qwen"]) {
     const events = await adapter.handleMessage(
       startThreadCommand(agentId, "hello?"),
     );
@@ -155,7 +155,7 @@ async function notauth() {
   // applicable) instead of spawning a CLI that dies on a login screen.
   const freshHome = mkdtempSync(path.join(tmpdir(), "tide-matrix-home-"));
   const adapter = await makeAdapter({ HOME: freshHome });
-  for (const agentId of ["claude", "codex", "opencode"]) {
+  for (const agentId of ["claude", "codex", "opencode", "qwen"]) {
     const events = await adapter.handleMessage(
       startThreadCommand(agentId, "hello?"),
     );

@@ -13,6 +13,7 @@ import {
   permissionConfigForAgent,
   setAvailableProviderAgents,
   setOpencodeModelCatalog,
+  setProviderModelCatalog,
 } from "../src/desktop/application/domains/agent-chat/state/agent-vocab.ts";
 import { buildProvidersHubViewModel } from "../src/desktop/application/domains/agent-chat/state/providers-hub.ts";
 
@@ -177,16 +178,22 @@ test("parseAcpModelCatalog reads ACP availableModels and opencode configOptions"
 });
 
 test("buildProvidersHubViewModel lists supported agents with status + catalog", () => {
-  setAvailableProviderAgents(["claude", "codex"]); // opencode not installed
+  setAvailableProviderAgents(["claude", "codex"]); // opencode/qwen not installed
   setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
   const hub = buildProvidersHubViewModel();
-  assert.deepEqual(hub.map((agent) => agent.agentId), ["claude", "codex", "opencode"]);
+  assert.deepEqual(hub.map((agent) => agent.agentId), ["codex", "claude", "opencode", "qwen"]);
 
   const opencode = hub.find((agent) => agent.agentId === "opencode");
   assert.equal(opencode?.installed, false);
   assert.equal(opencode?.status, "not_installed");
   assert.equal(opencode?.multiVendor, true); // its catalog carries vendors
   assert.deepEqual(opencode?.permissionModes.map((mode) => mode.value), ["build", "plan"]);
+
+  const qwen = hub.find((agent) => agent.agentId === "qwen");
+  assert.equal(qwen?.installed, false);
+  assert.equal(qwen?.status, "not_installed");
+  assert.equal(qwen?.defaultModel, "Qwen default");
+  assert.equal(qwen?.models[0]?.value, "Qwen default");
 
   const claude = hub.find((agent) => agent.agentId === "claude");
   assert.equal(claude?.installed, true);
@@ -218,4 +225,20 @@ test("cliModelOptionsForAgent('opencode') reflects the backend-enumerated catalo
   assert.equal(options[1]?.vendor, "openai");
   // Reset module state so other tests are unaffected.
   setOpencodeModelCatalog(null);
+});
+
+test("cliModelOptionsForAgent('qwen') reflects the ACP-reported catalog", () => {
+  assert.deepEqual(cliModelOptionsForAgent("qwen"), [
+    { value: "Qwen default", label: "Default", detail: "qwen config" },
+  ]);
+
+  setProviderModelCatalog("qwen", [
+    { value: "qwen3-coder-plus", label: "Qwen3 Coder Plus", vendor: "alibaba" },
+  ]);
+  assert.deepEqual(cliModelOptionsForAgent("qwen"), [
+    { value: "Qwen default", label: "Default", detail: "qwen config" },
+    { value: "qwen3-coder-plus", label: "Qwen3 Coder Plus", vendor: "alibaba" },
+  ]);
+
+  setProviderModelCatalog("qwen", null);
 });

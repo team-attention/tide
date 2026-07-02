@@ -53,6 +53,24 @@ test("an opencode Start Composer preference round-trips through storage", () => 
   });
 });
 
+test("a qwen Start Composer preference round-trips through storage", () => {
+  clearPrefs();
+  persistPreferredStartComposer({
+    agentId: "qwen",
+    model: "Qwen default",
+    permission: "default",
+    reasoning: "high",
+    worktree: "reuse",
+  });
+  assert.deepEqual(loadPreferredStartComposer(), {
+    agentId: "qwen",
+    model: "Qwen default",
+    permission: "default",
+    reasoning: "high",
+    worktree: "reuse",
+  });
+});
+
 test("an unknown persisted agent loads as null (no preference)", () => {
   clearPrefs();
   // A stored record for an agent the build no longer knows must load as null.
@@ -61,7 +79,7 @@ test("an unknown persisted agent loads as null (no preference)", () => {
 });
 
 test("isProductShellAgentIdentity accepts the provider CLI agents, rejects undefined/unknown", () => {
-  for (const id of ["codex", "claude", "opencode"]) {
+  for (const id of ["codex", "claude", "opencode", "qwen"]) {
     assert.equal(isProductShellAgentIdentity(id), true, `expected ${id} to be a valid agent`);
   }
   assert.equal(isProductShellAgentIdentity(undefined), false);

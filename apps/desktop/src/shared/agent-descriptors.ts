@@ -99,6 +99,24 @@ export const AGENT_DESCRIPTORS: Record<AgentId, AgentDescriptor> = {
       legacyValueMap: { default: "build", auto_edit: "build", yolo: "build" },
     },
   },
+  qwen: {
+    id: "qwen",
+    displayName: "Qwen Code",
+    monogram: "Qw",
+    isProviderCli: true,
+    sessionRefKind: "qwen_session",
+    permission: {
+      default: "default",
+      options: [
+        { id: "qwen-ask", value: "default", label: "Ask permissions", detail: "Approve edits & shell" },
+        { id: "qwen-auto-edit", value: "auto-edit", label: "Auto edits", detail: "Auto-approve file edits" },
+        { id: "qwen-auto", value: "auto", label: "Auto mode", detail: "Classifier-based approvals" },
+        { id: "qwen-plan", value: "plan", label: "Plan mode", detail: "Read-only analysis" },
+        { id: "qwen-yolo", value: "yolo", label: "YOLO mode", detail: "Auto-approve all tools", danger: true },
+      ],
+      legacyValueMap: { auto_edit: "auto-edit", ask: "default" },
+    },
+  },
 };
 
 // All provider-CLI agent ids, derived from the table (never hand-listed elsewhere).
