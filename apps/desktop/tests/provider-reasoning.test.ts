@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { codexReasoningText } from "../src/backend/infrastructure/node/provider/provider-history-helpers.ts";
 import { claudeThinkingText } from "../src/backend/infrastructure/node/live/live-backend-json.ts";
 import {
+  rebuildConversationFromProviderHistory,
   rebuildCodexConversation,
   rebuildClaudeConversation,
 } from "../src/backend/infrastructure/node/provider/provider-conversation-rebuilders.ts";
+import type { ThreadStorageRecord } from "../src/backend/application/services/thread/thread-persistence-service.ts";
 
 // Spec: docs_v2/specs/agent-chat-fidelity-reasoning-actions.md
 
@@ -75,3 +80,73 @@ test("rebuildClaudeConversation emits reasoning from thinking content", () => {
   assert.equal(blocks[1].role, "agent");
   assert.equal(blocks[1].body, "Applied.");
 });
+
+test("rebuildConversationFromProviderHistory reads the full provider transcript", () => {
+  const dir = fs.mkdtempSync(path.join(tmpdir(), "tide-provider-history-"));
+  try {
+    const rolloutPath = path.join(dir, "rollout.jsonl");
+    fs.writeFileSync(
+      rolloutPath,
+      [
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "user_message", message: "original prompt" },
+        }),
+        "x".repeat(1024 * 1024 + 100),
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "agent_message", message: "latest answer" },
+        }),
+      ].join("\n"),
+    );
+
+    const blocks = rebuildConversationFromProviderHistory(
+      threadRecordWithProviderTranscript(rolloutPath),
+    );
+
+    assert.deepEqual(
+      blocks
+        .filter((block) => block.kind === "user_message" || block.kind === "agent_message")
+        .map((block) => block.body),
+      ["original prompt", "latest answer"],
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function threadRecordWithProviderTranscript(transcriptPath: string): ThreadStorageRecord {
+  const timestamp = "2026-07-02T00:00:00.000Z";
+  return {
+    storageVersion: 1,
+    threadId: "thread-1",
+    title: "Original prompt",
+    pinned: false,
+    archived: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    agentBinding: {
+      agentId: "codex",
+      runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+      providerSessionRef: {
+        kind: "codex_rollout",
+        value: "session-1",
+        transcriptPath,
+      },
+    },
+    scope: { kind: "scratch", scratchCwd: dirFromPath(transcriptPath) },
+    executionContext: { cwd: dirFromPath(transcriptPath) },
+    providerSessionRef: {
+      agentId: "codex",
+      kind: "codex_rollout",
+      value: "session-1",
+      transcriptPath,
+      observedAt: timestamp,
+    },
+    lastKnownState: "idle",
+  };
+}
+
+function dirFromPath(filePath: string): string {
+  return path.dirname(filePath);
+}

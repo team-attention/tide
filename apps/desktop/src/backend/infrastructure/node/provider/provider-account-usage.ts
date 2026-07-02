@@ -1,12 +1,11 @@
 import { statSync } from "node:fs";
 
 import type { ProviderUsageSnapshotDto } from "../../../../shared/contracts/index.ts";
-import { readBoundedTail } from "../live/live-backend-fs.ts";
+import { readTextFile } from "../live/live-backend-fs.ts";
 import { parseProviderUsage } from "./provider-usage.ts";
 import { recentClaudeTranscripts, recentCodexRollouts } from "./recent-provider-files.ts";
 
 const ACCOUNT_USAGE_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
-const MAX_USAGE_HISTORY_BYTES = 2 * 1024 * 1024;
 
 export function readProviderAccountUsageSnapshotsFromHome(input: {
   homeDir: string;
@@ -44,7 +43,7 @@ function latestAccountUsageFromFiles(
   paths: string[],
 ): ProviderUsageSnapshotDto | undefined {
   for (const path of [...paths].reverse()) {
-    const text = readBoundedTail(path, MAX_USAGE_HISTORY_BYTES);
+    const text = readTextFile(path);
     if (text === undefined) {
       continue;
     }

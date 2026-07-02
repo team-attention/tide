@@ -43,25 +43,6 @@ export function isSymlink(path: string): boolean {
   }
 }
 
-// Reads the trailing bytes of a file, bounded so large transcripts stay cheap.
-export function readBoundedTail(path: string, maxBytes: number): string | undefined {
-  let fileDescriptor: number | undefined;
-  try {
-    const stat = statSync(path);
-    const bytesToRead = Math.min(maxBytes, stat.size);
-    const buffer = Buffer.alloc(bytesToRead);
-    fileDescriptor = openSync(path, "r");
-    readSync(fileDescriptor, buffer, 0, bytesToRead, Math.max(0, stat.size - bytesToRead));
-    return buffer.toString("utf8");
-  } catch {
-    return undefined;
-  } finally {
-    if (fileDescriptor !== undefined) {
-      closeSync(fileDescriptor);
-    }
-  }
-}
-
 // Reads the leading bytes of a file (codex session_meta and the first user turn
 // live near the top), bounded so large transcripts stay cheap to scan.
 export function readBoundedHead(path: string, maxBytes: number): string | undefined {
