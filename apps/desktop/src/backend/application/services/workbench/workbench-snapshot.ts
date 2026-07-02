@@ -100,7 +100,7 @@ export function browserPaneCapabilities(): BrowserPaneCapabilities {
     canReadDom: true,
     canCapturePixels: true,
     canActForeground: true,
-    canActBackground: false,
+    canActBackground: true,
   };
 }
 

@@ -399,7 +399,11 @@ function dedupeStrings(values: string[]): string[] {
 function codexThreadStartParams(
   launchOptions: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
-  const params: Record<string, unknown> = {};
+  // Codex app-server supports thread-level developerInstructions, which is the
+  // structured equivalent of Claude's Tide append-system-prompt context.
+  const params: Record<string, unknown> = {
+    developerInstructions: tideCodexContextPrompt(),
+  };
   const model = stringValue(launchOptions?.model);
   if (model !== undefined) {
     params.model = model;
@@ -434,6 +438,32 @@ function codexThreadStartParams(
     params.approvalPolicy = permission;
   }
   return params;
+}
+
+export function tideCodexContextPrompt(): string {
+  return [
+    "You are running inside Tide. Tide exposes first-party MCP tools that control",
+    "Tide-owned UI panes, including the Browser Pane. Prefer these tools for",
+    "opening, observing, and operating pages inside Tide instead of shell commands,",
+    "external browsers, or separate browser runtimes.",
+    "",
+    "Browser work inside Tide should use this loop:",
+    "- mcp__tide__tide_open_browser opens or navigates a Tide Browser Pane.",
+    "- mcp__tide__tide_observe_browser reads the current pane; use it before acting.",
+    "- mcp__tide__tide_act_browser clicks, types, drags, scrolls, or presses keys.",
+    "- Re-observe after actions when the next decision depends on page state.",
+    "",
+    "Use tide_observe_browser mode=both unless you only need text. Its image is the",
+    "rendered page and its interactiveElements list is the preferred source for",
+    "click_element. For visual-only controls, use screenshot coordinates with",
+    "click_at, drag, scroll, key, or type. Coordinates come from the latest",
+    "observe image; pass the current pane revision to actions, and re-observe if a",
+    "revision is stale.",
+    "",
+    "The Tide Browser Pane may be hosted in the background even when no side panel is",
+    "visibly open. Treat that as a live browser surface: observe it, act on it, and",
+    "avoid reopening pages just because the pane is not visible.",
+  ].join("\n");
 }
 
 function cwdFromScope(scope: ThreadScope | undefined, fallback: string): string {

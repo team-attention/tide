@@ -211,8 +211,17 @@ function initializeResult(): Record<string, unknown> {
       name: "tide",
       version: "0.1.0",
     },
-    instructions:
-      "You are running inside Tide. Use Tide MCP tools for Thread, Workbench, Browser Pane, File, Diff, and Terminal Pane context.",
+    instructions: [
+      "You are running inside Tide. Use Tide MCP tools for Thread, Workbench,",
+      "Browser Pane, File, Diff, and Terminal Pane context.",
+      "For browser work, open or navigate with tide_open_browser, observe with",
+      "tide_observe_browser, then act with tide_act_browser. Prefer the latest",
+      "interactiveElements list and click_element when possible; use screenshot",
+      "coordinates for visual-only controls. Re-observe after actions when the",
+      "next decision depends on page state, and re-observe on stale revisions.",
+      "A Browser Pane may be live in the background even when no side panel is",
+      "visible.",
+    ].join(" "),
   };
 }
 

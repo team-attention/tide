@@ -19,7 +19,7 @@ const BROWSER_INTERACTIVE_ELEMENT_CANDIDATES_SCRIPT = `(() => {
   if (root) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
     let visited = 0;
-    while (pointerCandidates.length < 120 && visited < 500) {
+    while (pointerCandidates.length < 240 && visited < 2000) {
       const element = walker.nextNode();
       if (!element) break;
       visited += 1;
@@ -33,15 +33,43 @@ const BROWSER_INTERACTIVE_ELEMENT_CANDIDATES_SCRIPT = `(() => {
     }
   }
   return candidates.concat(pointerCandidates)
-    .filter((element) => {
+    .map((element, sourceIndex) => ({ element, sourceIndex, rect: element.getBoundingClientRect() }))
+    .filter(({ element, rect }) => {
       if (!(element instanceof HTMLElement) || seen.has(element)) return false;
       seen.add(element);
-      const rect = element.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return false;
       const style = window.getComputedStyle(element);
-      return style.visibility !== "hidden" && style.display !== "none";
+      return style.visibility !== "hidden" && style.display !== "none" && parseFloat(style.opacity) !== 0;
     })
-    .slice(0, 80);
+    .map((item) => {
+      const viewportLeft = Math.max(0, item.rect.left);
+      const viewportTop = Math.max(0, item.rect.top);
+      const viewportRight = Math.min(window.innerWidth, item.rect.right);
+      const viewportBottom = Math.min(window.innerHeight, item.rect.bottom);
+      const viewportWidth = Math.max(0, viewportRight - viewportLeft);
+      const viewportHeight = Math.max(0, viewportBottom - viewportTop);
+      return {
+        ...item,
+        inViewport: viewportWidth > 0 && viewportHeight > 0,
+        viewportArea: viewportWidth * viewportHeight,
+      };
+    })
+    .sort((a, b) => {
+      if (a.inViewport !== b.inViewport) return a.inViewport ? -1 : 1;
+      if (a.inViewport && b.inViewport) {
+        const rowA = Math.floor(a.rect.top / 8);
+        const rowB = Math.floor(b.rect.top / 8);
+        if (rowA !== rowB) return rowA - rowB;
+        const colA = Math.floor(a.rect.left / 8);
+        const colB = Math.floor(b.rect.left / 8);
+        if (colA !== colB) return colA - colB;
+        const areaDelta = b.viewportArea - a.viewportArea;
+        if (areaDelta !== 0) return areaDelta;
+      }
+      return a.sourceIndex - b.sourceIndex;
+    })
+    .slice(0, 80)
+    .map((item) => item.element);
 })()`;
 
 export const BROWSER_INTERACTIVE_ELEMENTS_SCRIPT = `(() => {

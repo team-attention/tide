@@ -316,7 +316,7 @@ test("opening_browser_creates_browser_pane_in_thread_workbench", async () => {
     canReadDom: true,
     canCapturePixels: true,
     canActForeground: true,
-    canActBackground: false,
+    canActBackground: true,
   });
   assert.equal(observed.ok, true);
   assert.equal(observed.ok && observed.output.panes.length, 1);
