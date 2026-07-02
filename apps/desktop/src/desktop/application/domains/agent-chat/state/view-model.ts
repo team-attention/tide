@@ -333,7 +333,11 @@ function deriveChatState(
   if (state.runtimeState === "failed") {
     return "failed";
   }
-  if (state.runtimeState === "starting" || state.runtimeState === "running") {
+  if (
+    state.runtimeState === "starting" ||
+    state.runtimeState === "running" ||
+    (state.thread?.live === true && state.thread?.lastKnownState === "running")
+  ) {
     return "running";
   }
   if (state.runtimeState === "waiting_for_approval") {
