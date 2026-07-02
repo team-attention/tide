@@ -177,7 +177,8 @@ fn mcp_instructions() -> &'static str {
         "When visual_fit reports background_runtime_available, continue with Tide Browser Pane Runtime tools for that Browser Pane and preserve human-visible focus. ",
         "Browser Runtime Router: For supported browser work inside Tide, you must use Tide Browser Pane Runtime as the first runtime. It is the shared Tide-owned browser runtime for local preview, file-backed preview, unauthenticated public page review, visual verification, and page comments; it is visible when its Terminal Context Surface is active and background-capable when focus is elsewhere. ",
         "For user-requested browser work, treat the task as a Browser Operation: tide_open_browser, tide_browser_observe, and tide_browser_action start operation state for authorized Wrapped Agents; use human-like Browser Pane observe/action work, then call tide_browser_operation action=finish after the final observe. ",
-        "Use tide_open_browser, then tide_browser_observe, then tide_browser_action for navigate/move/click/type/press/clear-cursor; prefer Browser Page Map target_ref from tide_browser_observe over guessed coordinates when click/type targets are listed. Browser Automation Cursor motion is distance-scaled and click/type target dispatch waits for that motion to settle. Use tide_browser_observe detail=compact for routine action loops, and detail=full only when full BrowserSnapshot body text is needed. ",
+        "Use tide_open_browser, then tide_browser_observe, then tide_browser_action for navigate/move/click/type/press/scroll/back/forward/reload/wait-for/close-modal/clear-cursor; pass observation_id from observe when available, and prefer Browser Page Map target_ref from tide_browser_observe over guessed coordinates when click/type targets are listed. Browser Automation Cursor motion is distance-scaled and click/type target dispatch waits for that motion to settle. Use tide_browser_observe detail=compact for routine action loops, and detail=full only when full BrowserSnapshot body text is needed. ",
+        "For web-app research, use tide_browser_inspect_network for in-page fetch/XHR/resource evidence and tide_browser_collect_list for bounded repeated/virtual list collection before resorting to browser eval. Use collect-list in short loops: collect, structured scroll, collect; never run a long page JS loop that clicks or scrolls many times in one tool call. ",
         "Use tide_browser_read_snapshot, tide_browser_find_in_snapshot, and tide_browser_diff_since only for bounded cached BrowserSnapshot text; they do not refresh the live page. ",
         "Observe before the first content action; after navigate/click/type/press, observe when you need changed page content, but you may chain another click/type through a current enabled Browser Page Map target_ref. ",
         "Use tide_capture_selection and Context Artifact tools (tide_create_context_artifact, tide_list_context_artifacts, tide_read_context_artifact, tide_send_context_artifact) for Browser Pane comments and explicit paired-agent delivery. ",
@@ -461,20 +462,46 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
             }
         },
         {
+            "name": "tide_browser_inspect_network",
+            "description": "Read bounded in-page network evidence captured from fetch, XMLHttpRequest, and PerformanceResourceTiming. Use after page load or interactions to understand app APIs without direct out-of-browser API spoofing.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID" }
+                },
+                "required": ["pane_id"]
+            }
+        },
+        {
+            "name": "tide_browser_collect_list",
+            "description": "Read a bounded repeated/virtual list snapshot from visible DOM and scrollable regions. Use in short loops with tide_browser_action scroll to collect long result lists without a long JS automation call.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID" }
+                },
+                "required": ["pane_id"]
+            }
+        },
+        {
             "name": "tide_browser_action",
-            "description": "preferred structured action path for Tide Browser Pane. Uses the existing Browser Pane runtime, requires an initial observe for content actions, accepts target_ref from tide_browser_observe page_map for click/type, may chain current enabled target_ref actions after live input, moves Browser Automation Cursor with distance-scaled motion for move/click/targeted type without rendering label text, and dispatches click/type target actions after the cursor motion settles.",
+            "description": "preferred structured action path for Tide Browser Pane. Use observation_id from observe when available; supports navigate/move/click/type/press/scroll/back/forward/reload/wait-for/close-modal/clear-cursor.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "pane_id": { "type": "integer", "description": "Target Browser Pane ID; pass explicitly when Caller Pane is a Terminal" },
-                    "action": { "type": "string", "enum": ["navigate", "move", "click", "type", "press", "clear-cursor"] },
+                    "observation_id": { "type": "string" },
+                    "action": { "type": "string", "enum": ["navigate", "move", "click", "type", "press", "scroll", "back", "forward", "reload", "wait-for", "close-modal", "clear-cursor"] },
                     "url": { "type": "string", "description": "Required for navigate" },
                     "x": { "type": "number", "description": "Viewport x coordinate for move or click" },
                     "y": { "type": "number", "description": "Viewport y coordinate for move or click" },
                     "target_ref": { "type": "string", "description": "Generation-scoped Browser Page Element ref from tide_browser_observe page_map for click/type targeting" },
+                    "target": { "type": "object", "description": "Semantic target for click/type, e.g. {\"kind\":\"semantic\",\"role\":\"button\",\"label\":\"Search\"}" },
                     "label": { "type": "string", "description": "Optional Browser Automation Cursor label metadata for move or click; label text is not rendered beside the cursor" },
                     "text": { "type": "string", "description": "Required for type" },
                     "key": { "type": "string", "description": "Required for press" },
+                    "delta_x": { "type": "number" },
+                    "delta_y": { "type": "number" },
                     "reload": { "type": "boolean", "description": "Required to intentionally navigate to the already-loaded URL" },
                     "sensitive": { "type": "boolean", "description": "Set true for data-transmitting or sensitive flows" },
                     "approved": { "type": "boolean", "description": "Required when sensitive is true" }
@@ -674,6 +701,8 @@ fn mcp_tools_call(
         "tide_browser_read_snapshot" => "browser-read-snapshot",
         "tide_browser_find_in_snapshot" => "browser-find-in-snapshot",
         "tide_browser_diff_since" => "browser-diff-since",
+        "tide_browser_inspect_network" => "browser-inspect-network",
+        "tide_browser_collect_list" => "browser-collect-list",
         "tide_browser_action" => "browser-action",
         "tide_create_context_artifact" => "create-context-artifact",
         "tide_list_context_artifacts" => "list-context-artifacts",

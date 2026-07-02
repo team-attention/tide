@@ -505,6 +505,32 @@ impl App {
                     _ => false,
                 }
             }
+            "browser-network-log" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let network_log =
+                    crate::pane::browser::BrowserNetworkLog::from_bridge_json(Some(&parsed));
+
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => browser.update_network_log(network_log),
+                    _ => false,
+                }
+            }
+            "browser-list-snapshot" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let list_snapshot =
+                    crate::pane::browser::BrowserListSnapshot::from_bridge_json(Some(&parsed));
+
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => browser.update_list_snapshot(list_snapshot),
+                    _ => false,
+                }
+            }
             "browser-context-menu" => {
                 let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
                     Some(id) => id,

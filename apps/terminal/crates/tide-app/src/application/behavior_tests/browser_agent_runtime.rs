@@ -7,8 +7,8 @@ use serde_json::json;
 
 use crate::adapter::inward::cli_adapter::mcp;
 use crate::pane::browser::{
-    BrowserAutomationCursor, BrowserPageElement, BrowserPageElementKind, BrowserPageMap,
-    BrowserPane, BrowserSelectionSnapshot, BrowserSnapshot,
+    BrowserAutomationCursor, BrowserPageElement, BrowserPageElementKind, BrowserPageHitTest,
+    BrowserPageMap, BrowserPagePoint, BrowserPane, BrowserSelectionSnapshot, BrowserSnapshot,
 };
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::gateway_status::{AgentInfo, AgentStatus};
@@ -132,6 +132,13 @@ fn set_browser_page_map(app: &mut App, browser_id: PaneId) {
                 action: None,
                 disabled: false,
                 rect: Rect::new(720.0, 0.0, 320.0, 640.0),
+                click_point: None,
+                hit_test: BrowserPageHitTest {
+                    clickable: true,
+                    center_blocked: false,
+                    point_source: "center".to_string(),
+                },
+                scrollable: false,
             }],
             interactables: vec![
                 BrowserPageElement {
@@ -146,6 +153,13 @@ fn set_browser_page_map(app: &mut App, browser_id: PaneId) {
                     action: Some("open-dev-user-modal".to_string()),
                     disabled: false,
                     rect: Rect::new(902.0, 48.0, 104.0, 32.0),
+                    click_point: None,
+                    hit_test: BrowserPageHitTest {
+                        clickable: true,
+                        center_blocked: false,
+                        point_source: "center".to_string(),
+                    },
+                    scrollable: false,
                 },
                 BrowserPageElement {
                     reference: "i2".to_string(),
@@ -159,6 +173,13 @@ fn set_browser_page_map(app: &mut App, browser_id: PaneId) {
                     action: None,
                     disabled: false,
                     rect: Rect::new(24.0, 592.0, 624.0, 40.0),
+                    click_point: None,
+                    hit_test: BrowserPageHitTest {
+                        clickable: true,
+                        center_blocked: false,
+                        point_source: "center".to_string(),
+                    },
+                    scrollable: false,
                 },
             ],
             truncated_regions: false,
@@ -379,6 +400,18 @@ fn browser_observe_returns_browser_page_map_regions_and_interactables() {
         "open-dev-user-modal"
     );
     assert_eq!(
+        observed["page_map"]["interactables"][0]["hit_test"]["clickable"],
+        true
+    );
+    assert_eq!(
+        observed["interaction_graph"]["targeting"]["semantic_target_supported"],
+        true
+    );
+    assert_eq!(
+        observed["interaction_graph"]["targeting"]["click_point_preferred_over_rect_center"],
+        true
+    );
+    assert_eq!(
         observed["page_map"]["interactables"][1]["placeholder"],
         "편하게 답변해주세요"
     );
@@ -391,6 +424,231 @@ fn browser_observe_returns_browser_page_map_regions_and_interactables() {
         false
     );
     assert_eq!(observed["page_map"]["limits"]["interactable_limit"], 80);
+    assert_eq!(
+        observed["browser_primitives"]["network_evidence"]["next_tool"],
+        "tide_browser_inspect_network"
+    );
+    assert_eq!(
+        observed["browser_primitives"]["list_collection"]["next_tool"],
+        "tide_browser_collect_list"
+    );
+}
+
+#[test]
+fn browser_inspect_network_returns_in_page_network_evidence() {
+    // Browser-use primitive: agents can inspect browser-context network evidence without spoofing API calls outside the page.
+    let (mut app, terminal_id, browser_id) = app_with_caller_and_browser("https://example.com/app");
+
+    assert!(app.apply_webview_bridge_message(
+        &json!({
+            "kind": "browser-network-log",
+            "pane_id": browser_id,
+            "entries": [
+                {
+                    "id": "fetch:1",
+                    "source": "fetch",
+                    "method": "POST",
+                    "url": "https://example.com/api/search",
+                    "status": 200,
+                    "ok": true,
+                    "mime_type": "application/json",
+                    "request_body": "{\"query\":\"sadang\"}",
+                    "response_excerpt": "{\"items\":[{\"name\":\"Alpha\"}]}",
+                    "started_ms": 12.0,
+                    "duration_ms": 45.5
+                }
+            ]
+        })
+        .to_string()
+    ));
+
+    let inspected = app
+        .handle_cli_command(
+            "browser-inspect-network",
+            json!({"pane_id": browser_id, "_caller_pane": terminal_id}),
+        )
+        .expect("network evidence should be readable");
+
+    assert_eq!(inspected["network"]["status"], "ok");
+    assert_eq!(inspected["network"]["entries"][0]["source"], "fetch");
+    assert_eq!(inspected["network"]["entries"][0]["method"], "POST");
+    assert_eq!(
+        inspected["network"]["entries"][0]["url"],
+        "https://example.com/api/search"
+    );
+    assert_eq!(inspected["network"]["entries"][0]["status"], 200);
+    assert_eq!(inspected["usage"]["purpose"], "network_evidence");
+
+    let observed = observe_browser(&mut app, browser_id);
+    assert_eq!(
+        observed["browser_primitives"]["network_evidence"]["cached_entries"],
+        1
+    );
+}
+
+#[test]
+fn browser_collect_list_returns_bounded_virtual_list_snapshot_and_next_scroll() {
+    // Browser-use primitive: agents collect repeated/virtual lists through short collect/scroll loops.
+    let (mut app, terminal_id, browser_id) =
+        app_with_caller_and_browser("https://example.com/list");
+
+    assert!(app.apply_webview_bridge_message(
+        &json!({
+            "kind": "browser-list-snapshot",
+            "pane_id": browser_id,
+            "title": "Search results",
+            "url": "https://example.com/list",
+            "groups": [
+                {
+                    "ref": "s1",
+                    "signature": "div|card|data-index",
+                    "label": "Results",
+                    "rect": {"x": 100.0, "y": 80.0, "width": 480.0, "height": 520.0},
+                    "scroll_top": 320.0,
+                    "scroll_height": 1800.0,
+                    "client_height": 520.0,
+                    "at_top": false,
+                    "at_bottom": false,
+                    "items": [
+                        {
+                            "ref": "l1",
+                            "index": 12,
+                            "label": "Alpha",
+                            "text": "Alpha · Italian · 19:30 available",
+                            "href": "https://example.com/shop/alpha",
+                            "rect": {"x": 120.0, "y": 120.0, "width": 440.0, "height": 96.0},
+                            "click_point": {"x": 180.0, "y": 150.0}
+                        },
+                        {
+                            "ref": "l2",
+                            "index": 13,
+                            "label": "Beta",
+                            "text": "Beta · Sushi · 19:30 available",
+                            "rect": {"x": 120.0, "y": 230.0, "width": 440.0, "height": 96.0}
+                        }
+                    ]
+                }
+            ]
+        })
+        .to_string()
+    ));
+
+    let collected = app
+        .handle_cli_command(
+            "browser-collect-list",
+            json!({"pane_id": browser_id, "_caller_pane": terminal_id}),
+        )
+        .expect("list snapshot should be readable");
+
+    assert_eq!(collected["list_snapshot"]["status"], "ok");
+    assert_eq!(
+        collected["list_snapshot"]["groups"][0]["items"][0]["ref"],
+        "l1"
+    );
+    assert_eq!(
+        collected["list_snapshot"]["groups"][0]["items"][0]["href"],
+        "https://example.com/shop/alpha"
+    );
+    assert_eq!(collected["next_action"]["next_tool"], "tide_browser_action");
+    assert_eq!(collected["next_action"]["action"]["action"], "scroll");
+    assert_eq!(
+        collected["usage"]["anti_pattern"],
+        "Do not run a long page JS loop that clicks or scrolls dozens of times in one tool call."
+    );
+
+    let observed = observe_browser(&mut app, browser_id);
+    assert_eq!(
+        observed["browser_primitives"]["list_collection"]["cached_groups"],
+        1
+    );
+}
+
+#[test]
+fn browser_action_click_uses_semantic_target() {
+    // InteractionGraph v2: agents can ask for semantic intent while Tide resolves a hit-tested element.
+    let (mut app, browser_id, _terminal_id) = app_with_browser("https://example.com");
+    set_browser_page_map(&mut app, browser_id);
+    observe_browser(&mut app, browser_id);
+
+    let clicked = app
+        .handle_cli_command(
+            "browser-action",
+            json!({
+                "pane_id": browser_id,
+                "action": "click",
+                "target": {
+                    "kind": "semantic",
+                    "role": "button",
+                    "label": "Debug User"
+                }
+            }),
+        )
+        .expect("semantic target click should resolve");
+
+    assert_eq!(clicked["target"]["ref"], "i1");
+    assert_eq!(clicked["target"]["label"], "+ Debug User");
+    assert_eq!(clicked["automation_cursor"]["x"], 954.0);
+    assert_eq!(clicked["automation_cursor"]["y"], 64.0);
+}
+
+#[test]
+fn browser_action_type_uses_semantic_placeholder_target() {
+    // InteractionGraph v2: placeholder text is a deterministic target signal for inputs.
+    let (mut app, browser_id, _terminal_id) = app_with_browser("https://example.com");
+    set_browser_page_map(&mut app, browser_id);
+    observe_browser(&mut app, browser_id);
+
+    let typed = app
+        .handle_cli_command(
+            "browser-action",
+            json!({
+                "pane_id": browser_id,
+                "action": "type",
+                "target": {
+                    "kind": "semantic",
+                    "role": "textbox",
+                    "placeholder": "답변"
+                },
+                "text": "Codex"
+            }),
+        )
+        .expect("semantic target type should resolve");
+
+    assert_eq!(typed["target"]["ref"], "i2");
+    assert_eq!(typed["targeted_focus"], true);
+}
+
+#[test]
+fn browser_action_prefers_hit_test_click_point_over_rect_center() {
+    // InteractionGraph v2: when code finds a safer click point, actions use it instead of guessing the center.
+    let (mut app, browser_id, _terminal_id) = app_with_browser("https://example.com");
+    set_browser_page_map(&mut app, browser_id);
+    if let Some(PaneKind::Browser(browser)) = app.panes.get_mut(&browser_id) {
+        let target = &mut browser
+            .page_map
+            .as_mut()
+            .expect("page map should exist")
+            .interactables[0];
+        target.click_point = Some(BrowserPagePoint { x: 944.0, y: 58.0 });
+        target.hit_test = BrowserPageHitTest {
+            clickable: true,
+            center_blocked: true,
+            point_source: "mid_left".to_string(),
+        };
+    }
+    observe_browser(&mut app, browser_id);
+
+    let clicked = app
+        .handle_cli_command(
+            "browser-action",
+            json!({"pane_id": browser_id, "action": "click", "target_ref": "i1"}),
+        )
+        .expect("target_ref click should use hit-tested click point");
+
+    assert_eq!(clicked["target"]["click_point"]["x"], 944.0);
+    assert_eq!(clicked["target"]["hit_test"]["center_blocked"], true);
+    assert_eq!(clicked["automation_cursor"]["x"], 944.0);
+    assert_eq!(clicked["automation_cursor"]["y"], 58.0);
 }
 
 #[test]
@@ -1076,8 +1334,27 @@ fn browser_eval_is_available_but_not_advertised_as_primary_action() {
         .and_then(|tool| tool.get("description"))
         .and_then(|value| value.as_str())
         .unwrap_or_default();
+    let network_description = tools
+        .iter()
+        .find(|tool| {
+            tool.get("name").and_then(|value| value.as_str())
+                == Some("tide_browser_inspect_network")
+        })
+        .and_then(|tool| tool.get("description"))
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let list_description = tools
+        .iter()
+        .find(|tool| {
+            tool.get("name").and_then(|value| value.as_str()) == Some("tide_browser_collect_list")
+        })
+        .and_then(|tool| tool.get("description"))
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
     assert!(action_description.contains("preferred"));
     assert!(eval_description.contains("escape hatch"));
+    assert!(network_description.contains("network evidence"));
+    assert!(list_description.contains("virtual list"));
 }
 
 #[test]

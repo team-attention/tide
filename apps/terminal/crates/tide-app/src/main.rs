@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![recursion_limit = "256"]
 // Tide — GPU terminal emulator with native macOS platform layer.
 // Wires all crates together: native window, wgpu surface, renderer, terminal panes,
 // layout engine, input router, file tree, and CWD following.
