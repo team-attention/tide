@@ -143,6 +143,27 @@ test("archiving_a_thread_excludes_it_from_the_default_list_but_keeps_it_retrieva
   );
 });
 
+test("archiving_a_thread_deletes_tide_native_evidence", async () => {
+  const fakes = createFakes();
+  const deletedEvidence: string[] = [];
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    nativeEvidencePort: {
+      deleteThreadEvidence: (threadId) => deletedEvidence.push(threadId),
+    },
+    initialThreads: [threadSeed("thread-evidence")],
+  });
+
+  const archived = await service.archiveThread({ threadId: "thread-evidence", archived: true });
+  const restored = await service.archiveThread({ threadId: "thread-evidence", archived: false });
+
+  assert.equal(archived.ok, true);
+  assert.equal(restored.ok, true);
+  assert.deepEqual(deletedEvidence, ["thread-evidence"]);
+});
+
 test("archiving_a_live_thread_tears_down_runtime_terminal_and_browser_control_state", async () => {
   const activeRuntimeHandle: AgentRuntimeHandle = {
     runtimeId: "runtime-live",
@@ -1117,6 +1138,128 @@ test("sending_follow_up_input_to_an_open_thread_resumes_before_writing", async (
   assert.equal(result.runtimeState, "running");
   assert.deepEqual(fakes.runtime.events, ["resume", "writeInput"]);
   assert.equal(fakes.runtime.writes[0].input.value, "Continue from the prior work");
+});
+
+test("provider_capability_invocation_routes_provider_method_to_live_runtime", async () => {
+  class CapabilityRuntimePort extends FakeAgentRuntimePort {
+    invocations: Array<{
+      handle: AgentRuntimeHandle;
+      input: {
+        capabilityId: string;
+        invoke: { kind: string; method?: string; params?: unknown };
+        params?: unknown;
+      };
+    }> = [];
+
+    async invokeCapability(
+      handle: AgentRuntimeHandle,
+      input: {
+        capabilityId: string;
+        invoke: { kind: string; method?: string; params?: unknown };
+        params?: unknown;
+      },
+    ): Promise<{ status: "handled"; result: Record<string, unknown> }> {
+      this.events.push("invokeCapability");
+      this.invocations.push({ handle, input });
+      return { status: "handled", result: { method: input.invoke.method ?? "" } };
+    }
+  }
+
+  const fakes = createFakes();
+  const runtime = new CapabilityRuntimePort();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    agentRuntimePort: runtime,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-follow-up", {
+        agentBinding: {
+          agentId: "codex",
+          providerSessionRef: {
+            kind: "codex_rollout",
+            value: "rollout-1",
+          },
+        },
+      }),
+    ],
+  });
+
+  const result = await service.invokeProviderCapability({
+    threadId: "thread-follow-up",
+    capabilityId: "codex:review",
+    invoke: { kind: "provider_method", method: "review/start" },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.status, "handled");
+  assert.deepEqual(runtime.events, ["resume", "invokeCapability"]);
+  assert.equal(runtime.invocations[0]?.handle.runtimeId, "runtime-resume-1");
+  assert.deepEqual(runtime.invocations[0]?.input, {
+    capabilityId: "codex:review",
+    invoke: { kind: "provider_method", method: "review/start" },
+    params: undefined,
+  });
+});
+
+test("provider_invoke_capability_contract_round_trips_to_runtime_method", async () => {
+  class CapabilityRuntimePort extends FakeAgentRuntimePort {
+    invocations: Array<{ handle: AgentRuntimeHandle; method?: string }> = [];
+
+    async invokeCapability(
+      handle: AgentRuntimeHandle,
+      input: { invoke: { kind: string; method?: string } },
+    ): Promise<{ status: "handled"; result: Record<string, unknown> }> {
+      this.events.push("invokeCapability");
+      this.invocations.push({ handle, method: input.invoke.method });
+      return { status: "handled", result: { compacted: true } };
+    }
+  }
+
+  const fakes = createFakes();
+  const runtime = new CapabilityRuntimePort();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    agentRuntimePort: runtime,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-capability", {
+        agentBinding: {
+          agentId: "codex",
+          providerSessionRef: { kind: "codex_rollout", value: "rollout-1" },
+        },
+      }),
+    ],
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+  });
+
+  const events = await adapter.handleMessage({
+    contractVersion: CONTRACT_VERSION,
+    requestId: "req-capability",
+    kind: "provider.invokeCapability",
+    issuedAt: now,
+    payload: {
+      threadId: "thread-capability",
+      capabilityId: "codex:compact",
+      invoke: { kind: "provider_method", method: "thread/compact/start" },
+    },
+  });
+
+  assert.deepEqual(events.map((event) => event.kind), [
+    "command.accepted",
+    "agentRuntime.stateChanged",
+    "command.completed",
+  ]);
+  assert.deepEqual(runtime.events, ["resume", "invokeCapability"]);
+  assert.equal(runtime.invocations[0]?.method, "thread/compact/start");
+  assert.deepEqual(events.at(-1)?.payload, {
+    result: { status: "handled", result: { compacted: true } },
+  });
 });
 
 test("sending_input_to_a_thread_without_a_provider_session_starts_a_new_runtime", async () => {
@@ -2640,10 +2783,14 @@ test("discardDraftThread_kills_terminal_ptys_and_removes_the_thread", async () =
   // Spec: composer-draft-thread — leaving the composer / switching project discards the
   // draft: its visible-terminal PTYs are stopped (no orphans) and it is removed.
   const fakes = createFakes();
+  const deletedEvidence: string[] = [];
   const service = createThreadRuntimeService({
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("draft"),
+    nativeEvidencePort: {
+      deleteThreadEvidence: (threadId) => deletedEvidence.push(threadId),
+    },
   });
   const created = await service.createDraftThread({
     agentBinding: { agentId: "codex" },
@@ -2658,6 +2805,7 @@ test("discardDraftThread_kills_terminal_ptys_and_removes_the_thread", async () =
   assert.equal(discarded.ok && discarded.discarded, true);
   // The PTY was stopped.
   assert.equal(fakes.workbenchTerminal.handles[0]?.stops.length, 1);
+  assert.deepEqual(deletedEvidence, [draftId]);
   // The thread is gone.
   const hydrated = await service.hydrateThread({ threadId: draftId });
   assert.equal(hydrated.ok, false);

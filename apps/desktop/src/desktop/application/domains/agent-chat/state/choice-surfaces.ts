@@ -6,7 +6,10 @@ import { launchOptionsForState, setComposerNewWorktreeIntent, updateComposerLaun
 import { buildOpencodeConnectSurface, getOpencodeEnvironment, isOpencodeUsable } from "./opencode-onramp.ts";
 import { basenameOf } from "./path-labels.ts";
 import { row } from "./choice-row.ts";
-// Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
+import { commandRowsFromCapabilities } from "./capability-command-rows.ts";
+import { invokeComposerCapabilityRow } from "./capability-invocation.ts";
+import { fileMentionRows } from "./file-mention-rows.ts";
+import { capabilityMenuRows, hasCapabilityMenuRows, selectCapabilityMenuRow } from "./capability-menu.ts";
 
 const CODEX_LOCAL_SLASH_COMMANDS: AgentChatCommandOption[] = [
   { name: "compact", description: "Summarize the conversation to free context", trigger: "/", source: "builtin" },
@@ -24,8 +27,6 @@ export function selectAgentChatChoiceSurfaceRow(
       state: {
         ...state,
         promptState: null,
-        // Keep the composer draft: the answer is the chosen option, not what the user
-        // was typing — clearing it would lose an in-progress follow-up (spec).
       },
       command: {
         kind: "prompt.answer",
@@ -111,9 +112,6 @@ export function selectAgentChatChoiceSurfaceRow(
   switch (surfaceKind) {
     case "agent_menu": {
       const agentId = composerAgentIdForRow(rowId);
-      // Coming-soon / unknown rows are no-ops. A not-installed agent IS selectable now:
-      // the handler ensures a Draft Thread + runs provider.checkReadiness so its install /
-      // sign-in card surfaces immediately. Spec: provider-cli-setup-handoff.md.
       if (agentId === null || isAgentComingSoon(agentId)) {
         return { state, command: null };
       }
@@ -209,24 +207,32 @@ export function selectAgentChatChoiceSurfaceRow(
       if (rowId.startsWith("command:")) {
         return spliceComposerTriggerToken(state, rowId.slice("command:".length));
       }
+      if (rowId.startsWith("capability:")) {
+        return invokeComposerCapabilityRow(
+          state,
+          rowId.slice("capability:".length),
+          activeThreadId,
+        );
+      }
       if (rowId.startsWith("file:")) {
         return spliceComposerTriggerToken(state, `@${rowId.slice("file:".length)}`);
       }
       return setComposerActiveSurface(state, null);
     }
     case "composer_options":
+      if (rowId === "agent-capabilities") {
+        return setComposerActiveSurface(state, "capability_menu");
+      }
+      return setComposerActiveSurface(state, null);
+    case "capability_menu":
+      if (rowId.startsWith("capability-menu:")) {
+        return selectCapabilityMenuRow(state, rowId.slice("capability-menu:".length), activeThreadId);
+      }
       return setComposerActiveSurface(state, null);
   }
 }
 
-// Splice a picked command/file token into the draft, replacing the in-progress trigger
-// token while preserving any text typed before it (e.g. "explain /go" + "/goal" →
-// "explain /goal "). The row only renders while its trigger is active, but fall back to
-// the full draft rather than an empty prefix so an insert can never wipe the draft.
-function spliceComposerTriggerToken(
-  state: AgentChatShellState,
-  token: string,
-): AgentChatShellUpdateResult {
+function spliceComposerTriggerToken(state: AgentChatShellState, token: string): AgentChatShellUpdateResult {
   const active = activeComposerTrigger(state.composer.draft);
   const prefix = active ? state.composer.draft.slice(0, active.tokenStart) : state.composer.draft;
   return {
@@ -357,17 +363,20 @@ export function createActiveComposerSurface(
         title: "Composer menu",
         sourceLabel: agentLabel,
         rows: [
+          ...(hasCapabilityMenuRows(state) ? [row("agent-capabilities", "Agent capabilities", "Session, model, MCP, and tools", agentLabel, "agent")] : []),
           row("files-images", "Files and images", "Attach an image", undefined, "attach"),
-          // Context-attach features are not wired yet — shown disabled, not as
-          // silent no-ops. (selected=false, danger=false, disabled=true)
           row("current-selection", "Current file or selection", "coming soon", undefined, "file", false, false, true),
           row("context", "Browser, Diff, Terminal, or FileTree context", "coming soon", undefined, "panel", false, false, true),
         ],
       };
+    case "capability_menu":
+      return {
+        surfaceKind,
+        title: "Agent capabilities",
+        sourceLabel: agentLabel,
+        rows: capabilityMenuRows(state, agentLabel),
+      };
     case "command_suggestions": {
-      // Real provider commands/skills for the active cwd+agent (discovered from
-      // provider files, injected by the product shell), filtered by what the
-      // user has typed after the leading / or $.
       const active = activeComposerTrigger(state.composer.draft);
       const trigger = active?.trigger ?? "/";
       const query = (active?.query ?? "").trim().toLowerCase();
@@ -379,8 +388,18 @@ export function createActiveComposerSurface(
           rows: fileMentionRows(state, query),
         };
       }
-      // Mirror the agent's real command set, plus local fallbacks for known provider
-      // commands that the machine protocol does not expose (codex `/compact`).
+      const capabilityRows =
+        trigger === "/" || trigger === "$"
+          ? commandRowsFromCapabilities(state, trigger, query, agentLabel)
+          : [];
+      if (capabilityRows.length > 0) {
+        return {
+          surfaceKind,
+          title: trigger === "$" ? "Skills" : "Commands",
+          sourceLabel: agentLabel,
+          rows: capabilityRows,
+        };
+      }
       const seenCommandNames = new Set<string>();
       const availableCommands = state.availableCommands ?? [];
       const commands = [
@@ -413,58 +432,6 @@ export function createActiveComposerSurface(
       };
     }
   }
-}
-
-function fileMentionRows(
-  state: AgentChatShellState,
-  query: string,
-): AgentChatChoiceSurfaceRowView[] {
-  const seen = new Set<string>();
-  const matches = (state.availableFileMentions ?? [])
-    .filter((file) => {
-      const relativePath = file.relativePath.toLowerCase();
-      const name = file.name.toLowerCase();
-      return query.length === 0 || relativePath.includes(query) || name.includes(query);
-    })
-    .filter((file) => {
-      const key = file.relativePath.toLowerCase();
-      if (seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) => fileMentionRank(a, query) - fileMentionRank(b, query) || a.relativePath.localeCompare(b.relativePath))
-    .slice(0, 60);
-
-  if (matches.length === 0) {
-    return [row("no-files", "No files found", "for this directory", undefined, "file", false, false, true)];
-  }
-
-  return matches.map((file) =>
-    row(`file:${file.relativePath}`, file.name, file.relativePath, undefined, "file"),
-  );
-}
-
-function fileMentionRank(
-  file: { name: string; relativePath: string },
-  query: string,
-): number {
-  if (query.length === 0) {
-    return file.relativePath.split("/").length;
-  }
-  const name = file.name.toLowerCase();
-  const relativePath = file.relativePath.toLowerCase();
-  if (name === query || relativePath === query) {
-    return 0;
-  }
-  if (name.startsWith(query)) {
-    return 1;
-  }
-  if (relativePath.startsWith(query)) {
-    return 2;
-  }
-  return 3 + file.relativePath.split("/").length;
 }
 
 function permissionRowsForAgent(agentId: string, currentValue: string): AgentChatChoiceSurfaceRowView[] {

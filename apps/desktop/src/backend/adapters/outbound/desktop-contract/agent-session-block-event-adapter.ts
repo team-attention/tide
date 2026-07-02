@@ -26,6 +26,9 @@ export function toAgentSessionBlockDto(
     status: block.status,
     updatedAt: block.updatedAt,
   };
+  if (block.parentBlockId !== undefined) {
+    dto.parentBlockId = block.parentBlockId;
+  }
   if (block.agentId !== undefined) {
     dto.agentId = block.agentId;
   }

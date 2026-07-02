@@ -11,10 +11,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createLiveAgentSessionEventProjector } from "../src/backend/infrastructure/node/live/live-backend.ts";
-import type { BackendEventEnvelope } from "../src/shared/contracts/index.ts";
+import type { BackendEventEnvelope, ProviderCliAgentId } from "../src/shared/contracts/index.ts";
+import { structuredToNativeRuntimeEvent } from "../src/backend/adapters/outbound/agent-runtime/clients/structured-to-native-runtime-event.ts";
 
 const THREAD = "thread-coalesce";
-const AGENT = "claude" as const;
+const AGENT: ProviderCliAgentId = "claude";
 const RUNTIME = "runtime-1";
 
 function contentRecordEvent(blockId: string, body: string) {
@@ -41,13 +42,17 @@ function contentRecordEvent(blockId: string, body: string) {
 // Minimal fake service implementing exactly the methods the persist path touches.
 // hydrateThread always returns one block so persistThreadBlocksUnsafe performs a
 // real write (its blocks.length === 0 short-circuit would otherwise hide the count).
-function createCountingFixture() {
+function createCountingFixture(input: {
+  nativeProjectionMode?: "structured_mirror" | "external_all_blocks";
+  agentId?: ProviderCliAgentId;
+} = {}) {
   let writes = 0;
   const events: BackendEventEnvelope[] = [];
+  const agentId = input.agentId ?? AGENT;
   const block = {
     blockId: "b1",
     threadId: THREAD,
-    agentId: AGENT,
+    agentId,
     kind: "message",
     role: "agent",
     status: "complete",
@@ -60,7 +65,7 @@ function createCountingFixture() {
     async hydrateThread() {
       return {
         ok: true as const,
-        thread: { threadId: THREAD, agentBinding: { agentId: AGENT } },
+        thread: { threadId: THREAD, agentBinding: { agentId } },
         runtimeState: "running",
         blocks: [block],
       };
@@ -69,7 +74,7 @@ function createCountingFixture() {
     peekThread() {
       return {
         ok: true as const,
-        thread: { threadId: THREAD, agentBinding: { agentId: AGENT } },
+        thread: { threadId: THREAD, agentBinding: { agentId } },
         runtimeState: "running",
         blocks: [block],
       };
@@ -82,7 +87,7 @@ function createCountingFixture() {
     async recordStreamingBlock() {
       return {
         ok: true as const,
-        thread: { threadId: THREAD, agentBinding: { agentId: AGENT } },
+        thread: { threadId: THREAD, agentBinding: { agentId } },
         runtimeState: "running",
       };
     },
@@ -115,6 +120,7 @@ function createCountingFixture() {
     onEvent: (event) => events.push(event),
     homeDir: "/tmp",
     integrations: {} as never,
+    nativeProjectionMode: input.nativeProjectionMode,
   });
   return { projector, writes: () => writes, events: () => events };
 }
@@ -219,6 +225,84 @@ test("standalone structured usage event emits rate-limit-only updates", async ()
   });
 });
 
+test("structured usage also upserts a stable usage block", async () => {
+  const { projector, events } = createCountingFixture();
+
+  await projector.ingestStructuredProviderEvent({
+    threadId: THREAD,
+    agentId: AGENT,
+    runtimeId: RUNTIME,
+    event: {
+      kind: "usage" as const,
+      usage: {
+        inputTokens: 60000,
+        outputTokens: 4000,
+        contextWindow: 256000,
+      },
+    },
+  });
+
+  const blockEvent = events().find(
+    (event) =>
+      event.kind === "agentSessionBlock.upserted" &&
+      event.payload.block.kind === "usage",
+  );
+  assert.equal(blockEvent?.payload.block.blockId, `usage:${THREAD}:${RUNTIME}`);
+  assert.equal(blockEvent?.payload.block.status, "complete");
+  assert.equal(blockEvent?.payload.block.body, "Usage updated: 64k tokens · 64k / 256k context · 25% context");
+  assert.deepEqual(blockEvent?.payload.block.data, {
+    runtimeId: RUNTIME,
+    scope: "session",
+    usage: {
+      inputTokens: 60000,
+      outputTokens: 4000,
+      totalTokens: 64000,
+      contextTokens: 64000,
+      contextWindow: 256000,
+      contextUsedPercent: 25,
+    },
+    nativeUnits: {
+      inputTokens: 60000,
+      outputTokens: 4000,
+      contextWindow: 256000,
+    },
+  });
+});
+
+test("live activity upserts one stable agent activity block and completes it on clear", async () => {
+  const { projector, events } = createCountingFixture();
+
+  await projector.ingestStructuredProviderEvent({
+    threadId: THREAD,
+    agentId: AGENT,
+    runtimeId: RUNTIME,
+    event: {
+      kind: "live_activity" as const,
+      nestedAgents: 3,
+      nestedToolCalls: 7,
+    },
+  });
+  await projector.ingestStructuredProviderEvent({
+    threadId: THREAD,
+    agentId: AGENT,
+    runtimeId: RUNTIME,
+    event: { kind: "live_activity" as const },
+  });
+
+  const blockEvents = events().filter(
+    (event) =>
+      event.kind === "agentSessionBlock.upserted" &&
+      event.payload.block.kind === "agent_activity",
+  );
+  assert.equal(blockEvents.length, 2);
+  assert.equal(blockEvents[0]?.payload.block.blockId, `agent-activity:${THREAD}:${RUNTIME}`);
+  assert.equal(blockEvents[0]?.payload.block.status, "streaming");
+  assert.equal(blockEvents[0]?.payload.block.body, "3 agents running · 7 tool calls");
+  assert.equal(blockEvents[1]?.payload.block.blockId, `agent-activity:${THREAD}:${RUNTIME}`);
+  assert.equal(blockEvents[1]?.payload.block.status, "complete");
+  assert.equal(blockEvents[1]?.payload.block.body, "Activity complete");
+});
+
 test("content_delta (live streaming tokens) never persists", async () => {
   const { projector, writes } = createCountingFixture();
 
@@ -238,6 +322,154 @@ test("content_delta (live streaming tokens) never persists", async () => {
   }
   await projector.flushPendingPersists();
   assert.equal(writes(), 0, "per-token deltas must not touch disk");
+});
+
+test("external native event path owns streaming and final content blocks", async () => {
+  const { projector, writes, events } = createCountingFixture({
+    nativeProjectionMode: "external_all_blocks",
+  });
+  const structured = contentRecordEvent("native-message-1", "hello from native");
+
+  await projector.ingestStructuredProviderEvent(structured);
+  assert.equal(
+    events().some((event) => event.kind === "agentSessionBlock.upserted"),
+    false,
+    "structured path must not create content blocks when native events own projection",
+  );
+
+  await projector.ingestNativeRuntimeEvent({
+    threadId: THREAD,
+    agentId: AGENT,
+    runtimeId: RUNTIME,
+    event: structuredToNativeRuntimeEvent({
+      eventId: "native-content-1",
+      provider: AGENT,
+      transport: "claude_stream_json",
+      runtimeId: RUNTIME,
+      tideThreadId: THREAD,
+      nativeSequence: 1,
+      receivedAt: "2026-06-12T00:00:03.000Z",
+      event: structured.event,
+    }),
+  });
+
+  const blockEvent = events().find(
+    (event) =>
+      event.kind === "agentSessionBlock.upserted" &&
+      event.payload.block.blockId === "native-message-1",
+  );
+  assert.equal(blockEvent?.payload.block.kind, "agent_message");
+  assert.equal(blockEvent?.payload.block.body, "hello from native");
+  assert.equal(blockEvent?.payload.block.localProvenance?.kind, "native_semantic_block");
+  assert.equal(writes(), 0);
+  await projector.flushPendingPersists();
+  assert.equal(writes(), 1);
+});
+
+test("provider capability initialize events project as config state in structured mirror mode", async () => {
+  const { projector, events } = createCountingFixture();
+
+  await projector.ingestStructuredProviderEvent({
+    threadId: THREAD,
+    agentId: AGENT,
+    runtimeId: RUNTIME,
+    event: {
+      kind: "provider_capabilities",
+      protocolVersion: 1,
+      agentInfo: { title: "Claude Code" },
+      authMethods: [{ id: "anthropic" }],
+      agentCapabilities: { loadSession: true, sessionCapabilities: {} },
+    },
+  });
+
+  const blockEvent = events().find(
+    (event) =>
+      event.kind === "agentSessionBlock.upserted" &&
+      event.payload.block.blockId.endsWith(":provider-capabilities"),
+  );
+  assert.equal(blockEvent?.payload.block.kind, "progress_status");
+  assert.equal(blockEvent?.payload.block.body, "Claude Code · 1 auth method · 2 capability groups");
+  assert.equal(blockEvent?.payload.block.localProvenance?.kind, "native_semantic_block");
+  const capabilityEvent = events().find((event) => event.kind === "agentRuntime.capabilitiesChanged");
+  assert.deepEqual(
+    capabilityEvent?.payload.capabilities.map((capability) => capability.capabilityId),
+    ["claude:setup:auth", "claude:setup:capabilities"],
+  );
+});
+
+test("provider capability snapshots keep initialize setup rows when command rows arrive", async () => {
+  const { projector, events } = createCountingFixture({ agentId: "opencode" });
+
+  await projector.ingestStructuredProviderEvent({
+    threadId: THREAD,
+    agentId: "opencode",
+    runtimeId: RUNTIME,
+    event: {
+      kind: "provider_capabilities",
+      protocolVersion: 1,
+      agentInfo: { title: "opencode" },
+      authMethods: [{ id: "oauth" }],
+      agentCapabilities: { loadSession: true },
+    },
+  });
+  await projector.ingestStructuredProviderEvent({
+    threadId: THREAD,
+    agentId: "opencode",
+    runtimeId: RUNTIME,
+    event: {
+      kind: "commands",
+      commands: [{ name: "compact", description: "Compact context", trigger: "/" }],
+    },
+  });
+
+  const capabilityEvents = events().filter((event) => event.kind === "agentRuntime.capabilitiesChanged");
+  const latest = capabilityEvents[capabilityEvents.length - 1];
+  assert.deepEqual(
+    latest?.payload.capabilities.map((capability) => capability.capabilityId),
+    [
+      "opencode:command:compact",
+      "opencode:setup:auth",
+      "opencode:setup:capabilities",
+    ],
+  );
+});
+
+test("external native content_delta records only the streaming tail", async () => {
+  const { projector, writes, events } = createCountingFixture({
+    nativeProjectionMode: "external_all_blocks",
+  });
+
+  await projector.ingestNativeRuntimeEvent({
+    threadId: THREAD,
+    agentId: AGENT,
+    runtimeId: RUNTIME,
+    event: structuredToNativeRuntimeEvent({
+      eventId: "native-delta-1",
+      provider: AGENT,
+      transport: "claude_stream_json",
+      runtimeId: RUNTIME,
+      tideThreadId: THREAD,
+      nativeSequence: 1,
+      receivedAt: "2026-06-12T00:00:04.000Z",
+      event: {
+        kind: "content_delta",
+        blockId: "stream-native-1",
+        role: "agent",
+        blockKind: "agent_message",
+        body: "partial",
+      },
+    }),
+  });
+
+  const blockEvent = events().find(
+    (event) =>
+      event.kind === "agentSessionBlock.upserted" &&
+      event.payload.block.blockId === "stream-native-1",
+  );
+  assert.equal(blockEvent?.payload.block.status, "streaming");
+  assert.equal(blockEvent?.payload.block.body, "partial");
+  await projector.flushPendingPersists();
+  assert.equal(writes(), 0, "streaming native deltas must not persist");
 });
 
 test("a prompt opening flushes pending writes so the waiting state is durable", async () => {

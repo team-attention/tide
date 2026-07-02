@@ -25,6 +25,7 @@ export const AgentSessionTurn = memo(
   },
   (prev, next) =>
     prev.block.blockId === next.block.blockId &&
+    prev.block.parentBlockId === next.block.parentBlockId &&
     prev.block.body === next.block.body &&
     prev.block.status === next.block.status &&
     prev.block.kind === next.block.kind &&
@@ -32,6 +33,7 @@ export const AgentSessionTurn = memo(
     prev.block.phase === next.block.phase &&
     prev.block.title === next.block.title &&
     prev.block.rawFallback === next.block.rawFallback &&
+    prev.block.nativeEvidenceLabel === next.block.nativeEvidenceLabel &&
     prev.activeStreamingCaret === next.activeStreamingCaret,
 );
 
@@ -55,10 +57,13 @@ function createAgentSessionTurn(
       key={block.blockId}
       className={turnClassName}
       data-block-id={block.blockId}
+      data-parent-block-id={block.parentBlockId}
       data-block-kind={block.kind}
       data-block-status={block.status}
       data-block-role={role}
       data-block-phase={block.phase}
+      data-native-evidence={block.nativeEvidenceLabel}
+      data-native-evidence-count={block.nativeEvidence?.length}
       data-streaming-caret={activeStreamingCaret ? "active" : undefined}
     >
       {/* Codex-style: the user turn is a right-aligned bubble (no label needed),

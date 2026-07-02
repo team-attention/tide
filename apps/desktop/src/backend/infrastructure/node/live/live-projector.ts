@@ -1,11 +1,12 @@
 import type { ThreadPersistenceService } from "../../../application/services/thread/thread-persistence-service.ts";
 import type { AgentIntegrationRegistry } from "../../../adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts";
 import { createFixtureAgentSessionReader } from "../../../application/services/thread/fixture-agent-session-reader.ts";
-import type { AgentSessionBlock, AgentSessionBlockUpdate } from "../../../application/domains/agent-session/agent-session-block.ts";
+import type { AgentSessionBlock } from "../../../application/domains/agent-session/agent-session-block.ts";
 import type { AgentTurnOutcome } from "../../../application/ports/outbound/agent-integration-port.ts";
+import type { NativeRuntimeEvent } from "../../../application/domains/native-agent/native-runtime-event.ts";
 import type { RawAgentFrame } from "../../../application/services/thread/thread-runtime-service.ts";
 import type { StructuredProviderEvent } from "../../../adapters/outbound/agent-runtime/structured/structured-runtime-events.ts";
-import { createAgentSessionBlockCompletedEventFromUpdate, createAgentSessionBlockUpsertedEventFromBlock } from "../../../adapters/outbound/desktop-contract/agent-session-block-event-adapter.ts";
+import type { NativeEvidenceStore } from "../../../adapters/outbound/agent-runtime/evidence/native-evidence-store.ts";
 import type { PromptState } from "../../../application/domains/thread/thread.ts";
 import type { DiscoveredProviderSessionRef } from "../provider/provider-session-ref.ts";
 import type { ThreadRuntimeService } from "../../../application/services/thread/thread-runtime-service.ts";
@@ -15,6 +16,19 @@ import { toAgentSessionBlockDto } from "../../../adapters/inbound/contract-messa
 import { planActivityFromToolResultPayload } from "../../../adapters/outbound/agent-runtime/structured/plan-activity.ts";
 import { emitStructuredActivity, emitStructuredUsage } from "./live-usage-events.ts";
 import { emitGoalState, emitProviderTurnStarted, goalKeepsRuntimeBusy } from "./live-goal-events.ts";
+import { persistThreadBlocks } from "./live-session-cache-persistence.ts";
+import { emitBlockUpdate, recordBlockUpdateInService } from "./live-block-updates.ts";
+import { nextEventId } from "./live-event-ids.ts";
+import {
+  providerCapabilityCatalogFromProviderCapabilities,
+  providerCapabilityCatalogFromRuntimeCommands,
+} from "../../../adapters/outbound/agent-integrations/provider-capability-catalog.ts";
+import { upsertActivityRuntimeStateBlock } from "./live-runtime-state-blocks.ts";
+import {
+  createLiveNativeRuntimeProjector,
+  nativeVisibleSemanticBlockKinds,
+} from "./live-native-runtime-projector.ts";
+import { createLiveProviderCapabilityEmitter } from "./live-provider-capabilities.ts";
 
 export function createLiveAgentSessionEventProjector(input: {
   service: () => ThreadRuntimeService;
@@ -22,6 +36,8 @@ export function createLiveAgentSessionEventProjector(input: {
   onEvent?: (event: BackendEventEnvelope) => void;
   homeDir: string;
   integrations: AgentIntegrationRegistry;
+  nativeProjectionMode?: "structured_mirror" | "external_all_blocks";
+  nativeEvidenceStore?: NativeEvidenceStore;
 }) {
   const reader = createFixtureAgentSessionReader();
   const blocksByThread = new Map<string, AgentSessionBlock[]>();
@@ -73,6 +89,17 @@ export function createLiveAgentSessionEventProjector(input: {
     }
     persistTimers.set(threadId, timer);
   };
+  const nativeRuntimeProjector = createLiveNativeRuntimeProjector({
+    blocksByThread,
+    service: input.service,
+    onEvent: input.onEvent,
+    schedulePersist,
+    evidenceStore: input.nativeEvidenceStore,
+  });
+  const capabilityEmitter = createLiveProviderCapabilityEmitter({
+    onEvent: input.onEvent,
+    nextEventId,
+  });
 
   const flushPersist = async (threadId: string): Promise<void> => {
     const timer = persistTimers.get(threadId);
@@ -116,8 +143,8 @@ export function createLiveAgentSessionEventProjector(input: {
 
   // Uniform turn settle. Every Agent Integration produces an AgentTurnOutcome from
   // its OWN signals (claude/codex hook payload, codex rollout
-  // transcript); this shared path applies it identically — the provider-specific
-  // "circus" lives in the adapters, not here. `finalMessage` becomes the agent
+  // transcript); this shared path applies it identically. Provider-specific
+  // signal collection lives in the adapters. `finalMessage` becomes the agent
   // answer block; `notice` (rate limit / out of credits / empty / error) becomes a
   // visible `error` block so the turn never settles silently empty. Both go through
   // the same reader pipeline as streamed content and are deduped by body, so they
@@ -267,11 +294,21 @@ export function createLiveAgentSessionEventProjector(input: {
   };
 
   return {
-    // Normalized protocol events from a STRUCTURED provider runtime (the
-    // runtime-event spine realized): content records flow through the same
-    // frame→block reader as everything else; prompts/turn-ends/session-refs hit
-    // the service directly. NO pollers exist for these runtimes — the protocol
-    // pushes. See docs_v2/specs/structured-agent-runtime.md.
+    async ingestNativeRuntimeEvent(eventInput: {
+      threadId: string;
+      agentId: ProviderCliAgentId;
+      runtimeId: string;
+      event: NativeRuntimeEvent;
+    }): Promise<void> {
+      return serializeIngest(eventInput.threadId, async () => {
+        const blocks = nativeRuntimeProjector.ingestNativeEvent(eventInput.event);
+        await nativeRuntimeProjector.recordProjectedRuntimeStateBlocks(
+          eventInput.threadId,
+          blocks,
+          nativeVisibleSemanticBlockKinds,
+        );
+      });
+    },
     async ingestStructuredProviderEvent(eventInput: {
       threadId: string;
       agentId: ProviderCliAgentId;
@@ -281,6 +318,10 @@ export function createLiveAgentSessionEventProjector(input: {
       return serializeIngest(eventInput.threadId, async () => {
       const service = input.service();
       const event = eventInput.event;
+      const nativeBlocks =
+        input.nativeProjectionMode === "external_all_blocks"
+          ? []
+          : nativeRuntimeProjector.ingestStructuredMirror(eventInput);
       if (event.kind === "session_ref") {
         await recordDiscoveredProviderSessionRef({
           service,
@@ -288,6 +329,15 @@ export function createLiveAgentSessionEventProjector(input: {
           threadId: eventInput.threadId,
           providerSessionRef: event.ref,
         });
+        return;
+      }
+      if (event.kind === "provider_capabilities") {
+        capabilityEmitter.emitCapabilitiesChanged(
+          eventInput.threadId,
+          eventInput.agentId,
+          providerCapabilityCatalogFromProviderCapabilities(eventInput.agentId, event),
+        );
+        await nativeRuntimeProjector.recordProjectedRuntimeStateBlocks(eventInput.threadId, nativeBlocks, new Set(["config_state"]));
         return;
       }
       if (event.kind === "turn_started") {
@@ -332,23 +382,43 @@ export function createLiveAgentSessionEventProjector(input: {
       }
       if (event.kind === "content_record") {
         const activity = planActivityFromToolResultPayload(event.payload);
-        if (activity !== undefined) emitStructuredActivity({ threadId: eventInput.threadId, activity, nextEventId, onEvent: input.onEvent });
-        await appendFrameAndEmit({
-          threadId: eventInput.threadId,
-          agentId: eventInput.agentId,
-          source: "provider_history",
-          sourceRef: event.sourceRef,
-          payloadKind: "provider_record",
-          payload: event.payload,
-          body: event.body,
-        });
+        if (activity !== undefined) {
+          emitStructuredActivity({
+            threadId: eventInput.threadId,
+            activity,
+            nextEventId,
+            onEvent: input.onEvent,
+          });
+          await upsertActivityRuntimeStateBlock({
+            blocksByThread,
+            service,
+            nextEventId,
+            onEvent: input.onEvent,
+            schedulePersist,
+            threadId: eventInput.threadId,
+            agentId: eventInput.agentId,
+            runtimeId: eventInput.runtimeId,
+            activity,
+          });
+        }
+        if (input.nativeProjectionMode !== "external_all_blocks") {
+          await appendFrameAndEmit({
+            threadId: eventInput.threadId,
+            agentId: eventInput.agentId,
+            source: "provider_history",
+            sourceRef: event.sourceRef,
+            payloadKind: "provider_record",
+            payload: event.payload,
+            body: event.body,
+          });
+        }
         return;
       }
       if (event.kind === "content_delta") {
-        // Live streaming: upsert the block in the in-memory cache and emit the
-        // UI event ONLY — no frame append, no reader, no persist (per-token disk
-        // writes would blow the perf budget). The matching content_record
-        // finalizes + persists the same blockId when the block completes.
+        if (input.nativeProjectionMode === "external_all_blocks") {
+          return;
+        }
+        // Legacy streaming path: UI-only upsert; final content_record persists.
         const now = new Date().toISOString();
         const blocks = new Map(
           (blocksByThread.get(eventInput.threadId) ?? []).map((b) => [b.blockId, b]),
@@ -388,6 +458,11 @@ export function createLiveAgentSessionEventProjector(input: {
         return;
       }
       if (event.kind === "commands") {
+        capabilityEmitter.emitCapabilitiesChanged(
+          eventInput.threadId,
+          eventInput.agentId,
+          providerCapabilityCatalogFromRuntimeCommands(eventInput.agentId, event.commands),
+        );
         input.onEvent?.({
           contractVersion: CONTRACT_VERSION,
           eventId: nextEventId(),
@@ -432,23 +507,36 @@ export function createLiveAgentSessionEventProjector(input: {
         return;
       }
       if (event.kind === "usage") {
-        emitStructuredUsage({
+        const usage = emitStructuredUsage({
           threadId: eventInput.threadId,
           agentId: eventInput.agentId,
           usage: event.usage,
           nextEventId,
           onEvent: input.onEvent,
         });
+        if (usage !== undefined) {
+          await nativeRuntimeProjector.recordProjectedRuntimeStateBlocks(
+            eventInput.threadId,
+            nativeBlocks,
+            new Set(["usage"]),
+          );
+        }
         return;
       }
       if (event.kind === "live_activity") {
         const { nestedAgents, nestedToolCalls, planTotal, planCompleted } = event;
+        const activity = { nestedAgents, nestedToolCalls, planTotal, planCompleted };
         emitStructuredActivity({
           threadId: eventInput.threadId,
-          activity: { nestedAgents, nestedToolCalls, planTotal, planCompleted },
+          activity,
           nextEventId,
           onEvent: input.onEvent,
         });
+        await nativeRuntimeProjector.recordProjectedRuntimeStateBlocks(
+          eventInput.threadId,
+          nativeBlocks,
+          new Set(["agent_activity"]),
+        );
         return;
       }
       if (event.kind === "prompt_withdrawn") {
@@ -466,16 +554,28 @@ export function createLiveAgentSessionEventProjector(input: {
       }
       if (event.kind === "turn_completed") {
         if (event.usage !== undefined) {
-          emitStructuredUsage({
+          const usage = emitStructuredUsage({
             threadId: eventInput.threadId,
             agentId: eventInput.agentId,
             usage: event.usage,
             nextEventId,
             onEvent: input.onEvent,
           });
+          if (usage !== undefined) {
+            await nativeRuntimeProjector.recordProjectedRuntimeStateBlocks(
+              eventInput.threadId,
+              nativeBlocks,
+              new Set(["usage"]),
+            );
+          }
         }
         // Fan-out over — clear the live-activity count so it doesn't linger (Slice B).
         emitStructuredActivity({ threadId: eventInput.threadId, activity: {}, nextEventId, onEvent: input.onEvent });
+        await nativeRuntimeProjector.recordProjectedRuntimeStateBlocks(
+          eventInput.threadId,
+          nativeBlocks,
+          new Set(["agent_activity"]),
+        );
         const current = service.peekThread(eventInput.threadId);
         const activeGoal = goalKeepsRuntimeBusy(current.ok ? current.thread.goalState : undefined);
         if (activeGoal) {
@@ -523,110 +623,6 @@ export function createLiveAgentSessionEventProjector(input: {
       await flushAllPersists();
     },
   };
-}
-
-function emitBlockUpdate(input: {
-  update: AgentSessionBlockUpdate;
-  blocks: Map<string, AgentSessionBlock>;
-  onEvent?: (event: BackendEventEnvelope) => void;
-}): void {
-  if (input.update.kind === "upsert") {
-    input.blocks.set(input.update.block.blockId, input.update.block);
-    input.onEvent?.(
-      createAgentSessionBlockUpsertedEventFromBlock({
-        eventId: nextEventId(),
-        emittedAt: new Date().toISOString(),
-        block: input.update.block,
-      }),
-    );
-    return;
-  }
-
-  if (input.update.kind === "complete") {
-    input.onEvent?.(
-      createAgentSessionBlockCompletedEventFromUpdate({
-        eventId: nextEventId(),
-        emittedAt: new Date().toISOString(),
-        update: input.update,
-      }),
-    );
-  }
-}
-
-// Record a block update in the service's authoritative in-memory state ONLY.
-// Disk persistence is coalesced separately (schedulePersist/flushPersist in the
-// projector) so a streaming turn doesn't rewrite the whole conversation per block.
-async function recordBlockUpdateInService(
-  service: ThreadRuntimeService,
-  update: AgentSessionBlockUpdate,
-): Promise<void> {
-  if (update.kind === "upsert") {
-    await service.recordAgentSessionBlock({
-      threadId: update.block.threadId,
-      block: update.block,
-    });
-  } else if (update.kind === "reset") {
-    for (const block of update.blocks) {
-      await service.recordAgentSessionBlock({ threadId: block.threadId, block });
-    }
-  }
-}
-
-// Persist the thread's full current Agent Session block list so a restart can
-// restore the conversation. Blocks live as references in the service; fill the
-// required block fields to write the durable cache.
-export async function persistThreadBlocks(input: {
-  persistence: ThreadPersistenceService;
-  service: ThreadRuntimeService;
-  threadId: string;
-}): Promise<void> {
-  try {
-    await persistThreadBlocksUnsafe(input);
-  } catch (error) {
-    // The Agent Session cache is a best-effort restore optimization — the live
-    // service holds the authoritative blocks in memory and the next write persists
-    // the full list again. A transient FS error (concurrent atomic-write rename
-    // race, or teardown removing the dir mid-write) must never crash the backend.
-    process.emitWarning(
-      error instanceof Error ? error.message : String(error),
-      { type: "TidePersistenceCacheWarning" },
-    );
-  }
-}
-
-async function persistThreadBlocksUnsafe(input: {
-  persistence: ThreadPersistenceService;
-  service: ThreadRuntimeService;
-  threadId: string;
-}): Promise<void> {
-  const hydrated = input.service.peekThread(input.threadId);
-  if (!hydrated.ok || hydrated.blocks.length === 0) {
-    return;
-  }
-  const agentId = hydrated.thread.agentBinding.agentId;
-  const blocks = hydrated.blocks.map((ref) => ({
-    blockId: ref.blockId,
-    threadId: input.threadId,
-    agentId: ref.agentId ?? agentId,
-    kind: ref.kind,
-    role: ref.role ?? "runtime",
-    sourceFrameIds: ref.sourceFrameIds ?? [],
-    localProvenance: ref.localProvenance,
-    status: ref.status,
-    title: ref.title,
-    body: ref.body,
-    data: ref.data,
-    rawFallback: ref.rawFallback,
-    createdAt: ref.createdAt ?? ref.updatedAt,
-    updatedAt: ref.updatedAt,
-  })) as AgentSessionBlock[];
-  const saved = await input.persistence.writeAgentSessionCache(input.threadId, {
-    blocks,
-    sourceFingerprint: `local:${blocks.length}:${blocks[blocks.length - 1]?.updatedAt ?? ""}`,
-  });
-  if (!saved.ok) {
-    process.emitWarning(saved.error.message, { type: "TidePersistenceCacheWarning" });
-  }
 }
 
 // On a turn-end signal, return the runtime to idle (so the UI stops showing
@@ -792,8 +788,4 @@ async function recordDiscoveredProviderSessionRef(input: {
       type: "TideProviderSessionRefWarning",
     });
   }
-}
-
-export function nextEventId(): string {
-  return `evt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

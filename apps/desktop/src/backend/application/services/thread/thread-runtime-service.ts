@@ -1,4 +1,4 @@
-import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderGoalStateInput, RecordProviderGoalStateResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderTurnStartedInput, RecordProviderTurnStartedResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
+import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, InvokeProviderCapabilityInput, InvokeProviderCapabilityResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderGoalStateInput, RecordProviderGoalStateResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderTurnStartedInput, RecordProviderTurnStartedResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
 import { ComposerQueueService } from "./composer-queue-service.ts";
 import { createUnavailableBrowserRuntimePort } from "./unavailable-browser-runtime-port.ts";
 import type {
@@ -93,6 +93,7 @@ import { ThreadStore } from "./thread-store.ts";
 import { setThreadGoalWithRuntime, ThreadGoalStateService } from "./thread-goal-state-service.ts";
 import { promptAnswerValue } from "./prompt-answer-value.ts";
 import { ThreadArchiveService } from "./thread-archive-service.ts";
+import { ThreadProviderCapabilityService } from "./thread-provider-capability-service.ts";
 import { markThreadFailed, markThreadStarting } from "./thread-state-transitions.ts";
 import { normalizeThreadSeed, snapshotThread, threadRoot } from "./thread-snapshot.ts";
 
@@ -353,6 +354,7 @@ private readonly tideMcp: TideMcpToolHandler;
 private readonly workbenchCmd: WorkbenchCommandHandler;
   private readonly workspaceQuery: WorkspaceQueryHandler;
   private readonly threadArchive: ThreadArchiveService;
+  private readonly providerCapabilities: ThreadProviderCapabilityService;
 
 constructor(input: CreateThreadRuntimeServiceInput) {
     this.agentRuntimePort = input.agentRuntimePort;
@@ -361,14 +363,12 @@ constructor(input: CreateThreadRuntimeServiceInput) {
     this.workbenchTerminalPort = input.workbenchTerminalPort;
     this.workspaceCommandPort = input.workspaceCommandPort ?? createUnavailableWorkspaceCommandPort();
     this.workspaceFilePort = input.workspaceFilePort ?? createUnavailableWorkspaceFilePort();
-    this.workspaceCodeIntelligencePort =
-      input.workspaceCodeIntelligencePort ?? createUnavailableWorkspaceCodeIntelligencePort();
+    this.workspaceCodeIntelligencePort = input.workspaceCodeIntelligencePort ?? createUnavailableWorkspaceCodeIntelligencePort();
     this.composerAttachmentStorePort = input.composerAttachmentStorePort;
     this.providerTrustPort = input.providerTrustPort;
     this.browserRuntimePort = input.browserRuntimePort ?? createUnavailableBrowserRuntimePort();
     this.ensureScratchDirectory = input.ensureScratchDirectory;
-    this.defaultWorkbenchTerminalCommand =
-      input.defaultWorkbenchTerminalCommand ?? DEFAULT_WORKBENCH_TERMINAL_COMMAND;
+    this.defaultWorkbenchTerminalCommand = input.defaultWorkbenchTerminalCommand ?? DEFAULT_WORKBENCH_TERMINAL_COMMAND;
     this.defaultWorkbenchTerminalArgs = [...(input.defaultWorkbenchTerminalArgs ?? DEFAULT_WORKBENCH_TERMINAL_ARGS)];
     this.clock = input.clock ?? defaultClock;
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
@@ -391,6 +391,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       clock: this.clock,
       idGenerator: this.idGenerator,
       stopTerminalPane: (pane) => this.workbenchRuntime.stopTerminalPane(pane),
+      deleteThreadEvidence: (threadId) => input.nativeEvidencePort?.deleteThreadEvidence(threadId),
     });
     this.workbenchFileOps = new WorkbenchFileOperations({
       workspaceFilePort: this.workspaceFilePort,
@@ -413,6 +414,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       workbenchRuntime: this.workbenchRuntime,
       browserRuntimePort: this.browserRuntimePort,
       clock: this.clock,
+      deleteThreadEvidence: (threadId) => input.nativeEvidencePort?.deleteThreadEvidence(threadId),
     });
     this.tideMcp = new TideMcpToolHandler({
       store: this.threads,
@@ -449,6 +451,14 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       clock: this.clock,
       idGenerator: this.idGenerator,
       appendLocalUserMessageBlock: (thread, input) => this.appendLocalUserMessageBlock(thread, input),
+      activeOrResumedHandle: (thread) => this.activeOrResumedHandle(thread),
+    });
+    this.providerCapabilities = new ThreadProviderCapabilityService({
+      threads: this.threads,
+      agentRuntimePort: this.agentRuntimePort,
+      providerReadinessPort: this.providerReadinessPort,
+      clock: this.clock,
+      sendComposerInput: (value) => this.sendComposerInput(value),
       activeOrResumedHandle: (thread) => this.activeOrResumedHandle(thread),
     });
 
@@ -1688,6 +1698,10 @@ async activeOrResumedHandle(thread: ThreadRecord): Promise<AgentRuntimeHandle> {
     ...args: Parameters<ComposerQueueService["updateThreadLaunchOptions"]>
   ): ReturnType<ComposerQueueService["updateThreadLaunchOptions"]> {
     return this.composerQueue.updateThreadLaunchOptions(...args);
+  }
+
+  async invokeProviderCapability(input: InvokeProviderCapabilityInput): Promise<ServiceResult<InvokeProviderCapabilityResult>> {
+    return this.providerCapabilities.invokeProviderCapability(input);
   }
 }
 

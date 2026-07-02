@@ -22,6 +22,7 @@ export function handleCodexServerRequest(
   serverRequestId: number | string,
   params: Record<string, unknown>,
 ): void {
+  const nativeIds = codexServerRequestNativeIds(params);
   if (method === "item/commandExecution/requestApproval") {
     const command = stringField(params, "command") ?? "Run command";
     const cwd = stringField(params, "cwd");
@@ -31,6 +32,7 @@ export function handleCodexServerRequest(
       threadId: ctx.threadId,
       message: reason !== undefined ? `Run command — ${reason}` : "Run command",
       detail: { format: "text", body: cwd !== undefined ? `${command}\n\n# cwd: ${cwd}` : command },
+      nativeIds,
     }));
     return;
   }
@@ -40,11 +42,12 @@ export function handleCodexServerRequest(
       serverRequestId,
       threadId: ctx.threadId,
       message: reason !== undefined ? `Apply file changes — ${reason}` : "Apply file changes",
+      nativeIds,
     }));
     return;
   }
   if (method === "item/tool/requestUserInput") {
-    const prompt = codexRequestUserInputPrompt({ serverRequestId, threadId: ctx.threadId, params });
+    const prompt = codexRequestUserInputPrompt({ serverRequestId, threadId: ctx.threadId, params, nativeIds });
     if (prompt === undefined) {
       ctx.writeLine({ id: serverRequestId, result: { answers: {} } });
       notice(ctx, "Codex requested user input with no answerable questions.");
@@ -54,7 +57,7 @@ export function handleCodexServerRequest(
     return;
   }
   if (method === "mcpServer/elicitation/request") {
-    surface(ctx, codexMcpElicitationPrompt({ serverRequestId, threadId: ctx.threadId, params }));
+    surface(ctx, codexMcpElicitationPrompt({ serverRequestId, threadId: ctx.threadId, params, nativeIds }));
     return;
   }
   if (method === "applyPatchApproval") {
@@ -71,6 +74,7 @@ export function handleCodexServerRequest(
       threadId: ctx.threadId,
       message: reason !== undefined ? `Apply patch — ${reason}` : "Apply patch",
       ...(lines.length > 0 ? { detail: { format: "text", body: lines.join("\n\n") } } : {}),
+      nativeIds,
     }));
     return;
   }
@@ -85,6 +89,7 @@ export function handleCodexServerRequest(
       threadId: ctx.threadId,
       message: reason !== undefined ? `Run command — ${reason}` : "Run command",
       detail: { format: "text", body: cwd !== undefined ? `${command}\n\n# cwd: ${cwd}` : command },
+      nativeIds,
     }));
     return;
   }
@@ -123,4 +128,31 @@ function surface(
 
 function notice(ctx: CodexServerRequestContext, message: string): void {
   ctx.onEvent({ kind: "runtime_notice", level: "info", message });
+}
+
+function codexServerRequestNativeIds(params: Record<string, unknown>): Record<string, string> | undefined {
+  const ids: Record<string, string> = {};
+  const itemId = firstStringField(params, ["itemId", "item_id", "itemID", "id"]);
+  const callId = firstStringField(params, ["callId", "toolCallId", "tool_call_id", "itemId", "item_id", "itemID", "id"]);
+  const blockId = firstStringField(params, ["blockId", "block_id"]);
+  if (itemId !== undefined) {
+    ids.itemId = itemId;
+  }
+  if (callId !== undefined) {
+    ids.callId = callId;
+  }
+  if (blockId !== undefined) {
+    ids.blockId = blockId;
+  }
+  return Object.keys(ids).length === 0 ? undefined : ids;
+}
+
+function firstStringField(record: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = stringField(record, key);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
 }

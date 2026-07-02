@@ -5,6 +5,18 @@ import type { WorkbenchSplitNode } from "./workbench-split-tree.ts";
 
 export type ProductShellAgentIdentity = "codex" | "claude" | "opencode";
 
+export interface ProductShellProviderCapability {
+  capabilityId: string;
+  agentId: ProductShellAgentIdentity;
+  kind: string;
+  group: string;
+  label: string;
+  description?: string;
+  trigger?: "/" | "$";
+  invoke: { kind: string; [key: string]: unknown };
+  available: boolean;
+}
+
 export type ProductShellLeftRailMenu =
   | { kind: "thread"; threadId: string }
   | { kind: "project"; projectId: string }
@@ -232,6 +244,10 @@ export interface ProductShellState {
   gitWorktrees: AgentChatWorktreeOption[];
   // Real provider slash-commands/skills for the active cwd+agent (Main IPC).
   providerCommands: AgentChatCommandOption[];
+  // Provider-native command/config/session/skill capability catalog. Commands are
+  // still mirrored into providerCommands for the current UI; this is the grouped
+  // source of truth for the native-agent runtime rebuild.
+  providerCapabilities: ProductShellProviderCapability[];
   // Most recent bounded file tree loaded for Composer @ mentions.
   composerFileMentions: ProductShellComposerFileMentions | null;
   // Pinned projects (shown as shortcuts in the Pinned section) and the project

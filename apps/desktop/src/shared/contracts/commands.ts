@@ -3,6 +3,7 @@ import type { WorkspaceCodeIntelKindDto } from "./code-intel.ts";
 import type { ThreadId, WorkbenchPaneId } from "./ids.ts";
 import type { PromptStepAnswerDto } from "./prompt.ts";
 import type { JsonObject } from "./json.ts";
+import type { ProviderCapabilityInvokeDto } from "./provider-capability.ts";
 import type { ThreadScopeDto } from "./thread.ts";
 
 export type BackendCommandKind =
@@ -24,6 +25,7 @@ export type BackendCommandKind =
   | "provider.trustWorkspace"
   | "provider.opencodeConnectApiKey"
   | "provider.discoverCommands"
+  | "provider.invokeCapability"
   | "provider.checkReadiness"
   | "provider.refreshUsage"
   | "workbench.command"
@@ -53,6 +55,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "provider.trustWorkspace",
   "provider.opencodeConnectApiKey",
   "provider.discoverCommands",
+  "provider.invokeCapability",
   "provider.checkReadiness",
   "provider.refreshUsage",
   "workbench.command",
@@ -162,6 +165,17 @@ export interface BackendCommandPayloadByKind {
   // runtime. The backend replies with an agentRuntime.commandsChanged event.
   // See docs_v2/specs/live-provider-command-mirroring.md.
   "provider.discoverCommands": { agentId: string; cwd: string };
+  // Invoke a provider-native capability without pretending it is composer text.
+  // Provider methods route to the live Tide-owned runtime; prompt-text commands
+  // may still be delivered through the normal Composer queue when the provider
+  // explicitly declares that invocation shape. Non-runtime Tide surfaces/config
+  // controls are rejected here and should use their own product command.
+  "provider.invokeCapability": {
+    threadId: ThreadId;
+    capabilityId: string;
+    invoke: ProviderCapabilityInvokeDto;
+    params?: unknown;
+  };
   // Run Provider Readiness for an agent on demand (Composer slot select) so the
   // install/sign-in card surfaces immediately. Backend replies providerReadiness.changed.
   // See docs_v2/specs/provider-cli-setup-handoff.md.

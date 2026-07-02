@@ -2,7 +2,8 @@ import { resolveExecutable } from "../../../adapters/outbound/agent-integrations
 import { createLiveAgentUpdateChecker } from "../provider/agent-update-checker.ts";
 import { locateClaudeTranscriptFile } from "../../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
 import { tideClaudeContextPrompt } from "../../../adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
-import { createLiveAgentSessionEventProjector, nextEventId } from "./live-projector.ts";
+import { createLiveAgentSessionEventProjector } from "./live-projector.ts";
+import { nextEventId } from "./live-event-ids.ts";
 import {
   createPersistentLiveBackendAdapter,
   persistThreadEvents,
@@ -109,6 +110,7 @@ import {
 } from "../../../adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts";
 
 import type { StructuredProviderEvent } from "../../../adapters/outbound/agent-runtime/structured/structured-runtime-events.ts";
+import { createInMemoryNativeEvidenceStore } from "../../../adapters/outbound/agent-runtime/evidence/native-evidence-store.ts";
 
 import { createFileAppStorage } from "../../../adapters/outbound/app-storage/file-app-storage.ts";
 
@@ -284,6 +286,9 @@ export function createLiveBackendContractMessageAdapter(
 
   let service: ThreadRuntimeService;
   const ptyLauncher = createPythonPtyProcessLauncher();
+  const nativeEvidenceStore = createInMemoryNativeEvidenceStore({
+    keepRawFrames: process.env.TIDE_NATIVE_RAW_EVIDENCE === "1",
+  });
   const projector = createLiveAgentSessionEventProjector({
     service: () => service,
     persistence,
@@ -295,6 +300,8 @@ export function createLiveBackendContractMessageAdapter(
     },
     homeDir,
     integrations,
+    nativeProjectionMode: "external_all_blocks",
+    nativeEvidenceStore,
   });
   // Shared first-turn handoff gate: the runtime port waits on it before delivering a
   // tool_surface_ready agent's first prompt; the Tide MCP socket server marks a
@@ -308,6 +315,9 @@ export function createLiveBackendContractMessageAdapter(
     // fire-and-forget dispatch here can't race a thread's events against each other.
     onProviderEvent: (providerEvent) => {
       void projector.ingestStructuredProviderEvent(providerEvent);
+    },
+    onNativeEvent: (nativeEvent) => {
+      void projector.ingestNativeRuntimeEvent(nativeEvent);
     },
     // Locate a Claude session's `subagents/` dir so the runtime can watch a `Task`
     // fan-out's live activity. Mirrors the transcript scan: <project>/<id>.jsonl →
@@ -325,6 +335,7 @@ export function createLiveBackendContractMessageAdapter(
       integrations,
       updateChecker: agentUpdateChecker,
     }),
+    nativeEvidencePort: nativeEvidenceStore,
     workbenchTerminalPort: createPtyWorkbenchTerminalPort({
       launcher: ptyLauncher,
       resolveRuntimeEnvironment: ({ cwd, planEnv }) =>

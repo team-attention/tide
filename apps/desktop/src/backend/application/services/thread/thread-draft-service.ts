@@ -84,6 +84,7 @@ export interface DraftThreadServiceInput {
   // Stop a visible-terminal PTY a discarded draft owns (no orphan processes). Injected
   // so this collaborator never reaches into the WorkbenchRuntime / PTY port directly.
   stopTerminalPane: (pane: TerminalPaneState) => Promise<void>;
+  deleteThreadEvidence?: (threadId: ThreadId) => void;
 }
 
 export class DraftThreadService {
@@ -91,12 +92,14 @@ export class DraftThreadService {
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
   private readonly stopTerminalPane: (pane: TerminalPaneState) => Promise<void>;
+  private readonly deleteThreadEvidence?: (threadId: ThreadId) => void;
 
   constructor(input: DraftThreadServiceInput) {
     this.store = input.store;
     this.clock = input.clock;
     this.idGenerator = input.idGenerator;
     this.stopTerminalPane = input.stopTerminalPane;
+    this.deleteThreadEvidence = input.deleteThreadEvidence;
   }
 
   // Register a Draft Thread: full context + a live (empty) Workbench, lifecycleState
@@ -139,6 +142,7 @@ export class DraftThreadService {
         .filter((pane): pane is TerminalPaneState => pane.kind === "terminal")
         .map((pane) => this.stopTerminalPane(pane).catch(() => {})),
     );
+    this.deleteThreadEvidence?.(input.threadId);
     this.store.delete(input.threadId);
     return { ok: true, discarded: true };
   }

@@ -19,6 +19,7 @@ import { acpOptionKind, buildAcpPermissionDetail } from "./acp-permission.ts";
 import { cancelAcpPermissionRequest, writeUnsupportedAcpServerRequest } from "./acp-server-request.ts";
 import { planActivityFromEntries, planActivityFromTodoToolOutput } from "./plan-activity.ts";
 import { acpPlanContentRecord, withGoalPreamble } from "./structured-plan-goal.ts";
+import { acpProviderCapabilitiesEvent } from "./acp-provider-capabilities.ts";
 
 export const ACP_OPTION_PREFIX = "structured:acp-option:";
 
@@ -138,7 +139,9 @@ class AcpClient implements StructuredRuntimeClient {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       clientInfo: { name: "tide", title: "Tide", version: "2.0" },
-    }, () => {
+    }, (response) => {
+      const initializeResult = isRecord(response.result) ? response.result : {};
+      this.onEvent(acpProviderCapabilitiesEvent(initializeResult));
       const sessionParams = {
         cwd: this.protocolParams.cwd ?? process.cwd(),
         mcpServers: Array.isArray(this.protocolParams.mcpServers)

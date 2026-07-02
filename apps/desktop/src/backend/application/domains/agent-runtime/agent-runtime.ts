@@ -71,3 +71,21 @@ export interface AgentSessionConfigInput {
 // session; the caller must restart the runtime (provider-native resume) before
 // the next turn.
 export type AgentSessionConfigResult = "applied" | "restart_required";
+
+export type AgentRuntimeCapabilityInvoke =
+  | { kind: "provider_method"; method: string; params?: unknown }
+  | { kind: "provider_prompt_text"; text: string }
+  | { kind: "provider_structured_prompt_metadata"; metadata: unknown }
+  | { kind: "provider_config"; key: string; value?: unknown }
+  | { kind: "tide_surface"; surface: string; payload?: unknown }
+  | { kind: "unsupported"; reason: string };
+
+export interface AgentRuntimeCapabilityInvocationInput {
+  capabilityId: string;
+  invoke: AgentRuntimeCapabilityInvoke;
+  params?: unknown;
+}
+
+export type AgentRuntimeCapabilityInvocationResult =
+  | { status: "handled"; result?: unknown }
+  | { status: "unsupported"; reason: string };

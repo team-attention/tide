@@ -15,6 +15,7 @@ export interface AgentSessionBlockDto {
   threadId: ThreadId;
   agentId?: AgentId;
   kind: string;
+  parentBlockId?: string;
   role?: AgentSessionBlockRoleDto;
   sourceFrameIds?: string[];
   localProvenance?: JsonObject;

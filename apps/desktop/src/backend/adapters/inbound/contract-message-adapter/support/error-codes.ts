@@ -8,6 +8,8 @@ export function contractCodeFromServiceError(error: ServiceError): ContractError
     case "provider_not_ready":
     case "agent_runtime_unavailable":
       return error.code;
+    case "provider_runtime_failed":
+      return "provider_runtime_failed";
     case "browser_runtime_unavailable":
     case "browser_runtime_timeout":
       return "agent_runtime_unavailable";
@@ -22,6 +24,7 @@ export function contractCodeFromServiceError(error: ServiceError): ContractError
     case "workbench_user_controlled":
     case "unsupported_tide_mcp_tool":
     case "directory_trust_unavailable":
+    case "provider_capability_unsupported":
     case "workspace_file_unavailable":
     case "workspace_file_not_found":
     case "workspace_file_outside_scope":
@@ -46,6 +49,7 @@ export function isRetryableServiceError(error: ServiceError): boolean {
   return (
     error.code === "provider_not_ready" ||
     error.code === "agent_runtime_unavailable" ||
+    error.code === "provider_runtime_failed" ||
     error.code === "browser_runtime_unavailable" ||
     error.code === "browser_runtime_timeout"
   );

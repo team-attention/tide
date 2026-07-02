@@ -10,6 +10,8 @@ import {
   workspaceImageLoadedEvent,
 } from "./dto/workspace-query-dtos.ts";
 import { providerCatalogChangedEvent, providerUsageChangedEvent } from "./dto/provider-dtos.ts";
+import { providerCapabilityInvocationEvents, providerCommandDiscoveryEvents } from "./dto/provider-capability-dtos.ts";
+import { isProviderCliAgentId } from "../../../../shared/agent-descriptors.ts";
 import type {
   AnswerPromptResult,
   ArchiveThreadResult,
@@ -29,33 +31,19 @@ import type {
   ProviderReadinessResult,
   TrustWorkspaceResult,
 } from "../../../application/services/thread/thread-runtime-service.ts";
-
 import {
   CONTRACT_VERSION,
   createCommandAcceptedEvent,
   createCommandCompletedEvent,
   createContractErrorEvent,
   createContractErrorPayload,
-  type AgentBindingDto,
-  type AgentRuntimeSourceDto,
-  type AgentRuntimeStateDto,
-  type AgentSessionBlockDto,
-  type BackendCommandEnvelope,
-  type BackendEventEnvelope,
-  type ContractErrorCode,
-  type JsonObject,
-  type LastKnownStateDto,
-  type OpencodeEnvironmentDto,
-  type OpencodeVendorDto,
-  type ProviderCliAgentId,
-  type ProviderUsageSnapshotDto,
-  type ProviderReadinessDto,
-  type ProviderModelDto,
-  type PromptStateDto,
-  type ThreadScopeDto,
-  type ThreadSummaryDto,
-  type WorkbenchFileTreeDto,
-  type WorkbenchPaneRefDto,
+  type AgentBindingDto, type AgentRuntimeSourceDto, type AgentRuntimeStateDto,
+  type AgentSessionBlockDto, type BackendCommandEnvelope, type BackendEventEnvelope,
+  type ContractErrorCode, type JsonObject, type LastKnownStateDto,
+  type OpencodeEnvironmentDto, type OpencodeVendorDto, type ProviderCliAgentId,
+  type ProviderUsageSnapshotDto, type ProviderReadinessDto, type ProviderModelDto,
+  type PromptStateDto, type ThreadScopeDto, type ThreadSummaryDto,
+  type WorkbenchFileTreeDto, type WorkbenchPaneRefDto,
   sanitizeJsonValue,
   validateBackendCommandEnvelope,
 } from "../../../../shared/contracts/index.ts";
@@ -76,7 +64,6 @@ export interface CreateBackendContractMessageAdapterInput {
   enumerateOpencodeVendors?: () => Promise<OpencodeVendorDto[]>;
   opencodeEnvironment?: () => Promise<OpencodeEnvironmentDto>;
   connectOpencodeApiKey?: (vendorId: string, key: string) => Promise<void>;
-  // Probe an agent's REAL command set for the composer menu (live-provider-command-mirroring.md).
   discoverProviderCommands?: (
     agentId: string,
     cwd: string,
@@ -334,8 +321,6 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           const message = error instanceof Error ? error.message : "opencode could not save the API key.";
           return [this.contractErrorEvent({ requestId: typed.requestId, code: "provider_runtime_failed", message, retryable: true })];
         }
-        // Re-list (threads/availableAgents) AND push the refreshed opencode catalog so the
-        // now-connected vendor + its models surface (catalogs were invalidated by the connect).
         const catalogEvent = providerCatalogChangedEvent({
           eventId: this.nextEventId(),
           requestId: typed.requestId,
@@ -348,20 +333,35 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           [this.threadListedEvent(typed, result), catalogEvent, this.commandCompletedEvent(typed)]);
       }
       case "provider.discoverCommands": {
-        // The runtime probe resolves [] on any error/timeout (never rejects).
         const typed = command as BackendCommandEnvelope<"provider.discoverCommands">;
+        if (!isProviderCliAgentId(typed.payload.agentId)) {
+          return [
+            this.contractErrorEvent({
+              requestId: typed.requestId,
+              code: "invalid_command",
+              message: "Unknown provider CLI agent.",
+              retryable: false,
+            }),
+          ];
+        }
         const commands = (await this.discoverProviderCommands?.(typed.payload.agentId, typed.payload.cwd)) ?? [];
+        const agentId = typed.payload.agentId;
         return [
-          {
-            contractVersion: CONTRACT_VERSION,
-            eventId: this.nextEventId(),
+          ...providerCommandDiscoveryEvents({
+            nextEventId: () => this.nextEventId(),
             requestId: typed.requestId,
-            kind: "agentRuntime.commandsChanged",
             emittedAt: this.clock(),
-            payload: { agentId: typed.payload.agentId as ProviderCliAgentId, cwd: typed.payload.cwd, commands },
-          } satisfies BackendEventEnvelope<"agentRuntime.commandsChanged">,
+            agentId,
+            cwd: typed.payload.cwd,
+            commands,
+          }),
           this.commandCompletedEvent(typed, { handled: commands.length > 0 }),
         ];
+      }
+      case "provider.invokeCapability": {
+        const typedCommand = command as BackendCommandEnvelope<"provider.invokeCapability">;
+        return this.handleServiceResult(typedCommand, await this.service.invokeProviderCapability(typedCommand.payload), (value) =>
+          providerCapabilityInvocationEvents({ command: typedCommand, result: value, nextEventId: () => this.nextEventId(), emittedAt: this.clock() }));
       }
       case "provider.refreshUsage": {
         const typed = command as BackendCommandEnvelope<"provider.refreshUsage">;

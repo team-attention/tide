@@ -51,6 +51,17 @@ export interface AgentChatCommandOption {
   source?: "project" | "user" | "builtin";
 }
 
+export interface AgentChatProviderCapabilityOption {
+  capabilityId: string;
+  kind: string;
+  group: string;
+  label: string;
+  description?: string;
+  trigger?: "/" | "$";
+  invoke: { kind: string; [key: string]: unknown };
+  available: boolean;
+}
+
 export interface AgentChatFileMentionOption {
   name: string;
   relativePath: string;
@@ -82,6 +93,10 @@ export interface AgentChatShellState {
   // Real provider slash-commands/skills for the active cwd+agent, injected by
   // the product shell (discovered from provider files). Empty until provided.
   availableCommands?: AgentChatCommandOption[];
+  // Provider-native capability catalog. Command suggestions read this first so
+  // prompt commands, skills, config controls, and session actions are not
+  // flattened into one generic string list.
+  availableCapabilities?: AgentChatProviderCapabilityOption[];
   // Real files for the active cwd, injected by the product shell for Composer
   // @ mentions. Empty until the bounded file tree has been loaded.
   availableFileMentions?: AgentChatFileMentionOption[];
@@ -208,6 +223,7 @@ export type AgentChatComposerSurfaceKind =
   | "worktree_menu"
   | "branch_menu"
   | "composer_options"
+  | "capability_menu"
   | "command_suggestions"
   // The opencode "Connect a model" on-ramp (Zen card + vendor grid). Opened from
   // the Model chip when opencode is selected but not yet usable, or via "Add a
@@ -303,6 +319,7 @@ export interface AgentChatPromptState {
   // A batched, multi-step prompt (claude AskUserQuestion). When present with length > 1 the
   // card is a navigable wizard; single prompts omit it. See multi-step-prompt-navigation.md.
   steps?: AgentChatPromptStep[];
+  nativeIds?: Record<string, string>;
   source: "pty" | "provider_signal" | "provider_hook";
 }
 
@@ -371,8 +388,10 @@ export interface AgentChatBlock {
   threadId: string;
   agentId?: string;
   kind: string;
+  parentBlockId?: string;
   role?: "user" | "agent" | "reasoning" | "tool" | "system" | "runtime";
   sourceFrameIds?: string[];
+  localProvenance?: Record<string, unknown>;
   status: "pending" | "streaming" | "complete" | "failed" | "needs_input";
   title?: string;
   body?: string;
@@ -385,6 +404,18 @@ export interface AgentChatBlock {
 }
 
 export type AgentChatBlockPhase = "commentary" | "final_answer";
+
+export interface AgentChatNativeEvidenceView {
+  eventId: string;
+  provider: string;
+  transport: string;
+  nativeKind: string;
+  summary: string;
+  receivedAt: string;
+  nativeIds?: Record<string, string>;
+  redactedFields?: string[];
+  rawRef?: string;
+}
 
 export type AgentChatBackendCommand =
   | {
@@ -428,6 +459,15 @@ export type AgentChatBackendCommand =
   | {
       kind: "provider.trustWorkspace";
       payload: { threadId: string };
+    }
+  | {
+      kind: "provider.invokeCapability";
+      payload: {
+        threadId: string;
+        capabilityId: string;
+        invoke: AgentChatProviderCapabilityOption["invoke"];
+        params?: unknown;
+      };
     }
   | {
       kind: "prompt.answer";
@@ -575,12 +615,15 @@ export interface AgentChatChecklistView {
 export interface AgentChatBlockView {
   blockId: string;
   kind: string;
+  parentBlockId?: string;
   role?: string;
   status: string;
   phase?: AgentChatBlockPhase;
   title: string;
   body: string;
   rawFallback?: string;
+  nativeEvidence?: AgentChatNativeEvidenceView[];
+  nativeEvidenceLabel?: string;
 }
 
 export interface AgentChatComposerView {

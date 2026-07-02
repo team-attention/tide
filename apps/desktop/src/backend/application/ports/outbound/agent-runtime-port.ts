@@ -2,6 +2,8 @@ import type {
   AgentRuntimeHandle,
   AgentRuntimeResumeInput,
   AgentRuntimeStartInput,
+  AgentRuntimeCapabilityInvocationInput,
+  AgentRuntimeCapabilityInvocationResult,
   AgentSessionConfigInput,
   AgentSessionConfigResult,
   TerminalInput,
@@ -28,6 +30,10 @@ export interface AgentRuntimePort {
     handle: AgentRuntimeHandle,
     input: AgentSessionConfigInput,
   ): Promise<AgentSessionConfigResult>;
+  invokeCapability?(
+    handle: AgentRuntimeHandle,
+    input: AgentRuntimeCapabilityInvocationInput,
+  ): Promise<AgentRuntimeCapabilityInvocationResult>;
   // Abort the in-flight turn but keep the runtime alive + resumable.
   interrupt(handle: AgentRuntimeHandle): Promise<void>;
   stop(handle: AgentRuntimeHandle): Promise<void>;

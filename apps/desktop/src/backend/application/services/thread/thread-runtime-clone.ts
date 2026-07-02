@@ -26,7 +26,7 @@ import type { WorkspaceFileTree } from "../../ports/outbound/workspace-file-port
 export function toAgentSessionBlockReference(
   block: AgentSessionBlock,
 ): AgentSessionBlockReference {
-  return {
+  const reference: AgentSessionBlockReference = {
     blockId: block.blockId,
     agentId: block.agentId,
     kind: block.kind,
@@ -42,6 +42,10 @@ export function toAgentSessionBlockReference(
     createdAt: block.createdAt,
     updatedAt: block.updatedAt,
   };
+  if (block.parentBlockId !== undefined) {
+    reference.parentBlockId = block.parentBlockId;
+  }
+  return reference;
 }
 
 export function cloneAgentBinding(binding: AgentBinding): AgentBinding {

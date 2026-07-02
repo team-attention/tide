@@ -3,6 +3,7 @@ import { codexModelLabel, defaultModelValueForAgent, defaultPermissionForAgent, 
 import { createActiveComposerSurface } from "./choice-surfaces.ts";
 import { isOpencodeUsable } from "./opencode-onramp.ts";
 import { environmentContextValue, launchOptionsForState } from "./launch-options.ts";
+import { nativeEvidenceForBlock, nativeEvidenceLabel } from "./native-evidence-view.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
 export function createAgentChatShellViewModel(
@@ -420,7 +421,8 @@ function checklistStatus(value: unknown): AgentChatChecklistStatus {
 
 function toBlockView(block: AgentChatBlock): AgentChatBlockView {
   const body = block.body ?? block.rawFallback ?? block.title ?? "";
-  return {
+  const nativeEvidence = nativeEvidenceForBlock(block);
+  const view: AgentChatBlockView = {
     blockId: block.blockId,
     kind: block.kind,
     role: block.role,
@@ -429,7 +431,13 @@ function toBlockView(block: AgentChatBlock): AgentChatBlockView {
     title: block.title ?? formatBlockKind(block.kind),
     body,
     rawFallback: block.rawFallback,
+    nativeEvidence,
+    nativeEvidenceLabel: nativeEvidenceLabel(nativeEvidence),
   };
+  if (block.parentBlockId !== undefined) {
+    view.parentBlockId = block.parentBlockId;
+  }
+  return view;
 }
 
 function agentBlockPhase(block: AgentChatBlock): AgentChatBlockPhase | undefined {

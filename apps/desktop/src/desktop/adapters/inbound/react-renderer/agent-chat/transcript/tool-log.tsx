@@ -26,9 +26,12 @@ export function createToolLogTurn(block: AgentChatBlockView): ReactElement | nul
         isResult ? "result" : "call"
       }`}
       data-block-id={block.blockId}
+      data-parent-block-id={block.parentBlockId}
       data-block-kind={block.kind}
       data-block-status={block.status}
       data-block-role="tool"
+      data-native-evidence={block.nativeEvidenceLabel}
+      data-native-evidence-count={block.nativeEvidence?.length}
     >
       {/* A call shows a quiet tool-name label; a result drops the (repeated) label
           and just shows its output flowing under the call. No arrow markers. */}
