@@ -113,6 +113,7 @@ test("start_composer_goal_command_sets_initial_goal_without_sending_the_slash_co
     objective: "Explain the repo",
     status: "active",
     provider: "codex",
+    createdAt: result.state.thread?.goalState?.createdAt,
     updatedAt: result.state.thread?.goalState?.updatedAt,
   });
   assert.equal(result.state.thread?.title, "Explain the repo");

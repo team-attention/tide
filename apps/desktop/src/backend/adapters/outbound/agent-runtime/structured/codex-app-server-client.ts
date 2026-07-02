@@ -128,7 +128,7 @@ function nullableNumberField(record: Record<string, unknown>, key: string): numb
 }
 
 function isoFromCodexTime(value: number | undefined): string | undefined {
-  if (value === undefined) {
+  if (value === undefined || !Number.isFinite(value)) {
     return undefined;
   }
   const millis = value > 1_000_000_000_000 ? value : value * 1000;

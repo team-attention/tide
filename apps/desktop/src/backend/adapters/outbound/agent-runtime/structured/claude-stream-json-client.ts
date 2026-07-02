@@ -173,8 +173,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     // delivered the first prompt via launch argv for the same reason).
     if (this.goalObjective.length > 0) {
       this.sendGoalCommand(this.goalObjective);
-    }
-    if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
+    } else if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
       this.sendUserText(input.initialPrompt, input.initialAttachments);
     }
   }

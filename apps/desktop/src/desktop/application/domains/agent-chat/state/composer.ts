@@ -345,6 +345,7 @@ export function submitComposer(
               objective: goalCommand.objective,
               status: "active",
               provider: providerForAgentId(state.thread.agentBinding.agentId),
+              createdAt: nowIso,
               updatedAt: nowIso,
             },
           },
@@ -406,6 +407,7 @@ export function submitComposer(
             objective: goalCommand.objective,
             status: "active",
             provider: providerForAgentId(startOptions.agentBinding.agentId),
+            createdAt: nowIso,
             updatedAt: nowIso,
           },
         }
