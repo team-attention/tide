@@ -43,6 +43,23 @@ function fakeApprovalPlan(receivedFile: string, method: string, params: unknown)
 
 const COMMAND_APPROVAL = { command: "npm test", cwd: "/work", reason: "Run the tests" };
 const FILE_CHANGE_APPROVAL = { itemId: "item-1", reason: "Edit config", threadId: "th-1", turnId: "tn-1" };
+const MCP_ELICITATION = {
+  threadId: "codex-thread-1",
+  turnId: "codex-turn-1",
+  serverName: "codex_apps",
+  mode: "form",
+  message: 'Allow Notion to run tool "notion.notion-update-page"?',
+  _meta: {
+    codex_approval_kind: "mcp_tool_call",
+    tool_title: "notion-update-page",
+    tool_arguments: {
+      page_id: "page-1",
+      command: "update_properties",
+      properties: { Status: "Waiting" },
+    },
+  },
+  requestedSchema: { type: "object", properties: {} },
+};
 
 async function waitFor<T>(probe: () => T | undefined, label: string): Promise<T> {
   const deadline = Date.now() + 15_000;
@@ -71,6 +88,11 @@ function promptCollector(): { events: PromptState[]; onEvent: (event: Structured
 }
 
 function decisionFromResponse(receivedFile: string): unknown {
+  const result = resultFromResponse(receivedFile);
+  return result !== undefined ? result.decision : undefined;
+}
+
+function resultFromResponse(receivedFile: string): Record<string, unknown> | undefined {
   if (!existsSync(receivedFile)) {
     return undefined;
   }
@@ -80,7 +102,7 @@ function decisionFromResponse(receivedFile: string): unknown {
     }
     const parsed = JSON.parse(line) as Record<string, unknown>;
     if (parsed.id === 7 && parsed.result !== undefined) {
-      return (parsed.result as Record<string, unknown>).decision;
+      return parsed.result as Record<string, unknown>;
     }
   }
   return undefined;
@@ -192,6 +214,55 @@ test("Skip (empty answer) on a codex approval DECLINES — never silently accept
     await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: "" });
     const decision = await waitFor(() => decisionFromResponse(receivedFile), "decision response");
     assert.equal(decision, "decline");
+  } finally {
+    await client.stop();
+  }
+});
+
+test("codex MCP elicitation surfaces an approval prompt and Allow sends action accept", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-codex-mcp-elicit-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = makeClient(fakeApprovalPlan(receivedFile, "mcpServer/elicitation/request", MCP_ELICITATION), onEvent);
+  try {
+    const prompt = await waitFor(() => events[0], "MCP elicitation prompt");
+    assert.equal(prompt.kind, "approval");
+    assert.equal(prompt.message, 'Allow Notion to run tool "notion.notion-update-page"?');
+    assert.equal(prompt.choices?.length, 2);
+    assert.equal(prompt.choices?.[0]?.choiceId, "allow");
+    assert.equal(prompt.choices?.[1]?.choiceId, "deny");
+    assert.equal(prompt.detail?.format, "text");
+    assert.match(prompt.detail?.body ?? "", /server: codex_apps/);
+    assert.match(prompt.detail?.body ?? "", /tool: notion-update-page/);
+    assert.match(prompt.detail?.body ?? "", /"Status": "Waiting"/);
+
+    const allow = prompt.choices?.find((choice) => choice.choiceId === "allow");
+    await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: allow?.providerValue ?? "" });
+    const result = await waitFor(() => resultFromResponse(receivedFile), "MCP elicitation response");
+    assert.deepEqual(result, {
+      action: "accept",
+      content: {},
+      _meta: null,
+    });
+  } finally {
+    await client.stop();
+  }
+});
+
+test("Skip (empty answer) on a codex MCP elicitation DECLINES instead of hanging", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-codex-mcp-elicit-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = makeClient(fakeApprovalPlan(receivedFile, "mcpServer/elicitation/request", MCP_ELICITATION), onEvent);
+  try {
+    const prompt = await waitFor(() => events[0], "MCP elicitation prompt");
+    await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: "" });
+    const result = await waitFor(() => resultFromResponse(receivedFile), "MCP elicitation response");
+    assert.deepEqual(result, {
+      action: "decline",
+      content: null,
+      _meta: null,
+    });
   } finally {
     await client.stop();
   }
