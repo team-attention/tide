@@ -17,6 +17,9 @@ export type AgentRuntimeStateDto =
 export interface AgentRuntimeUsageDto {
   // Cumulative tokens used in the session (input + output) when known.
   totalTokens?: number;
+  // Tokens in the currently reported context/request, when the provider reports
+  // it separately from the cumulative session total.
+  contextTokens?: number;
   // The model's context window size in tokens, when the provider reports it.
   contextWindow?: number;
   // Percent of the context window consumed (0–100), when derivable.

@@ -54,6 +54,7 @@ export function applyAgentChatBackendEvent(
       const payload = event.payload as {
         usage?: {
           totalTokens?: number;
+          contextTokens?: number;
           contextWindow?: number;
           contextUsedPercent?: number;
           model?: string;
@@ -73,6 +74,7 @@ export function applyAgentChatBackendEvent(
         ...state,
         usage: {
           totalTokens: payload.usage.totalTokens ?? previous.totalTokens,
+          contextTokens: payload.usage.contextTokens ?? previous.contextTokens,
           contextWindow: payload.usage.contextWindow ?? previous.contextWindow,
           contextUsedPercent: payload.usage.contextUsedPercent ?? previous.contextUsedPercent,
           model: payload.usage.model ?? previous.model,

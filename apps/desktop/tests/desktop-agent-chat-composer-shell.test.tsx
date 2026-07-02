@@ -511,6 +511,7 @@ test("usage_changed_renders_session_context_above_the_composer", () => {
 
   assert.deepEqual(createAgentChatShellViewModel(withUsage).usage, {
     tokensLabel: "64k tokens",
+    contextTokensLabel: "64k tokens",
     contextPercentLabel: "25%",
     contextUsedPercent: 25,
     contextRemainingPercent: 75,
@@ -520,6 +521,39 @@ test("usage_changed_renders_session_context_above_the_composer", () => {
   const html = renderShell(withUsage);
   assert.match(html, /class="agent-usage"/);
   assert.match(visibleText(html), /Session context\s*64k \/ 256k tokens\s*75% left/);
+});
+
+test("usage_changed_uses_context_tokens_for_session_context_when_cumulative_total_is_larger", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const withUsage = applyBackendEventToAgentChatShell(
+    hydrated,
+    backendEvent("agentRuntime.usageChanged", {
+      threadId: "thread-shell",
+      usage: {
+        totalTokens: 7633249,
+        contextTokens: 173394,
+        contextWindow: 258400,
+        contextUsedPercent: 67,
+      },
+    }),
+  );
+
+  assert.deepEqual(createAgentChatShellViewModel(withUsage).usage, {
+    tokensLabel: "7633k tokens",
+    contextTokensLabel: "173k tokens",
+    contextPercentLabel: "67%",
+    contextUsedPercent: 67,
+    contextRemainingPercent: 33,
+    contextRemainingLabel: "33%",
+    contextDetailLabel: "173k / 258k tokens",
+  });
+  const html = renderShell(withUsage);
+  const text = visibleText(html);
+  assert.match(text, /Session context\s*173k \/ 258k tokens\s*33% left/);
+  assert.doesNotMatch(text, /7633k/);
 });
 
 test("usage_changed_renders_codex_rate_limit_windows", () => {
@@ -607,6 +641,7 @@ test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", (
 
   assert.deepEqual(createAgentChatShellViewModel(withLimits).usage, {
     tokensLabel: "64k tokens",
+    contextTokensLabel: "64k tokens",
     contextPercentLabel: "25%",
     contextUsedPercent: 25,
     contextRemainingPercent: 75,

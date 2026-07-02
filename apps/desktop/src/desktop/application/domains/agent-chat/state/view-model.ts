@@ -149,6 +149,9 @@ export function createAgentChatUsageView(usage: AgentChatUsage | null): AgentCha
   }
   const tokensLabel =
     usage.totalTokens !== undefined ? `${formatTokenCount(usage.totalTokens)} tokens` : undefined;
+  const contextTokens = usage.contextTokens ?? usage.totalTokens;
+  const contextTokensLabel =
+    contextTokens !== undefined ? `${formatTokenCount(contextTokens)} tokens` : undefined;
   const contextPercentLabel =
     usage.contextUsedPercent !== undefined ? `${usage.contextUsedPercent}%` : undefined;
   const contextRemainingPercent =
@@ -156,14 +159,15 @@ export function createAgentChatUsageView(usage: AgentChatUsage | null): AgentCha
       ? clampPercent(Math.round(100 - usage.contextUsedPercent))
       : undefined;
   const contextDetailLabel =
-    usage.totalTokens !== undefined && usage.contextWindow !== undefined
-      ? `${formatTokenCount(usage.totalTokens)} / ${formatTokenCount(usage.contextWindow)} tokens`
-      : tokensLabel;
+    contextTokens !== undefined && usage.contextWindow !== undefined
+      ? `${formatTokenCount(contextTokens)} / ${formatTokenCount(usage.contextWindow)} tokens`
+      : contextTokensLabel;
   const rateLimits = (usage.rateLimits ?? [])
     .map(rateLimitView)
     .filter((view): view is AgentChatUsageRateLimitView => view !== undefined);
   if (
     tokensLabel === undefined &&
+    contextTokensLabel === undefined &&
     contextPercentLabel === undefined &&
     rateLimits.length === 0
   ) {
@@ -171,6 +175,7 @@ export function createAgentChatUsageView(usage: AgentChatUsage | null): AgentCha
   }
   return {
     ...(tokensLabel !== undefined ? { tokensLabel } : {}),
+    ...(contextTokensLabel !== undefined ? { contextTokensLabel } : {}),
     ...(contextPercentLabel !== undefined ? { contextPercentLabel } : {}),
     ...(usage.contextUsedPercent !== undefined
       ? { contextUsedPercent: usage.contextUsedPercent }

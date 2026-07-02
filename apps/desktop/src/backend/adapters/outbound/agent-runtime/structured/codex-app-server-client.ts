@@ -113,6 +113,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private lastUsage?: {
     inputTokens?: number;
     outputTokens?: number;
+    contextTokens?: number;
     contextWindow?: number;
     totalTokens?: number;
     rateLimits?: AgentRuntimeRateLimitDto[];
@@ -510,6 +511,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       const usage = isRecord(params.tokenUsage) ? params.tokenUsage : undefined;
       const total = usage !== undefined && isRecord(usage.total) ? usage.total : undefined;
       if (usage !== undefined) {
+        const contextTokens = codexContextTokensFromUsage(usage);
         const rateLimits = codexRateLimitsFromUsage(usage);
         if (rateLimits.length > 0) {
           this.lastRateLimits = rateLimits;
@@ -521,6 +523,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
           ...(total !== undefined ? { inputTokens: numberField(total, "inputTokens") } : {}),
           ...(total !== undefined ? { outputTokens: numberField(total, "outputTokens") } : {}),
           ...(total !== undefined ? { totalTokens: numberField(total, "totalTokens") } : {}),
+          ...(contextTokens !== undefined ? { contextTokens } : {}),
           ...(numberField(usage, "modelContextWindow") !== undefined
             ? { contextWindow: numberField(usage, "modelContextWindow") }
             : {}),
@@ -703,4 +706,39 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       });
     }
   }
+}
+
+function codexContextTokensFromUsage(usage: Record<string, unknown>): number | undefined {
+  const direct =
+    numberField(usage, "contextTokens") ??
+    numberField(usage, "context_tokens");
+  if (direct !== undefined) {
+    return direct;
+  }
+  const current =
+    recordField(usage, "last") ??
+    recordField(usage, "lastTokenUsage") ??
+    recordField(usage, "last_token_usage") ??
+    recordField(usage, "current") ??
+    recordField(usage, "context") ??
+    recordField(usage, "contextUsage");
+  if (current === undefined) {
+    return undefined;
+  }
+  const currentTotal = recordField(current, "total");
+  return (
+    numberField(current, "totalTokens") ??
+    numberField(current, "total_tokens") ??
+    numberField(current, "tokens") ??
+    (currentTotal !== undefined ? numberField(currentTotal, "totalTokens") : undefined) ??
+    (currentTotal !== undefined ? numberField(currentTotal, "total_tokens") : undefined)
+  );
+}
+
+function recordField(
+  record: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined {
+  const value = record[key];
+  return isRecord(value) ? value : undefined;
 }
