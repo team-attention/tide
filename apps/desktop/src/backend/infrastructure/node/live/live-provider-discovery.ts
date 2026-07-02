@@ -1,7 +1,7 @@
 import { claudeProjectTranscriptsDir } from "../../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
 import { spawnSync } from "node:child_process";
 
-import { readBoundedHead, readBoundedTail, readTextFile } from "./live-backend-fs.ts";
+import { readBoundedHead, readTextFile } from "./live-backend-fs.ts";
 
 import { basename, join } from "node:path";
 
@@ -132,7 +132,7 @@ export function rebuildAdoptedConversation(seed: ThreadSeed): AgentSessionBlock[
   if (ref === undefined || filePath === undefined) {
     return [];
   }
-  const text = readBoundedTail(filePath, 1024 * 1024);
+  const text = readTextFile(filePath);
   if (text === undefined) {
     return [];
   }

@@ -1,4 +1,4 @@
-import { readBoundedTail } from "../live/live-backend-fs.ts";
+import { readTextFile } from "../live/live-backend-fs.ts";
 import {
   inputTextContentEquals,
   parseJsonObject,
@@ -77,13 +77,16 @@ export function readClaudeProviderSessionRefsFromHome(input: {
 
 // Confirms a codex rollout / claude transcript actually contains the turn's
 // expected user message, so ADOPTION-time discovery binds the right file (not
-// just the most recently touched one). Bounded tail read; pure.
+// just the most recently touched one).
 function codexRolloutContainsUserMessage(
   rolloutPath: string,
   expectedUserMessage: string,
 ): boolean {
-  const text = readBoundedTail(rolloutPath, 256 * 1024);
+  const text = readTextFile(rolloutPath);
   if (text === undefined) {
+    return false;
+  }
+  if (!textMightContainJsonStringValue(text, expectedUserMessage)) {
     return false;
   }
 
@@ -111,8 +114,11 @@ function claudeTranscriptContainsUserMessage(
   transcriptPath: string,
   expectedUserMessage: string,
 ): boolean {
-  const text = readBoundedTail(transcriptPath, 256 * 1024);
+  const text = readTextFile(transcriptPath);
   if (text === undefined) {
+    return false;
+  }
+  if (!textMightContainJsonStringValue(text, expectedUserMessage)) {
     return false;
   }
 
@@ -137,4 +143,8 @@ function claudeTranscriptContainsUserMessage(
     }
   }
   return false;
+}
+
+function textMightContainJsonStringValue(text: string, value: string): boolean {
+  return text.includes(value) || text.includes(JSON.stringify(value).slice(1, -1));
 }

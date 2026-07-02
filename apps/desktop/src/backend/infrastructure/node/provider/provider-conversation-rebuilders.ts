@@ -1,7 +1,7 @@
 import type { AgentSessionBlock } from "../../../application/domains/agent-session/agent-session-block.ts";
 import type { AgentId } from "../../../application/domains/thread/thread.ts";
 import type { ThreadStorageRecord } from "../../../application/services/thread/thread-persistence-service.ts";
-import { readBoundedTail } from "../live/live-backend-fs.ts";
+import { readTextFile } from "../live/live-backend-fs.ts";
 import {
   claudeAssistantTextContent,
   claudeThinkingText,
@@ -31,7 +31,7 @@ export function rebuildConversationFromProviderHistory(
   if (ref === undefined || filePath === undefined) {
     return [];
   }
-  const text = readBoundedTail(filePath, 1024 * 1024);
+  const text = readTextFile(filePath);
   if (text === undefined) {
     return [];
   }
