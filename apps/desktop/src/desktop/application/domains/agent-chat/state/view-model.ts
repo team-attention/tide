@@ -336,7 +336,7 @@ function deriveChatState(
   if (
     state.runtimeState === "starting" ||
     state.runtimeState === "running" ||
-    (state.thread?.live === true && state.thread.lastKnownState === "running")
+    (state.thread?.live === true && state.thread?.lastKnownState === "running")
   ) {
     return "running";
   }

@@ -311,12 +311,13 @@ function pruneLiveAgentTextBlocks(
   exceptBlockId?: string,
 ): AgentChatBlock[] {
   return blocks.filter(
-    (block) => block.blockId === exceptBlockId || !isLiveAgentTextBlock(block),
+    (block) => block && (block.blockId === exceptBlockId || !isLiveAgentTextBlock(block)),
   );
 }
 
 function isLiveAgentTextBlock(block: AgentChatBlock): boolean {
   return (
+    block &&
     block.role === "agent" &&
     (block.status === "pending" || block.status === "streaming")
   );
