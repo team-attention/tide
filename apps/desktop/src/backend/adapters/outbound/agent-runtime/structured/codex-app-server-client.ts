@@ -38,11 +38,10 @@ import { codexToolItemId, isCodexVisibleToolItem } from "./codex-tool-call-recor
 import { CodexToolCallLifecycle } from "./codex-tool-call-lifecycle.ts";
 import { codexPlanContentRecord } from "./structured-plan-goal.ts";
 import {
-  codexApprovalPrompt,
-  codexMcpElicitationPrompt,
   codexServerPromptResult,
   type PendingServerPrompt,
 } from "./codex-server-prompt.ts";
+import { handleCodexServerRequest } from "./codex-server-request.ts";
 export { codexRateLimitsFromUsage } from "./codex-app-server-shared.ts";
 export {
   CODEX_ACCEPT_FOR_SESSION_TOKEN,
@@ -335,7 +334,10 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     this.pendingServerPrompts.delete(promptId);
-    this.writeLine({ id: pending.serverRequestId, result: codexServerPromptResult(pending, input.value) });
+    this.writeLine({
+      id: pending.serverRequestId,
+      result: codexServerPromptResult(pending, { value: input.value, stepAnswers: input.stepAnswers }),
+    });
   }
 
   private applyGoal(): void {
@@ -457,7 +459,12 @@ class CodexAppServerClient implements StructuredRuntimeClient {
 
     // SERVER-INITIATED REQUEST (has an id): an approval to answer.
     if (message.id !== undefined) {
-      this.handleServerRequest(method, message.id as number | string, params);
+      handleCodexServerRequest({
+        threadId: this.tideThreadId,
+        pendingServerPrompts: this.pendingServerPrompts,
+        writeLine: (value) => this.writeLine(value),
+        onEvent: this.onEvent,
+      }, method, message.id as number | string, params);
       return;
     }
 
@@ -554,57 +561,6 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     // thread/started, turn/started, deltas, status changes: no visible block.
-  }
-
-  private handleServerRequest(
-    method: string,
-    serverRequestId: number | string,
-    params: Record<string, unknown>,
-  ): void {
-    if (method === "item/commandExecution/requestApproval") {
-      const command = stringField(params, "command") ?? "Run command";
-      const cwd = stringField(params, "cwd");
-      const reason = stringField(params, "reason");
-      const { promptState, pending } = codexApprovalPrompt({
-        serverRequestId,
-        threadId: this.tideThreadId,
-        message: reason !== undefined ? `Run command — ${reason}` : "Run command",
-        detail: { format: "text", body: cwd !== undefined ? `${command}\n\n# cwd: ${cwd}` : command },
-      });
-      this.pendingServerPrompts.set(promptState.promptId, pending);
-      this.onEvent({ kind: "prompt", promptState });
-      return;
-    }
-    if (method === "item/fileChange/requestApproval") {
-      // FileChangeRequestApprovalParams carries NO inline diff — only itemId/reason/threadId/
-      // turnId (verified via `codex app-server generate-json-schema`). The actual edits live in
-      // a separate fileChange item referenced by `itemId`; surfacing that diff needs item
-      // correlation (future work). So the headline — with `reason` — is the honest detail today.
-      const reason = stringField(params, "reason");
-      const { promptState, pending } = codexApprovalPrompt({
-        serverRequestId,
-        threadId: this.tideThreadId,
-        message: reason !== undefined ? `Apply file changes — ${reason}` : "Apply file changes",
-      });
-      this.pendingServerPrompts.set(promptState.promptId, pending);
-      this.onEvent({ kind: "prompt", promptState });
-      return;
-    }
-    if (method === "mcpServer/elicitation/request") {
-      const { promptState, pending } = codexMcpElicitationPrompt({
-        serverRequestId,
-        threadId: this.tideThreadId,
-        params,
-      });
-      this.pendingServerPrompts.set(promptState.promptId, pending);
-      this.onEvent({ kind: "prompt", promptState });
-      return;
-    }
-    // Unknown server request: answering wrong is worse than declining late; log
-    // and leave it pending (gap: item/tool/requestUserInput).
-    if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
-      process.stderr.write(`[tide-codex-as ${this.runtimeId}] unhandled server request ${method}\n`);
-    }
   }
 
   private emitItem(item: Record<string, unknown> | undefined): void {
