@@ -21,6 +21,7 @@ import {
   markProductShellThreadsUnread,
   quickOpenFilesFromState,
   closeProductShellWorkbenchPane,
+  clearProductShellEditorReferences,
   editProductShellWorkbenchEditorPane,
   focusProductShellWorkbenchPane,
   confirmProductShellThreadArchive,
@@ -2003,12 +2004,81 @@ test("workbench_editor_pane_renders_references_list", () => {
   assert.match(html, /workbench-editor-references__title[^>]*>References/);
   assert.match(html, /workbench-editor-references__query[^>]*>src\/app\.ts/);
   assert.match(html, /workbench-editor-references__count[^>]*>2/);
+  assert.match(html, /aria-label="Close references"/);
   assert.match(html, /aria-label="Open reference src\/app\.ts:1:14"/);
   assert.match(html, /aria-label="Open reference src\/lib\.ts:8:3"/);
   assert.match(html, /workbench-editor-references__item--current-file/);
   assert.match(html, /workbench-editor-references__file[^>]*>app\.ts/);
   assert.match(html, /workbench-editor-references__path[^>]*>src/);
   assert.match(html, /return value;/);
+});
+
+test("workbench_editor_references_dismissal_survives_repeated_pane_snapshots", () => {
+  // Spec: docs_v2/specs/workbench-editor-code-navigation.md (D5)
+  const references = {
+    query: "value",
+    truncated: false,
+    items: [
+      { relativePath: "src/app.ts", line: 0, character: 13, length: 5, label: "export const value = 1;" },
+    ],
+  };
+  const pane = {
+    paneId: "pane-editor",
+    kind: "editor" as const,
+    title: "app.ts",
+    revision: "pane-editor:rev",
+    updatedAt: "2026-05-28T00:00:00.000Z",
+    filePath: "/Users/you/Workspace/tide/src/app.ts",
+    relativePath: "src/app.ts",
+    bodyText: "export const value = 1;\n",
+    bodyTextPreview: "export const value = 1;\n",
+    byteLength: 24,
+    truncated: false,
+    references,
+  };
+  const opened = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        activePaneId: "pane-editor",
+        panes: [pane],
+      },
+    },
+  );
+
+  const dismissed = clearProductShellEditorReferences(opened, "pane-editor");
+  assert.equal(dismissed.appChrome.workbenchPanes[0]?.references, undefined);
+
+  const repeated = applyProductShellBackendEvent(dismissed, {
+    kind: "workbench.changed",
+    payload: {
+      threadId: "thread-workbench",
+      activePaneId: "pane-editor",
+      panes: [pane],
+    },
+  });
+  assert.equal(repeated.appChrome.workbenchPanes[0]?.references, undefined);
+
+  const newResult = applyProductShellBackendEvent(repeated, {
+    kind: "workbench.changed",
+    payload: {
+      threadId: "thread-workbench",
+      activePaneId: "pane-editor",
+      panes: [
+        {
+          ...pane,
+          references: {
+            ...references,
+            query: "other",
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(newResult.appChrome.workbenchPanes[0]?.references?.query, "other");
+  assert.equal(newResult.dismissedEditorReferenceKeys?.["pane-editor"], undefined);
 });
 
 test("truncated_workbench_editor_pane_renders_read_only", () => {

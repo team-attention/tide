@@ -1,7 +1,7 @@
 import type { ProductShellEditorDraft, ProductShellState, ProductShellUpdateResult } from "./types.ts";
 import { isUntitledPaneId } from "./types.ts";
 import { editProductShellUntitledFile, requestProductShellUntitledSaveAs } from "./untitled-files.ts";
-import type { AppChromeEditorNavigationTarget, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
+import type { AppChromeEditorNavigationTarget, AppChromeEditorReferenceList, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 
 // Editor reducers, split out of workbench.ts (spec: workbench-dock-parity /
 // navigable-source-structure). The Workbench shell, layout, launcher, and browser
@@ -25,6 +25,83 @@ export function closeProductShellEditorPicker(
   return state.editorPickerFilter === null
     ? state
     : { ...state, editorPickerFilter: null };
+}
+
+export function clearProductShellEditorReferences(
+  state: ProductShellState,
+  paneId: string,
+): ProductShellState {
+  const pane = state.appChrome.workbenchPanes.find(
+    (candidate) => candidate.paneId === paneId && candidate.kind === "editor",
+  );
+  const key = editorReferenceListKey(pane?.references);
+  if (key === null) {
+    return state;
+  }
+  const dismissedEditorReferenceKeys = {
+    ...(state.dismissedEditorReferenceKeys ?? {}),
+    [paneId]: key,
+  };
+  const hidePaneReferences = (workbenchPanes: AppChromeWorkbenchPaneRef[]): AppChromeWorkbenchPaneRef[] =>
+    workbenchPanes.map((candidate) =>
+      candidate.paneId === paneId && candidate.kind === "editor"
+        ? { ...candidate, references: undefined }
+        : candidate,
+    );
+
+  return {
+    ...state,
+    dismissedEditorReferenceKeys,
+    appChrome: {
+      ...state.appChrome,
+      workbenchPanes: hidePaneReferences(state.appChrome.workbenchPanes),
+    },
+    threads: state.threads.map((thread) => ({
+      ...thread,
+      workbenchPanes: hidePaneReferences(thread.workbenchPanes),
+    })),
+  };
+}
+
+export function applyDismissedProductShellEditorReferences(
+  panes: AppChromeWorkbenchPaneRef[],
+  dismissedEditorReferenceKeys: Record<string, string> | undefined,
+): {
+  panes: AppChromeWorkbenchPaneRef[];
+  dismissedEditorReferenceKeys: Record<string, string> | undefined;
+} {
+  const dismissed = dismissedEditorReferenceKeys ?? {};
+  let panesChanged = false;
+  let dismissedChanged = false;
+  const nextDismissed = { ...dismissed };
+  const nextPanes = panes.map((pane) => {
+    if (pane.kind !== "editor") {
+      return pane;
+    }
+    const dismissedKey = dismissed[pane.paneId];
+    if (dismissedKey === undefined) {
+      return pane;
+    }
+    const referenceKey = editorReferenceListKey(pane.references);
+    if (referenceKey === null) {
+      delete nextDismissed[pane.paneId];
+      dismissedChanged = true;
+      return pane;
+    }
+    if (referenceKey !== dismissedKey) {
+      delete nextDismissed[pane.paneId];
+      dismissedChanged = true;
+      return pane;
+    }
+    panesChanged = true;
+    return { ...pane, references: undefined };
+  });
+
+  return {
+    panes: panesChanged ? nextPanes : panes,
+    dismissedEditorReferenceKeys:
+      dismissedChanged ? nextDismissed : dismissedEditorReferenceKeys,
+  };
 }
 
 // Pick a file from the in-pane editor picker: open it in an Editor Pane (which
@@ -285,6 +362,23 @@ export function reconcileEditorDrafts(
     }
   }
   return next;
+}
+
+function editorReferenceListKey(references: AppChromeEditorReferenceList | undefined): string | null {
+  if (references === undefined) {
+    return null;
+  }
+  return JSON.stringify({
+    query: references.query,
+    truncated: references.truncated,
+    items: references.items.map((item) => ({
+      relativePath: item.relativePath,
+      line: item.line,
+      character: item.character,
+      length: item.length,
+      label: item.label,
+    })),
+  });
 }
 
 function offsetToLineCharacter(
