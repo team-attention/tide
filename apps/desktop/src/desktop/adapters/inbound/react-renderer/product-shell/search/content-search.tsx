@@ -104,27 +104,30 @@ export function ContentSearchPanel(props: {
                     {dir ? <span className="content-search__file-dir">{dir}</span> : null}
                     <span className="content-search__file-count">{`${matches.length}`}</span>
                   </div>
-                  {matches.slice(0, 40).map((match, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      className="content-search__match"
-                      onClick={() => {
-                        props.onOpen(relativePath, {
-                          line: match.line,
-                          character: match.column,
-                          length: query.trim().length,
-                          label: match.lineText.trim(),
-                        });
-                        props.onClose();
-                      }}
-                    >
-                      <span className="content-search__line-no">{`${match.line + 1}:${match.column + 1}`}</span>
-                      <span className="content-search__line">
-                        {renderSearchPreview(match.lineText, match.column, query.trim().length)}
-                      </span>
-                    </button>
-                  ))}
+                  {matches.slice(0, 40).map((match, index) => {
+                    const lineText = match.lineText ?? "";
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        className="content-search__match"
+                        onClick={() => {
+                          props.onOpen(relativePath, {
+                            line: match.line,
+                            character: match.column,
+                            length: query.trim().length,
+                            label: lineText.trim(),
+                          });
+                          props.onClose();
+                        }}
+                      >
+                        <span className="content-search__line-no">{`${match.line + 1}:${match.column + 1}`}</span>
+                        <span className="content-search__line">
+                          {renderSearchPreview(lineText, match.column, query.trim().length)}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               );
             })
@@ -135,7 +138,14 @@ export function ContentSearchPanel(props: {
   );
 }
 
-function renderSearchPreview(lineText: string, column: number, length: number): ReactElement | string {
+function renderSearchPreview(
+  lineText: string | null | undefined,
+  column: number,
+  length: number,
+): ReactElement | string {
+  if (!lineText) {
+    return "";
+  }
   if (length <= 0 || column < 0 || column >= lineText.length) {
     return lineText;
   }
