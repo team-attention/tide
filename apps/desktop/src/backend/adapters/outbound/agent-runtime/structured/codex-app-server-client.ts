@@ -33,7 +33,7 @@ import type {
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import { codexPlanActivityFromItem } from "./plan-activity.ts";
-import { bounded, codexRateLimitsFromUsage, isRecord, numberField, stringField } from "./codex-app-server-shared.ts";
+import { bounded, codexContextTokensFromUsage, codexRateLimitsFromUsage, isRecord, numberField, stringField } from "./codex-app-server-shared.ts";
 import { codexToolItemId, isCodexVisibleToolItem } from "./codex-tool-call-record.ts";
 import { CodexToolCallLifecycle } from "./codex-tool-call-lifecycle.ts";
 import { codexPlanContentRecord } from "./structured-plan-goal.ts";
@@ -706,39 +706,4 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       });
     }
   }
-}
-
-function codexContextTokensFromUsage(usage: Record<string, unknown>): number | undefined {
-  const direct =
-    numberField(usage, "contextTokens") ??
-    numberField(usage, "context_tokens");
-  if (direct !== undefined) {
-    return direct;
-  }
-  const current =
-    recordField(usage, "last") ??
-    recordField(usage, "lastTokenUsage") ??
-    recordField(usage, "last_token_usage") ??
-    recordField(usage, "current") ??
-    recordField(usage, "context") ??
-    recordField(usage, "contextUsage");
-  if (current === undefined) {
-    return undefined;
-  }
-  const currentTotal = recordField(current, "total");
-  return (
-    numberField(current, "totalTokens") ??
-    numberField(current, "total_tokens") ??
-    numberField(current, "tokens") ??
-    (currentTotal !== undefined ? numberField(currentTotal, "totalTokens") : undefined) ??
-    (currentTotal !== undefined ? numberField(currentTotal, "total_tokens") : undefined)
-  );
-}
-
-function recordField(
-  record: Record<string, unknown>,
-  key: string,
-): Record<string, unknown> | undefined {
-  const value = record[key];
-  return isRecord(value) ? value : undefined;
 }
