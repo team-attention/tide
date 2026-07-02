@@ -18,6 +18,7 @@ import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
   expectedOccurrences,
   fileByteLimit,
+  finiteNumberFromInput,
   imageByteLimit,
   optionalString,
   titleFromRelativePath,
@@ -123,6 +124,7 @@ export class WorkbenchFileOperations {
     pane.bodyTextPreview = file.value.content;
     pane.byteLength = file.value.byteLength;
     pane.truncated = file.value.truncated;
+    pane.navigationTarget = editorNavigationTargetFromInput(input);
 
     if (existingPane === undefined) {
       thread.workbench.panes.push(pane);
@@ -410,4 +412,24 @@ export class WorkbenchFileOperations {
     pane.updatedAt = this.clock();
     thread.workbench.activePaneId = pane.paneId;
   }
+}
+
+function editorNavigationTargetFromInput(
+  input: Record<string, unknown> | undefined,
+): EditorPaneState["navigationTarget"] {
+  const line = finiteNumberFromInput(input?.line);
+  const character = finiteNumberFromInput(input?.character);
+  if (line === undefined || character === undefined || line < 0 || character < 0) {
+    return undefined;
+  }
+  const length = finiteNumberFromInput(input?.length);
+  const label = optionalString(input?.label);
+  const sourcePaneId = optionalString(input?.sourcePaneId);
+  return {
+    line: Math.floor(line),
+    character: Math.floor(character),
+    ...(length === undefined || length < 0 ? {} : { length: Math.floor(length) }),
+    ...(label === undefined ? {} : { label }),
+    ...(sourcePaneId === undefined ? {} : { sourcePaneId }),
+  };
 }

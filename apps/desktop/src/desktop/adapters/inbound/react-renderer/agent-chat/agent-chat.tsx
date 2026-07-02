@@ -383,16 +383,19 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       ) : null}
       <div className="agent-chat-shell__session-region">
         {transcriptFind.open ? (
-          <InPaneFindBar
-            query={transcriptFind.query}
-            matchCount={transcriptMatchCount}
-            activeIndex={transcriptFind.activeIndex}
-            placeholder="Find in session"
-            onQueryChange={transcriptFind.setQuery}
-            onNext={() => transcriptFind.next(transcriptMatchCount)}
-            onPrevious={() => transcriptFind.previous(transcriptMatchCount)}
-            onClose={transcriptFind.closeFind}
-          />
+          <div className="agent-chat-shell__find-region">
+            <InPaneFindBar
+              query={transcriptFind.query}
+              matchCount={transcriptMatchCount}
+              activeIndex={transcriptFind.activeIndex}
+              scopeLabel="Thread"
+              placeholder="Search this thread"
+              onQueryChange={transcriptFind.setQuery}
+              onNext={() => transcriptFind.next(transcriptMatchCount)}
+              onPrevious={() => transcriptFind.previous(transcriptMatchCount)}
+              onClose={transcriptFind.closeFind}
+            />
+          </div>
         ) : null}
         {sessionView}
       </div>

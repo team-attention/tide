@@ -17,7 +17,54 @@
   min-height: 0;
 }
 
-.workbench-editor-cm,
+.workbench-editor-commandbar {
+  flex: 0 0 auto;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--tide-line);
+  border-bottom: 1px solid var(--tide-line);
+  background: var(--tide-surface);
+}
+
+.workbench-editor-commandbar__button {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+}
+
+.workbench-editor-commandbar__button:hover:not(:disabled) {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+.workbench-editor-commandbar__button:focus-visible {
+  outline: 2px solid var(--tide-action);
+  outline-offset: -2px;
+}
+
+.workbench-editor-commandbar__button:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
+.workbench-editor-commandbar__separator {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--tide-line);
+}
+
 .workbench-editor-cm .cm-editor {
   height: 100%;
 }

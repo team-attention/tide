@@ -11,7 +11,10 @@ import { fileIconFor } from "../../support/file-icons.ts";
 export function ContentSearchPanel(props: {
   results: ProductShellContentSearch | null;
   onSearch: (query: string) => void;
-  onOpen: (relativePath: string) => void;
+  onOpen: (
+    relativePath: string,
+    target: { line: number; character: number; length?: number; label?: string },
+  ) => void;
   onClose: () => void;
 }): ReactElement {
   const [query, setQuery] = useState("");
@@ -56,6 +59,7 @@ export function ContentSearchPanel(props: {
       <div className="content-search">
         <div className="content-search__field">
           <Search size={15} strokeWidth={1.9} className="content-search__icon" aria-hidden />
+          <span className="content-search__scope">Files</span>
           <input
             ref={inputRef}
             className="content-search__input"
@@ -100,20 +104,30 @@ export function ContentSearchPanel(props: {
                     {dir ? <span className="content-search__file-dir">{dir}</span> : null}
                     <span className="content-search__file-count">{`${matches.length}`}</span>
                   </div>
-                  {matches.slice(0, 40).map((match, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      className="content-search__match"
-                      onClick={() => {
-                        props.onOpen(relativePath);
-                        props.onClose();
-                      }}
-                    >
-                      <span className="content-search__line-no">{`${match.line + 1}`}</span>
-                      <span className="content-search__line">{match.lineText.trim()}</span>
-                    </button>
-                  ))}
+                  {matches.slice(0, 40).map((match, index) => {
+                    const lineText = match.lineText ?? "";
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        className="content-search__match"
+                        onClick={() => {
+                          props.onOpen(relativePath, {
+                            line: match.line,
+                            character: match.column,
+                            length: query.trim().length,
+                            label: lineText.trim(),
+                          });
+                          props.onClose();
+                        }}
+                      >
+                        <span className="content-search__line-no">{`${match.line + 1}:${match.column + 1}`}</span>
+                        <span className="content-search__line">
+                          {renderSearchPreview(lineText, match.column, query.trim().length)}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               );
             })
@@ -121,5 +135,26 @@ export function ContentSearchPanel(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+function renderSearchPreview(
+  lineText: string | null | undefined,
+  column: number,
+  length: number,
+): ReactElement | string {
+  if (!lineText) {
+    return "";
+  }
+  if (length <= 0 || column < 0 || column >= lineText.length) {
+    return lineText;
+  }
+  const end = Math.min(lineText.length, column + length);
+  return (
+    <>
+      {lineText.slice(0, column)}
+      <mark className="content-search__hit">{lineText.slice(column, end)}</mark>
+      {lineText.slice(end)}
+    </>
   );
 }

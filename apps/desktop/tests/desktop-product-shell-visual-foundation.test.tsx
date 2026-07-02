@@ -32,6 +32,7 @@ import {
   goToProductShellEditorDefinition,
   goToProductShellEditorReferences,
   moveProductShellEditorCursor,
+  openProductShellFileInEditor,
   openProductShellLeftRailMenu,
   openProductShellThread,
   openProductShellThreadFromLeftRail,
@@ -794,6 +795,34 @@ test("workspace_file_loaded_no_longer_synthesizes_a_start_page_editor", () => {
   assert.equal(loaded.startPageFiles.length, 0);
   assert.equal(loaded.workbenchOpen, false);
   assert.equal(createProductShellViewModel(loaded).appChrome.activeWorkbenchPane?.kind, "launcher");
+});
+
+test("opening_a_file_at_a_result_location_carries_navigation_target", () => {
+  const state = openProductShellThread(createProductShellState(), "thread-workbench");
+
+  const result = openProductShellFileInEditor(state, "src/app.ts", {
+    line: 6,
+    character: 12,
+    length: 5,
+    label: "const value = app();",
+    sourcePaneId: "pane-source",
+  });
+
+  assert.deepEqual(result.command, {
+    kind: "workbench.command",
+    payload: {
+      threadId: "thread-workbench",
+      command: "open_editor",
+      data: {
+        path: "src/app.ts",
+        line: 6,
+        character: 12,
+        length: 5,
+        label: "const value = app();",
+        sourcePaneId: "pane-source",
+      },
+    },
+  });
 });
 
 test("quick_open_files_include_collapsed_folder_descendants", () => {
@@ -1895,6 +1924,44 @@ test("product_shell_find_references_emits_go_to_references_command", () => {
   assert.equal(result.state.appChrome.activeWorkbenchPaneId, "pane-editor");
 });
 
+test("product_shell_code_navigation_accepts_explicit_editor_position", () => {
+  const opened = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        activePaneId: "pane-editor",
+        panes: [
+          {
+            paneId: "pane-editor",
+            kind: "editor",
+            title: "app.ts",
+            revision: "pane-editor:rev",
+            updatedAt: "2026-05-28T00:00:00.000Z",
+            filePath: "/Users/you/Workspace/tide/src/app.ts",
+            relativePath: "src/app.ts",
+            bodyText: "const local = 1;\nconsole.log(local);\n",
+            bodyTextPreview: "const local = 1;\nconsole.log(local);\n",
+            byteLength: 36,
+            truncated: false,
+          },
+        ],
+      },
+    },
+  );
+
+  const result = goToProductShellEditorDefinition(opened, "pane-editor", {
+    line: 1,
+    character: 12,
+  });
+
+  assert.deepEqual(result.command?.kind === "workbench.command" ? result.command.payload.data : null, {
+    line: 1,
+    character: 12,
+  });
+});
+
 test("workbench_editor_pane_renders_references_list", () => {
   // Spec: docs_v2/specs/workbench-editor-code-navigation.md (D5)
   const state = applyProductShellBackendEvent(
@@ -1938,6 +2005,7 @@ test("workbench_editor_pane_renders_references_list", () => {
   assert.match(html, /workbench-editor-references__count[^>]*>2/);
   assert.match(html, /aria-label="Open reference src\/app\.ts:1:14"/);
   assert.match(html, /aria-label="Open reference src\/lib\.ts:8:3"/);
+  assert.match(html, /workbench-editor-references__item--current-file/);
   assert.match(html, /workbench-editor-references__file[^>]*>app\.ts/);
   assert.match(html, /workbench-editor-references__path[^>]*>src/);
   assert.match(html, /return value;/);

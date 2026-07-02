@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-02T00:00:00.000Z",
+  "title": "Design System: Tide Desktop Workbench",
+  "extensions": {
+    "northStar": {
+      "name": "The Drafting Table",
+      "summary": "A calm, dense, desktop-native workspace for editing, searching, navigating, reviewing, and steering agents without breaking flow."
+    },
+    "colorMeta": {
+      "app-bg": {
+        "role": "neutral",
+        "displayName": "Paper Background",
+        "canonical": "#fdfdfc",
+        "usage": "Main app background and content surfaces in light mode."
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Workbench Surface",
+        "canonical": "#f4f3f0",
+        "usage": "Toolbars, in-pane find bars, gutters, and compact controls."
+      },
+      "selection": {
+        "role": "neutral",
+        "displayName": "Soft Selection",
+        "canonical": "#eeedea",
+        "usage": "Hover and selected row fills."
+      },
+      "action": {
+        "role": "primary",
+        "displayName": "Ink Action",
+        "canonical": "#343038",
+        "usage": "Primary actions and high-confidence active chrome."
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Precision Blue",
+        "canonical": "#3970f0",
+        "usage": "Current match, current reference, keyboard focus, and code navigation target."
+      },
+      "danger": {
+        "role": "semantic",
+        "displayName": "Muted Danger",
+        "canonical": "#ba322f",
+        "usage": "Failed saves, destructive actions, and broken workspace state."
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Title",
+        "purpose": "Active file titles, selected tabs, and major working-surface labels."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Transcript text, result labels, menu items, and compact descriptions."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Scope chips, counters, mode labels, and keyboard hints."
+      },
+      "mono": {
+        "displayName": "Code",
+        "purpose": "Editor text, result line previews, paths when alignment matters, and command literals."
+      }
+    },
+    "elevation": {
+      "flatByDefault": true,
+      "shadows": {
+        "popover": "0 8px 18px -10px rgb(52 48 56 / 12%)",
+        "sheet": "0 24px 60px -12px rgba(36, 33, 38, 0.35)",
+        "composer": "0 8px 11px rgba(52, 48, 56, 0.13)"
+      }
+    },
+    "motion": {
+      "durationFast": "120ms",
+      "durationBase": "160ms",
+      "easing": "ease-out",
+      "rule": "Motion conveys open, close, selection, loading, and route transitions only."
+    },
+    "workflowSurfaces": {
+      "editor": {
+        "mustShow": ["active pane", "file identity", "dirty or conflict state", "mode", "current selection"],
+        "mustAvoid": ["hidden primary actions", "state only in breadcrumb", "heavy active-line stripe"]
+      },
+      "search": {
+        "mustShow": ["scope", "query", "result count", "active match", "empty or partial state"],
+        "mustAvoid": ["global full-width bar for local search", "different visual grammar per search type"]
+      },
+      "references": {
+        "mustShow": ["origin", "destination", "line and column", "preview", "back path"],
+        "mustAvoid": ["static bottom report", "opening file without target location"]
+      },
+      "chatSessionSearch": {
+        "mustShow": ["thread scope", "match snippet", "author or turn", "active highlighted message"],
+        "mustAvoid": ["viewport-wide overlay", "search UI detached from transcript column"]
+      }
+    },
+    "componentRules": {
+      "resultRows": {
+        "height": "28-34px",
+        "anatomy": "icon, primary label, secondary path or scope, preview, trailing count or shortcut",
+        "selectedFill": "{colors.selection}"
+      },
+      "inPaneFind": {
+        "height": "36px",
+        "placement": "inside the surface it searches",
+        "controls": ["query", "count", "previous", "next", "close", "optional case/word/regex toggles"]
+      },
+      "commandSurface": {
+        "placement": "top anchored sheet for global command-like actions, docked or inline for sustained work",
+        "rowBehavior": "mouse hover mirrors keyboard selection"
+      }
+    },
+    "rules": {
+      "do": [
+        "Design by workflow: edit, search, navigate, review, ask agent, return.",
+        "Give every search surface a scope, result count, keyboard path, and empty or stale state.",
+        "Use one row anatomy for quick open, project search, references, diagnostics, and session search.",
+        "Preserve route memory for navigation."
+      ],
+      "dont": [
+        "Do not treat feature parity as UX quality.",
+        "Do not stretch a session find bar across the whole app when it searches only the chat transcript.",
+        "Do not make reference search feel like a static report.",
+        "Do not rely on right-click as the primary discovery path for editor actions.",
+        "Do not encode important state with a tiny dot alone."
+      ]
+    }
+  }
+}

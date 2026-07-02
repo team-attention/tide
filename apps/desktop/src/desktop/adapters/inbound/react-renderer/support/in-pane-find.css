@@ -30,6 +30,24 @@
   border-color: var(--tide-action);
 }
 
+.in-pane-find__scope {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 14ch;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid var(--tide-line);
+  border-radius: 5px;
+  background: var(--tide-bg);
+  color: var(--tide-muted);
+  font: 11px/1.2 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .in-pane-find__count {
   flex: 0 0 auto;
   min-width: 58px;
@@ -78,6 +96,12 @@
 
 .in-pane-find[data-tone="dark"] .in-pane-find__input:focus {
   border-color: #7aa2ff;
+}
+
+.in-pane-find[data-tone="dark"] .in-pane-find__scope {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: #b9b9bf;
 }
 
 .in-pane-find[data-tone="dark"] .in-pane-find__button:hover:not(:disabled) {

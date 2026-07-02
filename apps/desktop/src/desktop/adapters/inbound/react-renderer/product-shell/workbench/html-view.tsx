@@ -136,6 +136,7 @@ export function WorkbenchHtmlView(props: {
           query={find.query}
           matchCount={matchCount}
           activeIndex={find.activeIndex}
+          scopeLabel="Preview"
           placeholder="Find in preview"
           onQueryChange={find.setQuery}
           onNext={previewFindNext}

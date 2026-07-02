@@ -250,6 +250,7 @@ function WorkbenchTerminalView(props: {
           query={find.query}
           matchCount={terminalMatchCount}
           activeIndex={find.activeIndex}
+          scopeLabel="Terminal"
           placeholder="Find in terminal"
           tone="dark"
           onQueryChange={find.setQuery}

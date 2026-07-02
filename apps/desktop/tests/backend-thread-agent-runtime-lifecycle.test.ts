@@ -3404,6 +3404,49 @@ test("opening_editor_from_workbench_command_reads_file_and_creates_editor_pane",
   assert.equal(opened.ok && opened.thread.workbench.focusOwner, "workbench");
 });
 
+test("open_editor_with_navigation_target_reveals_the_exact_result_location", async () => {
+  const service = createThreadRuntimeService({
+    ...createFakes({ files: { "src/app.ts": "export const app = true;\nconst value = app;\n" } }).ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-search-open", {
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+      }),
+    ],
+  });
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-search-open",
+    command: "open_editor",
+    data: {
+      path: "src/app.ts",
+      line: 1,
+      character: 6,
+      length: 5,
+      label: "const value = app;",
+      sourcePaneId: "pane-source",
+    },
+  });
+
+  assert.equal(opened.ok, true);
+  const pane = opened.ok ? opened.thread.workbench.panes[0] : undefined;
+  assert.deepEqual(pane?.kind === "editor" ? pane.navigationTarget : undefined, {
+    line: 1,
+    character: 6,
+    length: 5,
+    label: "const value = app;",
+    sourcePaneId: "pane-source",
+  });
+  assert.deepEqual(opened.ok ? opened.workbench.panes[0]?.navigationTarget : undefined, {
+    line: 1,
+    character: 6,
+    length: 5,
+    label: "const value = app;",
+    sourcePaneId: "pane-source",
+  });
+});
+
 test("open_editor_opens_image_pane_for_image_file", async () => {
   // Spec: docs_v2/specs/workbench-open-polish-and-image-pane.md
   const service = createThreadRuntimeService({

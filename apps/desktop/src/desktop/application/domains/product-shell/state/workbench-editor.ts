@@ -1,7 +1,7 @@
 import type { ProductShellEditorDraft, ProductShellState, ProductShellUpdateResult } from "./types.ts";
 import { isUntitledPaneId } from "./types.ts";
 import { editProductShellUntitledFile, requestProductShellUntitledSaveAs } from "./untitled-files.ts";
-import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
+import type { AppChromeEditorNavigationTarget, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 
 // Editor reducers, split out of workbench.ts (spec: workbench-dock-parity /
 // navigable-source-structure). The Workbench shell, layout, launcher, and browser
@@ -54,15 +54,27 @@ export function selectProductShellEditorPickerFile(
 export function openProductShellFileInEditor(
   state: ProductShellState,
   path: string,
+  target?: AppChromeEditorNavigationTarget,
 ): ProductShellUpdateResult {
   if (state.activeThreadId === null || path.length === 0) {
     return { state, command: null };
   }
+  const data =
+    target === undefined
+      ? { path }
+      : {
+          path,
+          line: target.line,
+          character: target.character,
+          ...(target.length === undefined ? {} : { length: target.length }),
+          ...(target.label === undefined ? {} : { label: target.label }),
+          ...(target.sourcePaneId === undefined ? {} : { sourcePaneId: target.sourcePaneId }),
+        };
   return {
     state: { ...state, workbenchOpen: true },
     command: {
       kind: "workbench.command",
-      payload: { threadId: state.activeThreadId, command: "open_editor", data: { path } },
+      payload: { threadId: state.activeThreadId, command: "open_editor", data },
     },
   };
 }
@@ -135,6 +147,7 @@ export function moveProductShellEditorCursor(
 export function goToProductShellEditorDefinition(
   state: ProductShellState,
   paneId: string,
+  positionOverride?: { line: number; character: number },
 ): ProductShellUpdateResult {
   const pane = state.appChrome.workbenchPanes.find(
     (candidate) => candidate.paneId === paneId && candidate.kind === "editor",
@@ -144,7 +157,7 @@ export function goToProductShellEditorDefinition(
   }
   const draft = state.editorDrafts[paneId];
   const content = draft?.content ?? pane.bodyText ?? pane.bodyTextPreview ?? "";
-  const position = offsetToLineCharacter(content, draft?.cursorOffset ?? 0);
+  const position = positionOverride ?? offsetToLineCharacter(content, draft?.cursorOffset ?? 0);
 
   return {
     state: {
@@ -171,6 +184,7 @@ export function goToProductShellEditorDefinition(
 export function goToProductShellEditorReferences(
   state: ProductShellState,
   paneId: string,
+  positionOverride?: { line: number; character: number },
 ): ProductShellUpdateResult {
   const pane = state.appChrome.workbenchPanes.find(
     (candidate) => candidate.paneId === paneId && candidate.kind === "editor",
@@ -180,7 +194,7 @@ export function goToProductShellEditorReferences(
   }
   const draft = state.editorDrafts[paneId];
   const content = draft?.content ?? pane.bodyText ?? pane.bodyTextPreview ?? "";
-  const position = offsetToLineCharacter(content, draft?.cursorOffset ?? 0);
+  const position = positionOverride ?? offsetToLineCharacter(content, draft?.cursorOffset ?? 0);
 
   return {
     state: {

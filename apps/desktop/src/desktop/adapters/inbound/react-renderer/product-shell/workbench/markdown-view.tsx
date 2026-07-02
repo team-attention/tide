@@ -358,6 +358,7 @@ export function WorkbenchMarkdownView(props: {
           query={find.query}
           matchCount={previewMatchCount}
           activeIndex={find.activeIndex}
+          scopeLabel="Preview"
           placeholder="Find in preview"
           onQueryChange={find.setQuery}
           onNext={() => find.next(previewMatchCount)}

@@ -743,7 +743,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
                 return state;
               })
             }
-            onOpen={(relativePath: string) => handlers.onOpenFile(relativePath)}
+            onOpen={(relativePath, target) => handlers.onOpenFile(relativePath, target)}
             onClose={() => setContentSearchVisible(false)}
           />
         ) : null}

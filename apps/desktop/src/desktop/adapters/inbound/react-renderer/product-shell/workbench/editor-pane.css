@@ -172,6 +172,10 @@ button.workbench-editor-breadcrumb__crumb:active {
   background: var(--tide-selection);
 }
 
+.workbench-editor-references__item--current-file {
+  background: color-mix(in srgb, var(--tide-selection) 62%, transparent);
+}
+
 .workbench-editor-references__item:focus-visible {
   outline: 2px solid var(--tide-action);
   outline-offset: -1px;
