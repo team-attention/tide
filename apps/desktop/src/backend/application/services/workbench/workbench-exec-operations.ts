@@ -5,6 +5,7 @@ import type {
 } from "../../domains/workbench/workbench.ts";
 import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
 import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
+import type { BrowserRuntimePort } from "../../ports/outbound/browser-runtime-port.ts";
 import { arrayOfStrings } from "../support/record-helpers.ts";
 import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
@@ -45,6 +46,7 @@ export interface WorkbenchExecOperationsDeps {
   workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
   workbenchRuntime: WorkbenchRuntime;
   workbenchFileOps: WorkbenchFileOperations;
+  browserRuntimePort?: BrowserRuntimePort;
   defaultWorkbenchTerminalCommand: string;
   defaultWorkbenchTerminalArgs: string[];
   clock: () => string;
@@ -56,6 +58,7 @@ export class WorkbenchExecOperations {
   private readonly workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
   private readonly workbenchRuntime: WorkbenchRuntime;
   private readonly workbenchFileOps: WorkbenchFileOperations;
+  private readonly browserRuntimePort?: BrowserRuntimePort;
   private readonly defaultWorkbenchTerminalCommand: string;
   private readonly defaultWorkbenchTerminalArgs: string[];
   private readonly clock: () => string;
@@ -66,6 +69,7 @@ export class WorkbenchExecOperations {
     this.workspaceCodeIntelligencePort = deps.workspaceCodeIntelligencePort;
     this.workbenchRuntime = deps.workbenchRuntime;
     this.workbenchFileOps = deps.workbenchFileOps;
+    this.browserRuntimePort = deps.browserRuntimePort;
     this.defaultWorkbenchTerminalCommand = deps.defaultWorkbenchTerminalCommand;
     this.defaultWorkbenchTerminalArgs = [...deps.defaultWorkbenchTerminalArgs];
     this.clock = deps.clock;
@@ -113,6 +117,15 @@ export class WorkbenchExecOperations {
     }
     if (target.kind === "terminal") {
       await this.workbenchRuntime.stopTerminalPane(target);
+    }
+    if (target.kind === "browser") {
+      await this.browserRuntimePort
+        ?.close({
+          threadId: thread.threadId,
+          paneId: target.paneId,
+          reason: "pane_closed",
+        })
+        .catch(() => {});
     }
     closeWorkbenchPaneState(thread.workbench, paneId, this.clock);
     thread.updatedAt = this.clock();

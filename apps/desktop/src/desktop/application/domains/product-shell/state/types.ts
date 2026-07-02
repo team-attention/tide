@@ -455,36 +455,6 @@ export type ProductShellBackendCommand =
       };
     }
   | {
-      kind: "workbench.command";
-      payload: {
-        threadId: string;
-        command: "update_browser_snapshot";
-        targetPaneId: string;
-        data: ProductShellBrowserSnapshot;
-      };
-    }
-  | {
-      kind: "workbench.command";
-      payload: {
-        threadId: string;
-        command: "update_browser_action_result";
-        targetPaneId: string;
-        data: ProductShellBrowserActionResult;
-      };
-    }
-  | {
-      // The renderer host's reply to an observe-time pixel-capture pull (pendingCapture):
-      // the captureId being answered + the captured screenshot (omitted if capture failed).
-      // Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
-      kind: "workbench.command";
-      payload: {
-        threadId: string;
-        command: "update_browser_capture_result";
-        targetPaneId: string;
-        data: { captureId: string; screenshot?: ProductShellBrowserScreenshot };
-      };
-    }
-  | {
       // Probe an agent's REAL command set for the composer menu (handshake-only).
       // The backend replies with agentRuntime.commandsChanged. See
       // docs_v2/specs/live-provider-command-mirroring.md.
@@ -578,12 +548,6 @@ export type ProductShellPinnedItemView =
   | { kind: "thread"; thread: ProductShellThreadView }
   | { kind: "project"; project: ProductShellProjectGroupView };
 
-// A non-active thread's Browser Pane, carried with its owning threadId so its
-// offscreen <webview> can route snapshots/actions back to the right thread.
-export type ProductShellBackgroundBrowserPane = AppChromeWorkbenchPaneRef & {
-  threadId: string;
-};
-
 export interface ProductShellEditorPickerFileView {
   relativePath: string;
   name: string;
@@ -632,8 +596,6 @@ export interface ProductShellViewModel {
   contentSearch: ProductShellContentSearch | null;
   // In-pane editor file picker (the Workbench Launcher's "Editor" mode), or null.
   editorPicker: ProductShellEditorPickerView | null;
-  // Browser Panes of non-active threads, kept alive offscreen for background agents.
-  backgroundBrowserPanes: ProductShellBackgroundBrowserPane[];
   editorDrafts: Record<string, ProductShellEditorDraft>;
 }
 
@@ -651,42 +613,6 @@ export interface ProductShellBrowserScreenshot {
   width: number;
   height: number;
   devicePixelRatio: number;
-}
-
-export interface ProductShellBrowserInteractiveElement {
-  index: number;
-  tag: string;
-  role?: string;
-  type?: string;
-  text?: string;
-  ariaLabel?: string;
-  placeholder?: string;
-  href?: string;
-  disabled?: boolean;
-  rect: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-}
-
-export interface ProductShellBrowserSnapshot {
-  revision: string;
-  url?: string;
-  pageTitle?: string;
-  bodyTextPreview?: string;
-  interactiveElements?: ProductShellBrowserInteractiveElement[];
-  loading: boolean;
-  // Pixel-vision capture (webview.capturePage), cached backend-side for
-  // tide_observe_browser mode=screenshot|both. Omitted from backend→renderer snapshots.
-  screenshot?: ProductShellBrowserScreenshot;
-}
-
-export interface ProductShellBrowserActionResult extends ProductShellBrowserSnapshot {
-  actionId: string;
-  status: "completed" | "failed";
-  message: string;
 }
 
 export interface ProductShellFileTreeView {

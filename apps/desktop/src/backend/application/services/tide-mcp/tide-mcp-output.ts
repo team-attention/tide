@@ -64,7 +64,7 @@ export interface TideActBrowserOutput {
   threadId: ThreadId;
   pane: BrowserPaneRef;
   action: BrowserPaneActionRequest;
-  status: "pending";
+  status: "pending" | "completed" | "failed";
 }
 
 export interface TideReadFileOutput {

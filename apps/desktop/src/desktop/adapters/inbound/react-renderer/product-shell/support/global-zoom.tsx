@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
 
 // Global app zoom (Cmd +/-/0). Main zooms the host window's webContents and broadcasts
-// the factor; we MIRROR that factor onto every Browser Pane <webview> guest — guests do
+// the factor; we MIRROR that factor onto every embedded <webview> guest — guests do
 // NOT inherit host-window zoom, so without this the embedded pages would stay put while
 // the rest of the UI scaled (and pre-fix, the native zoom roles did the inverse: only
 // the focused webview zoomed). A small floating indicator shows the current % and resets
 // to 100% on click. Spec: host-zoom-shortcuts.
 
-// Module-scoped so newly-mounted webviews (a Browser Pane opened after a zoom change)
+// Module-scoped so newly-mounted webviews (for example an HTML preview after a zoom change)
 // can read the current factor from the MutationObserver path below.
 let currentZoomFactor = 1;
 

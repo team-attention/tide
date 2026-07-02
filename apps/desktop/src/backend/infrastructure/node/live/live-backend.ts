@@ -169,6 +169,7 @@ import { createThreadPersistenceService } from "../../../application/services/th
 
 import {
   createThreadRuntimeService,
+  type BrowserRuntimePort,
   type PtyTranscriptPort,
   type RawAgentFrame,
   type ThreadRuntimeAsyncEvent,
@@ -185,6 +186,7 @@ export interface CreateLiveBackendContractMessageAdapterInput {
   appDataRoot?: string;
   env?: NodeJS.ProcessEnv;
   startMcpSocket?: boolean;
+  browserRuntimePort?: BrowserRuntimePort;
 }
 
 export function createLiveBackendContractMessageAdapter(
@@ -350,6 +352,7 @@ export function createLiveBackendContractMessageAdapter(
     // TS in-process + LSP-on-PATH engines behind one router (spec:
     // workbench-editor-language-intelligence).
     workspaceCodeIntelligencePort: createWorkspaceCodeIntelligenceRouter(),
+    browserRuntimePort: input.browserRuntimePort,
     defaultWorkbenchTerminalCommand: defaultWorkbenchTerminalCommand({ env }),
     defaultWorkbenchTerminalArgs: [],
     onAsyncEvent: (event) => {

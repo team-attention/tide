@@ -241,7 +241,13 @@ export function WorkbenchSplitView(props: {
           <span className="workbench-split__pane-grip" aria-hidden />
         </div>
         <div className="workbench-split__pane-body">
-          {createWorkbenchPaneContent(pane, handlers, viewModel.editorDrafts[pane.paneId], gitChanges)}
+          {createWorkbenchPaneContent(
+            pane,
+            handlers,
+            viewModel.editorDrafts[pane.paneId],
+            gitChanges,
+            viewModel.activeThreadId,
+          )}
         </div>
       </section>
     );

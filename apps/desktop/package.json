@@ -24,6 +24,7 @@
     "verify:tide": "node scripts/v2-verification-loop.mjs",
     "test:smoke:providers": "node --experimental-strip-types scripts/v2-provider-smoke.mjs",
     "test:smoke:electron": "node --experimental-strip-types scripts/v2-electron-runtime-smoke.mjs",
+    "test:browser-runtime": "node scripts/pw-browser-runtime-host-verify.cjs",
     "e2e": "node --experimental-strip-types scripts/e2e-run.mjs",
     "package:mac": "node scripts/v2-tooling-command.mjs electron-builder --mac",
     "prestart": "pkill -f 'Electron .* --tide-dev-app' 2>/dev/null; sleep 1; exit 0"

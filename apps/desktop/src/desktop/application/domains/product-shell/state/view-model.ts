@@ -1,4 +1,4 @@
-import type { ProductShellBackgroundBrowserPane, ProductShellEditorDraft, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellPinnedItemView, ProductShellProject, ProductShellProjectGroupView, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellUsageModelView, ProductShellViewModel } from "./types.ts";
+import type { ProductShellEditorDraft, ProductShellEditorPickerView, ProductShellFileTreeView, ProductShellListSortBy, ProductShellPinnedItemView, ProductShellProject, ProductShellProjectGroupView, ProductShellState, ProductShellThread, ProductShellThreadView, ProductShellUsageModelView, ProductShellViewModel } from "./types.ts";
 import { finalizeThreadList, isExternalSessionThread, pinnedItemRefKey } from "./thread-list.ts";
 import { worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 import { reconcileTree } from "./workbench-split-tree.ts";
@@ -124,6 +124,7 @@ export const selectAgentChatViewModel = shellSelector(
 );
 
 export interface ProductShellWorkbenchViewModel {
+  activeThreadId: ProductShellViewModel["activeThreadId"];
   appChrome: ProductShellViewModel["appChrome"];
   editorDrafts: ProductShellViewModel["editorDrafts"];
   editorPicker: ProductShellViewModel["editorPicker"];
@@ -171,6 +172,7 @@ export const selectWorkbenchViewModel = shellSelector(
             draftActiveWorkbenchPaneId,
           );
     return {
+      activeThreadId,
       // The Workbench's Stacked tab strip (workbench.tsx) scrolls horizontally, so it
       // shows EVERY open pane as a tab — it has no overflow menu. Uncap the view model
       // here (the 6-tab cap + overflow split belongs to the legacy AppChrome surface)
@@ -255,22 +257,6 @@ export const selectChatColumnViewModel = shellSelector(
   }),
 );
 
-const selectBackgroundBrowserPanes = shellSelector(
-  [
-    (state: ProductShellState) => state.threads,
-    (state: ProductShellState) => state.activeThreadId,
-    (state: ProductShellState) => state.workbenchOpen,
-    (state: ProductShellState) => state.appChrome.activeWorkbenchPaneId,
-  ],
-  (threads, activeThreadId, workbenchOpen, activeWorkbenchPaneId) =>
-    deriveBackgroundBrowserPanes({
-      threads,
-      activeThreadId,
-      workbenchOpen,
-      appChrome: { activeWorkbenchPaneId },
-    }),
-);
-
 export function createProductShellViewModel(
   state: ProductShellState,
 ): ProductShellViewModel {
@@ -308,7 +294,6 @@ export function createProductShellViewModel(
     contentSearch: state.contentSearch,
     editorPicker: workbench.editorPicker,
     editorDrafts: workbench.editorDrafts,
-    backgroundBrowserPanes: selectBackgroundBrowserPanes(state),
   };
 }
 
@@ -493,41 +478,6 @@ function buildThreadListViewModel(
     projectGroups,
     scratchThreads,
     flatThreads,
-  });
-}
-
-// Browser Panes need a live <webview> only while visible, active-thread warm, or leased
-// by pending agent work. The foreground workbench hosts a webview ONLY for the
-// active thread's currently-shown pane (workbench open + that pane active). Active-thread
-// offscreen browsers stay warm for user continuity; non-active threads only get a live
-// background webview while an agent/browser lease is active (pending action/capture or
-// driving overlay). Idle non-active browsers remain cold snapshots to cap memory.
-// See docs_v2/specs/browser-pane-action-liveness.md.
-export function deriveBackgroundBrowserPanes(
-  state: Pick<ProductShellState, "threads" | "activeThreadId" | "workbenchOpen"> & {
-    appChrome: Pick<ProductShellState["appChrome"], "activeWorkbenchPaneId">;
-  },
-): ProductShellBackgroundBrowserPane[] {
-  return state.threads.flatMap((thread) => {
-    const isActive = thread.threadId === state.activeThreadId;
-    return thread.workbenchPanes
-      .filter((pane) => pane.kind === "browser")
-      .filter(
-        (pane) =>
-          !(
-            isActive &&
-            state.workbenchOpen &&
-            state.appChrome.activeWorkbenchPaneId === pane.paneId
-          ),
-      )
-      .filter(
-        (pane) =>
-          isActive ||
-          pane.pendingAction !== undefined ||
-          pane.pendingCapture !== undefined ||
-          pane.agentDriving === true,
-      )
-      .map((pane) => ({ ...pane, threadId: thread.threadId }));
   });
 }
 

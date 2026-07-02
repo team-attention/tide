@@ -58,9 +58,6 @@ import {
   toggleProductShellProject,
   toggleProductShellWorkbench,
   toggleProductShellWorkbenchWithLauncher,
-  updateProductShellBrowserActionResult,
-  updateProductShellBrowserCaptureResult,
-  updateProductShellBrowserSnapshot,
   updateProductShellComposerDraft,
   writeProductShellTerminalInput,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
@@ -1346,14 +1343,15 @@ test("workbench_browser_pane_renders_url_loading_and_preview", () => {
   assert.match(html, /aria-label="Browser address input"/);
   assert.match(html, /https:\/\/example\.test\/docs/);
   assert.match(html, /loading/);
-  // The live <webview> renders the page (the human view); the text snapshot is
-  // the Agent's evidence, not a human-facing preview panel.
-  assert.match(html, /data-browser-pane-webview="pane-browser"/);
+  // The live page is presented by Electron main as a native child view attached
+  // to this stage; the text snapshot is not a human-facing preview panel.
+  assert.match(html, /data-native-runtime="true"/);
+  assert.doesNotMatch(html, /data-browser-pane-webview="pane-browser"/);
   assert.doesNotMatch(html, /Thread-bound Workbench Pane content appears here/);
 });
 
-test("workbench_browser_pane_renders_electron_webview_for_url", () => {
-  // Spec: docs_v2/specs/workbench-browser-webview-pane.md
+test("workbench_browser_pane_renders_native_runtime_stage_for_url", () => {
+  // Spec: docs_v2/specs/browser-use-main-process-runtime.md
   const state = applyProductShellBackendEvent(
     openProductShellThread(createProductShellState(), "thread-workbench"),
     {
@@ -1379,168 +1377,9 @@ test("workbench_browser_pane_renders_electron_webview_for_url", () => {
   );
   const html = renderProductShell(state);
 
-  assert.match(html, /<webview/);
-  assert.match(html, /src="https:\/\/example\.test\/docs"/);
-  assert.match(html, /data-browser-pane-webview="pane-browser"/);
-});
-
-test("product_shell_browser_webview_snapshot_emits_update_command", () => {
-  // Spec: docs_v2/specs/workbench-browser-pane-evidence-loop.md
-  const state = applyProductShellBackendEvent(
-    openProductShellThread(createProductShellState(), "thread-workbench"),
-    {
-      kind: "workbench.changed",
-      payload: {
-        threadId: "thread-workbench",
-        activePaneId: "pane-browser",
-        panes: [
-          {
-            paneId: "pane-browser",
-            kind: "browser",
-            title: "Browser preview",
-            revision: "pane-browser:rev",
-            updatedAt: "2026-05-28T00:00:00.000Z",
-            loading: true,
-            url: "https://example.test/docs",
-          },
-        ],
-      },
-    },
-  );
-
-  const result = updateProductShellBrowserSnapshot(state, "pane-browser", {
-    revision: "pane-browser:rev",
-    url: "https://example.test/ready",
-    pageTitle: "Example ready",
-    bodyTextPreview: "Loaded page body",
-    loading: false,
-  });
-
-  assert.deepEqual(result.command, {
-    kind: "workbench.command",
-    payload: {
-      threadId: "thread-workbench",
-      command: "update_browser_snapshot",
-      targetPaneId: "pane-browser",
-      data: {
-        revision: "pane-browser:rev",
-        url: "https://example.test/ready",
-        pageTitle: "Example ready",
-        bodyTextPreview: "Loaded page body",
-        loading: false,
-      },
-    },
-  });
-});
-
-test("product_shell_browser_action_result_emits_workbench_command", () => {
-  // Spec: docs_v2/specs/tide-mcp-browser-action-tool.md
-  const state = applyProductShellBackendEvent(
-    openProductShellThread(createProductShellState(), "thread-workbench"),
-    {
-      kind: "workbench.changed",
-      payload: {
-        threadId: "thread-workbench",
-        activePaneId: "pane-browser",
-        panes: [
-          {
-            paneId: "pane-browser",
-            kind: "browser",
-            title: "Browser preview",
-            revision: "pane-browser:action-rev",
-            updatedAt: "2026-05-28T00:00:00.000Z",
-            loading: false,
-            url: "https://example.test/docs",
-            pendingAction: {
-              actionId: "action-1",
-              kind: "click",
-              selector: "button.primary",
-              requestedAt: "2026-05-28T00:00:01.000Z",
-            },
-          },
-        ],
-      },
-    },
-  );
-
-  const result = updateProductShellBrowserActionResult(state, "pane-browser", {
-    revision: "pane-browser:action-rev",
-    actionId: "action-1",
-    status: "completed",
-    message: "Clicked button.primary",
-    url: "https://example.test/next",
-    pageTitle: "Next page",
-    bodyTextPreview: "Next page body",
-    loading: false,
-  });
-
-  assert.deepEqual(result.command, {
-    kind: "workbench.command",
-    payload: {
-      threadId: "thread-workbench",
-      command: "update_browser_action_result",
-      targetPaneId: "pane-browser",
-      data: {
-        revision: "pane-browser:action-rev",
-        actionId: "action-1",
-        status: "completed",
-        message: "Clicked button.primary",
-        url: "https://example.test/next",
-        pageTitle: "Next page",
-        bodyTextPreview: "Next page body",
-        loading: false,
-      },
-    },
-  });
-});
-
-test("product_shell_browser_capture_result_emits_workbench_command", () => {
-  // Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md — the renderer's reply to
-  // an observe-time pixel-capture pull routes the captured screenshot to the pane's thread.
-  const state = applyProductShellBackendEvent(
-    openProductShellThread(createProductShellState(), "thread-workbench"),
-    {
-      kind: "workbench.changed",
-      payload: {
-        threadId: "thread-workbench",
-        activePaneId: "pane-browser",
-        panes: [
-          {
-            paneId: "pane-browser",
-            kind: "browser",
-            title: "Browser preview",
-            revision: "pane-browser:rev",
-            updatedAt: "2026-05-28T00:00:00.000Z",
-            loading: false,
-            url: "https://example.test/docs",
-            pendingCapture: { captureId: "cap-1", requestedAt: "2026-05-28T00:00:01.000Z" },
-          },
-        ],
-      },
-    },
-  );
-
-  const screenshot = {
-    data: "QUJD",
-    mimeType: "image/png" as const,
-    width: 800,
-    height: 600,
-    devicePixelRatio: 2,
-  };
-  const result = updateProductShellBrowserCaptureResult(state, "pane-browser", {
-    captureId: "cap-1",
-    screenshot,
-  });
-
-  assert.deepEqual(result.command, {
-    kind: "workbench.command",
-    payload: {
-      threadId: "thread-workbench",
-      command: "update_browser_capture_result",
-      targetPaneId: "pane-browser",
-      data: { captureId: "cap-1", screenshot },
-    },
-  });
+  assert.doesNotMatch(html, /<webview/);
+  assert.match(html, /value="https:\/\/example\.test\/docs"/);
+  assert.match(html, /data-native-runtime="true"/);
 });
 
 function editorPaneState(pane: Record<string, unknown>) {

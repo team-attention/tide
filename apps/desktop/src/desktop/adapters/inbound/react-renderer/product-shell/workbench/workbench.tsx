@@ -90,7 +90,13 @@ export function createWorkbenchColumn(
           data-pane-id={activeTab.paneId}
           data-pane-kind={activeTab.kind}
         >
-          {createWorkbenchPaneContent(activePane, handlers, viewModel.editorDrafts[activePane.paneId], gitChanges)}
+          {createWorkbenchPaneContent(
+            activePane,
+            handlers,
+            viewModel.editorDrafts[activePane.paneId],
+            gitChanges,
+            viewModel.activeThreadId,
+          )}
         </section>
       ) : (
         <section className="workbench-column__pane" data-pane-kind="launcher">

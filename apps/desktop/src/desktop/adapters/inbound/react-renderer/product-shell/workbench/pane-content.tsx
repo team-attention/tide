@@ -82,6 +82,7 @@ export function createWorkbenchPaneContent(
   handlers: ProductShellHandlers,
   editorDraft: ProductShellViewModel["editorDrafts"][string] | undefined,
   gitChanges: GitChangesView | null,
+  threadId: string | null = null,
 ): ReactElement {
   // Isolate each pane behind an error boundary: a throw in one pane's render/effect (e.g. a
   // <webview> guest method called before dom-ready) shows an inline fallback for THAT pane
@@ -92,7 +93,13 @@ export function createWorkbenchPaneContent(
   // descendants, so a thrown function-call result would escape past it to the parent.
   return (
     <ErrorBoundary resetKey={pane.paneId} label={`the ${pane.kind} pane`}>
-      <WorkbenchPaneContent pane={pane} handlers={handlers} editorDraft={editorDraft} gitChanges={gitChanges} />
+      <WorkbenchPaneContent
+        pane={pane}
+        handlers={handlers}
+        editorDraft={editorDraft}
+        gitChanges={gitChanges}
+        threadId={threadId}
+      />
     </ErrorBoundary>
   );
 }
@@ -102,14 +109,15 @@ function WorkbenchPaneContent(props: {
   handlers: ProductShellHandlers;
   editorDraft: ProductShellViewModel["editorDrafts"][string] | undefined;
   gitChanges: GitChangesView | null;
+  threadId: string | null;
 }): ReactElement {
-  const { pane, handlers, editorDraft, gitChanges } = props;
+  const { pane, handlers, editorDraft, gitChanges, threadId } = props;
   switch (pane.kind) {
     case "browser":
       // Key by paneId so a different/new browser pane fully remounts (fresh
       // webview + initial src) instead of reusing the prior pane's webview,
       // which left the old page showing after close-and-reopen.
-      return <WorkbenchBrowserPane key={pane.paneId} pane={pane} handlers={handlers} />;
+      return <WorkbenchBrowserPane key={pane.paneId} pane={pane} handlers={handlers} threadId={threadId} />;
     case "editor":
       return (
         <WorkbenchEditorPane

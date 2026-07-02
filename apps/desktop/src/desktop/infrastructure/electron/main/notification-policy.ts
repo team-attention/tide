@@ -20,7 +20,7 @@ export interface TideNotificationRequest {
 // the app window is focused AND it is the active (on-screen) thread. Every other case —
 // app in the background, or a different thread than the one shown — notifies. Window
 // focus is authoritative here; the renderer's document.hasFocus() reports false when a
-// Browser Pane / terminal <webview> holds focus even though the window is frontmost.
+// terminal or embedded webview content holds focus even though the window is frontmost.
 export function shouldEmitNotification(input: {
   appFocused: boolean;
   isActiveThread: boolean;

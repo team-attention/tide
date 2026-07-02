@@ -19,8 +19,6 @@ import { RailPeek } from "./left-rail/rail-peek.tsx";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
 import type { QuickOpenFile } from "./search/quick-open.tsx";
 import { createWindowChromeToggles } from "./chrome/chrome.tsx";
-import { BackgroundBrowserHost } from "./workbench/browser-pane.tsx";
-import { ErrorBoundary } from "./support/error-boundary.tsx";
 import { ContentSearchPanel } from "./search/content-search.tsx";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { ProductShellStoreProvider, useShellStore, useStableHandlers } from "./store-context.ts";
@@ -309,7 +307,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       Math.max(min, Math.min(max, value));
     // Coalesce pointermove into one state update per animation frame. Raw
     // pointermove fires ~60–120x/sec and each setState re-renders the whole shell
-    // (chat + workbench webview + file tree), which is the main resize jank.
+    // (chat + native workbench view + file tree), which is the main resize jank.
     let frame: number | null = null;
     let latestDx = 0;
     const applyWidth = () => {
@@ -715,15 +713,6 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         {/* Workbench + FileTree toggles live in a single fixed cluster at the window's
             top-right, so they never jump between column headers as panels open/close. */}
         {createWindowChromeToggles(layoutVm, handlers, showWorkbenchControls, inlineWorkbenchControls, collapseChromeToDots)}
-        {/* Offscreen host keeping background threads' Browser Panes alive for their agents.
-            It's invisible, so an error there must never surface UI — a crash just drops the
-            host (the agents lose liveness) rather than taking down the app. */}
-        <ErrorBoundary fallback={() => null}>
-          <BackgroundBrowserHost
-            panes={layoutVm.backgroundBrowserPanes}
-            handlers={stableHandlers}
-          />
-        </ErrorBoundary>
         {viewModel.settingsOpen
           ? createSettingsModal(viewModel.worktreeSettings, themePref, viewModel.usageByModel, handlers)
           : null}

@@ -224,16 +224,37 @@ export function applyProductShellBackendEvent(
         layoutMode?: "stacked" | "split";
         fileTree?: unknown;
       };
-      // A workbench change only touches the view when it is FOR the active thread.
-      // This must also hold when no thread is active (the New Thread composer,
-      // activeThreadId === null): a BACKGROUND thread opening a browser must not flip
-      // the workbench open on the composer the user is looking at. (payload.threadId
-      // undefined means an inherently active-thread-scoped event — let it through.)
       if (
         payload.threadId !== undefined &&
         payload.threadId !== state.activeThreadId
       ) {
-        return state;
+        // Background thread workbench state is still authoritative. Record its panes, but
+        // never touch the visible appChrome/workbenchOpen for the thread the user is
+        // looking at.
+        const panes = payload.panes ?? [];
+        const threadId = payload.threadId;
+        const previousPanes =
+          nextState.threads.find((thread) => thread.threadId === threadId)?.workbenchPanes ?? [];
+        const existingPaneIds = new Set(previousPanes.map((pane) => pane.paneId));
+        const hasNewRealPane = panes.some(
+          (pane) => pane.kind !== "launcher" && !existingPaneIds.has(pane.paneId),
+        );
+        const hasOpenPane = panes.length > 0;
+        const threadExists = nextState.threads.some((thread) => thread.threadId === threadId);
+        const nextWorkbenchOpenByThreadId =
+          threadExists && (hasNewRealPane || !hasOpenPane)
+            ? {
+                ...nextState.workbenchOpenByThreadId,
+                [threadId]: hasNewRealPane,
+              }
+            : nextState.workbenchOpenByThreadId;
+        return {
+          ...nextState,
+          threads: nextState.threads.map((thread) =>
+            thread.threadId === threadId ? { ...thread, workbenchPanes: panes } : thread,
+          ),
+          workbenchOpenByThreadId: nextWorkbenchOpenByThreadId,
+        };
       }
       const panes = payload.panes ?? [];
       const threadId = payload.threadId ?? state.activeThreadId;

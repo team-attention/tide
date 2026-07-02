@@ -1,15 +1,8 @@
-import type {
-  ThreadId,
-  ThreadSnapshot,
-} from "../../domains/thread/thread.ts";
-import type {
-  ChangesPaneState,
-  WorkbenchFileTreeView,
-  WorkbenchSnapshot,
-} from "../../domains/workbench/workbench.ts";
+import type { ChangesPaneState } from "../../domains/workbench/workbench.ts";
 import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
 import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
 import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port.ts";
+import type { BrowserRuntimePort } from "../../ports/outbound/browser-runtime-port.ts";
 import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
   commandName,
@@ -29,8 +22,6 @@ import {
   releaseAgentBrowserControl,
 } from "./workbench-browser-operations.ts";
 import {
-  browserPaneActionResultFromData,
-  browserPaneCaptureResultFromData,
   browserPaneSnapshotFromData,
   editorPanePositionFromData,
   editorPaneSaveFromData,
@@ -38,7 +29,11 @@ import {
   workbenchTerminalCommandFromData,
   workbenchLayoutModeFromValue,
 } from "./workbench-command-data.ts";
-import { BrowserCaptureCoordinator } from "./browser-capture-coordinator.ts";
+import type {
+  WorkbenchCommandHandlerDeps,
+  WorkbenchCommandInput,
+  WorkbenchCommandResult,
+} from "./workbench-command-types.ts";
 import { providerReadinessTerminalInput } from "./provider-readiness-terminal-input.ts";
 import type { WorkbenchFileOperations } from "./workbench-file-operations.ts";
 import { activeLauncherPaneId, openWorkbenchLauncher, removeLauncherPane } from "./workbench-launcher.ts";
@@ -50,33 +45,6 @@ import {
   snapshotWorkbench,
   workbenchPaneById,
 } from "./workbench-snapshot.ts";
-
-export interface WorkbenchCommandInput {
-  threadId: ThreadId;
-  command: string;
-  targetPaneId?: string;
-  data?: Record<string, unknown>;
-}
-
-export interface WorkbenchCommandResult {
-  handled: true;
-  thread: ThreadSnapshot;
-  workbench: WorkbenchSnapshot;
-}
-
-export interface WorkbenchCommandHandlerDeps {
-  threads: ThreadStore;
-  clock: () => string;
-  idGenerator: () => string;
-  defaultWorkbenchTerminalCommand: string;
-  defaultWorkbenchTerminalArgs: string[];
-  workbenchRuntime: WorkbenchRuntime;
-  workbenchFileOps: WorkbenchFileOperations;
-  workspaceFilePort: WorkspaceFilePort;
-  workspaceCommandPort: WorkspaceCommandPort;
-  workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
-  browserCapture: BrowserCaptureCoordinator;
-}
 
 // Dispatches Workbench commands (open/close panes, terminal input/resize,
 // editor save, navigation, file-tree refresh) to the pane operation collaborators
@@ -93,7 +61,7 @@ export class WorkbenchCommandHandler {
   private readonly workspaceFilePort: WorkspaceFilePort;
   private readonly workspaceCommandPort: WorkspaceCommandPort;
   private readonly workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
-  private readonly browserCapture: BrowserCaptureCoordinator;
+  private readonly browserRuntimePort?: BrowserRuntimePort;
 
   constructor(deps: WorkbenchCommandHandlerDeps) {
     this.threads = deps.threads;
@@ -106,7 +74,7 @@ export class WorkbenchCommandHandler {
     this.workspaceFilePort = deps.workspaceFilePort;
     this.workspaceCommandPort = deps.workspaceCommandPort;
     this.workspaceCodeIntelligencePort = deps.workspaceCodeIntelligencePort;
-    this.browserCapture = deps.browserCapture;
+    this.browserRuntimePort = deps.browserRuntimePort;
   }
 
   async handleWorkbenchCommand(
@@ -146,6 +114,16 @@ export class WorkbenchCommandHandler {
         const pane = workbenchPaneById(thread.workbench, opened.pane.paneId);
         if (pane !== undefined) {
           thread.workbench.activePaneId = pane.paneId;
+          if (pane.kind === "browser") {
+            await this.browserRuntimePort
+              ?.ensure({
+                threadId: thread.threadId,
+                paneId: pane.paneId,
+                url: pane.url,
+                title: pane.title,
+              })
+              .catch(() => {});
+          }
         }
         removeLauncherPane(thread, launcherToReplace);
         thread.workbench.focusOwner = "workbench";
@@ -207,101 +185,6 @@ export class WorkbenchCommandHandler {
         }
         pane.updatedAt = this.clock();
         thread.updatedAt = this.clock();
-        return {
-          ok: true,
-          handled: true,
-          thread: snapshotThread(thread),
-          workbench: snapshotWorkbench(thread.workbench),
-        };
-      }
-      case "update_browser_capture_result": {
-        // The renderer's reply to an observe-time pixel-capture pull (pendingCapture). Resolve
-        // the awaiting observe call and refresh the fallback cache. A capture never changes the
-        // page, so the revision is NOT re-minted. A late/duplicate report (captureId no longer
-        // pending) is ignored. Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
-        const pane = workbenchPaneById(thread.workbench, input.targetPaneId);
-        if (pane === undefined || pane.kind !== "browser") {
-          return failure(
-            "workbench_target_not_found",
-            "Browser Pane target was not found.",
-          );
-        }
-        const result = browserPaneCaptureResultFromData(input.data);
-        if (result === undefined) {
-          return failure(
-            "invalid_workbench_command",
-            "Browser Pane capture result requires a capture id.",
-          );
-        }
-        if (pane.pendingCapture?.captureId === result.captureId) {
-          delete pane.pendingCapture;
-        }
-        if (result.screenshot !== undefined) {
-          pane.screenshot = result.screenshot;
-        }
-        this.browserCapture.resolve(result.captureId, result.screenshot);
-        pane.updatedAt = this.clock();
-        thread.updatedAt = this.clock();
-        return {
-          ok: true,
-          handled: true,
-          thread: snapshotThread(thread),
-          workbench: snapshotWorkbench(thread.workbench),
-        };
-      }
-      case "update_browser_action_result": {
-        const pane = workbenchPaneById(thread.workbench, input.targetPaneId);
-        if (pane === undefined || pane.kind !== "browser") {
-          return failure(
-            "workbench_target_not_found",
-            "Browser Pane target was not found.",
-          );
-        }
-        const result = browserPaneActionResultFromData(input.data);
-        if (result === undefined) {
-          return failure(
-            "invalid_workbench_command",
-            "Browser Pane action result requires revision, action id, status, and message.",
-          );
-        }
-        if (
-          result.revision !== pane.revision ||
-          pane.pendingAction?.actionId !== result.actionId
-        ) {
-          return failure(
-            "workbench_stale_reference",
-            "Browser Pane action result is stale.",
-          );
-        }
-
-        const completedAt = this.clock();
-        pane.lastAction = {
-          ...pane.pendingAction,
-          status: result.status,
-          message: result.message,
-          completedAt,
-        };
-        delete pane.pendingAction;
-        if (result.pageTitle !== undefined) {
-          pane.pageTitle = result.pageTitle;
-        }
-        if (result.url !== undefined) {
-          pane.url = result.url;
-        }
-        if (result.bodyTextPreview !== undefined) {
-          pane.bodyTextPreview = result.bodyTextPreview;
-        }
-        if (result.interactiveElements !== undefined) {
-          pane.interactiveElements = result.interactiveElements;
-        }
-        pane.loading = result.loading ?? false;
-        // D5 (spec: browser-pane-live-pull-vision.md): remember the pre-completion revision
-        // so the agent's NEXT act, if it still carries this just-settled token, is auto-retried
-        // once instead of failing the CAS (the close/reopen thrash).
-        pane.priorRevision = pane.revision;
-        pane.revision = this.idGenerator();
-        pane.updatedAt = completedAt;
-        thread.updatedAt = completedAt;
         return {
           ok: true,
           handled: true,
@@ -552,6 +435,15 @@ export class WorkbenchCommandHandler {
         // removal + active reassignment is the shared helper.
         if (pane.kind === "terminal") {
           void this.workbenchRuntime.stopTerminalPane(pane);
+        }
+        if (pane.kind === "browser") {
+          void this.browserRuntimePort
+            ?.close({
+              threadId: thread.threadId,
+              paneId: pane.paneId,
+              reason: "pane_closed",
+            })
+            .catch(() => {});
         }
         closeWorkbenchPaneState(thread.workbench, pane.paneId, this.clock);
         thread.updatedAt = this.clock();

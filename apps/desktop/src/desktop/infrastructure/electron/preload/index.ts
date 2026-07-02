@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   BackendCommandEnvelope,
   BackendEventEnvelope,
+  BrowserRuntimeRendererCommandDto,
+  BrowserRuntimeStageDto,
   ThreadSummaryDto,
 } from "../../../../shared/contracts/index.ts";
 
@@ -105,7 +107,7 @@ export interface TidePreloadSurface {
   // close (a focused Workbench pane, else the active thread → start composer).
   onCloseIntent(listener: () => void): () => void;
   // Cmd/Ctrl+F from the application menu, routed through the host renderer so
-  // Browser Pane <webview> focus cannot swallow in-pane search.
+  // Native browser views, HTML previews, and terminal focus cannot swallow in-pane search.
   onFindIntent(listener: () => void): () => void;
   // A Browser Pane link asked to open elsewhere. Main denies ordinary popup windows
   // and forwards the URL so the renderer drives the backend open_browser path: `newPane`
@@ -113,11 +115,14 @@ export interface TidePreloadSurface {
   // click) navigates the active Browser Pane in place. HTTPS `new-window` popups may be
   // preserved as native child windows by Main.
   onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
+  setBrowserRuntimeStage(stage: BrowserRuntimeStageDto): void;
+  browserRuntimeCommand(command: BrowserRuntimeRendererCommandDto): Promise<void>;
+  onBrowserRuntimeReleaseControl(listener: (threadId: string, paneId: string) => void): () => void;
   // View-menu panel toggles (Cmd+B left rail / Cmd+E file tree / Cmd+J workbench),
   // routed from the application menu so they fire regardless of focus (webview/terminal).
   onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
   // Global zoom (Cmd +/-/0). Main sets the host window's zoom and broadcasts the factor
-  // (1 = 100%) so the renderer mirrors it onto Browser Pane <webview> guests (which
+  // (1 = 100%) so the renderer mirrors it onto embedded webview guests (which
   // don't inherit host zoom) and shows a zoom indicator. resetZoom returns to 100%;
   // getZoom reads the current host factor to seed the indicator on mount. Zoom is NOT
   // persisted — the window opens at 100% each launch (main resets it on load).
@@ -234,6 +239,20 @@ export const tidePreloadSurface: TidePreloadSurface = {
     ipcRenderer.on("tide:open-browser-pane", wrapped);
     return () => {
       ipcRenderer.removeListener("tide:open-browser-pane", wrapped);
+    };
+  },
+  setBrowserRuntimeStage(stage) {
+    ipcRenderer.send("tide:browser-runtime-stage", stage);
+  },
+  browserRuntimeCommand(command) {
+    return ipcRenderer.invoke("tide:browser-runtime-command", command) as Promise<void>;
+  },
+  onBrowserRuntimeReleaseControl(listener) {
+    const wrapped = (_event: unknown, threadId: string, paneId: string) =>
+      listener(threadId, paneId);
+    ipcRenderer.on("tide:browser-runtime-release-control", wrapped);
+    return () => {
+      ipcRenderer.removeListener("tide:browser-runtime-release-control", wrapped);
     };
   },
   onTogglePanel(listener) {

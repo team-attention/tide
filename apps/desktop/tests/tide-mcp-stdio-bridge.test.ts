@@ -33,6 +33,13 @@ import {
   type TerminalInput,
   type ThreadSeed,
 } from "../src/backend/application/services/thread/thread-runtime-service.ts";
+import type {
+  BrowserRuntimeActInput,
+  BrowserRuntimeCloseInput,
+  BrowserRuntimeEnsureInput,
+  BrowserRuntimeObserveInput,
+  BrowserRuntimePort,
+} from "../src/backend/application/ports/outbound/browser-runtime-port.ts";
 
 const now = "2026-05-29T00:00:00.000Z";
 
@@ -497,6 +504,7 @@ test("socket_request_handler_routes_to_live_tool_surface", async () => {
 function serviceWithActiveThread() {
   return createThreadRuntimeService({
     agentRuntimePort: new FakeAgentRuntimePort(),
+    browserRuntimePort: new FakeBrowserRuntimePort(),
     providerReadinessPort: new FakeProviderReadinessPort(),
     ptyTranscriptPort: new FakePtyTranscriptPort(),
     clock: () => now,
@@ -557,6 +565,60 @@ class FakeAgentRuntimePort implements AgentRuntimePort {
   ): Promise<void> {}
 
   async stop(_handle: AgentRuntimeHandle): Promise<void> {}
+}
+
+class FakeBrowserRuntimePort implements BrowserRuntimePort {
+  async ensure(input: BrowserRuntimeEnsureInput) {
+    return {
+      ok: true as const,
+      value: {
+        observation: {
+          url: input.url,
+          title: input.title ?? "Runtime Browser",
+          pageTitle: input.title ?? "Runtime Browser",
+          bodyTextPreview: "",
+          interactiveElements: [],
+          loading: false,
+        },
+      },
+    };
+  }
+
+  async observe(_input: BrowserRuntimeObserveInput) {
+    return {
+      ok: true as const,
+      value: {
+        observation: {
+          title: "Runtime Browser",
+          pageTitle: "Runtime Browser",
+          bodyTextPreview: "",
+          interactiveElements: [],
+          loading: false,
+        },
+      },
+    };
+  }
+
+  async act(_input: BrowserRuntimeActInput) {
+    return {
+      ok: true as const,
+      value: {
+        status: "completed" as const,
+        completedAt: now,
+        observation: {
+          title: "Runtime Browser",
+          pageTitle: "Runtime Browser",
+          bodyTextPreview: "",
+          interactiveElements: [],
+          loading: false,
+        },
+      },
+    };
+  }
+
+  async close(_input: BrowserRuntimeCloseInput) {
+    return { ok: true as const, value: undefined };
+  }
 }
 
 class FakeProviderReadinessPort implements ProviderReadinessPort {

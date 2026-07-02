@@ -295,6 +295,54 @@ test("a background thread opening a browser does not open the workbench on the N
   // The composer view is unaffected — the workbench stays closed.
   assert.equal(state.workbenchOpen, false);
   assert.equal(state.activeThreadId, null);
+  assert.deepEqual(
+    state.threads
+      .find((thread) => thread.threadId === "thread-bg")
+      ?.workbenchPanes.map((pane) => pane.paneId),
+    ["p1"],
+  );
+});
+
+test("a background browser pane update is retained without stealing focus", () => {
+  let state = createProductShellState({ includeFixtureData: false });
+  state = applyProductShellBackendEvent(state, hydrated("thread-a", "codex", []));
+  state = applyProductShellBackendEvent(state, hydrated("thread-bg", "codex", []));
+  state = clickThread(state, "thread-a");
+  assert.equal(state.activeThreadId, "thread-a");
+
+  state = applyProductShellBackendEvent(state, {
+    kind: "workbench.changed" as const,
+    payload: {
+      threadId: "thread-bg",
+      panes: [
+        {
+          paneId: "p1",
+          kind: "browser",
+          title: "Naver",
+          revision: "r1",
+          url: "https://example.test/",
+          lastAction: {
+            actionId: "action-1",
+            kind: "click_at",
+            requestedAt: "2026-06-04T00:00:00.000Z",
+            x: 10,
+            y: 12,
+            status: "completed",
+            completedAt: "2026-06-04T00:00:01.000Z",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(state.activeThreadId, "thread-a", "background action must not steal focus");
+  assert.equal(state.appChrome.workbenchPanes.length, 0, "active workbench view is unchanged");
+  assert.deepEqual(
+    state.threads
+      .find((thread) => thread.threadId === "thread-bg")
+      ?.workbenchPanes.map((pane) => pane.paneId),
+    ["p1"],
+  );
 });
 
 // Regression: when the user IS viewing the thread, its own browser open still opens

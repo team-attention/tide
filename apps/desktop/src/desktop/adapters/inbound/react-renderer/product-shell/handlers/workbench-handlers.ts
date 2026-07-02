@@ -1,10 +1,10 @@
-import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureComposerDraftThreadActive, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, updateProductShellBackgroundBrowserActionResult, updateProductShellBackgroundBrowserCaptureResult, updateProductShellBackgroundBrowserSnapshot, updateProductShellBrowserActionResult, updateProductShellBrowserCaptureResult, updateProductShellBrowserSnapshot, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureComposerDraftThreadActive, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
-export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onBrowserSnapshot" | "onBrowserActionResult" | "onBrowserCaptureResult" | "onBackgroundBrowserSnapshot" | "onBackgroundBrowserActionResult" | "onBackgroundBrowserCaptureResult" | "onOpenBrowserPane" | "onOpenChanges" | "onGitChanges" | "onGitFileDiff" | "onLoadWorkbenchImage"> {
+export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onOpenBrowserPane" | "onOpenChanges" | "onGitChanges" | "onGitFileDiff" | "onLoadWorkbenchImage"> {
   const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onWorkbenchToggle: () =>
@@ -149,42 +149,6 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
     onTerminalResize: (paneId, cols, rows) =>
       setShellState((state) => {
         const result = resizeProductShellTerminal(state, paneId, cols, rows);
-        dispatchBackendCommand(result.command);
-        return result.state;
-      }),
-    onBrowserSnapshot: (paneId, snapshot) =>
-      setShellState((state) => {
-        const result = updateProductShellBrowserSnapshot(state, paneId, snapshot);
-        dispatchBackendCommand(result.command);
-        return result.state;
-      }),
-    onBrowserActionResult: (paneId, actionResult) =>
-      setShellState((state) => {
-        const result = updateProductShellBrowserActionResult(state, paneId, actionResult);
-        dispatchBackendCommand(result.command);
-        return result.state;
-      }),
-    onBrowserCaptureResult: (paneId, captureResult) =>
-      setShellState((state) => {
-        const result = updateProductShellBrowserCaptureResult(state, paneId, captureResult);
-        dispatchBackendCommand(result.command);
-        return result.state;
-      }),
-    onBackgroundBrowserSnapshot: (threadId, paneId, snapshot) =>
-      setShellState((state) => {
-        const result = updateProductShellBackgroundBrowserSnapshot(state, threadId, paneId, snapshot);
-        dispatchBackendCommand(result.command);
-        return result.state;
-      }),
-    onBackgroundBrowserActionResult: (threadId, paneId, actionResult) =>
-      setShellState((state) => {
-        const result = updateProductShellBackgroundBrowserActionResult(state, threadId, paneId, actionResult);
-        dispatchBackendCommand(result.command);
-        return result.state;
-      }),
-    onBackgroundBrowserCaptureResult: (threadId, paneId, captureResult) =>
-      setShellState((state) => {
-        const result = updateProductShellBackgroundBrowserCaptureResult(state, threadId, paneId, captureResult);
         dispatchBackendCommand(result.command);
         return result.state;
       }),

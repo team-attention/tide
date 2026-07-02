@@ -26,7 +26,6 @@ import {
   type ThreadRuntimeAsyncEvent,
   type ThreadSeed,
 } from "../src/backend/application/services/thread/thread-runtime-service.ts";
-import { BROWSER_ACTION_PENDING_TTL_MS } from "../src/backend/application/services/workbench/workbench-browser-operations.ts";
 import type {
   WorkbenchTerminalHandle,
   WorkbenchTerminalOutput,
@@ -48,6 +47,13 @@ import type {
   WorkspaceFileTreeResult,
   WorkspaceFileWriteResult,
 } from "../src/backend/application/ports/outbound/workspace-file-port.ts";
+import type {
+  BrowserRuntimeActInput,
+  BrowserRuntimeCloseInput,
+  BrowserRuntimeEnsureInput,
+  BrowserRuntimeObserveInput,
+  BrowserRuntimePort,
+} from "../src/backend/application/ports/outbound/browser-runtime-port.ts";
 
 const now = "2026-05-27T00:00:00.000Z";
 
@@ -57,7 +63,6 @@ test("mcp_session_without_explicit_thread_id_resolves_thread_from_agent_runtime_
   // UC-1 BR-1: MCP Session resolves Thread.
   const fakes = createFakes();
   const service = createThreadRuntimeService({
-    browserCapturePullTimeoutMs: 20,
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -85,7 +90,6 @@ test("mcp_session_without_explicit_thread_id_resolves_thread_from_agent_runtime_
 test("tide_mcp_tool_surface_lists_bounded_workbench_tools", () => {
   // UC-1 BR-2: Tool list is bounded.
   const service = createThreadRuntimeService({
-    browserCapturePullTimeoutMs: 20,
     ...createFakes().ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -310,8 +314,9 @@ test("opening_browser_creates_browser_pane_in_thread_workbench", async () => {
   assert.equal(opened.output.visibleSideEffect, "created");
   assert.equal(opened.output.pane.kind, "browser");
   assert.equal(opened.output.pane.url, "https://example.test/docs");
-  assert.equal(opened.output.pane.loading, true);
-  assert.equal(opened.output.pane.readiness, "loading");
+  assert.equal(opened.output.pane.loading, false);
+  assert.equal(opened.output.pane.readiness, "ready");
+  assert.equal(opened.output.pane.bodyTextPreview, "Runtime ensured body");
   assert.deepEqual(opened.output.pane.capabilities, {
     canReadDom: true,
     canCapturePixels: true,
@@ -326,10 +331,9 @@ test("opening_browser_creates_browser_pane_in_thread_workbench", async () => {
   );
 });
 
-test("opening_browser_navigation_marks_page_loading_and_clears_stale_preview", async () => {
-  // A newly requested URL is not visible evidence yet. Keep the pane loading until the
-  // renderer reports a load snapshot, and don't let the agent read stale DOM text from the
-  // previous page while the visible webview may still be blank.
+test("opening_browser_navigation_refreshes_page_evidence_through_runtime", async () => {
+  // BrowserRuntime owns navigation evidence now. The MCP response reflects the
+  // terminal runtime observation instead of a renderer-owned loading placeholder.
   const service = serviceWithActiveThread("thread-browser-loading", "runtime-browser-loading");
   const opened = await openBrowser(
     service,
@@ -361,10 +365,10 @@ test("opening_browser_navigation_marks_page_loading_and_clears_stale_preview", a
 
   assert.equal(navigated.ok, true);
   assert.equal(navigated.ok && navigated.output.pane.url, "https://example.test/new");
-  assert.equal(navigated.ok && navigated.output.pane.loading, true);
-  assert.equal(navigated.ok && navigated.output.pane.readiness, "loading");
-  assert.equal(navigated.ok && navigated.output.pane.pageTitle, undefined);
-  assert.equal(navigated.ok && navigated.output.pane.bodyTextPreview, undefined);
+  assert.equal(navigated.ok && navigated.output.pane.loading, false);
+  assert.equal(navigated.ok && navigated.output.pane.readiness, "ready");
+  assert.equal(navigated.ok && navigated.output.pane.pageTitle, "Runtime Browser");
+  assert.equal(navigated.ok && navigated.output.pane.bodyTextPreview, "Runtime ensured body");
   assert.equal(navigated.ok && navigated.output.visibleSideEffect, "navigated");
 });
 
@@ -372,7 +376,6 @@ test("mcp_mutating_workbench_tool_emits_workbench_changed_async_event", async ()
   // Spec: docs_v2/specs/tide-mcp-workbench-mutation-events.md
   const events: ThreadRuntimeAsyncEvent[] = [];
   const service = createThreadRuntimeService({
-    browserCapturePullTimeoutMs: 20,
     ...createFakes().ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -397,7 +400,6 @@ test("mcp_observe_tool_does_not_emit_workbench_changed_async_event", async () =>
   // Spec: docs_v2/specs/tide-mcp-workbench-mutation-events.md
   const events: ThreadRuntimeAsyncEvent[] = [];
   const service = createThreadRuntimeService({
-    browserCapturePullTimeoutMs: 20,
     ...createFakes().ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -423,7 +425,6 @@ test("opening_browser_uses_tide_workbench_and_not_external_browser", async () =>
   // UC-3 BR-2: Open Browser does not open OS browser.
   const fakes = createFakes();
   const service = createThreadRuntimeService({
-    browserCapturePullTimeoutMs: 20,
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -459,7 +460,7 @@ test("opening_browser_preserves_composer_focus_by_default", async () => {
   assert.equal(observed.ok && observed.output.focusOwner, "composer");
 });
 
-test("observing_browser_returns_backend_stored_webview_snapshot", async () => {
+test("observing_browser_returns_browser_runtime_observation", async () => {
   // Spec: docs_v2/specs/workbench-browser-pane-evidence-loop.md
   const service = serviceWithActiveThread("thread-browser-evidence", "runtime-browser-evidence");
   const opened = await openBrowser(
@@ -488,12 +489,12 @@ test("observing_browser_returns_backend_stored_webview_snapshot", async () => {
   });
 
   assert.equal(observed.ok, true);
-  assert.equal(observed.ok && observed.output.pane.pageTitle, "Example ready");
-  assert.equal(observed.ok && observed.output.pane.url, "https://example.test/ready");
-  assert.equal(observed.ok && observed.output.pane.bodyTextPreview, "Loaded page body");
+  assert.equal(observed.ok && observed.output.pane.pageTitle, "Runtime Browser");
+  assert.equal(observed.ok && observed.output.pane.url, "https://example.test/runtime");
+  assert.equal(observed.ok && observed.output.pane.bodyTextPreview, "Runtime observed body");
 });
 
-test("observing_browser_with_only_url_evidence_reports_unavailable", async () => {
+test("observing_browser_with_only_cached_url_refreshes_through_runtime", async () => {
   const service = serviceWithActiveThread(
     "thread-browser-url-only",
     "runtime-browser-url-only",
@@ -523,7 +524,8 @@ test("observing_browser_with_only_url_evidence_reports_unavailable", async () =>
 
   assert.equal(observed.ok, true);
   assert.equal(observed.ok && observed.output.pane.loading, false);
-  assert.equal(observed.ok && observed.output.pane.readiness, "unavailable");
+  assert.equal(observed.ok && observed.output.pane.readiness, "ready");
+  assert.equal(observed.ok && observed.output.pane.bodyTextPreview, "Runtime observed body");
 });
 
 test("observing_browser_with_interactive_elements_reports_ready", async () => {
@@ -567,12 +569,12 @@ test("observing_browser_with_interactive_elements_reports_ready", async () => {
   assert.equal(observed.ok && observed.output.pane.interactiveElements?.[0]?.text, "Reserve");
 });
 
-test("browser_action_tool_schedules_pending_click_for_desktop_webview", async () => {
+test("browser_action_tool_executes_click_through_browser_runtime", async () => {
   // Spec: docs_v2/specs/tide-mcp-browser-action-tool.md
   const events: ThreadRuntimeAsyncEvent[] = [];
+  const fakes = createFakes();
   const service = createThreadRuntimeService({
-    browserCapturePullTimeoutMs: 20,
-    ...createFakes().ports,
+    ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
     initialThreads: [
@@ -611,17 +613,103 @@ test("browser_action_tool_schedules_pending_click_for_desktop_webview", async ()
   assert.equal(result.ok && result.output.kind, "act_browser");
   assert.equal(result.ok && result.output.action.kind, "click");
   assert.equal(result.ok && result.output.action.selector, "button.primary");
-  assert.equal(result.ok && result.output.status, "pending");
+  assert.equal(result.ok && result.output.status, "completed");
+  assert.equal(fakes.browserRuntime.acts.length, 1);
+  assert.equal(fakes.browserRuntime.acts[0]?.action.kind, "click");
   const pane = result.ok ? result.thread.workbench.panes[0] : undefined;
   assert.equal(pane?.kind, "browser");
-  assert.deepEqual(
-    pane?.kind === "browser" ? pane.pendingAction : undefined,
-    result.ok ? result.output.action : undefined,
-  );
+  assert.equal(pane?.kind === "browser" ? "pendingAction" in pane : false, false);
+  assert.equal(pane?.kind === "browser" ? pane.lastAction?.status : undefined, "completed");
   assert.equal(events.at(-1)?.kind, "workbench_changed");
 });
 
-test("browser_action_tool_schedules_pending_click_by_observed_element_index", async () => {
+test("browser_runtime_port_observe_updates_browser_without_pending_capture", async () => {
+  const runtime = new FakeBrowserRuntimePort();
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    browserRuntimePort: runtime,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-browser-runtime-observe", {
+        activeRuntimeHandle: runtimeHandle(
+          "thread-browser-runtime-observe",
+          "runtime-browser-runtime-observe",
+        ),
+        runtimeState: "running",
+      }),
+    ],
+  });
+  const opened = await openBrowser(
+    service,
+    "runtime-browser-runtime-observe",
+    "https://example.test/runtime",
+  );
+
+  const observed = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-browser-runtime-observe", agentId: "codex" },
+    toolName: "tide_observe_browser",
+    input: { paneId: opened.output.pane.paneId, mode: "both" },
+  });
+
+  assert.equal(observed.ok, true);
+  assert.equal(runtime.ensures.length, 1);
+  assert.equal(runtime.observes.length, 1);
+  assert.equal(observed.ok && observed.output.kind, "observe_browser");
+  assert.equal(observed.ok && observed.output.pane.bodyTextPreview, "Runtime observed body");
+  assert.equal(observed.ok && observed.output.pane.screenshot?.width, 4);
+  assert.equal(observed.ok ? "pendingCapture" in observed.output.pane : true, false);
+});
+
+test("browser_runtime_port_act_returns_terminal_result_without_pending_action", async () => {
+  const runtime = new FakeBrowserRuntimePort();
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    browserRuntimePort: runtime,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-browser-runtime-act", {
+        activeRuntimeHandle: runtimeHandle(
+          "thread-browser-runtime-act",
+          "runtime-browser-runtime-act",
+        ),
+        runtimeState: "running",
+      }),
+    ],
+  });
+  const opened = await openBrowser(
+    service,
+    "runtime-browser-runtime-act",
+    "https://example.test/runtime-act",
+  );
+
+  const acted = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-browser-runtime-act", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: {
+      paneId: opened.output.pane.paneId,
+      revision: opened.output.pane.revision,
+      action: "click_at",
+      x: 20,
+      y: 30,
+    },
+  });
+
+  assert.equal(acted.ok, true);
+  assert.equal(runtime.acts.length, 1);
+  assert.equal(acted.ok && acted.output.kind, "act_browser");
+  assert.equal(acted.ok && acted.output.status, "completed");
+  assert.equal(acted.ok ? "pendingAction" in acted.output.pane : true, false);
+  assert.equal(acted.ok && acted.output.pane.lastAction?.status, "completed");
+  assert.equal(acted.ok && acted.output.pane.bodyTextPreview, "Runtime acted body");
+  assert.notEqual(
+    acted.ok && acted.output.pane.revision,
+    opened.output.pane.revision,
+  );
+});
+
+test("browser_action_tool_executes_click_by_observed_element_index", async () => {
   const service = serviceWithActiveThread(
     "thread-browser-element-action",
     "runtime-browser-element-action",
@@ -654,10 +742,12 @@ test("browser_action_tool_schedules_pending_click_by_observed_element_index", as
   assert.equal(result.ok && result.output.kind, "act_browser");
   assert.equal(result.ok && result.output.action.kind, "click_element");
   assert.equal(result.ok && result.output.action.elementIndex, 3);
-  assert.equal(result.ok && result.output.pane.pendingAction?.kind, "click_element");
+  assert.equal(result.ok && result.output.status, "completed");
+  assert.equal(result.ok ? "pendingAction" in result.output.pane : true, false);
+  assert.equal(result.ok && result.output.pane.lastAction?.kind, "click_element");
 });
 
-test("browser_action_tool_schedules_pending_drag_for_bottom_sheet_controls", async () => {
+test("browser_action_tool_executes_drag_for_bottom_sheet_controls", async () => {
   const service = serviceWithActiveThread("thread-browser-drag", "runtime-browser-drag");
   const opened = await openBrowser(
     service,
@@ -692,13 +782,12 @@ test("browser_action_tool_schedules_pending_drag_for_bottom_sheet_controls", asy
   assert.equal(result.ok && result.output.kind, "act_browser");
   assert.equal(result.ok && result.output.action.kind, "drag");
   assert.equal(result.ok && result.output.action.toY, 260);
-  assert.equal(
-    result.ok && result.output.pane.pendingAction?.kind,
-    "drag",
-  );
+  assert.equal(result.ok && result.output.status, "completed");
+  assert.equal(result.ok ? "pendingAction" in result.output.pane : true, false);
+  assert.equal(result.ok && result.output.pane.lastAction?.kind, "drag");
 });
 
-test("browser_action_while_loading_queues_human_input", async () => {
+test("browser_action_while_loading_still_executes_through_runtime", async () => {
   const service = serviceWithActiveThread(
     "thread-browser-loading-act",
     "runtime-browser-loading-act",
@@ -724,8 +813,9 @@ test("browser_action_while_loading_queues_human_input", async () => {
   assert.equal(result.ok && result.output.kind, "act_browser");
   assert.equal(result.ok && result.output.action.kind, "key");
   assert.equal(result.ok && result.output.action.keys, "Escape");
-  assert.equal(result.ok && result.output.pane.pendingAction?.kind, "key");
-  assert.equal(result.ok && result.output.pane.loading, true);
+  assert.equal(result.ok && result.output.status, "completed");
+  assert.equal(result.ok ? "pendingAction" in result.output.pane : true, false);
+  assert.equal(result.ok && result.output.pane.lastAction?.kind, "key");
 });
 
 test("browser_type_action_without_text_returns_structured_error", async () => {
@@ -803,15 +893,12 @@ test("same_url_browser_snapshot_keeps_revision_so_a_held_act_still_wins", async 
     },
   });
   assert.equal(refreshed.ok, true);
-
-  const observed = await service.handleTideMcpToolCall({
-    session: { runtimeId: "runtime-rev-d1", agentId: "codex" },
-    toolName: "tide_observe_browser",
-    input: { paneId: opened.output.pane.paneId },
-  });
   // Content advanced, but the revision the agent is holding is unchanged.
-  assert.equal(observed.ok && observed.output.pane.pageTitle, "Settled");
-  assert.equal(observed.ok && observed.output.pane.revision, held);
+  const pane = refreshed.ok
+    ? refreshed.thread.workbench.panes.find((candidate) => candidate.kind === "browser")
+    : undefined;
+  assert.equal(pane?.kind === "browser" ? pane.pageTitle : undefined, "Settled");
+  assert.equal(pane?.kind === "browser" ? pane.revision : undefined, held);
 
   // So an act carrying the originally-observed revision still wins (no nav between).
   const acted = await service.handleTideMcpToolCall({
@@ -822,11 +909,10 @@ test("same_url_browser_snapshot_keeps_revision_so_a_held_act_still_wins", async 
   assert.equal(acted.ok, true);
 });
 
-test("act_does_not_remint_revision_and_a_settled_acts_prior_revision_is_auto_retried_once", async () => {
-  // Spec: docs_v2/specs/browser-pane-live-pull-vision.md (D5). Queuing an act must NOT
-  // advance the revision (it is a no-op for the page), and after an act settles a follow-up
-  // act still carrying that just-settled revision is auto-retried once instead of failing the
-  // CAS — the failure that forced weak models into a close/reopen thrash.
+test("act_remints_revision_and_the_previous_revision_is_auto_retried_once", async () => {
+  // BrowserRuntime acts return terminal page evidence immediately. Completion re-mints
+  // the revision and keeps the pre-act revision as priorRevision so a closely-following
+  // action carrying the previous observation token can still be accepted once.
   const service = serviceWithActiveThread("thread-rev-d5", "runtime-rev-d5");
   const opened = await openBrowser(service, "runtime-rev-d5", "https://example.test/d5");
   const paneId = opened.output.pane.paneId;
@@ -839,31 +925,19 @@ test("act_does_not_remint_revision_and_a_settled_acts_prior_revision_is_auto_ret
     "https://example.test/d5",
   );
 
-  // Act with revA → succeeds. The act itself does NOT re-mint the revision (Part 1): the
-  // returned pane still reports revA.
   const acted = await service.handleTideMcpToolCall({
     session: { runtimeId: "runtime-rev-d5", agentId: "codex" },
     toolName: "tide_act_browser",
     input: { paneId, revision: revA, action: "click_at", x: 10, y: 20 },
   });
   assert.equal(acted.ok, true);
+  const revB =
+    acted.ok && acted.output.kind === "act_browser" ? acted.output.pane.revision : "";
   assert.equal(
-    acted.ok && acted.output.kind === "act_browser" && acted.output.pane.revision,
-    revA,
+    acted.ok && acted.output.kind === "act_browser" && acted.output.pane.lastAction?.status,
+    "completed",
   );
-  const actionId =
-    acted.ok && acted.output.kind === "act_browser" ? acted.output.action.actionId : "";
-
-  // Settle the action. Completion re-mints the revision (to a new token) and records
-  // priorRevision = revA. (This also proves Part 1: the result still carries revA, so it
-  // only matches because the act did not re-mint.)
-  const completed = await service.handleWorkbenchCommand({
-    threadId: "thread-rev-d5",
-    command: "update_browser_action_result",
-    targetPaneId: paneId,
-    data: { revision: revA, actionId, status: "completed", message: "clicked", loading: false },
-  });
-  assert.equal(completed.ok, true);
+  assert.notEqual(revB, revA);
 
   // A genuinely stale (arbitrary) revision is still rejected (the CAS holds).
   const stale = await service.handleTideMcpToolCall({
@@ -873,148 +947,14 @@ test("act_does_not_remint_revision_and_a_settled_acts_prior_revision_is_auto_ret
   });
   assert.equal(stale.ok, false);
 
-  // But a follow-up act STILL carrying revA (the just-settled, now-prior revision) is
-  // auto-retried against the current revision instead of erroring (Part 2).
+  // But a follow-up act still carrying revA, the just-completed prior revision,
+  // is auto-retried against the current revision instead of erroring.
   const retried = await service.handleTideMcpToolCall({
     session: { runtimeId: "runtime-rev-d5", agentId: "codex" },
     toolName: "tide_act_browser",
     input: { paneId, revision: revA, action: "click_at", x: 30, y: 40 },
   });
   assert.equal(retried.ok, true);
-});
-
-test("stale_pending_browser_action_is_failed_and_the_next_action_is_queued", async () => {
-  // Spec: docs_v2/specs/browser-pane-action-liveness.md (D4). If the Desktop renderer
-  // loses an action result entirely, the backend watchdog must not keep refusing later
-  // browser actions with "already has a pending action" forever.
-  let currentTimeMs = Date.parse(now);
-  const service = createThreadRuntimeService({
-    browserCapturePullTimeoutMs: 20,
-    ...createFakes().ports,
-    clock: () => new Date(currentTimeMs).toISOString(),
-    idGenerator: sequentialIdGenerator("id"),
-    initialThreads: [
-      threadSeed("thread-stale-pending", {
-        activeRuntimeHandle: runtimeHandle("thread-stale-pending", "runtime-stale-pending"),
-        runtimeState: "running",
-      }),
-    ],
-  });
-  const opened = await openBrowser(
-    service,
-    "runtime-stale-pending",
-    "https://example.test/pending",
-  );
-  const paneId = opened.output.pane.paneId;
-  const revision = opened.output.pane.revision;
-  await settleBrowser(
-    service,
-    "thread-stale-pending",
-    paneId,
-    revision,
-    "https://example.test/pending",
-  );
-
-  const first = await service.handleTideMcpToolCall({
-    session: { runtimeId: "runtime-stale-pending", agentId: "codex" },
-    toolName: "tide_act_browser",
-    input: { paneId, revision, action: "click_at", x: 10, y: 20 },
-  });
-  assert.equal(first.ok, true);
-  const firstActionId =
-    first.ok && first.output.kind === "act_browser" ? first.output.action.actionId : "";
-
-  currentTimeMs += BROWSER_ACTION_PENDING_TTL_MS + 1;
-  const second = await service.handleTideMcpToolCall({
-    session: { runtimeId: "runtime-stale-pending", agentId: "codex" },
-    toolName: "tide_act_browser",
-    input: { paneId, revision, action: "click_at", x: 30, y: 40 },
-  });
-
-  assert.equal(second.ok, true);
-  assert.equal(
-    second.ok && second.output.kind === "act_browser" && second.output.pane.lastAction?.actionId,
-    firstActionId,
-  );
-  assert.equal(
-    second.ok && second.output.kind === "act_browser" && second.output.pane.lastAction?.status,
-    "failed",
-  );
-  assert.equal(
-    second.ok && second.output.kind === "act_browser" && second.output.pane.pendingAction?.x,
-    30,
-  );
-});
-
-test("observe_browser_clears_a_stale_pending_action_before_the_next_action", async () => {
-  let currentTimeMs = Date.parse(now);
-  const events: ThreadRuntimeAsyncEvent[] = [];
-  const service = createThreadRuntimeService({
-    browserCapturePullTimeoutMs: 20,
-    ...createFakes().ports,
-    clock: () => new Date(currentTimeMs).toISOString(),
-    idGenerator: sequentialIdGenerator("id"),
-    initialThreads: [
-      threadSeed("thread-observe-stale-pending", {
-        activeRuntimeHandle: runtimeHandle(
-          "thread-observe-stale-pending",
-          "runtime-observe-stale-pending",
-        ),
-        runtimeState: "running",
-      }),
-    ],
-    onAsyncEvent: (event) => events.push(event),
-  });
-  const opened = await openBrowser(
-    service,
-    "runtime-observe-stale-pending",
-    "https://example.test/observe-pending",
-  );
-  const paneId = opened.output.pane.paneId;
-  const revision = opened.output.pane.revision;
-  await settleBrowser(
-    service,
-    "thread-observe-stale-pending",
-    paneId,
-    revision,
-    "https://example.test/observe-pending",
-  );
-
-  const first = await service.handleTideMcpToolCall({
-    session: { runtimeId: "runtime-observe-stale-pending", agentId: "codex" },
-    toolName: "tide_act_browser",
-    input: { paneId, revision, action: "click_at", x: 10, y: 20 },
-  });
-  assert.equal(first.ok, true);
-  const firstActionId =
-    first.ok && first.output.kind === "act_browser" ? first.output.action.actionId : "";
-
-  currentTimeMs += BROWSER_ACTION_PENDING_TTL_MS + 1;
-  events.length = 0;
-  const observed = await service.handleTideMcpToolCall({
-    session: { runtimeId: "runtime-observe-stale-pending", agentId: "codex" },
-    toolName: "tide_observe_browser",
-    input: { paneId, revision, mode: "text" },
-  });
-
-  assert.equal(observed.ok, true);
-  assert.equal(observed.ok && observed.output.pane.pendingAction, undefined);
-  assert.equal(observed.ok && observed.output.pane.lastAction?.actionId, firstActionId);
-  assert.equal(observed.ok && observed.output.pane.lastAction?.status, "failed");
-  assert.equal(events.length, 1);
-  assert.equal(events[0]?.kind, "workbench_changed");
-  assert.equal(
-    events[0]?.thread.workbench.panes.find((pane) => pane.kind === "browser")?.lastAction
-      ?.actionId,
-    firstActionId,
-  );
-
-  const second = await service.handleTideMcpToolCall({
-    session: { runtimeId: "runtime-observe-stale-pending", agentId: "codex" },
-    toolName: "tide_act_browser",
-    input: { paneId, revision, action: "click_at", x: 30, y: 40 },
-  });
-  assert.equal(second.ok, true);
 });
 
 test("navigation_advances_revision_and_the_stale_error_carries_the_current_one", async () => {
@@ -1060,7 +1000,7 @@ test("navigation_advances_revision_and_the_stale_error_carries_the_current_one",
   assert.ok(current !== undefined && !acted.ok && acted.error.message.includes(current));
 });
 
-test("browser_action_result_command_records_completion_and_snapshot", async () => {
+test("browser_runtime_action_records_completion_and_snapshot", async () => {
   // Spec: docs_v2/specs/tide-mcp-browser-action-tool.md
   const service = serviceWithActiveThread("thread-browser-result", "runtime-browser-result");
   const opened = await openBrowser(
@@ -1088,34 +1028,14 @@ test("browser_action_result_command_records_completion_and_snapshot", async () =
   });
   assert.equal(action.ok, true);
 
-  const scheduledPane = action.ok
-    ? action.thread.workbench.panes.find((pane) => pane.kind === "browser")
-    : undefined;
-  const result = await service.handleWorkbenchCommand({
-    threadId: "thread-browser-result",
-    command: "update_browser_action_result",
-    targetPaneId: opened.output.pane.paneId,
-    data: {
-      revision: scheduledPane?.revision,
-      actionId: action.ok ? action.output.action.actionId : "",
-      status: "completed",
-      message: "Typed input[name=q]",
-      url: "https://example.test/action?q=tide",
-      pageTitle: "Search results",
-      bodyTextPreview: "Found Tide",
-      loading: false,
-    },
-  });
-
-  assert.equal(result.ok, true);
-  const pane = result.ok
-    ? result.thread.workbench.panes.find((candidate) => candidate.kind === "browser")
+  const pane = action.ok
+    ? action.thread.workbench.panes.find((candidate) => candidate.kind === "browser")
     : undefined;
   assert.equal(pane?.kind, "browser");
-  assert.equal(pane?.kind === "browser" ? pane.pendingAction : undefined, undefined);
+  assert.equal(pane?.kind === "browser" ? "pendingAction" in pane : false, false);
   assert.equal(pane?.kind === "browser" ? pane.lastAction?.status : undefined, "completed");
-  assert.equal(pane?.kind === "browser" ? pane.pageTitle : undefined, "Search results");
-  assert.equal(pane?.kind === "browser" ? pane.bodyTextPreview : undefined, "Found Tide");
+  assert.equal(pane?.kind === "browser" ? pane.pageTitle : undefined, "Runtime Browser");
+  assert.equal(pane?.kind === "browser" ? pane.bodyTextPreview : undefined, "Runtime acted body");
 });
 
 test("browser_snapshot_command_caches_screenshot_returned_by_screenshot_mode_observe", async () => {
@@ -1160,7 +1080,7 @@ test("browser_snapshot_command_caches_screenshot_returned_by_screenshot_mode_obs
   assert.equal(screenshotObserve.ok, true);
   assert.equal(
     screenshotObserve.ok && screenshotObserve.output.pane.screenshot?.data,
-    "QUJD",
+    "iVBORw0KGgo=",
   );
 });
 
@@ -1741,7 +1661,6 @@ function serviceWithActiveThreads(
   fakes = createFakes(),
 ) {
   return createThreadRuntimeService({
-    browserCapturePullTimeoutMs: 20,
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
@@ -1850,9 +1769,11 @@ function createFakes(options: {
     options.definition,
     options.definitionError,
   );
+  const browserRuntime = new FakeBrowserRuntimePort();
 
   return {
     runtime,
+    browserRuntime,
     readiness,
     transcript,
     workspaceFiles,
@@ -1867,6 +1788,7 @@ function createFakes(options: {
       workspaceCommandPort: commands,
       workbenchTerminalPort: workbenchTerminal,
       workspaceCodeIntelligencePort: codeIntelligence,
+      browserRuntimePort: browserRuntime,
     },
   };
 }
@@ -1895,6 +1817,88 @@ class FakeAgentRuntimePort implements AgentRuntimePort {
 
   async stop(_handle: AgentRuntimeHandle): Promise<void> {
     this.events.push("stop");
+  }
+}
+
+class FakeBrowserRuntimePort implements BrowserRuntimePort {
+  ensures: BrowserRuntimeEnsureInput[] = [];
+  observes: BrowserRuntimeObserveInput[] = [];
+  acts: BrowserRuntimeActInput[] = [];
+  closes: BrowserRuntimeCloseInput[] = [];
+
+  async ensure(input: BrowserRuntimeEnsureInput) {
+    this.ensures.push(input);
+    return {
+      ok: true as const,
+      value: {
+        observation: {
+          url: input.url,
+          title: input.title ?? "Runtime Browser",
+          pageTitle: "Runtime Browser",
+          bodyTextPreview: "Runtime ensured body",
+          interactiveElements: [],
+          loading: false,
+        },
+      },
+    };
+  }
+
+  async observe(input: BrowserRuntimeObserveInput) {
+    this.observes.push(input);
+    return {
+      ok: true as const,
+      value: {
+        observation: {
+          url: "https://example.test/runtime",
+          title: "Runtime Browser",
+          pageTitle: "Runtime Browser",
+          bodyTextPreview: "Runtime observed body",
+          interactiveElements: [
+            {
+              index: 0,
+              tag: "button",
+              text: "Reserve",
+              rect: { x: 10, y: 20, width: 100, height: 40 },
+            },
+          ],
+          screenshot:
+            input.mode === "text"
+              ? undefined
+              : {
+                  data: "iVBORw0KGgo=",
+                  mimeType: "image/png" as const,
+                  width: 4,
+                  height: 3,
+                  devicePixelRatio: 1,
+                },
+          loading: false,
+        },
+      },
+    };
+  }
+
+  async act(input: BrowserRuntimeActInput) {
+    this.acts.push(input);
+    return {
+      ok: true as const,
+      value: {
+        status: "completed" as const,
+        message: "Runtime action completed.",
+        completedAt: "2026-05-27T00:00:01.000Z",
+        observation: {
+          title: "Runtime Browser",
+          pageTitle: "Runtime Browser",
+          bodyTextPreview: "Runtime acted body",
+          interactiveElements: [],
+          loading: false,
+        },
+      },
+    };
+  }
+
+  async close(input: BrowserRuntimeCloseInput) {
+    this.closes.push(input);
+    return { ok: true as const, value: undefined };
   }
 }
 

@@ -65,13 +65,9 @@ export function browserPaneRef(pane: BrowserPaneState): BrowserPaneRef {
         : pane.interactiveElements.map((element) => ({
             ...element,
             rect: { ...element.rect },
-          })),
+    })),
     agentDriving: pane.agentDriving ?? false,
     agentCursor: pane.agentCursor === undefined ? undefined : { ...pane.agentCursor },
-    pendingCapture:
-      pane.pendingCapture === undefined ? undefined : { ...pane.pendingCapture },
-    pendingAction:
-      pane.pendingAction === undefined ? undefined : { ...pane.pendingAction },
     lastAction: pane.lastAction === undefined ? undefined : { ...pane.lastAction },
     stale: false,
     availableTools: [...TIDE_MCP_WORKBENCH_TOOL_NAMES],

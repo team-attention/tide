@@ -8,6 +8,9 @@ export function contractCodeFromServiceError(error: ServiceError): ContractError
     case "provider_not_ready":
     case "agent_runtime_unavailable":
       return error.code;
+    case "browser_runtime_unavailable":
+    case "browser_runtime_timeout":
+      return "agent_runtime_unavailable";
     case "agent_binding_locked":
     case "thread_not_draft":
     case "prompt_not_found":
@@ -33,10 +36,17 @@ export function contractCodeFromServiceError(error: ServiceError): ContractError
     case "workspace_code_intelligence_unavailable":
     case "workspace_code_definition_not_found":
     case "workspace_code_references_not_found":
+    case "browser_runtime_error":
+    case "browser_runtime_invalid_response":
       return "invalid_command";
   }
 }
 
 export function isRetryableServiceError(error: ServiceError): boolean {
-  return error.code === "provider_not_ready" || error.code === "agent_runtime_unavailable";
+  return (
+    error.code === "provider_not_ready" ||
+    error.code === "agent_runtime_unavailable" ||
+    error.code === "browser_runtime_unavailable" ||
+    error.code === "browser_runtime_timeout"
+  );
 }
