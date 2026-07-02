@@ -45,13 +45,17 @@ function isBrowserRuntimeStage(value: unknown): value is BrowserRuntimeStageDto 
     visible?: unknown;
     bounds?: unknown;
     overlay?: unknown;
+    url?: unknown;
+    title?: unknown;
   };
   return (
     typeof record.threadId === "string" &&
     typeof record.paneId === "string" &&
     typeof record.visible === "boolean" &&
     (record.bounds === null || isBrowserRuntimeBounds(record.bounds)) &&
-    (record.overlay === undefined || isBrowserRuntimeOverlay(record.overlay))
+    (record.overlay === undefined || isBrowserRuntimeOverlay(record.overlay)) &&
+    (record.url === undefined || typeof record.url === "string") &&
+    (record.title === undefined || typeof record.title === "string")
   );
 }
 

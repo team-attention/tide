@@ -67,19 +67,22 @@ export class ThreadArchiveService {
         .filter((pane): pane is TerminalPaneState => pane.kind === "terminal")
         .map((pane) => this.workbenchRuntime.stopTerminalPane(pane).catch(() => {})),
     );
-    await Promise.all(
-      thread.workbench.panes
-        .filter((pane) => pane.kind === "browser")
-        .map((pane) =>
-          this.browserRuntimePort
-            ?.close({
-              threadId: thread.threadId,
-              paneId: pane.paneId,
-              reason: "thread_archived",
-            })
-            .catch(() => {}),
-        ),
-    );
+    const browserRuntimePort = this.browserRuntimePort;
+    if (browserRuntimePort !== undefined) {
+      await Promise.all(
+        thread.workbench.panes
+          .filter((pane) => pane.kind === "browser")
+          .map((pane) =>
+            browserRuntimePort
+              .close({
+                threadId: thread.threadId,
+                paneId: pane.paneId,
+                reason: "thread_archived",
+              })
+              .catch(() => {}),
+          ),
+      );
+    }
 
     if (runtimeHandle !== undefined) {
       await this.agentRuntimePort.stop(runtimeHandle).catch(() => {});

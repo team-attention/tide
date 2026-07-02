@@ -92,6 +92,9 @@ export class BrowserRuntimeHost {
           this.closeRuntime(payload.threadId, payload.paneId);
           return this.ok(request.requestId, { closed: true });
         }
+        default: {
+          throw new Error(`Unknown BrowserRuntime operation: ${String(request.operation)}`);
+        }
       }
     } catch (error) {
       return {
@@ -487,7 +490,17 @@ async function readDomSnapshot(webContents: WebContents): Promise<{
   devicePixelRatio: number;
   interactiveElements: BrowserRuntimeObservationDto["interactiveElements"];
 }> {
-  const result = await runInPage(webContents, DOM_SNAPSHOT_SCRIPT);
+  let result: unknown;
+  try {
+    result = await runInPage(webContents, DOM_SNAPSHOT_SCRIPT);
+  } catch {
+    return {
+      title: webContents.getTitle(),
+      bodyTextPreview: "",
+      devicePixelRatio: 1,
+      interactiveElements: [],
+    };
+  }
   const record = result !== null && typeof result === "object" ? result as {
     title?: unknown;
     bodyTextPreview?: unknown;
@@ -528,20 +541,24 @@ async function waitForLoadSettle(webContents: WebContents): Promise<void> {
 
 async function waitForPaintableViewport(webContents: WebContents): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const result = await runInPage(
-      webContents,
-      "({ width: window.innerWidth, height: window.innerHeight, readyState: document.readyState })",
-    );
-    const record = result !== null && typeof result === "object"
-      ? result as { width?: unknown; height?: unknown }
-      : {};
-    if (
-      typeof record.width === "number" &&
-      typeof record.height === "number" &&
-      record.width > 0 &&
-      record.height > 0
-    ) {
-      return;
+    try {
+      const result = await runInPage(
+        webContents,
+        "({ width: window.innerWidth, height: window.innerHeight, readyState: document.readyState })",
+      );
+      const record = result !== null && typeof result === "object"
+        ? result as { width?: unknown; height?: unknown }
+        : {};
+      if (
+        typeof record.width === "number" &&
+        typeof record.height === "number" &&
+        record.width > 0 &&
+        record.height > 0
+      ) {
+        return;
+      }
+    } catch {
+      // Navigations can briefly destroy the execution context; retry until the viewport stabilizes.
     }
     await delay(50);
   }

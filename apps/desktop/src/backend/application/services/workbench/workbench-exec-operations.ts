@@ -118,9 +118,9 @@ export class WorkbenchExecOperations {
     if (target.kind === "terminal") {
       await this.workbenchRuntime.stopTerminalPane(target);
     }
-    if (target.kind === "browser") {
+    if (target.kind === "browser" && this.browserRuntimePort !== undefined) {
       await this.browserRuntimePort
-        ?.close({
+        .close({
           threadId: thread.threadId,
           paneId: target.paneId,
           reason: "pane_closed",

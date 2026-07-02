@@ -114,9 +114,9 @@ export class WorkbenchCommandHandler {
         const pane = workbenchPaneById(thread.workbench, opened.pane.paneId);
         if (pane !== undefined) {
           thread.workbench.activePaneId = pane.paneId;
-          if (pane.kind === "browser") {
+          if (pane.kind === "browser" && this.browserRuntimePort !== undefined) {
             await this.browserRuntimePort
-              ?.ensure({
+              .ensure({
                 threadId: thread.threadId,
                 paneId: pane.paneId,
                 url: pane.url,
@@ -436,9 +436,9 @@ export class WorkbenchCommandHandler {
         if (pane.kind === "terminal") {
           void this.workbenchRuntime.stopTerminalPane(pane);
         }
-        if (pane.kind === "browser") {
+        if (pane.kind === "browser" && this.browserRuntimePort !== undefined) {
           void this.browserRuntimePort
-            ?.close({
+            .close({
               threadId: thread.threadId,
               paneId: pane.paneId,
               reason: "pane_closed",

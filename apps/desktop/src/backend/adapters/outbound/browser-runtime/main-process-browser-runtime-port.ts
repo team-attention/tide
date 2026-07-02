@@ -56,12 +56,24 @@ export function createMainProcessBrowserRuntimePort(
         );
       }, BROWSER_RUNTIME_REQUEST_TIMEOUT_MS);
       pending.set(requestId, { resolve, timeout });
-      parentPort.postMessage({
-        kind: "browserRuntime.request",
-        requestId,
-        operation,
-        payload,
-      } satisfies BrowserRuntimeRequestEnvelopeDto);
+      try {
+        parentPort.postMessage({
+          kind: "browserRuntime.request",
+          requestId,
+          operation,
+          payload,
+        } satisfies BrowserRuntimeRequestEnvelopeDto);
+      } catch (error) {
+        clearTimeout(timeout);
+        pending.delete(requestId);
+        resolve(
+          unavailableResponse(
+            "browser_runtime_error",
+            error instanceof Error ? error.message : "BrowserRuntime request could not be sent.",
+            requestId,
+          ),
+        );
+      }
     });
     return response;
   };
