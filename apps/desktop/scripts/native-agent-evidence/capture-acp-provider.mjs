@@ -142,6 +142,7 @@ async function captureHandshake(input) {
   });
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
+  child.stdin.on("error", () => {});
 
   let buffer = "";
   let stderrBytes = 0;

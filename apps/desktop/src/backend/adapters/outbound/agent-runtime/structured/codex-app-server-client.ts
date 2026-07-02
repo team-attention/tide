@@ -93,7 +93,7 @@ export function createCodexAppServerClient(
 }
 
 interface PendingCodexResponse {
-  onResult: (result: Record<string, unknown>) => void;
+  onResult: (result: unknown) => void;
   onError?: (error: Error) => void;
 }
 
@@ -420,7 +420,10 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     onError?: (error: Error) => void,
   ): void {
     this.requestId += 1;
-    this.pendingResponses.set(this.requestId, { onResult, onError });
+    this.pendingResponses.set(this.requestId, {
+      onResult: (result) => onResult(isRecord(result) ? result : {}),
+      onError,
+    });
     if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
       process.stderr.write(`[tide-codex-as ${this.runtimeId}] -> ${method}\n`);
     }
@@ -473,7 +476,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       const handler = this.pendingResponses.get(id);
       if (handler !== undefined) {
         this.pendingResponses.delete(id);
-        if (isRecord(message.result)) {
+        if (message.result !== undefined) {
           handler.onResult(message.result);
         } else if (message.error !== undefined) {
           // A failed thread/turn request must not hang the thread.

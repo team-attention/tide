@@ -123,7 +123,7 @@ function selectProviderConfigCapability(
   if (capability.invoke.kind !== "provider_config" || typeof capability.invoke.key !== "string") {
     return setComposerActiveSurface(state, null);
   }
-  if ("value" in capability.invoke) {
+  if (capability.invoke.value !== undefined) {
     const updated = updateComposerLaunchOptions(state, { [capability.invoke.key]: capability.invoke.value });
     return { state: { ...updated.state, composer: { ...updated.state.composer, activeSurface: null } }, command: updated.command };
   }

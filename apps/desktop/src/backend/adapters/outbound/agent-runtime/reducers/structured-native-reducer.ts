@@ -500,7 +500,10 @@ function numberField(record: Record<string, unknown>, key: string): number | und
 
 type UsageInput = Extract<StructuredProviderEvent, { kind: "usage" }>["usage"];
 
-function normalizeUsage(usage: UsageInput): Record<string, unknown> {
+function normalizeUsage(usage: UsageInput | null | undefined): Record<string, unknown> {
+  if (usage === undefined || usage === null) {
+    return {};
+  }
   const totalTokens =
     usage.totalTokens ??
     (usage.inputTokens !== undefined || usage.outputTokens !== undefined

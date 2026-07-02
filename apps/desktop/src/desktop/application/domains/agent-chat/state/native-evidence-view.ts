@@ -5,7 +5,9 @@ export function nativeEvidenceForBlock(block: AgentChatBlock): AgentChatNativeEv
   if (!Array.isArray(rawEvidence)) {
     return undefined;
   }
-  const evidence = rawEvidence.map(nativeEvidenceEntry).filter((entry) => entry !== undefined);
+  const evidence = rawEvidence
+    .map(nativeEvidenceEntry)
+    .filter((entry): entry is AgentChatNativeEvidenceView => entry !== undefined);
   return evidence.length > 0 ? evidence : undefined;
 }
 

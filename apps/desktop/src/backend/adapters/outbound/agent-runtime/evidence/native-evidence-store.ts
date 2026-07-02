@@ -180,8 +180,17 @@ function walkShape(
     shape.push(`${path}:${typeof value}`);
     return;
   }
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
+  if (!isPlainObject(value)) {
+    shape.push(`${path}:object`);
+    return;
+  }
+  let keys: string[];
+  try {
+    keys = Object.keys(value).sort();
+  } catch {
+    shape.push(`${path}:object`);
+    return;
+  }
   shape.push(`${path}:object(${keys.join(",")})`);
   for (const key of keys.slice(0, 40)) {
     const childPath = `${path}.${key}`;
@@ -190,16 +199,23 @@ function walkShape(
       shape.push(`${childPath}:redacted`);
       continue;
     }
-    walkShape(record[key], childPath, shape, redacted, depth + 1);
+    let childValue: unknown;
+    try {
+      childValue = value[key];
+    } catch {
+      shape.push(`${childPath}:unreadable`);
+      continue;
+    }
+    walkShape(childValue, childPath, shape, redacted, depth + 1);
   }
 }
 
 function isSensitiveFieldName(key: string): boolean {
-  const normalized = key.toLocaleLowerCase();
+  const normalized = key.toLowerCase();
   return (
     normalized.includes("secret") ||
     normalized.includes("token") ||
-    normalized.includes("key") ||
+    isSensitiveCredentialKey(normalized) ||
     normalized.includes("password") ||
     normalized.includes("credential") ||
     normalized === "prompt" ||
@@ -212,5 +228,33 @@ function isSensitiveFieldName(key: string): boolean {
     normalized === "stderr" ||
     normalized === "env" ||
     normalized.endsWith("path")
+  );
+}
+
+function isPlainObject(value: object): value is Record<string, unknown> {
+  try {
+    const proto = Object.getPrototypeOf(value);
+    return proto === null || proto === Object.prototype;
+  } catch {
+    return false;
+  }
+}
+
+function isSensitiveCredentialKey(normalized: string): boolean {
+  const nonSensitiveKeySuffixes = new Set([
+    "donkey",
+    "donkeys",
+    "hockey",
+    "monkey",
+    "monkeys",
+    "turkey",
+    "turkeys",
+    "whiskey",
+    "whiskeys",
+  ]);
+  return (
+    normalized === "key" ||
+    normalized === "keys" ||
+    ((normalized.endsWith("key") || normalized.endsWith("keys")) && !nonSensitiveKeySuffixes.has(normalized))
   );
 }

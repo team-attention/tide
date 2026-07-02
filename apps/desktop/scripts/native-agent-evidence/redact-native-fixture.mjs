@@ -37,7 +37,7 @@ function isSensitiveKey(key) {
   return (
     normalized.includes("secret") ||
     normalized.includes("token") ||
-    normalized.includes("key") ||
+    isSensitiveCredentialKey(normalized) ||
     normalized.includes("password") ||
     normalized.includes("credential") ||
     normalized === "prompt" ||
@@ -50,6 +50,25 @@ function isSensitiveKey(key) {
     normalized === "stderr" ||
     normalized === "env" ||
     normalized.endsWith("path")
+  );
+}
+
+function isSensitiveCredentialKey(normalized) {
+  const nonSensitiveKeySuffixes = new Set([
+    "donkey",
+    "donkeys",
+    "hockey",
+    "monkey",
+    "monkeys",
+    "turkey",
+    "turkeys",
+    "whiskey",
+    "whiskeys",
+  ]);
+  return (
+    normalized === "key" ||
+    normalized === "keys" ||
+    ((normalized.endsWith("key") || normalized.endsWith("keys")) && !nonSensitiveKeySuffixes.has(normalized))
   );
 }
 
