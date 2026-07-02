@@ -109,11 +109,8 @@ export interface TidePreloadSurface {
   // Cmd/Ctrl+F from the application menu, routed through the host renderer so
   // Native browser views, HTML previews, and terminal focus cannot swallow in-pane search.
   onFindIntent(listener: () => void): () => void;
-  // A Browser Pane link asked to open elsewhere. Main denies ordinary popup windows
-  // and forwards the URL so the renderer drives the backend open_browser path: `newPane`
-  // true (Cmd/Ctrl/middle-click) opens a new Browser Pane; false (a plain target=_blank
-  // click) navigates the active Browser Pane in place. HTTPS `new-window` popups may be
-  // preserved as native child windows by Main.
+  // BrowserRuntime owns Browser Pane popup handling and forwards http(s) popup
+  // URLs here so the renderer drives the backend open_browser path.
   onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
   setBrowserRuntimeStage(stage: BrowserRuntimeStageDto): void;
   browserRuntimeCommand(command: BrowserRuntimeRendererCommandDto): Promise<void>;

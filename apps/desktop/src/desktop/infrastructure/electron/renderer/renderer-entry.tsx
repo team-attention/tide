@@ -110,11 +110,8 @@ declare global {
       onBackendEvent(listener: (event: BackendEventEnvelope) => void): () => void;
       onCloseIntent(listener: () => void): () => void;
       onFindIntent(listener: () => void): () => void;
-      // A link inside a Browser Pane asked to open elsewhere — Main denies ordinary
-      // popup windows and hands the URL here. `newPane` true (Cmd/Ctrl/middle-click)
-      // opens a new Browser Pane; false (a plain target=_blank click) navigates the
-      // active Browser Pane in place. HTTPS `new-window` popups may be preserved as
-      // native child windows by Main.
+      // BrowserRuntime owns Browser Pane popup handling and forwards http(s)
+      // popup URLs here so the renderer drives the backend open_browser path.
       onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
       setBrowserRuntimeStage(stage: BrowserRuntimeStageDto): void;
       browserRuntimeCommand(command: BrowserRuntimeRendererCommandDto): Promise<void>;

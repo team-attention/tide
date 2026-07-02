@@ -1,8 +1,9 @@
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { mainDir } from "./backend-bridge.ts";
-import { BrowserWindow } from "electron";
+import { BrowserWindow, shell, type WebContents } from "electron";
 import { runElectronRuntimeSmoke } from "./runtime-smoke.ts";
+import { classifyTopLevelNavigation } from "./window-navigation-policy.ts";
 // Extracted from electron-main.ts (spec: navigable-source-structure).
 
 export interface TideDesktopMainEntrypoint {
@@ -55,6 +56,8 @@ export function createMainWindow(): BrowserWindow {
     },
   });
 
+  installHostNavigationGuard(mainWindow.webContents);
+
   // Zoom (Cmd +/-/0) is a per-session control, NOT a persisted preference — always open
   // at 100%. Chromium persists per-origin zoom in the session store, so a relaunch would
   // otherwise restore the last zoom; reset it on each load (on dom-ready, before paint,
@@ -83,4 +86,26 @@ export function createMainWindow(): BrowserWindow {
   void rendererLoaded.then(() => runElectronRuntimeSmoke(mainWindow));
 
   return mainWindow;
+}
+
+function installHostNavigationGuard(webContents: WebContents): void {
+  const guard = (event: { preventDefault: () => void }, url: string): void => {
+    const verdict = classifyTopLevelNavigation(url, appRendererUrl());
+    if (verdict === "allow") {
+      return;
+    }
+    event.preventDefault();
+    if (verdict === "open_external") {
+      void shell.openExternal(url).catch(() => undefined);
+    }
+  };
+
+  webContents.on("will-navigate", guard);
+  webContents.on("will-redirect", guard);
+  webContents.setWindowOpenHandler(({ url }) => {
+    if (classifyTopLevelNavigation(url, appRendererUrl()) === "open_external") {
+      void shell.openExternal(url).catch(() => undefined);
+    }
+    return { action: "deny" };
+  });
 }

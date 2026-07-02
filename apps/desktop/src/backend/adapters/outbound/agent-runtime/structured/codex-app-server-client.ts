@@ -672,6 +672,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
         return;
       }
       const blockId = `structured:${this.runtimeId}:msg:${itemId}`;
+      const phase = stringField(item, "phase");
       this.emitRecord(blockId, {
         type: "message",
         role: "agent",
@@ -679,6 +680,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
         blockId,
         body: text,
         sourceRuntimeId: this.runtimeId,
+        ...(phase === "commentary" || phase === "final_answer" ? { phase } : {}),
       }, text);
       return;
     }

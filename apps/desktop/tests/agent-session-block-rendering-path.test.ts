@@ -61,6 +61,32 @@ test("structured_message_events_render_as_conversation_blocks", () => {
   assert.deepEqual(event.payload.block.sourceFrameIds, ["frame-message"]);
 });
 
+test("structured_agent_message_phase_is_preserved_for_rendering_policy", () => {
+  // Codex distinguishes intermediate commentary from the final answer. Keep that
+  // provider evidence on the block so the transcript does not render updates as
+  // completed answers while the turn is still running.
+  const reader = createFixtureAgentSessionReader();
+  const result = reader.read({
+    thread,
+    agentBinding: thread.agentBinding,
+    frames: [
+      frame("frame-commentary", {
+        payload: {
+          type: "message",
+          role: "agent",
+          body: "I am checking the logs.",
+          phase: "commentary",
+        },
+      }),
+    ],
+    existingBlocks: [],
+  });
+
+  const block = onlyUpsertedBlock(result.blockUpdates);
+  assert.deepEqual(block.data, { phase: "commentary" });
+  assert.deepEqual(toAgentSessionBlockDto(block).data, { phase: "commentary" });
+});
+
 test("unknown_structured_events_render_as_raw_blocks", () => {
   // UC-1 BR-3: Unknown structured events become visible raw blocks.
   const reader = createFixtureAgentSessionReader();

@@ -29,6 +29,7 @@ export const AgentSessionTurn = memo(
     prev.block.status === next.block.status &&
     prev.block.kind === next.block.kind &&
     prev.block.role === next.block.role &&
+    prev.block.phase === next.block.phase &&
     prev.block.title === next.block.title &&
     prev.block.rawFallback === next.block.rawFallback &&
     prev.activeStreamingCaret === next.activeStreamingCaret,
@@ -42,15 +43,22 @@ function createAgentSessionTurn(
     return createToolLogTurn(block);
   }
   const role = block.role === "user" ? "user" : block.role === "agent" ? "agent" : "event";
+  const isCommentary = role === "agent" && block.phase === "commentary";
+  const turnClassName = [
+    "agent-session-turn",
+    `agent-session-turn--${role}`,
+    isCommentary ? "agent-session-turn--commentary" : "",
+  ].filter(Boolean).join(" ");
 
   return (
     <article
       key={block.blockId}
-      className={`agent-session-turn agent-session-turn--${role}`}
+      className={turnClassName}
       data-block-id={block.blockId}
       data-block-kind={block.kind}
       data-block-status={block.status}
       data-block-role={role}
+      data-block-phase={block.phase}
       data-streaming-caret={activeStreamingCaret ? "active" : undefined}
     >
       {/* Codex-style: the user turn is a right-aligned bubble (no label needed),
@@ -59,6 +67,7 @@ function createAgentSessionTurn(
       {role === "event" ? (
         <span className="agent-session-turn__label">{block.title}</span>
       ) : null}
+      {isCommentary ? <span className="agent-session-turn__label">Update</span> : null}
       {role === "agent" ? (
         renderAgentMarkdown(block.body)
       ) : role === "user" ? (
@@ -73,7 +82,7 @@ function createAgentSessionTurn(
       ) : null}
       {/* Hover actions on a completed agent answer: copy the answer, or retry the
           prompt. Click handling is event-delegated on the session container. */}
-      {role === "agent" && block.status !== "streaming" && block.status !== "pending" && block.body.trim().length > 0
+      {role === "agent" && !isCommentary && block.status !== "streaming" && block.status !== "pending" && block.body.trim().length > 0
         ? createAgentTurnActions()
         : null}
     </article>

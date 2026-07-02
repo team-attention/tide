@@ -246,6 +246,25 @@ test("electron_main_enables_webview_tag_for_html_preview_panes", () => {
   assert.match(main, /contextIsolation:\s*true/);
 });
 
+test("electron_navigation_policy_is_scoped_by_webcontents_owner", () => {
+  const mainDir = path.join(repoRoot, "src/desktop/infrastructure/electron/main");
+  const electronMain = fs.readFileSync(path.join(mainDir, "electron-main.ts"), "utf8");
+  const mainWindow = fs.readFileSync(path.join(mainDir, "main-window.ts"), "utf8");
+  const browserRuntimeHost = fs.readFileSync(
+    path.join(mainDir, "browser-runtime-host.ts"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(electronMain, /web-contents-created/);
+  assert.doesNotMatch(electronMain, /getType\(\)\s*===\s*["']webview["']/);
+  assert.doesNotMatch(electronMain, /shouldPreserveBrowserPopupWindow/);
+  assert.match(mainWindow, /installHostNavigationGuard/);
+  assert.match(mainWindow, /classifyTopLevelNavigation/);
+  assert.match(browserRuntimeHost, /view\.webContents\.setWindowOpenHandler/);
+  assert.match(browserRuntimeHost, /tide:open-browser-pane/);
+  assert.doesNotMatch(browserRuntimeHost, /overrideBrowserWindowOptions/);
+});
+
 test("application_menu_routes_find_to_the_host_renderer_even_from_webview_focus", () => {
   // Spec: in-pane find should open over embedded webviews, which do not send
   // renderer keydown events to the host React tree.

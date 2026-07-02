@@ -795,6 +795,7 @@ test("codex_provider_history_reader_projects_agent_message_frame", () => {
     blockId: "provider:thread-codex-history:019e7000-0000-7000-a000-000000000002:1",
     body: "Codex history",
     sourceRuntimeId: "runtime-codex-history",
+    phase: "final_answer",
   });
   assert.deepEqual(
     readCodexProviderHistoryFramesFromHome({
