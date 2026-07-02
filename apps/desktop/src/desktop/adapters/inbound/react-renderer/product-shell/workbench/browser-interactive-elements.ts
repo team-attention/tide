@@ -39,7 +39,7 @@ const BROWSER_INTERACTIVE_ELEMENT_CANDIDATES_SCRIPT = `(() => {
       seen.add(element);
       if (rect.width <= 0 || rect.height <= 0) return false;
       const style = window.getComputedStyle(element);
-      return style.visibility !== "hidden" && style.display !== "none" && style.opacity !== "0";
+      return style.visibility !== "hidden" && style.display !== "none" && parseFloat(style.opacity) !== 0;
     })
     .map((item) => {
       const viewportLeft = Math.max(0, item.rect.left);
@@ -57,11 +57,14 @@ const BROWSER_INTERACTIVE_ELEMENT_CANDIDATES_SCRIPT = `(() => {
     .sort((a, b) => {
       if (a.inViewport !== b.inViewport) return a.inViewport ? -1 : 1;
       if (a.inViewport && b.inViewport) {
-        const topDelta = a.rect.top - b.rect.top;
-        if (Math.abs(topDelta) > 4) return topDelta;
-        const leftDelta = a.rect.left - b.rect.left;
-        if (Math.abs(leftDelta) > 4) return leftDelta;
-        return b.viewportArea - a.viewportArea;
+        const rowA = Math.floor(a.rect.top / 8);
+        const rowB = Math.floor(b.rect.top / 8);
+        if (rowA !== rowB) return rowA - rowB;
+        const colA = Math.floor(a.rect.left / 8);
+        const colB = Math.floor(b.rect.left / 8);
+        if (colA !== colB) return colA - colB;
+        const areaDelta = b.viewportArea - a.viewportArea;
+        if (areaDelta !== 0) return areaDelta;
       }
       return a.sourceIndex - b.sourceIndex;
     })
