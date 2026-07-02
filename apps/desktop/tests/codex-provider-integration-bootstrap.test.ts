@@ -117,6 +117,18 @@ test("codex_ready_preflight_returns_app_server_plan_with_tide_mcp_config", async
       'mcp_servers.tide.env.TIDE_SOCKET="/tmp/tide.sock"',
     ),
   );
+  assert.equal(
+    typeof result.launchPlan?.protocolParams?.developerInstructions,
+    "string",
+  );
+  assert.match(
+    String(result.launchPlan?.protocolParams?.developerInstructions),
+    /mcp__tide__tide_observe_browser/,
+  );
+  assert.match(
+    String(result.launchPlan?.protocolParams?.developerInstructions),
+    /background/,
+  );
   // No TUI machinery on a structured plan.
   assert.equal(result.launchPlan?.args.includes("--dangerously-bypass-hook-trust"), false);
 });

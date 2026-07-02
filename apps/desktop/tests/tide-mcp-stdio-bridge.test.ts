@@ -80,6 +80,8 @@ test("mcp_initialize_returns_tide_server_capabilities", async () => {
   assert.equal(response?.id, 1);
   assert.equal(response?.result.serverInfo.name, "tide");
   assert.deepEqual(response?.result.capabilities, { tools: {} });
+  assert.match(String(response?.result.instructions), /tide_observe_browser/);
+  assert.match(String(response?.result.instructions), /background/);
 });
 
 test("mcp_tools_list_returns_backend_tool_definitions", async () => {
