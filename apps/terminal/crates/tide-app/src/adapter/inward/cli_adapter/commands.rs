@@ -13,9 +13,12 @@ use crate::agent::notification::{
     CodexStopResolution,
 };
 use crate::pane::browser::{
-    BrowserActionHistoryEntry, BrowserAutomationCursor, BrowserPageElement, BrowserPageElementKind,
-    BrowserPageMap, BrowserPane, BrowserPaneScreenshot, BrowserReviewHistoryEntry,
-    BrowserSelectionSnapshot, BrowserSnapshot, BROWSER_ACTION_HISTORY_LIMIT,
+    BrowserActionHistoryEntry, BrowserAutomationCursor, BrowserListGroup, BrowserListItem,
+    BrowserListSnapshot, BrowserNetworkEntry, BrowserNetworkLog, BrowserPageElement,
+    BrowserPageElementKind, BrowserPageMap, BrowserPane, BrowserPaneScreenshot,
+    BrowserReviewHistoryEntry, BrowserSelectionSnapshot, BrowserSnapshot,
+    BROWSER_ACTION_HISTORY_LIMIT, BROWSER_LIST_GROUP_LIMIT, BROWSER_LIST_ITEM_LIMIT,
+    BROWSER_LIST_TEXT_LIMIT_BYTES, BROWSER_NETWORK_LOG_LIMIT, BROWSER_NETWORK_TEXT_LIMIT_BYTES,
     BROWSER_PAGE_MAP_INTERACTABLE_LIMIT, BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES,
     BROWSER_PAGE_MAP_REGION_LIMIT, BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES,
     BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES,
@@ -165,6 +168,8 @@ impl crate::App {
             "browser-read-snapshot" => cli_browser_read_snapshot(self, params),
             "browser-find-in-snapshot" => cli_browser_find_in_snapshot(self, params),
             "browser-diff-since" => cli_browser_diff_since(self, params),
+            "browser-inspect-network" => cli_browser_inspect_network(self, params),
+            "browser-collect-list" => cli_browser_collect_list(self, params),
             // Phase 2 — Act
             "browser-eval" => cli_browser_eval(self, params),
             "browser-operation" => cli_browser_operation(self, params),
@@ -512,6 +517,20 @@ fn optional_bounded_json_string(value: Option<&String>, limit: usize) -> Value {
         .unwrap_or(Value::Null)
 }
 
+fn browser_page_point_json(point: Option<&crate::pane::browser::BrowserPagePoint>) -> Value {
+    point
+        .map(|point| json!({ "x": point.x, "y": point.y }))
+        .unwrap_or(Value::Null)
+}
+
+fn browser_page_hit_test_json(hit_test: &crate::pane::browser::BrowserPageHitTest) -> Value {
+    json!({
+        "clickable": hit_test.clickable,
+        "center_blocked": hit_test.center_blocked,
+        "point_source": hit_test.point_source,
+    })
+}
+
 fn browser_page_element_json(element: &BrowserPageElement) -> Value {
     json!({
         "ref": element.reference.clone(),
@@ -526,6 +545,9 @@ fn browser_page_element_json(element: &BrowserPageElement) -> Value {
         "disabled": element.disabled,
         "enabled": !element.disabled,
         "rect": rect_value(element.rect),
+        "click_point": browser_page_point_json(element.click_point.as_ref()),
+        "hit_test": browser_page_hit_test_json(&element.hit_test),
+        "scrollable": element.scrollable,
     })
 }
 
@@ -542,6 +564,9 @@ fn browser_page_element_summary_json(element: &BrowserPageElement) -> Value {
         "disabled": element.disabled,
         "enabled": !element.disabled,
         "rect": rect_value(element.rect),
+        "click_point": browser_page_point_json(element.click_point.as_ref()),
+        "hit_test": browser_page_hit_test_json(&element.hit_test),
+        "scrollable": element.scrollable,
     })
 }
 
@@ -628,6 +653,178 @@ fn browser_page_map_summary_json(page_map: Option<&BrowserPageMap>, generation: 
     })
 }
 
+fn browser_interaction_graph_json(page_map: Option<&BrowserPageMap>, generation: u64) -> Value {
+    let interactables = page_map
+        .map(|page_map| {
+            page_map
+                .interactables
+                .iter()
+                .map(browser_page_element_summary_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let scrollables = page_map
+        .map(|page_map| {
+            page_map
+                .interactables
+                .iter()
+                .chain(page_map.regions.iter())
+                .filter(|element| element.scrollable)
+                .map(browser_page_element_summary_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json!({
+        "generation": generation,
+        "status": if page_map.is_some() { "ok" } else { "missing" },
+        "source": "dom_geometry_hit_test",
+        "interactables": interactables,
+        "scrollables": scrollables,
+        "targeting": {
+            "semantic_target_supported": true,
+            "target_ref_supported": true,
+            "click_point_preferred_over_rect_center": true,
+            "hit_tested": true,
+        },
+    })
+}
+
+fn browser_network_entry_json(entry: &BrowserNetworkEntry) -> Value {
+    json!({
+        "id": entry.id,
+        "source": entry.source,
+        "method": entry.method,
+        "url": bounded_json_string(&entry.url, BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES),
+        "status": entry.status,
+        "ok": entry.ok,
+        "mime_type": entry.mime_type,
+        "request_body": optional_bounded_json_string(entry.request_body.as_ref(), BROWSER_NETWORK_TEXT_LIMIT_BYTES),
+        "response_excerpt": optional_bounded_json_string(entry.response_excerpt.as_ref(), BROWSER_NETWORK_TEXT_LIMIT_BYTES),
+        "started_ms": entry.started_ms,
+        "duration_ms": entry.duration_ms,
+    })
+}
+
+fn browser_network_log_json(network_log: Option<&BrowserNetworkLog>) -> Value {
+    let entries = network_log
+        .map(|network_log| {
+            network_log
+                .entries
+                .iter()
+                .map(browser_network_entry_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json!({
+        "status": if network_log.is_some() { "ok" } else { "missing" },
+        "entries": entries,
+        "limits": {
+            "entry_limit": BROWSER_NETWORK_LOG_LIMIT,
+            "text_limit_bytes": BROWSER_NETWORK_TEXT_LIMIT_BYTES,
+            "truncated": network_log.map(|network_log| network_log.truncated).unwrap_or(false),
+        }
+    })
+}
+
+fn browser_list_item_json(item: &BrowserListItem) -> Value {
+    json!({
+        "ref": item.reference,
+        "index": item.index,
+        "label": bounded_json_string(&item.label, BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES),
+        "text": bounded_json_string(&item.text, BROWSER_LIST_TEXT_LIMIT_BYTES),
+        "href": item.href,
+        "rect": rect_value(item.rect),
+        "click_point": browser_page_point_json(item.click_point.as_ref()),
+    })
+}
+
+fn browser_list_group_json(group: &BrowserListGroup) -> Value {
+    let items = group
+        .items
+        .iter()
+        .map(browser_list_item_json)
+        .collect::<Vec<_>>();
+    json!({
+        "ref": group.reference,
+        "signature": group.signature,
+        "label": bounded_json_string(&group.label, BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES),
+        "rect": rect_value(group.rect),
+        "scroll": {
+            "top": group.scroll_top,
+            "height": group.scroll_height,
+            "client_height": group.client_height,
+            "at_top": group.at_top,
+            "at_bottom": group.at_bottom,
+        },
+        "items": items,
+        "truncated": group.truncated,
+    })
+}
+
+fn browser_list_snapshot_json(list_snapshot: Option<&BrowserListSnapshot>) -> Value {
+    let groups = list_snapshot
+        .map(|list_snapshot| {
+            list_snapshot
+                .groups
+                .iter()
+                .map(browser_list_group_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json!({
+        "status": if list_snapshot.is_some() { "ok" } else { "missing" },
+        "page_title": list_snapshot.and_then(|snapshot| snapshot.page_title.clone()),
+        "page_url": list_snapshot.and_then(|snapshot| snapshot.page_url.clone()),
+        "groups": groups,
+        "limits": {
+            "group_limit": BROWSER_LIST_GROUP_LIMIT,
+            "item_limit": BROWSER_LIST_ITEM_LIMIT,
+            "text_limit_bytes": BROWSER_LIST_TEXT_LIMIT_BYTES,
+            "truncated": list_snapshot.map(|snapshot| snapshot.truncated).unwrap_or(false),
+        },
+    })
+}
+
+fn browser_list_next_action_json(
+    pane_id: PaneId,
+    observation_id: &str,
+    list_snapshot: Option<&BrowserListSnapshot>,
+) -> Value {
+    let Some(snapshot) = list_snapshot else {
+        return json!({
+            "next_tool": "tide_browser_collect_list",
+            "message": "No list snapshot is cached yet; call again after observe/wait-for refresh.",
+        });
+    };
+    let Some(group) = snapshot.groups.first() else {
+        return json!({
+            "next_tool": Value::Null,
+            "message": "No repeated visible list candidates found.",
+        });
+    };
+    if group.at_bottom {
+        return json!({
+            "next_tool": Value::Null,
+            "message": "Primary list candidate is at bottom; stop scrolling or verify with a final observe.",
+        });
+    }
+    let x = f64::from(group.rect.x + group.rect.width * 0.5);
+    let y = f64::from(group.rect.y + group.rect.height * 0.85);
+    json!({
+        "next_tool": "tide_browser_action",
+        "action": {
+            "pane_id": pane_id,
+            "observation_id": observation_id,
+            "action": "scroll",
+            "x": x,
+            "y": y,
+            "delta_y": group.client_height.max(480.0) * 0.8,
+        },
+        "then": "tide_browser_collect_list",
+        "message": "Scroll the primary list candidate, then collect again; do not run a long click/scroll JS loop.",
+    })
+}
+
 fn browser_selection_json(selection: Option<&BrowserSelectionSnapshot>) -> Value {
     match selection {
         Some(selection) => json!({
@@ -693,6 +890,133 @@ fn browser_action_history_json(browser: &BrowserPane) -> Value {
     })
 }
 
+fn browser_observation_id(pane_id: PaneId, generation: u64) -> String {
+    format!("browser:{pane_id}:g{generation}")
+}
+
+fn browser_readiness_state(browser: &BrowserPane, modal_open: bool) -> &'static str {
+    if modal_open {
+        "blocked_by_modal"
+    } else if browser.loading {
+        "loading"
+    } else if browser.page_map.is_none() && browser.page_snapshot.is_none() {
+        "unavailable"
+    } else if browser.page_map.is_none() {
+        "page_map_missing"
+    } else {
+        "ready"
+    }
+}
+
+fn browser_readiness_json(browser: &BrowserPane, modal_open: bool) -> Value {
+    let state = browser_readiness_state(browser, modal_open);
+    let mut reasons = Vec::new();
+    match state {
+        "blocked_by_modal" => {
+            reasons.push("ModalStack hides the Browser Pane webview".to_string());
+        }
+        "loading" => {
+            reasons.push("Browser Pane is still loading".to_string());
+        }
+        "unavailable" => {
+            reasons.push("No BrowserSnapshot or Browser Page Map has been captured".to_string());
+        }
+        "page_map_missing" => {
+            reasons.push("BrowserSnapshot exists but Browser Page Map is missing".to_string());
+        }
+        _ => {}
+    }
+    json!({
+        "state": state,
+        "reasons": reasons,
+    })
+}
+
+fn browser_allowed_actions_json(browser: &BrowserPane, modal_open: bool) -> Value {
+    let mut actions = vec!["navigate", "move", "clear-cursor", "wait-for"];
+    if modal_open {
+        actions.push("close-modal");
+        actions.push("press");
+        return json!(actions);
+    }
+    if browser.can_go_back {
+        actions.push("back");
+    }
+    if browser.can_go_forward {
+        actions.push("forward");
+    }
+    if !browser.url.is_empty() {
+        actions.push("reload");
+    }
+    if browser.page_map.is_some() {
+        actions.push("click");
+        actions.push("type");
+        actions.push("scroll");
+        actions.push("press");
+    } else if browser.page_snapshot.is_some() {
+        actions.push("scroll");
+        actions.push("press");
+    }
+    json!(actions)
+}
+
+fn browser_recovery_json(browser: &BrowserPane, modal_open: bool, visual_fit: &Value) -> Value {
+    if modal_open {
+        return json!({
+            "status": "blocked",
+            "next_tool": "tide_browser_action",
+            "action": { "action": "close-modal" },
+            "message": "ModalStack is hiding the Browser Pane webview; close the modal or use modal targets before page content actions."
+        });
+    }
+    if browser.loading {
+        return json!({
+            "status": "wait",
+            "next_tool": "tide_browser_observe",
+            "message": "Browser Pane is loading; observe again before content actions."
+        });
+    }
+    if let Some(tool_selection) = visual_fit.get("tool_selection") {
+        if tool_selection.get("next_tool").and_then(Value::as_str) == Some("tide_layout_action") {
+            return json!({
+                "status": "layout_required",
+                "next_tool": "tide_layout_action",
+                "action": tool_selection.get("action").cloned().unwrap_or(Value::Null),
+                "message": "Browser visual fit is insufficient; adjust layout before Browser Pane content actions."
+            });
+        }
+    }
+    if browser.page_map.is_none() {
+        return json!({
+            "status": "observe_required",
+            "next_tool": "tide_browser_observe",
+            "message": "Browser Page Map is missing; re-observe or request screenshot evidence before target_ref actions."
+        });
+    }
+    json!({
+        "status": "ok",
+        "next_tool": Value::Null,
+        "message": Value::Null,
+    })
+}
+
+fn browser_validate_observation_id(
+    params: &Value,
+    pane_id: PaneId,
+    browser: &BrowserPane,
+) -> Result<(), CliError> {
+    let Some(observation_id) = params.get("observation_id").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let expected = browser_observation_id(pane_id, browser.generation);
+    if observation_id == expected {
+        return Ok(());
+    }
+    Err(CliError::InvalidParams(format!(
+        "stale Browser observation_id {observation_id}; current observation_id is {expected}"
+    )))
+}
+
 const BROWSER_SNAPSHOT_FIND_MATCH_LIMIT: usize = 50;
 const BROWSER_SNAPSHOT_MATCH_CONTEXT_LIMIT_BYTES: usize = 2 * 1024;
 const BROWSER_SNAPSHOT_DIFF_LIMIT_BYTES: usize = 64 * 1024;
@@ -736,7 +1060,18 @@ fn ensure_sensitive_action_approval(params: &Value, surface: &str) -> Result<(),
 fn browser_action_is_supported(action: &str) -> bool {
     matches!(
         action,
-        "navigate" | "move" | "click" | "type" | "press" | "clear-cursor"
+        "navigate"
+            | "move"
+            | "click"
+            | "type"
+            | "press"
+            | "scroll"
+            | "back"
+            | "forward"
+            | "reload"
+            | "wait-for"
+            | "close-modal"
+            | "clear-cursor"
     )
 }
 
@@ -752,42 +1087,268 @@ fn browser_action_target_ref(params: &Value) -> Option<&str> {
         .filter(|value| !value.trim().is_empty())
 }
 
+fn browser_action_semantic_target(params: &Value) -> Option<&Value> {
+    params
+        .get("target")
+        .or_else(|| params.get("semantic_target"))
+        .filter(|target| {
+            target
+                .get("kind")
+                .and_then(Value::as_str)
+                .map(|kind| kind == "semantic")
+                .unwrap_or(true)
+        })
+}
+
+fn semantic_target_string<'a>(target: &'a Value, keys: &[&str]) -> Option<&'a str> {
+    keys.iter()
+        .find_map(|key| target.get(*key).and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn semantic_normalize(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(char::to_lowercase)
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>()
+}
+
+#[derive(Debug, Default)]
+struct SemanticQuery {
+    label: Option<String>,
+    text: Option<String>,
+    placeholder: Option<String>,
+    action: Option<String>,
+    role: Option<String>,
+    tag: Option<String>,
+}
+
+impl SemanticQuery {
+    fn new(target: &Value) -> Self {
+        Self {
+            label: semantic_target_string(target, &["label", "name", "accessible_name"])
+                .map(semantic_normalize),
+            text: semantic_target_string(target, &["text"]).map(semantic_normalize),
+            placeholder: semantic_target_string(target, &["placeholder"]).map(semantic_normalize),
+            action: semantic_target_string(target, &["action"]).map(semantic_normalize),
+            role: semantic_target_string(target, &["role"]).map(semantic_normalize),
+            tag: semantic_target_string(target, &["tag"]).map(semantic_normalize),
+        }
+    }
+
+    fn has_role_or_tag(&self) -> bool {
+        self.role.is_some() || self.tag.is_some()
+    }
+}
+
+fn semantic_field_score(
+    field: &str,
+    normalized_query: &str,
+    exact_score: i32,
+    contains_score: i32,
+) -> i32 {
+    let field = semantic_normalize(field);
+    if field.is_empty() || normalized_query.is_empty() {
+        0
+    } else if field == normalized_query {
+        exact_score
+    } else if field.contains(normalized_query) {
+        contains_score
+    } else {
+        0
+    }
+}
+
+fn semantic_optional_field_score(
+    field: Option<&String>,
+    normalized_query: &str,
+    exact_score: i32,
+    contains_score: i32,
+) -> i32 {
+    field
+        .map(|field| semantic_field_score(field, normalized_query, exact_score, contains_score))
+        .unwrap_or(0)
+}
+
+fn browser_page_element_matches_kind(element: &BrowserPageElement, target: &Value) -> bool {
+    let Some(kind) = semantic_target_string(target, &["element_kind", "page_map_kind"]) else {
+        return true;
+    };
+    matches!(
+        (kind, &element.kind),
+        ("interactable", BrowserPageElementKind::Interactable)
+            | ("region", BrowserPageElementKind::Region)
+    )
+}
+
+fn browser_page_element_semantic_score(
+    element: &BrowserPageElement,
+    target: &Value,
+    query: &SemanticQuery,
+) -> Option<i32> {
+    if element.disabled || !element.hit_test.clickable {
+        return None;
+    }
+    if !browser_page_element_matches_kind(element, target) {
+        return None;
+    }
+    if let Some(role) = query.role.as_ref() {
+        if element.role.as_deref().map(semantic_normalize).as_ref() != Some(role) {
+            return None;
+        }
+    }
+    if let Some(tag) = query.tag.as_ref() {
+        if semantic_normalize(&element.tag) != *tag {
+            return None;
+        }
+    }
+
+    let mut score = 0;
+    if let Some(label) = query.label.as_ref() {
+        score += semantic_field_score(&element.label, label, 120, 70);
+        score += semantic_field_score(&element.text, label, 80, 45);
+        score += semantic_optional_field_score(element.placeholder.as_ref(), label, 70, 35);
+        score += semantic_optional_field_score(element.value.as_ref(), label, 40, 20);
+        score += semantic_optional_field_score(element.action.as_ref(), label, 30, 15);
+    }
+    if let Some(text) = query.text.as_ref() {
+        score += semantic_field_score(&element.text, text, 100, 55);
+        score += semantic_field_score(&element.label, text, 70, 35);
+    }
+    if let Some(placeholder) = query.placeholder.as_ref() {
+        score += semantic_optional_field_score(element.placeholder.as_ref(), placeholder, 100, 50);
+    }
+    if let Some(action) = query.action.as_ref() {
+        score += semantic_optional_field_score(element.action.as_ref(), action, 100, 50);
+    }
+
+    if score == 0 && query.has_role_or_tag() {
+        score = 1;
+    }
+    (score > 0).then_some(score)
+}
+
+fn browser_semantic_target_candidates<'a>(
+    page_map: &'a BrowserPageMap,
+    target: &Value,
+) -> Vec<(i32, &'a BrowserPageElement)> {
+    let query = SemanticQuery::new(target);
+    let mut candidates = page_map
+        .interactables
+        .iter()
+        .chain(page_map.regions.iter())
+        .filter_map(|element| {
+            browser_page_element_semantic_score(element, target, &query)
+                .map(|score| (score, element))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| left.1.reference.cmp(&right.1.reference))
+    });
+    candidates
+}
+
+fn browser_semantic_target_error(
+    kind: &str,
+    candidates: &[(i32, &BrowserPageElement)],
+) -> CliError {
+    let labels = candidates
+        .iter()
+        .take(5)
+        .map(|(score, element)| {
+            format!(
+                "{}:{}:{}",
+                element.reference,
+                score,
+                if element.label.is_empty() {
+                    element.text.as_str()
+                } else {
+                    element.label.as_str()
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    CliError::InvalidParams(if labels.is_empty() {
+        format!("Browser semantic target {kind}")
+    } else {
+        format!("Browser semantic target {kind}; candidates: {labels}")
+    })
+}
+
 fn resolve_browser_action_target(
     browser: &BrowserPane,
     params: &Value,
     action: &str,
 ) -> Result<Option<BrowserPageElement>, CliError> {
-    let Some(target_ref) = browser_action_target_ref(params) else {
+    if let Some(target_ref) = browser_action_target_ref(params) {
+        if !matches!(action, "click" | "type") {
+            return Err(CliError::InvalidParams(
+                "target_ref is supported only for click and type Browser Pane actions".into(),
+            ));
+        }
+        let Some(page_map) = browser.page_map.as_ref() else {
+            return Err(CliError::InvalidParams(
+                "target_ref requires a Browser Page Map from tide_browser_observe".into(),
+            ));
+        };
+        let element = page_map
+            .element_by_ref(target_ref)
+            .cloned()
+            .ok_or_else(|| {
+                CliError::InvalidParams(format!(
+                    "Browser Page Element ref {target_ref} is unknown for the current Browser Pane Generation"
+                ))
+            })?;
+        if element.disabled {
+            return Err(CliError::InvalidParams(format!(
+                "Browser Page Element ref {target_ref} is disabled"
+            )));
+        }
+        if !element.hit_test.clickable {
+            return Err(CliError::InvalidParams(format!(
+                "Browser Page Element ref {target_ref} is not hit-test clickable"
+            )));
+        }
+        return Ok(Some(element));
+    }
+
+    let Some(semantic_target) = browser_action_semantic_target(params) else {
         return Ok(None);
     };
     if !matches!(action, "click" | "type") {
         return Err(CliError::InvalidParams(
-            "target_ref is supported only for click and type Browser Pane actions".into(),
+            "semantic target is supported only for click and type Browser Pane actions".into(),
         ));
     }
     let Some(page_map) = browser.page_map.as_ref() else {
         return Err(CliError::InvalidParams(
-            "target_ref requires a Browser Page Map from tide_browser_observe".into(),
+            "semantic target requires a Browser Page Map from tide_browser_observe".into(),
         ));
     };
-    let element = page_map
-        .element_by_ref(target_ref)
-        .cloned()
-        .ok_or_else(|| {
-            CliError::InvalidParams(format!(
-                "Browser Page Element ref {target_ref} is unknown for the current Browser Pane Generation"
-            ))
-        })?;
-    if element.disabled {
-        return Err(CliError::InvalidParams(format!(
-            "Browser Page Element ref {target_ref} is disabled"
-        )));
+    let candidates = browser_semantic_target_candidates(page_map, semantic_target);
+    let Some((top_score, top_element)) = candidates.first() else {
+        return Err(browser_semantic_target_error("not found", &candidates));
+    };
+    if candidates
+        .get(1)
+        .is_some_and(|(score, _)| score == top_score)
+    {
+        return Err(browser_semantic_target_error("ambiguous", &candidates));
     }
-    Ok(Some(element))
+    Ok(Some((*top_element).clone()))
 }
 
 fn browser_action_requires_fresh_observe(action: &str) -> bool {
-    matches!(action, "navigate" | "click" | "type" | "press")
+    matches!(
+        action,
+        "navigate" | "click" | "type" | "press" | "scroll" | "back" | "forward" | "reload"
+    )
 }
 
 fn browser_action_can_use_current_page_map_target_without_fresh_observe(
@@ -801,11 +1362,23 @@ fn browser_action_can_use_current_page_map_target_without_fresh_observe(
 }
 
 fn browser_action_interacts_with_page_content(action: &str) -> bool {
-    matches!(action, "click" | "type" | "press")
+    matches!(action, "click" | "type" | "press" | "scroll")
 }
 
 fn browser_action_requires_observe_after(action: &str) -> bool {
-    matches!(action, "navigate" | "click" | "type" | "press")
+    matches!(
+        action,
+        "navigate"
+            | "click"
+            | "type"
+            | "press"
+            | "scroll"
+            | "back"
+            | "forward"
+            | "reload"
+            | "wait-for"
+            | "close-modal"
+    )
 }
 
 fn browser_eval_contains_any(script: &str, patterns: &[&str]) -> bool {
@@ -3341,7 +3914,13 @@ fn cli_replace_in_editor(
 
 /// UC-1: ObserveBrowserPaneAutomationState — read structured Browser Pane state.
 fn cli_browser_observe(
-    ctx: &mut (impl AppCorePort + DockPort + FocusNavPort + GatewayPort + LayoutPort + PaneAccessPort),
+    ctx: &mut (impl AppCorePort
+              + DockPort
+              + FocusNavPort
+              + GatewayPort
+              + LayoutPort
+              + ModalPort
+              + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
     let detail = browser_observe_detail(&params)?;
@@ -3353,6 +3932,7 @@ fn cli_browser_observe(
     let rect = pane_rect(ctx, pane_id);
     let visual_fit =
         browser_visual_fit(rect, owner_terminal_id, ctx.focused_terminal_id(), pane_id);
+    let modal_open = ctx.modal().is_any_open();
     let control_decision = agent_browser_control_decision(ctx, pane_id);
 
     let pane = ctx
@@ -3407,9 +3987,12 @@ fn cli_browser_observe(
         browser.request_agent_screenshot_refresh();
         browser_screenshot_json(browser.agent_screenshot())
     };
+    let observation_id = browser_observation_id(pane_id, browser.generation);
 
     let result = json!({
         "pane_id": pane_id,
+        "generation": browser.generation,
+        "observation_id": observation_id,
         "detail": detail_label,
         "title": title,
         "url": browser.url.clone(),
@@ -3419,15 +4002,36 @@ fn cli_browser_observe(
         "can_go_forward": browser.can_go_forward,
         "snapshot": snapshot,
         "page_map": page_map,
+        "interaction_graph": browser_interaction_graph_json(browser.page_map.as_ref(), browser.generation),
         "selection": browser_selection_json(browser.page_selection.as_ref()),
         "automation_cursor": browser_automation_cursor_json(browser.automation_cursor()),
         "action_history": browser_action_history_json(browser),
         "vision": vision_label,
         "screenshot": screenshot_json,
+        "readiness": browser_readiness_json(browser, modal_open),
+        "allowed_actions": browser_allowed_actions_json(browser, modal_open),
+        "recovery": browser_recovery_json(browser, modal_open, &visual_fit),
+        "browser_primitives": {
+            "network_evidence": {
+                "next_tool": "tide_browser_inspect_network",
+                "cached_entries": browser.network_log.as_ref().map(|log| log.entries.len()).unwrap_or(0),
+                "source": "in_page_fetch_xhr_and_resource_timing",
+            },
+            "list_collection": {
+                "next_tool": "tide_browser_collect_list",
+                "cached_groups": browser.list_snapshot.as_ref().map(|snapshot| snapshot.groups.len()).unwrap_or(0),
+                "loop": ["collect", "scroll_small", "collect"],
+            },
+        },
         "runtime": "tide_browser_pane",
         "external_runtime": browser_external_runtime_json(browser),
         "operation": browser_operation_json(control_decision.active),
         "requires_prior_observe_for_actions": true,
+        "observation_id_semantics": {
+            "generation_scoped": true,
+            "required_for_new_clients": true,
+            "legacy_actions_without_observation_id_allowed": true,
+        },
         "cursor_semantics": browser_cursor_semantics_json(),
         "rect": optional_rect_value(rect),
         "visual_fit": visual_fit,
@@ -3695,6 +4299,84 @@ fn cli_browser_diff_since(
     }))
 }
 
+fn cli_browser_inspect_network(
+    ctx: &mut (impl DockPort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = required_browser_pane_id(&params)?;
+    let auth = ensure_snapshot_tool_authorized(ctx, pane_id)?;
+    let pane = ctx
+        .pane_mut(pane_id)
+        .ok_or(CliError::PaneNotFound(pane_id))?;
+    let PaneKind::Browser(browser) = pane else {
+        return Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "browser",
+            actual: pane_kind_label(pane),
+        });
+    };
+
+    browser.request_network_log_refresh();
+    let network = browser_network_log_json(browser.network_log.as_ref());
+    Ok(json!({
+        "pane_id": pane_id,
+        "caller_pane": auth.caller_pane_id,
+        "associated_terminal": auth.associated_terminal_id,
+        "generation": browser.generation,
+        "observation_id": browser_observation_id(pane_id, browser.generation),
+        "network": network,
+        "refreshed_live_page": true,
+        "runtime": "tide_browser_pane",
+        "usage": {
+            "purpose": "network_evidence",
+            "notes": [
+                "Entries are observed from the in-page fetch/XMLHttpRequest bridge and PerformanceResourceTiming.",
+                "Call after navigate/wait-for/interaction; direct external API calls should not replace browser-context evidence when sites depend on headers/cookies."
+            ]
+        },
+    }))
+}
+
+fn cli_browser_collect_list(
+    ctx: &mut (impl DockPort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = required_browser_pane_id(&params)?;
+    let auth = ensure_snapshot_tool_authorized(ctx, pane_id)?;
+    let pane = ctx
+        .pane_mut(pane_id)
+        .ok_or(CliError::PaneNotFound(pane_id))?;
+    let PaneKind::Browser(browser) = pane else {
+        return Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "browser",
+            actual: pane_kind_label(pane),
+        });
+    };
+
+    browser.request_list_snapshot_refresh();
+    let observation_id = browser_observation_id(pane_id, browser.generation);
+    let list_snapshot = browser_list_snapshot_json(browser.list_snapshot.as_ref());
+    let next_action =
+        browser_list_next_action_json(pane_id, &observation_id, browser.list_snapshot.as_ref());
+    Ok(json!({
+        "pane_id": pane_id,
+        "caller_pane": auth.caller_pane_id,
+        "associated_terminal": auth.associated_terminal_id,
+        "generation": browser.generation,
+        "observation_id": observation_id,
+        "list_snapshot": list_snapshot,
+        "next_action": next_action,
+        "refreshed_live_page": true,
+        "runtime": "tide_browser_pane",
+        "usage": {
+            "purpose": "bounded_virtual_list_collection",
+            "loop": ["tide_browser_collect_list", "tide_browser_action scroll", "tide_browser_collect_list"],
+            "anti_pattern": "Do not run a long page JS loop that clicks or scrolls dozens of times in one tool call."
+        },
+    }))
+}
+
 /// UC-12: BrowserControl — evaluate JavaScript in a Browser Pane.
 fn cli_browser_eval(
     ctx: &mut (impl DockPort + FocusNavPort + GatewayPort + PaneAccessPort),
@@ -3834,10 +4516,53 @@ fn cli_browser_action(
     let modal_open = ctx.modal().is_any_open();
     let control_decision = agent_browser_control_decision(ctx, pane_id);
 
+    if action == "close-modal" {
+        let closed = ctx.modal().is_any_open();
+        ctx.modal_mut().close_all();
+        let pane = ctx
+            .pane_mut(pane_id)
+            .ok_or(CliError::PaneNotFound(pane_id))?;
+        let browser = navigation_browser_mut(pane_id, pane)?;
+        let observe_after_action = browser_action_requires_observe_after(action);
+        if observe_after_action {
+            browser.mark_agent_action_requires_reobserve();
+        }
+        set_agent_browser_control_mode(browser, &control_decision);
+        browser.record_agent_action(BrowserActionHistoryEntry {
+            generation: browser.generation,
+            action: action.to_string(),
+            target_ref: None,
+            target_label: Some("ModalStack".to_string()),
+            x: None,
+            y: None,
+            text_bytes: None,
+            key: None,
+            url: None,
+            dispatched: closed,
+            observe_after_action,
+        });
+        return Ok(json!({
+            "pane_id": pane_id,
+            "generation": browser.generation,
+            "observation_id": browser_observation_id(pane_id, browser.generation),
+            "action": action,
+            "dispatched": closed,
+            "runtime": "tide_browser_pane",
+            "external_runtime": Value::Null,
+            "requires_prior_observe": false,
+            "observe_after_action": observe_after_action,
+            "modal_closed": closed,
+            "cursor_semantics": browser_cursor_semantics_json(),
+            "automation_cursor": browser_automation_cursor_json(browser.automation_cursor()),
+            "agent_browser_control_mode": agent_browser_control_mode_json(&control_decision, browser),
+        }));
+    }
+
     let pane = ctx
         .pane_mut(pane_id)
         .ok_or(CliError::PaneNotFound(pane_id))?;
     let browser = navigation_browser_mut(pane_id, pane)?;
+    browser_validate_observation_id(&params, pane_id, browser)?;
 
     if modal_open && browser_action_interacts_with_page_content(action) {
         return Err(CliError::InvalidParams(
@@ -4001,6 +4726,56 @@ fn cli_browser_action(
             }
             dispatched
         }
+        "scroll" => {
+            let delta_x = params
+                .get("delta_x")
+                .or_else(|| params.get("dx"))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let delta_y = params
+                .get("delta_y")
+                .or_else(|| params.get("dy"))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            if delta_x == 0.0 && delta_y == 0.0 {
+                return Err(CliError::InvalidParams(
+                    "delta_x or delta_y required for scroll".into(),
+                ));
+            }
+            let x = params.get("x").and_then(|v| v.as_f64());
+            let y = params.get("y").and_then(|v| v.as_f64());
+            let dispatched = browser.dispatch_automation_scroll(delta_x, delta_y, x, y);
+            if dispatched {
+                browser.request_page_snapshot_refresh();
+            }
+            dispatched
+        }
+        "back" => {
+            let dispatched = browser.webview.is_some() && browser.can_go_back;
+            if dispatched {
+                browser.go_back();
+                browser.request_page_snapshot_refresh();
+            }
+            dispatched
+        }
+        "forward" => {
+            let dispatched = browser.webview.is_some() && browser.can_go_forward;
+            if dispatched {
+                browser.go_forward();
+                browser.request_page_snapshot_refresh();
+            }
+            dispatched
+        }
+        "reload" => {
+            let dispatched = browser.webview.is_some();
+            browser.reload();
+            browser.request_page_snapshot_refresh();
+            dispatched
+        }
+        "wait-for" => {
+            browser.request_page_snapshot_refresh();
+            browser.webview.is_some()
+        }
         "clear-cursor" => {
             browser.clear_automation_cursor();
             browser.webview.is_some()
@@ -4019,7 +4794,7 @@ fn cli_browser_action(
         .as_ref()
         .map(BrowserPageElement::center)
         .or_else(|| match action {
-            "move" | "click" => {
+            "move" | "click" | "scroll" => {
                 let x = params.get("x").and_then(|value| value.as_f64())?;
                 let y = params.get("y").and_then(|value| value.as_f64())?;
                 Some((x, y))
@@ -4065,6 +4840,8 @@ fn cli_browser_action(
 
     Ok(json!({
         "pane_id": pane_id,
+        "generation": browser.generation,
+        "observation_id": browser_observation_id(pane_id, browser.generation),
         "action": action,
         "dispatched": dispatched,
         "runtime": "tide_browser_pane",

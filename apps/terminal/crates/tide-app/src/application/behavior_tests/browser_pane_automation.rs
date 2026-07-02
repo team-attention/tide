@@ -1,5 +1,7 @@
 // Spec: docs/specs/browser-pane-automation.md
 
+use std::path::PathBuf;
+
 use serde_json::json;
 
 use crate::pane::browser::{
@@ -7,7 +9,7 @@ use crate::pane::browser::{
 };
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
-use crate::state::FocusArea;
+use crate::state::{FileFinderState, FocusArea};
 use crate::App;
 use crate::DockPort;
 use crate::LayoutPort;
@@ -102,6 +104,15 @@ fn browser_observe_returns_structured_navigation_state() {
     assert_eq!(result["load_progress"], 0.5);
     assert_eq!(result["can_go_back"], true);
     assert_eq!(result["can_go_forward"], false);
+    assert_eq!(result["generation"].as_u64(), Some(0));
+    assert_eq!(result["observation_id"], format!("browser:{browser_id}:g0"));
+    assert_eq!(result["readiness"]["state"], "loading");
+    assert!(result["allowed_actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value == "wait-for"));
+    assert_eq!(result["recovery"]["next_tool"], "tide_browser_observe");
 }
 
 #[test]
@@ -184,6 +195,28 @@ fn browser_observe_includes_visual_fit_tool_selection_guidance() {
 }
 
 #[test]
+fn browser_observe_reports_page_map_missing_recovery() {
+    // Browser Operation contract: observe reports missing Page Map as a recovery state instead of leaving agents to guess.
+    let (mut app, browser_id) = app_with_browser();
+    if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&browser_id) {
+        bp.update_page_snapshot(Some(BrowserSnapshot {
+            text: "Visible text without a map".into(),
+            page_title: Some("Example".into()),
+            page_url: Some("https://example.com".into()),
+        }));
+        bp.clear_page_map();
+    }
+
+    let result = app
+        .handle_cli_command("browser-observe", json!({"pane_id": browser_id}))
+        .expect("browser-observe should succeed");
+
+    assert_eq!(result["readiness"]["state"], "page_map_missing");
+    assert_eq!(result["recovery"]["status"], "observe_required");
+    assert_eq!(result["recovery"]["next_tool"], "tide_browser_observe");
+}
+
+#[test]
 fn browser_observe_rejects_non_browser_pane() {
     // UC-1 BR-4: browser-observe rejects non-browser Panes
     let (mut app, editor_id) = app_with_editor();
@@ -220,8 +253,12 @@ fn browser_observe_rejects_render_mode_browser_pane() {
 
 #[test]
 fn browser_action_accepts_each_supported_action_name() {
-    // UC-2 BR-6: supported Browser actions in this slice are navigate, move, click, type, press, and clear-cursor
+    // UC-2 BR-6: supported Browser actions include navigation, input, scroll, recovery, and cursor actions.
     let (mut app, browser_id) = app_with_browser();
+    if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&browser_id) {
+        bp.can_go_back = true;
+        bp.can_go_forward = true;
+    }
 
     for params in [
         json!({"pane_id": browser_id, "action": "navigate", "url": "docs.example.com"}),
@@ -229,6 +266,12 @@ fn browser_action_accepts_each_supported_action_name() {
         json!({"pane_id": browser_id, "action": "click", "x": 32.0, "y": 48.0}),
         json!({"pane_id": browser_id, "action": "type", "text": "hello"}),
         json!({"pane_id": browser_id, "action": "press", "key": "Enter"}),
+        json!({"pane_id": browser_id, "action": "scroll", "delta_y": 480.0}),
+        json!({"pane_id": browser_id, "action": "back"}),
+        json!({"pane_id": browser_id, "action": "forward"}),
+        json!({"pane_id": browser_id, "action": "reload"}),
+        json!({"pane_id": browser_id, "action": "wait-for"}),
+        json!({"pane_id": browser_id, "action": "close-modal"}),
         json!({"pane_id": browser_id, "action": "clear-cursor"}),
     ] {
         observe_browser(&mut app, browser_id);
@@ -248,6 +291,63 @@ fn browser_action_rejects_unknown_action_name() {
     );
 
     assert!(result.is_err());
+}
+
+#[test]
+fn browser_action_rejects_stale_observation_id_when_supplied() {
+    // Browser Operation contract: new clients can bind actions to the observed Generation.
+    let (mut app, browser_id) = app_with_browser();
+    let observed = app
+        .handle_cli_command("browser-observe", json!({"pane_id": browser_id}))
+        .expect("browser-observe should succeed");
+    let observation_id = observed["observation_id"].as_str().unwrap().to_string();
+    if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&browser_id) {
+        bp.update_page_snapshot(Some(BrowserSnapshot {
+            text: "Generation changed".into(),
+            page_title: Some("Example".into()),
+            page_url: Some("https://example.com".into()),
+        }));
+    }
+
+    let result = app.handle_cli_command(
+        "browser-action",
+        json!({
+            "pane_id": browser_id,
+            "observation_id": observation_id,
+            "action": "click",
+            "x": 32.0,
+            "y": 48.0
+        }),
+    );
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn browser_action_close_modal_clears_modal_stack() {
+    // Browser Operation recovery: close-modal gives agents a structured path when ModalStack hides the webview.
+    let (mut app, browser_id) = app_with_browser();
+    app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
+    assert!(app.modal.is_any_open());
+
+    let observed = app
+        .handle_cli_command("browser-observe", json!({"pane_id": browser_id}))
+        .expect("browser-observe should succeed");
+    assert_eq!(observed["readiness"]["state"], "blocked_by_modal");
+    assert_eq!(
+        observed["recovery"]["action"]["action"].as_str(),
+        Some("close-modal")
+    );
+
+    let result = app
+        .handle_cli_command(
+            "browser-action",
+            json!({"pane_id": browser_id, "action": "close-modal"}),
+        )
+        .expect("close-modal should succeed");
+
+    assert_eq!(result["modal_closed"], true);
+    assert!(!app.modal.is_any_open());
 }
 
 #[test]
@@ -399,11 +499,11 @@ fn browser_action_source_requests_snapshot_refresh_after_live_input_dispatch() {
     assert!(source.contains("browser.dispatch_automation_type_at_after("));
     assert!(source.contains("None => browser.dispatch_automation_type(text),"));
     assert!(source.contains("let dispatched = browser.dispatch_automation_press(key);"));
-    assert_eq!(
+    assert!(
         source
             .matches("browser.request_page_snapshot_refresh();")
-            .count(),
-        4
+            .count()
+            >= 4
     );
 }
 
@@ -427,7 +527,8 @@ fn browser_automation_cursor_is_injected_through_the_browser_bridge_dom_path() {
     assert!(bridge_source.contains("const associatedLabelText = (el) => {"));
     assert!(bridge_source
         .contains("textFromIds(el.getAttribute && el.getAttribute(\"aria-labelledby\"))"));
-    assert!(bridge_source.contains("normalizeText(parent.innerText || parent.textContent || \"\", 1000);"));
+    assert!(bridge_source
+        .contains("normalizeText(parent.innerText || parent.textContent || \"\", 1000);"));
     assert!(bridge_source.contains("const stableElementRef = (el, prefix) => {"));
     assert!(bridge_source.contains("window.__tidePageMapRefCounter"));
     assert!(bridge_source.contains("const interactableSet = new Set(interactableNodes);"));

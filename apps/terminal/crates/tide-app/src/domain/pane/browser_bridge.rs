@@ -65,6 +65,146 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
     const text = value == null ? "" : String(value);
     return text.length > limit ? text.slice(0, limit) : text;
   }};
+  const networkLimit = 80;
+  const networkTextLimit = 4096;
+  const networkLog = window.__tideNetworkLog || [];
+  window.__tideNetworkLog = networkLog;
+  window.__tideNetworkSeq = window.__tideNetworkSeq || 0;
+  const postNetworkLog = () => {{
+    const resources = [];
+    try {{
+      if (performance && typeof performance.getEntriesByType === "function") {{
+        for (const entry of performance.getEntriesByType("resource").slice(-40)) {{
+          resources.push({{
+            id: `resource:${{entry.name}}:${{Math.round(entry.startTime || 0)}}`,
+            source: entry.initiatorType || "resource",
+            method: null,
+            url: entry.name || "",
+            status: null,
+            ok: null,
+            mime_type: null,
+            request_body: null,
+            response_excerpt: null,
+            started_ms: Number.isFinite(entry.startTime) ? entry.startTime : null,
+            duration_ms: Number.isFinite(entry.duration) ? entry.duration : null
+          }});
+        }}
+      }}
+    }} catch (_e) {{}}
+    const entries = resources.concat(networkLog).filter((entry) => entry && entry.url).slice(-networkLimit);
+    post({{
+      kind: "browser-network-log",
+      pane_id: paneId,
+      entries,
+      truncated: resources.length + networkLog.length > networkLimit
+    }});
+  }};
+  const pushNetworkEntry = (entry) => {{
+    networkLog.push(entry);
+    if (networkLog.length > networkLimit) networkLog.splice(0, networkLog.length - networkLimit);
+    postNetworkLog();
+  }};
+  if (!window.__tideNetworkBridgeInstalled) {{
+    window.__tideNetworkBridgeInstalled = true;
+    const originalFetch = window.fetch;
+    if (typeof originalFetch === "function") {{
+      window.fetch = async function(input, init) {{
+        const started = performance && typeof performance.now === "function" ? performance.now() : null;
+        const id = `fetch:${{++window.__tideNetworkSeq}}`;
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        const method = ((init && init.method) || (input && input.method) || "GET").toUpperCase();
+        const requestBody = init && typeof init.body === "string" ? clampText(init.body, networkTextLimit) : null;
+        try {{
+          const response = await originalFetch.apply(this, arguments);
+          const ended = performance && typeof performance.now === "function" ? performance.now() : null;
+          const mimeType = response && response.headers && response.headers.get ? response.headers.get("content-type") : null;
+          const record = {{
+            id,
+            source: "fetch",
+            method,
+            url: (response && response.url) || url,
+            status: response ? response.status : null,
+            ok: response ? response.ok : null,
+            mime_type: mimeType,
+            request_body: requestBody,
+            response_excerpt: null,
+            started_ms: started,
+            duration_ms: started != null && ended != null ? ended - started : null
+          }};
+          pushNetworkEntry(record);
+          if (response && response.clone && mimeType && /(json|text|javascript|xml|html)/i.test(mimeType)) {{
+            response.clone().text().then((text) => {{
+              record.response_excerpt = clampText(text, networkTextLimit);
+              postNetworkLog();
+            }}).catch(() => {{}});
+          }}
+          return response;
+        }} catch (error) {{
+          const ended = performance && typeof performance.now === "function" ? performance.now() : null;
+          pushNetworkEntry({{
+            id,
+            source: "fetch",
+            method,
+            url,
+            status: null,
+            ok: false,
+            mime_type: null,
+            request_body: requestBody,
+            response_excerpt: clampText(error && error.message ? error.message : String(error), networkTextLimit),
+            started_ms: started,
+            duration_ms: started != null && ended != null ? ended - started : null
+          }});
+          throw error;
+        }}
+      }};
+    }}
+    const OriginalXHR = window.XMLHttpRequest;
+    if (typeof OriginalXHR === "function" && OriginalXHR.prototype) {{
+      const originalOpen = OriginalXHR.prototype.open;
+      const originalSend = OriginalXHR.prototype.send;
+      OriginalXHR.prototype.open = function(method, url) {{
+        this.__tideNetwork = {{
+          id: `xhr:${{++window.__tideNetworkSeq}}`,
+          method: method ? String(method).toUpperCase() : "GET",
+          url: url ? String(url) : "",
+          started_ms: null,
+          request_body: null
+        }};
+        return originalOpen.apply(this, arguments);
+      }};
+      OriginalXHR.prototype.send = function(body) {{
+        if (this.__tideNetwork) {{
+          this.__tideNetwork.started_ms = performance && typeof performance.now === "function" ? performance.now() : null;
+          this.__tideNetwork.request_body = typeof body === "string" ? clampText(body, networkTextLimit) : null;
+          this.addEventListener("loadend", () => {{
+            const ended = performance && typeof performance.now === "function" ? performance.now() : null;
+            let mimeType = null;
+            let excerpt = null;
+            try {{ mimeType = this.getResponseHeader("content-type"); }} catch (_e) {{}}
+            try {{
+              if ((this.responseType === "" || this.responseType === "text") && typeof this.responseText === "string" && (!mimeType || /(json|text|javascript|xml|html)/i.test(mimeType))) {{
+                excerpt = clampText(this.responseText, networkTextLimit);
+              }}
+            }} catch (_e) {{}}
+            pushNetworkEntry({{
+              id: this.__tideNetwork.id,
+              source: "xhr",
+              method: this.__tideNetwork.method,
+              url: this.responseURL || this.__tideNetwork.url,
+              status: this.status || null,
+              ok: this.status >= 200 && this.status < 400,
+              mime_type: mimeType,
+              request_body: this.__tideNetwork.request_body,
+              response_excerpt: excerpt,
+              started_ms: this.__tideNetwork.started_ms,
+              duration_ms: this.__tideNetwork.started_ms != null && ended != null ? ended - this.__tideNetwork.started_ms : null
+            }});
+          }}, {{once: true}});
+        }}
+        return originalSend.apply(this, arguments);
+      }};
+    }}
+  }}
   const visibleRect = (el) => {{
     if (!el || el.id === "__tide-automation-cursor") return null;
     const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
@@ -174,11 +314,71 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
     }}
     return "";
   }};
+  const belongsToElement = (root, node) => {{
+    if (!root || !node) return false;
+    return root === node || (root.contains && root.contains(node));
+  }};
+  const hitTestPoint = (el, x, y) => {{
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    if (x < 0 || y < 0 || x > (window.innerWidth || 0) || y > (window.innerHeight || 0)) return false;
+    const stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)];
+    return stack.some((node) => belongsToElement(el, node));
+  }};
+  const clickPointFor = (el, rect) => {{
+    const samples = [
+      [0.5, 0.5, "center"],
+      [0.25, 0.5, "mid_left"],
+      [0.75, 0.5, "mid_right"],
+      [0.5, 0.25, "mid_top"],
+      [0.5, 0.75, "mid_bottom"],
+      [0.25, 0.25, "top_left"],
+      [0.75, 0.25, "top_right"],
+      [0.25, 0.75, "bottom_left"],
+      [0.75, 0.75, "bottom_right"]
+    ];
+    const centerX = rect.x + rect.width * 0.5;
+    const centerY = rect.y + rect.height * 0.5;
+    const centerOk = hitTestPoint(el, centerX, centerY);
+    for (const [px, py, source] of samples) {{
+      const x = rect.x + rect.width * px;
+      const y = rect.y + rect.height * py;
+      if (hitTestPoint(el, x, y)) {{
+        return {{
+          click_point: {{x, y}},
+          hit_test: {{clickable: true, center_blocked: !centerOk, point_source: source}}
+        }};
+      }}
+    }}
+    return {{
+      click_point: null,
+      hit_test: {{clickable: false, center_blocked: !centerOk, point_source: "none"}}
+    }};
+  }};
+  const isScrollableElement = (el) => {{
+    if (!el || !window.getComputedStyle) return false;
+    const style = window.getComputedStyle(el);
+    if (!style) return false;
+    const overflowY = style.overflowY || style.overflow;
+    const overflowX = style.overflowX || style.overflow;
+    return (
+      (/(auto|scroll|overlay)/.test(overflowY) && el.scrollHeight > el.clientHeight) ||
+      (/(auto|scroll|overlay)/.test(overflowX) && el.scrollWidth > el.clientWidth)
+    );
+  }};
   const elementPayload = (el, ref, kind) => {{
     const rect = visibleRect(el);
     if (!rect) return null;
     const role = derivedRole(el);
     const text = el.innerText || el.textContent || "";
+    const disabled = !!el.disabled || (el.getAttribute && el.getAttribute("aria-disabled") === "true");
+    const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    const pointerBlocked = style && style.pointerEvents === "none";
+    const interaction = disabled || pointerBlocked
+      ? {{
+          click_point: null,
+          hit_test: {{clickable: false, center_blocked: false, point_source: disabled ? "disabled" : "pointer-events-none"}}
+        }}
+      : clickPointFor(el, rect);
     return {{
       ref,
       kind,
@@ -189,8 +389,11 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
       value: typeof el.value === "string" ? clampText(el.value, 160) : null,
       placeholder: el.getAttribute ? el.getAttribute("placeholder") : null,
       action: el.getAttribute ? el.getAttribute("data-action") : null,
-      disabled: !!el.disabled || (el.getAttribute && el.getAttribute("aria-disabled") === "true"),
-      rect
+      disabled,
+      rect,
+      click_point: interaction.click_point,
+      hit_test: interaction.hit_test,
+      scrollable: isScrollableElement(el)
     }};
   }};
   const stableElementRef = (el, prefix) => {{
@@ -203,6 +406,100 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
     const ref = prefix + next;
     if (el.setAttribute) el.setAttribute(attr, ref);
     return ref;
+  }};
+  const rectIntersectsViewport = (rect) => {{
+    return rect && rect.right >= 0 && rect.bottom >= 0 && rect.left <= (window.innerWidth || 0) && rect.top <= (window.innerHeight || 0);
+  }};
+  const listSignature = (el) => {{
+    const tag = (el.tagName || "").toLowerCase();
+    const role = derivedRole(el) || "";
+    const className = typeof el.className === "string" ? el.className : "";
+    const classes = className.split(/\s+/).filter(Boolean).slice(0, 2).join(".");
+    const dataIndex = el.getAttribute && el.getAttribute("data-index") != null ? "data-index" : "";
+    return [tag, role, classes, dataIndex].filter(Boolean).join("|") || tag || "item";
+  }};
+  const listItemPayload = (el) => {{
+    const rect = visibleRect(el);
+    if (!rect) return null;
+    const rawRect = el.getBoundingClientRect();
+    if (!rectIntersectsViewport(rawRect)) return null;
+    const text = normalizeText(el.innerText || el.textContent || "", 1000);
+    if (text.length < 2) return null;
+    const hrefNode = el.closest && el.closest("a[href]");
+    const click = clickPointFor(el, rect);
+    const dataIndex = el.getAttribute && el.getAttribute("data-index");
+    const parsedIndex = dataIndex != null && dataIndex !== "" ? Number.parseInt(dataIndex, 10) : NaN;
+    return {{
+      ref: stableElementRef(el, "l"),
+      index: Number.isFinite(parsedIndex) ? parsedIndex : null,
+      label: elementLabel(el),
+      text,
+      href: hrefNode && hrefNode.href ? hrefNode.href : null,
+      rect,
+      click_point: click.click_point,
+      signature: listSignature(el)
+    }};
+  }};
+  const collectListSnapshot = () => {{
+    const title = document.title || "";
+    const url = window.location ? window.location.href : "";
+    const scrollers = [];
+    const rootScroller = document.scrollingElement || document.documentElement || document.body;
+    if (rootScroller) scrollers.push(rootScroller);
+    for (const el of Array.from(document.querySelectorAll("*"))) {{
+      if (isScrollableElement(el)) scrollers.push(el);
+      if (scrollers.length >= 12) break;
+    }}
+    const groups = [];
+    for (const scroller of scrollers) {{
+      const scrollerRect = scroller === rootScroller
+        ? {{x: 0, y: 0, width: window.innerWidth || 0, height: window.innerHeight || 0}}
+        : visibleRect(scroller);
+      if (!scrollerRect || scrollerRect.width < 80 || scrollerRect.height < 60) continue;
+      const nodes = Array.from(scroller.querySelectorAll("article, li, [role='listitem'], [data-index], a[href], button, section, div"));
+      const buckets = new Map();
+      for (const node of nodes.slice(0, 800)) {{
+        if (node === scroller || node === document.body || node === document.documentElement) continue;
+        const item = listItemPayload(node);
+        if (!item) continue;
+        if (item.rect.width < 80 || item.rect.height < 20 || item.rect.height > 700) continue;
+        const bucket = buckets.get(item.signature) || [];
+        bucket.push(item);
+        buckets.set(item.signature, bucket);
+      }}
+      const candidates = Array.from(buckets.entries())
+        .filter(([, items]) => items.length >= 2)
+        .sort((a, b) => b[1].length - a[1].length);
+      for (const [signature, items] of candidates.slice(0, 3)) {{
+        const boundedItems = items.slice(0, 120).map((item) => {{
+          const {{signature: _signature, ...rest}} = item;
+          return rest;
+        }});
+        groups.push({{
+          ref: stableElementRef(scroller, "s"),
+          signature,
+          label: elementLabel(scroller),
+          rect: scrollerRect,
+          scroll_top: scroller === rootScroller ? (window.scrollY || rootScroller.scrollTop || 0) : scroller.scrollTop,
+          scroll_height: scroller === rootScroller ? Math.max(rootScroller.scrollHeight || 0, document.body ? document.body.scrollHeight : 0) : scroller.scrollHeight,
+          client_height: scroller === rootScroller ? (window.innerHeight || rootScroller.clientHeight || 0) : scroller.clientHeight,
+          at_top: (scroller === rootScroller ? (window.scrollY || rootScroller.scrollTop || 0) : scroller.scrollTop) <= 2,
+          at_bottom: ((scroller === rootScroller ? (window.scrollY || rootScroller.scrollTop || 0) : scroller.scrollTop) + (scroller === rootScroller ? (window.innerHeight || rootScroller.clientHeight || 0) : scroller.clientHeight)) >= ((scroller === rootScroller ? Math.max(rootScroller.scrollHeight || 0, document.body ? document.body.scrollHeight : 0) : scroller.scrollHeight) - 8),
+          items: boundedItems,
+          truncated: items.length > boundedItems.length
+        }});
+      }}
+      if (groups.length >= 8) break;
+    }}
+    return {{
+      title,
+      url,
+      groups: groups.slice(0, 8),
+      truncated: groups.length > 8
+    }};
+  }};
+  const postListSnapshot = () => {{
+    post({{kind: "browser-list-snapshot", pane_id: paneId, ...collectListSnapshot()}});
   }};
   const collectPageMap = () => {{
     const regionLimit = 30;
@@ -294,7 +591,11 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
   const snapshot = () => {{
     postPageSnapshot();
     postSelectionSnapshot();
+    postNetworkLog();
+    postListSnapshot();
   }};
+  window.__tideRequestNetworkLog = postNetworkLog;
+  window.__tideRequestListSnapshot = postListSnapshot;
   const ensureAutomationCursor = () => {{
     let cursor = document.getElementById('__tide-automation-cursor');
     if (cursor) return cursor;
@@ -454,6 +755,33 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
         (target.tagName === 'BUTTON' || target.tagName === 'A')) {{
       target.click();
     }}
+    return true;
+  }};
+  const nearestScrollable = (node) => {{
+    let el = node && node.nodeType === Node.ELEMENT_NODE ? node : null;
+    while (el && el !== document.body && el !== document.documentElement) {{
+      const style = window.getComputedStyle(el);
+      if (style) {{
+        const overflowY = style.overflowY || style.overflow;
+        const overflowX = style.overflowX || style.overflow;
+        const canScrollY = /(auto|scroll|overlay)/.test(overflowY) && el.scrollHeight > el.clientHeight;
+        const canScrollX = /(auto|scroll|overlay)/.test(overflowX) && el.scrollWidth > el.clientWidth;
+        if (canScrollY || canScrollX) return el;
+      }}
+      el = el.parentElement;
+    }}
+    return document.scrollingElement || document.documentElement || document.body;
+  }};
+  window.__tideBrowserAutomationScroll = (deltaX, deltaY, x = null, y = null) => {{
+    const hasPoint = Number.isFinite(x) && Number.isFinite(y);
+    const pointTarget = hasPoint ? document.elementFromPoint(x, y) : document.activeElement;
+    const target = nearestScrollable(pointTarget);
+    if (!target) return false;
+    target.scrollBy({{
+      left: Number.isFinite(deltaX) ? deltaX : 0,
+      top: Number.isFinite(deltaY) ? deltaY : 0,
+      behavior: 'auto'
+    }});
     return true;
   }};
   let scheduled = false;

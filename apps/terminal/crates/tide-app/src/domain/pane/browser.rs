@@ -114,6 +114,11 @@ pub const BROWSER_PAGE_MAP_REGION_LIMIT: usize = 30;
 pub const BROWSER_PAGE_MAP_INTERACTABLE_LIMIT: usize = 80;
 pub const BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES: usize = 160;
 pub const BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES: usize = 512;
+pub const BROWSER_NETWORK_LOG_LIMIT: usize = 80;
+pub const BROWSER_NETWORK_TEXT_LIMIT_BYTES: usize = 4096;
+pub const BROWSER_LIST_GROUP_LIMIT: usize = 8;
+pub const BROWSER_LIST_ITEM_LIMIT: usize = 120;
+pub const BROWSER_LIST_TEXT_LIMIT_BYTES: usize = 1024;
 pub const BROWSER_CONTENT_ZOOM_DEFAULT: f64 = 1.0;
 pub const BROWSER_CONTENT_ZOOM_MIN: f64 = 0.5;
 pub const BROWSER_CONTENT_ZOOM_MAX: f64 = 3.0;
@@ -163,11 +168,96 @@ pub struct BrowserSnapshotHistoryEntry {
     pub snapshot: BrowserSnapshot,
 }
 
+/// Bounded network evidence observed inside the page context.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserNetworkEntry {
+    pub id: String,
+    pub source: String,
+    pub method: Option<String>,
+    pub url: String,
+    pub status: Option<u16>,
+    pub ok: Option<bool>,
+    pub mime_type: Option<String>,
+    pub request_body: Option<String>,
+    pub response_excerpt: Option<String>,
+    pub started_ms: Option<f64>,
+    pub duration_ms: Option<f64>,
+}
+
+/// Latest bounded page network log posted by the bridge.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserNetworkLog {
+    pub entries: Vec<BrowserNetworkEntry>,
+    pub truncated: bool,
+}
+
+/// Repeated visible item extracted from a scrollable/list-like page region.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserListItem {
+    pub reference: String,
+    pub index: Option<i64>,
+    pub label: String,
+    pub text: String,
+    pub href: Option<String>,
+    pub rect: Rect,
+    pub click_point: Option<BrowserPagePoint>,
+}
+
+/// A scrollable/list-like page region with visible repeated items.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserListGroup {
+    pub reference: String,
+    pub signature: String,
+    pub label: String,
+    pub rect: Rect,
+    pub scroll_top: f64,
+    pub scroll_height: f64,
+    pub client_height: f64,
+    pub at_top: bool,
+    pub at_bottom: bool,
+    pub items: Vec<BrowserListItem>,
+    pub truncated: bool,
+}
+
+/// Latest bounded page list snapshot posted by the bridge.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserListSnapshot {
+    pub page_title: Option<String>,
+    pub page_url: Option<String>,
+    pub groups: Vec<BrowserListGroup>,
+    pub truncated: bool,
+}
+
 /// Kind of visible Browser Page Element captured in Browser Page Map.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BrowserPageElementKind {
     Region,
     Interactable,
+}
+
+/// Point in Browser Pane viewport coordinates selected by deterministic hit testing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserPagePoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Deterministic interaction viability metadata from the page bridge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserPageHitTest {
+    pub clickable: bool,
+    pub center_blocked: bool,
+    pub point_source: String,
+}
+
+impl BrowserPageHitTest {
+    fn default_for_bridge_legacy() -> Self {
+        Self {
+            clickable: true,
+            center_blocked: false,
+            point_source: "center".to_string(),
+        }
+    }
 }
 
 /// Visible Browser Pane page region or interactable captured from the bridge.
@@ -184,10 +274,16 @@ pub struct BrowserPageElement {
     pub action: Option<String>,
     pub disabled: bool,
     pub rect: Rect,
+    pub click_point: Option<BrowserPagePoint>,
+    pub hit_test: BrowserPageHitTest,
+    pub scrollable: bool,
 }
 
 impl BrowserPageElement {
     pub fn center(&self) -> (f64, f64) {
+        if let Some(point) = self.click_point.as_ref() {
+            return (point.x, point.y);
+        }
         (
             f64::from(self.rect.x + self.rect.width * 0.5),
             f64::from(self.rect.y + self.rect.height * 0.5),
@@ -260,6 +356,224 @@ impl BrowserPageMap {
     }
 }
 
+impl BrowserNetworkLog {
+    /// Parse a bounded Browser network log JSON payload posted by the bridge.
+    pub(crate) fn from_bridge_json(value: Option<&serde_json::Value>) -> Option<Self> {
+        let value = value?;
+        let entries = value
+            .get("entries")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(parse_network_entry)
+            .take(BROWSER_NETWORK_LOG_LIMIT)
+            .collect::<Vec<_>>();
+        if entries.is_empty() {
+            return None;
+        }
+        Some(Self {
+            truncated: value
+                .get("truncated")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            entries,
+        })
+    }
+}
+
+impl BrowserListSnapshot {
+    /// Parse a bounded repeated-list snapshot JSON payload posted by the bridge.
+    pub(crate) fn from_bridge_json(value: Option<&serde_json::Value>) -> Option<Self> {
+        let value = value?;
+        let groups = value
+            .get("groups")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(parse_list_group)
+            .take(BROWSER_LIST_GROUP_LIMIT)
+            .collect::<Vec<_>>();
+        if groups.is_empty() {
+            return None;
+        }
+        Some(Self {
+            page_title: value
+                .get("title")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .filter(|s| !s.trim().is_empty()),
+            page_url: value
+                .get("url")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .filter(|s| !s.trim().is_empty()),
+            truncated: value
+                .get("truncated")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            groups,
+        })
+    }
+}
+
+fn parse_network_entry(value: &serde_json::Value) -> Option<BrowserNetworkEntry> {
+    let url = value
+        .get("url")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())?
+        .to_string();
+    Some(BrowserNetworkEntry {
+        id: value
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        source: value
+            .get("source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        method: value
+            .get("method")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .filter(|s| !s.trim().is_empty()),
+        url,
+        status: value
+            .get("status")
+            .and_then(|v| v.as_u64())
+            .and_then(|status| u16::try_from(status).ok()),
+        ok: value.get("ok").and_then(|v| v.as_bool()),
+        mime_type: value
+            .get("mime_type")
+            .or_else(|| value.get("mimeType"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .filter(|s| !s.trim().is_empty()),
+        request_body: bounded_bridge_string(
+            value.get("request_body"),
+            BROWSER_NETWORK_TEXT_LIMIT_BYTES,
+        ),
+        response_excerpt: bounded_bridge_string(
+            value
+                .get("response_excerpt")
+                .or_else(|| value.get("responseText"))
+                .or_else(|| value.get("body")),
+            BROWSER_NETWORK_TEXT_LIMIT_BYTES,
+        ),
+        started_ms: value
+            .get("started_ms")
+            .or_else(|| value.get("startTime"))
+            .and_then(|v| v.as_f64()),
+        duration_ms: value
+            .get("duration_ms")
+            .or_else(|| value.get("duration"))
+            .and_then(|v| v.as_f64()),
+    })
+}
+
+fn parse_list_group(value: &serde_json::Value) -> Option<BrowserListGroup> {
+    let reference = value
+        .get("ref")
+        .or_else(|| value.get("reference"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())?
+        .to_string();
+    let rect = parse_page_rect(value.get("rect")?)?;
+    let items = value
+        .get("items")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(parse_list_item)
+        .take(BROWSER_LIST_ITEM_LIMIT)
+        .collect::<Vec<_>>();
+    if items.is_empty() {
+        return None;
+    }
+    Some(BrowserListGroup {
+        reference,
+        signature: value
+            .get("signature")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        label: value
+            .get("label")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        rect,
+        scroll_top: value
+            .get("scroll_top")
+            .or_else(|| value.get("scrollTop"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0),
+        scroll_height: value
+            .get("scroll_height")
+            .or_else(|| value.get("scrollHeight"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0),
+        client_height: value
+            .get("client_height")
+            .or_else(|| value.get("clientHeight"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0),
+        at_top: value
+            .get("at_top")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        at_bottom: value
+            .get("at_bottom")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        truncated: value
+            .get("truncated")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        items,
+    })
+}
+
+fn parse_list_item(value: &serde_json::Value) -> Option<BrowserListItem> {
+    let reference = value
+        .get("ref")
+        .or_else(|| value.get("reference"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())?
+        .to_string();
+    let rect = parse_page_rect(value.get("rect")?)?;
+    let text =
+        bounded_bridge_string(value.get("text"), BROWSER_LIST_TEXT_LIMIT_BYTES).unwrap_or_default();
+    if text.trim().is_empty() {
+        return None;
+    }
+    Some(BrowserListItem {
+        reference,
+        index: value.get("index").and_then(|v| v.as_i64()),
+        label: value
+            .get("label")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        text,
+        href: value
+            .get("href")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .filter(|s| !s.trim().is_empty()),
+        rect,
+        click_point: parse_page_point(value.get("click_point")),
+    })
+}
+
+fn bounded_bridge_string(value: Option<&serde_json::Value>, limit: usize) -> Option<String> {
+    value
+        .and_then(|v| v.as_str())
+        .map(|s| truncate_utf8_to_byte_limit(s, limit))
+        .filter(|s| !s.is_empty())
+}
+
 fn parse_page_elements(
     values: Option<&Vec<serde_json::Value>>,
     kind: BrowserPageElementKind,
@@ -322,6 +636,13 @@ fn parse_page_element(
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
         rect,
+        click_point: parse_page_point(value.get("click_point")),
+        hit_test: parse_page_hit_test(value.get("hit_test"))
+            .unwrap_or_else(BrowserPageHitTest::default_for_bridge_legacy),
+        scrollable: value
+            .get("scrollable")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
     })
 }
 
@@ -334,6 +655,32 @@ fn parse_page_rect(value: &serde_json::Value) -> Option<crate::tide_core::Rect> 
         return None;
     }
     Some(crate::tide_core::Rect::new(x, y, width, height))
+}
+
+fn parse_page_point(value: Option<&serde_json::Value>) -> Option<BrowserPagePoint> {
+    let value = value?;
+    let x = value.get("x").and_then(|v| v.as_f64())?;
+    let y = value.get("y").and_then(|v| v.as_f64())?;
+    Some(BrowserPagePoint { x, y })
+}
+
+fn parse_page_hit_test(value: Option<&serde_json::Value>) -> Option<BrowserPageHitTest> {
+    let value = value?;
+    Some(BrowserPageHitTest {
+        clickable: value
+            .get("clickable")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        center_blocked: value
+            .get("center_blocked")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        point_source: value
+            .get("point_source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
+    })
 }
 
 /// Visible Browser Pane automation marker owned by Browser Pane state.
@@ -426,6 +773,10 @@ pub struct BrowserPane {
     pub page_snapshot: Option<BrowserSnapshot>,
     /// Latest Browser Page Map captured from the WKWebView bridge.
     pub page_map: Option<BrowserPageMap>,
+    /// Latest bounded network evidence captured from the WKWebView bridge.
+    pub network_log: Option<BrowserNetworkLog>,
+    /// Latest bounded repeated-list snapshot captured from the WKWebView bridge.
+    pub list_snapshot: Option<BrowserListSnapshot>,
     /// Bounded in-memory BrowserSnapshot history for read/find/diff tools.
     snapshot_history: Vec<BrowserSnapshotHistoryEntry>,
     /// Bounded in-memory Browser review/comment history for visible collaboration loops.
@@ -508,6 +859,8 @@ impl BrowserPane {
             url_selection: None,
             page_snapshot: None,
             page_map: None,
+            network_log: None,
+            list_snapshot: None,
             snapshot_history: Vec::new(),
             review_history: Vec::new(),
             action_history: Vec::new(),
@@ -556,6 +909,8 @@ impl BrowserPane {
             url_selection: None,
             page_snapshot: None,
             page_map: None,
+            network_log: None,
+            list_snapshot: None,
             snapshot_history: Vec::new(),
             review_history: Vec::new(),
             action_history: Vec::new(),
@@ -604,6 +959,8 @@ impl BrowserPane {
             url_selection: None,
             page_snapshot: None,
             page_map: None,
+            network_log: None,
+            list_snapshot: None,
             snapshot_history: Vec::new(),
             review_history: Vec::new(),
             action_history: Vec::new(),
@@ -651,6 +1008,8 @@ impl BrowserPane {
             url_selection: None,
             page_snapshot: None,
             page_map: None,
+            network_log: None,
+            list_snapshot: None,
             snapshot_history: Vec::new(),
             review_history: Vec::new(),
             action_history: Vec::new(),
@@ -721,6 +1080,8 @@ impl BrowserPane {
         self.certificate_decision = None; // BR-14: clear on navigation
         self.last_external_handoff = None;
         self.selection_bridge_installed = false;
+        self.network_log = None;
+        self.list_snapshot = None;
         self.clear_page_snapshot();
         self.clear_page_selection();
         let mut dispatched = false;
@@ -1085,6 +1446,8 @@ impl BrowserPane {
         self.last_external_handoff = Some(handoff);
         self.loading = false;
         self.selection_bridge_installed = false;
+        self.network_log = None;
+        self.list_snapshot = None;
         self.clear_page_snapshot();
         self.clear_page_selection();
         self.generation = self.generation.wrapping_add(1);
@@ -1112,6 +1475,8 @@ impl BrowserPane {
         self.url = current.to_string();
         self.last_external_handoff = None;
         self.selection_bridge_installed = false;
+        self.network_log = None;
+        self.list_snapshot = None;
         self.clear_page_snapshot();
         self.clear_page_selection();
 
@@ -1524,6 +1889,30 @@ impl BrowserPane {
         true
     }
 
+    pub fn dispatch_automation_scroll(
+        &self,
+        delta_x: f64,
+        delta_y: f64,
+        x: Option<f64>,
+        y: Option<f64>,
+    ) -> bool {
+        let Some(ref wv) = self.webview else {
+            return false;
+        };
+        let x_arg = x
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_string());
+        let y_arg = y
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_string());
+        let js = format!(
+            "if (window.__tideBrowserAutomationScroll) {{ window.__tideBrowserAutomationScroll({}, {}, {}, {}); }}",
+            delta_x, delta_y, x_arg, y_arg
+        );
+        wv.evaluate_javascript(&js);
+        true
+    }
+
     /// Get the selected text in the URL bar, if any.
     pub fn url_selected_text(&self) -> Option<String> {
         let (start, end) = self.url_selection?;
@@ -1581,6 +1970,8 @@ impl BrowserPane {
         let full_html = self.full_render_html().unwrap_or_default();
         wv.load_html_string(&full_html);
         self.selection_bridge_installed = false;
+        self.network_log = None;
+        self.list_snapshot = None;
         self.clear_page_snapshot();
         self.clear_page_selection();
         self.install_selection_bridge();
@@ -1592,6 +1983,8 @@ impl BrowserPane {
     /// BR-27, BR-33: morphdom diffs against current DOM, preserving scroll/focus/input.
     pub fn update_render_content(&mut self, html: &str) {
         self.render_html = Some(html.to_string());
+        self.network_log = None;
+        self.list_snapshot = None;
         self.clear_page_snapshot();
         self.clear_page_selection();
         if let Some(ref wv) = self.webview {
@@ -1628,6 +2021,22 @@ impl BrowserPane {
         let Some(ref wv) = self.webview else { return };
         wv.evaluate_javascript(
             "if (window.__tideRequestPageSnapshot) { window.__tideRequestPageSnapshot(); }",
+        );
+    }
+
+    /// Request a Browser network log refresh from the injected page bridge.
+    pub fn request_network_log_refresh(&self) {
+        let Some(ref wv) = self.webview else { return };
+        wv.evaluate_javascript(
+            "if (window.__tideRequestNetworkLog) { window.__tideRequestNetworkLog(); }",
+        );
+    }
+
+    /// Request a repeated-list snapshot refresh from the injected page bridge.
+    pub fn request_list_snapshot_refresh(&self) {
+        let Some(ref wv) = self.webview else { return };
+        wv.evaluate_javascript(
+            "if (window.__tideRequestListSnapshot) { window.__tideRequestListSnapshot(); }",
         );
     }
 
@@ -1702,6 +2111,26 @@ impl BrowserPane {
     /// Clear any cached Browser Page Map.
     pub fn clear_page_map(&mut self) {
         let _ = self.update_page_map(None);
+    }
+
+    /// Update the latest Browser network log from the WKWebView bridge.
+    pub fn update_network_log(&mut self, network_log: Option<BrowserNetworkLog>) -> bool {
+        if self.network_log == network_log {
+            return false;
+        }
+        self.network_log = network_log;
+        self.generation = self.generation.wrapping_add(1);
+        true
+    }
+
+    /// Update the latest repeated-list snapshot from the WKWebView bridge.
+    pub fn update_list_snapshot(&mut self, list_snapshot: Option<BrowserListSnapshot>) -> bool {
+        if self.list_snapshot == list_snapshot {
+            return false;
+        }
+        self.list_snapshot = list_snapshot;
+        self.generation = self.generation.wrapping_add(1);
+        true
     }
 
     /// Update the latest page selection snapshot from the WKWebView bridge.
