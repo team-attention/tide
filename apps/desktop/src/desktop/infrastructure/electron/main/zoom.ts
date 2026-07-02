@@ -22,7 +22,7 @@ export function steppedZoomFactor(current: number, direction: 1 | -1): number {
 
 // Set the HOST window's zoom factor and tell its renderer the new value. We zoom the
 // host webContents directly (not via the focused-webContents zoom roles) so Cmd +/-
-// scales the Tide UI even when a Browser Pane <webview> has focus; the renderer mirrors
+// scales the Tide UI even when an embedded guest has focus; the renderer mirrors
 // the broadcast factor onto each <webview> guest (which doesn't inherit host zoom) so
 // the WHOLE app scales together. Spec: host-zoom-shortcuts.
 export function applyHostZoom(host: WebContents, factor: number): void {

@@ -6,7 +6,6 @@ import {
 import {
   boundedBrowserTextPreview,
   numberFromData,
-  optionalRawString,
   optionalString,
 } from "../support/service-value-helpers.ts";
 import type {
@@ -193,21 +192,7 @@ function finiteNumberFromData(
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-// Parse the renderer's reply to an observe-time capture pull (update_browser_capture_result):
-// the captureId being answered plus an optional screenshot (absent when the guest could not be
-// captured — observe then degrades to the cached image / DOM text).
-export function browserPaneCaptureResultFromData(
-  data: Record<string, unknown> | undefined,
-): { captureId: string; screenshot?: BrowserPaneScreenshot } | undefined {
-  const captureId = optionalString(data?.captureId);
-  if (captureId === undefined) {
-    return undefined;
-  }
-  return { captureId, screenshot: browserPaneScreenshotFromData(data?.screenshot) };
-}
-
-// Parse a pixel-vision capture from update_browser_snapshot command data (renderer's
-// webview.capturePage). Requires base64 data + positive width/height; mimeType defaults
+// Parse a pixel-vision capture from command data. Requires base64 data + positive width/height; mimeType defaults
 // to image/png, devicePixelRatio to 1.
 function browserPaneScreenshotFromData(value: unknown): BrowserPaneScreenshot | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -227,50 +212,5 @@ function browserPaneScreenshotFromData(value: unknown): BrowserPaneScreenshot | 
     width,
     height,
     devicePixelRatio: numberFromData(record, "devicePixelRatio") ?? 1,
-  };
-}
-
-export function browserPaneActionResultFromData(
-  data: Record<string, unknown> | undefined,
-):
-  | {
-      revision: string;
-      actionId: string;
-      status: "completed" | "failed";
-      message: string;
-      url?: string;
-      pageTitle?: string;
-      bodyTextPreview?: string;
-      interactiveElements?: BrowserPaneInteractiveElement[];
-      loading?: boolean;
-    }
-  | undefined {
-  const revision = optionalString(data?.revision);
-  const actionId = optionalString(data?.actionId);
-  const status =
-    data?.status === "completed" || data?.status === "failed" ? data.status : undefined;
-  const message = optionalRawString(data?.message);
-  if (
-    revision === undefined ||
-    actionId === undefined ||
-    status === undefined ||
-    message === undefined
-  ) {
-    return undefined;
-  }
-  const bodyTextPreview =
-    typeof data?.bodyTextPreview === "string"
-      ? boundedBrowserTextPreview(data.bodyTextPreview)
-      : undefined;
-  return {
-    revision,
-    actionId,
-    status,
-    message,
-    url: optionalString(data?.url),
-    pageTitle: optionalString(data?.pageTitle),
-    bodyTextPreview,
-    interactiveElements: browserPaneInteractiveElementsFromData(data?.interactiveElements),
-    loading: typeof data?.loading === "boolean" ? data.loading : undefined,
   };
 }

@@ -107,18 +107,10 @@ export interface BrowserPaneState {
   // instead of re-driving or hitting a cryptic stale-reference; observe still works. Cleared
   // at turn end (spec: composer-prompt-browser-fixes / browser-pane-agent-computer-use).
   userControlled?: boolean;
-  // Latest captured pixel-vision screenshot (filled by the renderer's capturePage).
+  // Latest captured pixel-vision screenshot (filled by BrowserRuntime).
   // Attached to observe output only for mode=screenshot|both; kept out of general
   // Workbench snapshots to avoid shipping the image on every state change.
   screenshot?: BrowserPaneScreenshot;
-  // An in-flight, observe-driven pixel-capture request. Set when tide_observe_browser
-  // (mode=screenshot|both) needs FRESH pixels: the renderer host watches this on the pane,
-  // calls capturePage() for this captureId, and reports back via update_browser_capture_result.
-  // Screenshots are pulled on demand at observe time — NOT eagerly on every page-load event —
-  // so a mounted (incl. background) pane never PNG-encodes on the recurring load-event storm.
-  // Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
-  pendingCapture?: { captureId: string; requestedAt: string };
-  pendingAction?: BrowserPaneActionRequest;
   lastAction?: BrowserPaneActionResult;
   // The pane's revision immediately BEFORE its most recent settled act-completion re-mint,
   // kept so tide_act_browser can auto-retry one step of staleness from the agent's OWN prior
@@ -170,7 +162,7 @@ export interface BrowserPaneActionResult extends BrowserPaneActionRequest {
   completedAt: string;
 }
 
-// Pixel vision: a captured raster image of the rendered <webview> page, surfaced to the
+// Pixel vision: a captured raster image of the rendered browser runtime page, surfaced to the
 // Agent as an MCP image content block via tide_observe_browser mode=screenshot|both.
 // data is base64; coordinates the agent picks are screenshot pixels, with
 // devicePixelRatio reporting the screenshot-pixel to CSS-pixel ratio. See
@@ -324,8 +316,6 @@ export interface BrowserPaneRef extends WorkbenchPaneRef {
   agentDriving: boolean;
   agentCursor?: { x: number; y: number };
   screenshot?: BrowserPaneScreenshot;
-  pendingCapture?: { captureId: string; requestedAt: string };
-  pendingAction?: BrowserPaneActionRequest;
   lastAction?: BrowserPaneActionResult;
   stale: boolean;
   availableTools: TideMcpToolName[];

@@ -7,6 +7,7 @@ import {
   type BackendHandshake,
 } from "../../../../shared/contracts/index.ts";
 import { createLiveBackendContractMessageAdapter } from "../live/live-backend.ts";
+import { createMainProcessBrowserRuntimePort } from "../../../adapters/outbound/browser-runtime/main-process-browser-runtime-port.ts";
 import { reapOrphanedTideAgentProcesses } from "../live/reap-orphaned-agents.ts";
 import {
   runAgentReaperGuardianFromEnv,
@@ -77,8 +78,10 @@ spawnAgentReaperGuardian({
 });
 
 const parentPort = await loadElectronParentPort();
+const browserRuntime = createMainProcessBrowserRuntimePort(parentPort);
 const adapter = createLiveBackendContractMessageAdapter({
   onEvent: postOrBufferBackendEvent,
+  browserRuntimePort: browserRuntime.port,
 });
 let activeParentCommandCount = 0;
 const bufferedBackendEvents: BackendEventEnvelope[] = [];
@@ -114,7 +117,11 @@ if (parentPort !== undefined) {
   });
 
   parentPort.on("message", (message: unknown) => {
-    void handleParentMessage(unwrapPortMessage(message));
+    const payload = unwrapPortMessage(message);
+    if (browserRuntime.handleParentMessage(payload)) {
+      return;
+    }
+    void handleParentMessage(payload);
   });
 }
 

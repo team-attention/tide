@@ -5,8 +5,8 @@ import { WorkbenchCodeEditor } from "./code-editor.tsx";
 import {
   safeFindInWebView,
   safeStopFindInWebView,
-  type BrowserWebViewElement,
-} from "./browser-webview-actions.ts";
+  type HtmlWebViewElement,
+} from "./html-webview.ts";
 import { InPaneFindBar, useInPaneFindState, usePaneFindIntent } from "../../support/in-pane-find.tsx";
 // Extracted alongside markdown-view.tsx (spec: workbench-html-preview.md).
 
@@ -44,9 +44,9 @@ export function WorkbenchHtmlView(props: {
   handlers: ProductShellHandlers;
 }): ReactElement {
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const webviewRef = useRef<BrowserWebViewElement | null>(null);
-  const [webviewElement, setWebviewElement] = useState<BrowserWebViewElement | null>(null);
-  const setWebviewRef = useCallback((element: BrowserWebViewElement | null) => {
+  const webviewRef = useRef<HtmlWebViewElement | null>(null);
+  const [webviewElement, setWebviewElement] = useState<HtmlWebViewElement | null>(null);
+  const setWebviewRef = useCallback((element: HtmlWebViewElement | null) => {
     webviewRef.current = element;
     setWebviewElement(element);
   }, []);
@@ -147,8 +147,7 @@ export function WorkbenchHtmlView(props: {
       {effectiveMode === "preview" ? (
         <div className="workbench-html-stage">
           {/* `<webview>` is an Electron custom element with no JSX typing, so it stays a
-              createElement call (same as the Browser Pane). file:// renders the saved
-              page with its relative assets. */}
+              createElement call. file:// renders the saved page with its relative assets. */}
           {createElement("webview", {
             ref: setWebviewRef,
             className: "workbench-html-webview",

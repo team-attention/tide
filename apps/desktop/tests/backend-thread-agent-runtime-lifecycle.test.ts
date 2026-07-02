@@ -143,7 +143,7 @@ test("archiving_a_thread_excludes_it_from_the_default_list_but_keeps_it_retrieva
   );
 });
 
-test("archiving_a_live_thread_tears_down_runtime_terminal_and_browser_pending_state", async () => {
+test("archiving_a_live_thread_tears_down_runtime_terminal_and_browser_control_state", async () => {
   const activeRuntimeHandle: AgentRuntimeHandle = {
     runtimeId: "runtime-live",
     threadId: "thread-archive-live",
@@ -154,13 +154,14 @@ test("archiving_a_live_thread_tears_down_runtime_terminal_and_browser_pending_st
     agentDriving: true,
     agentCursor: { x: 12, y: 18 },
     userControlled: true,
-    pendingCapture: { captureId: "capture-archive", requestedAt: now },
-    pendingAction: {
+    lastAction: {
       actionId: "action-archive",
       kind: "click_at" as const,
       x: 12,
       y: 18,
       requestedAt: now,
+      status: "completed" as const,
+      completedAt: now,
     },
   };
   const fakes = createFakes();
@@ -240,12 +241,8 @@ test("archiving_a_live_thread_tears_down_runtime_terminal_and_browser_pending_st
     false,
   );
   assert.equal(
-    archivedBrowser && archivedBrowser.kind === "browser" && archivedBrowser.pendingAction,
-    undefined,
-  );
-  assert.equal(
-    archivedBrowser && archivedBrowser.kind === "browser" && archivedBrowser.pendingCapture,
-    undefined,
+    archivedBrowser && archivedBrowser.kind === "browser" && archivedBrowser.lastAction?.status,
+    "completed",
   );
   assert.equal(lateExit.ok && lateExit.thread.lifecycleState, "archived");
   assert.equal(hydrated.ok && hydrated.thread.lifecycleState, "archived");

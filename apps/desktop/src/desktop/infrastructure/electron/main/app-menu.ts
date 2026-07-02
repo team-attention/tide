@@ -4,7 +4,7 @@ import { applyHostZoom, steppedZoomFactor } from "./zoom.ts";
 // Extracted from electron-main.ts (spec: navigable-source-structure).
 
 // View-menu panel toggles route through a menu accelerator (not a renderer keydown)
-// so they fire even when focus is inside a <webview> Browser Pane or a terminal — and
+// so they fire even when focus is inside embedded content or a terminal — and
 // the shortcut shows in the menu, making it discoverable. The renderer decides the
 // actual open/close via its existing toggle handlers. Spec: panel-toggle-shortcuts.
 function sendTogglePanel(panel: "leftRail" | "fileTree" | "workbench"): void {
@@ -17,7 +17,7 @@ function sendFindIntent(menuWindow: BrowserWindow | undefined): void {
 
 // Zoom the HOST window's webContents directly instead of using the built-in
 // "zoomIn"/"zoomOut"/"resetZoom" roles. Those roles act on the *focused*
-// webContents — when a Browser Pane <webview> has focus that's the guest page,
+// webContents — when embedded webview content has focus that's the guest page,
 // so Cmd +/- zoomed only the embedded page and left the Tide UI untouched. We zoom the
 // React host instead so the whole app scales regardless of webview focus. We prefer the
 // `browserWindow` Electron hands the click callback (the window the menu acted on) over

@@ -10,6 +10,8 @@ import { registerAutoUpdate, logUpdateEvent } from "./auto-update.ts";
 import { readUiPrefs, saveUiPref } from "./ui-prefs.ts";
 import { readInitialThreadListSnapshot } from "./thread-list-snapshot.ts";
 import { registerProviderCommandIpc } from "./provider-command-ipc.ts";
+import { browserRuntimeHost } from "./browser-runtime-host.ts";
+import { registerBrowserRuntimeIpc } from "./browser-runtime-ipc.ts";
 import {
   app,
   BrowserWindow,
@@ -64,6 +66,8 @@ import {
   validateBackendEventEnvelope,
   validateBackendHandshake,
 } from "../../../../shared/contracts/index.ts";
+
+registerBrowserRuntimeIpc(browserRuntimeHost);
 
 ipcMain.handle("tide:open-directory", async () => {
   const result = await dialog.showOpenDialog({
@@ -671,7 +675,7 @@ void app.whenReady().then(() => {
 });
 
 app.on("web-contents-created", (_event, contents) => {
-  // A page inside a Browser Pane <webview> that opens a popup (target=_blank,
+  // A page inside embedded webview content that opens a popup (target=_blank,
   // window.open, Cmd/Ctrl+click) would otherwise spawn a blank top-level
   // BrowserWindow. Deny ordinary popups and forward the URL to the renderer over
   // IPC, which drives the SAME backend open_browser path the agent and the address
@@ -757,5 +761,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  browserRuntimeHost.closeAll("app_quit");
   backendProcess?.kill();
 });

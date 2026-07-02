@@ -7,6 +7,7 @@ import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port
 import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
 import type { ComposerAttachmentInput, ComposerAttachmentStorePort } from "../../ports/outbound/composer-attachment-store-port.ts";
 import type { ProviderTrustPort } from "../../ports/outbound/provider-trust-port.ts";
+import type { BrowserRuntimePort } from "../../ports/outbound/browser-runtime-port.ts";
 import type { AgentBinding, AgentId, AgentSessionBlockReference, ProviderCliAgentId, PromptState, PromptStepAnswer, ProviderSessionRef, ThreadGoalState, ThreadId, ThreadScope, ThreadSeed, ThreadSnapshot } from "../../domains/thread/thread.ts";
 import type { ThreadRuntimeAsyncEvent } from "./thread-runtime-events.ts";
 import type { AgentRuntimeState } from "../../domains/agent-runtime/agent-runtime.ts";
@@ -15,7 +16,7 @@ import type { AgentSessionBlock } from "../../domains/agent-session/agent-sessio
 import type { RawAgentFrame, RawAgentFramePayloadKind, RawAgentFrameSource } from "../../domains/agent-session/raw-agent-frame.ts";
 import type { ArchiveThreadInput, ArchiveThreadResult, ListThreadsInput, ListThreadsResult, RenameThreadInput, RenameThreadResult, RestoreThreadsInput, RestoreThreadsResult, SetThreadGoalInput, SetThreadGoalResult, SetThreadPinnedInput, SetThreadPinnedResult } from "./thread-crud-service.ts";
 import type { ServiceResult } from "../support/service-result.ts";
-import type { WorkbenchCommandInput, WorkbenchCommandResult } from "../workbench/workbench-command-handler.ts";
+import type { WorkbenchCommandInput, WorkbenchCommandResult } from "../workbench/workbench-command-types.ts";
 import type { WorkspaceQueryHandler } from "../workbench/workspace-query-handler.ts";
 import type { TideMcpToolDefinition } from "../../domains/workbench/workbench.ts";
 import type { TideMcpToolCallInput, TideMcpToolCallResult } from "../tide-mcp/tide-mcp-tool-handler.ts";
@@ -32,6 +33,7 @@ export interface CreateThreadRuntimeServiceInput {
   workspaceCodeIntelligencePort?: WorkspaceCodeIntelligencePort;
   composerAttachmentStorePort?: ComposerAttachmentStorePort;
   providerTrustPort?: ProviderTrustPort;
+  browserRuntimePort?: BrowserRuntimePort;
   // Materializes a Scratch Thread's real per-thread cwd under the Tide app-support
   // dir (creates it). See docs_v2/specs/scratch-execution-context.md.
   ensureScratchDirectory?: (threadId: string) => string;
@@ -41,10 +43,6 @@ export interface CreateThreadRuntimeServiceInput {
   idGenerator?: () => string;
   initialThreads?: ThreadSeed[];
   onAsyncEvent?: (event: ThreadRuntimeAsyncEvent) => Promise<void> | void;
-  // Ceiling for the observe-time Browser Pane capture pull (renderer round-trip). Defaults to
-  // 3 s; a backend-only test (no renderer to reply) sets a tiny value so observe degrades at once
-  // instead of waiting out the real timeout on every vision observe.
-  browserCapturePullTimeoutMs?: number;
 }
 
 export interface HydrateThreadInput {

@@ -12,6 +12,8 @@ import {
   sanitizeJsonValue,
   type BackendCommandEnvelope,
   type BackendEventEnvelope,
+  type BrowserRuntimeRendererCommandDto,
+  type BrowserRuntimeStageDto,
   type ThreadSummaryDto,
 } from "../../../../shared/contracts/index.ts";
 // Inter (OFL-1.1, self-hosted) is the canonical Figma typeface; load the weights
@@ -114,6 +116,9 @@ declare global {
       // active Browser Pane in place. HTTPS `new-window` popups may be preserved as
       // native child windows by Main.
       onOpenBrowserPane(listener: (url: string, newPane: boolean) => void): () => void;
+      setBrowserRuntimeStage(stage: BrowserRuntimeStageDto): void;
+      browserRuntimeCommand(command: BrowserRuntimeRendererCommandDto): Promise<void>;
+      onBrowserRuntimeReleaseControl(listener: (threadId: string, paneId: string) => void): () => void;
       // View-menu panel toggles (Cmd+B / Cmd+E / Cmd+J), routed from the app menu.
       onTogglePanel(listener: (panel: "leftRail" | "fileTree" | "workbench") => void): () => void;
       // Global zoom (Cmd +/-/0): Main broadcasts the factor so the renderer mirrors it

@@ -34,7 +34,7 @@ const PINNED_MAX: Record<string, number> = {
   // +8: checkReadiness replaces the WHOLE agentBinding (runtimeSource + cleared session), not just
   // agentId, so a switched agent can't inherit a stale source/session (review regression on PR #136).
   // The full thread-runtime-service split is still the real fix.
-  // +7: wiring the shared BrowserCaptureCoordinator into the MCP + workbench-command handlers
+  // +7: wiring the BrowserRuntime host through MCP, Electron main, and workbench handlers.
   // for the observe-time screenshot pull + the injectable pull timeout
   // (browser-pane-screenshot-on-load-decoupling).
   // +9: seedCachedBlocksIfEmpty — the facade delegate + ThreadCrudService method that lazily

@@ -19,6 +19,10 @@ export type ServiceErrorCode =
   | "workbench_target_not_found"
   | "workbench_stale_reference"
   | "workbench_user_controlled"
+  | "browser_runtime_unavailable"
+  | "browser_runtime_timeout"
+  | "browser_runtime_error"
+  | "browser_runtime_invalid_response"
   | "unsupported_tide_mcp_tool"
   | "directory_trust_unavailable"
   | WorkspaceCodeIntelligenceErrorCode

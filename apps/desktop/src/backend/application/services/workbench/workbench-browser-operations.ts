@@ -1,9 +1,9 @@
 import type { ThreadRecord } from "../../domains/thread/thread.ts";
 import type {
   BrowserPaneActionRequest,
-  BrowserPaneScreenshot,
   BrowserPaneState,
 } from "../../domains/workbench/workbench.ts";
+import type { BrowserRuntimeObservation } from "../../ports/outbound/browser-runtime-port.ts";
 import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
   browserActionKindFromInput,
@@ -17,18 +17,25 @@ import {
 } from "../support/service-value-helpers.ts";
 import { browserPaneRef, firstBrowserPane } from "./workbench-snapshot.ts";
 import type {
-  TideActBrowserOutput,
   TideObserveBrowserOutput,
   TideOpenBrowserOutput,
 } from "../tide-mcp/tide-mcp-output.ts";
 
 // Browser Pane operations for the Workbench: open/reveal/navigate a Browser Pane,
-// observe it, and queue a click/type action. Pure functions over the thread's
-// pane list (the live page render + action execution happen in the Desktop
-// webview). Shared by the workbench-command and Tide MCP paths. Extracted from
-// thread-runtime-service.ts. See docs_v2/specs/thread-runtime-service-decomposition.md.
+// observe it, and prepare BrowserRuntime actions. Pure functions over the thread's
+// pane list; live page rendering and execution are owned by Electron main's
+// BrowserRuntime. Shared by the workbench-command and Tide MCP paths. Extracted
+// from thread-runtime-service.ts. See docs_v2/specs/thread-runtime-service-decomposition.md.
 
-export const BROWSER_ACTION_PENDING_TTL_MS = 15000;
+export function browserPaneByIdForThread(
+  thread: ThreadRecord,
+  paneId: string | undefined,
+): BrowserPaneState | undefined {
+  return thread.workbench.panes.find(
+    (candidate): candidate is BrowserPaneState =>
+      candidate.kind === "browser" && candidate.paneId === paneId,
+  );
+}
 
 export function openBrowserOutput(
   thread: ThreadRecord,
@@ -99,26 +106,10 @@ export function openBrowserOutput(
   };
 }
 
-// Pull a FRESH pixel capture from the renderer for this observe (mode=screenshot|both):
-// returns the captured screenshot, or undefined when capture is unavailable (timed out / pane
-// not painting) so observe degrades to the cached image. Provided by the MCP handler, which
-// owns the pendingCapture round-trip; omitted by callers (e.g. tests) that want the cache-only
-// behaviour. Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
-export type BrowserScreenshotPuller = (
-  pane: BrowserPaneState,
-) => Promise<BrowserPaneScreenshot | undefined>;
-
-interface ObserveBrowserOutputResult {
-  value: TideObserveBrowserOutput;
-  stalePendingActionExpired: boolean;
-}
-
 export async function observeBrowserOutput(
   thread: ThreadRecord,
   input: Record<string, unknown> | undefined,
-  pullScreenshot?: BrowserScreenshotPuller,
-  clock?: () => string,
-): Promise<ServiceResult<ObserveBrowserOutputResult>> {
+): Promise<ServiceResult<{ value: TideObserveBrowserOutput }>> {
   const paneId = optionalString(input?.paneId);
   if (paneId === undefined) {
     return failure("workbench_target_not_found", "Browser Pane target was not found.");
@@ -140,30 +131,9 @@ export async function observeBrowserOutput(
     return failure("workbench_stale_reference", "Browser Pane revision is stale.");
   }
 
-  const observedAt = clock?.();
-  const stalePendingActionExpired =
-    observedAt !== undefined && expireStalePendingBrowserAction(pane, observedAt);
-  if (observedAt !== undefined && stalePendingActionExpired) {
-    thread.updatedAt = observedAt;
-  }
-
   const mode = browserObserveModeFromInput(input?.mode);
-  // Pixel vision is pulled ON DEMAND at observe time, not eagerly on every page-load: ask the
-  // renderer to capture the live <webview> now and cache the result. Fall back to the last
-  // cached screenshot when the pull yields nothing. text mode never captures.
-  if (mode !== "text" && pullScreenshot !== undefined) {
-    try {
-      const fresh = await pullScreenshot(pane);
-      if (fresh !== undefined) {
-        pane.screenshot = fresh;
-      }
-    } catch {
-      // An unexpected puller failure (IPC / coordinator) degrades to the cached screenshot or
-      // DOM text below — never fail the whole observe tool call.
-    }
-  }
-  // Attach the screenshot only for mode=screenshot|both (default text → no image, back-compat +
-  // token cost). screenshot-only drops the DOM-text body.
+  // BrowserRuntime has already refreshed the pane evidence before this mapper runs.
+  // Attach the screenshot only for mode=screenshot|both; screenshot-only drops DOM text.
   const ref = browserPaneRef(pane);
   if (mode !== "text" && pane.screenshot !== undefined) {
     ref.screenshot = { ...pane.screenshot };
@@ -179,20 +149,67 @@ export async function observeBrowserOutput(
       threadId: thread.threadId,
       pane: ref,
     },
-    stalePendingActionExpired,
   };
 }
 
-// Hybrid action model (docs_v2/specs/browser-pane-agent-computer-use.md): semantic DOM
-// actions ("click"/"click_element"/"type_text") never start driving; coordinate/input actions
-// ("move_to"/"click_at"/"drag"/"scroll"/"key"/"type") are the "human" computer-use path and
-// start agentDriving (+ agentCursor where it has a point).
-export function actBrowserOutput(
+export function applyBrowserRuntimeObservation(
+  pane: BrowserPaneState,
+  observation: BrowserRuntimeObservation,
+  input: {
+    idGenerator: () => string;
+    observedAt: string;
+    remint: "never" | "on_url_change" | "always";
+  },
+): void {
+  const previousUrl = pane.url;
+  if (observation.title !== undefined) {
+    pane.title = observation.title;
+  }
+  if (observation.pageTitle !== undefined) {
+    pane.pageTitle = observation.pageTitle;
+  }
+  if (observation.url !== undefined) {
+    pane.url = observation.url;
+  }
+  if (observation.bodyTextPreview !== undefined) {
+    pane.bodyTextPreview = observation.bodyTextPreview;
+  }
+  if (observation.interactiveElements !== undefined) {
+    pane.interactiveElements = observation.interactiveElements;
+  }
+  if (observation.screenshot !== undefined) {
+    pane.screenshot = observation.screenshot;
+  }
+  pane.loading = observation.loading;
+  if (
+    input.remint === "always" ||
+    (input.remint === "on_url_change" &&
+      observation.url !== undefined &&
+      observation.url !== previousUrl)
+  ) {
+    if (observation.url !== undefined && observation.url !== previousUrl) {
+      delete pane.priorRevision;
+    } else {
+      pane.priorRevision = pane.revision;
+    }
+    pane.revision = input.idGenerator();
+  }
+  pane.updatedAt = input.observedAt;
+}
+
+export function prepareBrowserRuntimeAction(
   thread: ThreadRecord,
   input: Record<string, unknown> | undefined,
   idGenerator: () => string,
   clock: () => string,
-): ServiceResult<{ value: TideActBrowserOutput }> {
+): ServiceResult<{
+  value: {
+    pane: BrowserPaneState;
+    action: BrowserPaneActionRequest;
+    setsDriving: boolean;
+    agentCursor?: { x: number; y: number };
+  };
+}> {
   const paneId = optionalString(input?.paneId);
   const revision = optionalString(input?.revision);
   const actionKind = browserActionKindFromInput(input?.action);
@@ -209,10 +226,7 @@ export function actBrowserOutput(
     return built;
   }
 
-  const pane = thread.workbench.panes.find(
-    (candidate): candidate is BrowserPaneState =>
-      candidate.kind === "browser" && candidate.paneId === paneId,
-  );
+  const pane = browserPaneByIdForThread(thread, paneId);
   if (pane === undefined) {
     return failure(
       "workbench_target_not_found",
@@ -220,101 +234,31 @@ export function actBrowserOutput(
     );
   }
   if (pane.userControlled === true) {
-    // The user took manual control of this pane. Don't drive it (and don't re-grab) —
-    // yield and continue: observe the current state and proceed or ask the user.
     return failure(
       "workbench_user_controlled",
       "The user has taken manual control of this browser pane, so it is no longer agent-driven. " +
         "Do not drive it; re-observe to see the current page, then continue your response or ask the user how to proceed.",
     );
   }
-  if (pane.pendingAction !== undefined) {
-    if (expireStalePendingBrowserAction(pane, requestedAt)) {
-      thread.updatedAt = requestedAt;
-    } else {
-      // A real conflict: an action is already in flight. The agent must let it settle and
-      // re-observe (which returns the result + a fresh revision) before driving again.
-      return failure(
-        "invalid_workbench_command",
-        pendingBrowserActionMessage(pane.pendingAction, requestedAt),
-      );
-    }
-  }
   if (
     revision !== pane.revision &&
     !(revision === pane.priorRevision && pane.loading !== true)
   ) {
-    // D5 (spec: browser-pane-live-pull-vision.md) + D3: a stale revision is rejected EXCEPT
-    // the one safe case — the caller's token is the pane's immediately-prior revision from a
-    // settled act-completion (`priorRevision`, which is cleared on navigation), i.e. the
-    // agent's OWN already-settled action advanced the token. There we auto-retry against the
-    // current revision instead of failing — that failure is what forced weak models into a
-    // close/reopen thrash. A genuinely stale token (older, or advanced by a navigation) still
-    // errors, handing back the current revision so the agent re-observes the new page.
     return failure(
       "workbench_stale_reference",
       `Browser Pane revision is stale. The pane is now at revision "${pane.revision}"; if it has not navigated since you observed it, retry this action with that revision.`,
     );
   }
-  const { action, setsDriving, agentCursor } = built.value;
-  pane.pendingAction = action;
-  if (setsDriving) {
-    pane.agentDriving = true;
-    if (agentCursor !== undefined) {
-      pane.agentCursor = agentCursor;
-    }
-  }
-  // No re-mint on the act itself (D5 "no re-mint on no-op act"): queuing an action does not
-  // change the page, so the agent's observed revision stays valid for its next act. The
-  // revision advances only when the page actually changes — on action completion
-  // (update_browser_action_result) or navigation.
-  pane.updatedAt = action.requestedAt;
-  thread.updatedAt = action.requestedAt;
 
   return {
     ok: true,
     value: {
-      kind: "act_browser",
-      threadId: thread.threadId,
-      pane: browserPaneRef(pane),
-      action: { ...action },
-      status: "pending",
+      pane,
+      action: built.value.action,
+      setsDriving: built.value.setsDriving,
+      agentCursor: built.value.agentCursor,
     },
   };
-}
-
-function expireStalePendingBrowserAction(
-  pane: BrowserPaneState,
-  completedAt: string,
-): boolean {
-  const pending = pane.pendingAction;
-  if (pending === undefined || !isStaleBrowserAction(pending, completedAt)) {
-    return false;
-  }
-  pane.lastAction = {
-    ...pending,
-    status: "failed",
-    message:
-      "Browser action timed out before the renderer reported a result. Tide cleared the stale pending action so the next browser action can run.",
-    completedAt,
-  };
-  delete pane.pendingAction;
-  pane.agentDriving = false;
-  delete pane.agentCursor;
-  pane.updatedAt = completedAt;
-  return true;
-}
-
-function isStaleBrowserAction(
-  action: BrowserPaneActionRequest,
-  now: string,
-): boolean {
-  const requestedAtMs = Date.parse(action.requestedAt);
-  const nowMs = Date.parse(now);
-  if (!Number.isFinite(requestedAtMs) || !Number.isFinite(nowMs)) {
-    return false;
-  }
-  return nowMs - requestedAtMs >= BROWSER_ACTION_PENDING_TTL_MS;
 }
 
 interface BuiltBrowserAction {
@@ -477,31 +421,7 @@ function boundedIntegerFromInput(
   return Math.min(Math.max(Math.round(value), min), max);
 }
 
-function pendingBrowserActionMessage(
-  action: BrowserPaneActionRequest,
-  now: string,
-): string {
-  const ageMs = browserActionAgeMs(action, now);
-  if (ageMs === undefined) {
-    return "Browser Pane already has a pending action; re-observe before sending another browser action.";
-  }
-  const remainingMs = Math.max(BROWSER_ACTION_PENDING_TTL_MS - ageMs, 0);
-  return `Browser Pane already has a pending action (${action.kind}, actionId ${action.actionId}, age ${ageMs}ms; retry after about ${remainingMs}ms or re-observe before sending another browser action).`;
-}
-
-function browserActionAgeMs(
-  action: BrowserPaneActionRequest,
-  now: string,
-): number | undefined {
-  const requestedAtMs = Date.parse(action.requestedAt);
-  const nowMs = Date.parse(now);
-  if (!Number.isFinite(requestedAtMs) || !Number.isFinite(nowMs)) {
-    return undefined;
-  }
-  return Math.max(nowMs - requestedAtMs, 0);
-}
-
-// User takeover (D5): clear computer-use driving state and any queued agent input so
+// User takeover (D5): clear computer-use driving state so
 // the user regains the page immediately. Pure over the thread's pane list.
 export function releaseAgentBrowserControl(
   thread: ThreadRecord,
@@ -522,7 +442,6 @@ export function releaseAgentBrowserControl(
   const releasedAt = clock();
   pane.agentDriving = false;
   delete pane.agentCursor;
-  delete pane.pendingAction;
   // Mark the pane user-controlled so the agent's next drive attempt is softly refused
   // (it yields + continues) rather than re-grabbing or erroring on the bumped revision.
   pane.userControlled = true;
@@ -533,9 +452,8 @@ export function releaseAgentBrowserControl(
 }
 
 // Turn end / runtime no longer driving: drop the "agent is driving" overlay state on
-// the Thread's Browser Panes so the on-screen theater + lock auto-dismiss. Leaves any
-// in-flight pendingAction to settle via its own result path. Returns whether anything
-// changed. Spec: docs_v2/specs/browser-pane-agent-computer-use.md.
+// the Thread's Browser Panes so the on-screen theater + lock auto-dismiss. Returns whether
+// anything changed. Spec: docs_v2/specs/browser-pane-agent-computer-use.md.
 export function clearAgentBrowserDriving(thread: ThreadRecord): boolean {
   let changed = false;
   for (const pane of thread.workbench.panes) {

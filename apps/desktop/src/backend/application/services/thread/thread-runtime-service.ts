@@ -1,5 +1,6 @@
 import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderGoalStateInput, RecordProviderGoalStateResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderTurnStartedInput, RecordProviderTurnStartedResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
 import { ComposerQueueService } from "./composer-queue-service.ts";
+import { createUnavailableBrowserRuntimePort } from "./unavailable-browser-runtime-port.ts";
 import type {
   AgentSessionBlock,
 } from "../../domains/agent-session/agent-session-block.ts";
@@ -104,9 +105,7 @@ import {
 import { WorkbenchRuntime } from "../workbench/workbench-runtime.ts";
 
 import {
-  actBrowserOutput,
   clearAgentBrowserDriving,
-  observeBrowserOutput,
 } from "../workbench/workbench-browser-operations.ts";
 
 import { WorkbenchFileOperations } from "../workbench/workbench-file-operations.ts";
@@ -114,10 +113,7 @@ import { WorkbenchFileOperations } from "../workbench/workbench-file-operations.
 import { WorkbenchExecOperations } from "../workbench/workbench-exec-operations.ts";
 
 import {
-  boundedBrowserTextPreview,
   boundedTranscriptPreview,
-  browserActionKindFromInput,
-  browserTitleFromUrl,
   commandByteLimit,
   commandName,
   commandTimeoutMs,
@@ -155,8 +151,6 @@ import {
 } from "../workbench/workbench-snapshot.ts";
 
 import {
-  browserPaneActionResultFromData,
-  browserPaneSnapshotFromData,
   editorPanePositionFromData,
   editorPaneSaveFromData,
 } from "../workbench/workbench-command-data.ts";
@@ -178,6 +172,7 @@ import type {
 } from "../../ports/outbound/composer-attachment-store-port.ts";
 
 import type { ProviderTrustPort } from "../../ports/outbound/provider-trust-port.ts";
+import type { BrowserRuntimePort } from "../../ports/outbound/browser-runtime-port.ts";
 
 import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
 
@@ -206,7 +201,7 @@ export type {
   RawAgentFrame, RawAgentFramePayloadKind, RawAgentFrameSource,
   AgentRuntimeHandle, AgentRuntimePort, AgentRuntimeResumeInput, AgentRuntimeStartInput, AgentRuntimeState, TerminalInput,
   ProviderReadinessCheckInput, ProviderReadinessPort, ProviderReadinessResult, PtyTranscriptPort,
-  WorkspaceCommandPort, WorkspaceCodeIntelligencePort, WorkspaceFilePort, ComposerAttachmentInput, ComposerAttachmentStorePort, ProviderTrustPort,
+  WorkspaceCommandPort, WorkspaceCodeIntelligencePort, WorkspaceFilePort, ComposerAttachmentInput, ComposerAttachmentStorePort, ProviderTrustPort, BrowserRuntimePort,
   AgentBinding, AgentId, LastKnownState, PendingInput, PromptState, ThreadId, ThreadLifecycleState, ThreadScope, ThreadSnapshot,
   BrowserPaneRef, TideMcpToolDefinition, TideMcpToolName, WorkbenchSnapshot, WorkbenchState,
 };
@@ -302,10 +297,11 @@ export type { TideMcpSessionRef, TideMcpToolCallInput, TideMcpToolCallResult };
 
 import {
   WorkbenchCommandHandler,
-  type WorkbenchCommandInput,
-  type WorkbenchCommandResult,
 } from "../workbench/workbench-command-handler.ts";
-import { BrowserCaptureCoordinator } from "../workbench/browser-capture-coordinator.ts";
+import type {
+  WorkbenchCommandInput,
+  WorkbenchCommandResult,
+} from "../workbench/workbench-command-types.ts";
 import { WorkspaceQueryHandler } from "../workbench/workspace-query-handler.ts";
 
 export type { WorkbenchCommandInput, WorkbenchCommandResult };
@@ -335,6 +331,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
   composerAttachmentStorePort?: ComposerAttachmentStorePort;
   providerTrustPort?: ProviderTrustPort;
+  browserRuntimePort: BrowserRuntimePort;
   ensureScratchDirectory?: (threadId: string) => string;
   defaultWorkbenchTerminalCommand: string;
   defaultWorkbenchTerminalArgs: string[];
@@ -368,6 +365,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       input.workspaceCodeIntelligencePort ?? createUnavailableWorkspaceCodeIntelligencePort();
     this.composerAttachmentStorePort = input.composerAttachmentStorePort;
     this.providerTrustPort = input.providerTrustPort;
+    this.browserRuntimePort = input.browserRuntimePort ?? createUnavailableBrowserRuntimePort();
     this.ensureScratchDirectory = input.ensureScratchDirectory;
     this.defaultWorkbenchTerminalCommand =
       input.defaultWorkbenchTerminalCommand ?? DEFAULT_WORKBENCH_TERMINAL_COMMAND;
@@ -404,18 +402,16 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       workspaceCodeIntelligencePort: this.workspaceCodeIntelligencePort,
       workbenchRuntime: this.workbenchRuntime,
       workbenchFileOps: this.workbenchFileOps,
+      browserRuntimePort: this.browserRuntimePort,
       defaultWorkbenchTerminalCommand: this.defaultWorkbenchTerminalCommand,
       defaultWorkbenchTerminalArgs: this.defaultWorkbenchTerminalArgs,
       clock: this.clock,
       idGenerator: this.idGenerator,
     });
-    // Shared by the observe pull (sets pendingCapture + awaits) and the command handler
-    // (resolves on the renderer's update_browser_capture_result).
-    const browserCapture = new BrowserCaptureCoordinator();
     this.threadArchive = new ThreadArchiveService({
       agentRuntimePort: this.agentRuntimePort,
       workbenchRuntime: this.workbenchRuntime,
-      browserCapture,
+      browserRuntimePort: this.browserRuntimePort,
       clock: this.clock,
     });
     this.tideMcp = new TideMcpToolHandler({
@@ -425,8 +421,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       emitAsyncEvent: (event) => this.emitAsyncEvent(event),
       workbenchFileOps: this.workbenchFileOps,
       workbenchExec: this.workbenchExec,
-      browserCapture,
-      browserCapturePullTimeoutMs: input.browserCapturePullTimeoutMs,
+      browserRuntimePort: this.browserRuntimePort,
     });
     this.workbenchCmd = new WorkbenchCommandHandler({
       threads: this.threads,
@@ -439,7 +434,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       workspaceFilePort: this.workspaceFilePort,
       workspaceCommandPort: this.workspaceCommandPort,
       workspaceCodeIntelligencePort: this.workspaceCodeIntelligencePort,
-      browserCapture,
+      browserRuntimePort: this.browserRuntimePort,
     });
     this.workspaceQuery = new WorkspaceQueryHandler({
       workspaceFilePort: this.workspaceFilePort,

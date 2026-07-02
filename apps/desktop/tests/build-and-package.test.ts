@@ -237,8 +237,8 @@ test("electron_main_creates_a_browser_window_and_loads_the_renderer", () => {
   assert.match(main, /loadFile/);
 });
 
-test("electron_main_enables_webview_tag_for_workbench_browser_panes", () => {
-  // Spec: docs_v2/specs/workbench-browser-webview-pane.md
+test("electron_main_enables_webview_tag_for_html_preview_panes", () => {
+  // Spec: docs_v2/specs/workbench-html-preview.md
   const main = readMainProcessSource();
 
   assert.match(main, /webviewTag:\s*true/);
@@ -247,7 +247,7 @@ test("electron_main_enables_webview_tag_for_workbench_browser_panes", () => {
 });
 
 test("application_menu_routes_find_to_the_host_renderer_even_from_webview_focus", () => {
-  // Spec: in-pane find should open for Browser Pane webviews, which do not send
+  // Spec: in-pane find should open over embedded webviews, which do not send
   // renderer keydown events to the host React tree.
   const main = readMainProcessSource();
   const preload = fs.readFileSync(path.join(repoRoot, "src/desktop/infrastructure/electron/preload/index.ts"), "utf8");

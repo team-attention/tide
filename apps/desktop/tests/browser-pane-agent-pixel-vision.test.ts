@@ -1,8 +1,7 @@
 // Spec: docs_v2/specs/browser-pane-agent-computer-use.md (Slice 2 — pixel vision)
-// tide_observe_browser gains a vision mode (text|screenshot|both) that attaches the
-// cached Browser Pane Screenshot, and the MCP layer surfaces it as an image content
-// block. The renderer capturePage that fills the cache is verified live; these tests set
-// the cache directly (a fake capture) and drive the observe + MCP plumbing.
+// tide_observe_browser supports vision modes (text|screenshot|both). BrowserRuntime
+// refreshes screenshot evidence before this mapper runs; these tests set the cached
+// runtime evidence directly and drive the observe + MCP plumbing.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -80,45 +79,6 @@ test("observe mode=screenshot with no cached capture returns no screenshot (degr
   const thread = browserThread();
   const result = await observeBrowserOutput(thread, { paneId: "p1", mode: "screenshot" });
   assert.equal(result.ok, true);
-  assert.equal(result.ok && result.value.pane.screenshot, undefined);
-});
-
-// --- On-demand pull: the screenshot is captured FRESH at observe time, not from the cache ---
-// Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
-
-const FRESH_SHOT: BrowserPaneScreenshot = {
-  data: "ZnJlc2g=",
-  mimeType: "image/png",
-  width: 1280,
-  height: 800,
-  devicePixelRatio: 2,
-};
-
-test("observe pulls a FRESH capture and returns it over the stale cache", async () => {
-  const thread = browserThread({ screenshot: SCREENSHOT });
-  let pulledPaneId: string | undefined;
-  const result = await observeBrowserOutput(thread, { paneId: "p1", mode: "both" }, async (pane) => {
-    pulledPaneId = pane.paneId;
-    return FRESH_SHOT;
-  });
-  assert.equal(pulledPaneId, "p1", "the puller is invoked for the observed pane");
-  assert.deepEqual(result.ok ? result.value.pane.screenshot : undefined, FRESH_SHOT);
-});
-
-test("observe falls back to the cached screenshot when the pull yields nothing (timeout)", async () => {
-  const thread = browserThread({ screenshot: SCREENSHOT });
-  const result = await observeBrowserOutput(thread, { paneId: "p1", mode: "both" }, async () => undefined);
-  assert.deepEqual(result.ok ? result.value.pane.screenshot : undefined, SCREENSHOT);
-});
-
-test("observe mode=text never pulls a capture", async () => {
-  const thread = browserThread({ screenshot: SCREENSHOT });
-  let pulled = false;
-  const result = await observeBrowserOutput(thread, { paneId: "p1", mode: "text" }, async () => {
-    pulled = true;
-    return FRESH_SHOT;
-  });
-  assert.equal(pulled, false, "text mode must not trigger a pixel capture");
   assert.equal(result.ok && result.value.pane.screenshot, undefined);
 });
 

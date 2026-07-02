@@ -1,5 +1,5 @@
 import type { AgentChatBackendEvent, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerSurfaceKind, AgentChatPromptStepAnswer, AgentChatThreadSummary } from "../../../../../application/domains/agent-chat/agent-chat.ts";
-import type { DropZone, ProductShellBackendCommand, ProductShellBrowserActionResult, ProductShellBrowserCaptureResult, ProductShellBrowserSnapshot, ProductShellFileTreeMenu, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { DropZone, ProductShellBackendCommand, ProductShellFileTreeMenu, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
@@ -295,15 +295,6 @@ export interface ProductShellHandlers {
     line?: number;
     character?: number;
   }) => Promise<Record<string, unknown> | null>;
-  onBrowserSnapshot: (paneId: string, snapshot: ProductShellBrowserSnapshot) => void;
-  onBrowserActionResult: (paneId: string, result: ProductShellBrowserActionResult) => void;
-  // Observe-time pixel-capture reply (pendingCapture pull). Spec:
-  // docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
-  onBrowserCaptureResult: (paneId: string, result: ProductShellBrowserCaptureResult) => void;
-  // Background (non-active thread) Browser Pane updates, routed by the pane's threadId.
-  onBackgroundBrowserSnapshot: (threadId: string, paneId: string, snapshot: ProductShellBrowserSnapshot) => void;
-  onBackgroundBrowserActionResult: (threadId: string, paneId: string, result: ProductShellBrowserActionResult) => void;
-  onBackgroundBrowserCaptureResult: (threadId: string, paneId: string, result: ProductShellBrowserCaptureResult) => void;
   // User takeover (D5): release agent driving on a foregrounded driven Browser Pane.
   onReleaseAgentBrowserControl: (paneId: string) => void;
 }

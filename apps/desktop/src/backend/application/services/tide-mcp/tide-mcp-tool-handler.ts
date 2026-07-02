@@ -1,24 +1,26 @@
 import type { AgentId, ThreadId, ThreadRecord, ThreadSnapshot } from "../../domains/thread/thread.ts";
 import type {
-  BrowserPaneScreenshot,
   BrowserPaneState,
   TideMcpToolDefinition,
   TideMcpToolName,
 } from "../../domains/workbench/workbench.ts";
+import type { BrowserRuntimePort } from "../../ports/outbound/browser-runtime-port.ts";
 import { TIDE_MCP_WORKBENCH_TOOL_NAMES } from "../../domains/workbench/workbench.ts";
-import { failure, type ServiceResult } from "../support/service-result.ts";
+import { failure, type ServiceErrorCode, type ServiceResult } from "../support/service-result.ts";
 import { snapshotThread } from "../thread/thread-snapshot.ts";
 import type { ThreadRuntimeAsyncEvent } from "../thread/thread-runtime-events.ts";
 import type { ThreadStore } from "../thread/thread-store.ts";
-import { BrowserCaptureCoordinator } from "../workbench/browser-capture-coordinator.ts";
 import {
-  actBrowserOutput,
+  applyBrowserRuntimeObservation,
+  browserPaneByIdForThread,
   observeBrowserOutput,
   openBrowserOutput,
+  prepareBrowserRuntimeAction,
 } from "../workbench/workbench-browser-operations.ts";
 import type { WorkbenchExecOperations } from "../workbench/workbench-exec-operations.ts";
 import type { WorkbenchFileOperations } from "../workbench/workbench-file-operations.ts";
-import { snapshotWorkbench } from "../workbench/workbench-snapshot.ts";
+import { browserPaneRef, snapshotWorkbench } from "../workbench/workbench-snapshot.ts";
+import { browserObserveModeFromInput, optionalString } from "../support/service-value-helpers.ts";
 import type {
   TideMcpToolOutput,
   TideObserveThreadOutput,
@@ -30,11 +32,6 @@ import type {
 // surfaces a workbench change. Thin — all pane operations live in the
 // browser/file/exec collaborators. Extracted from thread-runtime-service.ts.
 // See docs_v2/specs/thread-runtime-service-decomposition.md.
-
-// Ceiling for the observe-time capture round-trip (renderer capturePage + IPC both ways).
-// Longer than the renderer's own 2s capturePage race so a slow-but-arriving capture still wins;
-// past it, observe degrades to the cached screenshot / DOM text instead of hanging the agent.
-const BROWSER_CAPTURE_PULL_TIMEOUT_MS = 3000;
 
 export interface TideMcpSessionRef {
   runtimeId: string;
@@ -63,10 +60,7 @@ export interface TideMcpToolHandlerDeps {
   emitAsyncEvent: (event: ThreadRuntimeAsyncEvent) => void;
   workbenchFileOps: WorkbenchFileOperations;
   workbenchExec: WorkbenchExecOperations;
-  browserCapture: BrowserCaptureCoordinator;
-  // Ceiling for the observe-time capture round-trip. Defaults to BROWSER_CAPTURE_PULL_TIMEOUT_MS;
-  // a backend-only test (no renderer to reply) injects a tiny value so observe degrades at once.
-  browserCapturePullTimeoutMs?: number;
+  browserRuntimePort: BrowserRuntimePort;
 }
 
 export class TideMcpToolHandler {
@@ -76,8 +70,7 @@ export class TideMcpToolHandler {
   private readonly emitAsyncEvent: (event: ThreadRuntimeAsyncEvent) => void;
   private readonly workbenchFileOps: WorkbenchFileOperations;
   private readonly workbenchExec: WorkbenchExecOperations;
-  private readonly browserCapture: BrowserCaptureCoordinator;
-  private readonly browserCapturePullTimeoutMs: number;
+  private readonly browserRuntimePort: BrowserRuntimePort;
 
   constructor(deps: TideMcpToolHandlerDeps) {
     this.store = deps.store;
@@ -86,9 +79,7 @@ export class TideMcpToolHandler {
     this.emitAsyncEvent = deps.emitAsyncEvent;
     this.workbenchFileOps = deps.workbenchFileOps;
     this.workbenchExec = deps.workbenchExec;
-    this.browserCapture = deps.browserCapture;
-    this.browserCapturePullTimeoutMs =
-      deps.browserCapturePullTimeoutMs ?? BROWSER_CAPTURE_PULL_TIMEOUT_MS;
+    this.browserRuntimePort = deps.browserRuntimePort;
   }
 
   listTools(): TideMcpToolDefinition[] {
@@ -139,31 +130,6 @@ export class TideMcpToolHandler {
     };
   }
 
-  // Observe-time pixel-capture pull: mark the pane's pendingCapture, push it to the renderer
-  // host (which captures the live <webview> for this captureId and replies via
-  // update_browser_capture_result), and await the reply. Returns the fresh screenshot, or
-  // undefined on timeout (pane closed / not painting) so observe falls back to the cache.
-  // Spec: docs_v2/specs/browser-pane-screenshot-on-load-decoupling.md.
-  private async pullBrowserScreenshot(
-    thread: ThreadRecord,
-    pane: BrowserPaneState,
-  ): Promise<BrowserPaneScreenshot | undefined> {
-    const captureId = this.idGenerator();
-    pane.pendingCapture = { captureId, requestedAt: this.clock() };
-    try {
-      this.emitAsyncEvent({ kind: "workbench_changed", thread: snapshotThread(thread) });
-      return await this.browserCapture.request(captureId, this.browserCapturePullTimeoutMs);
-    } finally {
-      // On the happy path the result command already cleared pendingCapture; clear it here for
-      // the timeout path (and an unexpected emit/await throw) and re-broadcast so the renderer
-      // host stops offering to capture this id — never leave a stale pendingCapture on the pane.
-      if (pane.pendingCapture?.captureId === captureId) {
-        delete pane.pendingCapture;
-        this.emitAsyncEvent({ kind: "workbench_changed", thread: snapshotThread(thread) });
-      }
-    }
-  }
-
   private resolveMcpThread(
     session: TideMcpSessionRef,
   ): ServiceResult<{ thread: ThreadRecord }> {
@@ -203,27 +169,12 @@ export class TideMcpToolHandler {
       case "tide_observe_workbench":
         return { ok: true, value: observeWorkbenchOutput(thread) };
       case "tide_open_browser":
-        return {
-          ok: true,
-          value: openBrowserOutput(thread, input.input, this.idGenerator, this.clock),
-        };
+        return this.openBrowser(thread, input.input);
       case "tide_observe_browser": {
-        const result = await observeBrowserOutput(
-          thread,
-          input.input,
-          (pane) => this.pullBrowserScreenshot(thread, pane),
-          this.clock,
-        );
-        if (result.ok && result.stalePendingActionExpired) {
-          this.emitAsyncEvent({
-            kind: "workbench_changed",
-            thread: snapshotThread(thread),
-          });
-        }
-        return result;
+        return this.observeBrowserWithRuntime(thread, input.input);
       }
       case "tide_act_browser":
-        return actBrowserOutput(thread, input.input, this.idGenerator, this.clock);
+        return this.actBrowserWithRuntime(thread, input.input);
       case "tide_read_file":
         return this.workbenchFileOps.readFileOutput(thread, input.input);
       case "tide_open_file":
@@ -245,6 +196,163 @@ export class TideMcpToolHandler {
       case "tide_set_workbench_layout":
         return this.workbenchExec.setWorkbenchLayoutOutput(thread, input.input);
     }
+  }
+
+  private async openBrowser(
+    thread: ThreadRecord,
+    input: Record<string, unknown> | undefined,
+  ): Promise<ServiceResult<{ value: TideMcpToolOutput }>> {
+    const opened = openBrowserOutput(thread, input, this.idGenerator, this.clock);
+    const pane = browserPaneByIdForThread(thread, opened.pane.paneId);
+    if (pane === undefined) {
+      return { ok: true, value: opened };
+    }
+    const ensured = await this.browserRuntimePort.ensure({
+      threadId: thread.threadId,
+      paneId: pane.paneId,
+      url: pane.url,
+      title: pane.title,
+    });
+    if (!ensured.ok) {
+      return failure(browserRuntimeServiceErrorCode(ensured.error.code), ensured.error.message);
+    }
+    const observedAt = this.clock();
+    applyBrowserRuntimeObservation(pane, ensured.value.observation, {
+      idGenerator: this.idGenerator,
+      observedAt,
+      remint: "on_url_change",
+    });
+    thread.updatedAt = observedAt;
+    return {
+      ok: true,
+      value: {
+        ...opened,
+        pane: browserPaneRef(pane),
+      },
+    };
+  }
+
+  private async observeBrowserWithRuntime(
+    thread: ThreadRecord,
+    input: Record<string, unknown> | undefined,
+  ): Promise<ServiceResult<{ value: TideMcpToolOutput }>> {
+    const paneId = optionalString(input?.paneId);
+    const pane = browserPaneByIdForThread(thread, paneId);
+    if (pane === undefined) {
+      return failure(
+        "workbench_target_not_found",
+        "Browser Pane target was not found for this Thread.",
+      );
+    }
+    const revision = optionalString(input?.revision);
+    if (revision !== undefined && revision !== pane.revision) {
+      return failure("workbench_stale_reference", "Browser Pane revision is stale.");
+    }
+    const mode = browserObserveModeFromInput(input?.mode);
+    const observed = await this.browserRuntimePort.observe({
+      threadId: thread.threadId,
+      paneId: pane.paneId,
+      mode,
+    });
+    if (!observed.ok) {
+      return failure(browserRuntimeServiceErrorCode(observed.error.code), observed.error.message);
+    }
+    const observedAt = this.clock();
+    applyBrowserRuntimeObservation(pane, observed.value.observation, {
+      idGenerator: this.idGenerator,
+      observedAt,
+      remint: "on_url_change",
+    });
+    thread.updatedAt = observedAt;
+    this.emitAsyncEvent({ kind: "workbench_changed", thread: snapshotThread(thread) });
+    return observeBrowserOutput(thread, input);
+  }
+
+  private async actBrowserWithRuntime(
+    thread: ThreadRecord,
+    input: Record<string, unknown> | undefined,
+  ): Promise<ServiceResult<{ value: TideMcpToolOutput }>> {
+    const prepared = prepareBrowserRuntimeAction(
+      thread,
+      input,
+      this.idGenerator,
+      this.clock,
+    );
+    if (!prepared.ok) {
+      return prepared;
+    }
+    const { pane, action, setsDriving, agentCursor } = prepared.value;
+    if (setsDriving) {
+      pane.agentDriving = true;
+      if (agentCursor !== undefined) {
+        pane.agentCursor = agentCursor;
+      }
+      pane.updatedAt = action.requestedAt;
+      thread.updatedAt = action.requestedAt;
+      this.emitAsyncEvent({ kind: "workbench_changed", thread: snapshotThread(thread) });
+    }
+
+    const acted = await this.browserRuntimePort.act({
+      threadId: thread.threadId,
+      paneId: pane.paneId,
+      action,
+    });
+    const completedAt = this.clock();
+    if (!acted.ok) {
+      pane.lastAction = {
+        ...action,
+        status: "failed",
+        message: acted.error.message,
+        completedAt,
+      };
+      pane.updatedAt = completedAt;
+      thread.updatedAt = completedAt;
+      return {
+        ok: true,
+        value: {
+          kind: "act_browser",
+          threadId: thread.threadId,
+          pane: browserPaneRef(pane),
+          action,
+          status: "failed",
+        },
+      };
+    }
+
+    pane.lastAction = {
+      ...action,
+      status: acted.value.status,
+      message: acted.value.message,
+      completedAt: acted.value.completedAt,
+    };
+    applyBrowserRuntimeObservation(pane, acted.value.observation, {
+      idGenerator: this.idGenerator,
+      observedAt: acted.value.completedAt,
+      remint: "always",
+    });
+    thread.updatedAt = acted.value.completedAt;
+    return {
+      ok: true,
+      value: {
+        kind: "act_browser",
+        threadId: thread.threadId,
+        pane: browserPaneRef(pane),
+        action,
+        status: acted.value.status,
+      },
+    };
+  }
+}
+
+function browserRuntimeServiceErrorCode(code: string): ServiceErrorCode {
+  switch (code) {
+    case "browser_runtime_unavailable":
+    case "browser_runtime_timeout":
+    case "browser_runtime_error":
+    case "browser_runtime_invalid_response":
+      return code;
+    default:
+      return "browser_runtime_error";
   }
 }
 
@@ -361,7 +469,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   {
     name: "tide_act_browser",
     description:
-      "Operate an open Tide Browser Pane like a human (hybrid). Prefer semantic element action click_element(elementIndex) using the latest tide_observe_browser interactiveElements list when available. Coordinate computer-use actions move the cursor and drive the live page via real input events: move_to/click_at (x,y; click_at takes optional button and clickCount), drag (x,y,toX,toY; useful for bottom sheets/sliders), scroll (x,y,deltaX,deltaY), key (keys like \"Enter\" or \"Cmd+A\"), and type (text into the focused element). Selector actions click/type_text (selector, text) are the reliability fallback. Coordinates are screenshot pixels from the latest tide_observe_browser image; Tide converts them to webview CSS pixels.",
+      "Operate an open Tide Browser Pane like a human. Prefer semantic element action click_element(elementIndex) using the latest tide_observe_browser interactiveElements list when available. Coordinate actions move the cursor and drive the live page through BrowserRuntime input: move_to/click_at (x,y; click_at takes optional button and clickCount), drag (x,y,toX,toY; useful for bottom sheets/sliders), scroll (x,y,deltaX,deltaY), key (keys like \"Enter\" or \"Cmd+A\"), and type (text into the focused element). Selector actions click/type_text use runtime DOM lookup. Coordinates are screenshot pixels from the latest tide_observe_browser image and are mapped to the runtime viewport.",
     inputSchema: {
       type: "object",
       properties: {

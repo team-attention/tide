@@ -1,27 +1,27 @@
 import type { AgentRuntimePort } from "../../ports/outbound/agent-runtime-port.ts";
+import type { BrowserRuntimePort } from "../../ports/outbound/browser-runtime-port.ts";
 import type { TerminalPaneState } from "../../domains/workbench/workbench.ts";
 import type { ThreadRecord } from "../../domains/thread/thread.ts";
 import { boundedTranscriptPreview } from "../support/service-value-helpers.ts";
-import { BrowserCaptureCoordinator } from "../workbench/browser-capture-coordinator.ts";
 import { WorkbenchRuntime } from "../workbench/workbench-runtime.ts";
 
 export interface ThreadArchiveServiceInput {
   agentRuntimePort: AgentRuntimePort;
   workbenchRuntime: WorkbenchRuntime;
-  browserCapture: BrowserCaptureCoordinator;
+  browserRuntimePort?: BrowserRuntimePort;
   clock: () => string;
 }
 
 export class ThreadArchiveService {
   private readonly agentRuntimePort: AgentRuntimePort;
   private readonly workbenchRuntime: WorkbenchRuntime;
-  private readonly browserCapture: BrowserCaptureCoordinator;
+  private readonly browserRuntimePort?: BrowserRuntimePort;
   private readonly clock: () => string;
 
   constructor(input: ThreadArchiveServiceInput) {
     this.agentRuntimePort = input.agentRuntimePort;
     this.workbenchRuntime = input.workbenchRuntime;
-    this.browserCapture = input.browserCapture;
+    this.browserRuntimePort = input.browserRuntimePort;
     this.clock = input.clock;
   }
 
@@ -44,11 +44,6 @@ export class ThreadArchiveService {
 
     for (const pane of thread.workbench.panes) {
       if (pane.kind === "browser") {
-        if (pane.pendingCapture !== undefined) {
-          this.browserCapture.cancel(pane.pendingCapture.captureId);
-          delete pane.pendingCapture;
-        }
-        delete pane.pendingAction;
         pane.agentDriving = false;
         delete pane.agentCursor;
         delete pane.userControlled;
@@ -72,6 +67,22 @@ export class ThreadArchiveService {
         .filter((pane): pane is TerminalPaneState => pane.kind === "terminal")
         .map((pane) => this.workbenchRuntime.stopTerminalPane(pane).catch(() => {})),
     );
+    const browserRuntimePort = this.browserRuntimePort;
+    if (browserRuntimePort !== undefined) {
+      await Promise.all(
+        thread.workbench.panes
+          .filter((pane) => pane.kind === "browser")
+          .map((pane) =>
+            browserRuntimePort
+              .close({
+                threadId: thread.threadId,
+                paneId: pane.paneId,
+                reason: "thread_archived",
+              })
+              .catch(() => {}),
+          ),
+      );
+    }
 
     if (runtimeHandle !== undefined) {
       await this.agentRuntimePort.stop(runtimeHandle).catch(() => {});

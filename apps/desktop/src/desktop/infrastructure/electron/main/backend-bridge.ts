@@ -1,9 +1,10 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createContractErrorEvent, createContractErrorPayload, validateBackendEventEnvelope, validateBackendHandshake } from "../../../../shared/contracts/index.ts";
+import { createContractErrorEvent, createContractErrorPayload, isBrowserRuntimeRequestEnvelope, validateBackendEventEnvelope, validateBackendHandshake } from "../../../../shared/contracts/index.ts";
 import type { BackendCommandEnvelope, BackendEventEnvelope, BackendHandshake } from "../../../../shared/contracts/index.ts";
 import { BrowserWindow, app, utilityProcess } from "electron";
 import type { UtilityProcess } from "electron";
+import { browserRuntimeHost } from "./browser-runtime-host.ts";
 // Extracted from electron-main.ts (spec: navigable-source-structure).
 
 export const mainDir = dirname(fileURLToPath(import.meta.url));
@@ -139,6 +140,12 @@ export function postBackendCommand(command: BackendCommandEnvelope): Promise<Bac
 
 function handleBackendProcessMessage(message: unknown): void {
   const payload = unwrapPortMessage(message);
+  if (isBrowserRuntimeRequestEnvelope(payload)) {
+    void browserRuntimeHost.handleRequest(payload).then((response) => {
+      backendProcess?.postMessage(response);
+    });
+    return;
+  }
   if (!isBackendProcessMessage(payload)) {
     return;
   }
