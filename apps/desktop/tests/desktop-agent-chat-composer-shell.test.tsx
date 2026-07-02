@@ -1592,6 +1592,40 @@ test("agent_session_block_upserts_render_one_visible_block_per_block_id", () => 
   assert.match(renderShell(withUpdatedBlock), /hello/);
 });
 
+test("agent_session_block_view_preserves_native_evidence_summaries_for_debugging", () => {
+  const state = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("agentSessionBlock.upserted", {
+      block: {
+        ...block("native-block", "complete", "Native projected answer"),
+        parentBlockId: "tool-parent-1",
+        localProvenance: {
+          kind: "native_semantic_block",
+          evidence: [{
+            eventId: "native-event-1",
+            provider: "codex",
+            transport: "codex_app_server",
+            nativeKind: "usage",
+            nativeIds: { sessionId: "session-1" },
+            receivedAt: later,
+            summary: "codex/usage sessionId=session-1",
+            redactedFields: ["$.payload.text"],
+          }],
+        },
+      },
+    }),
+  );
+  const view = createAgentChatShellViewModel(state);
+  const evidence = view.blocks[0]?.nativeEvidence?.[0];
+
+  assert.equal(evidence?.eventId, "native-event-1");
+  assert.equal(evidence?.nativeIds?.sessionId, "session-1");
+  assert.equal(view.blocks[0]?.parentBlockId, "tool-parent-1");
+  assert.equal(view.blocks[0]?.nativeEvidenceLabel, "codex/usage sessionId=session-1");
+  assert.match(renderShell(state), /data-parent-block-id="tool-parent-1"/);
+  assert.match(renderShell(state), /data-native-evidence="codex\/usage sessionId=session-1"/);
+});
+
 test("the_working_indicator_stays_up_mid_turn_after_a_completed_agent_block", () => {
   // A multi-step turn emits agent text, completes that block, then keeps going
   // (a tool call, more text). The runtime is still "running", so "Working…" must
@@ -2163,6 +2197,173 @@ test("slash_command_menu_mirrors_the_full_command_set_in_the_start_composer", ()
   const startedHtml = renderShell(started);
   assert.match(startedHtml, /\/work/);
   assert.match(startedHtml, /\/goal/);
+});
+
+test("capability_catalog_drives_command_surface_without_mixing_session_or_config_controls", () => {
+  const state = {
+    ...updateComposerDraft(createAgentChatShellState(), "/").state,
+    availableCommands: [{ name: "legacy", description: "Legacy command", trigger: "/" as const }],
+    availableCapabilities: [
+      {
+        capabilityId: "claude:/work",
+        kind: "prompt_command",
+        group: "commands",
+        label: "work",
+        description: "Run engineering work",
+        trigger: "/" as const,
+        invoke: { kind: "provider_prompt_text", text: "/work" },
+        available: true,
+      },
+      {
+        capabilityId: "codex:compact",
+        kind: "session_action",
+        group: "session",
+        label: "Compact",
+        trigger: "/" as const,
+        invoke: { kind: "provider_method", method: "thread/compact/start" },
+        available: true,
+      },
+      {
+        capabilityId: "codex:model",
+        kind: "config_control",
+        group: "model",
+        label: "Model",
+        invoke: { kind: "provider_config", key: "model" },
+        available: true,
+      },
+    ],
+  };
+
+  const rows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
+
+  assert.ok(rows.some((entry) => entry.label === "/work"));
+  assert.ok(!rows.some((entry) => entry.label === "/legacy"));
+  assert.ok(!rows.some((entry) => entry.label.includes("Compact")));
+  assert.ok(!rows.some((entry) => entry.label.includes("Model")));
+});
+
+test("capability_command_rows_can_invoke_provider_methods_without_splicing_text", () => {
+  const state = {
+    ...updateComposerDraft(
+      applyBackendEventToAgentChatShell(
+        createAgentChatShellState(),
+        backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+      ),
+      "/",
+    ).state,
+    availableCapabilities: [
+      {
+        capabilityId: "codex:review",
+        kind: "prompt_command",
+        group: "commands",
+        label: "Review",
+        description: "Start provider-native review",
+        trigger: "/" as const,
+        invoke: { kind: "provider_method", method: "review/start" },
+        available: true,
+      },
+    ],
+  };
+
+  const rows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
+
+  assert.equal(rows[0]?.label, "/Review");
+  assert.equal(rows[0]?.disabled, false);
+
+  const selected = selectAgentChatChoiceSurfaceRow(state, "command_suggestions", "capability:codex:review", thread.threadId);
+  assert.equal(selected.state.composer.activeSurface, null);
+  assert.equal(selected.state.composer.draft, "/");
+  assert.deepEqual(selected.command, {
+    kind: "provider.invokeCapability",
+    payload: {
+      threadId: thread.threadId,
+      capabilityId: "codex:review",
+      invoke: { kind: "provider_method", method: "review/start" },
+    },
+  });
+});
+
+test("capability_menu_renders_session_config_and_mcp_sections_distinct_from_slash_commands", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const state = {
+    ...setComposerActiveSurface(hydrated, "composer_options").state,
+    availableCapabilities: [
+      {
+        capabilityId: "codex:compact",
+        kind: "session_action",
+        group: "session",
+        label: "Compact",
+        trigger: "/" as const,
+        invoke: { kind: "provider_method", method: "thread/compact/start" },
+        available: true,
+      },
+      {
+        capabilityId: "codex:model",
+        kind: "config_control",
+        group: "model",
+        label: "Model",
+        invoke: { kind: "provider_config", key: "model" },
+        available: true,
+      },
+      {
+        capabilityId: "codex:permission",
+        kind: "permission_control",
+        group: "permission",
+        label: "Permission profile",
+        invoke: { kind: "provider_config", key: "permission" },
+        available: true,
+      },
+      {
+        capabilityId: "codex:mcp",
+        kind: "mcp_surface",
+        group: "mcp",
+        label: "MCP status",
+        invoke: { kind: "provider_method", method: "mcpServerStatus/list" },
+        available: true,
+      },
+      {
+        capabilityId: "codex:cloud",
+        kind: "session_action",
+        group: "session",
+        label: "Cloud",
+        invoke: { kind: "unsupported", reason: "Cloud runtime is not available." },
+        available: false,
+      },
+    ],
+  };
+
+  const optionsRows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
+  assert.ok(optionsRows.some((entry) => entry.rowId === "agent-capabilities"));
+
+  const opened = selectAgentChatChoiceSurfaceRow(state, "composer_options", "agent-capabilities", thread.threadId);
+  assert.equal(opened.state.composer.activeSurface, "capability_menu");
+  const capabilityRows = createAgentChatShellViewModel(opened.state).composer.activeSurface?.rows ?? [];
+  assert.deepEqual(
+    capabilityRows.map((entry) => entry.label).filter((label) => ["Session", "Compact", "Cloud", "Model", "Permission", "Permission profile", "MCP", "MCP status"].includes(label)),
+    ["Session", "Compact", "Cloud", "Model", "Model", "Permission", "Permission profile", "MCP", "MCP status"],
+  );
+  assert.equal(capabilityRows.find((entry) => entry.label === "Cloud")?.disabled, true);
+
+  const compact = selectAgentChatChoiceSurfaceRow(opened.state, "capability_menu", "capability-menu:codex:compact", thread.threadId);
+  assert.deepEqual(compact.command, {
+    kind: "provider.invokeCapability",
+    payload: {
+      threadId: thread.threadId,
+      capabilityId: "codex:compact",
+      invoke: { kind: "provider_method", method: "thread/compact/start" },
+    },
+  });
+
+  const model = selectAgentChatChoiceSurfaceRow(opened.state, "capability_menu", "capability-menu:codex:model", thread.threadId);
+  assert.equal(model.state.composer.activeSurface, "model_menu");
+  assert.equal(model.command, null);
+
+  const permission = selectAgentChatChoiceSurfaceRow(opened.state, "capability_menu", "capability-menu:codex:permission", thread.threadId);
+  assert.equal(permission.state.composer.activeSurface, "permission_menu");
+  assert.equal(permission.command, null);
 });
 
 test("slash_command_menu_offers_goal_when_provider_commands_are_empty", () => {

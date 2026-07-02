@@ -2,6 +2,8 @@ import type {
   AgentRuntimeHandle,
   AgentRuntimeResumeInput,
   AgentRuntimeStartInput,
+  AgentRuntimeCapabilityInvocationInput,
+  AgentRuntimeCapabilityInvocationResult,
   AgentSessionConfigInput,
   AgentSessionConfigResult,
   TerminalInput,
@@ -32,6 +34,8 @@ import type {
   StructuredProviderEvent,
   StructuredRuntimeClient,
 } from "../structured/structured-runtime-events.ts";
+import type { NativeRuntimeEvent, NativeTransport } from "../../../../application/domains/native-agent/native-runtime-event.ts";
+import { structuredToNativeRuntimeEvent } from "../clients/structured-to-native-runtime-event.ts";
 
 export type AgentIntegrationRegistry = Record<ProviderCliAgentId, AgentIntegrationPort>;
 
@@ -62,6 +66,12 @@ export interface CreateAgentIntegrationRuntimePortInput {
     agentId: ProviderCliAgentId;
     runtimeId: string;
     event: StructuredProviderEvent;
+  }) => Promise<void> | void;
+  onNativeEvent?: (input: {
+    threadId: string;
+    agentId: ProviderCliAgentId;
+    runtimeId: string;
+    event: NativeRuntimeEvent;
   }) => Promise<void> | void;
   clock?: () => string;
   idGenerator?: () => string;
@@ -170,6 +180,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   private readonly idGenerator: () => string;
   private readonly resolveRuntimeEnvironment?: CreateAgentIntegrationRuntimePortInput["resolveRuntimeEnvironment"];
   private readonly onProviderEvent?: CreateAgentIntegrationRuntimePortInput["onProviderEvent"];
+  private readonly onNativeEvent?: CreateAgentIntegrationRuntimePortInput["onNativeEvent"];
   private readonly locateSubagentsDir?: CreateAgentIntegrationRuntimePortInput["locateSubagentsDir"];
   private readonly runtimes = new Map<string, StructuredRuntimeState>();
   // Probed real command sets per (agentId:cwd) — see discoverCommands.
@@ -184,6 +195,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
     this.resolveRuntimeEnvironment = input.resolveRuntimeEnvironment;
     this.onProviderEvent = input.onProviderEvent;
+    this.onNativeEvent = input.onNativeEvent;
     this.locateSubagentsDir = input.locateSubagentsDir;
   }
 
@@ -319,6 +331,29 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     // that lacks the capability) degrades to a transparent restart — the resume
     // re-applies every current option via launch argv. Never a phantom "applied".
     return acked ? "applied" : "restart_required";
+  }
+
+  async invokeCapability(
+    handle: AgentRuntimeHandle,
+    input: AgentRuntimeCapabilityInvocationInput,
+  ): Promise<AgentRuntimeCapabilityInvocationResult> {
+    const runtime = this.runtimes.get(handle.runtimeId);
+    if (runtime === undefined) {
+      return { status: "unsupported", reason: "Agent Runtime handle was not found." };
+    }
+    if (input.invoke.kind !== "provider_method") {
+      return {
+        status: "unsupported",
+        reason: `Capability ${input.capabilityId} is not a provider method.`,
+      };
+    }
+    if (runtime.client.invokeCapability === undefined) {
+      return {
+        status: "unsupported",
+        reason: `${runtime.agentId} does not expose provider method invocation.`,
+      };
+    }
+    return runtime.client.invokeCapability(input);
   }
 
   async interrupt(handle: AgentRuntimeHandle): Promise<void> {
@@ -467,8 +502,26 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       },
     };
     const runtimePlanWithEnv = this.withRuntimeEnvironment(runtimePlan);
+    let nativeSequence = 0;
+    let providerSessionId = resumeRef ?? runtimePlanWithEnv.providerSessionRef?.value;
     const emit = (event: StructuredProviderEvent): void => {
+      nativeSequence += 1;
+      if (event.kind === "session_ref") {
+        providerSessionId = event.ref.value;
+      }
       void this.onProviderEvent?.({ threadId, agentId, runtimeId, event });
+      const nativeEvent = structuredToNativeRuntimeEvent({
+        eventId: this.idGenerator(),
+        provider: agentId,
+        transport: plan.transport as NativeTransport,
+        runtimeId,
+        tideThreadId: threadId,
+        providerSessionId,
+        nativeSequence,
+        receivedAt: this.clock(),
+        event,
+      });
+      void this.onNativeEvent?.({ threadId, agentId, runtimeId, event: nativeEvent });
     };
     const client = this.createTransportClient({
       plan: runtimePlanWithEnv,

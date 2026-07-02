@@ -31,6 +31,9 @@ export type AgentChatBackendCommandDraft = {
   kind: "provider.trustWorkspace";
   payload: BackendCommandPayloadByKind["provider.trustWorkspace"];
 } | {
+  kind: "provider.invokeCapability";
+  payload: BackendCommandPayloadByKind["provider.invokeCapability"];
+} | {
   kind: "prompt.answer";
   payload: BackendCommandPayloadByKind["prompt.answer"];
 } | {
@@ -89,6 +92,11 @@ export function toBackendCommandDraft(
       return {
         kind: "provider.trustWorkspace",
         payload: command.payload,
+      };
+    case "provider.invokeCapability":
+      return {
+        kind: "provider.invokeCapability",
+        payload: command.payload as BackendCommandPayloadByKind["provider.invokeCapability"],
       };
     case "prompt.answer":
       return {

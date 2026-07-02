@@ -27,6 +27,7 @@ import type { OpencodeEnvironmentDto, OpencodeVendorDto } from "./opencode-vendo
 import type { ProviderModelDto } from "./provider-model-catalog.ts";
 import type { JsonObject } from "./json.ts";
 import type { PromptStateDto } from "./prompt.ts";
+import type { ProviderCapabilityDto } from "./provider-capability.ts";
 import type { ProviderReadinessDto } from "./provider-readiness.ts";
 import type { ThreadSummaryDto } from "./thread.ts";
 import type { WorkbenchFileTreeDto, WorkbenchLayoutModeDto, WorkbenchPaneRefDto } from "./workbench.ts";
@@ -50,6 +51,7 @@ export type BackendEventKind =
   | "agentRuntime.usageChanged"
   | "agentRuntime.activityChanged"
   | "agentRuntime.commandsChanged"
+  | "agentRuntime.capabilitiesChanged"
   | "agentRuntime.modelCatalogChanged"
   | "agentRuntime.noticePosted"
   | "providerReadiness.changed"
@@ -86,6 +88,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "agentRuntime.usageChanged",
   "agentRuntime.activityChanged",
   "agentRuntime.commandsChanged",
+  "agentRuntime.capabilitiesChanged",
   "agentRuntime.modelCatalogChanged",
   "agentRuntime.noticePosted",
   "providerReadiness.changed",
@@ -220,6 +223,12 @@ export interface BackendEventPayloadByKind {
     agentId: ProviderCliAgentId;
     cwd?: string;
     commands: Array<{ name: string; description: string; trigger: "/" | "$" }>;
+  };
+  "agentRuntime.capabilitiesChanged": {
+    threadId?: ThreadId;
+    agentId: ProviderCliAgentId;
+    cwd?: string;
+    capabilities: ProviderCapabilityDto[];
   };
   // The agent self-reported its model catalog over the protocol (ACP
   // availableModels / opencode configOptions) — the live current model + the real

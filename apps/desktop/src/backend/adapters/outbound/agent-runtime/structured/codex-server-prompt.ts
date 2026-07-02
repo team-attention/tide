@@ -66,6 +66,7 @@ export function codexApprovalPrompt(input: {
   threadId: string;
   message: string;
   detail?: PromptDetail;
+  nativeIds?: Record<string, string>;
 }): { promptState: PromptState; pending: PendingServerPrompt } {
   const promptId = `codex-perm-${String(input.serverRequestId)}`;
   return {
@@ -77,6 +78,7 @@ export function codexApprovalPrompt(input: {
       kind: "approval",
       message: input.message,
       ...(input.detail !== undefined ? { detail: input.detail } : {}),
+      ...(input.nativeIds !== undefined ? { nativeIds: input.nativeIds } : {}),
       choices: [
         { choiceId: "allow", label: "Allow", providerValue: CODEX_ACCEPT_TOKEN },
         {
@@ -98,6 +100,7 @@ export function codexLegacyReviewPrompt(input: {
   threadId: string;
   message: string;
   detail?: PromptDetail;
+  nativeIds?: Record<string, string>;
 }): { promptState: PromptState; pending: PendingServerPrompt } {
   const promptId = `codex-legacy-review-${String(input.serverRequestId)}`;
   return {
@@ -109,6 +112,7 @@ export function codexLegacyReviewPrompt(input: {
       kind: "approval",
       message: input.message,
       ...(input.detail !== undefined ? { detail: input.detail } : {}),
+      ...(input.nativeIds !== undefined ? { nativeIds: input.nativeIds } : {}),
       choices: [
         { choiceId: "allow", label: "Allow", providerValue: CODEX_ACCEPT_TOKEN },
         {
@@ -129,6 +133,7 @@ export function codexMcpElicitationPrompt(input: {
   serverRequestId: number | string;
   threadId: string;
   params: Record<string, unknown>;
+  nativeIds?: Record<string, string>;
 }): { promptState: PromptState; pending: PendingServerPrompt } {
   const promptId = `codex-mcp-elicit-${String(input.serverRequestId)}`;
   const mode = stringField(input.params, "mode");
@@ -146,6 +151,7 @@ export function codexMcpElicitationPrompt(input: {
       kind: "approval",
       message: stringField(input.params, "message") ?? "Allow MCP request",
       ...(detail !== undefined ? { detail } : {}),
+      ...(input.nativeIds !== undefined ? { nativeIds: input.nativeIds } : {}),
       choices: [
         { choiceId: "allow", label: "Allow", providerValue: CODEX_ACCEPT_TOKEN },
         { choiceId: "deny", label: "Deny", providerValue: CODEX_DECLINE_TOKEN },
@@ -167,6 +173,7 @@ export function codexRequestUserInputPrompt(input: {
   serverRequestId: number | string;
   threadId: string;
   params: Record<string, unknown>;
+  nativeIds?: Record<string, string>;
 }): { promptState: PromptState; pending: PendingServerPrompt } | undefined {
   const questions = Array.isArray(input.params.questions)
     ? input.params.questions.map(codexQuestionFromRecord).filter((q): q is CodexUserInputQuestion => q !== undefined)
@@ -197,6 +204,7 @@ export function codexRequestUserInputPrompt(input: {
       ...(first.choices !== undefined ? { choices: first.choices } : {}),
       ...(first.choices?.[0] !== undefined ? { defaultChoiceId: first.choices[0].choiceId } : {}),
       ...(steps !== undefined ? { steps } : {}),
+      ...(input.nativeIds !== undefined ? { nativeIds: input.nativeIds } : {}),
       source: "provider_hook",
     },
   };

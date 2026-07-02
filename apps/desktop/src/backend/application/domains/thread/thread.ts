@@ -136,6 +136,9 @@ export interface PromptState {
   // with length > 1 the card is a navigable wizard; single prompts omit it.
   // `message`/`choices`/`multiSelect` mirror `steps[0]` as a single-view fallback.
   steps?: PromptStep[];
+  // Provider-native ids associated with this prompt. Used to correlate an
+  // approval/question with the tool/file/command block it is gating.
+  nativeIds?: Record<string, string>;
   source: "pty" | "provider_signal" | "provider_hook";
 }
 
@@ -161,6 +164,7 @@ export interface AgentSessionBlockReference {
   blockId: string;
   agentId?: AgentId;
   kind: string;
+  parentBlockId?: string;
   role?: "user" | "agent" | "reasoning" | "tool" | "system" | "runtime";
   sourceFrameIds?: string[];
   localProvenance?: Record<string, unknown>;

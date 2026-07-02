@@ -84,6 +84,7 @@ export function toAgentSessionBlockDto(
     threadId: thread.threadId,
     agentId: block.agentId ?? thread.agentBinding.agentId,
     kind: block.kind,
+    parentBlockId: block.parentBlockId,
     role: block.role,
     sourceFrameIds: block.sourceFrameIds?.map((frameId) => frameId),
     localProvenance: jsonObject(block.localProvenance),

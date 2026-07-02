@@ -1,9 +1,8 @@
 // Codex structured runtime client — the app-server protocol (the same one the
 // Codex IDE extension speaks).
 //
-// EVIDENCE-BASED (live transcripts /tmp/tide-proto-evidence/codex/ + the
-// machine-generated TypeScript bindings from `codex app-server generate-ts`,
-// codex-cli 0.136):
+// EVIDENCE-BASED (redacted app-server runtime fixtures + the machine-generated
+// TypeScript bindings from `codex app-server generate-ts`, codex-cli 0.136):
 // - spawn: `codex app-server` serves JSONL over stdio directly (JSON-RPC-shaped,
 //   no `jsonrpc` field). Client requests: {id, method, params}; responses echo
 //   the id. Notifications have no id. The SERVER also sends requests (its own id
@@ -23,10 +22,13 @@
 //   turn: the model is told and continues (verified live, 02-deny-flow.jsonl).
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
+import type {
+  AgentRuntimeCapabilityInvocationInput,
+  AgentRuntimeCapabilityInvocationResult,
+} from "../../../../application/domains/agent-runtime/agent-runtime.ts";
 import type { ComposerAttachmentRef } from "../../../../application/domains/thread/thread.ts";
 import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
-  StructuredGoalState,
   StructuredClientCallbacks,
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
@@ -37,6 +39,8 @@ import { codexPlanActivityFromItem } from "./plan-activity.ts";
 import { bounded, codexContextTokensFromUsage, codexRateLimitsFromUsage, isRecord, numberField, stringField } from "./codex-app-server-shared.ts";
 import { codexToolItemId, isCodexVisibleToolItem } from "./codex-tool-call-record.ts";
 import { CodexToolCallLifecycle } from "./codex-tool-call-lifecycle.ts";
+import { codexGoalState } from "./codex-goal-state.ts";
+import { invokeCodexProviderCapability } from "./codex-provider-methods.ts";
 import { codexPlanContentRecord } from "./structured-plan-goal.ts";
 import {
   codexServerPromptResult,
@@ -82,63 +86,15 @@ export function codexTurnInput(
   return items;
 }
 
-function codexGoalState(goal: Record<string, unknown> | undefined): StructuredGoalState | undefined {
-  if (goal === undefined) {
-    return undefined;
-  }
-  const objective = stringField(goal, "objective");
-  const status = codexGoalStatus(stringField(goal, "status"));
-  if (objective === undefined || status === undefined) {
-    return undefined;
-  }
-  const tokenBudget = nullableNumberField(goal, "tokenBudget");
-  return {
-    objective,
-    status,
-    provider: "codex",
-    ...(isoFromCodexTime(numberField(goal, "createdAt")) !== undefined
-      ? { createdAt: isoFromCodexTime(numberField(goal, "createdAt")) }
-      : {}),
-    updatedAt: isoFromCodexTime(numberField(goal, "updatedAt")) ?? new Date().toISOString(),
-    ...(tokenBudget !== undefined ? { tokenBudget } : {}),
-    ...(numberField(goal, "tokensUsed") !== undefined ? { tokensUsed: numberField(goal, "tokensUsed") } : {}),
-    ...(numberField(goal, "timeUsedSeconds") !== undefined ? { timeUsedSeconds: numberField(goal, "timeUsedSeconds") } : {}),
-  };
-}
-
-function codexGoalStatus(status: string | undefined): StructuredGoalState["status"] | undefined {
-  switch (status) {
-    case "active":
-    case "paused":
-    case "blocked":
-    case "complete":
-      return status;
-    case "usageLimited":
-      return "usage_limited";
-    case "budgetLimited":
-      return "budget_limited";
-    default:
-      return undefined;
-  }
-}
-
-function nullableNumberField(record: Record<string, unknown>, key: string): number | undefined {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function isoFromCodexTime(value: number | undefined): string | undefined {
-  if (value === undefined || !Number.isFinite(value)) {
-    return undefined;
-  }
-  const millis = value > 1_000_000_000_000 ? value : value * 1000;
-  return new Date(millis).toISOString();
-}
-
 export function createCodexAppServerClient(
   input: CreateCodexAppServerClientInput,
 ): StructuredRuntimeClient {
   return new CodexAppServerClient(input);
+}
+
+interface PendingCodexResponse {
+  onResult: (result: unknown) => void;
+  onError?: (error: Error) => void;
 }
 
 class CodexAppServerClient implements StructuredRuntimeClient {
@@ -174,7 +130,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   };
   private lastRateLimits?: AgentRuntimeRateLimitDto[];
   // our request id -> what to do with the result
-  private readonly pendingResponses = new Map<number, (result: Record<string, unknown>) => void>();
+  private readonly pendingResponses = new Map<number, PendingCodexResponse>();
   // promptId -> the SERVER's request id awaiting a decision result
   private readonly pendingServerPrompts = new Map<string, PendingServerPrompt>();
   private readonly queuedWrites: string[] = [];
@@ -422,6 +378,17 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     return true;
   }
 
+  async invokeCapability(
+    input: AgentRuntimeCapabilityInvocationInput,
+  ): Promise<AgentRuntimeCapabilityInvocationResult> {
+    return invokeCodexProviderCapability({
+      capability: input,
+      codexThreadId: this.codexThreadId,
+      request: (method, params) =>
+        new Promise((resolve, reject) => this.request(method, params, resolve, reject)),
+    });
+  }
+
   async interrupt(): Promise<void> {
     // turn/interrupt aborts the turn → turn/completed status:interrupted; the
     // app-server process stays alive for the next turn.
@@ -450,9 +417,13 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     method: string,
     params: Record<string, unknown>,
     onResult: (result: Record<string, unknown>) => void,
+    onError?: (error: Error) => void,
   ): void {
     this.requestId += 1;
-    this.pendingResponses.set(this.requestId, onResult);
+    this.pendingResponses.set(this.requestId, {
+      onResult: (result) => onResult(isRecord(result) ? result : {}),
+      onError,
+    });
     if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
       process.stderr.write(`[tide-codex-as ${this.runtimeId}] -> ${method}\n`);
     }
@@ -505,14 +476,20 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       const handler = this.pendingResponses.get(id);
       if (handler !== undefined) {
         this.pendingResponses.delete(id);
-        if (isRecord(message.result)) {
-          handler(message.result);
+        if (message.result !== undefined) {
+          handler.onResult(message.result);
         } else if (message.error !== undefined) {
           // A failed thread/turn request must not hang the thread.
           const errorMessage = isRecord(message.error)
             ? stringField(message.error, "message") ?? "Codex request failed."
             : "Codex request failed.";
-          this.onEvent({ kind: "turn_completed", notice: errorMessage });
+          if (handler.onError !== undefined) {
+            handler.onError(new Error(errorMessage));
+          } else {
+            this.onEvent({ kind: "turn_completed", notice: errorMessage });
+          }
+        } else {
+          handler.onResult({});
         }
       }
       return;

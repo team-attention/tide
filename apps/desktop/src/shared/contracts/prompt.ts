@@ -49,6 +49,9 @@ export interface PromptStateDto {
   // omit this and render as a plain single card. `message`/`choices`/`multiSelect` mirror
   // `steps[0]` so non-wizard consumers still have a usable single view.
   steps?: PromptStepDto[];
+  // Provider-native ids associated with this prompt. The renderer treats this as
+  // opaque provenance; backend projection uses it to link prompts to gated blocks.
+  nativeIds?: Record<string, string>;
   source: "pty" | "provider_signal" | "provider_hook";
 }
 

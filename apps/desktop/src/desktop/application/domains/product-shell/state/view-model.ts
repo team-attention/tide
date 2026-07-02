@@ -107,9 +107,10 @@ export const selectAgentChatViewModel = shellSelector(
     (state: ProductShellState) => state.gitBranches,
     (state: ProductShellState) => state.gitWorktrees,
     (state: ProductShellState) => state.providerCommands,
+    (state: ProductShellState) => state.providerCapabilities,
     (state: ProductShellState) => state.composerFileMentions,
   ],
-  (agentChat, registeredProjects, projects, gitBranches, gitWorktrees, providerCommands, composerFileMentions) =>
+  (agentChat, registeredProjects, projects, gitBranches, gitWorktrees, providerCommands, providerCapabilities, composerFileMentions) =>
     createAgentChatShellViewModel(
       agentChatWithProjects({
         agentChat,
@@ -118,6 +119,7 @@ export const selectAgentChatViewModel = shellSelector(
         gitBranches,
         gitWorktrees,
         providerCommands,
+        providerCapabilities,
         composerFileMentions,
       } as ProductShellState),
     ),
@@ -518,6 +520,7 @@ export function agentChatWithProjects(state: ProductShellState): AgentChatShellS
     availableBranches: state.gitBranches,
     availableWorktrees: state.gitWorktrees,
     availableCommands: state.providerCommands,
+    availableCapabilities: state.providerCapabilities,
     availableFileMentions: fileMentionsForActiveScope(state),
   };
 }

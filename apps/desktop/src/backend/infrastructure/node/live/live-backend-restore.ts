@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 
 import { createBackendContractMessageAdapter } from "../../../adapters/inbound/contract-message-adapter/contract-message-adapter.ts";
-import { nextEventId, persistThreadBlocks } from "./live-projector.ts";
+import { nextEventId } from "./live-event-ids.ts";
+import { persistThreadBlocks } from "./live-session-cache-persistence.ts";
 import { discoverAdoptedThreadSeeds, rebuildAdoptedConversation } from "./live-provider-discovery.ts";
 import { rebuildConversationFromProviderHistory } from "../provider/provider-conversation-rebuilders.ts";
 import { readProviderAccountUsageSnapshotsFromHome } from "../provider/provider-account-usage.ts";

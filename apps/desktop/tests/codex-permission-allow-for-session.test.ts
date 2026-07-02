@@ -41,7 +41,7 @@ function fakeApprovalPlan(receivedFile: string, method: string, params: unknown)
   };
 }
 
-const COMMAND_APPROVAL = { command: "npm test", cwd: "/work", reason: "Run the tests" };
+const COMMAND_APPROVAL = { itemId: "cmd-item-1", command: "npm test", cwd: "/work", reason: "Run the tests" };
 const FILE_CHANGE_APPROVAL = { itemId: "item-1", reason: "Edit config", threadId: "th-1", turnId: "tn-1" };
 const MCP_ELICITATION = {
   threadId: "codex-thread-1",
@@ -144,6 +144,7 @@ test("codex command approval surfaces an Allow for this session choice", async (
     assert.equal(session?.providerValue, "structured:accept_for_session");
     assert.equal(session?.label, "Allow for this session");
     assert.equal(prompt.defaultChoiceId, "allow");
+    assert.deepEqual(prompt.nativeIds, { itemId: "cmd-item-1", callId: "cmd-item-1" });
   } finally {
     await client.stop();
   }
@@ -212,6 +213,7 @@ test("codex fileChange approval also offers Allow for this session", async () =>
       prompt.choices?.some((choice) => choice.choiceId === "allow_session" && choice.providerValue === "structured:accept_for_session"),
       true,
     );
+    assert.deepEqual(prompt.nativeIds, { itemId: "item-1", callId: "item-1" });
   } finally {
     await client.stop();
   }
@@ -299,6 +301,7 @@ test("codex request_user_input surfaces a wizard prompt and returns answers", as
   try {
     const prompt = await waitFor(() => events[0], "request_user_input prompt");
     assert.equal(prompt.kind, "choice");
+    assert.deepEqual(prompt.nativeIds, { itemId: "item-1", callId: "item-1" });
     assert.equal(prompt.steps?.length, 2);
     assert.equal(prompt.steps?.[0]?.stepId, "status");
     assert.equal(prompt.steps?.[1]?.stepId, "note");

@@ -10,7 +10,7 @@ import type { ProviderTrustPort } from "../../ports/outbound/provider-trust-port
 import type { BrowserRuntimePort } from "../../ports/outbound/browser-runtime-port.ts";
 import type { AgentBinding, AgentId, AgentSessionBlockReference, ProviderCliAgentId, PromptState, PromptStepAnswer, ProviderSessionRef, ThreadGoalState, ThreadId, ThreadScope, ThreadSeed, ThreadSnapshot } from "../../domains/thread/thread.ts";
 import type { ThreadRuntimeAsyncEvent } from "./thread-runtime-events.ts";
-import type { AgentRuntimeState } from "../../domains/agent-runtime/agent-runtime.ts";
+import type { AgentRuntimeCapabilityInvoke, AgentRuntimeState } from "../../domains/agent-runtime/agent-runtime.ts";
 import type { ProviderReadinessResult } from "../../domains/provider-readiness/provider-readiness.ts";
 import type { AgentSessionBlock } from "../../domains/agent-session/agent-session-block.ts";
 import type { RawAgentFrame, RawAgentFramePayloadKind, RawAgentFrameSource } from "../../domains/agent-session/raw-agent-frame.ts";
@@ -27,6 +27,7 @@ export interface CreateThreadRuntimeServiceInput {
   agentRuntimePort: AgentRuntimePort;
   providerReadinessPort: ProviderReadinessPort;
   ptyTranscriptPort: PtyTranscriptPort;
+  nativeEvidencePort?: NativeEvidenceCleanupPort;
   workbenchTerminalPort?: WorkbenchTerminalPort;
   workspaceCommandPort?: WorkspaceCommandPort;
   workspaceFilePort?: WorkspaceFilePort;
@@ -43,6 +44,10 @@ export interface CreateThreadRuntimeServiceInput {
   idGenerator?: () => string;
   initialThreads?: ThreadSeed[];
   onAsyncEvent?: (event: ThreadRuntimeAsyncEvent) => Promise<void> | void;
+}
+
+export interface NativeEvidenceCleanupPort {
+  deleteThreadEvidence(threadId: ThreadId): void;
 }
 
 export interface HydrateThreadInput {
@@ -130,6 +135,20 @@ export interface UpdateThreadLaunchOptionsResult {
   // from the thread's previous options. Empty when the change was a no-op. Lets
   // the renderer attach chip feedback to the right chip(s).
   changedKeys: string[];
+}
+
+export interface InvokeProviderCapabilityInput {
+  threadId: ThreadId;
+  capabilityId: string;
+  invoke: AgentRuntimeCapabilityInvoke;
+  params?: unknown;
+}
+
+export interface InvokeProviderCapabilityResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  status: "handled";
+  result?: unknown;
 }
 
 export interface TrustWorkspaceInput {
@@ -352,6 +371,9 @@ export interface ThreadRuntimeService {
   updateThreadLaunchOptions(
     input: UpdateThreadLaunchOptionsInput,
   ): Promise<ServiceResult<UpdateThreadLaunchOptionsResult>>;
+  invokeProviderCapability(
+    input: InvokeProviderCapabilityInput,
+  ): Promise<ServiceResult<InvokeProviderCapabilityResult>>;
   editPendingInput(
     input: EditPendingInputInput,
   ): Promise<ServiceResult<EditPendingInputResult>>;

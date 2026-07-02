@@ -4,14 +4,30 @@
 // opencode ACP) these events are produced NATIVELY by the provider — never
 // inferred from PTY scrapes, hook spools, or history-file polling.
 //
-// Every shape here is evidence-based: captured live from the real CLIs
-// (transcripts under /tmp/tide-proto-evidence/, summarized in
-// docs_v2/specs/structured-agent-runtime.md). Do not extend from memory.
+// Every shape here is evidence-based from provider runtime frames and redacted
+// fixtures summarized in docs_v2/specs/structured-agent-runtime.md. Do not
+// extend from memory.
 import type { ComposerAttachmentRef, PromptState, PromptStepAnswer } from "../../../../application/domains/thread/thread.ts";
 import type { DiscoveredProviderSessionRef } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
+import type {
+  AgentRuntimeCapabilityInvocationInput,
+  AgentRuntimeCapabilityInvocationResult,
+} from "../../../../application/domains/agent-runtime/agent-runtime.ts";
 
 export type StructuredProviderEvent =
+  // Provider bootstrap metadata from a structured runtime initialize handshake.
+  // This is especially important for ACP-family providers that may reject
+  // session/new until auth is configured: Tide still needs the provider's
+  // declared auth methods and capabilities to render the setup surface.
+  | {
+      kind: "provider_capabilities";
+      protocolVersion?: number;
+      agentInfo?: Record<string, unknown>;
+      authMethods?: unknown[];
+      agentCapabilities?: Record<string, unknown>;
+      nativePayload?: Record<string, unknown>;
+    }
   // The provider announced (or confirmed) its session identity.
   | { kind: "session_ref"; ref: DiscoveredProviderSessionRef }
   // A provider-native turn started without Tide necessarily initiating it. Native
@@ -120,6 +136,9 @@ export interface StructuredRuntimeClient {
   // REFUSED it (or never acked) so the caller can fall back to a restart — e.g.
   // claude refuses a live switch to bypassPermissions unless launched capable.
   applyConfig?(protocolParams: Record<string, unknown>): Promise<boolean>;
+  invokeCapability?(
+    input: AgentRuntimeCapabilityInvocationInput,
+  ): Promise<AgentRuntimeCapabilityInvocationResult>;
   // Abort the in-flight turn via the provider's protocol interrupt, leaving the
   // process ALIVE and resumable (claude control_request:interrupt / codex
   // turn/interrupt / ACP session/cancel). The provider emits its turn-end so

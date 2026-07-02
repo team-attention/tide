@@ -25,6 +25,8 @@ export type ServiceErrorCode =
   | "browser_runtime_invalid_response"
   | "unsupported_tide_mcp_tool"
   | "directory_trust_unavailable"
+  | "provider_capability_unsupported"
+  | "provider_runtime_failed"
   | WorkspaceCodeIntelligenceErrorCode
   | WorkspaceCommandErrorCode
   | WorkspaceFileErrorCode;

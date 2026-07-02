@@ -53,6 +53,8 @@ export type AgentSessionBlockKind =
   | "choice_prompt"
   | "command_picker"
   | "model_picker"
+  | "usage"
+  | "agent_activity"
   // A live agent checklist / plan: the to-do list a coding agent maintains and
   // checks off as it works (claude TodoWrite, codex turn/plan/updated, ACP plan).
   // One stable block per runtime, upserted in place; entries live in data.entries.
@@ -66,6 +68,7 @@ export interface AgentSessionBlock {
   threadId: ThreadId;
   agentId: AgentId;
   kind: AgentSessionBlockKind;
+  parentBlockId?: string;
   role: AgentSessionBlockRole;
   sourceFrameIds: string[];
   localProvenance?: Record<string, unknown>;

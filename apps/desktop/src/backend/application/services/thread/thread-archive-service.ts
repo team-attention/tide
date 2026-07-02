@@ -1,7 +1,7 @@
 import type { AgentRuntimePort } from "../../ports/outbound/agent-runtime-port.ts";
 import type { BrowserRuntimePort } from "../../ports/outbound/browser-runtime-port.ts";
 import type { TerminalPaneState } from "../../domains/workbench/workbench.ts";
-import type { ThreadRecord } from "../../domains/thread/thread.ts";
+import type { ThreadId, ThreadRecord } from "../../domains/thread/thread.ts";
 import { boundedTranscriptPreview } from "../support/service-value-helpers.ts";
 import { WorkbenchRuntime } from "../workbench/workbench-runtime.ts";
 
@@ -10,6 +10,7 @@ export interface ThreadArchiveServiceInput {
   workbenchRuntime: WorkbenchRuntime;
   browserRuntimePort?: BrowserRuntimePort;
   clock: () => string;
+  deleteThreadEvidence?: (threadId: ThreadId) => void;
 }
 
 export class ThreadArchiveService {
@@ -17,12 +18,14 @@ export class ThreadArchiveService {
   private readonly workbenchRuntime: WorkbenchRuntime;
   private readonly browserRuntimePort?: BrowserRuntimePort;
   private readonly clock: () => string;
+  private readonly deleteThreadEvidence?: (threadId: ThreadId) => void;
 
   constructor(input: ThreadArchiveServiceInput) {
     this.agentRuntimePort = input.agentRuntimePort;
     this.workbenchRuntime = input.workbenchRuntime;
     this.browserRuntimePort = input.browserRuntimePort;
     this.clock = input.clock;
+    this.deleteThreadEvidence = input.deleteThreadEvidence;
   }
 
   async teardownThreadForArchive(thread: ThreadRecord): Promise<void> {
@@ -87,6 +90,7 @@ export class ThreadArchiveService {
     if (runtimeHandle !== undefined) {
       await this.agentRuntimePort.stop(runtimeHandle).catch(() => {});
     }
+    this.deleteThreadEvidence?.(thread.threadId);
   }
 
   resetThreadAfterUnarchive(thread: ThreadRecord): boolean {

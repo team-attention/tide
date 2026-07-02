@@ -1,4 +1,4 @@
-import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellProviderUsage, ProductShellState } from "./types.ts";
+import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellProviderCapability, ProductShellProviderUsage, ProductShellState } from "./types.ts";
 import { applyAgentChatBackendEvent, setAvailableProviderAgents, setOpencodeEnvironment, setOpencodeModelCatalog, setOpencodeVendors, setProviderModelCatalog, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
@@ -194,6 +194,15 @@ export function applyProductShellBackendEvent(
         return nextState;
       }
       return setProductShellProviderCommands(nextState, commandsPayload.commands);
+    }
+    case "agentRuntime.capabilitiesChanged": {
+      const payload = event.payload as {
+        capabilities?: ProductShellProviderCapability[];
+      };
+      if (payload.capabilities === undefined) {
+        return nextState;
+      }
+      return { ...nextState, providerCapabilities: payload.capabilities };
     }
     case "agentRuntime.modelCatalogChanged": {
       // The agent self-reported its model catalog over the protocol (ACP /

@@ -2,6 +2,7 @@ import {
   CONTRACT_VERSION,
   type BackendEventEnvelope,
   type BackendEventId,
+  type AgentRuntimeUsageDto,
   type ProviderCliAgentId,
 } from "../../../../shared/contracts/index.ts";
 import { runtimeUsageFromStructuredUsage, type StructuredRuntimeUsageInput } from "./live-runtime-usage.ts";
@@ -14,10 +15,10 @@ export function emitStructuredUsage(input: {
   usage: StructuredRuntimeUsageInput;
   nextEventId: () => BackendEventId;
   onEvent?: (event: BackendEventEnvelope) => void;
-}): void {
+}): AgentRuntimeUsageDto | undefined {
   const usage = runtimeUsageFromStructuredUsage(input.usage);
   if (usage === undefined) {
-    return;
+    return undefined;
   }
   input.onEvent?.({
     contractVersion: CONTRACT_VERSION,
@@ -45,6 +46,7 @@ export function emitStructuredUsage(input: {
       },
     });
   }
+  return usage;
 }
 
 // Live fan-out activity (Claude subagent counts); an all-undefined activity clears it.

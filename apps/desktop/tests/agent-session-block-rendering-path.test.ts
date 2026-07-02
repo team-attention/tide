@@ -16,6 +16,7 @@ import {
   createAgentSessionBlockUpsertedEventFromBlock,
   toAgentSessionBlockDto,
 } from "../src/backend/adapters/outbound/desktop-contract/agent-session-block-event-adapter.ts";
+import { toAgentSessionBlockDto as toThreadAgentSessionBlockDto } from "../src/backend/adapters/inbound/contract-message-adapter/dto/thread-dtos.ts";
 import { validateBackendEventEnvelope } from "../src/shared/contracts/index.ts";
 
 const now = "2026-05-27T00:00:00.000Z";
@@ -85,6 +86,34 @@ test("structured_agent_message_phase_is_preserved_for_rendering_policy", () => {
   const block = onlyUpsertedBlock(result.blockUpdates);
   assert.deepEqual(block.data, { phase: "commentary" });
   assert.deepEqual(toAgentSessionBlockDto(block).data, { phase: "commentary" });
+});
+
+test("agent session block DTO preserves native parent block links", () => {
+  const block: AgentSessionBlock = {
+    blockId: "prompt-child",
+    threadId: thread.threadId,
+    agentId: "codex",
+    kind: "approval_prompt",
+    parentBlockId: "tool-parent",
+    role: "runtime",
+    sourceFrameIds: [],
+    status: "needs_input",
+    body: "Allow command?",
+    createdAt: now,
+    updatedAt: later,
+  };
+
+  const dto = toAgentSessionBlockDto(block);
+  assert.equal(dto.parentBlockId, "tool-parent");
+  assert.equal(toThreadAgentSessionBlockDto(thread, block).parentBlockId, "tool-parent");
+
+  const event = createAgentSessionBlockUpsertedEventFromBlock({
+    eventId: "evt-parent-link",
+    emittedAt: later,
+    block,
+  });
+  assert.equal(validateBackendEventEnvelope(event).ok, true);
+  assert.equal(event.payload.block.parentBlockId, "tool-parent");
 });
 
 test("unknown_structured_events_render_as_raw_blocks", () => {
