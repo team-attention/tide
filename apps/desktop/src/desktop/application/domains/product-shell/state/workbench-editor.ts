@@ -371,7 +371,7 @@ function editorReferenceListKey(references: AppChromeEditorReferenceList | undef
   return JSON.stringify({
     query: references.query,
     truncated: references.truncated,
-    items: references.items.map((item) => ({
+    items: (references.items ?? []).map((item) => ({
       relativePath: item.relativePath,
       line: item.line,
       character: item.character,
