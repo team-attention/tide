@@ -198,6 +198,7 @@ export function applyAgentChatBackendEvent(
         ...state,
         runtimeState: payload.state,
         thread: nextThread,
+        blocks: isActive ? state.blocks : pruneLiveAgentTextBlocks(state.blocks),
         // The backend is authoritative for the follow-up queue: reflect it on every
         // transition (a flush shrinks it). Absent → keep the optimistic list.
         queuedInputs: payload.queuedInputs ?? state.queuedInputs,
@@ -231,9 +232,10 @@ export function applyAgentChatBackendEvent(
       const payload = event.payload as { block: AgentChatBlock };
       // The queue is backend-authoritative now (agentRuntime.stateChanged carries it),
       // so a user block never mutates queuedInputs here — no more guessing/desync.
+      const blocks = blocksBeforeUpsert(state.blocks, payload.block);
       return {
         ...state,
-        blocks: upsertBlock(state.blocks, payload.block),
+        blocks: upsertBlock(blocks, payload.block),
       };
     }
     case "agentSessionBlock.completed": {
@@ -289,4 +291,33 @@ function upsertBlock(
   }
 
   return blocks.map((block, index) => (index === existingIndex ? nextBlock : block));
+}
+
+function blocksBeforeUpsert(
+  blocks: AgentChatBlock[],
+  nextBlock: AgentChatBlock,
+): AgentChatBlock[] {
+  if (nextBlock.role === "user") {
+    return pruneLiveAgentTextBlocks(blocks);
+  }
+  if (isLiveAgentTextBlock(nextBlock)) {
+    return pruneLiveAgentTextBlocks(blocks, nextBlock.blockId);
+  }
+  return blocks;
+}
+
+function pruneLiveAgentTextBlocks(
+  blocks: AgentChatBlock[],
+  exceptBlockId?: string,
+): AgentChatBlock[] {
+  return blocks.filter(
+    (block) => block.blockId === exceptBlockId || !isLiveAgentTextBlock(block),
+  );
+}
+
+function isLiveAgentTextBlock(block: AgentChatBlock): boolean {
+  return (
+    block.role === "agent" &&
+    (block.status === "pending" || block.status === "streaming")
+  );
 }

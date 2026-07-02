@@ -146,12 +146,7 @@ async sendComposerInput(
     // decision is one predictable, visible stacking model for ALL agents. The capability
     // is kept as accurate provider metadata — a future per-provider "steer now" opt-in
     // would gate on it again — but no send path acts on it today.
-    const busy =
-      thread.activeRuntimeHandle !== undefined &&
-      (thread.runtimeState === "running" ||
-        thread.runtimeState === "starting" ||
-        thread.runtimeState === "waiting_for_approval" ||
-        thread.runtimeState === "waiting_for_input");
+    const busy = isThreadBusyForComposerQueue(thread);
     if (busy) {
       this.enqueuePendingInput(thread, {
         kind: "composer_input",
@@ -367,4 +362,33 @@ writePendingInputs(thread: ThreadRecord, queue: PendingInput[]): void {
       status: discards ? "discarded" : "edited",
     };
   }
+}
+
+function isThreadBusyForComposerQueue(thread: ThreadRecord): boolean {
+  if (thread.activeRuntimeHandle === undefined) {
+    return false;
+  }
+  return (
+    isActiveRuntimeState(thread.runtimeState) ||
+    isActiveLastKnownState(thread.lastKnownState) ||
+    thread.promptState !== undefined ||
+    thread.streamingBlocks.length > 0
+  );
+}
+
+function isActiveRuntimeState(state: ThreadRecord["runtimeState"]): boolean {
+  return (
+    state === "running" ||
+    state === "starting" ||
+    state === "waiting_for_approval" ||
+    state === "waiting_for_input"
+  );
+}
+
+function isActiveLastKnownState(state: ThreadRecord["lastKnownState"]): boolean {
+  return (
+    state === "running" ||
+    state === "waiting_for_approval" ||
+    state === "waiting_for_input"
+  );
 }

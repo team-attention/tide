@@ -856,6 +856,26 @@ test("multiple_followups_stack_then_reconcile_to_the_backend_queue_on_state_chan
   assert.deepEqual(afterFlush.queuedInputs, ["second"]);
 });
 
+test("live_thread_with_running_last_known_state_keeps_followup_docked_as_queued", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", {
+      thread: { ...thread, live: true, lastKnownState: "running" },
+      blocks: [],
+      runtimeState: "idle",
+    }),
+  );
+
+  const sent = submitComposer(updateComposerDraft(hydrated, "still running follow-up").state);
+  const viewModel = createAgentChatShellViewModel(sent.state);
+
+  assert.equal(viewModel.chatState, "running");
+  assert.deepEqual(sent.state.queuedInputs, ["still running follow-up"]);
+  const html = renderShell(sent.state);
+  assert.match(html, /Queued/);
+  assert.match(html, /still running follow-up/);
+});
+
 test("queued_messages_stay_docked_in_the_steer_stack_while_a_prompt_is_open", () => {
   // A queued follow-up must not jump into the transcript when an Allow/Deny card
   // opens (chatState=waiting_for_approval) and back to the steer stack when it closes.
@@ -873,6 +893,83 @@ test("queued_messages_stay_docked_in_the_steer_stack_while_a_prompt_is_open", ()
   const html = renderShell(withPrompt);
   assert.match(html, /Queued/);
   assert.match(html, /queued one/);
+});
+
+test("new_user_block_prunes_orphan_streaming_agent_text", () => {
+  const streamingBlock: AgentSessionBlockDto = {
+    blockId: "agent-streaming-zombie",
+    threadId: "thread-shell",
+    agentId: "codex",
+    kind: "agent_message",
+    role: "agent",
+    status: "streaming",
+    body: "stale partial text",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const userBlock: AgentSessionBlockDto = {
+    blockId: "user-next-turn",
+    threadId: "thread-shell",
+    agentId: "codex",
+    kind: "user_message",
+    role: "user",
+    status: "complete",
+    body: "next prompt",
+    createdAt: later,
+    updatedAt: later,
+  };
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", {
+      thread: { ...thread, live: true, lastKnownState: "running" },
+      blocks: [streamingBlock],
+      runtimeState: "running",
+    }),
+  );
+
+  const next = applyBackendEventToAgentChatShell(
+    hydrated,
+    backendEvent("agentSessionBlock.upserted", { block: userBlock }),
+  );
+
+  assert.deepEqual(
+    next.blocks.map((block) => block.body),
+    ["next prompt"],
+  );
+});
+
+test("idle_state_change_prunes_orphan_streaming_agent_text", () => {
+  const streamingBlock: AgentSessionBlockDto = {
+    blockId: "agent-streaming-orphan",
+    threadId: "thread-shell",
+    agentId: "codex",
+    kind: "agent_message",
+    role: "agent",
+    status: "streaming",
+    body: "orphan partial text",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", {
+      thread: { ...thread, live: true, lastKnownState: "running" },
+      blocks: [streamingBlock],
+      runtimeState: "running",
+    }),
+  );
+
+  const idle = applyBackendEventToAgentChatShell(
+    hydrated,
+    backendEvent("agentRuntime.stateChanged", {
+      threadId: "thread-shell",
+      state: "idle",
+      changedAt: later,
+      queuedInputs: [],
+    }),
+  );
+
+  assert.deepEqual(idle.blocks, []);
 });
 
 test("an_idle_send_runs_and_its_optimistic_chip_reconciles_away_not_queued", () => {

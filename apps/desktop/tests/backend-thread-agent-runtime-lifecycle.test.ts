@@ -1320,6 +1320,37 @@ test("input_sent_while_a_turn_is_running_is_queued_not_sent", async () => {
   assert.equal(fakes.runtime.writes.length, 1);
 });
 
+test("live_thread_with_running_last_known_state_queues_even_if_runtime_state_drifted_idle", async () => {
+  const fakes = createFakes();
+  const activeRuntimeHandle: AgentRuntimeHandle = {
+    runtimeId: "runtime-drift",
+    threadId: "thread-drift",
+    agentId: "codex",
+  };
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-drift", {
+        runtimeState: "idle",
+        lastKnownState: "running",
+        activeRuntimeHandle,
+      }),
+    ],
+  });
+
+  const queued = await service.sendComposerInput({
+    threadId: "thread-drift",
+    input: "follow-up while UI still shows running",
+  });
+
+  assert.equal(queued.ok, true);
+  assert.equal(queued.status, "queued");
+  assert.deepEqual(queued.thread.queuedInputs, ["follow-up while UI still shows running"]);
+  assert.deepEqual(fakes.runtime.events, []);
+});
+
 test("input_during_a_running_turn_is_queued_even_for_a_steer_capable_provider", async () => {
   // UNIFORM QUEUE: Tide queues EVERY provider's follow-up while a turn is live —
   // even codex, whose protocol CAN inject input mid-turn (supportsTurnSteer) — so
