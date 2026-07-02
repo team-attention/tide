@@ -118,6 +118,8 @@ export function applyProductShellBackendEvent(
             usage: ProductShellProviderUsage["usage"];
             observedAt?: string;
           } =>
+            typeof entry === "object" &&
+            entry !== null &&
             typeof entry.agentId === "string" &&
             isProductShellAgentIdentity(entry.agentId) &&
             entry.usage !== undefined &&
@@ -129,7 +131,7 @@ export function applyProductShellBackendEvent(
           ...(entry.observedAt !== undefined ? { observedAt: entry.observedAt } : {}),
         }));
       if (incoming.length === 0) {
-        return { ...nextState, providerUsage: [] };
+        return nextState;
       }
       const byKey = new Map(
         nextState.providerUsage.map((entry) => [providerUsageKey(entry), entry] as const),

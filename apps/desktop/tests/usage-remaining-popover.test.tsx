@@ -223,6 +223,47 @@ test("settings_shows_account_usage_on_new_thread_without_thread_list", () => {
   assert.match(settingsText, /Weekly\s*65%/);
 });
 
+test("settings_preserves_account_usage_when_provider_usage_update_is_empty_or_malformed", () => {
+  const withAccountUsage = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    {
+      kind: "providerUsage.changed",
+      payload: {
+        usages: [
+          {
+            agentId: "claude",
+            usage: {
+              model: "sonnet-4.6",
+              rateLimits: [{ label: "weekly", usedPercent: 65, resetsAt: 1782378364 }],
+            },
+          },
+        ],
+      },
+    },
+  );
+  const afterEmptyUpdate = applyProductShellBackendEvent(withAccountUsage, {
+    kind: "providerUsage.changed",
+    payload: { usages: [] },
+  });
+  const afterMalformedUpdate = applyProductShellBackendEvent(afterEmptyUpdate, {
+    kind: "providerUsage.changed",
+    payload: { usages: [null, "bad", 3, {}] },
+  });
+  const html = renderToStaticMarkup(
+    <TideProductShell initialState={setProductShellSettingsOpen(afterMalformedUpdate, true)} />,
+  );
+  const settingsStart = html.indexOf('aria-label="Settings"');
+  const settingsHtml = settingsStart >= 0 ? html.slice(settingsStart) : html;
+  const usageStart = settingsHtml.indexOf('aria-label="Usage remaining"');
+  const usageHtml = usageStart >= 0 ? settingsHtml.slice(usageStart) : settingsHtml;
+  const settingsText = visibleText(usageHtml);
+
+  assert.doesNotMatch(settingsText, /No usage reported yet/);
+  assert.match(settingsText, /Claude Code/);
+  assert.match(settingsText, /sonnet-4\.6/);
+  assert.match(settingsText, /Weekly\s*65%/);
+});
+
 function visibleText(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }

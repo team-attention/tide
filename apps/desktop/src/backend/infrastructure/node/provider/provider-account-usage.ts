@@ -13,26 +13,30 @@ export function readProviderAccountUsageSnapshotsFromHome(input: {
   codexHome?: string;
   nowMs?: number;
 }): ProviderUsageSnapshotDto[] {
-  const sinceMs = (input.nowMs ?? Date.now()) - ACCOUNT_USAGE_LOOKBACK_MS;
-  const snapshots: ProviderUsageSnapshotDto[] = [];
+  try {
+    const sinceMs = (input.nowMs ?? Date.now()) - ACCOUNT_USAGE_LOOKBACK_MS;
+    const snapshots: ProviderUsageSnapshotDto[] = [];
 
-  const codex = latestAccountUsageFromFiles(
-    "codex",
-    recentCodexRollouts(input.homeDir, sinceMs, input.codexHome),
-  );
-  if (codex !== undefined) {
-    snapshots.push(codex);
+    const codex = latestAccountUsageFromFiles(
+      "codex",
+      recentCodexRollouts(input.homeDir, sinceMs, input.codexHome),
+    );
+    if (codex !== undefined) {
+      snapshots.push(codex);
+    }
+
+    const claude = latestAccountUsageFromFiles(
+      "claude",
+      recentClaudeTranscripts(input.homeDir, sinceMs),
+    );
+    if (claude !== undefined) {
+      snapshots.push(claude);
+    }
+
+    return snapshots;
+  } catch {
+    return [];
   }
-
-  const claude = latestAccountUsageFromFiles(
-    "claude",
-    recentClaudeTranscripts(input.homeDir, sinceMs),
-  );
-  if (claude !== undefined) {
-    snapshots.push(claude);
-  }
-
-  return snapshots;
 }
 
 function latestAccountUsageFromFiles(
