@@ -21,6 +21,41 @@ export function codexRateLimitsFromUsage(
   return usage !== undefined ? rateLimitsFromProviderRecord(usage) : [];
 }
 
+export function codexContextTokensFromUsage(usage: Record<string, unknown>): number | undefined {
+  const direct =
+    numberField(usage, "contextTokens") ??
+    numberField(usage, "context_tokens");
+  if (direct !== undefined) {
+    return direct;
+  }
+  const current =
+    recordField(usage, "last") ??
+    recordField(usage, "lastTokenUsage") ??
+    recordField(usage, "last_token_usage") ??
+    recordField(usage, "current") ??
+    recordField(usage, "context") ??
+    recordField(usage, "contextUsage");
+  if (current === undefined) {
+    return undefined;
+  }
+  const currentTotal = recordField(current, "total");
+  return (
+    numberField(current, "totalTokens") ??
+    numberField(current, "total_tokens") ??
+    numberField(current, "tokens") ??
+    (currentTotal !== undefined ? numberField(currentTotal, "totalTokens") : undefined) ??
+    (currentTotal !== undefined ? numberField(currentTotal, "total_tokens") : undefined)
+  );
+}
+
 export function bounded(text: string): string {
   return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
+}
+
+function recordField(
+  record: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined {
+  const value = record[key];
+  return isRecord(value) ? value : undefined;
 }

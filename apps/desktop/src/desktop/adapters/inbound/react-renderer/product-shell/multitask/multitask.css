@@ -151,8 +151,12 @@
 }
 
 .rail-peek[data-open] .rail-peek__panel {
-  transform: translateX(0);
+  /* Drop the transform in the open state so fixed descendants (thread context
+     popovers and menus) stay viewport-anchored instead of being contained by the
+     peek panel. */
+  transform: none;
   pointer-events: auto;
+  overflow: visible;
 }
 
 .rail-peek__panel .left-rail {

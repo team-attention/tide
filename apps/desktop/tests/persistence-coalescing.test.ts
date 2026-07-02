@@ -178,6 +178,7 @@ test("turn_completed emits structured usage with context percent", async () => {
     threadId: THREAD,
     usage: {
       totalTokens: 64000,
+      contextTokens: 64000,
       contextWindow: 256000,
       contextUsedPercent: 25,
       rateLimits: [

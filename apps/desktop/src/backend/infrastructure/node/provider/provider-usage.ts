@@ -29,11 +29,13 @@ export function parseProviderUsage(
   return undefined;
 }
 
-// codex rollout: the latest `event_msg` of type `token_count` carries
-// `info.total_token_usage.total_tokens` and `info.model_context_window`. A
-// `session_meta`/`turn_context` line may carry the model label.
+// codex rollout: the latest `event_msg` of type `token_count` carries both a
+// cumulative `info.total_token_usage.total_tokens` and the current request's
+// `info.last_token_usage.total_tokens`. The context meter must use the latter;
+// the cumulative value can grow far past the model context window.
 function parseCodexUsage(text: string): AgentRuntimeUsageDto | undefined {
   let totalTokens: number | undefined;
+  let contextTokens: number | undefined;
   let contextWindow: number | undefined;
   let model: string | undefined;
   let rateLimits: AgentRuntimeRateLimitDto[] | undefined;
@@ -60,6 +62,10 @@ function parseCodexUsage(text: string): AgentRuntimeUsageDto | undefined {
     if (tokens !== undefined) {
       totalTokens = tokens;
     }
+    const currentContextTokens = codexContextTokensFromTokenCount(info, payload);
+    if (currentContextTokens !== undefined) {
+      contextTokens = currentContextTokens;
+    }
     const window =
       numberField(info, "model_context_window") ??
       numberField(payload, "model_context_window");
@@ -71,7 +77,44 @@ function parseCodexUsage(text: string): AgentRuntimeUsageDto | undefined {
       rateLimits = parsedRateLimits;
     }
   }
-  return finalizeUsage({ totalTokens, contextWindow, model, rateLimits });
+  return finalizeUsage({ totalTokens, contextTokens, contextWindow, model, rateLimits });
+}
+
+function codexContextTokensFromTokenCount(
+  info: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): number | undefined {
+  const direct =
+    numberField(info, "contextTokens") ??
+    numberField(info, "context_tokens") ??
+    numberField(payload, "contextTokens") ??
+    numberField(payload, "context_tokens");
+  if (direct !== undefined) {
+    return direct;
+  }
+  const current =
+    recordField(info, "last") ??
+    recordField(info, "lastTokenUsage") ??
+    recordField(info, "last_token_usage") ??
+    recordField(info, "current") ??
+    recordField(info, "context") ??
+    recordField(info, "contextUsage") ??
+    recordField(payload, "last") ??
+    recordField(payload, "lastTokenUsage") ??
+    recordField(payload, "last_token_usage") ??
+    recordField(payload, "current") ??
+    recordField(payload, "context") ??
+    recordField(payload, "contextUsage");
+  const currentTotal = current !== undefined ? recordField(current, "total") : undefined;
+  return (
+    (current !== undefined ? numberField(current, "totalTokens") : undefined) ??
+    (current !== undefined ? numberField(current, "total_tokens") : undefined) ??
+    (current !== undefined ? numberField(current, "tokens") : undefined) ??
+    (currentTotal !== undefined ? numberField(currentTotal, "totalTokens") : undefined) ??
+    (currentTotal !== undefined ? numberField(currentTotal, "total_tokens") : undefined) ??
+    numberField(info, "last_total_tokens") ??
+    numberField(payload, "last_total_tokens")
+  );
 }
 
 // claude transcript: the latest assistant message carries `message.usage` with
@@ -115,18 +158,20 @@ function parseClaudeUsage(text: string): AgentRuntimeUsageDto | undefined {
       totalTokens = sum;
     }
   }
-  return finalizeUsage({ totalTokens, contextWindow: undefined, model, rateLimits });
+  return finalizeUsage({ totalTokens, contextTokens: undefined, contextWindow: undefined, model, rateLimits });
 }
 
 function finalizeUsage(input: {
   totalTokens?: number;
+  contextTokens?: number;
   contextWindow?: number;
   model?: string;
   rateLimits?: AgentRuntimeRateLimitDto[];
 }): AgentRuntimeUsageDto | undefined {
-  const { totalTokens, contextWindow, model, rateLimits } = input;
+  const { totalTokens, contextTokens, contextWindow, model, rateLimits } = input;
   if (
     totalTokens === undefined &&
+    contextTokens === undefined &&
     contextWindow === undefined &&
     model === undefined &&
     (rateLimits === undefined || rateLimits.length === 0)
@@ -137,6 +182,9 @@ function finalizeUsage(input: {
   if (totalTokens !== undefined) {
     usage.totalTokens = totalTokens;
   }
+  if (contextTokens !== undefined) {
+    usage.contextTokens = contextTokens;
+  }
   if (contextWindow !== undefined) {
     usage.contextWindow = contextWindow;
   }
@@ -146,8 +194,9 @@ function finalizeUsage(input: {
   if (rateLimits !== undefined && rateLimits.length > 0) {
     usage.rateLimits = rateLimits;
   }
-  if (totalTokens !== undefined && contextWindow !== undefined && contextWindow > 0) {
-    usage.contextUsedPercent = Math.min(100, Math.round((totalTokens / contextWindow) * 100));
+  const tokensForContext = contextTokens ?? totalTokens;
+  if (tokensForContext !== undefined && contextWindow !== undefined && contextWindow > 0) {
+    usage.contextUsedPercent = Math.min(100, Math.round((tokensForContext / contextWindow) * 100));
   }
   return usage;
 }

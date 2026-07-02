@@ -120,6 +120,7 @@ export interface LaunchOptionFeedback {
 
 export interface AgentChatUsage {
   totalTokens?: number;
+  contextTokens?: number;
   contextWindow?: number;
   contextUsedPercent?: number;
   model?: string;
@@ -506,6 +507,9 @@ export interface LiveTurnActivityView {
 export interface AgentChatUsageView {
   // Pre-formatted, ready to render: e.g. "12.3k tokens".
   tokensLabel?: string;
+  // Pre-formatted current context/request tokens, when distinct from cumulative
+  // session total.
+  contextTokensLabel?: string;
   // e.g. "64%" when a context window is known.
   contextPercentLabel?: string;
   // 0–100, for the meter bar fill.

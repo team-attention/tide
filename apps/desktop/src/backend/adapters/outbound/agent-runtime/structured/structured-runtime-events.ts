@@ -71,6 +71,7 @@ export type StructuredProviderEvent =
       usage: {
         inputTokens?: number;
         outputTokens?: number;
+        contextTokens?: number;
         contextWindow?: number;
         totalTokens?: number;
         rateLimits?: AgentRuntimeRateLimitDto[];
@@ -98,6 +99,7 @@ export type StructuredProviderEvent =
       usage?: {
         inputTokens?: number;
         outputTokens?: number;
+        contextTokens?: number;
         contextWindow?: number;
         totalTokens?: number;
         rateLimits?: AgentRuntimeRateLimitDto[];

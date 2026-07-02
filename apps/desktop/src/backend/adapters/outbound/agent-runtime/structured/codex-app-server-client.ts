@@ -34,7 +34,7 @@ import type {
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import { codexPlanActivityFromItem } from "./plan-activity.ts";
-import { bounded, codexRateLimitsFromUsage, isRecord, numberField, stringField } from "./codex-app-server-shared.ts";
+import { bounded, codexContextTokensFromUsage, codexRateLimitsFromUsage, isRecord, numberField, stringField } from "./codex-app-server-shared.ts";
 import { codexToolItemId, isCodexVisibleToolItem } from "./codex-tool-call-record.ts";
 import { CodexToolCallLifecycle } from "./codex-tool-call-lifecycle.ts";
 import { codexPlanContentRecord } from "./structured-plan-goal.ts";
@@ -167,6 +167,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private lastUsage?: {
     inputTokens?: number;
     outputTokens?: number;
+    contextTokens?: number;
     contextWindow?: number;
     totalTokens?: number;
     rateLimits?: AgentRuntimeRateLimitDto[];
@@ -575,6 +576,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       const usage = isRecord(params.tokenUsage) ? params.tokenUsage : undefined;
       const total = usage !== undefined && isRecord(usage.total) ? usage.total : undefined;
       if (usage !== undefined) {
+        const contextTokens = codexContextTokensFromUsage(usage);
         const rateLimits = codexRateLimitsFromUsage(usage);
         if (rateLimits.length > 0) {
           this.lastRateLimits = rateLimits;
@@ -586,6 +588,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
           ...(total !== undefined ? { inputTokens: numberField(total, "inputTokens") } : {}),
           ...(total !== undefined ? { outputTokens: numberField(total, "outputTokens") } : {}),
           ...(total !== undefined ? { totalTokens: numberField(total, "totalTokens") } : {}),
+          ...(contextTokens !== undefined ? { contextTokens } : {}),
           ...(numberField(usage, "modelContextWindow") !== undefined
             ? { contextWindow: numberField(usage, "modelContextWindow") }
             : {}),

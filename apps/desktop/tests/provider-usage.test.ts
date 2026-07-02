@@ -18,6 +18,7 @@ test("parses codex token_count into tokens, context window, and percent", () => 
         type: "token_count",
         info: {
           total_token_usage: { input_tokens: 60000, output_tokens: 4000, total_tokens: 64000 },
+          last_token_usage: { total_tokens: 48000 },
           model_context_window: 256000,
         },
         rate_limits: {
@@ -29,14 +30,60 @@ test("parses codex token_count into tokens, context window, and percent", () => 
   ].join("\n");
   const usage = parseProviderUsage(rollout, "codex");
   assert.equal(usage?.totalTokens, 64000);
+  assert.equal(usage?.contextTokens, 48000);
   assert.equal(usage?.contextWindow, 256000);
-  assert.equal(usage?.contextUsedPercent, 25);
+  assert.equal(usage?.contextUsedPercent, 19);
   assert.equal(usage?.model, "gpt-5.5");
   assert.deepEqual(usage?.rateLimits, [
     { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
     { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
   ]);
 });
+
+test("codex context percent uses last token_count instead of cumulative session total", () => {
+  const rollout = [
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: { total_tokens: 7633249 },
+          last_token_usage: { total_tokens: 173394 },
+          model_context_window: 258400,
+        },
+      },
+    }),
+  ].join("\n");
+  const usage = parseProviderUsage(rollout, "codex");
+  assert.equal(usage?.totalTokens, 7633249);
+  assert.equal(usage?.contextTokens, 173394);
+  assert.equal(usage?.contextWindow, 258400);
+  assert.equal(usage?.contextUsedPercent, 67);
+});
+
+for (const [label, info, expectedTokens, expectedPercent] of [
+  ["direct camelCase", { contextTokens: 40000 }, 40000, 20],
+  ["camelCase last usage", { lastTokenUsage: { totalTokens: 60000 } }, 60000, 30],
+  ["nested context total", { contextUsage: { total: { totalTokens: 120000 } } }, 120000, 60],
+] as const) {
+  test(`codex hydrate usage supports ${label} context token format`, () => {
+    const rollout = JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: { total_tokens: 900000 },
+          model_context_window: 200000,
+          ...info,
+        },
+      },
+    });
+    const usage = parseProviderUsage(rollout, "codex");
+    assert.equal(usage?.totalTokens, 900000);
+    assert.equal(usage?.contextTokens, expectedTokens);
+    assert.equal(usage?.contextUsedPercent, expectedPercent);
+  });
+}
 
 test("codex usage takes the LAST token_count (cumulative latest)", () => {
   const rollout = [

@@ -30,6 +30,7 @@ const usage: AgentChatUsageView = {
   contextRemainingLabel: "75%",
   contextDetailLabel: "64k / 256k tokens",
   tokensLabel: "64k tokens",
+  contextTokensLabel: "64k tokens",
   rateLimits: [
     {
       label: "5h",

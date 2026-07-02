@@ -84,11 +84,12 @@ function sessionContextSegment(usage: Usage): UsageSegmentView | null {
       tonePercent: usage.contextRemainingPercent,
     };
   }
-  if (usage.tokensLabel !== undefined) {
+  const tokenValue = usage.contextTokensLabel ?? usage.tokensLabel;
+  if (tokenValue !== undefined) {
     return {
       key: "tokens",
       label: "Session context",
-      value: usage.tokensLabel,
+      value: tokenValue,
     };
   }
   return null;
