@@ -1,3 +1,5 @@
+import type { ProviderCliAgentId } from "./agent.ts";
+
 export type AgentRuntimeStateDto =
   | "not_started"
   | "starting"
@@ -50,4 +52,13 @@ export interface AgentRuntimeRateLimitDto {
   windowMinutes?: number;
   // Provider reset time as Unix seconds, when reported.
   resetsAt?: number;
+}
+
+// App-level provider/account quota snapshot, independent of any one Tide Thread.
+// Settings consumes these rows; per-thread context/token usage remains on
+// agentRuntime.usageChanged.
+export interface ProviderUsageSnapshotDto {
+  agentId: ProviderCliAgentId;
+  usage: AgentRuntimeUsageDto;
+  observedAt?: string;
 }

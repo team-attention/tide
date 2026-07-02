@@ -1,4 +1,9 @@
-import type { AgentRuntimeStateDto, AgentRuntimeUsageDto, LiveTurnActivityDto } from "./agent-runtime.ts";
+import type {
+  AgentRuntimeStateDto,
+  AgentRuntimeUsageDto,
+  LiveTurnActivityDto,
+  ProviderUsageSnapshotDto,
+} from "./agent-runtime.ts";
 import type { AgentSessionBlockDto } from "./agent-session-block.ts";
 import type {
   WorkspaceCodeCompletionDto,
@@ -49,6 +54,7 @@ export type BackendEventKind =
   | "agentRuntime.noticePosted"
   | "providerReadiness.changed"
   | "providerCatalog.changed"
+  | "providerUsage.changed"
   | "prompt.changed"
   | "agentSessionBlock.upserted"
   | "agentSessionBlock.completed"
@@ -84,6 +90,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "agentRuntime.noticePosted",
   "providerReadiness.changed",
   "providerCatalog.changed",
+  "providerUsage.changed",
   "prompt.changed",
   "agentSessionBlock.upserted",
   "agentSessionBlock.completed",
@@ -131,6 +138,12 @@ export interface BackendEventPayloadByKind {
     opencodeVendors?: OpencodeVendorDto[];
     // opencode version + tested-with + resolved executable path (for the readiness terminal auth login).
     opencodeEnvironment?: OpencodeEnvironmentDto;
+  };
+  // App/account-level provider usage windows. This is intentionally separate from
+  // agentRuntime.usageChanged, which is per Thread and can include session context
+  // tokens. Settings reads only this event.
+  "providerUsage.changed": {
+    usages: ProviderUsageSnapshotDto[];
   };
   "thread.hydrated": {
     thread: ThreadSummaryDto;

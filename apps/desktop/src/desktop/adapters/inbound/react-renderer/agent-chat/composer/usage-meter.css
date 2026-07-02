@@ -5,7 +5,7 @@
 .agent-usage {
   position: relative;
   display: block;
-  margin: -4px 0 -8px;
+  margin: -6px 2px -8px;
   color: var(--tide-text);
   font-size: 12px;
   line-height: 1.25;
@@ -15,31 +15,31 @@
 
 .agent-usage__segments {
   min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  display: block;
 }
 
 .agent-usage__segment {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 5px;
-  padding: 7px 8px;
-  border: 1px solid color-mix(in srgb, var(--tide-line) 80%, transparent);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--tide-surface) 64%, var(--tide-bg));
+  grid-template-columns: minmax(0, auto) minmax(72px, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
 }
 
-.agent-usage__segment-head {
+.agent-usage__segment[data-has-bar="false"] {
+  grid-template-columns: minmax(0, auto) max-content;
+}
+
+.agent-usage__segment-text {
   min-width: 0;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
 }
 
 .agent-usage__segment-label {
-  min-width: 0;
+  flex: 0 0 auto;
   overflow: hidden;
   color: var(--tide-muted);
   font-size: 11px;
@@ -71,7 +71,7 @@
   width: 100%;
   height: 4px;
   border-radius: 999px;
-  background: var(--tide-line);
+  background: color-mix(in srgb, var(--tide-line) 72%, transparent);
   overflow: hidden;
 }
 

@@ -13,7 +13,7 @@ import { CONTRACT_VERSION } from "../../../../shared/contracts/index.ts";
 import type { BackendEventEnvelope, ProviderCliAgentId } from "../../../../shared/contracts/index.ts";
 import { toAgentSessionBlockDto } from "../../../adapters/inbound/contract-message-adapter/dto/thread-dtos.ts";
 import { planActivityFromToolResultPayload } from "../../../adapters/outbound/agent-runtime/structured/plan-activity.ts";
-import { runtimeUsageFromStructuredUsage, type StructuredRuntimeUsageInput } from "./live-runtime-usage.ts";
+import { emitStructuredActivity, emitStructuredUsage } from "./live-usage-events.ts";
 // Extracted from live-backend.ts (spec: navigable-source-structure).
 
 export function createLiveAgentSessionEventProjector(input: {
@@ -305,7 +305,7 @@ export function createLiveAgentSessionEventProjector(input: {
       }
       if (event.kind === "content_record") {
         const activity = planActivityFromToolResultPayload(event.payload);
-        if (activity !== undefined) emitStructuredActivity({ threadId: eventInput.threadId, activity, onEvent: input.onEvent });
+        if (activity !== undefined) emitStructuredActivity({ threadId: eventInput.threadId, activity, nextEventId, onEvent: input.onEvent });
         await appendFrameAndEmit({
           threadId: eventInput.threadId,
           agentId: eventInput.agentId,
@@ -407,7 +407,9 @@ export function createLiveAgentSessionEventProjector(input: {
       if (event.kind === "usage") {
         emitStructuredUsage({
           threadId: eventInput.threadId,
+          agentId: eventInput.agentId,
           usage: event.usage,
+          nextEventId,
           onEvent: input.onEvent,
         });
         return;
@@ -417,6 +419,7 @@ export function createLiveAgentSessionEventProjector(input: {
         emitStructuredActivity({
           threadId: eventInput.threadId,
           activity: { nestedAgents, nestedToolCalls, planTotal, planCompleted },
+          nextEventId,
           onEvent: input.onEvent,
         });
         return;
@@ -438,12 +441,14 @@ export function createLiveAgentSessionEventProjector(input: {
         if (event.usage !== undefined) {
           emitStructuredUsage({
             threadId: eventInput.threadId,
+            agentId: eventInput.agentId,
             usage: event.usage,
+            nextEventId,
             onEvent: input.onEvent,
           });
         }
         // Fan-out over — clear the live-activity count so it doesn't linger (Slice B).
-        emitStructuredActivity({ threadId: eventInput.threadId, activity: {}, onEvent: input.onEvent });
+        emitStructuredActivity({ threadId: eventInput.threadId, activity: {}, nextEventId, onEvent: input.onEvent });
         const nextBlocks = new Map(
           (blocksByThread.get(eventInput.threadId) ?? []).map((block) => [
             block.blockId,
@@ -485,44 +490,6 @@ export function createLiveAgentSessionEventProjector(input: {
       await flushAllPersists();
     },
   };
-}
-
-// Token usage reported natively by a structured protocol turn (claude result
-// modelUsage; codex thread/tokenUsage/updated; ACP _meta.quota).
-function emitStructuredUsage(input: {
-  threadId: string;
-  usage: StructuredRuntimeUsageInput;
-  onEvent?: (event: BackendEventEnvelope) => void;
-}): void {
-  const usage = runtimeUsageFromStructuredUsage(input.usage);
-  if (usage === undefined) {
-    return;
-  }
-  input.onEvent?.({
-    contractVersion: CONTRACT_VERSION,
-    eventId: nextEventId(),
-    kind: "agentRuntime.usageChanged",
-    emittedAt: new Date().toISOString(),
-    payload: {
-      threadId: input.threadId,
-      usage,
-    },
-  });
-}
-
-// Live fan-out activity (Claude subagent counts); an all-undefined activity clears it.
-function emitStructuredActivity(input: {
-  threadId: string;
-  activity: { nestedAgents?: number; nestedToolCalls?: number; planTotal?: number; planCompleted?: number };
-  onEvent?: (event: BackendEventEnvelope) => void;
-}): void {
-  input.onEvent?.({
-    contractVersion: CONTRACT_VERSION,
-    eventId: nextEventId(),
-    kind: "agentRuntime.activityChanged",
-    emittedAt: new Date().toISOString(),
-    payload: { threadId: input.threadId, activity: input.activity },
-  });
 }
 
 function emitBlockUpdate(input: {

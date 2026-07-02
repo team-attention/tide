@@ -18,7 +18,7 @@ export function SessionContextMeter({ usage }: { usage: Usage }): ReactElement |
   if (segment === null) {
     return null;
   }
-  const summary = `${segment.label} ${segment.value}${segment.detail ? `, ${segment.detail}` : ""}`;
+  const summary = [segment.label, segment.detail, segment.value].filter(Boolean).join(", ");
 
   return (
     <div
@@ -46,12 +46,15 @@ export function UsageMeter({
 function UsageSegment({ segment }: { segment: UsageSegmentView }): ReactElement {
   const tone = usageTone(segment.remainingPercent);
   return (
-    <div className="agent-usage__segment" data-usage-tone={tone}>
-      <div className="agent-usage__segment-head">
+    <div
+      className="agent-usage__segment"
+      data-has-bar={segment.remainingPercent !== undefined ? "true" : "false"}
+      data-usage-tone={tone}
+    >
+      <div className="agent-usage__segment-text">
         <span className="agent-usage__segment-label">{segment.label}</span>
-        <span className="agent-usage__segment-value">{segment.value}</span>
+        {segment.detail ? <span className="agent-usage__segment-detail">{segment.detail}</span> : null}
       </div>
-      {segment.detail ? <div className="agent-usage__segment-detail">{segment.detail}</div> : null}
       {segment.remainingPercent !== undefined ? (
         <span className="agent-usage__bar" aria-hidden>
           <span
@@ -60,6 +63,7 @@ function UsageSegment({ segment }: { segment: UsageSegmentView }): ReactElement 
           />
         </span>
       ) : null}
+      <span className="agent-usage__segment-value">{segment.value}</span>
     </div>
   );
 }

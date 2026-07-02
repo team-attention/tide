@@ -195,19 +195,16 @@
 .settings-usage {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 8px;
 }
 
 .settings-usage__row {
   display: grid;
-  grid-template-columns: minmax(128px, 0.28fr) minmax(0, 1fr);
+  grid-template-columns: minmax(128px, 0.3fr) minmax(0, 1fr);
   align-items: start;
-  gap: 16px;
-  padding: 8px 10px;
-  border: 1px solid var(--tide-line);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--tide-muted) 5%, transparent);
+  gap: 12px;
+  padding: 2px 0;
 }
 
 .settings-usage__identity {
@@ -235,78 +232,45 @@
   white-space: nowrap;
 }
 
-.settings-usage__windows {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-  gap: 14px;
-}
-
-.settings-usage-window {
+.settings-usage__details {
   min-width: 0;
   display: grid;
   gap: 5px;
 }
 
-.settings-usage-window__head,
-.settings-usage-window__meta {
+.settings-usage-line {
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(42px, max-content) minmax(54px, max-content);
   align-items: baseline;
-  justify-content: space-between;
   gap: 8px;
 }
 
-.settings-usage-window__name {
+.settings-usage-line__label {
   min-width: 0;
   overflow: hidden;
-  color: var(--tide-muted);
-  font-size: 11px;
-  font-weight: 650;
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.settings-usage-window__value {
-  flex: 0 0 auto;
-  color: var(--tide-text);
-  font-size: 13px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.settings-usage-window__bar {
-  width: 100%;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--tide-line);
-}
-
-.settings-usage-window__bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--tide-success);
-}
-
-.settings-usage-window[data-usage-tone="warn"] .settings-usage-window__bar-fill {
-  background: var(--tide-warn);
-}
-
-.settings-usage-window[data-usage-tone="critical"] .settings-usage-window__bar-fill {
-  background: var(--tide-danger);
-}
-
-.settings-usage-window__meta {
+.settings-usage-line__value {
   color: var(--tide-muted);
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
-.settings-usage-window__meta span:last-child {
+.settings-usage-line__detail {
   min-width: 0;
   overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;

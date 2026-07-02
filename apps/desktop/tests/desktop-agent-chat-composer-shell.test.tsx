@@ -502,7 +502,7 @@ test("usage_changed_renders_session_context_above_the_composer", () => {
   });
   const html = renderShell(withUsage);
   assert.match(html, /class="agent-usage"/);
-  assert.match(visibleText(html), /Session context\s*75% left\s*64k \/ 256k tokens/);
+  assert.match(visibleText(html), /Session context\s*64k \/ 256k tokens\s*75% left/);
 });
 
 test("usage_changed_renders_codex_rate_limit_windows", () => {
@@ -615,7 +615,7 @@ test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", (
   });
   const html = renderShell(withLimits);
   assert.match(html, /class="agent-usage"/);
-  assert.match(visibleText(html), /Session context\s*75% left\s*64k \/ 256k tokens/);
+  assert.match(visibleText(html), /Session context\s*64k \/ 256k tokens\s*75% left/);
   assert.doesNotMatch(visibleText(html), /5h\s*42% left\s*resets/);
   assert.doesNotMatch(visibleText(html), /Weekly\s*32% left\s*resets/);
 });

@@ -109,6 +109,7 @@ export function createProductShellState(
     editorPickerFilter: null,
     agentChat: createStartAgentChatState(startScope),
     agentChatByThreadId: {},
+    providerUsage: [],
     appChrome: createAppChromeState(),
     fileTree: null,
     startPageFiles: [],

@@ -47,7 +47,7 @@ test("session_context_meter_shows_only_current_session_context", () => {
   const text = visibleText(html);
 
   assert.match(html, /class="agent-usage"/);
-  assert.match(text, /Session context\s*75% left\s*64k \/ 256k tokens/);
+  assert.match(text, /Session context\s*64k \/ 256k tokens\s*75% left/);
   assert.doesNotMatch(text, /5h/);
   assert.doesNotMatch(text, /1 week|Weekly/);
 });
@@ -87,17 +87,34 @@ test("settings_shows_provider_window_usage_and_reset_while_composer_shows_contex
         contextUsedPercent: 25,
         model: "gpt-5.5",
         rateLimits: [
-          { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
-          { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
+          { usedPercent: 99, windowMinutes: 300, resetsAt: 1781973894 },
         ],
       },
     },
   });
-  const settingsOpen = setProductShellSettingsOpen(withUsage, true);
+  const withAccountUsage = applyProductShellBackendEvent(withUsage, {
+    kind: "providerUsage.changed",
+    payload: {
+      usages: [
+        {
+          agentId: "codex",
+          usage: {
+            model: "gpt-5.5",
+            rateLimits: [
+              { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
+              { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
+            ],
+          },
+          observedAt: "2026-06-11T00:02:00.000Z",
+        },
+      ],
+    },
+  });
+  const settingsOpen = setProductShellSettingsOpen(withAccountUsage, true);
   const html = renderToStaticMarkup(<TideProductShell initialState={settingsOpen} />);
   const settingsStart = html.indexOf('aria-label="Settings"');
   const settingsHtml = settingsStart >= 0 ? html.slice(settingsStart) : html;
-  const usageStart = settingsHtml.indexOf('aria-label="Provider window usage"');
+  const usageStart = settingsHtml.indexOf('aria-label="Usage remaining"');
   const usageHtml = usageStart >= 0 ? settingsHtml.slice(usageStart) : settingsHtml;
   const composerHtml = html.slice(0, settingsStart >= 0 ? settingsStart : html.length);
   const settingsText = visibleText(usageHtml);
@@ -105,18 +122,19 @@ test("settings_shows_provider_window_usage_and_reset_while_composer_shows_contex
 
   assert.match(settingsText, /Codex/);
   assert.match(settingsText, /GPT-5\.5/);
-  assert.match(settingsText, /5h window\s*58%/);
-  assert.match(settingsText, /1 week window\s*68%/);
-  assert.match(settingsText, /Resets/);
+  assert.match(settingsText, /5h\s*58%/);
+  assert.match(settingsText, /Weekly\s*68%/);
+  assert.doesNotMatch(settingsText, /99%/);
   assert.doesNotMatch(settingsText, /Session context/);
   assert.doesNotMatch(settingsText, /64k \/ 256k tokens/);
+  assert.doesNotMatch(settingsText, /window|Resets/);
 
   assert.match(composerHtml, /class="agent-usage"/);
-  assert.match(composerText, /Session context\s*75% left\s*64k \/ 256k tokens/);
+  assert.match(composerText, /Session context\s*64k \/ 256k tokens\s*75% left/);
   assert.doesNotMatch(composerText, /5h window|1 week window/);
 });
 
-test("settings_omits_context_only_usage_rows", () => {
+test("settings_ignores_thread_session_context_without_account_usage", () => {
   const thread: AgentChatThreadSummary = {
     threadId: "thread-context-only",
     title: "Context only",
@@ -157,13 +175,52 @@ test("settings_omits_context_only_usage_rows", () => {
   );
   const settingsStart = html.indexOf('aria-label="Settings"');
   const settingsHtml = settingsStart >= 0 ? html.slice(settingsStart) : html;
-  const usageStart = settingsHtml.indexOf('aria-label="Provider window usage"');
+  const usageStart = settingsHtml.indexOf('aria-label="Usage remaining"');
   const usageHtml = usageStart >= 0 ? settingsHtml.slice(usageStart) : settingsHtml;
   const settingsText = visibleText(usageHtml);
 
-  assert.match(settingsText, /No provider window usage reported yet/);
+  assert.match(settingsText, /No usage reported yet/);
   assert.doesNotMatch(settingsText, /Claude Code/);
+  assert.doesNotMatch(settingsText, /sonnet-4\.6/);
+  assert.doesNotMatch(settingsText, /Session context/);
   assert.doesNotMatch(settingsText, /64k \/ 256k tokens/);
+});
+
+test("settings_shows_account_usage_on_new_thread_without_thread_list", () => {
+  const withAccountUsage = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    {
+      kind: "providerUsage.changed",
+      payload: {
+        usages: [
+          {
+            agentId: "claude",
+            usage: {
+              model: "sonnet-4.6",
+              rateLimits: [
+                { label: "5h", usedPercent: 40, resetsAt: 1781973894 },
+                { label: "weekly", usedPercent: 65, resetsAt: 1782378364 },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  );
+  const html = renderToStaticMarkup(
+    <TideProductShell initialState={setProductShellSettingsOpen(withAccountUsage, true)} />,
+  );
+  const settingsStart = html.indexOf('aria-label="Settings"');
+  const settingsHtml = settingsStart >= 0 ? html.slice(settingsStart) : html;
+  const usageStart = settingsHtml.indexOf('aria-label="Usage remaining"');
+  const usageHtml = usageStart >= 0 ? settingsHtml.slice(usageStart) : settingsHtml;
+  const settingsText = visibleText(usageHtml);
+
+  assert.doesNotMatch(settingsText, /No usage reported yet/);
+  assert.match(settingsText, /Claude Code/);
+  assert.match(settingsText, /sonnet-4\.6/);
+  assert.match(settingsText, /5h\s*40%/);
+  assert.match(settingsText, /Weekly\s*65%/);
 });
 
 function visibleText(html: string): string {
