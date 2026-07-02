@@ -7,7 +7,7 @@ import {
   createPersistentLiveBackendAdapter,
   persistThreadEvents,
 } from "./live-backend-restore.ts";
-import { resolveAugmentedEnvironment } from "./resolve-shell-path.ts";
+import { defaultWorkbenchTerminalCommand, resolveAugmentedEnvironment } from "./resolve-shell-path.ts";
 import { worktreeRepoRootForCwd } from "../../../../shared/worktree/path.ts";
 export {
   threadSeedFromStorageRecord,
@@ -345,7 +345,7 @@ export function createLiveBackendContractMessageAdapter(
     // TS in-process + LSP-on-PATH engines behind one router (spec:
     // workbench-editor-language-intelligence).
     workspaceCodeIntelligencePort: createWorkspaceCodeIntelligenceRouter(),
-    defaultWorkbenchTerminalCommand: env.SHELL ?? "sh",
+    defaultWorkbenchTerminalCommand: defaultWorkbenchTerminalCommand({ env }),
     defaultWorkbenchTerminalArgs: [],
     onAsyncEvent: (event) => {
       emitBackendEvents(backendEventsFromThreadRuntimeAsyncEvent(event));

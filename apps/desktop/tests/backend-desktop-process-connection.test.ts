@@ -628,7 +628,7 @@ test("workbench_command_open_terminal_emits_workbench_changed", async () => {
   assert.equal(events[1].payload.activePaneId, "id-1");
   assert.equal(events[1].payload.panes[0]?.kind, "terminal");
   assert.equal(events[1].payload.panes[0]?.title, "Provider readiness: codex");
-  assert.equal(events[1].payload.panes[0]?.command, "/usr/local/bin/codex");
+  assert.equal(events[1].payload.panes[0]?.command, "sh");
   assert.equal(events[2].payload.result?.handled, true);
 });
 

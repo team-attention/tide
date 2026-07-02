@@ -12,12 +12,14 @@ import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-comman
 import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port.ts";
 import { failure, type ServiceResult } from "../support/service-result.ts";
 import {
+  commandName,
   fileByteLimit,
   fileTreeExpandedPaths,
   fileTreeMaxDepth,
   fileTreeMaxEntries,
   numberFromData,
   optionalString,
+  terminalLaunchPreview,
 } from "../support/service-value-helpers.ts";
 import { cloneFileTreeView } from "../thread/thread-runtime-clone.ts";
 import { snapshotThread, threadRoot } from "../thread/thread-snapshot.ts";
@@ -37,6 +39,7 @@ import {
   workbenchLayoutModeFromValue,
 } from "./workbench-command-data.ts";
 import { BrowserCaptureCoordinator } from "./browser-capture-coordinator.ts";
+import { providerReadinessTerminalInput } from "./provider-readiness-terminal-input.ts";
 import type { WorkbenchFileOperations } from "./workbench-file-operations.ts";
 import { activeLauncherPaneId, openWorkbenchLauncher, removeLauncherPane } from "./workbench-launcher.ts";
 import type { WorkbenchRuntime } from "./workbench-runtime.ts";
@@ -354,6 +357,9 @@ export class WorkbenchCommandHandler {
         let args: string[];
         let env: Record<string, string> | undefined;
         let cwd: string;
+        let providerReadinessInput: string | undefined;
+        let providerReadinessPreview: string | undefined;
+        let title = terminalInput.title;
         if (isProviderReadiness) {
           if (
             terminalInput.command === undefined ||
@@ -365,10 +371,17 @@ export class WorkbenchCommandHandler {
               "Provider readiness terminal command requires command, cwd, and expectedCompletion.",
             );
           }
-          command = terminalInput.command;
-          args = terminalInput.args ?? [];
+          command = this.defaultWorkbenchTerminalCommand;
+          args = [...this.defaultWorkbenchTerminalArgs];
           env = terminalInput.env;
           cwd = terminalInput.cwd;
+          providerReadinessInput = providerReadinessTerminalInput({
+            command: terminalInput.command,
+            args: terminalInput.args ?? [],
+            shellCommand: command,
+          });
+          providerReadinessPreview = terminalLaunchPreview(terminalInput.command, terminalInput.args ?? [], cwd);
+          title ??= `Provider readiness: ${commandName(terminalInput.command)}`;
         } else {
           const root = threadRoot(thread);
           if (root === undefined) {
@@ -396,12 +409,17 @@ export class WorkbenchCommandHandler {
           args,
           env,
           cwd,
-          title: terminalInput.title,
+          title,
           terminalRole,
           expectedCompletion: terminalInput.expectedCompletion,
         });
         if (isProviderReadiness) {
+          pane.transcriptPreview = providerReadinessPreview;
           await this.workbenchRuntime.ensureWorkbenchTerminalRunning(thread, pane);
+          const terminalHandle = this.workbenchRuntime.terminalHandle(pane.paneId);
+          if (terminalHandle !== undefined && providerReadinessInput !== undefined) {
+            await terminalHandle.write(providerReadinessInput);
+          }
         } else {
           void this.workbenchRuntime.ensureWorkbenchTerminalRunning(thread, pane).catch(() => undefined);
         }
@@ -777,5 +795,4 @@ export class WorkbenchCommandHandler {
         );
     }
   }
-
 }

@@ -107,7 +107,7 @@ export class WorkbenchRuntime {
     const terminalRole = input.terminalRole ?? "session";
     const title = input.title ?? defaultTerminalTitle(terminalRole, input.command);
     const existing =
-      terminalRole === "session"
+      terminalRole === "session" || terminalRole === "provider_readiness"
         ? undefined
         : thread.workbench.panes.find(
             (pane): pane is TerminalPaneState =>
@@ -168,7 +168,7 @@ export class WorkbenchRuntime {
     pane.status = "running";
     pane.transcriptPreview =
       terminalPaneStoredRole(pane) === "provider_readiness"
-        ? terminalLaunchPreview(pane.command, pane.args ?? [], pane.cwd)
+        ? pane.transcriptPreview ?? terminalLaunchPreview(pane.command, pane.args ?? [], pane.cwd)
         : "";
     pane.revision = this.idGenerator();
     pane.updatedAt = this.clock();
