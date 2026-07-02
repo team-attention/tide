@@ -82,6 +82,7 @@ test("worktree_thread_row_exposes_project_and_worktree_in_hover_context", () => 
   assert.match(markup, /id="thread-row-context-t1"/);
   assert.match(markup, /aria-describedby="thread-row-context-t1"/);
   assert.match(markup, /class="thread-row__context-popover"[^>]*hidden/);
+  assert.match(markup, /(?:tabIndex|tabindex)="-1"/);
   assert.match(markup, />Project</);
   assert.match(markup, />repo</);
   assert.match(markup, />Worktree</);

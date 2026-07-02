@@ -118,6 +118,7 @@ test("thread_rows_keep_scope_status_and_worktree_context_in_hidden_popover", () 
   assert.match(projectRow, /aria-label="Thread menu"/);
   assert.doesNotMatch(projectRow, /thread-row__leading/);
   assert.match(projectRow, /class="thread-row__context-popover"[^>]*hidden/);
+  assert.match(projectRow, /(?:tabIndex|tabindex)="-1"/);
   assert.match(projectRow, />Project</);
   assert.doesNotMatch(projectRow, />Status</);
   assert.doesNotMatch(projectRow, /thread-row__label/);

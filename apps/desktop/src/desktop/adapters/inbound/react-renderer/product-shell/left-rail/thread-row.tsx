@@ -255,6 +255,7 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
           id={contextPopoverId}
           className="thread-row__context-popover"
           role="tooltip"
+          tabIndex={-1}
           hidden={!contextOpen}
           aria-hidden={contextOpen ? undefined : true}
           style={contextPopoverStyle}
