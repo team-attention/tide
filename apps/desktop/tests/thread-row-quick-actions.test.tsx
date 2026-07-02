@@ -77,22 +77,24 @@ test("thread_row_leading_status_is_only_for_running_or_attention", () => {
   assert.doesNotMatch(live, /thread-row__leading/);
 });
 
-test("worktree_thread_row_does_not_render_hover_context_popover", () => {
+test("worktree_thread_row_exposes_project_and_worktree_in_hover_context", () => {
   const markup = renderRow(true, "/Users/you/repo.worktree/feature-x");
-  assert.doesNotMatch(markup, /id="thread-row-context-t1"/);
-  assert.doesNotMatch(markup, /thread-row__context-popover/);
-  assert.doesNotMatch(markup, />Project</);
-  assert.doesNotMatch(markup, />Worktree</);
-  assert.doesNotMatch(markup, />feature-x</);
-  assert.doesNotMatch(markup, /title="\/Users\/you\/repo\.worktree\/feature-x"/);
+  assert.match(markup, /id="thread-row-context-t1"/);
+  assert.match(markup, /aria-describedby="thread-row-context-t1"/);
+  assert.match(markup, /class="thread-row__context-popover"[^>]*hidden/);
+  assert.match(markup, />Project</);
+  assert.match(markup, />repo</);
+  assert.match(markup, />Worktree</);
+  assert.match(markup, />feature-x</);
+  assert.match(markup, /title="\/Users\/you\/repo\.worktree\/feature-x"/);
   assert.doesNotMatch(markup, /repo \/ feature-x/);
 });
 
-test("thread_row_default_markup_does_not_surface_scope_paths", () => {
+test("thread_row_scope_context_handles_windows_paths", () => {
   const markup = renderRow(true, "C:\\Users\\you\\repo");
   assert.match(markup, /aria-label="Thread menu"/);
+  assert.match(markup, /p1 \/ repo/);
   assert.doesNotMatch(markup, /p1 \/ C:\\Users\\you\\repo/);
-  assert.doesNotMatch(markup, /p1 \/ repo/);
 });
 
 test("delete_worktree_is_direct_only_for_worktree_rows", () => {
