@@ -5,7 +5,9 @@
 .agent-usage {
   position: relative;
   display: block;
-  margin: -6px 2px -8px;
+  margin: -5px 6px -8px;
+  padding: 5px 2px 0;
+  border-top: 1px solid color-mix(in srgb, var(--tide-line) 72%, transparent);
   color: var(--tide-text);
   font-size: 12px;
   line-height: 1.25;
@@ -21,38 +23,48 @@
 .agent-usage__segment {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(72px, 1fr) max-content;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-areas:
+    "text value"
+    "bar bar";
   align-items: center;
-  gap: 8px;
-  padding: 0 8px;
+  gap: 5px 10px;
+  padding: 0;
 }
 
 .agent-usage__segment[data-has-bar="false"] {
-  grid-template-columns: minmax(0, auto) max-content;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-areas: "text value";
 }
 
 .agent-usage__segment-text {
+  grid-area: text;
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
 
 .agent-usage__segment-label {
   flex: 0 0 auto;
   overflow: hidden;
   color: var(--tide-muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 650;
+  letter-spacing: 0;
+  text-transform: uppercase;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .agent-usage__segment-value {
+  grid-area: value;
+  justify-self: end;
   flex: 0 0 auto;
   color: var(--tide-text);
   font-size: 12.5px;
-  font-weight: 700;
+  font-weight: 670;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -68,10 +80,12 @@
 }
 
 .agent-usage__bar {
+  grid-area: bar;
   width: 100%;
-  height: 4px;
+  height: 2px;
+  margin-top: 1px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--tide-line) 72%, transparent);
+  background: color-mix(in srgb, var(--tide-line) 78%, transparent);
   overflow: hidden;
 }
 
@@ -80,7 +94,7 @@
   height: 100%;
   border-radius: 999px;
   background: var(--tide-muted);
-  transition: width 0.4s ease;
+  transition: width 0.35s ease;
 }
 
 .agent-usage__segment[data-usage-tone="ok"] .agent-usage__bar-fill {

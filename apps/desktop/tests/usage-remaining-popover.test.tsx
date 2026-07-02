@@ -47,6 +47,7 @@ test("session_context_meter_shows_only_current_session_context", () => {
   const text = visibleText(html);
 
   assert.match(html, /class="agent-usage"/);
+  assert.match(html, /width:\s*25%/);
   assert.match(text, /Session context\s*64k \/ 256k tokens\s*75% left/);
   assert.doesNotMatch(text, /5h/);
   assert.doesNotMatch(text, /1 week|Weekly/);
@@ -101,8 +102,8 @@ test("settings_shows_provider_window_usage_and_reset_while_composer_shows_contex
           usage: {
             model: "gpt-5.5",
             rateLimits: [
-              { usedPercent: 58, windowMinutes: 300, resetsAt: 1781973894 },
-              { usedPercent: 68, windowMinutes: 10080, resetsAt: 1782378364 },
+              { usedPercent: 42, windowMinutes: 300, resetsAt: 1781973894 },
+              { usedPercent: 32, windowMinutes: 10080, resetsAt: 1782378364 },
             ],
           },
           observedAt: "2026-06-11T00:02:00.000Z",
@@ -124,6 +125,7 @@ test("settings_shows_provider_window_usage_and_reset_while_composer_shows_contex
   assert.match(settingsText, /GPT-5\.5/);
   assert.match(settingsText, /5h\s*58%/);
   assert.match(settingsText, /Weekly\s*68%/);
+  assert.doesNotMatch(settingsText, /42%/);
   assert.doesNotMatch(settingsText, /99%/);
   assert.doesNotMatch(settingsText, /Session context/);
   assert.doesNotMatch(settingsText, /64k \/ 256k tokens/);
@@ -219,8 +221,8 @@ test("settings_shows_account_usage_on_new_thread_without_thread_list", () => {
   assert.doesNotMatch(settingsText, /No usage reported yet/);
   assert.match(settingsText, /Claude Code/);
   assert.match(settingsText, /sonnet-4\.6/);
-  assert.match(settingsText, /5h\s*40%/);
-  assert.match(settingsText, /Weekly\s*65%/);
+  assert.match(settingsText, /5h\s*60%/);
+  assert.match(settingsText, /Weekly\s*35%/);
 });
 
 test("settings_preserves_account_usage_when_provider_usage_update_is_empty_or_malformed", () => {
@@ -261,7 +263,7 @@ test("settings_preserves_account_usage_when_provider_usage_update_is_empty_or_ma
   assert.doesNotMatch(settingsText, /No usage reported yet/);
   assert.match(settingsText, /Claude Code/);
   assert.match(settingsText, /sonnet-4\.6/);
-  assert.match(settingsText, /Weekly\s*65%/);
+  assert.match(settingsText, /Weekly\s*35%/);
 });
 
 function visibleText(html: string): string {
