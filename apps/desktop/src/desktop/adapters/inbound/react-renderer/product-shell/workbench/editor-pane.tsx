@@ -116,7 +116,7 @@ export function WorkbenchEditorPane(props: {
               relativePath={props.pane.relativePath ?? props.pane.filePath}
               handlers={props.handlers}
             />
-            {createWorkbenchEditorReferences(props.pane.references, props.handlers)}
+            {createWorkbenchEditorReferences(props.pane, props.handlers)}
           </div>
         </>
       )}
@@ -210,14 +210,25 @@ function createEditorBreadcrumb(
 }
 
 function createWorkbenchEditorReferences(
-  references: NonNullable<
-    ProductShellViewModel["appChrome"]["activeWorkbenchPane"]
-  >["references"],
+  pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>,
   handlers: ProductShellHandlers,
 ): ReactElement | null {
+  const references = pane.references;
   if (references === undefined) {
     return null;
   }
+  const sourcePath = pane.relativePath ?? pane.filePath ?? "";
+  const orderedItems = [...references.items].sort((a, b) => {
+    const aCurrent = a.relativePath === sourcePath ? 0 : 1;
+    const bCurrent = b.relativePath === sourcePath ? 0 : 1;
+    if (aCurrent !== bCurrent) {
+      return aCurrent - bCurrent;
+    }
+    if (a.relativePath !== b.relativePath) {
+      return a.relativePath.localeCompare(b.relativePath);
+    }
+    return a.line - b.line || a.character - b.character;
+  });
   const countLabel = `${references.items.length}${references.truncated ? "+" : ""}`;
   return (
     <div className="workbench-editor-references" aria-label="References">
@@ -232,11 +243,12 @@ function createWorkbenchEditorReferences(
         <div className="workbench-editor-references__empty">No references found.</div>
       ) : (
         <ul className="workbench-editor-references__list">
-          {references.items.map((item, index) => {
+          {orderedItems.map((item, index) => {
             const Icon = fileIconFor(fileNameForReference(item.relativePath));
             const folder = folderForReference(item.relativePath);
             const lineColumn = `${item.line + 1}:${item.character + 1}`;
             const preview = item.label?.trim() || "No preview";
+            const isCurrentFile = item.relativePath === sourcePath;
             return (
               <li
                 key={`${item.relativePath}:${item.line}:${item.character}:${index}`}
@@ -244,10 +256,20 @@ function createWorkbenchEditorReferences(
               >
                 <button
                   type="button"
-                  className="workbench-editor-references__item"
+                  className={`workbench-editor-references__item${
+                    isCurrentFile ? " workbench-editor-references__item--current-file" : ""
+                  }`}
                   title={`Open ${item.relativePath}:${lineColumn}`}
                   aria-label={`Open reference ${item.relativePath}:${lineColumn}`}
-                  onClick={() => handlers.onOpenFile(item.relativePath)}
+                  onClick={() =>
+                    handlers.onOpenFile(item.relativePath, {
+                      line: item.line,
+                      character: item.character,
+                      length: item.length,
+                      label: preview,
+                      sourcePaneId: pane.paneId,
+                    })
+                  }
                 >
                   <span className="workbench-editor-references__meta">
                     <Icon size={13} strokeWidth={1.8} aria-hidden />

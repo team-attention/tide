@@ -553,6 +553,7 @@ export function WorkbenchBrowserPane(props: {
           query={find.query}
           matchCount={browserMatchCount}
           activeIndex={find.activeIndex}
+          scopeLabel="Page"
           placeholder="Find in page"
           onQueryChange={find.setQuery}
           onNext={browserFindNext}

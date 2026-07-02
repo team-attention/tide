@@ -38,18 +38,18 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
     )?.kind;
 
   return {
-    onOpenFile: (path) => {
+    onOpenFile: (path, target) => {
       const currentState = getShellState();
       if (currentState.activeThreadId === null) {
         const ensured = ensureDraftForFilePane(currentState);
-        const result = openProductShellFileInEditor(ensured.state, path);
+        const result = openProductShellFileInEditor(ensured.state, path, target);
         setShellState(result.state);
         if (ensured.command !== null) dispatchBackendCommand(ensured.command);
         dispatchBackendCommand(result.command);
         return;
       }
       setShellState((state) => {
-        const result = openProductShellFileInEditor(state, path);
+        const result = openProductShellFileInEditor(state, path, target);
         dispatchBackendCommand(result.command);
         return result.state;
       });
@@ -76,14 +76,14 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
       }),
     onEditorGoToDefinition: (paneId, position) => {
       setShellState((state) => {
-        const result = goToProductShellEditorDefinition(state, paneId);
+        const result = goToProductShellEditorDefinition(state, paneId, position);
         dispatchBackendCommand(result.command);
         return result.state;
       });
     },
     onEditorGoToReferences: (paneId, position) => {
       setShellState((state) => {
-        const result = goToProductShellEditorReferences(state, paneId);
+        const result = goToProductShellEditorReferences(state, paneId, position);
         dispatchBackendCommand(result.command);
         return result.state;
       });

@@ -137,6 +137,7 @@ export function InPaneFindBar(props: {
   matchCount: number;
   activeIndex: number;
   placeholder?: string;
+  scopeLabel?: string;
   tone?: "default" | "dark";
   onQueryChange: (query: string) => void;
   onNext: () => void;
@@ -171,6 +172,7 @@ export function InPaneFindBar(props: {
   return (
     <div className="in-pane-find" data-tone={props.tone ?? "default"} role="search" aria-label="Find in pane">
       <Search size={14} strokeWidth={1.9} aria-hidden />
+      {props.scopeLabel ? <span className="in-pane-find__scope">{props.scopeLabel}</span> : null}
       <input
         ref={inputRef}
         className="in-pane-find__input"

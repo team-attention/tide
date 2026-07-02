@@ -403,6 +403,12 @@ export type ProductShellBackendCommand =
           path: string;
           // New File: touch a missing file before opening (spec: workbench-new-file.md).
           create?: boolean;
+          // Optional navigation target used by project search and reference rows.
+          line?: number;
+          character?: number;
+          length?: number;
+          label?: string;
+          sourcePaneId?: string;
         };
       };
     }

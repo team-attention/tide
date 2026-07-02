@@ -475,6 +475,23 @@ test("transcript_has_bottom_scroll_buffer_for_the_docked_composer", () => {
   assert.match(css, /\.agent-session\[data-chat-state="running"\][\s\S]*data-streaming-caret="active"[\s\S]*::after/);
 });
 
+test("thread_find_bar_is_scoped_to_the_chat_content_column", () => {
+  // The transcript find bar should read as local chat UI, not as a browser-wide
+  // or workbench-wide search strip.
+  const source = readRepoFile(
+    "src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.tsx",
+  );
+  const css = readRepoFile(
+    "src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.css",
+  );
+
+  assert.match(source, /className="agent-chat-shell__find-region"/);
+  assert.match(source, /scopeLabel="Thread"/);
+  assert.match(source, /placeholder="Search this thread"/);
+  assert.match(css, /\.agent-chat-shell__find-region\s*{[^}]*width:\s*min\(760px,\s*calc\(100% - 32px\)\)/s);
+  assert.match(css, /\.agent-chat-shell__find-region \.in-pane-find\s*{[^}]*border-radius:\s*8px/s);
+});
+
 test("usage_changed_renders_session_context_above_the_composer", () => {
   const hydrated = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),

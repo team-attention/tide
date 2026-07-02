@@ -498,14 +498,18 @@ test("fileUrlFromPath builds a file:// url, encoding spaces and normalizing Wind
   assert.equal(fileUrlFromPath("C:\\dir\\sub\\page.html"), "file:///C:/dir/sub/page.html");
 });
 
-test("workbench_editor_pane_opens_lsp_actions_on_right_click_not_buttons", async () => {
+test("workbench_editor_pane_exposes_core_commands_and_keeps_context_menu_navigation", async () => {
   // Spec: docs_v2/specs/workbench-editor-code-navigation.md
-  // A real code editor exposes Go to Definition / Find References on the
-  // right-click context menu, not as a row of buttons below the code.
+  // Core editor actions need discoverable chrome, while right-click keeps the
+  // richer context path for code navigation.
   const root = await mountShell(editorState("export const value = 1;\n", "src/app.ts"));
   try {
-    // No LSP/save action button bar in the editor chrome.
-    assert.equal(dom.window.document.querySelector(".workbench-editor-actions"), null);
+    const toolbar = dom.window.document.querySelector('.workbench-editor-commandbar[role="toolbar"]');
+    assert.ok(toolbar, "editor command toolbar should mount");
+    assert.ok(toolbar.querySelector('button[aria-label="Save"]'), "save command should be visible");
+    assert.ok(toolbar.querySelector('button[aria-label="Find in file"]'), "find command should be visible");
+    assert.ok(toolbar.querySelector('button[aria-label="Go to Definition"]'), "definition command should be visible");
+    assert.ok(toolbar.querySelector('button[aria-label="Find References"]'), "references command should be visible");
 
     const surface = dom.window.document.querySelector(".workbench-editor-surface");
     assert.ok(surface, "editor surface should mount");

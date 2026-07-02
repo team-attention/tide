@@ -11,7 +11,7 @@ import { editorLanguageExtensions } from "./editor-pane.tsx";
 import { codeIntelligenceExtensions } from "./code-intel-extensions.ts";
 import type { CodeIntelContext } from "./code-intel-extensions.ts";
 import { createGitDiffLineDecorations, parseUnifiedDiffLineMarkers } from "./git-diff-lines.ts";
-import { CornerDownRight } from "lucide-react";
+import { CornerDownRight, FileSearch, ListTree, Save, Search as SearchIcon } from "lucide-react";
 import { InPaneFindBar, useInPaneFindState, usePaneFindIntent } from "../../support/in-pane-find.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 // Language-intelligence extensions: spec workbench-editor-language-intelligence.
@@ -333,6 +333,13 @@ export function WorkbenchCodeEditor(props: {
     props.handlers.onEditorCursorChange(props.paneId, pos);
     props.handlers.onEditorGoToDefinition(props.paneId, offsetToPosition(view, pos));
   };
+  const currentEditorPosition = (): { line: number; character: number } | undefined => {
+    const view = editorRef.current?.view;
+    if (view === undefined) {
+      return undefined;
+    }
+    return offsetToPosition(view, view.state.selection.main.head);
+  };
 
   return (
     <div
@@ -344,11 +351,54 @@ export function WorkbenchCodeEditor(props: {
       onContextMenu={openContextMenu}
       onMouseDownCapture={onCmdClick}
     >
+      <div className="workbench-editor-commandbar" role="toolbar" aria-label="Editor commands">
+        <button
+          type="button"
+          className="workbench-editor-commandbar__button"
+          title="Save"
+          aria-label="Save"
+          disabled={props.readOnly || !props.dirty}
+          onClick={() => props.handlers.onEditorSave(props.paneId)}
+        >
+          <Save size={14} strokeWidth={1.9} aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="workbench-editor-commandbar__button"
+          title="Find in file"
+          aria-label="Find in file"
+          onClick={find.openFind}
+        >
+          <SearchIcon size={14} strokeWidth={1.9} aria-hidden />
+        </button>
+        <span className="workbench-editor-commandbar__separator" aria-hidden />
+        <button
+          type="button"
+          className="workbench-editor-commandbar__button"
+          title="Go to Definition"
+          aria-label="Go to Definition"
+          disabled={props.readOnly}
+          onClick={() => props.handlers.onEditorGoToDefinition(props.paneId, currentEditorPosition())}
+        >
+          <FileSearch size={14} strokeWidth={1.9} aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="workbench-editor-commandbar__button"
+          title="Find References"
+          aria-label="Find References"
+          disabled={props.readOnly}
+          onClick={() => props.handlers.onEditorGoToReferences(props.paneId, currentEditorPosition())}
+        >
+          <ListTree size={14} strokeWidth={1.9} aria-hidden />
+        </button>
+      </div>
       {find.open ? (
         <InPaneFindBar
           query={find.query}
           matchCount={findMatchCount}
           activeIndex={find.activeIndex}
+          scopeLabel="File"
           placeholder="Find in file"
           onQueryChange={find.setQuery}
           onNext={() => find.next(findMatchCount)}
