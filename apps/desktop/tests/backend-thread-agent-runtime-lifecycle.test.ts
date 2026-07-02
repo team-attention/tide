@@ -2711,13 +2711,15 @@ test("workbench_command_open_terminal_creates_terminal_pane", async () => {
   assert.equal(opened.thread.workbench.panes[0]?.kind, "terminal");
   assert.equal(opened.thread.workbench.panes[0]?.terminalRole, "provider_readiness");
   assert.equal(opened.thread.workbench.panes[0]?.title, "Provider readiness: codex");
-  assert.equal(opened.thread.workbench.panes[0]?.command, "/usr/local/bin/codex");
+  assert.equal(opened.thread.workbench.panes[0]?.command, "sh");
   assert.equal(opened.thread.workbench.panes[0]?.cwd, "/repo");
+  assert.match(opened.thread.workbench.panes[0]?.transcriptPreview ?? "", /\$ \/usr\/local\/bin\/codex/);
+  assert.deepEqual(fakes.workbenchTerminal.handles[0]?.writes, ["exec /usr/local/bin/codex\r"]);
   assert.equal(opened.thread.workbench.focusOwner, "workbench");
   assert.deepEqual(fakes.runtime.events, []);
 });
 
-test("workbench_command_open_terminal_starts_provider_readiness_terminal_process", async () => {
+test("workbench_command_open_terminal_starts_provider_readiness_shell_and_inputs_command", async () => {
   // Spec: docs_v2/specs/workbench-terminal-pane-session.md
   const fakes = createFakes({
     readiness: {
@@ -2766,13 +2768,99 @@ test("workbench_command_open_terminal_starts_provider_readiness_terminal_process
   assert.equal(opened.ok, true);
   assert.equal(opened.thread.pendingInput?.value, "Preserve while readiness runs");
   assert.equal(opened.thread.workbench.panes[0]?.status, "running");
-  assert.equal(fakes.workbenchTerminal.starts[0]?.command, "/usr/local/bin/codex");
-  assert.deepEqual(fakes.workbenchTerminal.starts[0]?.args, ["--no-alt-screen"]);
+  assert.equal(fakes.workbenchTerminal.starts[0]?.command, "sh");
+  assert.deepEqual(fakes.workbenchTerminal.starts[0]?.args, []);
   assert.deepEqual(fakes.workbenchTerminal.starts[0]?.env, {
     CODEX_HOME: "/tmp/tide-codex-home",
   });
   assert.equal(fakes.workbenchTerminal.starts[0]?.cwd, "/repo");
+  assert.deepEqual(fakes.workbenchTerminal.handles[0]?.writes, [
+    "exec /usr/local/bin/codex --no-alt-screen\r",
+  ]);
   assert.deepEqual(fakes.runtime.events, []);
+});
+
+test("provider_readiness_terminal_quotes_posix_command_tokens_before_shell_input", async () => {
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-readiness-quote")],
+  });
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-readiness-quote",
+    command: "open_terminal",
+    data: {
+      command: "/opt/provider cli/bin/tool",
+      args: ["auth login", "--flag=value"],
+      cwd: "/repo",
+      expectedCompletion: "retry_preflight",
+      terminalRole: "provider_readiness",
+    },
+  });
+
+  assert.equal(opened.ok, true);
+  assert.deepEqual(fakes.workbenchTerminal.handles[0]?.writes, [
+    "exec '/opt/provider cli/bin/tool' 'auth login' --flag=value\r",
+  ]);
+});
+
+test("provider_readiness_terminal_quotes_powershell_command_tokens_before_shell_input", async () => {
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    defaultWorkbenchTerminalCommand: "powershell.exe",
+    initialThreads: [threadSeed("thread-readiness-powershell")],
+  });
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-readiness-powershell",
+    command: "open_terminal",
+    data: {
+      command: "C:\\Program Files\\Provider\\tool.exe",
+      args: ["auth login", "it isn't raw"],
+      cwd: "C:\\repo",
+      expectedCompletion: "retry_preflight",
+      terminalRole: "provider_readiness",
+    },
+  });
+
+  assert.equal(opened.ok, true);
+  assert.deepEqual(fakes.workbenchTerminal.handles[0]?.writes, [
+    "& 'C:\\Program Files\\Provider\\tool.exe' 'auth login' 'it isn''t raw'; exit $LASTEXITCODE\r",
+  ]);
+});
+
+test("provider_readiness_terminal_quotes_cmd_command_tokens_before_shell_input", async () => {
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    defaultWorkbenchTerminalCommand: "cmd.exe",
+    initialThreads: [threadSeed("thread-readiness-cmd")],
+  });
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-readiness-cmd",
+    command: "open_terminal",
+    data: {
+      command: "C:\\Program Files\\Provider\\tool.exe",
+      args: ["auth login", "foo & bar", "%PATH%"],
+      cwd: "C:\\repo",
+      expectedCompletion: "retry_preflight",
+      terminalRole: "provider_readiness",
+    },
+  });
+
+  assert.equal(opened.ok, true);
+  assert.deepEqual(fakes.workbenchTerminal.handles[0]?.writes, [
+    '"C:\\Program Files\\Provider\\tool.exe" "auth login" "foo & bar" "^%PATH^%" & exit\r',
+  ]);
 });
 
 test("provider_readiness_terminal_input_writes_terminal_bytes_to_running_readiness_terminal_process", async () => {
@@ -2806,7 +2894,10 @@ test("provider_readiness_terminal_input_writes_terminal_bytes_to_running_readine
   });
 
   assert.equal(written.ok, true);
-  assert.deepEqual(fakes.workbenchTerminal.handles[0]?.writes, ["\u001b[B\r"]);
+  assert.deepEqual(fakes.workbenchTerminal.handles[0]?.writes, [
+    "exec /usr/local/bin/codex\r",
+    "\u001b[B\r",
+  ]);
   assert.deepEqual(fakes.runtime.events, []);
 });
 

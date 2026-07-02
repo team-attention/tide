@@ -40,6 +40,20 @@ export type ShellEnvMode = "interactive_login" | "login";
 const DARWIN_FALLBACK_DIRS = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin"];
 const LINUX_FALLBACK_DIRS = ["/usr/local/bin"];
 
+export function defaultWorkbenchTerminalCommand(deps: {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+} = {}): string {
+  const env = deps.env ?? process.env;
+  if (env.SHELL !== undefined && env.SHELL.length > 0) {
+    return env.SHELL;
+  }
+  if ((deps.platform ?? process.platform) === "win32") {
+    return env.ComSpec ?? env.COMSPEC ?? "cmd.exe";
+  }
+  return "sh";
+}
+
 export function resolveAugmentedPath(deps: ResolveAugmentedPathDeps = {}): string {
   const platform = deps.platform ?? process.platform;
   const currentPath = deps.currentPath ?? process.env.PATH ?? "";

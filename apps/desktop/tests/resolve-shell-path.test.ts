@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  defaultWorkbenchTerminalCommand,
   resolveAugmentedEnvironment,
   resolveAugmentedPath,
 } from "../src/backend/infrastructure/node/live/resolve-shell-path.ts";
@@ -76,6 +77,30 @@ test("windows_path_is_left_unchanged", () => {
     runShell: () => "should-not-be-used",
   });
   assert.equal(result, current);
+});
+
+test("default_workbench_terminal_uses_platform_shell_fallbacks", () => {
+  assert.equal(
+    defaultWorkbenchTerminalCommand({
+      platform: "darwin",
+      env: { SHELL: "/bin/zsh" },
+    }),
+    "/bin/zsh",
+  );
+  assert.equal(
+    defaultWorkbenchTerminalCommand({
+      platform: "win32",
+      env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" },
+    }),
+    "C:\\Windows\\System32\\cmd.exe",
+  );
+  assert.equal(
+    defaultWorkbenchTerminalCommand({
+      platform: "win32",
+      env: {},
+    }),
+    "cmd.exe",
+  );
 });
 
 test("login_shell_auth_environment_is_imported_for_provider_runtimes", () => {
