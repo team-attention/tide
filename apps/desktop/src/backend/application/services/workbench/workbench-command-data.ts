@@ -10,6 +10,7 @@ import {
   optionalString,
 } from "../support/service-value-helpers.ts";
 import type {
+  BrowserPaneInteractiveElement,
   BrowserPaneScreenshot,
   TerminalPaneState,
   WorkbenchLayoutMode,
@@ -102,6 +103,7 @@ export function browserPaneSnapshotFromData(
       url?: string;
       pageTitle?: string;
       bodyTextPreview?: string;
+      interactiveElements?: BrowserPaneInteractiveElement[];
       loading?: boolean;
       screenshot?: BrowserPaneScreenshot;
     }
@@ -119,9 +121,76 @@ export function browserPaneSnapshotFromData(
     url: optionalString(data?.url),
     pageTitle: optionalString(data?.pageTitle),
     bodyTextPreview,
+    interactiveElements: browserPaneInteractiveElementsFromData(data?.interactiveElements),
     loading: typeof data?.loading === "boolean" ? data.loading : undefined,
     screenshot: browserPaneScreenshotFromData(data?.screenshot),
   };
+}
+
+function browserPaneInteractiveElementsFromData(
+  value: unknown,
+): BrowserPaneInteractiveElement[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const elements: BrowserPaneInteractiveElement[] = [];
+  for (const item of value.slice(0, 80)) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const rectRecord =
+      record.rect !== null && typeof record.rect === "object" && !Array.isArray(record.rect)
+        ? (record.rect as Record<string, unknown>)
+        : undefined;
+    const index = nonNegativeIntegerFromData(record, "index");
+    const tag = optionalString(record.tag);
+    const x = rectRecord === undefined ? undefined : finiteNumberFromData(rectRecord, "x");
+    const y = rectRecord === undefined ? undefined : finiteNumberFromData(rectRecord, "y");
+    const width = rectRecord === undefined ? undefined : finiteNumberFromData(rectRecord, "width");
+    const height = rectRecord === undefined ? undefined : finiteNumberFromData(rectRecord, "height");
+    if (
+      index === undefined ||
+      tag === undefined ||
+      x === undefined ||
+      y === undefined ||
+      width === undefined ||
+      height === undefined
+    ) {
+      continue;
+    }
+    elements.push({
+      index,
+      tag: tag.slice(0, 32),
+      role: optionalString(record.role)?.slice(0, 64),
+      type: optionalString(record.type)?.slice(0, 64),
+      text: optionalString(record.text)?.slice(0, 240),
+      ariaLabel: optionalString(record.ariaLabel)?.slice(0, 160),
+      placeholder: optionalString(record.placeholder)?.slice(0, 160),
+      href: optionalString(record.href)?.slice(0, 512),
+      disabled: typeof record.disabled === "boolean" ? record.disabled : undefined,
+      rect: { x, y, width, height },
+    });
+  }
+  return elements.length === 0 ? undefined : elements;
+}
+
+function nonNegativeIntegerFromData(
+  data: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = data[key];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+function finiteNumberFromData(
+  data: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = data[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 // Parse the renderer's reply to an observe-time capture pull (update_browser_capture_result):
@@ -172,6 +241,7 @@ export function browserPaneActionResultFromData(
       url?: string;
       pageTitle?: string;
       bodyTextPreview?: string;
+      interactiveElements?: BrowserPaneInteractiveElement[];
       loading?: boolean;
     }
   | undefined {
@@ -200,6 +270,7 @@ export function browserPaneActionResultFromData(
     url: optionalString(data?.url),
     pageTitle: optionalString(data?.pageTitle),
     bodyTextPreview,
+    interactiveElements: browserPaneInteractiveElementsFromData(data?.interactiveElements),
     loading: typeof data?.loading === "boolean" ? data.loading : undefined,
   };
 }

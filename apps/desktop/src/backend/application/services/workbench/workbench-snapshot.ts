@@ -59,6 +59,13 @@ export function browserPaneRef(pane: BrowserPaneState): BrowserPaneRef {
     readiness: browserPaneReadiness(pane),
     capabilities: browserPaneCapabilities(),
     bodyTextPreview: pane.bodyTextPreview,
+    interactiveElements:
+      pane.interactiveElements === undefined
+        ? undefined
+        : pane.interactiveElements.map((element) => ({
+            ...element,
+            rect: { ...element.rect },
+          })),
     agentDriving: pane.agentDriving ?? false,
     agentCursor: pane.agentCursor === undefined ? undefined : { ...pane.agentCursor },
     pendingCapture:
@@ -78,7 +85,11 @@ export function browserPaneReadiness(pane: BrowserPaneState): BrowserPaneReadine
   if (pane.screenshot !== undefined) {
     return "ready";
   }
-  if (pane.pageTitle !== undefined || pane.bodyTextPreview !== undefined) {
+  if (
+    pane.pageTitle !== undefined ||
+    pane.bodyTextPreview !== undefined ||
+    pane.interactiveElements !== undefined
+  ) {
     return "ready";
   }
   return "unavailable";

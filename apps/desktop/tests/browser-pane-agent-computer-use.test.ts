@@ -90,6 +90,24 @@ test("move_to / scroll / key / type are accepted coordinate actions that start d
   }
 });
 
+test("key actions are accepted while the pane reports loading", () => {
+  // Regression: Catchtable rendered a visible modal while Electron still reported loading.
+  // Blocking Escape there trapped the agent in a stuck load instead of letting it behave like
+  // a user and stop/dismiss the page.
+  const thread = browserThread({ loading: true });
+  const result = actBrowserOutput(
+    thread,
+    { paneId: "p1", revision: "rev-1", action: "key", keys: "Escape" },
+    idGen,
+    clock,
+  );
+  assert.equal(result.ok, true);
+  const pane = browserPaneOf(thread);
+  assert.equal(pane.pendingAction?.kind, "key");
+  assert.equal(pane.pendingAction?.keys, "Escape");
+  assert.equal(pane.agentDriving, true);
+});
+
 test("drag carries start/end coordinates and moves the agent cursor to the end point", () => {
   const thread = browserThread();
   const result = actBrowserOutput(
@@ -178,6 +196,35 @@ test("selector click is unchanged and does NOT start agent driving", () => {
   assert.equal(pane.pendingAction?.selector, "button.primary");
   assert.notEqual(pane.agentDriving, true);
   assert.equal(pane.agentCursor, undefined);
+});
+
+test("element click uses observed element index and does NOT start coordinate driving", () => {
+  const thread = browserThread();
+  const result = actBrowserOutput(
+    thread,
+    { paneId: "p1", revision: "rev-1", action: "click_element", elementIndex: 2 },
+    idGen,
+    clock,
+  );
+  assert.equal(result.ok, true);
+  const pane = browserPaneOf(thread);
+  assert.equal(pane.pendingAction?.kind, "click_element");
+  assert.equal(pane.pendingAction?.elementIndex, 2);
+  assert.notEqual(pane.agentDriving, true);
+  assert.equal(pane.agentCursor, undefined);
+});
+
+test("element click requires a numeric observed element index", () => {
+  const thread = browserThread();
+  const result = actBrowserOutput(
+    thread,
+    { paneId: "p1", revision: "rev-1", action: "click_element" },
+    idGen,
+    clock,
+  );
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "invalid_workbench_command");
+  assert.equal(browserPaneOf(thread).pendingAction, undefined);
 });
 
 test("type_text without text still returns a structured error", () => {

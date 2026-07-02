@@ -112,6 +112,7 @@ export function expectedOccurrences(value: unknown): number {
 
 const BROWSER_ACTION_KINDS = [
   "click",
+  "click_element",
   "type_text",
   "move_to",
   "click_at",

@@ -387,8 +387,7 @@ export function WorkbenchBrowserPane(props: {
       webview === null ||
       props.pane.url === undefined ||
       action === undefined ||
-      executedActionIdsRef.current.has(action.actionId) ||
-      !isWebViewSettled(webview)
+      executedActionIdsRef.current.has(action.actionId)
     ) {
       return;
     }
@@ -405,7 +404,7 @@ export function WorkbenchBrowserPane(props: {
           actionId: action.actionId,
           status: result.status,
           message: result.message,
-          loading: false,
+          loading: !isWebViewSettled(webview),
           ...result.snapshot,
         });
       })
@@ -415,7 +414,7 @@ export function WorkbenchBrowserPane(props: {
           actionId: action.actionId,
           status: "failed",
           message: error instanceof Error ? error.message : "Browser action failed.",
-          loading: false,
+          loading: !isWebViewSettled(webview),
         });
       });
   }, [
@@ -718,8 +717,7 @@ function BackgroundBrowserWebView(props: {
     if (
       webview === null ||
       pendingCapture === undefined ||
-      lastCapturedIdRef.current === pendingCapture.captureId ||
-      !isWebViewSettled(webview)
+      lastCapturedIdRef.current === pendingCapture.captureId
     ) {
       return;
     }
@@ -737,8 +735,7 @@ function BackgroundBrowserWebView(props: {
       webview === null ||
       url === undefined ||
       pendingAction === undefined ||
-      executedActionIdsRef.current.has(pendingAction.actionId) ||
-      !isWebViewSettled(webview)
+      executedActionIdsRef.current.has(pendingAction.actionId)
     ) {
       return;
     }
@@ -751,7 +748,7 @@ function BackgroundBrowserWebView(props: {
           actionId: pendingAction.actionId,
           status: result.status,
           message: result.message,
-          loading: false,
+          loading: !isWebViewSettled(webview),
           ...result.snapshot,
         });
       })
@@ -761,7 +758,7 @@ function BackgroundBrowserWebView(props: {
           actionId: pendingAction.actionId,
           status: "failed",
           message: error instanceof Error ? error.message : "Browser action failed.",
-          loading: false,
+          loading: !isWebViewSettled(webview),
         });
       });
   }, [webviewElement, handlers, threadId, paneId, revision, url, pendingAction?.actionId, settleVersion]);

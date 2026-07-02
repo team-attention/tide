@@ -213,6 +213,33 @@ test("selector click resolves a target and sends real mouse events", async () =>
   assert.equal(scripts.length, 1);
 });
 
+test("element click uses observed interactive element index without coordinate input events", async () => {
+  const inputEvents: BrowserWebViewInputEvent[] = [];
+  const scripts: string[] = [];
+  const webview = {
+    sendInputEvent: (event: BrowserWebViewInputEvent) => {
+      inputEvents.push(event);
+    },
+    executeJavaScript: (code: string) => {
+      scripts.push(code);
+      return Promise.resolve({
+        ok: true,
+        message: "Clicked interactive element #1 button Reserve",
+      });
+    },
+  } as unknown as BrowserWebViewElement;
+  const result = await executeBrowserWebViewAction(
+    webview,
+    action({ kind: "click_element", elementIndex: 1 }),
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.message, "Clicked interactive element #1 button Reserve");
+  assert.deepEqual(inputEvents, []);
+  assert.equal(scripts.length, 1);
+  assert.match(scripts[0] ?? "", /"elementIndex":1/);
+  assert.match(scripts[0] ?? "", /target\.click\(\)/);
+});
+
 test("selector click does not block a target inside an invalid form", async () => {
   const inputEvents: BrowserWebViewInputEvent[] = [];
   const webview = {
@@ -260,6 +287,40 @@ test("selector type_text focuses the target and sends char events", async () => 
   assert.equal(result.ok, true);
   assert.deepEqual(inputEvents.map((event) => event.type), ["keyDown", "keyUp", "char", "char"]);
   assert.equal(scripts.length, 2);
+});
+
+test("selector type_text does not require global process in the renderer", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "process");
+  Object.defineProperty(globalThis, "process", {
+    value: undefined,
+    configurable: true,
+    writable: true,
+  });
+  try {
+    const inputEvents: BrowserWebViewInputEvent[] = [];
+    const webview = {
+      sendInputEvent: (event: BrowserWebViewInputEvent) => {
+        inputEvents.push(event);
+      },
+      executeJavaScript: (code: string) =>
+        Promise.resolve({
+          ok: true,
+          message: code.includes("document.activeElement") ? "focused value length 2" : "focused",
+        }),
+    } as unknown as BrowserWebViewElement;
+    const result = await executeBrowserWebViewAction(
+      webview,
+      action({ kind: "type_text", selector: "input.title", text: "hi" }),
+    );
+    assert.equal(result.ok, true);
+    assert.deepEqual(inputEvents.map((event) => event.type), ["keyDown", "keyUp", "char", "char"]);
+  } finally {
+    if (descriptor === undefined) {
+      delete (globalThis as { process?: unknown }).process;
+    } else {
+      Object.defineProperty(globalThis, "process", descriptor);
+    }
+  }
 });
 
 test("a coordinate action on a webview without sendInputEvent fails gracefully", async () => {
@@ -359,6 +420,41 @@ test("readBrowserWebViewSnapshot is text-only and NEVER calls capturePage (no lo
   assert.equal(snapshot.url, "https://x.test/");
   assert.equal(snapshot.pageTitle, "X");
   assert.equal(snapshot.bodyTextPreview, "hello");
+});
+
+test("readBrowserWebViewSnapshot carries bounded interactive elements", async () => {
+  const webview = {
+    executeJavaScript: () =>
+      Promise.resolve({
+        url: "https://x.test/",
+        pageTitle: "X",
+        bodyTextPreview: "",
+        interactiveElements: [
+          {
+            index: 0,
+            tag: "input",
+            type: "search",
+            placeholder: "Search",
+            rect: { x: 10, y: 20, width: 300, height: 44 },
+          },
+          {
+            index: 1,
+            tag: "a",
+            text: "Instagram",
+            href: "https://www.instagram.com/catchtable_official",
+            rect: { x: 10, y: 90, width: 120, height: 32 },
+          },
+        ],
+      }),
+    getURL: () => "https://x.test/",
+  } as unknown as BrowserWebViewElement;
+
+  const snapshot = await readBrowserWebViewSnapshot(webview);
+
+  assert.equal(snapshot.bodyTextPreview, "");
+  assert.equal(snapshot.interactiveElements?.length, 2);
+  assert.equal(snapshot.interactiveElements?.[0]?.placeholder, "Search");
+  assert.equal(snapshot.interactiveElements?.[1]?.href, "https://www.instagram.com/catchtable_official");
 });
 
 test("readBrowserWebViewSnapshot tolerates pre-dom-ready getURL throws", async () => {

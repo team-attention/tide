@@ -346,7 +346,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   {
     name: "tide_observe_browser",
     description:
-      "Observe bounded Browser Pane state after validating Thread ownership and revision. mode=both (default) returns BOTH a pixel screenshot of the rendered page as an image block (see it like a human) AND the DOM text; mode=text returns DOM text only (cheaper); mode=screenshot drops the text.",
+      "Observe bounded Browser Pane state after validating Thread ownership and revision. mode=both (default) returns BOTH a pixel screenshot of the rendered page as an image block (see it like a human), DOM text, and a compact list of visible interactive elements with labels/rects; mode=text returns DOM text/elements only (cheaper); mode=screenshot drops the text.",
     inputSchema: {
       type: "object",
       properties: {
@@ -361,7 +361,7 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   {
     name: "tide_act_browser",
     description:
-      "Operate an open Tide Browser Pane like a human (hybrid). Coordinate computer-use actions move the cursor and drive the live page via real input events: move_to/click_at (x,y; click_at takes optional button and clickCount), drag (x,y,toX,toY; useful for bottom sheets/sliders), scroll (x,y,deltaX,deltaY), key (keys like \"Enter\" or \"Cmd+A\"), and type (text into the focused element). Selector actions click/type_text (selector, text) are the reliability fallback. Coordinates are screenshot pixels from the latest tide_observe_browser image; Tide converts them to webview CSS pixels.",
+      "Operate an open Tide Browser Pane like a human (hybrid). Prefer semantic element action click_element(elementIndex) using the latest tide_observe_browser interactiveElements list when available. Coordinate computer-use actions move the cursor and drive the live page via real input events: move_to/click_at (x,y; click_at takes optional button and clickCount), drag (x,y,toX,toY; useful for bottom sheets/sliders), scroll (x,y,deltaX,deltaY), key (keys like \"Enter\" or \"Cmd+A\"), and type (text into the focused element). Selector actions click/type_text (selector, text) are the reliability fallback. Coordinates are screenshot pixels from the latest tide_observe_browser image; Tide converts them to webview CSS pixels.",
     inputSchema: {
       type: "object",
       properties: {
@@ -369,9 +369,23 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
         revision: { type: "string" },
         action: {
           type: "string",
-          enum: ["click", "type_text", "move_to", "click_at", "drag", "scroll", "key", "type"],
+          enum: [
+            "click",
+            "click_element",
+            "type_text",
+            "move_to",
+            "click_at",
+            "drag",
+            "scroll",
+            "key",
+            "type",
+          ],
         },
         selector: { type: "string", description: "Required for click / type_text." },
+        elementIndex: {
+          type: "number",
+          description: "Required for click_element; use index from observe_browser interactiveElements.",
+        },
         text: { type: "string", description: "Required for type_text and type." },
         x: { type: "number", description: "Required for move_to / click_at / drag / scroll." },
         y: { type: "number", description: "Required for move_to / click_at / drag / scroll." },

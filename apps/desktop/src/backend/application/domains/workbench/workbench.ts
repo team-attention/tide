@@ -67,6 +67,24 @@ export interface BrowserPaneCapabilities {
   canActBackground: boolean;
 }
 
+export interface BrowserPaneInteractiveElement {
+  index: number;
+  tag: string;
+  role?: string;
+  type?: string;
+  text?: string;
+  ariaLabel?: string;
+  placeholder?: string;
+  href?: string;
+  disabled?: boolean;
+  rect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
 export interface BrowserPaneState {
   paneId: WorkbenchPaneId;
   kind: "browser";
@@ -77,6 +95,7 @@ export interface BrowserPaneState {
   revision: string;
   updatedAt: string;
   bodyTextPreview?: string;
+  interactiveElements?: BrowserPaneInteractiveElement[];
   // Backend-authoritative computer-use driving state. agentDriving = the Agent is
   // operating this Pane via a computer-use turn; agentCursor = last pointer position
   // in screenshot-pixel space (for the on-screen cursor theater). Cleared on release
@@ -110,6 +129,7 @@ export interface BrowserPaneState {
 
 export type BrowserPaneActionKind =
   | "click"
+  | "click_element"
   | "type_text"
   | "move_to"
   | "click_at"
@@ -125,6 +145,8 @@ export interface BrowserPaneActionRequest {
   kind: BrowserPaneActionKind;
   // Selector path (reliability fallback): set for "click" / "type_text".
   selector?: string;
+  // Element path: index from the latest observe_browser interactiveElements list.
+  elementIndex?: number;
   text?: string;
   // Coordinate computer-use path (screenshot-pixel space). See
   // docs_v2/specs/browser-pane-agent-computer-use.md.
@@ -298,6 +320,7 @@ export interface BrowserPaneRef extends WorkbenchPaneRef {
   readiness: BrowserPaneReadiness;
   capabilities: BrowserPaneCapabilities;
   bodyTextPreview?: string;
+  interactiveElements?: BrowserPaneInteractiveElement[];
   agentDriving: boolean;
   agentCursor?: { x: number; y: number };
   screenshot?: BrowserPaneScreenshot;

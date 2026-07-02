@@ -79,8 +79,18 @@ export interface AppChromeWorkbenchPaneRef {
 
 export interface AppChromeBrowserPaneAction {
   actionId: string;
-  kind: "click" | "type_text" | "move_to" | "click_at" | "drag" | "scroll" | "key" | "type";
+  kind:
+    | "click"
+    | "click_element"
+    | "type_text"
+    | "move_to"
+    | "click_at"
+    | "drag"
+    | "scroll"
+    | "key"
+    | "type";
   selector?: string;
+  elementIndex?: number;
   text?: string;
   x?: number;
   y?: number;

@@ -632,11 +632,30 @@ export interface ProductShellBrowserScreenshot {
   devicePixelRatio: number;
 }
 
+export interface ProductShellBrowserInteractiveElement {
+  index: number;
+  tag: string;
+  role?: string;
+  type?: string;
+  text?: string;
+  ariaLabel?: string;
+  placeholder?: string;
+  href?: string;
+  disabled?: boolean;
+  rect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
 export interface ProductShellBrowserSnapshot {
   revision: string;
   url?: string;
   pageTitle?: string;
   bodyTextPreview?: string;
+  interactiveElements?: ProductShellBrowserInteractiveElement[];
   loading: boolean;
   // Pixel-vision capture (webview.capturePage), cached backend-side for
   // tide_observe_browser mode=screenshot|both. Omitted from backend→renderer snapshots.
