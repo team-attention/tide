@@ -437,7 +437,10 @@ function agentBlockPhase(block: AgentChatBlock): AgentChatBlockPhase | undefined
     return undefined;
   }
   const phase = block.data?.phase;
-  return phase === "commentary" || phase === "final_answer" ? phase : undefined;
+  if (phase === "commentary" || phase === "final_answer") {
+    return phase;
+  }
+  return undefined;
 }
 
 function readOnlyThreadContextItems(
