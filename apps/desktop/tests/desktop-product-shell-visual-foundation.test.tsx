@@ -111,14 +111,15 @@ test("left_ui_renders_project_grouped_thread_rows_without_default_status_markers
   assert.doesNotMatch(html, /project-row__count/);
 });
 
-test("thread_rows_keep_scope_status_and_worktree_context_out_of_default_markup", () => {
+test("thread_rows_keep_scope_status_and_worktree_context_in_hidden_popover", () => {
   const fixtureHtml = renderProductShell();
   const projectRow = extractByDataAttribute(fixtureHtml, "data-thread-row", "thread-workbench");
-  assert.doesNotMatch(fixtureHtml, /thread-row__context-popover/);
-  assert.doesNotMatch(projectRow, /aria-describedby="thread-row-context-thread-workbench"/);
+  assert.match(projectRow, /aria-describedby="thread-row-context-thread-workbench"/);
   assert.match(projectRow, /aria-label="Thread menu"/);
   assert.doesNotMatch(projectRow, /thread-row__leading/);
-  assert.doesNotMatch(projectRow, />Project</);
+  assert.match(projectRow, /class="thread-row__context-popover"[^>]*hidden/);
+  assert.match(projectRow, /(?:tabIndex|tabindex)="-1"/);
+  assert.match(projectRow, />Project</);
   assert.doesNotMatch(projectRow, />Status</);
   assert.doesNotMatch(projectRow, /thread-row__label/);
   assert.doesNotMatch(projectRow, /thread-row__scope/);
@@ -158,14 +159,15 @@ test("thread_rows_keep_scope_status_and_worktree_context_out_of_default_markup",
     "thread-worktree",
   );
 
-  assert.doesNotMatch(worktreeRow, /aria-describedby="thread-row-context-thread-worktree"/);
-  assert.doesNotMatch(worktreeRow, /thread-row__context-popover/);
-  assert.doesNotMatch(worktreeRow, />Project</);
-  assert.doesNotMatch(worktreeRow, />feature-login</);
-  assert.doesNotMatch(worktreeRow, />Branch</);
-  assert.doesNotMatch(worktreeRow, />tide\/feature-login</);
-  assert.doesNotMatch(worktreeRow, />Status</);
-  assert.doesNotMatch(worktreeRow, />Running</);
+  assert.match(worktreeRow, /aria-describedby="thread-row-context-thread-worktree"/);
+  assert.match(worktreeRow, /thread-row__context-popover/);
+  assert.match(worktreeRow, />Project</);
+  assert.match(worktreeRow, />Worktree</);
+  assert.match(worktreeRow, />feature-login</);
+  assert.match(worktreeRow, />Branch</);
+  assert.match(worktreeRow, />tide\/feature-login</);
+  assert.match(worktreeRow, />Status</);
+  assert.match(worktreeRow, />Running</);
   assert.doesNotMatch(worktreeRow, /thread-row__branch/);
   assert.doesNotMatch(worktreeRow, /thread-row__branch-name/);
 });
@@ -936,15 +938,15 @@ test("thread_rows_use_list_style_selection_not_card_blocks", () => {
   assert.doesNotMatch(css, /tide-row-running-breathe/);
   assert.doesNotMatch(css, /\.thread-row--active\s*{[^}]*border-color/s);
   assert.doesNotMatch(css, /\.thread-row(?:--active|\[data-[^\]]+\])?\s*{[^}]*border-left/s);
-  assert.doesNotMatch(css, /\.thread-row__context-popover/);
+  assert.match(css, /\.thread-row__context-popover\s*{[^}]*position:\s*fixed/s);
   assert.doesNotMatch(css, /\.thread-row--scoped\s*{[^}]*height:\s*36px/s);
   assert.doesNotMatch(css, /\.thread-row__scope\s*{/);
   assert.doesNotMatch(css, /\.thread-row__branch\s*{/);
   assert.match(threadRowSource, /"Thread menu"/);
-  assert.doesNotMatch(threadRowSource, /THREAD_ROW_CONTEXT_OPEN_EVENT/);
-  assert.doesNotMatch(threadRowSource, /document\.dispatchEvent\(\s*new CustomEvent\(THREAD_ROW_CONTEXT_OPEN_EVENT/s);
-  assert.doesNotMatch(threadRowSource, /document\.addEventListener\(THREAD_ROW_CONTEXT_OPEN_EVENT/);
-  assert.doesNotMatch(threadRowSource, /hiddenThreadRowContextPopoverStyle/);
+  assert.match(threadRowSource, /THREAD_ROW_CONTEXT_OPEN_EVENT/);
+  assert.match(threadRowSource, /document\.dispatchEvent\(\s*new CustomEvent\(THREAD_ROW_CONTEXT_OPEN_EVENT/s);
+  assert.match(threadRowSource, /document\.addEventListener\(THREAD_ROW_CONTEXT_OPEN_EVENT/);
+  assert.match(threadRowSource, /hiddenThreadRowContextPopoverStyle/);
   assert.doesNotMatch(threadRowSource, /typeof window === "undefined"\s*\?\s*fallbackThreadRowContextAnchor/);
 });
 

@@ -104,6 +104,75 @@
   white-space: nowrap;
 }
 
+/* Project/worktree context stays out of the row until hover/focus, keeping the
+   list single-line while still making scoped rows inspectable. */
+
+.thread-row__context-popover {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--tide-bg) 94%, var(--tide-surface));
+  box-shadow:
+    0 18px 44px -22px rgb(52 48 56 / 46%),
+    0 6px 18px -12px rgb(52 48 56 / 28%);
+  color: var(--tide-text);
+  pointer-events: auto;
+  transform: translateY(-2px) scale(0.98);
+  transform-origin: top left;
+  animation: tide-pop-in 0.12s ease forwards;
+  user-select: text;
+}
+
+.thread-row__context-popover[hidden] {
+  display: none;
+}
+
+[data-theme="dark"] .thread-row__context-popover {
+  box-shadow:
+    0 18px 48px -18px rgb(0 0 0 / 76%),
+    0 6px 18px -10px rgb(0 0 0 / 72%);
+}
+
+.thread-row__context-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+}
+
+.thread-row__context-kind {
+  color: var(--tide-muted);
+  font-size: 9.5px;
+  font-weight: 650;
+  line-height: 13px;
+  text-transform: uppercase;
+}
+
+.thread-row__context-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-text);
+  font-size: 12px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-row__context-popover:hover .thread-row__context-row {
+  align-items: start;
+}
+
+.thread-row__context-popover:hover .thread-row__context-value {
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .thread-row__time {
   flex: 0 0 auto;
   color: var(--tide-muted);
