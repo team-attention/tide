@@ -9,6 +9,7 @@ import type {
   PendingInput,
   PromptState,
   ProviderSessionRef,
+  ThreadGoalState,
   ThreadScope,
 } from "../../domains/thread/thread.ts";
 import type {
@@ -119,6 +120,12 @@ export function cloneLaunchOptions(
   launchOptions: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   return launchOptions === undefined ? undefined : { ...launchOptions };
+}
+
+export function cloneGoalState(
+  goalState: ThreadGoalState | undefined,
+): ThreadGoalState | undefined {
+  return goalState === undefined ? undefined : { ...goalState };
 }
 
 export function clonePromptState(

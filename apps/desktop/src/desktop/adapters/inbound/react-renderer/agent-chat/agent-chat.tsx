@@ -52,7 +52,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   const threadId = viewModel.thread?.threadId;
   const goalPanelVisible =
     viewModel.thread !== null &&
-    (((viewModel.thread.goal ?? "").trim().length > 0) ||
+    (((viewModel.thread.goalState?.objective ?? viewModel.thread.goal ?? "").trim().length > 0) ||
       (viewModel.checklist !== null && viewModel.checklist.entries.length > 0));
   const isNewThreadStart =
     viewModel.composer.mode === "start" &&
@@ -377,6 +377,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
       {goalPanelVisible && viewModel.thread !== null ? (
         <GoalChecklistPanel
           goal={viewModel.thread.goal}
+          goalState={viewModel.thread.goalState}
           checklist={viewModel.checklist}
           onSetGoal={props.onSetGoal}
         />

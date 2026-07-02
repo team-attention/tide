@@ -144,6 +144,7 @@ export function applyProductShellBackendEvent(
     }
     case "thread.started":
     case "thread.hydrated":
+    case "thread.goalSet":
       return applyProductShellThreadEvent(nextState, event, source);
     case "thread.archived":
       return applyProductShellThreadArchivedEvent(nextState, event);

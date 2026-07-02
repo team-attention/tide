@@ -20,6 +20,7 @@ export function createAgentChatShellViewModel(
           agentLabel: formatAgentLabel(state.thread.agentBinding.agentId),
           runtimeStartedAt: state.thread.runtimeStartedAt,
           goal: state.thread.goal,
+          goalState: state.thread.goalState,
         }
       : null,
     providerReadinessBlockers:

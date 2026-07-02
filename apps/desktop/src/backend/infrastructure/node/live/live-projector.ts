@@ -14,7 +14,7 @@ import type { BackendEventEnvelope, ProviderCliAgentId } from "../../../../share
 import { toAgentSessionBlockDto } from "../../../adapters/inbound/contract-message-adapter/dto/thread-dtos.ts";
 import { planActivityFromToolResultPayload } from "../../../adapters/outbound/agent-runtime/structured/plan-activity.ts";
 import { emitStructuredActivity, emitStructuredUsage } from "./live-usage-events.ts";
-// Extracted from live-backend.ts (spec: navigable-source-structure).
+import { emitGoalState, emitProviderTurnStarted, goalKeepsRuntimeBusy } from "./live-goal-events.ts";
 
 export function createLiveAgentSessionEventProjector(input: {
   service: () => ThreadRuntimeService;
@@ -26,15 +26,8 @@ export function createLiveAgentSessionEventProjector(input: {
   const reader = createFixtureAgentSessionReader();
   const blocksByThread = new Map<string, AgentSessionBlock[]>();
 
-  // Conversation-cache persistence is COALESCED. A streaming turn produces many
-  // content_record block updates; persisting the full conversation on each one is
-  // O(messages) full-disk writes per turn (see docs perf E1). Instead we record
-  // blocks in the service synchronously (authoritative, in-memory) and schedule a
-  // trailing debounced disk write, with a hard flush at the durability-critical
-  // moments: turn end, prompt open, runtime exit, and backend shutdown. The cache
-  // is a best-effort restore optimization, so losing at most the last debounce
-  // window of an INCOMPLETE turn on a hard kill is acceptable; every settled state
-  // is always flushed. `TIDE_DEBUG_PERSIST=1` logs each actual write.
+    // Coalesce conversation-cache persistence: streaming turns update memory,
+    // then write blocks on a trailing debounce with hard boundary flushes.
   const PERSIST_DEBOUNCE_MS = 300;
   const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const persistInFlight = new Map<string, Promise<void>>();
@@ -121,12 +114,6 @@ export function createLiveAgentSessionEventProjector(input: {
     })();
   };
 
-  // Last usage signature emitted per thread, so identical usage isn't re-emitted
-  // on every history poll (the chip would otherwise churn every tick).
-
-  // Reads a provider transcript, parses its last-known context/token usage, and
-  // emits `agentRuntime.usageChanged` when it differs from the last emit. A no-op
-  // when the transcript is missing or carries no usage yet.
   // Uniform turn settle. Every Agent Integration produces an AgentTurnOutcome from
   // its OWN signals (claude/codex hook payload, codex rollout
   // transcript); this shared path applies it identically — the provider-specific
@@ -303,6 +290,46 @@ export function createLiveAgentSessionEventProjector(input: {
         });
         return;
       }
+      if (event.kind === "turn_started") {
+        await emitProviderTurnStarted({
+          threadId: eventInput.threadId,
+          service,
+          onEvent: input.onEvent,
+          nextEventId,
+        });
+        return;
+      }
+      if (event.kind === "goal_updated") {
+        const result = await emitGoalState({
+          threadId: eventInput.threadId,
+          goalState: {
+            ...event.goal,
+            updatedAt: event.goal.updatedAt ?? new Date().toISOString(),
+          },
+          service,
+          onEvent: input.onEvent,
+          nextEventId,
+        });
+        if (result !== undefined && !goalKeepsRuntimeBusy(result.thread.goalState)) {
+          await emitTurnComplete({
+            threadId: eventInput.threadId,
+            service,
+            onEvent: input.onEvent,
+            force: true,
+          });
+        }
+        return;
+      }
+      if (event.kind === "goal_cleared") {
+        await emitGoalState({
+          threadId: eventInput.threadId,
+          goalState: undefined,
+          service,
+          onEvent: input.onEvent,
+          nextEventId,
+        });
+        return;
+      }
       if (event.kind === "content_record") {
         const activity = planActivityFromToolResultPayload(event.payload);
         if (activity !== undefined) emitStructuredActivity({ threadId: eventInput.threadId, activity, nextEventId, onEvent: input.onEvent });
@@ -449,6 +476,12 @@ export function createLiveAgentSessionEventProjector(input: {
         }
         // Fan-out over — clear the live-activity count so it doesn't linger (Slice B).
         emitStructuredActivity({ threadId: eventInput.threadId, activity: {}, nextEventId, onEvent: input.onEvent });
+        const current = service.peekThread(eventInput.threadId);
+        const activeGoal = goalKeepsRuntimeBusy(current.ok ? current.thread.goalState : undefined);
+        if (activeGoal) {
+          await flushPersist(eventInput.threadId);
+          return;
+        }
         const nextBlocks = new Map(
           (blocksByThread.get(eventInput.threadId) ?? []).map((block) => [
             block.blockId,

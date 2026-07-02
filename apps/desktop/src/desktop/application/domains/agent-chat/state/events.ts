@@ -170,7 +170,7 @@ export function applyAgentChatBackendEvent(
       }
       return {
         ...state,
-        thread: { ...state.thread, goal: summary.goal },
+        thread: { ...state.thread, goal: summary.goal, goalState: summary.goalState },
       };
     }
     case "agentRuntime.stateChanged": {

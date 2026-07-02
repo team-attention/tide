@@ -6,6 +6,7 @@ import type {
 import {
   cloneAgentBinding,
   cloneBlocks,
+  cloneGoalState,
   cloneLaunchOptions,
   clonePendingInput,
   clonePromptState,
@@ -46,6 +47,7 @@ export function normalizeThreadSeed(seed: ThreadSeed): ThreadRecord {
     lastKnownState: seed.lastKnownState,
     pinned: seed.pinned ?? false,
     goal: seed.goal,
+    goalState: cloneGoalState(seed.goalState),
     createdAt: seed.createdAt,
     updatedAt: seed.updatedAt,
     cachedBlocks: cloneBlocks(seed.cachedBlocks ?? []),
@@ -83,6 +85,7 @@ export function snapshotThread(
     runtimeStartedAt: thread.runtimeStartedAt,
     pinned: thread.pinned ?? false,
     goal: thread.goal,
+    goalState: cloneGoalState(thread.goalState),
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     cachedBlocks: options?.shareBlocks

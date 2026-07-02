@@ -1,24 +1,4 @@
-// Claude Code structured runtime client — the stream-json control protocol.
-//
-// EVIDENCE-BASED (live transcripts /tmp/tide-proto-evidence/claude/, claude
-// 2.1.170; corroborated by @anthropic-ai/claude-agent-sdk 0.3.170 sdk.mjs):
-// - spawn: claude --print --input-format stream-json --output-format stream-json
-//   --verbose --permission-prompt-tool stdio [--permission-mode X] ...
-//   JSONL both directions over plain stdio (NO PTY). Process persists across
-//   turns while stdin stays open.
-// - first stdout line: {"type":"system","subtype":"init", session_id, tools,
-//   mcp_servers:[{name,status}], model, slash_commands, ...}
-// - user turn (stdin): {"type":"user","message":{"role":"user","content":[...]}}
-// - complete messages stream back as {"type":"assistant"|"user", message:{...}}
-//   (tool_result content arrives on "user"-typed lines, Anthropic shape).
-// - permission: {"type":"control_request","request_id","request":{"subtype":
-//   "can_use_tool","tool_name","input","permission_suggestions",...}} answered on
-//   stdin with {"type":"control_response","response":{"subtype":"success",
-//   "request_id","response":{"behavior":"allow","updatedInput":<input>}}} or
-//   {"behavior":"deny","message","interrupt":false}. The tool DOES NOT START
-//   until the response arrives — the whole PTY box-timing failure class is gone.
-// - turn end: {"type":"result", subtype, is_error, usage, modelUsage, ...}.
-//   Unauthenticated: result.is_error=true + synthetic "Not logged in" message.
+// Claude Code stream-json client. Uses native `/goal`, not Tide-side preambles.
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -29,6 +9,7 @@ import type { ComposerAttachmentRef } from "../../../../application/domains/thre
 import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   StructuredClientCallbacks,
+  StructuredProviderEvent,
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
@@ -36,7 +17,7 @@ import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/a
 import { claudeUsage } from "./claude-usage.ts";
 import { usageWithRememberedRateLimits, type StructuredUsagePayload } from "./structured-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
-import { claudeTodoWritePlanContentRecord, withGoalPreamble } from "./structured-plan-goal.ts";
+import { claudeTodoWritePlanContentRecord } from "./structured-plan-goal.ts";
 import {
   STRUCTURED_ALLOW_ALWAYS_TOKEN,
   STRUCTURED_ALLOW_TOKEN,
@@ -51,11 +32,11 @@ import { buildPermissionPrompt } from "./claude-permission-prompt.ts";
 import type { AskUserQuestionContext, PendingPermission } from "./claude-ask-user-question.ts";
 import { answerAskUserQuestion, surfaceAskUserQuestion, surfaceAskUserQuestionWizard } from "./claude-ask-user-question.ts";
 import { writeUnsupportedClaudeControlRequest } from "./claude-control-request.ts";
+import { claudeGoalEventsFromMessage, claudeGoalEventsFromText, claudeGoalSetEvent, claudeGoalUserMessage } from "./claude-goal.ts";
 
-// How long applyConfig waits for claude's control_response ack before treating a
-// mid-thread change as failed (→ transparent restart). claude acks in single-digit
-// ms; this only fires if the process is wedged/dead. See
-// docs_v2/specs/claude-bypass-live-capability.md.
+// How long applyConfig waits for claude's control_response ack before treating
+// a mid-thread change as failed; fires only if the process is wedged/dead.
+// See docs_v2/specs/claude-bypass-live-capability.md.
 const CONFIG_ACK_TIMEOUT_MS = 2500;
 
 export interface CreateClaudeStreamJsonClientInput extends StructuredClientCallbacks {
@@ -116,28 +97,21 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   private readonly runtimeId: string;
   private readonly agentId = "claude" as const;
   private buffer = "";
-  private initialPrompt?: string;
-  private initSeen = false;
   private exited = false;
-  // Minted session id (from init), used to locate this session's `subagents/` dir.
   private sessionId?: string;
   private readonly subagentWatcher?: SubagentActivityWatcher;
   private readonly scanUpdate = createUpdateNoticeScanner((message) =>
     this.onEvent({ kind: "runtime_notice", level: "info", message }),
   );
-  // Live streaming state; the complete `assistant` message finalizes the same blockId.
   private streamMessageId?: string;
   private readonly streamBlocks = new Map<
     number,
     { kind: "agent" | "reasoning"; body: string }
   >();
   private flushScheduled = false;
-  // promptId -> the protocol request awaiting a control_response.
   private readonly pendingPermissions = new Map<string, PendingPermission>();
-  // cfg-* request_id -> resolver for a mid-thread applyConfig control_response ack.
   private readonly pendingConfigAcks = new Map<string, (ok: boolean) => void>();
   private lastRateLimits?: AgentRuntimeRateLimitDto[];
-  // Claude has no native goal API over stream-json, so each turn gets a goal preamble.
   private goalObjective = "";
 
   constructor(input: CreateClaudeStreamJsonClientInput) {
@@ -145,7 +119,6 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     this.threadId = input.threadId;
     this.runtimeId = input.runtimeId;
     this.goalObjective = input.initialGoal?.trim() ?? "";
-    this.initialPrompt = input.initialPrompt;
     if (input.locateSubagentsDir !== undefined) {
       const locate = input.locateSubagentsDir;
       this.subagentWatcher = createNodeSubagentActivityWatcher({
@@ -198,36 +171,48 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     // buffered, so writing before the process reads is safe; and claude
     // registers its MCP tools before running the turn (the PTY-era plan
     // delivered the first prompt via launch argv for the same reason).
-    if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
-      this.writeLine({
-        type: "user",
-        message: {
-          role: "user",
-          content: claudeUserContent(withGoalPreamble(this.goalObjective, input.initialPrompt), input.initialAttachments),
-        },
-      });
-      this.initialPrompt = undefined;
-      this.subagentWatcher?.start(Date.now()); // watch this turn's Task fan-out.
+    if (this.goalObjective.length > 0) {
+      this.sendGoalCommand(this.goalObjective);
+    } else if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
+      this.sendUserText(input.initialPrompt, input.initialAttachments);
     }
   }
 
   get pid(): number | undefined { return this.child.pid ?? undefined; }
 
+  private sendUserText(text: string, attachments?: ComposerAttachmentRef[]): void {
+    this.writeLine({
+      type: "user",
+      message: {
+        role: "user",
+        content: claudeUserContent(text, attachments),
+      },
+    });
+    this.onEvent({ kind: "turn_started" });
+    this.subagentWatcher?.start(Date.now());
+  }
+
+  private sendGoalCommand(objective: string): void {
+    const goal = objective.trim();
+    this.goalObjective = goal;
+    this.writeLine(claudeGoalUserMessage(goal));
+    if (goal.length === 0) {
+      this.onEvent({ kind: "goal_cleared" });
+      return;
+    }
+    const event = claudeGoalSetEvent(goal);
+    if (event !== undefined) this.onEvent(event);
+    this.onEvent({ kind: "turn_started" });
+    this.subagentWatcher?.start(Date.now());
+  }
+
   async write(input: StructuredRuntimeWrite): Promise<void> {
     if (input.kind === "goal_set") {
-      this.goalObjective = input.objective.trim();
+      this.sendGoalCommand(input.objective);
       return;
     }
     if (input.kind === "composer_input") {
-      this.writeLine({
-        type: "user",
-        message: {
-          role: "user",
-          content: claudeUserContent(withGoalPreamble(this.goalObjective, input.value), input.attachments),
-        },
-      });
-      // Follow-up turn — restart so the count reflects THIS turn's subagents.
-      this.subagentWatcher?.start(Date.now());
+      this.sendUserText(input.value, input.attachments);
       return;
     }
     const promptId = input.promptId ?? "";
@@ -517,7 +502,15 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       if (commands.length > 0) {
         this.onEvent({ kind: "commands", commands });
       }
-      this.initSeen = true;
+      return;
+    }
+    if (type === "system" && message.subtype === "local_command") {
+      this.handleGoalEvents(
+        claudeGoalEventsFromText(
+          typeof message.content === "string" ? message.content : "",
+          this.goalObjective,
+        ),
+      );
       return;
     }
     if (type === "stream_event") {
@@ -525,6 +518,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       return;
     }
     if (type === "assistant" || type === "user") {
+      this.handleGoalEvents(claudeGoalEventsFromMessage(message, this.goalObjective));
       // The complete message finalizes whatever streamed (same blockId scheme),
       // so flush any pending delta first, then persist.
       this.flushStream();
@@ -584,6 +578,13 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       this.lastRateLimits = usage.rateLimits;
     }
     return usageWithRememberedRateLimits(usage, this.lastRateLimits);
+  }
+
+  private handleGoalEvents(result: { events: StructuredProviderEvent[]; objective: string }): void {
+    this.goalObjective = result.objective;
+    for (const event of result.events) {
+      this.onEvent(event);
+    }
   }
 
   // --- Live streaming (requires --include-partial-messages) ---

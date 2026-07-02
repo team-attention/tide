@@ -28,6 +28,9 @@ export function toThreadSummaryDto(thread: ThreadSnapshot): ThreadSummaryDto {
   if (thread.goal !== undefined) {
     summary.goal = thread.goal;
   }
+  if (thread.goalState !== undefined) {
+    summary.goalState = { ...thread.goalState };
+  }
   return summary;
 }
 

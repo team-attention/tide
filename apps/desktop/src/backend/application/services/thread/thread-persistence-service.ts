@@ -3,6 +3,7 @@ import type {
   AgentBinding,
   AgentId,
   LastKnownState,
+  ThreadGoalState,
   ThreadId,
   ThreadScope,
 } from "../../domains/thread/thread.ts";
@@ -19,6 +20,7 @@ export interface ThreadStorageRecord {
   // The user-set thread goal. Absent on older records ⇒ unset. See
   // docs_v2/specs/thread-goal-and-checklist-panel.md.
   goal?: string;
+  goalState?: ThreadGoalState;
   createdAt: string;
   updatedAt: string;
   agentBinding: AgentBinding;

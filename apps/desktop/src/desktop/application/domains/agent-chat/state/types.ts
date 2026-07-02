@@ -227,6 +227,7 @@ export interface AgentChatThreadSummary {
   // The user-set thread goal (objective). Shown in the Goal & Checklist panel.
   // Absent ⇒ unset. See docs_v2/specs/thread-goal-and-checklist-panel.md.
   goal?: string;
+  goalState?: AgentChatGoalState;
   lastKnownState: string;
   // True while a runtime for this thread is hydrated/alive in the backend process
   // now (regardless of running/waiting) — the multitask switcher's live set. Absent
@@ -238,6 +239,28 @@ export interface AgentChatThreadSummary {
   runtimeStartedAt?: string;
   // The backend's authoritative follow-up queue (head-first) at hydrate time.
   queuedInputs?: string[];
+}
+
+export type AgentChatGoalStatus =
+  | "active"
+  | "paused"
+  | "blocked"
+  | "usage_limited"
+  | "budget_limited"
+  | "complete";
+
+export type AgentChatGoalProvider = "codex" | "claude" | "fallback";
+
+export interface AgentChatGoalState {
+  objective: string;
+  status: AgentChatGoalStatus;
+  provider: AgentChatGoalProvider;
+  createdAt?: string;
+  updatedAt: string;
+  tokenBudget?: number;
+  tokensUsed?: number;
+  timeUsedSeconds?: number;
+  lastReason?: string;
 }
 
 export type AgentChatThreadScope =
@@ -523,6 +546,7 @@ export interface AgentChatThreadView {
   runtimeStartedAt?: string;
   // The user-set goal, shown (and editable) in the Goal & Checklist panel.
   goal?: string;
+  goalState?: AgentChatGoalState;
 }
 
 export type AgentChatChecklistStatus = "pending" | "in_progress" | "done";

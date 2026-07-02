@@ -2,8 +2,8 @@
 // structured provider clients (claude / codex / ACP). Each client maps its
 // provider-native plan/todo signal into a uniform PlanEntry list and emits a
 // `type: "plan"` content_record with a STABLE blockId (plan:<runtimeId>) so the
-// reader upserts one block in place. For goal, providers without a native goal API
-// prepend a steering preamble on send. See specs/thread-goal-and-checklist-panel.md.
+// reader upserts one block in place. Providers without a native goal API prepend a
+// steering preamble on send. See specs/thread-goal-and-checklist-panel.md.
 
 export type PlanEntryStatus = "pending" | "in_progress" | "done";
 
@@ -29,7 +29,7 @@ export function planBody(entries: PlanEntry[]): string {
 }
 
 // Prepend the thread goal as a steering preamble for providers that have no native
-// goal mechanism (claude over stream-json, ACP). No goal set ⇒ the value is returned
+// goal mechanism (currently ACP fallback). No goal set => the value is returned
 // unchanged (byte-identical to before).
 export function withGoalPreamble(goalObjective: string, value: string): string {
   const goal = goalObjective.trim();

@@ -14,6 +14,12 @@ import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/a
 export type StructuredProviderEvent =
   // The provider announced (or confirmed) its session identity.
   | { kind: "session_ref"; ref: DiscoveredProviderSessionRef }
+  // A provider-native turn started without Tide necessarily initiating it. Native
+  // goal runners can continue turns on their own after stop-hook evaluation.
+  | { kind: "turn_started" }
+  // Provider-native goal runner state changed or cleared.
+  | { kind: "goal_updated"; goal: StructuredGoalState }
+  | { kind: "goal_cleared" }
   // One conversation record (message / reasoning / tool_call / tool_result).
   // `payload` uses the SAME shapes the provider history connectors emit, so the
   // existing frame→block reader pipeline renders it unchanged. This is the
@@ -141,6 +147,28 @@ export type StructuredRuntimeWrite =
       // single-prompt path. See multi-step-prompt-navigation.md.
       stepAnswers?: PromptStepAnswer[];
     };
+
+export type StructuredGoalStatus =
+  | "active"
+  | "paused"
+  | "blocked"
+  | "usage_limited"
+  | "budget_limited"
+  | "complete";
+
+export type StructuredGoalProvider = "codex" | "claude" | "fallback";
+
+export interface StructuredGoalState {
+  objective: string;
+  status: StructuredGoalStatus;
+  provider: StructuredGoalProvider;
+  createdAt?: string;
+  updatedAt?: string;
+  tokenBudget?: number;
+  tokensUsed?: number;
+  timeUsedSeconds?: number;
+  lastReason?: string;
+}
 
 export interface StructuredClientCallbacks {
   onEvent: (event: StructuredProviderEvent) => void;
