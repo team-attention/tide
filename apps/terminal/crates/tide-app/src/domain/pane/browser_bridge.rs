@@ -357,6 +357,7 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
   const isScrollableElement = (el) => {{
     if (!el || !window.getComputedStyle) return false;
     const style = window.getComputedStyle(el);
+    if (!style) return false;
     const overflowY = style.overflowY || style.overflow;
     const overflowX = style.overflowX || style.overflow;
     return (
@@ -760,11 +761,13 @@ pub(crate) fn browser_selection_bridge_script(pane_id: PaneId) -> String {
     let el = node && node.nodeType === Node.ELEMENT_NODE ? node : null;
     while (el && el !== document.body && el !== document.documentElement) {{
       const style = window.getComputedStyle(el);
-      const overflowY = style.overflowY || style.overflow;
-      const overflowX = style.overflowX || style.overflow;
-      const canScrollY = /(auto|scroll|overlay)/.test(overflowY) && el.scrollHeight > el.clientHeight;
-      const canScrollX = /(auto|scroll|overlay)/.test(overflowX) && el.scrollWidth > el.clientWidth;
-      if (canScrollY || canScrollX) return el;
+      if (style) {{
+        const overflowY = style.overflowY || style.overflow;
+        const overflowX = style.overflowX || style.overflow;
+        const canScrollY = /(auto|scroll|overlay)/.test(overflowY) && el.scrollHeight > el.clientHeight;
+        const canScrollX = /(auto|scroll|overlay)/.test(overflowX) && el.scrollWidth > el.clientWidth;
+        if (canScrollY || canScrollX) return el;
+      }}
       el = el.parentElement;
     }}
     return document.scrollingElement || document.documentElement || document.body;

@@ -1115,14 +1115,46 @@ fn semantic_normalize(value: &str) -> String {
         .collect::<String>()
 }
 
-fn semantic_field_score(field: &str, query: &str, exact_score: i32, contains_score: i32) -> i32 {
+#[derive(Debug, Default)]
+struct SemanticQuery {
+    label: Option<String>,
+    text: Option<String>,
+    placeholder: Option<String>,
+    action: Option<String>,
+    role: Option<String>,
+    tag: Option<String>,
+}
+
+impl SemanticQuery {
+    fn new(target: &Value) -> Self {
+        Self {
+            label: semantic_target_string(target, &["label", "name", "accessible_name"])
+                .map(semantic_normalize),
+            text: semantic_target_string(target, &["text"]).map(semantic_normalize),
+            placeholder: semantic_target_string(target, &["placeholder"]).map(semantic_normalize),
+            action: semantic_target_string(target, &["action"]).map(semantic_normalize),
+            role: semantic_target_string(target, &["role"]).map(semantic_normalize),
+            tag: semantic_target_string(target, &["tag"]).map(semantic_normalize),
+        }
+    }
+
+    fn has_role_or_tag(&self) -> bool {
+        self.role.is_some() || self.tag.is_some()
+    }
+}
+
+fn semantic_field_score(
+    field: &str,
+    normalized_query: &str,
+    exact_score: i32,
+    contains_score: i32,
+) -> i32 {
     let field = semantic_normalize(field);
-    let query = semantic_normalize(query);
-    if field.is_empty() || query.is_empty() {
+    if field.is_empty() || normalized_query.is_empty() {
         0
-    } else if field == query {
+    } else if field == normalized_query {
         exact_score
-    } else if field.contains(&query) {
+    } else if field.contains(normalized_query) {
         contains_score
     } else {
         0
@@ -1131,12 +1163,12 @@ fn semantic_field_score(field: &str, query: &str, exact_score: i32, contains_sco
 
 fn semantic_optional_field_score(
     field: Option<&String>,
-    query: &str,
+    normalized_query: &str,
     exact_score: i32,
     contains_score: i32,
 ) -> i32 {
     field
-        .map(|field| semantic_field_score(field, query, exact_score, contains_score))
+        .map(|field| semantic_field_score(field, normalized_query, exact_score, contains_score))
         .unwrap_or(0)
 }
 
@@ -1154,6 +1186,7 @@ fn browser_page_element_matches_kind(element: &BrowserPageElement, target: &Valu
 fn browser_page_element_semantic_score(
     element: &BrowserPageElement,
     target: &Value,
+    query: &SemanticQuery,
 ) -> Option<i32> {
     if element.disabled || !element.hit_test.clickable {
         return None;
@@ -1161,40 +1194,37 @@ fn browser_page_element_semantic_score(
     if !browser_page_element_matches_kind(element, target) {
         return None;
     }
-    if let Some(role) = semantic_target_string(target, &["role"]) {
-        if element.role.as_deref().map(semantic_normalize) != Some(semantic_normalize(role)) {
+    if let Some(role) = query.role.as_ref() {
+        if element.role.as_deref().map(semantic_normalize).as_ref() != Some(role) {
             return None;
         }
     }
-    if let Some(tag) = semantic_target_string(target, &["tag"]) {
-        if semantic_normalize(&element.tag) != semantic_normalize(tag) {
+    if let Some(tag) = query.tag.as_ref() {
+        if semantic_normalize(&element.tag) != *tag {
             return None;
         }
     }
 
     let mut score = 0;
-    if let Some(label) = semantic_target_string(target, &["label", "name", "accessible_name"]) {
+    if let Some(label) = query.label.as_ref() {
         score += semantic_field_score(&element.label, label, 120, 70);
         score += semantic_field_score(&element.text, label, 80, 45);
         score += semantic_optional_field_score(element.placeholder.as_ref(), label, 70, 35);
         score += semantic_optional_field_score(element.value.as_ref(), label, 40, 20);
         score += semantic_optional_field_score(element.action.as_ref(), label, 30, 15);
     }
-    if let Some(text) = semantic_target_string(target, &["text"]) {
+    if let Some(text) = query.text.as_ref() {
         score += semantic_field_score(&element.text, text, 100, 55);
         score += semantic_field_score(&element.label, text, 70, 35);
     }
-    if let Some(placeholder) = semantic_target_string(target, &["placeholder"]) {
+    if let Some(placeholder) = query.placeholder.as_ref() {
         score += semantic_optional_field_score(element.placeholder.as_ref(), placeholder, 100, 50);
     }
-    if let Some(action) = semantic_target_string(target, &["action"]) {
+    if let Some(action) = query.action.as_ref() {
         score += semantic_optional_field_score(element.action.as_ref(), action, 100, 50);
     }
 
-    if score == 0
-        && (semantic_target_string(target, &["role"]).is_some()
-            || semantic_target_string(target, &["tag"]).is_some())
-    {
+    if score == 0 && query.has_role_or_tag() {
         score = 1;
     }
     (score > 0).then_some(score)
@@ -1204,12 +1234,14 @@ fn browser_semantic_target_candidates<'a>(
     page_map: &'a BrowserPageMap,
     target: &Value,
 ) -> Vec<(i32, &'a BrowserPageElement)> {
+    let query = SemanticQuery::new(target);
     let mut candidates = page_map
         .interactables
         .iter()
         .chain(page_map.regions.iter())
         .filter_map(|element| {
-            browser_page_element_semantic_score(element, target).map(|score| (score, element))
+            browser_page_element_semantic_score(element, target, &query)
+                .map(|score| (score, element))
         })
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| {
