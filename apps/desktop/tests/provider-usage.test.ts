@@ -61,6 +61,30 @@ test("codex context percent uses last token_count instead of cumulative session 
   assert.equal(usage?.contextUsedPercent, 67);
 });
 
+for (const [label, info, expectedTokens, expectedPercent] of [
+  ["direct camelCase", { contextTokens: 40000 }, 40000, 20],
+  ["camelCase last usage", { lastTokenUsage: { totalTokens: 60000 } }, 60000, 30],
+  ["nested context total", { contextUsage: { total: { totalTokens: 120000 } } }, 120000, 60],
+] as const) {
+  test(`codex hydrate usage supports ${label} context token format`, () => {
+    const rollout = JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: { total_tokens: 900000 },
+          model_context_window: 200000,
+          ...info,
+        },
+      },
+    });
+    const usage = parseProviderUsage(rollout, "codex");
+    assert.equal(usage?.totalTokens, 900000);
+    assert.equal(usage?.contextTokens, expectedTokens);
+    assert.equal(usage?.contextUsedPercent, expectedPercent);
+  });
+}
+
 test("codex usage takes the LAST token_count (cumulative latest)", () => {
   const rollout = [
     JSON.stringify({ type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { total_tokens: 1000 }, model_context_window: 200000 } } }),

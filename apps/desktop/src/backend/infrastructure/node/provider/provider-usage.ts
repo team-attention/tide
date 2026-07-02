@@ -62,11 +62,7 @@ function parseCodexUsage(text: string): AgentRuntimeUsageDto | undefined {
     if (tokens !== undefined) {
       totalTokens = tokens;
     }
-    const last = recordField(info, "last_token_usage");
-    const currentContextTokens =
-      numberField(last ?? {}, "total_tokens") ??
-      numberField(info, "last_total_tokens") ??
-      numberField(payload, "last_total_tokens");
+    const currentContextTokens = codexContextTokensFromTokenCount(info, payload);
     if (currentContextTokens !== undefined) {
       contextTokens = currentContextTokens;
     }
@@ -82,6 +78,43 @@ function parseCodexUsage(text: string): AgentRuntimeUsageDto | undefined {
     }
   }
   return finalizeUsage({ totalTokens, contextTokens, contextWindow, model, rateLimits });
+}
+
+function codexContextTokensFromTokenCount(
+  info: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): number | undefined {
+  const direct =
+    numberField(info, "contextTokens") ??
+    numberField(info, "context_tokens") ??
+    numberField(payload, "contextTokens") ??
+    numberField(payload, "context_tokens");
+  if (direct !== undefined) {
+    return direct;
+  }
+  const current =
+    recordField(info, "last") ??
+    recordField(info, "lastTokenUsage") ??
+    recordField(info, "last_token_usage") ??
+    recordField(info, "current") ??
+    recordField(info, "context") ??
+    recordField(info, "contextUsage") ??
+    recordField(payload, "last") ??
+    recordField(payload, "lastTokenUsage") ??
+    recordField(payload, "last_token_usage") ??
+    recordField(payload, "current") ??
+    recordField(payload, "context") ??
+    recordField(payload, "contextUsage");
+  const currentTotal = current !== undefined ? recordField(current, "total") : undefined;
+  return (
+    (current !== undefined ? numberField(current, "totalTokens") : undefined) ??
+    (current !== undefined ? numberField(current, "total_tokens") : undefined) ??
+    (current !== undefined ? numberField(current, "tokens") : undefined) ??
+    (currentTotal !== undefined ? numberField(currentTotal, "totalTokens") : undefined) ??
+    (currentTotal !== undefined ? numberField(currentTotal, "total_tokens") : undefined) ??
+    numberField(info, "last_total_tokens") ??
+    numberField(payload, "last_total_tokens")
+  );
 }
 
 // claude transcript: the latest assistant message carries `message.usage` with
