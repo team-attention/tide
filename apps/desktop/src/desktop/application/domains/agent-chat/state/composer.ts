@@ -334,10 +334,20 @@ export function submitComposer(
 
   if (state.thread) {
     if (goalCommand.matched) {
+      const nowIso = new Date().toISOString();
       return {
         state: {
           ...state,
-          thread: { ...state.thread, goal: goalCommand.objective },
+          thread: {
+            ...state.thread,
+            goal: goalCommand.objective,
+            goalState: {
+              objective: goalCommand.objective,
+              status: "active",
+              provider: providerForAgentId(state.thread.agentBinding.agentId),
+              updatedAt: nowIso,
+            },
+          },
           composer: composerAfterSend,
         },
         command: {
@@ -377,10 +387,11 @@ export function submitComposer(
   const startOptions = startOptionsWithExistingWorktreeScope(state.composer.startOptions);
   const newThreadId = generateThreadId();
   const nowIso = new Date().toISOString();
-  const initialMessage = goalCommand.matched ? goalCommand.objective : input;
+  const initialMessage = goalCommand.matched ? "" : input;
+  const title = goalCommand.matched ? goalCommand.objective : initialMessage;
   const optimisticThread: AgentChatThreadSummary = {
     threadId: newThreadId,
-    title: initialMessage.length > 0 ? initialMessage.slice(0, 80) : "New thread",
+    title: title.length > 0 ? title.slice(0, 80) : "New thread",
     agentBinding: startOptions.agentBinding,
     scope: startOptions.scope ?? { kind: "scratch", scratchCwd: "Scratch" },
     launchOptions: startOptions.launchOptions,
@@ -388,7 +399,17 @@ export function submitComposer(
     updatedAt: nowIso,
     pinned: false,
     archived: false,
-    ...(goalCommand.matched ? { goal: goalCommand.objective } : {}),
+    ...(goalCommand.matched
+      ? {
+          goal: goalCommand.objective,
+          goalState: {
+            objective: goalCommand.objective,
+            status: "active",
+            provider: providerForAgentId(startOptions.agentBinding.agentId),
+            updatedAt: nowIso,
+          },
+        }
+      : {}),
     lastKnownState: "running",
   };
 
@@ -413,6 +434,10 @@ export function submitComposer(
       },
     },
   };
+}
+
+function providerForAgentId(agentId: string): "codex" | "claude" | "fallback" {
+  return agentId === "codex" || agentId === "claude" ? agentId : "fallback";
 }
 
 function startOptionsWithExistingWorktreeScope(

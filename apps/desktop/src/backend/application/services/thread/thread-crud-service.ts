@@ -1,4 +1,5 @@
 import type {
+  AgentBinding,
   AgentSessionBlockReference,
   ThreadId,
   ThreadSeed,
@@ -221,8 +222,22 @@ export class ThreadCrudService {
       return failure("thread_not_found", "Thread was not found.");
     }
     const goal = input.goal.trim();
+    const now = this.clock();
     thread.goal = goal.length > 0 ? goal : undefined;
-    thread.updatedAt = this.clock();
+    thread.goalState = goal.length > 0
+      ? {
+          objective: goal,
+          status: "active",
+          provider: providerForAgentId(thread.agentBinding.agentId),
+          createdAt: thread.goalState?.createdAt ?? now,
+          updatedAt: now,
+        }
+      : undefined;
+    thread.updatedAt = now;
     return { ok: true, thread: snapshotThread(thread) };
   }
+}
+
+function providerForAgentId(agentId: AgentBinding["agentId"]) {
+  return agentId === "codex" || agentId === "claude" ? agentId : "fallback";
 }

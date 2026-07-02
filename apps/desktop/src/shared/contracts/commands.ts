@@ -97,6 +97,9 @@ export interface BackendCommandPayloadByKind {
     // Client-generated id so the new thread can be shown optimistically and the
     // backend binds to the same thread (startThread honors input.threadId).
     threadId?: ThreadId;
+    // Empty when the Start Composer action is provider-native `/goal <objective>`;
+    // in that case `goal` starts the first provider turn and no local user
+    // message block is created.
     initialMessage: string;
     // Optional Tide-owned goal set through `/goal <objective>` on the Start
     // Composer. Persisted before runtime spawn and passed to provider-native goal

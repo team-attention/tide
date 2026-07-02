@@ -268,6 +268,7 @@ export async function persistThreadEvents(
         event.kind !== "thread.archived" &&
         event.kind !== "thread.pinChanged" &&
         event.kind !== "thread.renamed" &&
+        event.kind !== "thread.goalSet" &&
         event.kind !== "thread.launchOptionsChanged"
       ) {
         continue;
@@ -334,6 +335,7 @@ export function threadSeedFromStorageRecord(record: ThreadStorageRecord): Thread
     pinned: record.pinned,
     // Carry the persisted goal through restore so the panel shows it on boot.
     goal: record.goal,
+    goalState: record.goalState,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
@@ -374,6 +376,7 @@ export function threadStorageRecordFromThreadSummary(
     title: thread.title,
     pinned: thread.pinned,
     ...(thread.goal !== undefined ? { goal: thread.goal } : {}),
+    ...(thread.goalState !== undefined ? { goalState: thread.goalState } : {}),
     archived: thread.archived,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,

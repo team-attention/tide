@@ -7,7 +7,7 @@ import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port
 import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
 import type { ComposerAttachmentInput, ComposerAttachmentStorePort } from "../../ports/outbound/composer-attachment-store-port.ts";
 import type { ProviderTrustPort } from "../../ports/outbound/provider-trust-port.ts";
-import type { AgentBinding, AgentId, AgentSessionBlockReference, ProviderCliAgentId, PromptState, PromptStepAnswer, ProviderSessionRef, ThreadId, ThreadScope, ThreadSeed, ThreadSnapshot } from "../../domains/thread/thread.ts";
+import type { AgentBinding, AgentId, AgentSessionBlockReference, ProviderCliAgentId, PromptState, PromptStepAnswer, ProviderSessionRef, ThreadGoalState, ThreadId, ThreadScope, ThreadSeed, ThreadSnapshot } from "../../domains/thread/thread.ts";
 import type { ThreadRuntimeAsyncEvent } from "./thread-runtime-events.ts";
 import type { AgentRuntimeState } from "../../domains/agent-runtime/agent-runtime.ts";
 import type { ProviderReadinessResult } from "../../domains/provider-readiness/provider-readiness.ts";
@@ -231,6 +231,25 @@ export interface RecordProviderSessionRefResult {
   runtimeState: AgentRuntimeState;
 }
 
+export interface RecordProviderGoalStateInput {
+  threadId: ThreadId;
+  goalState?: ThreadGoalState;
+}
+
+export interface RecordProviderGoalStateResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+}
+
+export interface RecordProviderTurnStartedInput {
+  threadId: ThreadId;
+}
+
+export interface RecordProviderTurnStartedResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+}
+
 export interface RecordAgentSessionBlockInput {
   threadId: ThreadId;
   block: AgentSessionBlock;
@@ -348,6 +367,12 @@ export interface ThreadRuntimeService {
   recordProviderSessionRef(
     input: RecordProviderSessionRefInput,
   ): Promise<ServiceResult<RecordProviderSessionRefResult>>;
+  recordProviderGoalState(
+    input: RecordProviderGoalStateInput,
+  ): Promise<ServiceResult<RecordProviderGoalStateResult>>;
+  recordProviderTurnStarted(
+    input: RecordProviderTurnStartedInput,
+  ): Promise<ServiceResult<RecordProviderTurnStartedResult>>;
   recordAgentSessionBlock(
     input: RecordAgentSessionBlockInput,
   ): Promise<ServiceResult<RecordAgentSessionBlockResult>>;

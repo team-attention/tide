@@ -53,6 +53,17 @@ export function newThreadRecord(input: {
     scope: cloneScope(input.scope),
     launchOptions: cloneLaunchOptions(input.launchOptions),
     ...(goal !== undefined && goal.length > 0 ? { goal } : {}),
+    ...(goal !== undefined && goal.length > 0
+      ? {
+          goalState: {
+            objective: goal,
+            status: "active",
+            provider: providerForAgentId(input.agentBinding.agentId),
+            createdAt: input.capturedAt,
+            updatedAt: input.capturedAt,
+          },
+        }
+      : {}),
     lifecycleState: input.lifecycleState,
     runtimeState: "not_started",
     lastKnownState: "idle",
@@ -144,7 +155,7 @@ export class DraftThreadService {
     if (thread === undefined || thread.lifecycleState !== "draft") {
       return undefined;
     }
-    thread.title = titleFromMessage(input.initialMessage);
+    thread.title = titleFromMessage(input.initialMessage.length > 0 ? input.initialMessage : input.goal ?? "");
     thread.agentBinding = cloneAgentBinding(input.agentBinding);
     if (input.scope !== undefined) {
       thread.scope = cloneScope(input.scope);
@@ -152,10 +163,23 @@ export class DraftThreadService {
     const goal = input.goal?.trim();
     if (goal !== undefined) {
       thread.goal = goal.length > 0 ? goal : undefined;
+      thread.goalState = goal.length > 0
+        ? {
+            objective: goal,
+            status: "active",
+            provider: providerForAgentId(thread.agentBinding.agentId),
+            createdAt: capturedAt,
+            updatedAt: capturedAt,
+          }
+        : undefined;
     }
     thread.launchOptions = cloneLaunchOptions(input.launchOptions);
     thread.lifecycleState = "creating";
     thread.updatedAt = capturedAt;
     return thread;
   }
+}
+
+function providerForAgentId(agentId: AgentBinding["agentId"]) {
+  return agentId === "codex" || agentId === "claude" ? agentId : "fallback";
 }

@@ -26,6 +26,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { ComposerAttachmentRef } from "../../../../application/domains/thread/thread.ts";
 import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
+  StructuredGoalState,
   StructuredClientCallbacks,
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
@@ -79,6 +80,59 @@ export function codexTurnInput(
     items.push({ type: "localImage", path: attachment.path });
   }
   return items;
+}
+
+function codexGoalState(goal: Record<string, unknown> | undefined): StructuredGoalState | undefined {
+  if (goal === undefined) {
+    return undefined;
+  }
+  const objective = stringField(goal, "objective");
+  const status = codexGoalStatus(stringField(goal, "status"));
+  if (objective === undefined || status === undefined) {
+    return undefined;
+  }
+  const tokenBudget = nullableNumberField(goal, "tokenBudget");
+  return {
+    objective,
+    status,
+    provider: "codex",
+    ...(isoFromCodexTime(numberField(goal, "createdAt")) !== undefined
+      ? { createdAt: isoFromCodexTime(numberField(goal, "createdAt")) }
+      : {}),
+    updatedAt: isoFromCodexTime(numberField(goal, "updatedAt")) ?? new Date().toISOString(),
+    ...(tokenBudget !== undefined ? { tokenBudget } : {}),
+    ...(numberField(goal, "tokensUsed") !== undefined ? { tokensUsed: numberField(goal, "tokensUsed") } : {}),
+    ...(numberField(goal, "timeUsedSeconds") !== undefined ? { timeUsedSeconds: numberField(goal, "timeUsedSeconds") } : {}),
+  };
+}
+
+function codexGoalStatus(status: string | undefined): StructuredGoalState["status"] | undefined {
+  switch (status) {
+    case "active":
+    case "paused":
+    case "blocked":
+    case "complete":
+      return status;
+    case "usageLimited":
+      return "usage_limited";
+    case "budgetLimited":
+      return "budget_limited";
+    default:
+      return undefined;
+  }
+}
+
+function nullableNumberField(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function isoFromCodexTime(value: number | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const millis = value > 1_000_000_000_000 ? value : value * 1000;
+  return new Date(millis).toISOString();
 }
 
 export function createCodexAppServerClient(
@@ -345,10 +399,21 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     if (this.goalObjective.length === 0) {
-      this.request("thread/goal/clear", { threadId: this.codexThreadId }, () => undefined);
+      this.request("thread/goal/clear", { threadId: this.codexThreadId }, () => {
+        this.onEvent({ kind: "goal_cleared" });
+      });
       return;
     }
-    this.request("thread/goal/set", { threadId: this.codexThreadId, objective: this.goalObjective }, () => undefined);
+    this.request("thread/goal/set", {
+      threadId: this.codexThreadId,
+      objective: this.goalObjective,
+      status: "active",
+    }, (result) => {
+      const goal = codexGoalState(isRecord(result.goal) ? result.goal : undefined);
+      if (goal !== undefined) {
+        this.onEvent({ kind: "goal_updated", goal });
+      }
+    });
   }
 
   async applyConfig(protocolParams: Record<string, unknown>): Promise<boolean> {
@@ -534,6 +599,27 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       this.emitRecord(record.sourceRef, record.payload, record.body);
       return;
     }
+    if (method === "thread/goal/updated") {
+      const goal = codexGoalState(isRecord(params.goal) ? params.goal : undefined);
+      if (goal !== undefined) {
+        this.onEvent({ kind: "goal_updated", goal });
+      }
+      return;
+    }
+    if (method === "thread/goal/cleared") {
+      this.goalObjective = "";
+      this.onEvent({ kind: "goal_cleared" });
+      return;
+    }
+    if (method === "turn/started") {
+      const turn = isRecord(params.turn) ? params.turn : undefined;
+      const id = turn !== undefined ? stringField(turn, "id") : undefined;
+      if (id !== undefined) {
+        this.activeTurnId = id;
+      }
+      this.onEvent({ kind: "turn_started" });
+      return;
+    }
     if (method === "turn/completed") {
       const turn = isRecord(params.turn) ? params.turn : undefined;
       const status = turn !== undefined ? stringField(turn, "status") : undefined;
@@ -560,7 +646,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       }
       return;
     }
-    // thread/started, turn/started, deltas, status changes: no visible block.
+    // thread/started, deltas, status changes: no visible block.
   }
 
   private emitItem(item: Record<string, unknown> | undefined): void {

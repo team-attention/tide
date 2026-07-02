@@ -191,6 +191,9 @@ export interface ThreadRecord {
   // provider's native goal mechanism on set and runtime (re)start. Absent ⇒ unset.
   // See docs_v2/specs/thread-goal-and-checklist-panel.md.
   goal?: string;
+  // Provider-native goal runner state. `goal` is kept as the objective cache for
+  // older snapshots and simpler UI checks.
+  goalState?: ThreadGoalState;
   createdAt: string;
   updatedAt: string;
   cachedBlocks: AgentSessionBlockReference[];
@@ -246,6 +249,7 @@ export interface ThreadSnapshot {
   runtimeStartedAt?: string;
   pinned?: boolean;
   goal?: string;
+  goalState?: ThreadGoalState;
   createdAt: string;
   updatedAt: string;
   // True while an Agent Runtime for this thread is hydrated/alive in THIS process
@@ -275,6 +279,7 @@ export interface ThreadSeed {
   lastKnownState: LastKnownState;
   pinned?: boolean;
   goal?: string;
+  goalState?: ThreadGoalState;
   createdAt: string;
   updatedAt: string;
   cachedBlocks?: AgentSessionBlockReference[];
@@ -284,4 +289,26 @@ export interface ThreadSeed {
   rawFrameSequence?: number;
   mcpToolCallCount?: number;
   workbench?: WorkbenchState;
+}
+
+export type ThreadGoalStatus =
+  | "active"
+  | "paused"
+  | "blocked"
+  | "usage_limited"
+  | "budget_limited"
+  | "complete";
+
+export type ThreadGoalProvider = "codex" | "claude" | "fallback";
+
+export interface ThreadGoalState {
+  objective: string;
+  status: ThreadGoalStatus;
+  provider: ThreadGoalProvider;
+  createdAt?: string;
+  updatedAt: string;
+  tokenBudget?: number;
+  tokensUsed?: number;
+  timeUsedSeconds?: number;
+  lastReason?: string;
 }

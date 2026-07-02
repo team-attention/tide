@@ -106,9 +106,15 @@ test("start_composer_goal_command_sets_initial_goal_without_sending_the_slash_co
   const command = result.command ? toBackendCommandDraft(result.command) : null;
 
   assert.equal(command?.kind, "thread.start");
-  assert.equal(command?.payload.initialMessage, "Explain the repo");
+  assert.equal(command?.payload.initialMessage, "");
   assert.equal(command?.payload.goal, "Explain the repo");
   assert.equal(result.state.thread?.goal, "Explain the repo");
+  assert.deepEqual(result.state.thread?.goalState, {
+    objective: "Explain the repo",
+    status: "active",
+    provider: "codex",
+    updatedAt: result.state.thread?.goalState?.updatedAt,
+  });
   assert.equal(result.state.thread?.title, "Explain the repo");
   assert.deepEqual(result.state.queuedInputs, []);
 });

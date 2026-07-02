@@ -17,6 +17,9 @@ export interface ThreadSummaryDto {
   // (codex thread/goal/set, claude /goal). Empty/absent ⇒ no goal set.
   // See specs/thread-goal-and-checklist-panel.md.
   goal?: string;
+  // Provider-native goal runner state. `goal` remains the objective cache for
+  // older clients; goalState is the authoritative status when present.
+  goalState?: ThreadGoalStateDto;
   lastKnownState: LastKnownStateDto;
   // True while an Agent Runtime for this thread is hydrated/alive in the backend
   // process right now (an in-process runtime handle exists), regardless of state
@@ -43,3 +46,25 @@ export type LastKnownStateDto =
   | "waiting_for_approval"
   | "failed"
   | "archived";
+
+export type ThreadGoalStatusDto =
+  | "active"
+  | "paused"
+  | "blocked"
+  | "usage_limited"
+  | "budget_limited"
+  | "complete";
+
+export type ThreadGoalProviderDto = "codex" | "claude" | "fallback";
+
+export interface ThreadGoalStateDto {
+  objective: string;
+  status: ThreadGoalStatusDto;
+  provider: ThreadGoalProviderDto;
+  createdAt?: string;
+  updatedAt: string;
+  tokenBudget?: number;
+  tokensUsed?: number;
+  timeUsedSeconds?: number;
+  lastReason?: string;
+}

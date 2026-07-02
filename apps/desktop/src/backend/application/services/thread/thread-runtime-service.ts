@@ -1,4 +1,4 @@
-import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
+import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderGoalStateInput, RecordProviderGoalStateResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderTurnStartedInput, RecordProviderTurnStartedResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
 import { ComposerQueueService } from "./composer-queue-service.ts";
 import type {
   AgentSessionBlock,
@@ -89,6 +89,7 @@ import {
 import { boundedDiffText, unifiedContentDiff } from "../support/diff-text.ts";
 
 import { ThreadStore } from "./thread-store.ts";
+import { setThreadGoalWithRuntime, ThreadGoalStateService } from "./thread-goal-state-service.ts";
 import { promptAnswerValue } from "./prompt-answer-value.ts";
 import { ThreadArchiveService } from "./thread-archive-service.ts";
 import { markThreadFailed, markThreadStarting } from "./thread-state-transitions.ts";
@@ -202,39 +203,12 @@ const DEFAULT_WORKBENCH_TERMINAL_COMMAND = "sh";
 const DEFAULT_WORKBENCH_TERMINAL_ARGS: string[] = [];
 
 export type {
-  RawAgentFrame,
-  RawAgentFramePayloadKind,
-  RawAgentFrameSource,
-  AgentRuntimeHandle,
-  AgentRuntimePort,
-  AgentRuntimeResumeInput,
-  AgentRuntimeStartInput,
-  AgentRuntimeState,
-  TerminalInput,
-  ProviderReadinessCheckInput,
-  ProviderReadinessPort,
-  ProviderReadinessResult,
-  PtyTranscriptPort,
-  WorkspaceCommandPort,
-  WorkspaceCodeIntelligencePort,
-  WorkspaceFilePort,
-  ComposerAttachmentInput,
-  ComposerAttachmentStorePort,
-  ProviderTrustPort,
-  AgentBinding,
-  AgentId,
-  LastKnownState,
-  PendingInput,
-  PromptState,
-  ThreadId,
-  ThreadLifecycleState,
-  ThreadScope,
-  ThreadSnapshot,
-  BrowserPaneRef,
-  TideMcpToolDefinition,
-  TideMcpToolName,
-  WorkbenchSnapshot,
-  WorkbenchState,
+  RawAgentFrame, RawAgentFramePayloadKind, RawAgentFrameSource,
+  AgentRuntimeHandle, AgentRuntimePort, AgentRuntimeResumeInput, AgentRuntimeStartInput, AgentRuntimeState, TerminalInput,
+  ProviderReadinessCheckInput, ProviderReadinessPort, ProviderReadinessResult, PtyTranscriptPort,
+  WorkspaceCommandPort, WorkspaceCodeIntelligencePort, WorkspaceFilePort, ComposerAttachmentInput, ComposerAttachmentStorePort, ProviderTrustPort,
+  AgentBinding, AgentId, LastKnownState, PendingInput, PromptState, ThreadId, ThreadLifecycleState, ThreadScope, ThreadSnapshot,
+  BrowserPaneRef, TideMcpToolDefinition, TideMcpToolName, WorkbenchSnapshot, WorkbenchState,
 };
 
 export type { ThreadSeed };
@@ -373,6 +347,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   private readonly answeringPromptByThread = new Map<string, string>();
 
 private readonly threadCrud: ThreadCrudService;
+private readonly threadGoals: ThreadGoalStateService;
   private readonly draftThreads: DraftThreadService;
 private readonly workbenchRuntime: WorkbenchRuntime;
 private readonly workbenchFileOps: WorkbenchFileOperations;
@@ -401,6 +376,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
     this.onAsyncEvent = input.onAsyncEvent;
     this.threadCrud = new ThreadCrudService({ store: this.threads, clock: this.clock });
+    this.threadGoals = new ThreadGoalStateService({ threads: this.threads, clock: this.clock });
     this.workbenchRuntime = new WorkbenchRuntime({
       store: this.threads,
       workbenchTerminalPort: this.workbenchTerminalPort,
@@ -538,19 +514,14 @@ renameThread(
   async setThreadGoal(
     input: SetThreadGoalInput,
   ): Promise<ServiceResult<SetThreadGoalResult>> {
-    const result = await this.threadCrud.setGoal(input);
-    if (!result.ok) {
-      return result;
-    }
-    const thread = this.threads.get(input.threadId);
-    if (thread?.activeRuntimeHandle !== undefined) {
-      await this.agentRuntimePort.writeInput(thread.activeRuntimeHandle, {
-        kind: "goal_set",
-        value: thread.goal ?? "",
-        submittedAt: this.clock(),
-      });
-    }
-    return result;
+    return setThreadGoalWithRuntime({
+      command: input,
+      threadCrud: this.threadCrud,
+      threads: this.threads,
+      agentRuntimePort: this.agentRuntimePort,
+      activeOrResumedHandle: (thread) => this.activeOrResumedHandle(thread),
+      clock: this.clock,
+    });
   }
 
 async hydrateThread(
@@ -637,7 +608,7 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
     if (thread === undefined) {
       thread = newThreadRecord({
         threadId,
-        title: titleFromMessage(input.initialMessage),
+        title: titleFromMessage(input.initialMessage.length > 0 ? input.initialMessage : input.goal ?? ""),
         agentBinding: input.agentBinding,
         scope: input.scope,
         launchOptions: input.launchOptions,
@@ -664,6 +635,7 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
     // still carries the references. See composer-image-attachments spec.
     const { text: message, attachments: messageAttachments } =
       await this.composerQueue.composeMessageWithAttachments(thread, input.initialMessage, input.attachments);
+    const hasInitialPrompt = message.trim().length > 0 || messageAttachments.length > 0;
 
     const readiness = await this.providerReadinessPort.check({
       agentId: thread.agentBinding.agentId,
@@ -673,13 +645,15 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
 
     if (!readiness.ready) {
       thread.lifecycleState = "open";
-      this.composerQueue.enqueuePendingInput(thread, {
-        kind: "composer_input",
-        value: message,
-        capturedAt,
-        launchOptions: cloneLaunchOptions(input.launchOptions),
-        attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
-      });
+      if (hasInitialPrompt) {
+        this.composerQueue.enqueuePendingInput(thread, {
+          kind: "composer_input",
+          value: message,
+          capturedAt,
+          launchOptions: cloneLaunchOptions(input.launchOptions),
+          attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
+        });
+      }
       thread.updatedAt = this.clock();
 
       return {
@@ -690,16 +664,20 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
         providerReadiness: readiness,
       };
     }
-    const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
-    this.emitAsyncEvent({
-      kind: "agent_session_block_upserted",
-      thread: snapshotThread(thread),
-      block: submittedBlock,
-    });
+    const submittedBlock = hasInitialPrompt
+      ? this.appendLocalUserMessageBlock(thread, message)
+      : undefined;
+    if (submittedBlock !== undefined) {
+      this.emitAsyncEvent({
+        kind: "agent_session_block_upserted",
+        thread: snapshotThread(thread),
+        block: submittedBlock,
+      });
+    }
 
     // Provider CLIs receive the first message as the launch-time initial prompt
     // (positional/flag), which reliably starts a turn.
-    const deliverPromptViaLaunch = true;
+    const deliverPromptViaLaunch = hasInitialPrompt;
     const attachmentsForRuntime = messageAttachments.length > 0 ? messageAttachments : undefined;
     markThreadStarting(thread, this.clock);
     let handle: AgentRuntimeHandle;
@@ -717,7 +695,7 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
       thread.runtimeState = "running";
       thread.updatedAt = this.clock();
 
-      if (!deliverPromptViaLaunch) {
+      if (hasInitialPrompt && !deliverPromptViaLaunch) {
         await this.agentRuntimePort.writeInput(handle, {
           kind: "composer_input",
           value: message,
@@ -736,7 +714,7 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
       thread: snapshotThread(thread),
       runtimeState: thread.runtimeState,
       providerReadiness: readiness,
-      submittedBlock,
+      ...(submittedBlock !== undefined ? { submittedBlock } : {}),
     };
   }
 
@@ -1032,6 +1010,18 @@ async recordProviderSessionRef(
       thread: snapshotThread(thread),
       runtimeState: thread.runtimeState,
     };
+  }
+
+async recordProviderGoalState(
+    input: RecordProviderGoalStateInput,
+  ): Promise<ServiceResult<RecordProviderGoalStateResult>> {
+    return this.threadGoals.recordProviderGoalState(input);
+  }
+
+async recordProviderTurnStarted(
+    input: RecordProviderTurnStartedInput,
+  ): Promise<ServiceResult<RecordProviderTurnStartedResult>> {
+    return this.threadGoals.recordProviderTurnStarted(input);
   }
 
 async recordAgentSessionBlock(
@@ -1671,6 +1661,7 @@ async activeOrResumedHandle(thread: ThreadRecord): Promise<AgentRuntimeHandle> {
             agentBinding: cloneAgentBinding(thread.agentBinding),
             scope: cloneScope(thread.scope),
             launchOptions: thread.launchOptions,
+            initialGoal: thread.goal,
           })
         : await this.agentRuntimePort.resume({
             threadId: thread.threadId,

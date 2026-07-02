@@ -285,7 +285,12 @@ export function createLiveBackendContractMessageAdapter(
   const projector = createLiveAgentSessionEventProjector({
     service: () => service,
     persistence,
-    onEvent: input.onEvent,
+    onEvent: (event) => {
+      input.onEvent?.(event);
+      if (event.kind === "thread.goalSet") {
+        void persistThreadEvents(persistence, service, [event]);
+      }
+    },
     homeDir,
     integrations,
   });

@@ -3,6 +3,7 @@ import { CheckCircle2, Circle, CircleDot, Target } from "lucide-react";
 import type {
   AgentChatChecklistStatus,
   AgentChatChecklistView,
+  AgentChatGoalState,
 } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 
 // The pinned panel at the top of the chat column: the thread goal (user-set,
@@ -11,12 +12,14 @@ import type {
 // See thread-goal-and-checklist-panel.md.
 export function GoalChecklistPanel(props: {
   goal?: string;
+  goalState?: AgentChatGoalState;
   checklist: AgentChatChecklistView | null;
   onSetGoal?: (goal: string) => void;
 }): ReactElement | null {
-  const { goal, checklist, onSetGoal } = props;
+  const { goal, goalState, checklist, onSetGoal } = props;
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(goal ?? "");
+  const currentGoal = (goalState?.objective ?? goal ?? "").trim();
+  const [draft, setDraft] = useState(currentGoal);
   const [collapsed, setCollapsed] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const isCancellingRef = useRef(false);
@@ -24,9 +27,9 @@ export function GoalChecklistPanel(props: {
   // Keep the draft in sync with backend-confirmed goal changes while not editing.
   useEffect(() => {
     if (!editing) {
-      setDraft(goal ?? "");
+      setDraft(currentGoal);
     }
-  }, [goal, editing]);
+  }, [currentGoal, editing]);
 
   useEffect(() => {
     if (editing) {
@@ -36,7 +39,6 @@ export function GoalChecklistPanel(props: {
     }
   }, [editing]);
 
-  const currentGoal = (goal ?? "").trim();
   const hasGoal = currentGoal.length > 0;
   const hasChecklist = checklist !== null && checklist.entries.length > 0;
 
@@ -58,7 +60,7 @@ export function GoalChecklistPanel(props: {
   const cancel = (): void => {
     isCancellingRef.current = true;
     setEditing(false);
-    setDraft(goal ?? "");
+    setDraft(currentGoal);
   };
 
   return (
@@ -96,13 +98,18 @@ export function GoalChecklistPanel(props: {
             className={`goal-checklist-panel__goal-text${hasGoal ? "" : " goal-checklist-panel__goal-text--empty"}`}
             title={hasGoal ? "Edit goal" : "Set a goal"}
             onClick={() => {
-              setDraft(goal ?? "");
+              setDraft(currentGoal);
               setEditing(true);
             }}
           >
             {hasGoal ? currentGoal : "Set a goal for this thread"}
           </button>
         )}
+        {goalState !== undefined && hasGoal ? (
+          <span className={`goal-checklist-panel__status goal-checklist-panel__status--${goalState.status}`}>
+            {goalStatusLabel(goalState)}
+          </span>
+        ) : null}
         {hasChecklist ? (
           <button
             type="button"
@@ -130,6 +137,25 @@ export function GoalChecklistPanel(props: {
       ) : null}
     </section>
   );
+}
+
+function goalStatusLabel(goalState: AgentChatGoalState): string {
+  const provider = goalState.provider;
+  switch (goalState.status) {
+    case "active":
+      return "Active";
+    case "paused":
+      return "Paused";
+    case "blocked":
+      return "Blocked";
+    case "usage_limited":
+      return "Usage limit";
+    case "budget_limited":
+      return "Budget limit";
+    case "complete":
+      return "Complete";
+  }
+  return provider;
 }
 
 function ChecklistStatusIcon({ status }: { status: AgentChatChecklistStatus }): ReactElement {
