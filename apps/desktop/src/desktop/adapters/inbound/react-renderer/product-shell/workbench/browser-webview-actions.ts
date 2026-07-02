@@ -3,6 +3,11 @@ import type {
   ProductShellBrowserSnapshot,
   ProductShellViewModel,
 } from "../../../../../application/domains/product-shell/product-shell.ts";
+import {
+  BROWSER_INTERACTIVE_ELEMENTS_SCRIPT,
+  browserInteractiveElementClickScript,
+  browserInteractiveElementsFromUnknown,
+} from "./browser-interactive-elements.ts";
 
 // Pure Browser Pane <webview> execution helpers, extracted from browser-pane.tsx so the
 // "see + operate" mechanics are testable against a fake <webview> (no React).
@@ -189,7 +194,8 @@ export async function readBrowserWebViewSnapshot(
   const script = `(() => ({
     url: window.location.href,
     pageTitle: document.title,
-    bodyTextPreview: (document.body?.innerText ?? "").slice(0, 65536)
+    bodyTextPreview: (document.body?.innerText ?? "").slice(0, 65536),
+    interactiveElements: ${BROWSER_INTERACTIVE_ELEMENTS_SCRIPT}
   }))()`;
   const rawSnapshot = await safeExecuteJavaScript(webview, script);
   const snapshot =
@@ -200,6 +206,7 @@ export async function readBrowserWebViewSnapshot(
     url: stringRecordField(snapshot, "url") ?? safeGetWebViewURL(webview),
     pageTitle: stringRecordField(snapshot, "pageTitle"),
     bodyTextPreview: stringRecordField(snapshot, "bodyTextPreview"),
+    interactiveElements: browserInteractiveElementsFromUnknown(snapshot.interactiveElements),
   };
 }
 
@@ -253,6 +260,7 @@ export async function executeBrowserWebViewAction(
 ): Promise<BrowserWebViewActionExecution> {
   switch (action.kind) {
     case "click":
+    case "click_element":
     case "type_text":
       return executeSelectorAction(webview, action);
     case "move_to":
@@ -265,8 +273,9 @@ export async function executeBrowserWebViewAction(
   }
 }
 
-// Selector path: find the target in the page DOM, then prefer Electron input events so
-// React-controlled fields and real click handlers see the same event family a user sends.
+// Semantic DOM path: selectors and observed interactive-element indexes resolve inside the
+// page DOM. Selector clicks prefer real input events; element-index clicks intentionally use
+// the element target directly so they do not depend on screenshot coordinates.
 async function executeSelectorAction(
   webview: BrowserWebViewElement,
   action: BrowserWebViewAction,
@@ -306,6 +315,19 @@ async function executeSelectorAction(
     };
   }
 
+  if (action.kind === "click_element") {
+    const elementIndex = action.elementIndex;
+    if (typeof elementIndex !== "number" || !Number.isFinite(elementIndex) || elementIndex < 0) {
+      return { ok: false, message: "Element browser action requires numeric elementIndex." };
+    }
+    return browserActionExecutionFromUnknown(
+      await safeExecuteJavaScript(
+        webview,
+        browserInteractiveElementClickScript(Math.floor(elementIndex)),
+      ),
+    );
+  }
+
   if (action.kind === "type_text") {
     return executeSelectorTypeText(webview, action.selector ?? "", action.text ?? "");
   }
@@ -326,7 +348,7 @@ async function executeSelectorClickFallback(
     target.click();
     return { ok: true, message: "Clicked " + payload.selector + " via DOM fallback" };
   })(${payload})`;
-  return browserActionExecutionFromUnknown(await webview.executeJavaScript?.(script));
+  return browserActionExecutionFromUnknown(await safeExecuteJavaScript(webview, script));
 }
 
 async function executeSelectorTypeText(
@@ -382,7 +404,7 @@ async function executeSelectorTypeFallback(
     }));
     return { ok: true, message: "Typed " + payload.selector + " via DOM fallback" };
   })(${payload})`;
-  return browserActionExecutionFromUnknown(await webview.executeJavaScript?.(script));
+  return browserActionExecutionFromUnknown(await safeExecuteJavaScript(webview, script));
 }
 
 async function resolveSelectorTarget(
@@ -422,7 +444,7 @@ async function resolveSelectorTarget(
       disabled: target.disabled === true || target.getAttribute?.("aria-disabled") === "true",
     };
   })(${payload})`;
-  return browserActionTargetFromUnknown(await webview.executeJavaScript?.(script));
+  return browserActionTargetFromUnknown(await safeExecuteJavaScript(webview, script));
 }
 
 async function prepareEditableTarget(
@@ -463,7 +485,7 @@ async function prepareEditableTarget(
       disabled: target.disabled === true || target.getAttribute?.("aria-disabled") === "true",
     };
   })(${payload})`;
-  return browserActionTargetFromUnknown(await webview.executeJavaScript?.(script));
+  return browserActionTargetFromUnknown(await safeExecuteJavaScript(webview, script));
 }
 
 async function readFocusedEditableValue(
@@ -485,7 +507,7 @@ async function readFocusedEditableValue(
     }
     return { ok: false, message: "focused element is not editable after type" };
   })()`;
-  return browserActionExecutionFromUnknown(await webview.executeJavaScript?.(script));
+  return browserActionExecutionFromUnknown(await safeExecuteJavaScript(webview, script));
 }
 
 // Coordinate computer-use path — real input events on the live <webview>.
@@ -632,7 +654,7 @@ function coordinateActionPoint(x: number, y: number): { x: number; y: number } {
 }
 
 function replaceFocusedText(webview: BrowserWebViewElement, text: string): void {
-  const selectAllModifier = process.platform === "darwin" ? "cmd" : "control";
+  const selectAllModifier = selectAllModifierForPlatform();
   webview.sendInputEvent?.({ type: "keyDown", keyCode: "A", modifiers: [selectAllModifier] });
   webview.sendInputEvent?.({ type: "keyUp", keyCode: "A", modifiers: [selectAllModifier] });
   if (text.length === 0) {
@@ -643,6 +665,18 @@ function replaceFocusedText(webview: BrowserWebViewElement, text: string): void 
   for (const char of text) {
     sendTextCharacter(webview, char);
   }
+}
+
+function selectAllModifierForPlatform(): "cmd" | "control" {
+  const maybeProcess = (globalThis as { process?: { platform?: string } }).process;
+  if (maybeProcess?.platform === "darwin") {
+    return "cmd";
+  }
+  const platform =
+    typeof navigator !== "undefined" && typeof navigator.platform === "string"
+      ? navigator.platform
+      : "";
+  return /Mac|iPhone|iPad|iPod/i.test(platform) ? "cmd" : "control";
 }
 
 function sendTextCharacter(webview: BrowserWebViewElement, char: string): void {
@@ -684,7 +718,7 @@ async function describePoint(
       message: parts.join("") + (disabled ? "; disabled" : "") + (formValid === false ? "; form invalid" : ""),
     };
   })(${payload})`;
-  return browserActionExecutionFromUnknown(await webview.executeJavaScript?.(script));
+  return browserActionExecutionFromUnknown(await safeExecuteJavaScript(webview, script));
 }
 
 // "Cmd+Shift+A" → { keyCode: "A", modifiers: ["cmd", "shift"] }. Electron sendInputEvent

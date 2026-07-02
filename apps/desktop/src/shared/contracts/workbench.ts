@@ -22,11 +22,30 @@ export interface BrowserPaneCapabilitiesDto {
   canActBackground: boolean;
 }
 
+export interface BrowserPaneInteractiveElementDto {
+  index: number;
+  tag: string;
+  role?: string;
+  type?: string;
+  text?: string;
+  ariaLabel?: string;
+  placeholder?: string;
+  href?: string;
+  disabled?: boolean;
+  rect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
 export interface BrowserPaneRefDto extends BaseWorkbenchPaneRefDto {
   kind: "browser";
   url?: string;
   pageTitle?: string;
   bodyTextPreview?: string;
+  interactiveElements?: BrowserPaneInteractiveElementDto[];
   loading: boolean;
   readiness?: BrowserPaneReadinessDto;
   capabilities?: BrowserPaneCapabilitiesDto;
@@ -47,6 +66,7 @@ export interface BrowserPaneRefDto extends BaseWorkbenchPaneRefDto {
 
 export type BrowserPaneActionKindDto =
   | "click"
+  | "click_element"
   | "type_text"
   | "move_to"
   | "click_at"
@@ -62,6 +82,8 @@ export interface BrowserPaneActionDto {
   kind: BrowserPaneActionKindDto;
   // Selector path (reliability fallback): set for "click" / "type_text".
   selector?: string;
+  // Element path: index from observe_browser interactiveElements.
+  elementIndex?: number;
   text?: string;
   // Coordinate computer-use path (screenshot-pixel space): "move_to"/"click_at"/"scroll"/
   // "drag" carry x/y; "drag" adds toX/toY and optional durationMs/steps; "scroll" adds

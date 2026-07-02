@@ -526,6 +526,47 @@ test("observing_browser_with_only_url_evidence_reports_unavailable", async () =>
   assert.equal(observed.ok && observed.output.pane.readiness, "unavailable");
 });
 
+test("observing_browser_with_interactive_elements_reports_ready", async () => {
+  const service = serviceWithActiveThread(
+    "thread-browser-elements-only",
+    "runtime-browser-elements-only",
+  );
+  const opened = await openBrowser(
+    service,
+    "runtime-browser-elements-only",
+    "https://example.test/elements-only",
+  );
+  const snapshot = await service.handleWorkbenchCommand({
+    threadId: "thread-browser-elements-only",
+    command: "update_browser_snapshot",
+    targetPaneId: opened.output.pane.paneId,
+    data: {
+      revision: opened.output.pane.revision,
+      url: "https://example.test/elements-only",
+      loading: false,
+      interactiveElements: [
+        {
+          index: 0,
+          tag: "button",
+          text: "Reserve",
+          rect: { x: 40, y: 80, width: 120, height: 44 },
+        },
+      ],
+    },
+  });
+  assert.equal(snapshot.ok, true);
+
+  const observed = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-browser-elements-only", agentId: "codex" },
+    toolName: "tide_observe_browser",
+    input: { paneId: opened.output.pane.paneId },
+  });
+
+  assert.equal(observed.ok, true);
+  assert.equal(observed.ok && observed.output.pane.readiness, "ready");
+  assert.equal(observed.ok && observed.output.pane.interactiveElements?.[0]?.text, "Reserve");
+});
+
 test("browser_action_tool_schedules_pending_click_for_desktop_webview", async () => {
   // Spec: docs_v2/specs/tide-mcp-browser-action-tool.md
   const events: ThreadRuntimeAsyncEvent[] = [];
@@ -580,6 +621,42 @@ test("browser_action_tool_schedules_pending_click_for_desktop_webview", async ()
   assert.equal(events.at(-1)?.kind, "workbench_changed");
 });
 
+test("browser_action_tool_schedules_pending_click_by_observed_element_index", async () => {
+  const service = serviceWithActiveThread(
+    "thread-browser-element-action",
+    "runtime-browser-element-action",
+  );
+  const opened = await openBrowser(
+    service,
+    "runtime-browser-element-action",
+    "https://example.test/action",
+  );
+  await settleBrowser(
+    service,
+    "thread-browser-element-action",
+    opened.output.pane.paneId,
+    opened.output.pane.revision,
+    "https://example.test/action",
+  );
+
+  const result = await service.handleTideMcpToolCall({
+    session: { runtimeId: "runtime-browser-element-action", agentId: "codex" },
+    toolName: "tide_act_browser",
+    input: {
+      paneId: opened.output.pane.paneId,
+      revision: opened.output.pane.revision,
+      action: "click_element",
+      elementIndex: 3,
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.output.kind, "act_browser");
+  assert.equal(result.ok && result.output.action.kind, "click_element");
+  assert.equal(result.ok && result.output.action.elementIndex, 3);
+  assert.equal(result.ok && result.output.pane.pendingAction?.kind, "click_element");
+});
+
 test("browser_action_tool_schedules_pending_drag_for_bottom_sheet_controls", async () => {
   const service = serviceWithActiveThread("thread-browser-drag", "runtime-browser-drag");
   const opened = await openBrowser(
@@ -621,7 +698,7 @@ test("browser_action_tool_schedules_pending_drag_for_bottom_sheet_controls", asy
   );
 });
 
-test("browser_action_while_loading_returns_structured_not_ready_error", async () => {
+test("browser_action_while_loading_queues_human_input", async () => {
   const service = serviceWithActiveThread(
     "thread-browser-loading-act",
     "runtime-browser-loading-act",
@@ -638,15 +715,17 @@ test("browser_action_while_loading_returns_structured_not_ready_error", async ()
     input: {
       paneId: opened.output.pane.paneId,
       revision: opened.output.pane.revision,
-      action: "click_at",
-      x: 10,
-      y: 20,
+      action: "key",
+      keys: "Escape",
     },
   });
 
-  assert.equal(result.ok, false);
-  assert.equal(!result.ok && result.error.code, "invalid_workbench_command");
-  assert.match(!result.ok ? result.error.message : "", /still loading/);
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.output.kind, "act_browser");
+  assert.equal(result.ok && result.output.action.kind, "key");
+  assert.equal(result.ok && result.output.action.keys, "Escape");
+  assert.equal(result.ok && result.output.pane.pendingAction?.kind, "key");
+  assert.equal(result.ok && result.output.pane.loading, true);
 });
 
 test("browser_type_action_without_text_returns_structured_error", async () => {

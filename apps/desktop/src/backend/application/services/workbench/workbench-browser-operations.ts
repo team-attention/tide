@@ -80,6 +80,7 @@ export function openBrowserOutput(
     reusablePane.loading = true;
     delete reusablePane.pageTitle;
     delete reusablePane.bodyTextPreview;
+    delete reusablePane.interactiveElements;
     delete reusablePane.screenshot;
   }
   reusablePane.revision = idGenerator();
@@ -182,11 +183,10 @@ export async function observeBrowserOutput(
   };
 }
 
-// Hybrid action model (docs_v2/specs/browser-pane-agent-computer-use.md): the selector
-// path ("click"/"type_text") is the unchanged reliability fallback and never starts
-// driving; the coordinate path ("move_to"/"click_at"/"drag"/"scroll"/"key"/"type")
-// is the "human" computer-use path and starts agentDriving (+ agentCursor where it has
-// a point).
+// Hybrid action model (docs_v2/specs/browser-pane-agent-computer-use.md): semantic DOM
+// actions ("click"/"click_element"/"type_text") never start driving; coordinate/input actions
+// ("move_to"/"click_at"/"drag"/"scroll"/"key"/"type") are the "human" computer-use path and
+// start agentDriving (+ agentCursor where it has a point).
 export function actBrowserOutput(
   thread: ThreadRecord,
   input: Record<string, unknown> | undefined,
@@ -256,13 +256,6 @@ export function actBrowserOutput(
       `Browser Pane revision is stale. The pane is now at revision "${pane.revision}"; if it has not navigated since you observed it, retry this action with that revision.`,
     );
   }
-  if (pane.loading === true) {
-    return failure(
-      "invalid_workbench_command",
-      "Browser Pane is still loading. Re-observe after it reports readiness:\"ready\" before acting.",
-    );
-  }
-
   const { action, setsDriving, agentCursor } = built.value;
   pane.pendingAction = action;
   if (setsDriving) {
@@ -359,6 +352,22 @@ function buildBrowserActionRequest(
         },
       };
     }
+    case "click_element": {
+      const elementIndex = nonNegativeIntegerFromInput(input?.elementIndex);
+      if (elementIndex === undefined) {
+        return failure(
+          "invalid_workbench_command",
+          "Element browser action requires numeric elementIndex from observe_browser interactiveElements.",
+        );
+      }
+      return {
+        ok: true,
+        value: {
+          action: { ...base, elementIndex },
+          setsDriving: false,
+        },
+      };
+    }
     case "move_to":
     case "click_at": {
       const x = finiteNumberFromInput(input?.x);
@@ -448,6 +457,12 @@ function buildBrowserActionRequest(
       return { ok: true, value: { action: { ...base, text }, setsDriving: true } };
     }
   }
+}
+
+function nonNegativeIntegerFromInput(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : undefined;
 }
 
 function boundedIntegerFromInput(

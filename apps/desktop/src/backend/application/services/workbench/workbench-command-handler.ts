@@ -182,6 +182,7 @@ export class WorkbenchCommandHandler {
           pane.url = snapshot.url;
         }
         pane.bodyTextPreview = snapshot.bodyTextPreview;
+        pane.interactiveElements = snapshot.interactiveElements;
         if (snapshot.screenshot !== undefined) {
           pane.screenshot = snapshot.screenshot;
         }
@@ -286,6 +287,9 @@ export class WorkbenchCommandHandler {
         }
         if (result.bodyTextPreview !== undefined) {
           pane.bodyTextPreview = result.bodyTextPreview;
+        }
+        if (result.interactiveElements !== undefined) {
+          pane.interactiveElements = result.interactiveElements;
         }
         pane.loading = result.loading ?? false;
         // D5 (spec: browser-pane-live-pull-vision.md): remember the pre-completion revision
