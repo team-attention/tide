@@ -134,3 +134,55 @@ test("switching_to_a_thread_whose_composer_holds_a_chip_does_not_steal_focus", a
 
   await act(async () => root.unmount());
 });
+
+test("switching_threads_closes_the_agent_chat_find_bar", async () => {
+  const { createRoot } = await import("react-dom/client");
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  const threadA = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const threadB = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", {
+      thread: { ...thread, threadId: "thread-other", title: "Other" },
+      blocks: [],
+      runtimeState: "idle",
+    }),
+  );
+
+  await act(async () => {
+    root.render(<AgentChatShell viewModel={createAgentChatShellViewModel(threadA)} />);
+  });
+  await act(async () => {
+    container
+      .querySelector(".agent-chat-shell")
+      ?.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
+    window.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", {
+        key: "f",
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  assert.ok(
+    container.querySelector('input[placeholder="Search this thread"]'),
+    "Cmd+F opens the current thread find bar",
+  );
+
+  await act(async () => {
+    root.render(<AgentChatShell viewModel={createAgentChatShellViewModel(threadB)} />);
+  });
+  assert.equal(
+    container.querySelector('input[placeholder="Search this thread"]'),
+    null,
+    "switching threads closes the scoped find bar",
+  );
+
+  await act(async () => root.unmount());
+});

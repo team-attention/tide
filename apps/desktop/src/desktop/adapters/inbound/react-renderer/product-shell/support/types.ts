@@ -283,6 +283,7 @@ export interface ProductShellHandlers {
   // thread panes normally resolve from their tracked cursor.
   onEditorGoToDefinition: (paneId: string, position?: { line: number; character: number }) => void;
   onEditorGoToReferences: (paneId: string, position?: { line: number; character: number }) => void;
+  onEditorReferencesDismiss: (paneId: string) => void;
   // Editor language-intelligence query (workspace.codeIntel round-trip). The
   // result payload goes straight back to the calling CodeMirror extension —
   // it never enters shell state, so typing/hovering can't re-render the shell.

@@ -50,6 +50,10 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   // switches (not remounted), so the count ref must be re-baselined when the thread
   // changes, or opening a thread whose composer holds chips would read as an "add".
   const threadId = viewModel.thread?.threadId;
+  useEffect(() => {
+    transcriptFind.setQuery("");
+    transcriptFind.closeFind();
+  }, [threadId, transcriptFind.closeFind, transcriptFind.setQuery]);
   const goalPanelVisible =
     viewModel.thread !== null &&
     (((viewModel.thread.goalState?.objective ?? viewModel.thread.goal ?? "").trim().length > 0) ||

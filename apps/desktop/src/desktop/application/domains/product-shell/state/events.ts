@@ -7,7 +7,7 @@ import { applyProductShellThreadArchivedEvent, applyProductShellThreadEvent, app
 import { setProductShellProviderCommands } from "./composer-bridge.ts";
 import { activeSurfaceThreadId, createStartAgentChatState, isProductShellAgentIdentity } from "./start.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
-import { reconcileEditorDrafts } from "./workbench-editor.ts";
+import { applyDismissedProductShellEditorReferences, reconcileEditorDrafts } from "./workbench-editor.ts";
 import { projectsFromThreads } from "./view-model.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
@@ -236,6 +236,11 @@ export function applyProductShellBackendEvent(
         return state;
       }
       const panes = payload.panes ?? [];
+      const referencesFilter = applyDismissedProductShellEditorReferences(
+        panes,
+        nextState.dismissedEditorReferenceKeys,
+      );
+      const visiblePanes = referencesFilter.panes;
       const threadId = payload.threadId ?? state.activeThreadId;
       // Auto-open only when a NEW real (non-launcher) pane appears (an agent
       // opened a browser, the user opened a terminal/editor). An UPDATE to existing
@@ -278,9 +283,14 @@ export function applyProductShellBackendEvent(
             ? nextState.threads
             : nextState.threads.map((thread) =>
                 thread.threadId === threadId
-                  ? { ...thread, workbenchPanes: panes }
+                  ? { ...thread, workbenchPanes: visiblePanes }
                   : thread,
               ),
+        appChrome: {
+          ...nextState.appChrome,
+          workbenchPanes: visiblePanes,
+        },
+        dismissedEditorReferenceKeys: referencesFilter.dismissedEditorReferenceKeys,
         workbenchOpen: nextWorkbenchOpen,
         // Keep the per-thread memory in sync with the effective open state (a new pane
         // opens it; an update keeps the user's choice), so switching away and back
@@ -296,7 +306,7 @@ export function applyProductShellBackendEvent(
           payload.fileTree === undefined
             ? nextState.fileTree
             : productShellFileTreeFromPayload(payload.fileTree),
-        editorDrafts: reconcileEditorDrafts(nextState.editorDrafts, panes),
+        editorDrafts: reconcileEditorDrafts(nextState.editorDrafts, visiblePanes),
       };
     }
     case "workspace.fileTreeLoaded": {

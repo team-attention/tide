@@ -274,6 +274,9 @@ export interface ProductShellState {
   startPagePendingNavigation: { relativePath: string; target: AppChromeEditorNavigationTarget } | null;
   // Latest project content-search (Cmd+Shift+F) results for the active thread.
   contentSearch: ProductShellContentSearch | null;
+  // Renderer-only dismissals for editor reference lists, keyed by pane id and the
+  // exact references payload. A fresh Find References result uses a new key.
+  dismissedEditorReferenceKeys?: Record<string, string>;
   editorDrafts: Record<string, ProductShellEditorDraft>;
   nextLocalThreadNumber: number;
   // How the Left Rail thread list is grouped/sorted (persisted in the renderer).

@@ -136,6 +136,30 @@ button.workbench-editor-breadcrumb__crumb:active {
   font: 600 11px/1 Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
+.workbench-editor-references__dismiss {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+}
+
+.workbench-editor-references__dismiss:hover {
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+.workbench-editor-references__dismiss:focus-visible {
+  outline: 2px solid var(--tide-action);
+  outline-offset: -1px;
+}
+
 .workbench-editor-references__empty {
   padding: 14px 12px;
   color: var(--tide-muted);

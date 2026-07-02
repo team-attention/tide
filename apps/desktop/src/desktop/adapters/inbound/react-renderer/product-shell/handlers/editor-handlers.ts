@@ -1,4 +1,5 @@
 import {
+  clearProductShellEditorReferences,
   closeProductShellEditorPicker,
   editProductShellWorkbenchEditorPane,
   ensureComposerDraftThreadActive,
@@ -19,7 +20,7 @@ import { deriveEditorRoot } from "../workbench/code-intel-mappers.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
-export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onOpenFile" | "onEditorPickerFilter" | "onEditorPickerSelect" | "onEditorPickerCancel" | "onEditorDraftChange" | "onEditorCursorChange" | "onEditorSave" | "onEditorGoToDefinition" | "onEditorGoToReferences" | "onEditorCodeIntel" | "onFileTreeEntryOpen" | "onCreateFile" | "onFileTreeToggle"> {
+export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onOpenFile" | "onEditorPickerFilter" | "onEditorPickerSelect" | "onEditorPickerCancel" | "onEditorDraftChange" | "onEditorCursorChange" | "onEditorSave" | "onEditorGoToDefinition" | "onEditorGoToReferences" | "onEditorReferencesDismiss" | "onEditorCodeIntel" | "onFileTreeEntryOpen" | "onCreateFile" | "onFileTreeToggle"> {
   const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
 
   const ensureDraftForFilePane = (state: typeof shellState): ReturnType<typeof ensureComposerDraftThreadActive> => {
@@ -88,6 +89,8 @@ export function createEditorHandlers(ctx: ProductShellHandlerContext): Pick<Prod
         return result.state;
       });
     },
+    onEditorReferencesDismiss: (paneId) =>
+      setShellState((state) => clearProductShellEditorReferences(state, paneId)),
     // Query-style round-trip: posts workspace.codeIntel and hands the result
     // payload back to the caller. Deliberately NOT dispatchBackendCommand —
     // that would fold the response events into shell state and re-render the

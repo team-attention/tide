@@ -115,6 +115,7 @@ export function createProductShellState(
     startPageFiles: [],
     startPagePendingNavigation: null,
     contentSearch: null,
+    dismissedEditorReferenceKeys: {},
     editorDrafts: {},
     nextLocalThreadNumber: 1,
     listSettings: input.listSettings ?? { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS },

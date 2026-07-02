@@ -21,6 +21,7 @@ import { java } from "@codemirror/lang-java";
 import { StreamLanguage } from "@codemirror/language";
 import { shell as shellMode } from "@codemirror/legacy-modes/mode/shell";
 import { toml as tomlMode } from "@codemirror/legacy-modes/mode/toml";
+import { X } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function WorkbenchEditorPane(props: {
@@ -241,6 +242,15 @@ function createWorkbenchEditorReferences(
           <code className="workbench-editor-references__query">{references.query}</code>
         ) : null}
         <span className="workbench-editor-references__count">{countLabel}</span>
+        <button
+          type="button"
+          className="workbench-editor-references__dismiss"
+          title="Close references"
+          aria-label="Close references"
+          onClick={() => handlers.onEditorReferencesDismiss(pane.paneId)}
+        >
+          <X size={14} strokeWidth={2} aria-hidden />
+        </button>
       </div>
       {referenceItems.length === 0 ? (
         <div className="workbench-editor-references__empty">No references found.</div>
