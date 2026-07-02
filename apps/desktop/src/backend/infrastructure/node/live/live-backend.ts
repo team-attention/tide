@@ -64,6 +64,7 @@ import {
   readClaudeProviderSessionRefsFromHome,
   readCodexProviderSessionRefsFromHome,
 } from "../provider/provider-history-readers.ts";
+import { readProviderAccountUsageSnapshotsFromHome } from "../provider/provider-account-usage.ts";
 
 export {
   readClaudeProviderSessionRefsFromHome,
@@ -370,6 +371,24 @@ export function createLiveBackendContractMessageAdapter(
   const detection = createProviderDetection({
     hasIntegration: (agentId) => integrations[agentId] !== undefined,
     resolveExecutable,
+  });
+  setImmediate(() => {
+    const usages = readProviderAccountUsageSnapshotsFromHome({
+      homeDir,
+      codexHome: effectiveCodexHome(process.cwd()),
+    });
+    if (usages.length === 0) {
+      return;
+    }
+    emitBackendEvents([
+      {
+        contractVersion: CONTRACT_VERSION,
+        eventId: nextEventId(),
+        kind: "providerUsage.changed",
+        emittedAt: new Date().toISOString(),
+        payload: { usages },
+      },
+    ]);
   });
   // Deliver opencode's catalog OUT OF BAND so the agent menu (availableAgents on thread.listed)
   // is never blocked behind opencode's slower subprocesses: enumerate once OFF the startup
