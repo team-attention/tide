@@ -54,6 +54,33 @@ function fakeProviderPlan(questions: unknown[], receivedFile: string): ProviderL
   };
 }
 
+function fakeControlRequestPlan(receivedFile: string, request: Record<string, unknown>): ProviderLaunchPlan {
+  const script = [
+    'const fs = require("node:fs");',
+    `console.log(${JSON.stringify(
+      JSON.stringify({ type: "control_request", request_id: "req-unknown-1", request }),
+    )});`,
+    'let buf = "";',
+    'process.stdin.setEncoding("utf8");',
+    'process.stdin.on("data", (chunk) => {',
+    "  buf += chunk;",
+    "  let i;",
+    '  while ((i = buf.indexOf("\\n")) >= 0) {',
+    "    const line = buf.slice(0, i);",
+    "    buf = buf.slice(i + 1);",
+    '    if (line.trim().length > 0) fs.appendFileSync(process.env.TIDE_FAKE_OUT, line + "\\n");',
+    "  }",
+    "});",
+  ].join("\n");
+  return {
+    command: process.execPath,
+    args: ["-e", script],
+    env: { TIDE_FAKE_OUT: receivedFile },
+    cwd: tmpdir(),
+    transport: "claude_stream_json",
+  };
+}
+
 // A fake claude process that ANSWERS our applyConfig control requests: it acks each
 // cfg-* control_request with a control_response — success, except a switch to
 // bypassPermissions, which it REFUSES (claude's real behaviour on a session not
@@ -659,6 +686,26 @@ function behaviorOf(response: Record<string, unknown>): unknown {
   const inner = (response.response as Record<string, unknown>).response as Record<string, unknown>;
   return inner.behavior;
 }
+
+test("unknown claude control_request subtype gets an error response instead of hanging", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-control-unknown-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const client = createClaudeStreamJsonClient({
+    plan: fakeControlRequestPlan(receivedFile, { subtype: "future_request", payload: true }),
+    threadId: "thread-1",
+    runtimeId: "rt-1",
+    onEvent: () => undefined,
+  });
+  try {
+    const response = await waitFor(() => receivedControlResponse(receivedFile), "unknown control_response");
+    const inner = response.response as Record<string, unknown>;
+    assert.equal(inner.subtype, "error");
+    assert.equal(inner.request_id, "req-unknown-1");
+    assert.match(String(inner.error), /future_request/);
+  } finally {
+    await client.stop();
+  }
+});
 
 test("Skip (empty answer) on a claude permission card DENIES the tool — never silently allows", async () => {
   // Spec: claude-parallel-permission-wedge.md. The Skip button answers with value "" — that

@@ -5,11 +5,13 @@ export interface CodexToolCallRecord {
   body: string;
 }
 
+export type CodexToolCallStatus = "pending" | "complete" | "failed";
+
 export function codexToolCallRecordFromItem(input: {
   item: Record<string, unknown>;
   runtimeId: string;
   sequence: number;
-  status: "pending" | "complete";
+  status: CodexToolCallStatus;
 }): CodexToolCallRecord | undefined {
   const itemType = stringField(input.item, "type") ?? stringField(input.item, "itemType");
   const itemId = codexToolItemId(input.item, String(input.sequence));
@@ -74,6 +76,18 @@ export function codexToolCallRecordFromItem(input: {
   return undefined;
 }
 
+export function codexToolNameFromItem(item: Record<string, unknown>): string | undefined {
+  const itemType = stringField(item, "type") ?? stringField(item, "itemType");
+  if (itemType === "commandExecution") return "shell";
+  if (itemType === "mcpToolCall") {
+    const server = stringField(item, "server") ?? "mcp";
+    const tool = stringField(item, "tool") ?? "tool";
+    return `${server}.${tool}`;
+  }
+  if (itemType === "webSearch") return "web_search";
+  return undefined;
+}
+
 export function codexToolItemId(item: Record<string, unknown>, fallback: string): string {
   const explicit = stringField(item, "id");
   if (explicit !== undefined) return explicit;
@@ -91,6 +105,17 @@ export function codexToolItemId(item: Record<string, unknown>, fallback: string)
 export function isCodexVisibleToolItem(item: Record<string, unknown>): boolean {
   const itemType = stringField(item, "type") ?? stringField(item, "itemType");
   return itemType === "commandExecution" || itemType === "mcpToolCall" || itemType === "webSearch";
+}
+
+export function isCodexAppsMcpToolItem(item: Record<string, unknown>): boolean {
+  const itemType = stringField(item, "type") ?? stringField(item, "itemType");
+  if (itemType !== "mcpToolCall") {
+    return false;
+  }
+  const server = stringField(item, "server") ?? "";
+  const namespace = stringField(item, "namespace") ?? "";
+  const tool = stringField(item, "tool") ?? "";
+  return server === "codex_apps" || namespace.startsWith("mcp__codex_apps") || tool.startsWith("codex_apps.");
 }
 
 function jsonText(value: unknown): string {

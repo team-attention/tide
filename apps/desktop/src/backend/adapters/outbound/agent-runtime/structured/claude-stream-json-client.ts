@@ -19,8 +19,6 @@
 //   until the response arrives — the whole PTY box-timing failure class is gone.
 // - turn end: {"type":"result", subtype, is_error, usage, modelUsage, ...}.
 //   Unauthenticated: result.is_error=true + synthetic "Not logged in" message.
-// - interrupt: control_request {"subtype":"interrupt"} from client; not wired
-//   yet (Tide's Stop kills the runtime, same semantics as the PTY transport).
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -52,6 +50,7 @@ import {
 import { buildPermissionPrompt } from "./claude-permission-prompt.ts";
 import type { AskUserQuestionContext, PendingPermission } from "./claude-ask-user-question.ts";
 import { answerAskUserQuestion, surfaceAskUserQuestion, surfaceAskUserQuestionWizard } from "./claude-ask-user-question.ts";
+import { writeUnsupportedClaudeControlRequest } from "./claude-control-request.ts";
 
 // How long applyConfig waits for claude's control_response ack before treating a
 // mid-thread change as failed (→ transparent restart). claude acks in single-digit
@@ -126,9 +125,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   private readonly scanUpdate = createUpdateNoticeScanner((message) =>
     this.onEvent({ kind: "runtime_notice", level: "info", message }),
   );
-  // Live streaming state: the id of the assistant message currently streaming
-  // (from message_start) and the accumulated text per content-block index. The
-  // matching complete `assistant` message finalizes these by the SAME blockId.
+  // Live streaming state; the complete `assistant` message finalizes the same blockId.
   private streamMessageId?: string;
   private readonly streamBlocks = new Map<
     number,
@@ -140,11 +137,7 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   // cfg-* request_id -> resolver for a mid-thread applyConfig control_response ack.
   private readonly pendingConfigAcks = new Map<string, (ok: boolean) => void>();
   private lastRateLimits?: AgentRuntimeRateLimitDto[];
-  // The thread goal. claude has no clean native goal API over stream-json (the TUI
-  // `/goal` command is not interpreted here), so the goal STEERS by being prepended
-  // as a short preamble on each composer send while set. Pushed via goal_set and
-  // re-applied on runtime restart. Empty ⇒ no goal. See
-  // specs/thread-goal-and-checklist-panel.md.
+  // Claude has no native goal API over stream-json, so each turn gets a goal preamble.
   private goalObjective = "";
 
   constructor(input: CreateClaudeStreamJsonClientInput) {
@@ -742,11 +735,17 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
 
   private handleControlRequest(message: Record<string, unknown>): void {
     const requestId = stringField(message, "request_id");
-    const request = isRecord(message.request) ? message.request : undefined;
-    if (requestId === undefined || request === undefined) {
+    if (requestId === undefined) {
       return;
     }
-    if (request.subtype !== "can_use_tool") {
+    const request = isRecord(message.request) ? message.request : undefined;
+    if (request?.subtype !== "can_use_tool") {
+      writeUnsupportedClaudeControlRequest({
+        requestId,
+        subtype: request === undefined ? "malformed" : String(request.subtype ?? "unknown"),
+        writeLine: (value) => this.writeLine(value),
+        onEvent: this.onEvent,
+      });
       return;
     }
     const toolName = stringField(request, "tool_name") ?? "tool";

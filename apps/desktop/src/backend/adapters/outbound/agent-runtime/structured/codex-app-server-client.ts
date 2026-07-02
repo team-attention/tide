@@ -23,7 +23,7 @@
 //   turn: the model is told and continues (verified live, 02-deny-flow.jsonl).
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-import type { ComposerAttachmentRef, PromptDetail, PromptState } from "../../../../application/domains/thread/thread.ts";
+import type { ComposerAttachmentRef } from "../../../../application/domains/thread/thread.ts";
 import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type {
   StructuredClientCallbacks,
@@ -34,24 +34,25 @@ import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/a
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import { codexPlanActivityFromItem } from "./plan-activity.ts";
 import { bounded, codexRateLimitsFromUsage, isRecord, numberField, stringField } from "./codex-app-server-shared.ts";
-import {
-  codexToolCallRecordFromItem,
-  codexToolItemId,
-  isCodexVisibleToolItem,
-} from "./codex-tool-call-record.ts";
+import { codexToolItemId, isCodexVisibleToolItem } from "./codex-tool-call-record.ts";
+import { CodexToolCallLifecycle } from "./codex-tool-call-lifecycle.ts";
 import { codexPlanContentRecord } from "./structured-plan-goal.ts";
+import {
+  codexServerPromptResult,
+  type PendingServerPrompt,
+} from "./codex-server-prompt.ts";
+import { handleCodexServerRequest } from "./codex-server-request.ts";
 export { codexRateLimitsFromUsage } from "./codex-app-server-shared.ts";
 export {
+  CODEX_ACCEPT_FOR_SESSION_TOKEN,
+  CODEX_ACCEPT_TOKEN,
+  CODEX_DECLINE_TOKEN,
+} from "./codex-server-prompt.ts";
+export {
   codexToolCallRecordFromItem,
+  isCodexAppsMcpToolItem,
   type CodexToolCallRecord,
 } from "./codex-tool-call-record.ts";
-
-export const CODEX_ACCEPT_TOKEN = "structured:accept";
-export const CODEX_DECLINE_TOKEN = "structured:decline";
-// "Allow for this session": codex's native session-scoped approval — the same command/files
-// are not re-prompted for the rest of the session (decision: "acceptForSession").
-// See docs_v2/specs/codex-permission-allow-for-session.md.
-export const CODEX_ACCEPT_FOR_SESSION_TOKEN = "structured:accept_for_session";
 
 export interface CreateCodexAppServerClientInput extends StructuredClientCallbacks {
   plan: ProviderLaunchPlan;
@@ -120,7 +121,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   // our request id -> what to do with the result
   private readonly pendingResponses = new Map<number, (result: Record<string, unknown>) => void>();
   // promptId -> the SERVER's request id awaiting a decision result
-  private readonly pendingApprovals = new Map<string, number | string>();
+  private readonly pendingServerPrompts = new Map<string, PendingServerPrompt>();
   private readonly queuedWrites: string[] = [];
   private ready = false;
   // Live streaming: itemId -> accumulated agentMessage text. The complete
@@ -128,9 +129,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private readonly streamBodies = new Map<string, string>();
   // itemId -> accumulated reasoning summary text (model_reasoning_summary=detailed).
   private readonly reasoningBodies = new Map<string, string>();
-  // Tool-like items can hang between item/started and item/completed. Keep the
-  // sequence stable so the pending row updates in place when completion arrives.
-  private readonly toolItemSequences = new Map<string, number>();
+  private readonly toolCalls: CodexToolCallLifecycle;
   private flushScheduled = false;
   private readonly scanUpdate = createUpdateNoticeScanner((message) =>
     this.onEvent({ kind: "runtime_notice", level: "info", message }),
@@ -142,6 +141,16 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     this.runtimeId = input.runtimeId;
     this.protocolParams = isRecord(input.plan.protocolParams) ? input.plan.protocolParams : {};
     this.goalObjective = input.initialGoal?.trim() ?? "";
+    this.toolCalls = new CodexToolCallLifecycle({
+      runtimeId: this.runtimeId,
+      nextSequence: () => {
+        const sequence = this.recordIndex;
+        this.recordIndex += 1;
+        return sequence;
+      },
+      emitRecord: (sourceRef, payload, body) => this.emitRecord(sourceRef, payload, body),
+      onNotice: (message) => this.onEvent({ kind: "runtime_notice", level: "info", message }),
+    });
     this.child = spawn(input.plan.command, input.plan.args, {
       cwd: input.plan.cwd,
       env: { ...process.env, ...input.plan.env },
@@ -159,12 +168,14 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     this.child.on("error", () => {
       if (!this.exited) {
         this.exited = true;
+        this.toolCalls.failPendingForTurnEnd("failed");
         this.onEvent({ kind: "runtime_exited", exitCode: null });
       }
     });
     this.child.on("exit", (code) => {
       if (!this.exited) {
         this.exited = true;
+        this.toolCalls.failPendingForTurnEnd("failed");
         this.onEvent({ kind: "runtime_exited", exitCode: code });
       }
     });
@@ -318,22 +329,15 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     const promptId = input.promptId ?? "";
-    const serverRequestId = this.pendingApprovals.get(promptId);
-    if (serverRequestId === undefined) {
+    const pending = this.pendingServerPrompts.get(promptId);
+    if (pending === undefined) {
       return;
     }
-    this.pendingApprovals.delete(promptId);
-    // codex v2 decision enum: accept / acceptForSession (don't re-prompt this session) /
-    // decline. Secure-by-default: only an EXPLICIT allow token approves; the Skip button
-    // (value ""), a dismissed card, or any unrecognized answer DECLINES — never run a tool the
-    // user did not approve (mirrors the claude fix, claude-parallel-permission-wedge.md).
-    const decision =
-      input.value === CODEX_ACCEPT_TOKEN
-        ? "accept"
-        : input.value === CODEX_ACCEPT_FOR_SESSION_TOKEN
-          ? "acceptForSession"
-          : "decline";
-    this.writeLine({ id: serverRequestId, result: { decision } });
+    this.pendingServerPrompts.delete(promptId);
+    this.writeLine({
+      id: pending.serverRequestId,
+      result: codexServerPromptResult(pending, { value: input.value, stepAnswers: input.stepAnswers }),
+    });
   }
 
   private applyGoal(): void {
@@ -365,6 +369,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
 
   async stop(): Promise<void> {
     this.exited = true;
+    this.toolCalls.clearTimeouts();
     this.child.kill("SIGTERM");
     setTimeout(() => {
       try {
@@ -454,7 +459,12 @@ class CodexAppServerClient implements StructuredRuntimeClient {
 
     // SERVER-INITIATED REQUEST (has an id): an approval to answer.
     if (message.id !== undefined) {
-      this.handleServerRequest(method, message.id as number | string, params);
+      handleCodexServerRequest({
+        threadId: this.tideThreadId,
+        pendingServerPrompts: this.pendingServerPrompts,
+        writeLine: (value) => this.writeLine(value),
+        onEvent: this.onEvent,
+      }, method, message.id as number | string, params);
       return;
     }
 
@@ -533,6 +543,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
         notice = (error !== undefined ? stringField(error, "message") : undefined) ?? "Codex turn failed.";
       }
       // status "interrupted" is a user Stop — no notice (benign).
+      this.toolCalls.failPendingForTurnEnd(status);
       this.activeTurnId = undefined;
       this.turnStartInFlight = false;
       // Any input parked for a steer that never found a live turn (e.g. the turn
@@ -550,74 +561,6 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     // thread/started, turn/started, deltas, status changes: no visible block.
-  }
-
-  private handleServerRequest(
-    method: string,
-    serverRequestId: number | string,
-    params: Record<string, unknown>,
-  ): void {
-    if (method === "item/commandExecution/requestApproval") {
-      const command = stringField(params, "command") ?? "Run command";
-      const cwd = stringField(params, "cwd");
-      const reason = stringField(params, "reason");
-      this.surfaceApproval(
-        serverRequestId,
-        reason !== undefined ? `Run command — ${reason}` : "Run command",
-        { format: "text", body: cwd !== undefined ? `${command}\n\n# cwd: ${cwd}` : command },
-      );
-      return;
-    }
-    if (method === "item/fileChange/requestApproval") {
-      // FileChangeRequestApprovalParams carries NO inline diff — only itemId/reason/threadId/
-      // turnId (verified via `codex app-server generate-json-schema`). The actual edits live in
-      // a separate fileChange item referenced by `itemId`; surfacing that diff needs item
-      // correlation (future work). So the headline — with `reason` — is the honest detail today.
-      const reason = stringField(params, "reason");
-      this.surfaceApproval(
-        serverRequestId,
-        reason !== undefined ? `Apply file changes — ${reason}` : "Apply file changes",
-      );
-      return;
-    }
-    // Unknown server request: answering wrong is worse than declining late; log
-    // and leave it pending (gap: item/tool/requestUserInput, elicitation).
-    if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
-      process.stderr.write(`[tide-codex-as ${this.runtimeId}] unhandled server request ${method}\n`);
-    }
-  }
-
-  private surfaceApproval(
-    serverRequestId: number | string,
-    message: string,
-    detail?: PromptDetail,
-  ): void {
-    const promptId = `codex-perm-${String(serverRequestId)}`;
-    this.pendingApprovals.set(promptId, serverRequestId);
-    const promptState: PromptState = {
-      promptId,
-      threadId: this.tideThreadId,
-      agentId: "codex",
-      kind: "approval",
-      message,
-      ...(detail !== undefined ? { detail } : {}),
-      // Order: Allow / Allow for this session / Deny. Both v2 approval types codex sends
-      // (commandExecution + fileChange) support the session-scoped decision, so the choice is
-      // always offered. It rides the existing `kind: "allow_always"` styling slot.
-      choices: [
-        { choiceId: "allow", label: "Allow", providerValue: CODEX_ACCEPT_TOKEN },
-        {
-          choiceId: "allow_session",
-          label: "Allow for this session",
-          providerValue: CODEX_ACCEPT_FOR_SESSION_TOKEN,
-          kind: "allow_always",
-        },
-        { choiceId: "deny", label: "Deny", providerValue: CODEX_DECLINE_TOKEN },
-      ],
-      defaultChoiceId: "allow",
-      source: "provider_hook",
-    };
-    this.onEvent({ kind: "prompt", promptState });
   }
 
   private emitItem(item: Record<string, unknown> | undefined): void {
@@ -674,7 +617,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       const output = stringField(item, "aggregatedOutput") ?? "";
       const exitCode = numberField(item, "exitCode");
       const status = stringField(item, "status");
-      this.emitToolCallItem(item, "complete");
+      this.toolCalls.emit(item, "complete");
       const resultBlock = `structured:${this.runtimeId}:${this.recordIndex}`;
       this.recordIndex += 1;
       this.emitRecord(`${resultBlock}:${itemId}`, {
@@ -691,11 +634,11 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       return;
     }
     if (itemType === "mcpToolCall") {
-      this.emitToolCallItem(item, "complete");
+      this.toolCalls.emit(item, "complete");
       return;
     }
     if (itemType === "webSearch") {
-      this.emitToolCallItem(item, "complete");
+      this.toolCalls.emit(item, "complete");
     }
     // userMessage / plan / fileChange render via their own flows later.
   }
@@ -707,7 +650,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     if (this.emitPlanActivity(item)) {
       return;
     }
-    this.emitToolCallItem(item, "pending");
+    this.toolCalls.emit(item, "pending");
   }
 
   // codex `update_plan` item → live plan step progress (Slice B′). The app-server can
@@ -718,38 +661,6 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     if (plan === undefined) return false;
     this.onEvent({ kind: "live_activity", ...plan });
     return true;
-  }
-
-  private emitToolCallItem(item: Record<string, unknown>, status: "pending" | "complete"): void {
-    if (!isCodexVisibleToolItem(item)) {
-      return;
-    }
-    const itemId = codexToolItemId(item, String(this.recordIndex));
-    const sequence = this.sequenceForToolItem(itemId);
-    const record = codexToolCallRecordFromItem({
-      item,
-      runtimeId: this.runtimeId,
-      sequence,
-      status,
-    });
-    if (record === undefined) {
-      return;
-    }
-    this.emitRecord(record.sourceRef, record.payload, record.body);
-    if (status === "complete") {
-      this.toolItemSequences.delete(itemId);
-    }
-  }
-
-  private sequenceForToolItem(itemId: string): number {
-    const existing = this.toolItemSequences.get(itemId);
-    if (existing !== undefined) {
-      return existing;
-    }
-    const sequence = this.recordIndex;
-    this.recordIndex += 1;
-    this.toolItemSequences.set(itemId, sequence);
-    return sequence;
   }
 
   private emitRecord(sourceRef: string, payload: Record<string, unknown>, body: string): void {

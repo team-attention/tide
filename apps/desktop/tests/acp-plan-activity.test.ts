@@ -55,6 +55,61 @@ test("opencode todowrite tool result emits ACP live plan activity", async () => 
   }
 });
 
+test("unknown ACP server request returns JSON-RPC error instead of hanging", async () => {
+  const root = fs.mkdtempSync(path.join(tmpdir(), "tide-acp-unknown-"));
+  const receivedFile = path.join(root, "received.jsonl");
+  const scriptPath = path.join(root, "fake-acp.cjs");
+  fs.writeFileSync(scriptPath, fakeAcpServerRequestScript(receivedFile, {
+    jsonrpc: "2.0",
+    id: 99,
+    method: "session/future_request",
+    params: {},
+  }));
+  const client = createAcpClient({
+    plan: { command: process.execPath, args: [scriptPath], env: {}, cwd: root, transport: "acp" },
+    agentId: "opencode",
+    sessionRefKind: "opencode_session",
+    threadId: "thread-acp-unknown",
+    runtimeId: "runtime-acp-unknown",
+    onEvent: () => undefined,
+  });
+  try {
+    const response = await waitForAcpResponse(receivedFile, 99);
+    assert.equal((response.error as Record<string, unknown>).code, -32601);
+    assert.match(String((response.error as Record<string, unknown>).message), /session\/future_request/);
+  } finally {
+    await client.stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("ACP permission request with no choices is cancelled instead of hanging", async () => {
+  const root = fs.mkdtempSync(path.join(tmpdir(), "tide-acp-empty-perm-"));
+  const receivedFile = path.join(root, "received.jsonl");
+  const scriptPath = path.join(root, "fake-acp.cjs");
+  fs.writeFileSync(scriptPath, fakeAcpServerRequestScript(receivedFile, {
+    jsonrpc: "2.0",
+    id: 100,
+    method: "session/request_permission",
+    params: { options: [], toolCall: { title: "Allow impossible action?" } },
+  }));
+  const client = createAcpClient({
+    plan: { command: process.execPath, args: [scriptPath], env: {}, cwd: root, transport: "acp" },
+    agentId: "opencode",
+    sessionRefKind: "opencode_session",
+    threadId: "thread-acp-empty-perm",
+    runtimeId: "runtime-acp-empty-perm",
+    onEvent: () => undefined,
+  });
+  try {
+    const response = await waitForAcpResponse(receivedFile, 100);
+    assert.deepEqual(response.result, { outcome: { outcome: "cancelled" } });
+  } finally {
+    await client.stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function fakeAcpScript(): string {
   return `
 const readline = require("node:readline");
@@ -100,4 +155,43 @@ rl.on("line", (line) => {
 });
 setInterval(() => undefined, 1000);
 `;
+}
+
+function fakeAcpServerRequestScript(receivedFile: string, request: Record<string, unknown>): string {
+  return `
+const fs = require("node:fs");
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+send(${JSON.stringify(request)});
+let buf = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buf += chunk;
+  let i;
+  while ((i = buf.indexOf("\\n")) >= 0) {
+    const line = buf.slice(0, i);
+    buf = buf.slice(i + 1);
+    if (line.trim().length > 0) fs.appendFileSync(${JSON.stringify(receivedFile)}, line + "\\n");
+  }
+});
+setInterval(() => undefined, 1000);
+`;
+}
+
+async function waitForAcpResponse(receivedFile: string, id: number): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    if (fs.existsSync(receivedFile)) {
+      for (const line of fs.readFileSync(receivedFile, "utf8").split("\n")) {
+        if (line.trim().length === 0) continue;
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (parsed.id === id && (parsed.result !== undefined || parsed.error !== undefined)) {
+          return parsed;
+        }
+      }
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ACP response ${id}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
 }

@@ -1,27 +1,7 @@
-// Shared ACP (Agent Client Protocol) runtime client. Used by providers that
-// speak ACP over stdio, currently opencode (`opencode acp`).
-//
-// EVIDENCE-BASED (live opencode transcripts + the bundled
-// @agentclientprotocol/sdk schemas):
-// - JSON-RPC 2.0, newline-delimited, over plain stdio. Bidirectional: the agent
-//   also sends REQUESTS (session/request_permission) the client must answer.
-// - initialize {protocolVersion:1, clientCapabilities, clientInfo} →
-//   {authMethods, agentCapabilities:{loadSession:true,...}}.
-// - session/new {cwd, mcpServers:[]} → {sessionId, modes, models}. The agent
-//   GENERATES the session id (randomUUID) — it cannot be minted by the client.
-//   Unauthenticated providers return a JSON-RPC error.
-// - session/prompt {sessionId, prompt:[{type:"text",text}]} stays UNRESOLVED for
-//   the whole turn; its result {stopReason, _meta:{quota}} IS the turn end.
-// - streaming: notifications session/update {update:{sessionUpdate:kind,...}}:
-//   agent_message_chunk / agent_thought_chunk / tool_call / tool_call_update /
-//   available_commands_update / plan.
-// - permission: agent request session/request_permission {options:[{optionId,
-//   name,kind}], toolCall:{title,...}} → respond
-//   {id, result:{outcome:{outcome:"selected", optionId}}}.
-// - cancel: notification session/cancel {sessionId} → prompt resolves with
-//   stopReason "cancelled" (pending permission must be answered "cancelled").
-// - trust: ACP surfaces NO trust prompt; an untrusted cwd may skip MCP servers
-//   and lock privileged modes.
+// Shared ACP runtime client for providers that speak ACP over stdio, currently
+// opencode (`opencode acp`). Evidence: JSON-RPC 2.0 JSONL, bidirectional server
+// requests, session/prompt stays unresolved for the turn, and session/update
+// notifications stream messages, thoughts, tools, commands, usage, and plans.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 import type { ComposerAttachmentRef, PromptChoice, PromptState, ProviderCliAgentId } from "../../../../application/domains/thread/thread.ts";
@@ -36,6 +16,7 @@ import { acpUsageFromRecord } from "./acp-usage.ts";
 import { usageWithRememberedRateLimits, type StructuredUsagePayload } from "./structured-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import { acpOptionKind, buildAcpPermissionDetail } from "./acp-permission.ts";
+import { cancelAcpPermissionRequest, writeUnsupportedAcpServerRequest } from "./acp-server-request.ts";
 import { planActivityFromEntries, planActivityFromTodoToolOutput } from "./plan-activity.ts";
 import { acpPlanContentRecord, withGoalPreamble } from "./structured-plan-goal.ts";
 
@@ -464,7 +445,14 @@ class AcpClient implements StructuredRuntimeClient {
     if (message.id !== undefined) {
       if (method === "session/request_permission") {
         this.surfacePermission(message.id as number | string, params);
+        return;
       }
+      writeUnsupportedAcpServerRequest({
+        serverRequestId: message.id as number | string,
+        method,
+        writeLine: (value) => this.writeLine(value),
+        onEvent: this.onEvent,
+      });
       return;
     }
 
@@ -650,6 +638,11 @@ class AcpClient implements StructuredRuntimeClient {
       })
       .filter((choice): choice is PromptChoice => choice !== undefined);
     if (choices.length === 0) {
+      cancelAcpPermissionRequest({
+        serverRequestId,
+        writeLine: (value) => this.writeLine(value),
+        onEvent: this.onEvent,
+      });
       return;
     }
     const promptId = `acp-perm-${String(serverRequestId)}`;
