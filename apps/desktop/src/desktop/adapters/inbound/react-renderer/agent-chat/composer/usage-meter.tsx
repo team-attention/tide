@@ -10,7 +10,8 @@ interface UsageSegmentView {
   label: string;
   value: string;
   detail?: string;
-  remainingPercent?: number;
+  fillPercent?: number;
+  tonePercent?: number;
 }
 
 export function SessionContextMeter({ usage }: { usage: Usage }): ReactElement | null {
@@ -44,22 +45,22 @@ export function UsageMeter({
 }
 
 function UsageSegment({ segment }: { segment: UsageSegmentView }): ReactElement {
-  const tone = usageTone(segment.remainingPercent);
+  const tone = usageTone(segment.tonePercent);
   return (
     <div
       className="agent-usage__segment"
-      data-has-bar={segment.remainingPercent !== undefined ? "true" : "false"}
+      data-has-bar={segment.fillPercent !== undefined ? "true" : "false"}
       data-usage-tone={tone}
     >
       <div className="agent-usage__segment-text">
         <span className="agent-usage__segment-label">{segment.label}</span>
         {segment.detail ? <span className="agent-usage__segment-detail">{segment.detail}</span> : null}
       </div>
-      {segment.remainingPercent !== undefined ? (
+      {segment.fillPercent !== undefined ? (
         <span className="agent-usage__bar" aria-hidden>
           <span
             className="agent-usage__bar-fill"
-            style={{ width: `${Math.max(2, Math.min(100, segment.remainingPercent))}%` }}
+            style={{ width: `${Math.max(2, Math.min(100, segment.fillPercent))}%` }}
           />
         </span>
       ) : null}
@@ -77,7 +78,10 @@ function sessionContextSegment(usage: Usage): UsageSegmentView | null {
       detail: usage.contextDetailLabel ?? (
         usage.contextPercentLabel !== undefined ? `${usage.contextPercentLabel} used` : undefined
       ),
-      remainingPercent: usage.contextRemainingPercent,
+      // The text keeps the remaining amount, while the meter itself fills as
+      // the session consumes context so the bar grows in the intuitive direction.
+      fillPercent: usage.contextUsedPercent,
+      tonePercent: usage.contextRemainingPercent,
     };
   }
   if (usage.tokensLabel !== undefined) {

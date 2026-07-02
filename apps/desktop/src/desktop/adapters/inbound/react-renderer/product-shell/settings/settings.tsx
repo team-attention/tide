@@ -306,7 +306,7 @@ function SettingsUsageDetails({ row }: { row: ProductShellUsageModelView }): Rea
         <SettingsUsageLine
           key={`${limit.label}-${index}`}
           label={settingsWindowLabel(limit.label)}
-          value={limit.usedLabel}
+          value={limit.remainingLabel ?? limit.usedLabel}
           detail={limit.resetLabel ?? "Reset unknown"}
         />
       ))}

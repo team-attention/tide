@@ -4,7 +4,7 @@
 
 Show current-session context near the composer, and show usage remaining in
 Settings as a simple Codex-style list. Provider quota windows (5h, Weekly, and
-any future reported windows) render as label, used percentage, and reset time.
+any future reported windows) render as label, remaining percentage, and reset time.
 
 The composer strip is context-only. Settings is account/provider quota only:
 it does not read thread session context and it does not show token/context
@@ -29,10 +29,10 @@ fallback rows.
 - **Scope**: provider/account quota snapshots from provider history at startup,
   plus live provider quota updates during turns. Thread/session usage is never a
   Settings source.
-- **Settings framing**: used %, i.e. provider `usedPercent`, clamped to
-  `[0, 100]`, rounded to an integer.
-- **View-model compatibility**: rate-limit views still expose remaining % for
-  any existing remaining-framed callers, but Settings renders `usedLabel`.
+- **Settings framing**: remaining %, i.e. `100 - provider usedPercent`, clamped
+  to `[0, 100]`, rounded to an integer.
+- **View-model compatibility**: rate-limit views still expose used % and
+  remaining % for callers, but Settings renders `remainingLabel`.
 - **Reset format**: windows that reset within a day (`windowMinutes <= 1440`, e.g. 5h) show a clock time (`8:31 PM`); longer windows (Weekly/Monthly) show a calendar date (`Jun 28`). Uses the user's locale/timezone (`toLocaleTimeString` / `toLocaleDateString`).
 - A window with no `usedPercent` is dropped (cannot show usage). `resetLabel` is omitted when `resetsAt` is absent.
 
@@ -63,8 +63,8 @@ interface AgentChatUsageRateLimitView {
 ```
 
 `AgentChatUsageView.rateLimits?: AgentChatUsageRateLimitView[]` drives the
-provider-window items in each Settings usage row. The context remaining fields
-drive only the composer meter.
+provider-window items in each Settings usage row. The context-used field drives
+the composer fill meter, while the remaining fields still drive the label.
 
 ## Contracts
 
@@ -91,9 +91,9 @@ composer/session context UI.
 5. The Product Shell view model derives Settings rows from provider snapshots
    only and drops snapshots without quota windows.
 6. The composer stack renders `Session context 68% left`, with token detail when
-   available.
-7. Settings renders window rows when reported, e.g. `5h 18% 8:31 PM`,
-   `Weekly 71% Jun 28`. If no account quota windows exist, it renders
+   available, and its fill bar grows as the session consumes context.
+7. Settings renders window rows when reported, e.g. `5h 58% 8:31 PM`,
+   `Weekly 68% Jun 28`. If no account quota windows exist, it renders
    `No usage reported yet.`
 
 ## Invariants
@@ -113,7 +113,7 @@ composer/session context UI.
 - view-model: `usedPercent 58 / window 300` → `{ label: "5h", usedLabel: "58%", remainingLabel: "42%", resetLabel: <time-with-colon> }`; `usedPercent 68 / window 10080` → `{ label: "Weekly", usedLabel: "68%", remainingLabel: "32%", resetLabel: <date-no-colon, has letters> }`.
 - view-model: window missing `usedPercent` is dropped; usage with only token/context still renders (no rateLimits).
 - component/shell: composer usage shows only session context. Settings usage
-  rows show 5h and Weekly used percentages with reset labels when account
+  rows show 5h and Weekly remaining percentages with reset labels when account
   provider windows are present.
 - component/shell: thread-only session usage leaves Settings empty; account
   usage renders on New Thread without any listed/open thread.
