@@ -1,4 +1,4 @@
-import type { AgentChatAgentBinding, AgentChatBackendCommand, AgentChatBranchOption, AgentChatCommandOption, AgentChatShellState, AgentChatShellViewModel, AgentChatThreadScope, AgentChatUsageView, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatAgentBinding, AgentChatBackendCommand, AgentChatBranchOption, AgentChatCommandOption, AgentChatShellState, AgentChatShellViewModel, AgentChatThreadScope, AgentChatUsage, AgentChatUsageView, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
 import type { AppChromeBackendCommand, AppChromeEditorNavigationTarget, AppChromeEditorReferenceList, AppChromeState, AppChromeViewModel, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import type { WorkbenchSplitNode } from "./workbench-split-tree.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
@@ -85,6 +85,12 @@ export interface ProductShellProject {
   projectId: string;
   name: string;
   cwd: string;
+}
+
+export interface ProductShellProviderUsage {
+  agentId: ProductShellAgentIdentity;
+  usage: AgentChatUsage;
+  observedAt?: string;
 }
 
 // A top-level pinned item: a standalone pinned Thread or a pinned Project. The Pinned
@@ -255,6 +261,9 @@ export interface ProductShellState {
   // threads is a pure selection — it never mutates or loses another thread's state.
   // Switching preserves the current `agentChat` here and restores the target's.
   agentChatByThreadId: Record<string, AgentChatShellState>;
+  // App/account-level provider quota snapshots. Settings reads this instead of
+  // per-thread session context usage.
+  providerUsage: ProductShellProviderUsage[];
   appChrome: AppChromeState;
   fileTree: ProductShellFileTreeView | null;
   // Legacy pre-Draft start-page editor files. Current UI keeps this empty and opens

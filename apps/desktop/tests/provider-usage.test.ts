@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
+import { readProviderAccountUsageSnapshotsFromHome } from "../src/backend/infrastructure/node/provider/provider-account-usage.ts";
 import { parseProviderUsage } from "../src/backend/infrastructure/node/provider/provider-usage.ts";
 
 // Spec: docs_v2/specs/agent-chat-fidelity-reasoning-actions.md (usage meter slice)
@@ -85,4 +89,61 @@ test("parses claude rate_limit_event into provider rate limits", () => {
 test("returns undefined when there is no usage in the transcript", () => {
   assert.equal(parseProviderUsage("not json\n{}", "codex"), undefined);
   assert.equal(parseProviderUsage("", "claude"), undefined);
+});
+
+test("reads account quota snapshots from recent provider history", () => {
+  const homeDir = mkdtempSync(join(tmpdir(), "tide-provider-usage-"));
+  const codexHome = join(homeDir, "codex-home");
+  const codexDir = join(codexHome, "sessions", "2026", "07", "02");
+  const claudeDir = join(homeDir, ".claude", "projects", "repo");
+  mkdirSync(codexDir, { recursive: true });
+  mkdirSync(claudeDir, { recursive: true });
+
+  const older = new Date(Date.now() - 10_000);
+  const newer = new Date(Date.now() - 1_000);
+  const codexOld = join(codexDir, "rollout-old.jsonl");
+  const codexLatest = join(codexDir, "rollout-latest.jsonl");
+  const claudeLatest = join(claudeDir, "11111111-1111-4111-8111-111111111111.jsonl");
+
+  writeFileSync(codexOld, JSON.stringify({ type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { total_tokens: 1000 } } } }));
+  writeFileSync(
+    codexLatest,
+    [
+      JSON.stringify({ type: "session_meta", payload: { model: "gpt-5.5" } }),
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          rate_limits: {
+            primary: { used_percent: 12, window_minutes: 300, resets_at: 1781973894 },
+          },
+        },
+      }),
+    ].join("\n"),
+  );
+  writeFileSync(
+    claudeLatest,
+    JSON.stringify({
+      type: "rate_limit_event",
+      rateLimits: [{ label: "Weekly", usedPercent: 65, windowMinutes: 10080 }],
+    }),
+  );
+  utimesSync(codexOld, older, older);
+  utimesSync(codexLatest, newer, newer);
+  utimesSync(claudeLatest, newer, newer);
+
+  const snapshots = readProviderAccountUsageSnapshotsFromHome({ homeDir, codexHome });
+
+  assert.deepEqual(
+    snapshots.map((snapshot) => snapshot.agentId).sort(),
+    ["claude", "codex"],
+  );
+  assert.deepEqual(
+    snapshots.find((snapshot) => snapshot.agentId === "codex")?.usage.rateLimits,
+    [{ usedPercent: 12, windowMinutes: 300, resetsAt: 1781973894 }],
+  );
+  assert.deepEqual(
+    snapshots.find((snapshot) => snapshot.agentId === "claude")?.usage.rateLimits,
+    [{ label: "Weekly", usedPercent: 65, windowMinutes: 10080 }],
+  );
 });

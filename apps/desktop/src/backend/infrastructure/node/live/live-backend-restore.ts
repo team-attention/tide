@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
 
 import { createBackendContractMessageAdapter } from "../../../adapters/inbound/contract-message-adapter/contract-message-adapter.ts";
-import { persistThreadBlocks } from "./live-projector.ts";
+import { nextEventId, persistThreadBlocks } from "./live-projector.ts";
 import { discoverAdoptedThreadSeeds, rebuildAdoptedConversation } from "./live-provider-discovery.ts";
 import { rebuildConversationFromProviderHistory } from "../provider/provider-conversation-rebuilders.ts";
+import { readProviderAccountUsageSnapshotsFromHome } from "../provider/provider-account-usage.ts";
 import { isInternalSessionTitle } from "../../../application/services/provider/provider-session-discovery.ts";
 import type { AgentSessionBlock } from "../../../application/domains/agent-session/agent-session-block.ts";
 import {
@@ -19,6 +20,7 @@ import type {
   BackendEventEnvelope,
   ThreadSummaryDto,
 } from "../../../../shared/contracts/index.ts";
+import { CONTRACT_VERSION } from "../../../../shared/contracts/index.ts";
 
 // Persistence + restore collaborator extracted from live-backend.ts (the composition
 // root). Owns: thread metadata-first restore with lazy per-thread block hydration and
@@ -41,6 +43,7 @@ export function createPersistentLiveBackendAdapter(input: {
   // adopted-session discovery so it doesn't re-read them.
   let persistedRecords: ThreadStorageRecord[] = [];
   let adoptedDiscoveryKicked = false;
+  let providerUsageSnapshotReturned = false;
   // Per-thread lazy block loads, deduped so concurrent/repeat opens of one thread
   // share a single rebuild instead of racing.
   const lazyBlockLoads = new Map<string, Promise<void>>();
@@ -173,22 +176,60 @@ export function createPersistentLiveBackendAdapter(input: {
       // thread.hydrated carries the real transcript and there is no empty flash.
       await ensureThreadBlocks(message);
       const events = await input.adapter.handleMessage(message);
+      if (!providerUsageSnapshotReturned && isThreadListMessage(message)) {
+        providerUsageSnapshotReturned = true;
+        const usages = readProviderAccountUsageSnapshotsFromHome({
+          homeDir: input.homeDir,
+          codexHome: input.codexHome,
+        });
+        if (usages.length > 0) {
+          const requestId = requestIdFromMessage(message);
+          const usageEvent: BackendEventEnvelope<"providerUsage.changed"> = {
+            contractVersion: CONTRACT_VERSION,
+            eventId: nextEventId(),
+            kind: "providerUsage.changed",
+            emittedAt: new Date().toISOString(),
+            ...(requestId !== undefined ? { requestId } : {}),
+            payload: {
+              usages,
+            },
+          };
+          const completedIndex = events.findIndex((event) => event.kind === "command.completed");
+          events.splice(completedIndex >= 0 ? completedIndex : events.length, 0, usageEvent);
+        }
+      }
       await persistThreadEvents(input.persistence, input.service, events);
       // Kick adopted (external) session discovery ONCE, after the first response is
       // computed. setImmediate fires in the next check phase — after this resolved
       // promise lets the entrypoint post the first thread.listed — so the rail clears
       // before the synchronous local-history scan blocks the loop.
-      if (!adoptedDiscoveryKicked) {
-        adoptedDiscoveryKicked = true;
-        setImmediate(() => {
-          void restoreAdoptedSessions();
-        });
-      }
-      return events;
+      return finishHandleMessage(events);
     },
     // Flush coalesced conversation-cache writes (wired to backend shutdown).
     flushPendingPersists: input.flushPendingPersists,
   };
+
+  function finishHandleMessage(events: BackendEventEnvelope[]): BackendEventEnvelope[] {
+    if (!adoptedDiscoveryKicked) {
+      adoptedDiscoveryKicked = true;
+      setImmediate(() => {
+        void restoreAdoptedSessions();
+      });
+    }
+    return events;
+  }
+}
+
+function isThreadListMessage(message: unknown): boolean {
+  return typeof message === "object" && message !== null && (message as { kind?: unknown }).kind === "thread.list";
+}
+
+function requestIdFromMessage(message: unknown): string | undefined {
+  if (typeof message !== "object" || message === null) {
+    return undefined;
+  }
+  const requestId = (message as { requestId?: unknown }).requestId;
+  return typeof requestId === "string" ? requestId : undefined;
 }
 
 // The thread a thread.hydrate command targets, if any — drives the lazy block load.

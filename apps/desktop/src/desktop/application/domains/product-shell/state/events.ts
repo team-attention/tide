@@ -1,11 +1,11 @@
-import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellState } from "./types.ts";
+import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellProviderUsage, ProductShellState } from "./types.ts";
 import { applyAgentChatBackendEvent, setAvailableProviderAgents, setOpencodeEnvironment, setOpencodeModelCatalog, setOpencodeVendors, setProviderModelCatalog, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { applyProductShellThreadArchivedEvent, applyProductShellThreadEvent, applyProductShellThreadLaunchOptionsChangedEvent, applyProductShellThreadPinChangedEvent, applyProductShellThreadRenamedEvent, toProductShellThreadFromSummary } from "./thread-list.ts";
 import { setProductShellProviderCommands } from "./composer-bridge.ts";
-import { activeSurfaceThreadId, createStartAgentChatState } from "./start.ts";
+import { activeSurfaceThreadId, createStartAgentChatState, isProductShellAgentIdentity } from "./start.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
 import { reconcileEditorDrafts } from "./workbench-editor.ts";
 import { projectsFromThreads } from "./view-model.ts";
@@ -102,6 +102,45 @@ export function applyProductShellBackendEvent(
       );
       setOpencodeEnvironment(catalog.opencodeEnvironment ?? null);
       return nextState;
+    }
+    case "providerUsage.changed": {
+      const usagePayload = event.payload as {
+        usages?: ReadonlyArray<{
+          agentId?: unknown;
+          usage?: ProductShellProviderUsage["usage"];
+          observedAt?: unknown;
+        }>;
+      };
+      const incoming: ProductShellProviderUsage[] = (usagePayload.usages ?? [])
+        .filter(
+          (entry): entry is {
+            agentId: ProductShellProviderUsage["agentId"];
+            usage: ProductShellProviderUsage["usage"];
+            observedAt?: string;
+          } =>
+            typeof entry === "object" &&
+            entry !== null &&
+            typeof entry.agentId === "string" &&
+            isProductShellAgentIdentity(entry.agentId) &&
+            entry.usage !== undefined &&
+            (entry.observedAt === undefined || typeof entry.observedAt === "string"),
+        )
+        .map((entry) => ({
+          agentId: entry.agentId,
+          usage: entry.usage,
+          ...(entry.observedAt !== undefined ? { observedAt: entry.observedAt } : {}),
+        }));
+      if (incoming.length === 0) {
+        return nextState;
+      }
+      const byKey = new Map(
+        nextState.providerUsage.map((entry) => [providerUsageKey(entry), entry] as const),
+      );
+      for (const entry of incoming) {
+        byKey.set(providerUsageKey(entry), entry);
+      }
+      const providerUsage = [...byKey.values()];
+      return { ...nextState, providerUsage };
     }
     case "thread.started":
     case "thread.hydrated":
@@ -319,6 +358,10 @@ function activeWorkspaceFileTreeCwd(state: ProductShellState): string | null {
     return null;
   }
   return scope.cwd;
+}
+
+function providerUsageKey(entry: ProductShellProviderUsage): string {
+  return entry.agentId;
 }
 
 function shouldApplyBackendEventToActiveSurfaces(

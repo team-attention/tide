@@ -314,31 +314,24 @@ export function createProductShellViewModel(
 
 function deriveUsageByModel(state: ProductShellState): ProductShellUsageModelView[] {
   const byModel = new Map<string, ProductShellUsageModelView & { sortMs: number }>();
-  const seenThreadIds = new Set<string>();
-  const chats = [state.agentChat, ...Object.values(state.agentChatByThreadId)];
 
-  for (const chat of chats) {
-    const threadId = chat.thread?.threadId;
-    if (threadId !== undefined) {
-      if (seenThreadIds.has(threadId)) {
-        continue;
-      }
-      seenThreadIds.add(threadId);
-    }
-    const usage = createAgentChatUsageView(chat.usage);
+  for (const snapshot of state.providerUsage) {
+    const usage = createAgentChatUsageView(snapshot.usage);
     if (usage === null) {
       continue;
     }
-    const agentId = chat.thread?.agentBinding.agentId ?? chat.composer.startOptions.agentBinding.agentId;
-    const modelValue = usageModelValue(chat, agentId);
+    if ((usage.rateLimits?.length ?? 0) === 0) {
+      continue;
+    }
+    const agentId = snapshot.agentId;
+    const modelValue = usageModelValue(snapshot.usage.model, agentId);
     const key = `${agentId}:${modelValue}`;
-    const sortMs = Date.parse(chat.thread?.updatedAt ?? "") || 0;
+    const sortMs = Date.parse(snapshot.observedAt ?? "") || 0;
     const row: ProductShellUsageModelView & { sortMs: number } = {
       key,
       agentId,
       agentLabel: formatAgentLabel(agentId),
       modelLabel: usageModelLabel(agentId, modelValue),
-      ...(chat.thread?.title !== undefined ? { threadTitle: chat.thread.title } : {}),
       usage,
       sortMs,
     };
@@ -353,14 +346,9 @@ function deriveUsageByModel(state: ProductShellState): ProductShellUsageModelVie
     .map(({ sortMs: _sortMs, ...row }) => row);
 }
 
-function usageModelValue(chat: AgentChatShellState, agentId: string): string {
-  const usageModel = chat.usage?.model?.trim();
+function usageModelValue(usageModel: string | undefined, agentId: string): string {
   if (usageModel !== undefined && usageModel.length > 0) {
     return usageModel;
-  }
-  const launchModel = chat.thread?.launchOptions?.model ?? chat.composer.startOptions.launchOptions?.model;
-  if (typeof launchModel === "string" && launchModel.trim().length > 0) {
-    return launchModel;
   }
   return defaultModelValueForAgent(agentId);
 }
