@@ -1,7 +1,6 @@
 import type { AgentChatBlock, AgentChatBlockPhase, AgentChatBlockView, AgentChatChecklistEntry, AgentChatChecklistStatus, AgentChatChecklistView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageRateLimitView, AgentChatUsageView, LaunchOptionFeedback, LiveTurnActivityView } from "./types.ts";
 import { codexModelLabel, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, modelLabelForAgent, permissionLabelForValue, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { createActiveComposerSurface } from "./choice-surfaces.ts";
-import { isOpencodeUsable } from "./opencode-onramp.ts";
 import { environmentContextValue, launchOptionsForState } from "./launch-options.ts";
 import { nativeEvidenceForBlock, nativeEvidenceLabel } from "./native-evidence-view.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
@@ -270,9 +269,9 @@ function formatResetLabel(
 
 // The Model chip opens the opencode on-ramp instead of the model menu when opencode
 // is the selected agent and not yet usable (no connected vendor / no model).
-function modelChipSurfaceForState(state: AgentChatShellState): "model_menu" | "opencode_connect" {
+function modelChipSurfaceForState(state: AgentChatShellState): "model_menu" | "opencode_model_provider" {
   const binding = state.thread?.agentBinding ?? state.composer.startOptions.agentBinding;
-  return binding.agentId === "opencode" && !isOpencodeUsable() ? "opencode_connect" : "model_menu";
+  return binding.agentId === "opencode" ? "opencode_model_provider" : "model_menu";
 }
 
 function modelLabelForState(state: AgentChatShellState): string {

@@ -8,6 +8,9 @@ import {
   claudeSessionTitle,
   codexSessionDescriptor,
   discoverLocalSessions,
+  opencodeFirstUserTextFromExport,
+  parseOpencodeExportText,
+  parseOpencodeSessionListText,
   type DiscoveryFs,
 } from "../src/backend/application/services/provider/provider-session-discovery.ts";
 
@@ -31,6 +34,8 @@ function fakeFs(overrides: Partial<DiscoveryFs> = {}): DiscoveryFs {
   return {
     listClaudeTranscripts: () => [],
     listCodexRollouts: () => [],
+    listOpencodeSessions: () => [],
+    exportOpencodeSession: () => undefined,
     readText: () => undefined,
     ...overrides,
   };
@@ -136,4 +141,131 @@ test("discovery_skips_auto_review_internal_sessions", () => {
   });
   const sessions = discoverLocalSessions({ cwds: [CWD], fs });
   assert.equal(sessions.length, 0, "auto-review session is filtered out");
+});
+
+test("opencode_session_list_parser_maps_json_records_and_ignores_malformed_entries", () => {
+  const entries = parseOpencodeSessionListText(JSON.stringify([
+    {
+      id: "ses-1",
+      title: "Fix composer",
+      created: 1_000,
+      updated: 2_000,
+      projectId: "p1",
+      directory: CWD,
+    },
+    { id: "bad-no-directory" },
+  ]));
+  assert.deepEqual(entries, [
+    {
+      id: "ses-1",
+      title: "Fix composer",
+      created: 1_000,
+      updated: 2_000,
+      projectId: "p1",
+      directory: CWD,
+    },
+  ]);
+});
+
+test("opencode_export_parser_strips_leading_status_line", () => {
+  const exported = parseOpencodeExportText(
+    `Exporting session: ses-1\n${JSON.stringify({
+      info: { id: "ses-1" },
+      messages: [
+        {
+          info: { role: "user" },
+          parts: [{ type: "text", text: "Adopt this opencode session" }],
+        },
+      ],
+    })}`,
+  );
+  assert.equal(exported?.info.id, "ses-1");
+  assert.equal(opencodeFirstUserTextFromExport(`noise\n${JSON.stringify(exported)}`), "Adopt this opencode session");
+});
+
+test("discovery_adopts_opencode_sessions_by_directory_without_transcript_path", () => {
+  const fs = fakeFs({
+    listOpencodeSessions: () => [
+      {
+        id: "opencode-1",
+        title: "New session",
+        created: 1_000,
+        updated: 2_000,
+        directory: CWD,
+      },
+      {
+        id: "wrong-cwd",
+        title: "Wrong",
+        created: 1,
+        updated: 1,
+        directory: "/other",
+      },
+    ],
+    exportOpencodeSession: () => JSON.stringify({
+      info: { id: "opencode-1" },
+      messages: [
+        {
+          info: { role: "user" },
+          parts: [{ type: "text", text: "Continue the opencode flow" }],
+        },
+      ],
+    }),
+  });
+
+  const sessions = discoverLocalSessions({ cwds: [CWD], fs });
+  const seeds = adoptedThreadSeedsFromSessions({
+    sessions,
+    projectIdForCwd: () => "tide",
+    existingRefValues: new Set(),
+    existingThreadIds: new Set(),
+  });
+
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].agentId, "opencode");
+  assert.equal(sessions[0].title, "Continue the opencode flow");
+  assert.equal(seeds[0].agentBinding.providerSessionRef?.kind, "opencode_session");
+  assert.equal(seeds[0].agentBinding.providerSessionRef?.value, "opencode-1");
+  assert.equal(seeds[0].agentBinding.providerSessionRef?.transcriptPath, undefined);
+});
+
+test("discovery_uses_opencode_export_only_when_the_list_title_is_not_meaningful", () => {
+  let exportCalls = 0;
+  const fs = fakeFs({
+    listOpencodeSessions: () => [
+      {
+        id: "meaningful",
+        title: "Implement the composer provider picker",
+        created: 1_000,
+        updated: 2_000,
+        directory: CWD,
+      },
+      {
+        id: "generic",
+        title: "New session",
+        created: 3_000,
+        updated: 4_000,
+        directory: CWD,
+      },
+    ],
+    exportOpencodeSession: (sessionId) => {
+      exportCalls += 1;
+      return JSON.stringify({
+        info: { id: sessionId },
+        messages: [
+          {
+            info: { role: "user" },
+            parts: [{ type: "text", text: `Export title for ${sessionId}` }],
+          },
+        ],
+      });
+    },
+  });
+
+  const sessions = discoverLocalSessions({ cwds: [CWD], fs });
+
+  assert.equal(exportCalls, 1);
+  assert.deepEqual(
+    sessions.map((session) => session.title),
+    ["Implement the composer provider picker", "Export title for generic"],
+  );
 });

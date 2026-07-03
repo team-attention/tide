@@ -3452,6 +3452,72 @@ test("provider_readiness_terminal_exit_pushes_async_readiness_when_still_blocked
   assert.deepEqual(fakes.runtime.events, []);
 });
 
+test("opencode_provider_readiness_terminal_exit_requests_catalog_refresh", async () => {
+  const fakes = createFakes({
+    readiness: {
+      ready: false,
+      agentId: "opencode",
+      blockers: [
+        {
+          kind: "not_authenticated",
+          message: "opencode needs a provider login.",
+          terminalAction: {
+            command: "/usr/local/bin/opencode",
+            args: ["auth", "login", "-p", "openai"],
+            cwd: "/repo",
+            expectedCompletion: "retry_preflight",
+          },
+        },
+      ],
+    },
+  });
+  const asyncEvents: ThreadRuntimeAsyncEvent[] = [];
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    onAsyncEvent: (event) => {
+      asyncEvents.push(event);
+    },
+  });
+  const started = await service.startThread({
+    initialMessage: "Keep this pending",
+    agentBinding: { agentId: "opencode" },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
+  });
+  assert.equal(started.ok, true);
+  const opened = await service.handleWorkbenchCommand({
+    threadId: started.thread.threadId,
+    command: "open_terminal",
+    data: {
+      command: "/usr/local/bin/opencode",
+      args: ["auth", "login", "-p", "openai"],
+      cwd: "/repo",
+      expectedCompletion: "retry_preflight",
+      terminalRole: "provider_readiness",
+    },
+  });
+  assert.equal(opened.ok, true);
+  asyncEvents.length = 0;
+
+  await fakes.workbenchTerminal.emitExit(0, { exitCode: 0, signal: null });
+
+  assert.deepEqual(
+    asyncEvents.map((event) => event.kind),
+    [
+      "workbench_changed",
+      "provider_catalog_refresh_requested",
+      "provider_readiness_changed",
+      "thread_hydrated",
+    ],
+  );
+  const catalogEvent = asyncEvents.find(
+    (event): event is Extract<ThreadRuntimeAsyncEvent, { kind: "provider_catalog_refresh_requested" }> =>
+      event.kind === "provider_catalog_refresh_requested",
+  );
+  assert.equal(catalogEvent?.agentId, "opencode");
+});
+
 test("closing_running_provider_readiness_terminal_stops_readiness_terminal_process", async () => {
   // Spec: docs_v2/specs/workbench-terminal-pane-session.md
   const fakes = createFakes();

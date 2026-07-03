@@ -110,6 +110,40 @@ test("ACP permission request with no choices is cancelled instead of hanging", a
   }
 });
 
+test("opencode ACP resume loads the adopted opencode session id", async () => {
+  const root = fs.mkdtempSync(path.join(tmpdir(), "tide-acp-resume-"));
+  const receivedFile = path.join(root, "received.jsonl");
+  const scriptPath = path.join(root, "fake-acp-resume.cjs");
+  fs.writeFileSync(scriptPath, fakeAcpResumeScript(receivedFile));
+  const client = createAcpClient({
+    plan: {
+      command: process.execPath,
+      args: [scriptPath],
+      env: {},
+      cwd: root,
+      transport: "acp",
+      protocolParams: { cwd: root },
+    },
+    agentId: "opencode",
+    sessionRefKind: "opencode_session",
+    threadId: "thread-opencode-adopted",
+    runtimeId: "runtime-opencode-adopted",
+    resumeSessionId: "opencode-session-123",
+    onEvent: () => undefined,
+  });
+  try {
+    const request = await waitForAcpRequest(receivedFile, "session/load");
+    assert.deepEqual(request.params, {
+      sessionId: "opencode-session-123",
+      cwd: root,
+      mcpServers: [],
+    });
+  } finally {
+    await client.stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function fakeAcpScript(): string {
   return `
 const readline = require("node:readline");
@@ -177,6 +211,28 @@ setInterval(() => undefined, 1000);
 `;
 }
 
+function fakeAcpResumeScript(receivedFile: string): string {
+  return `
+const fs = require("node:fs");
+const readline = require("node:readline");
+const rl = readline.createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+rl.on("line", (line) => {
+  if (line.trim().length === 0) return;
+  fs.appendFileSync(${JSON.stringify(receivedFile)}, line + "\\n");
+  const message = JSON.parse(line);
+  if (message.method === "initialize") {
+    send({ jsonrpc: "2.0", id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "session/load") {
+    send({ jsonrpc: "2.0", id: message.id, result: { sessionId: message.params.sessionId } });
+  }
+});
+setInterval(() => undefined, 1000);
+`;
+}
+
 async function waitForAcpResponse(receivedFile: string, id: number): Promise<Record<string, unknown>> {
   const deadline = Date.now() + 15_000;
   for (;;) {
@@ -191,6 +247,25 @@ async function waitForAcpResponse(receivedFile: string, id: number): Promise<Rec
     }
     if (Date.now() > deadline) {
       throw new Error(`timed out waiting for ACP response ${id}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+async function waitForAcpRequest(receivedFile: string, method: string): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    if (fs.existsSync(receivedFile)) {
+      for (const line of fs.readFileSync(receivedFile, "utf8").split("\n")) {
+        if (line.trim().length === 0) continue;
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (parsed.method === method) {
+          return parsed;
+        }
+      }
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ACP request ${method}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }

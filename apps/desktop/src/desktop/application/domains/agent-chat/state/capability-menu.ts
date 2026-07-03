@@ -130,5 +130,9 @@ function selectProviderConfigCapability(
   if (capability.invoke.key === "permission") {
     return setComposerActiveSurface(state, "permission_menu");
   }
-  return setComposerActiveSurface(state, "model_menu");
+  const binding = state.thread?.agentBinding ?? state.composer.startOptions.agentBinding;
+  return setComposerActiveSurface(
+    state,
+    binding.agentId === "opencode" ? "opencode_model_provider" : "model_menu",
+  );
 }
