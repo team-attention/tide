@@ -129,10 +129,9 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     }
     this.child = spawn(input.plan.command, input.plan.args, {
       cwd: input.plan.cwd,
-      // Inherit the backend's env (login-shell PATH, HOME for auth state) and
-      // overlay the plan's additions — plan.env alone would strand the CLI
-      // without credentials or PATH.
-      env: { ...process.env, ...input.plan.env },
+      // The runtime port resolves the cwd shell env before this point, so this
+      // spawn must not re-merge the backend process env and leak Tide ownership.
+      env: input.plan.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.child.stdout.setEncoding("utf8");

@@ -387,10 +387,10 @@ Represents the Tide-owned executable or command that serves Tide MCP over stdio.
 
 Expected current implementation:
 
-- path under `<home>/.tide/agent-bootstrap/tide-mcp-stdio`;
+- direct command/args/env projection for `<tide> <backend-entrypoint> mcp`;
 - invokes the Desktop Backend MCP entrypoint under `ELECTRON_RUN_AS_NODE`;
-- cleanup policy `manual` or versioned overwrite, because it is a generated
-  shared user-scope artifact.
+- generated provider config, when needed, is scoped under Tide app data instead
+  of a mutable shared user-scope wrapper.
 
 ### mcp_server_binding
 

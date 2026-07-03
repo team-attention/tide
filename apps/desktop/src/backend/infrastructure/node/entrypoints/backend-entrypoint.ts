@@ -82,6 +82,7 @@ const browserRuntime = createMainProcessBrowserRuntimePort(parentPort);
 const adapter = createLiveBackendContractMessageAdapter({
   onEvent: postOrBufferBackendEvent,
   browserRuntimePort: browserRuntime.port,
+  backendInstanceId,
 });
 let activeParentCommandCount = 0;
 const bufferedBackendEvents: BackendEventEnvelope[] = [];

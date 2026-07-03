@@ -65,11 +65,15 @@ The provider MCP process must have:
 
 This preserves the same Agent Runtime session identity; MCP tool calls do not create another Agent Runtime.
 
-### D5. Provider configs launch a Tide MCP stdio wrapper
+### D5. Provider configs launch an owner-projected Tide MCP command
 
-Provider-native MCP config files must point to the generated `tide-mcp-stdio` wrapper, not to the general Tide app executable with loose arguments.
+Provider-native MCP config files must point to the Backend-owner-projected Tide
+MCP command/args/env. New launches do not depend on a generated global
+`tide-mcp-stdio` wrapper.
 
-The wrapper launches the Backend entrypoint in node mode with `mcp`, while provider configs carry the active `TIDE_SOCKET` env so the provider-owned stdio process can call the live Backend socket bridge.
+The projected command launches the Backend entrypoint in node mode with `mcp`,
+while provider configs carry the active `TIDE_SOCKET` env so the provider-owned
+stdio process can call the live Backend socket bridge.
 
 ## Contracts
 
@@ -131,12 +135,12 @@ interface TideMcpRuntimeEnv {
 | Backend entrypoint reaches MCP mode without loading Electron parentPort | `backend_entrypoint_mcp_mode_reaches_stdio_bridge_without_electron_parent_port` |
 | Socket bridge forwards JSON-RPC requests to a live adapter | `mcp_socket_request_handler_routes_tools_call_to_adapter` |
 | Stdio entrypoint requires the live Backend socket | `mcp_stdio_entrypoint_requires_tide_socket` |
-| Provider bootstrap creates wrapper-backed MCP configs | `provider_bootstrap_artifacts_create_provider_native_files` |
+| Provider bootstrap creates owner-projected MCP configs | `provider_bootstrap_artifacts_create_only_the_mcp_surface` |
 | A broken client connection does not crash the Backend | `tide_mcp_socket_server_survives_a_broken_client_connection` |
 | Agent observes the thread end-to-end over stdio+socket | `tide_mcp_stdio_socket_round_trip_lets_an_agent_observe_the_thread` |
 | Agent operates the Workbench end-to-end over stdio+socket | `tide_mcp_stdio_socket_round_trip_lets_an_agent_operate_the_workbench` |
 
 ## Implementation Notes
 
-- Keep line-delimited JSON-RPC framing in a small runner so later packaging can choose the final executable wrapper without changing the Backend adapter.
+- Keep line-delimited JSON-RPC framing in the MCP bridge so later packaging can choose the final executable projection without changing the Backend adapter.
 - Keep socket or process-supervisor details outside the domain service.

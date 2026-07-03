@@ -615,11 +615,10 @@ app.commandLine.appendSwitch("password-store", "basic");
 // (The dev `npm start` kills the old instance first, so it always gets the new
 // build; this lock is the safety net for the packaged app.)
 //
-// Skipped when TIDE_APP_DATA_ROOT is set — that override is ONLY used by the
-// headless test/verification harnesses, which intentionally run several isolated
-// instances at once (each with its own temp data root); the lock is keyed by
-// Electron userData, not the data root, so without this they would collide.
-if (process.env.TIDE_APP_DATA_ROOT === undefined) {
+// Verification harnesses that intentionally run several isolated instances must
+// opt in explicitly. An inherited TIDE_APP_DATA_ROOT from an agent shell must not
+// be enough to start a second app/backend against the same owner state.
+if (process.env.TIDE_ALLOW_MULTI_INSTANCE !== "1") {
   const gotSingleInstanceLock = app.requestSingleInstanceLock();
   // Breadcrumb for the post-update relaunch: a Squirrel-relaunched instance that loses
   // this race logs `lock = false` right before quitting. See auto-update.ts.

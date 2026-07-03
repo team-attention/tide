@@ -129,14 +129,18 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
       ready: true,
       blockers: [],
       capabilities: opencodeCapabilities,
-      launchPlan: this.opencodeLaunchPlan({ executablePath, cwd }),
     };
   }
 
   async buildStartPlan(input: AgentStartPlanInput): Promise<ProviderLaunchPlan> {
     const executablePath = (await this.resolveExecutable("opencode")) ?? "opencode";
     const cwd = cwdFromScope(input.scope, this.defaultCwd);
-    return this.opencodeLaunchPlan({ executablePath, cwd, launchOptions: input.launchOptions });
+    return this.opencodeLaunchPlan({
+      executablePath,
+      cwd,
+      launchOptions: input.launchOptions,
+      runtimeId: input.runtimeId,
+    });
   }
 
   async buildResumePlan(input: AgentResumePlanInput): Promise<ProviderLaunchPlan> {
@@ -147,6 +151,7 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
       cwd,
       launchOptions: input.launchOptions,
       resumeRef: input.providerSessionRef.value,
+      runtimeId: input.runtimeId,
     });
   }
 
@@ -164,6 +169,7 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
     cwd: string;
     launchOptions?: Record<string, unknown>;
     resumeRef?: string;
+    runtimeId?: string;
   }): ProviderLaunchPlan {
     // STRUCTURED TRANSPORT: ACP over stdio (`opencode acp`). The shared ACP
     // client drives initialize → session/new (resume via session/load) →
@@ -186,7 +192,15 @@ class OpencodeAgentIntegration implements AgentIntegrationPort {
                   name: "tide",
                   command: this.tideMcp.command,
                   args: this.tideMcp.args,
-                  env: Object.entries(this.tideMcp.env ?? {}).map(([name, value]) => ({ name, value })),
+                  env: Object.entries({
+                    ...this.tideMcp.env,
+                    ...(input.runtimeId === undefined
+                      ? {}
+                      : {
+                          TIDE_RUNTIME_ID: input.runtimeId,
+                          TIDE_AGENT_ID: "opencode",
+                        }),
+                  }).map(([name, value]) => ({ name, value })),
                 },
               ],
             }

@@ -162,12 +162,6 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       ready: true,
       blockers: [],
       capabilities: codexCapabilities,
-      launchPlan: await this.codexLaunchPlan({
-        executablePath,
-        cwd,
-        resumeRef: undefined,
-        launchOptions: input.launchOptions,
-      }),
     };
   }
 

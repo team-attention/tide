@@ -94,6 +94,9 @@ async function assertRuntimeEnvironmentApplied(
       projectEnv: process.env.PROJECT_ENV,
       term: process.env.TERM,
       tideSocket: process.env.TIDE_SOCKET,
+      tideAppDataRoot: process.env.TIDE_APP_DATA_ROOT,
+      tideBin: process.env.TIDE_BIN,
+      electronRunAsNode: process.env.ELECTRON_RUN_AS_NODE,
       runtimeId: process.env.TIDE_RUNTIME_ID
     }));
     setTimeout(() => {}, 200);
@@ -101,10 +104,21 @@ async function assertRuntimeEnvironmentApplied(
   const plan: ProviderLaunchPlan = {
     command: process.execPath,
     args: ["-e", captureScript, envFile],
-    env: { TERM: "plan-term", TIDE_SOCKET: "plan-socket" },
+    env: {
+      TERM: "plan-term",
+      TIDE_SOCKET: "plan-socket",
+      TIDE_APP_DATA_ROOT: "/wrong-plan-data-root",
+      ELECTRON_RUN_AS_NODE: "1",
+    },
     cwd,
     transport,
   };
+  const oldAppDataRoot = process.env.TIDE_APP_DATA_ROOT;
+  const oldTideBin = process.env.TIDE_BIN;
+  const oldElectronRunAsNode = process.env.ELECTRON_RUN_AS_NODE;
+  process.env.TIDE_APP_DATA_ROOT = "/wrong-process-data-root";
+  process.env.TIDE_BIN = "/wrong/tide";
+  process.env.ELECTRON_RUN_AS_NODE = "1";
   const resolverCalls: Array<{ cwd: string; planEnv: Record<string, string> }> = [];
   const port = createAgentIntegrationAgentRuntimePort({
     integrations: integrationRegistry(plan),
@@ -115,19 +129,28 @@ async function assertRuntimeEnvironmentApplied(
         PROJECT_ENV: "from-cwd-shell",
         TERM: "shell-term",
         TIDE_SOCKET: "shell-socket",
+        TIDE_APP_DATA_ROOT: "/wrong-shell-data-root",
+        TIDE_BIN: "/wrong-shell-tide",
+        ELECTRON_RUN_AS_NODE: "1",
       };
     },
   });
 
-  const handle = await port.start({
-    threadId: `thread-env-${agentId}`,
-    agentBinding: { agentId },
-    scope: { kind: "project", projectId: cwd, cwd },
-    launchOptions: {},
-    initialPrompt: "capture env",
-  });
-  await waitForFile(envFile);
-  await port.stop(handle);
+  try {
+    const handle = await port.start({
+      threadId: `thread-env-${agentId}`,
+      agentBinding: { agentId },
+      scope: { kind: "project", projectId: cwd, cwd },
+      launchOptions: {},
+      initialPrompt: "capture env",
+    });
+    await waitForFile(envFile);
+    await port.stop(handle);
+  } finally {
+    restoreEnv("TIDE_APP_DATA_ROOT", oldAppDataRoot);
+    restoreEnv("TIDE_BIN", oldTideBin);
+    restoreEnv("ELECTRON_RUN_AS_NODE", oldElectronRunAsNode);
+  }
 
   const captured = JSON.parse(fs.readFileSync(envFile, "utf8")) as Record<string, string>;
   assert.equal(resolverCalls.length, 1);
@@ -136,9 +159,20 @@ async function assertRuntimeEnvironmentApplied(
   assert.equal(captured.cwd, fs.realpathSync(cwd));
   assert.equal(captured.projectEnv, "from-cwd-shell");
   assert.equal(captured.term, "plan-term");
-  assert.equal(captured.tideSocket, "plan-socket");
+  assert.equal(captured.tideSocket, undefined);
+  assert.equal(captured.tideAppDataRoot, undefined);
+  assert.equal(captured.tideBin, undefined);
+  assert.equal(captured.electronRunAsNode, undefined);
   assert.equal(captured.runtimeId, `runtime-env-${agentId}`);
   fs.rmSync(cwd, { recursive: true, force: true });
+}
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+    return;
+  }
+  process.env[key] = value;
 }
 
 function integrationRegistry(plan: ProviderLaunchPlan): AgentIntegrationRegistry {

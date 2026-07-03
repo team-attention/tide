@@ -7,12 +7,10 @@ import { join } from "node:path";
 // more hooks, signal spool, or config overlays. See
 // docs_v2/specs/structured-agent-runtime.md.
 //
-// - tide-mcp-stdio: a tiny wrapper that runs `<tide> backend-entrypoint mcp`
-//   under ELECTRON_RUN_AS_NODE. claude attaches it via --mcp-config; codex
-//   attaches it via `-c mcp_servers.tide.*` argv (so codex needs no generated
-//   config overlay and keeps provider-native Codex home behavior).
 // - claude mcp.json + settings.json (settings only pre-allows the tide MCP
-//   server; no hooks).
+//   server; no hooks). The MCP command is projected directly as
+//   `<tide> <backend-entrypoint> mcp` with ELECTRON_RUN_AS_NODE in env, not
+//   through a mutable global wrapper.
 
 export interface ProviderBootstrapArtifactsInput {
   homeDir: string;
@@ -47,6 +45,8 @@ export function providerBootstrapArtifactsForHome(
   return {
     rootDir,
     tideCommand,
+    // Legacy path retained for older callers/tests. New launches must not write
+    // or execute this global mutable wrapper.
     tideMcpCommandPath: join(rootDir, "tide-mcp-stdio"),
     tideMcpEntrypoint,
     codexHome: join(input.homeDir, ".codex"),
@@ -60,17 +60,14 @@ export function ensureProviderBootstrapArtifacts(
 ): ProviderBootstrapArtifacts {
   const artifacts = providerBootstrapArtifactsForHome(input);
   mkdirSync(artifacts.rootDir, { recursive: true });
-  writeFileSync(artifacts.tideMcpCommandPath, tideMcpCommandScript(artifacts), {
-    encoding: "utf8",
-    mode: 0o755,
-  });
   ensureClaudeArtifacts(input, artifacts);
   return artifacts;
 }
 
 // The Tide MCP bridge is the one bootstrap an agent needs before it can start.
 export function isMcpBootstrapReady(artifacts: ProviderBootstrapArtifacts): boolean {
-  return existsSync(artifacts.tideMcpCommandPath);
+  void artifacts;
+  return true;
 }
 
 export function isClaudeBootstrapReady(artifacts: ProviderBootstrapArtifacts): boolean {
@@ -86,8 +83,8 @@ function ensureClaudeArtifacts(
     mcpServers: {
       tide: {
         type: "stdio",
-        command: artifacts.tideMcpCommandPath,
-        args: [],
+        command: artifacts.tideCommand,
+        args: [artifacts.tideMcpEntrypoint, "mcp"],
         env: tideMcpEnv(input),
       },
     },
@@ -102,14 +99,10 @@ function ensureClaudeArtifacts(
   });
 }
 
-function tideMcpCommandScript(artifacts: ProviderBootstrapArtifacts): string {
-  return `#!/usr/bin/env sh
-ELECTRON_RUN_AS_NODE=1 exec ${shellWord(artifacts.tideCommand)} ${shellWord(artifacts.tideMcpEntrypoint)} mcp "$@"
-`;
-}
-
 function tideMcpEnv(input: ProviderBootstrapArtifactsInput): Record<string, string> {
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = {
+    ELECTRON_RUN_AS_NODE: "1",
+  };
   if (input.tideSocket !== undefined) {
     env.TIDE_SOCKET = input.tideSocket;
   }
@@ -124,8 +117,4 @@ function tideMcpEnv(input: ProviderBootstrapArtifactsInput): Record<string, stri
 
 function writeJsonFile(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-function shellWord(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
 }

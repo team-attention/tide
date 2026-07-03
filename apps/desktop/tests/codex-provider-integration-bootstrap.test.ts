@@ -91,46 +91,72 @@ test("codex_preflight_requires_hook_bootstrap_before_ready_launch", async () => 
   assert.equal(result.launchPlan, undefined);
 });
 
-test("codex_ready_preflight_returns_app_server_plan_with_tide_mcp_config", async () => {
+test("codex_ready_preflight_does_not_build_launch_plan", async () => {
   const integration = codexIntegration();
 
   const result = await integration.preflight(basePreflightInput);
 
   assert.equal(result.ready, true);
+  assert.equal(result.launchPlan, undefined);
+});
+
+test("codex_build_start_plan_returns_app_server_plan_with_tide_mcp_config", async () => {
+  const integration = codexIntegration();
+
+  const plan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    runtimeId: "runtime-codex-test",
+  });
+
   // Structured transport: the app-server protocol (the Codex IDE extension's).
-  assert.equal(result.launchPlan?.transport, "codex_app_server");
-  assert.equal(result.launchPlan?.command, "/usr/local/bin/codex");
-  assert.equal(result.launchPlan?.cwd, "/repo");
-  assert.deepEqual(result.launchPlan?.env, {});
-  assert.equal(result.launchPlan?.args[0], "app-server");
-  // Tide MCP rides the global `-c` config overrides (no TUI, no hooks).
-  assert.ok(result.launchPlan?.args.includes("-c"));
+  assert.equal(plan.transport, "codex_app_server");
+  assert.equal(plan.command, "/usr/local/bin/codex");
+  assert.equal(plan.cwd, "/repo");
+  assert.deepEqual(plan.env, {});
+  assert.equal(plan.args[0], "app-server");
+  // Tide MCP rides direct `-c` config overrides (no global wrapper, no TUI).
+  assert.ok(plan.args.includes("-c"));
   assert.ok(
-    result.launchPlan?.args.some((arg) =>
-      arg === 'mcp_servers.tide.command="/tmp/tide-mcp-stdio"',
+    plan.args.some((arg) =>
+      arg === 'mcp_servers.tide.command="/Applications/Tide.app/Contents/MacOS/Tide"',
     ),
     "Tide MCP Tool Surface command must be attached to the Codex session.",
   );
-  assert.ok(result.launchPlan?.args.includes("mcp_servers.tide.args=[]"));
   assert.ok(
-    result.launchPlan?.args.includes(
+    plan.args.includes(
+      'mcp_servers.tide.args=["/Applications/Tide.app/Contents/Resources/backend-entrypoint.js","mcp"]',
+    ),
+  );
+  assert.ok(
+    plan.args.includes(
+      'mcp_servers.tide.env.ELECTRON_RUN_AS_NODE="1"',
+    ),
+  );
+  assert.ok(
+    plan.args.includes(
       'mcp_servers.tide.env.TIDE_SOCKET="/tmp/tide.sock"',
     ),
   );
+  assert.ok(
+    plan.args.includes(
+      'mcp_servers.tide.env.TIDE_RUNTIME_ID="runtime-codex-test"',
+    ),
+  );
   assert.equal(
-    typeof result.launchPlan?.protocolParams?.developerInstructions,
+    typeof plan.protocolParams?.developerInstructions,
     "string",
   );
   assert.match(
-    String(result.launchPlan?.protocolParams?.developerInstructions),
+    String(plan.protocolParams?.developerInstructions),
     /mcp__tide__tide_observe_browser/,
   );
   assert.match(
-    String(result.launchPlan?.protocolParams?.developerInstructions),
+    String(plan.protocolParams?.developerInstructions),
     /background/,
   );
   // No TUI machinery on a structured plan.
-  assert.equal(result.launchPlan?.args.includes("--dangerously-bypass-hook-trust"), false);
+  assert.equal(plan.args.includes("--dangerously-bypass-hook-trust"), false);
 });
 
 test("codex_launch_plan_applies_model_sandbox_and_approval_via_protocol_params", async () => {
@@ -356,8 +382,11 @@ test("codex_launch_plan_uses_app_server_not_one_shot_exec", async () => {
   // lose the session; --remote leaves the machine. Both stay banned.
   const integration = codexIntegration();
 
-  const result = await integration.preflight(basePreflightInput);
-  const args = result.launchPlan?.args ?? [];
+  const result = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+  });
+  const args = result.args;
 
   assert.equal(args[0], "app-server");
   assert.equal(args.includes("exec"), false);
@@ -368,8 +397,11 @@ test("codex_launch_plan_uses_app_server_not_one_shot_exec", async () => {
 test("codex_launch_plan_does_not_disable_codex_plugins", async () => {
   const integration = codexIntegration();
 
-  const result = await integration.preflight(basePreflightInput);
-  const args = result.launchPlan?.args ?? [];
+  const result = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+  });
+  const args = result.args;
 
   assert.equal(
     args.some((arg) => arg.startsWith("plugins.")),
@@ -404,9 +436,10 @@ function codexIntegration(options: {
       ? undefined
       : () => options.workspaceWritableRoots ?? [],
     tideMcp: {
-      command: "/tmp/tide-mcp-stdio",
-      args: [],
+      command: "/Applications/Tide.app/Contents/MacOS/Tide",
+      args: ["/Applications/Tide.app/Contents/Resources/backend-entrypoint.js", "mcp"],
       env: {
+        ELECTRON_RUN_AS_NODE: "1",
         TIDE_SOCKET: "/tmp/tide.sock",
       },
     },

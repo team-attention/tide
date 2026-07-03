@@ -2,10 +2,10 @@
 
 ## Status
 
-Drafted. This spec starts from `origin/main` and replaces the abandoned
-process-bound socket hotfix direction. The fix should be implemented from this
-ownership model, not by layering more behavior on top of the first socket
-isolation patch.
+Implemented. This spec started from `origin/main` and replaced the abandoned
+process-bound socket hotfix direction. The implemented slice makes Backend
+ownership explicit, projects Tide MCP directly into provider launch shapes, and
+prevents inherited Tide owner env from crossing app/backend/runtime boundaries.
 
 ## Summary
 
@@ -297,6 +297,9 @@ plan through a path that bypasses ownership planning.
 
 ## Implementation Plan
 
+This plan is implemented for the current Codex, Claude, and opencode structured
+runtime paths.
+
 ### Phase 0: Reset the branch and document the target
 
 Start from `origin/main`, not from the socket hotfix branch. Add this spec and
@@ -374,28 +377,27 @@ creates a fresh provider runtime with a fresh Tide MCP ownership plan.
 | Behavior | Test name |
 |----------|-----------|
 | Main strips inherited MCP/provider env before Backend launch | `electron_main_strips_inherited_agent_env_for_backend` |
-| Backend endpoint ignores ambient `TIDE_SOCKET` | `backend_owner_endpoint_ignores_ambient_tide_socket` |
-| Provider runtime env strips Tide ownership values | `provider_runtime_env_strips_tide_owner_env` |
-| Provider runtime env preserves user/provider env | `provider_runtime_env_preserves_user_provider_env` |
-| MCP bridge env receives endpoint and runtime identity | `mcp_bridge_projection_carries_owned_endpoint_and_runtime_identity` |
-| Codex projects shared bridge without global wrapper | `codex_projects_tide_mcp_bridge_directly` |
-| Claude config is owner-scoped | `claude_mcp_config_is_owner_scoped` |
-| opencode projects shared bridge without global wrapper | `opencode_projects_tide_mcp_bridge_directly` |
-| Preflight cannot bypass ownership planning | `provider_preflight_does_not_construct_unowned_launch_plan` |
-| Nested app launch does not reuse parent app owner env | `nested_tide_launch_does_not_inherit_parent_mcp_owner` |
+| Backend endpoint ignores ambient `TIDE_SOCKET` | `live_backend_ignores_ambient_tide_socket_for_owned_mcp_route` |
+| Provider runtime env strips Tide ownership values | `agent_runtime_port_applies_cwd_runtime_environment_to_all_structured_spawns` |
+| Provider runtime env preserves user/provider env | `agent_runtime_port_applies_cwd_runtime_environment_to_all_structured_spawns` |
+| MCP bridge env receives endpoint and runtime identity | `codex_build_start_plan_returns_app_server_plan_with_tide_mcp_config`; `opencode start plan carries the chosen config as ACP configOptions` |
+| Codex projects shared bridge without global wrapper | `codex_build_start_plan_returns_app_server_plan_with_tide_mcp_config` |
+| Claude config is owner-scoped | `provider_bootstrap_artifacts_create_only_the_mcp_surface` |
+| opencode projects shared bridge without global wrapper | `opencode start plan carries the chosen config as ACP configOptions` |
+| Preflight cannot bypass ownership planning | `codex_ready_preflight_does_not_build_launch_plan`; `claude_ready_preflight_does_not_build_launch_plan`; `opencode preflight reports not_installed and not_authenticated` |
+| Nested app launch does not reuse parent app owner env | `electron_main_strips_inherited_agent_env_for_backend`; `electron_main_requires_explicit_multi_instance_flag` |
 
 ## Validation
 
-Run after implementation:
+Completed validation:
 
 - targeted unit tests for process env, ownership planning, and provider
   projections;
 - `npm run typecheck`;
-- desktop test suite;
-- one provider smoke per Codex, Claude, and opencode if local credentials and
-  CLIs are available;
-- a manual nested-demo check: start Tide from an agent-run shell command and
-  confirm it gets its own Backend owner and MCP endpoint.
+- desktop test suite via `npm test`.
+
+Provider smoke checks and a manual nested-demo check remain useful follow-up
+validation when local provider credentials and CLIs are available.
 
 ## Open Questions
 
