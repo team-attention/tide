@@ -26,6 +26,7 @@ This branch implements the first product slice of the plan:
 - Review pane target/provider controls, running state, raw output fallback, persisted structured finding extraction, and "Ask agent to fix" handoff into the composer.
 - Main-process Git mutation IPC for file-level and hunk-level stage, unstage, and discard, plus commit and push.
 - Changes pane Git handoff bar and hunk action strip wired to those Tide-owned Git IPC commands.
+- Scratch-repo fixtures for branch-diff review prompts and commit review prompts.
 - Persistent Agent Monitor panel derived from existing product-shell thread/runtime/prompt/activity state.
 
 Deferred follow-up:
@@ -390,20 +391,17 @@ Required:
    - Capture `opencode run --format json` review-prompt output sample.
    - Decide structured parsing per provider from captured output, not assumptions.
 
-2. Deepen Tide-owned Git handoff.
-   - Broaden scratch-repo fixtures beyond the current file/hunk handoff cases to cover branch diff and commit review cases.
-
-3. Move Agent Monitor toward backend-owned snapshots.
+2. Move Agent Monitor toward backend-owned snapshots.
    - Store durable `runtimeSnapshotsByThreadId` or equivalent backend-owned monitor state.
    - Preserve richer background-thread detail even when a thread is not hydrated.
    - Add inline answer controls only when prompt snapshots are complete.
 
-4. Add provider-specific external session import only after fixtures.
+3. Add provider-specific external session import only after fixtures.
    - Claude: `claude agents --json`.
    - opencode: `opencode session list` / export.
    - Codex: app-server/cloud exploration only after local protocol evidence.
 
-5. Add local plugin inventory.
+4. Add local plugin inventory.
    - Local installed plugins/skills/MCP inventory per agent.
    - No marketplace claim.
 

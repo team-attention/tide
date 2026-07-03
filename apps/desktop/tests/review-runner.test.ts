@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { parseReviewFindings } from "../src/desktop/application/domains/product-shell/state/review-findings.ts";
@@ -77,6 +81,61 @@ test("opencode review command builds a run prompt with the selected cwd", async 
   assert.match(command?.args.at(-1) ?? "", /-old\n\+new/);
 });
 
+test("opencode base-branch review prompt carries a scratch repo branch diff", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-review-branch-diff-"));
+  try {
+    initRepo(dir);
+    writeFileSync(join(dir, "app.txt"), "base\n", "utf8");
+    git(dir, ["add", "app.txt"]);
+    git(dir, ["commit", "-m", "initial"]);
+    git(dir, ["checkout", "-b", "feature"]);
+    writeFileSync(join(dir, "app.txt"), "base\nfeature\n", "utf8");
+    git(dir, ["add", "app.txt"]);
+    git(dir, ["commit", "-m", "feature change"]);
+
+    const command = await buildReviewCommand({
+      cwd: dir,
+      provider: "opencode",
+      target: { kind: "base_branch", baseBranch: "main" },
+    });
+    const prompt = command?.args.at(-1) ?? "";
+
+    assert.equal(command?.command, "opencode");
+    assert.match(prompt, /diff --git a\/app\.txt b\/app\.txt/);
+    assert.match(prompt, /\+feature/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("claude commit review prompt carries a scratch repo commit patch", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-review-commit-diff-"));
+  try {
+    initRepo(dir);
+    writeFileSync(join(dir, "app.txt"), "base\n", "utf8");
+    git(dir, ["add", "app.txt"]);
+    git(dir, ["commit", "-m", "initial"]);
+    writeFileSync(join(dir, "app.txt"), "base\ncommit review\n", "utf8");
+    git(dir, ["add", "app.txt"]);
+    git(dir, ["commit", "-m", "commit review case"]);
+    const sha = git(dir, ["rev-parse", "HEAD"]).trim();
+
+    const command = await buildReviewCommand({
+      cwd: dir,
+      provider: "claude",
+      target: { kind: "commit", sha },
+    });
+    const prompt = command?.args.at(-1) ?? "";
+
+    assert.equal(command?.command, "claude");
+    assert.match(prompt, /commit review case/);
+    assert.match(prompt, /diff --git a\/app\.txt b\/app\.txt/);
+    assert.match(prompt, /\+commit review/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("review findings parser preserves severity and file locations", () => {
   assert.deepEqual(
     parseReviewFindings([
@@ -104,3 +163,13 @@ test("review findings parser preserves severity and file locations", () => {
     ],
   );
 });
+
+function initRepo(cwd: string): void {
+  git(cwd, ["init", "-b", "main"]);
+  git(cwd, ["config", "user.email", "tide@example.test"]);
+  git(cwd, ["config", "user.name", "Tide Test"]);
+}
+
+function git(cwd: string, args: string[]): string {
+  return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
