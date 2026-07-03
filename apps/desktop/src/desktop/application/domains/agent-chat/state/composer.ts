@@ -1,6 +1,7 @@
 import type { AgentChatAgentId, AgentChatComposerAttachment, AgentChatComposerMessageAttachment, AgentChatComposerSurfaceKind, AgentChatContextChip, AgentChatPromptStepAnswer, AgentChatProviderReadinessTerminalAction, AgentChatShellState, AgentChatShellUpdateResult, AgentChatStartOptions, AgentChatThreadSummary } from "./types.ts";
 import { defaultModelValueForAgent, defaultPermissionForAgent, runtimeSourceForAgent } from "./agent-vocab.ts";
 import { cloneStringRecord, launchOptionsForState } from "./launch-options.ts";
+import { resetOpencodeModelProviderSurface } from "./opencode-model-provider.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
 export function updateComposerDraft(
@@ -118,12 +119,20 @@ export function setComposerActiveSurface(
   state: AgentChatShellState,
   surface: AgentChatComposerSurfaceKind | null,
 ): AgentChatShellUpdateResult {
+  const binding = state.thread?.agentBinding ?? state.composer.startOptions.agentBinding;
+  const normalizedSurface =
+    surface === "model_menu" && binding.agentId === "opencode"
+      ? "opencode_model_provider"
+      : surface;
+  if (normalizedSurface === "opencode_model_provider") {
+    resetOpencodeModelProviderSurface();
+  }
   return {
     state: {
       ...state,
       composer: {
         ...state.composer,
-        activeSurface: surface,
+        activeSurface: normalizedSurface,
       },
     },
     command: null,

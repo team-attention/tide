@@ -3,6 +3,7 @@ import type { AnchorRect, ComposerHandlers } from "../support/types.ts";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { agentMonogramFor, createChoiceSurface } from "./choice-surface.tsx";
 import { OpencodeConnectPanel } from "./opencode-connect-panel.tsx";
+import { OpencodeModelProviderPanel } from "./opencode-model-provider-panel.tsx";
 import { CornerDownRight, FileText, Folder, FolderGit2, GitBranch, Globe, Terminal } from "lucide-react";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
@@ -49,7 +50,13 @@ export function createChipPopover(input: {
         style={style as unknown as CSSProperties}
         onMouseDown={(event: { stopPropagation: () => void }) => event.stopPropagation()}
       >
-        {input.surface.surfaceKind === "opencode_connect" ? (
+        {input.surface.surfaceKind === "opencode_model_provider" ? (
+          <OpencodeModelProviderPanel
+            surface={input.surface}
+            onRowSelect={input.onRowSelect}
+            onConnectApiKey={input.onOpencodeConnectApiKey}
+          />
+        ) : input.surface.surfaceKind === "opencode_connect" ? (
           <OpencodeConnectPanel
             surface={input.surface}
             onRowSelect={input.onRowSelect}

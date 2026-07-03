@@ -1,6 +1,8 @@
 import type { AgentSessionBlock } from "../../../application/domains/agent-session/agent-session-block.ts";
 import type { AgentId } from "../../../application/domains/thread/thread.ts";
 import type { ThreadStorageRecord } from "../../../application/services/thread/thread-persistence-service.ts";
+import { parseOpencodeExportText } from "../../../application/services/provider/provider-session-discovery.ts";
+import { spawnSync } from "node:child_process";
 import { readTextFile } from "../live/live-backend-fs.ts";
 import {
   claudeAssistantTextContent,
@@ -27,6 +29,9 @@ export function rebuildConversationFromProviderHistory(
   record: ThreadStorageRecord,
 ): AgentSessionBlock[] {
   const ref = record.providerSessionRef;
+  if (ref?.kind === "opencode_session") {
+    return rebuildOpencodeConversationFromCli(ref.value, record.threadId, record.agentBinding.agentId);
+  }
   const filePath = ref?.transcriptPath;
   if (ref === undefined || filePath === undefined) {
     return [];
@@ -42,8 +47,6 @@ export function rebuildConversationFromProviderHistory(
   if (ref.kind === "claude_transcript") {
     return rebuildClaudeConversation(text, record.threadId, ref.value, agentId);
   }
-  // opencode_session has no rebuilder yet. Capture its on-disk session format
-  // before adding one (evidence discipline).
   return [];
 }
 
@@ -279,4 +282,257 @@ export function rebuildClaudeConversation(
     }
   }
   return blocks;
+}
+
+export function rebuildOpencodeConversationFromExport(
+  text: string,
+  threadId: string,
+  sessionId: string,
+  agentId: AgentId,
+): AgentSessionBlock[] {
+  const exported = parseOpencodeExportText(text);
+  if (exported === undefined) {
+    return [
+      opencodeImportDiagnosticBlock(
+        threadId,
+        agentId,
+        sessionId,
+        "opencode export did not return parseable session JSON.",
+      ),
+    ];
+  }
+  const blocks: AgentSessionBlock[] = [];
+  for (let messageIndex = 0; messageIndex < exported.messages.length; messageIndex += 1) {
+    const message = exported.messages[messageIndex];
+    const role = stringField(message.info, "role");
+    const timestamp = opencodeTimestamp(message.info);
+    for (let partIndex = 0; partIndex < message.parts.length; partIndex += 1) {
+      const part = message.parts[partIndex];
+      const kind = opencodePartKind(part);
+      if (kind === "text") {
+        const body = opencodePartText(part);
+        if ((role === "user" || role === "assistant") && body !== undefined && body.length > 0) {
+          blocks.push(
+            conversationBlock({
+              threadId,
+              sessionId,
+              index: messageIndex,
+              agentId,
+              isUser: role === "user",
+              body,
+              timestamp,
+              blockId: `provider:${threadId}:${sessionId}:${messageIndex}:${partIndex}`,
+            }),
+          );
+        }
+        continue;
+      }
+      if (kind === "reasoning") {
+        const body = opencodePartText(part);
+        if (body !== undefined) {
+          blocks.push(
+            reasoningConversationBlock({
+              threadId,
+              agentId,
+              blockId: `reasoning:${threadId}:${sessionId}:${messageIndex}:${partIndex}`,
+              body,
+              timestamp,
+            }),
+          );
+        }
+        continue;
+      }
+      if (kind === "tool") {
+        const tool = opencodeToolPart(part);
+        blocks.push(
+          toolConversationBlock({
+            threadId,
+            agentId,
+            blockId: `tool:${threadId}:${sessionId}:${messageIndex}:${partIndex}`,
+            kind: tool.completed ? "tool_result" : "tool_call",
+            toolName: tool.name,
+            callId: tool.callId,
+            body: tool.body,
+            data: tool.completed ? { ok: true, output: tool.body } : { arguments: tool.body },
+            timestamp,
+          }),
+        );
+        continue;
+      }
+      if (kind === "step-start" || kind === "step-finish") {
+        const useful = opencodePartText(part) ?? opencodeUsefulJson(part);
+        if (useful !== undefined) {
+          blocks.push(rawConversationBlock({
+            threadId,
+            agentId,
+            blockId: `raw:${threadId}:${sessionId}:${messageIndex}:${partIndex}`,
+            title: kind,
+            body: useful,
+            timestamp,
+          }));
+        }
+        continue;
+      }
+      blocks.push(rawConversationBlock({
+        threadId,
+        agentId,
+        blockId: `raw:${threadId}:${sessionId}:${messageIndex}:${partIndex}`,
+        title: kind ?? "opencode part",
+        body: boundedJson(part),
+        timestamp,
+      }));
+    }
+  }
+  return blocks;
+}
+
+export function rebuildOpencodeConversationFromCli(
+  sessionId: string,
+  threadId: string,
+  agentId: AgentId,
+): AgentSessionBlock[] {
+  const exported = runOpencodeExport(sessionId);
+  if (exported === undefined) {
+    return [
+      opencodeImportDiagnosticBlock(
+        threadId,
+        agentId,
+        sessionId,
+        "opencode export failed; Tide could not import this local session history.",
+      ),
+    ];
+  }
+  return rebuildOpencodeConversationFromExport(exported, threadId, sessionId, agentId);
+}
+
+export function opencodeImportDiagnosticBlock(
+  threadId: string,
+  agentId: AgentId,
+  sessionId: string,
+  message: string,
+): AgentSessionBlock {
+  const timestamp = new Date().toISOString();
+  return {
+    blockId: `opencode-import-diagnostic:${threadId}:${sessionId}`,
+    threadId,
+    agentId,
+    kind: "raw_block",
+    role: "runtime",
+    sourceFrameIds: [],
+    status: "failed",
+    title: "opencode import",
+    body: message,
+    rawFallback: message,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+function rawConversationBlock(input: {
+  threadId: string;
+  agentId: AgentId;
+  blockId: string;
+  title: string;
+  body: string;
+  timestamp: string;
+}): AgentSessionBlock {
+  return {
+    blockId: input.blockId,
+    threadId: input.threadId,
+    agentId: input.agentId,
+    kind: "raw_block",
+    role: "runtime",
+    sourceFrameIds: [],
+    status: "complete",
+    title: input.title,
+    body: input.body,
+    rawFallback: input.body,
+    createdAt: input.timestamp,
+    updatedAt: input.timestamp,
+  };
+}
+
+function runOpencodeExport(sessionId: string): string | undefined {
+  try {
+    const result = spawnSync("opencode", ["export", sessionId], {
+      encoding: "utf8",
+      timeout: 8_000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    if (result.status !== 0 || result.error !== undefined) {
+      return undefined;
+    }
+    return result.stdout;
+  } catch {
+    return undefined;
+  }
+}
+
+function opencodePartKind(part: Record<string, unknown>): string | undefined {
+  return stringField(part, "type") ?? stringField(part, "kind");
+}
+
+function opencodePartText(part: Record<string, unknown>): string | undefined {
+  return stringField(part, "text") ??
+    stringField(part, "content") ??
+    stringField(part, "message") ??
+    stringField(part, "reasoning");
+}
+
+function opencodeToolPart(part: Record<string, unknown>): {
+  name: string;
+  callId: string;
+  completed: boolean;
+  body: string;
+} {
+  const state = stringField(part, "state") ?? stringField(part, "status");
+  const name =
+    stringField(part, "tool") ??
+    stringField(part, "name") ??
+    stringField(recordField(part, "tool"), "name") ??
+    "tool";
+  const callId = stringField(part, "id") ?? stringField(part, "callID") ?? stringField(part, "callId") ?? name;
+  const body =
+    opencodePartText(part) ??
+    stringField(part, "output") ??
+    stringField(part, "input") ??
+    boundedJson(part);
+  return {
+    name,
+    callId,
+    completed: state === "completed" || state === "complete" || part.output !== undefined,
+    body: boundedToolText(body),
+  };
+}
+
+function opencodeUsefulJson(part: Record<string, unknown>): string | undefined {
+  if (part.usage === undefined && part.finish === undefined && part.error === undefined) {
+    return undefined;
+  }
+  return boundedJson(part);
+}
+
+function opencodeTimestamp(info: Record<string, unknown>): string {
+  const time = recordField(info, "time");
+  const created = numberField(time, "created") ?? numberField(info, "created");
+  if (created === undefined) {
+    return new Date().toISOString();
+  }
+  const ms = created < 10_000_000_000 ? created * 1000 : created;
+  return new Date(ms).toISOString();
+}
+
+function numberField(record: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = record?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function boundedJson(value: unknown): string {
+  let text: string;
+  try {
+    text = JSON.stringify(value, null, 2);
+  } catch {
+    text = String(value);
+  }
+  return text.length > 8_000 ? `${text.slice(0, 8_000)}\n… truncated …` : text;
 }

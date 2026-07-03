@@ -10,6 +10,7 @@ import {
   rebuildConversationFromProviderHistory,
   rebuildCodexConversation,
   rebuildClaudeConversation,
+  rebuildOpencodeConversationFromExport,
 } from "../src/backend/infrastructure/node/provider/provider-conversation-rebuilders.ts";
 import type { ThreadStorageRecord } from "../src/backend/application/services/thread/thread-persistence-service.ts";
 
@@ -79,6 +80,42 @@ test("rebuildClaudeConversation emits reasoning from thinking content", () => {
   assert.equal(blocks[0].body, "Plan the change.");
   assert.equal(blocks[1].role, "agent");
   assert.equal(blocks[1].body, "Applied.");
+});
+
+test("rebuildOpencodeConversationFromExport emits text, reasoning, tool, and raw blocks", () => {
+  const exported = [
+    "Exporting session: opencode-1",
+    JSON.stringify({
+      info: { id: "opencode-1" },
+      messages: [
+        {
+          info: { role: "user", time: { created: 1_000 } },
+          parts: [{ type: "text", text: "Build the provider picker" }],
+        },
+        {
+          info: { role: "assistant", time: { created: 2_000 } },
+          parts: [
+            { type: "reasoning", text: "Need provider-first drilldown." },
+            { type: "text", text: "Implemented." },
+            { type: "tool", id: "call-1", name: "edit", state: "completed", output: "patched files" },
+            { type: "unknown-new-part", payload: { kept: true } },
+          ],
+        },
+      ],
+    }),
+  ].join("\n");
+
+  const blocks = rebuildOpencodeConversationFromExport(exported, "thread-1", "opencode-1", "opencode");
+
+  assert.deepEqual(
+    blocks.map((block) => block.kind),
+    ["user_message", "reasoning", "agent_message", "tool_result", "raw_block"],
+  );
+  assert.equal(blocks[0].body, "Build the provider picker");
+  assert.equal(blocks[1].body, "Need provider-first drilldown.");
+  assert.equal(blocks[2].body, "Implemented.");
+  assert.equal(blocks[3].title, "edit");
+  assert.match(blocks[4].rawFallback ?? "", /unknown-new-part/);
 });
 
 test("rebuildConversationFromProviderHistory reads the full provider transcript", () => {

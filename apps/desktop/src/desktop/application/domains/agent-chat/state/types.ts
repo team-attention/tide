@@ -225,6 +225,9 @@ export type AgentChatComposerSurfaceKind =
   | "composer_options"
   | "capability_menu"
   | "command_suggestions"
+  // opencode's normal Model chip surface: provider-first, compact row drilldown
+  // for provider -> model -> connect/auth. Replaces the old flat opencode model menu.
+  | "opencode_model_provider"
   // The opencode "Connect a model" on-ramp (Zen card + vendor grid). Opened from
   // the Model chip when opencode is selected but not yet usable, or via "Add a
   // vendor…" in the opencode model menu. See opencode-vendor-onramp.md.
@@ -640,8 +643,8 @@ export interface AgentChatComposerView {
   // chip absorbs reasoning feedback too (the model label includes the effort).
   permissionFeedback?: LaunchOptionFeedback;
   modelFeedback?: LaunchOptionFeedback;
-  // Which surface the Model chip opens: normally "model_menu", but "opencode_connect"
-  // when opencode is selected and not yet usable (no connected vendor / no model).
+  // Which surface the Model chip opens: normally "model_menu", but opencode always
+  // uses its provider-first model/provider surface.
   modelChipSurface: AgentChatComposerSurfaceKind;
   activeSurface: AgentChatChoiceSurfaceView | null;
   contextControlsEditable: boolean;
@@ -681,6 +684,67 @@ export interface AgentChatChoiceSurfaceView {
   // Structured data for the rich "opencode_connect" panel (Zen card + vendor grid).
   // Present only for that surface; the generic row list still gates the actions.
   opencodeConnect?: AgentChatOpencodeConnectView;
+  // Structured data for the compact opencode provider/model surface. Present only
+  // for `opencode_model_provider`; rows still gate every action through the
+  // application state dispatcher.
+  opencodeModelProvider?: AgentChatOpencodeModelProviderView;
+}
+
+export type AgentChatOpencodeModelProviderStep =
+  | "provider_list"
+  | "model_list"
+  | "connect_vendor"
+  | "vendor_method"
+  | "api_key";
+
+export interface AgentChatOpencodeModelProviderProviderView {
+  rowId: string;
+  id: string;
+  label: string;
+  detail: string;
+  monogram: string;
+  connected: boolean;
+  needsReconnect: boolean;
+  selected: boolean;
+}
+
+export interface AgentChatOpencodeModelProviderModelView {
+  rowId: string;
+  value: string;
+  label: string;
+  detail?: string;
+  monogram: string;
+  selected: boolean;
+  meta?: string;
+}
+
+export interface AgentChatOpencodeModelProviderConnectionView {
+  rowId: string;
+  label: string;
+  detail: string;
+}
+
+export interface AgentChatOpencodeModelProviderMethodView {
+  browserRowId: string;
+  apiKeyRowId: string;
+}
+
+export interface AgentChatOpencodeModelProviderView {
+  step: AgentChatOpencodeModelProviderStep;
+  version?: string;
+  zenFreeCount: number;
+  connectedCount: number;
+  providerId?: string;
+  providerLabel?: string;
+  providerMonogram?: string;
+  providerStatus?: string;
+  currentModel?: string;
+  currentEffort?: string;
+  providers: AgentChatOpencodeModelProviderProviderView[];
+  models: AgentChatOpencodeModelProviderModelView[];
+  effortRows: AgentChatChoiceSurfaceRowView[];
+  connection?: AgentChatOpencodeModelProviderConnectionView;
+  method?: AgentChatOpencodeModelProviderMethodView;
 }
 
 // One vendor tile in the opencode on-ramp grid (view shape).
