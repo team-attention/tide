@@ -172,15 +172,20 @@ export function openProductShellWorkbenchLauncher(
 export function selectProductShellLauncherAction(
   state: ProductShellState,
   actionId: string,
+  launcherPaneId?: string,
 ): ProductShellUpdateResult {
   if (state.activeThreadId === null) {
     // Composer launcher actions are dispatched through handlers that first create
     // the backend Draft Thread, then re-enter this reducer with activeThreadId set.
     return { state, command: null };
   }
-  const launcher = state.appChrome.workbenchPanes.find(
-    (pane) => pane.kind === "launcher",
-  );
+  const launcher = launcherPaneId
+    ? state.appChrome.workbenchPanes.find(
+        (pane) => pane.kind === "launcher" && pane.paneId === launcherPaneId,
+      )
+    : state.appChrome.workbenchPanes.find(
+        (pane) => pane.kind === "launcher",
+      );
   const action = launcher?.actions?.find((candidate) => candidate.actionId === actionId);
   // The EMPTY-workbench launcher is a synthetic, frontend-only pane (no backend
   // launcher pane), so `launcher`/`action` are undefined — but its action buttons
@@ -188,7 +193,10 @@ export function selectProductShellLauncherAction(
   // real launcher pane (else clicking them on an empty workbench silently no-ops).
   const KNOWN_LAUNCHER_COMMANDS = ["open_terminal", "open_browser", "open_editor", "open_diff"];
   const enabledOnRealLauncher = action !== undefined && action.enabled;
-  const knownOnSyntheticLauncher = launcher === undefined && KNOWN_LAUNCHER_COMMANDS.includes(actionId);
+  const knownOnSyntheticLauncher =
+    launcherPaneId === undefined &&
+    launcher === undefined &&
+    KNOWN_LAUNCHER_COMMANDS.includes(actionId);
   if (!enabledOnRealLauncher && !knownOnSyntheticLauncher) {
     return { state, command: null };
   }
@@ -200,6 +208,7 @@ export function selectProductShellLauncherAction(
         payload: {
           threadId: state.activeThreadId,
           command: "open_terminal",
+          ...(launcher === undefined ? {} : { targetPaneId: launcher.paneId }),
         },
       },
     };
@@ -213,6 +222,7 @@ export function selectProductShellLauncherAction(
         payload: {
           threadId: state.activeThreadId,
           command: "open_diff",
+          ...(launcher === undefined ? {} : { targetPaneId: launcher.paneId }),
         },
       },
     };
@@ -230,6 +240,7 @@ export function selectProductShellLauncherAction(
         payload: {
           threadId: state.activeThreadId,
           command: "open_browser",
+          ...(launcher === undefined ? {} : { targetPaneId: launcher.paneId }),
         },
       },
     };
@@ -458,10 +469,7 @@ export function writeProductShellTerminalInput(
 ): ProductShellUpdateResult {
   const result = writeWorkbenchTerminalInput(state.appChrome, paneId, bytes);
   return {
-    state: {
-      ...state,
-      appChrome: result.state,
-    },
+    state,
     command: result.command,
   };
 }

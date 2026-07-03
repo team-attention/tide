@@ -8,7 +8,7 @@ import {
   createPersistentLiveBackendAdapter,
   persistThreadEvents,
 } from "./live-backend-restore.ts";
-import { defaultWorkbenchTerminalCommand, resolveAugmentedEnvironment } from "./resolve-shell-path.ts";
+import { defaultWorkbenchTerminalCommand, resolveAugmentedEnvironment, resolveWorkbenchTerminalEnvironment } from "./resolve-shell-path.ts";
 import { worktreeRepoRootForCwd } from "../../../../shared/worktree/path.ts";
 export {
   threadSeedFromStorageRecord,
@@ -338,8 +338,8 @@ export function createLiveBackendContractMessageAdapter(
     nativeEvidencePort: nativeEvidenceStore,
     workbenchTerminalPort: createPtyWorkbenchTerminalPort({
       launcher: ptyLauncher,
-      resolveRuntimeEnvironment: ({ cwd, planEnv }) =>
-        resolveAugmentedEnvironment({ currentEnv: { ...env, ...planEnv }, cwd }),
+      resolveRuntimeEnvironment: ({ planEnv }) =>
+        resolveWorkbenchTerminalEnvironment({ currentEnv: { ...env, ...planEnv } }),
     }),
     ptyTranscriptPort: createMemoryPtyTranscriptPort(),
     workspaceCommandPort: createNodeWorkspaceCommandPort(),

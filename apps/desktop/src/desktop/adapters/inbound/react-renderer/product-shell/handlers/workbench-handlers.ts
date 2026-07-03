@@ -101,7 +101,7 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         dispatchBackendCommand(result.command);
         return result.state;
       }),
-    onLauncherAction: (actionId) => {
+    onLauncherAction: (actionId, launcherPaneId) => {
       const currentState = getShellState();
       if (currentState.activeThreadId === null) {
         // Composer (New Thread): make the Draft Thread the active thread first (lazily),
@@ -110,14 +110,14 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         // saving/snapshots route through the active thread like any started thread. The
         // create-draft command is dispatched before the open. See composer-draft-thread.md.
         const ensured = ensureComposerDraftThreadActive(currentState);
-        const result = selectProductShellLauncherAction(ensured.state, actionId);
+        const result = selectProductShellLauncherAction(ensured.state, actionId, launcherPaneId);
         setShellState(result.state);
         if (ensured.command !== null) dispatchBackendCommand(ensured.command);
         dispatchBackendCommand(result.command);
         return;
       }
       setShellState((state) => {
-        const result = selectProductShellLauncherAction(state, actionId);
+        const result = selectProductShellLauncherAction(state, actionId, launcherPaneId);
         dispatchBackendCommand(result.command);
         return result.state;
       });

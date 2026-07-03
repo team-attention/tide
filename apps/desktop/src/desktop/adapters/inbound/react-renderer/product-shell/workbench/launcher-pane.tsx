@@ -43,7 +43,7 @@ export function WorkbenchLauncherPane(props: {
             type="button"
             disabled={!action.enabled}
             data-launcher-action={action.actionId}
-            onClick={() => props.handlers.onLauncherAction(action.actionId)}
+            onClick={() => props.handlers.onLauncherAction(action.actionId, props.pane.paneId)}
           >
             <span className="workbench-launcher-action__icon" aria-hidden>
               {launcherActionIcon(action.actionId)}

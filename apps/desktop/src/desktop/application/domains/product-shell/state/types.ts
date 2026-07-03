@@ -391,6 +391,7 @@ export type ProductShellBackendCommand =
       payload: {
         threadId: string;
         command: "open_launcher" | "open_terminal" | "open_diff";
+        targetPaneId?: string;
       };
     }
   | {
@@ -402,6 +403,7 @@ export type ProductShellBackendCommand =
         // chat link click). Absent for a blank "open browser" launcher action.
         // disposition "new_browser_pane" forces a fresh pane (Launcher Browser
         // action, cmd/ctrl+click); default reuses the active Browser Pane.
+        targetPaneId?: string;
         data?: { url?: string; title?: string; disposition?: "new_browser_pane" | "reuse_active_browser" };
       };
     }
