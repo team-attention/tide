@@ -27,6 +27,7 @@ import {
   readdirSync,
   readSync,
   realpathSync,
+  rmSync,
   statSync,
 } from "node:fs";
 
@@ -97,7 +98,10 @@ import {
 } from "../../../adapters/inbound/contract-message-adapter/dto/thread-dtos.ts";
 import { toWorkbenchPaneRefDto } from "../../../adapters/inbound/contract-message-adapter/dto/workbench-dtos.ts";
 
-import { createTideMcpSocketServer } from "../../../adapters/inbound/tide-mcp-server/tide-mcp-socket-bridge.ts";
+import {
+  createTideMcpSocketServer,
+  type TideMcpSocketServer,
+} from "../../../adapters/inbound/tide-mcp-server/tide-mcp-socket-bridge.ts";
 
 import { createRuntimeReadinessRegistry } from "../../../application/services/provider/runtime-readiness-registry.ts";
 
@@ -408,20 +412,28 @@ export function createLiveBackendContractMessageAdapter(
       emitBackendEvents(backendEventsFromThreadRuntimeAsyncEvent(event));
     },
   });
+  let mcpSocketServer: TideMcpSocketServer | undefined;
+  let mcpSocketListening = false;
+  let mcpSocketListenSettled: Promise<void> = Promise.resolve();
   if (input.startMcpSocket !== false) {
-    const mcpSocketServer = createTideMcpSocketServer({
+    mcpSocketServer = createTideMcpSocketServer({
       socketPath: tideSocket,
       adapter: createTideMcpToolSurfaceAdapter({ service }),
       readinessRegistry,
     });
-    void mcpSocketServer.listen().catch((error: unknown) => {
-      process.emitWarning(
-        error instanceof Error
-          ? error.message
-          : "Tide MCP socket bridge failed to start.",
-        { type: "TideMcpSocketBridgeWarning" },
-      );
-    });
+    mcpSocketListenSettled = mcpSocketServer
+      .listen()
+      .then(() => {
+        mcpSocketListening = true;
+      })
+      .catch((error: unknown) => {
+        process.emitWarning(
+          error instanceof Error
+            ? error.message
+            : "Tide MCP socket bridge failed to start.",
+          { type: "TideMcpSocketBridgeWarning" },
+        );
+      });
   }
 
   // Installed-agent detection + opencode model catalog, surfaced on thread.listed.
@@ -485,7 +497,7 @@ export function createLiveBackendContractMessageAdapter(
     emitOpencodeProviderCatalogChanged();
   });
 
-  return createPersistentLiveBackendAdapter({
+  const persistentAdapter = createPersistentLiveBackendAdapter({
     flushPendingPersists: () => projector.flushPendingPersists(),
     adapter: createBackendContractMessageAdapter({
       service,
@@ -501,6 +513,33 @@ export function createLiveBackendContractMessageAdapter(
     appDataRoot,
     emitBackendEvents,
   });
+  return {
+    ...persistentAdapter,
+    async shutdown(): Promise<void> {
+      await persistentAdapter.flushPendingPersists();
+      await mcpSocketListenSettled;
+      if (mcpSocketServer !== undefined && mcpSocketListening) {
+        try {
+          await mcpSocketServer.close();
+        } catch {
+          // Best-effort cleanup continues below even if the server was already
+          // closed or never fully bound.
+        }
+      }
+      cleanupOwnedBackendRuntimeArtifacts({
+        bootstrapRootDir: bootstrapArtifacts.rootDir,
+        tideSocket,
+      });
+    },
+  };
+}
+
+export function cleanupOwnedBackendRuntimeArtifacts(input: {
+  bootstrapRootDir: string;
+  tideSocket: string;
+}): void {
+  rmSync(input.bootstrapRootDir, { recursive: true, force: true });
+  rmSync(input.tideSocket, { force: true });
 }
 
 

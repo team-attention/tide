@@ -98,7 +98,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     }
     shuttingDown = true;
     void adapter
-      .flushPendingPersists()
+      .shutdown()
       .catch(() => {})
       .finally(() => process.exit(0));
   });
