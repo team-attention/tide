@@ -13,6 +13,7 @@ import { registerProviderCommandIpc } from "./provider-command-ipc.ts";
 import { browserRuntimeHost } from "./browser-runtime-host.ts";
 import { registerBrowserRuntimeIpc } from "./browser-runtime-ipc.ts";
 import { runProviderReview } from "./review-runner.ts";
+import { applyGitHunk } from "./git-hunk-actions.ts";
 import {
   app,
   BrowserWindow,
@@ -502,6 +503,10 @@ ipcMain.handle("tide:git-discard-file", async (_event, cwd: unknown, relPath: un
   const result = await execGitArgs(["-C", root, "restore", "--staged", "--worktree", "--", path]);
   return gitActionMessage(result, `Discarded ${path}.`);
 });
+
+ipcMain.handle("tide:git-apply-hunk", async (_event, cwd: unknown, relPath: unknown, patch: unknown, action: unknown) =>
+  applyGitHunk({ cwd, relPath, patch, action }),
+);
 
 ipcMain.handle("tide:git-commit", async (_event, cwd: unknown, message: unknown): Promise<GitActionResult> => {
   const root = await gitActionRoot(cwd);

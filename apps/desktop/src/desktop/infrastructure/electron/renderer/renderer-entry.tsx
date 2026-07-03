@@ -77,6 +77,8 @@ export function createInitialRendererElement() {
               gitStageFile: (cwd: string, relPath: string) => window.tide!.gitStageFile(cwd, relPath),
               gitUnstageFile: (cwd: string, relPath: string) => window.tide!.gitUnstageFile(cwd, relPath),
               gitDiscardFile: (cwd: string, relPath: string) => window.tide!.gitDiscardFile(cwd, relPath),
+              gitApplyHunk: (cwd: string, relPath: string, patch: string, action: "stage" | "unstage" | "discard") =>
+                window.tide!.gitApplyHunk(cwd, relPath, patch, action),
               gitCommit: (cwd: string, message: string) => window.tide!.gitCommit(cwd, message),
               gitPush: (cwd: string) => window.tide!.gitPush(cwd),
               runReview: (cwd, provider, target) => window.tide!.runReview(cwd, provider, target),
@@ -193,6 +195,7 @@ declare global {
       gitStageFile(cwd: string, relPath: string): Promise<{ ok: boolean; message: string }>;
       gitUnstageFile(cwd: string, relPath: string): Promise<{ ok: boolean; message: string }>;
       gitDiscardFile(cwd: string, relPath: string): Promise<{ ok: boolean; message: string }>;
+      gitApplyHunk(cwd: string, relPath: string, patch: string, action: "stage" | "unstage" | "discard"): Promise<{ ok: boolean; message: string }>;
       gitCommit(cwd: string, message: string): Promise<{ ok: boolean; message: string }>;
       gitPush(cwd: string): Promise<{ ok: boolean; message: string }>;
       runReview(

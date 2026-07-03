@@ -24,14 +24,13 @@ This branch implements the first product slice of the plan:
   - Claude: `claude ultrareview` for base-branch review, and local `claude -p` prompt review for other targets.
   - opencode: `opencode run` prompt review.
 - Review pane target/provider controls, running state, raw output fallback, simple finding extraction, and "Ask agent to fix" handoff into the composer.
-- Main-process Git mutation IPC for file-level stage, unstage, discard, commit, and push.
-- Changes pane Git handoff bar wired to those Tide-owned Git IPC commands.
+- Main-process Git mutation IPC for file-level and hunk-level stage, unstage, and discard, plus commit and push.
+- Changes pane Git handoff bar and hunk action strip wired to those Tide-owned Git IPC commands.
 - Persistent Agent Monitor panel derived from existing product-shell thread/runtime/prompt/activity state.
 
 Deferred follow-up:
 
 - Codex app-server `review/start` schema fixture and native review path.
-- Hunk-level stage/unstage/discard.
 - Generated commit message flow.
 - Inline answer controls inside Agent Monitor.
 - Adoption/import of provider-owned background sessions outside Tide.
@@ -218,7 +217,7 @@ Keep git mutation Tide-owned:
 - Commit dialog with generated message.
 - Push with explicit remote/branch confirmation.
 
-Initial implementation covers file-level stage/unstage/discard, manual commit messages, and confirmed push through Main-process IPC. Hunk-level actions and generated commit messages remain follow-up work.
+Initial implementation covers file-level and hunk-level stage/unstage/discard, manual commit messages, and confirmed push through Main-process IPC. Generated commit messages remain follow-up work.
 
 Implementation should extend Main-process git IPC rather than route these through providers. Provider agents may suggest a commit message, but Tide should execute the git command.
 
@@ -400,10 +399,9 @@ Required:
    - Add command mapping tests for Codex, Claude, and opencode review targets.
 
 3. Deepen Tide-owned Git handoff.
-   - Add hunk-level stage/unstage/discard.
    - Add generated commit message flow.
    - Add explicit remote/branch push confirmation.
-   - Add scratch-repo fixtures for staged, unstaged, untracked, branch diff, and commit review cases.
+   - Broaden scratch-repo fixtures beyond the current selected-hunk staging fixture to cover staged, untracked, branch diff, and commit review cases.
 
 4. Move Agent Monitor toward backend-owned snapshots.
    - Store durable `runtimeSnapshotsByThreadId` or equivalent backend-owned monitor state.

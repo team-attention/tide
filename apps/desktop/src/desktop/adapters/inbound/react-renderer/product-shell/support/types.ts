@@ -29,6 +29,8 @@ export type GitActionResult =
   | { ok: true; message: string }
   | { ok: false; message: string };
 
+export type GitHunkAction = "stage" | "unstage" | "discard";
+
 // Branch + uncommitted files for the Changes pane (self-fetched from the pane's cwd).
 export interface GitChangesViewResult {
   isGitRepo: boolean;
@@ -126,6 +128,7 @@ export interface ProjectRegistryBridge {
   gitStageFile(cwd: string, relPath: string): Promise<GitActionResult>;
   gitUnstageFile(cwd: string, relPath: string): Promise<GitActionResult>;
   gitDiscardFile(cwd: string, relPath: string): Promise<GitActionResult>;
+  gitApplyHunk(cwd: string, relPath: string, patch: string, action: GitHunkAction): Promise<GitActionResult>;
   gitCommit(cwd: string, message: string): Promise<GitActionResult>;
   gitPush(cwd: string): Promise<GitActionResult>;
   runReview(cwd: string, provider: ReviewProvider, target: ReviewTarget): Promise<ReviewRunResult>;
@@ -242,6 +245,7 @@ export interface ProductShellHandlers {
   onGitStageFile: (cwd: string, relPath: string) => Promise<GitActionResult>;
   onGitUnstageFile: (cwd: string, relPath: string) => Promise<GitActionResult>;
   onGitDiscardFile: (cwd: string, relPath: string) => Promise<GitActionResult>;
+  onGitApplyHunk: (cwd: string, relPath: string, patch: string, action: GitHunkAction) => Promise<GitActionResult>;
   onGitCommit: (cwd: string, message: string) => Promise<GitActionResult>;
   onGitPush: (cwd: string) => Promise<GitActionResult>;
   onRunReview: (cwd: string, provider: ReviewProvider, target: ReviewTarget) => Promise<ReviewRunResult>;

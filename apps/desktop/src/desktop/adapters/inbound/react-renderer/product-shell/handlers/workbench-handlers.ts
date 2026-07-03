@@ -4,7 +4,7 @@ import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureC
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
-export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onOpenBrowserPane" | "onOpenChanges" | "onOpenThreadChanges" | "onOpenReview" | "onGitChanges" | "onGitFileDiff" | "onGitStageFile" | "onGitUnstageFile" | "onGitDiscardFile" | "onGitCommit" | "onGitPush" | "onRunReview" | "onLoadWorkbenchImage"> {
+export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onOpenBrowserPane" | "onOpenChanges" | "onOpenThreadChanges" | "onOpenReview" | "onGitChanges" | "onGitFileDiff" | "onGitStageFile" | "onGitUnstageFile" | "onGitDiscardFile" | "onGitApplyHunk" | "onGitCommit" | "onGitPush" | "onRunReview" | "onLoadWorkbenchImage"> {
   const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onWorkbenchToggle: () =>
@@ -75,6 +75,9 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
       props.projectBridge?.gitUnstageFile(cwd, relPath) ?? Promise.resolve({ ok: false, message: "Git is unavailable." }),
     onGitDiscardFile: (cwd, relPath) =>
       props.projectBridge?.gitDiscardFile(cwd, relPath) ?? Promise.resolve({ ok: false, message: "Git is unavailable." }),
+    onGitApplyHunk: (cwd, relPath, patch, action) =>
+      props.projectBridge?.gitApplyHunk(cwd, relPath, patch, action) ??
+      Promise.resolve({ ok: false, message: "Git is unavailable." }),
     onGitCommit: (cwd, message) =>
       props.projectBridge?.gitCommit(cwd, message) ?? Promise.resolve({ ok: false, message: "Git is unavailable." }),
     onGitPush: (cwd) =>

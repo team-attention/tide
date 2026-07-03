@@ -31,6 +31,8 @@ export type GitActionResult =
   | { ok: true; message: string }
   | { ok: false; message: string };
 
+export type GitHunkAction = "stage" | "unstage" | "discard";
+
 export type ReviewProvider = "codex" | "claude" | "opencode";
 
 export type ReviewTarget =
@@ -236,6 +238,7 @@ export interface TidePreloadSurface {
   gitStageFile(cwd: string, relPath: string): Promise<GitActionResult>;
   gitUnstageFile(cwd: string, relPath: string): Promise<GitActionResult>;
   gitDiscardFile(cwd: string, relPath: string): Promise<GitActionResult>;
+  gitApplyHunk(cwd: string, relPath: string, patch: string, action: GitHunkAction): Promise<GitActionResult>;
   gitCommit(cwd: string, message: string): Promise<GitActionResult>;
   gitPush(cwd: string): Promise<GitActionResult>;
   runReview(cwd: string, provider: ReviewProvider, target: ReviewTarget): Promise<ReviewRunResult>;
@@ -442,6 +445,9 @@ export const tidePreloadSurface: TidePreloadSurface = {
   },
   gitDiscardFile(cwd, relPath) {
     return ipcRenderer.invoke("tide:git-discard-file", cwd, relPath) as Promise<GitActionResult>;
+  },
+  gitApplyHunk(cwd, relPath, patch, action) {
+    return ipcRenderer.invoke("tide:git-apply-hunk", cwd, relPath, patch, action) as Promise<GitActionResult>;
   },
   gitCommit(cwd, message) {
     return ipcRenderer.invoke("tide:git-commit", cwd, message) as Promise<GitActionResult>;

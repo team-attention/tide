@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactElement } from "react";
 import { styled } from "styled-components";
 import { ClipboardCheck, GitBranch, PanelLeftClose, PanelLeftOpen, RefreshCw } from "lucide-react";
 import { createDiffView } from "./diff-pane.tsx";
-import type { GitChangeStatus, GitChangesViewResult } from "../support/types.ts";
+import { extractGitDiffHunks, type GitDiffHunk } from "./git-diff-hunks.ts";
+import { ChangesHunkActionList } from "./changes-hunk-actions.tsx";
+import type { GitChangeStatus, GitChangesViewResult, GitHunkAction } from "../support/types.ts";
 // First-class read-only git "Changes" Workbench pane (spec: git-changes-view): the repo's
 // uncommitted files (vs HEAD) on the left, the selected file's diff on the right. It's a
 // real backend pane (tabs/split/close like the others) that self-fetches its data from
@@ -31,6 +33,7 @@ export function ChangesPanel(props: {
   onGitStageFile: (cwd: string, relPath: string) => Promise<{ ok: boolean; message: string }>;
   onGitUnstageFile: (cwd: string, relPath: string) => Promise<{ ok: boolean; message: string }>;
   onGitDiscardFile: (cwd: string, relPath: string) => Promise<{ ok: boolean; message: string }>;
+  onGitApplyHunk: (cwd: string, relPath: string, patch: string, action: GitHunkAction) => Promise<{ ok: boolean; message: string }>;
   onGitCommit: (cwd: string, message: string) => Promise<{ ok: boolean; message: string }>;
   onGitPush: (cwd: string) => Promise<{ ok: boolean; message: string }>;
 }): ReactElement {
@@ -42,11 +45,13 @@ export function ChangesPanel(props: {
     onGitStageFile,
     onGitUnstageFile,
     onGitDiscardFile,
+    onGitApplyHunk,
     onGitCommit,
     onGitPush,
   } = props;
   const [data, setData] = useState<GitChangesViewResult>({ isGitRepo: true, branch: null, files: [] });
   const [nonce, setNonce] = useState(0);
+  const [diffNonce, setDiffNonce] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [diff, setDiff] = useState<string>("");
   const [loadingDiff, setLoadingDiff] = useState(false);
@@ -64,6 +69,7 @@ export function ChangesPanel(props: {
   const { isGitRepo, branch, files } = data;
   const totalAdd = files.reduce((sum, file) => sum + (file.additions ?? 0), 0);
   const totalDel = files.reduce((sum, file) => sum + (file.deletions ?? 0), 0);
+  const diffHunks = useMemo(() => extractGitDiffHunks(diff), [diff]);
 
   // Fetch the changed-file list for this cwd (on mount, cwd change, or refresh).
   useEffect(() => {
@@ -115,7 +121,7 @@ export function ChangesPanel(props: {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, cwd]);
+  }, [selected, cwd, diffNonce]);
 
   // Drag the divider to resize the file list (clamped so it can't crowd out the diff or
   // shrink past legibility). Pointer capture — rather than window listeners — keeps the
@@ -160,6 +166,25 @@ export function ChangesPanel(props: {
     setGitNotice(result);
     setGitBusy(false);
     setNonce((value) => value + 1);
+    setDiffNonce((value) => value + 1);
+  }
+
+  async function runHunkGitAction(action: GitHunkAction, hunk: GitDiffHunk): Promise<void> {
+    if (selected === null || gitBusy) {
+      return;
+    }
+    if (
+      action === "discard" &&
+      !window.confirm(`Discard this hunk in ${selected}? This cannot be undone from Tide.`)
+    ) {
+      return;
+    }
+    setGitBusy(true);
+    const result = await onGitApplyHunk(cwd, selected, hunk.patch, action);
+    setGitNotice(result);
+    setGitBusy(false);
+    setNonce((value) => value + 1);
+    setDiffNonce((value) => value + 1);
   }
 
   async function commitChanges(): Promise<void> {
@@ -175,6 +200,7 @@ export function ChangesPanel(props: {
     }
     setGitBusy(false);
     setNonce((value) => value + 1);
+    setDiffNonce((value) => value + 1);
   }
 
   async function pushBranch(): Promise<void> {
@@ -233,7 +259,10 @@ export function ChangesPanel(props: {
           type="button"
           title="Refresh"
           aria-label="Refresh changes"
-          onClick={() => setNonce((value) => value + 1)}
+          onClick={() => {
+            setNonce((value) => value + 1);
+            setDiffNonce((value) => value + 1);
+          }}
         >
           <RefreshCw size={14} strokeWidth={1.9} aria-hidden />
         </ChangesIconButton>
@@ -357,7 +386,16 @@ export function ChangesPanel(props: {
           ) : diff.trim().length === 0 ? (
             <ChangesDiffEmpty>No textual diff (binary or empty).</ChangesDiffEmpty>
           ) : (
-            createDiffView(diff)
+            <ChangesDiffStack>
+              {diffHunks.length > 0 ? (
+                <ChangesHunkActionList
+                  hunks={diffHunks}
+                  gitBusy={gitBusy}
+                  onAction={(action, hunk) => void runHunkGitAction(action, hunk)}
+                />
+              ) : null}
+              {createDiffView(diff)}
+            </ChangesDiffStack>
           )}
         </ChangesDiffPane>
       </ChangesBody>
@@ -664,6 +702,15 @@ const ChangesDiffPane = styled.div`
     white-space: pre;
     word-break: normal;
   }
+`;
+
+const ChangesDiffStack = styled.div`
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 `;
 
 const ChangesDiffEmpty = styled.div`

@@ -9,6 +9,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { ChangesPanel } from "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/changes-panel.tsx";
+import { extractGitDiffHunks } from "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/git-diff-hunks.ts";
 import { GIT_STATE_REFRESH_MS, useGitState } from "../src/desktop/adapters/inbound/react-renderer/product-shell/support/use-shell-effects.ts";
 import type { GitChangesView, GitChangesViewResult, ProjectRegistryBridge } from "../src/desktop/adapters/inbound/react-renderer/product-shell/support/types.ts";
 import { createFileTreeColumn } from "../src/desktop/adapters/inbound/react-renderer/product-shell/file-tree/file-tree.tsx";
@@ -22,7 +23,7 @@ const dom = new JSDOM("<!doctype html><html><body></body></html>");
 (globalThis as unknown as { document: unknown }).document = dom.window.document;
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-async function renderPane(changes: GitChangesViewResult): Promise<string> {
+async function renderPane(changes: GitChangesViewResult, diff = ""): Promise<string> {
   const { createRoot } = await import("react-dom/client");
   const container = dom.window.document.createElement("div");
   dom.window.document.body.appendChild(container);
@@ -32,7 +33,14 @@ async function renderPane(changes: GitChangesViewResult): Promise<string> {
       <ChangesPanel
         cwd="/repo"
         onGitChanges={() => Promise.resolve(changes)}
-        onGitFileDiff={() => Promise.resolve("")}
+        onGitFileDiff={() => Promise.resolve(diff)}
+        onOpenReview={() => undefined}
+        onGitStageFile={() => Promise.resolve({ ok: true, message: "staged" })}
+        onGitUnstageFile={() => Promise.resolve({ ok: true, message: "unstaged" })}
+        onGitDiscardFile={() => Promise.resolve({ ok: true, message: "discarded" })}
+        onGitApplyHunk={() => Promise.resolve({ ok: true, message: "hunk applied" })}
+        onGitCommit={() => Promise.resolve({ ok: true, message: "committed" })}
+        onGitPush={() => Promise.resolve({ ok: true, message: "pushed" })}
       />,
     );
   });
@@ -82,6 +90,88 @@ test("changes_pane_renders_a_resizable_collapsible_file_list", async () => {
   // GitHub-style file tree controls: a collapse toggle + a resize divider.
   assert.match(html, /Hide file list/);
   assert.match(html, /Resize file list/);
+});
+
+test("extract_git_diff_hunks_builds_single_hunk_patches_with_headers", () => {
+  const hunks = extractGitDiffHunks(
+    [
+      "diff --git a/src/app.ts b/src/app.ts",
+      "index 111..222 100644",
+      "--- a/src/app.ts",
+      "+++ b/src/app.ts",
+      "@@ -1,2 +1,2 @@",
+      " const a = 1;",
+      "-old",
+      "+new",
+      "@@ -10,1 +10,2 @@",
+      " keep",
+      "+more",
+    ].join("\n"),
+  );
+
+  assert.equal(hunks.length, 2);
+  assert.equal(hunks[0].title, "@@ -1,2 +1,2 @@");
+  assert.match(hunks[0].patch, /diff --git a\/src\/app\.ts b\/src\/app\.ts/);
+  assert.match(hunks[0].patch, /@@ -1,2 \+1,2 @@/);
+  assert.doesNotMatch(hunks[0].patch, /@@ -10,1 \+10,2 @@/);
+  assert.equal(hunks[0].additions, 1);
+  assert.equal(hunks[0].deletions, 1);
+});
+
+test("changes_pane_stage_hunk_sends_selected_hunk_patch", async () => {
+  const { createRoot } = await import("react-dom/client");
+  const container = dom.window.document.createElement("div");
+  dom.window.document.body.appendChild(container);
+  const root = createRoot(container);
+  let applied: { path: string; patch: string; action: string } | null = null;
+  await act(async () => {
+    root.render(
+      <ChangesPanel
+        cwd="/repo"
+        onGitChanges={() => Promise.resolve({
+          isGitRepo: true,
+          branch: "main",
+          files: [{ path: "src/app.ts", status: "modified", additions: 1, deletions: 1 }],
+        })}
+        onGitFileDiff={() => Promise.resolve([
+          "diff --git a/src/app.ts b/src/app.ts",
+          "index 111..222 100644",
+          "--- a/src/app.ts",
+          "+++ b/src/app.ts",
+          "@@ -1,1 +1,1 @@",
+          "-old",
+          "+new",
+        ].join("\n"))}
+        onOpenReview={() => undefined}
+        onGitStageFile={() => Promise.resolve({ ok: true, message: "staged" })}
+        onGitUnstageFile={() => Promise.resolve({ ok: true, message: "unstaged" })}
+        onGitDiscardFile={() => Promise.resolve({ ok: true, message: "discarded" })}
+        onGitApplyHunk={(_cwd, path, patch, action) => {
+          applied = { path, patch, action };
+          return Promise.resolve({ ok: true, message: "hunk staged" });
+        }}
+        onGitCommit={() => Promise.resolve({ ok: true, message: "committed" })}
+        onGitPush={() => Promise.resolve({ ok: true, message: "pushed" })}
+      />,
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  const button = container.querySelector('button[aria-label="Stage hunk 1"]') as HTMLButtonElement | null;
+  assert.notEqual(button, null);
+
+  await act(async () => {
+    button?.click();
+  });
+  await act(async () => {
+    root.unmount();
+  });
+
+  assert.equal(applied?.path, "src/app.ts");
+  assert.equal(applied?.action, "stage");
+  assert.match(applied?.patch ?? "", /@@ -1,1 \+1,1 @@/);
 });
 
 test("file_tree_renders_git_status_badges_and_deleted_rows", () => {
