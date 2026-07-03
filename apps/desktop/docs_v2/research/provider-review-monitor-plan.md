@@ -34,6 +34,7 @@ This branch implements the first product slice of the plan:
 - Scratch-repo fixtures for branch-diff review prompts and commit review prompts.
 - Persistent Agent Monitor panel derived from existing product-shell thread/runtime/prompt/activity state.
 - Agent Monitor runtime snapshots keyed by thread id, preserving background activity detail even when the background chat state is not hydrated.
+- Agent Monitor rows surface queued input counts and have a multi-provider rendering fixture for Codex, Claude, and opencode rows.
 - Agent Monitor inline choice-answer controls for complete single-prompt snapshots; incomplete, free-text, multi-select, and multi-step prompts still route through thread focus.
 - Provider-owned adopted thread summaries preserve provider session refs in Product Shell state.
 - Agent Monitor shows provider-owned external sessions as read-only idle rows when the external sessions list setting is enabled.
@@ -384,9 +385,9 @@ opencode:
 
 ### Tests And Fixtures
 
-Required:
+Covered in this branch:
 
-- Reducer tests for state transitions:
+- Reducer tests for monitor state transitions:
   - running -> idle
   - running -> waiting_for_approval
   - waiting_for_input -> running
@@ -395,6 +396,9 @@ Required:
 - Multi-thread monitor rendering fixture with Codex, Claude, and opencode rows.
 - Background thread detail preservation test.
 - Provider-owned monitor derivation tests for adopted sessions.
+
+Still required before live attach/resume:
+
 - Provider live attach/resume tests only after each provider command output is captured.
 
 ## Remaining Work Order

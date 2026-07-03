@@ -82,6 +82,7 @@ function MonitorSessionRow(props: {
   const { session, now, handlers } = props;
   const cwd = session.cwd ?? "";
   const prompt = session.prompt;
+  const queuedLabel = queuedInputLabel(session.queuedInputCount);
   return (
     <MonitorSession data-active={session.active ? "true" : "false"}>
       <MonitorSessionMain>
@@ -90,6 +91,7 @@ function MonitorSessionRow(props: {
           <span>{agentLabel(session.agentId)}</span>
           <span>{stateLabel(session.state)}</span>
           {session.providerOwned === true ? <span>provider-owned</span> : null}
+          {queuedLabel !== undefined ? <span>{queuedLabel}</span> : null}
           {session.startedAt !== undefined ? <span>{formatElapsed(session.startedAt, now)}</span> : null}
         </MonitorSessionMeta>
         <MonitorSessionDetail>
@@ -176,6 +178,13 @@ function promptLabel(kind: ProductShellAgentMonitorSession["pendingPromptKind"])
     default:
       return undefined;
   }
+}
+
+function queuedInputLabel(count: number | undefined): string | undefined {
+  if (count === undefined || count <= 0) {
+    return undefined;
+  }
+  return count === 1 ? "1 queued" : `${count} queued`;
 }
 
 function formatElapsed(startedAt: string, now: number): string {

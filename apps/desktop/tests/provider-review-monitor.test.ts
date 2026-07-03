@@ -189,6 +189,130 @@ test("agent monitor snapshots preserve background activity without active-chat l
   assert.equal(session?.changedAt, "2026-07-04T00:03:00.000Z");
 });
 
+test("agent monitor runtime snapshots cover idle failed and queued transitions", () => {
+  const listed = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: { threads: [threadSummary()] },
+  });
+  const running = applyProductShellBackendEvent(listed, {
+    kind: "agentRuntime.stateChanged",
+    payload: {
+      threadId: "thread-review",
+      state: "running",
+      changedAt: "2026-07-04T00:03:00.000Z",
+      queuedInputs: ["queued follow-up"],
+    },
+  });
+  assert.equal(createProductShellViewModel(running).agentMonitorSessions[0]?.state, "running");
+  assert.equal(createProductShellViewModel(running).agentMonitorSessions[0]?.queuedInputCount, 1);
+
+  const waitingForInput = applyProductShellBackendEvent(running, {
+    kind: "agentRuntime.stateChanged",
+    payload: {
+      threadId: "thread-review",
+      state: "waiting_for_input",
+      changedAt: "2026-07-04T00:03:30.000Z",
+    },
+  });
+  assert.equal(createProductShellViewModel(waitingForInput).agentMonitorSessions[0]?.state, "waiting_for_input");
+
+  const resumed = applyProductShellBackendEvent(waitingForInput, {
+    kind: "agentRuntime.stateChanged",
+    payload: {
+      threadId: "thread-review",
+      state: "running",
+      changedAt: "2026-07-04T00:03:45.000Z",
+    },
+  });
+  assert.equal(createProductShellViewModel(resumed).agentMonitorSessions[0]?.state, "running");
+
+  const idle = applyProductShellBackendEvent(resumed, {
+    kind: "agentRuntime.stateChanged",
+    payload: {
+      threadId: "thread-review",
+      state: "idle",
+      changedAt: "2026-07-04T00:04:00.000Z",
+      queuedInputs: [],
+    },
+  });
+  assert.equal(createProductShellViewModel(idle).agentMonitorSessions[0]?.state, "idle");
+  assert.equal(createProductShellViewModel(idle).agentMonitorSessions[0]?.queuedInputCount, 0);
+
+  const failed = applyProductShellBackendEvent(idle, {
+    kind: "agentRuntime.stateChanged",
+    payload: {
+      threadId: "thread-review",
+      state: "failed",
+      changedAt: "2026-07-04T00:05:00.000Z",
+    },
+  });
+  assert.equal(createProductShellViewModel(failed).agentMonitorSessions[0]?.state, "failed");
+});
+
+test("agent monitor renders multi-provider rows and queued input counts", async () => {
+  const container = dom.window.document.createElement("div");
+  dom.window.document.body.appendChild(container);
+  const root = createRoot(container);
+  const handlers = {
+    onAgentMonitorToggle: () => undefined,
+    onThreadSelect: () => undefined,
+    onOpenThreadChanges: () => undefined,
+    onInterrupt: () => undefined,
+  } as Partial<ProductShellHandlers> as ProductShellHandlers;
+
+  await act(async () => {
+    root.render(
+      createElement(AgentMonitorPanel, {
+        sessions: [
+          {
+            threadId: "thread-codex",
+            agentId: "codex",
+            title: "Codex review",
+            cwd: "/repo/codex",
+            state: "waiting_for_input",
+            queuedInputCount: 2,
+            active: false,
+          },
+          {
+            threadId: "thread-claude",
+            agentId: "claude",
+            title: "Claude fanout",
+            cwd: "/repo/claude",
+            state: "running",
+            activityLabel: "3 agents, 5 tools",
+            active: true,
+          },
+          {
+            threadId: "thread-opencode",
+            agentId: "opencode",
+            title: "opencode plan",
+            cwd: "/repo/opencode",
+            state: "idle",
+            providerOwned: true,
+            active: false,
+          },
+        ] satisfies ProductShellAgentMonitorSession[],
+        handlers,
+      }),
+    );
+  });
+
+  const text = container.textContent ?? "";
+  assert.match(text, /Needs You/);
+  assert.match(text, /Running/);
+  assert.match(text, /Idle \/ Stopped/);
+  assert.match(text, /Codex/);
+  assert.match(text, /2 queued/);
+  assert.match(text, /Claude/);
+  assert.match(text, /3 agents, 5 tools/);
+  assert.match(text, /opencode/);
+  assert.match(text, /provider-owned/);
+
+  await act(async () => {
+    root.unmount();
+  });
+});
+
 test("agent monitor row actions target the selected thread and active runtime", async () => {
   let selectedThreadId: string | null = null;
   let openedThreadId: string | null = null;
