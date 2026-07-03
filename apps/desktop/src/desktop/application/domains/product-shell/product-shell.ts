@@ -20,7 +20,6 @@ import {
   addComposerContextChip,
   removeComposerContextChip,
   setComposerContextChipComment,
-  setAvailableProviderAgents,
   type AgentChatComposerAttachment,
   type AgentChatContextChip,
   type AgentChatBackendCommand,

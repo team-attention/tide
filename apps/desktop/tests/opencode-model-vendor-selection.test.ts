@@ -15,12 +15,11 @@ import {
   cliModelOptionsForAgent,
   isAgentComingSoon,
   permissionConfigForAgent,
-  setAvailableProviderAgents,
-  setOpencodeModelCatalog,
 } from "../src/desktop/application/domains/agent-chat/state/agent-vocab.ts";
 import { buildProvidersHubViewModel } from "../src/desktop/application/domains/agent-chat/state/providers-hub.ts";
 
 // Spec: docs_v2/specs/opencode-model-vendor-selection.md
+// Spec: docs_v2/specs/provider-catalog-ownership-and-model-selection.md
 
 function opencodeIntegration(overrides?: { executable?: string | undefined; authenticated?: boolean }) {
   return createOpencodeAgentIntegration({
@@ -219,9 +218,23 @@ test("parseAcpModelCatalog reads ACP availableModels and opencode configOptions"
 });
 
 test("buildProvidersHubViewModel lists supported agents with status + catalog", () => {
-  setAvailableProviderAgents(["claude", "codex"]); // opencode not installed
-  setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
-  const hub = buildProvidersHubViewModel();
+  const hub = buildProvidersHubViewModel({
+    providerInventory: {
+      agents: [
+        { agentId: "claude", installed: true },
+        { agentId: "codex", installed: true },
+        { agentId: "opencode", installed: false },
+      ],
+    },
+    providerCatalogs: {
+      opencode: {
+        agentId: "opencode",
+        status: "ready",
+        models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+        defaultModel: "opencode default",
+      },
+    },
+  });
   assert.deepEqual(hub.map((agent) => agent.agentId), ["claude", "codex", "opencode"]);
 
   const opencode = hub.find((agent) => agent.agentId === "opencode");
@@ -234,30 +247,8 @@ test("buildProvidersHubViewModel lists supported agents with status + catalog", 
   assert.equal(claude?.installed, true);
   assert.equal(claude?.multiVendor, false);
   assert.ok((claude?.models.length ?? 0) > 1);
-
-  setAvailableProviderAgents(null);
-  setOpencodeModelCatalog(null);
 });
 
-test("cliModelOptionsForAgent('opencode') reflects the backend-enumerated catalog", () => {
-  setAvailableProviderAgents(["opencode"]);
-  setOpencodeModelCatalog(null);
-  // No catalog yet → sentinel default only.
-  assert.deepEqual(cliModelOptionsForAgent("opencode"), [
-    { value: "opencode default", label: "Default", detail: "opencode config" },
-  ]);
-
-  setOpencodeModelCatalog([
-    { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
-    { value: "opencode/big-pickle", label: "big-pickle", vendor: "opencode" },
-  ]);
-  const options = cliModelOptionsForAgent("opencode");
-  assert.equal(options[0]?.value, "opencode default");
-  assert.deepEqual(options.slice(1).map((option) => option.value), [
-    "openai/gpt-5.5",
-    "opencode/big-pickle",
-  ]);
-  assert.equal(options[1]?.vendor, "openai");
-  // Reset module state so other tests are unaffected.
-  setOpencodeModelCatalog(null);
+test("cliModelOptionsForAgent('opencode') does not fabricate provider catalog rows", () => {
+  assert.deepEqual(cliModelOptionsForAgent("opencode"), []);
 });

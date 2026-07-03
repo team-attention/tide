@@ -1,12 +1,8 @@
-import type { AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatOpencodeConnectVendorView } from "./types.ts";
-import { cliModelOptionsForAgent } from "./agent-vocab.ts";
+import type { AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatOpencodeConnectVendorView, AgentChatProviderCatalog } from "./types.ts";
 
-// State + view builder for the opencode vendor on-ramp (spec: opencode-vendor-onramp.md).
-// opencode is a multi-vendor router; this owns the desktop's view of which vendors are
-// signed in (from `opencode auth list`, surfaced on thread.listed) and opencode's
-// environment, plus the "is opencode usable yet?" gate that decides whether the Model
-// chip opens the normal model menu or this on-ramp. Local types mirror the contract
-// DTOs (this domain stays isolated from shared/contracts, like the model catalog).
+// View builder for the opencode vendor on-ramp (spec: opencode-vendor-onramp.md).
+// opencode is a multi-vendor router; the Product Shell owns the provider catalog
+// snapshot and injects it into this pure builder.
 
 export interface OpencodeOnrampVendor {
   id: string;
@@ -25,40 +21,35 @@ export interface OpencodeOnrampEnvironment {
   executablePath?: string;
 }
 
-// Module-level so it survives New-Thread state resets, mirroring the model catalog.
-let opencodeVendors: OpencodeOnrampVendor[] = [];
-let opencodeEnvironment: OpencodeOnrampEnvironment | null = null;
-
-export function setOpencodeVendors(vendors: OpencodeOnrampVendor[] | null): void {
-  opencodeVendors = vendors ?? [];
+export function getOpencodeVendors(catalog?: AgentChatProviderCatalog): OpencodeOnrampVendor[] {
+  return readyOpencodeCatalog(catalog)?.vendors ?? [];
 }
 
-export function getOpencodeVendors(): OpencodeOnrampVendor[] {
-  return opencodeVendors;
-}
-
-export function setOpencodeEnvironment(environment: OpencodeOnrampEnvironment | null): void {
-  opencodeEnvironment = environment;
-}
-
-export function getOpencodeEnvironment(): OpencodeOnrampEnvironment | null {
-  return opencodeEnvironment;
+export function getOpencodeEnvironment(
+  catalog?: AgentChatProviderCatalog,
+): OpencodeOnrampEnvironment | null {
+  return catalog?.agentId === "opencode" ? catalog.environment ?? null : null;
 }
 
 // opencode is usable once at least one vendor is signed in AND not flagged unusable
 // (a connected-but-expired credential serves no models), OR its model catalog has a
 // concrete model (beyond the "opencode default" sentinel). When NOT usable, the Model
 // chip opens the on-ramp instead of an empty model menu.
-export function isOpencodeUsable(): boolean {
-  if (opencodeVendors.some((vendor) => vendor.connected && vendor.usable !== false)) {
+export function isOpencodeUsable(catalog?: AgentChatProviderCatalog): boolean {
+  const readyCatalog = readyOpencodeCatalog(catalog);
+  if (readyCatalog === undefined) {
+    return false;
+  }
+  const vendors = readyCatalog.vendors ?? [];
+  if (vendors.some((vendor) => vendor.connected && vendor.usable !== false)) {
     return true;
   }
-  return cliModelOptionsForAgent("opencode").some((model) => model.value !== "opencode default");
+  return readyCatalog.models.some((model) => model.value !== "opencode default");
 }
 
 // Zen's free models are the `opencode/*` (vendor "opencode") rows in the catalog.
-function zenFreeModelCount(): number {
-  return cliModelOptionsForAgent("opencode").filter((model) => model.vendor === "opencode").length;
+function zenFreeModelCount(catalog?: AgentChatProviderCatalog): number {
+  return readyOpencodeCatalog(catalog)?.models.filter((model) => model.vendor === "opencode").length ?? 0;
 }
 
 const MONOGRAMS: Record<string, string> = {
@@ -92,8 +83,11 @@ function vendorRowView(vendor: OpencodeOnrampVendor): AgentChatOpencodeConnectVe
 // generic action rows (the row list gates dispatch in selectAgentChatChoiceSurfaceRow).
 // `manageMode` = opencode is already usable and the user opened the panel to ADD a
 // vendor (so the panel offers "back to models").
-export function buildOpencodeConnectSurface(manageMode: boolean): AgentChatChoiceSurfaceView {
-  const vendors = opencodeVendors.length > 0 ? opencodeVendors : [];
+export function buildOpencodeConnectSurface(
+  manageMode: boolean,
+  catalog?: AgentChatProviderCatalog,
+): AgentChatChoiceSurfaceView {
+  const vendors = getOpencodeVendors(catalog);
   const vendorViews = vendors.map(vendorRowView);
   const rows: AgentChatChoiceSurfaceRowView[] = [
     row("use-free-model"),
@@ -109,8 +103,8 @@ export function buildOpencodeConnectSurface(manageMode: boolean): AgentChatChoic
     sourceLabel: "opencode",
     rows,
     opencodeConnect: {
-      version: opencodeEnvironment?.version,
-      zenFreeCount: zenFreeModelCount(),
+      version: getOpencodeEnvironment(catalog)?.version,
+      zenFreeCount: zenFreeModelCount(catalog),
       connectedCount: vendors.filter((vendor) => vendor.connected).length,
       vendors: vendorViews,
       manageMode,
@@ -120,4 +114,10 @@ export function buildOpencodeConnectSurface(manageMode: boolean): AgentChatChoic
 
 function row(rowId: string): AgentChatChoiceSurfaceRowView {
   return { rowId, label: rowId, icon: "", selected: false, danger: false, disabled: false };
+}
+
+function readyOpencodeCatalog(
+  catalog?: AgentChatProviderCatalog,
+): AgentChatProviderCatalog | undefined {
+  return catalog?.agentId === "opencode" && catalog.status === "ready" ? catalog : undefined;
 }

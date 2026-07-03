@@ -45,7 +45,7 @@ export function OpencodeModelProviderPanel(props: {
 
       {data.step === "provider_list" || data.step === "connect_vendor" ? (
         <OpencodeProviderRows>
-          {data.providers.map((provider) => (
+          {data.providers.length > 0 ? data.providers.map((provider) => (
             <OpencodeProviderRowButton
               key={provider.rowId}
               type="button"
@@ -61,7 +61,12 @@ export function OpencodeModelProviderPanel(props: {
                 {provider.selected ? "Current" : provider.needsReconnect ? "Reconnect" : provider.connected ? ">" : "Connect"}
               </OpencodeProviderMeta>
             </OpencodeProviderRowButton>
-          ))}
+          )) : (
+            <OpencodeProviderEmpty>
+              {props.surface.rows[0]?.label ?? "Provider catalog unavailable"}
+              {props.surface.rows[0]?.detail ? ` · ${props.surface.rows[0].detail}` : ""}
+            </OpencodeProviderEmpty>
+          )}
         </OpencodeProviderRows>
       ) : null}
 

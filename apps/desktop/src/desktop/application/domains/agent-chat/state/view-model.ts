@@ -278,6 +278,7 @@ function modelLabelForState(state: AgentChatShellState): string {
   const binding = state.thread?.agentBinding ?? state.composer.startOptions.agentBinding;
   const launchOptions = launchOptionsForState(state);
   const model = String(launchOptions?.model ?? defaultModelValueForAgent(binding.agentId));
+  const catalog = state.availableProviderCatalogs?.[binding.agentId];
   // codex exposes a reasoning effort; show it next to the model so the chip
   // reflects the real setting (not a hardcoded level).
   if (binding.agentId === "codex") {
@@ -286,9 +287,9 @@ function modelLabelForState(state: AgentChatShellState): string {
   }
   if (binding.agentId === "claude") {
     const effort = String(launchOptions?.reasoning ?? "high");
-    return `${modelLabelForAgent("claude", model)} · ${reasoningLabel(effort)}`;
+    return `${modelLabelForAgent("claude", model, catalog)} · ${reasoningLabel(effort)}`;
   }
-  return modelLabelForAgent(binding.agentId, model);
+  return modelLabelForAgent(binding.agentId, model, catalog);
 }
 
 function reasoningLabel(reasoning: string): string {

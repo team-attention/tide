@@ -1,6 +1,6 @@
 import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellProviderCapability, ProductShellProviderUsage, ProductShellState } from "./types.ts";
-import { applyAgentChatBackendEvent, setAvailableProviderAgents, setOpencodeEnvironment, setOpencodeModelCatalog, setOpencodeVendors, setProviderModelCatalog, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
-import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
+import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatProviderCatalog, AgentChatProviderCatalogVendor, AgentChatProviderInventory, AgentChatProviderModelOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { applyProductShellThreadArchivedEvent, applyProductShellThreadEvent, applyProductShellThreadLaunchOptionsChangedEvent, applyProductShellThreadPinChangedEvent, applyProductShellThreadRenamedEvent, toProductShellThreadFromSummary } from "./thread-list.ts";
@@ -66,43 +66,27 @@ export function applyProductShellBackendEvent(
 
   switch (event.kind) {
     case "thread.listed": {
-      // Record which provider-CLI agents the backend detected locally so the composer agent menu
-      // enables them and labels the rest "Not installed". This is fast (which-based) and arrives
-      // immediately — opencode's slower catalog comes separately via providerCatalog.changed, so
-      // the agent menu is never blocked behind it. See provider-cli-setup-handoff.md.
-      const listedPayload = event.payload as { availableAgents?: readonly string[] };
-      setAvailableProviderAgents(listedPayload.availableAgents ?? null);
-      return applyProductShellThreadListEvent(nextState, event);
+      return applyProductShellThreadListEvent(
+        seedProviderInventoryFromLegacyThreadList(nextState, event),
+        event,
+      );
+    }
+    case "providerInventory.changed": {
+      const providerInventory = providerInventoryFromPayload(event.payload);
+      return providerInventory === null ? nextState : { ...nextState, providerInventory };
     }
     case "providerCatalog.changed": {
-      // opencode's catalog, delivered out of band from thread.listed: the model menu (multi-vendor
-      // router), the "Connect a model" on-ramp grid + connected-state, and version. Module-level
-      // setters; returning a fresh nextState triggers the re-render that reads them.
-      const catalog = event.payload as {
-        opencodeModels?: ReadonlyArray<{ value: string; label: string; vendor?: string; detail?: string }>;
-        opencodeVendors?: ReadonlyArray<{ id: string; label: string; connected: boolean; method?: string; popular?: boolean; usable?: boolean }>;
-        opencodeEnvironment?: { version?: string; testedWith?: string; executablePath?: string };
+      const catalog = providerCatalogFromPayload(event.payload);
+      if (catalog === null) {
+        return nextState;
+      }
+      return {
+        ...nextState,
+        providerCatalogs: {
+          ...nextState.providerCatalogs,
+          [catalog.agentId]: catalog,
+        },
       };
-      setOpencodeModelCatalog(
-        catalog.opencodeModels?.map((model) => ({
-          value: model.value,
-          label: model.label,
-          vendor: model.vendor,
-          detail: model.detail,
-        })) ?? null,
-      );
-      setOpencodeVendors(
-        catalog.opencodeVendors?.map((vendor) => ({
-          id: vendor.id,
-          label: vendor.label,
-          connected: vendor.connected,
-          method: vendor.method,
-          popular: vendor.popular,
-          usable: vendor.usable,
-        })) ?? null,
-      );
-      setOpencodeEnvironment(catalog.opencodeEnvironment ?? null);
-      return nextState;
     }
     case "providerUsage.changed": {
       const usagePayload = event.payload as {
@@ -207,24 +191,33 @@ export function applyProductShellBackendEvent(
     }
     case "agentRuntime.modelCatalogChanged": {
       // The agent self-reported its model catalog over the protocol (ACP /
-      // opencode configOptions) — cache it so the composer menu reflects the real
-      // list. Module-level cache (read by cliModelOptionsForAgent); no view change.
+      // opencode configOptions). Fold it into the same Product Shell provider
+      // catalog slice as provider.catalog.get.
       const catalogPayload = event.payload as {
         agentId?: string;
         models?: ReadonlyArray<{ value: string; label: string; vendor?: string; detail?: string }>;
       };
-      if (catalogPayload.agentId !== undefined) {
-        setProviderModelCatalog(
-          catalogPayload.agentId,
-          catalogPayload.models?.map((model) => ({
-            value: model.value,
-            label: model.label,
-            vendor: model.vendor,
-            detail: model.detail,
-          })) ?? null,
-        );
+      const agentId = catalogPayload.agentId;
+      if (agentId === undefined || !isProductShellAgentIdentity(agentId)) {
+        return nextState;
       }
-      return nextState;
+      const previous = nextState.providerCatalogs[agentId];
+      const catalog: AgentChatProviderCatalog = {
+        agentId,
+        status: "ready",
+        models: providerModelsFromPayload(catalogPayload.models),
+        vendors: previous?.vendors,
+        environment: previous?.environment,
+        currentModel: previous?.currentModel,
+        defaultModel: previous?.defaultModel ?? defaultModelForProvider(agentId),
+      };
+      return {
+        ...nextState,
+        providerCatalogs: {
+          ...nextState.providerCatalogs,
+          [catalog.agentId]: catalog,
+        },
+      };
     }
     case "workbench.changed": {
       const payload = event.payload as {
@@ -431,6 +424,248 @@ function activeWorkspaceFileTreeCwd(state: ProductShellState): string | null {
 
 function providerUsageKey(entry: ProductShellProviderUsage): string {
   return entry.agentId;
+}
+
+const PRODUCT_SHELL_PROVIDER_AGENT_IDS = ["codex", "claude", "opencode"] as const;
+
+function seedProviderInventoryFromLegacyThreadList(
+  state: ProductShellState,
+  event: AgentChatBackendEvent,
+): ProductShellState {
+  if (state.providerInventory !== null) {
+    return state;
+  }
+  const payload = event.payload as { availableAgents?: unknown };
+  if (!Array.isArray(payload.availableAgents)) {
+    return state;
+  }
+  const installed = new Set(
+    payload.availableAgents.filter((agentId): agentId is ProductShellProviderUsage["agentId"] =>
+      typeof agentId === "string" && isProductShellAgentIdentity(agentId),
+    ),
+  );
+  return {
+    ...state,
+    providerInventory: {
+      agents: PRODUCT_SHELL_PROVIDER_AGENT_IDS.map((agentId) => ({
+        agentId,
+        installed: installed.has(agentId),
+      })),
+    },
+  };
+}
+
+function providerInventoryFromPayload(payload: unknown): AgentChatProviderInventory | null {
+  const raw = payload as { agents?: unknown };
+  if (!Array.isArray(raw.agents)) {
+    return null;
+  }
+  const agents = raw.agents
+    .map((entry): AgentChatProviderInventory["agents"][number] | null => {
+      const candidate = entry as { agentId?: unknown; installed?: unknown };
+      if (
+        typeof candidate.agentId !== "string" ||
+        !isProductShellAgentIdentity(candidate.agentId) ||
+        typeof candidate.installed !== "boolean"
+      ) {
+        return null;
+      }
+      return { agentId: candidate.agentId, installed: candidate.installed };
+    })
+    .filter((entry): entry is AgentChatProviderInventory["agents"][number] => entry !== null);
+  return { agents };
+}
+
+function providerCatalogFromPayload(payload: unknown): AgentChatProviderCatalog | null {
+  const rawPayload = payload as {
+    catalog?: unknown;
+    opencodeModels?: unknown;
+    opencodeVendors?: unknown;
+    opencodeEnvironment?: unknown;
+  };
+  const catalog = providerCatalogSnapshotFromPayload(rawPayload.catalog);
+  if (catalog !== null) {
+    return catalog;
+  }
+  if (
+    rawPayload.opencodeModels !== undefined ||
+    rawPayload.opencodeVendors !== undefined ||
+    rawPayload.opencodeEnvironment !== undefined
+  ) {
+    return {
+      agentId: "opencode",
+      status: "ready",
+      models: providerModelsFromPayload(rawPayload.opencodeModels),
+      vendors: providerVendorsFromPayload(rawPayload.opencodeVendors),
+      environment: providerEnvironmentFromPayload(rawPayload.opencodeEnvironment),
+      defaultModel: "opencode default",
+    };
+  }
+  return null;
+}
+
+function providerCatalogSnapshotFromPayload(payload: unknown): AgentChatProviderCatalog | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+  const raw = payload as {
+    agentId?: unknown;
+    status?: unknown;
+    scope?: unknown;
+    models?: unknown;
+    vendors?: unknown;
+    environment?: unknown;
+    currentModel?: unknown;
+    defaultModel?: unknown;
+    error?: unknown;
+  };
+  if (
+    typeof raw.agentId !== "string" ||
+    !isProductShellAgentIdentity(raw.agentId) ||
+    (raw.status !== "ready" && raw.status !== "unavailable" && raw.status !== "error")
+  ) {
+    return null;
+  }
+  return {
+    agentId: raw.agentId,
+    status: raw.status,
+    scope: providerScopeFromPayload(raw.scope),
+    models: providerModelsFromPayload(raw.models),
+    vendors: providerVendorsFromPayload(raw.vendors),
+    environment: providerEnvironmentFromPayload(raw.environment),
+    currentModel: typeof raw.currentModel === "string" ? raw.currentModel : undefined,
+    defaultModel:
+      typeof raw.defaultModel === "string"
+        ? raw.defaultModel
+        : defaultModelForProvider(raw.agentId),
+    error: providerCatalogErrorFromPayload(raw.error),
+  };
+}
+
+function providerModelsFromPayload(payload: unknown): AgentChatProviderModelOption[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  return payload
+    .map((entry): AgentChatProviderModelOption | null => {
+      const model = entry as {
+        value?: unknown;
+        label?: unknown;
+        vendor?: unknown;
+        effortOptions?: unknown;
+        detail?: unknown;
+      };
+      if (typeof model.value !== "string" || typeof model.label !== "string") {
+        return null;
+      }
+      return {
+        value: model.value,
+        label: model.label,
+        vendor: typeof model.vendor === "string" ? model.vendor : undefined,
+        effortOptions: Array.isArray(model.effortOptions)
+          ? model.effortOptions.filter((effort): effort is string => typeof effort === "string")
+          : undefined,
+        detail: typeof model.detail === "string" ? model.detail : undefined,
+      };
+    })
+    .filter((entry): entry is AgentChatProviderModelOption => entry !== null);
+}
+
+function providerVendorsFromPayload(payload: unknown): AgentChatProviderCatalogVendor[] | undefined {
+  if (!Array.isArray(payload)) {
+    return undefined;
+  }
+  return payload
+    .map((entry): AgentChatProviderCatalogVendor | null => {
+      const vendor = entry as {
+        id?: unknown;
+        label?: unknown;
+        connected?: unknown;
+        method?: unknown;
+        popular?: unknown;
+        usable?: unknown;
+      };
+      if (
+        typeof vendor.id !== "string" ||
+        typeof vendor.label !== "string" ||
+        typeof vendor.connected !== "boolean"
+      ) {
+        return null;
+      }
+      return {
+        id: vendor.id,
+        label: vendor.label,
+        connected: vendor.connected,
+        method: typeof vendor.method === "string" ? vendor.method : undefined,
+        popular: typeof vendor.popular === "boolean" ? vendor.popular : undefined,
+        usable: typeof vendor.usable === "boolean" ? vendor.usable : undefined,
+      };
+    })
+    .filter((entry): entry is AgentChatProviderCatalogVendor => entry !== null);
+}
+
+function providerEnvironmentFromPayload(
+  payload: unknown,
+): AgentChatProviderCatalog["environment"] | undefined {
+  if (typeof payload !== "object" || payload === null) {
+    return undefined;
+  }
+  const environment = payload as {
+    version?: unknown;
+    testedWith?: unknown;
+    executablePath?: unknown;
+  };
+  return {
+    version: typeof environment.version === "string" ? environment.version : undefined,
+    testedWith: typeof environment.testedWith === "string" ? environment.testedWith : undefined,
+    executablePath:
+      typeof environment.executablePath === "string" ? environment.executablePath : undefined,
+  };
+}
+
+function providerScopeFromPayload(payload: unknown): AgentChatProviderCatalog["scope"] {
+  if (typeof payload !== "object" || payload === null) {
+    return undefined;
+  }
+  const scope = payload as { cwd?: unknown };
+  return typeof scope.cwd === "string" ? { cwd: scope.cwd } : undefined;
+}
+
+function providerCatalogErrorFromPayload(
+  payload: unknown,
+): AgentChatProviderCatalog["error"] {
+  if (typeof payload !== "object" || payload === null) {
+    return undefined;
+  }
+  const error = payload as {
+    code?: unknown;
+    message?: unknown;
+    retryable?: unknown;
+  };
+  if (
+    error.code !== "not_installed" &&
+    error.code !== "not_authenticated" &&
+    error.code !== "provider_failed" &&
+    error.code !== "timed_out"
+  ) {
+    return undefined;
+  }
+  return {
+    code: error.code,
+    message: typeof error.message === "string" ? error.message : "Provider catalog failed.",
+    retryable: error.retryable === true,
+  };
+}
+
+function defaultModelForProvider(agentId: ProductShellProviderUsage["agentId"]): string {
+  switch (agentId) {
+    case "claude":
+      return "Claude default";
+    case "opencode":
+      return "opencode default";
+    default:
+      return "gpt-5.5";
+  }
 }
 
 function shouldApplyBackendEventToActiveSurfaces(

@@ -3,7 +3,7 @@
 // measurement and the global search keyboard shortcuts.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { setProductShellGitContext, toggleProductShellWorkbenchFullscreen } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { isProductShellAgentIdentity, setProductShellGitContext, toggleProductShellWorkbenchFullscreen } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellBackendCommand, ProductShellState, ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import { activeComposerTrigger } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import type { GitChangesView, ProductShellHandlers, ProjectRegistryBridge } from "./types.ts";
@@ -95,6 +95,36 @@ export function useComposerFileMentionRefresh(params: {
       payload: { cwd: params.cwd, maxDepth: 12, maxEntries: 5000 },
     });
   }, [params.cwd, params.dispatchBackendCommand, trigger?.trigger]);
+}
+
+export function useProviderCatalogRequests(params: {
+  initialStateProvided: boolean;
+  activeAgentId: string;
+  activeProjectCwd: string | null;
+  dispatchBackendCommand: (command: ProductShellBackendCommand | null) => void;
+}): void {
+  const { initialStateProvided, activeAgentId, activeProjectCwd, dispatchBackendCommand } = params;
+  useEffect(() => {
+    if (initialStateProvided) {
+      return;
+    }
+    dispatchBackendCommand({ kind: "thread.list", payload: {} });
+    dispatchBackendCommand({ kind: "provider.inventory.get", payload: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (initialStateProvided || !isProductShellAgentIdentity(activeAgentId)) {
+      return;
+    }
+    dispatchBackendCommand({
+      kind: "provider.catalog.get",
+      payload: {
+        agentId: activeAgentId,
+        ...(activeProjectCwd === null ? {} : { scope: { cwd: activeProjectCwd } }),
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectCwd, activeAgentId]);
 }
 
 // BrowserRuntime owns Browser Pane popup handling and forwards http(s) popup

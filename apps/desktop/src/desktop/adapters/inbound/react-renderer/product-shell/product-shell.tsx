@@ -13,7 +13,7 @@ import { createProductShellGitDialogs } from "./product-shell-git-dialogs.tsx";
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
-import { useActivateThreadFromMain, useCloseIntentFromMenu, useComposerFileMentionRefresh, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useProductShellEscape, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
+import { useActivateThreadFromMain, useCloseIntentFromMenu, useComposerFileMentionRefresh, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useProductShellEscape, useProviderCatalogRequests, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
 import { useMultitaskNavigation } from "./multitask/use-multitask-navigation.tsx";
 import { RailPeek } from "./left-rail/rail-peek.tsx";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
@@ -522,12 +522,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       applyBackendEvents(backendResult);
     }
   };
-  useEffect(() => {
-    if (props.initialState !== undefined) {
-      return;
-    }
-    dispatchBackendCommand({ kind: "thread.list", payload: {} });
-  }, []);
+  useProviderCatalogRequests({
+    initialStateProvided: props.initialState !== undefined,
+    activeAgentId,
+    activeProjectCwd,
+    dispatchBackendCommand,
+  });
   // Mirror the agent's REAL full command set in the composer menu: probe a
   // handshake-only runtime for (agent, cwd); the resulting agentRuntime.commandsChanged
   // replaces the instant file list (tide:list-commands). Re-runs when the active cwd or
@@ -732,7 +732,14 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             top-right, so they never jump between column headers as panels open/close. */}
         {createWindowChromeToggles(layoutVm, handlers, showWorkbenchControls, inlineWorkbenchControls, collapseChromeToDots)}
         {viewModel.settingsOpen
-          ? createSettingsModal(viewModel.worktreeSettings, themePref, viewModel.usageByModel, handlers)
+          ? createSettingsModal(
+              viewModel.worktreeSettings,
+              themePref,
+              viewModel.usageByModel,
+              viewModel.providerInventory,
+              viewModel.providerCatalogs,
+              handlers,
+            )
           : null}
         {quickOpenVisible ? (
           <QuickOpenPalette
@@ -776,13 +783,6 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       </ProductShellFrame>
     </ProductShellStoreProvider>
   );
-}
-
-// Looks up a project's cwd by id across registered + thread-derived projects.
-export function projectCwdById(state: ProductShellState, projectId: string): string | undefined {
-  return [...state.registeredProjects, ...state.projects].find(
-    (project) => project.projectId === projectId,
-  )?.cwd;
 }
 
 // Decomposed into ./product-shell/ (spec: navigable-source-structure). The shell

@@ -1,4 +1,4 @@
-import type { AgentChatAgentBinding, AgentChatAgentId, AgentChatAgentRuntimeSource } from "./types.ts";
+import type { AgentChatAgentBinding, AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatProviderCatalog, AgentChatProviderInventory } from "./types.ts";
 import {
   AGENT_DESCRIPTORS,
   agentDescriptor,
@@ -58,26 +58,20 @@ export function normalizePermissionValue(agentId: string, value: string): string
   return config.legacyValueMap?.[value] ?? value;
 }
 
-// Provider-CLI agents the backend detected on the local system. `null` = not yet
-// reported (treat all as available so the menu never flashes all-disabled at startup).
-// Set by the Desktop adapter from the thread.listed event. Module-level so it survives
-// New-Thread state resets.
-let availableProviderAgents: readonly string[] | null = null;
-
-export function setAvailableProviderAgents(agents: readonly string[] | null): void {
-  availableProviderAgents = agents;
+export function isAgentAvailable(
+  agentId: string,
+  inventory?: AgentChatProviderInventory | null,
+): boolean {
+  if (inventory === undefined || inventory === null) {
+    return true;
+  }
+  return inventory.agents.find((agent) => agent.agentId === agentId)?.installed === true;
 }
 
-export function isAgentAvailable(agentId: string): boolean {
-  return availableProviderAgents === null || availableProviderAgents.includes(agentId);
-}
-
-// Whether local-system agent detection has arrived yet (thread.listed). Until it has,
-// availableProviderAgents is null and isAgentAvailable optimistically returns true (for the
-// start-default pick, which only matters at send-time). The agent menu uses THIS to show a
-// neutral "Checking…" during that brief window instead of a misleading "installed" label.
-export function isAgentAvailabilityKnown(): boolean {
-  return availableProviderAgents !== null;
+export function isAgentAvailabilityKnown(
+  inventory?: AgentChatProviderInventory | null,
+): boolean {
+  return inventory !== undefined && inventory !== null;
 }
 
 // Agents shown in the composer menu but not yet wired for real use — rendered
@@ -97,48 +91,31 @@ const OFFERED_PROVIDER_AGENTS = ["codex", "claude", "opencode"] as const;
 // it is still offered AND detected locally — so a persisted hidden/uninstalled agent
 // never resurfaces as the default. Falls back to the first detected offered agent,
 // then codex.
-export function resolveStartAgentId(preferred: string | undefined): AgentChatAgentId {
+export function resolveStartAgentId(
+  preferred: string | undefined,
+  inventory?: AgentChatProviderInventory | null,
+): AgentChatAgentId {
   if (
     preferred !== undefined &&
     (OFFERED_PROVIDER_AGENTS as readonly string[]).includes(preferred) &&
-    isAgentAvailable(preferred) &&
+    isAgentAvailable(preferred, inventory) &&
     !isAgentComingSoon(preferred)
   ) {
     return preferred as AgentChatAgentId;
   }
   const firstAvailable = OFFERED_PROVIDER_AGENTS.find(
-    (agentId) => isAgentAvailable(agentId) && !isAgentComingSoon(agentId),
+    (agentId) => isAgentAvailable(agentId, inventory) && !isAgentComingSoon(agentId),
   );
   return (firstAvailable ?? "codex") as AgentChatAgentId;
 }
 
-interface CliModelOption {
+export interface CliModelOption {
   value: string;
   label: string;
   detail?: string;
   // Multi-vendor router models (opencode) carry their vendor for grouping in the
   // model menu; single-vendor agents (claude/codex) leave it undefined.
   vendor?: string;
-}
-
-// Provider-reported model catalogs, keyed by agent id. opencode ships its authed
-// list on thread.listed (`opencode models`) and can self-report over ACP at session
-// start (agentRuntime.modelCatalogChanged). When present, the catalog
-// drives the menu instead of the hand-curated static list. Module-level so it
-// survives New-Thread state resets, mirroring availableProviderAgents.
-const providerModelCatalogs = new Map<string, CliModelOption[]>();
-
-export function setProviderModelCatalog(agentId: string, models: CliModelOption[] | null): void {
-  if (models !== null && models.length > 0) {
-    providerModelCatalogs.set(agentId, models);
-  } else {
-    providerModelCatalogs.delete(agentId);
-  }
-}
-
-// opencode-specific alias kept for the thread.listed wiring.
-export function setOpencodeModelCatalog(models: CliModelOption[] | null): void {
-  setProviderModelCatalog("opencode", models);
 }
 
 // A maintained, provider-native model list per CLI agent (models change rarely).
@@ -161,16 +138,8 @@ export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
         { value: "claude-opus-4-7[1m]", label: "Opus 4.7 (1M context)", detail: "Legacy" },
         { value: "claude-opus-4-6", label: "Opus 4.6", detail: "Legacy" },
       ];
-    case "opencode": {
-      // opencode is a multi-vendor router: the real model list is whatever the
-      // user has authed (`opencode auth login`), enumerated by the backend and
-      // cached in opencodeModelCatalog. "opencode default" first = honor opencode's
-      // own configured default (no explicit set). Falls back to default-only until
-      // the catalog arrives (older backend / not yet enumerated).
-      const fallback = { value: "opencode default", label: "Default", detail: "opencode config" };
-      const catalog = providerModelCatalogs.get("opencode");
-      return catalog === undefined ? [fallback] : [fallback, ...catalog];
-    }
+    case "opencode":
+      return [];
     default:
       return [];
   }
@@ -212,11 +181,33 @@ export function defaultModelValueForAgent(agentId: string): string {
   }
 }
 
-function defaultModelLabelForAgent(agentId: string): string {
-  return modelLabelForAgent(agentId, defaultModelValueForAgent(agentId));
+function defaultModelLabelForAgent(
+  agentId: string,
+  catalog?: AgentChatProviderCatalog,
+): string {
+  return modelLabelForAgent(agentId, defaultModelValueForAgent(agentId), catalog);
 }
 
-export function modelLabelForAgent(agentId: string, model: string): string {
+export function modelLabelForAgent(
+  agentId: string,
+  model: string,
+  catalog?: AgentChatProviderCatalog,
+): string {
+  if (catalog?.status === "ready") {
+    const option = catalog.models.find((candidate) => candidate.value === model);
+    if (option !== undefined) {
+      return option.label;
+    }
+  }
+  if (model === defaultModelValueForAgent(agentId)) {
+    switch (agentId) {
+      case "claude":
+      case "opencode":
+        return "Default";
+      default:
+        break;
+    }
+  }
   // Show the friendly label for a known CLI model (e.g. "sonnet" -> "Sonnet").
   const option = cliModelOptionsForAgent(agentId).find((candidate) => candidate.value === model);
   if (option !== undefined) {

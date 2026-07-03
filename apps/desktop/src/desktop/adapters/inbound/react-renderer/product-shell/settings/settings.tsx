@@ -1,5 +1,5 @@
 import { DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS, isProductShellAgentIdentity } from "../../../../../application/domains/product-shell/product-shell.ts";
-import type { PreferredStartComposer, ProductShellListSettings, ProductShellPinnedItemRef, ProductShellUsageModelView, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { PreferredStartComposer, ProductShellListSettings, ProductShellPinnedItemRef, ProductShellUsageModelView, ProductShellViewModel, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ChangeEvent, ReactElement } from "react";
@@ -160,9 +160,12 @@ export function createSettingsModal(
   worktree: ProductShellWorktreeSettings,
   theme: TideThemePreference,
   usageByModel: ProductShellUsageModelView[],
+  providerInventory: ProductShellViewModel["providerInventory"],
+  providerCatalogs: ProductShellViewModel["providerCatalogs"],
   handlers: ProductShellHandlers,
 ): ReactElement {
   const usageRows = usageByModel;
+  const providerRows = buildProvidersHubViewModel({ providerInventory, providerCatalogs });
   return (
     <SettingsBackdrop onMouseDown={handlers.onCloseSettings}>
       <SettingsDialog
@@ -240,7 +243,7 @@ export function createSettingsModal(
         <SettingsSection>
           <SettingsSectionTitle>Providers &amp; Models</SettingsSectionTitle>
           <ProviderStatusList role="list" aria-label="Providers and models">
-            {buildProvidersHubViewModel().map((agent) => {
+            {providerRows.map((agent) => {
               const concreteModels = agent.models.filter((model) => !model.value.endsWith(" default"));
               const vendors = new Set(
                 concreteModels.map((model) => model.vendor).filter((vendor): vendor is string => vendor !== undefined),

@@ -24,7 +24,8 @@ import type {
 import type { RequestId, ThreadId } from "./ids.ts";
 import type { ProviderCliAgentId } from "./agent.ts";
 import type { OpencodeEnvironmentDto, OpencodeVendorDto } from "./opencode-vendor.ts";
-import type { ProviderModelDto } from "./provider-model-catalog.ts";
+import type { ProviderCatalogSnapshotDto, ProviderModelDto } from "./provider-model-catalog.ts";
+import type { ProviderInventoryDto } from "./provider-inventory.ts";
 import type { JsonObject } from "./json.ts";
 import type { PromptStateDto } from "./prompt.ts";
 import type { ProviderCapabilityDto } from "./provider-capability.ts";
@@ -55,6 +56,7 @@ export type BackendEventKind =
   | "agentRuntime.modelCatalogChanged"
   | "agentRuntime.noticePosted"
   | "providerReadiness.changed"
+  | "providerInventory.changed"
   | "providerCatalog.changed"
   | "providerUsage.changed"
   | "prompt.changed"
@@ -92,6 +94,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "agentRuntime.modelCatalogChanged",
   "agentRuntime.noticePosted",
   "providerReadiness.changed",
+  "providerInventory.changed",
   "providerCatalog.changed",
   "providerUsage.changed",
   "prompt.changed",
@@ -128,11 +131,12 @@ export interface BackendEventPayloadByKind {
     // slower catalog subprocesses (delivered separately via providerCatalog.changed).
     availableAgents?: ProviderCliAgentId[];
   };
-  // opencode's catalog (vendors / models / version), delivered OUT OF BAND from thread.listed
-  // so the agent menu (availableAgents) is never gated behind opencode's slower subprocesses
-  // (`opencode models`/`auth list`/`--version`). Pushed once at startup (off the critical path)
-  // and again after a vendor connect. See provider-cli-setup-handoff.md.
+  "providerInventory.changed": ProviderInventoryDto;
+  // Provider-owned model/vendor/environment catalog. `catalog` is the new general
+  // snapshot shape. The opencode-specific fields are tolerated temporarily while
+  // older producers are migrated.
   "providerCatalog.changed": {
+    catalog?: ProviderCatalogSnapshotDto;
     // opencode's authed model catalog (enumerated via `opencode models`); a multi-vendor router,
     // so per-user, not hand-curated. Absent ⇒ not yet enumerated (composer uses "opencode default").
     opencodeModels?: ProviderModelDto[];

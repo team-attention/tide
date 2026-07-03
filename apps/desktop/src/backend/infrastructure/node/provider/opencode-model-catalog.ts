@@ -11,20 +11,18 @@ const execFileAsync = promisify(execFile);
 // it cannot be hand-curated like the single-vendor agents. Output is one
 // `provider/model` id per line — we split on the first `/` into vendor + model.
 //
-// Cached per process with a short TTL so the subprocess is not respawned on every
-// thread.list. ASYNCHRONOUS (execFile, not execFileSync): opencode's CLI can take a
-// couple of seconds to start, and a synchronous spawn here froze the backend event
-// loop — delaying delivery of the already-computed thread.list reply and so the cold-
-// boot rail skeleton by ~2.5s. The catalog is delivered out of band on
-// providerCatalog.changed (never inside thread.listed), so it never needs to block.
+// ASYNCHRONOUS (execFile, not execFileSync): opencode's CLI can take a couple of
+// seconds to start, and a synchronous spawn here froze the backend event loop —
+// delaying delivery of the already-computed thread.list reply and so the cold-boot
+// rail skeleton by ~2.5s. The catalog is requested through provider.catalog.get
+// (never inside thread.listed), so it never needs to block Thread metadata.
 
-const CACHE_TTL_MS = 60_000;
 const OPENCODE_MODELS_TIMEOUT_MS = 5_000;
 
 interface OpencodeModelCatalog {
   get: () => Promise<ProviderModelDto[]>;
-  // Drop the cached result so the next get() re-runs `opencode models` (e.g. right
-  // after a new vendor sign-in).
+  // Kept for callers that refresh after vendor auth. There is no completed-result
+  // cache; invalidate only clears an in-flight read.
   invalidate: () => void;
 }
 
@@ -65,41 +63,26 @@ export function createOpencodeModelCatalog(
   resolveExecutable: (command: "opencode") => string | undefined,
   runCommand: OpencodeCommandRunner = runOpencodeModelsCommand,
 ): OpencodeModelCatalog {
-  let cache: ProviderModelDto[] = [];
-  let fetchedAt = 0;
   // Share one in-flight refresh so concurrent get() callers don't each spawn opencode.
-  let inflight: Promise<void> | null = null;
+  let inflight: Promise<ProviderModelDto[]> | null = null;
 
-  const refresh = async (): Promise<void> => {
+  const refresh = async (): Promise<ProviderModelDto[]> => {
     const executablePath = resolveExecutable("opencode");
     if (executablePath === undefined) {
-      cache = [];
-      return;
+      return [];
     }
-    try {
-      cache = parseOpencodeModels(await runCommand(executablePath, ["models"]));
-    } catch {
-      // Not installed / not authed / timed out — leave the menu on its sentinel.
-      cache = [];
-    }
+    return parseOpencodeModels(await runCommand(executablePath, ["models"]));
   };
 
   return {
     get: async () => {
-      const now = Date.now();
-      if (now - fetchedAt > CACHE_TTL_MS) {
-        fetchedAt = now;
-        inflight ??= refresh().finally(() => {
-          inflight = null;
-        });
-        await inflight;
-      } else if (inflight !== null) {
-        await inflight;
-      }
-      return cache;
+      inflight ??= refresh().finally(() => {
+        inflight = null;
+      });
+      return inflight;
     },
     invalidate: () => {
-      fetchedAt = 0;
+      inflight = null;
     },
   };
 }

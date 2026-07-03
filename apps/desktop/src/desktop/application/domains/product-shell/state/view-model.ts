@@ -108,9 +108,11 @@ export const selectAgentChatViewModel = shellSelector(
     (state: ProductShellState) => state.gitWorktrees,
     (state: ProductShellState) => state.providerCommands,
     (state: ProductShellState) => state.providerCapabilities,
+    (state: ProductShellState) => state.providerInventory,
+    (state: ProductShellState) => state.providerCatalogs,
     (state: ProductShellState) => state.composerFileMentions,
   ],
-  (agentChat, registeredProjects, projects, gitBranches, gitWorktrees, providerCommands, providerCapabilities, composerFileMentions) =>
+  (agentChat, registeredProjects, projects, gitBranches, gitWorktrees, providerCommands, providerCapabilities, providerInventory, providerCatalogs, composerFileMentions) =>
     createAgentChatShellViewModel(
       agentChatWithProjects({
         agentChat,
@@ -120,6 +122,8 @@ export const selectAgentChatViewModel = shellSelector(
         gitWorktrees,
         providerCommands,
         providerCapabilities,
+        providerInventory,
+        providerCatalogs,
         composerFileMentions,
       } as ProductShellState),
     ),
@@ -286,6 +290,8 @@ export function createProductShellViewModel(
     listSettings: state.listSettings,
     worktreeSettings: state.worktreeSettings,
     usageByModel: deriveUsageByModel(state),
+    providerInventory: state.providerInventory,
+    providerCatalogs: state.providerCatalogs,
     settingsOpen: state.settingsOpen,
     flatThreads: threadList.flatThreads,
     liveThreads: threadList.liveThreads,
@@ -521,6 +527,8 @@ export function agentChatWithProjects(state: ProductShellState): AgentChatShellS
     availableWorktrees: state.gitWorktrees,
     availableCommands: state.providerCommands,
     availableCapabilities: state.providerCapabilities,
+    availableProviderInventory: state.providerInventory,
+    availableProviderCatalogs: state.providerCatalogs,
     availableFileMentions: fileMentionsForActiveScope(state),
   };
 }

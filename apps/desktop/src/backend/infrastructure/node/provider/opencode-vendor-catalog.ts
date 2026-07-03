@@ -9,9 +9,8 @@ const execFileAsync = promisify(execFile);
 // Reads opencode's OWN machine-global auth (`opencode auth list`,
 // ~/.local/share/opencode/auth.json — shared with the terminal CLI, so terminal
 // sign-ins are already connected here) and version (`opencode --version`). Both are
-// fast local calls, bounded by a timeout and cached per process with a short TTL so
-// a new `opencode auth login` is picked up without a restart, mirroring
-// opencode-model-catalog.ts.
+// fast local calls, bounded by a timeout, and only concurrent in-flight reads are
+// deduped. Completed catalog results are not cached on the correctness path.
 
 // The opencode release Tide's on-ramp is verified against. Drives an optional,
 // non-blocking "newer than tested" note in the UI; never gates.
@@ -137,14 +136,12 @@ export function reconcileVendorUsability(
   );
 }
 
-const CACHE_TTL_MS = 60_000;
 const OPENCODE_VENDOR_COMMAND_TIMEOUT_MS = 5_000;
 
 export interface OpencodeVendorCatalog {
   get: () => Promise<OpencodeVendorDto[]>;
   environment: () => Promise<OpencodeEnvironmentDto>;
-  // Drop cached vendor/version so the next call re-reads `opencode auth list` (e.g.
-  // right after a new vendor sign-in).
+  // There is no completed-result cache; invalidate clears any in-flight reads.
   invalidate: () => void;
 }
 
@@ -166,68 +163,40 @@ export function createOpencodeVendorCatalog(
   resolveExecutable: (command: "opencode") => string | undefined,
   runCommand: OpencodeCommandRunner = runOpencodeVendorCommand,
 ): OpencodeVendorCatalog {
-  let vendorCache: OpencodeVendorDto[] = buildOpencodeVendors([]);
-  let vendorFetchedAt = 0;
-  let vendorInflight: Promise<void> | null = null;
-  let versionCache: string | undefined;
-  let versionFetchedAt = 0;
-  let versionInflight: Promise<void> | null = null;
+  let vendorInflight: Promise<OpencodeVendorDto[]> | null = null;
+  let versionInflight: Promise<string | undefined> | null = null;
 
   return {
     get: async () => {
       const executablePath = resolveExecutable("opencode");
       if (executablePath === undefined) {
-        vendorCache = buildOpencodeVendors([]);
-        return vendorCache;
+        return [];
       }
-      const now = Date.now();
-      if (now - vendorFetchedAt > CACHE_TTL_MS) {
-        vendorFetchedAt = now;
-        vendorInflight ??= (async () => {
-          try {
-            vendorCache = buildOpencodeVendors(parseOpencodeAuthList(await runCommand(executablePath, ["auth", "list"])));
-          } catch {
-            // Not installed / errored / timed out — curated tiles, none connected.
-            vendorCache = buildOpencodeVendors([]);
-          }
-        })().finally(() => {
-          vendorInflight = null;
-        });
-        await vendorInflight;
-      } else if (vendorInflight !== null) {
-        await vendorInflight;
-      }
-      return vendorCache;
+      vendorInflight ??= runCommand(executablePath, ["auth", "list"]).then((stdout) =>
+        buildOpencodeVendors(parseOpencodeAuthList(stdout)),
+      ).finally(() => {
+        vendorInflight = null;
+      });
+      return vendorInflight;
     },
     environment: async () => {
       const executablePath = resolveExecutable("opencode");
       if (executablePath === undefined) {
         return { testedWith: OPENCODE_TESTED_WITH };
       }
-      const now = Date.now();
-      if (now - versionFetchedAt > CACHE_TTL_MS) {
-        versionFetchedAt = now;
-        versionInflight ??= (async () => {
-          try {
-            versionCache = (await runCommand(executablePath, ["--version"]))
-              .split(/\r?\n/)
-              .map((line) => line.trim())
-              .find((line) => line.length > 0);
-          } catch {
-            versionCache = undefined;
-          }
-        })().finally(() => {
-          versionInflight = null;
-        });
-        await versionInflight;
-      } else if (versionInflight !== null) {
-        await versionInflight;
-      }
-      return { version: versionCache, testedWith: OPENCODE_TESTED_WITH, executablePath };
+      versionInflight ??= runCommand(executablePath, ["--version"]).then((stdout) =>
+        stdout
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .find((line) => line.length > 0),
+      ).catch(() => undefined).finally(() => {
+        versionInflight = null;
+      });
+      return { version: await versionInflight, testedWith: OPENCODE_TESTED_WITH, executablePath };
     },
     invalidate: () => {
-      vendorFetchedAt = 0;
-      versionFetchedAt = 0;
+      vendorInflight = null;
+      versionInflight = null;
     },
   };
 }

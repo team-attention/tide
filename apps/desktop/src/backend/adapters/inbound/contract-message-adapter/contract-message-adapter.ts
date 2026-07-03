@@ -1,6 +1,13 @@
 import { defaultClock, defaultIdGenerator, requestIdFromUnknown } from "./support/envelope-support.ts";
 import { omitUndefinedProperties, toWorkbenchFileTreeDto, toWorkbenchPaneRefDto } from "./dto/workbench-dtos.ts";
 import { contractCodeFromServiceError, isRetryableServiceError } from "./support/error-codes.ts";
+import {
+  handleProviderCatalogGetCommand,
+  handleProviderInventoryGetCommand,
+  resolveProviderCatalog,
+  type ProviderCatalogPorts,
+  type ProviderCommandContext,
+} from "./support/provider-catalog-support.ts";
 import { toAgentSessionBlockDto, toPromptStateDto, toProviderReadinessDto, toThreadSummaryDto } from "./dto/thread-dtos.ts";
 import {
   workspaceContentSearchResultsEvent,
@@ -22,42 +29,24 @@ import {
   type AgentBindingDto, type AgentRuntimeSourceDto, type AgentRuntimeStateDto,
   type AgentSessionBlockDto, type BackendCommandEnvelope, type BackendEventEnvelope,
   type ContractErrorCode, type JsonObject, type LastKnownStateDto,
-  type OpencodeEnvironmentDto, type OpencodeVendorDto, type ProviderCliAgentId,
-  type ProviderUsageSnapshotDto, type ProviderReadinessDto, type ProviderModelDto,
+  type ProviderCliAgentId,
+  type ProviderUsageSnapshotDto, type ProviderReadinessDto,
   type PromptStateDto, type ThreadScopeDto, type ThreadSummaryDto,
   type WorkbenchFileTreeDto, type WorkbenchPaneRefDto,
   sanitizeJsonValue,
   validateBackendCommandEnvelope,
 } from "../../../../shared/contracts/index.ts";
-export interface CreateBackendContractMessageAdapterInput {
+export interface CreateBackendContractMessageAdapterInput extends ProviderCatalogPorts {
   service: ThreadRuntimeService;
   clock?: () => string;
   idGenerator?: () => string;
-  // Provider-CLI agents detected on the local system. Surfaced on thread.listed so the
-  // composer menu can enable available agents and show the rest disabled. Evaluated
-  // per call so newly-installed CLIs are picked up without a restart.
-  detectAvailableAgents?: () => ProviderCliAgentId[];
-  // opencode's authed model catalog (`opencode models`), surfaced on thread.listed so
-  // the composer model menu can offer the user's real vendor/model list. Evaluated
-  // per call (cached in the enumerator) so a new `opencode auth login` is picked up.
-  enumerateOpencodeModels?: () => Promise<ProviderModelDto[]>;
-  // opencode vendor tiles + connected-state (`opencode auth list`) and environment
-  // (version + executable path), surfaced on thread.listed for the vendor on-ramp.
-  enumerateOpencodeVendors?: () => Promise<OpencodeVendorDto[]>;
-  opencodeEnvironment?: () => Promise<OpencodeEnvironmentDto>;
   connectOpencodeApiKey?: (vendorId: string, key: string) => Promise<void>;
-  discoverProviderCommands?: (
-    agentId: string,
-    cwd: string,
-  ) => Promise<Array<{ name: string; description: string; trigger: "/" | "$" }>>;
+  discoverProviderCommands?: (agentId: string, cwd: string) => Promise<Array<{ name: string; description: string; trigger: "/" | "$" }>>;
   refreshProviderUsage?: () => ProviderUsageSnapshotDto[] | Promise<ProviderUsageSnapshotDto[]>;
 }
 
 export interface BackendContractMessageAdapter {
   handleMessage(message: unknown): Promise<BackendEventEnvelope[]>;
-  // Build a pushed thread.listed (no requestId) reflecting the current store. Used to
-  // surface adopted (external) sessions that are discovered off the boot critical path,
-  // after the first list has already rendered the rail. See live-backend restore.
   pushThreadListedEvents(): Promise<BackendEventEnvelope[]>;
 }
 
@@ -71,25 +60,16 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
   private readonly service: ThreadRuntimeService;
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
-  private readonly detectAvailableAgents?: () => ProviderCliAgentId[];
-  private readonly enumerateOpencodeModels?: () => Promise<ProviderModelDto[]>;
-  private readonly enumerateOpencodeVendors?: () => Promise<OpencodeVendorDto[]>;
-  private readonly opencodeEnvironment?: () => Promise<OpencodeEnvironmentDto>;
+  private readonly providerCatalogPorts: ProviderCatalogPorts;
   private readonly connectOpencodeApiKey?: (vendorId: string, key: string) => Promise<void>;
-  private readonly discoverProviderCommands?: (
-    agentId: string,
-    cwd: string,
-  ) => Promise<Array<{ name: string; description: string; trigger: "/" | "$" }>>;
+  private readonly discoverProviderCommands?: (agentId: string, cwd: string) => Promise<Array<{ name: string; description: string; trigger: "/" | "$" }>>;
   private readonly refreshProviderUsage?: () => ProviderUsageSnapshotDto[] | Promise<ProviderUsageSnapshotDto[]>;
 
   constructor(input: CreateBackendContractMessageAdapterInput) {
     this.service = input.service;
     this.clock = input.clock ?? defaultClock;
     this.idGenerator = input.idGenerator ?? defaultIdGenerator;
-    this.detectAvailableAgents = input.detectAvailableAgents;
-    this.enumerateOpencodeModels = input.enumerateOpencodeModels;
-    this.enumerateOpencodeVendors = input.enumerateOpencodeVendors;
-    this.opencodeEnvironment = input.opencodeEnvironment;
+    this.providerCatalogPorts = { detectAvailableAgents: input.detectAvailableAgents, getProviderCatalog: input.getProviderCatalog, getProviderInventory: input.getProviderInventory };
     this.connectOpencodeApiKey = input.connectOpencodeApiKey;
     this.discoverProviderCommands = input.discoverProviderCommands;
     this.refreshProviderUsage = input.refreshProviderUsage;
@@ -315,12 +295,22 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           eventId: this.nextEventId(),
           requestId: typed.requestId,
           emittedAt: this.clock(),
-          opencodeModels: await this.enumerateOpencodeModels?.(),
-          opencodeVendors: await this.enumerateOpencodeVendors?.(),
-          opencodeEnvironment: await this.opencodeEnvironment?.(),
+          catalog: await resolveProviderCatalog({ agentId: "opencode" }, this.providerCommandContext()),
         });
         return this.handleServiceResult(typed, await this.service.listThreads({}), (result) =>
           [this.threadListedEvent(typed, result), catalogEvent, this.commandCompletedEvent(typed)]);
+      }
+      case "provider.inventory.get": {
+        return handleProviderInventoryGetCommand(
+          command as BackendCommandEnvelope<"provider.inventory.get">,
+          this.providerCommandContext(),
+        );
+      }
+      case "provider.catalog.get": {
+        return handleProviderCatalogGetCommand(
+          command as BackendCommandEnvelope<"provider.catalog.get">,
+          this.providerCommandContext(),
+        );
       }
       case "provider.discoverCommands": {
         const typed = command as BackendCommandEnvelope<"provider.discoverCommands">;
@@ -498,6 +488,14 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     return onSuccess(result);
   }
 
+  private providerCommandContext(): ProviderCommandContext {
+    return {
+      nextEventId: () => this.nextEventId(),
+      emittedAt: () => this.clock(),
+      ...this.providerCatalogPorts,
+    };
+  }
+
   private threadListedEvent(
     command: BackendCommandEnvelope,
     result: ListThreadsResult,
@@ -510,7 +508,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       emittedAt: this.clock(),
       payload: {
         threads: result.threads.map(toThreadSummaryDto),
-        availableAgents: this.detectAvailableAgents?.(),
+        availableAgents: this.providerCatalogPorts.detectAvailableAgents?.(),
       },
     };
   }
@@ -530,7 +528,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
         emittedAt: this.clock(),
         payload: {
           threads: result.threads.map(toThreadSummaryDto),
-          availableAgents: this.detectAvailableAgents?.(),
+          availableAgents: this.providerCatalogPorts.detectAvailableAgents?.(),
         },
       } satisfies BackendEventEnvelope<"thread.listed">,
     ];

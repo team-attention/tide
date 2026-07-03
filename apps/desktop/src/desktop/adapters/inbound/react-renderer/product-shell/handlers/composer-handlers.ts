@@ -1,4 +1,4 @@
-import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, interruptProductShellRuntime, localBranchCheckoutRequest, planLocalBranchCheckout, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, runProductShellQueuedInputNow, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellGitContext, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft, ensureComposerDraftThreadActive, type LocalBranchCheckoutTarget, type ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, interruptProductShellRuntime, isProductShellAgentIdentity, localBranchCheckoutRequest, planLocalBranchCheckout, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, runProductShellQueuedInputNow, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellGitContext, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft, ensureComposerDraftThreadActive, type LocalBranchCheckoutTarget, type ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { AgentChatThreadScope } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { resolveWorktreeName } from "../../../../../../shared/worktree/name.ts";
 import { makeWorktreeHash } from "../dialogs/worktree-name-input.tsx";
@@ -277,8 +277,26 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
             .join("\n"),
         }),
       ),
-    onComposerSurfaceChange: (surface) =>
-      setShellState((state) => setProductShellComposerActiveSurface(state, surface)),
+    onComposerSurfaceChange: (surface) => {
+      if (surface === "model_menu" || surface === "opencode_model_provider") {
+        const state = getShellState();
+        const agentId =
+          state.agentChat.thread?.agentBinding.agentId ??
+          state.agentChat.composer.startOptions.agentBinding.agentId;
+        const scope = state.agentChat.thread?.scope ?? state.agentChat.composer.startOptions.scope;
+        const cwd = scope?.kind === "project" ? scope.cwd : undefined;
+        if (isProductShellAgentIdentity(agentId)) {
+          dispatchBackendCommand({
+            kind: "provider.catalog.get",
+            payload: {
+              agentId,
+              ...(cwd === undefined ? {} : { scope: { cwd } }),
+            },
+          });
+        }
+      }
+      setShellState((state) => setProductShellComposerActiveSurface(state, surface));
+    },
     onChoiceSurfaceInputSubmit: (surfaceKind, rowId, value) => {
       if (surfaceKind === "branch_menu" && rowId === "create-branch") {
         submitWorktreeCreate(value, selectedBranchForNewWorktree(shellState));

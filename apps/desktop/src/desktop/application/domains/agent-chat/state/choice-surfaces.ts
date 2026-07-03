@@ -244,17 +244,19 @@ export function createActiveComposerSurface(
         // Provider-CLI agents are listed; ones whose CLI is not detected on the local
         // system are shown DISABLED (greyed), never removed.
         rows: [
-          agentMenuRow("codex", "Codex CLI", binding.agentId),
-          agentMenuRow("claude", "Claude Code", binding.agentId),
-          agentMenuRow("opencode", "opencode", binding.agentId),
+          agentMenuRow("codex", "Codex CLI", binding.agentId, state),
+          agentMenuRow("claude", "Claude Code", binding.agentId, state),
+          agentMenuRow("opencode", "opencode", binding.agentId, state),
         ],
       };
     case "model_menu":
       if (binding.agentId === "opencode") {
+        const catalog = state.availableProviderCatalogs?.opencode;
         return buildOpencodeModelProviderSurface(
           selectedModel,
           String(launchOptionsForState(state)?.reasoning ?? "high"),
           state.composer.opencodeModelProvider,
+          catalog,
         );
       }
       return {
@@ -279,15 +281,22 @@ export function createActiveComposerSurface(
                   : cliModelMenuRows(binding.agentId, agentLabel, selectedModel),
       };
     case "opencode_model_provider":
+      {
+        const catalog = state.availableProviderCatalogs?.opencode;
       return buildOpencodeModelProviderSurface(
         selectedModel,
         String(launchOptionsForState(state)?.reasoning ?? "high"),
         state.composer.opencodeModelProvider,
+        catalog,
       );
+      }
     case "opencode_connect":
       // Compatibility surface for older opencode connect entry points. The model
       // chip now opens the provider-first opencode_model_provider surface.
-      return buildOpencodeConnectSurface(isOpencodeUsable());
+      {
+        const catalog = state.availableProviderCatalogs?.opencode;
+        return buildOpencodeConnectSurface(isOpencodeUsable(catalog), catalog);
+      }
     case "permission_menu":
       return {
         surfaceKind,
@@ -413,11 +422,12 @@ function agentMenuRow(
   agentId: string,
   label: string,
   selectedAgentId: string,
+  state: AgentChatShellState,
 ): AgentChatChoiceSurfaceRowView {
   const selected = selectedAgentId === agentId;
   const comingSoon = isAgentComingSoon(agentId);
-  const available = isAgentAvailable(agentId);
-  const known = isAgentAvailabilityKnown();
+  const available = isAgentAvailable(agentId, state.availableProviderInventory);
+  const known = isAgentAvailabilityKnown(state.availableProviderInventory);
   // Until local detection arrives (known=false) show a neutral "Checking…" rather than a
   // misleading "Agent Integration"; once known, an undetected provider reads "Not installed"
   // so the row says WHY selecting it will offer install/sign-in. (Detection is fast + decoupled

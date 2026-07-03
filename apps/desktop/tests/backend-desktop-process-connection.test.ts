@@ -216,6 +216,93 @@ test("provider_refresh_usage_requeries_provider_history", async () => {
   });
 });
 
+test("provider_catalog_get_returns_requested_snapshot_outside_thread_list", async () => {
+  // Spec: docs_v2/specs/provider-catalog-ownership-and-model-selection.md
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+    getProviderCatalog: async (input) => ({
+      agentId: input.agentId,
+      status: "ready",
+      models: [
+        { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
+      ],
+      vendors: [
+        { id: "openai", label: "OpenAI", connected: true, method: "oauth", popular: true },
+      ],
+      environment: { version: "1.17.3", testedWith: "1.17", executablePath: "/bin/opencode" },
+      defaultModel: "opencode default",
+    }),
+  });
+
+  const listed = await adapter.handleMessage(commandEnvelope("thread.list", {}));
+  const catalogFields = Object.keys(listed[1].payload).filter((key) =>
+    key.toLowerCase().includes("catalog"),
+  );
+  assert.deepEqual(catalogFields, []);
+
+  const events = await adapter.handleMessage(
+    commandEnvelope("provider.catalog.get", {
+      agentId: "opencode",
+      scope: { cwd: "/repo/tide" },
+    }),
+  );
+
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ["command.accepted", "providerCatalog.changed", "command.completed"],
+  );
+  assertBackendEventsAreContractEnvelopes(events);
+  assert.equal(events[1].requestId, "req-provider.catalog.get");
+  assert.equal(events[1].payload.catalog.agentId, "opencode");
+  assert.equal(events[1].payload.catalog.status, "ready");
+  assert.deepEqual(events[1].payload.catalog.models.map((model) => model.value), ["openai/gpt-5.5"]);
+  assert.equal(events[1].payload.catalog.vendors?.[0]?.id, "openai");
+});
+
+test("provider_inventory_get_returns_provider_state_independent_of_thread_list", async () => {
+  // Spec: docs_v2/specs/provider-catalog-ownership-and-model-selection.md
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+    getProviderInventory: () => ({
+      agents: [
+        { agentId: "codex", installed: true },
+        { agentId: "claude", installed: false },
+        { agentId: "opencode", installed: true, environment: { version: "1.17.3" } },
+      ],
+    }),
+  });
+
+  const events = await adapter.handleMessage(commandEnvelope("provider.inventory.get", {}));
+
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ["command.accepted", "providerInventory.changed", "command.completed"],
+  );
+  assertBackendEventsAreContractEnvelopes(events);
+  assert.deepEqual(
+    events[1].payload.agents.map((agent) => [agent.agentId, agent.installed]),
+    [
+      ["codex", true],
+      ["claude", false],
+      ["opencode", true],
+    ],
+  );
+});
+
 // Spec: workbench-editor-language-intelligence — a workspace.codeIntel query
 // round-trips to a requestId-correlated workspace.codeIntelResult event. With
 // no engine configured the result is a QUIET miss (ok:false + message), never

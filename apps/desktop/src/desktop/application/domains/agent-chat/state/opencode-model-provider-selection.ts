@@ -15,7 +15,6 @@ import {
   opencodeProviderIdFromRow,
   selectedOpencodeModelProviderId,
 } from "./opencode-model-provider.ts";
-import { getOpencodeEnvironment } from "./opencode-onramp.ts";
 import { providerReadinessTerminalCommandData } from "./provider-readiness-terminal-command.ts";
 
 export function selectOpencodeModelProviderSurfaceRow(
@@ -26,11 +25,12 @@ export function selectOpencodeModelProviderSurfaceRow(
   const launchOptions = launchOptionsForState(state);
   const currentModel = String(launchOptions?.model ?? defaultModelValueForAgent("opencode"));
   const flowState = state.composer.opencodeModelProvider;
+  const catalog = state.availableProviderCatalogs?.opencode;
   if (rowId === "opencode-back") {
     return {
       state: withOpencodeModelProviderFlowState(
         state,
-        backOpencodeModelProvider(flowState, currentModel),
+        backOpencodeModelProvider(flowState, currentModel, catalog),
       ),
       command: null,
     };
@@ -46,7 +46,7 @@ export function selectOpencodeModelProviderSurfaceRow(
     return {
       state: withOpencodeModelProviderFlowState(
         state,
-        finishOpencodeModelProviderApiKey(flowState, currentModel),
+        finishOpencodeModelProviderApiKey(flowState, currentModel, catalog),
       ),
       command: null,
     };
@@ -56,7 +56,7 @@ export function selectOpencodeModelProviderSurfaceRow(
     return {
       state: withOpencodeModelProviderFlowState(
         state,
-        openOpencodeModelProviderForProvider(flowState, currentModel, providerId),
+        openOpencodeModelProviderForProvider(flowState, currentModel, providerId, catalog),
       ),
       command: null,
     };
@@ -66,7 +66,7 @@ export function selectOpencodeModelProviderSurfaceRow(
     return {
       state: withOpencodeModelProviderFlowState(
         state,
-        openOpencodeModelProviderConnection(flowState, currentModel, connectionProviderId),
+        openOpencodeModelProviderConnection(flowState, currentModel, connectionProviderId, catalog),
       ),
       command: null,
     };
@@ -76,12 +76,12 @@ export function selectOpencodeModelProviderSurfaceRow(
     return {
       state: withOpencodeModelProviderFlowState(
         state,
-        openOpencodeModelProviderApiKey(flowState, currentModel, apiKeyProviderId),
+        openOpencodeModelProviderApiKey(flowState, currentModel, apiKeyProviderId, catalog),
       ),
       command: null,
     };
   }
-  const currentProviderId = selectedOpencodeModelProviderId(currentModel, flowState);
+  const currentProviderId = selectedOpencodeModelProviderId(currentModel, flowState, catalog);
   if (rowId === connectVendorRowId(currentProviderId)) {
     return opencodeAuthTerminalCommand(state, currentProviderId, activeThreadId);
   }
@@ -98,7 +98,7 @@ export function opencodeAuthTerminalCommand(
   vendorId: string | undefined,
   activeThreadId?: string,
 ): AgentChatShellUpdateResult {
-  const environment = getOpencodeEnvironment();
+  const environment = state.availableProviderCatalogs?.opencode?.environment;
   const threadId = state.thread?.threadId ?? activeThreadId;
   const scope = state.thread?.scope ?? state.composer.startOptions.scope;
   const cwd =

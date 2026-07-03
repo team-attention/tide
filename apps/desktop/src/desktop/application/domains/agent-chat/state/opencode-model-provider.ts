@@ -3,10 +3,11 @@ import type {
   AgentChatChoiceSurfaceView,
   AgentChatOpencodeModelProviderFlowState,
   AgentChatOpencodeModelProviderStep,
+  AgentChatProviderCatalog,
+  AgentChatProviderModelOption,
 } from "./types.ts";
-import { cliModelOptionsForAgent, REASONING_LEVELS } from "./agent-vocab.ts";
+import { REASONING_LEVELS } from "./agent-vocab.ts";
 import {
-  getOpencodeEnvironment,
   getOpencodeVendors,
   isOpencodeUsable,
   opencodeVendorMonogram,
@@ -32,30 +33,84 @@ export function initialOpencodeModelProviderFlowState(): AgentChatOpencodeModelP
   };
 }
 
+function unavailableOpencodeCatalogSurface(
+  currentModel: string,
+  currentEffort: string,
+  catalog?: AgentChatProviderCatalog,
+): AgentChatChoiceSurfaceView {
+  const status = catalog?.status ?? "loading";
+  const detail =
+    status === "error"
+      ? catalog?.error?.message ?? "Provider catalog failed."
+      : status === "unavailable"
+        ? catalog?.error?.message ?? "opencode is not available."
+        : "Loading provider catalog";
+  const rowId =
+    status === "error"
+      ? "provider-catalog-error"
+      : status === "unavailable"
+        ? "provider-catalog-unavailable"
+        : "provider-catalog-loading";
+  const effortRows = opencodeEffortRows(currentEffort);
+  return {
+    surfaceKind: "opencode_model_provider",
+    title: "Provider",
+    sourceLabel: "opencode",
+    rows: [
+      row(
+        rowId,
+        status === "loading" ? "Loading provider catalog" : "Provider catalog unavailable",
+        detail,
+        status === "error" && catalog?.error?.retryable ? "Retry" : undefined,
+        status === "error" ? "!" : "source",
+        false,
+        status === "error",
+        true,
+      ),
+      ...effortRows,
+    ],
+    opencodeModelProvider: {
+      step: "provider_list",
+      version: catalog?.environment?.version,
+      zenFreeCount: 0,
+      connectedCount: 0,
+      currentModel,
+      currentEffort,
+      providers: [],
+      models: [],
+      effortRows,
+    },
+  };
+}
+
 export function buildOpencodeModelProviderSurface(
   currentModel: string,
   currentEffort: string,
   inputFlowState?: AgentChatOpencodeModelProviderFlowState,
+  catalog?: AgentChatProviderCatalog,
 ): AgentChatChoiceSurfaceView {
-  const flowState = normalizeFlowState(inputFlowState, currentModel);
+  if (catalog?.status !== "ready") {
+    return unavailableOpencodeCatalogSurface(currentModel, currentEffort, catalog);
+  }
+  const flowState = normalizeFlowState(inputFlowState, currentModel, catalog);
   const step = flowState.step ?? "provider_list";
-  const providerId = selectedProviderId(currentModel, flowState);
-  const providers = providerViewModels();
+  const providerId = selectedProviderId(currentModel, flowState, catalog);
+  const providers = providerViewModels(catalog);
   const provider = providers.find((candidate) => candidate.id === providerId);
-  const models = modelViewsForProvider(providerId, currentModel);
+  const models = modelViewsForProvider(providerId, currentModel, catalog);
   const effortRows = opencodeEffortRows(currentEffort);
-  const rows = rowsForStep(step, providerId, providers, models, effortRows);
+  const rows = rowsForStep(step, providerId, providers, models, effortRows, catalog);
 
   return {
     surfaceKind: "opencode_model_provider",
-    title: titleForStep(step, providerId, provider?.label),
+    title: titleForStep(step, providerId, provider?.label, catalog),
     sourceLabel: step === "provider_list" || step === "connect_vendor" ? "Model chip" : "opencode",
     rows,
     opencodeModelProvider: {
       step,
-      version: getOpencodeEnvironment()?.version,
-      zenFreeCount: zenFreeModelCount(),
-      connectedCount: getOpencodeVendors().filter((vendor) => vendor.connected).length,
+      version: catalog.environment?.version,
+      zenFreeCount: zenFreeModelCount(catalog),
+      connectedCount: getOpencodeVendors(catalog).filter((vendor) => vendor.connected).length,
       providerId,
       providerLabel: provider?.label,
       providerMonogram: provider?.monogram,
@@ -74,7 +129,7 @@ export function buildOpencodeModelProviderSurface(
       })),
       models,
       effortRows,
-      connection: connectionRowForProvider(providerId, provider),
+      connection: connectionRowForProvider(providerId, provider, catalog),
       method: {
         browserRowId: connectVendorRowId(providerId),
         apiKeyRowId: apiKeyRowId(providerId),
@@ -87,13 +142,14 @@ export function openOpencodeModelProviderForProvider(
   inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
   currentModel: string,
   providerId: string,
+  catalog?: AgentChatProviderCatalog,
 ): AgentChatOpencodeModelProviderFlowState {
-  const flowState = normalizeFlowState(inputFlowState, currentModel);
+  const flowState = normalizeFlowState(inputFlowState, currentModel, catalog);
   return {
     ...flowState,
     selectedProviderId: providerId,
     methodReturnStep: flowState.step === "connect_vendor" ? "connect_vendor" : "provider_list",
-    step: providerHasModelRows(providerId) ? "model_list" : "vendor_method",
+    step: providerHasModelRows(providerId, catalog) ? "model_list" : "vendor_method",
   };
 }
 
@@ -101,8 +157,9 @@ export function openOpencodeModelProviderConnection(
   inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
   currentModel: string,
   providerId: string,
+  catalog?: AgentChatProviderCatalog,
 ): AgentChatOpencodeModelProviderFlowState {
-  const flowState = normalizeFlowState(inputFlowState, currentModel);
+  const flowState = normalizeFlowState(inputFlowState, currentModel, catalog);
   return {
     ...flowState,
     selectedProviderId: providerId,
@@ -115,8 +172,9 @@ export function openOpencodeModelProviderApiKey(
   inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
   currentModel: string,
   providerId: string,
+  catalog?: AgentChatProviderCatalog,
 ): AgentChatOpencodeModelProviderFlowState {
-  const flowState = normalizeFlowState(inputFlowState, currentModel);
+  const flowState = normalizeFlowState(inputFlowState, currentModel, catalog);
   return {
     ...flowState,
     selectedProviderId: providerId,
@@ -127,9 +185,10 @@ export function openOpencodeModelProviderApiKey(
 export function finishOpencodeModelProviderApiKey(
   inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
   currentModel: string,
+  catalog?: AgentChatProviderCatalog,
 ): AgentChatOpencodeModelProviderFlowState {
   return {
-    ...normalizeFlowState(inputFlowState, currentModel),
+    ...normalizeFlowState(inputFlowState, currentModel, catalog),
     step: "provider_list",
   };
 }
@@ -137,8 +196,9 @@ export function finishOpencodeModelProviderApiKey(
 export function backOpencodeModelProvider(
   inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
   currentModel: string,
+  catalog?: AgentChatProviderCatalog,
 ): AgentChatOpencodeModelProviderFlowState {
-  const flowState = normalizeFlowState(inputFlowState, currentModel);
+  const flowState = normalizeFlowState(inputFlowState, currentModel, catalog);
   if (flowState.step === "model_list") {
     return { ...flowState, step: "provider_list" };
   }
@@ -152,7 +212,7 @@ export function backOpencodeModelProvider(
       step,
       selectedProviderId:
         step === "provider_list" || step === "connect_vendor"
-          ? providerIdFromModel(currentModel)
+          ? providerIdFromModel(currentModel, catalog)
           : flowState.selectedProviderId,
     };
   }
@@ -162,8 +222,9 @@ export function backOpencodeModelProvider(
 export function selectedOpencodeModelProviderId(
   currentModel: string,
   inputFlowState?: AgentChatOpencodeModelProviderFlowState,
+  catalog?: AgentChatProviderCatalog,
 ): string {
-  return selectedProviderId(currentModel, normalizeFlowState(inputFlowState, currentModel));
+  return selectedProviderId(currentModel, normalizeFlowState(inputFlowState, currentModel, catalog), catalog);
 }
 
 export function connectVendorRowId(providerId: string): string {
@@ -209,53 +270,59 @@ export function opencodeApiKeyProviderIdFromRow(rowId: string): string | undefin
 function normalizeFlowState(
   inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
   currentModel: string,
+  catalog?: AgentChatProviderCatalog,
 ): AgentChatOpencodeModelProviderFlowState {
   const flowState = inputFlowState ?? initialOpencodeModelProviderFlowState();
   let step = flowState.step;
   if (step === null) {
-    step = isOpencodeUsable() ? "provider_list" : "connect_vendor";
-  } else if (!isOpencodeUsable() && step === "provider_list") {
+    step = isOpencodeUsable(catalog) ? "provider_list" : "connect_vendor";
+  } else if (!isOpencodeUsable(catalog) && step === "provider_list") {
     step = "connect_vendor";
   }
   return {
     ...flowState,
     step,
-    selectedProviderId: flowState.selectedProviderId ?? providerIdFromModel(currentModel),
+    selectedProviderId: flowState.selectedProviderId ?? providerIdFromModel(currentModel, catalog),
   };
 }
 
 function selectedProviderId(
   currentModel: string,
   flowState: AgentChatOpencodeModelProviderFlowState,
+  catalog?: AgentChatProviderCatalog,
 ): string {
-  return flowState.selectedProviderId ?? providerIdFromModel(currentModel);
+  return flowState.selectedProviderId ?? providerIdFromModel(currentModel, catalog);
 }
 
-function providerIdFromModel(currentModel: string): string {
+function providerIdFromModel(currentModel: string, catalog?: AgentChatProviderCatalog): string {
   if (currentModel !== OPENCODE_DEFAULT_MODEL && currentModel.includes("/")) {
     return currentModel.split("/", 1)[0] || ZEN_PROVIDER_ID;
   }
-  const firstConcrete = concreteOpencodeModels()[0]?.vendor;
+  const firstConcrete = concreteOpencodeModels(catalog)[0]?.vendor;
   return firstConcrete ?? ZEN_PROVIDER_ID;
 }
 
-function concreteOpencodeModels() {
-  return cliModelOptionsForAgent("opencode").filter((model) => model.value !== OPENCODE_DEFAULT_MODEL);
+function concreteOpencodeModels(catalog?: AgentChatProviderCatalog): AgentChatProviderModelOption[] {
+  return catalog?.status === "ready"
+    ? catalog.models.filter((model) => model.value !== OPENCODE_DEFAULT_MODEL)
+    : [];
 }
 
-function providerViewModels(): ProviderViewModel[] {
-  const models = concreteOpencodeModels();
+function providerViewModels(catalog?: AgentChatProviderCatalog): ProviderViewModel[] {
+  const models = concreteOpencodeModels(catalog);
   const modelVendors = new Set(models.flatMap((model) => model.vendor === undefined ? [] : [model.vendor]));
-  const vendors = getOpencodeVendors();
+  const vendors = getOpencodeVendors(catalog);
   const providers: ProviderViewModel[] = [
-    {
-      id: ZEN_PROVIDER_ID,
-      label: "OpenCode Zen",
-      detail: zenFreeModelCount() > 0 ? `${zenFreeModelCount()} free models` : "Free default",
-      monogram: "Z",
-      connected: true,
-      needsReconnect: false,
-    },
+    ...(zenFreeModelCount(catalog) > 0
+      ? [{
+          id: ZEN_PROVIDER_ID,
+          label: "OpenCode Zen",
+          detail: `${zenFreeModelCount(catalog)} free models`,
+          monogram: "Z",
+          connected: true,
+          needsReconnect: false,
+        }]
+      : []),
   ];
 
   for (const vendor of vendors) {
@@ -305,6 +372,7 @@ function rowsForStep(
   providers: ProviderViewModel[],
   models: ReturnType<typeof modelViewsForProvider>,
   effortRows: AgentChatChoiceSurfaceRowView[],
+  catalog?: AgentChatProviderCatalog,
 ): AgentChatChoiceSurfaceRowView[] {
   if (step === "provider_list" || step === "connect_vendor") {
     return providers.map((provider) =>
@@ -321,9 +389,9 @@ function rowsForStep(
   if (step === "model_list") {
     return [
       row("opencode-back", "Back to providers", "opencode", "Esc", "back"),
-      ...(connectionRowForProvider(providerId, providers.find((provider) => provider.id === providerId)) === undefined
+      ...(connectionRowForProvider(providerId, providers.find((provider) => provider.id === providerId), catalog) === undefined
         ? []
-        : [row(connectionRowId(providerId), "Connection", providerStatus(providerId), "Update", "tool")]),
+        : [row(connectionRowId(providerId), "Connection", providerStatus(providerId, catalog), "Update", "tool")]),
       ...models.map((model) =>
         row(model.rowId, model.label, model.detail, model.meta, model.selected ? "check" : "", model.selected),
       ),
@@ -343,8 +411,12 @@ function rowsForStep(
   ];
 }
 
-function modelViewsForProvider(providerId: string, currentModel: string) {
-  return concreteOpencodeModels()
+function modelViewsForProvider(
+  providerId: string,
+  currentModel: string,
+  catalog?: AgentChatProviderCatalog,
+) {
+  return concreteOpencodeModels(catalog)
     .filter((model) => model.vendor === providerId)
     .map((model) => ({
       rowId: `model:${model.value}`,
@@ -370,13 +442,14 @@ function opencodeEffortRows(currentEffort: string): AgentChatChoiceSurfaceRowVie
   );
 }
 
-function providerHasModelRows(providerId: string): boolean {
-  return concreteOpencodeModels().some((model) => model.vendor === providerId);
+function providerHasModelRows(providerId: string, catalog?: AgentChatProviderCatalog): boolean {
+  return concreteOpencodeModels(catalog).some((model) => model.vendor === providerId);
 }
 
 function connectionRowForProvider(
   providerId: string,
   provider: ProviderViewModel | undefined,
+  catalog?: AgentChatProviderCatalog,
 ) {
   if (providerId === ZEN_PROVIDER_ID || provider === undefined || !provider.connected) {
     return undefined;
@@ -384,12 +457,12 @@ function connectionRowForProvider(
   return {
     rowId: connectionRowId(providerId),
     label: "Connection",
-    detail: `${provider.label} · ${providerStatus(providerId)} · opencode`,
+    detail: `${provider.label} · ${providerStatus(providerId, catalog)} · opencode`,
   };
 }
 
-function providerStatus(providerId: string): string {
-  const vendor = getOpencodeVendors().find((candidate) => candidate.id === providerId);
+function providerStatus(providerId: string, catalog?: AgentChatProviderCatalog): string {
+  const vendor = getOpencodeVendors(catalog).find((candidate) => candidate.id === providerId);
   if (vendor === undefined) {
     return "Models available";
   }
@@ -406,12 +479,13 @@ function titleForStep(
   step: AgentChatOpencodeModelProviderStep,
   providerId: string | undefined,
   providerLabel: string | undefined,
+  catalog?: AgentChatProviderCatalog,
 ): string {
   switch (step) {
     case "model_list":
       return providerLabel ?? "Models";
     case "vendor_method":
-      return `${providerMethodVerb(providerId)} ${providerLabel ?? "Provider"}`;
+      return `${providerMethodVerb(providerId, catalog)} ${providerLabel ?? "Provider"}`;
     case "api_key":
       return `API key ${providerLabel ?? "Provider"}`;
     case "connect_vendor":
@@ -421,8 +495,11 @@ function titleForStep(
   }
 }
 
-function providerMethodVerb(providerId: string | undefined): "Connect" | "Reconnect" | "Update" {
-  const status = providerStatus(providerId ?? "");
+function providerMethodVerb(
+  providerId: string | undefined,
+  catalog?: AgentChatProviderCatalog,
+): "Connect" | "Reconnect" | "Update" {
+  const status = providerStatus(providerId ?? "", catalog);
   if (status === "Reconnect") {
     return "Reconnect";
   }
@@ -432,8 +509,8 @@ function providerMethodVerb(providerId: string | undefined): "Connect" | "Reconn
   return "Update";
 }
 
-function zenFreeModelCount(): number {
-  return concreteOpencodeModels().filter((model) => model.vendor === ZEN_PROVIDER_ID).length;
+function zenFreeModelCount(catalog?: AgentChatProviderCatalog): number {
+  return concreteOpencodeModels(catalog).filter((model) => model.vendor === ZEN_PROVIDER_ID).length;
 }
 
 function vendorLabel(vendor: string): string {

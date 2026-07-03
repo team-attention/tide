@@ -4,6 +4,7 @@ import type { ThreadId, WorkbenchPaneId } from "./ids.ts";
 import type { PromptStepAnswerDto } from "./prompt.ts";
 import type { JsonObject } from "./json.ts";
 import type { ProviderCapabilityInvokeDto } from "./provider-capability.ts";
+import type { ProviderCatalogScopeDto } from "./provider-model-catalog.ts";
 import type { ThreadScopeDto } from "./thread.ts";
 
 export type BackendCommandKind =
@@ -28,6 +29,8 @@ export type BackendCommandKind =
   | "provider.discoverCommands"
   | "provider.invokeCapability"
   | "provider.checkReadiness"
+  | "provider.inventory.get"
+  | "provider.catalog.get"
   | "provider.refreshUsage"
   | "workbench.command"
   | "workspace.readFileTree"
@@ -59,6 +62,8 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "provider.discoverCommands",
   "provider.invokeCapability",
   "provider.checkReadiness",
+  "provider.inventory.get",
+  "provider.catalog.get",
   "provider.refreshUsage",
   "workbench.command",
   "workspace.readFileTree",
@@ -189,6 +194,8 @@ export interface BackendCommandPayloadByKind {
   // install/sign-in card surfaces immediately. Backend replies providerReadiness.changed.
   // See docs_v2/specs/provider-cli-setup-handoff.md.
   "provider.checkReadiness": { threadId: ThreadId; agentId: string };
+  "provider.inventory.get": {};
+  "provider.catalog.get": { agentId: string; scope?: ProviderCatalogScopeDto };
   // Re-read provider-local account/rate-limit history for Settings. Backend replies
   // providerUsage.changed when it finds usage windows, then command.completed.
   "provider.refreshUsage": {};

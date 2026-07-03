@@ -16,27 +16,34 @@ import {
   isOpencodeUsable,
   selectAgentChatChoiceSurfaceRow,
   setComposerActiveSurface,
-  setOpencodeEnvironment,
-  setOpencodeModelCatalog,
-  setOpencodeVendors,
 } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
+import type { AgentChatProviderCatalog } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
 
 // Spec: docs_v2/specs/opencode-vendor-onramp.md
+// Spec: docs_v2/specs/provider-catalog-ownership-and-model-selection.md
 
-function resetOnrampState() {
-  setOpencodeVendors(null);
-  setOpencodeEnvironment(null);
-  setOpencodeModelCatalog(null);
+function opencodeCatalog(input: Partial<AgentChatProviderCatalog>): AgentChatProviderCatalog {
+  return {
+    agentId: "opencode",
+    status: "ready",
+    models: [],
+    vendors: [],
+    defaultModel: "opencode default",
+    ...input,
+  };
 }
 
-function opencodeStartState() {
-  return createAgentChatShellState({
+function opencodeStartState(catalog?: AgentChatProviderCatalog) {
+  const state = createAgentChatShellState({
     startOptions: {
       agentBinding: { agentId: "opencode" },
       scope: { kind: "project", projectId: "tide", cwd: "/repo" },
       launchOptions: {},
     },
   });
+  return catalog === undefined
+    ? state
+    : { ...state, availableProviderCatalogs: { opencode: catalog } };
 }
 
 // ---- backend: `opencode auth list` parser ----
@@ -147,61 +154,57 @@ test("reconcileVendorUsability leaves vendors untouched when the catalog is empt
 // ---- desktop: "is opencode usable" gate ----
 
 test("isOpencodeUsable is false when the only connected vendor is unusable (expired) and no concrete model", () => {
-  resetOnrampState();
-  setOpencodeVendors([{ id: "anthropic", label: "Anthropic", connected: true, popular: true, usable: false }]);
-  assert.equal(isOpencodeUsable(), false);
-  resetOnrampState();
+  assert.equal(isOpencodeUsable(opencodeCatalog({
+    vendors: [{ id: "anthropic", label: "Anthropic", connected: true, popular: true, usable: false }],
+  })), false);
 });
 
 test("buildOpencodeConnectSurface marks an unusable connected vendor needsReconnect", () => {
-  resetOnrampState();
-  setOpencodeVendors([
-    { id: "openai", label: "OpenAI", connected: true, popular: true, usable: true },
-    { id: "anthropic", label: "Anthropic", connected: true, popular: true, usable: false },
-  ]);
-  const surface = buildOpencodeConnectSurface(true);
+  const surface = buildOpencodeConnectSurface(true, opencodeCatalog({
+    vendors: [
+      { id: "openai", label: "OpenAI", connected: true, popular: true, usable: true },
+      { id: "anthropic", label: "Anthropic", connected: true, popular: true, usable: false },
+    ],
+  }));
   const anthropic = surface.opencodeConnect?.vendors.find((vendor) => vendor.id === "anthropic");
   const openai = surface.opencodeConnect?.vendors.find((vendor) => vendor.id === "openai");
   assert.equal(anthropic?.needsReconnect, true);
   assert.equal(openai?.needsReconnect, false);
-  resetOnrampState();
 });
 
 test("isOpencodeUsable is false with no vendors and only the default model", () => {
-  resetOnrampState();
-  assert.equal(isOpencodeUsable(), false);
+  assert.equal(isOpencodeUsable(opencodeCatalog({})), false);
 });
 
 test("isOpencodeUsable is true once a vendor is connected", () => {
-  resetOnrampState();
-  setOpencodeVendors([{ id: "openai", label: "OpenAI", connected: true, popular: true }]);
-  assert.equal(isOpencodeUsable(), true);
-  resetOnrampState();
+  assert.equal(isOpencodeUsable(opencodeCatalog({
+    vendors: [{ id: "openai", label: "OpenAI", connected: true, popular: true }],
+  })), true);
 });
 
 test("isOpencodeUsable is true once a concrete model exists", () => {
-  resetOnrampState();
-  setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
-  assert.equal(isOpencodeUsable(), true);
-  resetOnrampState();
+  assert.equal(isOpencodeUsable(opencodeCatalog({
+    models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+  })), true);
 });
 
 // ---- desktop: the connect surface view ----
 
 test("buildOpencodeConnectSurface carries Zen count, connected count, version, vendor + action rows", () => {
-  resetOnrampState();
-  setOpencodeVendors([
-    { id: "openai", label: "OpenAI", connected: true, popular: true },
-    { id: "google", label: "Google", connected: false, popular: true },
-  ]);
-  setOpencodeModelCatalog([
-    { value: "opencode/big-pickle", label: "big-pickle", vendor: "opencode" },
-    { value: "opencode/grok-free", label: "grok-free", vendor: "opencode" },
-    { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
-  ]);
-  setOpencodeEnvironment({ version: "1.17.1", executablePath: "/bin/opencode" });
+  const catalog = opencodeCatalog({
+    vendors: [
+      { id: "openai", label: "OpenAI", connected: true, popular: true },
+      { id: "google", label: "Google", connected: false, popular: true },
+    ],
+    models: [
+      { value: "opencode/big-pickle", label: "big-pickle", vendor: "opencode" },
+      { value: "opencode/grok-free", label: "grok-free", vendor: "opencode" },
+      { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
+    ],
+    environment: { version: "1.17.1", executablePath: "/bin/opencode" },
+  });
 
-  const surface = buildOpencodeConnectSurface(false);
+  const surface = buildOpencodeConnectSurface(false, catalog);
   assert.equal(surface.surfaceKind, "opencode_connect");
   assert.equal(surface.opencodeConnect?.zenFreeCount, 2);
   assert.equal(surface.opencodeConnect?.connectedCount, 1);
@@ -212,27 +215,25 @@ test("buildOpencodeConnectSurface carries Zen count, connected count, version, v
   assert.ok(surface.rows.some((row) => row.rowId === "connect-vendor:openai"));
   assert.ok(surface.rows.some((row) => row.rowId === "all-providers"));
   assert.ok(!surface.rows.some((row) => row.rowId === "back-to-models"));
-  assert.ok(buildOpencodeConnectSurface(true).rows.some((row) => row.rowId === "back-to-models"));
-  resetOnrampState();
+  assert.ok(buildOpencodeConnectSurface(true, catalog).rows.some((row) => row.rowId === "back-to-models"));
 });
 
 // ---- desktop: the Model chip opens the on-ramp only when not usable ----
 
 test("modelChipSurface always opens the opencode model/provider surface", () => {
-  resetOnrampState();
   assert.equal(createAgentChatShellViewModel(opencodeStartState()).composer.modelChipSurface, "opencode_model_provider");
-  setOpencodeVendors([{ id: "openai", label: "OpenAI", connected: true, popular: true }]);
-  assert.equal(createAgentChatShellViewModel(opencodeStartState()).composer.modelChipSurface, "opencode_model_provider");
-  resetOnrampState();
+  assert.equal(createAgentChatShellViewModel(opencodeStartState(opencodeCatalog({
+    vendors: [{ id: "openai", label: "OpenAI", connected: true, popular: true }],
+  }))).composer.modelChipSurface, "opencode_model_provider");
 });
 
 // ---- desktop: connect actions drive opencode's own auth login via the readiness terminal ----
 
 test("connect-vendor dispatches the readiness terminal `auth login -p <id>`", () => {
-  resetOnrampState();
-  setOpencodeVendors([{ id: "openai", label: "OpenAI", connected: false, popular: true }]);
-  setOpencodeEnvironment({ version: "1.17.1", executablePath: "/bin/opencode" });
-  const opened = setComposerActiveSurface(opencodeStartState(), "opencode_connect").state;
+  const opened = setComposerActiveSurface(opencodeStartState(opencodeCatalog({
+    vendors: [{ id: "openai", label: "OpenAI", connected: false, popular: true }],
+    environment: { version: "1.17.1", executablePath: "/bin/opencode" },
+  })), "opencode_connect").state;
   const result = selectAgentChatChoiceSurfaceRow(opened, "opencode_connect", "connect-vendor:openai", "thread-1");
   assert.equal(result.command?.kind, "workbench.command");
   if (result.command?.kind === "workbench.command") {
@@ -244,49 +245,43 @@ test("connect-vendor dispatches the readiness terminal `auth login -p <id>`", ()
     assert.equal(result.command.payload.data.expectedCompletion, "retry_preflight");
   }
   assert.equal(result.state.composer.activeSurface, null);
-  resetOnrampState();
 });
 
 test("all-providers dispatches `auth login` with no -p", () => {
-  resetOnrampState();
-  setOpencodeEnvironment({ executablePath: "/bin/opencode" });
-  const opened = setComposerActiveSurface(opencodeStartState(), "opencode_connect").state;
+  const opened = setComposerActiveSurface(opencodeStartState(opencodeCatalog({
+    environment: { executablePath: "/bin/opencode" },
+  })), "opencode_connect").state;
   const result = selectAgentChatChoiceSurfaceRow(opened, "opencode_connect", "all-providers", "thread-1");
   assert.equal(
     result.command?.kind === "workbench.command" && result.command.payload.data.args.join(" "),
     "auth login",
   );
-  resetOnrampState();
 });
 
 test("connect is a no-op with no thread, or with no opencode executable", () => {
-  resetOnrampState();
-  setOpencodeVendors([{ id: "openai", label: "OpenAI", connected: false, popular: true }]);
-  setOpencodeEnvironment({ executablePath: "/bin/opencode" });
-  const opened = setComposerActiveSurface(opencodeStartState(), "opencode_connect").state;
+  const opened = setComposerActiveSurface(opencodeStartState(opencodeCatalog({
+    vendors: [{ id: "openai", label: "OpenAI", connected: false, popular: true }],
+    environment: { executablePath: "/bin/opencode" },
+  })), "opencode_connect").state;
   // No thread + no activeThreadId → nothing to host the surface.
   assert.equal(selectAgentChatChoiceSurfaceRow(opened, "opencode_connect", "connect-vendor:openai").command, null);
   // No executable path → nothing to launch.
-  setOpencodeEnvironment(null);
-  const opened2 = setComposerActiveSurface(opencodeStartState(), "opencode_connect").state;
+  const opened2 = setComposerActiveSurface(opencodeStartState(opencodeCatalog({
+    vendors: [{ id: "openai", label: "OpenAI", connected: false, popular: true }],
+  })), "opencode_connect").state;
   assert.equal(selectAgentChatChoiceSurfaceRow(opened2, "opencode_connect", "connect-vendor:openai", "t1").command, null);
-  resetOnrampState();
 });
 
 test("use-free-model sets opencode's default model and closes the panel", () => {
-  resetOnrampState();
   const opened = setComposerActiveSurface(opencodeStartState(), "opencode_connect").state;
   const result = selectAgentChatChoiceSurfaceRow(opened, "opencode_connect", "use-free-model");
   assert.equal(result.state.composer.activeSurface, null);
   assert.equal(result.state.composer.startOptions.launchOptions?.model, "opencode default");
-  resetOnrampState();
 });
 
 test("model_menu requests are normalized to the opencode model/provider surface", () => {
-  resetOnrampState();
   const opened = setComposerActiveSurface(opencodeStartState(), "model_menu").state;
   assert.equal(opened.composer.activeSurface, "opencode_model_provider");
-  resetOnrampState();
 });
 
 // ---- backend: the "정석" path — opencode's own HTTP server (PUT /auth/{id}) ----

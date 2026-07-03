@@ -26,7 +26,6 @@ import {
   addComposerContextChip,
   removeComposerContextChip,
   setComposerContextChipComment,
-  setAvailableProviderAgents,
   normalizePermissionValue,
   permissionLabelForValue,
   type AgentChatShellState,
@@ -2058,12 +2057,31 @@ test("agent_chip_renders_one_visible_value_for_provider_cli_sources", () => {
 
 test("model_chip_routes_menu_data_by_provider_cli_agent", () => {
   const codexState = setComposerActiveSurface(createAgentChatShellState(), "model_menu").state;
+  const selectedOpencode = selectComposerAgent(createAgentChatShellState(), "opencode").state;
   const opencodeState = setComposerActiveSurface(
-    selectComposerAgent(createAgentChatShellState(), "opencode").state,
+    {
+      ...selectedOpencode,
+      availableProviderCatalogs: {
+        opencode: {
+          agentId: "opencode",
+          status: "ready",
+          models: [
+            { value: "opencode/big-pickle", label: "big-pickle", vendor: "opencode" },
+            { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
+          ],
+          vendors: [
+            { id: "openai", label: "OpenAI", connected: true, popular: true, usable: true },
+          ],
+          defaultModel: "opencode default",
+        },
+      },
+    },
     "model_menu",
   ).state;
+  const opencodeLoadingState = setComposerActiveSurface(selectedOpencode, "model_menu").state;
   const codexHtml = renderShell(codexState);
   const opencodeHtml = renderShell(opencodeState);
+  const opencodeLoadingHtml = renderShell(opencodeLoadingState);
 
   assert.match(codexHtml, /Model/);
   assert.match(codexHtml, /Codex Agent Integration/);
@@ -2072,6 +2090,8 @@ test("model_chip_routes_menu_data_by_provider_cli_agent", () => {
   assert.match(opencodeHtml, /data-choice-surface="opencode_model_provider"/);
   assert.match(opencodeHtml, /OpenCode Zen/);
   assert.doesNotMatch(opencodeHtml, /Add a vendor/);
+  assert.match(opencodeLoadingHtml, /Loading provider catalog/);
+  assert.doesNotMatch(opencodeLoadingHtml, /OpenCode Zen/);
 });
 
 test("codex_model_chip_renders_polished_label_but_stores_provider_native_value", () => {
@@ -2666,7 +2686,6 @@ test("every provider-agent row binds; a not-installed row is an intentional no-o
   // opencode row was once rendered+enabled but composerAgentIdForRow lacked its
   // case, so it was a SILENT no-op). All provider-CLI agents bind — opencode
   // is no longer coming-soon.
-  setAvailableProviderAgents(null); // all detected
   for (const agentId of ["codex", "claude", "opencode"] as const) {
     const opened = setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state;
     const selected = selectAgentChatChoiceSurfaceRow(opened, "agent_menu", agentId).state;
@@ -2679,8 +2698,16 @@ test("every provider-agent row binds; a not-installed row is an intentional no-o
   // A NOT-INSTALLED agent is now SELECTABLE: picking it binds the agent so the handler can
   // ensure a Draft Thread + run provider.checkReadiness to surface its install / sign-in card.
   // (Only coming-soon rows stay disabled.) Spec: provider-cli-setup-handoff.md.
-  setAvailableProviderAgents(["codex", "claude"]); // opencode undetected
-  const base = setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state;
+  const base = setComposerActiveSurface({
+    ...createAgentChatShellState(),
+    availableProviderInventory: {
+      agents: [
+        { agentId: "codex", installed: true },
+        { agentId: "claude", installed: true },
+        { agentId: "opencode", installed: false },
+      ],
+    },
+  }, "agent_menu").state;
   const afterOpencode = selectAgentChatChoiceSurfaceRow(base, "agent_menu", "opencode").state;
   assert.equal(
     afterOpencode.composer.startOptions.agentBinding.agentId,
@@ -2694,7 +2721,6 @@ test("every provider-agent row binds; a not-installed row is an intentional no-o
     false,
     "a not-installed agent row must be selectable so its install handoff can start",
   );
-  setAvailableProviderAgents(null); // reset module state for other tests
 });
 
 test("project_menu_lists_real_injected_projects_not_a_hardcoded_set", () => {

@@ -13,6 +13,7 @@ export * from "./json.ts";
 export * from "./opencode-vendor.ts";
 export * from "./prompt.ts";
 export * from "./provider-model-catalog.ts";
+export * from "./provider-inventory.ts";
 export * from "./provider-capability.ts";
 export * from "./provider-readiness.ts";
 export * from "./thread.ts";

@@ -1,6 +1,26 @@
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 import type { AgentChatOpencodeModelProviderFlowState, AgentChatOpencodeModelProviderStep } from "./opencode-model-provider-types.ts";
+import type {
+  AgentChatCommandOption,
+  AgentChatProviderCapabilityOption,
+  AgentChatProviderCatalog,
+  AgentChatProviderCliAgentId,
+  AgentChatProviderInventory,
+} from "./provider-state-types.ts";
 export type { AgentChatOpencodeModelProviderFlowState, AgentChatOpencodeModelProviderMethodReturnStep, AgentChatOpencodeModelProviderStep } from "./opencode-model-provider-types.ts";
+export type {
+  AgentChatCommandOption,
+  AgentChatProviderCapabilityOption,
+  AgentChatProviderCatalog,
+  AgentChatProviderCatalogEnvironment,
+  AgentChatProviderCatalogError,
+  AgentChatProviderCatalogStatus,
+  AgentChatProviderCatalogVendor,
+  AgentChatProviderCliAgentId,
+  AgentChatProviderInventory,
+  AgentChatProviderInventoryAgent,
+  AgentChatProviderModelOption,
+} from "./provider-state-types.ts";
 
 export type AgentChatState =
   | "empty"
@@ -43,27 +63,6 @@ export interface AgentChatWorktreeOption {
   current: boolean;
 }
 
-export interface AgentChatCommandOption {
-  name: string;
-  description: string;
-  trigger: "/" | "$";
-  // Optional provenance, for display/debugging only (NOT used to filter the menu —
-  // the menu mirrors the agent's full set). "builtin" = the provider CLI's own
-  // command; "project"/"user" = a discovered command/skill file.
-  source?: "project" | "user" | "builtin";
-}
-
-export interface AgentChatProviderCapabilityOption {
-  capabilityId: string;
-  kind: string;
-  group: string;
-  label: string;
-  description?: string;
-  trigger?: "/" | "$";
-  invoke: { kind: string; [key: string]: unknown };
-  available: boolean;
-}
-
 export interface AgentChatFileMentionOption {
   name: string;
   relativePath: string;
@@ -99,6 +98,11 @@ export interface AgentChatShellState {
   // prompt commands, skills, config controls, and session actions are not
   // flattened into one generic string list.
   availableCapabilities?: AgentChatProviderCapabilityOption[];
+  // App/provider-owned inventory and catalog snapshots injected by Product Shell.
+  // Thread/Composer state stores selected values only; picker option lists read
+  // these snapshots.
+  availableProviderInventory?: AgentChatProviderInventory | null;
+  availableProviderCatalogs?: Record<string, AgentChatProviderCatalog>;
   // Real files for the active cwd, injected by the product shell for Composer
   // @ mentions. Empty until the bounded file tree has been loaded.
   availableFileMentions?: AgentChatFileMentionOption[];
@@ -210,8 +214,6 @@ export interface AgentChatAgentBinding {
     logPath?: string;
   };
 }
-
-export type AgentChatProviderCliAgentId = "codex" | "claude" | "opencode";
 
 export type AgentChatAgentId = AgentChatProviderCliAgentId;
 

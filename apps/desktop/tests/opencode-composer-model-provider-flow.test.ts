@@ -6,27 +6,32 @@ import {
   createAgentChatShellState,
   selectAgentChatChoiceSurfaceRow,
   setComposerActiveSurface,
-  setOpencodeEnvironment,
-  setOpencodeModelCatalog,
-  setOpencodeVendors,
 } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
+import type { AgentChatProviderCatalog } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
 
 // Spec: docs_v2/specs/opencode-composer-model-provider-flow.md
+// Spec: docs_v2/specs/provider-catalog-ownership-and-model-selection.md
 
-function resetOpencodeState() {
-  setOpencodeVendors(null);
-  setOpencodeEnvironment(null);
-  setOpencodeModelCatalog(null);
+function opencodeCatalog(input: Partial<AgentChatProviderCatalog>): AgentChatProviderCatalog {
+  return {
+    agentId: "opencode",
+    status: "ready",
+    models: [],
+    vendors: [],
+    defaultModel: "opencode default",
+    ...input,
+  };
 }
 
-function opencodeState() {
-  return createAgentChatShellState({
+function opencodeState(catalog: AgentChatProviderCatalog = opencodeCatalog({})) {
+  const state = createAgentChatShellState({
     startOptions: {
       agentBinding: { agentId: "opencode" },
       scope: { kind: "project", projectId: "tide", cwd: "/repo" },
       launchOptions: { model: "openai/gpt-5.5", reasoning: "high" },
     },
   });
+  return { ...state, availableProviderCatalogs: { opencode: catalog } };
 }
 
 function codexState() {
@@ -40,18 +45,17 @@ function codexState() {
 }
 
 test("opencode model chip opens provider root, not the flat model menu", () => {
-  resetOpencodeState();
-  setOpencodeVendors([
-    { id: "openai", label: "OpenAI", connected: true, popular: true, method: "oauth", usable: true },
-    { id: "anthropic", label: "Anthropic", connected: true, popular: true, method: "oauth", usable: false },
-    { id: "google", label: "Google", connected: false, popular: true },
-  ]);
-  setOpencodeModelCatalog([
-    { value: "opencode/big-pickle", label: "big-pickle", vendor: "opencode" },
-    { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
-  ]);
-
-  const opened = setComposerActiveSurface(opencodeState(), "model_menu").state;
+  const opened = setComposerActiveSurface(opencodeState(opencodeCatalog({
+    vendors: [
+      { id: "openai", label: "OpenAI", connected: true, popular: true, method: "oauth", usable: true },
+      { id: "anthropic", label: "Anthropic", connected: true, popular: true, method: "oauth", usable: false },
+      { id: "google", label: "Google", connected: false, popular: true },
+    ],
+    models: [
+      { value: "opencode/big-pickle", label: "big-pickle", vendor: "opencode" },
+      { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
+    ],
+  })), "model_menu").state;
   const surface = createActiveComposerSurface(opened);
 
   assert.equal(opened.composer.activeSurface, "opencode_model_provider");
@@ -62,20 +66,18 @@ test("opencode model chip opens provider root, not the flat model menu", () => {
   assert.ok(!surface?.rows.some((row) => row.rowId === "add-vendor"));
   assert.ok(!surface?.rows.some((row) => row.rowId === "all-providers"));
   assert.ok(!surface?.rows.some((row) => row.rowId === "opencode-back"));
-  resetOpencodeState();
 });
 
 test("connected provider drilldown renders models, connection update row, and provider back", () => {
-  resetOpencodeState();
-  setOpencodeVendors([
-    { id: "openai", label: "OpenAI", connected: true, popular: true, method: "oauth", usable: true },
-  ]);
-  setOpencodeModelCatalog([
-    { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
-    { value: "openai/gpt-5.4-mini", label: "gpt-5.4-mini", vendor: "openai" },
-  ]);
-
-  const opened = setComposerActiveSurface(opencodeState(), "opencode_model_provider").state;
+  const opened = setComposerActiveSurface(opencodeState(opencodeCatalog({
+    vendors: [
+      { id: "openai", label: "OpenAI", connected: true, popular: true, method: "oauth", usable: true },
+    ],
+    models: [
+      { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
+      { value: "openai/gpt-5.4-mini", label: "gpt-5.4-mini", vendor: "openai" },
+    ],
+  })), "opencode_model_provider").state;
   const drilled = selectAgentChatChoiceSurfaceRow(
     opened,
     "opencode_model_provider",
@@ -95,17 +97,15 @@ test("connected provider drilldown renders models, connection update row, and pr
   const root = createActiveComposerSurface(back);
   assert.equal(root?.opencodeModelProvider?.step, "provider_list");
   assert.ok(!root?.rows.some((row) => row.rowId === "opencode-back"));
-  resetOpencodeState();
 });
 
 test("connected provider connection update opens method sheet and backs to model list", () => {
-  resetOpencodeState();
-  setOpencodeVendors([
-    { id: "openai", label: "OpenAI", connected: true, popular: true, method: "oauth", usable: true },
-  ]);
-  setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
-
-  const opened = setComposerActiveSurface(opencodeState(), "opencode_model_provider").state;
+  const opened = setComposerActiveSurface(opencodeState(opencodeCatalog({
+    vendors: [
+      { id: "openai", label: "OpenAI", connected: true, popular: true, method: "oauth", usable: true },
+    ],
+    models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+  })), "opencode_model_provider").state;
   const modelState = selectAgentChatChoiceSurfaceRow(
     opened,
     "opencode_model_provider",
@@ -124,15 +124,13 @@ test("connected provider connection update opens method sheet and backs to model
     "opencode-back",
   ).state;
   assert.equal(createActiveComposerSurface(backState)?.opencodeModelProvider?.step, "model_list");
-  resetOpencodeState();
 });
 
 test("unconnected provider opens auth method and backs to provider root", () => {
-  resetOpencodeState();
-  setOpencodeVendors([{ id: "google", label: "Google", connected: false, popular: true }]);
-  setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
-
-  const opened = setComposerActiveSurface(opencodeState(), "opencode_model_provider").state;
+  const opened = setComposerActiveSurface(opencodeState(opencodeCatalog({
+    vendors: [{ id: "google", label: "Google", connected: false, popular: true }],
+    models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+  })), "opencode_model_provider").state;
   const methodState = selectAgentChatChoiceSurfaceRow(
     opened,
     "opencode_model_provider",
@@ -146,16 +144,16 @@ test("unconnected provider opens auth method and backs to provider root", () => 
     "opencode-back",
   ).state;
   assert.equal(createActiveComposerSurface(rootState)?.opencodeModelProvider?.step, "provider_list");
-  resetOpencodeState();
 });
 
 test("opencode model provider drilldown state is isolated per shell state", () => {
-  resetOpencodeState();
-  setOpencodeVendors([{ id: "google", label: "Google", connected: false, popular: true }]);
-  setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
+  const catalog = opencodeCatalog({
+    vendors: [{ id: "google", label: "Google", connected: false, popular: true }],
+    models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+  });
 
-  const firstOpened = setComposerActiveSurface(opencodeState(), "opencode_model_provider").state;
-  const secondOpened = setComposerActiveSurface(opencodeState(), "opencode_model_provider").state;
+  const firstOpened = setComposerActiveSurface(opencodeState(catalog), "opencode_model_provider").state;
+  const secondOpened = setComposerActiveSurface(opencodeState(catalog), "opencode_model_provider").state;
   const firstMethodState = selectAgentChatChoiceSurfaceRow(
     firstOpened,
     "opencode_model_provider",
@@ -164,16 +162,14 @@ test("opencode model provider drilldown state is isolated per shell state", () =
 
   assert.equal(createActiveComposerSurface(firstMethodState)?.opencodeModelProvider?.step, "vendor_method");
   assert.equal(createActiveComposerSurface(secondOpened)?.opencodeModelProvider?.step, "provider_list");
-  resetOpencodeState();
 });
 
 test("browser auth dispatches opencode auth login for the selected provider", () => {
-  resetOpencodeState();
-  setOpencodeVendors([{ id: "google", label: "Google", connected: false, popular: true }]);
-  setOpencodeEnvironment({ executablePath: "/bin/opencode", version: "1.17.3" });
-  setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
-
-  const opened = setComposerActiveSurface(opencodeState(), "opencode_model_provider").state;
+  const opened = setComposerActiveSurface(opencodeState(opencodeCatalog({
+    vendors: [{ id: "google", label: "Google", connected: false, popular: true }],
+    environment: { executablePath: "/bin/opencode", version: "1.17.3" },
+    models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+  })), "opencode_model_provider").state;
   const methodState = selectAgentChatChoiceSurfaceRow(
     opened,
     "opencode_model_provider",
@@ -193,15 +189,13 @@ test("browser auth dispatches opencode auth login for the selected provider", ()
     assert.equal(result.command.payload.data.expectedCompletion, "retry_preflight");
   }
   assert.equal(result.state.composer.activeSurface, null);
-  resetOpencodeState();
 });
 
 test("api key row stays local and returns to provider root after submit action", () => {
-  resetOpencodeState();
-  setOpencodeVendors([{ id: "google", label: "Google", connected: false, popular: true }]);
-  setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
-
-  const opened = setComposerActiveSurface(opencodeState(), "opencode_model_provider").state;
+  const opened = setComposerActiveSurface(opencodeState(opencodeCatalog({
+    vendors: [{ id: "google", label: "Google", connected: false, popular: true }],
+    models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+  })), "opencode_model_provider").state;
   const methodState = selectAgentChatChoiceSurfaceRow(
     opened,
     "opencode_model_provider",
@@ -220,18 +214,18 @@ test("api key row stays local and returns to provider root after submit action",
     "opencode-api-key-finished",
   ).state;
   assert.equal(createActiveComposerSurface(returned)?.opencodeModelProvider?.step, "provider_list");
-  resetOpencodeState();
 });
 
 test("model and effort rows update launch options through the existing command path", () => {
-  resetOpencodeState();
-  setOpencodeVendors([{ id: "openai", label: "OpenAI", connected: true, popular: true, usable: true }]);
-  setOpencodeModelCatalog([
-    { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
-    { value: "openai/gpt-5.4-mini", label: "gpt-5.4-mini", vendor: "openai" },
-  ]);
+  const catalog = opencodeCatalog({
+    vendors: [{ id: "openai", label: "OpenAI", connected: true, popular: true, usable: true }],
+    models: [
+      { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
+      { value: "openai/gpt-5.4-mini", label: "gpt-5.4-mini", vendor: "openai" },
+    ],
+  });
 
-  const opened = setComposerActiveSurface(opencodeState(), "opencode_model_provider").state;
+  const opened = setComposerActiveSurface(opencodeState(catalog), "opencode_model_provider").state;
   const modelState = selectAgentChatChoiceSurfaceRow(
     opened,
     "opencode_model_provider",
@@ -256,13 +250,10 @@ test("model and effort rows update launch options through the existing command p
     "reasoning-max",
   );
   assert.equal(effort.state.composer.startOptions.launchOptions?.reasoning, "max");
-  resetOpencodeState();
 });
 
 test("codex and claude keep the existing compact model menu", () => {
-  resetOpencodeState();
   const codexOpened = setComposerActiveSurface(codexState(), "model_menu").state;
   assert.equal(codexOpened.composer.activeSurface, "model_menu");
   assert.equal(createActiveComposerSurface(codexOpened)?.surfaceKind, "model_menu");
-  resetOpencodeState();
 });

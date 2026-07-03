@@ -226,8 +226,12 @@ test("product_shell_requests_backend_thread_list_on_mount_without_fixture_thread
     path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.tsx"),
     "utf8",
   );
+  const effectsSource = fs.readFileSync(
+    path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/product-shell/support/use-shell-effects.ts"),
+    "utf8",
+  );
 
-  assert.match(source, /kind:\s*"thread\.list"/);
+  assert.match(effectsSource, /kind:\s*"thread\.list"/);
   assert.match(source, /includeFixtureData:\s*false/);
 });
 

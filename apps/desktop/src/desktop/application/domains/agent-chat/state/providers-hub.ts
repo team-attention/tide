@@ -6,6 +6,7 @@ import {
   permissionConfigForAgent,
 } from "./agent-vocab.ts";
 import { getOpencodeEnvironment, getOpencodeVendors } from "./opencode-onramp.ts";
+import type { AgentChatProviderCatalog, AgentChatProviderInventory } from "./types.ts";
 
 // The data layer for the Settings "Providers & Models" hub: one row per provider-CLI
 // agent with its install status, model catalog (the same catalog the composer menu
@@ -41,16 +42,22 @@ export interface ProvidersHubAgentView {
 
 const HUB_AGENTS = ["claude", "codex", "opencode"] as const;
 
-export function buildProvidersHubViewModel(): ProvidersHubAgentView[] {
+export function buildProvidersHubViewModel(input: {
+  providerInventory?: AgentChatProviderInventory | null;
+  providerCatalogs?: Record<string, AgentChatProviderCatalog>;
+} = {}): ProvidersHubAgentView[] {
   return HUB_AGENTS.map((agentId) => {
-    const models = cliModelOptionsForAgent(agentId).map((option) => ({
+    const catalog = input.providerCatalogs?.[agentId];
+    const modelOptions =
+      catalog?.status === "ready" ? catalog.models : cliModelOptionsForAgent(agentId);
+    const models = modelOptions.map((option) => ({
       value: option.value,
       label: option.label,
       vendor: option.vendor,
       detail: option.detail,
     }));
-    const installed = isAgentAvailable(agentId);
-    const vendors = agentId === "opencode" ? getOpencodeVendors() : [];
+    const installed = isAgentAvailable(agentId, input.providerInventory);
+    const vendors = agentId === "opencode" ? getOpencodeVendors(catalog) : [];
     return {
       agentId,
       label: formatAgentLabel(agentId),
@@ -67,7 +74,7 @@ export function buildProvidersHubViewModel(): ProvidersHubAgentView[] {
         ? {
             connectedVendors: vendors.filter((vendor) => vendor.connected).length,
             totalVendors: vendors.length,
-            version: getOpencodeEnvironment()?.version,
+            version: getOpencodeEnvironment(catalog)?.version,
           }
         : {}),
     };

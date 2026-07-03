@@ -1,4 +1,4 @@
-import type { AgentChatAgentBinding, AgentChatBackendCommand, AgentChatBranchOption, AgentChatCommandOption, AgentChatShellState, AgentChatShellViewModel, AgentChatThreadScope, AgentChatUsage, AgentChatUsageView, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatAgentBinding, AgentChatBackendCommand, AgentChatBranchOption, AgentChatCommandOption, AgentChatProviderCatalog, AgentChatProviderInventory, AgentChatShellState, AgentChatShellViewModel, AgentChatThreadScope, AgentChatUsage, AgentChatUsageView, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
 import type { AppChromeBackendCommand, AppChromeEditorNavigationTarget, AppChromeEditorReferenceList, AppChromeState, AppChromeViewModel, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import type { WorkbenchSplitNode } from "./workbench-split-tree.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
@@ -256,6 +256,10 @@ export interface ProductShellState {
   // still mirrored into providerCommands for the current UI; this is the grouped
   // source of truth for the native-agent runtime rebuild.
   providerCapabilities: ProductShellProviderCapability[];
+  // App/provider-owned availability and model/vendor catalog state. Thread and
+  // Composer state keep selected values only.
+  providerInventory: AgentChatProviderInventory | null;
+  providerCatalogs: Record<string, AgentChatProviderCatalog>;
   // Most recent bounded file tree loaded for Composer @ mentions.
   composerFileMentions: ProductShellComposerFileMentions | null;
   // Pinned projects (shown as shortcuts in the Pinned section) and the project
@@ -491,6 +495,17 @@ export type ProductShellBackendCommand =
       payload: { agentId: string; cwd: string };
     }
   | {
+      // App/provider availability is separate from thread.list.
+      kind: "provider.inventory.get";
+      payload: {};
+    }
+  | {
+      // Snapshot of available model/vendor options for one provider. Selected values
+      // remain on Thread/Composer launch options.
+      kind: "provider.catalog.get";
+      payload: { agentId: ProductShellAgentIdentity; scope?: { cwd?: string } };
+    }
+  | {
       // Run Provider Readiness for an agent on demand (Composer slot select) so its
       // install / sign-in card surfaces immediately. Backend replies providerReadiness.changed.
       // See docs_v2/specs/provider-cli-setup-handoff.md.
@@ -612,6 +627,8 @@ export interface ProductShellViewModel {
   listSettings: ProductShellListSettings;
   worktreeSettings: ProductShellWorktreeSettings;
   usageByModel: ProductShellUsageModelView[];
+  providerInventory: AgentChatProviderInventory | null;
+  providerCatalogs: Record<string, AgentChatProviderCatalog>;
   settingsOpen: boolean;
   flatThreads: ProductShellThreadView[];
   // Threads with a live in-process runtime, in Left Rail render order — the set the

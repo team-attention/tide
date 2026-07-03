@@ -436,7 +436,8 @@ export function createLiveBackendContractMessageAdapter(
       });
   }
 
-  // Installed-agent detection + opencode model catalog, surfaced on thread.listed.
+  // Installed-agent detection + provider catalog snapshots. Thread metadata stays on
+  // thread.list; provider inventory/catalog are separate app/provider state.
   const detection = createProviderDetection({
     hasIntegration: (agentId) => integrations[agentId] !== undefined,
     resolveExecutable,
@@ -451,9 +452,7 @@ export function createLiveBackendContractMessageAdapter(
             kind: "providerCatalog.changed",
             emittedAt: new Date().toISOString(),
             payload: {
-              opencodeModels: await detection.enumerateOpencodeModels(),
-              opencodeVendors: await detection.enumerateOpencodeVendors(),
-              opencodeEnvironment: await detection.opencodeEnvironment(),
+              catalog: await detection.getProviderCatalog({ agentId: "opencode" }),
             },
           },
         ]);
@@ -485,10 +484,9 @@ export function createLiveBackendContractMessageAdapter(
       },
     ]);
   });
-  // Deliver opencode's catalog OUT OF BAND so the agent menu (availableAgents on thread.listed)
-  // is never blocked behind opencode's slower subprocesses: enumerate once OFF the startup
-  // critical path and push providerCatalog.changed when ready. (The adapter re-pushes it after a
-  // vendor connect.) See provider-cli-setup-handoff.md.
+  // Preload opencode's catalog OUT OF BAND so Thread list delivery is never blocked
+  // behind opencode's slower subprocesses. Renderer requests via provider.catalog.get
+  // remain the correctness path; this push is only an opportunistic warm update.
   setImmediate(() => {
     // Enumerate asynchronously: opencode's CLI spawns can take seconds, and doing them
     // synchronously here froze the backend event loop — delaying the already-computed

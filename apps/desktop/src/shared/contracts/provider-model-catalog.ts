@@ -4,6 +4,7 @@
 // where it cannot (claude/codex curated lists). See
 // docs_v2/specs/cross-provider-model-catalog-and-hub.md.
 import type { ProviderCliAgentId } from "./agent.ts";
+import type { OpencodeEnvironmentDto, OpencodeVendorDto } from "./opencode-vendor.ts";
 
 export interface ProviderModelDto {
   // Provider-native model id: claude `--model` alias / codex
@@ -28,4 +29,31 @@ export interface ProviderModelCatalogDto {
   currentModel?: string;
   // Tide-resolved default (sentinel or concrete id).
   defaultModel: string;
+}
+
+export type ProviderCatalogStatusDto = "ready" | "unavailable" | "error";
+
+export interface ProviderCatalogScopeDto {
+  cwd?: string;
+}
+
+export interface ProviderCatalogErrorDto {
+  code: "not_installed" | "not_authenticated" | "provider_failed" | "timed_out";
+  message: string;
+  retryable: boolean;
+}
+
+// App/provider-owned snapshot of the available options for one provider. This is
+// intentionally separate from Thread launch options: selected values live on the
+// Thread/Composer; available options live here.
+export interface ProviderCatalogSnapshotDto {
+  agentId: ProviderCliAgentId;
+  status: ProviderCatalogStatusDto;
+  scope?: ProviderCatalogScopeDto;
+  models: ProviderModelDto[];
+  vendors?: OpencodeVendorDto[];
+  environment?: OpencodeEnvironmentDto;
+  currentModel?: string;
+  defaultModel: string;
+  error?: ProviderCatalogErrorDto;
 }
