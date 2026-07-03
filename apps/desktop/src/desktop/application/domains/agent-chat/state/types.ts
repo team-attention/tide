@@ -1,4 +1,6 @@
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
+import type { AgentChatOpencodeModelProviderFlowState, AgentChatOpencodeModelProviderStep } from "./opencode-model-provider-types.ts";
+export type { AgentChatOpencodeModelProviderFlowState, AgentChatOpencodeModelProviderMethodReturnStep, AgentChatOpencodeModelProviderStep } from "./opencode-model-provider-types.ts";
 
 export type AgentChatState =
   | "empty"
@@ -691,24 +693,6 @@ export interface AgentChatChoiceSurfaceView {
   // for `opencode_model_provider`; rows still gate every action through the
   // application state dispatcher.
   opencodeModelProvider?: AgentChatOpencodeModelProviderView;
-}
-
-export type AgentChatOpencodeModelProviderStep =
-  | "provider_list"
-  | "model_list"
-  | "connect_vendor"
-  | "vendor_method"
-  | "api_key";
-
-export type AgentChatOpencodeModelProviderMethodReturnStep =
-  | "provider_list"
-  | "model_list"
-  | "connect_vendor";
-
-export interface AgentChatOpencodeModelProviderFlowState {
-  step: AgentChatOpencodeModelProviderStep | null;
-  selectedProviderId?: string;
-  methodReturnStep: AgentChatOpencodeModelProviderMethodReturnStep;
 }
 
 export interface AgentChatOpencodeModelProviderProviderView {
