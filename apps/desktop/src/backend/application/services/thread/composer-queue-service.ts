@@ -5,7 +5,7 @@ import type { ComposerAttachmentInput, ComposerAttachmentStorePort } from "../..
 import type { AgentSessionBlockReference, ComposerAttachmentRef, PendingInput, ThreadRecord } from "../../domains/thread/thread.ts";
 import type { AgentRuntimeHandle } from "../../domains/agent-runtime/agent-runtime.ts";
 import { RUNTIME_LAUNCH_OPTION_KEYS } from "./thread-runtime-api.ts";
-import type { EditPendingInputInput, EditPendingInputResult, RunQueuedInputNowInput, RunQueuedInputNowResult, SendComposerInput, SendComposerInputResult, UpdateThreadLaunchOptionsInput, UpdateThreadLaunchOptionsResult } from "./thread-runtime-api.ts";
+import type { EditPendingInputInput, EditPendingInputResult, RunQueuedInputNowInput, RunQueuedInputNowResult, SendComposerInput, SendComposerInputResult, StopAgentRuntimeInput, StopAgentRuntimeResult, UpdateThreadLaunchOptionsInput, UpdateThreadLaunchOptionsResult } from "./thread-runtime-api.ts";
 import { failure } from "../support/service-result.ts";
 import type { ServiceResult } from "../support/service-result.ts";
 import { cloneLaunchOptions } from "./thread-runtime-clone.ts";
@@ -391,6 +391,22 @@ writePendingInputs(thread: ThreadRecord, queue: PendingInput[]): void {
       status: index === 0 ? "already_head" : "selected",
     };
   }
+}
+
+export async function runQueuedInputNowThroughQueue(
+  input: RunQueuedInputNowInput,
+  composerQueue: ComposerQueueService,
+  stopAgentRuntime: (input: StopAgentRuntimeInput) => Promise<ServiceResult<StopAgentRuntimeResult>>,
+): Promise<ServiceResult<RunQueuedInputNowResult>> {
+  const promoted = await composerQueue.promoteQueuedInputToHead(input);
+  if (!promoted.ok) {
+    return promoted;
+  }
+  const stopped = await stopAgentRuntime({ threadId: input.threadId });
+  if (!stopped.ok) {
+    return stopped;
+  }
+  return { ok: true, thread: stopped.thread, runtimeState: stopped.runtimeState, status: promoted.status };
 }
 
 function isThreadBusyForComposerQueue(thread: ThreadRecord): boolean {
