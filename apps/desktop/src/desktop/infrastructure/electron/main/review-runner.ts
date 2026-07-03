@@ -168,7 +168,7 @@ async function opencodeReviewCommand(cwd: string, target: ReviewTarget): Promise
   const prompt = await promptReviewInstructions(cwd, target, "opencode");
   return {
     command: "opencode",
-    args: ["run", "--format", "default", "--dir", cwd, "--title", "Tide Review", prompt],
+    args: ["run", "--format", "json", "--dir", cwd, "--title", "Tide Review", prompt],
     source: "opencode_prompt",
   };
 }

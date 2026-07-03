@@ -108,6 +108,21 @@ export interface ProductShellProviderUsage {
   observedAt?: string;
 }
 
+export interface ProductShellAgentMonitorPromptChoice {
+  choiceId: string;
+  label: string;
+  providerValue: string;
+  kind?: "allow_once" | "allow_always" | "reject_once" | "reject_always";
+}
+
+export interface ProductShellAgentMonitorPromptSnapshot {
+  promptId: string;
+  kind: "approval" | "question" | "mcp_elicitation";
+  message: string;
+  choices: ProductShellAgentMonitorPromptChoice[];
+  defaultChoiceId?: string;
+}
+
 export interface ProductShellAgentMonitorSession {
   threadId: string;
   agentId: ProductShellAgentIdentity;
@@ -121,6 +136,7 @@ export interface ProductShellAgentMonitorSession {
   changedAt?: string;
   queuedInputCount?: number;
   pendingPromptKind?: "approval" | "question" | "mcp_elicitation";
+  prompt?: ProductShellAgentMonitorPromptSnapshot;
   activityLabel?: string;
   planCompleted?: number;
   planTotal?: number;
@@ -138,6 +154,7 @@ export interface ProductShellAgentRuntimeSnapshot {
   changedAt?: string;
   queuedInputCount?: number;
   pendingPromptKind?: ProductShellAgentMonitorSession["pendingPromptKind"];
+  prompt?: ProductShellAgentMonitorPromptSnapshot;
   planCompleted?: number;
   planTotal?: number;
   nestedAgents?: number;

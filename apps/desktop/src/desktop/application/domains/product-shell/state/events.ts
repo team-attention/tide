@@ -11,6 +11,7 @@ import { defaultModelForProvider, providerCatalogFromPayload, providerModelsFrom
 import { applyDismissedProductShellEditorReferences, reconcileEditorDrafts } from "./workbench-editor.ts";
 import { projectsFromThreads } from "./view-model.ts";
 import { resolveProductShellActiveWorkbenchPaneId } from "./workbench-active-pane.ts";
+import { monitorPromptKindFromPrompt, monitorPromptSnapshot } from "./agent-monitor-prompt.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
 export function applyProductShellBackendEvent(
@@ -503,7 +504,7 @@ function applyRuntimeSnapshotBackendEvent(
           ...(running && changedAt !== undefined ? { startedAt: changedAt } : {}),
           ...(queuedInputCount !== undefined ? { queuedInputCount } : {}),
         },
-        payload.state === "running" ? ["pendingPromptKind"] : [],
+        payload.state === "running" ? ["pendingPromptKind", "prompt"] : [],
       );
     }
     case "prompt.changed": {
@@ -511,16 +512,25 @@ function applyRuntimeSnapshotBackendEvent(
       const pendingPromptKind = payload.prompt === null || payload.prompt === undefined
         ? undefined
         : monitorPromptKindFromPrompt(payload.prompt.kind);
+      const prompt = monitorPromptSnapshot(payload.prompt);
       const stateForPrompt: AgentRuntimeStateName =
         pendingPromptKind === "approval" ? "waiting_for_approval" : "waiting_for_input";
+      const clearKeys: Array<Exclude<keyof ProductShellAgentRuntimeSnapshot, "threadId" | "state">> = [];
+      if (pendingPromptKind === undefined) {
+        clearKeys.push("pendingPromptKind");
+      }
+      if (prompt === undefined) {
+        clearKeys.push("prompt");
+      }
       return updateRuntimeSnapshot(
         state,
         threadId,
         {
           state: state.runtimeSnapshotsByThreadId[threadId]?.state ?? stateForPrompt,
           pendingPromptKind,
+          ...(prompt !== undefined ? { prompt } : {}),
         },
-        pendingPromptKind === undefined ? ["pendingPromptKind"] : [],
+        clearKeys,
       );
     }
     case "agentRuntime.activityChanged": {
@@ -604,18 +614,6 @@ function providerInventoryFromPayload(payload: unknown): AgentChatProviderInvent
     })
     .filter((entry): entry is AgentChatProviderInventory["agents"][number] => entry !== null);
   return { agents };
-}
-
-function monitorPromptKindFromPrompt(
-  promptKind: AgentChatPromptState["kind"],
-): ProductShellAgentRuntimeSnapshot["pendingPromptKind"] | undefined {
-  if (promptKind === "approval" || promptKind === "permission") {
-    return "approval";
-  }
-  if (promptKind === "question" || promptKind === "choice") {
-    return "question";
-  }
-  return promptKind === "command_picker" ? "mcp_elicitation" : undefined;
 }
 
 function isRuntimeStateName(value: unknown): value is AgentRuntimeStateName {

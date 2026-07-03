@@ -3,6 +3,7 @@ import { createAgentChatUsageView } from "../../agent-chat/agent-chat.ts";
 import { worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
 import type { ProductShellAgentMonitorSession, ProductShellAgentRuntimeSnapshot, ProductShellState } from "./types.ts";
 import { activeSurfaceThreadId } from "./start.ts";
+import { monitorPromptKindFromPrompt, monitorPromptSnapshot } from "./agent-monitor-prompt.ts";
 
 export function deriveAgentMonitorSessions(state: ProductShellState): ProductShellAgentMonitorSession[] {
   const surfaceThreadId = activeSurfaceThreadId(state);
@@ -47,6 +48,7 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
     const promptKind = chatState?.promptState?.kind;
     const pendingPromptKind =
       promptKind !== undefined ? monitorPromptKind(promptKind) : snapshot?.pendingPromptKind;
+    const prompt = monitorPromptSnapshot(chatState?.promptState) ?? snapshot?.prompt;
     const activityLabel = monitorActivityLabel(activity);
     const usageLabel = usage?.tokensLabel ?? usage?.contextDetailLabel ?? usage?.contextPercentLabel ?? snapshot?.usageLabel;
     const providerSessionRef = chatState?.thread?.agentBinding.providerSessionRef?.value ?? snapshot?.providerSessionRef;
@@ -70,6 +72,7 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
       ...(pendingPromptKind !== undefined
         ? { pendingPromptKind }
         : {}),
+      ...(prompt !== undefined ? { prompt } : {}),
       ...(activityLabel !== undefined ? { activityLabel } : {}),
       ...(activity?.planCompleted !== undefined ? { planCompleted: activity.planCompleted } : {}),
       ...(activity?.planTotal !== undefined ? { planTotal: activity.planTotal } : {}),
@@ -100,17 +103,7 @@ function monitorSnapshotLive(snapshot: ProductShellAgentRuntimeSnapshot | undefi
   );
 }
 
-function monitorPromptKind(
-  promptKind: NonNullable<AgentChatShellState["promptState"]>["kind"],
-): ProductShellAgentMonitorSession["pendingPromptKind"] | undefined {
-  if (promptKind === "approval" || promptKind === "permission") {
-    return "approval";
-  }
-  if (promptKind === "question" || promptKind === "choice") {
-    return "question";
-  }
-  return promptKind === "command_picker" ? "mcp_elicitation" : undefined;
-}
+const monitorPromptKind = monitorPromptKindFromPrompt;
 
 function monitorActivityLabel(
   activity: AgentChatShellState["liveActivityEnrichment"] | undefined,

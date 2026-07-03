@@ -74,7 +74,7 @@ test("opencode review command builds a run prompt with the selected cwd", async 
   });
 
   assert.equal(command?.command, "opencode");
-  assert.deepEqual(command?.args.slice(0, 6), ["run", "--format", "default", "--dir", "/repo", "--title"]);
+  assert.deepEqual(command?.args.slice(0, 6), ["run", "--format", "json", "--dir", "/repo", "--title"]);
   assert.equal(command?.args[6], "Tide Review");
   assert.equal(command?.source, "opencode_prompt");
   assert.match(command?.args.at(-1) ?? "", /Find regressions/);

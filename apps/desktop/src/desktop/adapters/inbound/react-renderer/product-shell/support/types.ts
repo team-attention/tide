@@ -1,5 +1,5 @@
 import type { AgentChatBackendEvent, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerSurfaceKind, AgentChatPromptStepAnswer, AgentChatThreadSummary } from "../../../../../application/domains/agent-chat/agent-chat.ts";
-import type { DropZone, ProductShellBackendCommand, ProductShellFileTreeMenu, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings, ReviewFinding } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { DropZone, ProductShellAgentMonitorPromptChoice, ProductShellBackendCommand, ProductShellFileTreeMenu, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings, ReviewFinding } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
@@ -213,6 +213,11 @@ export interface ProductShellHandlers {
   onRemoveContextChip: (id: string) => void;
   onSetContextChipComment: (id: string, comment: string) => void;
   onAnswerPromptText: (value: string, notes?: string) => void;
+  onAnswerMonitorPromptChoice: (
+    threadId: string,
+    promptId: string,
+    choice: ProductShellAgentMonitorPromptChoice,
+  ) => void;
   // Submit a multi-step prompt (wizard): one answer per step, all at once.
   onAnswerPromptSteps: (stepAnswers: AgentChatPromptStepAnswer[]) => void;
   onSubmit: () => void;

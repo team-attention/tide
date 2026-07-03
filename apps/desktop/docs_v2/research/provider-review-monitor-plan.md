@@ -22,19 +22,19 @@ This branch implements the first product slice of the plan:
 - Main-process review runner:
   - Codex: `codex review` CLI fallback for uncommitted/base/commit/custom.
   - Claude: `claude ultrareview` for base-branch review, and local `claude -p` prompt review for other targets.
-  - opencode: `opencode run` prompt review.
+  - opencode: `opencode run --format json` prompt review.
 - Review pane target/provider controls, running state, raw output fallback, persisted structured finding extraction, and "Ask agent to fix" handoff into the composer.
 - Main-process Git mutation IPC for file-level and hunk-level stage, unstage, and discard, plus commit and push.
 - Changes pane Git handoff bar and hunk action strip wired to those Tide-owned Git IPC commands.
 - Scratch-repo fixtures for branch-diff review prompts and commit review prompts.
 - Persistent Agent Monitor panel derived from existing product-shell thread/runtime/prompt/activity state.
 - Agent Monitor runtime snapshots keyed by thread id, preserving background activity detail even when the background chat state is not hydrated.
+- Agent Monitor inline choice-answer controls for complete single-prompt snapshots; incomplete, free-text, multi-select, and multi-step prompts still route through thread focus.
 - Local provider inventory surfaced as read-only `tide_local` capabilities for installed Codex plugins/skills/MCP, Claude installed plugins/MCP, and opencode local plugins/MCP.
 
 Deferred follow-up:
 
 - Codex app-server `review/start` schema fixture and native review path.
-- Inline answer controls inside Agent Monitor.
 - Adoption/import of provider-owned background sessions outside Tide.
 
 ## Design Principle
@@ -394,11 +394,7 @@ Required:
    - Capture `opencode run --format json` review-prompt output sample.
    - Decide structured parsing per provider from captured output, not assumptions.
 
-2. Finish Agent Monitor prompt controls.
-   - Add inline answer controls only when prompt snapshots are complete.
-   - Consider a backend-emitted `monitorSnapshot` only if renderer-held runtime snapshots prove insufficient.
-
-3. Add provider-specific external session import only after fixtures.
+2. Add provider-specific external session import only after fixtures.
    - Claude: `claude agents --json`.
    - opencode: `opencode session list` / export.
    - Codex: app-server/cloud exploration only after local protocol evidence.

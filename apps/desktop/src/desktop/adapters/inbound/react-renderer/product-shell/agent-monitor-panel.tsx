@@ -81,6 +81,7 @@ function MonitorSessionRow(props: {
 }): ReactElement {
   const { session, now, handlers } = props;
   const cwd = session.cwd ?? "";
+  const prompt = session.prompt;
   return (
     <MonitorSession data-active={session.active ? "true" : "false"}>
       <MonitorSessionMain>
@@ -93,6 +94,21 @@ function MonitorSessionRow(props: {
         <MonitorSessionDetail>
           {session.activityLabel ?? promptLabel(session.pendingPromptKind) ?? session.usageLabel ?? session.projectName ?? cwd}
         </MonitorSessionDetail>
+        {prompt !== undefined ? (
+          <MonitorPromptActions aria-label={prompt.message}>
+            {prompt.choices.map((choice) => (
+              <MonitorPromptButton
+                key={choice.choiceId}
+                type="button"
+                data-kind={choice.kind ?? "neutral"}
+                aria-label={`Answer ${choice.label}`}
+                onClick={() => handlers.onAnswerMonitorPromptChoice(session.threadId, prompt.promptId, choice)}
+              >
+                {choice.label}
+              </MonitorPromptButton>
+            ))}
+          </MonitorPromptActions>
+        ) : null}
       </MonitorSessionMain>
       <MonitorActions>
         <MonitorIconButton type="button" title="Focus thread" aria-label="Focus thread" onClick={() => handlers.onThreadSelect(session.threadId)}>
@@ -309,6 +325,44 @@ const MonitorSessionDetail = styled.div`
   font-size: 11.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
+`;
+
+const MonitorPromptActions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+`;
+
+const MonitorPromptButton = styled.button`
+  min-width: 0;
+  max-width: 160px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--tide-line);
+  border-radius: 7px;
+  background: var(--tide-panel);
+  color: var(--tide-text);
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &[data-kind^="allow"] {
+    border-color: color-mix(in srgb, var(--tide-success) 45%, var(--tide-line));
+    color: var(--tide-success);
+  }
+
+  &[data-kind^="reject"] {
+    border-color: color-mix(in srgb, var(--tide-danger) 38%, var(--tide-line));
+    color: var(--tide-danger);
+  }
+
+  &:hover {
+    background: var(--tide-selection);
+  }
 `;
 
 const MonitorActions = styled.div`

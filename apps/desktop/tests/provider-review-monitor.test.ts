@@ -9,6 +9,7 @@ import { AgentMonitorPanel } from "../src/desktop/adapters/inbound/react-rendere
 import type { ProductShellHandlers } from "../src/desktop/adapters/inbound/react-renderer/product-shell/support/types.ts";
 import {
   applyProductShellBackendEvent,
+  answerProductShellMonitorPromptChoice,
   createProductShellState,
   createProductShellViewModel,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
@@ -63,8 +64,46 @@ test("agent monitor sessions derive needs-attention state from background runtim
   assert.equal(view.agentMonitorSessions[0]?.threadId, "thread-review");
   assert.equal(view.agentMonitorSessions[0]?.state, "waiting_for_approval");
   assert.equal(view.agentMonitorSessions[0]?.pendingPromptKind, "approval");
+  assert.equal(view.agentMonitorSessions[0]?.prompt?.promptId, "prompt-review");
+  assert.deepEqual(
+    view.agentMonitorSessions[0]?.prompt?.choices.map((choice) => `${choice.choiceId}:${choice.label}`),
+    ["allow:Allow", "deny:Deny"],
+  );
   assert.equal(view.agentMonitorSessions[0]?.queuedInputCount, 1);
   assert.equal(view.agentMonitorSessions[0]?.cwd, "/repo/tide");
+});
+
+test("agent monitor prompt snapshots answer background choices by thread id", () => {
+  const listed = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: { threads: [threadSummary()] },
+  });
+  const prompted = applyProductShellBackendEvent(listed, {
+    kind: "prompt.changed",
+    payload: { threadId: "thread-review", prompt: approvalPrompt() },
+  });
+  const session = createProductShellViewModel(prompted).agentMonitorSessions[0];
+  const choice = session?.prompt?.choices.find((candidate) => candidate.choiceId === "allow");
+
+  assert.notEqual(choice, undefined);
+  const answered = answerProductShellMonitorPromptChoice(prompted, {
+    threadId: "thread-review",
+    promptId: "prompt-review",
+    choice: choice!,
+  });
+
+  assert.deepEqual(answered.command, {
+    kind: "prompt.answer",
+    payload: {
+      threadId: "thread-review",
+      promptId: "prompt-review",
+      choiceId: "allow",
+      value: "yes",
+    },
+  });
+  assert.equal(answered.state.runtimeSnapshotsByThreadId["thread-review"]?.state, "running");
+  assert.equal(answered.state.runtimeSnapshotsByThreadId["thread-review"]?.pendingPromptKind, undefined);
+  assert.equal(answered.state.runtimeSnapshotsByThreadId["thread-review"]?.prompt, undefined);
 });
 
 test("agent monitor snapshots preserve background activity without active-chat leakage", () => {
@@ -114,6 +153,7 @@ test("agent monitor row actions target the selected thread and active runtime", 
   let selectedThreadId: string | null = null;
   let openedThreadId: string | null = null;
   let interrupted = false;
+  let answeredPrompt: { threadId: string; promptId: string; value: string } | null = null;
   const container = dom.window.document.createElement("div");
   dom.window.document.body.appendChild(container);
   const root = createRoot(container);
@@ -128,6 +168,9 @@ test("agent monitor row actions target the selected thread and active runtime", 
     onInterrupt: () => {
       interrupted = true;
     },
+    onAnswerMonitorPromptChoice: (threadId, promptId, choice) => {
+      answeredPrompt = { threadId, promptId, value: choice.providerValue };
+    },
   } as Partial<ProductShellHandlers> as ProductShellHandlers;
 
   await act(async () => {
@@ -141,6 +184,15 @@ test("agent monitor row actions target the selected thread and active runtime", 
             cwd: "/repo/tide",
             state: "running",
             active: true,
+            pendingPromptKind: "approval",
+            prompt: {
+              promptId: "prompt-review",
+              kind: "approval",
+              message: "Approve git command?",
+              choices: [
+                { choiceId: "allow", label: "Allow", providerValue: "yes", kind: "allow_once" },
+              ],
+            },
           } satisfies ProductShellAgentMonitorSession,
         ],
         handlers,
@@ -150,13 +202,16 @@ test("agent monitor row actions target the selected thread and active runtime", 
   const focusButton = container.querySelector('button[aria-label="Focus thread"]') as HTMLButtonElement | null;
   const changesButton = container.querySelector('button[aria-label="Open changes"]') as HTMLButtonElement | null;
   const stopButton = container.querySelector('button[aria-label="Stop active agent"]') as HTMLButtonElement | null;
+  const allowButton = container.querySelector('button[aria-label="Answer Allow"]') as HTMLButtonElement | null;
   assert.notEqual(focusButton, null);
   assert.notEqual(changesButton, null);
   assert.notEqual(stopButton, null);
+  assert.notEqual(allowButton, null);
 
   await act(async () => {
     focusButton?.click();
     changesButton?.click();
+    allowButton?.click();
     stopButton?.click();
   });
   await act(async () => {
@@ -165,6 +220,7 @@ test("agent monitor row actions target the selected thread and active runtime", 
 
   assert.equal(selectedThreadId, "thread-review");
   assert.equal(openedThreadId, "thread-review");
+  assert.deepEqual(answeredPrompt, { threadId: "thread-review", promptId: "prompt-review", value: "yes" });
   assert.equal(interrupted, true);
 });
 
@@ -207,6 +263,11 @@ function approvalPrompt(): AgentChatPromptState {
     agentId: "codex",
     kind: "approval",
     message: "Approve git command?",
+    choices: [
+      { choiceId: "allow", label: "Allow", providerValue: "yes", kind: "allow_once" },
+      { choiceId: "deny", label: "Deny", providerValue: "no", kind: "reject_once" },
+    ],
+    defaultChoiceId: "deny",
     source: "provider_signal",
   };
 }
