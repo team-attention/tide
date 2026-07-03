@@ -2,14 +2,39 @@
 
 Date: 2026-07-03
 
-Status: research/design only. No implementation has been approved.
+Status: initial implementation in this branch.
 
-This memo narrows the Codex app parity discussion to the two gaps that look most valuable for Tide now:
+This memo narrows the Tide workflow gap discussion to the two areas that look most valuable now:
 
 1. Review / Git handoff.
 2. Agent monitoring.
 
-It intentionally deprioritizes scheduled tasks and plugin marketplaces. Without a service-side scheduler, scheduled tasks can only be local app-running reminders. Without a marketplace backend and connector auth model, plugin parity should be reduced to local inventory/management later.
+It intentionally deprioritizes scheduled tasks and plugin marketplaces. Without a service-side scheduler, scheduled tasks can only be local app-running reminders. Without a marketplace backend and connector auth model, plugin work should be reduced to local inventory/management later.
+
+Scope note: evidence in this memo is limited to public documentation, user-facing CLI help, and Tide source.
+
+## Implemented In This Branch
+
+This branch implements the first product slice of the plan:
+
+- Workbench `review` pane kind with a renderer Review pane.
+- Changes pane `Review` entry point.
+- Main-process review runner:
+  - Codex: `codex review` CLI fallback for uncommitted/base/commit/custom.
+  - Claude: `claude ultrareview` for base-branch review, and local `claude -p` prompt review for other targets.
+  - opencode: `opencode run` prompt review.
+- Review pane target/provider controls, running state, raw output fallback, simple finding extraction, and "Ask agent to fix" handoff into the composer.
+- Main-process Git mutation IPC for file-level stage, unstage, discard, commit, and push.
+- Changes pane Git handoff bar wired to those Tide-owned Git IPC commands.
+- Persistent Agent Monitor panel derived from existing product-shell thread/runtime/prompt/activity state.
+
+Deferred follow-up:
+
+- Codex app-server `review/start` schema fixture and native review path.
+- Hunk-level stage/unstage/discard.
+- Generated commit message flow.
+- Inline answer controls inside Agent Monitor.
+- Adoption/import of provider-owned background sessions outside Tide.
 
 ## Design Principle
 
@@ -68,7 +93,7 @@ Official docs inspected:
 | Review scopes | Uncommitted, base branch, commit, custom prompt | `ultrareview` target can be PR/base/current branch, but cloud-hosted | Prompt-defined; can use git diff context or provider tools | UI scopes should map to provider-supported subsets. |
 | Review as transcript turn | Codex docs say review runs show as transcript turns | Stream-json/print output can be captured, but not same semantic mode | JSON events can be captured from `run --format json` | Tide review result model should be independent from transcript shape. |
 | Git changes/diff | Tide can provide locally with git | Tide can provide locally with git | Tide can provide locally with git | Changes pane should remain Tide-owned. |
-| Stage/commit/push | Codex app has product flow; Tide not implemented | Provider could run git via tools, but Tide should own explicit git actions | Provider could run git via tools, but Tide should own explicit git actions | Git mutation must be Tide-owned with confirmation. |
+| Stage/commit/push | Codex app has product flow; Tide now has initial file-level Git handoff | Provider could run git via tools, but Tide should own explicit git actions | Provider could run git via tools, but Tide should own explicit git actions | Git mutation must stay Tide-owned with confirmation. |
 | Live runtime state | app-server events | stream-json events and Claude background agents | ACP events | Common monitor can use Tide runtime events first. |
 | Background sessions outside Tide | Codex external app-server/cloud surfaces exist, not yet integrated | `claude agents --json` is scriptable | `opencode session list/export`, server/web exist | Monitor can import provider-owned external sessions only after attach/adoption semantics are proven. |
 
@@ -82,7 +107,7 @@ Turn Tide's current read-only Changes pane into an explicit review and handoff w
 2. Run the best available review for the selected provider.
 3. Inspect findings.
 4. Ask an agent to fix selected findings.
-5. Later: stage, commit, and push through Tide-owned git commands.
+5. Stage, commit, and push through Tide-owned git commands.
 
 ### Non-goals
 
@@ -193,11 +218,13 @@ Keep git mutation Tide-owned:
 - Commit dialog with generated message.
 - Push with explicit remote/branch confirmation.
 
+Initial implementation covers file-level stage/unstage/discard, manual commit messages, and confirmed push through Main-process IPC. Hunk-level actions and generated commit messages remain follow-up work.
+
 Implementation should extend Main-process git IPC rather than route these through providers. Provider agents may suggest a commit message, but Tide should execute the git command.
 
-### Tests And Fixtures
+### Remaining Tests And Fixtures
 
-Required before implementation:
+Required before extending this slice:
 
 - Scratch repo fixture with:
   - unstaged file
@@ -358,32 +385,36 @@ Required:
 - Stop/focus/open-changes command dispatch tests.
 - Provider external import tests only after each provider command output is captured.
 
-## Recommended Work Order
+## Remaining Work Order
 
-1. Finish provider review adapter research.
-   - Confirm Codex `review/start` schema/fixture.
+1. Harden provider review adapters.
+   - Confirm Codex `review/start` schema/fixture before adding a native app-server path.
    - Capture Claude `ultrareview --json` sample if account/environment permits.
    - Capture `opencode run --format json` review-prompt output sample.
-   - Decide fallback order per provider.
+   - Decide structured parsing per provider from captured output, not assumptions.
 
-2. Build the review pane around the Review run model.
-   - Add Review pane UI.
-   - Wire Codex native or CLI runner.
-   - Add Claude/opencode fallback only if sample output is known.
+2. Deepen the Review pane.
+   - Add structured finding persistence.
+   - Link file/line findings into existing Editor/Diff panes.
+   - Add renderer tests for target selection, unavailable states, and result rendering.
+   - Add command mapping tests for Codex, Claude, and opencode review targets.
 
-3. Build Agent Monitor from existing runtime state/events.
-   - Add persistent monitor overlay/pane.
-   - Include focus/open changes/stop actions.
-   - Avoid external provider session adoption until attach/resume behavior is proven.
+3. Deepen Tide-owned Git handoff.
+   - Add hunk-level stage/unstage/discard.
+   - Add generated commit message flow.
+   - Add explicit remote/branch push confirmation.
+   - Add scratch-repo fixtures for staged, unstaged, untracked, branch diff, and commit review cases.
 
-4. Add Tide-owned Git handoff.
-   - Stage/unstage/revert.
-   - Commit dialog.
-   - Push confirmation.
+4. Move Agent Monitor toward backend-owned snapshots.
+   - Store durable `runtimeSnapshotsByThreadId` or equivalent backend-owned monitor state.
+   - Preserve richer background-thread detail even when a thread is not hydrated.
+   - Add inline answer controls only when prompt snapshots are complete.
+   - Add stop/focus/open-changes dispatch tests.
 
-5. Move Monitor to backend-owned snapshots and provider-specific imports.
-   - Store `runtimeSnapshotsByThreadId`.
-   - Import Claude/opencode external sessions only as read-only/adoptable after fixtures.
+5. Add provider-specific external session import only after fixtures.
+   - Claude: `claude agents --json`.
+   - opencode: `opencode session list` / export.
+   - Codex: app-server/cloud exploration only after local protocol evidence.
 
 6. Add local plugin inventory.
    - Local installed plugins/skills/MCP inventory per agent.

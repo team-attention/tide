@@ -11,6 +11,7 @@ import { WorkbenchDiffPane } from "./diff-pane.tsx";
 import { WorkbenchTerminalPane } from "./terminal-pane.tsx";
 import { WorkbenchLauncherPane } from "./launcher-pane.tsx";
 import { ChangesPanel } from "./changes-panel.tsx";
+import { ReviewPanel } from "./review-panel.tsx";
 import { ErrorBoundary } from "../support/error-boundary.tsx";
 import { WorkbenchPaneKindLabel, WorkbenchPaneSurface } from "./workbench-pane.parts.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
@@ -146,6 +147,21 @@ function WorkbenchPaneContent(props: {
           cwd={pane.cwd ?? ""}
           onGitChanges={handlers.onGitChanges}
           onGitFileDiff={handlers.onGitFileDiff}
+          onOpenReview={handlers.onOpenReview}
+          onGitStageFile={handlers.onGitStageFile}
+          onGitUnstageFile={handlers.onGitUnstageFile}
+          onGitDiscardFile={handlers.onGitDiscardFile}
+          onGitCommit={handlers.onGitCommit}
+          onGitPush={handlers.onGitPush}
+        />
+      );
+    case "review":
+      return (
+        <ReviewPanel
+          key={pane.cwd ?? ""}
+          cwd={pane.cwd ?? ""}
+          agentId={pane.agentId}
+          handlers={handlers}
         />
       );
     default:

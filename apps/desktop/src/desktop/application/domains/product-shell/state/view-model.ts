@@ -11,6 +11,7 @@ import { appendUntitledPanes, composerWorkbenchAppChrome, untitledEditorDraft } 
 import { agentBindingForShellAgent, cloneLaunchOptions } from "./start.ts";
 import { shellTimestamp } from "./create.ts";
 import { createSelectorFor } from "./create-selector.ts";
+import { deriveAgentMonitorSessions } from "./agent-monitor.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
 const shellSelector = createSelectorFor<ProductShellState>();
@@ -293,6 +294,8 @@ export function createProductShellViewModel(
     providerInventory: state.providerInventory,
     providerCatalogs: state.providerCatalogs,
     settingsOpen: state.settingsOpen,
+    agentMonitorOpen: state.agentMonitorOpen,
+    agentMonitorSessions: deriveAgentMonitorSessions(state),
     flatThreads: threadList.flatThreads,
     liveThreads: threadList.liveThreads,
     numberedThreads: threadList.numberedThreads,

@@ -1,4 +1,4 @@
-import type { AgentChatAgentBinding, AgentChatBackendCommand, AgentChatBranchOption, AgentChatCommandOption, AgentChatProviderCatalog, AgentChatProviderInventory, AgentChatShellState, AgentChatShellViewModel, AgentChatThreadScope, AgentChatUsage, AgentChatUsageView, AgentChatWorktreeOption } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatAgentBinding, AgentChatBackendCommand, AgentChatBranchOption, AgentChatCommandOption, AgentChatProviderCatalog, AgentChatProviderInventory, AgentChatShellState, AgentChatShellViewModel, AgentChatThreadScope, AgentChatUsage, AgentChatUsageView, AgentChatWorktreeOption, AgentRuntimeStateName } from "../../agent-chat/agent-chat.ts";
 import type { AppChromeBackendCommand, AppChromeEditorNavigationTarget, AppChromeEditorReferenceList, AppChromeState, AppChromeViewModel, AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import type { WorkbenchSplitNode } from "./workbench-split-tree.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
@@ -106,6 +106,29 @@ export interface ProductShellProviderUsage {
   agentId: ProductShellAgentIdentity;
   usage: AgentChatUsage;
   observedAt?: string;
+}
+
+export interface ProductShellAgentMonitorSession {
+  threadId: string;
+  agentId: ProductShellAgentIdentity;
+  title: string;
+  cwd?: string;
+  projectName?: string;
+  branch?: string;
+  worktree?: string;
+  state: AgentRuntimeStateName;
+  startedAt?: string;
+  changedAt?: string;
+  queuedInputCount?: number;
+  pendingPromptKind?: "approval" | "question" | "mcp_elicitation";
+  activityLabel?: string;
+  planCompleted?: number;
+  planTotal?: number;
+  nestedAgents?: number;
+  nestedToolCalls?: number;
+  usageLabel?: string;
+  providerSessionRef?: string;
+  active: boolean;
 }
 
 // A top-level pinned item: a standalone pinned Thread or a pinned Project. The Pinned
@@ -313,6 +336,8 @@ export interface ProductShellState {
   worktreeSettings: ProductShellWorktreeSettings;
   // Whether the Settings panel (modal) is open.
   settingsOpen: boolean;
+  // Persistent operational monitor for running/waiting agent sessions.
+  agentMonitorOpen: boolean;
   draftActiveWorkbenchPaneId: string | null;
   // The Composer's backend Draft Thread: a real (unstarted, no-agent) thread that hosts the
   // Terminal/Editor/Diff/Browser panes pre-send (their PTYs/files/webviews need a
@@ -402,7 +427,7 @@ export type ProductShellBackendCommand =
       kind: "workbench.command";
       payload: {
         threadId: string;
-        command: "open_launcher" | "open_terminal" | "open_diff";
+        command: "open_launcher" | "open_terminal" | "open_diff" | "open_review";
         targetPaneId?: string;
       };
     }
@@ -630,6 +655,8 @@ export interface ProductShellViewModel {
   providerInventory: AgentChatProviderInventory | null;
   providerCatalogs: Record<string, AgentChatProviderCatalog>;
   settingsOpen: boolean;
+  agentMonitorOpen: boolean;
+  agentMonitorSessions: ProductShellAgentMonitorSession[];
   flatThreads: ProductShellThreadView[];
   // Threads with a live in-process runtime, in Left Rail render order — the set the
   // multitask switcher (⌥Tab) cycles. See specs/multitask-navigation.md.

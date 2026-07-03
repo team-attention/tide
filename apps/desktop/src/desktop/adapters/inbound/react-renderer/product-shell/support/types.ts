@@ -25,6 +25,10 @@ export interface GitChangesResult {
   files: { path: string; status: GitChangeStatus; additions?: number; deletions?: number }[];
 }
 
+export type GitActionResult =
+  | { ok: true; message: string }
+  | { ok: false; message: string };
+
 // Branch + uncommitted files for the Changes pane (self-fetched from the pane's cwd).
 export interface GitChangesViewResult {
   isGitRepo: boolean;
@@ -37,6 +41,36 @@ export interface GitChangesView {
   branch: string | null;
   revision: number;
   files: GitChangesResult["files"];
+}
+
+export type ReviewProvider = "codex" | "claude" | "opencode";
+
+export type ReviewTarget =
+  | { kind: "uncommitted" }
+  | { kind: "base_branch"; baseBranch: string }
+  | { kind: "commit"; sha: string; title?: string }
+  | { kind: "custom"; instructions: string; diff?: string };
+
+export type ReviewRunSource =
+  | "codex_cli"
+  | "claude_ultrareview"
+  | "claude_prompt"
+  | "opencode_prompt";
+
+export interface ReviewRunResult {
+  ok: boolean;
+  provider: ReviewProvider;
+  source: ReviewRunSource;
+  target: ReviewTarget;
+  cwd: string;
+  command: string;
+  startedAt: string;
+  completedAt: string;
+  rawText: string;
+  stderr?: string;
+  exitCode?: number | null;
+  signal?: string | null;
+  message?: string;
 }
 
 export interface WorkbenchImageLoadResult {
@@ -89,6 +123,12 @@ export interface ProjectRegistryBridge {
   gitContext(cwd: string): Promise<GitContextResult>;
   gitChanges(cwd: string): Promise<GitChangesResult>;
   gitFileDiff(cwd: string, relPath: string): Promise<string>;
+  gitStageFile(cwd: string, relPath: string): Promise<GitActionResult>;
+  gitUnstageFile(cwd: string, relPath: string): Promise<GitActionResult>;
+  gitDiscardFile(cwd: string, relPath: string): Promise<GitActionResult>;
+  gitCommit(cwd: string, message: string): Promise<GitActionResult>;
+  gitPush(cwd: string): Promise<GitActionResult>;
+  runReview(cwd: string, provider: ReviewProvider, target: ReviewTarget): Promise<ReviewRunResult>;
   listCommands(cwd: string, agentId: string): Promise<AgentChatCommandOption[]>;
   // Structural FileTree mutations (Main-owned). `root` is the absolute workspace
   // root; paths are workspace-relative. Trash is the recoverable OS Trash.
@@ -194,9 +234,17 @@ export interface ProductShellHandlers {
   // the backend singleton on that draft.
   // Spec: git-changes-view.
   onOpenChanges: (cwd?: string) => void;
+  onOpenThreadChanges: (threadId: string) => void;
+  onOpenReview: (cwd?: string) => void;
   // The Changes pane self-fetches its data from its cwd (Main-process git).
   onGitChanges: (cwd: string) => Promise<GitChangesViewResult>;
   onGitFileDiff: (cwd: string, relPath: string) => Promise<string>;
+  onGitStageFile: (cwd: string, relPath: string) => Promise<GitActionResult>;
+  onGitUnstageFile: (cwd: string, relPath: string) => Promise<GitActionResult>;
+  onGitDiscardFile: (cwd: string, relPath: string) => Promise<GitActionResult>;
+  onGitCommit: (cwd: string, message: string) => Promise<GitActionResult>;
+  onGitPush: (cwd: string) => Promise<GitActionResult>;
+  onRunReview: (cwd: string, provider: ReviewProvider, target: ReviewTarget) => Promise<ReviewRunResult>;
   onLoadWorkbenchImage: (cwd: string, relativePath: string) => Promise<WorkbenchImageLoadResult | null>;
   onEditorPickerFilter: (filter: string) => void;
   onEditorPickerSelect: (relativePath: string) => void;
@@ -226,6 +274,7 @@ export interface ProductShellHandlers {
   onProjectCreateWorktreeCancel: () => void;
   onOpenSettings: () => void;
   onCloseSettings: () => void;
+  onAgentMonitorToggle: () => void;
   onWorktreeSettingsChange: (patch: Partial<ProductShellWorktreeSettings>) => void;
   onThemeChange: (pref: TideThemePreference) => void;
   onPinnedProjectSelect: (projectId: string) => void;

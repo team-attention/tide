@@ -7,7 +7,8 @@ export type WorkbenchPaneKind =
   | "image"
   | "terminal"
   | "launcher"
-  | "changes";
+  | "changes"
+  | "review";
 
 export type WorkbenchFocusOwner = "composer" | "workbench";
 
@@ -295,6 +296,18 @@ export interface ChangesPaneState {
   cwd: string;
 }
 
+// Tide-owned Review pane. The pane carries only execution context; the renderer runs the
+// provider-specific review runner through Main IPC and owns the transient result state.
+export interface ReviewPaneState {
+  paneId: WorkbenchPaneId;
+  kind: "review";
+  title: string;
+  revision: string;
+  updatedAt: string;
+  cwd: string;
+  agentId: "codex" | "claude" | "opencode";
+}
+
 export type WorkbenchPaneState =
   | BrowserPaneState
   | TerminalPaneState
@@ -302,7 +315,8 @@ export type WorkbenchPaneState =
   | ImagePaneState
   | DiffPaneState
   | LauncherPaneState
-  | ChangesPaneState;
+  | ChangesPaneState
+  | ReviewPaneState;
 
 export interface BrowserPaneRef extends WorkbenchPaneRef {
   kind: "browser";
@@ -322,7 +336,7 @@ export interface BrowserPaneRef extends WorkbenchPaneRef {
 }
 
 export interface NonBrowserWorkbenchPaneRef extends WorkbenchPaneRef {
-  kind: "diff" | "editor" | "image" | "terminal" | "changes";
+  kind: "diff" | "editor" | "image" | "terminal" | "changes" | "review";
   root?: string;
   filePath?: string;
   relativePath?: string;
@@ -341,6 +355,7 @@ export interface NonBrowserWorkbenchPaneRef extends WorkbenchPaneRef {
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  agentId?: "codex" | "claude" | "opencode";
   terminalRole?: "session" | "command_result" | "provider_readiness";
   status?: "ready" | "running" | "completed" | "failed";
   expectedCompletion?: "process_exit" | "retry_preflight";

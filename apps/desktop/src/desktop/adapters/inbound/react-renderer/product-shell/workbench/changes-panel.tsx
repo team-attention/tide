@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactElement } from "react";
 import { styled } from "styled-components";
-import { GitBranch, PanelLeftClose, PanelLeftOpen, RefreshCw } from "lucide-react";
+import { ClipboardCheck, GitBranch, PanelLeftClose, PanelLeftOpen, RefreshCw } from "lucide-react";
 import { createDiffView } from "./diff-pane.tsx";
 import type { GitChangeStatus, GitChangesViewResult } from "../support/types.ts";
 // First-class read-only git "Changes" Workbench pane (spec: git-changes-view): the repo's
@@ -27,13 +27,32 @@ export function ChangesPanel(props: {
   cwd: string;
   onGitChanges: (cwd: string) => Promise<GitChangesViewResult>;
   onGitFileDiff: (cwd: string, relPath: string) => Promise<string>;
+  onOpenReview: (cwd: string) => void;
+  onGitStageFile: (cwd: string, relPath: string) => Promise<{ ok: boolean; message: string }>;
+  onGitUnstageFile: (cwd: string, relPath: string) => Promise<{ ok: boolean; message: string }>;
+  onGitDiscardFile: (cwd: string, relPath: string) => Promise<{ ok: boolean; message: string }>;
+  onGitCommit: (cwd: string, message: string) => Promise<{ ok: boolean; message: string }>;
+  onGitPush: (cwd: string) => Promise<{ ok: boolean; message: string }>;
 }): ReactElement {
-  const { cwd, onGitChanges, onGitFileDiff } = props;
+  const {
+    cwd,
+    onGitChanges,
+    onGitFileDiff,
+    onOpenReview,
+    onGitStageFile,
+    onGitUnstageFile,
+    onGitDiscardFile,
+    onGitCommit,
+    onGitPush,
+  } = props;
   const [data, setData] = useState<GitChangesViewResult>({ isGitRepo: true, branch: null, files: [] });
   const [nonce, setNonce] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [diff, setDiff] = useState<string>("");
   const [loadingDiff, setLoadingDiff] = useState(false);
+  const [gitBusy, setGitBusy] = useState(false);
+  const [gitNotice, setGitNotice] = useState<{ ok: boolean; message: string } | null>(null);
+  const [commitMessage, setCommitMessage] = useState("");
   // GitHub-style file tree: drag the divider to resize it, or collapse it so the diff
   // takes the full pane width. Renderer-local view state (not persisted).
   const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH);
@@ -121,6 +140,53 @@ export function ChangesPanel(props: {
     setDragStart(null);
   }
 
+  async function runFileGitAction(action: "stage" | "unstage" | "discard"): Promise<void> {
+    if (selected === null || gitBusy) {
+      return;
+    }
+    if (
+      action === "discard" &&
+      !window.confirm(`Discard changes in ${selected}? This cannot be undone from Tide.`)
+    ) {
+      return;
+    }
+    setGitBusy(true);
+    const result =
+      action === "stage"
+        ? await onGitStageFile(cwd, selected)
+        : action === "unstage"
+          ? await onGitUnstageFile(cwd, selected)
+          : await onGitDiscardFile(cwd, selected);
+    setGitNotice(result);
+    setGitBusy(false);
+    setNonce((value) => value + 1);
+  }
+
+  async function commitChanges(): Promise<void> {
+    const message = commitMessage.trim();
+    if (message.length === 0 || gitBusy) {
+      return;
+    }
+    setGitBusy(true);
+    const result = await onGitCommit(cwd, message);
+    setGitNotice(result);
+    if (result.ok) {
+      setCommitMessage("");
+    }
+    setGitBusy(false);
+    setNonce((value) => value + 1);
+  }
+
+  async function pushBranch(): Promise<void> {
+    if (gitBusy || !window.confirm(`Push ${branch ?? "current branch"} from ${cwd}?`)) {
+      return;
+    }
+    setGitBusy(true);
+    const result = await onGitPush(cwd);
+    setGitNotice(result);
+    setGitBusy(false);
+  }
+
   return (
     <ChangesPaneFrame role="group" aria-label="Working tree changes">
       <ChangesHeader>
@@ -153,6 +219,16 @@ export function ChangesPanel(props: {
           </ChangesStat>
         )}
         <ChangesHeaderSpacer />
+        <ChangesActionButton
+          type="button"
+          title="Review changes"
+          aria-label="Review changes"
+          disabled={!isGitRepo}
+          onClick={() => onOpenReview(cwd)}
+        >
+          <ClipboardCheck size={14} strokeWidth={1.9} aria-hidden />
+          <span>Review</span>
+        </ChangesActionButton>
         <ChangesIconButton
           type="button"
           title="Refresh"
@@ -162,6 +238,54 @@ export function ChangesPanel(props: {
           <RefreshCw size={14} strokeWidth={1.9} aria-hidden />
         </ChangesIconButton>
       </ChangesHeader>
+      <ChangesHandoffBar>
+        <ChangesActionButton
+          type="button"
+          disabled={!isGitRepo || selected === null || gitBusy}
+          onClick={() => void runFileGitAction("stage")}
+        >
+          <span>Stage</span>
+        </ChangesActionButton>
+        <ChangesActionButton
+          type="button"
+          disabled={!isGitRepo || selected === null || gitBusy}
+          onClick={() => void runFileGitAction("unstage")}
+        >
+          <span>Unstage</span>
+        </ChangesActionButton>
+        <ChangesActionButton
+          type="button"
+          data-danger="true"
+          disabled={!isGitRepo || selected === null || gitBusy}
+          onClick={() => void runFileGitAction("discard")}
+        >
+          <span>Discard</span>
+        </ChangesActionButton>
+        <ChangesCommitInput
+          aria-label="Commit message"
+          placeholder="Commit message"
+          value={commitMessage}
+          onChange={(event) => setCommitMessage(event.currentTarget.value)}
+          disabled={!isGitRepo || gitBusy}
+        />
+        <ChangesActionButton
+          type="button"
+          disabled={!isGitRepo || gitBusy || commitMessage.trim().length === 0}
+          onClick={() => void commitChanges()}
+        >
+          <span>Commit</span>
+        </ChangesActionButton>
+        <ChangesActionButton
+          type="button"
+          disabled={!isGitRepo || gitBusy}
+          onClick={() => void pushBranch()}
+        >
+          <span>Push</span>
+        </ChangesActionButton>
+      </ChangesHandoffBar>
+      {gitNotice !== null ? (
+        <ChangesNotice data-ok={gitNotice.ok ? "true" : "false"}>{gitNotice.message}</ChangesNotice>
+      ) : null}
       <ChangesBody
         data-list-collapsed={listCollapsed ? "true" : "false"}
         style={{
@@ -323,6 +447,72 @@ const ChangesDel = styled.span`
 
 const ChangesHeaderSpacer = styled.span`
   flex: 1 1 auto;
+`;
+
+const ChangesActionButton = styled.button`
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--tide-line);
+  border-radius: 7px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--tide-selection);
+    color: var(--tide-action);
+  }
+
+  &[data-danger="true"]:hover:not(:disabled) {
+    color: var(--tide-danger);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+`;
+
+const ChangesHandoffBar = styled.div`
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--tide-line);
+`;
+
+const ChangesCommitInput = styled.input`
+  min-width: 120px;
+  flex: 1 1 auto;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--tide-line);
+  border-radius: 7px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font-size: 12.5px;
+  outline: none;
+`;
+
+const ChangesNotice = styled.div`
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--tide-line);
+  color: var(--tide-danger);
+  font-size: 12px;
+
+  &[data-ok="true"] {
+    color: var(--tide-diff-add);
+  }
 `;
 
 const ChangesBody = styled.div`

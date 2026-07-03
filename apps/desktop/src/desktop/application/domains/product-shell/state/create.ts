@@ -124,6 +124,7 @@ export function createProductShellState(
     listSettings: input.listSettings ?? { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS },
     worktreeSettings: input.worktreeSettings ?? { ...DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS },
     settingsOpen: false,
+    agentMonitorOpen: false,
     draftActiveWorkbenchPaneId: null,
     draftThreadId: null,
     untitledFiles: [],

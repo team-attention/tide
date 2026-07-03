@@ -141,8 +141,11 @@ export function toWorkbenchPaneRefDto(
       dto.completedAt = pane.completedAt;
     }
   }
-  if (pane.kind === "changes" && pane.cwd !== undefined) {
+  if ((pane.kind === "changes" || pane.kind === "review") && pane.cwd !== undefined) {
     dto.cwd = pane.cwd;
+  }
+  if (pane.kind === "review" && pane.agentId !== undefined) {
+    dto.agentId = pane.agentId;
   }
   return dto;
 }

@@ -23,7 +23,8 @@ export type AppChromeWorkbenchPaneKind =
   | "image"
   | "terminal"
   | "launcher"
-  | "changes";
+  | "changes"
+  | "review";
 
 export interface AppChromeThreadSummary {
   threadId: string;
@@ -62,6 +63,7 @@ export interface AppChromeWorkbenchPaneRef {
   command?: string;
   args?: string[];
   cwd?: string;
+  agentId?: "codex" | "claude" | "opencode";
   terminalRole?: "session" | "command_result" | "provider_readiness";
   status?: "ready" | "running" | "completed" | "failed";
   expectedCompletion?: "process_exit" | "retry_preflight";

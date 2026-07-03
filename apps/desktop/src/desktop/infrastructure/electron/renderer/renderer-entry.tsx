@@ -74,6 +74,12 @@ export function createInitialRendererElement() {
               gitContext: (cwd: string) => window.tide!.gitContext(cwd),
               gitChanges: (cwd: string) => window.tide!.gitChanges(cwd),
               gitFileDiff: (cwd: string, relPath: string) => window.tide!.gitFileDiff(cwd, relPath),
+              gitStageFile: (cwd: string, relPath: string) => window.tide!.gitStageFile(cwd, relPath),
+              gitUnstageFile: (cwd: string, relPath: string) => window.tide!.gitUnstageFile(cwd, relPath),
+              gitDiscardFile: (cwd: string, relPath: string) => window.tide!.gitDiscardFile(cwd, relPath),
+              gitCommit: (cwd: string, message: string) => window.tide!.gitCommit(cwd, message),
+              gitPush: (cwd: string) => window.tide!.gitPush(cwd),
+              runReview: (cwd, provider, target) => window.tide!.runReview(cwd, provider, target),
               listCommands: (cwd: string, agentId: string) => window.tide!.listCommands(cwd, agentId),
               fsCreateFile: (root: string, relativePath: string, content: string) =>
                 window.tide!.fsCreateFile(root, relativePath, content),
@@ -184,6 +190,38 @@ declare global {
         }[];
       }>;
       gitFileDiff(cwd: string, relPath: string): Promise<string>;
+      gitStageFile(cwd: string, relPath: string): Promise<{ ok: boolean; message: string }>;
+      gitUnstageFile(cwd: string, relPath: string): Promise<{ ok: boolean; message: string }>;
+      gitDiscardFile(cwd: string, relPath: string): Promise<{ ok: boolean; message: string }>;
+      gitCommit(cwd: string, message: string): Promise<{ ok: boolean; message: string }>;
+      gitPush(cwd: string): Promise<{ ok: boolean; message: string }>;
+      runReview(
+        cwd: string,
+        provider: "codex" | "claude" | "opencode",
+        target:
+          | { kind: "uncommitted" }
+          | { kind: "base_branch"; baseBranch: string }
+          | { kind: "commit"; sha: string; title?: string }
+          | { kind: "custom"; instructions: string; diff?: string },
+      ): Promise<{
+        ok: boolean;
+        provider: "codex" | "claude" | "opencode";
+        source: "codex_cli" | "claude_ultrareview" | "claude_prompt" | "opencode_prompt";
+        target:
+          | { kind: "uncommitted" }
+          | { kind: "base_branch"; baseBranch: string }
+          | { kind: "commit"; sha: string; title?: string }
+          | { kind: "custom"; instructions: string; diff?: string };
+        cwd: string;
+        command: string;
+        startedAt: string;
+        completedAt: string;
+        rawText: string;
+        stderr?: string;
+        exitCode?: number | null;
+        signal?: string | null;
+        message?: string;
+      }>;
       listCommands(cwd: string, agentId: string): Promise<{
         name: string;
         description: string;
