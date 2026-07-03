@@ -1,6 +1,37 @@
 import type { AgentChatPromptChoice, AgentChatPromptDetail, AgentChatPromptStep, AgentChatPromptStepAnswer, AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { useEffect, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
+import {
+  PromptActions,
+  PromptAnswerNote,
+  PromptBody,
+  PromptCardFrame,
+  PromptCustomReply,
+  PromptDetail,
+  PromptDetailBody,
+  PromptDetailLine,
+  PromptDetailLocation,
+  PromptDetailLocations,
+  PromptHead,
+  PromptHeaderChip,
+  PromptKind,
+  PromptMessage,
+  PromptOptionButton,
+  PromptOptionLabel,
+  PromptOptionMark,
+  PromptOptionPreview,
+  PromptOptionShortcut,
+  PromptOptionText,
+  PromptOptionValue,
+  PromptOptions,
+  PromptSecondaryButton,
+  PromptStepCount,
+  PromptStepDot,
+  PromptStepTabs,
+  PromptSubmitButton,
+  PromptSubmitShortcut,
+  PromptWizardHead,
+} from "./prompt-card.parts.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // A unified, pretty prompt card for any agent's question / approval / choice /
@@ -38,31 +69,30 @@ export function PromptCard(props: {
 function PromptDetailView(props: { detail: AgentChatPromptDetail }): ReactElement {
   const { detail } = props;
   return (
-    <div className="prompt-card__detail" data-format={detail.format}>
-      <pre className="prompt-card__detail-body">
+    <PromptDetail data-prompt-detail="true" data-format={detail.format}>
+      <PromptDetailBody data-prompt-detail-body="true">
         {detail.format === "diff"
           ? detail.body.split("\n").map((line, index) => (
-              <span
+              <PromptDetailLine
                 key={index}
-                className="prompt-card__detail-line"
                 data-line={line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx"}
               >
                 {line}
                 {"\n"}
-              </span>
+              </PromptDetailLine>
             ))
           : detail.body}
-      </pre>
+      </PromptDetailBody>
       {detail.locations !== undefined && detail.locations.length > 0 ? (
-        <div className="prompt-card__detail-locations">
+        <PromptDetailLocations>
           {detail.locations.map((path) => (
-            <span key={path} className="prompt-card__detail-location">
+            <PromptDetailLocation key={path} data-prompt-detail-location="true">
               {path}
-            </span>
+            </PromptDetailLocation>
           ))}
-        </div>
+        </PromptDetailLocations>
       ) : null}
-    </div>
+    </PromptDetail>
   );
 }
 
@@ -215,20 +245,20 @@ function SinglePromptCard(props: {
       ? "Choose an option"
       : "Question";
   return (
-    <div className="prompt-card" role="group" aria-label="Agent prompt">
-      <div className="prompt-card__head">
-        <span className="prompt-card__kind">
+    <PromptCardFrame role="group" aria-label="Agent prompt" data-prompt-card="true">
+      <PromptHead>
+        <PromptKind data-prompt-kind-label="true">
           {multiSelect ? "Select all that apply" : kindLabel}
           {props.prompt.header ? (
-            <span className="prompt-card__header-chip">{props.prompt.header}</span>
+            <PromptHeaderChip data-prompt-header-chip="true">{props.prompt.header}</PromptHeaderChip>
           ) : null}
-        </span>
-        <div className="prompt-card__body">
-          <p className="prompt-card__message">{props.prompt.message}</p>
+        </PromptKind>
+        <PromptBody data-prompt-body="true">
+          <PromptMessage data-prompt-message="true">{props.prompt.message}</PromptMessage>
           {props.prompt.detail ? <PromptDetailView detail={props.prompt.detail} /> : null}
-        </div>
-      </div>
-      <div className="prompt-card__options">
+        </PromptBody>
+      </PromptHead>
+      <PromptOptions data-prompt-options="true">
         {renderOptions({
           choices,
           multiSelect,
@@ -252,17 +282,17 @@ function SinglePromptCard(props: {
           notes,
           onNotes: setNotes,
         })}
-      </div>
-      <div className="prompt-card__actions">
-        <button type="button" className="prompt-card__skip" onClick={() => props.onAnswerText("")}>
+      </PromptOptions>
+      <PromptActions data-prompt-actions="true">
+        <PromptSecondaryButton type="button" data-prompt-skip="true" onClick={() => props.onAnswerText("")}>
           Skip
-        </button>
-        <button type="button" className="prompt-card__submit" disabled={!canSubmit} onClick={submit}>
+        </PromptSecondaryButton>
+        <PromptSubmitButton type="button" data-prompt-submit="true" disabled={!canSubmit} onClick={submit}>
           Submit
-          <span className="prompt-card__submit-kbd">⌘↵</span>
-        </button>
-      </div>
-    </div>
+          <PromptSubmitShortcut>⌘↵</PromptSubmitShortcut>
+        </PromptSubmitButton>
+      </PromptActions>
+    </PromptCardFrame>
   );
 }
 
@@ -426,20 +456,20 @@ function WizardPromptCard(props: {
   }, [stepIndex, answers, choices, hasChoices, multiSelect, isLast, steps, props]);
 
   return (
-    <div className="prompt-card prompt-card--wizard" role="group" aria-label="Agent prompt">
-      <div className="prompt-card__head">
-        <div className="prompt-card__wizard-head">
-          <span className="prompt-card__kind">
+    <PromptCardFrame $wizard role="group" aria-label="Agent prompt" data-prompt-card="true" data-prompt-wizard="true">
+      <PromptHead>
+        <PromptWizardHead data-prompt-wizard-head="true">
+          <PromptKind data-prompt-kind-label="true">
             {multiSelect ? "Select all that apply" : "Question"}
-            <span className="prompt-card__step-count"> · {stepIndex + 1} of {steps.length}</span>
-            {step.header ? <span className="prompt-card__header-chip">{step.header}</span> : null}
-          </span>
-          <div className="prompt-card__steps" role="tablist" aria-label="Steps">
+            <PromptStepCount> · {stepIndex + 1} of {steps.length}</PromptStepCount>
+            {step.header ? <PromptHeaderChip data-prompt-header-chip="true">{step.header}</PromptHeaderChip> : null}
+          </PromptKind>
+          <PromptStepTabs role="tablist" aria-label="Steps">
             {steps.map((eachStep, index) => (
-              <button
+              <PromptStepDot
                 key={eachStep.stepId}
                 type="button"
-                className="prompt-card__step-dot"
+                data-prompt-step-dot="true"
                 data-active={index === stepIndex ? "true" : "false"}
                 data-answered={stepIsAnswered(eachStep, answers[index]) ? "true" : "false"}
                 aria-label={`Step ${index + 1}${index === stepIndex ? " (current)" : ""}`}
@@ -447,13 +477,13 @@ function WizardPromptCard(props: {
                 onClick={() => setStepIndex(index)}
               />
             ))}
-          </div>
-        </div>
-        <div className="prompt-card__body">
-          <p className="prompt-card__message">{step.message}</p>
-        </div>
-      </div>
-      <div className="prompt-card__options">
+          </PromptStepTabs>
+        </PromptWizardHead>
+        <PromptBody data-prompt-body="true">
+          <PromptMessage data-prompt-message="true">{step.message}</PromptMessage>
+        </PromptBody>
+      </PromptHead>
+      <PromptOptions data-prompt-options="true">
         {renderOptions({
           choices,
           multiSelect,
@@ -482,22 +512,22 @@ function WizardPromptCard(props: {
           notes: answer.notes,
           onNotes: (value) => setCurrent((prev) => ({ ...prev, notes: value })),
         })}
-      </div>
-      <div className="prompt-card__actions">
-        <button
+      </PromptOptions>
+      <PromptActions data-prompt-actions="true">
+        <PromptSecondaryButton
           type="button"
-          className="prompt-card__skip"
+          data-prompt-skip="true"
           disabled={stepIndex === 0}
           onClick={goBack}
         >
           Back
-        </button>
-        <button type="button" className="prompt-card__submit" onClick={goNext}>
+        </PromptSecondaryButton>
+        <PromptSubmitButton type="button" data-prompt-submit="true" onClick={goNext}>
           {isLast ? "Submit" : "Next"}
-          <span className="prompt-card__submit-kbd">⌘↵</span>
-        </button>
-      </div>
-    </div>
+          <PromptSubmitShortcut>⌘↵</PromptSubmitShortcut>
+        </PromptSubmitButton>
+      </PromptActions>
+    </PromptCardFrame>
   );
 }
 
@@ -546,25 +576,25 @@ function renderOptions(input: {
     // docs_v2/specs/prompt-card-number-key-selection.md.
     numberHint?: number,
   ) => (
-    <button
+    <PromptOptionButton
       key={key}
       type="button"
-      className="prompt-card__option"
+      data-prompt-option="true"
       data-selected={selected ? "true" : "false"}
       data-multi={input.multiSelect ? "true" : undefined}
       data-kind={kind}
       aria-pressed={input.multiSelect ? selected : undefined}
       onClick={onClick}
     >
-      <span className="prompt-card__radio" aria-hidden />
-      <span className="prompt-card__option-text">
-        <span className="prompt-card__option-label">{label}</span>
-        {secondary ? <span className="prompt-card__option-value">{secondary}</span> : null}
-      </span>
+      <PromptOptionMark aria-hidden />
+      <PromptOptionText>
+        <PromptOptionLabel data-prompt-option-label="true">{label}</PromptOptionLabel>
+        {secondary ? <PromptOptionValue data-prompt-option-value="true">{secondary}</PromptOptionValue> : null}
+      </PromptOptionText>
       {numberHint !== undefined ? (
-        <span className="prompt-card__option-kbd" aria-hidden>⌘{numberHint}</span>
+        <PromptOptionShortcut aria-hidden>⌘{numberHint}</PromptOptionShortcut>
       ) : null}
-    </button>
+    </PromptOptionButton>
   );
   // The focused single-select option's preview (claude AskUserQuestion option.preview):
   // the mockup/code for the option the user is on, shown below the list.
@@ -601,11 +631,11 @@ function renderOptions(input: {
           )
         : null}
       {preview !== undefined && preview.length > 0 ? (
-        <pre className="prompt-card__option-preview" aria-label="Option preview">{preview}</pre>
+        <PromptOptionPreview data-prompt-option-preview="true" aria-label="Option preview">{preview}</PromptOptionPreview>
       ) : null}
       {input.otherActive ? (
-        <textarea
-          className="prompt-card__other"
+        <PromptCustomReply
+          data-prompt-custom-reply="true"
           placeholder={input.hasChoices ? "Type a custom reply…" : "Type your reply…"}
           value={input.otherText}
           rows={input.hasChoices ? 2 : 3}
@@ -622,8 +652,8 @@ function renderOptions(input: {
         />
       ) : null}
       {input.showNotes && !input.otherActive ? (
-        <textarea
-          className="prompt-card__note"
+        <PromptAnswerNote
+          data-prompt-note="true"
           placeholder="Add a note (optional) — sent with your answer"
           value={input.notes}
           rows={2}

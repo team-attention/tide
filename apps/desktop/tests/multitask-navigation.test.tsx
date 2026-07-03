@@ -60,8 +60,8 @@ test("live switcher HUD renders the live set and highlights the current index", 
   );
   assert.match(markup, /Alpha/);
   assert.match(markup, /Beta/);
-  // The highlighted (index 1 = Beta) card carries the active modifier + aria-current.
-  assert.match(markup, /multitask-hud__card--active/);
+  // The highlighted (index 1 = Beta) card carries semantic active state + aria-current.
+  assert.match(markup, /data-active="true"/);
   assert.match(markup, /aria-current="true"[^>]*data-thread-id="b"|data-thread-id="b"[^>]*aria-current="true"/);
 });
 

@@ -22,9 +22,9 @@ function check(label, ok, detail = "") {
 }
 
 async function openAgentMenu(page) {
-  const chip = page.locator('button.composer-shell__context-chip[data-context-kind="agent"]').first();
+  const chip = page.locator('button[data-composer-context-chip][data-context-kind="agent"]').first();
   await chip.click();
-  await page.waitForSelector('.choice-surface[data-choice-surface="agent_menu"]', { timeout: 5000 });
+  await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
   // thread.listed (which carries availableAgents) is built synchronously alongside the opencode
   // catalog subprocess, so it can land a beat AFTER the menu opens. Until it does, the menu shows
   // the default "all available" snapshot. Wait for the availability to settle (codex is hidden in
@@ -33,9 +33,9 @@ async function openAgentMenu(page) {
   await page
     .waitForFunction(
       () => {
-        const rows = Array.from(document.querySelectorAll('.choice-surface[data-choice-surface="agent_menu"] .choice-surface__row'));
-        const codex = rows.find((r) => /codex/i.test(r.querySelector(".choice-surface__row-label")?.textContent || ""));
-        return codex && /not installed/i.test(codex.querySelector(".choice-surface__row-detail")?.textContent || "");
+        const rows = Array.from(document.querySelectorAll('[data-choice-surface="agent_menu"] [data-choice-row]'));
+        const codex = rows.find((r) => /codex/i.test(r.querySelector("[data-choice-row-label]")?.textContent || ""));
+        return codex && /not installed/i.test(codex.querySelector("[data-choice-row-detail]")?.textContent || "");
       },
       { timeout: 12000 },
     )
@@ -44,10 +44,10 @@ async function openAgentMenu(page) {
 }
 
 async function agentRows(page) {
-  return page.$$eval('.choice-surface[data-choice-surface="agent_menu"] .choice-surface__row', (els) =>
+  return page.$$eval('[data-choice-surface="agent_menu"] [data-choice-row]', (els) =>
     els.map((el) => ({
-      label: el.querySelector(".choice-surface__row-label")?.textContent?.trim() ?? "",
-      detail: el.querySelector(".choice-surface__row-detail")?.textContent?.trim() ?? "",
+      label: el.querySelector("[data-choice-row-label]")?.textContent?.trim() ?? "",
+      detail: el.querySelector("[data-choice-row-detail]")?.textContent?.trim() ?? "",
       disabled: el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true",
     })),
   );
@@ -66,7 +66,7 @@ async function agentRows(page) {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(900);
 
   await page.locator("button", { hasText: /New thread/i }).first().click();
@@ -86,16 +86,16 @@ async function agentRows(page) {
   check("claude row stays installed (only codex hidden)", claudeRow !== undefined && !claudeRow.disabled && /agent integration/i.test(claudeRow?.detail ?? ""), claudeRow?.detail);
 
   // --- 2. Selecting the not-installed slot surfaces its install card IMMEDIATELY ---
-  await page.locator('.choice-surface[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: /codex/i }).first().click();
+  await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: /codex/i }).first().click();
   await page.waitForTimeout(1200); // provider.checkReadiness round-trip → providerReadiness.changed
-  const readiness = page.locator('.choice-surface[data-choice-surface="provider_readiness"]');
+  const readiness = page.locator('[data-choice-surface="provider_readiness"]');
   check("a Provider Readiness card appears on select (no Send)", (await readiness.count()) > 0);
   await page.screenshot({ path: "/tmp/pw-handoff-2-codex-install-card.png" });
 
   const readyRows = (await readiness.count())
-    ? await page.$$eval('.choice-surface[data-choice-surface="provider_readiness"] .choice-surface__row', (els) =>
+    ? await page.$$eval('[data-choice-surface="provider_readiness"] [data-choice-row]', (els) =>
         els.map((el) => ({
-          label: el.querySelector(".choice-surface__row-label")?.textContent?.trim() ?? "",
+          label: el.querySelector("[data-choice-row-label]")?.textContent?.trim() ?? "",
           rowSelected: el.getAttribute("data-selected"),
         })),
       )
@@ -116,12 +116,12 @@ async function agentRows(page) {
   rows = await agentRows(page);
   const opencodeRow = rows.find((r) => /opencode/i.test(r.label));
   check("opencode row present + selectable (installed)", opencodeRow !== undefined && !opencodeRow.disabled, opencodeRow?.detail);
-  await page.locator('.choice-surface[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: /opencode/i }).first().click();
+  await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: /opencode/i }).first().click();
   await page.waitForTimeout(1200);
-  const cardAfterOpencode = await page.locator('.choice-surface[data-choice-surface="provider_readiness"]').count();
+  const cardAfterOpencode = await page.locator('[data-choice-surface="provider_readiness"]').count();
   const installLabelAfterOpencode = cardAfterOpencode
-    ? await page.$$eval('.choice-surface[data-choice-surface="provider_readiness"] .choice-surface__row', (els) =>
-        els.some((el) => /not be found|not found/i.test(el.querySelector(".choice-surface__row-label")?.textContent ?? "")))
+    ? await page.$$eval('[data-choice-surface="provider_readiness"] [data-choice-row]', (els) =>
+        els.some((el) => /not be found|not found/i.test(el.querySelector("[data-choice-row-label]")?.textContent ?? "")))
     : false;
   await page.screenshot({ path: "/tmp/pw-handoff-3-opencode-selected.png" });
   console.log("opencode → readiness card count:", cardAfterOpencode, "has not-installed row:", installLabelAfterOpencode);

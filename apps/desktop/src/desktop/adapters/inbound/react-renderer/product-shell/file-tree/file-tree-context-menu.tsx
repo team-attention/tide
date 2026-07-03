@@ -3,6 +3,12 @@ import { FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
 import type { ProductShellFileTreeMenu } from "../../../../../application/domains/product-shell/product-shell.ts";
 import { relativeParentPath } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
+import {
+  FloatingMenuBackdrop,
+  FloatingMenuIcon,
+  FloatingMenuItem,
+  FloatingMenuSurface,
+} from "../support/floating-menu.parts.tsx";
 // FileTree right-click context menu — a fixed popover (escaping the tree's scroll
 // clip) behind a transparent backdrop that closes it on outside click. Mirrors the
 // left-rail context menu. Spec: workbench-filetree-file-operations.
@@ -62,26 +68,28 @@ export function createFileTreeContextMenuOverlay(
   ];
 
   return (
-    <div className="left-rail-context-menu-backdrop" onMouseDown={() => handlers.onFileTreeMenuClose()}>
-      <div
-        className="left-rail-context-menu left-rail-context-menu--file-tree"
+    <FloatingMenuBackdrop onMouseDown={() => handlers.onFileTreeMenuClose()}>
+      <FloatingMenuSurface
+        $kind="file_tree"
+        data-file-tree-context-menu
         onMouseDown={(event: { stopPropagation: () => void }) => event.stopPropagation()}
         style={{ position: "fixed", left: `${left}px`, top: `${top}px`, width: `${width}px`, zIndex: "60" } as CSSProperties}
       >
         {items.map((item) => (
-          <button
+          <FloatingMenuItem
             key={item.label}
-            className={`left-rail-context-menu__item${item.danger ? " left-rail-context-menu__item--danger" : ""}`}
             type="button"
+            data-file-tree-menu-item={item.label}
+            $danger={item.danger}
             onClick={item.onClick}
           >
-            <span className="left-rail-context-menu__icon" aria-hidden>
+            <FloatingMenuIcon $danger={item.danger} aria-hidden>
               {item.icon}
-            </span>
+            </FloatingMenuIcon>
             <span>{item.label}</span>
-          </button>
+          </FloatingMenuItem>
         ))}
-      </div>
-    </div>
+      </FloatingMenuSurface>
+    </FloatingMenuBackdrop>
   );
 }

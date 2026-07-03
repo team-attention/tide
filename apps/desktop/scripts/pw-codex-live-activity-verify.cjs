@@ -37,35 +37,35 @@ async function clickIfPresent(locator) {
   page.on("pageerror", (e) => pageErrors.push(String(e.message).slice(0, 200)));
   const shot = (label) => page.screenshot({ path: `/tmp/pw-codex-liveact-${label}.png` });
 
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1000);
 
-  await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+  await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
   await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
-  await page.locator('[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: "Codex CLI" }).first().click();
+  await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: "Codex CLI" }).first().click();
   await page.waitForTimeout(300);
 
   const permissionButton = page.locator('[aria-label="Permission"]').first();
   if ((await permissionButton.count()) > 0) {
     await permissionButton.click();
     await page.locator('[data-choice-surface="permission_menu"]').waitFor({ timeout: 5000 });
-    await page.locator('[data-choice-surface="permission_menu"] .choice-surface__row', { hasText: "Full access" }).first().click();
+    await page.locator('[data-choice-surface="permission_menu"] [data-choice-row]', { hasText: "Full access" }).first().click();
     await page.waitForTimeout(300);
   }
 
   await page.locator('[aria-label="Composer draft"]').first().fill(PROMPT);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   log({ phase: "sent", token: TOKEN, dataRoot });
 
   // Fresh roots can gate on provider trust/readiness; grant trust when the app offers it.
   await page.waitForTimeout(1500);
-  const trust = page.locator('.choice-surface__row, button', { hasText: /Trust this folder/i });
+  const trust = page.locator('[data-choice-row], button', { hasText: /Trust this folder/i });
   if (await clickIfPresent(trust)) {
     log({ phase: "trusted_folder" });
     await page.waitForTimeout(800);
     const draft = page.locator('[aria-label="Composer draft"]').first();
     if ((await draft.inputValue().catch(() => "")).trim().length > 0) {
-      await page.locator(".composer-shell__send").first().click();
+      await page.locator("[data-composer-send]").first().click();
       log({ phase: "resent" });
     }
   }
@@ -83,15 +83,15 @@ async function clickIfPresent(locator) {
     const at = Math.round((Date.now() - t0) / 1000);
     const snap = await page.evaluate((token) => {
       const q = (s) => document.querySelectorAll(s).length;
-      const workingText = document.querySelector(".agent-session-working__text")?.textContent?.trim() ?? null;
+      const workingText = document.querySelector("[data-working-text]")?.textContent?.trim() ?? null;
       const transcriptText = document.querySelector('[aria-label="Agent Session"]')?.textContent ?? "";
       const agentTurns = Array.from(document.querySelectorAll('[data-block-role="agent"]'));
       const agentText = agentTurns.map((node) => node.textContent ?? "").join("\n");
-      const toolBlocks = Array.from(document.querySelectorAll('[data-block-role="tool"], .tool-activity, .agent-session-turn--tool'));
-      const promptCard = document.querySelector('[data-prompt-kind], .agent-prompt-card')?.textContent?.slice(0, 300) ?? null;
+      const toolBlocks = Array.from(document.querySelectorAll('[data-block-role="tool"]'));
+      const promptCard = document.querySelector('[data-prompt-card]')?.textContent?.slice(0, 300) ?? null;
       return {
         workingText,
-        workingTurn: q(".agent-session-turn--working"),
+        workingTurn: q("[data-working="true"]"),
         toolBlocks: toolBlocks.length,
         toolText: toolBlocks.map((node) => (node.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 120)).slice(-3),
         agentTurns: agentTurns.length,

@@ -8,6 +8,7 @@ import {
   type ReactElement,
   type RefObject,
 } from "react";
+import { css, styled } from "styled-components";
 
 type HighlightHostWindow = Window & {
   Highlight?: new (...ranges: Range[]) => unknown;
@@ -138,6 +139,7 @@ export function InPaneFindBar(props: {
   activeIndex: number;
   placeholder?: string;
   scopeLabel?: string;
+  placement?: "pane" | "chat";
   tone?: "default" | "dark";
   onQueryChange: (query: string) => void;
   onNext: () => void;
@@ -170,12 +172,24 @@ export function InPaneFindBar(props: {
     }
   };
   return (
-    <div className="in-pane-find" data-tone={props.tone ?? "default"} role="search" aria-label="Find in pane">
+    <InPaneFindFrame
+      data-in-pane-find
+      data-tone={props.tone ?? "default"}
+      data-placement={props.placement ?? "pane"}
+      role="search"
+      aria-label="Find in pane"
+      $placement={props.placement ?? "pane"}
+      $tone={props.tone ?? "default"}
+    >
       <Search size={14} strokeWidth={1.9} aria-hidden />
-      {props.scopeLabel ? <span className="in-pane-find__scope">{props.scopeLabel}</span> : null}
-      <input
+      {props.scopeLabel ? (
+        <InPaneFindScope $placement={props.placement ?? "pane"} $tone={props.tone ?? "default"}>
+          {props.scopeLabel}
+        </InPaneFindScope>
+      ) : null}
+      <InPaneFindInput
         ref={inputRef}
-        className="in-pane-find__input"
+        data-in-pane-find-input
         value={props.query}
         placeholder={props.placeholder ?? "Find"}
         spellCheck={false}
@@ -184,39 +198,36 @@ export function InPaneFindBar(props: {
         onChange={(event: { currentTarget: { value: string } }) => props.onQueryChange(event.currentTarget.value)}
         onKeyDown={onKeyDown}
       />
-      <span className="in-pane-find__count" aria-live="polite">
+      <InPaneFindCount data-in-pane-find-count $placement={props.placement ?? "pane"} aria-live="polite">
         {count}
-      </span>
-      <button
+      </InPaneFindCount>
+      <InPaneFindButton
         type="button"
-        className="in-pane-find__button"
         title="Previous match"
         aria-label="Previous match"
         disabled={props.matchCount === 0}
         onClick={props.onPrevious}
       >
         <ChevronUp size={14} strokeWidth={2} aria-hidden />
-      </button>
-      <button
+      </InPaneFindButton>
+      <InPaneFindButton
         type="button"
-        className="in-pane-find__button"
         title="Next match"
         aria-label="Next match"
         disabled={props.matchCount === 0}
         onClick={props.onNext}
       >
         <ChevronDown size={14} strokeWidth={2} aria-hidden />
-      </button>
-      <button
+      </InPaneFindButton>
+      <InPaneFindButton
         type="button"
-        className="in-pane-find__button"
         title="Close find"
         aria-label="Close find"
         onClick={props.onClose}
       >
         <X size={14} strokeWidth={2} aria-hidden />
-      </button>
-    </div>
+      </InPaneFindButton>
+    </InPaneFindFrame>
   );
 }
 
@@ -280,7 +291,7 @@ function collectDomTextMatches(root: HTMLElement, query: string): Range[] {
       if (parent === null || (node.textContent ?? "").trim().length === 0) {
         return reject;
       }
-      if (parent.closest(".in-pane-find,script,style,noscript,textarea,input,select,button") !== null) {
+      if (parent.closest("[data-in-pane-find],script,style,noscript,textarea,input,select,button") !== null) {
         return reject;
       }
       return accept;
@@ -337,3 +348,128 @@ function focusIsInside(root: HTMLElement | null): boolean {
   }
   return lastInteractedFindRoot === root;
 }
+
+const InPaneFindFrame = styled.div<{
+  $placement: "pane" | "chat";
+  $tone: "default" | "dark";
+}>`
+  min-width: 0;
+  min-height: 32px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid
+    ${({ $tone }) => ($tone === "dark" ? "rgba(255, 255, 255, 0.12)" : "var(--tide-line)")};
+  padding: 5px 8px;
+  background: ${({ $tone }) => ($tone === "dark" ? "#222226" : "var(--tide-surface)")};
+  color: ${({ $tone }) => ($tone === "dark" ? "#b9b9bf" : "var(--tide-muted)")};
+
+  ${({ $placement }) =>
+    $placement === "chat"
+      ? css`
+          width: 100%;
+          min-height: 38px;
+          border: 1px solid var(--tide-line);
+          border-radius: 8px;
+          padding: 6px 8px;
+          background: color-mix(in srgb, var(--tide-surface) 92%, var(--tide-bg));
+          box-shadow: 0 1px 2px rgba(33, 31, 36, 0.04);
+        `
+      : ""}
+`;
+
+const InPaneFindInput = styled.input`
+  min-width: 72px;
+  height: 24px;
+  flex: 1 1 auto;
+  border: 1px solid var(--tide-line);
+  border-radius: 6px;
+  outline: none;
+  padding: 0 7px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font: 12px/1.4 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  &:focus {
+    border-color: var(--tide-action);
+  }
+
+  ${InPaneFindFrame}[data-placement="chat"] & {
+    height: 26px;
+  }
+
+  ${InPaneFindFrame}[data-tone="dark"] & {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: #19191b;
+    color: #ededf0;
+  }
+
+  ${InPaneFindFrame}[data-tone="dark"] &:focus {
+    border-color: #7aa2ff;
+  }
+`;
+
+const InPaneFindScope = styled.span<{
+  $placement: "pane" | "chat";
+  $tone: "default" | "dark";
+}>`
+  min-width: 0;
+  max-width: 14ch;
+  height: 20px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid
+    ${({ $tone }) => ($tone === "dark" ? "rgba(255, 255, 255, 0.16)" : "var(--tide-line)")};
+  border-radius: ${({ $placement }) => ($placement === "chat" ? "6px" : "5px")};
+  padding: ${({ $placement }) => ($placement === "chat" ? "2px 6px" : "0 6px")};
+  background: ${({ $tone }) => ($tone === "dark" ? "rgba(255, 255, 255, 0.05)" : "var(--tide-bg)")};
+  color: ${({ $tone }) => ($tone === "dark" ? "#b9b9bf" : "var(--tide-muted)")};
+  font: ${({ $placement }) =>
+    $placement === "chat"
+      ? "11px/1.25 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif"
+      : "11px/1.2 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif"};
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const InPaneFindCount = styled.span<{ $placement: "pane" | "chat" }>`
+  min-width: ${({ $placement }) => ($placement === "chat" ? "64px" : "58px")};
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font: 11px/1.2 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  text-align: right;
+  white-space: nowrap;
+`;
+
+const InPaneFindButton = styled.button`
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+
+  &:disabled {
+    opacity: 0.34;
+    cursor: default;
+  }
+
+  ${InPaneFindFrame}[data-tone="dark"] &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.09);
+    color: #ededf0;
+  }
+`;

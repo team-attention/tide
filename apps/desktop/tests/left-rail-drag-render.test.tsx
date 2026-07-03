@@ -11,7 +11,6 @@ import { createProductShellState } from "../src/desktop/application/domains/prod
 const markup = renderToStaticMarkup(<TideProductShell initialState={createProductShellState()} />);
 
 test("pinned top-level items render as drag-reorderable handles", () => {
-  assert.match(markup, /rail-drag-item/);
   assert.match(markup, /draggable=/);
   // The pinned thread carries its kind-tagged rail key.
   assert.match(markup, /data-rail-key="t:thread-master-plan"/);

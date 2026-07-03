@@ -56,12 +56,12 @@ test("app update renders as one icon-only button and keeps actions user driven",
     await act(async () => {
       root.render(<AppUpdateButton />);
     });
-    assert.equal(container.querySelector(".app-update-button"), null);
+    assert.equal(container.querySelector("[data-app-update-control]"), null);
 
     await act(async () => {
       listeners[0]?.({ phase: "available", version: "0.2.0" });
     });
-    const download = container.querySelector(".app-update-button--available") as HTMLButtonElement | null;
+    const download = container.querySelector('[data-app-update-control][data-phase="available"]') as HTMLButtonElement | null;
     assert.ok(download);
     assert.equal(download.textContent, "");
     assert.match(download.getAttribute("aria-label") ?? "", /Download Tide 0\.2\.0 update/);
@@ -70,7 +70,7 @@ test("app update renders as one icon-only button and keeps actions user driven",
       download.click();
     });
     assert.deepEqual(calls, ["download"]);
-    const requested = container.querySelector(".app-update-button--downloading") as HTMLButtonElement | null;
+    const requested = container.querySelector('[data-app-update-control][data-phase="downloading"]') as HTMLButtonElement | null;
     assert.ok(requested, "clicking Download should immediately show a download-in-progress state");
     assert.equal(requested.disabled, true);
     assert.match(requested.getAttribute("aria-label") ?? "", /Downloading Tide 0\.2\.0: 0%/);
@@ -79,7 +79,7 @@ test("app update renders as one icon-only button and keeps actions user driven",
     await act(async () => {
       listeners[0]?.({ phase: "error", message: "network" });
     });
-    const retry = container.querySelector(".app-update-button--error") as HTMLButtonElement | null;
+    const retry = container.querySelector('[data-app-update-control][data-phase="error"]') as HTMLButtonElement | null;
     assert.ok(retry);
     await act(async () => {
       retry.click();
@@ -89,7 +89,7 @@ test("app update renders as one icon-only button and keeps actions user driven",
     await act(async () => {
       listeners[0]?.({ phase: "ready", version: "0.2.0" });
     });
-    const apply = container.querySelector(".app-update-button--ready") as HTMLButtonElement | null;
+    const apply = container.querySelector('[data-app-update-control][data-phase="ready"]') as HTMLButtonElement | null;
     assert.ok(apply);
     await act(async () => {
       apply.click();
@@ -115,14 +115,14 @@ test("app update button is owned by the left rail, not a floating root pill", ()
     path.join(repoRoot, "src/desktop/infrastructure/electron/renderer/renderer-entry.tsx"),
     "utf8",
   );
-  const css = fs.readFileSync(
-    path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/product-shell/support/app-update-pill.css"),
+  const updateButtonSource = fs.readFileSync(
+    path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/product-shell/support/app-update-pill.tsx"),
     "utf8",
   );
 
   assert.match(leftRail, /<AppUpdateButton \/>/);
   assert.doesNotMatch(rendererEntry, /AppUpdate(Pill|Button)/);
-  assert.match(css, /margin-left:\s*auto/);
-  assert.doesNotMatch(css, /position:\s*fixed/);
-  assert.doesNotMatch(css, /translateX\(-50%\)/);
+  assert.match(updateButtonSource, /const AppUpdateControl = styled\.button`[\s\S]*margin-left:\s*auto/);
+  assert.doesNotMatch(updateButtonSource, /position:\s*fixed/);
+  assert.doesNotMatch(updateButtonSource, /translateX\(-50%\)/);
 });

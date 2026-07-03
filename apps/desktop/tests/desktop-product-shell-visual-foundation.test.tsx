@@ -74,9 +74,8 @@ import {
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-// The product-shell stylesheet is an ordered @import index over styles/*.css
-// (docs_v2/specs/navigable-source-structure.md); assertions run against the
-// inlined concatenation so match/doesNotMatch cover the whole cascade.
+// Only global renderer CSS remains in styles/*.css. Component-owned styles live
+// in semantic styled-components inside their TSX modules.
 function readProductShellCss(): string {
   const indexPath = path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/styles/index.css");
   const indexSource = fs.readFileSync(indexPath, "utf8");
@@ -85,10 +84,17 @@ function readProductShellCss(): string {
   );
 }
 
+function readRendererSource(relativePath: string): string {
+  return fs.readFileSync(
+    path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer", relativePath),
+    "utf8",
+  );
+}
+
 test("product_shell_renders_left_ui_agent_chat_composer_and_app_chrome", () => {
   const html = renderProductShell();
 
-  assert.match(html, /class="[^"]*\btide-product-shell\b/);
+  assert.match(html, /data-product-shell="true"/);
   assert.match(html, /aria-label="Left Rail"/);
   assert.match(html, /aria-label="Agent Chat"/);
   assert.match(html, /aria-label="Composer"/);
@@ -106,10 +112,10 @@ test("left_ui_renders_project_grouped_thread_rows_without_default_status_markers
   assert.match(html, /Chats/);
   assert.match(html, /data-left-row-kind="project"/);
   assert.match(html, /data-left-row-kind="thread"/);
-  assert.doesNotMatch(idleRow, /thread-row__leading/);
-  assert.doesNotMatch(pinnedRow, /thread-row__leading/);
-  assert.match(attentionRow, /thread-row__leading--attention/);
-  assert.doesNotMatch(html, /class="thread-row__main"[^>]*>\s*<span class="agent-identity-icon/);
+  assert.doesNotMatch(idleRow, /data-thread-leading-status/);
+  assert.doesNotMatch(pinnedRow, /data-thread-leading-status/);
+  assert.match(attentionRow, /data-thread-leading-status="attention"/);
+  assert.doesNotMatch(html, /data-thread-row-main[^>]*>\s*<span class="agent-identity-icon/);
   assert.doesNotMatch(html, /project-row__count/);
 });
 
@@ -118,8 +124,8 @@ test("thread_rows_keep_scope_status_and_worktree_context_in_hidden_popover", () 
   const projectRow = extractByDataAttribute(fixtureHtml, "data-thread-row", "thread-workbench");
   assert.match(projectRow, /aria-describedby="thread-row-context-thread-workbench"/);
   assert.match(projectRow, /aria-label="Thread menu"/);
-  assert.doesNotMatch(projectRow, /thread-row__leading/);
-  assert.match(projectRow, /class="thread-row__context-popover"[^>]*hidden/);
+  assert.doesNotMatch(projectRow, /data-thread-leading-status/);
+  assert.match(projectRow, /data-thread-context-popover[^>]*hidden/);
   assert.match(projectRow, /(?:tabIndex|tabindex)="-1"/);
   assert.match(projectRow, />Project</);
   assert.doesNotMatch(projectRow, />Status</);
@@ -162,7 +168,7 @@ test("thread_rows_keep_scope_status_and_worktree_context_in_hidden_popover", () 
   );
 
   assert.match(worktreeRow, /aria-describedby="thread-row-context-thread-worktree"/);
-  assert.match(worktreeRow, /thread-row__context-popover/);
+  assert.match(worktreeRow, /data-thread-context-popover/);
   assert.match(worktreeRow, />Project</);
   assert.match(worktreeRow, />Worktree</);
   assert.match(worktreeRow, />feature-login</);
@@ -441,7 +447,7 @@ test("left_rail_defers_active_row_background_until_thread_hydrates", () => {
   const openingRow = extractByDataAttribute(renderProductShell(opened), "data-thread-row", "thread-a");
   assert.match(openingRow, /data-active="true"/);
   assert.match(openingRow, /data-hydrating="true"/);
-  assert.doesNotMatch(openingRow, /thread-row--active/);
+  assert.doesNotMatch(openingRow, /data-thread-visual-active="true"/);
 
   const hydrated = applyProductShellBackendEvent(opened, {
     kind: "thread.hydrated",
@@ -450,7 +456,7 @@ test("left_rail_defers_active_row_background_until_thread_hydrates", () => {
   const hydratedRow = extractByDataAttribute(renderProductShell(hydrated), "data-thread-row", "thread-a");
   assert.match(hydratedRow, /data-active="true"/);
   assert.doesNotMatch(hydratedRow, /data-hydrating="true"/);
-  assert.match(hydratedRow, /thread-row--active/);
+  assert.match(hydratedRow, /data-thread-visual-active="true"/);
 });
 
 test("a_background_threads_prompt_folds_into_its_stored_state_no_hydrate_needed_on_switch", () => {
@@ -958,17 +964,19 @@ test("thread_rows_use_list_style_selection_not_card_blocks", () => {
     "utf8",
   );
 
-  assert.match(css, /\.thread-row--active\s*{[^}]*background:\s*color-mix\([^}]*var\(--tide-selection\)/s);
-  assert.match(css, /\.thread-row--active\s*{[^}]*box-shadow:\s*none/s);
-  assert.match(css, /\.thread-row__leading--running\s*{[^}]*border-top-color:\s*var\(--tide-success\)/s);
-  assert.match(css, /\.thread-row__leading--attention\s*{[^}]*background:\s*var\(--tide-accent\)/s);
-  assert.match(css, /\.thread-row__action\s*{[^}]*width:\s*24px/s);
+  assert.match(threadRowSource, /const ThreadRowFrame = styled\.div/);
+  assert.match(threadRowSource, /color-mix\(in srgb, var\(--tide-selection\) 78%, transparent\)/);
+  assert.match(threadRowSource, /box-shadow:\s*none/);
+  assert.match(threadRowSource, /border-top-color:[\s\S]*var\(--tide-success\)/);
+  assert.match(threadRowSource, /background:[\s\S]*var\(--tide-accent\)/);
+  assert.match(threadRowSource, /const ThreadActionButton = styled\.button/);
+  assert.match(threadRowSource, /width:\s*24px/);
   assert.doesNotMatch(css, /\.thread-row--active\s*{[^}]*linear-gradient/s);
   assert.doesNotMatch(css, /\.thread-row(?:--active|\[data-[^\]]+\])?\s*{[^}]*inset 0 0 0 1px/s);
   assert.doesNotMatch(css, /tide-row-running-breathe/);
   assert.doesNotMatch(css, /\.thread-row--active\s*{[^}]*border-color/s);
   assert.doesNotMatch(css, /\.thread-row(?:--active|\[data-[^\]]+\])?\s*{[^}]*border-left/s);
-  assert.match(css, /\.thread-row__context-popover\s*{[^}]*position:\s*fixed/s);
+  assert.match(threadRowSource, /const ThreadContextPopover = styled\.div`[\s\S]*position:\s*fixed/s);
   assert.doesNotMatch(css, /\.thread-row--scoped\s*{[^}]*height:\s*36px/s);
   assert.doesNotMatch(css, /\.thread-row__scope\s*{/);
   assert.doesNotMatch(css, /\.thread-row__branch\s*{/);
@@ -981,14 +989,14 @@ test("thread_rows_use_list_style_selection_not_card_blocks", () => {
 });
 
 test("workbench_tabs_use_compact_chrome_not_full_height_slabs", () => {
-  const css = readProductShellCss();
+  const workbenchSource = readRendererSource("product-shell/workbench/workbench.tsx");
+  const tabChip = workbenchSource.match(/const WorkbenchTabChip = styled\.div`([\s\S]*?)`;/)?.[1] ?? "";
 
-  assert.match(css, /\.workbench-tabs \.workbench-tab\s*{[^}]*height:\s*32px/s);
-  assert.match(css, /\.workbench-tabs \.workbench-tab\s*{[^}]*box-shadow:\s*none/s);
-  assert.match(css, /\.workbench-tabs \.workbench-tab\[data-active="true"\]\s*{[^}]*background:\s*color-mix\([^}]*var\(--tide-selection\)/s);
-  assert.match(css, /\.workbench-tabs \.workbench-tab\[data-active="true"\]\s*{[^}]*box-shadow:\s*none/s);
-  assert.doesNotMatch(css, /\.workbench-tabs \.workbench-tab\s*{[^}]*height:\s*52px/s);
-  assert.doesNotMatch(css, /\.workbench-tabs \.workbench-tab\[data-active="true"\]\s*{[^}]*inset 0 -2px 0/s);
+  assert.match(tabChip, /height:\s*32px/);
+  assert.match(tabChip, /&\[data-active="true"\]\s*{[\s\S]*background:\s*color-mix\([^`]*var\(--tide-selection\)/);
+  assert.doesNotMatch(tabChip, /box-shadow\s*:/);
+  assert.doesNotMatch(tabChip, /height:\s*52px/);
+  assert.doesNotMatch(tabChip, /inset 0 -2px 0/);
 });
 
 test("composer_is_anchored_inside_agent_chat", () => {
@@ -1047,11 +1055,19 @@ test("visual_foundation_css_uses_tide_icon_key_colors_without_pure_black_shell",
 
 test("visual_foundation_css_avoids_decorative_glow_and_heavy_cards", () => {
   const css = readProductShellCss();
+  const chatColumnSource = readRendererSource("product-shell/chat-column/chat-column.tsx");
+  const composerSource = fs.readFileSync(
+    path.join(
+      repoRoot,
+      "src/desktop/adapters/inbound/react-renderer/agent-chat/composer/composer.tsx",
+    ),
+    "utf8",
+  );
 
   assert.doesNotMatch(css, /radial-gradient/);
   assert.doesNotMatch(css, /0 18px 60px/);
-  assert.match(css, /\.tide-product-shell__stage\s*{[^}]*background:\s*var\(--tide-bg\)/s);
-  assert.match(css, /\.composer-shell\s*{[^}]*box-shadow:\s*var\(--tide-shadow-composer\)/s);
+  assert.match(chatColumnSource, /const AgentChatStage = styled\.section`[\s\S]*background:\s*var\(--tide-bg\)/s);
+  assert.match(composerSource, /const ComposerShell = styled\.form`[^`]*box-shadow:\s*var\(--tide-shadow-composer\)/s);
 });
 
 test("agent_icons_use_deterministic_identity_palette", () => {
@@ -1458,7 +1474,7 @@ test("workbench_editor_pane_renders_as_a_code_editor_not_a_viewer", () => {
 
   assert.match(html, /data-pane-kind="editor"/);
   // Path shows as a breadcrumb (with workspace root), not a file-info panel.
-  assert.match(html, /workbench-editor-breadcrumb/);
+  assert.match(html, /data-editor-breadcrumb="true"/);
   assert.match(html, /src/);
   assert.match(html, /app\.ts/);
   // Real code editor surface (CodeMirror), no markdown preview toggle.
@@ -1498,7 +1514,7 @@ test("editor_breadcrumb_without_relative_path_is_static", () => {
     }),
   );
 
-  assert.match(html, /workbench-editor-breadcrumb/);
+  assert.match(html, /data-editor-breadcrumb="true"/);
   assert.match(html, /title="Scratch"/);
   assert.doesNotMatch(html, /aria-label="Open Scratch"/);
   assert.doesNotMatch(html, /aria-label="Reveal Scratch in FileTree"/);
@@ -1528,7 +1544,7 @@ test("markdown_editor_pane_renders_preview_with_rendered_headings", () => {
   // A Preview/Edit toggle is present for markdown.
   assert.match(html, /Markdown view mode/);
   // Breadcrumb includes the workspace root, like the Figma (`tide › CLAUDE.md`).
-  assert.match(html, /workbench-editor-breadcrumb/);
+  assert.match(html, /data-editor-breadcrumb="true"/);
 });
 
 test("markdown_preview_escapes_raw_html", () => {
@@ -1878,15 +1894,15 @@ test("workbench_editor_pane_renders_references_list", () => {
   const html = renderProductShell(state);
 
   assert.match(html, /aria-label="References"/);
-  assert.match(html, /workbench-editor-references__title[^>]*>References/);
-  assert.match(html, /workbench-editor-references__query[^>]*>src\/app\.ts/);
-  assert.match(html, /workbench-editor-references__count[^>]*>2/);
+  assert.match(html, /data-editor-reference-title="true"[^>]*>References/);
+  assert.match(html, /data-editor-reference-query="true"[^>]*>src\/app\.ts/);
+  assert.match(html, /data-editor-reference-count="true"[^>]*>2/);
   assert.match(html, /aria-label="Close references"/);
   assert.match(html, /aria-label="Open reference src\/app\.ts:1:14"/);
   assert.match(html, /aria-label="Open reference src\/lib\.ts:8:3"/);
-  assert.match(html, /workbench-editor-references__item--current-file/);
-  assert.match(html, /workbench-editor-references__file[^>]*>app\.ts/);
-  assert.match(html, /workbench-editor-references__path[^>]*>src/);
+  assert.match(html, /data-editor-reference-item="true"[^>]*data-current-file="true"|data-current-file="true"[^>]*data-editor-reference-item="true"/);
+  assert.match(html, /data-editor-reference-file="true"[^>]*>app\.ts/);
+  assert.match(html, /data-editor-reference-path="true"[^>]*>src/);
   assert.match(html, /return value;/);
 });
 
@@ -2061,12 +2077,12 @@ test("workbench_diff_pane_renders_structured_unified_diff_lines", () => {
 
   // D4: each diff line carries a change-type tag instead of one flat <pre> block,
   // now GitHub/VS Code-style with a +/- stat header and line-number gutters.
-  assert.match(html, /workbench-diff__stat/);
-  assert.match(html, /workbench-diff-row--hunk[\s\S]*?@@ -1,2 \+1,2 @@/);
-  assert.match(html, /workbench-diff-row--removed[\s\S]*?Old Tide/);
-  assert.match(html, /workbench-diff-row--added[\s\S]*?New Tide/);
-  assert.match(html, /workbench-diff-row--context[\s\S]*?Title/);
-  assert.match(html, /workbench-diff-row__gutter/);
+  assert.match(html, /data-diff-stat="true"/);
+  assert.match(html, /data-diff-row="hunk"[\s\S]*?@@ -1,2 \+1,2 @@/);
+  assert.match(html, /data-diff-row="removed"[\s\S]*?Old Tide/);
+  assert.match(html, /data-diff-row="added"[\s\S]*?New Tide/);
+  assert.match(html, /data-diff-row="context"[\s\S]*?Title/);
+  assert.match(html, /data-diff-gutter="true"/);
   // The +++/--- file header lines are dropped (the pane breadcrumb shows the path).
   assert.doesNotMatch(html, /\+\+\+ README\.md/);
   // Truncation notice stays visible as context, never hidden.
@@ -2096,7 +2112,7 @@ test("provider_readiness_terminal_pane_renders_dark_xterm_surface", () => {
   assert.match(html, /data-terminal-xterm="pane-provider-readiness"/);
   // No metadata/preview/input chrome leaks into the terminal surface anymore.
   assert.doesNotMatch(html, /aria-label="Provider readiness terminal input"/);
-  assert.doesNotMatch(html, /workbench-terminal__meta/);
+  assert.doesNotMatch(html, /data-terminal-meta/);
 });
 
 test("product_shell_provider_readiness_terminal_input_emits_workbench_command", () => {
@@ -2223,7 +2239,7 @@ test("agent_session_shows_working_indicator_while_runtime_is_running", () => {
     },
   });
   // Running + last block is the user's turn (no agent reply yet) -> indicator shows.
-  assert.match(renderProductShell(running), /agent-session-working/);
+  assert.match(renderProductShell(running), /data-working="true"/);
 
   // A *complete* agent reply mid-turn does NOT end the turn — the agent routinely
   // pauses after a sentence before its next tool call. While the runtime is still
@@ -2244,7 +2260,7 @@ test("agent_session_shows_working_indicator_while_runtime_is_running", () => {
       },
     },
   });
-  assert.match(renderProductShell(midTurnReply), /agent-session-working/);
+  assert.match(renderProductShell(midTurnReply), /data-working="true"/);
 
   // While the answer is actively streaming, the block carries its own blinking
   // caret, so the separate indicator hides to avoid a redundant double-indicator.
@@ -2263,7 +2279,7 @@ test("agent_session_shows_working_indicator_while_runtime_is_running", () => {
       },
     },
   });
-  assert.doesNotMatch(renderProductShell(streamingReply), /agent-session-working/);
+  assert.doesNotMatch(renderProductShell(streamingReply), /data-working="true"/);
 
   // The turn *ending* is what clears the indicator: the runtime flips to idle (no
   // lingering loading after the answer), governed by state — not by guessing the
@@ -2276,10 +2292,10 @@ test("agent_session_shows_working_indicator_while_runtime_is_running", () => {
       changedAt: "2026-05-29T00:00:02.000Z",
     },
   });
-  assert.doesNotMatch(renderProductShell(settled), /agent-session-working/);
+  assert.doesNotMatch(renderProductShell(settled), /data-working="true"/);
 
   // When idle from the start, no working indicator.
-  assert.doesNotMatch(renderProductShell(opened), /agent-session-working/);
+  assert.doesNotMatch(renderProductShell(opened), /data-working="true"/);
 });
 
 test("composer_button_is_stop_while_running_but_becomes_send_when_typing_a_followup", () => {
@@ -2293,13 +2309,13 @@ test("composer_button_is_stop_while_running_but_becomes_send_when_typing_a_follo
   // Running with an empty composer → the Stop (interrupt) button, no Send.
   const stopHtml = renderProductShell(running);
   assert.match(stopHtml, /aria-label="Interrupt"/);
-  assert.doesNotMatch(stopHtml, /class="composer-shell__send"/);
+  assert.doesNotMatch(stopHtml, /data-composer-send="true"/);
 
   // Start typing a follow-up → the button becomes Send so you can queue it; the
   // composer Stop is gone (interrupt lives on the queued rows instead).
   const typing = updateProductShellComposerDraft(running, "follow up");
   const sendHtml = renderProductShell(typing);
-  assert.match(sendHtml, /class="composer-shell__send"/);
+  assert.match(sendHtml, /data-composer-send="true"/);
   assert.doesNotMatch(sendHtml, /aria-label="Interrupt"/);
 });
 
@@ -2519,7 +2535,7 @@ test("an_expanding_folder_renders_a_skeleton_child_row_while_children_load", () 
   // under it until the children arrive.
   const expanding = selectProductShellFileTreeEntry(loaded, "d-src");
   assert.equal(expanding.state.fileTree?.loadingFolderPath, "src");
-  assert.match(renderProductShell(expanding.state), /file-tree-row--loading/);
+  assert.match(renderProductShell(expanding.state), /data-file-tree-loading-row/);
 });
 
 test("opening_file_tree_emits_refresh_workbench_command_for_active_thread", () => {
@@ -2996,13 +3012,13 @@ test("window_toggles_are_a_fixed_top_right_cluster_independent_of_open_panels", 
   // The Workbench/FileTree toggles live in one fixed window-level cluster, not in
   // whichever column happens to be rightmost — so they never jump around.
   const startHtml = renderProductShell();
-  assert.match(startHtml, /class="tide-window-toggles"/);
+  assert.match(startHtml, /data-window-toggle-cluster="true"/);
   assert.match(startHtml, /aria-label="Open Workbench"/);
   assert.match(startHtml, /aria-label="Open FileTree"/);
 
   const workbenchOpen = openProductShellThread(createProductShellState(), "thread-workbench");
   const workbenchHtml = renderProductShell(workbenchOpen);
-  assert.match(workbenchHtml, /class="tide-window-toggles"/);
+  assert.match(workbenchHtml, /data-window-toggle-cluster="true"/);
   // Active panel surfaces a Close affordance with the active state.
   assert.match(workbenchHtml, /aria-label="Close Workbench"/);
 
@@ -3030,10 +3046,14 @@ test("prompt_choice_surface_renders_above_composer_with_canonical_spacing", () =
     },
   );
   const html = renderProductShell(state);
-  const css = readProductShellCss();
+  const composerSource = fs.readFileSync(
+    path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/agent-chat/composer/composer.tsx"),
+    "utf8",
+  );
 
   assert.ok(html.indexOf('aria-label="Choice Surface"') < html.indexOf('aria-label="Composer"'));
-  assert.match(css, /\.agent-chat-shell__composer-stack\s*{[^}]*gap:\s*16px/s);
+  assert.match(html, /data-composer-stack="true"/);
+  assert.match(composerSource, /const ComposerStackFrame = styled\.div`[\s\S]*gap:\s*16px;/);
   assert.match(html, /Allow once/);
   assert.match(html, /Explain risk/);
   assert.match(html, /Deny/);
@@ -3060,31 +3080,38 @@ test("prompt_card_with_a_tall_body_caps_height_and_keeps_actions_reachable", () 
     },
   );
   const html = renderProductShell(state);
-  const css = readProductShellCss();
+  const promptCardSource = fs.readFileSync(
+    path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/agent-chat/prompt-card/prompt-card.tsx"),
+    "utf8",
+  );
+  const promptCardPartsSource = fs.readFileSync(
+    path.join(repoRoot, "src/desktop/adapters/inbound/react-renderer/agent-chat/prompt-card/prompt-card.parts.tsx"),
+    "utf8",
+  );
 
   // The live prompt card renders the FULL body plus the answer controls — the controls
   // must be present in the DOM (never conditionally dropped when the body is long). The
-  // message + approval detail are wrapped in the single scrollable `.prompt-card__body`.
+  // message + approval detail are wrapped in the single scrollable prompt body.
   assert.match(html, /aria-label="Agent prompt"/);
-  assert.match(html, /prompt-card__body/);
+  assert.match(html, /data-prompt-body="true"/);
   assert.match(html, /pr body line 79/);
   assert.match(html, /Submit/);
   assert.match(html, /Allow/);
 
   // The card is height-capped; the message/detail scroll together as ONE region
-  // (`.prompt-card__body`), while the kind badge, option list, and actions stay pinned
+  // (PromptBody), while the kind badge, option list, and actions stay pinned
   // (flex: 0 0 auto). The head clips (`overflow: hidden`) so a tall body can never overlap
   // the options below it, and the option list never shrinks to cram Allow/Deny.
-  assert.match(css, /\.prompt-card\s*{[^}]*max-height:/s);
-  assert.match(css, /\.prompt-card__body\s*{[^}]*overflow-y:\s*auto/s);
-  assert.match(css, /\.prompt-card__head\s*{[^}]*overflow:\s*hidden/s);
-  assert.match(css, /\.prompt-card__options\s*{[^}]*flex:\s*0 0 auto/s);
-  assert.match(css, /\.prompt-card__options\s*{[^}]*overflow-y:\s*auto/s);
-  assert.match(css, /\.prompt-card__actions\s*{[^}]*flex:\s*0 0 auto/s);
+  assert.match(promptCardSource, /PromptCardFrame[\s\S]*data-prompt-body="true"/);
+  assert.match(promptCardPartsSource, /export const PromptCardFrame = styled\.div[\s\S]*max-height:/);
+  assert.match(promptCardPartsSource, /export const PromptBody = styled\.div[\s\S]*overflow:\s*auto;/);
+  assert.match(promptCardPartsSource, /export const PromptHead = styled\.div[\s\S]*overflow:\s*hidden;/);
+  assert.match(promptCardPartsSource, /export const PromptOptions = styled\.div[\s\S]*flex:\s*0 0 auto;/);
+  assert.match(promptCardPartsSource, /export const PromptOptions = styled\.div[\s\S]*overflow:\s*auto;/);
+  assert.match(promptCardPartsSource, /export const PromptActions = styled\.div[\s\S]*flex:\s*0 0 auto;/);
   // The "Other…" reply + note textareas live inside the scrollable option column; pin them
   // (flex: 0 0 auto) so a tall option list can't flex-shrink them to crushed slivers.
-  assert.match(css, /\.prompt-card__other\s*{[^}]*flex:\s*0 0 auto/s);
-  assert.match(css, /\.prompt-card__note\s*{[^}]*flex:\s*0 0 auto/s);
+  assert.match(promptCardPartsSource, /const promptTextareaCss = `[\s\S]*flex:\s*0 0 auto;/);
 });
 
 test("product_shell_prompt_choice_row_emits_prompt_answer_command", () => {
@@ -3294,7 +3321,7 @@ test("shell_columns_can_close_without_losing_top_row_alignment", () => {
   assert.equal(view.fileTreeOpen, true);
   // Collapsed, the Left Rail leaves the grid (so the remaining columns' top rows stay
   // aligned) and becomes the out-of-flow floating peek (spec: multitask-navigation L1).
-  assert.match(html, /rail-peek__hot-zone/);
+  assert.match(html, /data-rail-peek-hot-zone/);
   assert.match(html, /aria-label="Agent Chat Top Row"/);
   assert.match(html, /aria-label="FileTree Top Row"/);
 });
@@ -3304,7 +3331,7 @@ test("thread_archive_intent_replaces_actions_with_one_confirm_pill", () => {
   const html = renderProductShell(state);
   const row = extractByDataAttribute(html, "data-thread-row", "thread-workbench");
 
-  assert.match(row, /thread-row--archive-confirming/);
+  assert.match(row, /data-thread-archive-confirming="true"/);
   assert.match(row, /Confirm/);
   assert.equal((row.match(/>Confirm</g) ?? []).length, 1);
   assert.doesNotMatch(row, /aria-label="Pin Thread"/);
@@ -3325,11 +3352,11 @@ test("left_ui_context_menus_match_figma_items_and_keep_rows_highlighted", () => 
     }),
   );
 
-  assert.match(extractByDataAttribute(threadHtml, "data-thread-row", "thread-workbench"), /thread-row--menu-open/);
+  assert.match(extractByDataAttribute(threadHtml, "data-thread-row", "thread-workbench"), /data-thread-menu-open="true"/);
   assert.match(threadHtml, /data-left-rail-menu-kind="thread"/);
   assert.match(threadHtml, /Pin \/ unpin/);
   assert.match(threadHtml, /Archive/);
-  assert.match(extractByDataAttribute(projectHtml, "data-project-row", "tide"), /project-row--menu-open/);
+  assert.match(extractByDataAttribute(projectHtml, "data-project-row", "tide"), /data-project-menu-open="true"/);
   assert.match(projectHtml, /data-left-rail-menu-kind="project"/);
   assert.match(projectHtml, /Pin project/);
   assert.match(projectHtml, /Open in Finder/);
@@ -3454,7 +3481,7 @@ test("collapsed_project_bubbles_a_waiting_thread_attention", () => {
   // Collapsed: the project row shows the attention dot.
   const collapsed = toggleProductShellProject(listed, "tide");
   const html = renderProductShell(collapsed);
-  assert.match(html, /data-project-row="tide"[\s\S]*?project-row__attention/);
+  assert.match(html, /data-project-row="tide"[\s\S]*?data-project-status-bubble="attention"/);
 });
 
 test("completed_background_thread_stays_marked_unread_until_opened", () => {
@@ -3527,7 +3554,7 @@ test("collapsed_project_bubbles_an_unread_completed_thread", () => {
 
   const collapsed = toggleProductShellProject(unread, "tide");
   const html = renderProductShell(collapsed);
-  assert.match(html, /data-project-row="tide"[\s\S]*?project-row__attention/);
+  assert.match(html, /data-project-row="tide"[\s\S]*?data-project-status-bubble="attention"/);
 });
 
 test("project_limits_visible_threads_and_offers_show_more", () => {
@@ -3569,7 +3596,7 @@ test("pinned_project_renders_as_expandable_group_with_its_threads", () => {
   const html = renderProductShell(pinned);
   assert.match(
     html,
-    /aria-label="Pinned"[\s\S]*?data-left-row-kind="project"[\s\S]*?project-row__chevron/,
+    /aria-label="Pinned"[\s\S]*?data-left-row-kind="project"[\s\S]*?data-project-chevron/,
   );
 });
 

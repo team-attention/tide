@@ -2,7 +2,7 @@
 // Boots the REAL built app twice:
 //   (A) against a seeded dataRoot whose enriched index has records → asserts the Main
 //       sendSync snapshot reaches window.tide.initialThreadList AND the rail shows real
-//       rows with no rail-skeleton.
+//       rows with no loading skeleton.
 //   (B) against an empty dataRoot → asserts the snapshot is null (skeleton fallback) and
 //       the app still settles (backend list, zero threads). Never spawns codex.
 const { _electron } = require("playwright");
@@ -20,7 +20,7 @@ async function launch(dataRoot) {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   return { app, page };
 }
 
@@ -57,8 +57,8 @@ function check(label, cond) {
   );
   check("snapshot omits live flag at boot (absent ⇒ false)", snapshot?.threads?.[0]?.live === undefined);
 
-  const railRows = await a.page.locator(".thread-row__main").count();
-  const skeleton = await a.page.locator(".rail-skeleton").count();
+  const railRows = await a.page.locator("[data-thread-row-main]").count();
+  const skeleton = await a.page.locator("[data-rail-skeleton]").count();
   check("rail shows real thread rows", railRows > 0);
   check("rail has no skeleton", skeleton === 0);
   await a.page.screenshot({ path: path.join(os.tmpdir(), "pw-snap-A-seeded.png") });
@@ -73,7 +73,7 @@ function check(label, cond) {
   });
   check("empty dataRoot → initialThreadList is null (not throwing)", emptySnap === "IS_NULL");
   await b.page.waitForTimeout(1500);
-  const emptyRows = await b.page.locator(".thread-row__main").count();
+  const emptyRows = await b.page.locator("[data-thread-row-main]").count();
   check("empty dataRoot settles with zero rows (no crash)", emptyRows === 0);
   await b.page.screenshot({ path: path.join(os.tmpdir(), "pw-snap-B-empty.png") });
   await b.app.close();

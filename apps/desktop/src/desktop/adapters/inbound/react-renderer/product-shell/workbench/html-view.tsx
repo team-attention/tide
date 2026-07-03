@@ -1,6 +1,7 @@
 import type { ProductShellHandlers } from "../support/types.ts";
 import { createElement, useCallback, useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
+import { styled } from "styled-components";
 import { WorkbenchCodeEditor } from "./code-editor.tsx";
 import {
   safeFindInWebView,
@@ -110,27 +111,27 @@ export function WorkbenchHtmlView(props: {
     return undefined;
   }, [webviewElement, effectiveMode, find.open, find.query, props.paneId]);
   const toggle = (target: "preview" | "code", label: string) => (
-    <button
+    <HtmlModeButton
       type="button"
-      className="workbench-html-toggle__option"
+      data-html-mode-option="true"
       data-active={mode === target ? "true" : "false"}
       aria-pressed={mode === target}
       onClick={() => setMode(target)}
     >
       {label}
-    </button>
+    </HtmlModeButton>
   );
   return (
-    <div ref={rootRef} className="workbench-html" data-html-mode={effectiveMode}>
-      <div className="workbench-html-header">
+    <HtmlViewFrame ref={rootRef} data-html-mode={effectiveMode}>
+      <HtmlHeader>
         {props.breadcrumb ?? null}
         {canPreview ? (
-          <div className="workbench-html-toggle" role="group" aria-label="HTML view mode">
+          <HtmlModeToggle role="group" aria-label="HTML view mode">
             {toggle("preview", "Preview")}
             {toggle("code", "Code")}
-          </div>
+          </HtmlModeToggle>
         ) : null}
-      </div>
+      </HtmlHeader>
       {find.open && effectiveMode === "preview" ? (
         <InPaneFindBar
           query={find.query}
@@ -145,17 +146,16 @@ export function WorkbenchHtmlView(props: {
         />
       ) : null}
       {effectiveMode === "preview" ? (
-        <div className="workbench-html-stage">
+        <HtmlPreviewStage data-html-preview-stage="true">
           {/* `<webview>` is an Electron custom element with no JSX typing, so it stays a
               createElement call. file:// renders the saved page with its relative assets. */}
           {createElement("webview", {
             ref: setWebviewRef,
-            className: "workbench-html-webview",
             "data-html-pane-webview": props.paneId,
             src: fileUrlFromPath(props.filePath as string),
             partition: "persist:tide-workbench-browser",
           })}
-        </div>
+        </HtmlPreviewStage>
       ) : (
         <WorkbenchCodeEditor
           paneId={props.paneId}
@@ -170,7 +170,7 @@ export function WorkbenchHtmlView(props: {
           handlers={props.handlers}
         />
       )}
-    </div>
+    </HtmlViewFrame>
   );
 }
 
@@ -180,3 +180,70 @@ type BrowserFoundInPageEvent = Event & {
     matches?: number;
   };
 };
+
+const HtmlViewFrame = styled.div`
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+`;
+
+const HtmlHeader = styled.div`
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--tide-line);
+
+  [data-editor-breadcrumb] {
+    min-height: 28px;
+    flex: 1 1 160px;
+    padding: 0;
+  }
+`;
+
+const HtmlModeToggle = styled.div`
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+  padding: 2px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+`;
+
+const HtmlModeButton = styled.button`
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  font: 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+
+  &[data-active="true"] {
+    background: var(--tide-bg);
+    color: var(--tide-text);
+    box-shadow: 0 1px 2px rgb(52 48 56 / 8%);
+  }
+`;
+
+const HtmlPreviewStage = styled.div`
+  position: relative;
+  min-height: 0;
+  flex: 1 1 0;
+  display: flex;
+
+  [data-html-pane-webview] {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    flex: 1 1 0;
+    display: flex;
+    background: var(--tide-bg);
+  }
+`;

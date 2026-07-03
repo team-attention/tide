@@ -1,10 +1,19 @@
 import type { ProductShellChatColumnViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
+import { styled } from "styled-components";
 import { threadScopeLabel } from "../left-rail/thread-section.tsx";
-import { createIconButton, createTrafficControls } from "../chrome/chrome.tsx";
+import { createTrafficControls } from "../chrome/chrome.tsx";
 import { Folder, GitBranch, PanelLeftOpen, Pin } from "lucide-react";
 import { AgentChatShell } from "../../agent-chat/agent-chat.tsx";
+import {
+  ColumnTopRow,
+  ColumnTopRowLeading,
+  ColumnTopRowScope,
+  ColumnTopRowTitle,
+  ColumnTopRowTrailing,
+  TopRowButton,
+} from "../support/column-top-row.parts.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function createAgentChatColumn(
@@ -35,55 +44,51 @@ export function createAgentChatColumn(
   const scopePath = scope === undefined ? undefined : scope.kind === "project" ? scope.cwd : "Scratch thread";
 
   return (
-    <section className="tide-product-shell__stage" aria-label="Agent Chat" data-column="agent-chat">
-      <header className="agent-chat-top-row column-top-row" aria-label="Agent Chat Top Row">
-        <div className="column-top-row__leading">
+    <AgentChatStage aria-label="Agent Chat" data-column="agent-chat">
+      <AgentChatTopRow aria-label="Agent Chat Top Row">
+        <ColumnTopRowLeading>
           {viewModel.leftRailOpen ? null : createTrafficControls()}
-          {viewModel.leftRailOpen
-            ? null
-            : createIconButton(
-                "Open Left Rail",
-                <PanelLeftOpen size={15} strokeWidth={1.9} />,
-                handlers.onLeftRailToggle,
-                "top-row-button",
-              )}
+          {viewModel.leftRailOpen ? null : (
+            <TopRowButton type="button" title="Open Left Rail" aria-label="Open Left Rail" onClick={handlers.onLeftRailToggle}>
+              <PanelLeftOpen size={15} strokeWidth={1.9} aria-hidden />
+            </TopRowButton>
+          )}
           <Pin size={14} strokeWidth={1.9} aria-hidden />
-          <span className="column-top-row__title">{title}</span>
+          <ColumnTopRowTitle>{title}</ColumnTopRowTitle>
           {scopeLabel === null ? null : (
-            <span className="column-top-row__scope" title={scopePath}>
+            <ColumnTopRowScope title={scopePath}>
               <Folder size={12} strokeWidth={1.9} aria-hidden />
               <span>{scopeLabel}</span>
-            </span>
+            </ColumnTopRowScope>
           )}
           {gitBadge === null ? null : (
-            <button
+            <HeaderGitBadge
               type="button"
-              className="column-top-row__git"
               title={`${gitBadge.branch ?? "detached HEAD"} · ${gitBadge.fileCount} file${gitBadge.fileCount === 1 ? "" : "s"} changed (+${gitBadge.additions} −${gitBadge.deletions}) — view changes`}
               aria-label="View working tree changes"
               onClick={() => handlers.onOpenChanges(gitBadge.cwd)}
             >
               <GitBranch size={12} strokeWidth={1.9} aria-hidden />
-              <span className="column-top-row__git-branch">{gitBadge.branch ?? "detached"}</span>
+              <HeaderGitBranch>{gitBadge.branch ?? "detached"}</HeaderGitBranch>
               {gitBadge.additions > 0 || gitBadge.deletions > 0 ? (
-                <span className="column-top-row__git-stat">
+                <HeaderGitStat>
                   {gitBadge.additions > 0 ? (
-                    <span className="column-top-row__git-add">{`+${gitBadge.additions}`}</span>
+                    <HeaderGitAdd>{`+${gitBadge.additions}`}</HeaderGitAdd>
                   ) : null}
                   {gitBadge.deletions > 0 ? (
-                    <span className="column-top-row__git-del">{`−${gitBadge.deletions}`}</span>
+                    <HeaderGitDel>{`−${gitBadge.deletions}`}</HeaderGitDel>
                   ) : null}
-                </span>
+                </HeaderGitStat>
               ) : gitBadge.fileCount > 0 ? (
-                <span className="column-top-row__git-count">{gitBadge.fileCount}</span>
+                <HeaderGitCount>{gitBadge.fileCount}</HeaderGitCount>
               ) : null}
-            </button>
+            </HeaderGitBadge>
           )}
-        </div>
+        </ColumnTopRowLeading>
         {/* Trailing kept as a spacer; the Workbench/FileTree toggles now live in the
             fixed window-level cluster at the top-right. */}
-        <div className="column-top-row__trailing" />
-      </header>
+        <ColumnTopRowTrailing />
+      </AgentChatTopRow>
       <AgentChatShell
         viewModel={viewModel.agentChat}
         showThreadHeader={false}
@@ -109,6 +114,84 @@ export function createAgentChatColumn(
         onAnswerPromptText={handlers.onAnswerPromptText}
         onAnswerPromptSteps={handlers.onAnswerPromptSteps}
       />
-    </section>
+    </AgentChatStage>
   );
 }
+
+const AgentChatStage = styled.section`
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr);
+  background: var(--tide-bg);
+`;
+
+const agentChatTopRowAttrs = (): Record<string, string> => ({
+  "data-agent-chat-top-row": "true",
+});
+
+const AgentChatTopRow = styled(ColumnTopRow).attrs(agentChatTopRowAttrs)`
+  padding: 0 12px;
+`;
+
+const HeaderGitBadge = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  max-width: 190px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  &:hover {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+`;
+
+const HeaderGitBranch = styled.span`
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const HeaderGitCount = styled.span`
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--tide-action);
+  color: var(--tide-on-action, var(--tide-bg));
+  font-size: 10px;
+  font-weight: 600;
+`;
+
+const HeaderGitStat = styled.span`
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+`;
+
+const HeaderGitAdd = styled.span`
+  color: var(--tide-diff-add);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+`;
+
+const HeaderGitDel = styled.span`
+  color: var(--tide-danger);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+`;

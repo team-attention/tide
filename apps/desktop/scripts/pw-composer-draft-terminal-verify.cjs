@@ -28,7 +28,7 @@ function check(label, ok, detail = "") {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(800);
 
   await page.evaluate(async (cwd) => { await window.tide.registerProject(cwd); }, repo);
@@ -50,7 +50,7 @@ function check(label, ok, detail = "") {
   const composerInput = page.locator('textarea[placeholder="Do anything"]');
   check("composer shows the start composer before opening a pane", (await composerInput.count()) > 0);
 
-  const railThreadsBefore = await page.locator(".thread-row, [data-thread-id]").count();
+  const railThreadsBefore = await page.locator("[data-thread-row], [data-thread-id]").count();
 
   // Open the Workbench (shows the Launcher in the composer), then pick Terminal.
   const openWb = page.locator('[aria-label="Open Workbench"]').first();
@@ -71,7 +71,7 @@ function check(label, ok, detail = "") {
   // The chat MUST still be the start composer (it did NOT flip to a transcript).
   check("chat stays the start composer after opening the terminal", (await page.locator('textarea[placeholder="Do anything"]').count()) > 0);
   // The Draft Thread is NOT listed in the rail until sent.
-  const railThreadsAfter = await page.locator(".thread-row, [data-thread-id]").count();
+  const railThreadsAfter = await page.locator("[data-thread-row], [data-thread-id]").count();
   check("the Draft Thread is not added to the rail", railThreadsAfter === railThreadsBefore, `${railThreadsBefore} -> ${railThreadsAfter}`);
 
   // TYPE into the terminal — proves input routes to the draft's PTY. xterm is WebGL
@@ -95,7 +95,7 @@ function check(label, ok, detail = "") {
   await page.screenshot({ path: "/tmp/pw-draft-3-after-send.png" });
   check("terminal pane persists after Send (started in place)", (await page.locator('[data-pane-kind="terminal"]').count()) > 0);
   check("chat became a transcript after Send", (await page.locator('textarea[placeholder="Do anything"]').count()) === 0);
-  const railThreadsSent = await page.locator(".thread-row, [data-thread-id]").count();
+  const railThreadsSent = await page.locator("[data-thread-row], [data-thread-id]").count();
   check("the started thread now appears in the rail", railThreadsSent > railThreadsBefore, `${railThreadsBefore} -> ${railThreadsSent}`);
 
   await app.close();

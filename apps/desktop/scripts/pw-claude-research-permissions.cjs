@@ -34,21 +34,21 @@ const check = (ok, label, detail) => { checks.push(ok); log({ phase: ok ? "ok" :
   page.on("pageerror", (e) => pageErrors.push(String(e.message).slice(0, 200)));
   const shot = (l) => page.screenshot({ path: `/tmp/pw-research-${l}.png` });
 
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(800);
 
   // claude + Ask permissions
-  await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+  await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
   await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
-  await page.locator('[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: "Claude Code" }).first().click();
+  await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: "Claude Code" }).first().click();
   await page.waitForTimeout(300);
   await page.locator('[aria-label="Permission"]').first().click();
   await page.locator('[data-choice-surface="permission_menu"]').waitFor({ timeout: 5000 });
-  await page.locator('[data-choice-surface="permission_menu"] .choice-surface__row', { hasText: "Ask permissions" }).first().click();
+  await page.locator('[data-choice-surface="permission_menu"] [data-choice-row]', { hasText: "Ask permissions" }).first().click();
   await page.waitForTimeout(300);
 
   await page.locator('[aria-label="Composer draft"]').first().fill(PROMPT);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   log({ phase: "sent" });
 
   // Drive the turn: every time a permission card appears, Allow + Submit it.
@@ -60,18 +60,18 @@ const check = (ok, label, detail) => { checks.push(ok); log({ phase: ok ? "ok" :
   while (Date.now() < deadline) {
     await page.waitForTimeout(1500);
 
-    const card = page.locator(".prompt-card");
+    const card = page.locator("[data-prompt-card]");
     if (await card.count()) {
-      const msg = (await card.locator(".prompt-card__message").innerText().catch(() => "")).trim();
+      const msg = (await card.locator("[data-prompt-message]").innerText().catch(() => "")).trim();
       if (!approved.has(msg)) {
         approved.add(msg);
         log({ phase: "card", n: approved.size, message: msg });
         await shot(`card-${approved.size}`);
-        const firstOption = card.locator(".prompt-card__option").first();
+        const firstOption = card.locator("[data-prompt-option]").first();
         if ((await firstOption.getAttribute("data-selected")) !== "true") {
           await firstOption.click();
         }
-        const submit = card.locator(".prompt-card__submit");
+        const submit = card.locator("[data-prompt-submit]");
         if (!(await submit.isDisabled())) {
           await submit.click();
           log({ phase: "approved", message: msg });
@@ -82,7 +82,7 @@ const check = (ok, label, detail) => { checks.push(ok); log({ phase: ok ? "ok" :
 
     // Final answer rendered? (PLTR/FIG short-interest number or any agent answer block
     // after the searches). Detect by the answer text containing digits + the turn idle.
-    const shellText = await page.locator(".tide-product-shell").innerText();
+    const shellText = await page.locator("[data-product-shell]").innerText();
     const hasNumberAnswer = /69|70|short interest|숏 인터레스트|주\b|million|shares/i.test(shellText) &&
       // exclude the user's own prompt echo
       shellText.replace(PROMPT, "").match(/\d{2}/);
@@ -97,7 +97,7 @@ const check = (ok, label, detail) => { checks.push(ok); log({ phase: ok ? "ok" :
   }
 
   await shot("final");
-  const shellText = await page.locator(".tide-product-shell").innerText();
+  const shellText = await page.locator("[data-product-shell]").innerText();
   const stillWorking = /Working|Thinking/i.test(shellText);
 
   check(approved.size >= 1, "at_least_one_permission_card", { approved: approved.size });

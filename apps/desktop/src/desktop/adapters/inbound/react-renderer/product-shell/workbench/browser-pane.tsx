@@ -2,7 +2,9 @@ import type { ProductShellViewModel } from "../../../../../application/domains/p
 import type { ProductShellHandlers } from "../support/types.ts";
 import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
+import { keyframes, styled } from "styled-components";
 import { ArrowLeft, ArrowRight, ExternalLink, FileText, RotateCw } from "lucide-react";
+import { WorkbenchPaneSurface } from "./workbench-pane.parts.tsx";
 
 function useBrowserRuntimeStage(input: {
   threadId: string | null;
@@ -173,38 +175,34 @@ export function WorkbenchBrowserPane(props: {
   };
 
   return (
-    <div className="workbench-pane-content workbench-pane-content--browser">
-      <form
-        className="workbench-browser-bar"
+    <BrowserPaneSurface data-pane-surface-kind="browser">
+      <BrowserAddressBar
         aria-label="Browser address"
         onSubmit={(event: { preventDefault: () => void }) => {
           event.preventDefault();
           navigate();
         }}
       >
-        <button
+        <BrowserNavButton
           type="button"
-          className="workbench-browser-bar__nav"
           title="Back"
           aria-label="Back"
           disabled={!runtimeAvailable}
           onClick={() => sendRuntimeCommand("goBack")}
         >
           <ArrowLeft size={15} strokeWidth={1.9} aria-hidden />
-        </button>
-        <button
+        </BrowserNavButton>
+        <BrowserNavButton
           type="button"
-          className="workbench-browser-bar__nav"
           title="Forward"
           aria-label="Forward"
           disabled={!runtimeAvailable}
           onClick={() => sendRuntimeCommand("goForward")}
         >
           <ArrowRight size={15} strokeWidth={1.9} aria-hidden />
-        </button>
-        <button
+        </BrowserNavButton>
+        <BrowserNavButton
           type="button"
-          className="workbench-browser-bar__nav"
           title={props.pane.loading ? "Stop / reloading" : "Reload"}
           aria-label="Reload"
           disabled={!runtimeAvailable}
@@ -212,9 +210,9 @@ export function WorkbenchBrowserPane(props: {
           data-loading={props.pane.loading ? "true" : "false"}
         >
           <RotateCw size={14} strokeWidth={1.9} aria-hidden />
-        </button>
-        <input
-          className="workbench-browser-bar__input"
+        </BrowserNavButton>
+        <BrowserAddressInput
+          data-browser-address-input="true"
           aria-label="Browser address input"
           value={address}
           placeholder="Enter a URL and press Enter"
@@ -223,18 +221,16 @@ export function WorkbenchBrowserPane(props: {
           autoCorrect="off"
           onChange={(event: { currentTarget: { value: string } }) => setAddress(event.currentTarget.value)}
         />
-        <button
+        <BrowserIconButton
           type="button"
-          className="workbench-browser-bar__icon"
           title="Add this page to the chat composer"
           aria-label="Add this page to chat"
           onClick={addPageToChat}
         >
           <FileText size={14} strokeWidth={1.8} aria-hidden />
-        </button>
-        <button
+        </BrowserIconButton>
+        <BrowserIconButton
           type="button"
-          className="workbench-browser-bar__icon"
           title="Open this page in your default browser"
           aria-label="Open in external browser"
           onClick={() => {
@@ -245,12 +241,12 @@ export function WorkbenchBrowserPane(props: {
           }}
         >
           <ExternalLink size={14} strokeWidth={1.8} aria-hidden />
-        </button>
-      </form>
-      <div ref={stageRef} className="workbench-browser-stage" data-native-runtime="true">
-        <div className="workbench-browser-native-stage" aria-hidden />
-      </div>
-    </div>
+        </BrowserIconButton>
+      </BrowserAddressBar>
+      <BrowserRuntimeStage ref={stageRef} data-native-runtime="true" data-browser-runtime-stage="true">
+        <BrowserNativeStage data-browser-native-stage="true" aria-hidden />
+      </BrowserRuntimeStage>
+    </BrowserPaneSurface>
   );
 }
 
@@ -267,3 +263,112 @@ function normalizeBrowserUrl(input: string): string {
   }
   return `https://www.google.com/search?q=${encodeURIComponent(value)}`;
 }
+
+const browserSpin = keyframes`
+  to {
+    transform: rotate(360deg);
+  }
+`;
+
+const BrowserPaneSurface = styled(WorkbenchPaneSurface)``;
+
+const BrowserAddressBar = styled.form`
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--tide-line);
+  color: var(--tide-muted);
+  font: 12px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+`;
+
+const BrowserAddressInput = styled.input`
+  min-width: 0;
+  height: 28px;
+  flex: 1 1 auto;
+  padding: 0 12px;
+  border: 1px solid var(--tide-line);
+  border-radius: 999px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font: 12px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  &:focus {
+    border-color: var(--tide-action);
+    outline: none;
+  }
+`;
+
+const BrowserNavButton = styled.button`
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.32;
+  }
+
+  &[data-loading="true"] svg {
+    animation: ${browserSpin} 0.8s linear infinite;
+  }
+`;
+
+const BrowserIconButton = styled.button`
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-bg);
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  &:hover {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+
+  &[data-active="true"] {
+    border-color: var(--tide-action);
+    background: var(--tide-action);
+    color: var(--tide-on-action);
+  }
+`;
+
+const BrowserRuntimeStage = styled.div`
+  position: relative;
+  min-height: 0;
+  flex: 1 1 0;
+  display: flex;
+`;
+
+const BrowserNativeStage = styled.div`
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 0;
+  display: flex;
+  background: #fff;
+`;

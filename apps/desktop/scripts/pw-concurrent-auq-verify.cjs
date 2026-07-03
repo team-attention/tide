@@ -15,27 +15,27 @@ const ASK = "Use the AskUserQuestion tool right now to ask me to pick one of Red
   app = await _electron.launch({ args: [path.join(repo, "out/main/electron-main.js")], env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot } });
   const page = await app.firstWindow();
   page.on("pageerror", (e) => log({ pageerror: String(e.message).slice(0, 160) }));
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(700);
 
   const pickClaudeAskPerms = async () => {
-    await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+    await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
     await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
-    await page.locator('[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: "Claude Code" }).first().click();
+    await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: "Claude Code" }).first().click();
     await page.waitForTimeout(200);
     await page.locator('[aria-label="Permission"]').first().click();
     await page.locator('[data-choice-surface="permission_menu"]').waitFor({ timeout: 5000 });
-    await page.locator('[data-choice-surface="permission_menu"] .choice-surface__row', { hasText: "Ask permissions" }).first().click();
+    await page.locator('[data-choice-surface="permission_menu"] [data-choice-row]', { hasText: "Ask permissions" }).first().click();
     await page.waitForTimeout(200);
   };
 
   // Start 3 threads in quick succession (concurrent runtimes).
   const started = [];
   for (let i = 0; i < 3; i += 1) {
-    if (i > 0) { await page.locator(".left-rail-nav-row", { hasText: "New thread" }).first().click(); await page.waitForTimeout(400); }
+    if (i > 0) { await page.locator("[data-left-nav-row]", { hasText: "New thread" }).first().click(); await page.waitForTimeout(400); }
     await pickClaudeAskPerms();
     await page.locator('[aria-label="Composer draft"]').first().fill(`[t${i}] ${ASK}`);
-    await page.locator(".composer-shell__send").first().click();
+    await page.locator("[data-composer-send]").first().click();
     log({ started: i });
     await page.waitForTimeout(1500); // stagger slightly, but all run concurrently
   }
@@ -57,9 +57,9 @@ const ASK = "Use the AskUserQuestion tool right now to ask me to pick one of Red
     await page.waitForTimeout(1500);
     let cardUp = false; let state = null; let working = false;
     while (Date.now() < deadline) {
-      cardUp = await page.locator(".prompt-card").first().isVisible().catch(() => false);
+      cardUp = await page.locator("[data-prompt-card]").first().isVisible().catch(() => false);
       state = await page.locator("[data-runtime-state]").first().getAttribute("data-runtime-state").catch(() => null);
-      working = await page.locator(".tide-product-shell", { hasText: "Working" }).count().then((c) => c > 0).catch(() => false);
+      working = await page.locator("[data-product-shell]", { hasText: "Working" }).count().then((c) => c > 0).catch(() => false);
       if (cardUp || (state && state !== "running" && state !== "starting" && !working)) break;
       await page.waitForTimeout(2000);
     }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
+import { styled } from "styled-components";
 
 // Global app zoom (Cmd +/-/0). Main zooms the host window's webContents and broadcasts
 // the factor; we MIRROR that factor onto every embedded <webview> guest — guests do
@@ -97,14 +98,46 @@ export function GlobalZoomIndicator(): ReactElement | null {
   }
   const percent = Math.round(factor * 100);
   return (
-    <button
+    <ZoomResetButton
       type="button"
-      className="zoom-indicator"
+      data-zoom-indicator="true"
       title="Reset zoom to 100%"
       aria-label={`Zoom ${percent} percent — click to reset to 100%`}
       onClick={() => window.tide?.resetZoom?.()}
     >
       {`${percent}%`}
-    </button>
+    </ZoomResetButton>
   );
 }
+
+const ZoomResetButton = styled.button`
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2000;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--tide-line);
+  border-radius: 14px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-shadow: 0 6px 18px rgba(52, 48, 56, 0.16);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+
+  &:hover {
+    border-color: var(--tide-action);
+    color: var(--tide-action);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--tide-action);
+    outline-offset: 2px;
+  }
+`;

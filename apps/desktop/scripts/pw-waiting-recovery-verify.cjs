@@ -31,37 +31,37 @@ const check = (ok, label, detail) => {
   page.on("pageerror", (e) => console.log(JSON.stringify({ phase: "pageerror", message: String(e.message).slice(0, 200) })));
   const shot = (l) => page.screenshot({ path: `/tmp/pw-waitrec-${l}.png` });
 
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(800);
 
   // claude + Ask permissions
-  await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+  await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
   await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
-  await page.locator('[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: "Claude Code" }).first().click();
+  await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: "Claude Code" }).first().click();
   await page.waitForTimeout(300);
   await page.locator('[aria-label="Permission"]').first().click();
   await page.locator('[data-choice-surface="permission_menu"]').waitFor({ timeout: 5000 });
-  await page.locator('[data-choice-surface="permission_menu"] .choice-surface__row', { hasText: "Ask permissions" }).first().click();
+  await page.locator('[data-choice-surface="permission_menu"] [data-choice-row]', { hasText: "Ask permissions" }).first().click();
   await page.waitForTimeout(300);
 
   await page.locator('[aria-label="Composer draft"]').first().fill(PROMPT);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   console.log("sent; waiting for a prompt card (AskUserQuestion or a tool permission)…");
 
   // (1) A card surfaces. Permission cards for the tool may surface first; either is a
   // waiting state. We accept the FIRST card and then prove it survives.
-  const card = page.locator(".prompt-card");
+  const card = page.locator("[data-prompt-card]");
   let appeared = false;
   try { await card.first().waitFor({ state: "visible", timeout: 180000 }); appeared = true; } catch {}
   check(appeared, "a prompt card surfaced (thread reached a waiting state)");
   if (!appeared) {
     await shot("nocard");
-    const txt = await page.locator(".tide-product-shell").innerText().catch(() => "");
+    const txt = await page.locator("[data-product-shell]").innerText().catch(() => "");
     console.log(JSON.stringify({ phase: "dump", tail: txt.slice(-600) }));
     await app.close();
     process.exit(1);
   }
-  const cardMsg = (await card.first().locator(".prompt-card__message").innerText().catch(() => "")).trim();
+  const cardMsg = (await card.first().locator("[data-prompt-message]").innerText().catch(() => "")).trim();
   console.log(JSON.stringify({ phase: "card", message: cardMsg.slice(0, 120) }));
   await shot("1-card");
 
@@ -79,12 +79,12 @@ const check = (ok, label, detail) => {
   // (3) A Stop escape is present while waiting (interrupt-in-waiting fix). The bottom
   // run-state button must be Stop, and runtimeState must be a waiting_* value.
   const runtimeState = await page.locator("[data-runtime-state]").first().getAttribute("data-runtime-state").catch(() => null);
-  const stopVisible = await page.locator(".composer-shell__send--stop").first().isVisible().catch(() => false);
+  const stopVisible = await page.locator("[data-composer-stop]").first().isVisible().catch(() => false);
   check(stopVisible, "a Stop escape button is shown in the waiting state", { runtimeState });
 
   // (4) Clicking Stop UNLOCKS: the card clears and the thread leaves the waiting state.
   if (stopVisible) {
-    await page.locator(".composer-shell__send--stop").first().click();
+    await page.locator("[data-composer-stop]").first().click();
     await page.waitForTimeout(2500);
     const cardGone = !(await card.first().isVisible().catch(() => false));
     const stateAfter = await page.locator("[data-runtime-state]").first().getAttribute("data-runtime-state").catch(() => null);

@@ -55,7 +55,7 @@ test("thread_row_exposes_direct_pin_archive_actions_plus_menu", () => {
   assert.match(markup, /aria-label="Thread menu"/);
   assert.doesNotMatch(markup, /aria-label="Unpin"/);
   assert.doesNotMatch(markup, /aria-label="Delete worktree"/);
-  assert.doesNotMatch(markup, /thread-row__leading/);
+  assert.doesNotMatch(markup, /data-thread-leading-status/);
 });
 
 test("pinned_thread_row_exposes_direct_unpin_without_leading_marker", () => {
@@ -63,25 +63,25 @@ test("pinned_thread_row_exposes_direct_unpin_without_leading_marker", () => {
   assert.match(markup, /aria-label="Unpin"/);
   assert.match(markup, /aria-label="Archive"/);
   assert.match(markup, /aria-label="Thread menu"/);
-  assert.doesNotMatch(markup, /thread-row__leading/);
+  assert.doesNotMatch(markup, /data-thread-leading-status/);
 });
 
 test("thread_row_leading_status_is_only_for_running_or_attention", () => {
   const running = renderRow(true, "/Users/you/repo", { lastKnownState: "running" });
-  assert.match(running, /thread-row__leading--running/);
+  assert.match(running, /data-thread-leading-status="running"/);
 
   const attention = renderRow(true, "/Users/you/repo", { lastKnownState: "waiting_for_input" });
-  assert.match(attention, /thread-row__leading--attention/);
+  assert.match(attention, /data-thread-leading-status="attention"/);
 
   const live = renderRow(true, "/Users/you/repo", { live: true });
-  assert.doesNotMatch(live, /thread-row__leading/);
+  assert.doesNotMatch(live, /data-thread-leading-status/);
 });
 
 test("worktree_thread_row_exposes_project_and_worktree_in_hover_context", () => {
   const markup = renderRow(true, "/Users/you/repo.worktree/feature-x");
   assert.match(markup, /id="thread-row-context-t1"/);
   assert.match(markup, /aria-describedby="thread-row-context-t1"/);
-  assert.match(markup, /class="thread-row__context-popover"[^>]*hidden/);
+  assert.match(markup, /data-thread-context-popover[^>]*hidden/);
   assert.match(markup, /(?:tabIndex|tabindex)="-1"/);
   assert.match(markup, />Project</);
   assert.match(markup, />repo</);

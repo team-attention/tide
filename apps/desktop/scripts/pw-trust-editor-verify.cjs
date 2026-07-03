@@ -23,9 +23,9 @@ const repo = path.resolve(__dirname, "..");
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1000);
-  const threadRows = page.locator(".thread-row__main");
+  const threadRows = page.locator("[data-thread-row-main]");
   if ((await threadRows.count()) > 0) {
     await threadRows.first().click();
     await page.waitForTimeout(1000);
@@ -36,11 +36,11 @@ const repo = path.resolve(__dirname, "..");
   await composer.click();
   await composer.type("/", { delay: 40 });
   await page.waitForTimeout(700);
-  const opened = await page.locator(".chip-popover").count();
+  const opened = await page.locator("[data-chip-popover]").count();
   console.log("popover open after '/' ?", opened > 0);
   await page.keyboard.press("Escape");
   await page.waitForTimeout(500);
-  const afterEsc = await page.locator(".chip-popover").count();
+  const afterEsc = await page.locator("[data-chip-popover]").count();
   console.log("popover closed after Escape?", afterEsc === 0);
   // Clear the stray "/".
   await composer.fill("");
@@ -51,7 +51,7 @@ const repo = path.resolve(__dirname, "..");
     await toggle.first().click();
     await page.waitForTimeout(1500);
   }
-  const rows = page.locator('.file-tree-row[data-file-kind="file"]');
+  const rows = page.locator('[data-file-kind="file"]');
   const total = await rows.count();
   console.log("file rows:", total);
   let openedFile = null;

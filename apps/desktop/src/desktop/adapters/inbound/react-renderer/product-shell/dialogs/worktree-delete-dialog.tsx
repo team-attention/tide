@@ -1,6 +1,18 @@
 import { useState } from "react";
 import type { ChangeEvent, ReactElement } from "react";
 import { Loader2, Trash2 } from "lucide-react";
+import {
+  WorktreeDeleteCheck,
+  WorktreeDialogActions,
+  WorktreeDialogBackdrop,
+  WorktreeDialogCancelButton,
+  WorktreeDialogConfirmButton,
+  WorktreeDialogPanel,
+  WorktreeDialogPreview,
+  WorktreeDialogSpinner,
+  WorktreeDialogTitle,
+  WorktreeDialogWarning,
+} from "./worktree-dialog.parts.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // The worktree being deleted (branch + git/merge facts from worktreeInfo, plus
@@ -36,24 +48,24 @@ export function WorktreeDeleteDialog(props: {
       ? `${threadCount} thread${threadCount === 1 ? "" : "s"} run in this worktree — they'll become unavailable (their history is kept).`
       : `This removes the worktree directory on disk.`;
   return (
-    <div
-      className="worktree-create-backdrop"
+    <WorktreeDialogBackdrop
       role="dialog"
       aria-label="Delete worktree"
+      data-worktree-dialog="delete-worktree"
       onMouseDown={(event: { target: EventTarget | null; currentTarget: EventTarget | null }) => {
         if (event.target === event.currentTarget && !deleting) {
           props.onClose();
         }
       }}
     >
-      <div className="worktree-create worktree-delete">
-        <div className="worktree-create__title">
+      <WorktreeDialogPanel>
+        <WorktreeDialogTitle>
           <Trash2 size={15} strokeWidth={1.9} aria-hidden />
           {`Delete worktree · ${branch}`}
-        </div>
-        <div className="worktree-create__preview">{body}</div>
+        </WorktreeDialogTitle>
+        <WorktreeDialogPreview data-kind="sentence">{body}</WorktreeDialogPreview>
         {anyRunning ? null : (
-          <label className="worktree-delete__check">
+          <WorktreeDeleteCheck>
             <input
               type="checkbox"
               checked={keepBranch}
@@ -61,31 +73,32 @@ export function WorktreeDeleteDialog(props: {
               onChange={(event: ChangeEvent<HTMLInputElement>) => setKeepBranch(event.currentTarget.checked)}
             />
             <span>{`Keep branch ${branch}`}</span>
-          </label>
+          </WorktreeDeleteCheck>
         )}
         {unmerged ? (
-          <div className="worktree-delete__warn">
+          <WorktreeDialogWarning>
             {`Branch "${branch}" has unmerged commits — deleting it discards them.`}
-          </div>
+          </WorktreeDialogWarning>
         ) : null}
-        <div className="worktree-create__actions">
-          <button
+        <WorktreeDialogActions>
+          <WorktreeDialogCancelButton
             type="button"
-            className="worktree-create__cancel"
             disabled={deleting}
             onClick={() => props.onClose()}
           >
             Cancel
-          </button>
-          <button
+          </WorktreeDialogCancelButton>
+          <WorktreeDialogConfirmButton
             type="button"
-            className="worktree-create__confirm worktree-delete__confirm"
+            data-variant="danger"
             disabled={anyRunning || deleting}
             onClick={() => props.onConfirm(keepBranch)}
           >
             {deleting ? (
               <>
-                <Loader2 size={14} strokeWidth={2} className="worktree-delete__spinner" aria-hidden />
+                <WorktreeDialogSpinner aria-hidden>
+                  <Loader2 size={14} strokeWidth={2} />
+                </WorktreeDialogSpinner>
                 Deleting…
               </>
             ) : willDeleteBranch ? (
@@ -93,9 +106,9 @@ export function WorktreeDeleteDialog(props: {
             ) : (
               "Delete worktree"
             )}
-          </button>
-        </div>
-      </div>
-    </div>
+          </WorktreeDialogConfirmButton>
+        </WorktreeDialogActions>
+      </WorktreeDialogPanel>
+    </WorktreeDialogBackdrop>
   );
 }

@@ -1,5 +1,5 @@
 // Live verification for prompt-full-fidelity-fields Slice 1, approval DETAIL half: drive a
-// REAL claude turn that requests Bash permission, then confirm the .prompt-card renders the
+// REAL claude turn that requests Bash permission, then confirm the [data-prompt-card] renders the
 // command as a `detail` block (claude-stream-json-client buildPermissionDetail).
 const { _electron } = require("playwright");
 const path = require("node:path");
@@ -21,26 +21,26 @@ const ASK =
   });
   const page = await app.firstWindow();
   page.on("pageerror", (e) => log({ pageerror: String(e.message).slice(0, 200) }));
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(700);
 
-  await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+  await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
   await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
-  await page.locator('[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: "Claude Code" }).first().click();
+  await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: "Claude Code" }).first().click();
   await page.waitForTimeout(200);
   await page.locator('[aria-label="Permission"]').first().click();
   await page.locator('[data-choice-surface="permission_menu"]').waitFor({ timeout: 5000 });
-  await page.locator('[data-choice-surface="permission_menu"] .choice-surface__row', { hasText: "Ask permissions" }).first().click();
+  await page.locator('[data-choice-surface="permission_menu"] [data-choice-row]', { hasText: "Ask permissions" }).first().click();
   await page.waitForTimeout(200);
 
   await page.locator('[aria-label="Composer draft"]').first().fill(ASK);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   log({ sent: true });
 
   const deadline = Date.now() + 150000;
   let cardUp = false;
   while (Date.now() < deadline) {
-    cardUp = await page.locator(".prompt-card").first().isVisible().catch(() => false);
+    cardUp = await page.locator("[data-prompt-card]").first().isVisible().catch(() => false);
     if (cardUp) break;
     await page.waitForTimeout(2000);
   }
@@ -54,15 +54,15 @@ const ASK =
 
   await page.waitForTimeout(400);
   const card = await page.evaluate(() => {
-    const el = document.querySelector(".prompt-card");
+    const el = document.querySelector("[data-prompt-card]");
     if (!el) return null;
     const txt = (n) => (n ? (n.textContent || "").trim() : null);
     return {
-      kindLabel: txt(el.querySelector(".prompt-card__kind")),
-      message: txt(el.querySelector(".prompt-card__message")),
-      detailFormat: el.querySelector(".prompt-card__detail")?.getAttribute("data-format") ?? null,
-      detailBody: txt(el.querySelector(".prompt-card__detail-body")),
-      options: [...el.querySelectorAll(".prompt-card__option-label")].map((n) => txt(n)),
+      kindLabel: txt(el.querySelector("[data-prompt-kind-label]")),
+      message: txt(el.querySelector("[data-prompt-message]")),
+      detailFormat: el.querySelector("[data-prompt-detail]")?.getAttribute("data-format") ?? null,
+      detailBody: txt(el.querySelector("[data-prompt-detail-body]")),
+      options: [...el.querySelectorAll("[data-prompt-option-label]")].map((n) => txt(n)),
       leaksStructuredToken: (el.textContent || "").includes("structured:"),
     };
   });

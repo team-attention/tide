@@ -1,6 +1,17 @@
 import { useState } from "react";
 import type { ReactElement } from "react";
 import { Save } from "lucide-react";
+import {
+  WorktreeDialogActions,
+  WorktreeDialogBackdrop,
+  WorktreeDialogCancelButton,
+  WorktreeDialogConfirmButton,
+  WorktreeDialogInput,
+  WorktreeDialogPanel,
+  WorktreeDialogPreview,
+  WorktreeDialogTitle,
+  WorktreeDialogWarning,
+} from "./worktree-dialog.parts.tsx";
 // Save As dialog for an untitled (blank) file: type the path to save under the
 // workspace root, then it opens as a real file. Spec: workbench-filetree-file-operations.
 export function UntitledSaveAsDialog(props: {
@@ -21,25 +32,25 @@ export function UntitledSaveAsDialog(props: {
     }
   };
   return (
-    <div
-      className="worktree-create-backdrop"
+    <WorktreeDialogBackdrop
       role="dialog"
       aria-label="Save file as"
+      data-worktree-dialog="save-file-as"
       onMouseDown={(event: { target: EventTarget | null; currentTarget: EventTarget | null }) => {
         if (event.target === event.currentTarget) {
           props.onClose();
         }
       }}
     >
-      <div className="worktree-create">
-        <div className="worktree-create__title">
+      <WorktreeDialogPanel>
+        <WorktreeDialogTitle>
           <Save size={15} strokeWidth={1.9} aria-hidden />
           {`Save ${props.title} as`}
-        </div>
-        <input
-          className="worktree-create__input"
+        </WorktreeDialogTitle>
+        <WorktreeDialogInput
           autoFocus
           spellCheck={false}
+          data-worktree-dialog-input="save-path"
           placeholder="path/to/file.ts"
           aria-label="File path"
           value={path}
@@ -54,22 +65,22 @@ export function UntitledSaveAsDialog(props: {
             }
           }}
         />
-        <div className="worktree-create__preview">{`Saving in ${scopeLabel}`}</div>
-        {props.notice !== null ? <div className="worktree-delete__warn">{props.notice}</div> : null}
-        <div className="worktree-create__actions">
-          <button type="button" className="worktree-create__cancel" onClick={() => props.onClose()}>
+        <WorktreeDialogPreview>{`Saving in ${scopeLabel}`}</WorktreeDialogPreview>
+        {props.notice !== null ? <WorktreeDialogWarning>{props.notice}</WorktreeDialogWarning> : null}
+        <WorktreeDialogActions>
+          <WorktreeDialogCancelButton type="button" onClick={() => props.onClose()}>
             Cancel
-          </button>
-          <button
+          </WorktreeDialogCancelButton>
+          <WorktreeDialogConfirmButton
             type="button"
-            className="worktree-create__confirm"
+            data-worktree-create-confirm="true"
             disabled={path.trim().length === 0}
             onClick={submit}
           >
             Save
-          </button>
-        </div>
-      </div>
-    </div>
+          </WorktreeDialogConfirmButton>
+        </WorktreeDialogActions>
+      </WorktreeDialogPanel>
+    </WorktreeDialogBackdrop>
   );
 }

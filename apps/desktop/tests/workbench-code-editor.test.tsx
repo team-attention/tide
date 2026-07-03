@@ -151,7 +151,7 @@ async function pressFindShortcut(): Promise<void> {
 }
 
 async function setFindInputValue(value: string): Promise<HTMLInputElement> {
-  const input = dom.window.document.querySelector(".in-pane-find__input") as HTMLInputElement | null;
+  const input = dom.window.document.querySelector("[data-in-pane-find-input]") as HTMLInputElement | null;
   assert.ok(input, "find input should be visible");
   const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")?.set;
   await act(async () => {
@@ -177,8 +177,8 @@ test("workbench_editor_pane_mounts_codemirror_with_file_content_and_line_numbers
     assert.ok(gutterLineNumbers.length >= 2, "editor should render line numbers");
 
     // The editable surface is a CodeMirror contenteditable, not a plain textarea.
-    assert.equal(dom.window.document.querySelector(".workbench-editor-cm .cm-editor") !== null, true);
-    assert.equal(dom.window.document.querySelector(".workbench-editor-textarea"), null);
+    assert.equal(dom.window.document.querySelector("[data-code-editor-host] .cm-editor") !== null, true);
+    assert.equal(dom.window.document.querySelector("[data-code-editor-textarea]"), null);
   } finally {
     await act(async () => {
       root.unmount();
@@ -345,13 +345,13 @@ test("workbench_editor_cmd_f_opens_tide_find_bar_not_codemirror_default_panel", 
 
     await pressFindShortcut();
 
-    const input = dom.window.document.querySelector(".in-pane-find__input") as HTMLInputElement | null;
+    const input = dom.window.document.querySelector("[data-in-pane-find-input]") as HTMLInputElement | null;
     assert.ok(input, "Tide find input should open");
     assert.equal(input.placeholder, "Find in file");
     assert.equal(dom.window.document.querySelector(".cm-search"), null);
 
     await setFindInputValue("value");
-    assert.match(dom.window.document.querySelector(".in-pane-find__count")?.textContent ?? "", /1 \/ 2/);
+    assert.match(dom.window.document.querySelector("[data-in-pane-find-count]")?.textContent ?? "", /1 \/ 2/);
   } finally {
     await act(async () => {
       root.unmount();
@@ -364,7 +364,7 @@ test("markdown_preview_cmd_f_searches_the_rendered_preview_surface", async () =>
   // last interacted pane still owns Cmd/Ctrl+F.
   const root = await mountShell(editorState("# Title\n\nSome body text.\n", "notes.md"));
   try {
-    const preview = dom.window.document.querySelector(".workbench-md-preview") as HTMLElement | null;
+    const preview = dom.window.document.querySelector("[data-md-preview]") as HTMLElement | null;
     assert.ok(preview, "preview renders by default");
     await act(async () => {
       preview.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
@@ -372,13 +372,13 @@ test("markdown_preview_cmd_f_searches_the_rendered_preview_surface", async () =>
 
     await pressFindShortcut();
 
-    const input = dom.window.document.querySelector(".in-pane-find__input") as HTMLInputElement | null;
+    const input = dom.window.document.querySelector("[data-in-pane-find-input]") as HTMLInputElement | null;
     assert.ok(input, "preview find input should open");
     assert.equal(input.placeholder, "Find in preview");
-    assert.equal(dom.window.document.querySelector(".workbench-editor-cm .cm-editor"), null);
+    assert.equal(dom.window.document.querySelector("[data-code-editor-host] .cm-editor"), null);
 
     await setFindInputValue("body");
-    assert.match(dom.window.document.querySelector(".in-pane-find__count")?.textContent ?? "", /1 \/ 1/);
+    assert.match(dom.window.document.querySelector("[data-in-pane-find-count]")?.textContent ?? "", /1 \/ 1/);
   } finally {
     await act(async () => {
       root.unmount();
@@ -391,12 +391,12 @@ test("markdown_editor_pane_toggle_shows_source_editor", async () => {
   const root = await mountShell(editorState("# Title\n\nSome body text.\n", "notes.md"));
   try {
     // Default: rendered Preview (a real <h1>), no CodeMirror source surface.
-    assert.ok(dom.window.document.querySelector(".workbench-md-preview"), "preview renders by default");
-    assert.ok(dom.window.document.querySelector(".workbench-md-preview h1"), "heading is rendered");
-    assert.equal(dom.window.document.querySelector(".workbench-editor-cm .cm-editor"), null);
+    assert.ok(dom.window.document.querySelector("[data-md-preview]"), "preview renders by default");
+    assert.ok(dom.window.document.querySelector("[data-md-preview] h1"), "heading is rendered");
+    assert.equal(dom.window.document.querySelector("[data-code-editor-host] .cm-editor"), null);
 
     const editButton = Array.from(
-      dom.window.document.querySelectorAll(".workbench-md-toggle__option"),
+      dom.window.document.querySelectorAll("[data-md-mode-option]"),
     ).find((button) => (button.textContent ?? "").trim() === "Edit");
     assert.ok(editButton, "Edit toggle present");
 
@@ -407,7 +407,7 @@ test("markdown_editor_pane_toggle_shows_source_editor", async () => {
 
     // Edit mode shows the real source editor.
     assert.ok(
-      dom.window.document.querySelector(".workbench-editor-cm .cm-editor"),
+      dom.window.document.querySelector("[data-code-editor-host] .cm-editor"),
       "source editor appears after toggling to Edit",
     );
   } finally {
@@ -422,11 +422,11 @@ test("html_editor_pane_renders_a_browser_preview_by_default_and_toggles_to_code"
   const root = await mountShell(editorState("<!doctype html><h1>Hi</h1>", "page.html"));
   try {
     // Default: a rendered <webview> preview, no CodeMirror source surface.
-    assert.ok(dom.window.document.querySelector(".workbench-html-webview"), "webview preview renders by default");
-    assert.equal(dom.window.document.querySelector(".workbench-editor-cm .cm-editor"), null);
+    assert.ok(dom.window.document.querySelector("[data-html-pane-webview]"), "webview preview renders by default");
+    assert.equal(dom.window.document.querySelector("[data-code-editor-host] .cm-editor"), null);
 
     const codeButton = Array.from(
-      dom.window.document.querySelectorAll(".workbench-html-toggle__option"),
+      dom.window.document.querySelectorAll("[data-html-mode-option]"),
     ).find((button) => (button.textContent ?? "").trim() === "Code");
     assert.ok(codeButton, "Code toggle present");
 
@@ -437,10 +437,10 @@ test("html_editor_pane_renders_a_browser_preview_by_default_and_toggles_to_code"
 
     // Code mode shows the real source editor; the preview webview is gone.
     assert.ok(
-      dom.window.document.querySelector(".workbench-editor-cm .cm-editor"),
+      dom.window.document.querySelector("[data-code-editor-host] .cm-editor"),
       "source editor appears after toggling to Code",
     );
-    assert.equal(dom.window.document.querySelector(".workbench-html-webview"), null);
+    assert.equal(dom.window.document.querySelector("[data-html-pane-webview]"), null);
   } finally {
     await act(async () => {
       root.unmount();
@@ -478,10 +478,10 @@ test("workbench_image_pane_fetches_and_renders_data_url_image", async () => {
         payload: { cwd: "/repo", path: "assets/logo.png" },
       },
     ]);
-    const image = dom.window.document.querySelector(".workbench-image__media") as HTMLImageElement | null;
+    const image = dom.window.document.querySelector("[data-workbench-image-media]") as HTMLImageElement | null;
     assert.ok(image, "image pane should render an img element");
     assert.equal(image.getAttribute("src"), "data:image/png;base64,iVBORw0KGgo=");
-    assert.equal(dom.window.document.querySelector(".workbench-editor-cm .cm-editor"), null);
+    assert.equal(dom.window.document.querySelector("[data-code-editor-host] .cm-editor"), null);
   } finally {
     await act(async () => {
       root.unmount();
@@ -504,14 +504,14 @@ test("workbench_editor_pane_exposes_core_commands_and_keeps_context_menu_navigat
   // richer context path for code navigation.
   const root = await mountShell(editorState("export const value = 1;\n", "src/app.ts"));
   try {
-    const toolbar = dom.window.document.querySelector('.workbench-editor-commandbar[role="toolbar"]');
+    const toolbar = dom.window.document.querySelector('[data-editor-commandbar][role="toolbar"]');
     assert.ok(toolbar, "editor command toolbar should mount");
     assert.ok(toolbar.querySelector('button[aria-label="Save"]'), "save command should be visible");
     assert.ok(toolbar.querySelector('button[aria-label="Find in file"]'), "find command should be visible");
     assert.ok(toolbar.querySelector('button[aria-label="Go to Definition"]'), "definition command should be visible");
     assert.ok(toolbar.querySelector('button[aria-label="Find References"]'), "references command should be visible");
 
-    const surface = dom.window.document.querySelector(".workbench-editor-surface");
+    const surface = dom.window.document.querySelector("[data-code-editor-surface]");
     assert.ok(surface, "editor surface should mount");
 
     await act(async () => {
@@ -525,9 +525,9 @@ test("workbench_editor_pane_exposes_core_commands_and_keeps_context_menu_navigat
       );
     });
 
-    const menu = dom.window.document.querySelector('.workbench-editor-menu[role="menu"]');
+    const menu = dom.window.document.querySelector('[data-editor-menu][role="menu"]');
     assert.ok(menu, "right-click should open the editor context menu");
-    const labels = Array.from(menu.querySelectorAll(".workbench-editor-menu__item")).map(
+    const labels = Array.from(menu.querySelectorAll("[data-editor-menu-item]")).map(
       (el) => (el.textContent ?? "").trim(),
     );
     assert.ok(labels.includes("Go to Definition"), `menu items were ${JSON.stringify(labels)}`);
@@ -544,7 +544,7 @@ test("editor_context_menu_lists_clipboard_items_above_navigation", async () => {
   // grows Cut / Copy / Paste while keeping the existing navigation items.
   const root = await mountShell(editorState("export const value = 1;\n", "src/app.ts"));
   try {
-    const surface = dom.window.document.querySelector(".workbench-editor-surface");
+    const surface = dom.window.document.querySelector("[data-code-editor-surface]");
     assert.ok(surface, "editor surface should mount");
 
     await act(async () => {
@@ -558,9 +558,9 @@ test("editor_context_menu_lists_clipboard_items_above_navigation", async () => {
       );
     });
 
-    const menu = dom.window.document.querySelector('.workbench-editor-menu[role="menu"]');
+    const menu = dom.window.document.querySelector('[data-editor-menu][role="menu"]');
     assert.ok(menu, "right-click should open the editor context menu");
-    const labels = Array.from(menu.querySelectorAll(".workbench-editor-menu__item")).map(
+    const labels = Array.from(menu.querySelectorAll("[data-editor-menu-item]")).map(
       (el) => (el.textContent ?? "").trim(),
     );
     for (const label of ["Cut", "Copy", "Paste"]) {
@@ -573,7 +573,7 @@ test("editor_context_menu_lists_clipboard_items_above_navigation", async () => {
     );
     // No selection captured → selection-dependent items are disabled; Paste is
     // enabled because this pane is editable.
-    const items = Array.from(menu.querySelectorAll(".workbench-editor-menu__item"));
+    const items = Array.from(menu.querySelectorAll("[data-editor-menu-item]"));
     const byLabel = (label: string) =>
       items.find((el) => (el.textContent ?? "").trim() === label) as HTMLButtonElement;
     assert.equal(byLabel("Cut").disabled, true);

@@ -23,6 +23,7 @@ import { ContentSearchPanel } from "./search/content-search.tsx";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { ProductShellStoreProvider, useShellStore, useStableHandlers } from "./store-context.ts";
 import { AgentChatColumnView, FileTreeColumnView, LeftRailColumnView, WorkbenchColumnView } from "./product-shell-columns.ts";
+import { ProductShellBody, ProductShellFrame } from "./product-shell.parts.tsx";
 
 import {
   applyProductShellBackendEvent,
@@ -650,25 +651,20 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
 
   return (
     <ProductShellStoreProvider value={store}>
-      <div
-        className={[
-          "tide-product-shell",
-          layoutVm.leftRailOpen ? "tide-product-shell--left-open" : "tide-product-shell--left-closed",
-          layoutVm.workbenchOpen ? "tide-product-shell--workbench-open" : "tide-product-shell--workbench-closed",
-          layoutVm.fileTreeOpen ? "tide-product-shell--file-tree-open" : "tide-product-shell--file-tree-closed",
-          isResizing ? "tide-product-shell--resizing" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+      <ProductShellFrame
         // While Ctrl is held (multitask mode), rows reveal their ^N pin badges —
         // CSS-gated on this attribute. Spec: multitask-navigation L2.
         data-multitask={multitask.active ? "true" : undefined}
+        data-product-shell="true"
+        data-left-rail-open={layoutVm.leftRailOpen ? "true" : "false"}
+        data-workbench-open={layoutVm.workbenchOpen ? "true" : "false"}
+        data-file-tree-open={layoutVm.fileTreeOpen ? "true" : "false"}
+        data-resizing={isResizing ? "true" : "false"}
       >
-        <div
-          className="tide-product-shell__body"
+        <ProductShellBody
           ref={bodyRef}
           // When the workbench controls are docked in the top-right cluster it's wider,
-          // so the rightmost column's header reserves more right padding (product-shell.css).
+          // so ProductShellBody reserves more right padding for the rightmost header.
           data-workbench-controls={
             collapseChromeToDots ? "dots" : inlineWorkbenchControls ? "inline" : showWorkbenchControls ? "menu" : "false"
           }
@@ -709,7 +705,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           {fileTreePresence.mounted ? (
             <FileTreeColumnView handlers={stableHandlers} gitChanges={git.gitChanges} />
           ) : null}
-        </div>
+        </ProductShellBody>
         {/* Workbench + FileTree toggles live in a single fixed cluster at the window's
             top-right, so they never jump between column headers as panels open/close. */}
         {createWindowChromeToggles(layoutVm, handlers, showWorkbenchControls, inlineWorkbenchControls, collapseChromeToDots)}
@@ -755,7 +751,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         )}
         {/* Transient ⌘-Tab-style live switcher (Ctrl+Tab), null unless cycling. */}
         {multitask.hud}
-      </div>
+      </ProductShellFrame>
     </ProductShellStoreProvider>
   );
 }

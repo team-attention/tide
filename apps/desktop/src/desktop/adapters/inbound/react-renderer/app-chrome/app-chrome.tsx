@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { styled } from "styled-components";
 
 import type {
   AppChromeStatusBarView,
@@ -17,7 +18,7 @@ export function AppChrome(props: AppChromeProps): ReactElement {
   const viewModel = props.viewModel;
 
   return (
-    <aside className="app-chrome" aria-label="App Chrome">
+    <AppChromeShell aria-label="App Chrome" data-app-chrome="true">
       {createStatusBar(viewModel.statusBar)}
       {viewModel.workbenchTabStrip.visible
         ? createWorkbenchTabStrip(viewModel.workbenchTabStrip.visibleTabs, props)
@@ -26,15 +27,15 @@ export function AppChrome(props: AppChromeProps): ReactElement {
         ? createWorkbenchOverflow(viewModel.workbenchTabStrip.overflowTabs)
         : null}
       {viewModel.errorMessage ? <p role="alert">{viewModel.errorMessage}</p> : null}
-    </aside>
+    </AppChromeShell>
   );
 }
 
 function createStatusBar(statusBar: AppChromeStatusBarView): ReactElement {
   return (
-    <section
-      className="status-bar"
+    <StatusBarSection
       aria-label="Status Bar"
+      data-status-bar="true"
       data-backend-connection-state={statusBar.backendConnectionState}
       data-runtime-state={statusBar.runtimeState}
     >
@@ -45,7 +46,7 @@ function createStatusBar(statusBar: AppChromeStatusBarView): ReactElement {
         <span data-attention="provider-readiness">Provider</span>
       ) : null}
       {statusBar.promptNeedsAttention ? <span data-attention="prompt">Prompt</span> : null}
-    </section>
+    </StatusBarSection>
   );
 }
 
@@ -54,9 +55,9 @@ function createWorkbenchTabStrip(
   handlers: Pick<AppChromeProps, "onFocusWorkbenchPane" | "onCloseWorkbenchPane">,
 ): ReactElement {
   return (
-    <nav className="workbench-tab-strip" aria-label="Workbench Tab Strip">
+    <WorkbenchTabStripNav aria-label="Workbench Tab Strip" data-workbench-tab-strip="true">
       {tabs.map((tab) => createWorkbenchTab(tab, handlers))}
-    </nav>
+    </WorkbenchTabStripNav>
   );
 }
 
@@ -65,9 +66,8 @@ function createWorkbenchTab(
   handlers: Pick<AppChromeProps, "onFocusWorkbenchPane" | "onCloseWorkbenchPane">,
 ): ReactElement {
   return (
-    <div
+    <AppChromeWorkbenchTab
       key={tab.paneId}
-      className="workbench-tab"
       data-pane-id={tab.paneId}
       data-pane-kind={tab.kind}
       data-active={String(tab.active)}
@@ -75,13 +75,13 @@ function createWorkbenchTab(
     >
       {createChromeButton(tab.focusAction, tab.title, () => handlers.onFocusWorkbenchPane?.(tab.paneId))}
       {createChromeButton(tab.closeAction, undefined, () => handlers.onCloseWorkbenchPane?.(tab.paneId))}
-    </div>
+    </AppChromeWorkbenchTab>
   );
 }
 
 function createWorkbenchOverflow(tabs: WorkbenchTabView[]): ReactElement {
   return (
-    <section className="workbench-tab-overflow" aria-label="Workbench Tab Overflow">
+    <WorkbenchTabOverflowSection aria-label="Workbench Tab Overflow" data-workbench-tab-overflow="true">
       {tabs.map((tab) => (
         <button
           key={`overflow:${tab.paneId}`}
@@ -93,7 +93,7 @@ function createWorkbenchOverflow(tabs: WorkbenchTabView[]): ReactElement {
           {tab.title}
         </button>
       ))}
-    </section>
+    </WorkbenchTabOverflowSection>
   );
 }
 
@@ -116,3 +116,13 @@ function createChromeButton(
     </button>
   );
 }
+
+const AppChromeShell = styled.aside``;
+
+const StatusBarSection = styled.section``;
+
+const WorkbenchTabStripNav = styled.nav``;
+
+const AppChromeWorkbenchTab = styled.div``;
+
+const WorkbenchTabOverflowSection = styled.section``;

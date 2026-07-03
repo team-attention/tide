@@ -138,7 +138,7 @@ export function useMultitaskNavigation(params: {
       const target = event.target as HTMLElement | null;
       if (
         target !== null &&
-        (target.tagName === "WEBVIEW" || target.closest(".workbench-terminal") !== null)
+        (target.tagName === "WEBVIEW" || target.closest("[data-terminal-role]") !== null)
       ) {
         resetMultitask();
       }

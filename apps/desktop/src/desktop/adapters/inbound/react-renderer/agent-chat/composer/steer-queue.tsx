@@ -1,6 +1,14 @@
 import type { ReactElement } from "react";
 import { renderUserAttachmentBody } from "../transcript/user-turn.tsx";
 import { ArrowUp, CornerDownRight, Pencil, Trash2 } from "lucide-react";
+import { styled } from "styled-components";
+import {
+  QueuedBadge,
+  QueuedEditButton,
+  TranscriptTurn,
+  TurnBody,
+  TurnLabel,
+} from "../transcript/transcript.parts.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // Optimistic just-sent user row, shown until the backend's real user block arrives.
@@ -10,39 +18,36 @@ import { ArrowUp, CornerDownRight, Pencil, Trash2 } from "lucide-react";
 export function createQueuedInputRow(queuedInput: string, queued: boolean, index = 0): ReactElement {
   const hasAttachments = queuedInput.includes("**↳ ");
   return (
-    <article
+    <TranscriptTurn
       key={`queued-${index}`}
-      className={
-        queued
-          ? "agent-session-turn agent-session-turn--user agent-session-turn--queued"
-          : "agent-session-turn agent-session-turn--user"
-      }
+      $queued={queued}
+      $role="user"
+      data-transcript-turn="true"
       data-block-role="user"
       {...(queued ? { "data-queued": true } : {})}
     >
-      <span className="agent-session-turn__label">
+      <TurnLabel>
         You
-        {queued ? <span className="agent-session-turn__queued-badge">Queued</span> : null}
+        {queued ? <QueuedBadge>Queued</QueuedBadge> : null}
         {/* Edit the queued message before it runs (only while genuinely queued).
             Handled by the Agent Session's delegated onClick via [data-edit-queued]. */}
         {queued ? (
-          <button
+          <QueuedEditButton
             type="button"
-            className="agent-session-turn__edit"
             data-edit-queued
             aria-label="Edit queued message"
             title="Edit queued message"
           >
             <Pencil size={12} strokeWidth={1.9} aria-hidden />
-          </button>
+          </QueuedEditButton>
         ) : null}
-      </span>
+      </TurnLabel>
       {hasAttachments ? (
         renderUserAttachmentBody(queuedInput)
       ) : (
-        <p className="agent-session-turn__body">{queuedInput}</p>
+        <TurnBody $userBubble data-turn-body="true">{queuedInput}</TurnBody>
       )}
-    </article>
+    </TranscriptTurn>
   );
 }
 
@@ -58,47 +63,137 @@ export function createQueuedSteerStack(
   onRemoveQueued?: (index: number) => void,
 ): ReactElement {
   return (
-    <div className="composer-steer-stack">
+    <ComposerSteerStack data-composer-steer-stack="true">
       {queuedInputs.map((queuedInput, index) => (
-        <div key={`steer-${index}`} className="composer-steer" data-queued>
-          <CornerDownRight size={13} strokeWidth={1.9} className="composer-steer__icon" aria-hidden />
-          <span className="composer-steer__badge">Queued</span>
-          <span className="composer-steer__text">{queuedInput}</span>
-          <span className="composer-steer__actions">
+        <ComposerSteer key={`steer-${index}`} data-composer-steer="true" data-queued>
+          <SteerIconWrap aria-hidden>
+            <CornerDownRight size={13} strokeWidth={1.9} aria-hidden />
+          </SteerIconWrap>
+          <SteerBadge>Queued</SteerBadge>
+          <SteerText>{queuedInput}</SteerText>
+          <SteerActions>
             {/* Send now: cut the live turn so this queued message runs now — framed as
                 a "send" (arrow-up), matching the composer's send button, not a red stop. */}
-            <button
+            <SteerInterruptButton
               type="button"
-              className="composer-steer__interrupt"
 	              aria-label="Send now — interrupt the current turn and run this message"
 	              title="Send now (interrupt current turn)"
 	              onClick={() => onRunQueuedInputNow?.(index)}
 	            >
               <ArrowUp size={15} strokeWidth={2.3} aria-hidden />
-            </button>
+            </SteerInterruptButton>
             {/* Edit: pull this message back into the Composer to edit. */}
-            <button
+            <SteerActionButton
               type="button"
-              className="composer-steer__edit"
               aria-label="Edit queued message"
               title="Edit"
               onClick={() => onEditQueued?.(index)}
             >
               <Pencil size={13} strokeWidth={1.9} aria-hidden />
-            </button>
+            </SteerActionButton>
             {/* Delete: discard this queued message. */}
-            <button
+            <SteerDeleteButton
               type="button"
-              className="composer-steer__delete"
               aria-label="Delete queued message"
               title="Delete"
               onClick={() => onRemoveQueued?.(index)}
             >
               <Trash2 size={13} strokeWidth={1.9} aria-hidden />
-            </button>
-          </span>
-        </div>
+            </SteerDeleteButton>
+          </SteerActions>
+        </ComposerSteer>
       ))}
-    </div>
+    </ComposerSteerStack>
   );
 }
+
+const ComposerSteerStack = styled.div`
+  max-height: 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  margin-bottom: -8px;
+`;
+
+const ComposerSteer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 12px;
+  border: 1px solid var(--tide-line);
+  border-radius: 12px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font-size: 13px;
+  line-height: 18px;
+  box-shadow: 0 1px 2px rgba(52, 48, 56, 0.04);
+`;
+
+const SteerIconWrap = styled.span`
+  flex-shrink: 0;
+  color: var(--tide-muted);
+`;
+
+const SteerBadge = styled.span`
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--tide-selection);
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+`;
+
+const SteerText = styled.span`
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const SteerActions = styled.span`
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+`;
+
+const SteerActionButton = styled.button`
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  &:hover {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+`;
+
+const SteerInterruptButton = styled(SteerActionButton)`
+  color: var(--tide-action);
+
+  &:hover {
+    background: var(--tide-action);
+    color: var(--tide-on-action);
+  }
+`;
+
+const SteerDeleteButton = styled(SteerActionButton)`
+  &:hover {
+    background: var(--tide-danger);
+    color: var(--tide-bg);
+  }
+`;

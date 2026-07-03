@@ -68,11 +68,11 @@ const DRIVE_LOADS = `(async () => {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1000);
 
   // Open the seeded thread, the Workbench, and a Browser pane.
-  const rows = page.locator(".thread-row__main");
+  const rows = page.locator("[data-thread-row-main]");
   if (await rows.count()) {
     await rows.first().click();
     await page.waitForTimeout(800);

@@ -2,6 +2,7 @@ import * as xtermModule from "@xterm/xterm";
 import type { Terminal as XtermTerminalInstance } from "@xterm/xterm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
+import { styled } from "styled-components";
 import { CornerDownRight } from "lucide-react";
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
@@ -244,7 +245,7 @@ function WorkbenchTerminalView(props: {
     };
   }, [props.paneId]);
   return (
-    <div className="workbench-terminal-view" ref={rootRef}>
+    <TerminalViewFrame ref={rootRef}>
       {find.open ? (
         <InPaneFindBar
           query={find.query}
@@ -259,11 +260,10 @@ function WorkbenchTerminalView(props: {
           onClose={find.closeFind}
         />
       ) : null}
-      <div className="workbench-terminal-xterm" data-terminal-xterm={props.paneId} ref={hostRef} />
+      <TerminalXtermHost data-terminal-xterm={props.paneId} ref={hostRef} />
       {selToolbar === null ? null : (
-        <button
+        <TerminalSelectionToolbar
           type="button"
-          className="editor-selection-toolbar"
           style={{ left: `${selToolbar.x + 6}px`, top: `${Math.max(selToolbar.y - 36, 8)}px` } as CSSProperties}
           onMouseDown={(event: { preventDefault: () => void }) => {
             event.preventDefault();
@@ -276,9 +276,9 @@ function WorkbenchTerminalView(props: {
         >
           <CornerDownRight size={13} strokeWidth={1.9} aria-hidden />
           Add to chat
-        </button>
+        </TerminalSelectionToolbar>
       )}
-    </div>
+    </TerminalViewFrame>
   );
 }
 
@@ -326,8 +326,7 @@ export function WorkbenchTerminalPane(props: {
   // floating "Add to chat" anchored to the selection (no always-on button).
   const interactive = props.pane.terminalRole !== "command_result";
   return (
-    <div
-      className="workbench-terminal"
+    <TerminalPaneSurface
       data-terminal-role={props.pane.terminalRole ?? "session"}
       data-terminal-status={props.pane.status ?? "ready"}
     >
@@ -344,6 +343,65 @@ export function WorkbenchTerminalPane(props: {
           })
         }
       />
-    </div>
+    </TerminalPaneSurface>
   );
 }
+
+const TerminalPaneSurface = styled.div`
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: block;
+  padding: 8px;
+  background: #1b1b1d;
+`;
+
+const TerminalViewFrame = styled.div`
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+`;
+
+const TerminalXtermHost = styled.div`
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background: #1b1b1d;
+
+  .xterm,
+  .xterm-viewport,
+  .xterm-screen {
+    height: 100%;
+  }
+`;
+
+const TerminalSelectionToolbar = styled.button`
+  position: fixed;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 8px;
+  background: var(--tide-text);
+  color: var(--tide-bg);
+  box-shadow: 0 6px 18px -6px rgba(36, 33, 38, 0.45);
+  cursor: pointer;
+  font: 600 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  white-space: nowrap;
+
+  svg {
+    color: var(--tide-bg);
+    opacity: 0.85;
+  }
+
+  &:hover {
+    opacity: 0.92;
+  }
+`;

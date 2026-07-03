@@ -1,6 +1,6 @@
 // Live verification for prompt-full-fidelity-fields Slice 1, codex + ACP halves: drive a
 // REAL turn for the given provider that requests approval/permission, then capture the
-// .prompt-card detail (command/diff + paths) and each option's native `kind` (ACP).
+// [data-prompt-card] detail (command/diff + paths) and each option's native `kind` (ACP).
 // Usage: node pw-provider-card-verify.cjs "<agentLabel>" "<permissionLabel>" "<prompt>"
 const { _electron } = require("playwright");
 const path = require("node:path");
@@ -20,26 +20,26 @@ const [AGENT, PERM, ASK] = process.argv.slice(2);
   });
   const page = await app.firstWindow();
   page.on("pageerror", (e) => log({ pageerror: String(e.message).slice(0, 200) }));
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(700);
 
-  await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+  await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
   await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
-  await page.locator('[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: AGENT }).first().click();
+  await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: AGENT }).first().click();
   await page.waitForTimeout(250);
   await page.locator('[aria-label="Permission"]').first().click();
   await page.locator('[data-choice-surface="permission_menu"]').waitFor({ timeout: 5000 });
-  await page.locator('[data-choice-surface="permission_menu"] .choice-surface__row', { hasText: PERM }).first().click();
+  await page.locator('[data-choice-surface="permission_menu"] [data-choice-row]', { hasText: PERM }).first().click();
   await page.waitForTimeout(250);
 
   await page.locator('[aria-label="Composer draft"]').first().fill(ASK);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   log({ agent: AGENT, sent: true });
 
   const deadline = Date.now() + 150000;
   let cardUp = false;
   while (Date.now() < deadline) {
-    cardUp = await page.locator(".prompt-card").first().isVisible().catch(() => false);
+    cardUp = await page.locator("[data-prompt-card]").first().isVisible().catch(() => false);
     if (cardUp) break;
     await page.waitForTimeout(2000);
   }
@@ -48,17 +48,17 @@ const [AGENT, PERM, ASK] = process.argv.slice(2);
 
   await page.waitForTimeout(400);
   const card = await page.evaluate(() => {
-    const el = document.querySelector(".prompt-card");
+    const el = document.querySelector("[data-prompt-card]");
     if (!el) return null;
     const txt = (n) => (n ? (n.textContent || "").trim() : null);
     return {
-      kindLabel: txt(el.querySelector(".prompt-card__kind")),
-      message: txt(el.querySelector(".prompt-card__message")),
-      detailFormat: el.querySelector(".prompt-card__detail")?.getAttribute("data-format") ?? null,
-      detailBody: txt(el.querySelector(".prompt-card__detail-body")),
-      locations: [...el.querySelectorAll(".prompt-card__detail-location")].map((n) => txt(n)),
-      options: [...el.querySelectorAll(".prompt-card__option")].map((o) => ({
-        label: txt(o.querySelector(".prompt-card__option-label")),
+      kindLabel: txt(el.querySelector("[data-prompt-kind-label]")),
+      message: txt(el.querySelector("[data-prompt-message]")),
+      detailFormat: el.querySelector("[data-prompt-detail]")?.getAttribute("data-format") ?? null,
+      detailBody: txt(el.querySelector("[data-prompt-detail-body]")),
+      locations: [...el.querySelectorAll("[data-prompt-detail-location]")].map((n) => txt(n)),
+      options: [...el.querySelectorAll("[data-prompt-option]")].map((o) => ({
+        label: txt(o.querySelector("[data-prompt-option-label]")),
         kind: o.getAttribute("data-kind"),
       })),
       leaksStructuredToken: (el.textContent || "").includes("structured:"),

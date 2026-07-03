@@ -452,7 +452,7 @@ test("optimistic_first_message_top_anchors_while_provider_is_not_ready", () => {
   // The optimistic message renders in the transcript (no backend block yet)...
   assert.match(html, /Why is there no branch delete option/);
   // ...and the session is top-anchored, not vertically centered.
-  assert.match(html, /agent-session--has-turns/);
+  assert.match(html, /data-has-turns="true"/);
 });
 
 test("a_ready_thread_with_no_messages_keeps_the_centered_empty_state", () => {
@@ -466,20 +466,20 @@ test("a_ready_thread_with_no_messages_keeps_the_centered_empty_state", () => {
   const html = renderShell(hydrated);
 
   assert.match(html, /No messages here/);
-  assert.doesNotMatch(html, /agent-session--has-turns/);
+  assert.doesNotMatch(html, /data-has-turns="true"/);
 });
 
 test("transcript_has_bottom_scroll_buffer_for_the_docked_composer", () => {
   // The docked Composer has a raised surface/shadow. Non-empty transcript content
   // needs a real scroll buffer so the final paragraph/table row can clear it.
-  const css = readRepoFile(
-    "src/desktop/adapters/inbound/react-renderer/agent-chat/transcript/transcript.css",
+  const source = readRepoFile(
+    "src/desktop/adapters/inbound/react-renderer/agent-chat/transcript/transcript.parts.tsx",
   );
 
-  assert.match(css, /--agent-session-bottom-buffer:\s*96px/);
-  assert.match(css, /\.agent-session\s*{[^}]*scroll-padding-bottom:\s*var\(--agent-session-bottom-buffer\)/s);
-  assert.match(css, /\.agent-session--has-turns\s*{[^}]*padding:\s*6px 0 var\(--agent-session-bottom-buffer\)/s);
-  assert.match(css, /\.agent-session\[data-chat-state="running"\][\s\S]*data-streaming-caret="active"[\s\S]*::after/);
+  assert.match(source, /--agent-session-bottom-buffer:\s*96px/);
+  assert.match(source, /scroll-padding-bottom:\s*var\(--agent-session-bottom-buffer\)/);
+  assert.match(source, /\$hasTurns \? "6px 0 var\(--agent-session-bottom-buffer\)" : "0"/);
+  assert.match(source, /data-streaming-caret="active"[\s\S]*\$\{TurnBody\}::after/);
 });
 
 test("thread_find_bar_is_scoped_to_the_chat_content_column", () => {
@@ -488,15 +488,15 @@ test("thread_find_bar_is_scoped_to_the_chat_content_column", () => {
   const source = readRepoFile(
     "src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.tsx",
   );
-  const css = readRepoFile(
-    "src/desktop/adapters/inbound/react-renderer/agent-chat/agent-chat.css",
+  const findSource = readRepoFile(
+    "src/desktop/adapters/inbound/react-renderer/support/in-pane-find.tsx",
   );
 
-  assert.match(source, /className="agent-chat-shell__find-region"/);
+  assert.match(source, /data-chat-find-region="true"/);
   assert.match(source, /scopeLabel="Thread"/);
+  assert.match(source, /placement="chat"/);
   assert.match(source, /placeholder="Search this thread"/);
-  assert.match(css, /\.agent-chat-shell__find-region\s*{[^}]*width:\s*min\(760px,\s*calc\(100% - 32px\)\)/s);
-  assert.match(css, /\.agent-chat-shell__find-region \.in-pane-find\s*{[^}]*border-radius:\s*8px/s);
+  assert.match(findSource, /\$placement === "chat"[\s\S]*border-radius:\s*8px/s);
 });
 
 test("usage_changed_renders_session_context_above_the_composer", () => {
@@ -526,7 +526,7 @@ test("usage_changed_renders_session_context_above_the_composer", () => {
     contextDetailLabel: "64k / 256k tokens",
   });
   const html = renderShell(withUsage);
-  assert.match(html, /class="agent-usage"/);
+  assert.match(html, /data-agent-usage="true"/);
   assert.match(visibleText(html), /Session context\s*64k \/ 256k tokens\s*75% left/);
 });
 
@@ -612,7 +612,7 @@ test("usage_changed_renders_codex_rate_limit_windows", () => {
   assert.match(weekly.resetLabel ?? "", /[A-Za-z]/);
   assert.doesNotMatch(weekly.resetLabel ?? "", /:/);
   const html = renderShell(withUsage);
-  assert.doesNotMatch(html, /class="agent-usage/);
+  assert.doesNotMatch(html, /data-agent-usage="true"/);
   assert.doesNotMatch(visibleText(html), /5h\s*42% left\s*resets/);
   assert.doesNotMatch(visibleText(html), /Weekly\s*32% left\s*resets/);
 });
@@ -673,7 +673,7 @@ test("usage_changed_merges_rate_limit_only_updates_with_existing_token_usage", (
     ],
   });
   const html = renderShell(withLimits);
-  assert.match(html, /class="agent-usage"/);
+  assert.match(html, /data-agent-usage="true"/);
   assert.match(visibleText(html), /Session context\s*64k \/ 256k tokens\s*75% left/);
   assert.doesNotMatch(visibleText(html), /5h\s*42% left\s*resets/);
   assert.doesNotMatch(visibleText(html), /Weekly\s*32% left\s*resets/);
@@ -1023,7 +1023,7 @@ test("the_queued_row_renders_an_edit_affordance_while_a_turn_runs", () => {
   // (Codex-style): the "Queued" badge plus an edit affordance to fix it before it
   // runs.
   assert.ok(markup.includes("Queued"));
-  assert.ok(markup.includes("composer-steer"));
+  assert.ok(markup.includes("data-composer-steer"));
   assert.ok(markup.includes("Edit queued message"));
 });
 
@@ -1042,12 +1042,12 @@ test("running_with_only_a_context_chip_shows_send_not_stop", () => {
     text: "const x = 1;",
   }).state;
   assert.ok(
-    !renderShell(withChip).includes("composer-shell__send--stop"),
+    !renderShell(withChip).includes('data-composer-stop="true"'),
     "a chip to send ⇒ Send button, not Stop",
   );
   // With truly nothing to send, the same running state shows Stop (interrupt).
   assert.ok(
-    renderShell(running).includes("composer-shell__send--stop"),
+    renderShell(running).includes('data-composer-stop="true"'),
     "nothing to send ⇒ Stop button",
   );
 });
@@ -1104,7 +1104,7 @@ test("a_waiting_thread_with_nothing_to_send_shows_the_Stop_escape_button", () =>
       backendEvent("thread.hydrated", { thread, blocks: [], runtimeState }),
     );
     assert.ok(
-      renderShell(base).includes("composer-shell__send--stop"),
+      renderShell(base).includes('data-composer-stop="true"'),
       `${runtimeState} with nothing to send ⇒ Stop button`,
     );
   }
@@ -1228,12 +1228,12 @@ test("renderUserBody_renders_a_blockquote_led_message_as_a_structured_attachment
   // leads with a blockquote; it must still render as the structured (markdown) attachment
   // body so the quote reads as a quote — not a flat paragraph showing a literal "> ".
   const quoted = renderToStaticMarkup(renderUserBody("> quoted line\n\nmy reply"));
-  assert.match(quoted, /agent-session-turn__body--attachments/);
+  assert.match(quoted, /data-turn-attachments="true"/);
   assert.match(quoted, /<blockquote>/);
 
   // A plain message (no header, no quote) stays a flat paragraph.
   const plain = renderToStaticMarkup(renderUserBody("just a normal message"));
-  assert.doesNotMatch(plain, /agent-session-turn__body--attachments/);
+  assert.doesNotMatch(plain, /data-turn-attachments="true"/);
   assert.match(plain, /just a normal message/);
 });
 
@@ -1554,7 +1554,7 @@ test("follow_up_composer_has_no_thread_context_block", () => {
   assert.equal(view.composer.mode, "follow_up");
   assert.equal(view.composer.contextControlsEditable, false);
   const html = renderShell(state);
-  assert.doesNotMatch(html, /composer-shell__context\b/);
+  assert.doesNotMatch(html, /data-composer-start-context/);
   assert.doesNotMatch(html, /data-context-kind="agent"/);
   assert.doesNotMatch(html, /name="agent"/);
   assert.match(html, /Ask for follow-up changes/);
@@ -1645,7 +1645,7 @@ test("the_working_indicator_stays_up_mid_turn_after_a_completed_agent_block", ()
 
   const html = renderShell(afterAgentText);
 
-  assert.ok(html.includes("agent-session-turn--working"));
+  assert.ok(html.includes('data-working="true"'));
   assert.match(html, /Working…/);
 });
 
@@ -1667,10 +1667,9 @@ test("commentary_agent_blocks_render_as_updates_while_the_turn_keeps_running", (
   const html = renderShell(withCommentary);
 
   assert.equal(view.blocks[0]?.phase, "commentary");
-  assert.match(html, /agent-session-turn--commentary/);
   assert.match(html, /data-block-phase="commentary"/);
   assert.match(html, />Update</);
-  assert.doesNotMatch(html, /agent-turn-actions/);
+  assert.doesNotMatch(html, /data-agent-turn-actions/);
   assert.match(html, /Working…/);
 });
 
@@ -1688,7 +1687,7 @@ test("the_working_indicator_is_hidden_while_the_agent_answer_streams", () => {
 
   const html = renderShell(streaming);
 
-  assert.ok(!html.includes("agent-session-turn--working"));
+  assert.ok(!html.includes('data-working="true"'));
   assert.match(html, /data-chat-state="running"/);
   assert.match(html, /data-block-id="b1"[^>]*data-streaming-caret="active"/);
 });
@@ -1720,7 +1719,7 @@ test("stale_streaming_agent_blocks_do_not_keep_the_blinking_caret_after_interrup
   );
   const html = renderShell(state);
 
-  assert.ok(html.includes("agent-session-turn--working"));
+  assert.ok(html.includes('data-working="true"'));
   assert.match(html, /data-block-id="old-answer"[^>]*data-block-status="streaming"/);
   assert.doesNotMatch(html, /data-block-id="old-answer"[^>]*data-streaming-caret="active"/);
 });
@@ -1767,7 +1766,7 @@ test("an attached image renders as a thumbnail, not the raw '[Attached image: pa
     }),
   );
   const html = renderShell(state);
-  assert.match(html, /class="agent-session-turn__image"/); // a thumbnail element
+  assert.match(html, /data-attached-image="true"/); // a thumbnail element
   assert.match(html, /src="file:\/\/\/tmp\/My%20Pics\/x\.png"/); // file:// w/ encoded path
   assert.doesNotMatch(html, /Attached image:/); // raw path text is gone
   assert.match(html, /look at this/); // the message text stays
@@ -1814,7 +1813,7 @@ test("consecutive_tool_blocks_collapse_into_a_codex_style_activity_summary", () 
   assert.match(html, /data-block-role="tool"/);
   assert.match(html, /Edited 1 file, ran 2 commands/);
   // Collapsed by default: the per-tool monospace detail is not rendered yet.
-  assert.doesNotMatch(html, /agent-session-turn__tool-body/);
+  assert.doesNotMatch(html, /data-tool-body="true"/);
 });
 
 test("tool_activity_summary_categorizes_read_and_search_tools", () => {
@@ -1839,7 +1838,7 @@ test("edit_tool_calls_surface_a_files_changed_list", () => {
   const html = renderShell(state);
 
   // Distinct edited files surface with filename + muted parent dir, display-only.
-  assert.match(html, /agent-session-tools__files/);
+  assert.match(html, /data-tool-activity-files="true"/);
   assert.match(html, /app\.ts/);
   assert.match(html, /README\.md/);
 });
@@ -1883,8 +1882,8 @@ test("agent_session_text_blocks_render_as_transcript_turns_not_status_cards", ()
   );
   const html = renderShell(state);
 
-  assert.match(html, /agent-session-turn agent-session-turn--user/);
-  assert.match(html, /agent-session-turn agent-session-turn--agent/);
+  assert.match(html, /data-block-role="user"/);
+  assert.match(html, /data-block-role="agent"/);
   assert.match(html, /Can you review this layout/);
   assert.match(html, /Yes\. I will check the Thread flow first/);
   assert.doesNotMatch(html, /agent-session-block/);
@@ -2152,12 +2151,12 @@ test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", 
   // The chip dropdown now renders as an anchored popover (fixed-position), so it
   // no longer needs to precede the composer in the DOM — just that it renders.
   assert.match(optionsHtml, /aria-label="Choice Surface"/);
-  assert.match(optionsHtml, /chip-popover/);
+  assert.match(optionsHtml, /data-chip-popover="true"/);
   assert.match(optionsHtml, /Files and images/);
   assert.match(optionsHtml, /Current file or selection/);
   // Unwired context-attach rows are shown disabled (greyed), not as no-ops; the
   // placeholder "Agent tools" row was removed entirely.
-  assert.match(optionsHtml, /choice-surface__row--disabled/);
+  assert.match(optionsHtml, /aria-disabled="true"/);
   assert.doesNotMatch(optionsHtml, /Agent tools/);
   assert.doesNotMatch(optionsHtml, /This popover never shows/i);
   assert.match(slashHtml, /Commands/);
@@ -2566,7 +2565,7 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
   assert.equal(permissionSelected.composer.startOptions.launchOptions?.permission, "acceptEdits");
   assert.match(html, /Claude Code/);
   assert.match(html, /What should we build in slice/);
-  assert.match(html, /composer-shell__chip-label">slice/);
+  assert.match(html, /data-composer-chip-label="true"[^>]*>slice/);
   assert.doesNotMatch(html, /data-choice-surface/);
 });
 
@@ -2846,7 +2845,7 @@ test("opening_a_thread_shows_a_loading_skeleton_that_clears_even_with_zero_block
   );
   const loading = { ...opened, hydrating: true };
   assert.equal(createAgentChatShellViewModel(loading).chatState, "hydrating");
-  assert.match(renderShell(loading), /agent-session-skeleton/);
+  assert.match(renderShell(loading), /data-session-skeleton="true"/);
 
   // The real hydrate returning — even with ZERO blocks (e.g. an agent that produced
   // nothing) — must clear the skeleton, not leave it spinning forever.
@@ -2855,7 +2854,7 @@ test("opening_a_thread_shows_a_loading_skeleton_that_clears_even_with_zero_block
     backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
   );
   assert.equal(createAgentChatShellViewModel(hydratedEmpty).chatState, "ready");
-  assert.doesNotMatch(renderShell(hydratedEmpty), /agent-session-skeleton/);
+  assert.doesNotMatch(renderShell(hydratedEmpty), /data-session-skeleton="true"/);
 });
 
 test("a_loaded_thread_with_no_messages_shows_an_empty_placeholder", () => {
@@ -2869,7 +2868,7 @@ test("a_loaded_thread_with_no_messages_shows_an_empty_placeholder", () => {
   const html = renderShell(empty);
   assert.match(html, /No messages here/);
   assert.doesNotMatch(html, /agent-session-skeleton/);
-  assert.doesNotMatch(html, /goal-checklist-panel/);
+  assert.doesNotMatch(html, /data-goal-checklist-panel="true"/);
   assert.doesNotMatch(html, /Set a goal for this thread/);
 });
 
@@ -2885,9 +2884,9 @@ test("goal_checklist_panel_renders_only_when_a_goal_or_checklist_exists", () => 
 
   const html = renderShell(withGoal);
 
-  assert.match(html, /goal-checklist-panel/);
-  assert.match(html, /agent-chat-shell--with-goal-panel/);
-  assert.match(html, /goal-checklist-panel--goal-only/);
+  assert.match(html, /data-goal-checklist-panel="true"/);
+  assert.match(html, /data-goal-panel="true"/);
+  assert.match(html, /data-checklist-mode="goal-only"/);
   assert.match(html, /Ship the release/);
 });
 
@@ -2920,8 +2919,8 @@ test("goal_checklist_panel_uses_a_compact_shell_row_for_checklists", () => {
 
   const html = renderShell(withChecklist);
 
-  assert.match(html, /agent-chat-shell--with-goal-panel/);
-  assert.match(html, /goal-checklist-panel--with-checklist/);
+  assert.match(html, /data-goal-panel="true"/);
+  assert.match(html, /data-checklist-mode="with-checklist"/);
   assert.match(html, /1\/2/);
   assert.match(html, /Fix the grid/);
 });

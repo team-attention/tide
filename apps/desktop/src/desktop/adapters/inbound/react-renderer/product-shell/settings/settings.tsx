@@ -3,10 +3,10 @@ import type { PreferredStartComposer, ProductShellListSettings, ProductShellPinn
 import type { TideThemePreference } from "../../support/theme.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ChangeEvent, ReactElement } from "react";
-import { createIconButton } from "../chrome/chrome.tsx";
 import { getStoredPref, setStoredPref } from "../../support/ui-prefs-store.ts";
 import { buildProvidersHubViewModel } from "../../../../../application/domains/agent-chat/state/providers-hub.ts";
 import { X } from "lucide-react";
+import { styled } from "styled-components";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export const LIST_SETTINGS_STORAGE_KEY = "tide.listSettings";
@@ -164,47 +164,47 @@ export function createSettingsModal(
 ): ReactElement {
   const usageRows = usageByModel;
   return (
-    <div className="settings-modal-backdrop" onMouseDown={handlers.onCloseSettings}>
-      <div
-        className="settings-modal"
+    <SettingsBackdrop onMouseDown={handlers.onCloseSettings}>
+      <SettingsDialog
         role="dialog"
         aria-label="Settings"
+        data-settings-modal="true"
         onMouseDown={(event: { stopPropagation: () => void }) => event.stopPropagation()}
       >
-        <header className="settings-modal__header">
-          <h2>Settings</h2>
-          {createIconButton(
-            "Close Settings",
-            <X size={16} strokeWidth={1.9} />,
-            handlers.onCloseSettings,
-            "settings-modal__close",
-          )}
-        </header>
-        <section className="settings-modal__section">
-          <h3 className="settings-modal__section-title">Appearance</h3>
-          <div className="settings-theme" role="group" aria-label="Theme">
+        <SettingsHeader>
+          <SettingsTitle>Settings</SettingsTitle>
+          <SettingsCloseButton
+            type="button"
+            aria-label="Close Settings"
+            title="Close Settings"
+            onClick={handlers.onCloseSettings}
+          >
+            <X size={16} strokeWidth={1.9} />
+          </SettingsCloseButton>
+        </SettingsHeader>
+        <SettingsSection>
+          <SettingsSectionTitle>Appearance</SettingsSectionTitle>
+          <ThemePreferenceGroup role="group" aria-label="Theme">
             {THEME_OPTIONS.map((option) => (
-              <button
+              <ThemePreferenceOption
                 key={option.value}
                 type="button"
-                className="settings-theme__option"
                 data-active={theme === option.value ? "true" : "false"}
                 aria-pressed={theme === option.value}
                 title={option.hint}
                 onClick={() => handlers.onThemeChange(option.value)}
               >
-                <span className="settings-theme__label">{option.label}</span>
-                <span className="settings-theme__hint">{option.hint}</span>
-              </button>
+                <ThemePreferenceLabel>{option.label}</ThemePreferenceLabel>
+                <ThemePreferenceHint>{option.hint}</ThemePreferenceHint>
+              </ThemePreferenceOption>
             ))}
-          </div>
-        </section>
-        <section className="settings-modal__section">
-          <h3 className="settings-modal__section-title">Worktrees</h3>
-          <label className="settings-modal__field">
-            <span className="settings-modal__label">Directory pattern</span>
-            <input
-              className="settings-modal__input"
+          </ThemePreferenceGroup>
+        </SettingsSection>
+        <SettingsSection>
+          <SettingsSectionTitle>Worktrees</SettingsSectionTitle>
+          <SettingsField>
+            <SettingsFieldLabel>Directory pattern</SettingsFieldLabel>
+            <SettingsTextInput
               value={worktree.baseDirPattern}
               placeholder="{repo_root}.worktree/{branch}"
               aria-label="Worktree directory pattern"
@@ -212,14 +212,13 @@ export function createSettingsModal(
                 handlers.onWorktreeSettingsChange({ baseDirPattern: event.currentTarget.value })
               }
             />
-            <span className="settings-modal__hint">
+            <SettingsHint>
               {"Use {repo_root} and {branch}. Empty = default sibling <repo>.worktree/<branch>."}
-            </span>
-          </label>
-          <label className="settings-modal__field">
-            <span className="settings-modal__label">Files to copy</span>
-            <textarea
-              className="settings-modal__textarea"
+            </SettingsHint>
+          </SettingsField>
+          <SettingsField>
+            <SettingsFieldLabel>Files to copy</SettingsFieldLabel>
+            <SettingsTextarea
               value={worktree.copyFiles.join("\n")}
               placeholder={".env\n.env.local"}
               rows={4}
@@ -233,14 +232,14 @@ export function createSettingsModal(
                 })
               }
             />
-            <span className="settings-modal__hint">
+            <SettingsHint>
               Repo-relative paths, one per line, copied into each new worktree.
-            </span>
-          </label>
-        </section>
-        <section className="settings-modal__section">
-          <h3 className="settings-modal__section-title">Providers &amp; Models</h3>
-          <div className="settings-providers" role="list" aria-label="Providers and models">
+            </SettingsHint>
+          </SettingsField>
+        </SettingsSection>
+        <SettingsSection>
+          <SettingsSectionTitle>Providers &amp; Models</SettingsSectionTitle>
+          <ProviderStatusList role="list" aria-label="Providers and models">
             {buildProvidersHubViewModel().map((agent) => {
               const concreteModels = agent.models.filter((model) => !model.value.endsWith(" default"));
               const vendors = new Set(
@@ -256,52 +255,51 @@ export function createSettingsModal(
                     ? `${vendors.size} vendor${vendors.size === 1 ? "" : "s"} · ${concreteModels.length} models`
                     : `${concreteModels.length} models`;
               return (
-                <div key={agent.agentId} className="settings-providers__row" role="listitem">
-                  <span className="settings-providers__name">{agent.label}</span>
-                  <span
-                    className="settings-providers__status"
+                <ProviderStatusRow key={agent.agentId} role="listitem">
+                  <ProviderName>{agent.label}</ProviderName>
+                  <ProviderInstallStatus
                     data-installed={agent.installed ? "true" : "false"}
                   >
                     {agent.installed ? "Installed" : "Not installed"}
-                  </span>
-                  <span className="settings-providers__summary">{summary}</span>
-                </div>
+                  </ProviderInstallStatus>
+                  <ProviderSummary>{summary}</ProviderSummary>
+                </ProviderStatusRow>
               );
             })}
-          </div>
-          <span className="settings-modal__hint">
+          </ProviderStatusList>
+          <SettingsHint>
             Pick a vendor / model / effort per thread from the composer. New to opencode?
             The composer&apos;s <b>Connect a model</b> panel signs you in — it runs opencode&apos;s
             own <code>opencode auth login</code>, so terminal sign-ins carry over automatically.
-          </span>
-        </section>
-        <section className="settings-modal__section">
-          <h3 className="settings-modal__section-title">Usage remaining</h3>
-          <div className="settings-usage" role="list" aria-label="Usage remaining">
+          </SettingsHint>
+        </SettingsSection>
+        <SettingsSection>
+          <SettingsSectionTitle>Usage remaining</SettingsSectionTitle>
+          <UsageRemainingList role="list" aria-label="Usage remaining">
             {usageRows.length > 0 ? (
               usageRows.map((row) => (
-                <div key={row.key} className="settings-usage__row" role="listitem">
-                  <div className="settings-usage__identity">
-                    <span className="settings-usage__agent">{row.agentLabel}</span>
-                    <span className="settings-usage__model">{row.modelLabel}</span>
-                  </div>
+                <UsageRemainingRow key={row.key} role="listitem">
+                  <UsageIdentity>
+                    <UsageAgent>{row.agentLabel}</UsageAgent>
+                    <UsageModel>{row.modelLabel}</UsageModel>
+                  </UsageIdentity>
                   <SettingsUsageDetails row={row} />
-                </div>
+                </UsageRemainingRow>
               ))
             ) : (
-              <div className="settings-usage__empty">No usage reported yet.</div>
+              <UsageEmptyState>No usage reported yet.</UsageEmptyState>
             )}
-          </div>
-        </section>
-      </div>
-    </div>
+          </UsageRemainingList>
+        </SettingsSection>
+      </SettingsDialog>
+    </SettingsBackdrop>
   );
 }
 
 function SettingsUsageDetails({ row }: { row: ProductShellUsageModelView }): ReactElement {
   const windows = row.usage.rateLimits ?? [];
   return (
-    <div className="settings-usage__details" aria-label={`${row.agentLabel} usage remaining`}>
+    <UsageDetails aria-label={`${row.agentLabel} usage remaining`}>
       {windows.map((limit, index) => (
         <SettingsUsageLine
           key={`${limit.label}-${index}`}
@@ -310,7 +308,7 @@ function SettingsUsageDetails({ row }: { row: ProductShellUsageModelView }): Rea
           detail={limit.resetLabel ?? "Reset unknown"}
         />
       ))}
-    </div>
+    </UsageDetails>
   );
 }
 
@@ -324,14 +322,13 @@ function SettingsUsageLine({
   detail?: string;
 }): ReactElement {
   return (
-    <div
-      className="settings-usage-line"
+    <UsageLine
       aria-label={`${label} ${value}${detail ? ` ${detail}` : ""}`}
     >
-      <span className="settings-usage-line__label">{label}</span>
-      <span className="settings-usage-line__value">{value}</span>
-      {detail ? <span className="settings-usage-line__detail">{detail}</span> : null}
-    </div>
+      <UsageLineLabel>{label}</UsageLineLabel>
+      <UsageLineValue>{value}</UsageLineValue>
+      {detail ? <UsageLineDetail>{detail}</UsageLineDetail> : null}
+    </UsageLine>
   );
 }
 
@@ -345,3 +342,346 @@ function settingsWindowLabel(label: string): string {
   }
   return label;
 }
+
+const SettingsBackdrop = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.28);
+  animation: tide-overlay-in 0.12s ease;
+`;
+
+const SettingsDialog = styled.div`
+  width: min(660px, calc(100vw - 48px));
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  padding: 18px 20px 22px;
+  border: 1px solid var(--tide-line);
+  border-radius: 10px;
+  background: var(--tide-surface, #fff);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.16);
+  animation: tide-modal-in 0.16s ease;
+`;
+
+const SettingsHeader = styled.header`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+`;
+
+const SettingsTitle = styled.h2`
+  margin: 0;
+  font-size: 16px;
+  font-weight: 670;
+`;
+
+const SettingsCloseButton = styled.button`
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--tide-muted) 14%, transparent);
+    color: var(--tide-text);
+  }
+`;
+
+const SettingsSection = styled.section`
+  padding-top: 2px;
+
+  & + & {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid color-mix(in srgb, var(--tide-line) 70%, transparent);
+  }
+`;
+
+const SettingsSectionTitle = styled.h3`
+  margin: 0 0 10px;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: uppercase;
+`;
+
+const SettingsField = styled.label`
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 16px;
+`;
+
+const SettingsFieldLabel = styled.span`
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 550;
+`;
+
+const settingsTextControl = `
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  color: var(--tide-text);
+  font-family: var(--tide-mono, ui-monospace, monospace);
+  font-size: 13px;
+
+  &:focus {
+    border-color: color-mix(in srgb, var(--tide-action) 55%, var(--tide-line));
+  }
+`;
+
+const SettingsTextInput = styled.input`
+  ${settingsTextControl}
+`;
+
+const SettingsTextarea = styled.textarea`
+  ${settingsTextControl}
+`;
+
+const SettingsHint = styled.span`
+  color: var(--tide-muted);
+  font-size: 11.5px;
+`;
+
+const ThemePreferenceGroup = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 0;
+
+  @media (max-width: 720px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+`;
+
+const ThemePreferenceOption = styled.button`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 11px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tide-bg) 42%, transparent);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--tide-selection) 88%, transparent);
+  }
+
+  &[data-active="true"] {
+    border-color: color-mix(in srgb, var(--tide-action) 48%, var(--tide-line));
+    background: color-mix(in srgb, var(--tide-selection) 82%, var(--tide-bg));
+  }
+`;
+
+const ThemePreferenceLabel = styled.span`
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 600;
+`;
+
+const ThemePreferenceHint = styled.span`
+  color: var(--tide-muted);
+  font-size: 11px;
+  line-height: 1.35;
+`;
+
+const ProviderStatusList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  margin-bottom: 10px;
+  border: 1px solid color-mix(in srgb, var(--tide-line) 84%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tide-bg) 34%, transparent);
+`;
+
+const ProviderStatusRow = styled.div`
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--tide-line) 72%, transparent);
+  background: transparent;
+
+  &:first-child {
+    border-top: 0;
+  }
+
+  @media (max-width: 720px) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+`;
+
+const ProviderName = styled.span`
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 600;
+`;
+
+const ProviderInstallStatus = styled.span`
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tide-muted) 16%, transparent);
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 600;
+
+  &[data-installed="true"] {
+    background: color-mix(in srgb, #1a8f4a 16%, transparent);
+    color: color-mix(in srgb, var(--tide-text) 80%, #1a8f4a);
+  }
+`;
+
+const ProviderSummary = styled.span`
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+
+  @media (max-width: 720px) {
+    grid-column: 1 / -1;
+  }
+`;
+
+const UsageRemainingList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  margin-bottom: 8px;
+  border: 1px solid color-mix(in srgb, var(--tide-line) 84%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tide-bg) 34%, transparent);
+`;
+
+const UsageRemainingRow = styled.div`
+  display: grid;
+  grid-template-columns: minmax(148px, 0.36fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  padding: 9px 10px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--tide-line) 72%, transparent);
+  background: transparent;
+
+  &:first-child {
+    border-top: 0;
+  }
+
+  @media (max-width: 720px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+`;
+
+const UsageIdentity = styled.div`
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+`;
+
+const UsageAgent = styled.span`
+  color: var(--tide-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: uppercase;
+`;
+
+const UsageModel = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const UsageDetails = styled.div`
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+`;
+
+const UsageLine = styled.div`
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px minmax(58px, max-content);
+  align-items: baseline;
+  gap: 12px;
+
+  @media (max-width: 720px) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+`;
+
+const UsageLineLabel = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const UsageLineValue = styled.span`
+  color: var(--tide-text);
+  font-size: 13.5px;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+
+  @media (max-width: 720px) {
+    text-align: left;
+  }
+`;
+
+const UsageLineDetail = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  @media (max-width: 720px) {
+    text-align: left;
+  }
+`;
+
+const UsageEmptyState = styled.div`
+  padding: 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--tide-muted);
+  font-size: 12.5px;
+`;

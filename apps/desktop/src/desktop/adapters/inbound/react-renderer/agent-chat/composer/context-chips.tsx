@@ -1,9 +1,13 @@
 import type { AgentChatChoiceSurfaceView, AgentChatComposerSurfaceKind, AgentChatContextItem } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import type { AnchorRect, ComposerHandlers } from "../support/types.ts";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
-import { agentMonogramFor, createChoiceSurface } from "./choice-surface.tsx";
+import { styled } from "styled-components";
+import { createChoiceSurface } from "./choice-surface.tsx";
 import { OpencodeConnectPanel } from "./opencode-connect-panel.tsx";
 import { CornerDownRight, FileText, Folder, FolderGit2, GitBranch, Globe, Terminal } from "lucide-react";
+import { ComposerChipIcon, ComposerChipLabel, ComposerContextChip } from "./composer.parts.tsx";
+import { AgentIdentityIcon } from "../../product-shell/support/agent-identity.tsx";
+import { VisuallyHidden } from "../../support/visually-hidden.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // Renders the active chip dropdown as a fixed popover anchored to the chip,
@@ -43,9 +47,9 @@ export function createChipPopover(input: {
     style.top = `${input.anchor.bottom + gap}px`;
   }
   return (
-    <div className="chip-popover-backdrop" onMouseDown={input.onClose}>
-      <div
-        className="chip-popover"
+    <ChipPopoverBackdrop data-chip-popover-backdrop="true" onMouseDown={input.onClose}>
+      <ChipPopoverSurface
+        data-chip-popover="true"
         style={style as unknown as CSSProperties}
         onMouseDown={(event: { stopPropagation: () => void }) => event.stopPropagation()}
       >
@@ -63,8 +67,8 @@ export function createChipPopover(input: {
             onInputSubmit: input.onInputSubmit,
           })
         )}
-      </div>
-    </div>
+      </ChipPopoverSurface>
+    </ChipPopoverBackdrop>
   );
 }
 
@@ -92,9 +96,9 @@ export function createContextChip(
   handlers: ComposerHandlers,
 ): ReactElement {
   return (
-    <button
+    <ComposerContextChip
       key={`${item.label}:${item.value}`}
-      className="composer-shell__context-chip"
+      data-composer-context-chip="true"
       data-context-kind={item.label.toLowerCase()}
       data-agent-runtime-source={item.runtimeSourceKind}
       type="button"
@@ -102,12 +106,12 @@ export function createContextChip(
         handlers.onOpenSurface?.(surfaceForContextItem(item), chipAnchorFromEvent(event))
       }
     >
-      <span className="composer-shell__chip-icon" aria-hidden>
+      <ComposerChipIcon data-composer-chip-icon="true" aria-hidden>
         {contextItemIcon(item)}
-      </span>
-      <span className="visually-hidden">{item.label}</span>
-      <span className="composer-shell__chip-label">{item.value}</span>
-    </button>
+      </ComposerChipIcon>
+      <VisuallyHidden>{item.label}</VisuallyHidden>
+      <ComposerChipLabel data-composer-chip-label="true">{item.value}</ComposerChipLabel>
+    </ComposerContextChip>
   );
 }
 
@@ -130,14 +134,7 @@ function contextItemIcon(item: AgentChatContextItem): ReactNode {
   switch (item.label) {
     case "Agent":
       // Use the same per-agent identity monogram badge shown in Thread rows.
-      return (
-        <span
-          className={`agent-identity-icon agent-identity-icon--${item.agentId ?? "codex"}`}
-          aria-hidden
-        >
-          {agentMonogramFor(item.agentId ?? "codex")}
-        </span>
-      );
+      return <AgentIdentityIcon agentId={item.agentId ?? "codex"} />;
     case "Project":
       return <Folder {...props} />;
     case "Scratch":
@@ -148,3 +145,15 @@ function contextItemIcon(item: AgentChatContextItem): ReactNode {
       return <GitBranch {...props} />;
   }
 }
+
+const ChipPopoverBackdrop = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+`;
+
+const ChipPopoverSurface = styled.div`
+  max-width: min(380px, calc(100vw - 16px));
+  display: flex;
+  overflow: hidden;
+`;

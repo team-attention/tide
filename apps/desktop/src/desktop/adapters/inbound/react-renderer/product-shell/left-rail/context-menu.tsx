@@ -3,6 +3,12 @@ import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { createListSettingsMenu } from "./section-header.tsx";
 import { Archive, FolderOpen, GitBranchPlus, Pencil, Pin, Trash2 } from "lucide-react";
+import {
+  FloatingMenuBackdrop,
+  FloatingMenuIcon,
+  FloatingMenuItem,
+  FloatingMenuSurface,
+} from "../support/floating-menu.parts.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // Renders the left-rail context menu as a fixed popover anchored to its trigger
@@ -34,7 +40,7 @@ export function createLeftRailContextMenuOverlay(
     style.top = `${anchor.bottom + 4}px`;
   }
   return (
-    <div className="left-rail-context-menu-backdrop" onMouseDown={onClose}>
+    <FloatingMenuBackdrop data-left-rail-menu-backdrop onMouseDown={onClose}>
       <div
         onMouseDown={(event: { stopPropagation: () => void }) => event.stopPropagation()}
         style={{ ...style, width: `${width}px` } as unknown as CSSProperties}
@@ -43,7 +49,7 @@ export function createLeftRailContextMenuOverlay(
           ? createListSettingsMenu(listSettings, handlers)
           : createLeftRailContextMenu(menu, handlers)}
       </div>
-    </div>
+    </FloatingMenuBackdrop>
   );
 }
 
@@ -130,24 +136,23 @@ function createLeftRailContextMenu(
         ];
 
   return (
-    <div
-      className={`left-rail-context-menu left-rail-context-menu--${menu.kind}`}
-      data-left-rail-menu-kind={menu.kind}
-    >
+    <FloatingMenuSurface $kind={menu.kind} data-left-rail-menu-kind={menu.kind}>
       {items.map((item) => (
-        <button
+        <FloatingMenuItem
           key={item.label}
-          className={`left-rail-context-menu__item${item.danger ? " left-rail-context-menu__item--danger" : ""}${item.onClick ? "" : " left-rail-context-menu__item--disabled"}`}
           type="button"
           disabled={item.onClick === undefined}
+          data-left-rail-menu-item={item.label}
+          $danger={item.danger}
+          $disabled={item.onClick === undefined}
           onClick={item.onClick}
         >
-          <span className="left-rail-context-menu__icon" aria-hidden>
+          <FloatingMenuIcon $danger={item.danger} aria-hidden>
             {item.icon}
-          </span>
+          </FloatingMenuIcon>
           <span>{item.label}</span>
-        </button>
+        </FloatingMenuItem>
       ))}
-    </div>
+    </FloatingMenuSurface>
   );
 }

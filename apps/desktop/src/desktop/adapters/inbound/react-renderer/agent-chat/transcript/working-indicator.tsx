@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactElement } from "react";
+import { keyframes, styled } from "styled-components";
+import { TranscriptTurn, TurnLabel } from "./transcript.parts.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // Live working indicator with an elapsed timer, so a long turn reads as active
@@ -35,19 +37,61 @@ export function AgentWorkingIndicator({
   const detail = liveActivitySummary?.trim();
   const text = detail ? `${elapsed} · ${detail}` : elapsed;
   return (
-    <article
-      className="agent-session-turn agent-session-turn--agent agent-session-turn--working"
+    <TranscriptTurn
+      $role="agent"
+      data-transcript-turn="true"
       data-block-role="agent"
       data-working={true}
       aria-live="polite"
     >
-      <span className="agent-session-turn__label">Agent</span>
-      <span className="agent-session-working">
-        <span className="agent-session-working__dot" />
-        <span className="agent-session-working__dot" />
-        <span className="agent-session-working__dot" />
-        <span className="agent-session-working__text">{text}</span>
-      </span>
-    </article>
+      <TurnLabel>Agent</TurnLabel>
+      <WorkingStatus>
+        <WorkingDot />
+        <WorkingDot />
+        <WorkingDot />
+        <WorkingText data-working-text="true">{text}</WorkingText>
+      </WorkingStatus>
+    </TranscriptTurn>
   );
 }
+
+const workingPulse = keyframes`
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+`;
+
+const WorkingStatus = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--tide-muted);
+  font-size: 13px;
+`;
+
+const WorkingDot = styled.span`
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--tide-muted);
+  animation: ${workingPulse} 1.1s ease-in-out infinite;
+
+  &:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+
+  &:nth-child(3) {
+    animation-delay: 0.36s;
+  }
+`;
+
+const WorkingText = styled.span`
+  margin-left: 4px;
+`;

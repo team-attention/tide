@@ -62,13 +62,13 @@ const check = (ok, label, detail) => {
   app.process().stderr?.on("data", (chunk) => fs.appendFileSync(stderrLog, chunk));
   const shot = (label) => page.screenshot({ path: `/tmp/pw-e2e-${AGENT}-${label}.png` });
 
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(800);
 
   // 1. Pick the agent exactly like a user: agent chip -> menu row.
-  await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+  await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
   await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
-  const agentRow = page.locator('[data-choice-surface="agent_menu"] .choice-surface__row', {
+  const agentRow = page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', {
     hasText: agentLabel,
   });
   const agentRowEnabled = (await agentRow.count()) > 0 && !(await agentRow.first().isDisabled());
@@ -81,7 +81,7 @@ const check = (ok, label, detail) => {
   await page.locator('[aria-label="Permission"]').first().click();
   const surface = page.locator('[data-choice-surface="permission_menu"]');
   await surface.waitFor({ timeout: 5000 });
-  const modeRow = surface.locator(".choice-surface__row", { hasText: PROMPT_MODE_ROW[AGENT] });
+  const modeRow = surface.locator("[data-choice-row]", { hasText: PROMPT_MODE_ROW[AGENT] });
   const permissionSet = (await modeRow.count()) > 0;
   if (permissionSet) {
     await modeRow.first().click();
@@ -94,12 +94,12 @@ const check = (ok, label, detail) => {
 
   // 3. Type the tool-forcing prompt and send.
   await page.locator('[aria-label="Composer draft"]').first().fill(PROMPT1);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   log({ phase: "sent", prompt: PROMPT1 });
 
   // 4. The permission Prompt Card must render in the REAL UI. Click its real
   //    buttons: keep the default (Allow/Yes) option, press Submit.
-  const promptCard = page.locator(".prompt-card");
+  const promptCard = page.locator("[data-prompt-card]");
   let promptSurfaced = false;
   try {
     await promptCard.waitFor({ timeout: 120000 });
@@ -112,27 +112,27 @@ const check = (ok, label, detail) => {
     // The exact journey that used to hang invisibly: while the prompt waits,
     // LEAVE the thread (New thread) and come back — the card must re-render
     // from hydrate, not only from the live prompt.changed event.
-    await page.locator(".tide-product-shell").press("Escape").catch(() => {});
+    await page.locator("[data-product-shell]").press("Escape").catch(() => {});
     await page.getByText("New thread", { exact: true }).first().click();
     await page.waitForTimeout(700);
-    await page.locator(".thread-row__main").first().click();
+    await page.locator("[data-thread-row-main]").first().click();
     await page.waitForTimeout(1200);
-    const cardAfterReturn = (await page.locator(".prompt-card").count()) > 0;
+    const cardAfterReturn = (await page.locator("[data-prompt-card]").count()) > 0;
     check(cardAfterReturn, "prompt_card_survives_thread_switch");
-    const message = (await promptCard.locator(".prompt-card__message").innerText()).trim();
+    const message = (await promptCard.locator("[data-prompt-message]").innerText()).trim();
     const optionLabels = await promptCard
-      .locator(".prompt-card__option-label")
+      .locator("[data-prompt-option-label]")
       .allInnerTexts();
     log({ phase: "prompt-card", message, options: optionLabels });
     await shot("2-prompt-card");
     // The adapter's default (Allow) must arrive pre-selected.
-    const firstOption = promptCard.locator(".prompt-card__option").first();
+    const firstOption = promptCard.locator("[data-prompt-option]").first();
     const preselected = (await firstOption.getAttribute("data-selected")) === "true";
     check(preselected, "default_choice_preselected");
     if (!preselected) {
       await firstOption.click();
     }
-    const submit = promptCard.locator(".prompt-card__submit");
+    const submit = promptCard.locator("[data-prompt-submit]");
     check(!(await submit.isDisabled()), "prompt_submit_enabled");
     await submit.click();
     log({ phase: "answered", chose: optionLabels[0] });
@@ -146,7 +146,7 @@ const check = (ok, label, detail) => {
 
   // 6. Follow-up turn into the SAME live thread.
   await page.locator('[aria-label="Composer draft"]').first().fill(PROMPT2);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   log({ phase: "sent-followup", prompt: PROMPT2 });
   const sawSecond = await waitForToken(page, TOKEN2, 120000);
   check(sawSecond.found, "followup_answer_rendered", sawSecond);
@@ -171,10 +171,10 @@ async function waitForToken(page, token, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await page.waitForTimeout(2000);
-    const blocks = page.locator(".agent-chat__block, .agent-message, .chat-block");
+    const blocks = page.locator("[data-transcript-turn]");
     // Fall back to whole-shell text scan: block class names may evolve, the
     // TOKEN appearing in the conversation area is the user-visible truth.
-    const text = await page.locator(".tide-product-shell").innerText();
+    const text = await page.locator("[data-product-shell]").innerText();
     const count = text.split(token).length - 1;
     // The user message block contains the token once; the rendered ANSWER adds
     // at least one more. Keep waiting until it does — returning on the first

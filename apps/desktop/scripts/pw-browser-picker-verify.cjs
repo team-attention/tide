@@ -37,7 +37,7 @@ async function clickWorkbenchToggle(page) {
   const page = await app.firstWindow();
   const fatal = [];
   page.on("pageerror", (e) => fatal.push(e.message));
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1000);
 
   let pass = true;
@@ -49,7 +49,7 @@ async function clickWorkbenchToggle(page) {
   await page.locator('[data-launcher-action="open_browser"]').first().click();
   await page.waitForTimeout(2500);
   check("app still mounted after opening Browser (no white screen)",
-    (await page.locator(".tide-product-shell").count()) === 1);
+    (await page.locator("[data-product-shell]").count()) === 1);
   check("browser pane rendered", (await page.locator('[data-pane-kind="browser"]').count()) > 0);
   check("no fatal renderer error on Browser open", fatal.length === 0);
 
@@ -59,7 +59,7 @@ async function clickWorkbenchToggle(page) {
   await page.locator('[data-launcher-action="open_editor"]').first().click();
   await page.waitForTimeout(1200);
   check("editor picker shows inline after clicking Editor",
-    (await page.locator(".editor-picker").count()) > 0);
+    (await page.locator('[data-editor-picker="true"]').count()) > 0);
   check("workbench STAYS OPEN with the picker",
     (await page.locator('[aria-label="Close Workbench"]').count()) > 0);
 
@@ -68,9 +68,9 @@ async function clickWorkbenchToggle(page) {
   await clickWorkbenchToggle(page); // reopen
   await page.waitForTimeout(800);
   check("picker NOT stale after close + reopen",
-    (await page.locator(".editor-picker").count()) === 0);
+    (await page.locator('[data-editor-picker="true"]').count()) === 0);
   check("launcher returns after close + reopen",
-    (await page.locator(".workbench-launcher-action").count()) === 5);
+    (await page.locator("[data-launcher-action]").count()) === 5);
 
   if (fatal.length > 0) console.log("FATAL renderer errors:", fatal.slice(0, 3));
   console.log(pass ? "\nALL PASS" : "\nSOME FAILED");

@@ -73,7 +73,7 @@ const fallbackContainer: CSSProperties = {
 
 function PaneErrorFallback(props: { label?: string; error: Error; reset: () => void }): ReactNode {
   return (
-    <div className="pane-error-fallback" role="alert" style={fallbackContainer}>
+    <div data-error-fallback="pane" role="alert" style={fallbackContainer}>
       <p style={{ margin: 0, fontWeight: 600 }}>
         Something went wrong in {props.label ?? "this view"}.
       </p>
@@ -111,7 +111,7 @@ const fallbackButton: CSSProperties = {
 // so offer a hard Reload alongside it. Use as the renderer root boundary's fallback.
 export function AppErrorFallback(props: { error: Error; reset: () => void }): ReactNode {
   return (
-    <div className="app-error-fallback" role="alert" style={{ ...fallbackContainer, position: "fixed", inset: 0 }}>
+    <div data-error-fallback="app" role="alert" style={{ ...fallbackContainer, position: "fixed", inset: 0 }}>
       <p style={{ margin: 0, fontWeight: 600, fontSize: "15px" }}>Tide hit an unexpected error.</p>
       <p
         style={{

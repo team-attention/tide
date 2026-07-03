@@ -55,7 +55,7 @@ async function clickIfPresent(locator) {
   page.on("pageerror", (e) => pageErrors.push(String(e.message).slice(0, 200)));
   const shot = (label) => page.screenshot({ path: `/tmp/${provider.shotPrefix}-${label}.png` });
 
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1000);
   await page.evaluate(() => {
     window.__tideAcpLiveEvents = [];
@@ -70,10 +70,10 @@ async function clickIfPresent(locator) {
     });
   });
 
-  await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+  await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
   await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
   const providerRow = page
-    .locator('[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: provider.label })
+    .locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: provider.label })
     .first();
   const providerClass = await providerRow.getAttribute("class").catch(() => "");
   log({ phase: "provider_row", agent: ACP_AGENT, label: provider.label, className: providerClass });
@@ -85,7 +85,7 @@ async function clickIfPresent(locator) {
     await permissionButton.click();
     await page.locator('[data-choice-surface="permission_menu"]').waitFor({ timeout: 5000 });
     const permissionRow = page
-      .locator('[data-choice-surface="permission_menu"] .choice-surface__row', { hasText: provider.permission })
+      .locator('[data-choice-surface="permission_menu"] [data-choice-row]', { hasText: provider.permission })
       .first();
     if ((await permissionRow.count()) > 0) {
       await permissionRow.click();
@@ -98,18 +98,18 @@ async function clickIfPresent(locator) {
   }
 
   await page.locator('[aria-label="Composer draft"]').first().fill(PROMPT);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   log({ phase: "sent", agent: ACP_AGENT, token: TOKEN, dataRoot });
 
   // Fresh roots can gate on provider trust/readiness; grant trust when offered.
   await page.waitForTimeout(1500);
-  const trust = page.locator('.choice-surface__row, button', { hasText: /Trust this folder/i });
+  const trust = page.locator('[data-choice-row], button', { hasText: /Trust this folder/i });
   if (await clickIfPresent(trust)) {
     log({ phase: "trusted_folder" });
     await page.waitForTimeout(800);
     const draft = page.locator('[aria-label="Composer draft"]').first();
     if ((await draft.inputValue().catch(() => "")).trim().length > 0) {
-      await page.locator(".composer-shell__send").first().click();
+      await page.locator("[data-composer-send]").first().click();
       log({ phase: "resent" });
     }
   }
@@ -129,17 +129,17 @@ async function clickIfPresent(locator) {
     const at = Math.round((Date.now() - t0) / 1000);
     const snap = await page.evaluate((token) => {
       const q = (s) => document.querySelectorAll(s).length;
-      const workingText = document.querySelector(".agent-session-working__text")?.textContent?.trim() ?? null;
+      const workingText = document.querySelector("[data-working-text]")?.textContent?.trim() ?? null;
       const transcriptText = document.querySelector('[aria-label="Agent Session"]')?.textContent ?? "";
       const agentTurns = Array.from(document.querySelectorAll('[data-block-role="agent"]'));
       const agentText = agentTurns.map((node) => node.textContent ?? "").join("\n");
-      const toolBlocks = Array.from(document.querySelectorAll('[data-block-role="tool"], .tool-activity, .agent-session-turn--tool'));
+      const toolBlocks = Array.from(document.querySelectorAll('[data-block-role="tool"]'));
       const readiness = document.querySelector('[data-choice-surface="provider_readiness"], .provider-readiness')?.textContent?.trim().replace(/\s+/g, " ").slice(0, 500) ?? null;
-      const promptCard = document.querySelector('[data-prompt-kind], .agent-prompt-card')?.textContent?.trim().replace(/\s+/g, " ").slice(0, 500) ?? null;
+      const promptCard = document.querySelector('[data-prompt-card]')?.textContent?.trim().replace(/\s+/g, " ").slice(0, 500) ?? null;
       const liveEvents = Array.isArray(window.__tideAcpLiveEvents) ? window.__tideAcpLiveEvents.slice(-5) : [];
       return {
         workingText,
-        workingTurn: q(".agent-session-turn--working"),
+        workingTurn: q("[data-working="true"]"),
         toolBlocks: toolBlocks.length,
         toolText: toolBlocks.map((node) => (node.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 120)).slice(-3),
         agentTurns: agentTurns.length,

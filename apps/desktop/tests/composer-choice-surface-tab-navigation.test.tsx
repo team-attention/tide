@@ -64,8 +64,8 @@ test("slash command choice surface tabs from the Composer input through rows", a
       root.render(<AgentChatShell viewModel={createAgentChatShellViewModel(state)} />);
     });
 
-    const input = container.querySelector(".composer-shell__input") as HTMLTextAreaElement | null;
-    const rows = Array.from(container.querySelectorAll<HTMLButtonElement>(".choice-surface__row"));
+    const input = container.querySelector("[data-composer-input]") as HTMLTextAreaElement | null;
+    const rows = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-choice-row]"));
     assert.ok(input, "Composer input should render");
     assert.ok(rows.length >= 3, "slash command menu should render multiple rows");
 

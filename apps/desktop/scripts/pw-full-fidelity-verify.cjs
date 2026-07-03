@@ -1,5 +1,5 @@
 // Live verification for prompt-full-fidelity-fields Slice 1: drive a REAL claude turn that
-// calls AskUserQuestion, then capture the surfaced .prompt-card DOM to confirm it renders
+// calls AskUserQuestion, then capture the surfaced [data-prompt-card] DOM to confirm it renders
 // the question HEADER chip and per-option DESCRIPTION (and that the internal "structured:"
 // routing token is NOT leaked as option text). AUQ schema requires header + option
 // description, so any real AUQ call exercises these fields.
@@ -24,28 +24,28 @@ const ASK =
   });
   const page = await app.firstWindow();
   page.on("pageerror", (e) => log({ pageerror: String(e.message).slice(0, 200) }));
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(700);
 
   // Select Claude Code + "Ask permissions" so the AUQ tool prompt surfaces as a card.
-  await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+  await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
   await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
-  await page.locator('[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: "Claude Code" }).first().click();
+  await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: "Claude Code" }).first().click();
   await page.waitForTimeout(200);
   await page.locator('[aria-label="Permission"]').first().click();
   await page.locator('[data-choice-surface="permission_menu"]').waitFor({ timeout: 5000 });
-  await page.locator('[data-choice-surface="permission_menu"] .choice-surface__row', { hasText: "Ask permissions" }).first().click();
+  await page.locator('[data-choice-surface="permission_menu"] [data-choice-row]', { hasText: "Ask permissions" }).first().click();
   await page.waitForTimeout(200);
 
   await page.locator('[aria-label="Composer draft"]').first().fill(ASK);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   log({ sent: true });
 
   // Wait for the AUQ card (real claude turn — generous budget).
   const deadline = Date.now() + 150000;
   let cardUp = false;
   while (Date.now() < deadline) {
-    cardUp = await page.locator(".prompt-card").first().isVisible().catch(() => false);
+    cardUp = await page.locator("[data-prompt-card]").first().isVisible().catch(() => false);
     if (cardUp) break;
     await page.waitForTimeout(2000);
   }
@@ -60,19 +60,19 @@ const ASK =
   await page.waitForTimeout(500);
   // Scrape the card: header chip(s), each option's label + secondary line, detail body.
   const card = await page.evaluate(() => {
-    const el = document.querySelector(".prompt-card");
+    const el = document.querySelector("[data-prompt-card]");
     if (!el) return null;
     const txt = (n) => (n ? (n.textContent || "").trim() : null);
     return {
-      kindLabel: txt(el.querySelector(".prompt-card__kind")),
-      headerChips: [...el.querySelectorAll(".prompt-card__header-chip")].map((n) => txt(n)),
-      message: txt(el.querySelector(".prompt-card__message")),
-      options: [...el.querySelectorAll(".prompt-card__option")].map((o) => ({
-        label: txt(o.querySelector(".prompt-card__option-label")),
-        secondary: txt(o.querySelector(".prompt-card__option-value")),
+      kindLabel: txt(el.querySelector("[data-prompt-kind-label]")),
+      headerChips: [...el.querySelectorAll("[data-prompt-header-chip]")].map((n) => txt(n)),
+      message: txt(el.querySelector("[data-prompt-message]")),
+      options: [...el.querySelectorAll("[data-prompt-option]")].map((o) => ({
+        label: txt(o.querySelector("[data-prompt-option-label]")),
+        secondary: txt(o.querySelector("[data-prompt-option-value]")),
       })),
-      hasPreview: !!el.querySelector(".prompt-card__option-preview"),
-      detailBody: txt(el.querySelector(".prompt-card__detail-body")),
+      hasPreview: !!el.querySelector("[data-prompt-option-preview]"),
+      detailBody: txt(el.querySelector("[data-prompt-detail-body]")),
       // Token-leak guard: NO visible text in the card should contain the internal prefix.
       leaksStructuredToken: (el.textContent || "").includes("structured:"),
     };

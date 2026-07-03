@@ -2,6 +2,8 @@ import type { ProductShellViewModel } from "../../../../../application/domains/p
 import type { ProductShellHandlers, WorkbenchImageLoadResult } from "../support/types.ts";
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
+import { styled } from "styled-components";
+import { WorkbenchPaneSurface } from "./workbench-pane.parts.tsx";
 
 export function WorkbenchImagePane(props: {
   pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;
@@ -51,23 +53,23 @@ export function WorkbenchImagePane(props: {
   ]);
 
   return (
-    <div className="workbench-pane-content workbench-pane-content--image">
-      <div className="workbench-image__stage">
+    <ImagePaneSurface data-pane-surface-kind="image">
+      <ImageStage>
         {dataBase64.length > 0 ? (
-          <img className="workbench-image__media" src={src} alt={props.pane.relativePath ?? props.pane.title} />
+          <ImageMedia data-workbench-image-media="true" src={src} alt={props.pane.relativePath ?? props.pane.title} />
         ) : (
-          <div className="workbench-image__empty">
+          <ImageEmpty>
             {props.pane.root === undefined || loadSettled ? "Image unavailable" : "Loading image..."}
-          </div>
+          </ImageEmpty>
         )}
-      </div>
-      <div className="workbench-image__meta">
+      </ImageStage>
+      <ImageMeta>
         <span>{props.pane.relativePath ?? props.pane.title}</span>
         {typeof (image?.byteLength ?? props.pane.byteLength) === "number" ? (
           <span>{formatBytes(image?.byteLength ?? props.pane.byteLength ?? 0)}</span>
         ) : null}
-      </div>
-    </div>
+      </ImageMeta>
+    </ImagePaneSurface>
   );
 }
 
@@ -97,3 +99,59 @@ function formatBytes(bytes: number): string {
   }
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+const ImagePaneSurface = styled(WorkbenchPaneSurface)`
+  flex: 1 1 auto;
+  height: auto;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 34px;
+  padding: 0;
+  background: var(--tide-bg);
+`;
+
+const ImageStage = styled.div`
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  background:
+    linear-gradient(45deg, color-mix(in srgb, var(--tide-surface) 70%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, var(--tide-surface) 70%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--tide-surface) 70%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--tide-surface) 70%, transparent) 75%);
+  background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+  background-size: 18px 18px;
+`;
+
+const ImageMedia = styled.img`
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+`;
+
+const ImageEmpty = styled.div`
+  color: var(--tide-muted);
+  font-size: 13px;
+`;
+
+const ImageMeta = styled.div`
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  border-top: 1px solid var(--tide-line);
+  color: var(--tide-muted);
+  font: 12px/1.2 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+`;

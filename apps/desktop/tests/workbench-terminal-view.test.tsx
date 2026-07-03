@@ -106,7 +106,7 @@ test("workbench_terminal_pane_marks_command_result_terminals_as_read_only_role",
   await new Promise((resolve) => setTimeout(resolve, 50));
 
   try {
-    const shell = dom.window.document.querySelector(".workbench-terminal");
+    const shell = dom.window.document.querySelector("[data-terminal-role]");
     assert.equal(shell?.getAttribute("data-terminal-role"), "command_result");
   } finally {
     await act(async () => {

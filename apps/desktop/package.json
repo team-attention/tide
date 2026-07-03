@@ -59,6 +59,7 @@
     "markdown-it": "^14.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "styled-components": "^6.4.3",
     "typescript": "^6.0.3"
   },
   "devDependencies": {

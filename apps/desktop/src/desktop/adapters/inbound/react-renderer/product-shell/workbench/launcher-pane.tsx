@@ -1,7 +1,9 @@
 import { EMPTY_WORKBENCH_LAUNCHER_PANE_ID, type ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
+import { styled } from "styled-components";
 import { ExternalLink, FilePlus, FileText, FolderOpen, GitBranchPlus, Square, Terminal } from "lucide-react";
+import { WorkbenchPaneSurface } from "./workbench-pane.parts.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // Default Launcher shown when the Workbench has no open Pane yet. Mirrors the
@@ -33,43 +35,41 @@ export function WorkbenchLauncherPane(props: {
   // editor (named on save, VSCode-style), the same as the FileTree's New File (spec:
   // workbench-filetree-file-operations).
   return (
-    <div className="workbench-pane-content workbench-pane-content--launcher">
-      <p className="workbench-launcher-hint">Open a pane</p>
-      <div className="workbench-launcher-actions" aria-label="Workbench Launcher Actions">
+    <WorkbenchLauncherSurface data-pane-surface-kind="launcher">
+      <WorkbenchLauncherHint>Open a pane</WorkbenchLauncherHint>
+      <WorkbenchLauncherActions aria-label="Workbench Launcher Actions">
         {actions.map((action) => (
-          <button
+          <WorkbenchLauncherActionButton
             key={action.actionId}
-            className="workbench-launcher-action"
             type="button"
             disabled={!action.enabled}
             data-launcher-action={action.actionId}
             onClick={() => props.handlers.onLauncherAction(action.actionId, props.pane.paneId)}
           >
-            <span className="workbench-launcher-action__icon" aria-hidden>
+            <WorkbenchLauncherActionIcon aria-hidden>
               {launcherActionIcon(action.actionId)}
-            </span>
-            <span className="workbench-launcher-action__copy">
-              <span className="workbench-launcher-action__label">{action.label}</span>
-              <span className="workbench-launcher-action__description">{action.description}</span>
-            </span>
-          </button>
+            </WorkbenchLauncherActionIcon>
+            <WorkbenchLauncherActionCopy>
+              <WorkbenchLauncherActionLabel>{action.label}</WorkbenchLauncherActionLabel>
+              <WorkbenchLauncherActionDescription>{action.description}</WorkbenchLauncherActionDescription>
+            </WorkbenchLauncherActionCopy>
+          </WorkbenchLauncherActionButton>
         ))}
-        <button
-          className="workbench-launcher-action"
+        <WorkbenchLauncherActionButton
           type="button"
           data-launcher-action="new_file"
           onClick={() => props.handlers.onNewUntitledFile()}
         >
-          <span className="workbench-launcher-action__icon" aria-hidden>
+          <WorkbenchLauncherActionIcon aria-hidden>
             <FilePlus size={15} strokeWidth={1.9} />
-          </span>
-          <span className="workbench-launcher-action__copy">
-            <span className="workbench-launcher-action__label">New file</span>
-            <span className="workbench-launcher-action__description">Open a blank file (name it when you save)</span>
-          </span>
-        </button>
-      </div>
-    </div>
+          </WorkbenchLauncherActionIcon>
+          <WorkbenchLauncherActionCopy>
+            <WorkbenchLauncherActionLabel>New file</WorkbenchLauncherActionLabel>
+            <WorkbenchLauncherActionDescription>Open a blank file (name it when you save)</WorkbenchLauncherActionDescription>
+          </WorkbenchLauncherActionCopy>
+        </WorkbenchLauncherActionButton>
+      </WorkbenchLauncherActions>
+    </WorkbenchLauncherSurface>
   );
 }
 
@@ -89,3 +89,81 @@ function launcherActionIcon(actionId: string): ReactElement {
       return <Square size={15} strokeWidth={1.9} />;
   }
 }
+
+const WorkbenchLauncherSurface = styled(WorkbenchPaneSurface)``;
+
+const WorkbenchLauncherHint = styled.p`
+  margin: 0;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+`;
+
+const WorkbenchLauncherActions = styled.div`
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+`;
+
+const WorkbenchLauncherActionButton = styled.button`
+  min-width: 0;
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--tide-line-strong);
+    background: var(--tide-hover);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.48;
+  }
+`;
+
+const WorkbenchLauncherActionIcon = styled.span`
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tide-muted);
+`;
+
+const WorkbenchLauncherActionCopy = styled.span`
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+`;
+
+const WorkbenchLauncherActionLabel = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 580;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const WorkbenchLauncherActionDescription = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;

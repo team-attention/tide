@@ -1,4 +1,5 @@
 import type { ReactElement, ReactNode } from "react";
+import { styled } from "styled-components";
 
 // Drag-and-drop wrapper for a manually-orderable top-level rail item (spec:
 // left-rail-manual-ordering). The whole wrapper is the drag source AND drop target;
@@ -13,9 +14,8 @@ export function createRailDragItem(
   children: ReactNode,
 ): ReactElement {
   return (
-    <div
+    <RailDragItemFrame
       key={itemKey}
-      className="rail-drag-item"
       draggable
       data-rail-key={itemKey}
       onDragStart={(event: { dataTransfer: DataTransfer; currentTarget: HTMLElement }) => {
@@ -25,11 +25,11 @@ export function createRailDragItem(
         // snapshot of the whole (often nested) row/group. Falls back to the native image
         // if there's no label or the platform ignores setDragImage.
         const label =
-          event.currentTarget.querySelector(".project-row__title, .thread-row__title")?.textContent?.trim() ?? "";
+          event.currentTarget.querySelector("[data-rail-title]")?.textContent?.trim() ?? "";
         if (label !== "") {
           const ghost = document.createElement("div");
-          ghost.className = "rail-drag-ghost";
           ghost.textContent = label;
+          styleRailDragGhost(ghost);
           document.body.appendChild(ghost);
           event.dataTransfer.setDragImage(ghost, 12, 14);
           // The browser snapshots the chip synchronously once this handler returns; drop
@@ -40,14 +40,14 @@ export function createRailDragItem(
       onDragOver={(event: { preventDefault: () => void; dataTransfer: DataTransfer; currentTarget: HTMLElement }) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
-        event.currentTarget.classList.add("rail-drag-item--over");
+        event.currentTarget.dataset.railDragOver = "true";
       }}
       onDragLeave={(event: { currentTarget: HTMLElement }) => {
-        event.currentTarget.classList.remove("rail-drag-item--over");
+        delete event.currentTarget.dataset.railDragOver;
       }}
       onDrop={(event: { preventDefault: () => void; dataTransfer: DataTransfer; currentTarget: HTMLElement }) => {
         event.preventDefault();
-        event.currentTarget.classList.remove("rail-drag-item--over");
+        delete event.currentTarget.dataset.railDragOver;
         const draggedKey = event.dataTransfer.getData(RAIL_DRAG_MIME);
         if (draggedKey !== "" && draggedKey !== itemKey) {
           onReorder(draggedKey, itemKey);
@@ -55,6 +55,44 @@ export function createRailDragItem(
       }}
     >
       {children}
-    </div>
+    </RailDragItemFrame>
   );
 }
+
+function styleRailDragGhost(ghost: HTMLDivElement): void {
+  Object.assign(ghost.style, {
+    position: "fixed",
+    top: "0",
+    left: "-9999px",
+    display: "inline-flex",
+    alignItems: "center",
+    maxWidth: "220px",
+    padding: "6px 12px",
+    borderRadius: "8px",
+    background: "var(--tide-surface)",
+    color: "var(--tide-text)",
+    fontSize: "13px",
+    fontWeight: "500",
+    lineHeight: "1",
+    whiteSpace: "nowrap",
+    boxShadow: "0 8px 20px -8px rgba(0, 0, 0, 0.35)",
+    border: "1px solid var(--tide-line)",
+    pointerEvents: "none",
+  });
+}
+
+const RailDragItemFrame = styled.div`
+  position: relative;
+
+  &[data-rail-drag-over="true"]::after {
+    content: "";
+    position: absolute;
+    right: 10px;
+    bottom: -2px;
+    left: 10px;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--tide-action);
+    pointer-events: none;
+  }
+`;

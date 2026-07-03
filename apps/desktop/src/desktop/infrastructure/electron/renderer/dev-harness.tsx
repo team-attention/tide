@@ -490,15 +490,15 @@ function measure(): void {
     fileTreeW: px('[aria-label="FileTree"]'), // Figma 344
     fileTreeSearchH: pxH(".file-tree-column__search"), // Figma 32
     fileRowH: pxH(".file-tree-row"), // Figma 30
-    composerMode: (document.querySelector(".composer-shell") as HTMLElement | null)?.dataset
+    composerMode: (document.querySelector("[data-composer-shell]") as HTMLElement | null)?.dataset
       .composerMode,
-    composerH: pxH(".composer-shell"), // Figma 90
-    composerInputH: pxH(".composer-shell__input"),
-    composerToolbarH: pxH(".composer-shell__toolbar"),
-    composerBodyH: pxH(".composer-shell__body"),
-    composerChipH: pxH(".composer-shell__choice-chip"), // Figma 28
+    composerH: pxH("[data-composer-shell]"), // Figma 90
+    composerInputH: pxH("[data-composer-input]"),
+    composerToolbarH: pxH("[data-composer-toolbar]"),
+    composerBodyH: pxH("[data-composer-body]"),
+    composerChipH: pxH("[data-composer-choice-chip]"), // Figma 28
     tabH: pxH(".workbench-tab"), // Figma 30
-    tabBarH: pxH('[data-column="workbench"] .column-top-row'), // Figma 52
+    tabBarH: pxH('[data-column="workbench"] [data-column-top-row]'), // Figma 52
   });
 }
 
