@@ -138,6 +138,7 @@ export function reconcileVendorUsability(
 }
 
 const CACHE_TTL_MS = 60_000;
+const OPENCODE_VENDOR_COMMAND_TIMEOUT_MS = 5_000;
 
 export interface OpencodeVendorCatalog {
   get: () => Promise<OpencodeVendorDto[]>;
@@ -147,8 +148,23 @@ export interface OpencodeVendorCatalog {
   invalidate: () => void;
 }
 
+type OpencodeCommandRunner = (executablePath: string, args: string[]) => Promise<string>;
+
+async function runOpencodeVendorCommand(executablePath: string, args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync(executablePath, args, {
+    encoding: "utf8",
+    // Both `auth list` and `--version` are usually fast local calls, but cold
+    // starts can cross one second. The catalog is delivered out of band, so give
+    // first spawn enough room while still bounding a hung CLI.
+    timeout: OPENCODE_VENDOR_COMMAND_TIMEOUT_MS,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  return stdout;
+}
+
 export function createOpencodeVendorCatalog(
   resolveExecutable: (command: "opencode") => string | undefined,
+  runCommand: OpencodeCommandRunner = runOpencodeVendorCommand,
 ): OpencodeVendorCatalog {
   let vendorCache: OpencodeVendorDto[] = buildOpencodeVendors([]);
   let vendorFetchedAt = 0;
@@ -156,21 +172,6 @@ export function createOpencodeVendorCatalog(
   let versionCache: string | undefined;
   let versionFetchedAt = 0;
   let versionInflight: Promise<void> | null = null;
-
-  // ASYNC (execFile, not execFileSync): opencode's CLI can take seconds to start, and
-  // a synchronous spawn froze the backend event loop, stalling the cold-boot rail
-  // skeleton. These run off the loop; the vendor catalog is delivered out of band on
-  // providerCatalog.changed, so it never needs to block a reply.
-  const run = async (executablePath: string, args: string[]): Promise<string> => {
-    const { stdout } = await execFileAsync(executablePath, args, {
-      encoding: "utf8",
-      // Both `auth list` and `--version` are fast local calls; bound them so a hung
-      // CLI can't keep the catalog stale forever.
-      timeout: 1_000,
-      maxBuffer: 4 * 1024 * 1024,
-    });
-    return stdout;
-  };
 
   return {
     get: async () => {
@@ -184,7 +185,7 @@ export function createOpencodeVendorCatalog(
         vendorFetchedAt = now;
         vendorInflight ??= (async () => {
           try {
-            vendorCache = buildOpencodeVendors(parseOpencodeAuthList(await run(executablePath, ["auth", "list"])));
+            vendorCache = buildOpencodeVendors(parseOpencodeAuthList(await runCommand(executablePath, ["auth", "list"])));
           } catch {
             // Not installed / errored / timed out — curated tiles, none connected.
             vendorCache = buildOpencodeVendors([]);
@@ -208,7 +209,7 @@ export function createOpencodeVendorCatalog(
         versionFetchedAt = now;
         versionInflight ??= (async () => {
           try {
-            versionCache = (await run(executablePath, ["--version"]))
+            versionCache = (await runCommand(executablePath, ["--version"]))
               .split(/\r?\n/)
               .map((line) => line.trim())
               .find((line) => line.length > 0);
