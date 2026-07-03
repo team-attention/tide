@@ -1,7 +1,7 @@
 import type { ProductShellProjectGroupView, ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import { useState, type ReactElement, type ReactNode } from "react";
-import { keyframes, styled } from "styled-components";
+import { css, keyframes, styled } from "styled-components";
 import {
   createSectionHeader,
   LeftRailCollapsible,
@@ -413,7 +413,14 @@ const ProjectStatusBubble = styled.span<{ $kind: "attention" | "running" }>`
   margin-left: 6px;
   border-radius: 999px;
   background: ${({ $kind }) => ($kind === "attention" ? "var(--tide-warn)" : "var(--tide-success)")};
-  animation: ${({ $kind }) => ($kind === "running" ? projectRunningPulse : "none")} 1.2s ease-in-out infinite;
+  ${({ $kind }) =>
+    $kind === "running"
+      ? css`
+          animation: ${projectRunningPulse} 1.2s ease-in-out infinite;
+        `
+      : css`
+          animation: none;
+        `}
 `;
 
 const ProjectRenameInput = styled.input`

@@ -9,7 +9,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
 } from "react";
-import { keyframes, styled } from "styled-components";
+import { css, keyframes, styled } from "styled-components";
 import { menuAnchorFromEvent } from "../chrome/chrome.tsx";
 import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree/path.ts";
 import { Archive, MoreHorizontal, Pin, PinOff, Trash2 } from "lucide-react";
@@ -539,7 +539,14 @@ const ThreadLeadingStatus = styled.span<{
   border-radius: 999px;
   background: ${({ $attention }) => ($attention ? "var(--tide-accent)" : "transparent")};
   color: var(--tide-muted);
-  animation: ${({ $running }) => ($running ? threadRowStatusSpin : "none")} 0.9s linear infinite;
+  ${({ $running }) =>
+    $running
+      ? css`
+          animation: ${threadRowStatusSpin} 0.9s linear infinite;
+        `
+      : css`
+          animation: none;
+        `}
 `;
 
 const ThreadRenameInput = styled.input`
