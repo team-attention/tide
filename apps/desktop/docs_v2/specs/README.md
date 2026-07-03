@@ -61,6 +61,7 @@ Each spec must be narrow enough to test and implement as one slice.
 | [Thread Launch Options Contract](thread-launch-options-contract.md) | Drafted | Preserve selected Launch Options across Thread start, hydrate, list, restore, and Follow-up Composer labels. |
 | [opencode Composer Model And Provider Flow](opencode-composer-model-provider-flow.md) | Drafted | Make the opencode Model Chip open a compact provider-first model/connect/reconnect flow instead of a flat menu plus separate on-ramp. |
 | [opencode Local Session Adoption](opencode-local-session-adoption.md) | Drafted | Adopt existing local opencode sessions into Tide Threads using `opencode session list` and `opencode export`, then resume via `opencode_session`. |
+| [Goal Complete Follow-up Stall](goal-complete-follow-up-stall.md) | Drafted | Prevent completed goal Threads from accepting optimistic follow-ups that stall behind stale live runtime state until app restart. |
 
 ## Rule
 
