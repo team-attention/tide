@@ -2561,6 +2561,7 @@ test("product_shell_launcher_terminal_action_emits_open_terminal_command", () =>
   assert.deepEqual(result.command?.payload, {
     threadId: "thread-sketch",
     command: "open_terminal",
+    targetPaneId: "pane-launcher",
   });
 });
 
@@ -2600,6 +2601,7 @@ test("product_shell_launcher_browser_action_emits_open_browser_command", () => {
   assert.deepEqual(result.command?.payload, {
     threadId: "thread-sketch",
     command: "open_browser",
+    targetPaneId: "pane-launcher",
   });
 });
 

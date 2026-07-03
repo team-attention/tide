@@ -186,7 +186,7 @@ export interface ProductShellHandlers {
     dataBase64: string;
   }) => void;
   onRemoveAttachment: (attachmentId: string) => void;
-  onLauncherAction: (actionId: string) => void;
+  onLauncherAction: (actionId: string, launcherPaneId?: string) => void;
   // Open the read-only git Changes view (working-tree diff). Wired to the launcher's
   // Diff action + the top-bar branch badge. Inside a thread it opens the backend singleton
   // pane; on the composer, `cwd` lets the handler first create the Draft Thread, then open

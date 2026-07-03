@@ -51,6 +51,7 @@ Each spec must be narrow enough to test and implement as one slice.
 | [Workbench Browser Pane Evidence Loop](workbench-browser-pane-evidence-loop.md) | Drafted | Store WebView title, URL, and bounded page text in Backend Workbench state for MCP observation. |
 | [Workbench Launcher Pane](workbench-launcher-pane.md) | Drafted | Open a real Workbench Launcher Pane when the active Thread has no visible work surface. |
 | [Workbench Terminal Pane Session](workbench-terminal-pane-session.md) | Drafted | Open a user-visible Thread-scoped Terminal Pane backed by a Workbench terminal process port. |
+| [Workbench Launcher And Terminal Usability](workbench-launcher-terminal-usability.md) | Drafted | Preserve launcher-as-placeholder semantics, Composer Draft Workbench visibility, and prompt Terminal input readiness. |
 | [Workbench FileTree View](workbench-filetree-view.md) | Drafted | Populate the independent right-side FileTree column from Backend-owned Thread root listings. |
 | [Tide MCP Stdio Bridge](tide-mcp-stdio-bridge.md) | Drafted | Expose Backend Tide MCP tools through provider-visible MCP JSON-RPC stdio handling. |
 | [Backend Thread List Product Shell Bootstrap](backend-thread-list-product-shell-bootstrap.md) | Drafted | Let Product Shell request Backend-owned Thread summaries instead of starting from fixture Thread rows. |

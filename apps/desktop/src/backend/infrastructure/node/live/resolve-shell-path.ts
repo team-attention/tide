@@ -122,6 +122,31 @@ export function resolveAugmentedEnvironment(
   return result;
 }
 
+export function resolveWorkbenchTerminalEnvironment(
+  deps: {
+    platform?: NodeJS.Platform;
+    currentEnv?: NodeJS.ProcessEnv;
+    homeDir?: string;
+  } = {},
+): NodeJS.ProcessEnv {
+  const platform = deps.platform ?? process.platform;
+  const currentEnv = deps.currentEnv ?? process.env;
+  if (platform === "win32") {
+    return { ...currentEnv };
+  }
+
+  const homeDir = deps.homeDir ?? currentEnv.HOME ?? os.homedir();
+  return {
+    ...currentEnv,
+    PATH: mergePathEntries({
+      platform,
+      homeDir,
+      shellPath: "",
+      currentPath: currentEnv.PATH ?? "",
+    }),
+  };
+}
+
 function mergePathEntries(input: {
   platform: NodeJS.Platform;
   homeDir: string;

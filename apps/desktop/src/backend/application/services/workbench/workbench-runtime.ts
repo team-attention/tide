@@ -187,6 +187,10 @@ export class WorkbenchRuntime {
           this.completeWorkbenchTerminal(thread.threadId, pane.paneId, exit),
       });
       this.retainRunningTerminalHandle(pane, handle);
+      this.emitAsyncEvent({
+        kind: "workbench_changed",
+        thread: snapshotThread(thread),
+      });
     } catch (error) {
       pane.status = "failed";
       pane.transcriptPreview = boundedTranscriptPreview(

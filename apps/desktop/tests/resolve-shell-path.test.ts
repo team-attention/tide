@@ -5,6 +5,7 @@ import {
   defaultWorkbenchTerminalCommand,
   resolveAugmentedEnvironment,
   resolveAugmentedPath,
+  resolveWorkbenchTerminalEnvironment,
 } from "../src/backend/infrastructure/node/live/resolve-shell-path.ts";
 
 // Why: a Finder-launched packaged app only gets the minimal launchd PATH, so the
@@ -238,5 +239,20 @@ test("augmented_environment_falls_back_to_current_env_when_shell_env_fails", () 
   });
 
   assert.equal(result.GH_TOKEN, "current-token");
+  assert.ok(result.PATH?.split(":").includes("/opt/homebrew/bin"));
+});
+
+test("workbench_terminal_environment_uses_current_env_without_shell_snapshot", () => {
+  const result = resolveWorkbenchTerminalEnvironment({
+    platform: "darwin",
+    currentEnv: {
+      HOME: "/Users/me",
+      PATH: "/usr/bin:/bin",
+      GH_TOKEN: "already-imported",
+    },
+  });
+
+  assert.equal(result.GH_TOKEN, "already-imported");
+  assert.ok(result.PATH?.split(":").includes("/Users/me/.local/bin"));
   assert.ok(result.PATH?.split(":").includes("/opt/homebrew/bin"));
 });

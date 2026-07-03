@@ -197,6 +197,48 @@ test("opening the Editor file picker keeps the Workbench open when the draft's e
   assert.notEqual(afterEvent.editorPickerFilter, null);
 });
 
+test("opening Browser from the Composer Draft launcher keeps the Workbench open through the empty draft snapshot", () => {
+  // Spec: docs_v2/specs/workbench-launcher-terminal-usability.md
+  const draft = ensureComposerDraftThreadActive({ ...composerState(), workbenchOpen: true });
+  const draftId = draft.state.draftThreadId as string;
+  const openingBrowser = selectProductShellLauncherAction(draft.state, "open_browser");
+  assert.equal(openingBrowser.state.workbenchOpen, true);
+
+  const afterEmptyDraftWorkbench = applyProductShellBackendEvent(openingBrowser.state, {
+    kind: "workbench.changed",
+    payload: { threadId: draftId, panes: [] },
+  } as Parameters<typeof applyProductShellBackendEvent>[1]);
+
+  assert.equal(afterEmptyDraftWorkbench.workbenchOpen, true);
+});
+
+test("terminal input routes before the pane status update reaches running and does not churn shell state", () => {
+  // Spec: docs_v2/specs/workbench-launcher-terminal-usability.md
+  const draft = ensureComposerDraftThreadActive(composerState());
+  const draftId = draft.state.draftThreadId as string;
+  const withReadyPane = applyProductShellBackendEvent(draft.state, {
+    kind: "workbench.changed",
+    payload: {
+      threadId: draftId,
+      panes: [{ ...terminalPane, status: "ready" }],
+      activePaneId: "term-1",
+    },
+  } as Parameters<typeof applyProductShellBackendEvent>[1]);
+
+  const typed = writeProductShellTerminalInput(withReadyPane, "term-1", "pwd\r");
+
+  assert.equal(typed.state, withReadyPane);
+  assert.deepEqual(typed.command, {
+    kind: "workbench.command",
+    payload: {
+      threadId: draftId,
+      command: "write_terminal_input",
+      targetPaneId: "term-1",
+      data: { bytes: "pwd\r" },
+    },
+  });
+});
+
 test("closing the Workbench abandons a pending Editor file picker (no stale picker on reopen)", () => {
   const withPicker: ProductShellState = {
     ...composerState(),

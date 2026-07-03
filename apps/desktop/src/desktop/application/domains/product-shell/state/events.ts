@@ -301,9 +301,15 @@ export function applyProductShellBackendEvent(
       const pickerOpen = typeof nextState.editorPickerFilter === "string";
       const untitledOpen =
         threadId !== null && nextState.untitledFiles.some((file) => file.threadId === threadId);
+      const preserveOpenEmptyDraft =
+        threadId !== null &&
+        threadId === nextState.draftThreadId &&
+        panes.length === 0 &&
+        previousPanes.length === 0 &&
+        nextState.workbenchOpenByThreadId[threadId] === true;
       const nextWorkbenchOpen = hasNewRealPane
         ? true
-        : hasOpenPane || pickerOpen || untitledOpen
+        : hasOpenPane || pickerOpen || untitledOpen || preserveOpenEmptyDraft
           ? nextState.workbenchOpen
           : false;
       return {

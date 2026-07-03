@@ -454,7 +454,7 @@ export function writeWorkbenchTerminalInput(
   const pane = state.workbenchPanes.find(
     (candidate) => candidate.paneId === paneId,
   );
-  if (!state.thread || pane?.kind !== "terminal" || pane.status !== "running" || bytes.length === 0) {
+  if (!state.thread || pane?.kind !== "terminal" || bytes.length === 0) {
     return { state, command: null };
   }
 

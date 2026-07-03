@@ -36,7 +36,7 @@ import type {
 } from "./workbench-command-types.ts";
 import { providerReadinessTerminalInput } from "./provider-readiness-terminal-input.ts";
 import type { WorkbenchFileOperations } from "./workbench-file-operations.ts";
-import { activeLauncherPaneId, openWorkbenchLauncher, removeLauncherPane } from "./workbench-launcher.ts";
+import { launcherPaneIdForCommand, openWorkbenchLauncher, removeLauncherPane } from "./workbench-launcher.ts";
 import type { WorkbenchRuntime } from "./workbench-runtime.ts";
 import {
   closeWorkbenchPaneState,
@@ -105,7 +105,7 @@ export class WorkbenchCommandHandler {
         // come from opening multiple launchers (+ → launcher → resolve), not from a
         // persistent launcher. With no active launcher (agent open, chat link) the
         // input disposition (reuse / new) applies as before.
-        const launcherToReplace = activeLauncherPaneId(thread);
+        const launcherToReplace = launcherPaneIdForCommand(thread, input.targetPaneId);
         const browserData =
           launcherToReplace === undefined
             ? input.data
@@ -213,7 +213,7 @@ export class WorkbenchCommandHandler {
       }
       case "open_editor": {
         // Resolve the Launcher placeholder in place (the Editor takes its slot).
-        const launcherToReplace = activeLauncherPaneId(thread);
+        const launcherToReplace = launcherPaneIdForCommand(thread, input.targetPaneId);
         const opened = await this.workbenchFileOps.openFileOutput(thread, input.data);
         if (!opened.ok) {
           return failure(opened.error.code, opened.error.message);
@@ -286,7 +286,7 @@ export class WorkbenchCommandHandler {
           cwd = resolvedCwd.cwd.cwd;
         }
         // Resolve the Launcher placeholder in place (the Terminal takes its slot).
-        const launcherToReplace = activeLauncherPaneId(thread);
+        const launcherToReplace = launcherPaneIdForCommand(thread, input.targetPaneId);
         const pane = this.workbenchRuntime.openWorkbenchTerminal(thread, {
           command,
           args,
@@ -328,7 +328,7 @@ export class WorkbenchCommandHandler {
             "Thread does not have an Execution Context root for the Changes pane.",
           );
         }
-        const launcherToReplace = activeLauncherPaneId(thread);
+        const launcherToReplace = launcherPaneIdForCommand(thread, input.targetPaneId);
         let pane = thread.workbench.panes.find(
           (candidate): candidate is ChangesPaneState => candidate.kind === "changes",
         );

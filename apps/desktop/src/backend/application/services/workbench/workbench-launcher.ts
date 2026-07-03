@@ -15,6 +15,16 @@ export function activeLauncherPaneId(thread: ThreadRecord): string | undefined {
   return active?.kind === "launcher" ? active.paneId : undefined;
 }
 
+export function launcherPaneIdForCommand(
+  thread: ThreadRecord,
+  targetPaneId: string | undefined,
+): string | undefined {
+  const target = thread.workbench.panes.find(
+    (pane) => pane.paneId === targetPaneId,
+  );
+  return target?.kind === "launcher" ? target.paneId : activeLauncherPaneId(thread);
+}
+
 export function removeLauncherPane(
   thread: ThreadRecord,
   paneId: string | undefined,

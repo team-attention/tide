@@ -4076,6 +4076,53 @@ test("opening_browser_from_workbench_command_creates_open_browser_pane", async (
   assert.equal(opened.ok && opened.thread.workbench.focusOwner, "workbench");
 });
 
+test("opening_browser_with_launcher_target_consumes_non_active_launcher", async () => {
+  // Spec: docs_v2/specs/workbench-launcher-terminal-usability.md
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-browser-target-launcher", {
+        workbench: {
+          activePaneId: "pane-browser-existing",
+          focusOwner: "workbench",
+          panes: [
+            browserPane("pane-browser-existing", "Existing browser"),
+            {
+              paneId: "pane-launcher",
+              kind: "launcher",
+              title: "Workbench launcher",
+              revision: "launcher-rev",
+              updatedAt: now,
+              actions: [
+                {
+                  actionId: "open_browser",
+                  label: "Browser",
+                  description: "Open a Browser Pane",
+                  enabled: true,
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-browser-target-launcher",
+    command: "open_browser",
+    targetPaneId: "pane-launcher",
+  });
+
+  assert.equal(opened.ok, true);
+  const panes = opened.ok ? opened.thread.workbench.panes : [];
+  assert.equal(panes.some((pane) => pane.kind === "launcher"), false);
+  assert.equal(panes.filter((pane) => pane.kind === "browser").length, 2);
+  assert.equal(opened.ok && opened.thread.workbench.activePaneId, "id-1");
+});
+
 test("browser_snapshot_command_updates_observable_browser_preview", async () => {
   // Spec: docs_v2/specs/workbench-browser-pane-evidence-loop.md
   const service = createThreadRuntimeService({
@@ -4286,6 +4333,39 @@ test("workbench_terminal_input_writes_to_visible_terminal_handle", async () => {
   assert.equal(written.ok, true);
   assert.deepEqual(fakes.runtime.events, []);
   assert.deepEqual(fakes.workbenchTerminal.handles[0]?.writes, ["pwd\r"]);
+});
+
+test("opening_session_terminal_emits_running_workbench_snapshot_after_handle_start", async () => {
+  // Spec: docs_v2/specs/workbench-launcher-terminal-usability.md
+  const fakes = createFakes();
+  const asyncEvents: ThreadRuntimeAsyncEvent[] = [];
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    defaultWorkbenchTerminalCommand: "zsh",
+    onAsyncEvent: (event) => {
+      asyncEvents.push(event);
+    },
+    initialThreads: [
+      threadSeed("thread-terminal-running-event", {
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+      }),
+    ],
+  });
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-terminal-running-event",
+    command: "open_terminal",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(opened.ok, true);
+  const event = asyncEvents.find((candidate) => candidate.kind === "workbench_changed");
+  const pane = event?.kind === "workbench_changed" ? event.thread.workbench.panes[0] : undefined;
+  assert.equal(pane?.kind, "terminal");
+  assert.equal(pane?.kind === "terminal" && pane.status, "running");
+  assert.equal(fakes.workbenchTerminal.handles.length, 1);
 });
 
 test("saving_editor_pane_writes_open_file_and_refreshes_revision", async () => {
