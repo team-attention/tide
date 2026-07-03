@@ -394,7 +394,6 @@ Required:
 2. Deepen the Review pane.
    - Add structured finding persistence.
    - Link file/line findings into existing Editor/Diff panes.
-   - Add renderer tests for target selection, unavailable states, and result rendering.
 
 3. Deepen Tide-owned Git handoff.
    - Broaden scratch-repo fixtures beyond the current file/hunk handoff cases to cover branch diff and commit review cases.
