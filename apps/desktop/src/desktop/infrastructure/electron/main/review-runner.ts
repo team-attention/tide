@@ -89,7 +89,7 @@ export async function runProviderReview(input: {
     cwd,
     stdin: command.stdin,
   });
-  const rawText = [executed.stdout, executed.stderr].filter((part) => part.trim().length > 0).join("\n\n");
+  const rawText = normalizeReviewRawText(command.source, executed.stdout, executed.stderr);
   const findings = parseReviewFindings(rawText);
   return {
     ok: executed.ok,
@@ -107,6 +107,17 @@ export async function runProviderReview(input: {
     signal: executed.signal,
     message: executed.ok ? undefined : reviewErrorMessage(command.command, executed),
   };
+}
+
+export function normalizeReviewRawText(
+  source: ReviewRunSource,
+  stdout: string,
+  stderr: string,
+): string {
+  const stdoutText = source === "opencode_prompt"
+    ? opencodeJsonLinesToText(stdout) ?? stdout
+    : stdout;
+  return [stdoutText, stderr].filter((part) => part.trim().length > 0).join("\n\n");
 }
 
 export async function buildReviewCommand(input: {
@@ -363,6 +374,62 @@ function reviewErrorMessage(
     return `${command} review was stopped (${result.signal}).`;
   }
   return result.stderr.trim() || `${command} review failed.`;
+}
+
+function opencodeJsonLinesToText(text: string): string | undefined {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) {
+    return "";
+  }
+  const messages: string[] = [];
+  for (const line of lines) {
+    const parsed = parseJsonRecord(line);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    const message = opencodeEventMessage(parsed);
+    if (message !== undefined) {
+      messages.push(message);
+    }
+  }
+  return messages.length > 0 ? messages.join("\n") : undefined;
+}
+
+function opencodeEventMessage(event: Record<string, unknown>): string | undefined {
+  const error = recordField(event, "error");
+  const errorData = recordField(error, "data");
+  const errorMessage = stringField(errorData, "message") ?? stringField(error, "message");
+  if (errorMessage !== undefined) {
+    return errorMessage;
+  }
+  return stringField(event, "message") ?? stringField(event, "text") ?? stringField(event, "delta");
+}
+
+function parseJsonRecord(line: string): Record<string, unknown> | undefined {
+  try {
+    return recordField(JSON.parse(line));
+  } catch {
+    return undefined;
+  }
+}
+
+function recordField(value: unknown, key?: string): Record<string, unknown> | undefined {
+  const candidate = key === undefined
+    ? value
+    : typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)[key]
+      : undefined;
+  return typeof candidate === "object" && candidate !== null && !Array.isArray(candidate)
+    ? candidate as Record<string, unknown>
+    : undefined;
+}
+
+function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function shellPreview(command: string, args: string[]): string {

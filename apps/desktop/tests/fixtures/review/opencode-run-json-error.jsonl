@@ -1,0 +1,2 @@
+{"type":"error","timestamp":1783114183503,"sessionID":"ses_fixture","error":{"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_fixture"}}}
+{"type":"error","timestamp":1783114183507,"sessionID":"ses_fixture","error":{"name":"UnknownError","data":{"message":"Command not found: \"help\". Available commands: init, review, customize-opencode"}}}

@@ -25,6 +25,7 @@ This branch implements the first product slice of the plan:
   - opencode: `opencode run --format json` prompt review.
 - Review pane target/provider controls, running state, raw output fallback, persisted structured finding extraction, and "Ask agent to fix" handoff into the composer.
 - Codex app-server `review/start` schema fixture coverage for target/delivery payload mapping; Review pane still uses the CLI fallback until an emitted-event fixture is captured.
+- opencode `run --format json` raw fallback for captured JSONL error events; structured success parsing waits for a real review-prompt fixture.
 - Main-process Git mutation IPC for file-level and hunk-level stage, unstage, and discard, plus commit and push.
 - Changes pane Git handoff bar and hunk action strip wired to those Tide-owned Git IPC commands.
 - Scratch-repo fixtures for branch-diff review prompts and commit review prompts.
@@ -74,6 +75,7 @@ Local CLI evidence:
 - `claude agents --help` supports `--json`, `--all`, and `--cwd`, which makes Claude background sessions script-observable.
 - `opencode --help` exposes `acp`, `run`, `serve`, `web`, `session`, `agent`, `pr`, `plugin`, and `github`.
 - `opencode run --help` supports `--format json`, `--agent`, `--model`, `--session`, `--continue`, and `--dir`.
+- `opencode run --format json --command help` emits newline-delimited JSON error events with `type`, `timestamp`, `sessionID`, and `error.data.message`.
 - `opencode session --help` exposes session listing/deletion.
 - `opencode agent --help` exposes provider-managed agents.
 

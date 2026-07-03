@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { parseReviewFindings } from "../src/desktop/application/domains/product-shell/state/review-findings.ts";
-import { buildReviewCommand } from "../src/desktop/infrastructure/electron/main/review-runner.ts";
+import { buildReviewCommand, normalizeReviewRawText } from "../src/desktop/infrastructure/electron/main/review-runner.ts";
 
 test("codex review command maps every review target shape", async () => {
   assert.deepEqual(
@@ -79,6 +79,17 @@ test("opencode review command builds a run prompt with the selected cwd", async 
   assert.equal(command?.source, "opencode_prompt");
   assert.match(command?.args.at(-1) ?? "", /Find regressions/);
   assert.match(command?.args.at(-1) ?? "", /-old\n\+new/);
+});
+
+test("opencode json review output renders captured error events as raw text", () => {
+  const jsonl = readFileSync(join("tests", "fixtures", "review", "opencode-run-json-error.jsonl"), "utf8");
+  assert.equal(
+    normalizeReviewRawText("opencode_prompt", jsonl, ""),
+    [
+      "Unexpected server error. Check server logs for details.",
+      'Command not found: "help". Available commands: init, review, customize-opencode',
+    ].join("\n"),
+  );
 });
 
 test("opencode base-branch review prompt carries a scratch repo branch diff", async () => {
