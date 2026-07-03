@@ -45,6 +45,9 @@ export interface ProductShellThread {
   // When the current turn started (from the backend). Carried so the Working timer
   // shows real elapsed time even after switching threads, instead of resetting.
   runtimeStartedAt?: string;
+  // Last selected Workbench Pane for this Thread. Workbench open/closed memory is
+  // separate; reopening or switching back should restore this Pane when it still exists.
+  activeWorkbenchPaneId?: string;
   // Absolute timestamps for list sorting (the `time` field is a display string).
   createdAt?: string;
   updatedAt?: string;

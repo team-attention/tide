@@ -265,6 +265,7 @@ export function applyAppChromeBackendEvent(
         thread: AppChromeThreadSummary;
         runtimeState?: AppChromeRuntimeState;
         workbenchPanes?: AppChromeWorkbenchPaneRef[];
+        activePaneId?: string;
       };
       const panes = payload.workbenchPanes ?? state.workbenchPanes;
       return {
@@ -272,10 +273,10 @@ export function applyAppChromeBackendEvent(
         thread: payload.thread,
         runtimeState: payload.runtimeState ?? state.runtimeState,
         workbenchPanes: panes,
-        activeWorkbenchPaneId:
-          state.activeWorkbenchPaneId && paneExists(panes, state.activeWorkbenchPaneId)
-            ? state.activeWorkbenchPaneId
-            : firstPaneId(panes),
+        activeWorkbenchPaneId: resolveActiveWorkbenchPaneId(
+          panes,
+          payload.activePaneId ?? state.activeWorkbenchPaneId,
+        ),
       };
     }
     case "thread.started": {
@@ -328,12 +329,10 @@ export function applyAppChromeBackendEvent(
       return {
         ...state,
         workbenchPanes: panes,
-        activeWorkbenchPaneId:
-          payload.activePaneId && paneExists(panes, payload.activePaneId)
-            ? payload.activePaneId
-            : state.activeWorkbenchPaneId && paneExists(panes, state.activeWorkbenchPaneId)
-            ? state.activeWorkbenchPaneId
-            : firstPaneId(panes),
+        activeWorkbenchPaneId: resolveActiveWorkbenchPaneId(
+          panes,
+          payload.activePaneId ?? state.activeWorkbenchPaneId,
+        ),
       };
     }
     case "contract.error": {
@@ -354,9 +353,15 @@ export function createAppChromeViewModel(
 ): AppChromeViewModel {
   const maxVisibleTabs = options.maxVisibleTabs ?? DEFAULT_MAX_VISIBLE_TABS;
   const openPanes = state.workbenchPanes;
-  const tabs = openPanes.map((pane) => toWorkbenchTabView(pane, state));
+  const activeWorkbenchPaneId = resolveActiveWorkbenchPaneId(
+    openPanes,
+    state.activeWorkbenchPaneId,
+  );
+  const tabs = openPanes.map((pane) =>
+    toWorkbenchTabView(pane, state, activeWorkbenchPaneId),
+  );
   const activeWorkbenchPane =
-    openPanes.find((pane) => pane.paneId === state.activeWorkbenchPaneId) ??
+    openPanes.find((pane) => pane.paneId === activeWorkbenchPaneId) ??
     openPanes[0];
 
   return {
@@ -549,6 +554,7 @@ function workbenchPaneTitle(pane: AppChromeWorkbenchPaneRef): string {
 function toWorkbenchTabView(
   pane: AppChromeWorkbenchPaneRef,
   state: AppChromeState,
+  activeWorkbenchPaneId: string | undefined,
 ): WorkbenchTabView {
   const focusActionId = `focus:${pane.paneId}`;
   const closeActionId = `close:${pane.paneId}`;
@@ -559,7 +565,7 @@ function toWorkbenchTabView(
     paneId: pane.paneId,
     kind: pane.kind,
     title,
-    active: state.activeWorkbenchPaneId === pane.paneId,
+    active: activeWorkbenchPaneId === pane.paneId,
     loading: pane.loading === true,
     revision: pane.revision,
     focusAction: {
@@ -570,7 +576,7 @@ function toWorkbenchTabView(
       state:
         state.loadingActionId === focusActionId
           ? "loading"
-          : state.activeWorkbenchPaneId === pane.paneId
+          : activeWorkbenchPaneId === pane.paneId
             ? "active"
             : "default",
       disabled: anyActionLoading && state.loadingActionId !== focusActionId,
@@ -590,6 +596,15 @@ function firstPaneId(
   panes: AppChromeWorkbenchPaneRef[],
 ): string | undefined {
   return panes[0]?.paneId;
+}
+
+function resolveActiveWorkbenchPaneId(
+  panes: AppChromeWorkbenchPaneRef[],
+  paneId: string | undefined,
+): string | undefined {
+  return paneId !== undefined && paneExists(panes, paneId)
+    ? paneId
+    : firstPaneId(panes);
 }
 
 function paneExists(

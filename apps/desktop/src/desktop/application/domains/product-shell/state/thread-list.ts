@@ -8,6 +8,7 @@ import { applyAppChromeBackendEvent, createAppChromeState } from "../../app-chro
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
 import { restorablePreservedChat } from "./preserved-agent-chat.ts";
+import { resolveProductShellActiveWorkbenchPaneId } from "./workbench-active-pane.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
 // External Sessions (agent sessions Tide did not start) are surfaced by backend
@@ -660,12 +661,9 @@ function hydrateProductShellThread(
   thread: ProductShellThread,
   blocks: AgentChatBlock[],
   runtimeState: "idle" | "running" = "idle",
-  // When this thread already has preserved per-thread state (we are switching back
-  // to it), restore that full state instead of rebuilding a fresh one — so its
-  // readiness blocker, blocks, prompt, and draft are not lost on the round-trip.
+  // Restore preserved per-thread state on switch-back instead of rebuilding it.
   preservedAgentChat?: AgentChatShellState,
-  // True for an optimistic open awaiting the backend hydrate — drives the loading
-  // skeleton until the real blocks arrive. Not set when restoring preserved state.
+  // True for an optimistic open awaiting the backend hydrate.
   hydrating = false,
 ): ProductShellState {
   const threadSummary = toAgentChatThreadSummary(thread);
@@ -691,6 +689,7 @@ function hydrateProductShellThread(
       },
       runtimeState,
       workbenchPanes: thread.workbenchPanes,
+      activePaneId: thread.activeWorkbenchPaneId,
     },
   });
 
@@ -733,6 +732,11 @@ export function applyProductShellThreadEvent(
   const existingThread = state.threads.find(
     (candidate) => candidate.threadId === threadSummary.threadId,
   );
+  const workbenchPanes = payload.workbenchPanes ?? [];
+  const activeWorkbenchPaneId = resolveProductShellActiveWorkbenchPaneId(
+    workbenchPanes,
+    existingThread?.activeWorkbenchPaneId,
+  );
   const shellThread: ProductShellThread = {
     threadId: threadSummary.threadId,
     title: threadSummary.title,
@@ -740,7 +744,8 @@ export function applyProductShellThreadEvent(
     time: formatRelativeThreadTime(threadSummary.updatedAt),
     scope: threadSummary.scope,
     launchOptions: cloneLaunchOptions(threadSummary.launchOptions),
-    workbenchPanes: payload.workbenchPanes ?? [],
+    workbenchPanes,
+    activeWorkbenchPaneId,
     pinned: threadSummary.pinned,
     attention:
       threadSummary.lastKnownState === "waiting_for_input" ||
@@ -774,15 +779,10 @@ export function applyProductShellThreadEvent(
     state.fileTree.root !== undefined &&
     normalizeCwd(state.fileTree.root) === normalizeCwd(startedCwd);
 
-  // Background per-thread chat state (incl. a NON-active thread's hydrate/started seeding
-  // its blocks + clearing `hydrating`) is folded into agentChatByThreadId upstream in
-  // applyProductShellBackendEvent (authoritative per-thread state), so this rail/data
-  // reducer no longer special-cases it.
+  // Background per-thread chat state is folded upstream.
   return {
     ...state,
-    // Focus is owned by user actions (click / new-thread set activeThreadId
-    // locally). A thread.started/hydrated event is a DATA update only and never
-    // moves focus — otherwise a late answer for another thread drags the view away.
+    // Focus is owned by user actions; data updates never move it.
     activeThreadId: state.activeThreadId,
     threads,
     // Recompute projects so a thread started in a not-yet-listed project (e.g.

@@ -93,6 +93,43 @@ test("a browser pane with no page title falls back to a friendly tab name", () =
   assert.equal(view.workbenchTabStrip.visibleTabs[1]?.title, "New Tab");
 });
 
+test("workbench_view_model_selects_first_visible_tab_when_active_id_missing", () => {
+  // Spec: docs_v2/specs/workbench-tab-focus-preservation.md
+  const view = createAppChromeViewModel({
+    ...stateWithWorkbenchPanes([
+      browserPane("pane-browser-1", "Browser"),
+      terminalPane("pane-terminal-1", "Terminal"),
+    ]),
+    activeWorkbenchPaneId: "missing-pane",
+  });
+
+  assert.equal(view.activeWorkbenchPane?.paneId, "pane-browser-1");
+  assert.deepEqual(
+    view.workbenchTabStrip.visibleTabs.map((tab) => [tab.paneId, tab.active]),
+    [
+      ["pane-browser-1", true],
+      ["pane-terminal-1", false],
+    ],
+  );
+});
+
+test("workbench_view_model_keeps_active_tab_and_pane_in_sync", () => {
+  // Spec: docs_v2/specs/workbench-tab-focus-preservation.md
+  const view = createAppChromeViewModel({
+    ...stateWithWorkbenchPanes([
+      browserPane("pane-browser-1", "Browser"),
+      terminalPane("pane-terminal-1", "Terminal"),
+    ]),
+    activeWorkbenchPaneId: "pane-terminal-1",
+  });
+
+  assert.equal(view.activeWorkbenchPane?.paneId, "pane-terminal-1");
+  assert.equal(
+    view.workbenchTabStrip.visibleTabs.find((tab) => tab.active)?.paneId,
+    "pane-terminal-1",
+  );
+});
+
 test("closing_workbench_tab_emits_workbench_command_with_pane_id", () => {
   // UC-3: Workbench opens Browser Pane.
   const state = stateWithWorkbenchPanes([browserPane("pane-browser-1", "Local preview")]);

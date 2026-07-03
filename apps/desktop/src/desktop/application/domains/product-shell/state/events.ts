@@ -9,6 +9,7 @@ import { activeSurfaceThreadId, createStartAgentChatState, isProductShellAgentId
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
 import { applyDismissedProductShellEditorReferences, reconcileEditorDrafts } from "./workbench-editor.ts";
 import { projectsFromThreads } from "./view-model.ts";
+import { resolveProductShellActiveWorkbenchPaneId } from "./workbench-active-pane.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
 export function applyProductShellBackendEvent(
@@ -242,8 +243,12 @@ export function applyProductShellBackendEvent(
         // looking at.
         const panes = payload.panes ?? [];
         const threadId = payload.threadId;
-        const previousPanes =
-          nextState.threads.find((thread) => thread.threadId === threadId)?.workbenchPanes ?? [];
+        const previousThread = nextState.threads.find((thread) => thread.threadId === threadId);
+        const previousPanes = previousThread?.workbenchPanes ?? [];
+        const activeWorkbenchPaneId = resolveProductShellActiveWorkbenchPaneId(
+          panes,
+          payload.activePaneId ?? previousThread?.activeWorkbenchPaneId,
+        );
         const existingPaneIds = new Set(previousPanes.map((pane) => pane.paneId));
         const hasNewRealPane = panes.some(
           (pane) => pane.kind !== "launcher" && !existingPaneIds.has(pane.paneId),
@@ -260,7 +265,9 @@ export function applyProductShellBackendEvent(
         return {
           ...nextState,
           threads: nextState.threads.map((thread) =>
-            thread.threadId === threadId ? { ...thread, workbenchPanes: panes } : thread,
+            thread.threadId === threadId
+              ? { ...thread, workbenchPanes: panes, activeWorkbenchPaneId }
+              : thread,
           ),
           workbenchOpenByThreadId: nextWorkbenchOpenByThreadId,
         };
@@ -282,6 +289,10 @@ export function applyProductShellBackendEvent(
         nextState.dismissedEditorReferenceKeys,
       );
       const visiblePanes = referencesFilter.panes;
+      const nextActiveWorkbenchPaneId = resolveProductShellActiveWorkbenchPaneId(
+        visiblePanes,
+        payload.activePaneId ?? nextState.appChrome.activeWorkbenchPaneId,
+      );
       // Auto-open only when a NEW real (non-launcher) pane appears (an agent
       // opened a browser, the user opened a terminal/editor). An UPDATE to existing
       // panes — e.g. terminal output/status events stream workbench.changed — must
@@ -329,12 +340,13 @@ export function applyProductShellBackendEvent(
             ? nextState.threads
             : nextState.threads.map((thread) =>
                 thread.threadId === threadId
-                  ? { ...thread, workbenchPanes: visiblePanes }
+                  ? { ...thread, workbenchPanes: visiblePanes, activeWorkbenchPaneId: nextActiveWorkbenchPaneId }
                   : thread,
               ),
         appChrome: {
           ...nextState.appChrome,
           workbenchPanes: visiblePanes,
+          activeWorkbenchPaneId: nextActiveWorkbenchPaneId,
         },
         dismissedEditorReferenceKeys: referencesFilter.dismissedEditorReferenceKeys,
         workbenchOpen: nextWorkbenchOpen,
@@ -481,12 +493,24 @@ function applyProductShellThreadListEvent(
       .filter((thread) => thread.unread === true && thread.threadId !== state.activeThreadId)
       .map((thread) => thread.threadId),
   );
+  const previousThreads = new Map(state.threads.map((thread) => [thread.threadId, thread] as const));
   const threads = (payload.threads ?? [])
     .filter((thread) => !thread.archived)
     .map(toProductShellThreadFromSummary)
-    .map((thread) =>
-      unreadThreadIds.has(thread.threadId) ? { ...thread, unread: true } : thread,
-    );
+    .map((thread) => {
+      const previous = previousThreads.get(thread.threadId);
+      const withWorkbench =
+        previous === undefined
+          ? thread
+          : {
+              ...thread,
+              workbenchPanes: previous.workbenchPanes,
+              activeWorkbenchPaneId: previous.activeWorkbenchPaneId,
+            };
+      return unreadThreadIds.has(thread.threadId)
+        ? { ...withWorkbench, unread: true }
+        : withWorkbench;
+    });
   const activeThreadIsListed =
     state.activeThreadId !== null &&
     threads.some((thread) => thread.threadId === state.activeThreadId);

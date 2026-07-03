@@ -6,6 +6,7 @@ import type { DropZone } from "./workbench-split-tree.ts";
 import { closeWorkbenchPane, focusWorkbenchPane, releaseWorkbenchAgentBrowserControl, resizeWorkbenchTerminal, writeWorkbenchTerminalInput } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { shellTimestamp } from "./create.ts";
+import { resolveProductShellActiveWorkbenchPaneId } from "./workbench-active-pane.ts";
 // Workbench shell / layout / launcher / browser reducers. Editor + start-page-editor
 // reducers live in ./workbench-editor.ts. (spec: navigable-source-structure)
 
@@ -33,6 +34,23 @@ export function toggleProductShellWorkbench(state: ProductShellState): ProductSh
 // reconciled against.
 function workbenchOpenPaneIds(state: ProductShellState): string[] {
   return state.appChrome.workbenchPanes.map((pane) => pane.paneId);
+}
+
+function withActiveThreadWorkbenchPaneId(
+  state: ProductShellState,
+  paneId: string | undefined,
+): ProductShellState {
+  if (state.activeThreadId === null) {
+    return state;
+  }
+  return {
+    ...state,
+    threads: state.threads.map((thread) =>
+      thread.threadId === state.activeThreadId
+        ? { ...thread, activeWorkbenchPaneId: paneId }
+        : thread,
+    ),
+  };
 }
 
 // Set the workbench presentation to Stacked (one active pane + tab strip) or
@@ -157,8 +175,21 @@ export function openProductShellWorkbenchLauncher(
       command: null,
     };
   }
+  const launcher = state.appChrome.workbenchPanes.find((pane) => pane.kind === "launcher");
+  const nextState: ProductShellState = {
+    ...state,
+    workbenchOpen: true,
+    editorPickerFilter: null,
+    appChrome:
+      launcher === undefined
+        ? state.appChrome
+        : { ...state.appChrome, activeWorkbenchPaneId: launcher.paneId },
+  };
   return {
-    state: { ...state, workbenchOpen: true, editorPickerFilter: null },
+    state:
+      launcher === undefined
+        ? nextState
+        : withActiveThreadWorkbenchPaneId(nextState, launcher.paneId),
     command: {
       kind: "workbench.command",
       payload: {
@@ -397,13 +428,17 @@ export function focusProductShellWorkbenchPane(
     return { state: { ...state, draftActiveWorkbenchPaneId: paneId }, command: null };
   }
   const result = focusWorkbenchPane(state.appChrome, paneId);
-  return {
-    state: {
+  const nextState = withActiveThreadWorkbenchPaneId(
+    {
       ...state,
       appChrome: result.state,
       // Focusing a real backend pane drops any untitled active override.
       draftActiveWorkbenchPaneId: null,
     },
+    result.command === null ? state.appChrome.activeWorkbenchPaneId : paneId,
+  );
+  return {
+    state: nextState,
     command: result.command,
   };
 }
@@ -436,22 +471,37 @@ export function closeProductShellWorkbenchPane(
   }
   const result = closeWorkbenchPane(state.appChrome, paneId);
   const pane = state.appChrome.workbenchPanes.find((candidate) => candidate.paneId === paneId);
-  const realPaneCount = state.appChrome.workbenchPanes.filter((candidate) => candidate.kind !== "launcher").length;
-  const closeWorkbench =
-    state.appChrome.workbenchPanes.length <= 1 ||
-    (pane !== undefined && pane.kind !== "launcher" && realPaneCount <= 1);
-  const workbenchOpen = closeWorkbench ? false : state.workbenchOpen;
-  return {
-    state: {
+  if (pane === undefined || result.command === null) {
+    return {
+      state: { ...state, editorPickerFilter: null, appChrome: result.state },
+      command: result.command,
+    };
+  }
+  const remainingPanes = state.appChrome.workbenchPanes.filter(
+    (candidate) => candidate.paneId !== paneId,
+  );
+  const nextActivePaneId = resolveProductShellActiveWorkbenchPaneId(
+    remainingPanes,
+    state.appChrome.activeWorkbenchPaneId === paneId
+      ? undefined
+      : state.appChrome.activeWorkbenchPaneId,
+  );
+  const workbenchOpen = remainingPanes.length === 0 ? false : state.workbenchOpen;
+  const nextState = withActiveThreadWorkbenchPaneId(
+    {
       ...state,
       editorPickerFilter: null,
-      appChrome: result.state,
+      appChrome: { ...result.state, activeWorkbenchPaneId: nextActivePaneId },
       workbenchOpen,
       workbenchOpenByThreadId:
         state.activeThreadId === null
           ? state.workbenchOpenByThreadId
           : { ...state.workbenchOpenByThreadId, [state.activeThreadId]: workbenchOpen },
     },
+    nextActivePaneId,
+  );
+  return {
+    state: nextState,
     command: result.command,
   };
 }
