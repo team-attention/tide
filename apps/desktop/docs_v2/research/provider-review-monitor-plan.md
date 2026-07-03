@@ -398,7 +398,7 @@ Required:
    - Add command mapping tests for Codex, Claude, and opencode review targets.
 
 3. Deepen Tide-owned Git handoff.
-   - Broaden scratch-repo fixtures beyond the current selected-hunk staging fixture to cover staged, untracked, branch diff, and commit review cases.
+   - Broaden scratch-repo fixtures beyond the current file/hunk handoff cases to cover branch diff and commit review cases.
 
 4. Move Agent Monitor toward backend-owned snapshots.
    - Store durable `runtimeSnapshotsByThreadId` or equivalent backend-owned monitor state.

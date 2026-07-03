@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
+  commitGitChanges,
+  discardGitFile,
   generateGitCommitMessage,
   getGitPushTarget,
   pushGitTarget,
+  stageGitFile,
+  unstageGitFile,
 } from "../src/desktop/infrastructure/electron/main/git-handoff-actions.ts";
 
 test("generateGitCommitMessage uses staged changes before working-tree changes", async () => {
@@ -76,6 +80,41 @@ test("getGitPushTarget and pushGitTarget use an explicit remote branch", async (
     });
   } finally {
     rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("file-level git handoff actions mutate a scratch repo", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-git-handoff-file-actions-"));
+  try {
+    initRepo(dir);
+    const file = join(dir, "app.txt");
+    writeFileSync(file, "old\n", "utf8");
+    git(dir, ["add", "app.txt"]);
+    git(dir, ["commit", "-m", "initial"]);
+
+    writeFileSync(file, "new\n", "utf8");
+    assert.equal((await stageGitFile({ cwd: dir, relPath: "app.txt" })).ok, true);
+    assert.match(git(dir, ["diff", "--cached", "--no-color", "--", "app.txt"]), /new/);
+
+    assert.equal((await unstageGitFile({ cwd: dir, relPath: "app.txt" })).ok, true);
+    assert.equal(git(dir, ["diff", "--cached", "--no-color", "--", "app.txt"]), "");
+
+    assert.equal((await stageGitFile({ cwd: dir, relPath: "app.txt" })).ok, true);
+    assert.equal((await commitGitChanges({ cwd: dir, message: "Update app.txt" })).ok, true);
+    assert.equal(git(dir, ["log", "-1", "--pretty=%s"]).trim(), "Update app.txt");
+
+    writeFileSync(file, "discard me\n", "utf8");
+    assert.equal((await discardGitFile({ cwd: dir, relPath: "app.txt" }, async () => undefined)).ok, true);
+    assert.equal(readFileSync(file, "utf8"), "new\n");
+
+    const untracked = join(dir, "scratch.txt");
+    writeFileSync(untracked, "temporary\n", "utf8");
+    assert.equal((await discardGitFile({ cwd: dir, relPath: "scratch.txt" }, async (path) => {
+      rmSync(path);
+    })).ok, true);
+    assert.equal(existsSync(untracked), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
