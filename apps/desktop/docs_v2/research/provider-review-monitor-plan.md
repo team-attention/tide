@@ -25,6 +25,7 @@ This branch implements the first product slice of the plan:
   - opencode: `opencode run --format json` prompt review.
 - Review pane target/provider controls, running state, raw output fallback, persisted structured finding extraction, and "Ask agent to fix" handoff into the composer.
 - Codex app-server `review/start` schema fixture coverage for target/delivery payload mapping, plus fake app-server provider-method coverage that verifies Tide sends `review/start` on the initialized provider thread and returns the app-server result.
+- Codex app-server evidence capture script support for a deliberate `review/start` capture mode guarded by `--allow-provider-review`; tests cover the path with a fake Codex app-server only.
 - Review pane still uses the CLI fallback until a real emitted-event fixture is captured.
 - opencode `run --format json` raw fallback for captured JSONL error events; structured success parsing waits for a real review-prompt fixture.
 - Main-process Git mutation IPC for file-level and hunk-level stage, unstage, and discard, plus commit and push.
@@ -165,7 +166,7 @@ Do not implement the Codex Review button until this is verified:
 
 If fixture quality is insufficient, use the CLI review runner first. The CLI help is stable enough for a first implementation; app-server review can follow.
 
-Current branch status: Tide's provider-method plumbing is covered with a fake app-server fixture. This proves the initialized-thread request path and response round trip, but it does not prove real provider review event semantics.
+Current branch status: Tide's provider-method plumbing is covered with a fake app-server fixture. The evidence script can deliberately capture `review/start` protocol frames, but this branch has not run a real provider review capture. The fake fixture proves the initialized-thread request path and response round trip, but it does not prove real provider review event semantics.
 
 ### Review Result Model
 
