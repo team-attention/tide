@@ -25,13 +25,14 @@ This branch implements the first product slice of the plan:
   - opencode: `opencode run --format json` prompt review.
 - Review pane target/provider controls, running state, raw output fallback, persisted structured finding extraction, and "Ask agent to fix" handoff into the composer.
 - Review pane failure/unavailable results preserve the provider message in the pane instead of rendering an empty raw-output state.
+- Backend provider capability invocation surfaces unsupported provider paths as `provider_capability_unsupported` without starting a runtime.
 - Codex app-server `review/start` schema fixture coverage for target/delivery payload mapping, plus fake app-server provider-method coverage that verifies Tide sends `review/start` on the initialized provider thread and returns the app-server result.
 - Codex app-server evidence capture script support for a deliberate `review/start` capture mode guarded by `--allow-provider-review`; tests cover the path with a fake Codex app-server only.
 - Review pane still uses the CLI fallback until a real emitted-event fixture is captured.
 - opencode `run --format json` raw fallback for captured JSONL error events; structured success parsing waits for a real review-prompt fixture.
 - Main-process Git mutation IPC for file-level and hunk-level stage, unstage, and discard, plus commit and push.
 - Changes pane Git handoff bar and hunk action strip wired to those Tide-owned Git IPC commands.
-- Scratch-repo fixtures for branch-diff review prompts and commit review prompts.
+- Scratch-repo fixtures for uncommitted, branch-diff, and commit review prompts.
 - Persistent Agent Monitor panel derived from existing product-shell thread/runtime/prompt/activity state.
 - Agent Monitor runtime snapshots keyed by thread id, preserving background activity detail even when the background chat state is not hydrated.
 - Agent Monitor rows surface queued input counts and have a multi-provider rendering fixture for Codex, Claude, and opencode rows.
@@ -235,9 +236,9 @@ Initial implementation covers file-level and hunk-level stage/unstage/discard, g
 
 Implementation should extend Main-process git IPC rather than route these through providers. Provider agents may suggest a commit message, but Tide should execute the git command.
 
-### Remaining Tests And Fixtures
+### Tests And Fixtures
 
-Required before extending this slice:
+Covered in this branch:
 
 - Scratch repo fixture with:
   - unstaged file
@@ -248,6 +249,10 @@ Required before extending this slice:
 - Provider command mapping tests for Codex, Claude, opencode.
 - Renderer tests for review target selection, disabled states, and unavailable result rendering.
 - Backend contract tests that unsupported provider paths surface as unavailable, not broken buttons.
+
+Still required before provider-native review expansion:
+
+- Real provider review captures for app-server/native structured output semantics.
 
 ## Plan 2: Agent Monitor
 

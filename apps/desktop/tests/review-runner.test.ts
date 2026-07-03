@@ -119,6 +119,38 @@ test("opencode base-branch review prompt carries a scratch repo branch diff", as
   }
 });
 
+test("opencode uncommitted review prompt carries unstaged staged and untracked changes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-review-uncommitted-diff-"));
+  try {
+    initRepo(dir);
+    writeFileSync(join(dir, "app.txt"), "base\n", "utf8");
+    git(dir, ["add", "app.txt"]);
+    git(dir, ["commit", "-m", "initial"]);
+
+    writeFileSync(join(dir, "app.txt"), "base\nunstaged review case\n", "utf8");
+    writeFileSync(join(dir, "staged.txt"), "staged review case\n", "utf8");
+    git(dir, ["add", "staged.txt"]);
+    writeFileSync(join(dir, "untracked.txt"), "untracked review case\n", "utf8");
+
+    const command = await buildReviewCommand({
+      cwd: dir,
+      provider: "opencode",
+      target: { kind: "uncommitted" },
+    });
+    const prompt = command?.args.at(-1) ?? "";
+
+    assert.equal(command?.command, "opencode");
+    assert.match(prompt, /diff --git a\/app\.txt b\/app\.txt/);
+    assert.match(prompt, /\+unstaged review case/);
+    assert.match(prompt, /diff --git a\/staged\.txt b\/staged\.txt/);
+    assert.match(prompt, /\+staged review case/);
+    assert.match(prompt, /untracked\.txt/);
+    assert.match(prompt, /\+untracked review case/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("claude commit review prompt carries a scratch repo commit patch", async () => {
   const dir = mkdtempSync(join(tmpdir(), "tide-review-commit-diff-"));
   try {
