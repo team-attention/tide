@@ -998,6 +998,49 @@ test("an_idle_send_runs_and_its_optimistic_chip_reconciles_away_not_queued", () 
   assert.deepEqual(reconciled.queuedInputs, []);
 });
 
+test("composer_send_contract_error_clears_the_optimistic_queue", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const sent = submitComposer(updateComposerDraft(hydrated, "run me").state);
+
+  const failed = applyAgentChatBackendEvent(sent.state, {
+    kind: "contract.error",
+    payload: {
+      message: "Backend command timed out before completion.",
+      failedBackendCommand: "composer.sendInput",
+    },
+  });
+
+  assert.equal(failed.runtimeState, "failed");
+  assert.equal(failed.errorMessage, "Backend command timed out before completion.");
+  assert.deepEqual(failed.queuedInputs, []);
+  assert.deepEqual(failed.thread?.queuedInputs, []);
+});
+
+test("non_composer_contract_error_preserves_authoritative_queued_inputs", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", {
+      thread: { ...thread, queuedInputs: ["still pending"] },
+      blocks: [],
+      runtimeState: "running",
+    }),
+  );
+
+  const failed = applyAgentChatBackendEvent(hydrated, {
+    kind: "contract.error",
+    payload: {
+      message: "Workbench command failed.",
+      failedBackendCommand: "workbench.command",
+    },
+  });
+
+  assert.equal(failed.runtimeState, "failed");
+  assert.deepEqual(failed.queuedInputs, ["still pending"]);
+});
+
 test("editing_with_no_queued_message_is_a_noop", () => {
   const hydrated = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),

@@ -57,6 +57,20 @@ import {
   type TideThemePreference,
 } from "../support/theme.ts";
 
+function backendCommandFailureEvent(
+  command: ProductShellBackendCommand,
+  error: unknown,
+): AgentChatBackendEvent {
+  return {
+    kind: "contract.error",
+    payload: {
+      code: "backend_command_failed",
+      message: error instanceof Error ? error.message : "Backend command failed.",
+      failedBackendCommand: command.kind,
+    },
+  };
+}
+
 export function TideProductShell(props: TideProductShellProps): ReactElement {
   // External store: columns subscribe per-slice; root keeps whole-state read (spec: render-isolation).
   const { store, shellState, setShellState } = useShellStore(() => {
@@ -493,9 +507,17 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     if (command === null) {
       return;
     }
-    const backendResult = props.onBackendCommand?.(command);
+    let backendResult: Promise<AgentChatBackendEvent[]> | AgentChatBackendEvent[] | void;
+    try {
+      backendResult = props.onBackendCommand?.(command);
+    } catch (error) {
+      applyBackendEvents([backendCommandFailureEvent(command, error)]);
+      return;
+    }
     if (backendResult instanceof Promise) {
-      void backendResult.then((events) => applyBackendEvents(events));
+      void backendResult
+        .then((events) => applyBackendEvents(events))
+        .catch((error: unknown) => applyBackendEvents([backendCommandFailureEvent(command, error)]));
     } else if (backendResult !== undefined) {
       applyBackendEvents(backendResult);
     }

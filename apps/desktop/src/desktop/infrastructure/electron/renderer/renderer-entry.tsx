@@ -212,6 +212,7 @@ function dispatchBackendCommand(
           code: "backend_transport_unavailable",
           message:
             "Backend transport unavailable. Run Tide through the Electron app to start Agents.",
+          failedBackendCommand: command.kind,
         },
       },
     ];
@@ -231,10 +232,16 @@ function dispatchBackendCommand(
   };
 
   return window.tide.sendBackendCommand(envelope).then((events) =>
-    events.map((event) => ({
-      kind: event.kind,
-      payload: event.payload as Record<string, unknown>,
-    })),
+    events.map((event) => {
+      const payload = event.payload as Record<string, unknown>;
+      return {
+        kind: event.kind,
+        payload:
+          event.kind === "contract.error"
+            ? { ...payload, failedBackendCommand: command.kind }
+            : payload,
+      };
+    }),
   );
 }
 

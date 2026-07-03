@@ -1117,10 +1117,21 @@ test("renderer_entry_surfaces_missing_backend_transport", () => {
 
   assert.match(rendererSource, /backend_transport_unavailable/);
   assert.match(rendererSource, /Run Tide through the Electron app to start Agents/);
+  assert.match(rendererSource, /failedBackendCommand:\s*command\.kind/);
   assert.match(
     rendererSource,
     /function dispatchBackendCommand[\s\S]*if\s*\(window\.tide === undefined\)\s*{\s*return \[/,
   );
+});
+
+test("renderer_and_product_shell_tag_backend_command_failures_with_command_kind", () => {
+  const rendererSource = readRepoFile("src/desktop/infrastructure/electron/renderer/renderer-entry.tsx");
+  const productShellSource = readRepoFile("src/desktop/adapters/inbound/react-renderer/product-shell/product-shell.tsx");
+
+  assert.match(rendererSource, /event\.kind === "contract\.error"/);
+  assert.match(rendererSource, /failedBackendCommand:\s*command\.kind/);
+  assert.match(productShellSource, /backendCommandFailureEvent/);
+  assert.match(productShellSource, /\.catch\(\(error: unknown\) => applyBackendEvents\(\[backendCommandFailureEvent\(command, error\)\]\)\)/);
 });
 
 function collectSupervisorEvents(

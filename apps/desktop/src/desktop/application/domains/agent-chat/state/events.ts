@@ -267,7 +267,7 @@ export function applyAgentChatBackendEvent(
       };
     }
     case "contract.error": {
-      const payload = event.payload as { message?: string };
+      const payload = event.payload as { message?: string; failedBackendCommand?: string };
       // A stale/duplicate prompt answer (double-click, card already promoted
       // away, runtime just stopped) is NOT a thread failure: the backend simply
       // rejected one command, and the authoritative prompt/runtime state arrives
@@ -277,10 +277,16 @@ export function applyAgentChatBackendEvent(
       if (/Prompt State/.test(message)) {
         return state;
       }
+      const failedComposerSend = payload.failedBackendCommand === "composer.sendInput";
       return {
         ...state,
         runtimeState: "failed",
         errorMessage: message,
+        queuedInputs: failedComposerSend ? [] : state.queuedInputs,
+        thread:
+          failedComposerSend && state.thread !== null
+            ? { ...state.thread, queuedInputs: [] }
+            : state.thread,
       };
     }
     default:

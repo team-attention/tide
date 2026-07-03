@@ -165,6 +165,8 @@ async sendComposerInput(
       };
     }
 
+    clearStaleIdleStreamingTail(thread);
+
     // A restart-required options change is consumed here, at the turn boundary:
     // the idle process is stopped and activeOrResumedHandle respawns it via the
     // provider-native resume with the new options (covered by the spinner).
@@ -416,9 +418,19 @@ function isThreadBusyForComposerQueue(thread: ThreadRecord): boolean {
   return (
     isActiveRuntimeState(thread.runtimeState) ||
     isActiveLastKnownState(thread.lastKnownState) ||
-    thread.promptState !== undefined ||
-    (thread.streamingBlocks?.length ?? 0) > 0
+    thread.promptState !== undefined
   );
+}
+
+function clearStaleIdleStreamingTail(thread: ThreadRecord): void {
+  if (
+    thread.streamingBlocks.length > 0 &&
+    !isActiveRuntimeState(thread.runtimeState) &&
+    !isActiveLastKnownState(thread.lastKnownState) &&
+    thread.promptState === undefined
+  ) {
+    thread.streamingBlocks = [];
+  }
 }
 
 function isActiveRuntimeState(state: ThreadRecord["runtimeState"]): boolean {

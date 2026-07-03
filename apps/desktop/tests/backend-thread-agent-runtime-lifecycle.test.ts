@@ -1492,6 +1492,62 @@ test("live_thread_with_running_last_known_state_queues_even_if_runtime_state_dri
   assert.deepEqual(fakes.runtime.events, []);
 });
 
+test("idle_thread_with_stale_streaming_tail_sends_followup_not_queued", async () => {
+  const fakes = createFakes();
+  const activeRuntimeHandle: AgentRuntimeHandle = {
+    runtimeId: "runtime-stale-tail",
+    threadId: "thread-stale-tail",
+    agentId: "codex",
+  };
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-stale-tail", {
+        runtimeState: "idle",
+        lastKnownState: "idle",
+        activeRuntimeHandle,
+        agentBinding: {
+          agentId: "codex",
+          providerSessionRef: { kind: "codex_rollout", value: "rollout-stale-tail" },
+        },
+      }),
+    ],
+  });
+  await service.recordStreamingBlock({
+    threadId: "thread-stale-tail",
+    block: {
+      blockId: "structured:stale:msg:0",
+      threadId: "thread-stale-tail",
+      agentId: "codex",
+      kind: "agent_message",
+      role: "agent",
+      sourceFrameIds: [],
+      status: "streaming",
+      body: "stale answer tail",
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+
+  const result = await service.sendComposerInput({
+    threadId: "thread-stale-tail",
+    input: "follow-up after idle",
+  });
+  const hydrated = await service.hydrateThread({ threadId: "thread-stale-tail" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, "sent");
+  assert.equal(result.submittedBlock?.body, "follow-up after idle");
+  assert.deepEqual(fakes.runtime.events, ["writeInput"]);
+  assert.equal(fakes.runtime.writes[0]?.input.value, "follow-up after idle");
+  assert.deepEqual(
+    hydrated.ok && hydrated.blocks.map((block) => block.body),
+    ["follow-up after idle"],
+  );
+});
+
 test("input_during_a_running_turn_is_queued_even_for_a_steer_capable_provider", async () => {
   // UNIFORM QUEUE: Tide queues EVERY provider's follow-up while a turn is live —
   // even codex, whose protocol CAN inject input mid-turn (supportsTurnSteer) — so
@@ -2432,6 +2488,57 @@ test("turn_complete_clears_the_streaming_tail", async () => {
   // I2: an orphan (never-finalized) streaming block is cleared at settle, so a later
   // hydrate is cachedBlocks-only.
   assert.deepEqual(hydrated.ok && hydrated.blocks.map((block) => block.body), []);
+});
+
+test("late_turn_complete_after_goal_settle_clears_idle_streaming_tail", async () => {
+  const fakes = createFakes();
+  const activeRuntimeHandle: AgentRuntimeHandle = {
+    runtimeId: "rt-goal-settle",
+    threadId: "thread-goal-settle",
+    agentId: "codex",
+  };
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-goal-settle", { runtimeState: "running", activeRuntimeHandle }),
+    ],
+  });
+  const lateStreaming: AgentSessionBlock = {
+    blockId: "structured:goal:msg:late",
+    threadId: "thread-goal-settle",
+    agentId: "codex",
+    kind: "agent_message",
+    role: "agent",
+    sourceFrameIds: [],
+    status: "streaming",
+    body: "late final tail",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await service.recordTurnComplete({ threadId: "thread-goal-settle", force: true });
+  await service.recordStreamingBlock({ threadId: "thread-goal-settle", block: lateStreaming });
+  const beforeLateComplete = await service.hydrateThread({ threadId: "thread-goal-settle" });
+  await service.recordTurnComplete({ threadId: "thread-goal-settle" });
+  const afterLateComplete = await service.hydrateThread({ threadId: "thread-goal-settle" });
+  const sent = await service.sendComposerInput({
+    threadId: "thread-goal-settle",
+    input: "follow-up after late settle",
+  });
+
+  assert.deepEqual(
+    beforeLateComplete.ok && beforeLateComplete.blocks.map((block) => block.body),
+    ["late final tail"],
+  );
+  assert.deepEqual(
+    afterLateComplete.ok && afterLateComplete.blocks.map((block) => block.body),
+    [],
+  );
+  assert.equal(sent.ok, true);
+  assert.equal(sent.status, "sent");
+  assert.equal(fakes.runtime.writes[0]?.input.value, "follow-up after late settle");
 });
 
 test("stopping_agent_runtime_preserves_thread_metadata", async () => {
