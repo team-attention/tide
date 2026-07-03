@@ -58,6 +58,12 @@ export function ReviewPanel(props: {
     }
     return result.findings.length > 0 ? result.findings : parseReviewFindings(result.rawText);
   }, [result]);
+  const rawOutputText = result?.rawText.trim() ||
+    (result !== null && !result.ok
+      ? result.message ?? "Review failed."
+      : running
+        ? "Waiting for provider output..."
+        : "No output yet.");
 
   async function runReview(): Promise<void> {
     if (target === null || running) {
@@ -222,14 +228,12 @@ export function ReviewPanel(props: {
             {result !== null ? (
               <ReviewStatus data-ok={result.ok ? "true" : "false"}>
                 {result.ok ? <CheckCircle2 size={13} strokeWidth={1.9} aria-hidden /> : <TriangleAlert size={13} strokeWidth={1.9} aria-hidden />}
-                <span>{result.ok ? "Completed" : "Failed"}</span>
+                <span>{reviewStatusLabel(result)}</span>
               </ReviewStatus>
             ) : null}
           </ReviewRawHeader>
           <ReviewCommand title={result?.command}>{result?.command ?? cwd}</ReviewCommand>
-          <ReviewRawText>
-            {result?.rawText.trim() || (running ? "Waiting for provider output..." : "No output yet.")}
-          </ReviewRawText>
+          <ReviewRawText>{rawOutputText}</ReviewRawText>
           <ReviewActions>
             <ReviewRunButton
               type="button"
@@ -269,6 +273,13 @@ function sourceLabel(source: ReviewRunResult["source"] | undefined): string {
     default:
       return "not run";
   }
+}
+
+function reviewStatusLabel(result: ReviewRunResult): string {
+  if (result.ok) {
+    return "Completed";
+  }
+  return result.message?.toLowerCase().includes("unavailable") ? "Unavailable" : "Failed";
 }
 
 const ReviewPaneFrame = styled.div`

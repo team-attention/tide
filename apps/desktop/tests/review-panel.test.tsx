@@ -146,6 +146,38 @@ test("review_panel_prefers_persisted_structured_findings_over_raw_output", async
   });
 });
 
+test("review_panel_surfaces_unavailable_review_results", async () => {
+  const unavailable = "This review target is unavailable for the selected provider.";
+  const { container, root } = renderReviewPanel({
+    onRunReview: async (_cwd, _provider, target) => ({
+      ok: false,
+      provider: "codex",
+      source: "codex_cli",
+      target,
+      cwd: "/repo",
+      command: "",
+      startedAt: "2026-07-04T00:00:00.000Z",
+      completedAt: "2026-07-04T00:00:01.000Z",
+      rawText: "",
+      findings: [],
+      message: unavailable,
+    }),
+  });
+  await flushEffects();
+
+  await act(async () => {
+    buttonByText(container, "Run review")?.click();
+  });
+  await flushEffects();
+
+  assert.match(container.textContent ?? "", /Unavailable/);
+  assert.match(container.textContent ?? "", new RegExp(unavailable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.equal(buttonByText(container, "Ask agent to fix")?.disabled, true);
+  await act(async () => {
+    root.unmount();
+  });
+});
+
 function renderReviewPanel(overrides: {
   onRunReview?: (cwd: string, provider: ReviewProvider, target: ReviewTarget) => Promise<ReviewRunResult>;
   onAddContentToChat?: (chip: { kind: "code" | "terminal" | "browser" | "message"; label: string; text: string }) => void;
