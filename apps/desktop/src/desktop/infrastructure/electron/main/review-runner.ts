@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { execGitArgs, runGit } from "./project-registry.ts";
 
 export type ReviewProvider = "codex" | "claude" | "opencode";
 
@@ -31,7 +30,7 @@ export interface ReviewRunResult {
   message?: string;
 }
 
-interface ReviewCommand {
+export interface ReviewCommand {
   command: string;
   args: string[];
   source: ReviewRunSource;
@@ -78,7 +77,7 @@ export async function runProviderReview(input: {
     return fail("Review requires a git repository.");
   }
 
-  const command = await reviewCommand({ cwd, provider, target });
+  const command = await buildReviewCommand({ cwd, provider, target });
   if (command === null) {
     return fail("This review target is unavailable for the selected provider.");
   }
@@ -104,7 +103,7 @@ export async function runProviderReview(input: {
   };
 }
 
-async function reviewCommand(input: {
+export async function buildReviewCommand(input: {
   cwd: string;
   provider: ReviewProvider;
   target: ReviewTarget;
@@ -328,6 +327,22 @@ function execFileWithInput(
     if (options.stdin !== undefined) {
       child.stdin?.end(options.stdin);
     }
+  });
+}
+
+function runGit(cwd: string, args: string[]): Promise<string> {
+  return new Promise((resolve) => {
+    execFile("git", ["-C", cwd, ...args], { maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+      resolve(error ? "" : stdout);
+    });
+  });
+}
+
+function execGitArgs(args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile("git", args, { maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+      resolve({ ok: !error, stdout: stdout ?? "", stderr: stderr ?? "" });
+    });
   });
 }
 
