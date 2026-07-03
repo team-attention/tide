@@ -115,7 +115,7 @@ export class WorkbenchCommandHandler {
         if (pane !== undefined) {
           thread.workbench.activePaneId = pane.paneId;
           if (pane.kind === "browser" && this.browserRuntimePort !== undefined) {
-            await this.browserRuntimePort
+            void this.browserRuntimePort
               .ensure({
                 threadId: thread.threadId,
                 paneId: pane.paneId,

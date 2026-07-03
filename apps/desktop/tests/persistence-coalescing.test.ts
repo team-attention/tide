@@ -225,7 +225,7 @@ test("standalone structured usage event emits rate-limit-only updates", async ()
   });
 });
 
-test("structured usage also upserts a stable usage block", async () => {
+test("structured usage updates runtime state without a transcript usage block", async () => {
   const { projector, events } = createCountingFixture();
 
   await projector.ingestStructuredProviderEvent({
@@ -247,24 +247,15 @@ test("structured usage also upserts a stable usage block", async () => {
       event.kind === "agentSessionBlock.upserted" &&
       event.payload.block.kind === "usage",
   );
-  assert.equal(blockEvent?.payload.block.blockId, `usage:${THREAD}:${RUNTIME}`);
-  assert.equal(blockEvent?.payload.block.status, "complete");
-  assert.equal(blockEvent?.payload.block.body, "Usage updated: 64k tokens · 64k / 256k context · 25% context");
-  assert.deepEqual(blockEvent?.payload.block.data, {
-    runtimeId: RUNTIME,
-    scope: "session",
+  assert.equal(blockEvent, undefined);
+  const usageEvent = events().find((event) => event.kind === "agentRuntime.usageChanged");
+  assert.deepEqual(usageEvent?.payload, {
+    threadId: THREAD,
     usage: {
-      inputTokens: 60000,
-      outputTokens: 4000,
       totalTokens: 64000,
       contextTokens: 64000,
       contextWindow: 256000,
       contextUsedPercent: 25,
-    },
-    nativeUnits: {
-      inputTokens: 60000,
-      outputTokens: 4000,
-      contextWindow: 256000,
     },
   });
 });

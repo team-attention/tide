@@ -29,7 +29,7 @@ function replayFixture(name: string) {
   return replayNativeFixtureText(fs.readFileSync(path.join(nativeFixtureRoot, name), "utf8"));
 }
 
-test("native pipeline projects structured usage into a stable semantic usage block with evidence", () => {
+test("native pipeline records structured usage evidence without a visible semantic block", () => {
   const evidenceStore = createInMemoryNativeEvidenceStore();
   const pipeline = createNativeRuntimePipeline({ evidenceStore });
   const event = structuredToNativeRuntimeEvent({
@@ -48,11 +48,7 @@ test("native pipeline projects structured usage into a stable semantic usage blo
 
   const blocks = pipeline.ingest(event);
 
-  assert.equal(blocks.length, 1);
-  assert.equal(blocks[0]?.blockId, "usage:thread-1:runtime-1");
-  assert.equal(blocks[0]?.kind, "usage");
-  assert.equal(blocks[0]?.body, "Usage updated: 64k tokens · 64k / 256k context · 25% context");
-  assert.equal(blocks[0]?.evidence[0]?.nativeKind, "usage");
+  assert.equal(blocks.length, 0);
   assert.equal(evidenceStore.snapshotsForThread("thread-1").length, 1);
 });
 
@@ -68,7 +64,7 @@ test("native fixture replay feeds captured frames through reducer and projector"
   assert.equal(summary.semanticKinds.command_run, 1);
   assert.equal(summary.semanticKinds.message, 1);
   assert.equal(summary.semanticKinds.session_event, 1);
-  assert.equal(summary.semanticKinds.usage, 1);
+  assert.equal(summary.semanticKinds.usage ?? 0, 0);
   assert.equal(summary.evidenceSnapshots, 4);
   assert.ok(summary.semanticBlocks.some((block) => (
     block.blockId === "msg-1" &&
@@ -79,10 +75,7 @@ test("native fixture replay feeds captured frames through reducer and projector"
     block.blockId === "tool-1" &&
     block.kind === "command_run"
   )));
-  assert.ok(summary.semanticBlocks.some((block) => (
-    block.blockId === "usage:thread-fixture:runtime-fixture" &&
-    block.kind === "usage"
-  )));
+  assert.equal(summary.semanticBlocks.some((block) => block.kind === "usage"), false);
 });
 
 test("codex fixture replay links command file and MCP approvals to gated blocks", () => {
@@ -99,7 +92,7 @@ test("codex fixture replay links command file and MCP approvals to gated blocks"
   assert.equal(summary.semanticKinds.file_change, 2);
   assert.equal(summary.semanticKinds.mcp_call, 2);
   assert.equal(summary.semanticKinds.approval_prompt, 3);
-  assert.equal(summary.semanticKinds.usage, 1);
+  assert.equal(summary.semanticKinds.usage ?? 0, 0);
   assert.equal(summary.evidenceSnapshots, 11);
 
   assert.deepEqual(
@@ -173,7 +166,7 @@ test("claude fixture replay preserves tool permission parentage and live activit
   assert.equal(summary.semanticKinds.reasoning, 1);
   assert.equal(summary.semanticKinds.tool_call, 2);
   assert.equal(summary.semanticKinds.approval_prompt, 1);
-  assert.equal(summary.semanticKinds.usage, 1);
+  assert.equal(summary.semanticKinds.usage ?? 0, 0);
   assert.equal(summary.semanticKinds.agent_activity, 2);
   assert.equal(summary.evidenceSnapshots, 8);
 
@@ -209,7 +202,7 @@ test("ACP fixture replay preserves command catalog, MCP tool updates, and permis
   assert.equal(summary.semanticKinds.config_state, 2);
   assert.equal(summary.semanticKinds.mcp_call, 2);
   assert.equal(summary.semanticKinds.approval_prompt, 1);
-  assert.equal(summary.semanticKinds.usage, 1);
+  assert.equal(summary.semanticKinds.usage ?? 0, 0);
   assert.equal(summary.semanticKinds.agent_activity, 1);
   assert.equal(summary.evidenceSnapshots, 8);
 

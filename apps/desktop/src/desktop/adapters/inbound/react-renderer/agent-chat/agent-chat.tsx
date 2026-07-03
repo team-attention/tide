@@ -258,6 +258,7 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     onDraftChange: props.onDraftChange,
     onSubmit: props.onSubmit,
     onInterrupt: props.onInterrupt,
+    onRunQueuedInputNow: props.onRunQueuedInputNow,
     onEditQueued: props.onEditQueued,
     onRemoveQueued: props.onRemoveQueued,
     onComposerSurfaceChange: props.onComposerSurfaceChange,

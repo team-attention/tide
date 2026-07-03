@@ -1,4 +1,4 @@
-import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, InvokeProviderCapabilityInput, InvokeProviderCapabilityResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderGoalStateInput, RecordProviderGoalStateResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderTurnStartedInput, RecordProviderTurnStartedResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
+import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, InvokeProviderCapabilityInput, InvokeProviderCapabilityResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderGoalStateInput, RecordProviderGoalStateResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderTurnStartedInput, RecordProviderTurnStartedResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, RunQueuedInputNowInput, RunQueuedInputNowResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
 import { ComposerQueueService } from "./composer-queue-service.ts";
 import { createUnavailableBrowserRuntimePort } from "./unavailable-browser-runtime-port.ts";
 import type {
@@ -1692,6 +1692,25 @@ async activeOrResumedHandle(thread: ThreadRecord): Promise<AgentRuntimeHandle> {
     ...args: Parameters<ComposerQueueService["editPendingInput"]>
   ): ReturnType<ComposerQueueService["editPendingInput"]> {
     return this.composerQueue.editPendingInput(...args);
+  }
+
+  async runQueuedInputNow(
+    input: RunQueuedInputNowInput,
+  ): Promise<ServiceResult<RunQueuedInputNowResult>> {
+    const promoted = await this.composerQueue.promoteQueuedInputToHead(input);
+    if (!promoted.ok) {
+      return promoted;
+    }
+    const stopped = await this.stopAgentRuntime({ threadId: input.threadId });
+    if (!stopped.ok) {
+      return stopped;
+    }
+    return {
+      ok: true,
+      thread: stopped.thread,
+      runtimeState: stopped.runtimeState,
+      status: promoted.status,
+    };
   }
 
   updateThreadLaunchOptions(

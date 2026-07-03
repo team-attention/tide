@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   applyProductShellBackendEvent,
+  COMPOSER_LAUNCHER_PANE_ID,
   createProductShellState,
   discardProductShellDraftThread,
   ensureComposerDraftThreadActive,
@@ -50,6 +51,40 @@ test("ensureComposerDraftThreadActive creates the draft and makes it the active 
   assert.equal(state.agentChat.thread, null);
 });
 
+test("draft thread hydrate keeps the visible surface on the start composer", () => {
+  // The draft owns backend Workbench panes, but it must not turn the Composer screen
+  // into an empty Thread transcript before the user actually sends.
+  const draft = ensureComposerDraftThreadActive(composerState());
+  const draftId = draft.state.draftThreadId as string;
+
+  const hydrated = applyProductShellBackendEvent(draft.state, {
+    kind: "thread.hydrated",
+    payload: {
+      thread: {
+        threadId: draftId,
+        title: "New Thread",
+        agentBinding: {
+          agentId: "codex",
+          runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+        },
+        scope: { kind: "scratch", scratchCwd: "Scratch" },
+        createdAt: "2026-06-16T00:00:00.000Z",
+        updatedAt: "2026-06-16T00:00:00.000Z",
+        pinned: false,
+        archived: false,
+        live: false,
+      },
+      blocks: [],
+      runtimeState: "not_started",
+      workbenchPanes: [],
+    },
+  } as Parameters<typeof applyProductShellBackendEvent>[1]);
+
+  assert.equal(hydrated.draftThreadId, draftId);
+  assert.equal(hydrated.activeThreadId, draftId);
+  assert.equal(hydrated.agentChat.thread, null);
+});
+
 test("ensureComposerDraftThreadActive is idempotent (reuses the active draft)", () => {
   const first = ensureComposerDraftThreadActive(composerState());
   const second = ensureComposerDraftThreadActive(first.state);
@@ -89,12 +124,12 @@ test("Composer Draft Thread routes Browser and Diff launcher actions to backend 
   const draft = ensureComposerDraftThreadActive(composerState());
   const draftId = draft.state.draftThreadId as string;
 
-  const browser = selectProductShellLauncherAction(draft.state, "open_browser");
+  const browser = selectProductShellLauncherAction(draft.state, "open_browser", COMPOSER_LAUNCHER_PANE_ID);
   assert.equal(browser.command?.kind, "workbench.command");
   assert.equal((browser.command as { payload: { threadId: string; command: string } }).payload.threadId, draftId);
   assert.equal((browser.command as { payload: { command: string } }).payload.command, "open_browser");
 
-  const diff = selectProductShellLauncherAction(draft.state, "open_diff");
+  const diff = selectProductShellLauncherAction(draft.state, "open_diff", COMPOSER_LAUNCHER_PANE_ID);
   assert.equal(diff.command?.kind, "workbench.command");
   assert.equal((diff.command as { payload: { threadId: string; command: string } }).payload.threadId, draftId);
   assert.equal((diff.command as { payload: { command: string } }).payload.command, "open_diff");

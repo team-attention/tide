@@ -25,30 +25,7 @@ export async function upsertUsageRuntimeStateBlock(
     usage: AgentRuntimeUsageDto;
   },
 ): Promise<void> {
-  const now = new Date().toISOString();
-  const blockId = `usage:${input.threadId}:${input.runtimeId}`;
-  const existing = existingBlock(input.blocksByThread, input.threadId, blockId);
-  await upsertRuntimeStateBlock(input, {
-    blockId,
-    threadId: input.threadId,
-    agentId: input.agentId,
-    kind: "usage",
-    role: "runtime",
-    sourceFrameIds: existing?.sourceFrameIds ?? [],
-    localProvenance: {
-      kind: "structured_usage",
-      runtimeId: input.runtimeId,
-    },
-    status: "complete",
-    title: "Usage",
-    body: usageBlockBody(input.usage),
-    data: {
-      runtimeId: input.runtimeId,
-      usage: input.usage,
-    },
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  });
+  void input;
 }
 
 export async function upsertActivityRuntimeStateBlock(
@@ -123,28 +100,6 @@ function existingBlock(
   return blocksByThread.get(threadId)?.find((block) => block.blockId === blockId);
 }
 
-function usageBlockBody(usage: AgentRuntimeUsageDto): string {
-  const parts: string[] = [];
-  if (usage.totalTokens !== undefined) {
-    parts.push(`${formatCompactNumber(usage.totalTokens)} tokens`);
-  }
-  if (usage.contextTokens !== undefined && usage.contextWindow !== undefined) {
-    parts.push(
-      `${formatCompactNumber(usage.contextTokens)} / ${formatCompactNumber(usage.contextWindow)} context`,
-    );
-  } else if (usage.contextTokens !== undefined) {
-    parts.push(`${formatCompactNumber(usage.contextTokens)} context tokens`);
-  }
-  if (usage.contextUsedPercent !== undefined) {
-    parts.push(`${usage.contextUsedPercent}% context`);
-  }
-  const rateLimitCount = usage.rateLimits?.length ?? 0;
-  if (rateLimitCount > 0) {
-    parts.push(`${rateLimitCount} quota ${rateLimitCount === 1 ? "window" : "windows"}`);
-  }
-  return parts.length === 0 ? "Usage updated" : `Usage updated: ${parts.join(" · ")}`;
-}
-
 function activityBlockBody(activity: LiveTurnActivityDto): string {
   const nestedAgents = activity.nestedAgents ?? 0;
   if (nestedAgents > 0) {
@@ -169,15 +124,4 @@ function isEmptyActivity(activity: LiveTurnActivityDto): boolean {
     activity.planTotal === undefined &&
     activity.planCompleted === undefined
   );
-}
-
-function formatCompactNumber(value: number): string {
-  if (value < 1000) {
-    return String(value);
-  }
-  const thousands = value / 1000;
-  if (thousands >= 100 || Number.isInteger(thousands)) {
-    return `${Math.round(thousands)}k`;
-  }
-  return `${thousands.toFixed(1)}k`;
 }

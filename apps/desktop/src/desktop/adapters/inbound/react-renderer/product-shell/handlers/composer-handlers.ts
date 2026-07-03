@@ -1,4 +1,4 @@
-import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, interruptProductShellRuntime, localBranchCheckoutRequest, planLocalBranchCheckout, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellGitContext, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft, ensureComposerDraftThreadActive, type LocalBranchCheckoutTarget, type ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, interruptProductShellRuntime, localBranchCheckoutRequest, planLocalBranchCheckout, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, runProductShellQueuedInputNow, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellGitContext, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft, ensureComposerDraftThreadActive, type LocalBranchCheckoutTarget, type ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { AgentChatThreadScope } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { resolveWorktreeName } from "../../../../../../shared/worktree/name.ts";
 import { makeWorktreeHash } from "../dialogs/worktree-name-input.tsx";
@@ -29,7 +29,7 @@ function selectedBranchForNewWorktree(state: ProductShellState): string {
 }
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
-export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onAnswerPromptSteps" | "onSubmit" | "onBranchCheckoutConfirm" | "onBranchCheckoutCancel" | "onInterrupt" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onChoiceSurfaceInputSubmit" | "onOpencodeConnectApiKey" | "onAddAttachment" | "onRemoveAttachment" | "onSetGoal"> {
+export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onDraftChange" | "onAddContentToChat" | "onRemoveContextChip" | "onSetContextChipComment" | "onAnswerPromptText" | "onAnswerPromptSteps" | "onSubmit" | "onBranchCheckoutConfirm" | "onBranchCheckoutCancel" | "onInterrupt" | "onRunQueuedInputNow" | "onEditQueued" | "onRemoveQueued" | "onResend" | "onQuote" | "onComposerSurfaceChange" | "onChoiceSurfaceRowSelect" | "onChoiceSurfaceInputSubmit" | "onOpencodeConnectApiKey" | "onAddAttachment" | "onRemoveAttachment" | "onSetGoal"> {
   const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, branchCheckout, setBranchCheckout, setBranchCheckoutBusy, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, openBranchDeleteByName, startColumnResize } = ctx;
   const submitDraftNow = (gitContext?: GitContextResult): void => {
     setShellState((state) => {
@@ -234,6 +234,12 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
     onInterrupt: () =>
       setShellState((state) => {
         const result = interruptProductShellRuntime(state);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onRunQueuedInputNow: (index) =>
+      setShellState((state) => {
+        const result = runProductShellQueuedInputNow(state, index);
         dispatchBackendCommand(result.command);
         return result.state;
       }),

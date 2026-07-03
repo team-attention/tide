@@ -1,4 +1,4 @@
-import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { EMPTY_WORKBENCH_LAUNCHER_PANE_ID, type ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
 import { ExternalLink, FilePlus, FileText, FolderOpen, GitBranchPlus, Square, Terminal } from "lucide-react";
@@ -10,10 +10,10 @@ export function emptyWorkbenchLauncherPane(): NonNullable<
   ProductShellViewModel["appChrome"]["activeWorkbenchPane"]
 > {
   return {
-    paneId: "workbench-launcher-empty",
+    paneId: EMPTY_WORKBENCH_LAUNCHER_PANE_ID,
     kind: "launcher",
     title: "Workbench launcher",
-    revision: "workbench-launcher-empty",
+    revision: EMPTY_WORKBENCH_LAUNCHER_PANE_ID,
     actions: [
       { actionId: "open_browser", label: "Browser", description: "Open a Browser Pane", enabled: true },
       { actionId: "open_editor", label: "Editor", description: "Pick a file from the FileTree to edit", enabled: true },

@@ -288,6 +288,38 @@ export function interruptProductShellRuntime(
   };
 }
 
+export function runProductShellQueuedInputNow(
+  state: ProductShellState,
+  index: number,
+): ProductShellUpdateResult {
+  const queued = state.agentChat.queuedInputs[index];
+  const threadId = state.agentChat.thread?.threadId;
+  if (queued === undefined || threadId === undefined) {
+    return { state, command: null };
+  }
+  const nextQueue = [...state.agentChat.queuedInputs];
+  if (index > 0) {
+    nextQueue.splice(index, 1);
+    nextQueue.unshift(queued);
+  }
+  return {
+    state: {
+      ...state,
+      agentChat: {
+        ...state.agentChat,
+        queuedInputs: nextQueue,
+      },
+    },
+    command: {
+      kind: "composer.runQueuedInputNow",
+      payload: {
+        threadId,
+        index,
+      },
+    },
+  };
+}
+
 // Edit the queued (not-yet-sent) message: pull its text back into the Composer
 // for editing and discard the backend's queued pendingInput. The user re-sends to
 // re-queue the corrected message. This reuses the Composer instead of an inline

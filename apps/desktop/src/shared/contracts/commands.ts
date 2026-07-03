@@ -20,6 +20,7 @@ export type BackendCommandKind =
   | "agentRuntime.resume"
   | "composer.sendInput"
   | "composer.editQueuedInput"
+  | "composer.runQueuedInputNow"
   | "prompt.answer"
   | "agentRuntime.stop"
   | "provider.trustWorkspace"
@@ -50,6 +51,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "agentRuntime.resume",
   "composer.sendInput",
   "composer.editQueuedInput",
+  "composer.runQueuedInputNow",
   "prompt.answer",
   "agentRuntime.stop",
   "provider.trustWorkspace",
@@ -139,6 +141,13 @@ export interface BackendCommandPayloadByKind {
   "composer.editQueuedInput": {
     threadId: ThreadId;
     value: string;
+    index?: number;
+  };
+  // Promote the selected queued Composer message to the head and interrupt the
+  // current turn so the selected row runs next. `index` addresses the backend
+  // queue head-first, same as composer.editQueuedInput.
+  "composer.runQueuedInputNow": {
+    threadId: ThreadId;
     index?: number;
   };
   "prompt.answer": {

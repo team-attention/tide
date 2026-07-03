@@ -350,12 +350,12 @@ export function createComposerStack(
       (viewModel.chatState === "running" ||
         viewModel.chatState === "waiting_for_approval" ||
         viewModel.chatState === "waiting_for_input")
-        ? createQueuedSteerStack(
-            viewModel.queuedInputs,
-            handlers.onEditQueued,
-            handlers.onInterrupt,
-            handlers.onRemoveQueued,
-          )
+	        ? createQueuedSteerStack(
+	            viewModel.queuedInputs,
+	            handlers.onEditQueued,
+	            handlers.onRunQueuedInputNow,
+	            handlers.onRemoveQueued,
+	          )
         : null}
       {viewModel.usage ? <SessionContextMeter usage={viewModel.usage} /> : null}
       {createComposer(viewModel, handlers)}

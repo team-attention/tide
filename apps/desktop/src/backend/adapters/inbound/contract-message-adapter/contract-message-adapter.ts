@@ -19,6 +19,7 @@ import type {
   HydrateThreadResult,
   ListThreadsResult,
   ResumeAgentRuntimeResult,
+  RunQueuedInputNowResult,
   SendComposerInputResult,
   SetThreadPinnedResult,
   ServiceError,
@@ -268,6 +269,14 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           typedCommand,
           await this.service.editPendingInput(typedCommand.payload),
           (result) => this.editQueuedInputEvents(typedCommand, result),
+        );
+      }
+      case "composer.runQueuedInputNow": {
+        const typedCommand = command as BackendCommandEnvelope<"composer.runQueuedInputNow">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.runQueuedInputNow(typedCommand.payload),
+          (result) => this.runQueuedInputNowEvents(typedCommand, result),
         );
       }
       case "prompt.answer": {
@@ -717,6 +726,16 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     // The queued message hasn't been sent, so editing only confirms the new
     // backend state; Desktop already holds the edited text it typed.
     return [this.commandCompletedEvent(command, { status: result.status })];
+  }
+
+  private runQueuedInputNowEvents(
+    command: BackendCommandEnvelope,
+    result: RunQueuedInputNowResult,
+  ): BackendEventEnvelope[] {
+    return [
+      this.agentRuntimeStateChangedEvent(command, result.thread, result.runtimeState),
+      this.commandCompletedEvent(command, { status: result.status }),
+    ];
   }
 
   private promptAnswerEvents(

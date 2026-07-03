@@ -204,6 +204,11 @@ export interface ProductShellFileTreeMenu {
 // derives it. See docs_v2/specs/workbench-dock-parity.md.
 export const COMPOSER_LAUNCHER_PANE_ID = "composer-launcher";
 
+// The synthetic Launcher pane rendered while an active Thread's Workbench is open
+// but Backend has not created/revealed a real Launcher Pane yet. It is a renderer
+// fallback only, never a Backend Workbench Pane id.
+export const EMPTY_WORKBENCH_LAUNCHER_PANE_ID = "workbench-launcher-empty";
+
 export interface ProductShellState {
   activeThreadId: string | null;
   leftRailOpen: boolean;

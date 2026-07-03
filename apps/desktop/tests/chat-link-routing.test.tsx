@@ -179,12 +179,12 @@ test("session file link click opens the workbench editor instead of navigating",
   assert.equal(opened, "/repo/src/app.ts");
 });
 
-test("openProductShellBrowserAtUrl opens the workbench + emits open_browser in a new pane by default", () => {
+test("openProductShellBrowserAtUrl emits open_browser in a new pane without launcher flash", () => {
   const result = openProductShellBrowserAtUrl(
     { activeThreadId: "t1", workbenchOpen: false } as unknown as ProductShellState,
     "https://example.com/page",
   );
-  assert.equal(result.state.workbenchOpen, true);
+  assert.equal(result.state.workbenchOpen, false);
   assert.equal(result.command?.kind, "workbench.command");
   assert.equal(
     result.command?.kind === "workbench.command" ? result.command.payload.command : null,

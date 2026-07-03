@@ -1948,6 +1948,7 @@ test("composer_shell_command_adapter_only_claims_shell_owned_backend_command_kin
   assert.doesNotMatch(source, /as AgentChatBackendCommandDraft/);
   assert.match(source, /"thread\.start"/);
   assert.match(source, /"composer\.sendInput"/);
+  assert.match(source, /"composer\.runQueuedInputNow"/);
   assert.match(source, /"prompt\.answer"/);
   assert.match(source, /"workbench\.command"/);
   // The composer's interrupt action emits agentRuntime.stop (a runtime-lifecycle
