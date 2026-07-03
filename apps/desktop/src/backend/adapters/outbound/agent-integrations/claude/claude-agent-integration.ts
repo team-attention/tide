@@ -167,12 +167,6 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       ready: true,
       blockers: [],
       capabilities: claudeCapabilities,
-      launchPlan: this.claudeLaunchPlan({
-        executablePath,
-        cwd,
-        resumeRef: undefined,
-        launchOptions: input.launchOptions,
-      }),
     };
   }
 

@@ -6,6 +6,7 @@ import {
   isClaudeBootstrapReady,
   isMcpBootstrapReady,
   providerBootstrapArtifactsForHome,
+  type ProviderBootstrapArtifacts,
 } from "./provider-bootstrap-artifacts.ts";
 import { readJsonFile, readTextFile } from "../live/live-backend-fs.ts";
 import { arrayOfStrings, recordField, stringField } from "../live/live-backend-json.ts";
@@ -19,9 +20,9 @@ export function readCodexProviderStateFromHome(
   homeDir: string,
   cwd: string,
   codexHome?: string,
+  bootstrapArtifacts: ProviderBootstrapArtifacts = providerBootstrapArtifactsForHome({ homeDir }),
 ): CodexProviderState {
   const realCodexHome = codexHome ?? join(homeDir, ".codex");
-  const bootstrapArtifacts = providerBootstrapArtifactsForHome({ homeDir });
   const auth = readJsonFile(join(realCodexHome, "auth.json"));
   const configPath = join(realCodexHome, "config.toml");
   const config = readTextFile(configPath);
@@ -38,6 +39,7 @@ export function readCodexProviderStateFromHome(
 export function readClaudeProviderStateFromHome(
   homeDir: string,
   cwd: string,
+  bootstrapArtifacts: ProviderBootstrapArtifacts = providerBootstrapArtifactsForHome({ homeDir }),
 ): ClaudeProviderState {
   const state = readJsonFile(join(homeDir, ".claude.json"));
   const projects = recordField(state, "projects");
@@ -47,9 +49,7 @@ export function readClaudeProviderStateFromHome(
     authenticated: Boolean(recordField(state, "oauthAccount") ?? stringField(state, "userID")),
     onboardingComplete: state?.hasCompletedOnboarding === true,
     trustedCwds: project?.hasTrustDialogAccepted === true ? [cwd] : [],
-    hookBootstrapReady: isClaudeBootstrapReady(
-      providerBootstrapArtifactsForHome({ homeDir }),
-    ),
+    hookBootstrapReady: isClaudeBootstrapReady(bootstrapArtifacts),
   };
 }
 

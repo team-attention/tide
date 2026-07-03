@@ -36,6 +36,7 @@ import type {
 } from "../structured/structured-runtime-events.ts";
 import type { NativeRuntimeEvent, NativeTransport } from "../../../../application/domains/native-agent/native-runtime-event.ts";
 import { structuredToNativeRuntimeEvent } from "../clients/structured-to-native-runtime-event.ts";
+import { sanitizeProviderRuntimeEnv } from "./provider-runtime-env.ts";
 
 export type AgentIntegrationRegistry = Record<ProviderCliAgentId, AgentIntegrationPort>;
 
@@ -546,14 +547,13 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   }
 
   private withRuntimeEnvironment(plan: ProviderLaunchPlan): ProviderLaunchPlan {
-    if (this.resolveRuntimeEnvironment === undefined) {
-      return plan;
-    }
     let runtimeEnv: NodeJS.ProcessEnv = {};
-    try {
-      runtimeEnv = this.resolveRuntimeEnvironment({ cwd: plan.cwd, planEnv: plan.env });
-    } catch {
-      runtimeEnv = {};
+    if (this.resolveRuntimeEnvironment !== undefined) {
+      try {
+        runtimeEnv = this.resolveRuntimeEnvironment({ cwd: plan.cwd, planEnv: plan.env });
+      } catch {
+        runtimeEnv = {};
+      }
     }
     const resolvedEnv: Record<string, string> = {};
     for (const [key, value] of Object.entries(runtimeEnv)) {
@@ -563,9 +563,13 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     }
     return {
       ...plan,
-      // The launch plan must win over shell env because it carries Tide's runtime
-      // IDs, MCP socket config, and provider-specific protocol configuration.
-      env: { ...resolvedEnv, ...plan.env },
+      // The launch plan wins over shell env for provider configuration, but Tide
+      // app/backend ownership env must not leak into the provider process because
+      // agent-run shell commands inherit this environment.
+      env: sanitizeProviderRuntimeEnv(
+        { ...resolvedEnv, ...plan.env },
+        { allowRuntimeTags: true },
+      ) as Record<string, string>,
     };
   }
 

@@ -105,7 +105,7 @@ class AcpClient implements StructuredRuntimeClient {
     this.goalObjective = input.initialGoal?.trim() ?? "";
     this.child = spawn(input.plan.command, input.plan.args, {
       cwd: input.plan.cwd,
-      env: { ...process.env, ...input.plan.env },
+      env: input.plan.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.child.stdout.setEncoding("utf8");

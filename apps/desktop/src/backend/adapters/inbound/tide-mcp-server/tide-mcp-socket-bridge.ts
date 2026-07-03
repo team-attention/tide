@@ -140,6 +140,7 @@ export async function runTideMcpSocketBackedLineDelimitedStdio(
 class NodeTideMcpSocketServer implements TideMcpSocketServer {
   readonly socketPath: string;
   private readonly requestHandler: TideMcpSocketRequestHandler;
+  private readonly sockets = new Set<net.Socket>();
   private readonly server = net.createServer((socket) => {
     this.handleConnection(socket);
   });
@@ -164,6 +165,9 @@ class NodeTideMcpSocketServer implements TideMcpSocketServer {
   }
 
   close(): Promise<void> {
+    for (const socket of this.sockets) {
+      socket.destroy();
+    }
     return new Promise((resolve, reject) => {
       this.server.close((error) => {
         if (existsSync(this.socketPath)) {
@@ -180,7 +184,11 @@ class NodeTideMcpSocketServer implements TideMcpSocketServer {
 
   private handleConnection(socket: net.Socket): void {
     let buffer = "";
+    this.sockets.add(socket);
     socket.setEncoding("utf8");
+    socket.on("close", () => {
+      this.sockets.delete(socket);
+    });
     // A broken client connection (EPIPE/ECONNRESET on write, abrupt close) must
     // not become an uncaught exception that crashes the Backend utilityProcess.
     socket.on("error", () => {

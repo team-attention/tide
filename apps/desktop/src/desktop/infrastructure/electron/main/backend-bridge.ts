@@ -58,16 +58,7 @@ export async function ensureBackendProcess(): Promise<BackendHandshake> {
   });
 
   backendProcess = utilityProcess.fork(resolveBackendEntrypointPath(), [], {
-    env: {
-      ...process.env,
-      TIDE_APP_DATA_ROOT: resolveAppDataRoot(),
-      // The node-capable runtime for Tide's MCP subprocess script (tide-mcp-stdio
-      // runs `ELECTRON_RUN_AS_NODE=1 $TIDE_BIN <script>`). Inside the utility
-      // process, process.execPath is the Electron HELPER binary, which is NOT
-      // node-runnable — the MCP bridge spawned with it would never exit. The MAIN
-      // process execPath is the real Electron binary, which is.
-      TIDE_BIN: process.env.TIDE_BIN ?? process.execPath,
-    },
+    env: backendProcessEnvironment(),
     stdio: "pipe",
   });
   backendProcess.stdout?.on("data", (chunk: Buffer) => {
@@ -246,6 +237,41 @@ function resetBackendProcess(): void {
   backendHandshake = null;
   resolveBackendHandshake = null;
   rejectBackendHandshake = null;
+}
+
+function backendProcessEnvironment(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined || isInheritedAgentOwnerEnv(key)) {
+      continue;
+    }
+    env[key] = value;
+  }
+  env.TIDE_APP_DATA_ROOT = resolveAppDataRoot();
+  // The node-capable runtime for Tide's MCP subprocess
+  // (`ELECTRON_RUN_AS_NODE=1 $TIDE_BIN <script> mcp`). Inside the utility
+  // process, process.execPath is the Electron HELPER binary, which is NOT
+  // node-runnable — the MCP bridge spawned with it would never exit. The MAIN
+  // process execPath is the real Electron binary, which is.
+  env.TIDE_BIN = process.execPath;
+  return env;
+}
+
+function isInheritedAgentOwnerEnv(key: string): boolean {
+  return (
+    key === "TIDE_APP_DATA_ROOT" ||
+    key === "TIDE_BIN" ||
+    key === "TIDE_SOCKET" ||
+    key === "TIDE_MCP_ENTRYPOINT" ||
+    key === "TIDE_BACKEND_INSTANCE_ID" ||
+    key === "TIDE_THREAD_ID" ||
+    key === "TIDE_RUNTIME_ID" ||
+    key === "TIDE_AGENT_ID" ||
+    key === "TIDE_PANE" ||
+    key === "TIDE_WINDOW" ||
+    key === "TIDE_ELECTRON_SMOKE_COMMAND" ||
+    key === "ELECTRON_RUN_AS_NODE"
+  );
 }
 
 function resolveBackendEntrypointPath(): string {

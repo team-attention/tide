@@ -429,7 +429,7 @@ test("provider_bootstrap_artifacts_create_only_the_mcp_surface", () => {
     tideSocket: "/tmp/tide.sock",
   });
 
-  assert.equal(fs.existsSync(artifacts.tideMcpCommandPath), true);
+  assert.equal(fs.existsSync(artifacts.tideMcpCommandPath), false);
   assert.equal(fs.existsSync(artifacts.claudeMcpConfigPath), true);
   assert.equal(fs.existsSync(artifacts.claudeSettingsPath), true);
   // codexHome is the REAL ~/.codex — no overlay dir/config written by Tide.
@@ -437,16 +437,15 @@ test("provider_bootstrap_artifacts_create_only_the_mcp_surface", () => {
 
   const claudeMcp = fs.readFileSync(artifacts.claudeMcpConfigPath, "utf8");
   assert.match(claudeMcp, /"mcpServers"/);
-  assert.match(claudeMcp, /tide-mcp-stdio/);
+  assert.match(claudeMcp, /"command": "\/Applications\/Tide\.app\/Contents\/MacOS\/Tide"/);
+  assert.match(claudeMcp, /backend-entrypoint\.js/);
+  assert.match(claudeMcp, /"mcp"/);
+  assert.match(claudeMcp, /"ELECTRON_RUN_AS_NODE": "1"/);
   assert.match(claudeMcp, /"TIDE_SOCKET": "\/tmp\/tide\.sock"/);
   // settings.json pre-allows the tide MCP server and carries NO hooks.
   const claudeSettings = fs.readFileSync(artifacts.claudeSettingsPath, "utf8");
   assert.match(claudeSettings, /mcp__tide/);
   assert.doesNotMatch(claudeSettings, /hooks/);
-  const tideMcpCommand = fs.readFileSync(artifacts.tideMcpCommandPath, "utf8");
-  assert.match(tideMcpCommand, /ELECTRON_RUN_AS_NODE=1 exec/);
-  assert.match(tideMcpCommand, /backend-entrypoint\.js/);
-  assert.match(tideMcpCommand, / mcp "\$@"/);
 });
 
 test("live_backend_provider_state_readers_require_tide_owned_bootstrap_artifacts", () => {
@@ -454,7 +453,7 @@ test("live_backend_provider_state_readers_require_tide_owned_bootstrap_artifacts
   const cwd = "/repo";
   writeProviderFiles(home, cwd);
 
-  assert.equal(readCodexProviderStateFromHome(home, cwd).hookBootstrapReady, false);
+  assert.equal(readCodexProviderStateFromHome(home, cwd).hookBootstrapReady, true);
   assert.equal(readClaudeProviderStateFromHome(home, cwd).hookBootstrapReady, false);
 });
 

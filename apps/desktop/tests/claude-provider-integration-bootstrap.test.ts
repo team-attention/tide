@@ -70,18 +70,29 @@ test("claude_preflight_reports_auth_onboarding_directory_trust_and_hook_bootstra
   assert.equal(result.launchPlan, undefined);
 });
 
-test("claude_ready_preflight_returns_structured_stream_json_plan", async () => {
+test("claude_ready_preflight_does_not_build_launch_plan", async () => {
   const integration = claudeIntegration();
 
   const result = await integration.preflight(basePreflightInput);
 
   assert.equal(result.ready, true);
+  assert.equal(result.launchPlan, undefined);
+});
+
+test("claude_build_start_plan_returns_structured_stream_json_plan", async () => {
+  const integration = claudeIntegration();
+
+  const result = await integration.buildStartPlan({
+    agentId: "claude",
+    scope: projectScope,
+  });
+
   // Structured transport: the stream-json control protocol over plain stdio.
-  assert.equal(result.launchPlan?.transport, "claude_stream_json");
-  assert.equal(result.launchPlan?.command, "/usr/local/bin/claude");
-  assert.equal(result.launchPlan?.cwd, "/repo");
-  assert.deepEqual(result.launchPlan?.env, {});
-  const args = result.launchPlan?.args ?? [];
+  assert.equal(result.transport, "claude_stream_json");
+  assert.equal(result.command, "/usr/local/bin/claude");
+  assert.equal(result.cwd, "/repo");
+  assert.deepEqual(result.env, {});
+  const args = result.args;
   const joined = args.join(" ");
   assert.ok(joined.includes("--print"));
   assert.ok(joined.includes("--input-format stream-json"));

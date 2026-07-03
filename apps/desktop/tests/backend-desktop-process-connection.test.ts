@@ -11,7 +11,9 @@ import { createFileAppStorage } from "../src/backend/adapters/outbound/app-stora
 import { createBackendContractMessageAdapter } from "../src/backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts";
 import {
   backendEventsFromThreadRuntimeAsyncEvent,
+  cleanupOwnedBackendRuntimeArtifacts,
   createLiveBackendContractMessageAdapter,
+  processBoundTideMcpSocketPath,
   threadSeedFromStorageRecord,
   threadStorageRecordFromThreadSummary,
 } from "../src/backend/infrastructure/node/live/live-backend.ts";
@@ -772,6 +774,112 @@ test("electron_main_passes_app_data_root_to_backend_process", () => {
   assert.match(source, /app\.getPath\("userData"\)/);
   assert.match(source, /TIDE_APP_DATA_ROOT/);
   assert.match(source, /utilityProcess\.fork\(resolveBackendEntrypointPath\(\),\s*\[\],\s*{/s);
+});
+
+test("electron_main_strips_inherited_agent_env_for_backend", () => {
+  // Spec: docs_v2/specs/agent-runtime-process-ownership.md
+  const source = readMainProcessSource();
+
+  assert.match(source, /backendProcessEnvironment/);
+  assert.match(source, /isInheritedAgentOwnerEnv/);
+  assert.match(source, /key === "TIDE_APP_DATA_ROOT"/);
+  assert.match(source, /key === "TIDE_BIN"/);
+  assert.match(source, /key === "TIDE_SOCKET"/);
+  assert.match(source, /key === "TIDE_MCP_ENTRYPOINT"/);
+  assert.match(source, /key === "TIDE_RUNTIME_ID"/);
+  assert.match(source, /key === "TIDE_AGENT_ID"/);
+  assert.match(source, /key === "TIDE_ELECTRON_SMOKE_COMMAND"/);
+  assert.match(source, /key === "ELECTRON_RUN_AS_NODE"/);
+  assert.match(source, /env\.TIDE_BIN = process\.execPath/);
+  assert.doesNotMatch(source, /TIDE_BIN:\s*process\.env\.TIDE_BIN\s*\?\?/);
+});
+
+test("electron_main_requires_explicit_multi_instance_flag", () => {
+  // Spec: docs_v2/specs/agent-runtime-process-ownership.md
+  const source = readMainProcessSource();
+
+  assert.match(source, /TIDE_ALLOW_MULTI_INSTANCE/);
+  assert.match(source, /process\.env\.TIDE_ALLOW_MULTI_INSTANCE !== "1"/);
+  assert.doesNotMatch(source, /if \(process\.env\.TIDE_APP_DATA_ROOT === undefined\)/);
+});
+
+test("tide_mcp_socket_path_is_bound_to_backend_instance", () => {
+  const appDataRoot = "/Users/me/Library/Application Support/Tide";
+  const first = processBoundTideMcpSocketPath({
+    appDataRoot,
+    backendInstanceId: "backend-one",
+    tempDir: "/tmp",
+  });
+  const second = processBoundTideMcpSocketPath({
+    appDataRoot,
+    backendInstanceId: "backend-two",
+    tempDir: "/tmp",
+  });
+
+  assert.notEqual(first, second);
+  assert.match(first.replace(/\\/g, "/"), /^\/tmp\/tide-mcp-[a-f0-9]{16}\.sock$/);
+  assert.match(second.replace(/\\/g, "/"), /^\/tmp\/tide-mcp-[a-f0-9]{16}\.sock$/);
+});
+
+test("live_backend_ignores_ambient_tide_socket_for_owned_mcp_route", () => {
+  // Spec: docs_v2/specs/agent-runtime-process-ownership.md
+  const source = readRepoFile("src/backend/infrastructure/node/live/live-backend.ts");
+
+  assert.match(source, /processBoundTideMcpSocketPath\(\{ appDataRoot, backendInstanceId \}\)/);
+  assert.doesNotMatch(source, /env\.TIDE_SOCKET\s*\?\?/);
+});
+
+test("live_backend_shutdown_removes_owner_scoped_bootstrap_and_socket_artifacts", async () => {
+  // Spec: docs_v2/specs/agent-runtime-process-ownership.md
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tide-owner-cleanup-"));
+  const backendInstanceId = "backend-cleanup-test";
+  const socketPath = processBoundTideMcpSocketPath({
+    appDataRoot: root,
+    backendInstanceId,
+  });
+  fs.writeFileSync(socketPath, "stale socket placeholder");
+
+  try {
+    const adapter = createLiveBackendContractMessageAdapter({
+      appDataRoot: root,
+      backendInstanceId,
+      env: { HOME: root },
+      startMcpSocket: false,
+      tideCommand: "/Applications/Tide.app/Contents/MacOS/Tide",
+      tideMcpEntrypoint: path.join(root, "backend-entrypoint.js"),
+    });
+    const bootstrapParent = path.join(root, "agent-bootstrap");
+    const scopeDirs = fs.readdirSync(bootstrapParent);
+    assert.equal(scopeDirs.length, 1);
+    const scopeDir = path.join(bootstrapParent, scopeDirs[0]);
+    assert.equal(fs.existsSync(path.join(scopeDir, "claude", "mcp.json")), true);
+
+    await adapter.shutdown();
+
+    assert.equal(fs.existsSync(scopeDir), false);
+    assert.equal(fs.existsSync(socketPath), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(socketPath, { force: true });
+  }
+});
+
+test("owned_backend_runtime_cleanup_removes_bootstrap_dir_and_socket_file", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tide-owner-cleanup-direct-"));
+  const bootstrapRootDir = path.join(root, "agent-bootstrap", "scope");
+  const socketPath = path.join(root, "mcp.sock");
+  fs.mkdirSync(bootstrapRootDir, { recursive: true });
+  fs.writeFileSync(path.join(bootstrapRootDir, "mcp.json"), "{}");
+  fs.writeFileSync(socketPath, "socket placeholder");
+
+  try {
+    cleanupOwnedBackendRuntimeArtifacts({ bootstrapRootDir, tideSocket: socketPath });
+
+    assert.equal(fs.existsSync(bootstrapRootDir), false);
+    assert.equal(fs.existsSync(socketPath), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("live_backend_wires_file_storage_restore_and_thread_event_persistence", () => {

@@ -33,6 +33,7 @@ Each spec must be narrow enough to test and implement as one slice.
 | [Provider Signal Prompt Ingress](provider-signal-prompt-ingress.md) | Drafted | Record provider-observed Prompt State in Backend and emit Desktop prompt events. |
 | [Provider Bootstrap Artifacts](provider-bootstrap-artifacts.md) | Subordinate | Current bootstrap helper details; new resource-model work is governed by Agent Resource Model. |
 | [Agent Resource Model](agent-resource-model.md) | Drafted | Post-Gemini resource model for sharing Tide-owned MCP/runtime/session resources across Codex, Claude, and opencode while keeping provider-native launch details inside adapters. |
+| [Agent Runtime Process Ownership](agent-runtime-process-ownership.md) | Implemented | Main-based ownership model that makes App -> Backend -> provider runtime -> MCP bridge connectivity explicit across Codex, Claude, opencode, and future provider agents. |
 | [Provider Signal Spool Ingress](provider-signal-spool-ingress.md) | Drafted | Read runtime-scoped provider hook spool records and route supported Prompt State into Backend events. |
 | [Direct API Agent Runtime](tide-api-agent-runtime.md) | Removed | Historical note: the direct API Agent runtime path was removed; Provider CLI Agents are canonical. |
 | [Direct API Agent Tool Calls](tide-api-agent-tool-calls.md) | Removed | Historical note: Tide MCP tools are exposed through provider CLI MCP, not a direct API Agent runtime. |

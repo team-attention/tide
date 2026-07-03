@@ -82,6 +82,7 @@ const browserRuntime = createMainProcessBrowserRuntimePort(parentPort);
 const adapter = createLiveBackendContractMessageAdapter({
   onEvent: postOrBufferBackendEvent,
   browserRuntimePort: browserRuntime.port,
+  backendInstanceId,
 });
 let activeParentCommandCount = 0;
 const bufferedBackendEvents: BackendEventEnvelope[] = [];
@@ -97,7 +98,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     }
     shuttingDown = true;
     void adapter
-      .flushPendingPersists()
+      .shutdown()
       .catch(() => {})
       .finally(() => process.exit(0));
   });

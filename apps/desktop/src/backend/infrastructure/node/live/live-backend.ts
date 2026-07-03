@@ -27,6 +27,7 @@ import {
   readdirSync,
   readSync,
   realpathSync,
+  rmSync,
   statSync,
 } from "node:fs";
 
@@ -97,7 +98,10 @@ import {
 } from "../../../adapters/inbound/contract-message-adapter/dto/thread-dtos.ts";
 import { toWorkbenchPaneRefDto } from "../../../adapters/inbound/contract-message-adapter/dto/workbench-dtos.ts";
 
-import { createTideMcpSocketServer } from "../../../adapters/inbound/tide-mcp-server/tide-mcp-socket-bridge.ts";
+import {
+  createTideMcpSocketServer,
+  type TideMcpSocketServer,
+} from "../../../adapters/inbound/tide-mcp-server/tide-mcp-socket-bridge.ts";
 
 import { createRuntimeReadinessRegistry } from "../../../application/services/provider/runtime-readiness-registry.ts";
 
@@ -189,6 +193,33 @@ export interface CreateLiveBackendContractMessageAdapterInput {
   env?: NodeJS.ProcessEnv;
   startMcpSocket?: boolean;
   browserRuntimePort?: BrowserRuntimePort;
+  backendInstanceId?: string;
+  tideCommand?: string;
+  tideMcpEntrypoint?: string;
+}
+
+export function processBoundTideMcpSocketPath(input: {
+  appDataRoot: string;
+  backendInstanceId: string;
+  tempDir?: string;
+}): string {
+  const digest = createHash("sha1")
+    .update(`${input.appDataRoot}\0${input.backendInstanceId}`)
+    .digest("hex")
+    .slice(0, 16);
+  return join(input.tempDir ?? tmpdir(), `tide-mcp-${digest}.sock`);
+}
+
+function createProviderBootstrapScopeId(input: {
+  appDataRoot: string;
+  backendInstanceId: string;
+  tideCommand: string;
+  tideMcpEntrypoint: string;
+}): string {
+  return createHash("sha1")
+    .update(`${input.appDataRoot}\0${input.backendInstanceId}\0${input.tideCommand}\0${input.tideMcpEntrypoint}`)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 export function createLiveBackendContractMessageAdapter(
@@ -197,17 +228,21 @@ export function createLiveBackendContractMessageAdapter(
   const env = input.env ?? process.env;
   const homeDir = env.HOME ?? process.cwd();
   const appDataRoot = input.appDataRoot ?? env.TIDE_APP_DATA_ROOT ?? join(homeDir, ".tide-v2");
-  // Stable per-install MCP socket path (a short hash of the app data root), NOT
-  // pid-based. A pid-based path changed on every backend restart, so agents spawned
-  // by an earlier backend pointed at a dead socket and their MCP tool calls hung
-  // forever. With a stable path the new backend re-binds the same socket (the server
-  // unlinks the stale file) and existing agents reconnect to it.
-  const tideSocket =
-    env.TIDE_SOCKET ??
-    join(tmpdir(), `tide-mcp-${createHash("sha1").update(appDataRoot).digest("hex").slice(0, 12)}.sock`);
+  const backendInstanceId =
+    input.backendInstanceId ?? env.TIDE_BACKEND_INSTANCE_ID ?? `backend-${process.pid}-${Date.now()}`;
+  const tideCommand = input.tideCommand ?? env.TIDE_BIN ?? process.execPath;
   const tideMcpEntrypoint =
-    env.TIDE_MCP_ENTRYPOINT ??
+    input.tideMcpEntrypoint ??
     join(dirname(fileURLToPath(import.meta.url)), "backend-entrypoint.js");
+  // TIDE_SOCKET is a child MCP bridge value, not Backend ownership input. Always
+  // mint the route from this Backend owner instance.
+  const tideSocket = processBoundTideMcpSocketPath({ appDataRoot, backendInstanceId });
+  const bootstrapScopeId = createProviderBootstrapScopeId({
+    appDataRoot,
+    backendInstanceId,
+    tideCommand,
+    tideMcpEntrypoint,
+  });
   const persistence = createThreadPersistenceService({
     storage: createFileAppStorage({ appDataRoot }),
     clock: liveClock,
@@ -221,7 +256,8 @@ export function createLiveBackendContractMessageAdapter(
   };
   const bootstrapArtifacts = ensureProviderBootstrapArtifacts({
     homeDir,
-    tideCommand: env.TIDE_BIN ?? process.execPath,
+    rootDir: join(appDataRoot, "agent-bootstrap", bootstrapScopeId),
+    tideCommand,
     tideMcpEntrypoint,
     tideSocket,
     tidePane: env.TIDE_PANE,
@@ -249,18 +285,19 @@ export function createLiveBackendContractMessageAdapter(
   const integrations = {
     codex: createCodexAgentIntegration({
       resolveExecutable: () => resolveExecutable("codex"),
-      readProviderState: ({ cwd }) => readCodexProviderStateFromHome(homeDir, cwd, effectiveCodexHome(cwd)),
+      readProviderState: ({ cwd }) =>
+        readCodexProviderStateFromHome(homeDir, cwd, effectiveCodexHome(cwd), bootstrapArtifacts),
       resolveWorkspaceWritableRoots: ({ cwd }) => resolveGitMetadataWritableRoots(cwd),
       tideMcp: {
-        command: bootstrapArtifacts.tideMcpCommandPath,
-        args: [],
-        env: { TIDE_SOCKET: tideSocket },
+        command: tideCommand,
+        args: [tideMcpEntrypoint, "mcp"],
+        env: { ELECTRON_RUN_AS_NODE: "1", TIDE_SOCKET: tideSocket },
       },
       defaultCwd: process.cwd(),
     }),
     claude: createClaudeAgentIntegration({
       resolveExecutable: () => resolveExecutable("claude"),
-      readProviderState: ({ cwd }) => readClaudeProviderStateFromHome(homeDir, cwd),
+      readProviderState: ({ cwd }) => readClaudeProviderStateFromHome(homeDir, cwd, bootstrapArtifacts),
       mcpConfigPath: bootstrapArtifacts.claudeMcpConfigPath,
       settingsPath: bootstrapArtifacts.claudeSettingsPath,
       tideContextPrompt: tideClaudeContextPrompt(),
@@ -272,9 +309,9 @@ export function createLiveBackendContractMessageAdapter(
       readProviderState: ({ cwd }) => readOpencodeProviderStateFromHome(homeDir, cwd),
       defaultCwd: process.cwd(),
       tideMcp: {
-        command: bootstrapArtifacts.tideMcpCommandPath,
-        args: [],
-        env: { TIDE_SOCKET: tideSocket },
+        command: tideCommand,
+        args: [tideMcpEntrypoint, "mcp"],
+        env: { ELECTRON_RUN_AS_NODE: "1", TIDE_SOCKET: tideSocket },
       },
     }),
   };
@@ -375,20 +412,28 @@ export function createLiveBackendContractMessageAdapter(
       emitBackendEvents(backendEventsFromThreadRuntimeAsyncEvent(event));
     },
   });
+  let mcpSocketServer: TideMcpSocketServer | undefined;
+  let mcpSocketListening = false;
+  let mcpSocketListenSettled: Promise<void> = Promise.resolve();
   if (input.startMcpSocket !== false) {
-    const mcpSocketServer = createTideMcpSocketServer({
+    mcpSocketServer = createTideMcpSocketServer({
       socketPath: tideSocket,
       adapter: createTideMcpToolSurfaceAdapter({ service }),
       readinessRegistry,
     });
-    void mcpSocketServer.listen().catch((error: unknown) => {
-      process.emitWarning(
-        error instanceof Error
-          ? error.message
-          : "Tide MCP socket bridge failed to start.",
-        { type: "TideMcpSocketBridgeWarning" },
-      );
-    });
+    mcpSocketListenSettled = mcpSocketServer
+      .listen()
+      .then(() => {
+        mcpSocketListening = true;
+      })
+      .catch((error: unknown) => {
+        process.emitWarning(
+          error instanceof Error
+            ? error.message
+            : "Tide MCP socket bridge failed to start.",
+          { type: "TideMcpSocketBridgeWarning" },
+        );
+      });
   }
 
   // Installed-agent detection + opencode model catalog, surfaced on thread.listed.
@@ -452,7 +497,7 @@ export function createLiveBackendContractMessageAdapter(
     emitOpencodeProviderCatalogChanged();
   });
 
-  return createPersistentLiveBackendAdapter({
+  const persistentAdapter = createPersistentLiveBackendAdapter({
     flushPendingPersists: () => projector.flushPendingPersists(),
     adapter: createBackendContractMessageAdapter({
       service,
@@ -468,6 +513,33 @@ export function createLiveBackendContractMessageAdapter(
     appDataRoot,
     emitBackendEvents,
   });
+  return {
+    ...persistentAdapter,
+    async shutdown(): Promise<void> {
+      await persistentAdapter.flushPendingPersists();
+      await mcpSocketListenSettled;
+      if (mcpSocketServer !== undefined && mcpSocketListening) {
+        try {
+          await mcpSocketServer.close();
+        } catch {
+          // Best-effort cleanup continues below even if the server was already
+          // closed or never fully bound.
+        }
+      }
+      cleanupOwnedBackendRuntimeArtifacts({
+        bootstrapRootDir: bootstrapArtifacts.rootDir,
+        tideSocket,
+      });
+    },
+  };
+}
+
+export function cleanupOwnedBackendRuntimeArtifacts(input: {
+  bootstrapRootDir: string;
+  tideSocket: string;
+}): void {
+  rmSync(input.bootstrapRootDir, { recursive: true, force: true });
+  rmSync(input.tideSocket, { force: true });
 }
 
 

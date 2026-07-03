@@ -28,6 +28,11 @@ function opencodeIntegration(overrides?: { executable?: string | undefined; auth
       overrides !== undefined && "executable" in overrides ? overrides.executable : "/opt/homebrew/bin/opencode",
     readProviderState: () => ({ authenticated: overrides?.authenticated ?? true }),
     defaultCwd: "/repo",
+    tideMcp: {
+      command: "/Applications/Tide.app/Contents/MacOS/Tide",
+      args: ["/Applications/Tide.app/Contents/Resources/backend-entrypoint.js", "mcp"],
+      env: { ELECTRON_RUN_AS_NODE: "1", TIDE_SOCKET: "/tmp/tide.sock" },
+    },
   });
 }
 
@@ -103,6 +108,7 @@ test("opencode start plan carries the chosen config as ACP configOptions", async
   const plan = await opencodeIntegration().buildStartPlan({
     agentId: "opencode",
     scope: projectScope,
+    runtimeId: "runtime-opencode-test",
     launchOptions: { model: "openai/gpt-5.5", reasoning: "high", permission: "plan" },
   });
   assert.equal(plan.transport, "acp");
@@ -113,6 +119,20 @@ test("opencode start plan carries the chosen config as ACP configOptions", async
     { configId: "model", value: "openai/gpt-5.5" },
     { configId: "effort", value: "high" },
     { configId: "mode", value: "plan" },
+  ]);
+  const mcpServers = (plan.protocolParams as { mcpServers?: unknown }).mcpServers;
+  assert.deepEqual(mcpServers, [
+    {
+      name: "tide",
+      command: "/Applications/Tide.app/Contents/MacOS/Tide",
+      args: ["/Applications/Tide.app/Contents/Resources/backend-entrypoint.js", "mcp"],
+      env: [
+        { name: "ELECTRON_RUN_AS_NODE", value: "1" },
+        { name: "TIDE_SOCKET", value: "/tmp/tide.sock" },
+        { name: "TIDE_RUNTIME_ID", value: "runtime-opencode-test" },
+        { name: "TIDE_AGENT_ID", value: "opencode" },
+      ],
+    },
   ]);
 });
 
