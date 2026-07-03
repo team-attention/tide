@@ -29,6 +29,32 @@ Run the whole battery via `npm run e2e` (Phase 2.1). Individual scripts:
 | `pw-claude-research-permissions.cjs` | claude WebSearch + two batched WebFetch cards → final answer (the user's exact research scenario). | claude auth |
 | `pw-restart-verify.cjs` | App restart restores the conversation from cache. | built app |
 
+## Native Agent Evidence
+
+These scripts capture bounded provider protocol evidence for adapter work. They
+write reduced/redacted files; do not commit raw provider transcripts.
+
+| Script | Proves / does | Needs |
+|---|---|---|
+| `native-agent-evidence/capture-codex-app-server.mjs` | Captures Codex app-server help by default. With `--review-start --allow-provider-review`, deliberately starts app-server, creates a read-only thread, sends `review/start`, and records redacted protocol frames. | codex auth; trusted repo cwd; explicit review approval for `--review-start` |
+| `native-agent-evidence/capture-claude-stream-json.mjs` | Captures Claude stream-json evidence for structured runtime behavior. | claude auth |
+| `native-agent-evidence/capture-acp-provider.mjs` | Captures ACP initialize/session evidence for opencode-family providers. | provider auth unless capturing auth-required fixtures |
+| `native-agent-evidence/capture-opencode-serve.mjs` | Captures opencode serve surface evidence for support/adoption work. | opencode auth |
+
+Codex review capture example:
+
+```sh
+node apps/desktop/scripts/native-agent-evidence/capture-codex-app-server.mjs \
+  --codex codex \
+  --out /tmp/tide-codex-review-evidence \
+  --review-start \
+  --allow-provider-review \
+  --cwd /path/to/scratch/repo \
+  --target base \
+  --base-branch main \
+  --delivery detached
+```
+
 ## Verification loop
 
 `npm run verify:tide` is the default local loop for AI-assisted and human review:
