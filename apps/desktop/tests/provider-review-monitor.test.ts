@@ -67,18 +67,24 @@ test("agent monitor sessions derive needs-attention state from background runtim
   assert.equal(view.agentMonitorSessions[0]?.cwd, "/repo/tide");
 });
 
-test("agent monitor open-changes action targets the row thread", async () => {
+test("agent monitor row actions target the selected thread and active runtime", async () => {
+  let selectedThreadId: string | null = null;
   let openedThreadId: string | null = null;
+  let interrupted = false;
   const container = dom.window.document.createElement("div");
   dom.window.document.body.appendChild(container);
   const root = createRoot(container);
   const handlers = {
     onAgentMonitorToggle: () => undefined,
-    onThreadSelect: () => undefined,
+    onThreadSelect: (threadId: string) => {
+      selectedThreadId = threadId;
+    },
     onOpenThreadChanges: (threadId: string) => {
       openedThreadId = threadId;
     },
-    onInterrupt: () => undefined,
+    onInterrupt: () => {
+      interrupted = true;
+    },
   } as Partial<ProductShellHandlers> as ProductShellHandlers;
 
   await act(async () => {
@@ -91,24 +97,32 @@ test("agent monitor open-changes action targets the row thread", async () => {
             title: "Review handoff",
             cwd: "/repo/tide",
             state: "running",
-            active: false,
+            active: true,
           } satisfies ProductShellAgentMonitorSession,
         ],
         handlers,
       }),
     );
   });
-  const button = container.querySelector('button[aria-label="Open changes"]') as HTMLButtonElement | null;
-  assert.notEqual(button, null);
+  const focusButton = container.querySelector('button[aria-label="Focus thread"]') as HTMLButtonElement | null;
+  const changesButton = container.querySelector('button[aria-label="Open changes"]') as HTMLButtonElement | null;
+  const stopButton = container.querySelector('button[aria-label="Stop active agent"]') as HTMLButtonElement | null;
+  assert.notEqual(focusButton, null);
+  assert.notEqual(changesButton, null);
+  assert.notEqual(stopButton, null);
 
   await act(async () => {
-    button?.click();
+    focusButton?.click();
+    changesButton?.click();
+    stopButton?.click();
   });
   await act(async () => {
     root.unmount();
   });
 
+  assert.equal(selectedThreadId, "thread-review");
   assert.equal(openedThreadId, "thread-review");
+  assert.equal(interrupted, true);
 });
 
 function threadSummary(): AgentChatThreadSummary {

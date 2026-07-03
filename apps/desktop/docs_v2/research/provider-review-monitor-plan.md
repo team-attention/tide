@@ -380,7 +380,6 @@ Required:
   - queued input count changes
 - Multi-thread monitor rendering fixture with Codex, Claude, and opencode rows.
 - Background thread detail preservation test.
-- Stop/focus/open-changes command dispatch tests.
 - Provider external import tests only after each provider command output is captured.
 
 ## Remaining Work Order
@@ -401,7 +400,6 @@ Required:
    - Store durable `runtimeSnapshotsByThreadId` or equivalent backend-owned monitor state.
    - Preserve richer background-thread detail even when a thread is not hydrated.
    - Add inline answer controls only when prompt snapshots are complete.
-   - Add stop/focus/open-changes dispatch tests.
 
 5. Add provider-specific external session import only after fixtures.
    - Claude: `claude agents --json`.
