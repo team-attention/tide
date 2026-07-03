@@ -19,12 +19,27 @@ const execFileAsync = promisify(execFile);
 // providerCatalog.changed (never inside thread.listed), so it never needs to block.
 
 const CACHE_TTL_MS = 60_000;
+const OPENCODE_MODELS_TIMEOUT_MS = 5_000;
 
 interface OpencodeModelCatalog {
   get: () => Promise<ProviderModelDto[]>;
   // Drop the cached result so the next get() re-runs `opencode models` (e.g. right
   // after a new vendor sign-in).
   invalidate: () => void;
+}
+
+type OpencodeCommandRunner = (executablePath: string, args: string[]) => Promise<string>;
+
+async function runOpencodeModelsCommand(executablePath: string, args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync(executablePath, args, {
+    encoding: "utf8",
+    // `opencode models` is usually a fast local cache lookup, but cold starts can
+    // cross one second. This runs off the event loop and is delivered out of band,
+    // so allow enough room for the first spawn while still bounding a hung CLI.
+    timeout: OPENCODE_MODELS_TIMEOUT_MS,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  return stdout;
 }
 
 export function parseOpencodeModels(stdout: string): ProviderModelDto[] {
@@ -48,6 +63,7 @@ export function parseOpencodeModels(stdout: string): ProviderModelDto[] {
 
 export function createOpencodeModelCatalog(
   resolveExecutable: (command: "opencode") => string | undefined,
+  runCommand: OpencodeCommandRunner = runOpencodeModelsCommand,
 ): OpencodeModelCatalog {
   let cache: ProviderModelDto[] = [];
   let fetchedAt = 0;
@@ -61,15 +77,7 @@ export function createOpencodeModelCatalog(
       return;
     }
     try {
-      const { stdout } = await execFileAsync(executablePath, ["models"], {
-        encoding: "utf8",
-        // `opencode models` is a fast local cache lookup; keep the call bounded so a
-        // hung/slow CLI can't keep the catalog stale forever (it runs off the event
-        // loop, so it never blocks the backend).
-        timeout: 1_000,
-        maxBuffer: 4 * 1024 * 1024,
-      });
-      cache = parseOpencodeModels(stdout);
+      cache = parseOpencodeModels(await runCommand(executablePath, ["models"]));
     } catch {
       // Not installed / not authed / timed out — leave the menu on its sentinel.
       cache = [];

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   buildOpencodeVendors,
+  createOpencodeVendorCatalog,
   parseOpencodeAuthList,
   reconcileVendorUsability,
 } from "../src/backend/infrastructure/node/provider/opencode-vendor-catalog.ts";
@@ -62,6 +64,20 @@ test("parseOpencodeAuthList reads ● rows, ignores the frame, keeps spaced name
 
 test("parseOpencodeAuthList tolerates empty output", () => {
   assert.deepEqual(parseOpencodeAuthList(""), []);
+});
+
+test("opencode vendor catalog tolerates cold CLI startup above one second", async () => {
+  const catalog = createOpencodeVendorCatalog(
+    () => "/fake/opencode",
+    async (_executablePath, args) => {
+      assert.deepEqual(args, ["auth", "list"]);
+      await delay(1200);
+      return "●  OpenAI oauth\n";
+    },
+  );
+  const vendors = await catalog.get();
+  assert.equal(vendors.find((vendor) => vendor.id === "openai")?.connected, true);
+  assert.equal(vendors.find((vendor) => vendor.id === "openai")?.method, "oauth");
 });
 
 // ---- backend: curated tiles ⨉ connected merge ----

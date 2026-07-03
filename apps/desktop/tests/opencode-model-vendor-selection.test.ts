@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   createOpencodeAgentIntegration,
   opencodeConfigOptions,
 } from "../src/backend/adapters/outbound/agent-integrations/opencode/opencode-agent-integration.ts";
-import { parseOpencodeModels } from "../src/backend/infrastructure/node/provider/opencode-model-catalog.ts";
+import {
+  createOpencodeModelCatalog,
+  parseOpencodeModels,
+} from "../src/backend/infrastructure/node/provider/opencode-model-catalog.ts";
 import { mergeConfigOptions, parseAcpModelCatalog } from "../src/backend/adapters/outbound/agent-runtime/structured/acp-client.ts";
 import {
   cliModelOptionsForAgent,
@@ -37,6 +41,24 @@ test("parseOpencodeModels splits provider/model ids into vendor + model, skips n
     { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
     { value: "opencode/big-pickle", label: "big-pickle", vendor: "opencode" },
     { value: "moonshotai/kimi-k2-thinking", label: "kimi-k2-thinking", vendor: "moonshotai" },
+  ]);
+});
+
+test("opencode model catalog tolerates cold CLI startup above one second", async () => {
+  const catalog = createOpencodeModelCatalog(
+    () => "/fake/opencode",
+    async (_executablePath, args) => {
+      assert.deepEqual(args, ["models"]);
+      await delay(1200);
+      return "opencode/deepseek-v4-flash-free\n";
+    },
+  );
+  assert.deepEqual(await catalog.get(), [
+    {
+      value: "opencode/deepseek-v4-flash-free",
+      label: "deepseek-v4-flash-free",
+      vendor: "opencode",
+    },
   ]);
 });
 
