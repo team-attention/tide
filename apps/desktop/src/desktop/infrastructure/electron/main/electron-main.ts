@@ -15,6 +15,16 @@ import { registerBrowserRuntimeIpc } from "./browser-runtime-ipc.ts";
 import { runProviderReview } from "./review-runner.ts";
 import { applyGitHunk } from "./git-hunk-actions.ts";
 import {
+  commitGitChanges,
+  discardGitFile,
+  generateGitCommitMessage,
+  getGitPushTarget,
+  pushGitTarget,
+  stageGitFile,
+  unstageGitFile,
+  type GitActionResult,
+} from "./git-handoff-actions.ts";
+import {
   app,
   BrowserWindow,
   dialog,
@@ -433,101 +443,37 @@ ipcMain.handle("tide:git-file-diff", async (_event, cwd: unknown, relPath: unkno
   return untracked.stdout;
 });
 
-type GitActionResult =
-  | { ok: true; message: string }
-  | { ok: false; message: string };
+ipcMain.handle("tide:git-stage-file", async (_event, cwd: unknown, relPath: unknown): Promise<GitActionResult> =>
+  stageGitFile({ cwd, relPath }),
+);
 
-const invalidGitAction: GitActionResult = { ok: false, message: "Invalid git action." };
+ipcMain.handle("tide:git-unstage-file", async (_event, cwd: unknown, relPath: unknown): Promise<GitActionResult> =>
+  unstageGitFile({ cwd, relPath }),
+);
 
-async function gitActionRoot(cwd: unknown): Promise<string | null> {
-  if (typeof cwd !== "string" || cwd.length === 0) {
-    return null;
-  }
-  const inside = (await runGit(cwd, ["rev-parse", "--is-inside-work-tree"])).trim();
-  if (inside !== "true") {
-    return null;
-  }
-  return (await runGit(cwd, ["rev-parse", "--show-toplevel"])).trim() || cwd;
-}
-
-function safeGitRelativePath(value: unknown): string | null {
-  if (typeof value !== "string" || value.length === 0 || value.startsWith("/") || value.includes("..")) {
-    return null;
-  }
-  return value;
-}
-
-function gitActionMessage(result: { ok: boolean; stdout: string; stderr: string }, fallback: string): GitActionResult {
-  if (result.ok) {
-    const message = result.stdout.trim() || fallback;
-    return { ok: true, message };
-  }
-  return { ok: false, message: result.stderr.trim() || "Git command failed." };
-}
-
-ipcMain.handle("tide:git-stage-file", async (_event, cwd: unknown, relPath: unknown): Promise<GitActionResult> => {
-  const root = await gitActionRoot(cwd);
-  const path = safeGitRelativePath(relPath);
-  if (root === null || path === null) {
-    return invalidGitAction;
-  }
-  const result = await execGitArgs(["-C", root, "add", "--", path]);
-  return gitActionMessage(result, `Staged ${path}.`);
-});
-
-ipcMain.handle("tide:git-unstage-file", async (_event, cwd: unknown, relPath: unknown): Promise<GitActionResult> => {
-  const root = await gitActionRoot(cwd);
-  const path = safeGitRelativePath(relPath);
-  if (root === null || path === null) {
-    return invalidGitAction;
-  }
-  const result = await execGitArgs(["-C", root, "restore", "--staged", "--", path]);
-  return gitActionMessage(result, `Unstaged ${path}.`);
-});
-
-ipcMain.handle("tide:git-discard-file", async (_event, cwd: unknown, relPath: unknown): Promise<GitActionResult> => {
-  const root = await gitActionRoot(cwd);
-  const path = safeGitRelativePath(relPath);
-  if (root === null || path === null) {
-    return invalidGitAction;
-  }
-  const status = await runGit(root, ["-c", "core.quotepath=false", "status", "--porcelain=v1", "--", path]);
-  if (status.startsWith("??")) {
-    try {
-      await shell.trashItem(join(root, path));
-      return { ok: true, message: `Moved ${path} to Trash.` };
-    } catch (error) {
-      return { ok: false, message: error instanceof Error ? error.message : "Failed to trash untracked file." };
-    }
-  }
-  const result = await execGitArgs(["-C", root, "restore", "--staged", "--worktree", "--", path]);
-  return gitActionMessage(result, `Discarded ${path}.`);
-});
+ipcMain.handle("tide:git-discard-file", async (_event, cwd: unknown, relPath: unknown): Promise<GitActionResult> =>
+  discardGitFile({ cwd, relPath }, (path) => shell.trashItem(path)),
+);
 
 ipcMain.handle("tide:git-apply-hunk", async (_event, cwd: unknown, relPath: unknown, patch: unknown, action: unknown) =>
   applyGitHunk({ cwd, relPath, patch, action }),
 );
 
-ipcMain.handle("tide:git-commit", async (_event, cwd: unknown, message: unknown): Promise<GitActionResult> => {
-  const root = await gitActionRoot(cwd);
-  const commitMessage = typeof message === "string" ? message.trim() : "";
-  if (root === null || commitMessage.length === 0) {
-    return invalidGitAction;
-  }
-  const result = await execGitArgs(["-C", root, "commit", "-m", commitMessage]);
-  return gitActionMessage(result, "Committed changes.");
-});
+ipcMain.handle("tide:git-generate-commit-message", async (_event, cwd: unknown) =>
+  generateGitCommitMessage(cwd),
+);
 
-ipcMain.handle("tide:git-push", async (_event, cwd: unknown): Promise<GitActionResult> => {
-  const root = await gitActionRoot(cwd);
-  if (root === null) {
-    return invalidGitAction;
-  }
-  const branch = (await runGit(root, ["branch", "--show-current"])).trim();
-  const result = await execGitArgs(["-C", root, "push"]);
-  const fallback = branch.length > 0 ? `Pushed ${branch}.` : "Pushed current branch.";
-  return gitActionMessage(result, fallback);
-});
+ipcMain.handle("tide:git-commit", async (_event, cwd: unknown, message: unknown): Promise<GitActionResult> =>
+  commitGitChanges({ cwd, message }),
+);
+
+ipcMain.handle("tide:git-push-target", async (_event, cwd: unknown) => getGitPushTarget(cwd));
+
+ipcMain.handle(
+  "tide:git-push",
+  async (_event, cwd: unknown, remote: unknown, branch: unknown): Promise<GitActionResult> =>
+    pushGitTarget({ cwd, remote, branch }),
+);
 
 ipcMain.handle("tide:run-review", async (_event, cwd: unknown, provider: unknown, target: unknown) =>
   runProviderReview({ cwd, provider, target }),

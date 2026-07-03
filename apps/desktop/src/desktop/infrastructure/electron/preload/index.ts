@@ -33,6 +33,21 @@ export type GitActionResult =
 
 export type GitHunkAction = "stage" | "unstage" | "discard";
 
+export type GitGeneratedCommitMessageResult =
+  | { ok: true; message: string; source: "staged" | "working_tree"; files: string[] }
+  | { ok: false; message: string };
+
+export type GitPushTargetResult =
+  | {
+      ok: true;
+      currentBranch: string;
+      remote: string;
+      branch: string;
+      upstream: string | null;
+      label: string;
+    }
+  | { ok: false; message: string };
+
 export type ReviewProvider = "codex" | "claude" | "opencode";
 
 export type ReviewTarget =
@@ -239,8 +254,10 @@ export interface TidePreloadSurface {
   gitUnstageFile(cwd: string, relPath: string): Promise<GitActionResult>;
   gitDiscardFile(cwd: string, relPath: string): Promise<GitActionResult>;
   gitApplyHunk(cwd: string, relPath: string, patch: string, action: GitHunkAction): Promise<GitActionResult>;
+  gitGenerateCommitMessage(cwd: string): Promise<GitGeneratedCommitMessageResult>;
   gitCommit(cwd: string, message: string): Promise<GitActionResult>;
-  gitPush(cwd: string): Promise<GitActionResult>;
+  gitPushTarget(cwd: string): Promise<GitPushTargetResult>;
+  gitPush(cwd: string, remote: string, branch: string): Promise<GitActionResult>;
   runReview(cwd: string, provider: ReviewProvider, target: ReviewTarget): Promise<ReviewRunResult>;
   listCommands(cwd: string, agentId: string): Promise<ProviderCommandSuggestion[]>;
 }
@@ -449,11 +466,17 @@ export const tidePreloadSurface: TidePreloadSurface = {
   gitApplyHunk(cwd, relPath, patch, action) {
     return ipcRenderer.invoke("tide:git-apply-hunk", cwd, relPath, patch, action) as Promise<GitActionResult>;
   },
+  gitGenerateCommitMessage(cwd) {
+    return ipcRenderer.invoke("tide:git-generate-commit-message", cwd) as Promise<GitGeneratedCommitMessageResult>;
+  },
   gitCommit(cwd, message) {
     return ipcRenderer.invoke("tide:git-commit", cwd, message) as Promise<GitActionResult>;
   },
-  gitPush(cwd) {
-    return ipcRenderer.invoke("tide:git-push", cwd) as Promise<GitActionResult>;
+  gitPushTarget(cwd) {
+    return ipcRenderer.invoke("tide:git-push-target", cwd) as Promise<GitPushTargetResult>;
+  },
+  gitPush(cwd, remote, branch) {
+    return ipcRenderer.invoke("tide:git-push", cwd, remote, branch) as Promise<GitActionResult>;
   },
   runReview(cwd, provider, target) {
     return ipcRenderer.invoke("tide:run-review", cwd, provider, target) as Promise<ReviewRunResult>;

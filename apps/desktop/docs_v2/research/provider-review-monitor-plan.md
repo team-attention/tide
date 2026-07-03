@@ -31,7 +31,6 @@ This branch implements the first product slice of the plan:
 Deferred follow-up:
 
 - Codex app-server `review/start` schema fixture and native review path.
-- Generated commit message flow.
 - Inline answer controls inside Agent Monitor.
 - Adoption/import of provider-owned background sessions outside Tide.
 
@@ -217,7 +216,7 @@ Keep git mutation Tide-owned:
 - Commit dialog with generated message.
 - Push with explicit remote/branch confirmation.
 
-Initial implementation covers file-level and hunk-level stage/unstage/discard, manual commit messages, and confirmed push through Main-process IPC. Generated commit messages remain follow-up work.
+Initial implementation covers file-level and hunk-level stage/unstage/discard, generated and manual commit messages, and push through an explicit remote/branch target via Main-process IPC.
 
 Implementation should extend Main-process git IPC rather than route these through providers. Provider agents may suggest a commit message, but Tide should execute the git command.
 
@@ -399,8 +398,6 @@ Required:
    - Add command mapping tests for Codex, Claude, and opencode review targets.
 
 3. Deepen Tide-owned Git handoff.
-   - Add generated commit message flow.
-   - Add explicit remote/branch push confirmation.
    - Broaden scratch-repo fixtures beyond the current selected-hunk staging fixture to cover staged, untracked, branch diff, and commit review cases.
 
 4. Move Agent Monitor toward backend-owned snapshots.

@@ -79,8 +79,10 @@ export function createInitialRendererElement() {
               gitDiscardFile: (cwd: string, relPath: string) => window.tide!.gitDiscardFile(cwd, relPath),
               gitApplyHunk: (cwd: string, relPath: string, patch: string, action: "stage" | "unstage" | "discard") =>
                 window.tide!.gitApplyHunk(cwd, relPath, patch, action),
+              gitGenerateCommitMessage: (cwd: string) => window.tide!.gitGenerateCommitMessage(cwd),
               gitCommit: (cwd: string, message: string) => window.tide!.gitCommit(cwd, message),
-              gitPush: (cwd: string) => window.tide!.gitPush(cwd),
+              gitPushTarget: (cwd: string) => window.tide!.gitPushTarget(cwd),
+              gitPush: (cwd: string, remote: string, branch: string) => window.tide!.gitPush(cwd, remote, branch),
               runReview: (cwd, provider, target) => window.tide!.runReview(cwd, provider, target),
               listCommands: (cwd: string, agentId: string) => window.tide!.listCommands(cwd, agentId),
               fsCreateFile: (root: string, relativePath: string, content: string) =>
@@ -196,8 +198,23 @@ declare global {
       gitUnstageFile(cwd: string, relPath: string): Promise<{ ok: boolean; message: string }>;
       gitDiscardFile(cwd: string, relPath: string): Promise<{ ok: boolean; message: string }>;
       gitApplyHunk(cwd: string, relPath: string, patch: string, action: "stage" | "unstage" | "discard"): Promise<{ ok: boolean; message: string }>;
+      gitGenerateCommitMessage(cwd: string): Promise<
+        | { ok: true; message: string; source: "staged" | "working_tree"; files: string[] }
+        | { ok: false; message: string }
+      >;
       gitCommit(cwd: string, message: string): Promise<{ ok: boolean; message: string }>;
-      gitPush(cwd: string): Promise<{ ok: boolean; message: string }>;
+      gitPushTarget(cwd: string): Promise<
+        | {
+            ok: true;
+            currentBranch: string;
+            remote: string;
+            branch: string;
+            upstream: string | null;
+            label: string;
+          }
+        | { ok: false; message: string }
+      >;
+      gitPush(cwd: string, remote: string, branch: string): Promise<{ ok: boolean; message: string }>;
       runReview(
         cwd: string,
         provider: "codex" | "claude" | "opencode",

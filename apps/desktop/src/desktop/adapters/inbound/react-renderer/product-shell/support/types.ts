@@ -31,6 +31,21 @@ export type GitActionResult =
 
 export type GitHunkAction = "stage" | "unstage" | "discard";
 
+export type GitGeneratedCommitMessageResult =
+  | { ok: true; message: string; source: "staged" | "working_tree"; files: string[] }
+  | { ok: false; message: string };
+
+export type GitPushTargetResult =
+  | {
+      ok: true;
+      currentBranch: string;
+      remote: string;
+      branch: string;
+      upstream: string | null;
+      label: string;
+    }
+  | { ok: false; message: string };
+
 // Branch + uncommitted files for the Changes pane (self-fetched from the pane's cwd).
 export interface GitChangesViewResult {
   isGitRepo: boolean;
@@ -129,8 +144,10 @@ export interface ProjectRegistryBridge {
   gitUnstageFile(cwd: string, relPath: string): Promise<GitActionResult>;
   gitDiscardFile(cwd: string, relPath: string): Promise<GitActionResult>;
   gitApplyHunk(cwd: string, relPath: string, patch: string, action: GitHunkAction): Promise<GitActionResult>;
+  gitGenerateCommitMessage(cwd: string): Promise<GitGeneratedCommitMessageResult>;
   gitCommit(cwd: string, message: string): Promise<GitActionResult>;
-  gitPush(cwd: string): Promise<GitActionResult>;
+  gitPushTarget(cwd: string): Promise<GitPushTargetResult>;
+  gitPush(cwd: string, remote: string, branch: string): Promise<GitActionResult>;
   runReview(cwd: string, provider: ReviewProvider, target: ReviewTarget): Promise<ReviewRunResult>;
   listCommands(cwd: string, agentId: string): Promise<AgentChatCommandOption[]>;
   // Structural FileTree mutations (Main-owned). `root` is the absolute workspace
@@ -246,8 +263,10 @@ export interface ProductShellHandlers {
   onGitUnstageFile: (cwd: string, relPath: string) => Promise<GitActionResult>;
   onGitDiscardFile: (cwd: string, relPath: string) => Promise<GitActionResult>;
   onGitApplyHunk: (cwd: string, relPath: string, patch: string, action: GitHunkAction) => Promise<GitActionResult>;
+  onGitGenerateCommitMessage: (cwd: string) => Promise<GitGeneratedCommitMessageResult>;
   onGitCommit: (cwd: string, message: string) => Promise<GitActionResult>;
-  onGitPush: (cwd: string) => Promise<GitActionResult>;
+  onGitPushTarget: (cwd: string) => Promise<GitPushTargetResult>;
+  onGitPush: (cwd: string, remote: string, branch: string) => Promise<GitActionResult>;
   onRunReview: (cwd: string, provider: ReviewProvider, target: ReviewTarget) => Promise<ReviewRunResult>;
   onLoadWorkbenchImage: (cwd: string, relativePath: string) => Promise<WorkbenchImageLoadResult | null>;
   onEditorPickerFilter: (filter: string) => void;

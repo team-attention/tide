@@ -5,12 +5,9 @@ import { ClipboardCheck, GitBranch, PanelLeftClose, PanelLeftOpen, RefreshCw } f
 import { createDiffView } from "./diff-pane.tsx";
 import { extractGitDiffHunks, type GitDiffHunk } from "./git-diff-hunks.ts";
 import { ChangesHunkActionList } from "./changes-hunk-actions.tsx";
-import type { GitChangeStatus, GitChangesViewResult, GitHunkAction } from "../support/types.ts";
-// First-class read-only git "Changes" Workbench pane (spec: git-changes-view): the repo's
-// uncommitted files (vs HEAD) on the left, the selected file's diff on the right. It's a
-// real backend pane (tabs/split/close like the others) that self-fetches its data from
-// the pane's cwd via Main-process git. No staging/commit. The file list is resizable +
-// collapsible (GitHub Files-changed parity) so the diff can take the full pane width.
+import type { GitChangeStatus, GitChangesViewResult, GitGeneratedCommitMessageResult, GitHunkAction, GitPushTargetResult } from "../support/types.ts";
+// First-class git Changes Workbench pane (spec: git-changes-view): self-fetches
+// status/diffs from the pane cwd and routes mutations through Main-process IPC.
 
 const STATUS_LABEL: Record<GitChangeStatus, string> = {
   modified: "M",
@@ -34,8 +31,10 @@ export function ChangesPanel(props: {
   onGitUnstageFile: (cwd: string, relPath: string) => Promise<{ ok: boolean; message: string }>;
   onGitDiscardFile: (cwd: string, relPath: string) => Promise<{ ok: boolean; message: string }>;
   onGitApplyHunk: (cwd: string, relPath: string, patch: string, action: GitHunkAction) => Promise<{ ok: boolean; message: string }>;
+  onGitGenerateCommitMessage: (cwd: string) => Promise<GitGeneratedCommitMessageResult>;
   onGitCommit: (cwd: string, message: string) => Promise<{ ok: boolean; message: string }>;
-  onGitPush: (cwd: string) => Promise<{ ok: boolean; message: string }>;
+  onGitPushTarget: (cwd: string) => Promise<GitPushTargetResult>;
+  onGitPush: (cwd: string, remote: string, branch: string) => Promise<{ ok: boolean; message: string }>;
 }): ReactElement {
   const {
     cwd,
@@ -46,7 +45,9 @@ export function ChangesPanel(props: {
     onGitUnstageFile,
     onGitDiscardFile,
     onGitApplyHunk,
+    onGitGenerateCommitMessage,
     onGitCommit,
+    onGitPushTarget,
     onGitPush,
   } = props;
   const [data, setData] = useState<GitChangesViewResult>({ isGitRepo: true, branch: null, files: [] });
@@ -58,6 +59,8 @@ export function ChangesPanel(props: {
   const [gitBusy, setGitBusy] = useState(false);
   const [gitNotice, setGitNotice] = useState<{ ok: boolean; message: string } | null>(null);
   const [commitMessage, setCommitMessage] = useState("");
+  const [generatingCommitMessage, setGeneratingCommitMessage] = useState(false);
+  const [pushTarget, setPushTarget] = useState<GitPushTargetResult | null>(null);
   // GitHub-style file tree: drag the divider to resize it, or collapse it so the diff
   // takes the full pane width. Renderer-local view state (not persisted).
   const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH);
@@ -81,6 +84,26 @@ export function ChangesPanel(props: {
         }
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwd, nonce]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPushTarget(null);
+    onGitPushTarget(cwd)
+      .then((result) => {
+        if (!cancelled) {
+          setPushTarget(result);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPushTarget({ ok: false, message: "Push target unavailable." });
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -203,12 +226,42 @@ export function ChangesPanel(props: {
     setDiffNonce((value) => value + 1);
   }
 
+  async function generateCommitMessage(): Promise<void> {
+    if (gitBusy || generatingCommitMessage) {
+      return;
+    }
+    setGeneratingCommitMessage(true);
+    try {
+      const result = await onGitGenerateCommitMessage(cwd);
+      if (result.ok) {
+        setCommitMessage(result.message);
+        setGitNotice({
+          ok: true,
+          message:
+            result.source === "staged"
+              ? "Generated commit message from staged changes."
+              : "Generated commit message from working-tree changes.",
+        });
+      } else {
+        setGitNotice(result);
+      }
+    } catch {
+      setGitNotice({ ok: false, message: "Failed to generate commit message." });
+    } finally {
+      setGeneratingCommitMessage(false);
+    }
+  }
+
   async function pushBranch(): Promise<void> {
-    if (gitBusy || !window.confirm(`Push ${branch ?? "current branch"} from ${cwd}?`)) {
+    if (
+      gitBusy ||
+      pushTarget?.ok !== true ||
+      !window.confirm(`Push ${pushTarget.currentBranch} to ${pushTarget.label} from ${cwd}?`)
+    ) {
       return;
     }
     setGitBusy(true);
-    const result = await onGitPush(cwd);
+    const result = await onGitPush(cwd, pushTarget.remote, pushTarget.branch);
     setGitNotice(result);
     setGitBusy(false);
   }
@@ -295,8 +348,15 @@ export function ChangesPanel(props: {
           placeholder="Commit message"
           value={commitMessage}
           onChange={(event) => setCommitMessage(event.currentTarget.value)}
-          disabled={!isGitRepo || gitBusy}
+          disabled={!isGitRepo || gitBusy || generatingCommitMessage}
         />
+        <ChangesActionButton
+          type="button"
+          disabled={!isGitRepo || gitBusy || generatingCommitMessage}
+          onClick={() => void generateCommitMessage()}
+        >
+          <span>{generatingCommitMessage ? "Generating" : "Generate"}</span>
+        </ChangesActionButton>
         <ChangesActionButton
           type="button"
           disabled={!isGitRepo || gitBusy || commitMessage.trim().length === 0}
@@ -304,9 +364,10 @@ export function ChangesPanel(props: {
         >
           <span>Commit</span>
         </ChangesActionButton>
+        <ChangesPushTarget title={pushTargetTitle(pushTarget)}>{pushTargetLabel(pushTarget)}</ChangesPushTarget>
         <ChangesActionButton
           type="button"
-          disabled={!isGitRepo || gitBusy}
+          disabled={!isGitRepo || gitBusy || pushTarget?.ok !== true}
           onClick={() => void pushBranch()}
         >
           <span>Push</span>
@@ -410,6 +471,14 @@ function fileName(path: string): string {
 function fileDir(path: string): string {
   const index = path.lastIndexOf("/");
   return index < 0 ? "" : path.slice(0, index);
+}
+
+function pushTargetLabel(pushTarget: GitPushTargetResult | null): string {
+  return pushTarget === null ? "Resolving push target" : pushTarget.ok ? pushTarget.label : "No push target";
+}
+
+function pushTargetTitle(pushTarget: GitPushTargetResult | null): string {
+  return pushTarget === null ? "Resolving push target" : pushTarget.ok ? `Pushes to ${pushTarget.label}` : pushTarget.message;
 }
 
 const ChangesPaneFrame = styled.div`
@@ -539,6 +608,16 @@ const ChangesCommitInput = styled.input`
   color: var(--tide-text);
   font-size: 12.5px;
   outline: none;
+`;
+
+const ChangesPushTarget = styled.span`
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 `;
 
 const ChangesNotice = styled.div`

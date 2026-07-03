@@ -152,7 +152,9 @@ function WorkbenchPaneContent(props: {
           onGitUnstageFile={handlers.onGitUnstageFile}
           onGitDiscardFile={handlers.onGitDiscardFile}
           onGitApplyHunk={handlers.onGitApplyHunk}
+          onGitGenerateCommitMessage={handlers.onGitGenerateCommitMessage}
           onGitCommit={handlers.onGitCommit}
+          onGitPushTarget={handlers.onGitPushTarget}
           onGitPush={handlers.onGitPush}
         />
       );
