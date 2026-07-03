@@ -191,9 +191,16 @@ export function applyAgentChatBackendEvent(
       const isActive = payload.state === "running" || payload.state === "starting";
       const turnStarting = !wasActive && isActive;
       const nextThread =
-        turnStarting && state.thread !== null && payload.changedAt !== undefined
-          ? { ...state.thread, runtimeStartedAt: payload.changedAt }
-          : state.thread;
+        state.thread === null
+          ? null
+          : {
+              ...state.thread,
+              lastKnownState: lastKnownStateFromRuntimeState(payload.state),
+              ...(payload.changedAt !== undefined ? { updatedAt: payload.changedAt } : {}),
+              ...(turnStarting && payload.changedAt !== undefined
+                ? { runtimeStartedAt: payload.changedAt }
+                : {}),
+            };
       return {
         ...state,
         runtimeState: payload.state,
@@ -313,6 +320,25 @@ function pruneLiveAgentTextBlocks(
   return blocks.filter(
     (block) => block && (block.blockId === exceptBlockId || !isLiveAgentTextBlock(block)),
   );
+}
+
+function lastKnownStateFromRuntimeState(state: AgentRuntimeStateName): string {
+  switch (state) {
+    case "running":
+    case "starting":
+      return "running";
+    case "waiting_for_input":
+      return "waiting_for_input";
+    case "waiting_for_approval":
+      return "waiting_for_approval";
+    case "failed":
+      return "failed";
+    case "not_started":
+    case "idle":
+    case "stopping":
+    case "stopped":
+      return "idle";
+  }
 }
 
 function isLiveAgentTextBlock(block: AgentChatBlock): boolean {

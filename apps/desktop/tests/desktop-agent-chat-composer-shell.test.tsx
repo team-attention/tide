@@ -970,6 +970,9 @@ test("idle_state_change_prunes_orphan_streaming_agent_text", () => {
   );
 
   assert.deepEqual(idle.blocks, []);
+  assert.equal(idle.thread?.lastKnownState, "idle");
+  assert.equal(createAgentChatShellViewModel(idle).chatState, "ready");
+  assert.doesNotMatch(renderShell(idle), /Working…/);
 });
 
 test("an_idle_send_runs_and_its_optimistic_chip_reconciles_away_not_queued", () => {
