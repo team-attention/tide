@@ -23,6 +23,7 @@ import {
   providerCapabilityCatalogFromProviderCapabilities,
   providerCapabilityCatalogFromRuntimeCommands,
 } from "../../../adapters/outbound/agent-integrations/provider-capability-catalog.ts";
+import { localProviderCapabilities } from "./live-local-provider-capabilities.ts";
 import { upsertActivityRuntimeStateBlock } from "./live-runtime-state-blocks.ts";
 import {
   createLiveNativeRuntimeProjector,
@@ -335,7 +336,10 @@ export function createLiveAgentSessionEventProjector(input: {
         capabilityEmitter.emitCapabilitiesChanged(
           eventInput.threadId,
           eventInput.agentId,
-          providerCapabilityCatalogFromProviderCapabilities(eventInput.agentId, event),
+          [
+            ...providerCapabilityCatalogFromProviderCapabilities(eventInput.agentId, event),
+            ...localProviderCapabilities(eventInput.agentId, input.homeDir),
+          ],
         );
         await nativeRuntimeProjector.recordProjectedRuntimeStateBlocks(eventInput.threadId, nativeBlocks, new Set(["config_state"]));
         return;
@@ -461,7 +465,10 @@ export function createLiveAgentSessionEventProjector(input: {
         capabilityEmitter.emitCapabilitiesChanged(
           eventInput.threadId,
           eventInput.agentId,
-          providerCapabilityCatalogFromRuntimeCommands(eventInput.agentId, event.commands),
+          [
+            ...providerCapabilityCatalogFromRuntimeCommands(eventInput.agentId, event.commands),
+            ...localProviderCapabilities(eventInput.agentId, input.homeDir),
+          ],
         );
         input.onEvent?.({
           contractVersion: CONTRACT_VERSION,

@@ -29,6 +29,7 @@ This branch implements the first product slice of the plan:
 - Scratch-repo fixtures for branch-diff review prompts and commit review prompts.
 - Persistent Agent Monitor panel derived from existing product-shell thread/runtime/prompt/activity state.
 - Agent Monitor runtime snapshots keyed by thread id, preserving background activity detail even when the background chat state is not hydrated.
+- Local provider inventory surfaced as read-only `tide_local` capabilities for installed Codex plugins/skills/MCP, Claude installed plugins/MCP, and opencode local plugins/MCP.
 
 Deferred follow-up:
 
@@ -60,6 +61,7 @@ Local Tide source:
 - `apps/desktop/docs_v2/specs/git-changes-view.md`: Tide's Changes pane is explicitly read-only; no staging, commit, discard, or push.
 - `apps/desktop/src/shared/contracts/agent-runtime.ts`: common runtime states include `running`, `waiting_for_input`, `waiting_for_approval`, `idle`, `stopped`, and `failed`.
 - `apps/desktop/src/shared/contracts/events.ts`: runtime events include `agentRuntime.stateChanged`, `usageChanged`, `activityChanged`, `capabilitiesChanged`, `prompt.changed`, and queued inputs.
+- `apps/desktop/src/shared/contracts/provider-capability.ts`: provider capability sources include `tide_local`, so local inventory can be surfaced without claiming marketplace support.
 - `apps/desktop/src/desktop/application/domains/product-shell/state/types.ts`: thread summaries already carry `running`, `attention`, `live`, and `runtimeStartedAt`.
 - `apps/desktop/src/desktop/adapters/inbound/react-renderer/product-shell/multitask/live-switcher-hud.tsx`: Tide has a transient live-thread switcher, not a persistent monitor.
 
@@ -400,10 +402,6 @@ Required:
    - Claude: `claude agents --json`.
    - opencode: `opencode session list` / export.
    - Codex: app-server/cloud exploration only after local protocol evidence.
-
-4. Add local plugin inventory.
-   - Local installed plugins/skills/MCP inventory per agent.
-   - No marketplace claim.
 
 ## Open Questions
 

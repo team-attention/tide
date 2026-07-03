@@ -2484,6 +2484,15 @@ test("capability_menu_renders_session_config_and_mcp_sections_distinct_from_slas
         invoke: { kind: "unsupported", reason: "Cloud runtime is not available." },
         available: false,
       },
+      {
+        capabilityId: "codex:local:plugin:codex-apps",
+        kind: "provider_setup",
+        group: "setup",
+        label: "Plugin: codex-apps",
+        source: "tide_local",
+        invoke: { kind: "unsupported", reason: "Installed locally. Manage this in Codex." },
+        available: true,
+      },
     ],
   };
 
@@ -2494,10 +2503,11 @@ test("capability_menu_renders_session_config_and_mcp_sections_distinct_from_slas
   assert.equal(opened.state.composer.activeSurface, "capability_menu");
   const capabilityRows = createAgentChatShellViewModel(opened.state).composer.activeSurface?.rows ?? [];
   assert.deepEqual(
-    capabilityRows.map((entry) => entry.label).filter((label) => ["Session", "Compact", "Cloud", "Model", "Permission", "Permission profile", "MCP", "MCP status"].includes(label)),
-    ["Session", "Compact", "Cloud", "Model", "Model", "Permission", "Permission profile", "MCP", "MCP status"],
+    capabilityRows.map((entry) => entry.label).filter((label) => ["Session", "Compact", "Cloud", "Model", "Permission", "Permission profile", "MCP", "MCP status", "Setup", "Plugin: codex-apps"].includes(label)),
+    ["Session", "Compact", "Cloud", "Model", "Model", "Permission", "Permission profile", "MCP", "MCP status", "Setup", "Plugin: codex-apps"],
   );
   assert.equal(capabilityRows.find((entry) => entry.label === "Cloud")?.disabled, true);
+  assert.equal(capabilityRows.find((entry) => entry.label === "Plugin: codex-apps")?.disabled, true);
 
   const compact = selectAgentChatChoiceSurfaceRow(opened.state, "capability_menu", "capability-menu:codex:compact", thread.threadId);
   assert.deepEqual(compact.command, {

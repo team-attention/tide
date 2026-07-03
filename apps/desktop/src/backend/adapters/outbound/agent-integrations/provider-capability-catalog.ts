@@ -1,5 +1,6 @@
 import type { ProviderCapability } from "../../../application/domains/native-agent/provider-capability.ts";
 import { providerCapabilitySortKey } from "../../../application/domains/native-agent/provider-capability.ts";
+import type { LocalProviderInventoryItem } from "../../../application/domains/native-agent/provider-local-inventory.ts";
 import type { ProviderCliAgentId } from "../../../application/domains/thread/thread.ts";
 import type { ProviderCapabilityDto } from "../../../../shared/contracts/index.ts";
 import type { DiscoveredCommand } from "../../../application/ports/outbound/agent-runtime-port.ts";
@@ -106,6 +107,16 @@ export function providerCapabilityCatalogFromProviderCapabilities(
   return capabilities;
 }
 
+export function providerCapabilityCatalogFromLocalInventory(
+  agentId: ProviderCliAgentId,
+  inventory: LocalProviderInventoryItem[],
+): ProviderCapability[] {
+  return inventory
+    .filter((item) => item.agentId === agentId)
+    .map(localInventoryCapability)
+    .sort((left, right) => providerCapabilitySortKey(left).localeCompare(providerCapabilitySortKey(right)));
+}
+
 export function mergeProviderCapabilityCatalog(
   agentId: ProviderCliAgentId,
   existing: ProviderCapability[],
@@ -178,4 +189,45 @@ function codexRuntimeCommandCapability(command: DiscoveredCommand): ProviderCapa
     nativePayload: command,
     available: false,
   };
+}
+
+function localInventoryCapability(item: LocalProviderInventoryItem): ProviderCapability {
+  const group = item.kind === "mcp" ? "mcp" : "setup";
+  const kind = item.kind === "mcp" ? "mcp_surface" : "provider_setup";
+  return {
+    capabilityId: `${item.agentId}:local:${item.kind}:${item.id}`,
+    provider: item.agentId,
+    source: "tide_local",
+    kind,
+    label: `${inventoryKindLabel(item.kind)}: ${item.label}`,
+    description: localInventoryDescription(item),
+    group,
+    invoke: {
+      kind: "unsupported",
+      reason: "Installed locally. Manage this in the provider CLI or local config.",
+    },
+    nativePayload: item.nativePayload ?? item,
+    available: true,
+  };
+}
+
+function inventoryKindLabel(kind: LocalProviderInventoryItem["kind"]): string {
+  switch (kind) {
+    case "plugin":
+      return "Plugin";
+    case "skill":
+      return "Skill";
+    case "mcp":
+      return "MCP";
+  }
+}
+
+function localInventoryDescription(item: LocalProviderInventoryItem): string {
+  const parts = [
+    item.version !== undefined ? `version ${item.version}` : undefined,
+    item.enabled !== undefined ? (item.enabled ? "enabled" : "disabled") : undefined,
+    item.description,
+    item.path,
+  ].filter((part): part is string => part !== undefined && part.length > 0);
+  return parts.length > 0 ? parts.join(" - ") : "Installed locally";
 }
