@@ -1349,6 +1349,10 @@ private async replayPendingInputAfterTrust(thread: ThreadRecord): Promise<void> 
       thread.runtimeState !== "waiting_for_approval" &&
       thread.runtimeState !== "waiting_for_input"
     ) {
+      if (thread.streamingBlocks.length > 0) {
+        thread.streamingBlocks = [];
+        thread.updatedAt = this.clock();
+      }
       return {
         ok: true,
         thread: snapshotThread(thread),
