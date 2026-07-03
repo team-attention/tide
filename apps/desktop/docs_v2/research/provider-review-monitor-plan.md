@@ -24,6 +24,7 @@ This branch implements the first product slice of the plan:
   - Claude: `claude ultrareview` for base-branch review, and local `claude -p` prompt review for other targets.
   - opencode: `opencode run --format json` prompt review.
 - Review pane target/provider controls, running state, raw output fallback, persisted structured finding extraction, and "Ask agent to fix" handoff into the composer.
+- Codex app-server `review/start` schema fixture coverage for target/delivery payload mapping; Review pane still uses the CLI fallback until an emitted-event fixture is captured.
 - Main-process Git mutation IPC for file-level and hunk-level stage, unstage, and discard, plus commit and push.
 - Changes pane Git handoff bar and hunk action strip wired to those Tide-owned Git IPC commands.
 - Scratch-repo fixtures for branch-diff review prompts and commit review prompts.
@@ -34,7 +35,7 @@ This branch implements the first product slice of the plan:
 
 Deferred follow-up:
 
-- Codex app-server `review/start` schema fixture and native review path.
+- Codex app-server `review/start` scratch-repo event fixture and native Review pane path.
 - Adoption/import of provider-owned background sessions outside Tide.
 
 ## Design Principle
@@ -389,7 +390,7 @@ Required:
 ## Remaining Work Order
 
 1. Harden provider review adapters.
-   - Confirm Codex `review/start` schema/fixture before adding a native app-server path.
+   - Run Codex `review/start` against a scratch repo and record emitted events before switching the Review pane from CLI fallback to native app-server.
    - Capture Claude `ultrareview --json` sample if account/environment permits.
    - Capture `opencode run --format json` review-prompt output sample.
    - Decide structured parsing per provider from captured output, not assumptions.
