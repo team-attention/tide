@@ -59,6 +59,8 @@ Each spec must be narrow enough to test and implement as one slice.
 | [Live Backend Persistence Bootstrap](live-backend-persistence-bootstrap.md) | Drafted | Restore and save Tide-owned Thread metadata through the live Backend process. |
 | [Live Provider Session Reference Discovery](live-provider-session-reference-discovery.md) | Drafted | Attach provider-owned Raw Agent Session references discovered by live provider evidence to Thread runtime and persistence. |
 | [Thread Launch Options Contract](thread-launch-options-contract.md) | Drafted | Preserve selected Launch Options across Thread start, hydrate, list, restore, and Follow-up Composer labels. |
+| [opencode Composer Model And Provider Flow](opencode-composer-model-provider-flow.md) | Drafted | Make the opencode Model Chip open a compact provider-first model/connect/reconnect flow instead of a flat menu plus separate on-ramp. |
+| [opencode Local Session Adoption](opencode-local-session-adoption.md) | Drafted | Adopt existing local opencode sessions into Tide Threads using `opencode session list` and `opencode export`, then resume via `opencode_session`. |
 
 ## Rule
 
@@ -69,5 +71,7 @@ For each spec:
 1. Record evidence from current `docs_v2` documents.
 2. Separate decided behavior from open questions.
 3. Define contracts, flow, invariants, and tests before code.
-4. Keep fallback behavior explicit and narrow.
+4. Define an end-to-end completion condition for user-visible slices. A
+   fallback can only be an explicit error/diagnostic state; it cannot be the
+   shipped implementation path or a substitute for wiring the real behavior.
 5. Avoid adding alternate runtime paths for the same Agent.

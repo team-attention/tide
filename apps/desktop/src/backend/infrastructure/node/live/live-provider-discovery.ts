@@ -1,11 +1,16 @@
 import { claudeProjectTranscriptsDir } from "../../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
+import { resolveExecutable } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
 import { spawnSync } from "node:child_process";
 
 import { readBoundedHead, readTextFile } from "./live-backend-fs.ts";
 
 import { basename, join } from "node:path";
 
-import { adoptedThreadSeedsFromSessions, discoverLocalSessions } from "../../../application/services/provider/provider-session-discovery.ts";
+import {
+  adoptedThreadSeedsFromSessions,
+  discoverLocalSessions,
+  parseOpencodeSessionListText,
+} from "../../../application/services/provider/provider-session-discovery.ts";
 
 import type { DiscoveryFs } from "../../../application/services/provider/provider-session-discovery.ts";
 
@@ -19,7 +24,11 @@ import type { ThreadSeed } from "../../../application/services/thread/thread-run
 
 import type { AgentSessionBlock } from "../../../application/domains/agent-session/agent-session-block.ts";
 
-import { rebuildClaudeConversation, rebuildCodexConversation } from "../provider/provider-conversation-rebuilders.ts";
+import {
+  rebuildClaudeConversation,
+  rebuildCodexConversation,
+  rebuildOpencodeConversationFromCli,
+} from "../provider/provider-conversation-rebuilders.ts";
 
 interface RegisteredProjectEntry {
   projectId: string;
@@ -82,8 +91,33 @@ function createDiscoveryFs(homeDir: string, codexHome?: string): DiscoveryFs {
           return [];
         }
       }),
+    listOpencodeSessions: () => {
+      const result = runOpencodeCli(["session", "list", "--format", "json", "--max-count", "200"], 2 * 1024 * 1024);
+      return result === undefined ? [] : parseOpencodeSessionListText(result);
+    },
+    exportOpencodeSession: (sessionId) => runOpencodeCli(["export", sessionId], 8 * 1024 * 1024),
     readText: (path) => readBoundedHead(path, 256 * 1024),
   };
+}
+
+function runOpencodeCli(args: string[], maxBuffer: number): string | undefined {
+  const executablePath = resolveExecutable("opencode");
+  if (executablePath === undefined) {
+    return undefined;
+  }
+  try {
+    const result = spawnSync(executablePath, args, {
+      encoding: "utf8",
+      timeout: 8_000,
+      maxBuffer,
+    });
+    if (result.status !== 0 || result.error !== undefined) {
+      return undefined;
+    }
+    return result.stdout;
+  } catch {
+    return undefined;
+  }
 }
 
 export function discoverAdoptedThreadSeeds(input: {
@@ -128,6 +162,9 @@ export function discoverAdoptedThreadSeeds(input: {
 
 export function rebuildAdoptedConversation(seed: ThreadSeed): AgentSessionBlock[] {
   const ref = seed.agentBinding.providerSessionRef;
+  if (ref?.kind === "opencode_session") {
+    return rebuildOpencodeConversationFromCli(ref.value, seed.threadId, seed.agentBinding.agentId);
+  }
   const filePath = ref?.transcriptPath;
   if (ref === undefined || filePath === undefined) {
     return [];

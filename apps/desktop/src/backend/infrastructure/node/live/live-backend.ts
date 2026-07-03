@@ -283,6 +283,7 @@ export function createLiveBackendContractMessageAdapter(
     agentIds: Object.keys(integrations) as ProviderCliAgentId[],
     resolveExecutable,
   });
+  let emitOpencodeProviderCatalogChanged = () => undefined;
 
   let service: ThreadRuntimeService;
   const ptyLauncher = createPythonPtyProcessLauncher();
@@ -367,6 +368,10 @@ export function createLiveBackendContractMessageAdapter(
     defaultWorkbenchTerminalCommand: defaultWorkbenchTerminalCommand({ env }),
     defaultWorkbenchTerminalArgs: [],
     onAsyncEvent: (event) => {
+      if (event.kind === "provider_catalog_refresh_requested") {
+        emitOpencodeProviderCatalogChanged();
+        return;
+      }
       emitBackendEvents(backendEventsFromThreadRuntimeAsyncEvent(event));
     },
   });
@@ -391,6 +396,30 @@ export function createLiveBackendContractMessageAdapter(
     hasIntegration: (agentId) => integrations[agentId] !== undefined,
     resolveExecutable,
   });
+  emitOpencodeProviderCatalogChanged = () => {
+    void (async () => {
+      try {
+        emitBackendEvents([
+          {
+            contractVersion: CONTRACT_VERSION,
+            eventId: nextEventId(),
+            kind: "providerCatalog.changed",
+            emittedAt: new Date().toISOString(),
+            payload: {
+              opencodeModels: await detection.enumerateOpencodeModels(),
+              opencodeVendors: await detection.enumerateOpencodeVendors(),
+              opencodeEnvironment: await detection.opencodeEnvironment(),
+            },
+          },
+        ]);
+      } catch (error) {
+        process.emitWarning(
+          error instanceof Error ? error.message : "Failed to refresh opencode provider catalog.",
+          { type: "TideOpencodeProviderCatalogWarning" },
+        );
+      }
+    })();
+  };
   const refreshProviderUsage = () =>
     readProviderAccountUsageSnapshotsFromHome({
       homeDir,
@@ -420,21 +449,7 @@ export function createLiveBackendContractMessageAdapter(
     // synchronously here froze the backend event loop — delaying the already-computed
     // thread.list reply (and so the cold-boot rail skeleton) by ~2.5s. Off the loop, the
     // catalog simply arrives a moment later without blocking anything.
-    void (async () => {
-      emitBackendEvents([
-        {
-          contractVersion: CONTRACT_VERSION,
-          eventId: nextEventId(),
-          kind: "providerCatalog.changed",
-          emittedAt: new Date().toISOString(),
-          payload: {
-            opencodeModels: await detection.enumerateOpencodeModels(),
-            opencodeVendors: await detection.enumerateOpencodeVendors(),
-            opencodeEnvironment: await detection.opencodeEnvironment(),
-          },
-        },
-      ]);
-    })();
+    emitOpencodeProviderCatalogChanged();
   });
 
   return createPersistentLiveBackendAdapter({
@@ -507,6 +522,8 @@ export function backendEventsFromThreadRuntimeAsyncEvent(
           },
         },
       ];
+    case "provider_catalog_refresh_requested":
+      return [];
     case "agent_session_block_upserted":
       return [
         {

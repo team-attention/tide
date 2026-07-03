@@ -20,6 +20,7 @@ Run the whole battery via `npm run e2e` (Phase 2.1). Individual scripts:
 | Script | Proves | Needs |
 |---|---|---|
 | `v2-provider-smoke.mjs --agent <id>` | Real backend + real CLI: answer renders once, turn settles. | provider auth + trusted dir |
+| `v2-opencode-adoption-smoke.mjs --cwd <path>` | Real backend + real opencode: adopts an existing local session, hydrates it, sends a follow-up, verifies the same session export. | opencode auth + existing session + explicit user approval |
 | `v2-provider-permission-flow.mjs --agent <id>` | Forces approval prompts, auto-answers, asserts surface once + settle (allow + deny). | provider auth |
 | `v2-provider-state-matrix.mjs --case <name>` | Non-happy paths: `notinstalled`, `notauth`, `trust`, `concurrency`, `followup`. | varies per case |
 | `v2-electron-runtime-smoke.mjs` | Boots the real packaged backend against a fake provider; full agent loop headless. No auth. | — (CI-safe) |

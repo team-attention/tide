@@ -150,6 +150,24 @@ test("provider_smoke_is_limited_to_provider_cli_agents", () => {
   assert.match(smokeScript, /Hydrated Agent Session did not include the live token/);
 });
 
+test("opencode_adoption_smoke_script_is_opt_in", () => {
+  const packageJson = readPackageJson();
+  const smokeScript = fs.readFileSync(
+    path.join(repoRoot, "scripts/v2-opencode-adoption-smoke.mjs"),
+    "utf8",
+  );
+
+  assert.equal(
+    packageJson.scripts["test:smoke:opencode-adoption"],
+    "node --experimental-strip-types scripts/v2-opencode-adoption-smoke.mjs",
+  );
+  assert.doesNotMatch(packageJson.scripts.test, /opencode-adoption/);
+  assert.match(smokeScript, /createLiveBackendContractMessageAdapter/);
+  assert.match(smokeScript, /parseOpencodeSessionListText/);
+  assert.match(smokeScript, /composer\.sendInput/);
+  assert.match(smokeScript, /opencode export did not include the follow-up token/);
+});
+
 test("provider_smoke_can_expect_provider_not_ready_and_open_readiness_terminal", () => {
   const smokeScript = fs.readFileSync(path.join(repoRoot, "scripts/v2-provider-smoke.mjs"), "utf8");
 

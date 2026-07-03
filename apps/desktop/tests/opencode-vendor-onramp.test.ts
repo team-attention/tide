@@ -202,11 +202,11 @@ test("buildOpencodeConnectSurface carries Zen count, connected count, version, v
 
 // ---- desktop: the Model chip opens the on-ramp only when not usable ----
 
-test("modelChipSurface opens opencode_connect when not usable, model_menu when usable", () => {
+test("modelChipSurface always opens the opencode model/provider surface", () => {
   resetOnrampState();
-  assert.equal(createAgentChatShellViewModel(opencodeStartState()).composer.modelChipSurface, "opencode_connect");
+  assert.equal(createAgentChatShellViewModel(opencodeStartState()).composer.modelChipSurface, "opencode_model_provider");
   setOpencodeVendors([{ id: "openai", label: "OpenAI", connected: true, popular: true }]);
-  assert.equal(createAgentChatShellViewModel(opencodeStartState()).composer.modelChipSurface, "model_menu");
+  assert.equal(createAgentChatShellViewModel(opencodeStartState()).composer.modelChipSurface, "opencode_model_provider");
   resetOnrampState();
 });
 
@@ -266,11 +266,10 @@ test("use-free-model sets opencode's default model and closes the panel", () => 
   resetOnrampState();
 });
 
-test("model_menu 'add-vendor' opens the opencode_connect panel", () => {
+test("model_menu requests are normalized to the opencode model/provider surface", () => {
   resetOnrampState();
   const opened = setComposerActiveSurface(opencodeStartState(), "model_menu").state;
-  const result = selectAgentChatChoiceSurfaceRow(opened, "model_menu", "add-vendor");
-  assert.equal(result.state.composer.activeSurface, "opencode_connect");
+  assert.equal(opened.composer.activeSurface, "opencode_model_provider");
   resetOnrampState();
 });
 

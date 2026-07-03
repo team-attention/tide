@@ -9,15 +9,34 @@
 
 import type { ThreadSeed } from "../thread/thread-runtime-service.ts";
 
-export type DiscoveredAgentId = "codex" | "claude";
+export type DiscoveredAgentId = "codex" | "claude" | "opencode";
 
 export interface DiscoveredSession {
   agentId: DiscoveredAgentId;
   sessionId: string;
-  transcriptPath: string;
+  transcriptPath?: string;
   cwd: string;
   title: string;
   startedAtMs: number;
+}
+
+export interface OpencodeSessionListEntry {
+  id: string;
+  title?: string;
+  created: number;
+  updated: number;
+  projectId?: string;
+  directory: string;
+}
+
+export interface OpencodeExport {
+  info: Record<string, unknown>;
+  messages: OpencodeExportMessage[];
+}
+
+export interface OpencodeExportMessage {
+  info: Record<string, unknown>;
+  parts: Record<string, unknown>[];
 }
 
 // Injected filesystem surface. Real implementations live in live-backend.
@@ -26,6 +45,8 @@ export interface DiscoveryFs {
   listClaudeTranscripts(cwd: string): { path: string; sessionId: string; mtimeMs: number }[];
   // All recent codex rollouts (filtered to a cwd by reading session_meta).
   listCodexRollouts(): { path: string; mtimeMs: number }[];
+  listOpencodeSessions(): OpencodeSessionListEntry[];
+  exportOpencodeSession(sessionId: string): string | undefined;
   readText(path: string): string | undefined;
 }
 
@@ -126,6 +147,28 @@ export function discoverLocalSessions(input: {
     });
   }
 
+  // opencode: provider CLI list/export is injected by the Node infrastructure.
+  for (const entry of input.fs.listOpencodeSessions()) {
+    if (!cwdSet.has(entry.directory)) {
+      continue;
+    }
+    let title = meaningfulOpencodeTitle(entry.title);
+    if (title === undefined) {
+      const exported = input.fs.exportOpencodeSession(entry.id);
+      title =
+        (exported === undefined ? undefined : opencodeFirstUserTextFromExport(exported)) ??
+        datedTitle("opencode", opencodeTimestampMs(entry.updated || entry.created));
+    }
+    if (isInternalSessionTitle(title)) continue;
+    sessions.push({
+      agentId: "opencode",
+      sessionId: entry.id,
+      cwd: entry.directory,
+      title,
+      startedAtMs: opencodeTimestampMs(entry.created || entry.updated),
+    });
+  }
+
   return sessions;
 }
 
@@ -154,6 +197,7 @@ export function adoptedThreadId(sessionId: string): string {
 const SESSION_REF_KIND: Record<DiscoveredAgentId, string> = {
   codex: "codex_rollout",
   claude: "claude_transcript",
+  opencode: "opencode_session",
 };
 
 // Maps discovered sessions to adopted ThreadSeeds, dropping any that a persisted
@@ -186,7 +230,7 @@ export function adoptedThreadSeedsFromSessions(input: {
         providerSessionRef: {
           kind: SESSION_REF_KIND[session.agentId] as never,
           value: session.sessionId,
-          transcriptPath: session.transcriptPath,
+          ...(session.transcriptPath === undefined ? {} : { transcriptPath: session.transcriptPath }),
         },
       },
       scope: {
@@ -204,6 +248,79 @@ export function adoptedThreadSeedsFromSessions(input: {
   return seeds;
 }
 
+export function parseOpencodeSessionListText(text: string): OpencodeSessionListEntry[] {
+  const parsed = parseJsonValue(text);
+  const parsedRecord = asRecord(parsed);
+  const records: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsedRecord?.sessions)
+      ? parsedRecord.sessions
+      : [];
+  return records.flatMap((record) => {
+    const item = asRecord(record);
+    const id = stringField(item, "id");
+    const directory = stringField(item, "directory");
+    if (id === undefined || directory === undefined) {
+      return [];
+    }
+    return [{
+      id,
+      title: stringField(item, "title"),
+      created: numberField(item, "created") ?? numberField(item, "timeCreated") ?? 0,
+      updated: numberField(item, "updated") ?? numberField(item, "timeUpdated") ?? 0,
+      projectId: stringField(item, "projectId"),
+      directory,
+    }];
+  });
+}
+
+export function parseOpencodeExportText(text: string): OpencodeExport | undefined {
+  const jsonStart = text.indexOf("{");
+  if (jsonStart < 0) {
+    return undefined;
+  }
+  const parsed = parseJsonValue(text.slice(jsonStart));
+  const record = asRecord(parsed);
+  const messages = Array.isArray(record?.messages) ? record.messages : undefined;
+  if (record === undefined || messages === undefined) {
+    return undefined;
+  }
+  const parsedMessages: OpencodeExportMessage[] = messages.flatMap((message) => {
+      const messageRecord = asRecord(message);
+      if (messageRecord === undefined) {
+        return [];
+      }
+      const parts: Record<string, unknown>[] = Array.isArray(messageRecord.parts)
+        ? messageRecord.parts.flatMap((part) => {
+            const partRecord = asRecord(part);
+            return partRecord === undefined ? [] : [partRecord];
+          })
+        : [];
+      return [{
+        info: asRecord(messageRecord.info) ?? {},
+        parts,
+      }];
+    });
+  return {
+    info: asRecord(record.info) ?? {},
+    messages: parsedMessages,
+  };
+}
+
+export function opencodeFirstUserTextFromExport(text: string): string | undefined {
+  const exported = parseOpencodeExportText(text);
+  for (const message of exported?.messages ?? []) {
+    if (stringField(message.info, "role") !== "user") {
+      continue;
+    }
+    const title = cleanTitle(opencodeTextParts(message.parts));
+    if (title !== undefined) {
+      return title;
+    }
+  }
+  return undefined;
+}
+
 // --- helpers ---
 
 function codexSessionIdFromPath(path: string): string {
@@ -217,6 +334,15 @@ function datedTitle(provider: string, mtimeMs: number): string {
   const date = new Date(mtimeMs);
   const iso = Number.isFinite(mtimeMs) ? date.toISOString().slice(0, 10) : "session";
   return `${provider} session ${iso}`;
+}
+
+function meaningfulOpencodeTitle(value: string | undefined): string | undefined {
+  const title = cleanTitle(value);
+  if (title === undefined) {
+    return undefined;
+  }
+  const lower = title.toLowerCase();
+  return lower.startsWith("new session") ? undefined : title;
 }
 
 function cleanTitle(value: string | undefined): string | undefined {
@@ -243,6 +369,14 @@ function parseJsonObject(line: string): Record<string, unknown> | undefined {
   }
 }
 
+function parseJsonValue(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -252,6 +386,31 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = record?.[key];
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function numberField(record: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = record?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function opencodeTimestampMs(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return Date.now();
+  }
+  return value < 10_000_000_000 ? value * 1000 : value;
+}
+
+function opencodeTextParts(parts: Record<string, unknown>[]): string | undefined {
+  const joined = parts
+    .filter((part) => partKind(part) === "text")
+    .map((part) => stringField(part, "text") ?? stringField(part, "content"))
+    .filter((value): value is string => value !== undefined && value.length > 0)
+    .join("\n\n");
+  return joined.length > 0 ? joined : undefined;
+}
+
+function partKind(part: Record<string, unknown>): string | undefined {
+  return stringField(part, "type") ?? stringField(part, "kind");
 }
 
 // Joins an array of {type:"text", text} / {text} content items, or a plain

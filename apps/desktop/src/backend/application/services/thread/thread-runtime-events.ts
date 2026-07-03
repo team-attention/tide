@@ -23,6 +23,10 @@ export type ThreadRuntimeAsyncEvent =
       readiness: ProviderReadinessResult;
     }
   | {
+      kind: "provider_catalog_refresh_requested";
+      agentId: "opencode";
+    }
+  | {
       kind: "agent_session_block_upserted";
       thread: ThreadSnapshot;
       block: AgentSessionBlockReference;

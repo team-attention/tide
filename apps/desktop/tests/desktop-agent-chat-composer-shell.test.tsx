@@ -1979,7 +1979,9 @@ test("model_chip_routes_menu_data_by_provider_cli_agent", () => {
   assert.match(codexHtml, /Codex Agent Integration/);
   assert.doesNotMatch(codexHtml, /OpenAI Provider Account/);
   assert.match(opencodeHtml, /opencode/);
-  assert.match(opencodeHtml, /Add a vendor/);
+  assert.match(opencodeHtml, /data-choice-surface="opencode_model_provider"/);
+  assert.match(opencodeHtml, /OpenCode Zen/);
+  assert.doesNotMatch(opencodeHtml, /Add a vendor/);
 });
 
 test("codex_model_chip_renders_polished_label_but_stores_provider_native_value", () => {
