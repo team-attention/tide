@@ -2605,6 +2605,50 @@ test("product_shell_launcher_browser_action_emits_open_browser_command", () => {
   });
 });
 
+test("product_shell_launcher_action_strictly_targets_the_requested_launcher", () => {
+  // Spec: docs_v2/specs/workbench-launcher-terminal-usability.md
+  const launcherAction = {
+    actionId: "open_browser",
+    label: "Browser",
+    description: "Open a Browser Pane",
+    enabled: true,
+  };
+  const state = applyProductShellBackendEvent(
+    toggleProductShellWorkbench(openProductShellThread(createProductShellState(), "thread-sketch")),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-sketch",
+        panes: [
+          {
+            paneId: "pane-launcher-a",
+            kind: "launcher",
+            title: "Launcher A",
+            revision: "rev-a",
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            actions: [launcherAction],
+          },
+          {
+            paneId: "pane-launcher-b",
+            kind: "launcher",
+            title: "Launcher B",
+            revision: "rev-b",
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            actions: [launcherAction],
+          },
+        ],
+      },
+    },
+  );
+
+  const targeted = selectProductShellLauncherAction(state, "open_browser", "pane-launcher-b");
+  assert.equal(targeted.command?.kind, "workbench.command");
+  assert.equal(targeted.command?.payload.targetPaneId, "pane-launcher-b");
+
+  const missing = selectProductShellLauncherAction(state, "open_browser", "pane-launcher-missing");
+  assert.equal(missing.command, null);
+});
+
 // --- workbench-dock-parity ---
 
 test("workbench_set_layout_split_emits_set_layout_mode_command", () => {

@@ -179,13 +179,13 @@ export function selectProductShellLauncherAction(
     // the backend Draft Thread, then re-enter this reducer with activeThreadId set.
     return { state, command: null };
   }
-  const launcher =
-    state.appChrome.workbenchPanes.find(
-      (pane) => pane.kind === "launcher" && pane.paneId === launcherPaneId,
-    ) ??
-    state.appChrome.workbenchPanes.find(
-      (pane) => pane.kind === "launcher",
-    );
+  const launcher = launcherPaneId
+    ? state.appChrome.workbenchPanes.find(
+        (pane) => pane.kind === "launcher" && pane.paneId === launcherPaneId,
+      )
+    : state.appChrome.workbenchPanes.find(
+        (pane) => pane.kind === "launcher",
+      );
   const action = launcher?.actions?.find((candidate) => candidate.actionId === actionId);
   // The EMPTY-workbench launcher is a synthetic, frontend-only pane (no backend
   // launcher pane), so `launcher`/`action` are undefined — but its action buttons
@@ -193,7 +193,10 @@ export function selectProductShellLauncherAction(
   // real launcher pane (else clicking them on an empty workbench silently no-ops).
   const KNOWN_LAUNCHER_COMMANDS = ["open_terminal", "open_browser", "open_editor", "open_diff"];
   const enabledOnRealLauncher = action !== undefined && action.enabled;
-  const knownOnSyntheticLauncher = launcher === undefined && KNOWN_LAUNCHER_COMMANDS.includes(actionId);
+  const knownOnSyntheticLauncher =
+    launcherPaneId === undefined &&
+    launcher === undefined &&
+    KNOWN_LAUNCHER_COMMANDS.includes(actionId);
   if (!enabledOnRealLauncher && !knownOnSyntheticLauncher) {
     return { state, command: null };
   }

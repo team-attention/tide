@@ -11,6 +11,7 @@ import {
   createAppChromeViewModel,
   focusWorkbenchPane,
   setChromeActionLoading,
+  writeWorkbenchTerminalInput,
   type AppChromeState,
 } from "../src/desktop/application/domains/app-chrome/app-chrome-state.ts";
 import {
@@ -175,6 +176,29 @@ test("loading_chrome_action_disables_conflicting_action", () => {
 
   assert.equal(tab?.closeAction.state, "loading");
   assert.equal(tab?.focusAction.disabled, true);
+});
+
+test("terminal_input_sends_to_ready_or_running_terminals_only", () => {
+  // Spec: docs_v2/specs/workbench-launcher-terminal-usability.md
+  const ready = stateWithWorkbenchPanes([
+    { ...terminalPane("pane-terminal-ready", "Ready"), status: "ready" },
+  ]);
+  const readyInput = writeWorkbenchTerminalInput(ready, "pane-terminal-ready", "ls\n");
+  assert.equal(readyInput.command?.kind, "workbench.command");
+  assert.deepEqual(readyInput.command?.payload, {
+    threadId: "thread-chrome",
+    command: "write_terminal_input",
+    targetPaneId: "pane-terminal-ready",
+    data: { bytes: "ls\n" },
+  });
+
+  for (const status of ["completed", "failed"] as const) {
+    const exited = stateWithWorkbenchPanes([
+      { ...terminalPane(`pane-terminal-${status}`, status), status },
+    ]);
+    const result = writeWorkbenchTerminalInput(exited, `pane-terminal-${status}`, "x");
+    assert.equal(result.command, null);
+  }
 });
 
 function renderChrome(state: AppChromeState): string {
