@@ -89,6 +89,7 @@ function MonitorSessionRow(props: {
         <MonitorSessionMeta>
           <span>{agentLabel(session.agentId)}</span>
           <span>{stateLabel(session.state)}</span>
+          {session.providerOwned === true ? <span>provider-owned</span> : null}
           {session.startedAt !== undefined ? <span>{formatElapsed(session.startedAt, now)}</span> : null}
         </MonitorSessionMeta>
         <MonitorSessionDetail>

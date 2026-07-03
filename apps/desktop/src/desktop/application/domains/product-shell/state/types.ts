@@ -29,6 +29,7 @@ export interface ProductShellThread {
   time: string;
   scope: AgentChatThreadScope;
   launchOptions?: Record<string, unknown>;
+  providerSessionRef?: AgentChatAgentBinding["providerSessionRef"];
   workbenchPanes: AppChromeWorkbenchPaneRef[];
   pinned?: boolean;
   attention?: boolean;
@@ -144,6 +145,7 @@ export interface ProductShellAgentMonitorSession {
   nestedToolCalls?: number;
   usageLabel?: string;
   providerSessionRef?: string;
+  providerOwned?: boolean;
   active: boolean;
 }
 

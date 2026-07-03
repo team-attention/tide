@@ -9,10 +9,8 @@ import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-stat
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
 import { restorablePreservedChat } from "./preserved-agent-chat.ts";
 import { resolveProductShellActiveWorkbenchPaneId } from "./workbench-active-pane.ts";
-// Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
-// External Sessions (agent sessions Tide did not start) are surfaced by backend
-// discovery as Threads whose id is prefixed `adopted-`.
+// External Sessions are backend-discovered Threads whose id is prefixed `adopted-`.
 export function isExternalSessionThread(threadId: string): boolean {
   return threadId.startsWith("adopted-");
 }
@@ -643,6 +641,7 @@ export function toProductShellThreadFromSummary(
     time: formatRelativeThreadTime(threadSummary.updatedAt),
     scope: threadSummary.scope,
     launchOptions: cloneLaunchOptions(threadSummary.launchOptions),
+    providerSessionRef: threadSummary.agentBinding.providerSessionRef,
     workbenchPanes: [],
     pinned: threadSummary.pinned,
     attention:
@@ -744,6 +743,7 @@ export function applyProductShellThreadEvent(
     time: formatRelativeThreadTime(threadSummary.updatedAt),
     scope: threadSummary.scope,
     launchOptions: cloneLaunchOptions(threadSummary.launchOptions),
+    providerSessionRef: threadSummary.agentBinding.providerSessionRef,
     workbenchPanes,
     activeWorkbenchPaneId,
     pinned: threadSummary.pinned,

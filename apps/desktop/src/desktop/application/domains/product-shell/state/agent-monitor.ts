@@ -13,6 +13,13 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
         ? state.agentChat
         : state.agentChatByThreadId[thread.threadId];
     const snapshot = state.runtimeSnapshotsByThreadId[thread.threadId];
+    const providerSessionRef =
+      chatState?.thread?.agentBinding.providerSessionRef?.value ??
+      snapshot?.providerSessionRef ??
+      thread.providerSessionRef?.value;
+    const providerOwned =
+      isExternalSessionThread(thread.threadId) || thread.providerSessionRef !== undefined;
+    const includeProviderOwnedIdle = providerOwned && state.listSettings.showExternalSessions;
     const runtimeState =
       chatState?.runtimeState ??
       snapshot?.state ??
@@ -22,7 +29,9 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
           ? "waiting_for_input"
           : thread.live === true
             ? "idle"
-            : "stopped");
+            : includeProviderOwnedIdle
+              ? "idle"
+              : "stopped");
     const queuedInputCount = chatState !== undefined ? chatState.queuedInputs.length : snapshot?.queuedInputCount;
     const live =
       thread.live === true ||
@@ -34,7 +43,7 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
       runtimeState === "waiting_for_approval" ||
       (queuedInputCount ?? 0) > 0 ||
       monitorSnapshotLive(snapshot);
-    if (!live) {
+    if (!live && !includeProviderOwnedIdle) {
       return items;
     }
     const cwd = thread.scope.kind === "project" ? thread.scope.cwd : thread.scope.scratchCwd;
@@ -51,7 +60,6 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
     const prompt = monitorPromptSnapshot(chatState?.promptState) ?? snapshot?.prompt;
     const activityLabel = monitorActivityLabel(activity);
     const usageLabel = usage?.tokensLabel ?? usage?.contextDetailLabel ?? usage?.contextPercentLabel ?? snapshot?.usageLabel;
-    const providerSessionRef = chatState?.thread?.agentBinding.providerSessionRef?.value ?? snapshot?.providerSessionRef;
     const startedAt = chatState?.thread?.runtimeStartedAt ?? thread.runtimeStartedAt ?? snapshot?.startedAt;
     const changedAt = chatState?.thread?.updatedAt ?? snapshot?.changedAt ?? thread.updatedAt;
     items.push({
@@ -82,6 +90,7 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
       ...(providerSessionRef !== undefined
         ? { providerSessionRef }
         : {}),
+      ...(providerOwned ? { providerOwned } : {}),
     });
     return items;
   }, []);
@@ -137,4 +146,8 @@ function monitorSortRank(session: ProductShellAgentMonitorSession): number {
 
 function projectNameForCwd(state: ProductShellState, cwd: string): string | undefined {
   return [...state.registeredProjects, ...state.projects].find((project) => project.cwd === cwd)?.name;
+}
+
+function isExternalSessionThread(threadId: string): boolean {
+  return threadId.startsWith("adopted-");
 }

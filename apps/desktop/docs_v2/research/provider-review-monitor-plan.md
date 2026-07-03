@@ -34,12 +34,14 @@ This branch implements the first product slice of the plan:
 - Persistent Agent Monitor panel derived from existing product-shell thread/runtime/prompt/activity state.
 - Agent Monitor runtime snapshots keyed by thread id, preserving background activity detail even when the background chat state is not hydrated.
 - Agent Monitor inline choice-answer controls for complete single-prompt snapshots; incomplete, free-text, multi-select, and multi-step prompts still route through thread focus.
+- Provider-owned adopted thread summaries preserve provider session refs in Product Shell state.
+- Agent Monitor shows provider-owned external sessions as read-only idle rows when the external sessions list setting is enabled.
 - Local provider inventory surfaced as read-only `tide_local` capabilities for installed Codex plugins/skills/MCP, Claude installed plugins/MCP, and opencode local plugins/MCP.
 
 Deferred follow-up:
 
 - Codex app-server `review/start` scratch-repo emitted-event fixture and native Review pane path.
-- Adoption/import of provider-owned background sessions outside Tide.
+- Broader provider-specific live attach/resume for provider-owned sessions outside Tide.
 
 ## Design Principle
 
@@ -102,7 +104,7 @@ Official docs inspected:
 | Git changes/diff | Tide can provide locally with git | Tide can provide locally with git | Tide can provide locally with git | Changes pane should remain Tide-owned. |
 | Stage/commit/push | Codex app has product flow; Tide now has initial file-level Git handoff | Provider could run git via tools, but Tide should own explicit git actions | Provider could run git via tools, but Tide should own explicit git actions | Git mutation must stay Tide-owned with confirmation. |
 | Live runtime state | app-server events | stream-json events and Claude background agents | ACP events | Common monitor can use Tide runtime events first. |
-| Background sessions outside Tide | Codex external app-server/cloud surfaces exist, not yet integrated | `claude agents --json` is scriptable | `opencode session list/export`, server/web exist | Monitor can import provider-owned external sessions only after attach/adoption semantics are proven. |
+| Background sessions outside Tide | Codex local history can be adopted read-only; external app-server/cloud surfaces are not integrated | `claude agents --json` is scriptable; local transcripts can be adopted read-only | `opencode session list/export` can be adopted read-only; server/web exist | Monitor can show provider-owned local sessions read-only; live attach/resume needs provider-specific evidence. |
 
 ## Plan 1: Review / Git Handoff
 
@@ -360,7 +362,7 @@ Claude:
 
 - Existing Tide code already enriches Claude `Task` fan-out using nested agent/tool counts.
 - Optional import: `claude agents --json --cwd <path>`.
-- Imported Claude background sessions should be marked as external/provider-owned unless Tide can attach/resume safely.
+- Imported Claude background sessions should remain external/provider-owned unless Tide can attach/resume safely.
 
 opencode:
 
@@ -391,7 +393,8 @@ Required:
   - queued input count changes
 - Multi-thread monitor rendering fixture with Codex, Claude, and opencode rows.
 - Background thread detail preservation test.
-- Provider external import tests only after each provider command output is captured.
+- Provider-owned monitor derivation tests for adopted sessions.
+- Provider live attach/resume tests only after each provider command output is captured.
 
 ## Remaining Work Order
 
@@ -401,7 +404,7 @@ Required:
    - Capture `opencode run --format json` review-prompt output sample.
    - Decide structured parsing per provider from captured output, not assumptions.
 
-2. Add provider-specific external session import only after fixtures.
+2. Expand provider-specific external session attach/resume only after fixtures.
    - Claude: `claude agents --json`.
    - opencode: `opencode session list` / export.
    - Codex: app-server/cloud exploration only after local protocol evidence.

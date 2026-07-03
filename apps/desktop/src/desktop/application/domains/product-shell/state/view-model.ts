@@ -711,10 +711,14 @@ function toThreadView(
 }
 
 export function toAgentChatThreadSummary(thread: ProductShellThread): AgentChatThreadSummary {
+  const agentBinding = agentBindingForShellAgent(thread.agentId);
   return {
     threadId: thread.threadId,
     title: thread.title,
-    agentBinding: agentBindingForShellAgent(thread.agentId),
+    agentBinding:
+      thread.providerSessionRef === undefined
+        ? agentBinding
+        : { ...agentBinding, providerSessionRef: { ...thread.providerSessionRef } },
     scope: thread.scope,
     launchOptions: cloneLaunchOptions(thread.launchOptions),
     context: { worktree: "current folder", branch: "main" },

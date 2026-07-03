@@ -12,6 +12,8 @@ import {
   answerProductShellMonitorPromptChoice,
   createProductShellState,
   createProductShellViewModel,
+  setProductShellListSettings,
+  toAgentChatThreadSummary,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import type { ProductShellAgentMonitorSession } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import type { AgentChatPromptState, AgentChatThreadSummary } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
@@ -71,6 +73,44 @@ test("agent monitor sessions derive needs-attention state from background runtim
   );
   assert.equal(view.agentMonitorSessions[0]?.queuedInputCount, 1);
   assert.equal(view.agentMonitorSessions[0]?.cwd, "/repo/tide");
+});
+
+test("agent monitor shows provider-owned external sessions only when enabled", () => {
+  const listed = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: { threads: [adoptedThreadSummary()] },
+  });
+
+  const hidden = createProductShellViewModel(listed);
+  assert.deepEqual(hidden.agentMonitorSessions.map((session) => session.threadId), []);
+
+  const shown = createProductShellViewModel(
+    setProductShellListSettings(listed, { showExternalSessions: true }),
+  );
+  assert.equal(shown.agentMonitorSessions.length, 1);
+  assert.equal(shown.agentMonitorSessions[0]?.threadId, "adopted-claude-session-1");
+  assert.equal(shown.agentMonitorSessions[0]?.state, "idle");
+  assert.equal(shown.agentMonitorSessions[0]?.providerOwned, true);
+  assert.equal(shown.agentMonitorSessions[0]?.providerSessionRef, "claude-session-1");
+});
+
+test("provider-owned thread summaries preserve provider session refs", () => {
+  const listed = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: { threads: [adoptedThreadSummary()] },
+  });
+  const thread = listed.threads.find((candidate) => candidate.threadId === "adopted-claude-session-1");
+
+  assert.notEqual(thread, undefined);
+  assert.equal(thread?.providerSessionRef?.kind, "claude_transcript");
+  assert.equal(thread?.providerSessionRef?.value, "claude-session-1");
+
+  const summary = toAgentChatThreadSummary(thread!);
+  assert.deepEqual(summary.agentBinding.providerSessionRef, {
+    kind: "claude_transcript",
+    value: "claude-session-1",
+    transcriptPath: "/repo/.claude/projects/repo/claude-session-1.jsonl",
+  });
 });
 
 test("agent monitor prompt snapshots answer background choices by thread id", () => {
@@ -184,6 +224,7 @@ test("agent monitor row actions target the selected thread and active runtime", 
             cwd: "/repo/tide",
             state: "running",
             active: true,
+            providerOwned: true,
             pendingPromptKind: "approval",
             prompt: {
               promptId: "prompt-review",
@@ -207,6 +248,7 @@ test("agent monitor row actions target the selected thread and active runtime", 
   assert.notEqual(changesButton, null);
   assert.notEqual(stopButton, null);
   assert.notEqual(allowButton, null);
+  assert.match(container.textContent ?? "", /provider-owned/);
 
   await act(async () => {
     focusButton?.click();
@@ -253,6 +295,27 @@ function activeThreadSummary(): AgentChatThreadSummary {
     lastKnownState: "idle",
     live: true,
     runtimeStartedAt: "2026-07-04T00:01:00.000Z",
+  };
+}
+
+function adoptedThreadSummary(): AgentChatThreadSummary {
+  return {
+    threadId: "adopted-claude-session-1",
+    title: "Imported Claude session",
+    agentBinding: {
+      agentId: "claude",
+      providerSessionRef: {
+        kind: "claude_transcript",
+        value: "claude-session-1",
+        transcriptPath: "/repo/.claude/projects/repo/claude-session-1.jsonl",
+      },
+    },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    createdAt: "2026-07-04T00:00:00.000Z",
+    updatedAt: "2026-07-04T00:02:00.000Z",
+    pinned: false,
+    archived: false,
+    lastKnownState: "idle",
   };
 }
 
