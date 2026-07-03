@@ -67,6 +67,49 @@ test("agent monitor sessions derive needs-attention state from background runtim
   assert.equal(view.agentMonitorSessions[0]?.cwd, "/repo/tide");
 });
 
+test("agent monitor snapshots preserve background activity without active-chat leakage", () => {
+  const listed = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: { threads: [activeThreadSummary(), threadSummary()] },
+  });
+  const active = { ...listed, activeThreadId: "thread-active" };
+  const running = applyProductShellBackendEvent(active, {
+    kind: "agentRuntime.stateChanged",
+    payload: {
+      threadId: "thread-review",
+      state: "running",
+      changedAt: "2026-07-04T00:03:00.000Z",
+      queuedInputs: ["follow-up review question"],
+    },
+  });
+  const enriched = applyProductShellBackendEvent(running, {
+    kind: "agentRuntime.activityChanged",
+    payload: {
+      threadId: "thread-review",
+      activity: { planCompleted: 1, planTotal: 3 },
+    },
+  });
+
+  assert.equal(enriched.agentChat.liveActivityEnrichment, undefined);
+  assert.equal(enriched.runtimeSnapshotsByThreadId["thread-review"]?.state, "running");
+  assert.equal(enriched.runtimeSnapshotsByThreadId["thread-review"]?.planCompleted, 1);
+  assert.equal(enriched.runtimeSnapshotsByThreadId["thread-review"]?.planTotal, 3);
+
+  const withoutBackgroundChat = {
+    ...enriched,
+    agentChatByThreadId: {},
+  };
+  const session = createProductShellViewModel(withoutBackgroundChat)
+    .agentMonitorSessions.find((candidate) => candidate.threadId === "thread-review");
+
+  assert.equal(session?.state, "running");
+  assert.equal(session?.activityLabel, "1/3 steps");
+  assert.equal(session?.planCompleted, 1);
+  assert.equal(session?.planTotal, 3);
+  assert.equal(session?.queuedInputCount, 1);
+  assert.equal(session?.changedAt, "2026-07-04T00:03:00.000Z");
+});
+
 test("agent monitor row actions target the selected thread and active runtime", async () => {
   let selectedThreadId: string | null = null;
   let openedThreadId: string | null = null;
@@ -131,6 +174,22 @@ function threadSummary(): AgentChatThreadSummary {
     title: "Review handoff",
     agentBinding: { agentId: "codex" },
     scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    createdAt: "2026-07-04T00:00:00.000Z",
+    updatedAt: "2026-07-04T00:02:00.000Z",
+    pinned: false,
+    archived: false,
+    lastKnownState: "idle",
+    live: true,
+    runtimeStartedAt: "2026-07-04T00:01:00.000Z",
+  };
+}
+
+function activeThreadSummary(): AgentChatThreadSummary {
+  return {
+    threadId: "thread-active",
+    title: "Active handoff",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "active", cwd: "/repo/active" },
     createdAt: "2026-07-04T00:00:00.000Z",
     updatedAt: "2026-07-04T00:02:00.000Z",
     pinned: false,

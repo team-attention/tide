@@ -131,6 +131,21 @@ export interface ProductShellAgentMonitorSession {
   active: boolean;
 }
 
+export interface ProductShellAgentRuntimeSnapshot {
+  threadId: string;
+  state: AgentRuntimeStateName;
+  startedAt?: string;
+  changedAt?: string;
+  queuedInputCount?: number;
+  pendingPromptKind?: ProductShellAgentMonitorSession["pendingPromptKind"];
+  planCompleted?: number;
+  planTotal?: number;
+  nestedAgents?: number;
+  nestedToolCalls?: number;
+  usageLabel?: string;
+  providerSessionRef?: string;
+}
+
 // A top-level pinned item: a standalone pinned Thread or a pinned Project. The Pinned
 // section is ONE manually-ordered, intermixed list of these (spec:
 // left-rail-manual-ordering); the order lives in ProductShellState.pinnedItemOrder.
@@ -338,6 +353,7 @@ export interface ProductShellState {
   settingsOpen: boolean;
   // Persistent operational monitor for running/waiting agent sessions.
   agentMonitorOpen: boolean;
+  runtimeSnapshotsByThreadId: Record<string, ProductShellAgentRuntimeSnapshot>;
   draftActiveWorkbenchPaneId: string | null;
   // The Composer's backend Draft Thread: a real (unstarted, no-agent) thread that hosts the
   // Terminal/Editor/Diff/Browser panes pre-send (their PTYs/files/webviews need a

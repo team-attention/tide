@@ -1,7 +1,7 @@
 import type { AgentChatShellState } from "../../agent-chat/agent-chat.ts";
 import { createAgentChatUsageView } from "../../agent-chat/agent-chat.ts";
 import { worktreeRepoRootForCwd } from "../../../../../shared/worktree/path.ts";
-import type { ProductShellAgentMonitorSession, ProductShellState } from "./types.ts";
+import type { ProductShellAgentMonitorSession, ProductShellAgentRuntimeSnapshot, ProductShellState } from "./types.ts";
 import { activeSurfaceThreadId } from "./start.ts";
 
 export function deriveAgentMonitorSessions(state: ProductShellState): ProductShellAgentMonitorSession[] {
@@ -11,8 +11,10 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
       surfaceThreadId === thread.threadId
         ? state.agentChat
         : state.agentChatByThreadId[thread.threadId];
+    const snapshot = state.runtimeSnapshotsByThreadId[thread.threadId];
     const runtimeState =
       chatState?.runtimeState ??
+      snapshot?.state ??
       (thread.running === true
         ? "running"
         : thread.attention === true
@@ -20,6 +22,7 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
           : thread.live === true
             ? "idle"
             : "stopped");
+    const queuedInputCount = chatState !== undefined ? chatState.queuedInputs.length : snapshot?.queuedInputCount;
     const live =
       thread.live === true ||
       thread.running === true ||
@@ -28,7 +31,8 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
       runtimeState === "starting" ||
       runtimeState === "waiting_for_input" ||
       runtimeState === "waiting_for_approval" ||
-      (chatState?.queuedInputs.length ?? 0) > 0;
+      (queuedInputCount ?? 0) > 0 ||
+      monitorSnapshotLive(snapshot);
     if (!live) {
       return items;
     }
@@ -39,10 +43,15 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
         : undefined;
     const projectName = projectNameForCwd(state, cwd);
     const usage = createAgentChatUsageView(chatState?.usage ?? null);
-    const activity = chatState?.liveActivityEnrichment;
+    const activity = chatState?.liveActivityEnrichment ?? snapshot;
     const promptKind = chatState?.promptState?.kind;
+    const pendingPromptKind =
+      promptKind !== undefined ? monitorPromptKind(promptKind) : snapshot?.pendingPromptKind;
     const activityLabel = monitorActivityLabel(activity);
-    const usageLabel = usage?.tokensLabel ?? usage?.contextDetailLabel ?? usage?.contextPercentLabel;
+    const usageLabel = usage?.tokensLabel ?? usage?.contextDetailLabel ?? usage?.contextPercentLabel ?? snapshot?.usageLabel;
+    const providerSessionRef = chatState?.thread?.agentBinding.providerSessionRef?.value ?? snapshot?.providerSessionRef;
+    const startedAt = chatState?.thread?.runtimeStartedAt ?? thread.runtimeStartedAt ?? snapshot?.startedAt;
+    const changedAt = chatState?.thread?.updatedAt ?? snapshot?.changedAt ?? thread.updatedAt;
     items.push({
       threadId: thread.threadId,
       agentId: thread.agentId,
@@ -55,11 +64,11 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
       ...(worktree !== undefined
         ? { branch: worktree.split("/").filter((part) => part.length > 0).pop() }
         : {}),
-      ...(thread.runtimeStartedAt !== undefined ? { startedAt: thread.runtimeStartedAt } : {}),
-      ...(thread.updatedAt !== undefined ? { changedAt: thread.updatedAt } : {}),
-      ...(chatState !== undefined ? { queuedInputCount: chatState.queuedInputs.length } : {}),
-      ...(promptKind !== undefined && monitorPromptKind(promptKind) !== undefined
-        ? { pendingPromptKind: monitorPromptKind(promptKind) }
+      ...(startedAt !== undefined ? { startedAt } : {}),
+      ...(changedAt !== undefined ? { changedAt } : {}),
+      ...(queuedInputCount !== undefined ? { queuedInputCount } : {}),
+      ...(pendingPromptKind !== undefined
+        ? { pendingPromptKind }
         : {}),
       ...(activityLabel !== undefined ? { activityLabel } : {}),
       ...(activity?.planCompleted !== undefined ? { planCompleted: activity.planCompleted } : {}),
@@ -67,8 +76,8 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
       ...(activity?.nestedAgents !== undefined ? { nestedAgents: activity.nestedAgents } : {}),
       ...(activity?.nestedToolCalls !== undefined ? { nestedToolCalls: activity.nestedToolCalls } : {}),
       ...(usageLabel !== undefined ? { usageLabel } : {}),
-      ...(chatState?.thread?.agentBinding.providerSessionRef?.value !== undefined
-        ? { providerSessionRef: chatState.thread.agentBinding.providerSessionRef.value }
+      ...(providerSessionRef !== undefined
+        ? { providerSessionRef }
         : {}),
     });
     return items;
@@ -77,6 +86,17 @@ export function deriveAgentMonitorSessions(state: ProductShellState): ProductShe
     (a, b) =>
       monitorSortRank(a) - monitorSortRank(b) ||
       (Date.parse(b.changedAt ?? "") - Date.parse(a.changedAt ?? "")),
+  );
+}
+
+function monitorSnapshotLive(snapshot: ProductShellAgentRuntimeSnapshot | undefined): boolean {
+  return snapshot !== undefined && (
+    snapshot.state === "running" ||
+    snapshot.state === "starting" ||
+    snapshot.state === "waiting_for_input" ||
+    snapshot.state === "waiting_for_approval" ||
+    (snapshot.queuedInputCount ?? 0) > 0 ||
+    snapshot.pendingPromptKind !== undefined
   );
 }
 

@@ -1,6 +1,6 @@
-import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellProviderCapability, ProductShellProviderUsage, ProductShellState } from "./types.ts";
-import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
-import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatProviderCatalog, AgentChatProviderInventory, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
+import type { ProductShellAgentRuntimeSnapshot, ProductShellBackendEventSource, ProductShellContentSearch, ProductShellProviderCapability, ProductShellProviderUsage, ProductShellState } from "./types.ts";
+import { applyAgentChatBackendEvent, createAgentChatUsageView, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatPromptState, AgentChatProviderCatalog, AgentChatProviderInventory, AgentChatThreadSummary, AgentRuntimeStateName } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { applyProductShellThreadArchivedEvent, applyProductShellThreadEvent, applyProductShellThreadLaunchOptionsChangedEvent, applyProductShellThreadPinChangedEvent, applyProductShellThreadRenamedEvent, toProductShellThreadFromSummary } from "./thread-list.ts";
@@ -58,12 +58,13 @@ export function applyProductShellBackendEvent(
         ),
       }
     : state.agentChatByThreadId;
-  const nextState = {
+  const foldedState = {
     ...state,
     agentChat,
     appChrome,
     agentChatByThreadId,
   };
+  const nextState = applyRuntimeSnapshotBackendEvent(foldedState, event);
 
   switch (event.kind) {
     case "thread.listed": {
@@ -456,6 +457,134 @@ function seedProviderInventoryFromLegacyThreadList(
   };
 }
 
+function applyRuntimeSnapshotBackendEvent(
+  state: ProductShellState,
+  event: AgentChatBackendEvent,
+): ProductShellState {
+  const threadId = threadIdFromBackendEvent(event);
+  if (threadId === undefined) {
+    return state;
+  }
+  switch (event.kind) {
+    case "thread.started":
+    case "thread.hydrated": {
+      const payload = event.payload as {
+        thread?: AgentChatThreadSummary;
+        runtimeState?: unknown;
+      };
+      const runtimeState = isRuntimeStateName(payload.runtimeState)
+        ? payload.runtimeState
+        : state.runtimeSnapshotsByThreadId[threadId]?.state ?? "idle";
+      return updateRuntimeSnapshot(state, threadId, {
+        state: runtimeState,
+        startedAt: payload.thread?.runtimeStartedAt,
+        changedAt: payload.thread?.updatedAt,
+        providerSessionRef: payload.thread?.agentBinding.providerSessionRef?.value,
+      });
+    }
+    case "agentRuntime.stateChanged": {
+      const payload = event.payload as {
+        state?: unknown;
+        changedAt?: unknown;
+        queuedInputs?: unknown;
+      };
+      if (!isRuntimeStateName(payload.state)) {
+        return state;
+      }
+      const changedAt = typeof payload.changedAt === "string" ? payload.changedAt : undefined;
+      const queuedInputCount = Array.isArray(payload.queuedInputs) ? payload.queuedInputs.length : undefined;
+      const running = payload.state === "running" || payload.state === "starting";
+      return updateRuntimeSnapshot(
+        state,
+        threadId,
+        {
+          state: payload.state,
+          changedAt,
+          ...(running && changedAt !== undefined ? { startedAt: changedAt } : {}),
+          ...(queuedInputCount !== undefined ? { queuedInputCount } : {}),
+        },
+        payload.state === "running" ? ["pendingPromptKind"] : [],
+      );
+    }
+    case "prompt.changed": {
+      const payload = event.payload as { prompt?: AgentChatPromptState | null };
+      const pendingPromptKind = payload.prompt === null || payload.prompt === undefined
+        ? undefined
+        : monitorPromptKindFromPrompt(payload.prompt.kind);
+      const stateForPrompt: AgentRuntimeStateName =
+        pendingPromptKind === "approval" ? "waiting_for_approval" : "waiting_for_input";
+      return updateRuntimeSnapshot(
+        state,
+        threadId,
+        {
+          state: state.runtimeSnapshotsByThreadId[threadId]?.state ?? stateForPrompt,
+          pendingPromptKind,
+        },
+        pendingPromptKind === undefined ? ["pendingPromptKind"] : [],
+      );
+    }
+    case "agentRuntime.activityChanged": {
+      const payload = event.payload as {
+        activity?: {
+          nestedAgents?: number;
+          nestedToolCalls?: number;
+          planTotal?: number;
+          planCompleted?: number;
+        };
+      } | undefined;
+      const activity = payload?.activity ?? {};
+      const empty =
+        activity.nestedAgents === undefined &&
+        activity.nestedToolCalls === undefined &&
+        activity.planTotal === undefined &&
+        activity.planCompleted === undefined;
+      return updateRuntimeSnapshot(
+        state,
+        threadId,
+        {
+          state: state.runtimeSnapshotsByThreadId[threadId]?.state ?? "running",
+          ...(empty ? {} : activity),
+        },
+        empty ? ["nestedAgents", "nestedToolCalls", "planTotal", "planCompleted"] : [],
+      );
+    }
+    case "agentRuntime.usageChanged": {
+      const payload = event.payload as { usage?: ProductShellProviderUsage["usage"] };
+      const usage = createAgentChatUsageView(payload.usage ?? null);
+      const usageLabel = usage?.tokensLabel ?? usage?.contextDetailLabel ?? usage?.contextPercentLabel;
+      if (usageLabel === undefined) {
+        return state;
+      }
+      return updateRuntimeSnapshot(state, threadId, {
+        state: state.runtimeSnapshotsByThreadId[threadId]?.state ?? "idle",
+        usageLabel,
+      });
+    }
+    default:
+      return state;
+  }
+}
+
+function updateRuntimeSnapshot(
+  state: ProductShellState,
+  threadId: string,
+  patch: Omit<Partial<ProductShellAgentRuntimeSnapshot>, "threadId"> & { state: AgentRuntimeStateName },
+  clearKeys: Array<Exclude<keyof ProductShellAgentRuntimeSnapshot, "threadId" | "state">> = [],
+): ProductShellState {
+  const previous = state.runtimeSnapshotsByThreadId[threadId] ?? { threadId, state: patch.state };
+  const next: ProductShellAgentRuntimeSnapshot = { ...previous, ...patch, threadId };
+  for (const key of clearKeys) {
+    delete next[key];
+  }
+  return {
+    ...state,
+    runtimeSnapshotsByThreadId: {
+      ...state.runtimeSnapshotsByThreadId,
+      [threadId]: next,
+    },
+  };
+}
+
 function providerInventoryFromPayload(payload: unknown): AgentChatProviderInventory | null {
   const raw = payload as { agents?: unknown };
   if (!Array.isArray(raw.agents)) {
@@ -475,6 +604,32 @@ function providerInventoryFromPayload(payload: unknown): AgentChatProviderInvent
     })
     .filter((entry): entry is AgentChatProviderInventory["agents"][number] => entry !== null);
   return { agents };
+}
+
+function monitorPromptKindFromPrompt(
+  promptKind: AgentChatPromptState["kind"],
+): ProductShellAgentRuntimeSnapshot["pendingPromptKind"] | undefined {
+  if (promptKind === "approval" || promptKind === "permission") {
+    return "approval";
+  }
+  if (promptKind === "question" || promptKind === "choice") {
+    return "question";
+  }
+  return promptKind === "command_picker" ? "mcp_elicitation" : undefined;
+}
+
+function isRuntimeStateName(value: unknown): value is AgentRuntimeStateName {
+  return (
+    value === "not_started" ||
+    value === "starting" ||
+    value === "running" ||
+    value === "waiting_for_input" ||
+    value === "waiting_for_approval" ||
+    value === "idle" ||
+    value === "stopping" ||
+    value === "stopped" ||
+    value === "failed"
+  );
 }
 
 function shouldApplyBackendEventToActiveSurfaces(
@@ -505,6 +660,7 @@ function threadIdFromBackendEvent(event: AgentChatBackendEvent): string | undefi
   switch (event.kind) {
     case "agentRuntime.stateChanged":
     case "agentRuntime.usageChanged":
+    case "agentRuntime.activityChanged":
     case "providerReadiness.changed":
     case "prompt.changed":
     case "agentSessionBlock.completed":

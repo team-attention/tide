@@ -28,6 +28,7 @@ This branch implements the first product slice of the plan:
 - Changes pane Git handoff bar and hunk action strip wired to those Tide-owned Git IPC commands.
 - Scratch-repo fixtures for branch-diff review prompts and commit review prompts.
 - Persistent Agent Monitor panel derived from existing product-shell thread/runtime/prompt/activity state.
+- Agent Monitor runtime snapshots keyed by thread id, preserving background activity detail even when the background chat state is not hydrated.
 
 Deferred follow-up:
 
@@ -391,10 +392,9 @@ Required:
    - Capture `opencode run --format json` review-prompt output sample.
    - Decide structured parsing per provider from captured output, not assumptions.
 
-2. Move Agent Monitor toward backend-owned snapshots.
-   - Store durable `runtimeSnapshotsByThreadId` or equivalent backend-owned monitor state.
-   - Preserve richer background-thread detail even when a thread is not hydrated.
+2. Finish Agent Monitor prompt controls.
    - Add inline answer controls only when prompt snapshots are complete.
+   - Consider a backend-emitted `monitorSnapshot` only if renderer-held runtime snapshots prove insufficient.
 
 3. Add provider-specific external session import only after fixtures.
    - Claude: `claude agents --json`.
