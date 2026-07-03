@@ -91,15 +91,13 @@ export function refocusStartComposerIfActiveDropped(
   return activeDropped ? startNewProductShellThread(next) : next;
 }
 
-// The thread the active chat surface actually DISPLAYS. Normally this is activeThreadId,
-// but a thread.listed can transiently null activeThreadId while the chat still shows a
-// thread (the listed set momentarily omitted it during a restore/refresh; nulling it does
-// not reset agentChat). Anything that means "the thread on screen" must key off what the
-// surface DISPLAYS, not the bookkeeping field — else a thread's live state is stranded or
-// dropped while activeThreadId is null. The Start Composer shows no thread
-// (agentChat.thread === null) → undefined.
+// The thread the active chat surface actually DISPLAYS. The Composer Draft Thread can
+// make Workbench/AppChrome target a backend thread while the chat still shows the Start
+// Composer, so this must key off agentChat.thread, not activeThreadId. A thread.listed can
+// also transiently null activeThreadId while the chat still shows a thread; using the
+// displayed chat thread keeps live state routed to the visible surface.
 export function activeSurfaceThreadId(state: ProductShellState): string | undefined {
-  return state.activeThreadId ?? state.agentChat.thread?.threadId ?? undefined;
+  return state.agentChat.thread?.threadId ?? undefined;
 }
 
 // Stash the currently active thread's agent-chat state into the per-thread map so it

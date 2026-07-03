@@ -15,6 +15,8 @@ It covers:
   useful without inventing fake panes.
 - Dispatching Browser, Terminal, and FileTree Launcher actions to real
   Thread-scoped Workbench commands.
+- Treating renderer-only fallback Launcher pane ids as placeholders, not Backend
+  `targetPaneId` values.
 
 It does not cover:
 
@@ -58,6 +60,11 @@ but the Pane itself must not fabricate Browser, Editor, Diff, or Terminal state.
 When the user opens Workbench for an active Thread with no visible Pane, Desktop
 requests `open_launcher`. Backend creates or reveals a single Launcher Pane for
 that Thread.
+
+If the Renderer temporarily paints a fallback Launcher before the Backend
+Launcher snapshot arrives, that fallback Launcher is synthetic. Its pane id must
+not be sent as a Workbench command `targetPaneId`; Browser and Terminal actions
+still dispatch `open_browser` and `open_terminal` against the active Thread.
 
 ### D4. Visible Launcher actions must be real or disabled
 
@@ -133,6 +140,7 @@ interface LauncherPaneAction {
 3. Launcher state never represents the hidden Agent Runtime.
 4. Launcher actions do not claim a Browser, Editor, Diff, or Terminal Pane exists.
 5. Enabled Launcher actions have a real command path.
+6. Renderer-only synthetic Launcher ids are never treated as Backend Pane ids.
 
 ## Tests
 
@@ -144,6 +152,7 @@ interface LauncherPaneAction {
 | Product Shell renders Launcher actions | `workbench_launcher_pane_renders_real_workbench_actions` |
 | Browser action opens a Browser Pane | `opening_browser_from_workbench_command_creates_visible_browser_pane` |
 | Product Shell dispatches Browser action | `product_shell_launcher_browser_action_emits_open_browser_command` |
+| Synthetic Launcher dispatches Browser/Terminal | `product_shell_synthetic_launcher_actions_emit_workbench_commands` |
 | Product Shell dispatches FileTree action | `product_shell_launcher_file_tree_action_opens_column_and_refreshes_tree` |
 
 ## Implementation Notes

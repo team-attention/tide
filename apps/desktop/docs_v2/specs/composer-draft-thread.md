@@ -51,8 +51,11 @@ visible Terminal Pane needs a backend PTY owner and there was no thread to host 
 - **D2 — Send starts the existing Draft Thread in place** (same `threadId`); it does not
   create a new thread. `startThread` splits into `createDraftThread` (context + workbench,
   no agent) and the existing start path operating on the already-registered draft.
-- **D3 — Composer mode = "active thread is a draft"**, not `activeThreadId === null`. The
-  active thread id points at the Draft Thread while composing.
+- **D3 — Composer screen identity is not the Draft Thread.** The Draft Thread may be
+  the Workbench/AppChrome backend target while composing, but the visible chat surface
+  remains the Start Composer as long as `agentChat.thread === null`. Draft
+  `thread.hydrated` / `thread.started` data must not turn the Composer screen into an
+  empty Thread transcript before Send.
 - **D4 — Changing the project/cwd or agent chip replaces the Draft Thread**: discard the
   old draft (tear down its Workbench, kill terminal PTYs) and create a new one. Panes
   close — identical to switching threads. (Pure launchOptions tweaks that don't change
@@ -86,8 +89,9 @@ Add `createDraftThread` and `discardDraftThread` to the backend service + Deskto
 
 ## Flow
 
-1. Enter composer → `createDraftThread(scope, agentBinding, launchOptions)`; active thread
-   id = draft id; composer UI renders because the active thread is a draft.
+1. Enter composer → no backend thread yet; opening the first real Workbench pane creates
+   `createDraftThread(scope, agentBinding, launchOptions)`. The draft becomes the
+   Workbench backend target, while the chat column remains the Start Composer.
 2. Open Browser / Editor / Terminal / Changes → ordinary `workbench.command(threadId =
    draft)`. Launcher actions all enabled.
 3. Send → `startThread(threadId = draft, initialMessage)` → agent spawns once; `draft ->
@@ -115,9 +119,9 @@ Add `createDraftThread` and `discardDraftThread` to the backend service + Deskto
   `startThread` on the draft id calls `agentRuntimePort.start` exactly once and moves it
   to `running`; `discardDraftThread` tears down the terminal handle and removes the
   thread.
-- renderer: composer mode derived from draft status (not `activeThreadId === null`);
-  launcher enables Editor/Terminal/Diff; changing scope/agent chip discards + recreates the
-  draft.
+- renderer: composer mode is preserved while `agentChat.thread === null`, even when a
+  Draft Thread owns the Workbench; launcher enables Editor/Terminal/Diff; changing
+  scope/agent chip discards + recreates the draft.
 - renderer: `starting_a_closed_composer_draft_thread_keeps_the_workbench_closed` verifies
   that sending from a closed Draft Thread reuses the draft id without flashing the
   Workbench open.
@@ -125,29 +129,24 @@ Add `createDraftThread` and `discardDraftThread` to the backend service + Deskto
 
 ## Implementation Notes
 
-**Renderer realization — the Draft Thread IS the active thread (PURE).** The decisive design
-choice (after a wrong first cut): when the user opens the first Composer pane,
-`ensureComposerDraftThreadActive` (state/workbench.ts) creates the backend draft AND sets
-`activeThreadId = draftThreadId` plus an `appChrome.thread` stub. The whole app — Workbench,
-FileTree, Editor, Terminal, Browser — and every interaction handler (terminal input/resize,
-editor save, browser snapshot) then operate on the draft through the NORMAL active-thread path,
-with zero per-pane special-casing. The chat stays the start Composer because it renders on
-`composer.mode` (`= agentChat.thread ? "follow_up" : "start"`), which is independent of
-`activeThreadId`; the draft never sets `agentChat.thread`. The launcher/browser/changes
+**Renderer realization — Draft Thread is a Workbench/AppChrome target, not the visible
+chat surface.** When the user opens the first Composer pane, `ensureComposerDraftThreadActive`
+(state/workbench.ts) creates the backend draft, records `draftThreadId`, and installs an
+`appChrome.thread` stub so Workbench interactions (terminal input/resize, editor save,
+browser snapshot) route through normal per-thread commands. The chat stays the Start
+Composer because it renders from `agentChat.thread`; draft backend data must not set
+`agentChat.thread` until Send starts the draft in place. The launcher/browser/changes
 handlers call `ensureComposerDraftThreadActive`, dispatch `thread.createDraft`, then send
 the normal backend Workbench command against that draft thread.
 
-**Anti-pattern (do NOT do this):** a parallel renderer structure — a separate
-`draftThreadBackendPanes` field + custom launcher/event routing with `activeThreadId` left null —
-renders the panes but BREAKS interactions, because the interaction handlers route through
-`appChrome.thread` (the active thread). The first cut did exactly this and the terminal wasn't
-typeable. The fix is to reuse the active-thread machinery, not duplicate it.
+**Anti-pattern (do NOT do this):** letting draft `thread.hydrated` apply to AgentChat
+and replace the Start Composer with an empty transcript. Draft events may update the
+Workbench/AppChrome target; they must not change the visible chat surface before Send.
 
-**`activeThreadId === null` audit:** most sites that used it to mean "Composer" now correctly take
-the thread path with the draft (turning OFF the old renderer hacks: start-page editor, draft
-browser). Only sites meaning "the chat is composing" must switch to `agentChat.thread === null`
-(notably `preferredStartComposerFromState`, or composer prefs stop persisting while a draft is
-active). No wholesale 42-site rewrite was needed.
+**Composer audit:** sites that mean "Workbench has a backend target" can use the Draft
+Thread path; sites that mean "the chat is composing" must use `agentChat.thread === null`
+(notably `activeSurfaceThreadId` and `preferredStartComposerFromState`, or draft hydrate
+turns the Composer into a thread transcript / composer prefs stop persisting).
 
 Slices (all done):
 

@@ -150,25 +150,10 @@ export function reduceStructuredNativeEvent(
         data: { models: payload.models, currentModel: payload.currentModel },
       }));
       break;
-    }
-    case "usage": {
-      const usage = normalizeUsage(payload.usage);
-      dirty.push(upsertEntry(next, event, evidence, {
-        key: `usage:${event.runtimeId}`,
-        blockId: `usage:${event.tideThreadId}:${event.runtimeId}`,
-        kind: "usage",
-        status: "completed",
-        title: "Usage",
-        body: usageBlockBody(usage),
-        data: {
-          runtimeId: event.runtimeId,
-          scope: "session",
-          usage,
-          nativeUnits: payload.usage,
-        },
-      }));
-      break;
-    }
+	    }
+	    case "usage": {
+	      break;
+	    }
     case "live_activity": {
       const activity = {
         nestedAgents: payload.nestedAgents,
@@ -208,25 +193,8 @@ export function reduceStructuredNativeEvent(
         title: payload.notice === undefined ? "Turn completed" : "Turn failed",
         body: payload.notice,
         data: { usage: payload.usage },
-      }));
-      if (payload.usage !== undefined) {
-        const usage = normalizeUsage(payload.usage);
-        dirty.push(upsertEntry(next, event, evidence, {
-          key: `usage:${event.runtimeId}`,
-          blockId: `usage:${event.tideThreadId}:${event.runtimeId}`,
-          kind: "usage",
-          status: "completed",
-          title: "Usage",
-          body: usageBlockBody(usage),
-          data: {
-            runtimeId: event.runtimeId,
-            scope: "turn",
-            usage,
-            nativeUnits: payload.usage,
-          },
-        }));
-      }
-      dirty.push(upsertEntry(next, event, evidence, {
+	      }));
+	      dirty.push(upsertEntry(next, event, evidence, {
         key: `activity:${event.runtimeId}`,
         blockId: `agent-activity:${event.tideThreadId}:${event.runtimeId}`,
         kind: "agent_activity",
@@ -498,58 +466,6 @@ function numberField(record: Record<string, unknown>, key: string): number | und
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-type UsageInput = Extract<StructuredProviderEvent, { kind: "usage" }>["usage"];
-
-function normalizeUsage(usage: UsageInput | null | undefined): Record<string, unknown> {
-  if (usage === undefined || usage === null) {
-    return {};
-  }
-  const totalTokens =
-    usage.totalTokens ??
-    (usage.inputTokens !== undefined || usage.outputTokens !== undefined
-      ? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0)
-      : undefined);
-  const contextTokens = usage.contextTokens ?? totalTokens;
-  const contextUsedPercent =
-    contextTokens !== undefined && usage.contextWindow !== undefined && usage.contextWindow > 0
-      ? Math.round((contextTokens / usage.contextWindow) * 100)
-      : undefined;
-  return {
-    ...(usage.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}),
-    ...(usage.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}),
-    ...(totalTokens !== undefined ? { totalTokens } : {}),
-    ...(contextTokens !== undefined ? { contextTokens } : {}),
-    ...(usage.contextWindow !== undefined ? { contextWindow: usage.contextWindow } : {}),
-    ...(contextUsedPercent !== undefined ? { contextUsedPercent } : {}),
-    ...(usage.rateLimits !== undefined ? { rateLimits: usage.rateLimits } : {}),
-  };
-}
-
-function usageBlockBody(usage: Record<string, unknown>): string {
-  const parts: string[] = [];
-  const totalTokens = numericUsageField(usage, "totalTokens");
-  const contextTokens = numericUsageField(usage, "contextTokens");
-  const contextWindow = numericUsageField(usage, "contextWindow");
-  const contextUsedPercent = numericUsageField(usage, "contextUsedPercent");
-  if (totalTokens !== undefined) {
-    parts.push(`${formatCompactNumber(totalTokens)} tokens`);
-  }
-  if (contextTokens !== undefined && contextWindow !== undefined) {
-    parts.push(`${formatCompactNumber(contextTokens)} / ${formatCompactNumber(contextWindow)} context`);
-  } else if (contextTokens !== undefined) {
-    parts.push(`${formatCompactNumber(contextTokens)} context tokens`);
-  }
-  if (contextUsedPercent !== undefined) {
-    parts.push(`${contextUsedPercent}% context`);
-  }
-  const rateLimits = usage.rateLimits;
-  const rateLimitCount = Array.isArray(rateLimits) ? rateLimits.length : 0;
-  if (rateLimitCount > 0) {
-    parts.push(`${rateLimitCount} quota ${rateLimitCount === 1 ? "window" : "windows"}`);
-  }
-  return parts.length === 0 ? "Usage updated" : `Usage updated: ${parts.join(" · ")}`;
-}
-
 function providerCapabilitiesBody(agentTitle: string, authMethodCount: number, capabilityCount: number): string {
   const parts = [agentTitle];
   if (authMethodCount > 0) {
@@ -559,11 +475,6 @@ function providerCapabilitiesBody(agentTitle: string, authMethodCount: number, c
     parts.push(`${capabilityCount} capability ${capabilityCount === 1 ? "group" : "groups"}`);
   }
   return parts.join(" · ");
-}
-
-function numericUsageField(usage: Record<string, unknown>, key: string): number | undefined {
-  const value = usage[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 interface ActivityInput {
@@ -597,15 +508,4 @@ function isEmptyActivity(activity: ActivityInput): boolean {
     activity.planTotal === undefined &&
     activity.planCompleted === undefined
   );
-}
-
-function formatCompactNumber(value: number): string {
-  if (value < 1000) {
-    return String(value);
-  }
-  const thousands = value / 1000;
-  if (thousands >= 100 || Number.isInteger(thousands)) {
-    return `${Math.round(thousands)}k`;
-  }
-  return `${thousands.toFixed(1)}k`;
 }

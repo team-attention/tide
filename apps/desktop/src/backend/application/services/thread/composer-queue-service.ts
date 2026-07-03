@@ -5,7 +5,7 @@ import type { ComposerAttachmentInput, ComposerAttachmentStorePort } from "../..
 import type { AgentSessionBlockReference, ComposerAttachmentRef, PendingInput, ThreadRecord } from "../../domains/thread/thread.ts";
 import type { AgentRuntimeHandle } from "../../domains/agent-runtime/agent-runtime.ts";
 import { RUNTIME_LAUNCH_OPTION_KEYS } from "./thread-runtime-api.ts";
-import type { EditPendingInputInput, EditPendingInputResult, SendComposerInput, SendComposerInputResult, UpdateThreadLaunchOptionsInput, UpdateThreadLaunchOptionsResult } from "./thread-runtime-api.ts";
+import type { EditPendingInputInput, EditPendingInputResult, RunQueuedInputNowInput, RunQueuedInputNowResult, SendComposerInput, SendComposerInputResult, StopAgentRuntimeInput, StopAgentRuntimeResult, UpdateThreadLaunchOptionsInput, UpdateThreadLaunchOptionsResult } from "./thread-runtime-api.ts";
 import { failure } from "../support/service-result.ts";
 import type { ServiceResult } from "../support/service-result.ts";
 import { cloneLaunchOptions } from "./thread-runtime-clone.ts";
@@ -362,6 +362,51 @@ writePendingInputs(thread: ThreadRecord, queue: PendingInput[]): void {
       status: discards ? "discarded" : "edited",
     };
   }
+
+  async promoteQueuedInputToHead(
+    input: RunQueuedInputNowInput,
+  ): Promise<ServiceResult<Omit<RunQueuedInputNowResult, "runtimeState">>> {
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+    const index = input.index ?? 0;
+    const queue = this.pendingInputsOf(thread);
+    const pending = queue[index];
+    if (pending === undefined || pending.kind !== "composer_input") {
+      return failure(
+        "no_pending_input",
+        "There is no queued Composer input to run.",
+      );
+    }
+    if (index > 0) {
+      queue.splice(index, 1);
+      queue.unshift(pending);
+      this.writePendingInputs(thread, queue);
+      thread.updatedAt = this.clock();
+    }
+    return {
+      ok: true,
+      thread: snapshotThread(thread),
+      status: index === 0 ? "already_head" : "selected",
+    };
+  }
+}
+
+export async function runQueuedInputNowThroughQueue(
+  input: RunQueuedInputNowInput,
+  composerQueue: ComposerQueueService,
+  stopAgentRuntime: (input: StopAgentRuntimeInput) => Promise<ServiceResult<StopAgentRuntimeResult>>,
+): Promise<ServiceResult<RunQueuedInputNowResult>> {
+  const promoted = await composerQueue.promoteQueuedInputToHead(input);
+  if (!promoted.ok) {
+    return promoted;
+  }
+  const stopped = await stopAgentRuntime({ threadId: input.threadId });
+  if (!stopped.ok) {
+    return stopped;
+  }
+  return { ok: true, thread: stopped.thread, runtimeState: stopped.runtimeState, status: promoted.status };
 }
 
 function isThreadBusyForComposerQueue(thread: ThreadRecord): boolean {

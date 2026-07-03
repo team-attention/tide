@@ -156,6 +156,7 @@ export interface ProductShellHandlers {
   onBranchCheckoutConfirm: () => void;
   onBranchCheckoutCancel: () => void;
   onInterrupt: () => void;
+  onRunQueuedInputNow: (index: number) => void;
   // Set or clear (empty string) the active thread's goal from the Goal & Checklist panel.
   onSetGoal: (goal: string) => void;
   onEditQueued: (index: number) => void;

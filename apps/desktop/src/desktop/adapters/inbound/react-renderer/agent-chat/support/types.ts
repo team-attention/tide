@@ -7,6 +7,7 @@ export interface AgentChatShellProps {
   onDraftChange?: (draft: string) => void;
   onSubmit?: () => void;
   onInterrupt?: () => void;
+  onRunQueuedInputNow?: (index: number) => void;
   // Set or clear (empty string) the thread goal from the Goal & Checklist panel.
   onSetGoal?: (goal: string) => void;
   // Edit the queued (not-yet-sent) message: pull it back into the Composer.
@@ -58,6 +59,7 @@ export interface ComposerHandlers {
   onDraftChange?: (draft: string) => void;
   onSubmit?: () => void;
   onInterrupt?: () => void;
+  onRunQueuedInputNow?: (index: number) => void;
   onEditQueued?: (index: number) => void;
   onRemoveQueued?: (index: number) => void;
   onRemoveContextChip?: (id: string) => void;

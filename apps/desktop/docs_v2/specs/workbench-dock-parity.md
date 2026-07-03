@@ -13,8 +13,9 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
 2. **Multiple Browser Panes** — open several Launchers (`+` → launcher → resolve to
    Browser, repeated) to get several coexisting browsers; the Launcher never persists
    beside the panes it opens.
-3. **Cmd/Ctrl+click → new Browser Pane** — modifier-click on a chat link opens a new
-   Browser Pane; plain click keeps reuse-active.
+3. **Chat/session links → new Browser Pane** — clicking a transcript/session link
+   opens a new Browser Pane so the current Browser context is not overwritten.
+   Browser-internal navigation stays inside the Browser Pane where it occurred.
 4. **Intuitive Stacked/Split — mirrors the v1 Terminal dock** (`dock-global.md`): per
    the original "work like dock in tide terminal", Stacked = a flat tab strip over all
    panes + one active pane; Split = the tiled `SplitLayout`, **each pane with its own
@@ -69,7 +70,8 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
   through the normal active-thread path. `submitProductShellComposerDraft` starts
   that same id in place.
 - Chat link click: `agent-chat/transcript/transcript.tsx:100-109` routes
-  `data-open-browser-link` → `onOpenBrowserPane(url)` (no modifier read today).
+  `data-open-browser-link` → `onOpenBrowserPane(url)`. Transcript/session links
+  are a new-pane intent; browser-internal clicks remain inside their WebView.
 
 ## Decisions
 
@@ -94,8 +96,10 @@ manipulable by the agent. Six concrete changes, delivered as one combined pass:
   Launcher occupies a slot, and picking an action REMOVES it and puts the chosen pane
   in its place. Several browsers come from opening several Launchers (`+` → launcher →
   resolve, repeated), NOT from a persistent Launcher. An empty Workbench shows the
-  Launcher; opening a pane while a Launcher is active resolves it; opening a pane with
-  no active Launcher (agent, chat-link) adds a new pane.
+  Launcher only when the Workbench/New Pane action explicitly opens an empty
+  Workbench; opening a pane while a Launcher is active resolves it; opening a pane
+  with no active Launcher (agent, chat-link) adds a new pane. Closing the last real
+  pane closes the Workbench column rather than replacing it with a fallback Launcher.
 
 ## Out Of Scope
 
@@ -143,8 +147,10 @@ MCP (`tide-mcp-tool-handler.ts` + definitions):
 
 Renderer handler signature:
 - `onOpenBrowserPane(url: string, options?: { newPane?: boolean })`.
+- Transcript/session link handlers call `onOpenBrowserPane(url, { newPane: true })`.
 - `openProductShellBrowserAtUrl(state, url, { newPane })` passes
-  `disposition: newPane ? "new_browser_pane" : "reuse_active_browser"`.
+  `disposition: newPane ? "new_browser_pane" : "reuse_active_browser"`; reuse is
+  reserved for explicit reuse calls, not transcript/session links.
 
 ## Flow
 
@@ -153,11 +159,13 @@ disposition) → backend sees the active pane is a Launcher → opens a new Brow
 AND removes the Launcher (`activeLauncherPaneId` + `removeLauncherPane`), so the
 Browser takes the Launcher's slot. Same for *Editor*/*Terminal* (`open_editor` /
 `open_terminal` remove the active Launcher). Several browsers = repeat `+` → Launcher
-→ resolve. With no active Launcher (agent `tide_open_browser`, chat-link click) the
-input disposition (reuse / `new_browser_pane`) applies and no Launcher is removed.
+→ resolve. With no active Launcher, explicit agent/browser commands use their requested
+disposition, while chat/session links always request `new_browser_pane`; no Launcher is
+removed in either case.
 
-**Cmd/Ctrl+click link:** transcript click reads `event.metaKey || event.ctrlKey`;
-true → `onOpenBrowserPane(url,{newPane:true})` → `new_browser_pane`; false → reuse.
+**Transcript/session link:** transcript click calls
+`onOpenBrowserPane(url,{newPane:true})` → `new_browser_pane`. Browser-internal
+navigation remains inside the WebView and does not create a Workbench command.
 
 **Stacked/Split:** segmented control / per-pane maximize → `set_layout_mode` command
 (optimistic renderer set + backend authoritative) → snapshot confirms. Maximize sets
@@ -173,9 +181,10 @@ Workbench commands (one per draft pane) bound to the new `threadId`, clears
 
 1. Backend `thread.workbench.layoutMode` is the single source of truth for a Thread's
    Stacked/Split choice; the renderer reflects it for the active Thread.
-2. The Launcher never disappears as an option: an empty Workbench shows the Launcher.
+2. The Launcher never disappears as an option: explicitly opening an empty
+   Workbench/New Pane shows the Launcher.
 3. Opening a Browser via the Launcher always yields a new Pane; reuse only happens
-   via plain chat-link click or an explicit `reuse_active_browser` disposition.
+   via an explicit `reuse_active_browser` disposition.
 4. No phantom Thread / no agent spawn from opening composer-screen panes; a Thread is
    created only by an actual send.
 5. Adoption is ordered after `thread.start` and best-effort; the chat send itself
@@ -195,7 +204,7 @@ Workbench commands (one per draft pane) bound to the new `threadId`, clears
 | T6 | renderer state | `toggleProductShellWorkbenchLayoutMode` / set-layout emits `set_layout_mode`; maximize emits stacked + focus. |
 | T7 | renderer state | start page (activeThreadId null): launcher Browser adds a draft pane + opens workbench; submit yields ordered `open_*` commands for each draft + clears draft + keeps workbench open. |
 | T8 | renderer component | Stacked|Split segmented control renders both options as icons with active state; same 52px top-row header in both modes; per-pane maximize button present in Split. |
-| T9 | renderer component | transcript modifier-click calls `onOpenBrowserPane(url,{newPane:true})`. |
+| T9 | renderer component | transcript/session link click calls `onOpenBrowserPane(url,{newPane:true})`. |
 
 ## Implementation Notes
 

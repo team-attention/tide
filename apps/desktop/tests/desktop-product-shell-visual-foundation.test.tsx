@@ -16,6 +16,7 @@ import {
   addProductShellComposerContextChip,
   applyProductShellBackendEvent,
   applyProductShellPromptState,
+  COMPOSER_LAUNCHER_PANE_ID,
   createProductShellState,
   createProductShellViewModel,
   markProductShellThreadsUnread,
@@ -23,6 +24,7 @@ import {
   closeProductShellWorkbenchPane,
   clearProductShellEditorReferences,
   editProductShellWorkbenchEditorPane,
+  EMPTY_WORKBENCH_LAUNCHER_PANE_ID,
   focusProductShellWorkbenchPane,
   confirmProductShellThreadArchive,
   toggleProductShellThreadPin,
@@ -44,6 +46,7 @@ import {
   selectWorkbenchViewModel,
   setProductShellWorkbenchLayout,
   openProductShellBrowserAtUrl,
+  runProductShellQueuedInputNow,
   ensureComposerDraftThreadActive,
   setProductShellComposerActiveSurface,
   setProductShellComposerFolderScope,
@@ -1276,6 +1279,41 @@ test("right_workbench_tab_actions_emit_backend_commands_and_apply_workbench_even
   assert.equal(closedView.agentChat.workbenchOpen, true);
 });
 
+test("closing_the_last_real_workbench_pane_closes_the_workbench_column", () => {
+  // Spec: docs_v2/specs/composer-workbench-regression-design.md
+  const base = openProductShellThread(createProductShellState(), "thread-sketch");
+  const state = {
+    ...base,
+    workbenchOpen: true,
+    appChrome: {
+      ...base.appChrome,
+      workbenchPanes: [
+        {
+          paneId: "browser-only",
+          kind: "browser" as const,
+          title: "Browser",
+          revision: "browser-only",
+          updatedAt: "2026-07-03T00:00:00.000Z",
+        },
+      ],
+      activeWorkbenchPaneId: "browser-only",
+    },
+  };
+
+  const result = closeProductShellWorkbenchPane(state, "browser-only");
+
+  assert.equal(result.state.workbenchOpen, false);
+  assert.equal(result.state.workbenchOpenByThreadId["thread-sketch"], false);
+  assert.deepEqual(result.command, {
+    kind: "workbench.command",
+    payload: {
+      threadId: "thread-sketch",
+      command: "close_pane",
+      targetPaneId: "browser-only",
+    },
+  });
+});
+
 test("active_thread_with_closed_workbench_renders_open_workbench_action", () => {
   // Spec: docs_v2/specs/app-chrome-workbench-tab-strip.md UC-6 D9
   // thread-sketch has no Workbench panes, so opening it leaves the Workbench closed.
@@ -2311,6 +2349,39 @@ test("submitting_during_a_running_turn_shows_a_queued_row_then_clears_on_flush",
   assert.deepEqual(createProductShellViewModel(flushed).agentChat.queuedInputs, []);
 });
 
+test("send_now_on_a_later_queued_row_promotes_that_row_by_index", () => {
+  // Spec: docs_v2/specs/composer-workbench-regression-design.md
+  const running = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "agentRuntime.stateChanged",
+      payload: { threadId: "thread-workbench", state: "running", changedAt: "2026-05-29T00:00:00.000Z" },
+    },
+  );
+  const queued = {
+    ...running,
+    agentChat: {
+      ...running.agentChat,
+      queuedInputs: ["first queued", "second queued", "third queued"],
+    },
+  };
+
+  const selected = runProductShellQueuedInputNow(queued, 2);
+
+  assert.deepEqual(selected.state.agentChat.queuedInputs, [
+    "third queued",
+    "first queued",
+    "second queued",
+  ]);
+  assert.deepEqual(selected.command, {
+    kind: "composer.runQueuedInputNow",
+    payload: {
+      threadId: "thread-workbench",
+      index: 2,
+    },
+  });
+});
+
 test("starting_a_thread_in_a_new_project_adds_that_project_to_the_rail", () => {
   // Spec: docs_v2/specs/desktop-product-shell-visual-foundation.md (project grouping)
   const state = createProductShellState({ includeFixtureData: false });
@@ -2649,6 +2720,29 @@ test("product_shell_launcher_action_strictly_targets_the_requested_launcher", ()
   assert.equal(missing.command, null);
 });
 
+test("product_shell_synthetic_launcher_actions_emit_workbench_commands", () => {
+  // Spec: docs_v2/specs/workbench-launcher-pane.md
+  const state = toggleProductShellWorkbench(openProductShellThread(createProductShellState(), "thread-sketch"));
+
+  const browser = selectProductShellLauncherAction(state, "open_browser", EMPTY_WORKBENCH_LAUNCHER_PANE_ID);
+  assert.deepEqual(browser.command, {
+    kind: "workbench.command",
+    payload: {
+      threadId: "thread-sketch",
+      command: "open_browser",
+    },
+  });
+
+  const terminal = selectProductShellLauncherAction(state, "open_terminal", EMPTY_WORKBENCH_LAUNCHER_PANE_ID);
+  assert.deepEqual(terminal.command, {
+    kind: "workbench.command",
+    payload: {
+      threadId: "thread-sketch",
+      command: "open_terminal",
+    },
+  });
+});
+
 // --- workbench-dock-parity ---
 
 test("workbench_set_layout_split_emits_set_layout_mode_command", () => {
@@ -2664,8 +2758,9 @@ test("workbench_set_layout_split_emits_set_layout_mode_command", () => {
 
 test("chat_link_open_browser_defaults_to_new_pane_disposition", () => {
   // Spec: docs_v2/specs/workbench-dock-parity.md (T5). Session links open beside existing pages.
-  const state = openProductShellThread(createProductShellState(), "thread-sketch");
+  const state = { ...openProductShellThread(createProductShellState(), "thread-sketch"), workbenchOpen: false };
   const opened = openProductShellBrowserAtUrl(state, "https://a.test");
+  assert.equal(opened.state.workbenchOpen, false);
   assert.deepEqual(opened.command?.payload, {
     threadId: "thread-sketch",
     command: "open_browser",
@@ -2677,6 +2772,49 @@ test("chat_link_open_browser_defaults_to_new_pane_disposition", () => {
     command: "open_browser",
     data: { url: "https://a.test" },
   });
+});
+
+test("stale_launcher_only_workbench_event_does_not_replace_an_open_real_pane", () => {
+  // Spec: docs_v2/specs/composer-workbench-regression-design.md — a late open_launcher
+  // response must not put the Launcher back over a Browser that already opened.
+  const state = {
+    ...openProductShellThread(createProductShellState(), "thread-sketch"),
+    workbenchOpen: true,
+    appChrome: {
+      ...openProductShellThread(createProductShellState(), "thread-sketch").appChrome,
+      workbenchPanes: [
+        {
+          paneId: "browser-1",
+          kind: "browser" as const,
+          title: "Browser",
+          revision: "browser-1",
+          updatedAt: "2026-07-03T00:00:00.000Z",
+        },
+      ],
+      activeWorkbenchPaneId: "browser-1",
+    },
+  };
+
+  const next = applyProductShellBackendEvent(state, {
+    kind: "workbench.changed",
+    payload: {
+      threadId: "thread-sketch",
+      activePaneId: "launcher-late",
+      panes: [
+        {
+          paneId: "launcher-late",
+          kind: "launcher",
+          title: "Workbench launcher",
+          revision: "launcher-late",
+          updatedAt: "2026-07-03T00:00:01.000Z",
+          actions: [],
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(next.appChrome.workbenchPanes.map((pane) => pane.paneId), ["browser-1"]);
+  assert.equal(next.workbenchOpen, true);
 });
 
 test("composer_browser_launcher_action_routes_through_the_draft_thread", () => {
@@ -2695,7 +2833,7 @@ test("composer_browser_launcher_action_routes_through_the_draft_thread", () => {
   assert.equal(inert.state.activeThreadId, null);
 
   const draft = ensureComposerDraftThreadActive(state);
-  const opened = selectProductShellLauncherAction(draft.state, "open_browser");
+  const opened = selectProductShellLauncherAction(draft.state, "open_browser", COMPOSER_LAUNCHER_PANE_ID);
   assert.equal(opened.command?.kind, "workbench.command");
   assert.equal(opened.command?.payload.threadId, draft.state.draftThreadId);
   assert.equal(opened.command?.payload.command, "open_browser");

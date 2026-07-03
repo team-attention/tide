@@ -439,12 +439,16 @@ export type AgentChatBackendCommand =
         attachments?: AgentChatComposerMessageAttachment[];
       };
     }
-  | {
-      kind: "composer.editQueuedInput";
-      payload: { threadId: string; value: string; index?: number };
-    }
-  | {
-      kind: "thread.setLaunchOptions";
+	  | {
+	      kind: "composer.editQueuedInput";
+	      payload: { threadId: string; value: string; index?: number };
+	    }
+	  | {
+	      kind: "composer.runQueuedInputNow";
+	      payload: { threadId: string; index?: number };
+	    }
+	  | {
+	      kind: "thread.setLaunchOptions";
       payload: { threadId: string; launchOptions: Record<string, unknown> };
     }
   | {

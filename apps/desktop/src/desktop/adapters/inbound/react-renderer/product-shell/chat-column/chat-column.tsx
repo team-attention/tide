@@ -90,6 +90,7 @@ export function createAgentChatColumn(
         onDraftChange={handlers.onDraftChange}
         onSubmit={handlers.onSubmit}
         onInterrupt={handlers.onInterrupt}
+        onRunQueuedInputNow={handlers.onRunQueuedInputNow}
         onSetGoal={handlers.onSetGoal}
         onEditQueued={handlers.onEditQueued}
         onRemoveQueued={handlers.onRemoveQueued}

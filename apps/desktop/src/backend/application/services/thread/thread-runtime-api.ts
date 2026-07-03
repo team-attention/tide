@@ -195,6 +195,19 @@ export interface EditPendingInputResult {
   status: "edited" | "discarded";
 }
 
+export interface RunQueuedInputNowInput {
+  threadId: ThreadId;
+  // Which queued message to run now: 0 (or omitted) = the head/next to run;
+  // 1..N = a message further back in the follow-up queue.
+  index?: number;
+}
+
+export interface RunQueuedInputNowResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  status: "selected" | "already_head";
+}
+
 export interface AnswerPromptInput {
   threadId: ThreadId;
   promptId: string;
@@ -377,6 +390,9 @@ export interface ThreadRuntimeService {
   editPendingInput(
     input: EditPendingInputInput,
   ): Promise<ServiceResult<EditPendingInputResult>>;
+  runQueuedInputNow(
+    input: RunQueuedInputNowInput,
+  ): Promise<ServiceResult<RunQueuedInputNowResult>>;
   answerPrompt(input: AnswerPromptInput): Promise<ServiceResult<AnswerPromptResult>>;
   recordProviderPromptState(
     input: RecordProviderPromptStateInput,

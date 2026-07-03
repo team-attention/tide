@@ -1,5 +1,5 @@
-import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, InvokeProviderCapabilityInput, InvokeProviderCapabilityResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderGoalStateInput, RecordProviderGoalStateResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderTurnStartedInput, RecordProviderTurnStartedResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
-import { ComposerQueueService } from "./composer-queue-service.ts";
+import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, InvokeProviderCapabilityInput, InvokeProviderCapabilityResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderGoalStateInput, RecordProviderGoalStateResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderTurnStartedInput, RecordProviderTurnStartedResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, RunQueuedInputNowInput, RunQueuedInputNowResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
+import { ComposerQueueService, runQueuedInputNowThroughQueue } from "./composer-queue-service.ts";
 import { createUnavailableBrowserRuntimePort } from "./unavailable-browser-runtime-port.ts";
 import type {
   AgentSessionBlock,
@@ -1682,23 +1682,13 @@ async activeOrResumedHandle(thread: ThreadRecord): Promise<AgentRuntimeHandle> {
 
   // Composer queue / launch-option operations are owned by ComposerQueueService
   // (shared store; spec: thread-runtime-service-decomposition.md).
-  sendComposerInput(
-    ...args: Parameters<ComposerQueueService["sendComposerInput"]>
-  ): ReturnType<ComposerQueueService["sendComposerInput"]> {
-    return this.composerQueue.sendComposerInput(...args);
-  }
+  sendComposerInput(...args: Parameters<ComposerQueueService["sendComposerInput"]>): ReturnType<ComposerQueueService["sendComposerInput"]> { return this.composerQueue.sendComposerInput(...args); }
 
-  editPendingInput(
-    ...args: Parameters<ComposerQueueService["editPendingInput"]>
-  ): ReturnType<ComposerQueueService["editPendingInput"]> {
-    return this.composerQueue.editPendingInput(...args);
-  }
+  editPendingInput(...args: Parameters<ComposerQueueService["editPendingInput"]>): ReturnType<ComposerQueueService["editPendingInput"]> { return this.composerQueue.editPendingInput(...args); }
 
-  updateThreadLaunchOptions(
-    ...args: Parameters<ComposerQueueService["updateThreadLaunchOptions"]>
-  ): ReturnType<ComposerQueueService["updateThreadLaunchOptions"]> {
-    return this.composerQueue.updateThreadLaunchOptions(...args);
-  }
+  runQueuedInputNow(input: RunQueuedInputNowInput): Promise<ServiceResult<RunQueuedInputNowResult>> { return runQueuedInputNowThroughQueue(input, this.composerQueue, (stopInput) => this.stopAgentRuntime(stopInput)); }
+
+  updateThreadLaunchOptions(...args: Parameters<ComposerQueueService["updateThreadLaunchOptions"]>): ReturnType<ComposerQueueService["updateThreadLaunchOptions"]> { return this.composerQueue.updateThreadLaunchOptions(...args); }
 
   async invokeProviderCapability(input: InvokeProviderCapabilityInput): Promise<ServiceResult<InvokeProviderCapabilityResult>> {
     return this.providerCapabilities.invokeProviderCapability(input);

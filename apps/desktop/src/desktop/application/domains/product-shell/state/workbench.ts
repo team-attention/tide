@@ -1,5 +1,5 @@
 import type { ProductShellBackendCommand, ProductShellState, ProductShellUpdateResult } from "./types.ts";
-import { COMPOSER_LAUNCHER_PANE_ID, isUntitledPaneId } from "./types.ts";
+import { COMPOSER_LAUNCHER_PANE_ID, EMPTY_WORKBENCH_LAUNCHER_PANE_ID, isUntitledPaneId } from "./types.ts";
 import { removeProductShellUntitledFile } from "./untitled-files.ts";
 import { applyDrop, reconcileTree, setRatioAtPath } from "./workbench-split-tree.ts";
 import type { DropZone } from "./workbench-split-tree.ts";
@@ -179,7 +179,11 @@ export function selectProductShellLauncherAction(
     // the backend Draft Thread, then re-enter this reducer with activeThreadId set.
     return { state, command: null };
   }
-  const launcher = launcherPaneId
+  const syntheticLauncher =
+    launcherPaneId === undefined ||
+    launcherPaneId === COMPOSER_LAUNCHER_PANE_ID ||
+    launcherPaneId === EMPTY_WORKBENCH_LAUNCHER_PANE_ID;
+  const launcher = launcherPaneId !== undefined && !syntheticLauncher
     ? state.appChrome.workbenchPanes.find(
         (pane) => pane.kind === "launcher" && pane.paneId === launcherPaneId,
       )
@@ -194,7 +198,7 @@ export function selectProductShellLauncherAction(
   const KNOWN_LAUNCHER_COMMANDS = ["open_terminal", "open_browser", "open_editor", "open_diff"];
   const enabledOnRealLauncher = action !== undefined && action.enabled;
   const knownOnSyntheticLauncher =
-    launcherPaneId === undefined &&
+    syntheticLauncher &&
     launcher === undefined &&
     KNOWN_LAUNCHER_COMMANDS.includes(actionId);
   if (!enabledOnRealLauncher && !knownOnSyntheticLauncher) {
@@ -271,11 +275,10 @@ function generateDraftThreadId(): string {
     : `draft-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 }
 
-// Lazily create the Composer's Draft Thread and make it the ACTIVE thread, so the whole
-// app (Workbench / FileTree / Editor / Terminal / Browser) operates on it through the
-// normal active-thread path — no Composer-only plumbing, no per-pane special-casing. The
-// chat stays the start Composer because agentChat.thread is untouched (null), and the chat
-// renders on composer.mode (= agentChat.thread ? follow_up : start), not activeThreadId.
+// Lazily create the Composer's Draft Thread and make it the Workbench/AppChrome backend
+// target. Workbench / FileTree / Editor / Terminal / Browser commands operate on it
+// through the normal per-thread path, but the visible chat stays the Start Composer:
+// agentChat.thread is untouched (null), and draft hydrate events must not set it.
 // Returns the next state + the thread.createDraft command to dispatch (null when a draft
 // is already active). See docs_v2/specs/composer-draft-thread.md.
 export function ensureComposerDraftThreadActive(
@@ -351,10 +354,8 @@ export function discardProductShellDraftThread(
 }
 
 // Opens an http(s) link (clicked in a chat message) in a fresh Workbench Browser
-// Pane, opening the Workbench column if needed. This is the default destination
-// for a chat link, so it never replaces either the app window or the page already
-// open in another Browser Pane. The pane's own toolbar offers "open in external
-// browser" for when the user wants their system browser.
+// Pane. The backend workbench.changed event opens the Workbench once the real pane
+// exists, so the renderer does not briefly show the Launcher as an intermediate state.
 export function openProductShellBrowserAtUrl(
   state: ProductShellState,
   url: string,
@@ -372,7 +373,7 @@ export function openProductShellBrowserAtUrl(
     ? { url }
     : { url, disposition: "new_browser_pane" as const };
   return {
-    state: { ...state, workbenchOpen: true },
+    state,
     command: {
       kind: "workbench.command",
       payload: { threadId: state.activeThreadId, command: "open_browser", data },
@@ -434,11 +435,22 @@ export function closeProductShellWorkbenchPane(
     };
   }
   const result = closeWorkbenchPane(state.appChrome, paneId);
+  const pane = state.appChrome.workbenchPanes.find((candidate) => candidate.paneId === paneId);
+  const realPaneCount = state.appChrome.workbenchPanes.filter((candidate) => candidate.kind !== "launcher").length;
+  const closeWorkbench =
+    state.appChrome.workbenchPanes.length <= 1 ||
+    (pane !== undefined && pane.kind !== "launcher" && realPaneCount <= 1);
+  const workbenchOpen = closeWorkbench ? false : state.workbenchOpen;
   return {
     state: {
       ...state,
       editorPickerFilter: null,
       appChrome: result.state,
+      workbenchOpen,
+      workbenchOpenByThreadId:
+        state.activeThreadId === null
+          ? state.workbenchOpenByThreadId
+          : { ...state.workbenchOpenByThreadId, [state.activeThreadId]: workbenchOpen },
     },
     command: result.command,
   };

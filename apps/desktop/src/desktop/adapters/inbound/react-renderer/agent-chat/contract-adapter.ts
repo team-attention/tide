@@ -19,6 +19,9 @@ export type AgentChatBackendCommandDraft = {
   kind: "composer.editQueuedInput";
   payload: BackendCommandPayloadByKind["composer.editQueuedInput"];
 } | {
+  kind: "composer.runQueuedInputNow";
+  payload: BackendCommandPayloadByKind["composer.runQueuedInputNow"];
+} | {
   kind: "thread.setLaunchOptions";
   payload: BackendCommandPayloadByKind["thread.setLaunchOptions"];
 } | {
@@ -71,6 +74,11 @@ export function toBackendCommandDraft(
     case "composer.editQueuedInput":
       return {
         kind: "composer.editQueuedInput",
+        payload: command.payload,
+      };
+    case "composer.runQueuedInputNow":
+      return {
+        kind: "composer.runQueuedInputNow",
         payload: command.payload,
       };
     case "thread.setLaunchOptions":

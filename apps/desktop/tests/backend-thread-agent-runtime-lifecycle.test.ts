@@ -53,6 +53,7 @@ import type {
   WorkbenchTerminalPort,
   WorkbenchTerminalStartInput,
 } from "../src/backend/application/ports/outbound/workbench-terminal-port.ts";
+import type { BrowserRuntimePort } from "../src/backend/application/ports/outbound/browser-runtime-port.ts";
 
 const now = "2026-05-27T00:00:00.000Z";
 
@@ -1706,6 +1707,27 @@ test("editing_a_queued_followup_by_index_targets_that_message_and_keeps_the_rest
   const done2 = await service.recordTurnComplete({ threadId: "thread-busy" });
   assert.equal(done2.flushedInput, undefined);
   assert.equal(done2.runtimeState, "idle");
+});
+
+test("run_queued_input_now_promotes_selected_row_then_interrupts_current_turn", async () => {
+  // Spec: docs_v2/specs/composer-workbench-regression-design.md
+  const { fakes, service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" }); // running now
+  await service.sendComposerInput({ threadId: "thread-busy", input: "second" }); // queued head
+  await service.sendComposerInput({ threadId: "thread-busy", input: "third" }); // queued tail
+  await service.sendComposerInput({ threadId: "thread-busy", input: "fourth" }); // queued tail
+
+  const selected = await service.runQueuedInputNow({ threadId: "thread-busy", index: 1 });
+
+  assert.equal(selected.ok, true);
+  assert.equal(selected.status, "selected");
+  assert.equal(selected.runtimeState, "running");
+  assert.deepEqual(selected.thread.queuedInputs, ["third", "second", "fourth"]);
+  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput", "interrupt"]);
+
+  const completed = await service.recordTurnComplete({ threadId: "thread-busy" });
+  assert.equal(completed.ok && completed.flushedInput, "third");
+  assert.deepEqual(completed.ok && completed.thread.queuedInputs, ["second", "fourth"]);
 });
 
 test("a_full_session_composes_send_queue_edit_prompt_answer_and_turn_end_flush", async () => {
@@ -4074,6 +4096,49 @@ test("opening_browser_from_workbench_command_creates_open_browser_pane", async (
   assert.equal(opened.ok && opened.thread.workbench.panes[0]?.url, "http://localhost:5173/");
   assert.equal(opened.ok && opened.thread.workbench.activePaneId, "id-1");
   assert.equal(opened.ok && opened.thread.workbench.focusOwner, "workbench");
+});
+
+test("opening_browser_returns_pane_snapshot_without_waiting_for_browser_runtime_host", async () => {
+  // Spec: docs_v2/specs/composer-workbench-regression-design.md — Workbench should render
+  // the Browser Pane as soon as backend state is updated; the live BrowserRuntime host may
+  // attach afterward and must not block the command response.
+  let ensureCalled = false;
+  const hangingBrowserRuntime: BrowserRuntimePort = {
+    ensure: () => {
+      ensureCalled = true;
+      return new Promise(() => {});
+    },
+    observe: async () => ({
+      ok: false,
+      error: { code: "unavailable", message: "not used" },
+    }),
+    act: async () => ({
+      ok: false,
+      error: { code: "unavailable", message: "not used" },
+    }),
+    close: async () => ({ ok: true, value: undefined }),
+  };
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    browserRuntimePort: hangingBrowserRuntime,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-browser-command")],
+  });
+
+  const opened = await Promise.race([
+    service.handleWorkbenchCommand({
+      threadId: "thread-browser-command",
+      command: "open_browser",
+      data: { url: "https://example.com" },
+    }),
+    new Promise<"timed_out">((resolve) => setTimeout(() => resolve("timed_out"), 50)),
+  ]);
+
+  assert.notEqual(opened, "timed_out");
+  assert.equal(ensureCalled, true);
+  assert.equal(typeof opened === "object" && opened.ok, true);
+  assert.equal(typeof opened === "object" && opened.ok && opened.thread.workbench.panes[0]?.kind, "browser");
 });
 
 test("opening_browser_with_launcher_target_consumes_non_active_launcher", async () => {

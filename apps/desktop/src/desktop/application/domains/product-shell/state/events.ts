@@ -266,12 +266,22 @@ export function applyProductShellBackendEvent(
         };
       }
       const panes = payload.panes ?? [];
+      const threadId = payload.threadId ?? state.activeThreadId;
+      const currentVisiblePanes =
+        threadId !== null && threadId === state.activeThreadId
+          ? state.appChrome.workbenchPanes
+          : [];
+      const incomingLauncherOnly =
+        panes.length > 0 && panes.every((pane) => pane.kind === "launcher");
+      const currentHasRealPane = currentVisiblePanes.some((pane) => pane.kind !== "launcher");
+      if (incomingLauncherOnly && currentHasRealPane) {
+        return { ...nextState, appChrome: state.appChrome };
+      }
       const referencesFilter = applyDismissedProductShellEditorReferences(
         panes,
         nextState.dismissedEditorReferenceKeys,
       );
       const visiblePanes = referencesFilter.panes;
-      const threadId = payload.threadId ?? state.activeThreadId;
       // Auto-open only when a NEW real (non-launcher) pane appears (an agent
       // opened a browser, the user opened a terminal/editor). An UPDATE to existing
       // panes — e.g. terminal output/status events stream workbench.changed — must

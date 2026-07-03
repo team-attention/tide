@@ -54,7 +54,7 @@ export function createQueuedInputRow(queuedInput: string, queued: boolean, index
 export function createQueuedSteerStack(
   queuedInputs: string[],
   onEditQueued?: (index: number) => void,
-  onInterrupt?: () => void,
+  onRunQueuedInputNow?: (index: number) => void,
   onRemoveQueued?: (index: number) => void,
 ): ReactElement {
   return (
@@ -70,10 +70,10 @@ export function createQueuedSteerStack(
             <button
               type="button"
               className="composer-steer__interrupt"
-              aria-label="Send now — interrupt the current turn and run this message"
-              title="Send now (interrupt current turn)"
-              onClick={() => onInterrupt?.()}
-            >
+	              aria-label="Send now — interrupt the current turn and run this message"
+	              title="Send now (interrupt current turn)"
+	              onClick={() => onRunQueuedInputNow?.(index)}
+	            >
               <ArrowUp size={15} strokeWidth={2.3} aria-hidden />
             </button>
             {/* Edit: pull this message back into the Composer to edit. */}
