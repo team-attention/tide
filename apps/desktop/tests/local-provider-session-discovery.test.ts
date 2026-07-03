@@ -227,3 +227,45 @@ test("discovery_adopts_opencode_sessions_by_directory_without_transcript_path", 
   assert.equal(seeds[0].agentBinding.providerSessionRef?.value, "opencode-1");
   assert.equal(seeds[0].agentBinding.providerSessionRef?.transcriptPath, undefined);
 });
+
+test("discovery_uses_opencode_export_only_when_the_list_title_is_not_meaningful", () => {
+  let exportCalls = 0;
+  const fs = fakeFs({
+    listOpencodeSessions: () => [
+      {
+        id: "meaningful",
+        title: "Implement the composer provider picker",
+        created: 1_000,
+        updated: 2_000,
+        directory: CWD,
+      },
+      {
+        id: "generic",
+        title: "New session",
+        created: 3_000,
+        updated: 4_000,
+        directory: CWD,
+      },
+    ],
+    exportOpencodeSession: (sessionId) => {
+      exportCalls += 1;
+      return JSON.stringify({
+        info: { id: sessionId },
+        messages: [
+          {
+            info: { role: "user" },
+            parts: [{ type: "text", text: `Export title for ${sessionId}` }],
+          },
+        ],
+      });
+    },
+  });
+
+  const sessions = discoverLocalSessions({ cwds: [CWD], fs });
+
+  assert.equal(exportCalls, 1);
+  assert.deepEqual(
+    sessions.map((session) => session.title),
+    ["Implement the composer provider picker", "Export title for generic"],
+  );
+});

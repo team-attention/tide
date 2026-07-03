@@ -153,6 +153,9 @@ export interface AgentChatComposerState {
   draft: string;
   activeSurface: AgentChatComposerSurfaceKind | null;
   startOptions: AgentChatStartOptions;
+  // Local drilldown state for the opencode Model Chip. Kept in shell state so
+  // separate thread shells do not leak provider/model picker state into each other.
+  opencodeModelProvider?: AgentChatOpencodeModelProviderFlowState;
   // Images pasted into the Composer, shown as preview chips and sent with the
   // next message. See docs_v2/specs/composer-image-attachments.md.
   attachments: AgentChatComposerAttachment[];
@@ -696,6 +699,17 @@ export type AgentChatOpencodeModelProviderStep =
   | "connect_vendor"
   | "vendor_method"
   | "api_key";
+
+export type AgentChatOpencodeModelProviderMethodReturnStep =
+  | "provider_list"
+  | "model_list"
+  | "connect_vendor";
+
+export interface AgentChatOpencodeModelProviderFlowState {
+  step: AgentChatOpencodeModelProviderStep | null;
+  selectedProviderId?: string;
+  methodReturnStep: AgentChatOpencodeModelProviderMethodReturnStep;
+}
 
 export interface AgentChatOpencodeModelProviderProviderView {
   rowId: string;

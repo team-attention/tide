@@ -398,19 +398,26 @@ export function createLiveBackendContractMessageAdapter(
   });
   emitOpencodeProviderCatalogChanged = () => {
     void (async () => {
-      emitBackendEvents([
-        {
-          contractVersion: CONTRACT_VERSION,
-          eventId: nextEventId(),
-          kind: "providerCatalog.changed",
-          emittedAt: new Date().toISOString(),
-          payload: {
-            opencodeModels: await detection.enumerateOpencodeModels(),
-            opencodeVendors: await detection.enumerateOpencodeVendors(),
-            opencodeEnvironment: await detection.opencodeEnvironment(),
+      try {
+        emitBackendEvents([
+          {
+            contractVersion: CONTRACT_VERSION,
+            eventId: nextEventId(),
+            kind: "providerCatalog.changed",
+            emittedAt: new Date().toISOString(),
+            payload: {
+              opencodeModels: await detection.enumerateOpencodeModels(),
+              opencodeVendors: await detection.enumerateOpencodeVendors(),
+              opencodeEnvironment: await detection.opencodeEnvironment(),
+            },
           },
-        },
-      ]);
+        ]);
+      } catch (error) {
+        process.emitWarning(
+          error instanceof Error ? error.message : "Failed to refresh opencode provider catalog.",
+          { type: "TideOpencodeProviderCatalogWarning" },
+        );
+      }
     })();
   };
   const refreshProviderUsage = () =>

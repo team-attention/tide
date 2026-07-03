@@ -4,10 +4,8 @@ import { setComposerActiveSurface } from "./composer.ts";
 import { launchOptionsForState, updateComposerLaunchOptions } from "./launch-options.ts";
 import {
   apiKeyFinishedRowId,
-  apiKeyRowId,
   backOpencodeModelProvider,
   connectVendorRowId,
-  connectionRowId,
   finishOpencodeModelProviderApiKey,
   openOpencodeModelProviderApiKey,
   openOpencodeModelProviderConnection,
@@ -27,9 +25,15 @@ export function selectOpencodeModelProviderSurfaceRow(
 ): AgentChatShellUpdateResult {
   const launchOptions = launchOptionsForState(state);
   const currentModel = String(launchOptions?.model ?? defaultModelValueForAgent("opencode"));
+  const flowState = state.composer.opencodeModelProvider;
   if (rowId === "opencode-back") {
-    backOpencodeModelProvider(currentModel);
-    return { state: { ...state }, command: null };
+    return {
+      state: withOpencodeModelProviderFlowState(
+        state,
+        backOpencodeModelProvider(flowState, currentModel),
+      ),
+      command: null,
+    };
   }
   if (rowId === "use-free-model") {
     const updated = updateComposerLaunchOptions(state, { model: "opencode default" });
@@ -39,30 +43,47 @@ export function selectOpencodeModelProviderSurfaceRow(
     };
   }
   if (rowId === apiKeyFinishedRowId()) {
-    finishOpencodeModelProviderApiKey();
-    return { state: { ...state }, command: null };
+    return {
+      state: withOpencodeModelProviderFlowState(
+        state,
+        finishOpencodeModelProviderApiKey(flowState, currentModel),
+      ),
+      command: null,
+    };
   }
   const providerId = opencodeProviderIdFromRow(rowId);
   if (providerId !== undefined) {
-    openOpencodeModelProviderForProvider(providerId);
-    return { state: { ...state }, command: null };
+    return {
+      state: withOpencodeModelProviderFlowState(
+        state,
+        openOpencodeModelProviderForProvider(flowState, currentModel, providerId),
+      ),
+      command: null,
+    };
   }
   const connectionProviderId = opencodeConnectionProviderIdFromRow(rowId);
   if (connectionProviderId !== undefined) {
-    openOpencodeModelProviderConnection(connectionProviderId);
-    return { state: { ...state }, command: null };
+    return {
+      state: withOpencodeModelProviderFlowState(
+        state,
+        openOpencodeModelProviderConnection(flowState, currentModel, connectionProviderId),
+      ),
+      command: null,
+    };
   }
   const apiKeyProviderId = opencodeApiKeyProviderIdFromRow(rowId);
   if (apiKeyProviderId !== undefined) {
-    openOpencodeModelProviderApiKey(apiKeyProviderId);
-    return { state: { ...state }, command: null };
+    return {
+      state: withOpencodeModelProviderFlowState(
+        state,
+        openOpencodeModelProviderApiKey(flowState, currentModel, apiKeyProviderId),
+      ),
+      command: null,
+    };
   }
-  const currentProviderId = selectedOpencodeModelProviderId(currentModel);
+  const currentProviderId = selectedOpencodeModelProviderId(currentModel, flowState);
   if (rowId === connectVendorRowId(currentProviderId)) {
     return opencodeAuthTerminalCommand(state, currentProviderId, activeThreadId);
-  }
-  if (rowId === apiKeyRowId(currentProviderId) || rowId === connectionRowId(currentProviderId)) {
-    return { state, command: null };
   }
   const reasoning = reasoningForOpencodeRow(rowId);
   if (reasoning !== undefined) {
@@ -102,6 +123,19 @@ export function opencodeAuthTerminalCommand(
           },
         ),
       },
+    },
+  };
+}
+
+function withOpencodeModelProviderFlowState(
+  state: AgentChatShellState,
+  flowState: AgentChatShellState["composer"]["opencodeModelProvider"],
+): AgentChatShellState {
+  return {
+    ...state,
+    composer: {
+      ...state.composer,
+      opencodeModelProvider: flowState,
     },
   };
 }

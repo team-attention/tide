@@ -254,6 +254,7 @@ export function createActiveComposerSurface(
         return buildOpencodeModelProviderSurface(
           selectedModel,
           String(launchOptionsForState(state)?.reasoning ?? "high"),
+          state.composer.opencodeModelProvider,
         );
       }
       return {
@@ -281,6 +282,7 @@ export function createActiveComposerSurface(
       return buildOpencodeModelProviderSurface(
         selectedModel,
         String(launchOptionsForState(state)?.reasoning ?? "high"),
+        state.composer.opencodeModelProvider,
       );
     case "opencode_connect":
       // Compatibility surface for older opencode connect entry points. The model

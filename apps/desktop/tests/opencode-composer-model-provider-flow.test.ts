@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   createActiveComposerSurface,
   createAgentChatShellState,
-  resetOpencodeModelProviderSurface,
   selectAgentChatChoiceSurfaceRow,
   setComposerActiveSurface,
   setOpencodeEnvironment,
@@ -18,7 +17,6 @@ function resetOpencodeState() {
   setOpencodeVendors(null);
   setOpencodeEnvironment(null);
   setOpencodeModelCatalog(null);
-  resetOpencodeModelProviderSurface();
 }
 
 function opencodeState() {
@@ -148,6 +146,24 @@ test("unconnected provider opens auth method and backs to provider root", () => 
     "opencode-back",
   ).state;
   assert.equal(createActiveComposerSurface(rootState)?.opencodeModelProvider?.step, "provider_list");
+  resetOpencodeState();
+});
+
+test("opencode model provider drilldown state is isolated per shell state", () => {
+  resetOpencodeState();
+  setOpencodeVendors([{ id: "google", label: "Google", connected: false, popular: true }]);
+  setOpencodeModelCatalog([{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }]);
+
+  const firstOpened = setComposerActiveSurface(opencodeState(), "opencode_model_provider").state;
+  const secondOpened = setComposerActiveSurface(opencodeState(), "opencode_model_provider").state;
+  const firstMethodState = selectAgentChatChoiceSurfaceRow(
+    firstOpened,
+    "opencode_model_provider",
+    "opencode-provider:google",
+  ).state;
+
+  assert.equal(createActiveComposerSurface(firstMethodState)?.opencodeModelProvider?.step, "vendor_method");
+  assert.equal(createActiveComposerSurface(secondOpened)?.opencodeModelProvider?.step, "provider_list");
   resetOpencodeState();
 });
 

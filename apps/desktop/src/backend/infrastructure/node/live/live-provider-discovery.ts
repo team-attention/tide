@@ -1,4 +1,5 @@
 import { claudeProjectTranscriptsDir } from "../../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
+import { resolveExecutable } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
 import { spawnSync } from "node:child_process";
 
 import { readBoundedHead, readTextFile } from "./live-backend-fs.ts";
@@ -100,8 +101,12 @@ function createDiscoveryFs(homeDir: string, codexHome?: string): DiscoveryFs {
 }
 
 function runOpencodeCli(args: string[], maxBuffer: number): string | undefined {
+  const executablePath = resolveExecutable("opencode");
+  if (executablePath === undefined) {
+    return undefined;
+  }
   try {
-    const result = spawnSync("opencode", args, {
+    const result = spawnSync(executablePath, args, {
       encoding: "utf8",
       timeout: 8_000,
       maxBuffer,

@@ -152,11 +152,13 @@ export function discoverLocalSessions(input: {
     if (!cwdSet.has(entry.directory)) {
       continue;
     }
-    const exported = input.fs.exportOpencodeSession(entry.id);
-    const title =
-      meaningfulOpencodeTitle(entry.title) ??
-      (exported === undefined ? undefined : opencodeFirstUserTextFromExport(exported)) ??
-      datedTitle("opencode", opencodeTimestampMs(entry.updated || entry.created));
+    let title = meaningfulOpencodeTitle(entry.title);
+    if (title === undefined) {
+      const exported = input.fs.exportOpencodeSession(entry.id);
+      title =
+        (exported === undefined ? undefined : opencodeFirstUserTextFromExport(exported)) ??
+        datedTitle("opencode", opencodeTimestampMs(entry.updated || entry.created));
+    }
     if (isInternalSessionTitle(title)) continue;
     sessions.push({
       agentId: "opencode",

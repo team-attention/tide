@@ -1,6 +1,7 @@
 import type {
   AgentChatChoiceSurfaceRowView,
   AgentChatChoiceSurfaceView,
+  AgentChatOpencodeModelProviderFlowState,
   AgentChatOpencodeModelProviderStep,
 } from "./types.ts";
 import { cliModelOptionsForAgent, REASONING_LEVELS } from "./agent-vocab.ts";
@@ -11,14 +12,6 @@ import {
   opencodeVendorMonogram,
 } from "./opencode-onramp.ts";
 import { row } from "./choice-row.ts";
-
-type MethodReturnStep = "provider_list" | "model_list" | "connect_vendor";
-
-interface OpencodeModelProviderFlowState {
-  step: AgentChatOpencodeModelProviderStep | null;
-  selectedProviderId?: string;
-  methodReturnStep: MethodReturnStep;
-}
 
 interface ProviderViewModel {
   id: string;
@@ -32,13 +25,8 @@ interface ProviderViewModel {
 const OPENCODE_DEFAULT_MODEL = "opencode default";
 const ZEN_PROVIDER_ID = "opencode";
 
-let flowState: OpencodeModelProviderFlowState = {
-  step: null,
-  methodReturnStep: "provider_list",
-};
-
-export function resetOpencodeModelProviderSurface(): void {
-  flowState = {
+export function initialOpencodeModelProviderFlowState(): AgentChatOpencodeModelProviderFlowState {
+  return {
     step: null,
     methodReturnStep: "provider_list",
   };
@@ -47,10 +35,11 @@ export function resetOpencodeModelProviderSurface(): void {
 export function buildOpencodeModelProviderSurface(
   currentModel: string,
   currentEffort: string,
+  inputFlowState?: AgentChatOpencodeModelProviderFlowState,
 ): AgentChatChoiceSurfaceView {
-  normalizeFlowState(currentModel);
+  const flowState = normalizeFlowState(inputFlowState, currentModel);
   const step = flowState.step ?? "provider_list";
-  const providerId = selectedProviderId(currentModel);
+  const providerId = selectedProviderId(currentModel, flowState);
   const providers = providerViewModels();
   const provider = providers.find((candidate) => candidate.id === providerId);
   const models = modelViewsForProvider(providerId, currentModel);
@@ -59,7 +48,7 @@ export function buildOpencodeModelProviderSurface(
 
   return {
     surfaceKind: "opencode_model_provider",
-    title: titleForStep(step, provider?.label),
+    title: titleForStep(step, providerId, provider?.label),
     sourceLabel: step === "provider_list" || step === "connect_vendor" ? "Model chip" : "opencode",
     rows,
     opencodeModelProvider: {
@@ -94,47 +83,87 @@ export function buildOpencodeModelProviderSurface(
   };
 }
 
-export function openOpencodeModelProviderForProvider(providerId: string): void {
-  flowState.selectedProviderId = providerId;
-  flowState.methodReturnStep =
-    flowState.step === "connect_vendor" ? "connect_vendor" : "provider_list";
-  flowState.step = providerHasModelRows(providerId) ? "model_list" : "vendor_method";
+export function openOpencodeModelProviderForProvider(
+  inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
+  currentModel: string,
+  providerId: string,
+): AgentChatOpencodeModelProviderFlowState {
+  const flowState = normalizeFlowState(inputFlowState, currentModel);
+  return {
+    ...flowState,
+    selectedProviderId: providerId,
+    methodReturnStep: flowState.step === "connect_vendor" ? "connect_vendor" : "provider_list",
+    step: providerHasModelRows(providerId) ? "model_list" : "vendor_method",
+  };
 }
 
-export function openOpencodeModelProviderConnection(providerId: string): void {
-  flowState.selectedProviderId = providerId;
-  flowState.methodReturnStep = "model_list";
-  flowState.step = "vendor_method";
+export function openOpencodeModelProviderConnection(
+  inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
+  currentModel: string,
+  providerId: string,
+): AgentChatOpencodeModelProviderFlowState {
+  const flowState = normalizeFlowState(inputFlowState, currentModel);
+  return {
+    ...flowState,
+    selectedProviderId: providerId,
+    methodReturnStep: "model_list",
+    step: "vendor_method",
+  };
 }
 
-export function openOpencodeModelProviderApiKey(providerId: string): void {
-  flowState.selectedProviderId = providerId;
-  flowState.step = "api_key";
+export function openOpencodeModelProviderApiKey(
+  inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
+  currentModel: string,
+  providerId: string,
+): AgentChatOpencodeModelProviderFlowState {
+  const flowState = normalizeFlowState(inputFlowState, currentModel);
+  return {
+    ...flowState,
+    selectedProviderId: providerId,
+    step: "api_key",
+  };
 }
 
-export function finishOpencodeModelProviderApiKey(): void {
-  flowState.step = "provider_list";
+export function finishOpencodeModelProviderApiKey(
+  inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
+  currentModel: string,
+): AgentChatOpencodeModelProviderFlowState {
+  return {
+    ...normalizeFlowState(inputFlowState, currentModel),
+    step: "provider_list",
+  };
 }
 
-export function backOpencodeModelProvider(currentModel: string): void {
+export function backOpencodeModelProvider(
+  inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
+  currentModel: string,
+): AgentChatOpencodeModelProviderFlowState {
+  const flowState = normalizeFlowState(inputFlowState, currentModel);
   if (flowState.step === "model_list") {
-    flowState.step = "provider_list";
-    return;
+    return { ...flowState, step: "provider_list" };
   }
   if (flowState.step === "api_key") {
-    flowState.step = "vendor_method";
-    return;
+    return { ...flowState, step: "vendor_method" };
   }
   if (flowState.step === "vendor_method") {
-    flowState.step = flowState.methodReturnStep;
-    if (flowState.step === "provider_list" || flowState.step === "connect_vendor") {
-      flowState.selectedProviderId = providerIdFromModel(currentModel);
-    }
+    const step = flowState.methodReturnStep;
+    return {
+      ...flowState,
+      step,
+      selectedProviderId:
+        step === "provider_list" || step === "connect_vendor"
+          ? providerIdFromModel(currentModel)
+          : flowState.selectedProviderId,
+    };
   }
+  return flowState;
 }
 
-export function selectedOpencodeModelProviderId(currentModel: string): string {
-  return selectedProviderId(currentModel);
+export function selectedOpencodeModelProviderId(
+  currentModel: string,
+  inputFlowState?: AgentChatOpencodeModelProviderFlowState,
+): string {
+  return selectedProviderId(currentModel, normalizeFlowState(inputFlowState, currentModel));
 }
 
 export function connectVendorRowId(providerId: string): string {
@@ -177,19 +206,28 @@ export function opencodeApiKeyProviderIdFromRow(rowId: string): string | undefin
     : undefined;
 }
 
-function normalizeFlowState(currentModel: string): void {
-  if (flowState.step === null) {
-    flowState.step = isOpencodeUsable() ? "provider_list" : "connect_vendor";
+function normalizeFlowState(
+  inputFlowState: AgentChatOpencodeModelProviderFlowState | undefined,
+  currentModel: string,
+): AgentChatOpencodeModelProviderFlowState {
+  const flowState = inputFlowState ?? initialOpencodeModelProviderFlowState();
+  let step = flowState.step;
+  if (step === null) {
+    step = isOpencodeUsable() ? "provider_list" : "connect_vendor";
+  } else if (!isOpencodeUsable() && step === "provider_list") {
+    step = "connect_vendor";
   }
-  if (!isOpencodeUsable() && flowState.step === "provider_list") {
-    flowState.step = "connect_vendor";
-  }
-  if (flowState.selectedProviderId === undefined) {
-    flowState.selectedProviderId = providerIdFromModel(currentModel);
-  }
+  return {
+    ...flowState,
+    step,
+    selectedProviderId: flowState.selectedProviderId ?? providerIdFromModel(currentModel),
+  };
 }
 
-function selectedProviderId(currentModel: string): string {
+function selectedProviderId(
+  currentModel: string,
+  flowState: AgentChatOpencodeModelProviderFlowState,
+): string {
   return flowState.selectedProviderId ?? providerIdFromModel(currentModel);
 }
 
@@ -364,12 +402,16 @@ function providerStatus(providerId: string): string {
   return "Connect";
 }
 
-function titleForStep(step: AgentChatOpencodeModelProviderStep, providerLabel: string | undefined): string {
+function titleForStep(
+  step: AgentChatOpencodeModelProviderStep,
+  providerId: string | undefined,
+  providerLabel: string | undefined,
+): string {
   switch (step) {
     case "model_list":
       return providerLabel ?? "Models";
     case "vendor_method":
-      return `${providerMethodVerb(flowState.selectedProviderId)} ${providerLabel ?? "Provider"}`;
+      return `${providerMethodVerb(providerId)} ${providerLabel ?? "Provider"}`;
     case "api_key":
       return `API key ${providerLabel ?? "Provider"}`;
     case "connect_vendor":

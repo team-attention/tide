@@ -160,6 +160,7 @@ export function OpencodeModelProviderPanel(props: {
           <input
             type="password"
             autoFocus
+            autoComplete="new-password"
             spellCheck={false}
             value={keyDraft}
             placeholder="sk-..."

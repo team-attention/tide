@@ -2,6 +2,7 @@ import type { AgentSessionBlock } from "../../../application/domains/agent-sessi
 import type { AgentId } from "../../../application/domains/thread/thread.ts";
 import type { ThreadStorageRecord } from "../../../application/services/thread/thread-persistence-service.ts";
 import { parseOpencodeExportText } from "../../../application/services/provider/provider-session-discovery.ts";
+import { resolveExecutable } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
 import { spawnSync } from "node:child_process";
 import { readTextFile } from "../live/live-backend-fs.ts";
 import {
@@ -453,8 +454,12 @@ function rawConversationBlock(input: {
 }
 
 function runOpencodeExport(sessionId: string): string | undefined {
+  const executablePath = resolveExecutable("opencode");
+  if (executablePath === undefined) {
+    return undefined;
+  }
   try {
-    const result = spawnSync("opencode", ["export", sessionId], {
+    const result = spawnSync(executablePath, ["export", sessionId], {
       encoding: "utf8",
       timeout: 8_000,
       maxBuffer: 8 * 1024 * 1024,
