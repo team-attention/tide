@@ -9,6 +9,7 @@ import type {
 } from "../support/types.ts";
 
 type ReviewTargetKind = ReviewTarget["kind"];
+type ReviewFinding = { text: string; path?: string; line?: number };
 
 export function ReviewPanel(props: {
   cwd: string;
@@ -51,7 +52,7 @@ export function ReviewPanel(props: {
     }
   }, [baseBranch, commitSha, commitTitle, customDiff, customInstructions, targetKind]);
 
-  const findings = useMemo(() => extractFindingSummaries(result?.rawText ?? ""), [result]);
+  const findings = useMemo(() => extractFindings(result?.rawText ?? ""), [result]);
 
   async function runReview(): Promise<void> {
     if (target === null || running) {
@@ -184,7 +185,23 @@ export function ReviewPanel(props: {
           ) : findings.length > 0 ? (
             <ReviewFindingList>
               {findings.map((finding, index) => (
-                <li key={`${index}:${finding}`}>{finding}</li>
+                <li key={`${index}:${finding.text}`}>
+                  {finding.path !== undefined && finding.line !== undefined ? (
+                    <ReviewFindingButton
+                      type="button"
+                      title={`Open ${finding.path}:${finding.line}`}
+                      onClick={() => handlers.onOpenFile(finding.path!, {
+                        line: finding.line!,
+                        character: 1,
+                        label: finding.text,
+                      })}
+                    >
+                      {finding.text}
+                    </ReviewFindingButton>
+                  ) : (
+                    finding.text
+                  )}
+                </li>
               ))}
             </ReviewFindingList>
           ) : (
@@ -249,14 +266,23 @@ function sourceLabel(source: ReviewRunResult["source"] | undefined): string {
   }
 }
 
-function extractFindingSummaries(rawText: string): string[] {
+function extractFindings(rawText: string): ReviewFinding[] {
   return rawText
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => /^([-*]|\d+[.)])\s+/.test(line))
     .map((line) => line.replace(/^([-*]|\d+[.)])\s+/, ""))
     .filter((line) => line.length > 12)
+    .map((text) => ({ text, ...extractFindingLocation(text) }))
     .slice(0, 12);
+}
+
+function extractFindingLocation(text: string): Pick<ReviewFinding, "path" | "line"> {
+  const match = /(?:^|\s)([A-Za-z0-9._/@-][A-Za-z0-9._/@-]*(?:\/[A-Za-z0-9._@-]+)*):(\d+)/.exec(text);
+  if (match === null || match[1] === undefined || match[2] === undefined || match[1].startsWith("http")) {
+    return {};
+  }
+  return { path: match[1].replace(/^\.\//, ""), line: Number(match[2]) };
 }
 
 const ReviewPaneFrame = styled.div`
@@ -434,6 +460,22 @@ const ReviewFindingList = styled.ol`
   color: var(--tide-text);
   font-size: 12.5px;
   line-height: 1.45;
+`;
+
+const ReviewFindingButton = styled.button`
+  display: inline;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+
+  &:hover {
+    color: var(--tide-action);
+    text-decoration: underline;
+  }
 `;
 
 const ReviewError = styled.div`

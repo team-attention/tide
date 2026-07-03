@@ -57,6 +57,7 @@ test("review_panel_disables_invalid_commit_target_then_runs_selected_target", as
 test("review_panel_renders_findings_and_hands_raw_output_to_chat", async () => {
   let attached: { label: string; text: string } | null = null;
   let draft = "";
+  let opened: { path: string; line?: number; character?: number; label?: string } | null = null;
   const { container, root } = renderReviewPanel({
     onRunReview: async (_cwd, _provider, target) => reviewResult({
       target,
@@ -68,6 +69,9 @@ test("review_panel_renders_findings_and_hands_raw_output_to_chat", async () => {
     onDraftChange: (next) => {
       draft = next;
     },
+    onOpenFile: (path, target) => {
+      opened = { path, ...(target ?? {}) };
+    },
   });
   await flushEffects();
 
@@ -78,6 +82,13 @@ test("review_panel_renders_findings_and_hands_raw_output_to_chat", async () => {
 
   assert.match(container.innerHTML, /High: src\/app\.ts:12 avoids stale state/);
   assert.match(container.innerHTML, /Full raw review output/);
+
+  await act(async () => {
+    buttonByText(container, "High: src/app.ts:12")?.click();
+  });
+  assert.equal(opened?.path, "src/app.ts");
+  assert.equal(opened?.line, 12);
+  assert.equal(opened?.character, 1);
 
   await act(async () => {
     buttonByText(container, "Ask agent to fix")?.click();
@@ -95,6 +106,10 @@ function renderReviewPanel(overrides: {
   onRunReview?: (cwd: string, provider: ReviewProvider, target: ReviewTarget) => Promise<ReviewRunResult>;
   onAddContentToChat?: (chip: { kind: "code" | "terminal" | "browser" | "message"; label: string; text: string }) => void;
   onDraftChange?: (draft: string) => void;
+  onOpenFile?: (
+    path: string,
+    target?: { line: number; character: number; length?: number; label?: string; sourcePaneId?: string },
+  ) => void;
 }): { container: HTMLDivElement; root: ReturnType<typeof createRoot> } {
   const container = dom.window.document.createElement("div");
   dom.window.document.body.appendChild(container);
@@ -103,6 +118,7 @@ function renderReviewPanel(overrides: {
     onRunReview: overrides.onRunReview ?? (async (_cwd, _provider, target) => reviewResult({ target })),
     onAddContentToChat: overrides.onAddContentToChat ?? (() => undefined),
     onDraftChange: overrides.onDraftChange ?? (() => undefined),
+    onOpenFile: overrides.onOpenFile ?? (() => undefined),
   } as Partial<ProductShellHandlers> as ProductShellHandlers;
 
   void act(() => {
