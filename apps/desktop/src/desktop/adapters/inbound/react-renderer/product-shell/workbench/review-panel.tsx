@@ -7,9 +7,9 @@ import type {
   ReviewRunResult,
   ReviewTarget,
 } from "../support/types.ts";
+import { parseReviewFindings } from "../../../../../application/domains/product-shell/state/review-findings.ts";
 
 type ReviewTargetKind = ReviewTarget["kind"];
-type ReviewFinding = { text: string; path?: string; line?: number };
 
 export function ReviewPanel(props: {
   cwd: string;
@@ -52,7 +52,12 @@ export function ReviewPanel(props: {
     }
   }, [baseBranch, commitSha, commitTitle, customDiff, customInstructions, targetKind]);
 
-  const findings = useMemo(() => extractFindings(result?.rawText ?? ""), [result]);
+  const findings = useMemo(() => {
+    if (result === null) {
+      return [];
+    }
+    return result.findings.length > 0 ? result.findings : parseReviewFindings(result.rawText);
+  }, [result]);
 
   async function runReview(): Promise<void> {
     if (target === null || running) {
@@ -185,21 +190,21 @@ export function ReviewPanel(props: {
           ) : findings.length > 0 ? (
             <ReviewFindingList>
               {findings.map((finding, index) => (
-                <li key={`${index}:${finding.text}`}>
-                  {finding.path !== undefined && finding.line !== undefined ? (
+                <li key={finding.findingId}>
+                  {finding.file !== undefined && finding.line !== undefined ? (
                     <ReviewFindingButton
                       type="button"
-                      title={`Open ${finding.path}:${finding.line}`}
-                      onClick={() => handlers.onOpenFile(finding.path!, {
+                      title={`Open ${finding.file}:${finding.line}`}
+                      onClick={() => handlers.onOpenFile(finding.file!, {
                         line: finding.line!,
                         character: 1,
-                        label: finding.text,
+                        label: finding.title,
                       })}
                     >
-                      {finding.text}
+                      {finding.title}
                     </ReviewFindingButton>
                   ) : (
-                    finding.text
+                    finding.title
                   )}
                 </li>
               ))}
@@ -264,25 +269,6 @@ function sourceLabel(source: ReviewRunResult["source"] | undefined): string {
     default:
       return "not run";
   }
-}
-
-function extractFindings(rawText: string): ReviewFinding[] {
-  return rawText
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => /^([-*]|\d+[.)])\s+/.test(line))
-    .map((line) => line.replace(/^([-*]|\d+[.)])\s+/, ""))
-    .filter((line) => line.length > 12)
-    .map((text) => ({ text, ...extractFindingLocation(text) }))
-    .slice(0, 12);
-}
-
-function extractFindingLocation(text: string): Pick<ReviewFinding, "path" | "line"> {
-  const match = /(?:^|\s)([A-Za-z0-9._/@-][A-Za-z0-9._/@-]*(?:\/[A-Za-z0-9._@-]+)*):(\d+)/.exec(text);
-  if (match === null || match[1] === undefined || match[2] === undefined || match[1].startsWith("http")) {
-    return {};
-  }
-  return { path: match[1].replace(/^\.\//, ""), line: Number(match[2]) };
 }
 
 const ReviewPaneFrame = styled.div`

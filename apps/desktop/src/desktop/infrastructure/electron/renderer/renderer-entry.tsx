@@ -237,6 +237,15 @@ declare global {
         startedAt: string;
         completedAt: string;
         rawText: string;
+        findings: {
+          findingId: string;
+          severity?: "critical" | "high" | "medium" | "low" | "info";
+          file?: string;
+          line?: number;
+          title: string;
+          body: string;
+          confidence?: "high" | "medium" | "low";
+        }[];
         stderr?: string;
         exitCode?: number | null;
         signal?: string | null;

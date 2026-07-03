@@ -1,7 +1,9 @@
 import type { AgentChatBackendEvent, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerSurfaceKind, AgentChatPromptStepAnswer, AgentChatThreadSummary } from "../../../../../application/domains/agent-chat/agent-chat.ts";
-import type { DropZone, ProductShellBackendCommand, ProductShellFileTreeMenu, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { DropZone, ProductShellBackendCommand, ProductShellFileTreeMenu, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings, ReviewFinding } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
+
+export type { ReviewFinding };
 
 export interface ProjectRegistryEntry {
   projectId: string;
@@ -84,6 +86,7 @@ export interface ReviewRunResult {
   startedAt: string;
   completedAt: string;
   rawText: string;
+  findings: ReviewFinding[];
   stderr?: string;
   exitCode?: number | null;
   signal?: string | null;

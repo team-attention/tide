@@ -62,6 +62,16 @@ export type ReviewRunSource =
   | "claude_prompt"
   | "opencode_prompt";
 
+export interface ReviewFinding {
+  findingId: string;
+  severity?: "critical" | "high" | "medium" | "low" | "info";
+  file?: string;
+  line?: number;
+  title: string;
+  body: string;
+  confidence?: "high" | "medium" | "low";
+}
+
 export interface ReviewRunResult {
   ok: boolean;
   provider: ReviewProvider;
@@ -72,6 +82,7 @@ export interface ReviewRunResult {
   startedAt: string;
   completedAt: string;
   rawText: string;
+  findings: ReviewFinding[];
   stderr?: string;
   exitCode?: number | null;
   signal?: string | null;

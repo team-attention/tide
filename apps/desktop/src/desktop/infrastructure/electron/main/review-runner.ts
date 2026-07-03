@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 
+import { parseReviewFindings, type ReviewFinding } from "../../../application/domains/product-shell/state/review-findings.ts";
+
 export type ReviewProvider = "codex" | "claude" | "opencode";
 
 export type ReviewTarget =
@@ -24,6 +26,7 @@ export interface ReviewRunResult {
   startedAt: string;
   completedAt: string;
   rawText: string;
+  findings: ReviewFinding[];
   stderr?: string;
   exitCode?: number | null;
   signal?: string | null;
@@ -63,6 +66,7 @@ export async function runProviderReview(input: {
     startedAt,
     completedAt: new Date().toISOString(),
     rawText: partial?.rawText ?? "",
+    findings: parseReviewFindings(partial?.rawText ?? ""),
     stderr: partial?.stderr,
     exitCode: partial?.exitCode,
     signal: partial?.signal,
@@ -86,6 +90,7 @@ export async function runProviderReview(input: {
     stdin: command.stdin,
   });
   const rawText = [executed.stdout, executed.stderr].filter((part) => part.trim().length > 0).join("\n\n");
+  const findings = parseReviewFindings(rawText);
   return {
     ok: executed.ok,
     provider,
@@ -96,6 +101,7 @@ export async function runProviderReview(input: {
     startedAt,
     completedAt: new Date().toISOString(),
     rawText,
+    findings,
     stderr: executed.stderr.trim().length > 0 ? executed.stderr : undefined,
     exitCode: executed.exitCode,
     signal: executed.signal,

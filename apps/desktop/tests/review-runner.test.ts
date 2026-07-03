@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { parseReviewFindings } from "../src/desktop/application/domains/product-shell/state/review-findings.ts";
 import { buildReviewCommand } from "../src/desktop/infrastructure/electron/main/review-runner.ts";
 
 test("codex review command maps every review target shape", async () => {
@@ -74,4 +75,32 @@ test("opencode review command builds a run prompt with the selected cwd", async 
   assert.equal(command?.source, "opencode_prompt");
   assert.match(command?.args.at(-1) ?? "", /Find regressions/);
   assert.match(command?.args.at(-1) ?? "", /-old\n\+new/);
+});
+
+test("review findings parser preserves severity and file locations", () => {
+  assert.deepEqual(
+    parseReviewFindings([
+      "- High: src/app.ts:12 stale state can regress review routing.",
+      "Plain prose is preserved only in raw output.",
+      "1. Low: ./src/other.ts:7 add a focused regression test.",
+    ].join("\n")),
+    [
+      {
+        findingId: "finding-1",
+        severity: "high",
+        file: "src/app.ts",
+        line: 12,
+        title: "High: src/app.ts:12 stale state can regress review routing.",
+        body: "High: src/app.ts:12 stale state can regress review routing.",
+      },
+      {
+        findingId: "finding-2",
+        severity: "low",
+        file: "src/other.ts",
+        line: 7,
+        title: "Low: ./src/other.ts:7 add a focused regression test.",
+        body: "Low: ./src/other.ts:7 add a focused regression test.",
+      },
+    ],
+  );
 });

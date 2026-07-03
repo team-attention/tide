@@ -127,6 +127,7 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         startedAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
         rawText: "",
+        findings: [],
         message: "Review runner is unavailable outside the desktop app.",
       }),
     onLoadWorkbenchImage: async (cwd, relativePath) => {
