@@ -273,7 +273,7 @@ export const TranscriptTurn = styled.article<{
   align-self: center;
   display: ${({ $role }) => ($role === "user" ? "flex" : "grid")};
   justify-content: ${({ $role }) => ($role === "user" ? "flex-end" : "normal")};
-  gap: ${({ $role }) => ($role === "tool" ? "3px" : "4px")};
+  gap: ${({ $role }) => ($role === "tool" ? "3px" : $role === "event" ? "8px" : "4px")};
   position: relative;
   color: ${({ $commentary, $role }) =>
     $commentary

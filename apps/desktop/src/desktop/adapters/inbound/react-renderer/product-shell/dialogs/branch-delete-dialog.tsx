@@ -72,7 +72,7 @@ export function BranchDeleteDialog(props: {
           </WorktreeDialogCancelButton>
           <WorktreeDialogConfirmButton
             type="button"
-            data-variant="danger"
+            $variant="danger"
             disabled={deleting}
             onClick={() => props.onConfirm()}
           >

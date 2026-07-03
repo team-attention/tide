@@ -90,7 +90,7 @@ export function WorktreeDeleteDialog(props: {
           </WorktreeDialogCancelButton>
           <WorktreeDialogConfirmButton
             type="button"
-            data-variant="danger"
+            $variant="danger"
             disabled={anyRunning || deleting}
             onClick={() => props.onConfirm(keepBranch)}
           >

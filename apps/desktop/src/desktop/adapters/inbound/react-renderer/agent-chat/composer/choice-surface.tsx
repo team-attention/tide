@@ -539,7 +539,7 @@ const ChoiceRowDetail = styled.span`
   text-overflow: ellipsis;
   white-space: nowrap;
 
-  ${ChoiceRow}[aria-disabled="true"] & {
+  ${ChoiceRow}:disabled & {
     font-style: italic;
   }
 `;

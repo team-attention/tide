@@ -137,19 +137,24 @@ export const WorktreeDialogCancelButton = styled(WorktreeDialogButton)`
   }
 `;
 
-export const WorktreeDialogConfirmButton = styled(WorktreeDialogButton)`
+export const WorktreeDialogConfirmButton = styled(WorktreeDialogButton)<{
+  $variant?: "danger";
+}>`
   border: 1px solid transparent;
   background: var(--tide-text);
   color: var(--tide-bg);
 
-  &[data-variant="danger"] {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    background: var(--tide-danger);
-    color: var(--tide-bg);
-  }
+  ${({ $variant }) =>
+    $variant === "danger"
+      ? `
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        background: var(--tide-danger);
+        color: var(--tide-bg);
+      `
+      : ""}
 `;
 
 export const WorktreeDeleteCheck = styled.label`

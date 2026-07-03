@@ -47,7 +47,7 @@ export function FileTreeDeleteDialog(props: {
           </WorktreeDialogCancelButton>
           <WorktreeDialogConfirmButton
             type="button"
-            data-variant="danger"
+            $variant="danger"
             onClick={() => props.onConfirm()}
           >
             Move to Trash

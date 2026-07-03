@@ -108,7 +108,7 @@ function check(label, ok, detail = "") {
   const delDialog = page.locator('[aria-label="Delete"]');
   check("Delete opens a confirm dialog", (await delDialog.count()) > 0);
   await page.screenshot({ path: "/tmp/pw-fileops-3-delete.png" });
-  await page.locator('[data-variant="danger"]', { hasText: "Move to Trash" }).first().click();
+  await page.getByRole("button", { name: "Move to Trash" }).click();
   await page.waitForTimeout(1200);
   check("Delete moves the file to the Trash (gone from the project)", !fs.existsSync(path.join(project, "doomed.txt")));
 
