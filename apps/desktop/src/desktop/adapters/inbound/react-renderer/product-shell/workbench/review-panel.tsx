@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { styled } from "styled-components";
 import { CheckCircle2, ClipboardCheck, Loader2, Send, TriangleAlert } from "lucide-react";
 import type {
@@ -25,6 +25,8 @@ export function ReviewPanel(props: {
   const [customInstructions, setCustomInstructions] = useState("");
   const [customDiff, setCustomDiff] = useState("");
   const [running, setRunning] = useState(false);
+  const [runStartedAtMs, setRunStartedAtMs] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [result, setResult] = useState<ReviewRunResult | null>(null);
 
   const target = useMemo<ReviewTarget | null>(() => {
@@ -58,17 +60,33 @@ export function ReviewPanel(props: {
     }
     return result.findings.length > 0 ? result.findings : parseReviewFindings(result.rawText);
   }, [result]);
+  const runningElapsedLabel = running && runStartedAtMs !== null
+    ? formatReviewElapsed(nowMs - runStartedAtMs)
+    : null;
   const rawOutputText = result?.rawText.trim() ||
     (result !== null && !result.ok
       ? result.message ?? "Review failed."
       : running
-        ? "Waiting for provider output..."
+        ? `Waiting for provider output${runningElapsedLabel === null ? "" : ` (${runningElapsedLabel})`}...`
         : "No output yet.");
+
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [running]);
 
   async function runReview(): Promise<void> {
     if (target === null || running) {
       return;
     }
+    const startedAtMs = Date.now();
+    setRunStartedAtMs(startedAtMs);
+    setNowMs(startedAtMs);
     setRunning(true);
     setResult(null);
     try {
@@ -164,7 +182,7 @@ export function ReviewPanel(props: {
           onClick={() => void runReview()}
         >
           {running ? <Loader2 size={14} strokeWidth={1.9} aria-hidden /> : <ClipboardCheck size={14} strokeWidth={1.9} aria-hidden />}
-          <span>{running ? "Running" : "Run review"}</span>
+          <span>{running ? `Running${runningElapsedLabel === null ? "" : ` ${runningElapsedLabel}`}` : "Run review"}</span>
         </ReviewRunButton>
       </ReviewControls>
       {targetKind === "custom" ? (
@@ -280,6 +298,20 @@ function reviewStatusLabel(result: ReviewRunResult): string {
     return "Completed";
   }
   return result.message?.toLowerCase().includes("unavailable") ? "Unavailable" : "Failed";
+}
+
+function formatReviewElapsed(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) {
+    return `${seconds}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours === 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${hours}h ${minutes % 60}m`;
 }
 
 const ReviewPaneFrame = styled.div`

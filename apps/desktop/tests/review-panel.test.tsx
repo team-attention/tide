@@ -178,6 +178,43 @@ test("review_panel_surfaces_unavailable_review_results", async () => {
   });
 });
 
+test("review_panel_shows_elapsed_time_while_review_runs", async () => {
+  let pendingTarget: ReviewTarget | null = null;
+  let resolveReview: ((result: ReviewRunResult) => void) | null = null;
+  const pendingReview = new Promise<ReviewRunResult>((resolve) => {
+    resolveReview = resolve;
+  });
+  const { container, root } = renderReviewPanel({
+    onRunReview: async (_cwd, _provider, target) => {
+      pendingTarget = target;
+      return pendingReview;
+    },
+  });
+  await flushEffects();
+
+  await act(async () => {
+    buttonByText(container, "Run review")?.click();
+  });
+
+  assert.match(container.textContent ?? "", /Running 0s/);
+  assert.match(container.textContent ?? "", /Waiting for provider output \(0s\)\.\.\./);
+  assert.equal(buttonByText(container, "Running 0s")?.disabled, true);
+
+  await act(async () => {
+    assert.notEqual(resolveReview, null);
+    assert.notEqual(pendingTarget, null);
+    resolveReview!(reviewResult({ target: pendingTarget! }));
+    await pendingReview;
+  });
+  await flushEffects();
+
+  assert.match(container.textContent ?? "", /Completed/);
+  assert.doesNotMatch(container.textContent ?? "", /Waiting for provider output/);
+  await act(async () => {
+    root.unmount();
+  });
+});
+
 function renderReviewPanel(overrides: {
   onRunReview?: (cwd: string, provider: ReviewProvider, target: ReviewTarget) => Promise<ReviewRunResult>;
   onAddContentToChat?: (chip: { kind: "code" | "terminal" | "browser" | "message"; label: string; text: string }) => void;

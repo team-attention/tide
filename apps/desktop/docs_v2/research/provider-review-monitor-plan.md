@@ -23,7 +23,7 @@ This branch implements the first product slice of the plan:
   - Codex: `codex review` CLI fallback for uncommitted/base/commit/custom.
   - Claude: `claude ultrareview` for base-branch review, and local `claude -p` prompt review for other targets.
   - opencode: `opencode run --format json` prompt review.
-- Review pane target/provider controls, running state, raw output fallback, persisted structured finding extraction, and "Ask agent to fix" handoff into the composer.
+- Review pane target/provider controls, running state with elapsed time, raw output fallback, persisted structured finding extraction, and "Ask agent to fix" handoff into the composer.
 - Review pane failure/unavailable results preserve the provider message in the pane instead of rendering an empty raw-output state.
 - Backend provider capability invocation surfaces unsupported provider paths as `provider_capability_unsupported` without starting a runtime.
 - Codex app-server `review/start` schema fixture coverage for target/delivery payload mapping, plus fake app-server provider-method coverage that verifies Tide sends `review/start` on the initialized provider thread and returns the app-server result.
